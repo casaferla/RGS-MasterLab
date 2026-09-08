@@ -4,6 +4,12 @@
 
 #include <string_view>
 
+namespace rgsml::tests {
+
+void runCorePrimitiveTests();
+
+}  // namespace rgsml::tests
+
 class BootstrapTest final : public QObject {
     Q_OBJECT
 
@@ -15,6 +21,11 @@ private slots:
         QCOMPARE(BuildInfo::versionMajor, 0);
         QCOMPARE(BuildInfo::versionMinor, 0);
         QCOMPARE(BuildInfo::versionPatch, 0);
+    }
+
+    void corePrimitives()
+    {
+        rgsml::tests::runCorePrimitiveTests();
     }
 };
 

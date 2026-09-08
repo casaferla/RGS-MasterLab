@@ -1,5 +1,14 @@
 qt_add_executable(rgsml_tests
     test_bootstrap.cpp
+    test_core_primitives.cpp
+    unit/core/include_checked_integer.cpp
+    unit/core/include_error.cpp
+    unit/core/include_frame_time.cpp
+    unit/core/include_processing_state.cpp
+    unit/core/include_rational.cpp
+    unit/core/include_result.cpp
+    unit/core/include_strong_id.cpp
+    unit/core/include_uuid.cpp
 )
 
 target_link_libraries(rgsml_tests
