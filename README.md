@@ -1,0 +1,36 @@
+# RGS MasterLab
+
+Bootstrap repository for the Windows shell of RGS MasterLab. The current code
+contains a Qt-free C++20 core, a minimal Qt 6/QML UI, the Windows executable,
+and a CTest bootstrap test. It does not contain audio or DSP functionality.
+
+## Prerequisites
+
+- Windows 10 or 11 x64
+- Visual Studio 2022 or Build Tools 2022 with the MSVC x64 C++ toolchain
+- CMake 3.25 or newer
+- Qt 6.8 or newer for MSVC 2022 64-bit, including Core, Gui, Qml, Quick,
+  QuickControls2, and Test
+
+Set `RGSML_QT_ROOT` locally to the prefix of the selected Qt kit. Do not commit
+its machine-specific value:
+
+```powershell
+$env:RGSML_QT_ROOT = '<Qt-kit-prefix>'
+```
+
+Alternatively, provide the standard CMake inputs `CMAKE_PREFIX_PATH` or
+`Qt6_DIR` locally.
+
+## Configure, build, and test
+
+From a Visual Studio 2022 developer environment:
+
+```powershell
+cmake --preset windows-msvc
+cmake --build --preset windows-msvc-debug
+ctest --preset windows-msvc-debug --output-on-failure
+```
+
+The Debug executable is generated as
+`build/windows-msvc/Debug/RGSMasterLab.exe`.

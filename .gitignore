@@ -1,0 +1,16 @@
+/build/
+/out/
+/.vs/
+/.vscode/
+/.idea/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.qmlc
+*.jsc
+*.log
+*.tmp

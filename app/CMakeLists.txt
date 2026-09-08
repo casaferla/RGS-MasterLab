@@ -1,0 +1,21 @@
+qt_add_executable(rgsml_app
+    src/main.cpp
+)
+
+set_target_properties(rgsml_app PROPERTIES
+    OUTPUT_NAME RGSMasterLab
+    WIN32_EXECUTABLE TRUE
+)
+
+target_link_libraries(rgsml_app
+    PRIVATE
+        rgsml_core
+        rgsml_ui
+        rgsml_uiplugin
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Qml
+        Qt6::Quick
+)
+
+rgsml_enable_warnings(rgsml_app)
