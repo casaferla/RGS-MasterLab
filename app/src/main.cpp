@@ -1,11 +1,32 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
-#include <QUrl>
+#include <QTimer>
+
+#include <cstdio>
+#include <cstdlib>
+
+namespace {
+
+bool smokeWarningObserved = false;
+
+void smokeMessageHandler(QtMsgType type, const QMessageLogContext&, const QString& message)
+{
+    if (type == QtWarningMsg || type == QtCriticalMsg || type == QtFatalMsg) {
+        smokeWarningObserved = true;
+        std::fprintf(stderr, "%s\n", message.toLocal8Bit().constData());
+    }
+}
+
+}  // namespace
 
 int main(int argc, char* argv[])
 {
     QGuiApplication application(argc, argv);
     application.setApplicationName(QStringLiteral("RGS MasterLab"));
+    const bool deploySmoke = application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
+    if (deploySmoke) {
+        qInstallMessageHandler(smokeMessageHandler);
+    }
 
     QQmlApplicationEngine engine;
     QObject::connect(
@@ -16,5 +37,10 @@ int main(int argc, char* argv[])
         Qt::QueuedConnection);
     engine.loadFromModule("Rgsml.Ui", "Main");
 
-    return application.exec();
+    if (deploySmoke && !engine.rootObjects().isEmpty()) {
+        QTimer::singleShot(0, &application, &QCoreApplication::quit);
+    }
+
+    const int result = application.exec();
+    return smokeWarningObserved ? EXIT_FAILURE : result;
 }

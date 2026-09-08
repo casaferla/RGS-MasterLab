@@ -28,9 +28,26 @@ From a Visual Studio 2022 developer environment:
 
 ```powershell
 cmake --preset windows-msvc
-cmake --build --preset windows-msvc-debug
+cmake --build --preset windows-msvc-debug-clean
 ctest --preset windows-msvc-debug --output-on-failure
+cmake --build --preset windows-msvc-release-clean
+ctest --preset windows-msvc-release --output-on-failure
 ```
+
+The original incremental `windows-msvc-debug` and `windows-msvc-release`
+build presets remain available. All repository acceptance presets enable
+target-scoped warnings-as-errors for first-party RGSML code.
+
+Install and validate the staged Release deployment with:
+
+```powershell
+cmake --install build/windows-msvc --config Release --prefix build/windows-msvc/stage/L0-M02/Release
+& build/windows-msvc/stage/L0-M02/Release/bin/RGSMasterLab.exe --rgsml-deploy-smoke
+```
+
+The generated toolchain record is written to
+`build/windows-msvc/generated/rgsml/ToolchainManifest.json` and installed to
+`share/RGSMasterLab/ToolchainManifest.json` below the selected prefix.
 
 The Debug executable is generated as
 `build/windows-msvc/Debug/RGSMasterLab.exe`.

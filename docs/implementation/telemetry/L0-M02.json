@@ -1,0 +1,19 @@
+{
+  "milestoneId": "L0-M02",
+  "estimatedPde": {
+    "optimistic": 1,
+    "mostLikely": 2,
+    "conservative": 3
+  },
+  "actualOwnerHours": 0,
+  "codexIterations": 4,
+  "configureBuildTestCycles": 7,
+  "defectsFound": 3,
+  "regressionsFound": 0,
+  "reviewHours": 0,
+  "blockedHours": 0,
+  "reworkReasonCodes": [
+    "HOST_ENV_PATH_CASE_COLLISION"
+  ],
+  "status": "READY_FOR_REVIEW"
+}

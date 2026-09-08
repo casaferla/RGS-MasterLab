@@ -15,3 +15,10 @@ bootstrap.
 
 Dependencies are resolved locally by CMake. Ordinary configure operations must
 not download packages or embed machine-specific installation paths.
+
+Compiler warnings are configured only through `rgsml_apply_project_warnings`
+on first-party targets. Dependency targets never inherit warnings-as-errors.
+The generated `ToolchainManifest.json` describes only stable, detected
+toolchain values; it excludes paths, timestamps, source-control state, and host
+identity. Windows staging uses Qt's generated QML deployment script and remains
+inside the ignored build tree.

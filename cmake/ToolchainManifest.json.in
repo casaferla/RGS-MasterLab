@@ -1,0 +1,31 @@
+{
+  "artifactId": "rgsml.toolchain_manifest",
+  "schemaVersion": 1,
+  "productName": "RGS MasterLab",
+  "target": {
+    "systemName": "@RGSML_MANIFEST_SYSTEM_NAME@",
+    "architecture": "@RGSML_MANIFEST_ARCHITECTURE@",
+    "windowsSdkVersion": "@RGSML_MANIFEST_WINDOWS_SDK_VERSION@"
+  },
+  "buildSystem": {
+    "cmakeVersion": "@RGSML_MANIFEST_CMAKE_VERSION@",
+    "generator": "@RGSML_MANIFEST_GENERATOR@",
+    "generatorPlatform": "@RGSML_MANIFEST_GENERATOR_PLATFORM@"
+  },
+  "compiler": {
+    "id": "@RGSML_MANIFEST_COMPILER_ID@",
+    "version": "@RGSML_MANIFEST_COMPILER_VERSION@",
+    "toolset": "@RGSML_MANIFEST_TOOLSET@"
+  },
+  "qt": {
+    "version": "@RGSML_MANIFEST_QT_VERSION@",
+    "minimumVersion": "6.8"
+  },
+  "sourceControl": {
+    "gitVersion": "@RGSML_MANIFEST_GIT_VERSION@"
+  },
+  "language": {
+    "cxxStandard": 20,
+    "extensions": false
+  }
+}

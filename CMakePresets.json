@@ -13,7 +13,8 @@
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/windows-msvc",
       "cacheVariables": {
-        "RGSML_BUILD_TESTS": "ON"
+        "RGSML_BUILD_TESTS": "ON",
+        "RGSML_WARNINGS_AS_ERRORS": "ON"
       }
     }
   ],
@@ -27,6 +28,18 @@
       "name": "windows-msvc-release",
       "configurePreset": "windows-msvc",
       "configuration": "Release"
+    },
+    {
+      "name": "windows-msvc-debug-clean",
+      "configurePreset": "windows-msvc",
+      "configuration": "Debug",
+      "cleanFirst": true
+    },
+    {
+      "name": "windows-msvc-release-clean",
+      "configurePreset": "windows-msvc",
+      "configuration": "Release",
+      "cleanFirst": true
     }
   ],
   "testPresets": [
@@ -34,6 +47,14 @@
       "name": "windows-msvc-debug",
       "configurePreset": "windows-msvc",
       "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc",
+      "configuration": "Release",
       "output": {
         "outputOnFailure": true
       }

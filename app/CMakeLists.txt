@@ -18,4 +18,4 @@ target_link_libraries(rgsml_app
         Qt6::Quick
 )
 
-rgsml_enable_warnings(rgsml_app)
+rgsml_apply_project_warnings(rgsml_app)

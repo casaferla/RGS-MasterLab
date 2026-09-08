@@ -13,4 +13,4 @@ target_link_libraries(rgsml_ui
         Qt6::QuickControls2
 )
 
-rgsml_enable_warnings(rgsml_ui)
+rgsml_apply_project_warnings(rgsml_ui)
