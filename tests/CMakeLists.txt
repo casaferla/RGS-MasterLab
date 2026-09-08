@@ -24,6 +24,44 @@ set_tests_properties(rgsml_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
 )
 
+qt_add_executable(rgsml_platform_contract_tests
+    test_platform_contracts.cpp
+)
+
+target_link_libraries(rgsml_platform_contract_tests
+    PRIVATE
+        rgsml_core
+        Qt6::Test
+)
+
+rgsml_apply_project_warnings(rgsml_platform_contract_tests)
+
+add_test(NAME rgsml_platform_contract_tests COMMAND rgsml_platform_contract_tests)
+set_tests_properties(rgsml_platform_contract_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+)
+
+foreach(dependency_case
+    core_dependency_graph_allowed
+    core_public_headers_standalone
+    core_forbidden_include_contract
+    dependency_rule_negative_fixture
+    dependency_rule_positive_fixture)
+    add_test(
+        NAME "${dependency_case}"
+        COMMAND
+            "${CMAKE_COMMAND}"
+            "-DCASE=${dependency_case}"
+            "-DRGSML_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+            "-DRGSML_TEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+            "-DTEST_GENERATOR=${CMAKE_GENERATOR}"
+            "-DTEST_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+            "-DTEST_CONFIG=$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_dependency_rules.cmake"
+    )
+    set_tests_properties("${dependency_case}" PROPERTIES RUN_SERIAL TRUE)
+endforeach()
+
 add_test(
     NAME toolchain_manifest_synthetic_contract
     COMMAND

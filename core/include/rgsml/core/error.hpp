@@ -20,6 +20,11 @@ enum class ErrorCode {
     InvalidUuid,
     InvalidRational,
     InvalidFrameRange,
+    ResourceNotFound,
+    AccessDenied,
+    IoFailure,
+    UnsupportedOperation,
+    InvalidState,
 };
 
 struct ErrorDetail final {

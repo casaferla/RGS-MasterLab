@@ -23,3 +23,17 @@
   and canonical processing state.
 - Integration: NOT_MERGED_TO_MAIN
 - Next task: TASK_004_NOT_PREPARED_OR_STARTED
+
+## L0-M04 — Platform/resource/playback ports and dependency rules
+
+- Status: READY_FOR_REVIEW
+- Baseline: `84d97d5e80295893f20f39e81d733693b07071d4`
+- Branch: `task/L0-M04-platform-contracts`
+- Delivery subject: `CODEX TASK 004 / L0-M04`
+- Scope: platform-neutral resource identity and permissions, capability-aware
+  byte reader/writer ports, resource-based playback control, additive error
+  categories, and positive/negative dependency-rule contracts.
+- Level 0: implementation complete; closure remains subject to review and
+  explicit acceptance.
+- Integration: NOT_MERGED_TO_MAIN
+- Next task: TASK_005_NOT_PREPARED_OR_STARTED

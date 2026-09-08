@@ -38,3 +38,27 @@ are non-negative, typed IDs are non-nil, and frame ranges are half-open with
 `Result`/`Status` with stable categorical error tokens. Frame-to-time mapping is
 exact rational arithmetic; time-to-frame rounding and FrameMap semantics are
 intentionally deferred.
+
+## Platform-neutral resource and playback ports
+
+L0-M04 adds inward-facing resource and playback contracts to `rgsml::core`.
+`ResourceReference` carries a provider-owned opaque locator, read/write
+permissions, and optional non-authoritative display metadata. Logical identity
+is the provider identifier plus locator; a byte-level identity mismatch alone
+does not prove that two locators resolve to different physical documents.
+
+`IResourceReader` and `IResourceWriter` are blocking, sequential-first byte
+ports. Capabilities explicitly describe optional seek, known-size, resize, and
+flush support and remain separate from access permissions. Short transfers are
+valid, EOF is a successful zero-byte read, and close is idempotent. Flush and
+close do not imply transactional commit or authoritative publication.
+
+`IAudioPlaybackService` is a resource-based control-plane port whose snapshot
+uses the existing exact frame types. It defines no decoder, PCM buffer, device,
+thread, or rendering authority. Concrete platform adapters remain downstream
+of core and are not introduced at Level 0.
+
+The reusable CMake dependency rule audits transitive target edges. Dedicated
+positive and negative fixtures, standalone public-header probes, and a
+forbidden include/type scan keep `rgsml_core` independent of Qt, UI, DSP, and
+platform implementations.

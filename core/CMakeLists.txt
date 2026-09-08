@@ -5,6 +5,7 @@ add_library(rgsml_core STATIC
     src/frame_time.cpp
     src/processing_state.cpp
     src/rational.cpp
+    src/resource_reference.cpp
     src/uuid.cpp
 )
 
@@ -14,3 +15,6 @@ target_include_directories(rgsml_core
 )
 
 rgsml_apply_project_warnings(rgsml_core)
+
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/RgsmlDependencyRules.cmake")
+rgsml_assert_target_dependencies(TARGET rgsml_core)

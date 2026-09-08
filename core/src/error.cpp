@@ -48,13 +48,23 @@ std::string_view error_code_token(ErrorCode code) noexcept
         return "invalid_rational";
     case ErrorCode::InvalidFrameRange:
         return "invalid_frame_range";
+    case ErrorCode::ResourceNotFound:
+        return "resource_not_found";
+    case ErrorCode::AccessDenied:
+        return "access_denied";
+    case ErrorCode::IoFailure:
+        return "io_failure";
+    case ErrorCode::UnsupportedOperation:
+        return "unsupported_operation";
+    case ErrorCode::InvalidState:
+        return "invalid_state";
     }
     return {};
 }
 
 Result<ErrorCode> parse_error_code(std::string_view token)
 {
-    constexpr std::array<ErrorCode, 8> codes{
+    constexpr std::array<ErrorCode, 13> codes{
         ErrorCode::InvalidArgument,
         ErrorCode::OutOfRange,
         ErrorCode::IntegerOverflow,
@@ -63,6 +73,11 @@ Result<ErrorCode> parse_error_code(std::string_view token)
         ErrorCode::InvalidUuid,
         ErrorCode::InvalidRational,
         ErrorCode::InvalidFrameRange,
+        ErrorCode::ResourceNotFound,
+        ErrorCode::AccessDenied,
+        ErrorCode::IoFailure,
+        ErrorCode::UnsupportedOperation,
+        ErrorCode::InvalidState,
     };
 
     for (const auto code : codes) {
