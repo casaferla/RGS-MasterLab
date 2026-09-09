@@ -1,6 +1,7 @@
 add_library(rgsml_audio STATIC
     src/audio_buffer.cpp
     src/audio_format.cpp
+    src/source_resource.cpp
     src/wav_reader.cpp
 )
 

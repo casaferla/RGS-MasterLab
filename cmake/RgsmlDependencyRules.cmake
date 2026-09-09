@@ -39,7 +39,7 @@ function(rgsml_assert_target_dependencies)
             endif()
 
             foreach(link_dependency IN LISTS link_dependencies)
-                if(link_dependency MATCHES "Qt[0-9]+::")
+                if(link_dependency MATCHES "Qt[0-9]+::" AND "QT" IN_LIST ARG_FORBIDDEN_LAYERS)
                     message(FATAL_ERROR
                         "RGSML_DEPENDENCY_RULE_VIOLATION: target '${ARG_TARGET}' reaches forbidden dependency '${link_dependency}' in layer 'QT'")
                 endif()

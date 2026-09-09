@@ -17,6 +17,15 @@ if(FIXTURE_CASE MATCHES "^audio_" OR FIXTURE_CASE STREQUAL "core_negative_audio"
     add_subdirectory("${RGSML_SOURCE_DIR}/audio" rgsml_audio_build)
 endif()
 
+if(FIXTURE_CASE MATCHES "^platform_" OR FIXTURE_CASE STREQUAL "audio_negative_platform")
+    set(RGSML_QT_ROOT "$ENV{RGSML_QT_ROOT}" CACHE PATH "Qt fixture prefix")
+    if(RGSML_QT_ROOT)
+        list(PREPEND CMAKE_PREFIX_PATH "${RGSML_QT_ROOT}")
+    endif()
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Core)
+    add_subdirectory("${RGSML_SOURCE_DIR}/platform" rgsml_platform_build)
+endif()
+
 if(FIXTURE_CASE STREQUAL "graph")
     rgsml_assert_target_dependencies(TARGET rgsml_core)
     return()
@@ -84,6 +93,39 @@ if(FIXTURE_CASE STREQUAL "audio_positive")
     add_executable(audio_dependency_consumer audio_allowed_consumer.cpp)
     target_link_libraries(audio_dependency_consumer PRIVATE rgsml_audio)
     rgsml_apply_project_warnings(audio_dependency_consumer)
+    rgsml_assert_target_dependencies(TARGET rgsml_audio)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "platform_graph")
+    rgsml_assert_target_dependencies(
+        TARGET rgsml_platform
+        FORBIDDEN_LAYERS AUDIO DSP QML UI)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "platform_headers")
+    set(header_source "${CMAKE_CURRENT_BINARY_DIR}/platform_standalone_header.cpp")
+    file(WRITE "${header_source}"
+        "#include <rgsml/platform/windows/windows_resource_reader.hpp>\nint platform_header() { return 0; }\n")
+    add_library(platform_standalone_header OBJECT "${header_source}")
+    target_link_libraries(platform_standalone_header PRIVATE rgsml_platform)
+    rgsml_apply_project_warnings(platform_standalone_header)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "platform_positive")
+    add_executable(platform_dependency_consumer platform_allowed_consumer.cpp)
+    target_link_libraries(platform_dependency_consumer PRIVATE rgsml_platform)
+    rgsml_apply_project_warnings(platform_dependency_consumer)
+    rgsml_assert_target_dependencies(
+        TARGET rgsml_platform
+        FORBIDDEN_LAYERS AUDIO DSP QML UI)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "audio_negative_platform")
+    target_link_libraries(rgsml_audio PRIVATE rgsml_platform)
     rgsml_assert_target_dependencies(TARGET rgsml_audio)
     return()
 endif()

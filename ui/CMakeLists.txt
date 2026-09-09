@@ -11,6 +11,7 @@ target_link_libraries(rgsml_ui
     PUBLIC
         Qt6::Quick
         Qt6::QuickControls2
+        Qt6::QuickDialogs2
 )
 
 rgsml_apply_project_warnings(rgsml_ui)

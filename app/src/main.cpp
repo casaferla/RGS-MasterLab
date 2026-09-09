@@ -1,5 +1,9 @@
+#include "source_selection_view_model.hpp"
+
 #include <QGuiApplication>
+#include <QLibraryInfo>
 #include <QQmlApplicationEngine>
+#include <QQmlContext>
 #include <QTimer>
 
 #include <cstdio>
@@ -28,7 +32,12 @@ int main(int argc, char* argv[])
         qInstallMessageHandler(smokeMessageHandler);
     }
 
+    rgsml::app::SourceSelectionViewModel sourceSelection;
     QQmlApplicationEngine engine;
+    engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("sourceSelection"),
+        &sourceSelection);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

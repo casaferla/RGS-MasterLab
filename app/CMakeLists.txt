@@ -1,5 +1,7 @@
 qt_add_executable(rgsml_app
     src/main.cpp
+    src/source_selection_view_model.cpp
+    src/source_selection_view_model.hpp
 )
 
 set_target_properties(rgsml_app PROPERTIES
@@ -10,6 +12,8 @@ set_target_properties(rgsml_app PROPERTIES
 target_link_libraries(rgsml_app
     PRIVATE
         rgsml_core
+        rgsml_audio
+        rgsml_platform
         rgsml_ui
         rgsml_uiplugin
         Qt6::Core

@@ -49,3 +49,15 @@
   PCM16/24/32 and IEEE binary32/binary64 decode, and audio dependency gates.
 - Integration: NOT_MERGED_TO_MAIN
 - Next task: TASK_006_NOT_PREPARED_OR_STARTED
+
+## L1-M02 — Windows Source picker, read-only resource, and metadata panel
+
+- Status: READY_FOR_REVIEW
+- Baseline: `8a366ccd1f2c29fd07e48dae6eafd8a4da7cc621`
+- Branch: `task/L1-M02-windows-source-resource`
+- Delivery subject: `CODEX TASK 006 / L1-M02`
+- Scope: canonical read-only Windows local-file provider, `SourceResource` WAV
+  metadata probe, transactional Qt Source selection, WAV-only file dialog,
+  read-only metadata panel, and platform/source/UI dependency contracts.
+- Integration: NOT_MERGED_TO_MAIN
+- Next task: TASK_007_NOT_PREPARED_OR_STARTED

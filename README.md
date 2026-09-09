@@ -2,9 +2,9 @@
 
 Bootstrap repository for the Windows shell of RGS MasterLab. The current code
 contains a Qt-free C++20 core, a platform-neutral audio library for canonical
-PCM buffers and bounded WAV decode, a minimal Qt 6/QML UI, the Windows
-executable, and headless CTest contracts. It does not contain DSP, playback,
-or concrete resource-adapter functionality.
+PCM buffers and bounded WAV decode, a read-only Windows local-file adapter, a
+Qt 6/QML Source picker and metadata panel, the Windows executable, and headless
+CTest contracts. It does not contain DSP, playback, writing, or persistence.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ or concrete resource-adapter functionality.
 - Visual Studio 2022 or Build Tools 2022 with the MSVC x64 C++ toolchain
 - CMake 3.25 or newer
 - Qt 6.8 or newer for MSVC 2022 64-bit, including Core, Gui, Qml, Quick,
-  QuickControls2, and Test
+  QuickControls2, QuickDialogs2, and Test
 
 Set `RGSML_QT_ROOT` locally to the prefix of the selected Qt kit. Do not commit
 its machine-specific value:
@@ -43,8 +43,8 @@ target-scoped warnings-as-errors for first-party RGSML code.
 Install and validate the staged Release deployment with:
 
 ```powershell
-cmake --install build/windows-msvc --config Release --prefix build/windows-msvc/stage/L0-M02/Release
-& build/windows-msvc/stage/L0-M02/Release/bin/RGSMasterLab.exe --rgsml-deploy-smoke
+cmake --install build/windows-msvc --config Release --prefix build/windows-msvc/stage/L1-M02/Release
+& build/windows-msvc/stage/L1-M02/Release/bin/RGSMasterLab.exe --rgsml-deploy-smoke
 ```
 
 The generated toolchain record is written to

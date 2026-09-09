@@ -3,15 +3,25 @@ if(NOT DEFINED CASE OR NOT DEFINED RGSML_SOURCE_DIR OR NOT DEFINED RGSML_TEST_BI
 endif()
 
 if(CASE STREQUAL "core_forbidden_include_contract"
-    OR CASE STREQUAL "audio_forbidden_include_contract")
+    OR CASE STREQUAL "audio_forbidden_include_contract"
+    OR CASE STREQUAL "platform_forbidden_public_contract")
     if(CASE STREQUAL "core_forbidden_include_contract")
         set(layer_name core)
-    else()
+        set(scan_globs
+            "${RGSML_SOURCE_DIR}/core/include/*.hpp"
+            "${RGSML_SOURCE_DIR}/core/src/*.cpp")
+    elseif(CASE STREQUAL "audio_forbidden_include_contract")
         set(layer_name audio)
+        set(scan_globs
+            "${RGSML_SOURCE_DIR}/audio/include/*.hpp"
+            "${RGSML_SOURCE_DIR}/audio/src/*.cpp")
+    else()
+        set(layer_name platform)
+        set(scan_globs
+            "${RGSML_SOURCE_DIR}/platform/windows/include/*.hpp")
     endif()
     file(GLOB_RECURSE core_sources LIST_DIRECTORIES FALSE
-        "${RGSML_SOURCE_DIR}/${layer_name}/include/*.hpp"
-        "${RGSML_SOURCE_DIR}/${layer_name}/src/*.cpp")
+        ${scan_globs})
     foreach(core_source IN LISTS core_sources)
         file(STRINGS "${core_source}" source_lines)
         foreach(source_line IN LISTS source_lines)
@@ -57,8 +67,56 @@ elseif(CASE STREQUAL "audio_dependency_rule_positive_fixture")
 elseif(CASE STREQUAL "audio_dependency_rule_negative_fixture")
     set(fixture_case "audio_negative")
     set(expect_failure TRUE)
+elseif(CASE STREQUAL "platform_dependency_graph_allowed")
+    set(fixture_case "platform_graph")
+elseif(CASE STREQUAL "platform_public_headers_standalone")
+    set(fixture_case "platform_headers")
+    set(build_fixture TRUE)
+elseif(CASE STREQUAL "platform_dependency_rule_positive_fixture")
+    set(fixture_case "platform_positive")
+    set(build_fixture TRUE)
+elseif(CASE STREQUAL "platform_dependency_rule_negative_fixture")
+    set(fixture_case "platform_negative")
+    set(expect_failure TRUE)
 elseif(NOT CASE STREQUAL "core_dependency_graph_allowed")
     message(FATAL_ERROR "unknown dependency-rule case: ${CASE}")
+endif()
+
+if(fixture_case STREQUAL "platform_negative")
+    set(fixture_build_dir
+        "${RGSML_TEST_BINARY_DIR}/dependency-rules-${CASE}")
+    file(REMOVE_RECURSE "${fixture_build_dir}")
+    set(configure_command
+        "${CMAKE_COMMAND}"
+        -S "${RGSML_SOURCE_DIR}/tests/cmake/dependency_rules_fixture"
+        -B "${fixture_build_dir}"
+        -G "${TEST_GENERATOR}"
+        "-DRGSML_SOURCE_DIR=${RGSML_SOURCE_DIR}"
+        "-DFIXTURE_CASE=audio_negative_platform"
+        "-DRGSML_WARNINGS_AS_ERRORS=ON")
+    if(DEFINED TEST_PLATFORM AND NOT TEST_PLATFORM STREQUAL "")
+        list(APPEND configure_command -A "${TEST_PLATFORM}")
+    endif()
+    execute_process(
+        COMMAND ${configure_command}
+        RESULT_VARIABLE configure_result
+        OUTPUT_VARIABLE configure_output
+        ERROR_VARIABLE configure_error)
+    if(configure_result EQUAL 0)
+        message(FATAL_ERROR
+            "platform negative dependency fixture unexpectedly configured")
+    endif()
+    set(expected_diagnostic
+        "RGSML_DEPENDENCY_RULE_VIOLATION: target 'rgsml_audio' reaches forbidden dependency 'rgsml_platform' in layer 'PLATFORM'")
+    set(combined_output "${configure_output}\n${configure_error}")
+    string(REGEX REPLACE "[ \t\r\n]+" " " normalized_output "${combined_output}")
+    string(FIND "${normalized_output}" "${expected_diagnostic}" diagnostic_position)
+    if(diagnostic_position EQUAL -1)
+        message(FATAL_ERROR
+            "platform negative fixture missed canonical diagnostic:\n${combined_output}")
+    endif()
+    message(STATUS "RGSML_PLATFORM_DEPENDENCY_RULE_NEGATIVE_PASS")
+    return()
 endif()
 
 if(fixture_case STREQUAL "audio_negative")

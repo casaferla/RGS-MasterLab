@@ -4,15 +4,18 @@ RGS MasterLab uses a shared C++20 core with platform-specific application shells
 The initial dependency direction is deliberately one-way:
 
 ```text
-rgsml_app -> rgsml_ui -> Qt Quick / QML
-          -> rgsml_core (Qt-free)
-rgsml_audio ----------> rgsml_core (both Qt/platform-free)
+rgsml_app ------> rgsml_ui ------> Qt Quick / QML
+      |               \---------> Qt Quick Dialogs
+      |-------> rgsml_platform ---> Qt Core (private implementation detail)
+      |-------> rgsml_audio ------> rgsml_core (Qt-free)
+rgsml_platform -------------------> rgsml_core (Qt-free)
 ```
 
-`rgsml_core` must remain independent of Qt and operating-system UI APIs. QML is
-limited to presentation and interaction; business logic belongs in C++. DSP,
-project persistence, rendering, and Android packaging remain outside this
-bootstrap.
+`rgsml_core` and `rgsml_audio` remain independent of Qt and operating-system UI
+APIs. `rgsml_platform` may use Qt Core privately but exposes only core resource
+contracts. QML is limited to presentation and interaction; business logic
+belongs in C++. DSP, project persistence, rendering, and Android packaging
+remain outside this bootstrap.
 
 Dependencies are resolved locally by CMake. Ordinary configure operations must
 not download packages or embed machine-specific installation paths.
@@ -86,5 +89,27 @@ unknown padded chunks. Decode is absolute-frame random access and uses bounded
 staging so short reads and failures cannot publish partial output. It rejects
 ambiguous layouts, malformed/truncated containers, unsupported encodings, and
 non-finite float samples without clipping, normalization, or implicit channel
-conversion. Concrete file readers, source picking, playback, and platform
-integration remain downstream work.
+conversion. Playback, writing, persistence, and DSP remain downstream work.
+
+## Windows read-only Source boundary
+
+L1-M02 introduces the single `rgsml_platform` production target and the
+`rgsml.windows.local-file` provider. `WindowsResourceReader` implements the
+frozen blocking `IResourceReader` contract for canonical absolute local-drive
+UTF-8 locators. Its public header exposes no Qt or Win32 types; Qt Core and
+filesystem details stay inside the private implementation. The adapter grants
+read permission only, reports seek and known-size capabilities, treats EOF as
+a successful zero-byte read, preserves position on rejected seeks, and makes
+close idempotent.
+
+`SourceResource` belongs to `rgsml_audio`. It probes a reader through the
+existing `WavReader`, then retains only the immutable `ResourceReference` and
+`WavStreamInfo`; it owns no open stream, decoded PCM, checksum, revision, or
+project state. The application-layer `SourceSelectionViewModel` composes the
+Windows adapter with this audio aggregate and publishes presentation-ready
+metadata. Selection is transactional: cancel is a no-op, a failed candidate
+leaves the accepted Source intact, and a later valid candidate replaces it.
+
+The QML shell uses a single-file WAV `FileDialog` and renders empty, ready, and
+error states plus the explicit read-only badge. It exposes no writer, playback,
+waveform, transport, or analysis control.

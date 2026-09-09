@@ -69,6 +69,94 @@ set_tests_properties(rgsml_audio_wav_reader_tests PROPERTIES
     LABELS "audio;audio_golden"
 )
 
+qt_add_executable(rgsml_source_resource_tests
+    unit/audio/test_source_resource.cpp
+)
+target_link_libraries(rgsml_source_resource_tests
+    PRIVATE
+        rgsml_audio
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_source_resource_tests)
+add_test(NAME rgsml_source_resource_tests COMMAND rgsml_source_resource_tests)
+set_tests_properties(rgsml_source_resource_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;source_resource"
+)
+
+qt_add_executable(rgsml_windows_resource_reader_tests
+    integration/platform/test_windows_resource_reader.cpp
+)
+target_link_libraries(rgsml_windows_resource_reader_tests
+    PRIVATE
+        rgsml_platform
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_windows_resource_reader_tests)
+add_test(
+    NAME rgsml_windows_resource_reader_tests
+    COMMAND rgsml_windows_resource_reader_tests
+)
+set_tests_properties(rgsml_windows_resource_reader_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "platform"
+)
+
+qt_add_executable(rgsml_source_selection_tests
+    integration/platform/test_source_selection.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
+)
+target_include_directories(rgsml_source_selection_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_source_selection_tests
+    PRIVATE
+        rgsml_audio
+        rgsml_platform
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_source_selection_tests)
+add_test(NAME rgsml_source_selection_tests COMMAND rgsml_source_selection_tests)
+set_tests_properties(rgsml_source_selection_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "platform;source_resource"
+)
+
+qt_add_executable(rgsml_source_metadata_panel_smoke
+    ui_smoke/test_source_metadata_panel.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
+)
+target_include_directories(rgsml_source_metadata_panel_smoke
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_source_metadata_panel_smoke
+    PRIVATE
+        rgsml_audio
+        rgsml_platform
+        rgsml_ui
+        rgsml_uiplugin
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Qml
+        Qt6::Quick
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_source_metadata_panel_smoke)
+add_test(
+    NAME rgsml_source_metadata_panel_smoke
+    COMMAND rgsml_source_metadata_panel_smoke
+)
+set_tests_properties(rgsml_source_metadata_panel_smoke PROPERTIES
+    ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;QML2_IMPORT_PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>/../qml"
+    LABELS "ui_smoke"
+)
+
 foreach(dependency_case
     core_dependency_graph_allowed
     core_public_headers_standalone
@@ -79,7 +167,12 @@ foreach(dependency_case
     audio_public_headers_standalone
     audio_forbidden_include_contract
     audio_dependency_rule_negative_fixture
-    audio_dependency_rule_positive_fixture)
+    audio_dependency_rule_positive_fixture
+    platform_dependency_graph_allowed
+    platform_public_headers_standalone
+    platform_forbidden_public_contract
+    platform_dependency_rule_negative_fixture
+    platform_dependency_rule_positive_fixture)
     add_test(
         NAME "${dependency_case}"
         COMMAND
