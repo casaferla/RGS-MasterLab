@@ -1,0 +1,20 @@
+{
+  "milestoneId": "L1-M01",
+  "estimatedPde": {
+    "optimistic": 2,
+    "mostLikely": 3,
+    "conservative": 5
+  },
+  "actualOwnerHours": 0,
+  "codexIterations": 8,
+  "configureBuildTestCycles": 20,
+  "defectsFound": 2,
+  "regressionsFound": 0,
+  "reviewHours": 0,
+  "blockedHours": 0,
+  "reworkReasonCodes": [
+    "HOST_ENV_PATH_CASE_COLLISION",
+    "HOST_ENV_QT_ROOT_NOT_INHERITED"
+  ],
+  "status": "READY_FOR_REVIEW"
+}

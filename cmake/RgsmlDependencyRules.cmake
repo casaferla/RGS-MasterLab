@@ -11,7 +11,7 @@ function(rgsml_assert_target_dependencies)
             "RGSML_DEPENDENCY_RULE_CONFIGURATION: target '${ARG_TARGET}' does not exist")
     endif()
     if(NOT ARG_FORBIDDEN_LAYERS)
-        set(ARG_FORBIDDEN_LAYERS QT QML PLATFORM DSP UI)
+        set(ARG_FORBIDDEN_LAYERS QT QML PLATFORM DSP UI AUDIO)
     endif()
 
     set(pending_targets "${ARG_TARGET}")
@@ -25,7 +25,9 @@ function(rgsml_assert_target_dependencies)
         list(APPEND visited_targets "${current_target}")
 
         get_property(current_layer TARGET "${current_target}" PROPERTY RGSML_DEPENDENCY_LAYER)
-        if(current_layer AND current_layer IN_LIST ARG_FORBIDDEN_LAYERS)
+        if(NOT current_target STREQUAL ARG_TARGET
+            AND current_layer
+            AND current_layer IN_LIST ARG_FORBIDDEN_LAYERS)
             message(FATAL_ERROR
                 "RGSML_DEPENDENCY_RULE_VIOLATION: target '${ARG_TARGET}' reaches forbidden dependency '${current_target}' in layer '${current_layer}'")
         endif()

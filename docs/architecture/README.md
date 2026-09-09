@@ -6,11 +6,12 @@ The initial dependency direction is deliberately one-way:
 ```text
 rgsml_app -> rgsml_ui -> Qt Quick / QML
           -> rgsml_core (Qt-free)
+rgsml_audio ----------> rgsml_core (both Qt/platform-free)
 ```
 
 `rgsml_core` must remain independent of Qt and operating-system UI APIs. QML is
-limited to presentation and interaction; business logic belongs in C++. Audio,
-DSP, project persistence, rendering, and Android packaging are outside this
+limited to presentation and interaction; business logic belongs in C++. DSP,
+project persistence, rendering, and Android packaging remain outside this
 bootstrap.
 
 Dependencies are resolved locally by CMake. Ordinary configure operations must
@@ -62,3 +63,28 @@ The reusable CMake dependency rule audits transitive target edges. Dedicated
 positive and negative fixtures, standalone public-header probes, and a
 forbidden include/type scan keep `rgsml_core` independent of Qt, UI, DSP, and
 platform implementations.
+
+## Canonical PCM buffer and WAV decode
+
+L1-M01 introduces the single static `rgsml_audio` production target. It owns
+`AudioFormat`, source/output frame-domain timebases, the move-only canonical
+`AudioBuffer` and its const/mutable non-owning views, plus `WavReader` and
+read-only stream metadata. Its only production dependency is `rgsml_core`.
+
+Canonical runtime PCM is planar IEEE binary64 with one mono-C plane or ordered
+stereo L/R planes. Every non-empty plane is at least 64-byte aligned. Buffers
+and subviews carry an absolute half-open frame range and an exact sample-rate
+timebase; local frame zero is therefore never used as a substitute for source
+origin. Runtime samples preserve signed zero and subnormals. The future
+`RGSDAU1` checksum view, normalization, sample-rate conversion, and DSP remain
+outside this milestone.
+
+`WavReader` owns one read-only, seek-capable `IResourceReader`. Its bounded
+structural scan accepts the frozen RIFF/RF64 little-endian PCM16/24/32 and IEEE
+binary32/binary64 mono/stereo matrix, including valid extensible formats and
+unknown padded chunks. Decode is absolute-frame random access and uses bounded
+staging so short reads and failures cannot publish partial output. It rejects
+ambiguous layouts, malformed/truncated containers, unsupported encodings, and
+non-finite float samples without clipping, normalization, or implicit channel
+conversion. Concrete file readers, source picking, playback, and platform
+integration remain downstream work.

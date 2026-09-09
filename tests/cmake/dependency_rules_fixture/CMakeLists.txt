@@ -13,6 +13,10 @@ include("${RGSML_SOURCE_DIR}/cmake/RgsmlWarnings.cmake")
 include("${RGSML_SOURCE_DIR}/cmake/RgsmlDependencyRules.cmake")
 add_subdirectory("${RGSML_SOURCE_DIR}/core" rgsml_core_build)
 
+if(FIXTURE_CASE MATCHES "^audio_" OR FIXTURE_CASE STREQUAL "core_negative_audio")
+    add_subdirectory("${RGSML_SOURCE_DIR}/audio" rgsml_audio_build)
+endif()
+
 if(FIXTURE_CASE STREQUAL "graph")
     rgsml_assert_target_dependencies(TARGET rgsml_core)
     return()
@@ -48,6 +52,53 @@ if(FIXTURE_CASE STREQUAL "positive")
     target_link_libraries(dependency_consumer PRIVATE rgsml_core)
     rgsml_apply_project_warnings(dependency_consumer)
     rgsml_assert_target_dependencies(TARGET dependency_consumer)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "audio_graph")
+    rgsml_assert_target_dependencies(TARGET rgsml_audio)
+    rgsml_assert_target_dependencies(TARGET rgsml_core)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "audio_headers")
+    set(public_headers
+        audio_buffer.hpp
+        audio_buffer_view.hpp
+        audio_format.hpp
+        wav_format.hpp
+        wav_reader.hpp)
+    foreach(public_header IN LISTS public_headers)
+        string(REPLACE "." "_" header_target "audio_standalone_${public_header}")
+        set(header_source "${CMAKE_CURRENT_BINARY_DIR}/${header_target}.cpp")
+        file(WRITE "${header_source}"
+            "#include <rgsml/audio/${public_header}>\nint ${header_target}() { return 0; }\n")
+        add_library("${header_target}" OBJECT "${header_source}")
+        target_link_libraries("${header_target}" PRIVATE rgsml_audio)
+        rgsml_apply_project_warnings("${header_target}")
+    endforeach()
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "audio_positive")
+    add_executable(audio_dependency_consumer audio_allowed_consumer.cpp)
+    target_link_libraries(audio_dependency_consumer PRIVATE rgsml_audio)
+    rgsml_apply_project_warnings(audio_dependency_consumer)
+    rgsml_assert_target_dependencies(TARGET rgsml_audio)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "audio_negative_qt")
+    add_library(fixture_forbidden INTERFACE)
+    set_property(TARGET fixture_forbidden PROPERTY RGSML_DEPENDENCY_LAYER QT)
+    target_link_libraries(rgsml_audio PRIVATE fixture_forbidden)
+    rgsml_assert_target_dependencies(TARGET rgsml_audio)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "core_negative_audio")
+    target_link_libraries(rgsml_core PRIVATE rgsml_audio)
+    rgsml_assert_target_dependencies(TARGET rgsml_core)
     return()
 endif()
 

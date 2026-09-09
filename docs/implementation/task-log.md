@@ -37,3 +37,15 @@
   explicit acceptance.
 - Integration: NOT_MERGED_TO_MAIN
 - Next task: TASK_005_NOT_PREPARED_OR_STARTED
+
+## L1-M01 — Canonical PCM buffer and WAV PCM/float decode
+
+- Status: READY_FOR_REVIEW
+- Baseline: `04306e664b9c1add58645cbbc681e725bddc485f`
+- Branch: `task/L1-M01-wav-decode-audio-buffer`
+- Delivery subject: `CODEX TASK 005 / L1-M01`
+- Scope: Qt-free canonical binary64 planar audio storage and views, exact
+  source timebase/ranges, bounded seekable RIFF/RF64 parsing, bit-exact
+  PCM16/24/32 and IEEE binary32/binary64 decode, and audio dependency gates.
+- Integration: NOT_MERGED_TO_MAIN
+- Next task: TASK_006_NOT_PREPARED_OR_STARTED

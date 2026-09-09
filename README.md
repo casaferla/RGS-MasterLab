@@ -1,8 +1,10 @@
 # RGS MasterLab
 
 Bootstrap repository for the Windows shell of RGS MasterLab. The current code
-contains a Qt-free C++20 core, a minimal Qt 6/QML UI, the Windows executable,
-and a CTest bootstrap test. It does not contain audio or DSP functionality.
+contains a Qt-free C++20 core, a platform-neutral audio library for canonical
+PCM buffers and bounded WAV decode, a minimal Qt 6/QML UI, the Windows
+executable, and headless CTest contracts. It does not contain DSP, playback,
+or concrete resource-adapter functionality.
 
 ## Prerequisites
 

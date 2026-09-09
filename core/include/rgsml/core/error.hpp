@@ -25,6 +25,11 @@ enum class ErrorCode {
     IoFailure,
     UnsupportedOperation,
     InvalidState,
+    UnsupportedAudioEncoding,
+    UnsupportedAudioLayout,
+    InvalidAudioSample,
+    MalformedAudioContainer,
+    TruncatedAudioData,
 };
 
 struct ErrorDetail final {

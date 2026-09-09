@@ -29,6 +29,7 @@ set(RGSML_TOOLCHAIN_MANIFEST
 rgsml_generate_current_toolchain_manifest("${RGSML_TOOLCHAIN_MANIFEST}")
 
 add_subdirectory(core)
+add_subdirectory(audio)
 add_subdirectory(ui)
 add_subdirectory(app)
 

@@ -58,13 +58,23 @@ std::string_view error_code_token(ErrorCode code) noexcept
         return "unsupported_operation";
     case ErrorCode::InvalidState:
         return "invalid_state";
+    case ErrorCode::UnsupportedAudioEncoding:
+        return "unsupported_audio_encoding";
+    case ErrorCode::UnsupportedAudioLayout:
+        return "unsupported_audio_layout";
+    case ErrorCode::InvalidAudioSample:
+        return "invalid_audio_sample";
+    case ErrorCode::MalformedAudioContainer:
+        return "malformed_audio_container";
+    case ErrorCode::TruncatedAudioData:
+        return "truncated_audio_data";
     }
     return {};
 }
 
 Result<ErrorCode> parse_error_code(std::string_view token)
 {
-    constexpr std::array<ErrorCode, 13> codes{
+    constexpr std::array<ErrorCode, 18> codes{
         ErrorCode::InvalidArgument,
         ErrorCode::OutOfRange,
         ErrorCode::IntegerOverflow,
@@ -78,6 +88,11 @@ Result<ErrorCode> parse_error_code(std::string_view token)
         ErrorCode::IoFailure,
         ErrorCode::UnsupportedOperation,
         ErrorCode::InvalidState,
+        ErrorCode::UnsupportedAudioEncoding,
+        ErrorCode::UnsupportedAudioLayout,
+        ErrorCode::InvalidAudioSample,
+        ErrorCode::MalformedAudioContainer,
+        ErrorCode::TruncatedAudioData,
     };
 
     for (const auto code : codes) {
