@@ -13,7 +13,8 @@ include("${RGSML_SOURCE_DIR}/cmake/RgsmlWarnings.cmake")
 include("${RGSML_SOURCE_DIR}/cmake/RgsmlDependencyRules.cmake")
 add_subdirectory("${RGSML_SOURCE_DIR}/core" rgsml_core_build)
 
-if(FIXTURE_CASE MATCHES "^audio_" OR FIXTURE_CASE STREQUAL "core_negative_audio")
+if(FIXTURE_CASE MATCHES "^(audio_|platform_)"
+    OR FIXTURE_CASE STREQUAL "core_negative_audio")
     add_subdirectory("${RGSML_SOURCE_DIR}/audio" rgsml_audio_build)
 endif()
 
@@ -22,8 +23,16 @@ if(FIXTURE_CASE MATCHES "^platform_" OR FIXTURE_CASE STREQUAL "audio_negative_pl
     if(RGSML_QT_ROOT)
         list(PREPEND CMAKE_PREFIX_PATH "${RGSML_QT_ROOT}")
     endif()
-    find_package(Qt6 6.8 REQUIRED COMPONENTS Core)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Core Multimedia)
     add_subdirectory("${RGSML_SOURCE_DIR}/platform" rgsml_platform_build)
+endif()
+
+if(FIXTURE_CASE STREQUAL "audio_negative_multimedia")
+    set(RGSML_QT_ROOT "$ENV{RGSML_QT_ROOT}" CACHE PATH "Qt fixture prefix")
+    if(RGSML_QT_ROOT)
+        list(PREPEND CMAKE_PREFIX_PATH "${RGSML_QT_ROOT}")
+    endif()
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Core Multimedia)
 endif()
 
 if(FIXTURE_CASE STREQUAL "graph")
@@ -75,6 +84,8 @@ if(FIXTURE_CASE STREQUAL "audio_headers")
         audio_buffer.hpp
         audio_buffer_view.hpp
         audio_format.hpp
+        playback_sample_rate_adapter.hpp
+        source_resource.hpp
         wav_format.hpp
         wav_reader.hpp)
     foreach(public_header IN LISTS public_headers)
@@ -100,14 +111,14 @@ endif()
 if(FIXTURE_CASE STREQUAL "platform_graph")
     rgsml_assert_target_dependencies(
         TARGET rgsml_platform
-        FORBIDDEN_LAYERS AUDIO DSP QML UI)
+        FORBIDDEN_LAYERS DSP QML UI)
     return()
 endif()
 
 if(FIXTURE_CASE STREQUAL "platform_headers")
     set(header_source "${CMAKE_CURRENT_BINARY_DIR}/platform_standalone_header.cpp")
     file(WRITE "${header_source}"
-        "#include <rgsml/platform/windows/windows_resource_reader.hpp>\nint platform_header() { return 0; }\n")
+        "#include <rgsml/platform/windows/windows_resource_reader.hpp>\n#include <rgsml/platform/windows/windows_audio_playback_service.hpp>\nint platform_header() { return 0; }\n")
     add_library(platform_standalone_header OBJECT "${header_source}")
     target_link_libraries(platform_standalone_header PRIVATE rgsml_platform)
     rgsml_apply_project_warnings(platform_standalone_header)
@@ -120,7 +131,23 @@ if(FIXTURE_CASE STREQUAL "platform_positive")
     rgsml_apply_project_warnings(platform_dependency_consumer)
     rgsml_assert_target_dependencies(
         TARGET rgsml_platform
-        FORBIDDEN_LAYERS AUDIO DSP QML UI)
+        FORBIDDEN_LAYERS DSP QML UI)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "platform_multimedia_graph")
+    get_target_property(platform_links rgsml_platform INTERFACE_LINK_LIBRARIES)
+    string(JOIN ";" platform_links_joined ${platform_links})
+    foreach(required_link rgsml_audio Qt6::Core Qt6::Multimedia)
+        string(FIND "${platform_links_joined}" "${required_link}" link_position)
+        if(link_position EQUAL -1)
+            message(FATAL_ERROR
+                "rgsml_platform is missing required inward link: ${required_link}")
+        endif()
+    endforeach()
+    rgsml_assert_target_dependencies(
+        TARGET rgsml_platform
+        FORBIDDEN_LAYERS DSP QML UI)
     return()
 endif()
 
@@ -134,6 +161,12 @@ if(FIXTURE_CASE STREQUAL "audio_negative_qt")
     add_library(fixture_forbidden INTERFACE)
     set_property(TARGET fixture_forbidden PROPERTY RGSML_DEPENDENCY_LAYER QT)
     target_link_libraries(rgsml_audio PRIVATE fixture_forbidden)
+    rgsml_assert_target_dependencies(TARGET rgsml_audio)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "audio_negative_multimedia")
+    target_link_libraries(rgsml_audio PRIVATE Qt6::Multimedia)
     rgsml_assert_target_dependencies(TARGET rgsml_audio)
     return()
 endif()

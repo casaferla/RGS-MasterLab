@@ -1,4 +1,7 @@
+#include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
+
+#include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include <QGuiApplication>
 #include <QLibraryInfo>
@@ -8,6 +11,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 
 namespace {
 
@@ -32,12 +36,20 @@ int main(int argc, char* argv[])
         qInstallMessageHandler(smokeMessageHandler);
     }
 
+    auto playbackService = std::make_unique<
+        rgsml::platform::windows::WindowsAudioPlaybackService>();
+    rgsml::app::PlaybackTransportViewModel playbackTransport{
+        std::move(playbackService)};
     rgsml::app::SourceSelectionViewModel sourceSelection;
+    sourceSelection.set_playback_transport(&playbackTransport);
     QQmlApplicationEngine engine;
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"),
         &sourceSelection);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("playbackTransport"),
+        &playbackTransport);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

@@ -16,7 +16,15 @@ if(RGSML_QT_ROOT)
     list(PREPEND CMAKE_PREFIX_PATH "${RGSML_QT_ROOT_CMAKE}")
 endif()
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 QuickDialogs2)
+find_package(Qt6 6.8 REQUIRED COMPONENTS
+    Core
+    Gui
+    Multimedia
+    Qml
+    Quick
+    QuickControls2
+    QuickDialogs2
+)
 if(RGSML_BUILD_TESTS)
     find_package(Qt6 6.8 REQUIRED COMPONENTS Test)
 endif()

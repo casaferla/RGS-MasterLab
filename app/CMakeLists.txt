@@ -1,5 +1,7 @@
 qt_add_executable(rgsml_app
     src/main.cpp
+    src/playback_transport_view_model.cpp
+    src/playback_transport_view_model.hpp
     src/source_selection_view_model.cpp
     src/source_selection_view_model.hpp
 )

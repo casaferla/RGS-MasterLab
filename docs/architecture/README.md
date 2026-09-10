@@ -113,3 +113,35 @@ leaves the accepted Source intact, and a later valid candidate replaces it.
 The QML shell uses a single-file WAV `FileDialog` and renders empty, ready, and
 error states plus the explicit read-only badge. It exposes no writer, playback,
 waveform, transport, or analysis control.
+
+## Windows WAV playback and playback-only rate adaptation
+
+L1-M03 implements the frozen `IAudioPlaybackService` with one concrete
+`WindowsAudioPlaybackService` in `rgsml_platform`. Its public header remains
+standard/core-only. Qt Multimedia, `QAudioSink`, default-device discovery,
+the bounded byte queue, device-format conversion, and lifecycle handling are
+private implementation details. The authoritative path remains
+`WindowsResourceReader -> WavReader -> AudioBuffer`; Qt does not decode WAV
+data and the audio callback only drains the bounded queue.
+
+`PlaybackSampleRateAdapter` belongs to `rgsml_audio` and is Qt-, Win32-, and
+platform-free. Exact-rate playback bypasses it. The only non-identity policy is
+the exact rational pair 44.1/48 kHz with the same channel layout, frozen
+binary64 polyphase FIR assets, absolute frame mapping, even-reflect whole-track
+boundaries, and bounded decode windows. It is ephemeral playback support, not
+a module, render node, processing state, checksum input, cache, or persisted
+artifact.
+
+| Property | Playback SRC L1-M03 | Future Final Output SRC |
+|---|---|---|
+| Capability | `rgsml.audio.src.playback` | `rgsml.audio.src.final-output` |
+| Placement | device audition path only | terminal MASTER/render path |
+| Rate policy | identity plus `44100<->48000` | frozen future rate matrix |
+| Quality profile | 120 dB design, beta `613263/50000`, T=192 | separate frozen 150 dB profile |
+| Assets/manifest | playback-only, independently checksummed | separate and not materialized here |
+| Qualification claim | L1-M03 functional listening only | no Q0-Q6/release claim from this work |
+
+The production dependency direction is therefore
+`rgsml_platform -> rgsml_audio -> rgsml_core`, with Qt Core and Qt Multimedia
+private to the platform adapter. The reverse `audio -> platform` edge remains
+forbidden.

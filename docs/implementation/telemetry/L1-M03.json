@@ -1,0 +1,23 @@
+{
+  "milestoneId": "L1-M03",
+  "estimatedPde": {
+    "optimistic": 2,
+    "mostLikely": 3,
+    "conservative": 5
+  },
+  "actualOwnerHours": 0,
+  "codexIterations": 9,
+  "configureBuildTestCycles": 18,
+  "defectsFound": 1,
+  "regressionsFound": 0,
+  "reviewHours": 0,
+  "blockedHours": 0,
+  "reworkReasonCodes": [
+    "HOST_ENV_PATH_CASE_COLLISION",
+    "HOST_QT_MULTIMEDIA_COMPONENT_UNAVAILABLE",
+    "PLAYBACK_DEVICE_EXACT_RATE_LIMITATION",
+    "PLAYBACK_SRC_GENERATOR_DEPENDENCY_UNAVAILABLE",
+    "UI_EVENT_LOOP_PLAYBACK_REFILL_STARVATION"
+  ],
+  "status": "READY_FOR_REVIEW"
+}

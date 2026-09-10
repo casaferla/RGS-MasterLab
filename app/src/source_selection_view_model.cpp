@@ -1,4 +1,5 @@
 #include "source_selection_view_model.hpp"
+#include "playback_transport_view_model.hpp"
 
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
@@ -170,6 +171,12 @@ QString SourceSelectionViewModel::error_message() const
     return errorMessage_;
 }
 
+void SourceSelectionViewModel::set_playback_transport(
+    PlaybackTransportViewModel* playback) noexcept
+{
+    playbackTransport_ = playback;
+}
+
 void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
 {
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
@@ -221,6 +228,10 @@ void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
     frameCount_ = frames;
     durationLabel_ = format_duration(frames, sampleRate);
     source_ = std::move(*candidate.value());
+
+    if (playbackTransport_ != nullptr) {
+        playbackTransport_->prepare_source(source_->reference(), sampleRate);
+    }
 
     const bool hadError = !errorMessage_.isEmpty();
     errorMessage_.clear();

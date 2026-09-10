@@ -1,0 +1,56 @@
+{
+  "algorithmVersion": "rgsml.playback-src.polyphase-fir/1.0.0",
+  "boundaryPolicyId": "rgsml.src.boundary.even-reflect/1.0.0",
+  "canonicalCoefficientEncoding": "ieee754-binary64-uint64-little-endian-j-ascending",
+  "capabilityId": "rgsml.audio.src.playback",
+  "design": {
+    "beta": "613263/50000",
+    "cutoffHz": 21025,
+    "designAttenuationDb": 120,
+    "fminHz": 44100,
+    "passbandEdgeHz": 20000,
+    "stopbandEdgeHz": 22050,
+    "tapsPerPhase": 192,
+    "transitionHz": 2050
+  },
+  "frameMapPolicyId": "rgsml.src.frame-map.half-open-ceil/1.0.0",
+  "generator": {
+    "finalRounding": "round-to-nearest-ties-to-even",
+    "finalTarget": "IEEE binary64",
+    "gmpy2Version": "2.3.1",
+    "initialPrecisionBits": 256,
+    "mpfrVersion": "MPFR 4.2.2",
+    "precisionSequence": "256,512,1024,...",
+    "termination": "Ziv final-rounding stability",
+    "transcendentalEvaluator": "MPFR"
+  },
+  "kernelPolicyId": "rgsml.playback-src.kernel.kaiser-sinc/1.0.0",
+  "kernels": [
+    {
+      "L": 160,
+      "M": 147,
+      "N": 30721,
+      "T": 192,
+      "algorithmVersion": "rgsml.playback-src.polyphase-fir/1.0.0",
+      "coefficientAsset": "audio/src/internal/playback_src_kernel_44100_48000.inc",
+      "fin": 44100,
+      "fout": 48000,
+      "kernelSha256": "ec8c4d554eb4ede15f58eead1fede923e74c4692c57832bda716e3fc826926b4",
+      "zivStablePrecisionBits": 512
+    },
+    {
+      "L": 147,
+      "M": 160,
+      "N": 28225,
+      "T": 192,
+      "algorithmVersion": "rgsml.playback-src.polyphase-fir/1.0.0",
+      "coefficientAsset": "audio/src/internal/playback_src_kernel_48000_44100.inc",
+      "fin": 48000,
+      "fout": 44100,
+      "kernelSha256": "37cfda8e885e2d00646ec60d02bdf5b7dcb85348fca416e065bab71a824efb22",
+      "zivStablePrecisionBits": 512
+    }
+  ],
+  "ratePolicyId": "rgsml.playback-src.rates.44100-48000/1.0.0",
+  "schemaId": "rgsml.playback-src.kernel-manifest/1.0.0"
+}

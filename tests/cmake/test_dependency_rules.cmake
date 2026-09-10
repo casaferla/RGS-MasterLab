@@ -78,6 +78,11 @@ elseif(CASE STREQUAL "platform_dependency_rule_positive_fixture")
 elseif(CASE STREQUAL "platform_dependency_rule_negative_fixture")
     set(fixture_case "platform_negative")
     set(expect_failure TRUE)
+elseif(CASE STREQUAL "platform_multimedia_link_contract")
+    set(fixture_case "platform_multimedia_graph")
+elseif(CASE STREQUAL "audio_multimedia_dependency_rule_negative_fixture")
+    set(fixture_case "audio_negative_multimedia")
+    set(expect_failure TRUE)
 elseif(NOT CASE STREQUAL "core_dependency_graph_allowed")
     message(FATAL_ERROR "unknown dependency-rule case: ${CASE}")
 endif()
@@ -116,6 +121,43 @@ if(fixture_case STREQUAL "platform_negative")
             "platform negative fixture missed canonical diagnostic:\n${combined_output}")
     endif()
     message(STATUS "RGSML_PLATFORM_DEPENDENCY_RULE_NEGATIVE_PASS")
+    return()
+endif()
+
+if(fixture_case STREQUAL "audio_negative_multimedia")
+    set(fixture_build_dir
+        "${RGSML_TEST_BINARY_DIR}/dependency-rules-${CASE}")
+    file(REMOVE_RECURSE "${fixture_build_dir}")
+    set(configure_command
+        "${CMAKE_COMMAND}"
+        -S "${RGSML_SOURCE_DIR}/tests/cmake/dependency_rules_fixture"
+        -B "${fixture_build_dir}"
+        -G "${TEST_GENERATOR}"
+        "-DRGSML_SOURCE_DIR=${RGSML_SOURCE_DIR}"
+        "-DFIXTURE_CASE=audio_negative_multimedia"
+        "-DRGSML_WARNINGS_AS_ERRORS=ON")
+    if(DEFINED TEST_PLATFORM AND NOT TEST_PLATFORM STREQUAL "")
+        list(APPEND configure_command -A "${TEST_PLATFORM}")
+    endif()
+    execute_process(
+        COMMAND ${configure_command}
+        RESULT_VARIABLE configure_result
+        OUTPUT_VARIABLE configure_output
+        ERROR_VARIABLE configure_error)
+    if(configure_result EQUAL 0)
+        message(FATAL_ERROR
+            "audio Qt Multimedia negative dependency fixture unexpectedly configured")
+    endif()
+    set(expected_diagnostic
+        "RGSML_DEPENDENCY_RULE_VIOLATION: target 'rgsml_audio' reaches forbidden dependency 'Qt6::Multimedia' in layer 'QT'")
+    set(combined_output "${configure_output}\n${configure_error}")
+    string(REGEX REPLACE "[ \t\r\n]+" " " normalized_output "${combined_output}")
+    string(FIND "${normalized_output}" "${expected_diagnostic}" diagnostic_position)
+    if(diagnostic_position EQUAL -1)
+        message(FATAL_ERROR
+            "audio Qt Multimedia negative fixture missed canonical diagnostic:\n${combined_output}")
+    endif()
+    message(STATUS "RGSML_AUDIO_MULTIMEDIA_DEPENDENCY_RULE_NEGATIVE_PASS")
     return()
 endif()
 

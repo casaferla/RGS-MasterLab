@@ -138,6 +138,75 @@ ApplicationWindow {
         }
 
         Rectangle {
+            objectName: "playbackTransportPanel"
+            width: parent.width
+            height: transportContent.implicitHeight + 32
+            radius: 10
+            color: "#22262c"
+            border.color: "#343a42"
+
+            Column {
+                id: transportContent
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 16
+                spacing: 12
+
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 12
+
+                    Button {
+                        objectName: "playPauseButton"
+                        text: playbackTransport.isPlaying ? "Pause" : "Play"
+                        enabled: playbackTransport.canPlay || playbackTransport.canPause
+                        activeFocusOnTab: true
+                        onClicked: {
+                            if (playbackTransport.isPlaying)
+                                playbackTransport.pause()
+                            else
+                                playbackTransport.playOrResume()
+                        }
+                    }
+
+                    Button {
+                        objectName: "stopButton"
+                        text: "Stop"
+                        enabled: playbackTransport.canStop
+                        activeFocusOnTab: true
+                        onClicked: playbackTransport.stop()
+                    }
+                }
+
+                Label {
+                    objectName: "playbackStateLabel"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    color: playbackTransport.playbackAvailable ? "#d7dce2" : "#aeb5bd"
+                    text: playbackTransport.stateLabel
+                }
+
+                Label {
+                    objectName: "playbackTimeLabel"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    color: "#aeb5bd"
+                    text: playbackTransport.positionLabel + " / "
+                          + playbackTransport.durationLabel
+                }
+
+                Label {
+                    objectName: "playbackErrorMessage"
+                    visible: playbackTransport.errorMessage.length > 0
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                    color: "#ffd9dc"
+                    text: playbackTransport.errorMessage
+                }
+            }
+        }
+
+        Rectangle {
             objectName: "sourceErrorPanel"
             width: parent.width
             height: errorLabel.implicitHeight + 24

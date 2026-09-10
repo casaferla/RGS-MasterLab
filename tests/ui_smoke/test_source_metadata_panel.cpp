@@ -1,6 +1,8 @@
+#include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
 
 #include "../audio_golden/wav/golden_vectors.hpp"
+#include "../unit/platform/fake_playback_service.hpp"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -11,6 +13,8 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QWindow>
+
+#include <memory>
 
 namespace rgsml::tests {
 namespace {
@@ -49,11 +53,18 @@ private slots:
 
 void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 {
+    auto playbackService = std::make_unique<FakePlaybackService>();
+    auto* observedPlayback = playbackService.get();
+    app::PlaybackTransportViewModel playbackTransport{
+        std::move(playbackService)};
     app::SourceSelectionViewModel model;
+    model.set_playback_transport(&playbackTransport);
     QQmlApplicationEngine engine;
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"), &model);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("playbackTransport"), &playbackTransport);
     engine.loadFromModule("Rgsml.Ui", "Main");
     QCOMPARE(engine.rootObjects().size(), 1);
 
@@ -68,6 +79,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(display);
     QVERIFY(readOnly);
     QVERIFY(error);
+    auto* playPause = root->findChild<QObject*>(QStringLiteral("playPauseButton"));
+    auto* stop = root->findChild<QObject*>(QStringLiteral("stopButton"));
+    auto* playbackState = root->findChild<QObject*>(
+        QStringLiteral("playbackStateLabel"));
+    auto* playbackTime = root->findChild<QObject*>(
+        QStringLiteral("playbackTimeLabel"));
+    auto* playbackError = root->findChild<QObject*>(
+        QStringLiteral("playbackErrorMessage"));
+    QVERIFY(playPause);
+    QVERIFY(stop);
+    QVERIFY(playbackState);
+    QVERIFY(playbackTime);
+    QVERIFY(playbackError);
+    QVERIFY(!playPause->property("enabled").toBool());
+    QVERIFY(!stop->property("enabled").toBool());
+    QCOMPARE(playbackState->property("text").toString(), QStringLiteral("No Source"));
     QVERIFY(empty->property("visible").toBool());
     QVERIFY(!display->property("visible").toBool());
 
@@ -94,6 +121,23 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
                 ->property("text").toString().contains(QStringLiteral("3")));
     QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceDurationMetadata"))
                 ->property("text").toString().contains(QStringLiteral("0:00.000")));
+    QVERIFY(playPause->property("enabled").toBool());
+    QVERIFY(stop->property("enabled").toBool());
+    QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Stopped"));
+    QVERIFY(playbackTime->property("text").toString().contains(QStringLiteral("/")));
+
+    QVERIFY(QMetaObject::invokeMethod(playPause, "clicked"));
+    QCoreApplication::processEvents();
+    QCOMPARE(observedPlayback->playCalls, 1);
+    QCOMPARE(playPause->property("text").toString(), QStringLiteral("Pause"));
+    QVERIFY(QMetaObject::invokeMethod(playPause, "clicked"));
+    QCoreApplication::processEvents();
+    QCOMPARE(observedPlayback->pauseCalls, 1);
+    QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Paused"));
+    QVERIFY(QMetaObject::invokeMethod(stop, "clicked"));
+    QCoreApplication::processEvents();
+    QCOMPARE(observedPlayback->stopCalls, 1);
+    QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Stopped"));
 
     const auto invalidPath = write_file(
         directory, QStringLiteral("Invalid.wav"), QByteArray{"bad"});

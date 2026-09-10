@@ -11,6 +11,8 @@
 
 namespace rgsml::app {
 
+class PlaybackTransportViewModel;
+
 class SourceSelectionViewModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool hasSource READ has_source NOTIFY sourceChanged)
@@ -42,6 +44,7 @@ public:
     [[nodiscard]] bool read_only() const noexcept;
     [[nodiscard]] QString error_message() const;
 
+    void set_playback_transport(PlaybackTransportViewModel* playback) noexcept;
     Q_INVOKABLE void selectSource(const QUrl& selectedFile);
     Q_INVOKABLE void cancelSourceSelection() noexcept;
 
@@ -64,6 +67,7 @@ private:
     qint64 sampleRateHz_{0};
     qint64 frameCount_{0};
     int channelCount_{0};
+    PlaybackTransportViewModel* playbackTransport_{nullptr};
 };
 
 }  // namespace rgsml::app

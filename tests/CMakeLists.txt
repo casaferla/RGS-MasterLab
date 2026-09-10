@@ -69,6 +69,21 @@ set_tests_properties(rgsml_audio_wav_reader_tests PROPERTIES
     LABELS "audio;audio_golden"
 )
 
+qt_add_executable(rgsml_playback_src_tests
+    unit/audio/test_playback_sample_rate_adapter.cpp
+)
+target_link_libraries(rgsml_playback_src_tests
+    PRIVATE
+        rgsml_audio
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_playback_src_tests)
+add_test(NAME rgsml_playback_src_tests COMMAND rgsml_playback_src_tests)
+set_tests_properties(rgsml_playback_src_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;audio_golden;playback;playback_src"
+)
+
 qt_add_executable(rgsml_source_resource_tests
     unit/audio/test_source_resource.cpp
 )
@@ -104,6 +119,8 @@ set_tests_properties(rgsml_windows_resource_reader_tests PROPERTIES
 
 qt_add_executable(rgsml_source_selection_tests
     integration/platform/test_source_selection.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
 )
@@ -127,6 +144,8 @@ set_tests_properties(rgsml_source_selection_tests PROPERTIES
 
 qt_add_executable(rgsml_source_metadata_panel_smoke
     ui_smoke/test_source_metadata_panel.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
 )
@@ -157,6 +176,69 @@ set_tests_properties(rgsml_source_metadata_panel_smoke PROPERTIES
     LABELS "ui_smoke"
 )
 
+qt_add_executable(rgsml_playback_support_tests
+    unit/platform/test_playback_support.cpp
+)
+target_include_directories(rgsml_playback_support_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/platform/windows/src/internal
+)
+target_link_libraries(rgsml_playback_support_tests
+    PRIVATE
+        rgsml_audio
+        rgsml_platform
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_playback_support_tests)
+add_test(NAME rgsml_playback_support_tests COMMAND rgsml_playback_support_tests)
+set_tests_properties(rgsml_playback_support_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "platform;playback"
+)
+
+qt_add_executable(rgsml_playback_composition_tests
+    integration/platform/test_playback_composition.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
+)
+target_include_directories(rgsml_playback_composition_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_playback_composition_tests
+    PRIVATE
+        rgsml_audio
+        rgsml_platform
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_playback_composition_tests)
+add_test(
+    NAME rgsml_playback_composition_tests
+    COMMAND rgsml_playback_composition_tests
+)
+set_tests_properties(rgsml_playback_composition_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "platform;source_resource;playback"
+)
+
+qt_add_executable(rgsml_playback_device_probe
+    integration/platform/test_playback_device_probe.cpp
+)
+target_link_libraries(rgsml_playback_device_probe
+    PRIVATE
+        Qt6::Core
+        Qt6::Multimedia
+)
+rgsml_apply_project_warnings(rgsml_playback_device_probe)
+add_test(NAME rgsml_playback_device_probe COMMAND rgsml_playback_device_probe)
+set_tests_properties(rgsml_playback_device_probe PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Multimedia>"
+    LABELS "playback_device"
+)
+
 foreach(dependency_case
     core_dependency_graph_allowed
     core_public_headers_standalone
@@ -172,7 +254,9 @@ foreach(dependency_case
     platform_public_headers_standalone
     platform_forbidden_public_contract
     platform_dependency_rule_negative_fixture
-    platform_dependency_rule_positive_fixture)
+    platform_dependency_rule_positive_fixture
+    platform_multimedia_link_contract
+    audio_multimedia_dependency_rule_negative_fixture)
     add_test(
         NAME "${dependency_case}"
         COMMAND

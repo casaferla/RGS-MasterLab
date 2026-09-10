@@ -61,3 +61,19 @@
   read-only metadata panel, and platform/source/UI dependency contracts.
 - Integration: NOT_MERGED_TO_MAIN
 - Next task: TASK_007_NOT_PREPARED_OR_STARTED
+
+## L1-M03 — Windows WAV playback and playback-rate adaptation
+
+- Status: READY_FOR_REVIEW
+- Baseline: `d6b265f96a2d50440fb0631914c6b372878aa4e9`
+- Branch: `task/L1-M03-windows-wav-playback`
+- Delivery subject: `CODEX TASK 007 / L1-M03`
+- Scope: bounded `WavReader` playback through the frozen playback port,
+  private Qt Multimedia output, deterministic exact-rate-first negotiation,
+  playback-only `44100<->48000` SRC, minimal transport UI, and two-output
+  Windows listening evidence.
+- RF-1: MATERIALIZED; decision `KEEP_BASELINE`; frozen estimates unchanged.
+- R12-01: MITIGATED_FOR_WINDOWS_L1-M03_44100_48000; residual risk remains
+  open for other rates, devices, drivers, Android, and qualification levels.
+- Integration: NOT_MERGED_TO_MAIN
+- Next task: TASK_008_NOT_PREPARED_OR_STARTED
