@@ -145,3 +145,23 @@ The production dependency direction is therefore
 `rgsml_platform -> rgsml_audio -> rgsml_core`, with Qt Core and Qt Multimedia
 private to the platform adapter. The reverse `audio -> platform` edge remains
 forbidden.
+
+## Source waveform overview
+
+L1-M04 adds the Qt-free `rgsml::audio::WaveformSummary` as the only
+authoritative waveform artifact. It is built in one forward pass from the
+accepted `WindowsResourceReader -> WavReader -> AudioBuffer` path. The base
+level contains at most 65,536 min/max buckets per channel, decode blocks contain
+at most 4,096 frames, the complete pyramid contains at most 131,071 buckets per
+channel, and presentation selects at most 4,096 ranges per channel. The
+summary preserves decoded values, channel order, signed zero, and subnormals;
+render-only clipping never changes its data.
+
+The application owns the cancellable worker, current generation, stale-result
+guard, and one-entry in-memory cache. The cache is ephemeral: it is neither a
+project artifact nor a persisted analysis result. The UI receives shared
+immutable summary ownership. C++ selects the bounded level and builds native
+scene-graph geometry, while QML owns only layout, bindings, accessibility, and
+retry intent. Bucket spans use shared physical-pixel boundaries so adjacent
+ranges cover the viewport without rounding gaps. The playhead is read-only;
+zoom, pan, seek-on-waveform, and region semantics remain outside L1-M04.

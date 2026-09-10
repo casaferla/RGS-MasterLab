@@ -1,5 +1,8 @@
 #include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
+#include "source_waveform_view_model.hpp"
+
+#include "waveform_presentation.hpp"
 
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
@@ -40,8 +43,15 @@ int main(int argc, char* argv[])
         rgsml::platform::windows::WindowsAudioPlaybackService>();
     rgsml::app::PlaybackTransportViewModel playbackTransport{
         std::move(playbackService)};
+    rgsml::ui::WaveformPresentation waveformPresentation;
+    rgsml::app::SourceWaveformViewModel sourceWaveform{
+        &waveformPresentation};
     rgsml::app::SourceSelectionViewModel sourceSelection;
     sourceSelection.set_playback_transport(&playbackTransport);
+    sourceSelection.set_source_committed_handler(
+        [&sourceWaveform](const rgsml::core::ResourceReference& source) {
+            sourceWaveform.source_committed(source);
+        });
     QQmlApplicationEngine engine;
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
     engine.rootContext()->setContextProperty(
@@ -50,6 +60,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("playbackTransport"),
         &playbackTransport);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("sourceWaveform"),
+        &waveformPresentation);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

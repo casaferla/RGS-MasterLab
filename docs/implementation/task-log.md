@@ -77,3 +77,20 @@
   open for other rates, devices, drivers, Android, and qualification levels.
 - Integration: NOT_MERGED_TO_MAIN
 - Next task: TASK_008_NOT_PREPARED_OR_STARTED
+
+## L1-M04 — Real Source waveform overview and minimal peak pyramid
+
+- Status: READY_FOR_REVIEW
+- Baseline: `4469677b3f9b6511dfa84148fa63738c68d9b2e0`
+- Branch: `task/L1-M04-source-waveform-overview`
+- Delivery subject: `CODEX TASK 008 / L1-M04`
+- Scope: Qt-free bounded min/max peak pyramid from canonical WAV decode,
+  cancellable application-owned generation and ephemeral one-entry cache,
+  bounded C++ scene-graph rendering, truthful Source/RAW states, and a
+  read-only playback playhead.
+- Manual gate: PASS after correction of a viewport-dependent vertical seam
+  artifact with shared physical-pixel bucket boundaries.
+- R12-01: inherited unchanged.
+- R12-02: MITIGATION_MATERIALIZED_AT_L1-M04; residual remains open for L1-M05.
+- Integration: NOT_MERGED_TO_MAIN
+- Next task: TASK_009_NOT_PREPARED_OR_STARTED

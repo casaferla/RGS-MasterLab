@@ -7,12 +7,12 @@
 #include <QString>
 #include <QUrl>
 
+#include <functional>
 #include <optional>
 
 namespace rgsml::app {
 
 class PlaybackTransportViewModel;
-
 class SourceSelectionViewModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool hasSource READ has_source NOTIFY sourceChanged)
@@ -29,6 +29,9 @@ class SourceSelectionViewModel final : public QObject {
     Q_PROPERTY(QString errorMessage READ error_message NOTIFY errorChanged)
 
 public:
+    using SourceCommittedHandler = std::function<void(
+        const core::ResourceReference&)>;
+
     explicit SourceSelectionViewModel(QObject* parent = nullptr);
 
     [[nodiscard]] bool has_source() const noexcept;
@@ -45,6 +48,7 @@ public:
     [[nodiscard]] QString error_message() const;
 
     void set_playback_transport(PlaybackTransportViewModel* playback) noexcept;
+    void set_source_committed_handler(SourceCommittedHandler handler);
     Q_INVOKABLE void selectSource(const QUrl& selectedFile);
     Q_INVOKABLE void cancelSourceSelection() noexcept;
 
@@ -68,6 +72,7 @@ private:
     qint64 frameCount_{0};
     int channelCount_{0};
     PlaybackTransportViewModel* playbackTransport_{nullptr};
+    SourceCommittedHandler sourceCommittedHandler_;
 };
 
 }  // namespace rgsml::app

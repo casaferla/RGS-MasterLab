@@ -23,10 +23,20 @@ ApplicationWindow {
         onRejected: sourceSelection.cancelSourceSelection()
     }
 
-    Column {
-        width: Math.min(parent.width - 64, 760)
-        anchors.centerIn: parent
-        spacing: 18
+    ScrollView {
+        id: workspaceScroll
+        anchors.fill: parent
+        anchors.margins: 32
+        clip: true
+        contentWidth: availableWidth
+        contentHeight: workspaceContent.implicitHeight
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+        Column {
+            id: workspaceContent
+            x: Math.max(0, (workspaceScroll.availableWidth - width) / 2)
+            width: Math.min(workspaceScroll.availableWidth, 900)
+            spacing: 18
 
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -207,6 +217,141 @@ ApplicationWindow {
         }
 
         Rectangle {
+            objectName: "sourceWaveformPanel"
+            width: parent.width
+            height: 260
+            radius: 10
+            color: "#22262c"
+            border.color: "#343a42"
+
+            Label {
+                id: waveformTitle
+                objectName: "sourceWaveformTitle"
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.margins: 16
+                color: "#f1f3f5"
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+                text: "Source / RAW · Full overview"
+            }
+
+            Label {
+                objectName: "sourceWaveformBounds"
+                anchors.right: parent.right
+                anchors.verticalCenter: waveformTitle.verticalCenter
+                anchors.rightMargin: 16
+                color: "#8f969e"
+                font.pixelSize: 11
+                visible: sourceWaveform.ready && sourceWaveform.sourceFrameCount > 0
+                text: sourceWaveform.baseBucketCount + " base ranges · "
+                      + sourceWaveform.levelCount + " levels"
+            }
+
+            WaveformItem {
+                id: waveformOverview
+                objectName: "sourceWaveformOverview"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: waveformTitle.bottom
+                anchors.bottom: parent.bottom
+                anchors.margins: 16
+                anchors.topMargin: 12
+                presentation: sourceWaveform
+                positionFrames: playbackTransport.positionFrames
+                durationFrames: playbackTransport.durationFrames
+                waveformColor: "#73d6ff"
+                zeroLineColor: "#505862"
+                playheadColor: "#f5c96a"
+                overrangeColor: "#ff7d8a"
+                visible: sourceWaveform.ready && sourceWaveform.sourceFrameCount > 0
+                Accessible.role: Accessible.StaticText
+                Accessible.name: sourceWaveform.channelCount === 2
+                    ? "Read-only full Source waveform, separate left and right lanes"
+                    : "Read-only full Source waveform, mono lane"
+                Accessible.description: "Non-interactive overview with read-only playback position"
+            }
+
+            Label {
+                objectName: "sourceWaveformLeftLane"
+                anchors.left: waveformOverview.left
+                anchors.top: waveformOverview.top
+                color: "#aeb5bd"
+                font.pixelSize: 10
+                visible: sourceWaveform.ready && sourceWaveform.sourceFrameCount > 0
+                         && sourceWaveform.channelCount === 2
+                text: "L"
+            }
+
+            Label {
+                objectName: "sourceWaveformRightLane"
+                anchors.left: waveformOverview.left
+                anchors.bottom: waveformOverview.bottom
+                color: "#aeb5bd"
+                font.pixelSize: 10
+                visible: sourceWaveform.ready && sourceWaveform.sourceFrameCount > 0
+                         && sourceWaveform.channelCount === 2
+                text: "R"
+            }
+
+            Label {
+                objectName: "sourceWaveformMonoLane"
+                anchors.left: waveformOverview.left
+                anchors.verticalCenter: waveformOverview.verticalCenter
+                color: "#aeb5bd"
+                font.pixelSize: 10
+                visible: sourceWaveform.ready && sourceWaveform.sourceFrameCount > 0
+                         && sourceWaveform.channelCount === 1
+                text: "C"
+            }
+
+            Label {
+                id: sourceWaveformStatus
+                objectName: "sourceWaveformStatus"
+                anchors.centerIn: waveformOverview
+                width: waveformOverview.width - 32
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                color: sourceWaveform.state === "FAILED" ? "#ffd9dc" : "#aeb5bd"
+                visible: !sourceWaveform.ready || sourceWaveform.sourceFrameCount === 0
+                text: sourceWaveform.statusText
+                Accessible.role: Accessible.StaticText
+                Accessible.name: "Source waveform " + sourceWaveform.state.toLowerCase()
+                Accessible.description: sourceWaveform.statusText
+            }
+
+            BusyIndicator {
+                objectName: "sourceWaveformBuildingIndicator"
+                anchors.horizontalCenter: waveformOverview.horizontalCenter
+                anchors.bottom: sourceWaveformStatus.top
+                anchors.bottomMargin: 8
+                running: sourceWaveform.state === "BUILDING"
+                visible: running
+            }
+
+            Button {
+                objectName: "sourceWaveformRetryButton"
+                anchors.horizontalCenter: waveformOverview.horizontalCenter
+                anchors.top: sourceWaveformStatus.bottom
+                anchors.topMargin: 10
+                text: "Retry waveform analysis"
+                visible: sourceWaveform.state === "FAILED"
+                activeFocusOnTab: visible
+                onClicked: sourceWaveform.requestRetry()
+            }
+
+            Label {
+                objectName: "sourceWaveformOverrangeIndicator"
+                anchors.right: waveformOverview.right
+                anchors.bottom: waveformOverview.bottom
+                color: "#ff9aa4"
+                font.pixelSize: 10
+                visible: sourceWaveform.ready && sourceWaveform.hasOverrange
+                text: "Source peaks exceed ±1.0"
+            }
+        }
+
+        Rectangle {
             objectName: "sourceErrorPanel"
             width: parent.width
             height: errorLabel.implicitHeight + 24
@@ -224,6 +369,7 @@ ApplicationWindow {
                 wrapMode: Text.Wrap
                 text: sourceSelection.errorMessage
             }
+        }
         }
     }
 }

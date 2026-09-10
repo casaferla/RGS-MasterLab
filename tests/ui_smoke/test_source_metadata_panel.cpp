@@ -1,7 +1,10 @@
 #include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
+#include "waveform_item.hpp"
+#include "waveform_presentation.hpp"
 
 #include "../audio_golden/wav/golden_vectors.hpp"
+#include "../unit/audio/wav_test_support.hpp"
 #include "../unit/platform/fake_playback_service.hpp"
 
 #include <QCoreApplication>
@@ -10,6 +13,7 @@
 #include <QLibraryInfo>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QWindow>
@@ -42,6 +46,19 @@ namespace {
     };
 }
 
+[[nodiscard]] std::shared_ptr<const audio::WaveformSummary> valid_summary()
+{
+    using namespace wav_support;
+    auto reader = audio::WavReader::open(memory_reader(
+        from_u8_array(audio_golden::kRiffPcm16Mono),
+        std::make_shared<ReaderControl>()));
+    Q_ASSERT(reader);
+    auto summary = audio::build_waveform_summary(**reader.value());
+    Q_ASSERT(summary);
+    return std::make_shared<audio::WaveformSummary>(
+        std::move(*summary.value()));
+}
+
 }  // namespace
 
 class SourceMetadataPanelSmokeTest final : public QObject {
@@ -59,12 +76,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         std::move(playbackService)};
     app::SourceSelectionViewModel model;
     model.set_playback_transport(&playbackTransport);
+    ui::WaveformPresentation waveformPresentation;
     QQmlApplicationEngine engine;
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"), &model);
     engine.rootContext()->setContextProperty(
         QStringLiteral("playbackTransport"), &playbackTransport);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("sourceWaveform"), &waveformPresentation);
     engine.loadFromModule("Rgsml.Ui", "Main");
     QCOMPARE(engine.rootObjects().size(), 1);
 
@@ -97,6 +117,23 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(playbackState->property("text").toString(), QStringLiteral("No Source"));
     QVERIFY(empty->property("visible").toBool());
     QVERIFY(!display->property("visible").toBool());
+    auto* waveformPanel = root->findChild<QObject*>(
+        QStringLiteral("sourceWaveformPanel"));
+    auto* waveformStatus = root->findChild<QObject*>(
+        QStringLiteral("sourceWaveformStatus"));
+    auto* waveformObject = root->findChild<QObject*>(
+        QStringLiteral("sourceWaveformOverview"));
+    auto* waveformItem = qobject_cast<ui::WaveformItem*>(waveformObject);
+    auto* waveformRetry = root->findChild<QObject*>(
+        QStringLiteral("sourceWaveformRetryButton"));
+    QVERIFY(waveformPanel);
+    QVERIFY(waveformStatus);
+    QVERIFY(waveformItem);
+    QVERIFY(waveformRetry);
+    QCOMPARE(waveformPresentation.state_token(), QStringLiteral("EMPTY"));
+    QVERIFY(waveformStatus->property("visible").toBool());
+    QVERIFY(!waveformItem->isVisible());
+    QCOMPARE(waveformItem->acceptedMouseButtons(), Qt::NoButton);
 
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -126,6 +163,24 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Stopped"));
     QVERIFY(playbackTime->property("text").toString().contains(QStringLiteral("/")));
 
+    waveformPresentation.publish_building();
+    QCoreApplication::processEvents();
+    QCOMPARE(waveformPresentation.state_token(), QStringLiteral("BUILDING"));
+    QVERIFY(waveformStatus->property("visible").toBool());
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceWaveformBuildingIndicator"))
+                ->property("visible").toBool());
+
+    waveformPresentation.publish_ready(valid_summary());
+    QCoreApplication::processEvents();
+    QCOMPARE(waveformPresentation.state_token(), QStringLiteral("READY"));
+    QVERIFY(waveformItem->isVisible());
+    QVERIFY(!waveformStatus->property("visible").toBool());
+    QCOMPARE(waveformPresentation.channel_count(), 1);
+    QVERIFY(waveformPresentation.base_bucket_count() > 0);
+    QVERIFY(waveformPresentation.payload_bytes() > 0);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceWaveformMonoLane"))
+                ->property("visible").toBool());
+
     QVERIFY(QMetaObject::invokeMethod(playPause, "clicked"));
     QCoreApplication::processEvents();
     QCOMPARE(observedPlayback->playCalls, 1);
@@ -147,11 +202,27 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!error->property("text").toString().isEmpty());
     QCOMPARE(display->property("text").toString(), QStringLiteral("UI Source.wav"));
 
+    waveformPresentation.publish_failed(QStringLiteral("Injected waveform failure."));
+    QCoreApplication::processEvents();
+    QCOMPARE(waveformPresentation.state_token(), QStringLiteral("FAILED"));
+    QVERIFY(waveformStatus->property("visible").toBool());
+    QVERIFY(waveformRetry->property("visible").toBool());
+    QSignalSpy retrySpy{
+        &waveformPresentation,
+        &ui::WaveformPresentation::retryRequested};
+    QVERIFY(QMetaObject::invokeMethod(waveformRetry, "clicked"));
+    QCOMPARE(retrySpy.count(), 1);
+    waveformPresentation.publish_ready(valid_summary());
+    QCoreApplication::processEvents();
+
     auto* window = qobject_cast<QWindow*>(root);
     QVERIFY(window);
     window->resize(800, 500);
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(800, 500));
+    window->resize(1600, 900);
+    QCoreApplication::processEvents();
+    QCOMPARE(window->size(), QSize(1600, 900));
     window->close();
     QCoreApplication::processEvents();
 }

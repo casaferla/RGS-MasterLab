@@ -69,6 +69,40 @@ set_tests_properties(rgsml_audio_wav_reader_tests PROPERTIES
     LABELS "audio;audio_golden"
 )
 
+qt_add_executable(rgsml_waveform_summary_tests
+    unit/audio/test_waveform_summary.cpp
+)
+target_include_directories(rgsml_waveform_summary_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_waveform_summary_tests
+    PRIVATE
+        rgsml_audio
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_waveform_summary_tests)
+add_test(NAME rgsml_waveform_summary_tests COMMAND rgsml_waveform_summary_tests)
+set_tests_properties(rgsml_waveform_summary_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;waveform"
+)
+
+qt_add_executable(rgsml_waveform_wav_tests
+    integration/audio/test_waveform_wav.cpp
+)
+target_link_libraries(rgsml_waveform_wav_tests
+    PRIVATE
+        rgsml_audio
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_waveform_wav_tests)
+add_test(NAME rgsml_waveform_wav_tests COMMAND rgsml_waveform_wav_tests)
+set_tests_properties(rgsml_waveform_wav_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;audio_golden;waveform;waveform_golden;source_resource"
+)
+
 qt_add_executable(rgsml_playback_src_tests
     unit/audio/test_playback_sample_rate_adapter.cpp
 )
@@ -222,6 +256,56 @@ add_test(
 set_tests_properties(rgsml_playback_composition_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "platform;source_resource;playback"
+)
+
+qt_add_executable(rgsml_waveform_geometry_tests
+    unit/ui/test_waveform_geometry.cpp
+)
+target_include_directories(rgsml_waveform_geometry_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/ui/src
+)
+target_link_libraries(rgsml_waveform_geometry_tests
+    PRIVATE
+        rgsml_audio
+        rgsml_ui
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_waveform_geometry_tests)
+add_test(NAME rgsml_waveform_geometry_tests COMMAND rgsml_waveform_geometry_tests)
+set_tests_properties(rgsml_waveform_geometry_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "waveform;ui_smoke"
+)
+
+qt_add_executable(rgsml_source_waveform_view_model_tests
+    integration/app/test_source_waveform_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/source_waveform_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/source_waveform_view_model.hpp
+)
+target_include_directories(rgsml_source_waveform_view_model_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+        ${CMAKE_SOURCE_DIR}/ui/src
+)
+target_link_libraries(rgsml_source_waveform_view_model_tests
+    PRIVATE
+        rgsml_audio
+        rgsml_platform
+        rgsml_ui
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_source_waveform_view_model_tests)
+add_test(
+    NAME rgsml_source_waveform_view_model_tests
+    COMMAND rgsml_source_waveform_view_model_tests
+)
+set_tests_properties(rgsml_source_waveform_view_model_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "waveform;source_resource;playback"
 )
 
 qt_add_executable(rgsml_playback_device_probe

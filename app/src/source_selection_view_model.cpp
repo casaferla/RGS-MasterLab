@@ -177,6 +177,12 @@ void SourceSelectionViewModel::set_playback_transport(
     playbackTransport_ = playback;
 }
 
+void SourceSelectionViewModel::set_source_committed_handler(
+    SourceCommittedHandler handler)
+{
+    sourceCommittedHandler_ = std::move(handler);
+}
+
 void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
 {
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
@@ -228,6 +234,10 @@ void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
     frameCount_ = frames;
     durationLabel_ = format_duration(frames, sampleRate);
     source_ = std::move(*candidate.value());
+
+    if (sourceCommittedHandler_) {
+        sourceCommittedHandler_(source_->reference());
+    }
 
     if (playbackTransport_ != nullptr) {
         playbackTransport_->prepare_source(source_->reference(), sampleRate);

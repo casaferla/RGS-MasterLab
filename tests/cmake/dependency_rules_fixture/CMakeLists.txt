@@ -86,6 +86,7 @@ if(FIXTURE_CASE STREQUAL "audio_headers")
         audio_format.hpp
         playback_sample_rate_adapter.hpp
         source_resource.hpp
+        waveform_summary.hpp
         wav_format.hpp
         wav_reader.hpp)
     foreach(public_header IN LISTS public_headers)

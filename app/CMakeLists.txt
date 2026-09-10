@@ -4,6 +4,8 @@ qt_add_executable(rgsml_app
     src/playback_transport_view_model.hpp
     src/source_selection_view_model.cpp
     src/source_selection_view_model.hpp
+    src/source_waveform_view_model.cpp
+    src/source_waveform_view_model.hpp
 )
 
 set_target_properties(rgsml_app PROPERTIES
