@@ -178,6 +178,8 @@ set_tests_properties(rgsml_source_selection_tests PROPERTIES
 
 qt_add_executable(rgsml_source_metadata_panel_smoke
     ui_smoke/test_source_metadata_panel.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
@@ -207,7 +209,7 @@ add_test(
 set_tests_properties(rgsml_source_metadata_panel_smoke PROPERTIES
     ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;QML2_IMPORT_PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>/../qml"
-    LABELS "ui_smoke"
+    LABELS "ui_smoke;waveform_navigation;audition_region;playback;source_resource"
 )
 
 qt_add_executable(rgsml_playback_support_tests
@@ -275,7 +277,77 @@ rgsml_apply_project_warnings(rgsml_waveform_geometry_tests)
 add_test(NAME rgsml_waveform_geometry_tests COMMAND rgsml_waveform_geometry_tests)
 set_tests_properties(rgsml_waveform_geometry_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    LABELS "waveform;ui_smoke"
+    LABELS "waveform;waveform_navigation;ui_smoke"
+)
+
+qt_add_executable(rgsml_waveform_viewport_tests
+    unit/ui/test_waveform_viewport.cpp
+)
+target_include_directories(rgsml_waveform_viewport_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/ui/src
+)
+target_link_libraries(rgsml_waveform_viewport_tests
+    PRIVATE
+        rgsml_audio
+        rgsml_ui
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_waveform_viewport_tests)
+add_test(NAME rgsml_waveform_viewport_tests COMMAND rgsml_waveform_viewport_tests)
+set_tests_properties(rgsml_waveform_viewport_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "waveform;waveform_navigation"
+)
+
+qt_add_executable(rgsml_waveform_interaction_tests
+    unit/ui/test_waveform_item_interaction.cpp
+)
+target_include_directories(rgsml_waveform_interaction_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/ui/src
+)
+target_link_libraries(rgsml_waveform_interaction_tests
+    PRIVATE
+        rgsml_audio
+        rgsml_ui
+        rgsml_uiplugin
+        Qt6::Gui
+        Qt6::Quick
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_waveform_interaction_tests)
+add_test(NAME rgsml_waveform_interaction_tests COMMAND rgsml_waveform_interaction_tests)
+set_tests_properties(rgsml_waveform_interaction_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;QML2_IMPORT_PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>/../qml"
+    LABELS "waveform;waveform_navigation;audition_region;ui_smoke"
+)
+
+qt_add_executable(rgsml_audition_region_tests
+    integration/app/test_audition_region_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
+)
+target_include_directories(rgsml_audition_region_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+        ${CMAKE_SOURCE_DIR}/ui/src
+)
+target_link_libraries(rgsml_audition_region_tests
+    PRIVATE
+        rgsml_core
+        rgsml_ui
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_audition_region_tests)
+add_test(NAME rgsml_audition_region_tests COMMAND rgsml_audition_region_tests)
+set_tests_properties(rgsml_audition_region_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audition_region;playback;waveform_navigation"
 )
 
 qt_add_executable(rgsml_source_waveform_view_model_tests

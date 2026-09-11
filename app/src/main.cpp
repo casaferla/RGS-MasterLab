@@ -1,3 +1,4 @@
+#include "audition_region_view_model.hpp"
 #include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
@@ -44,13 +45,45 @@ int main(int argc, char* argv[])
     rgsml::app::PlaybackTransportViewModel playbackTransport{
         std::move(playbackService)};
     rgsml::ui::WaveformPresentation waveformPresentation;
+    rgsml::app::AuditionRegionViewModel auditionRegion{&playbackTransport};
     rgsml::app::SourceWaveformViewModel sourceWaveform{
         &waveformPresentation};
     rgsml::app::SourceSelectionViewModel sourceSelection;
     sourceSelection.set_playback_transport(&playbackTransport);
     sourceSelection.set_source_committed_handler(
-        [&sourceWaveform](const rgsml::core::ResourceReference& source) {
+        [&sourceWaveform, &sourceSelection, &auditionRegion](
+            const rgsml::core::ResourceReference& source) {
+            const auto frameCount = rgsml::core::FrameCount::create(
+                sourceSelection.frame_count());
+            const auto sampleRate = rgsml::core::SampleRate::create(
+                sourceSelection.sample_rate_hz());
+            if (frameCount && sampleRate) {
+                auditionRegion.source_committed(
+                    *frameCount.value(), *sampleRate.value());
+            }
             sourceWaveform.source_committed(source);
+        });
+    waveformPresentation.set_seek_handler(
+        [&auditionRegion](rgsml::core::FrameIndex position) {
+            return auditionRegion.seek(position);
+        });
+    waveformPresentation.set_region_commit_handler(
+        [&auditionRegion](rgsml::core::FrameRange candidate) {
+            return auditionRegion.set_region(candidate);
+        });
+    QObject::connect(
+        &auditionRegion,
+        &rgsml::app::AuditionRegionViewModel::changed,
+        &waveformPresentation,
+        [&auditionRegion, &waveformPresentation] {
+            waveformPresentation.set_displayed_region(auditionRegion.region());
+        });
+    QObject::connect(
+        &waveformPresentation,
+        &rgsml::ui::WaveformPresentation::changed,
+        &auditionRegion,
+        [&waveformPresentation, &auditionRegion] {
+            auditionRegion.set_waveform_ready(waveformPresentation.ready());
         });
     QQmlApplicationEngine engine;
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
@@ -63,6 +96,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceWaveform"),
         &waveformPresentation);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("auditionRegion"),
+        &auditionRegion);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

@@ -165,3 +165,26 @@ scene-graph geometry, while QML owns only layout, bindings, accessibility, and
 retry intent. Bucket spans use shared physical-pixel boundaries so adjacent
 ranges cover the viewport without rounding gaps. The playhead is read-only;
 zoom, pan, seek-on-waveform, and region semantics remain outside L1-M04.
+
+## Source waveform navigation and Audition Region
+
+L1-M05 keeps `WaveformSummary` and its peak pyramid immutable while adding an
+ephemeral C++ viewport expressed as an exact half-open Source-frame range.
+Private UI math maps integer physical-pixel boundaries to Source frames with
+checked, ties-to-even arithmetic. Zoom, pan, fit, hit testing, playhead,
+region handles, and clipped bucket geometry share that mapping; each render
+selects only the finest existing level whose visible window contains at most
+4,096 peak ranges per channel. Resize and DPI changes do not alter the stored
+Source-frame viewport, and navigation performs no decode, I/O, or summary
+rebuild.
+
+`AuditionRegionViewModel` is the single application-side region artifact. It
+owns zero or one exact `core::FrameRange` over the current Source and exposes
+formatted text plus high-level actions to QML. Region creation/editing and
+exact decimal-time parsing remain in C++; QML performs no frame arithmetic.
+The view-model delegates click seek and explicit loop transactions to the
+existing `PlaybackTransportViewModel`, which in turn uses the frozen
+`IAudioPlaybackService` port. Loop state is re-snapshotted from that service,
+and failure preserves the previously committed region. The state is runtime
+only: it is not project persistence, analysis/processing scope, DSP, or a
+render contract.

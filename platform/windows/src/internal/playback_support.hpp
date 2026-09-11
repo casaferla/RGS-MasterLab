@@ -117,6 +117,7 @@ private:
     std::optional<core::FrameCount> duration_;
     std::optional<core::FrameCount> outputDuration_;
     std::optional<core::FrameRange> loop_;
+    bool loopTraversalEligible_{false};
     std::int64_t scheduledOutputFrame_{0};
     std::int64_t playbackStartOutputFrame_{0};
     std::vector<std::byte> pendingBytes_;

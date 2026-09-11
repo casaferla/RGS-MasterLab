@@ -159,6 +159,54 @@ void PlaybackTransportViewModel::prepare_source(
     refresh();
 }
 
+core::Status PlaybackTransportViewModel::seek_source_frame(
+    core::FrameIndex position)
+{
+    if (!service_) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "Playback service is unavailable."});
+    }
+    const auto result = service_->seek(position);
+    if (!result) {
+        publish_failure(*result.error());
+        return result;
+    }
+    errorMessage_.clear();
+    refresh();
+    return core::Status::success();
+}
+
+core::Status PlaybackTransportViewModel::set_loop_source_range(
+    std::optional<core::FrameRange> loop)
+{
+    if (!service_) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "Playback service is unavailable."});
+    }
+    const auto result = service_->set_loop(std::move(loop));
+    if (!result) {
+        publish_failure(*result.error());
+        refresh();
+        return result;
+    }
+    errorMessage_.clear();
+    refresh();
+    return core::Status::success();
+}
+
+core::Result<core::PlaybackSnapshot>
+PlaybackTransportViewModel::playback_snapshot() const
+{
+    if (!service_) {
+        return core::Result<core::PlaybackSnapshot>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "Playback service is unavailable."});
+    }
+    return service_->snapshot();
+}
+
 void PlaybackTransportViewModel::playOrResume()
 {
     if (!service_) {

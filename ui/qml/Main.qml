@@ -219,7 +219,7 @@ ApplicationWindow {
         Rectangle {
             objectName: "sourceWaveformPanel"
             width: parent.width
-            height: 260
+            height: 475
             radius: 10
             color: "#22262c"
             border.color: "#343a42"
@@ -233,7 +233,7 @@ ApplicationWindow {
                 color: "#f1f3f5"
                 font.pixelSize: 16
                 font.weight: Font.DemiBold
-                text: "Source / RAW · Full overview"
+                text: "Source / RAW · Waveform navigation"
             }
 
             Label {
@@ -248,15 +248,72 @@ ApplicationWindow {
                       + sourceWaveform.levelCount + " levels"
             }
 
+            Row {
+                id: waveformNavigationControls
+                objectName: "waveformNavigationControls"
+                anchors.left: parent.left
+                anchors.top: waveformTitle.bottom
+                anchors.leftMargin: 16
+                anchors.topMargin: 10
+                spacing: 8
+
+                Button {
+                    objectName: "waveformZoomInButton"
+                    text: "Zoom In"
+                    enabled: sourceWaveform.canNavigate
+                    activeFocusOnTab: true
+                    onClicked: sourceWaveform.zoomIn()
+                    Accessible.name: "Zoom in Source waveform"
+                }
+
+                Button {
+                    objectName: "waveformZoomOutButton"
+                    text: "Zoom Out"
+                    enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit
+                    activeFocusOnTab: true
+                    onClicked: sourceWaveform.zoomOut()
+                    Accessible.name: "Zoom out Source waveform"
+                }
+
+                Button {
+                    objectName: "waveformFitSourceButton"
+                    text: "Fit Source"
+                    enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit
+                    activeFocusOnTab: true
+                    onClicked: sourceWaveform.fitSource()
+                    Accessible.name: "Fit complete Source waveform"
+                }
+            }
+
+            Label {
+                objectName: "waveformViewportLabel"
+                anchors.left: waveformNavigationControls.right
+                anchors.right: parent.right
+                anchors.verticalCenter: waveformNavigationControls.verticalCenter
+                anchors.leftMargin: 12
+                anchors.rightMargin: 16
+                horizontalAlignment: Text.AlignRight
+                elide: Text.ElideLeft
+                color: "#aeb5bd"
+                font.pixelSize: 11
+                visible: sourceWaveform.canNavigate
+                text: "Visible " + sourceWaveform.viewportStartText + " — "
+                      + sourceWaveform.viewportEndText + " · "
+                      + sourceWaveform.viewportDurationText
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+            }
+
             WaveformItem {
                 id: waveformOverview
                 objectName: "sourceWaveformOverview"
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.top: waveformTitle.bottom
-                anchors.bottom: parent.bottom
-                anchors.margins: 16
-                anchors.topMargin: 12
+                anchors.top: waveformNavigationControls.bottom
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                anchors.topMargin: 10
+                height: 190
                 presentation: sourceWaveform
                 positionFrames: playbackTransport.positionFrames
                 durationFrames: playbackTransport.durationFrames
@@ -264,12 +321,16 @@ ApplicationWindow {
                 zeroLineColor: "#505862"
                 playheadColor: "#f5c96a"
                 overrangeColor: "#ff7d8a"
+                regionColor: "#487a9660"
+                regionHandleColor: "#f1f3f5"
                 visible: sourceWaveform.ready && sourceWaveform.sourceFrameCount > 0
-                Accessible.role: Accessible.StaticText
+                activeFocusOnTab: visible
+                Accessible.role: Accessible.Pane
                 Accessible.name: sourceWaveform.channelCount === 2
-                    ? "Read-only full Source waveform, separate left and right lanes"
-                    : "Read-only full Source waveform, mono lane"
-                Accessible.description: "Non-interactive overview with read-only playback position"
+                    ? "Source waveform navigation, separate left and right lanes"
+                    : "Source waveform navigation, mono lane"
+                Accessible.description: "Click to seek, drag to pan, Shift drag to create an Audition Region"
+                KeyNavigation.tab: auditionStartEditor.firstField
             }
 
             Label {
@@ -348,6 +409,130 @@ ApplicationWindow {
                 font.pixelSize: 10
                 visible: sourceWaveform.ready && sourceWaveform.hasOverrange
                 text: "Source peaks exceed ±1.0"
+            }
+
+            Flow {
+                id: auditionRegionControls
+                objectName: "auditionRegionControls"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: waveformOverview.bottom
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                anchors.topMargin: 12
+                spacing: 8
+                height: childrenRect.height
+
+                Label {
+                    color: "#d7dce2"
+                    text: "Region"
+                }
+
+                SegmentedTimeEditor {
+                    id: auditionStartEditor
+                    objectName: "auditionRegionStartEditor"
+                    objectPrefix: "auditionRegionStart"
+                    endpointName: "Audition Region start"
+                    enabled: auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                    hoursText: auditionRegion.startHours
+                    minutesText: auditionRegion.startMinutes
+                    secondsText: auditionRegion.startSeconds
+                    fractionText: auditionRegion.startFraction
+                    previousTabItem: waveformOverview
+                    nextTabItem: auditionEndEditor.firstField
+                    onCommitRequested: function(hours, minutes, seconds, fraction) {
+                        auditionRegion.commitStartSegments(
+                            hours, minutes, seconds, fraction)
+                    }
+                    onEscapeRequested: auditionRegion.clearError()
+                    onNudgeBackwardRequested: auditionRegion.nudgeStartBackward()
+                    onNudgeForwardRequested: auditionRegion.nudgeStartForward()
+                }
+
+                SegmentedTimeEditor {
+                    id: auditionEndEditor
+                    objectName: "auditionRegionEndEditor"
+                    objectPrefix: "auditionRegionEnd"
+                    endpointName: "Audition Region end exclusive"
+                    enabled: auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                    hoursText: auditionRegion.endHours
+                    minutesText: auditionRegion.endMinutes
+                    secondsText: auditionRegion.endSeconds
+                    fractionText: auditionRegion.endFraction
+                    previousTabItem: auditionStartEditor.lastField
+                    nextTabItem: fitRegionButton
+                    onCommitRequested: function(hours, minutes, seconds, fraction) {
+                        auditionRegion.commitEndSegments(
+                            hours, minutes, seconds, fraction)
+                    }
+                    onEscapeRequested: auditionRegion.clearError()
+                    onNudgeBackwardRequested: auditionRegion.nudgeEndBackward()
+                    onNudgeForwardRequested: auditionRegion.nudgeEndForward()
+                }
+
+                Button {
+                    id: fitRegionButton
+                    objectName: "waveformFitRegionButton"
+                    text: "Fit Region"
+                    enabled: auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                    activeFocusOnTab: true
+                    onClicked: sourceWaveform.fitRegion()
+                    Accessible.name: "Fit Audition Region in waveform"
+                }
+
+                CheckBox {
+                    objectName: "auditionRegionLoopCheckBox"
+                    text: "Loop Region"
+                    checked: auditionRegion.loopEnabled
+                    enabled: auditionRegion.canLoop || auditionRegion.loopEnabled
+                    activeFocusOnTab: true
+                    onClicked: auditionRegion.requestLoopEnabled(checked)
+                    Accessible.name: "Loop Audition Region"
+                    Accessible.description: auditionRegion.loopEnabled
+                        ? "Loop Region armed; arbitrary boundaries may click"
+                        : "Loop Region disarmed"
+                }
+
+                Button {
+                    objectName: "auditionRegionClearButton"
+                    text: "Clear"
+                    enabled: auditionRegion.controlsEnabled && auditionRegion.hasRegion
+                    activeFocusOnTab: true
+                    onClicked: auditionRegion.requestClearRegion()
+                    Accessible.name: "Clear Audition Region"
+                }
+            }
+
+            Label {
+                id: auditionRegionDetails
+                objectName: "auditionRegionDetails"
+                anchors.left: parent.left
+                anchors.top: auditionRegionControls.bottom
+                anchors.leftMargin: 16
+                anchors.topMargin: 8
+                color: "#aeb5bd"
+                visible: auditionRegion.hasRegion
+                text: "Source frames [" + auditionRegion.startFrameText + ", "
+                      + auditionRegion.endFrameText + ") · Duration "
+                      + auditionRegion.durationText
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+            }
+
+            Label {
+                objectName: "auditionRegionError"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: auditionRegionDetails.bottom
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                anchors.topMargin: 4
+                color: "#ffd9dc"
+                visible: auditionRegion.errorMessage.length > 0
+                wrapMode: Text.Wrap
+                text: auditionRegion.errorMessage
+                Accessible.role: Accessible.AlertMessage
+                Accessible.name: text
             }
         }
 

@@ -94,3 +94,23 @@
 - R12-02: MITIGATION_MATERIALIZED_AT_L1-M04; residual remains open for L1-M05.
 - Integration: NOT_MERGED_TO_MAIN
 - Next task: TASK_009_NOT_PREPARED_OR_STARTED
+
+## L1-M05 — Waveform navigation and single Audition Region
+
+- Status: READY_FOR_REVIEW
+- Baseline: `17c36204846560d247602e786b1851f624c255fd`
+- Branch: `task/L1-M05-waveform-navigation-audition-region`
+- Delivery subject: `CODEX TASK 009 / L1-M05`
+- Scope: exact Source-frame waveform zoom/pan/seek, one half-open Audition
+  Region, explicit loop orchestration, definitive segmented Region time
+  editor, and the targeted private playback seek/loop forward correction.
+- Manual gate: PASS with Product Owner clarification; `Ctrl++` verified,
+  non-US `Ctrl+=` alias not required, and `Alt+F4` during the extreme
+  mouse-captured gesture window accepted deferred/non-blocking.
+- BC12-L1M05-EXPLICIT-SEEK-LOOP-001:
+  RESOLVED_BY_FD12-L1M05-EXPLICIT-SEEK-LOOP-001.
+- R12-01: inherited unchanged.
+- R12-02: MITIGATED_FOR_WINDOWS_L1-M05; residual monitoring remains open.
+- RF-1: MATERIALIZED; frozen estimates unchanged.
+- Integration: NOT_MERGED_TO_MAIN
+- Next task: TASK_010_NOT_PREPARED_OR_STARTED

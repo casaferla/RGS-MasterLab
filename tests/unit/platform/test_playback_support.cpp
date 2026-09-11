@@ -59,6 +59,25 @@ using platform::windows::internal::PlaybackEngine;
             << 8U);
 }
 
+[[nodiscard]] std::int16_t read_i16(
+    const std::vector<std::byte>& bytes,
+    std::size_t offset)
+{
+    return std::bit_cast<std::int16_t>(read_u16(bytes, offset));
+}
+
+[[nodiscard]] std::vector<std::int64_t> indexed_stereo_codes(
+    std::int64_t frames)
+{
+    std::vector<std::int64_t> codes;
+    codes.reserve(static_cast<std::size_t>(frames) * 2U);
+    for (std::int64_t frame = 0; frame < frames; ++frame) {
+        codes.push_back(frame);
+        codes.push_back(-frame);
+    }
+    return codes;
+}
+
 class FakeOutput final : public IPlaybackOutput {
 public:
     explicit FakeOutput(
@@ -170,6 +189,11 @@ public:
         return history_;
     }
 
+    const std::vector<std::byte>& queue() const noexcept
+    {
+        return queue_;
+    }
+
     std::size_t maximum_observed() const noexcept
     {
         return maximumObserved_;
@@ -215,6 +239,9 @@ private slots:
     void conversionFailuresAndChunkInvariance();
     void stateMachineAndBoundedPump();
     void adaptedTimelineUsesAbsoluteRateMapping();
+    void explicitSeekLoopStateMatrix();
+    void explicitSeekLoopTraversalEofAndSrcIdentity();
+    void loopCommandIsPositionNeutralAcrossStates();
     void partialWritesNaturalEofAndRuntimeError();
 };
 
@@ -299,6 +326,335 @@ void PlaybackSupportTest::adaptedTimelineUsesAbsoluteRateMapping()
     QVERIFY(engine.seek(core::FrameIndex{220}));
     QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{220});
     QVERIFY(engine.stop());
+}
+
+void PlaybackSupportTest::explicitSeekLoopStateMatrix()
+{
+    constexpr std::int64_t duration = 400;
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{100}, core::FrameIndex{200}).value();
+    const std::array targets{
+        std::int64_t{50},
+        std::int64_t{100},
+        std::int64_t{150},
+        std::int64_t{199},
+        std::int64_t{200},
+        std::int64_t{250},
+        duration,
+    };
+    const std::array states{
+        core::PlaybackState::STOPPED,
+        core::PlaybackState::PAUSED,
+        core::PlaybackState::PLAYING,
+    };
+    const std::array sampleRates{44'100U, 48'000U};
+
+    for (const auto sampleRate : sampleRates) {
+        for (const auto initialState : states) {
+            for (const auto target : targets) {
+                PlaybackEngine engine;
+                auto output = std::make_unique<FakeOutput>(16U, 4U);
+                auto* observed = output.get();
+                QVERIFY(engine.install_candidate(
+                    open_pcm16_stereo(
+                        indexed_stereo_codes(duration),
+                        std::make_shared<ReaderControl>(),
+                        sampleRate),
+                    std::move(output),
+                    DeviceSampleFormat::PCM_S16));
+                QVERIFY(engine.set_loop(loop));
+                if (initialState == core::PlaybackState::PAUSED) {
+                    QVERIFY(engine.play());
+                    QVERIFY(engine.pause());
+                } else if (initialState == core::PlaybackState::PLAYING) {
+                    QVERIFY(engine.play());
+                }
+
+                const auto historyBefore = observed->history().size();
+                QVERIFY(engine.seek(core::FrameIndex{target}));
+                const auto immediate = engine.snapshot();
+                QVERIFY(immediate);
+                const auto expectedState =
+                    initialState == core::PlaybackState::PLAYING
+                        && target == duration
+                    ? core::PlaybackState::STOPPED
+                    : initialState;
+                QCOMPARE(immediate.value()->state, expectedState);
+                QCOMPARE(immediate.value()->position.value(), target);
+                QCOMPARE(immediate.value()->loop, std::optional{loop});
+
+                engine.tick();
+                const auto withoutProgress = engine.snapshot();
+                QVERIFY(withoutProgress);
+                QCOMPARE(withoutProgress.value()->position.value(), target);
+                QCOMPARE(withoutProgress.value()->loop, std::optional{loop});
+
+                if (initialState == core::PlaybackState::PLAYING
+                    && target < duration) {
+                    QVERIFY(observed->history().size() >= historyBefore + 4U);
+                    QCOMPARE(
+                        read_i16(observed->history(), historyBefore),
+                        static_cast<std::int16_t>(target));
+                    QVERIFY(observed->queue().size() >= 4U);
+                    QCOMPARE(
+                        read_i16(observed->queue(), 0U),
+                        static_cast<std::int16_t>(target));
+                }
+            }
+        }
+    }
+}
+
+void PlaybackSupportTest::explicitSeekLoopTraversalEofAndSrcIdentity()
+{
+    const auto smallLoop = *core::FrameRange::create(
+        core::FrameIndex{4}, core::FrameIndex{8}).value();
+    const auto codes = indexed_stereo_codes(16);
+
+    const auto verifyStart = [&](std::int64_t target,
+                                 const std::array<std::int16_t, 4>& expected) {
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(16U, 4U);
+        auto* observed = output.get();
+        QVERIFY(engine.install_candidate(
+            open_pcm16_stereo(codes),
+            std::move(output),
+            DeviceSampleFormat::PCM_S16));
+        QVERIFY(engine.set_loop(smallLoop));
+        QVERIFY(engine.seek(core::FrameIndex{target}));
+        QVERIFY(engine.play());
+        QCOMPARE(engine.snapshot().value()->position.value(), target);
+        for (std::size_t index = 0; index < expected.size(); ++index) {
+            QCOMPARE(
+                read_i16(observed->history(), index * 4U),
+                expected[index]);
+        }
+    };
+    verifyStart(2, {2, 3, 4, 5});
+    verifyStart(6, {6, 7, 4, 5});
+    verifyStart(8, {8, 9, 10, 11});
+    verifyStart(10, {10, 11, 12, 13});
+
+    PlaybackEngine endBoundaryLoop;
+    auto endBoundaryOutput = std::make_unique<FakeOutput>(16U, 4U);
+    auto* observedEndBoundary = endBoundaryOutput.get();
+    QVERIFY(endBoundaryLoop.install_candidate(
+        open_pcm16_stereo(codes),
+        std::move(endBoundaryOutput),
+        DeviceSampleFormat::PCM_S16));
+    const auto loopEndingAtEof = *core::FrameRange::create(
+        core::FrameIndex{12}, core::FrameIndex{16}).value();
+    QVERIFY(endBoundaryLoop.set_loop(loopEndingAtEof));
+    QVERIFY(endBoundaryLoop.seek(core::FrameIndex{14}));
+    QVERIFY(endBoundaryLoop.play());
+    const std::array<std::int16_t, 4> endBoundaryFrames{14, 15, 12, 13};
+    for (std::size_t index = 0; index < endBoundaryFrames.size(); ++index) {
+        QCOMPARE(
+            read_i16(observedEndBoundary->history(), index * 4U),
+            endBoundaryFrames[index]);
+    }
+    observedEndBoundary->consume_all();
+    endBoundaryLoop.tick();
+    QCOMPARE(
+        endBoundaryLoop.snapshot().value()->state,
+        core::PlaybackState::PLAYING);
+    QCOMPARE(
+        endBoundaryLoop.snapshot().value()->position.value(),
+        std::int64_t{14});
+    QCOMPARE(
+        endBoundaryLoop.snapshot().value()->loop,
+        std::optional{loopEndingAtEof});
+
+    PlaybackEngine traversal;
+    auto traversalOutput = std::make_unique<FakeOutput>(16U, 4U);
+    auto* observedTraversal = traversalOutput.get();
+    QVERIFY(traversal.install_candidate(
+        open_pcm16_stereo(codes),
+        std::move(traversalOutput),
+        DeviceSampleFormat::PCM_S16));
+    QVERIFY(traversal.set_loop(smallLoop));
+    QVERIFY(traversal.seek(core::FrameIndex{2}));
+    QVERIFY(traversal.play());
+    observedTraversal->consume_all();
+    traversal.tick();
+    QCOMPARE(traversal.snapshot().value()->position.value(), std::int64_t{6});
+    const std::array<std::int16_t, 4> wrapped{6, 7, 4, 5};
+    for (std::size_t index = 0; index < wrapped.size(); ++index) {
+        QCOMPARE(
+            read_i16(observedTraversal->history(), 16U + index * 4U),
+            wrapped[index]);
+    }
+    QVERIFY(traversal.pause());
+    const auto pausedPosition = traversal.snapshot().value()->position;
+    QVERIFY(traversal.play());
+    QCOMPARE(traversal.snapshot().value()->position, pausedPosition);
+
+    PlaybackEngine eof;
+    auto eofOutput = std::make_unique<FakeOutput>(64U, 4U);
+    auto* observedEof = eofOutput.get();
+    QVERIFY(eof.install_candidate(
+        open_pcm16_stereo(codes),
+        std::move(eofOutput),
+        DeviceSampleFormat::PCM_S16));
+    QVERIFY(eof.set_loop(smallLoop));
+    QVERIFY(eof.seek(core::FrameIndex{10}));
+    QVERIFY(eof.play());
+    observedEof->consume_all();
+    eof.tick();
+    const auto ended = eof.snapshot();
+    QVERIFY(ended);
+    QCOMPARE(ended.value()->state, core::PlaybackState::STOPPED);
+    QCOMPARE(ended.value()->position.value(), std::int64_t{16});
+    QCOMPARE(ended.value()->loop, std::optional{smallLoop});
+    QVERIFY(eof.play());
+    QCOMPARE(eof.snapshot().value()->state, core::PlaybackState::PLAYING);
+    QCOMPARE(eof.snapshot().value()->position.value(), std::int64_t{0});
+    QCOMPARE(eof.snapshot().value()->loop, std::optional{smallLoop});
+    QVERIFY(eof.stop());
+    QCOMPARE(eof.snapshot().value()->position.value(), std::int64_t{0});
+    QCOMPARE(eof.snapshot().value()->loop, std::optional{smallLoop});
+
+    const auto verifyAdapted = [](std::uint32_t inputRateValue,
+                                  std::uint32_t outputRateValue) {
+        constexpr std::int64_t sourceFrames = 480;
+        const auto runCase = [&](core::FrameRange loop,
+                                 std::int64_t target,
+                                 core::PlaybackState expectedState,
+                                 std::int64_t expectedPosition) {
+            const auto inputRate = core::SampleRate::create(inputRateValue);
+            const auto outputRate = core::SampleRate::create(outputRateValue);
+            QVERIFY(inputRate && outputRate);
+            auto converter = audio::PlaybackSampleRateAdapter::create(
+                audio::PlaybackRateSpec{
+                    *inputRate.value(),
+                    *outputRate.value(),
+                    audio::ChannelLayout::STEREO_LR,
+                    frame_count(sourceFrames),
+                });
+            QVERIFY(converter);
+            const auto mappedStart = converter.value()->map_input_frame_to_output(
+                core::FrameIndex{target});
+            const auto sourceBoundary = target < loop.end().value()
+                ? loop.end().value() : sourceFrames;
+            const auto mappedBoundary = converter.value()->map_input_frame_to_output(
+                core::FrameIndex{sourceBoundary});
+            QVERIFY(mappedStart && mappedBoundary);
+            const auto outputFrames = mappedBoundary.value()->value()
+                - mappedStart.value()->value();
+            QVERIFY(outputFrames > 0);
+
+            PlaybackEngine engine;
+            auto output = std::make_unique<FakeOutput>(
+                static_cast<std::size_t>(outputFrames) * 4U, 4U);
+            auto* observed = output.get();
+            QVERIFY(engine.install_candidate(
+                open_pcm16_stereo(
+                    indexed_stereo_codes(sourceFrames),
+                    std::make_shared<ReaderControl>(),
+                    inputRateValue),
+                std::move(output),
+                DeviceSampleFormat::PCM_S16,
+                std::move(*converter.value())));
+            QVERIFY(engine.set_loop(loop));
+            QVERIFY(engine.seek(core::FrameIndex{target}));
+            QVERIFY(engine.play());
+            QCOMPARE(engine.snapshot().value()->position.value(), target);
+            QCOMPARE(engine.snapshot().value()->loop, std::optional{loop});
+            observed->consume_all();
+            engine.tick();
+            QCOMPARE(engine.snapshot().value()->state, expectedState);
+            QCOMPARE(
+                engine.snapshot().value()->position.value(), expectedPosition);
+            QCOMPARE(engine.snapshot().value()->loop, std::optional{loop});
+        };
+
+        const auto middleLoop = *core::FrameRange::create(
+            core::FrameIndex{100}, core::FrameIndex{200}).value();
+        runCase(middleLoop, 50, core::PlaybackState::PLAYING, 100);
+        runCase(middleLoop, 150, core::PlaybackState::PLAYING, 100);
+        runCase(middleLoop, 200, core::PlaybackState::STOPPED, sourceFrames);
+        runCase(middleLoop, 250, core::PlaybackState::STOPPED, sourceFrames);
+
+        const auto eofLoop = *core::FrameRange::create(
+            core::FrameIndex{400}, core::FrameIndex{sourceFrames}).value();
+        runCase(eofLoop, 450, core::PlaybackState::PLAYING, 400);
+    };
+    verifyAdapted(44'100U, 48'000U);
+    verifyAdapted(48'000U, 44'100U);
+}
+
+void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
+{
+    constexpr std::int64_t duration = 400;
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{100}, core::FrameIndex{200}).value();
+    const std::array states{
+        core::PlaybackState::STOPPED,
+        core::PlaybackState::PAUSED,
+        core::PlaybackState::PLAYING,
+    };
+    const std::array positions{
+        std::int64_t{50}, std::int64_t{150},
+        std::int64_t{200}, std::int64_t{250}};
+
+    for (const auto requestedState : states) {
+        for (const auto position : positions) {
+            PlaybackEngine engine;
+            auto output = std::make_unique<FakeOutput>(16U, 4U);
+            auto* observed = output.get();
+            QVERIFY(engine.install_candidate(
+                open_pcm16_stereo(indexed_stereo_codes(duration)),
+                std::move(output),
+                DeviceSampleFormat::PCM_S16));
+            QVERIFY(engine.seek(core::FrameIndex{position}));
+            if (requestedState == core::PlaybackState::PAUSED) {
+                QVERIFY(engine.play());
+                QVERIFY(engine.pause());
+            } else if (requestedState == core::PlaybackState::PLAYING) {
+                QVERIFY(engine.play());
+            }
+            QVERIFY(engine.set_loop(loop));
+            const auto armed = engine.snapshot();
+            QVERIFY(armed);
+            QCOMPARE(armed.value()->state, requestedState);
+            QCOMPARE(armed.value()->position.value(), position);
+            QCOMPARE(armed.value()->loop, std::optional{loop});
+            QVERIFY(!engine.seek(core::FrameIndex{-1}));
+            const auto afterInvalidSeek = engine.snapshot();
+            QCOMPARE(afterInvalidSeek.value()->state, armed.value()->state);
+            QCOMPARE(afterInvalidSeek.value()->position, armed.value()->position);
+            QCOMPARE(afterInvalidSeek.value()->loop, armed.value()->loop);
+            const auto invalidLoop = *core::FrameRange::create(
+                core::FrameIndex{50}, core::FrameIndex{duration + 1}).value();
+            QVERIFY(!engine.set_loop(invalidLoop));
+            const auto afterInvalidLoop = engine.snapshot();
+            QCOMPARE(afterInvalidLoop.value()->state, armed.value()->state);
+            QCOMPARE(afterInvalidLoop.value()->position, armed.value()->position);
+            QCOMPARE(afterInvalidLoop.value()->loop, armed.value()->loop);
+            engine.tick();
+            QCOMPARE(engine.snapshot().value()->position.value(), position);
+
+            if (requestedState == core::PlaybackState::PLAYING) {
+                QVERIFY(observed->queue().size() >= 4U);
+                QCOMPARE(
+                    read_i16(observed->queue(), 0U),
+                    static_cast<std::int16_t>(position));
+            } else if (requestedState == core::PlaybackState::PAUSED) {
+                QVERIFY(observed->queue().empty());
+                QVERIFY(engine.play());
+                QCOMPARE(engine.snapshot().value()->position.value(), position);
+                QVERIFY(observed->queue().size() >= 4U);
+                QCOMPARE(
+                    read_i16(observed->queue(), 0U),
+                    static_cast<std::int16_t>(position));
+            }
+
+            const auto beforeDisable = engine.snapshot().value()->position;
+            QVERIFY(engine.set_loop(std::nullopt));
+            QCOMPARE(engine.snapshot().value()->position, beforeDisable);
+            QVERIFY(!engine.snapshot().value()->loop);
+        }
+    }
 }
 
 void PlaybackSupportTest::floatAndPcm16GoldenConversion()

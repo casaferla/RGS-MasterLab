@@ -240,6 +240,7 @@ core::Status PlaybackEngine::install_candidate(
     state_ = core::PlaybackState::STOPPED;
     position_ = core::FrameIndex{0};
     loop_.reset();
+    loopTraversalEligible_ = false;
     runtimeError_.reset();
     reset_queue_state(0);
     return core::Status::success();
@@ -266,6 +267,7 @@ core::Status PlaybackEngine::clear()
     duration_.reset();
     outputDuration_.reset();
     loop_.reset();
+    loopTraversalEligible_ = false;
     runtimeError_.reset();
     state_ = core::PlaybackState::NO_SOURCE;
     position_ = core::FrameIndex{0};
@@ -298,6 +300,7 @@ core::Status PlaybackEngine::play()
 
     if (position_.value() == duration_->value()) {
         position_ = core::FrameIndex{0};
+        loopTraversalEligible_ = loop_.has_value();
     }
     auto stopped = output_->stop();
     if (!stopped) {
@@ -357,6 +360,7 @@ core::Status PlaybackEngine::stop()
     output_->clear_queue();
     state_ = core::PlaybackState::STOPPED;
     position_ = core::FrameIndex{0};
+    loopTraversalEligible_ = loop_.has_value();
     runtimeError_.reset();
     reset_queue_state(0);
     return core::Status::success();
@@ -382,10 +386,15 @@ core::Status PlaybackEngine::seek(core::FrameIndex position)
     }
     output_->clear_queue();
     position_ = position;
+    loopTraversalEligible_ = loop_
+        && position.value() < loop_->end().value();
     runtimeError_.reset();
     reset_queue_state(position.value());
     if (previousState == core::PlaybackState::PLAYING) {
         state_ = core::PlaybackState::STOPPED;
+        if (position.value() == duration_->value()) {
+            return core::Status::success();
+        }
         auto restarted = play();
         if (!restarted) {
             state_ = core::PlaybackState::STOPPED;
@@ -414,21 +423,36 @@ core::Status PlaybackEngine::set_loop(std::optional<core::FrameRange> loop)
                 "Playback loop must be a non-empty range within the Source.");
         }
     }
-    loop_ = loop;
-    if (state_ != core::PlaybackState::PLAYING || !output_) {
-        return core::Status::success();
+    const auto previousPosition = position_;
+    const auto previousLoop = loop_;
+    const auto previousEligibility = loopTraversalEligible_;
+    const bool wasPlaying = state_ == core::PlaybackState::PLAYING;
+    const bool wasPaused = state_ == core::PlaybackState::PAUSED;
+    if (wasPlaying) {
+        update_position();
+    }
+    if ((wasPlaying || wasPaused) && output_) {
+        auto stopped = output_->stop();
+        if (!stopped) {
+            position_ = previousPosition;
+            loop_ = previousLoop;
+            loopTraversalEligible_ = previousEligibility;
+            return stopped;
+        }
+        output_->clear_queue();
     }
 
-    update_position();
-    auto stopped = output_->stop();
-    if (!stopped) {
-        return stopped;
-    }
-    output_->clear_queue();
-    if (loop_ && position_.value() >= loop_->end().value()) {
-        position_ = loop_->begin();
+    loop_ = loop;
+    loopTraversalEligible_ = loop_
+        && position_.value() < loop_->end().value();
+    if (!wasPlaying && !wasPaused) {
+        return core::Status::success();
     }
     reset_queue_state(position_.value());
+    if (wasPaused) {
+        state_ = core::PlaybackState::PAUSED;
+        return core::Status::success();
+    }
     state_ = core::PlaybackState::STOPPED;
     return play();
 }
@@ -534,7 +558,7 @@ core::Status PlaybackEngine::pump_once()
 
     const std::int64_t boundary = output_boundary();
     if (scheduledOutputFrame_ >= boundary) {
-        if (loop_) {
+        if (loop_ && loopTraversalEligible_) {
             scheduledOutputFrame_ =
                 source_to_output_frame(loop_->begin().value());
         } else {
@@ -593,7 +617,8 @@ core::Status PlaybackEngine::pump_once()
     scheduledOutputFrame_ += frames;
     if (!loop_ && scheduledOutputFrame_ == outputDuration_->value()) {
         eofScheduled_ = true;
-    } else if (loop_ && scheduledOutputFrame_ == output_boundary()) {
+    } else if (loop_ && loopTraversalEligible_
+        && scheduledOutputFrame_ == output_boundary()) {
         scheduledOutputFrame_ =
             source_to_output_frame(loop_->begin().value());
     }
@@ -612,15 +637,17 @@ void PlaybackEngine::update_position() noexcept
     } else {
         candidateOutput = outputDuration_->value();
     }
-    if (loop_) {
+    if (loop_ && loopTraversalEligible_) {
         const auto loopBeginOutput =
             source_to_output_frame(loop_->begin().value());
         const auto loopEndOutput =
             source_to_output_frame(loop_->end().value());
-        if (candidateOutput >= loopEndOutput) {
+        if (processed > 0 && candidateOutput >= loopEndOutput) {
             const auto loopLength = loopEndOutput - loopBeginOutput;
-            candidateOutput = loopBeginOutput
-                + ((candidateOutput - loopEndOutput) % loopLength);
+            if (loopLength > 0) {
+                candidateOutput = loopBeginOutput
+                    + ((candidateOutput - loopEndOutput) % loopLength);
+            }
         }
     } else {
         candidateOutput = std::min(candidateOutput, outputDuration_->value());
@@ -674,7 +701,7 @@ std::int64_t PlaybackEngine::output_to_source_frame(
 
 std::int64_t PlaybackEngine::output_boundary() const noexcept
 {
-    return loop_
+    return loop_ && loopTraversalEligible_
         ? source_to_output_frame(loop_->end().value())
         : outputDuration_->value();
 }

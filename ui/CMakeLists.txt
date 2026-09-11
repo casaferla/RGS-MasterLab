@@ -5,9 +5,12 @@ qt_add_qml_module(rgsml_ui
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/Rgsml/Ui"
     QML_FILES
         qml/Main.qml
+        qml/SegmentedTimeEditor.qml
     SOURCES
         src/internal/waveform_geometry.cpp
         src/internal/waveform_geometry.hpp
+        src/internal/waveform_viewport.cpp
+        src/internal/waveform_viewport.hpp
         src/waveform_item.cpp
         src/waveform_item.hpp
         src/waveform_presentation.cpp
