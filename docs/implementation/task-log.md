@@ -114,3 +114,25 @@
 - RF-1: MATERIALIZED; frozen estimates unchanged.
 - Integration: NOT_MERGED_TO_MAIN
 - Next task: TASK_010_NOT_PREPARED_OR_STARTED
+
+## L1-M07 — Canonical Module Registry, Module Instance, and Dynamic Mastering Chain
+
+- Status: READY_FOR_REVIEW
+- Baseline: `830b8b9b54ce4a46d0b41a2705f87e6446f37c55`
+- Branch: `task/L1-M07-module-registry-dynamic-chain`
+- Delivery subject: `CODEX TASK 010 / L1-M07`
+- Scope: static Qt/platform-free `rgsml_dsp`, exact `IModule` and immutable
+  descriptor contracts, one canonical eleven-entry descriptor-only registry,
+  stable module-instance identity, and atomic structural chain mutations.
+- Baseline conflict:
+  `BASELINE_CONFLICT_DISCOVERED — RESOLVED_BY_TARGETED_FORWARD_DELTA`;
+  `TARGETED_DELTA_REQUIRED — MATERIALIZED`.
+- DSP package: 11 descriptors; 0 production factories; 0 production
+  processors; no DSP mathematics.
+- Manual gate: NOT_REQUIRED_C_PLUS_U.
+- R12-01: inherited unchanged.
+- R12-02: MITIGATED_FOR_WINDOWS_L1-M05; residual monitoring remains open.
+- RF-1: MATERIALIZED; frozen estimates unchanged.
+- Alt+F4 active-capture residual: PO_ACCEPTED_DEFERRED / NON-BLOCKING.
+- Integration: NOT_MERGED_TO_MAIN
+- Next task: TASK_011_NOT_PREPARED_OR_STARTED

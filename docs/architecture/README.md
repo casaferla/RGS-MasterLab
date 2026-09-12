@@ -188,3 +188,30 @@ existing `PlaybackTransportViewModel`, which in turn uses the frozen
 and failure preserves the previously committed region. The state is runtime
 only: it is not project persistence, analysis/processing scope, DSP, or a
 render contract.
+
+## Structural DSP registry and dynamic chain
+
+L1-M07 introduces the static `rgsml_dsp` target. It depends only on
+`rgsml_core` and `rgsml_audio`; it is Qt-free, platform-free, and suitable for
+shared Windows/Android core use. Its public boundary contains the exact
+streaming `IModule` contract and immutable structural value types. No
+application or QML integration is present.
+
+The canonical `ModuleRegistry` validates and owns one deterministic,
+unsigned-ASCII-sorted catalog of eleven complete `ModuleDescriptor` values.
+Descriptor existence is deliberately separate from execution availability:
+the L1-M07 catalog contains zero production factories and zero production
+processors, so every execution lookup reports
+`MODULE_IMPLEMENTATION_UNAVAILABLE`.
+
+`ModuleInstance` gives each occurrence a stable typed identity while keeping
+enabled, bypassed, ownership, and link state independent. `ProcessingChain`
+stores exact stage/segment context and applies add, remove, reorder, duplicate,
+and bypass changes atomically: it validates a candidate topology before
+publishing it and advances a checked structural revision only on success.
+Hard placement, terminal-slot, must-be-last, single-active, and ordering
+constraints reject invalid topology; recommendations remain advisory.
+
+This milestone contains structural contracts only. It does not implement DSP
+mathematics, Gain processing, parameter execution, production factories or
+processors, rendering, persistence, project state, or chain UI.

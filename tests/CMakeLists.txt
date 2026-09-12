@@ -395,6 +395,42 @@ set_tests_properties(rgsml_playback_device_probe PROPERTIES
     LABELS "playback_device"
 )
 
+foreach(dsp_test IN ITEMS
+    module_descriptor
+    module_registry
+    processing_chain
+    structural_integration)
+    qt_add_executable("rgsml_dsp_${dsp_test}_tests"
+        "${CMAKE_CURRENT_SOURCE_DIR}/unit/dsp/test_${dsp_test}.cpp"
+    )
+    target_include_directories("rgsml_dsp_${dsp_test}_tests"
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/dsp/src
+    )
+    target_link_libraries("rgsml_dsp_${dsp_test}_tests"
+        PRIVATE
+            rgsml_dsp
+            Qt6::Test
+    )
+    rgsml_apply_project_warnings("rgsml_dsp_${dsp_test}_tests")
+    add_test(
+        NAME "rgsml_dsp_${dsp_test}_tests"
+        COMMAND "rgsml_dsp_${dsp_test}_tests"
+    )
+    set(dsp_test_labels "dsp")
+    if(dsp_test STREQUAL "module_registry")
+        list(APPEND dsp_test_labels module_registry)
+    elseif(dsp_test STREQUAL "processing_chain")
+        list(APPEND dsp_test_labels processing_chain)
+    elseif(dsp_test STREQUAL "structural_integration")
+        list(APPEND dsp_test_labels module_registry processing_chain)
+    endif()
+    set_tests_properties("rgsml_dsp_${dsp_test}_tests" PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "${dsp_test_labels}"
+    )
+endforeach()
+
 foreach(dependency_case
     core_dependency_graph_allowed
     core_public_headers_standalone
@@ -424,6 +460,30 @@ foreach(dependency_case
             "-DTEST_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
             "-DTEST_CONFIG=$<CONFIG>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_dependency_rules.cmake"
+    )
+    set_tests_properties("${dependency_case}" PROPERTIES
+        RUN_SERIAL TRUE
+        LABELS "dependency_contract"
+    )
+endforeach()
+
+foreach(dependency_case
+    dsp_dependency_graph_allowed
+    dsp_public_headers_standalone
+    dsp_forbidden_public_contract
+    dsp_dependency_rule_negative_fixture
+    dsp_dependency_rule_positive_fixture)
+    add_test(
+        NAME "${dependency_case}"
+        COMMAND
+            "${CMAKE_COMMAND}"
+            "-DCASE=${dependency_case}"
+            "-DRGSML_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+            "-DRGSML_TEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+            "-DTEST_GENERATOR=${CMAKE_GENERATOR}"
+            "-DTEST_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+            "-DTEST_CONFIG=$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/dependency_rules_fixture/test_dsp_dependency_rules.cmake"
     )
     set_tests_properties("${dependency_case}" PROPERTIES
         RUN_SERIAL TRUE
