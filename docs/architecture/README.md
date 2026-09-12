@@ -215,3 +215,29 @@ constraints reject invalid topology; recommendations remain advisory.
 This milestone contains structural contracts only. It does not implement DSP
 mathematics, Gain processing, parameter execution, production factories or
 processors, rendering, persistence, project state, or chain UI.
+
+## Gain-v1 and chunked Render Preview
+
+L1-M08 makes only `rgsml.dsp.gain` executable. `GainParameters` owns one
+canonical binary64 `gainDb` value in the inclusive `[-24,+24]` dB range;
+negative zero becomes positive zero and invalid/non-finite inputs are rejected.
+`GainModule` implements the frozen stateless law `10^(gainDb/20)` with a
+once-materialized factor, an exact checked 0 dB identity path, one scalar
+binary64 multiplication per nonzero-Gain sample, and zero latency, context,
+tail, prepass, or smoothing. The registry therefore remains eleven descriptors
+while exposing exactly one production factory and processor.
+
+The static, Qt/platform-free `rgsml_render` target depends only on DSP, audio,
+and core. Its immutable `RenderRequest` borrows a read-only canonical Source
+view for one synchronous call and owns the chain snapshot and exact Gain
+bindings. `render_preview` validates the complete request before publishing a
+result, executes contiguous absolute Source-frame chunks with bounded process
+storage, preserves sample rate/layout/domain, and never mutates Source.
+`RenderResult` independently owns exactly the requested canonical binary64
+window plus chain revision and ordered Gain signature contributions.
+
+This preview is not Final Render: it has no writer/export, output SRC,
+cancellation/job API, cache, persistence, UI, Gold, Reference Match, or format
+dispatch. The only input scope remains WAV. A Windows-only tests harness may
+audition completed `RenderResult` data through Qt Multimedia, but that
+dependency is excluded from both production libraries and tests-off builds.

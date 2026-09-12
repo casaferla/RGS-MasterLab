@@ -13,16 +13,20 @@ include("${RGSML_SOURCE_DIR}/cmake/RgsmlWarnings.cmake")
 include("${RGSML_SOURCE_DIR}/cmake/RgsmlDependencyRules.cmake")
 add_subdirectory("${RGSML_SOURCE_DIR}/core" rgsml_core_build)
 
-if(FIXTURE_CASE MATCHES "^(audio_|platform_|dsp_)"
+if(FIXTURE_CASE MATCHES "^(audio_|platform_|dsp_|render_)"
     OR FIXTURE_CASE STREQUAL "core_negative_audio"
     OR FIXTURE_CASE STREQUAL "core_negative_dsp")
     add_subdirectory("${RGSML_SOURCE_DIR}/audio" rgsml_audio_build)
 endif()
 
-if(FIXTURE_CASE MATCHES "^dsp_"
+if(FIXTURE_CASE MATCHES "^(dsp_|render_)"
     OR FIXTURE_CASE STREQUAL "core_negative_dsp"
     OR FIXTURE_CASE STREQUAL "audio_negative_dsp")
     add_subdirectory("${RGSML_SOURCE_DIR}/dsp" rgsml_dsp_build)
+endif()
+
+if(FIXTURE_CASE MATCHES "^render_")
+    add_subdirectory("${RGSML_SOURCE_DIR}/render" rgsml_render_build)
 endif()
 
 if(FIXTURE_CASE MATCHES "^platform_" OR FIXTURE_CASE STREQUAL "audio_negative_platform")
@@ -151,6 +155,56 @@ if(FIXTURE_CASE STREQUAL "dsp_positive")
     rgsml_assert_target_dependencies(
         TARGET rgsml_dsp
         FORBIDDEN_LAYERS QT QML PLATFORM UI PROJECT RENDER)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "render_graph")
+    rgsml_assert_target_dependencies(
+        TARGET rgsml_render
+        FORBIDDEN_LAYERS QT QML PLATFORM UI PROJECT)
+    rgsml_assert_target_dependencies(
+        TARGET rgsml_dsp
+        FORBIDDEN_LAYERS QT QML PLATFORM UI PROJECT RENDER)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "render_headers")
+    foreach(public_header IN ITEMS
+        render_preview.hpp
+        render_request.hpp
+        render_result.hpp)
+        string(REPLACE "." "_" header_target "render_standalone_${public_header}")
+        set(header_source "${CMAKE_CURRENT_BINARY_DIR}/${header_target}.cpp")
+        file(WRITE "${header_source}"
+            "#include <rgsml/render/${public_header}>\nint ${header_target}() { return 0; }\n")
+        add_library("${header_target}" OBJECT "${header_source}")
+        target_link_libraries("${header_target}" PRIVATE rgsml_render)
+        rgsml_apply_project_warnings("${header_target}")
+    endforeach()
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "render_positive")
+    add_executable(render_dependency_consumer render_allowed_consumer.cpp)
+    target_link_libraries(render_dependency_consumer PRIVATE rgsml_render)
+    rgsml_apply_project_warnings(render_dependency_consumer)
+    rgsml_assert_target_dependencies(
+        TARGET rgsml_render
+        FORBIDDEN_LAYERS QT QML PLATFORM UI PROJECT)
+    return()
+endif()
+
+if(FIXTURE_CASE MATCHES "^render_negative_(qt|qml|platform|ui|project)$")
+    string(REGEX REPLACE "^render_negative_" "" forbidden_layer "${FIXTURE_CASE}")
+    string(TOUPPER "${forbidden_layer}" forbidden_layer)
+    add_library(fixture_forbidden INTERFACE)
+    set_property(
+        TARGET fixture_forbidden
+        PROPERTY RGSML_DEPENDENCY_LAYER "${forbidden_layer}")
+    target_link_libraries(rgsml_render PRIVATE fixture_forbidden)
+    rgsml_assert_target_dependencies(
+        TARGET rgsml_render
+        FORBIDDEN_LAYERS QT QML PLATFORM UI PROJECT)
     return()
 endif()
 

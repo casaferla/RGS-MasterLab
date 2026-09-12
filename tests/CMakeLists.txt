@@ -431,6 +431,83 @@ foreach(dsp_test IN ITEMS
     )
 endforeach()
 
+qt_add_executable(rgsml_gain_tests
+    unit/dsp/test_gain.cpp
+)
+target_link_libraries(rgsml_gain_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_gain_tests)
+add_test(NAME rgsml_gain_tests COMMAND rgsml_gain_tests)
+set_tests_properties(rgsml_gain_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;gain"
+)
+
+qt_add_executable(rgsml_render_preview_tests
+    unit/render/test_render_preview.cpp
+)
+target_link_libraries(rgsml_render_preview_tests
+    PRIVATE
+        rgsml_render
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_render_preview_tests)
+add_test(NAME rgsml_render_preview_tests COMMAND rgsml_render_preview_tests)
+set_tests_properties(rgsml_render_preview_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;gain;render"
+)
+
+qt_add_executable(rgsml_gain_golden_tests
+    audio_golden/gain/test_gain_golden.cpp
+)
+target_link_libraries(rgsml_gain_golden_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_gain_golden_tests)
+add_test(NAME rgsml_gain_golden_tests COMMAND rgsml_gain_golden_tests)
+set_tests_properties(rgsml_gain_golden_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;gain;audio_golden"
+)
+
+qt_add_executable(rgsml_render_wav_tests
+    integration/render/test_render_wav.cpp
+)
+target_link_libraries(rgsml_render_wav_tests
+    PRIVATE
+        rgsml_render
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_render_wav_tests)
+add_test(NAME rgsml_render_wav_tests COMMAND rgsml_render_wav_tests)
+set_tests_properties(rgsml_render_wav_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;audio_golden;dsp;gain;render"
+)
+
+if(WIN32)
+    qt_add_executable(rgsml_gain_listening_gate
+        manual/gain_preview/gain_listening_gate.cpp
+    )
+    target_link_libraries(rgsml_gain_listening_gate
+        PRIVATE
+            rgsml_render
+            rgsml_platform
+            Qt6::Core
+            Qt6::Multimedia
+    )
+    set_target_properties(rgsml_gain_listening_gate PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+    rgsml_apply_project_warnings(rgsml_gain_listening_gate)
+endif()
+
 foreach(dependency_case
     core_dependency_graph_allowed
     core_public_headers_standalone
@@ -464,6 +541,30 @@ foreach(dependency_case
     set_tests_properties("${dependency_case}" PROPERTIES
         RUN_SERIAL TRUE
         LABELS "dependency_contract"
+    )
+endforeach()
+
+foreach(dependency_case
+    render_dependency_graph_allowed
+    render_public_headers_standalone
+    render_forbidden_public_contract
+    render_dependency_rule_negative_fixture
+    render_dependency_rule_positive_fixture)
+    add_test(
+        NAME "${dependency_case}"
+        COMMAND
+            "${CMAKE_COMMAND}"
+            "-DCASE=${dependency_case}"
+            "-DRGSML_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+            "-DRGSML_TEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+            "-DTEST_GENERATOR=${CMAKE_GENERATOR}"
+            "-DTEST_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+            "-DTEST_CONFIG=$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/dependency_rules_fixture/test_render_dependency_rules.cmake"
+    )
+    set_tests_properties("${dependency_case}" PROPERTIES
+        RUN_SERIAL TRUE
+        LABELS "dependency_contract;render"
     )
 endforeach()
 

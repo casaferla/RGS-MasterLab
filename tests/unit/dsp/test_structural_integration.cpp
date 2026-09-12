@@ -59,7 +59,7 @@ void StructuralIntegrationTest::deterministicPublicApiTrace()
         firstRegistry.value()->descriptors(),
         secondRegistry.value()->descriptors()));
     QCOMPARE(firstRegistry.value()->descriptors().size(), std::size_t{11});
-    QCOMPARE(firstRegistry.value()->factory_count(), std::size_t{0});
+    QCOMPARE(firstRegistry.value()->factory_count(), std::size_t{1});
 
     std::uint64_t firstRevision = 0;
     std::uint64_t secondRevision = 0;
@@ -79,12 +79,15 @@ void StructuralIntegrationTest::deterministicPublicApiTrace()
         QCOMPARE(
             descriptor.value()->get().type_id(),
             instance.module_type_id());
-        auto unavailable =
-            firstRegistry.value()->create_module(instance.module_type_id());
-        QVERIFY(unavailable.error() != nullptr);
-        QCOMPARE(
-            error_category(*unavailable.error()),
-            std::string_view{"MODULE_IMPLEMENTATION_UNAVAILABLE"});
+        auto module = firstRegistry.value()->create_module(instance.module_type_id());
+        if (instance.module_type_id() == "rgsml.dsp.gain") {
+            QVERIFY(module.value() != nullptr);
+        } else {
+            QVERIFY(module.error() != nullptr);
+            QCOMPARE(
+                error_category(*module.error()),
+                std::string_view{"MODULE_IMPLEMENTATION_UNAVAILABLE"});
+        }
     }
 }
 

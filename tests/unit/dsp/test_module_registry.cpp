@@ -116,13 +116,20 @@ void ModuleRegistryTest::emptyLookupAndUnavailableCatalog()
 
     auto catalog = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(catalog.value() != nullptr);
+    QCOMPARE(catalog.value()->factory_count(), std::size_t{1});
     for (const auto& descriptor : catalog.value()->descriptors()) {
-        QVERIFY(!catalog.value()->has_factory(descriptor.type_id()));
-        auto unavailable = catalog.value()->create_module(descriptor.type_id());
-        QVERIFY(unavailable.error() != nullptr);
-        QCOMPARE(
-            error_category(*unavailable.error()),
-            std::string_view{"MODULE_IMPLEMENTATION_UNAVAILABLE"});
+        const auto isGain = descriptor.type_id() == "rgsml.dsp.gain";
+        QCOMPARE(catalog.value()->has_factory(descriptor.type_id()), isGain);
+        auto module = catalog.value()->create_module(descriptor.type_id());
+        if (isGain) {
+            QVERIFY(module.value() != nullptr);
+            QCOMPARE((*module.value())->descriptor().type_id(), descriptor.type_id());
+        } else {
+            QVERIFY(module.error() != nullptr);
+            QCOMPARE(
+                error_category(*module.error()),
+                std::string_view{"MODULE_IMPLEMENTATION_UNAVAILABLE"});
+        }
     }
     auto unknown = catalog.value()->create_module("rgsml.dsp.unknown");
     QVERIFY(unknown.error() != nullptr);

@@ -1,4 +1,6 @@
 add_library(rgsml_dsp STATIC
+    src/gain_parameters.cpp
+    src/gain_module.cpp
     src/module_descriptor.cpp
     src/module_registry.cpp
     src/processing_chain.cpp

@@ -136,3 +136,24 @@
 - Alt+F4 active-capture residual: PO_ACCEPTED_DEFERRED / NON-BLOCKING.
 - Integration: NOT_MERGED_TO_MAIN
 - Next task: TASK_011_NOT_PREPARED_OR_STARTED
+
+## L1-M08 — Gain and first chunked identity/Gain Render Preview
+
+- Status: READY_FOR_REVIEW
+- Baseline: `2e1bca98c589264c3a1b51e5367f19b425bd2975`
+- Branch: `task/L1-M08-gain-render-preview`
+- Delivery subject: `CODEX TASK 011 / L1-M08`
+- Authority: `MISSING_AUTHORITATIVE_DSP_INPUT — RESOLVED_BY_L1-M08_GAIN_FORWARD_DELTA`.
+- Scope: production immutable Gain-v1, registry transition to 11 descriptors / 1
+  factory / 1 processor, Qt-free bounded same-rate chunked Render Preview,
+  independent binary64 oracle, Source immutability, and a tests-only Windows
+  listening harness.
+- Human Listening Gate: PASS on `Altoparlanti (High Definition Audio Device)`
+  with physically connected headphones; 0 dB, +6 dB, and -12 dB were accepted
+  with no audible click, dropout, coloration, or chunk-boundary artifact.
+- R12-01: inherited unchanged.
+- R12-02: MITIGATED_FOR_WINDOWS_L1-M05; residual monitoring remains open.
+- RF-1: MATERIALIZED; frozen estimates unchanged.
+- RF-2: MATERIALIZED_AT_L1-M08; frozen Phase-12 estimates unchanged.
+- Integration: NOT_MERGED_TO_MAIN
+- Next task: TASK_012_NOT_PREPARED_OR_STARTED

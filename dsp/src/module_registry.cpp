@@ -1,6 +1,8 @@
 #include <rgsml/dsp/module_registry.hpp>
 
 #include <rgsml/core/error.hpp>
+#include <rgsml/dsp/gain_module.hpp>
+#include <rgsml/dsp/gain_parameters.hpp>
 
 #include <algorithm>
 #include <array>
@@ -16,6 +18,38 @@ namespace {
 using rgsml::core::Error;
 using rgsml::core::ErrorCode;
 using rgsml::core::Result;
+
+constexpr auto kGainTypeId = "rgsml.dsp.gain";
+
+class GainFactory final : public IModuleFactory {
+public:
+    explicit GainFactory(ModuleDescriptor descriptor)
+        : descriptor_(std::move(descriptor))
+    {
+    }
+
+    [[nodiscard]] std::string_view module_type_id() const noexcept override
+    {
+        return descriptor_.type_id();
+    }
+
+    [[nodiscard]] Result<std::unique_ptr<IModule>> create() const override
+    {
+        auto parameters = GainParameters::create(0.0);
+        if (!parameters) {
+            return Result<std::unique_ptr<IModule>>::failure(*parameters.error());
+        }
+        auto module = GainModule::create(descriptor_, *parameters.value());
+        if (!module) {
+            return Result<std::unique_ptr<IModule>>::failure(*module.error());
+        }
+        std::unique_ptr<IModule> result = std::move(*module.value());
+        return Result<std::unique_ptr<IModule>>::success(std::move(result));
+    }
+
+private:
+    ModuleDescriptor descriptor_;
+};
 
 [[nodiscard]] Error registry_error(
     ErrorCode code,
@@ -115,7 +149,12 @@ using rgsml::core::Result;
         {PRE_MASTER_CONDITIONING, MANUAL, DNA_LINKED, REF_LINKED},
         true,
         INLINE_CHAIN,
-        std::nullopt));
+        std::nullopt,
+        {},
+        false,
+        false,
+        "1.0.0",
+        "rgsml.dsp.gain.parameters/1.0.0"));
     specs.push_back(make_spec(
         "rgsml.dsp.parametric-eq",
         {FILTER_EQ},
@@ -324,9 +363,14 @@ Result<ModuleRegistry> ModuleRegistry::create_dsp_package_v1()
         if (!descriptor) {
             return Result<ModuleRegistry>::failure(*descriptor.error());
         }
+        auto canonical_descriptor = std::move(*descriptor.value());
+        std::shared_ptr<const IModuleFactory> factory;
+        if (canonical_descriptor.type_id() == kGainTypeId) {
+            factory = std::make_shared<GainFactory>(canonical_descriptor);
+        }
         registrations.push_back(ModuleRegistration{
-            std::move(*descriptor.value()),
-            nullptr});
+            std::move(canonical_descriptor),
+            std::move(factory)});
     }
     return create(std::move(registrations));
 }
