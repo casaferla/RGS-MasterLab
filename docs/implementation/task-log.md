@@ -157,3 +157,30 @@
 - RF-2: MATERIALIZED_AT_L1-M08; frozen Phase-12 estimates unchanged.
 - Integration: NOT_MERGED_TO_MAIN
 - Next task: TASK_012_NOT_PREPARED_OR_STARTED
+
+## L1-M09 — IEEE-F64 WAV writer and safe Render Preview export
+
+- Status: READY_FOR_REVIEW
+- Baseline: `ae821ba9265f98cae9a6b0a08eafbde0c8e9a975`
+- Branch: `task/L1-M09-wav-writer-safe-export`
+- Delivery subject: `CODEX TASK 012 / L1-M09`
+- Scope: deterministic bounded IEEE-F64 RIFF/RF64 `WavWriter`, Windows
+  create-new writer adapter, fail-closed new-file transactional export,
+  encoded-file SHA-256, canonical decoded `RGSDAU1` SHA-256, canonical
+  `WavReader` validation/readback, and deterministic failure injection.
+- Automated qualification: Debug 62/62; Release 62/62; focused Task 012
+  Release 3/3; dependency/public-header contracts 27/27 in both configurations;
+  tests-off and staged deploy smoke PASS.
+- Manual Functional Gate: PASS using the tracked 48 kHz stereo listening WAV;
+  Source collision and existing destination were rejected, Source remained
+  byte-identical, and no successful candidate leaked.
+- Output scope: IEEE_F64 RIFF/RF64 only; input scope remains WAV_ONLY.
+- New external dependencies: NONE.
+- ToolchainManifest: unchanged and byte-identical, SHA-256
+  `49D7AF5974E7F39FCAE5A44193EAF913D4CCF7282746CA4860D29CF706223E11`.
+- R12-01: inherited unchanged.
+- R12-02: MITIGATED_FOR_WINDOWS_L1-M05; residual monitoring remains open.
+- RF-1: MATERIALIZED; frozen estimates unchanged.
+- RF-2: MATERIALIZED_AT_L1-M08; frozen Phase-12 estimates unchanged.
+- Integration: NOT_MERGED_TO_MAIN
+- Next task: TASK_013_NOT_PREPARED_OR_STARTED

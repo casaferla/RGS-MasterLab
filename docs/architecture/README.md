@@ -241,3 +241,27 @@ cancellation/job API, cache, persistence, UI, Gold, Reference Match, or format
 dispatch. The only input scope remains WAV. A Windows-only tests harness may
 audition completed `RenderResult` data through Qt Multimedia, but that
 dependency is excluded from both production libraries and tests-off builds.
+
+## IEEE-F64 WAV writing and transactional new-file export
+
+L1-M09 adds a deterministic `WavWriter` to `rgsml_audio`. It consumes the
+frozen `IResourceWriter` byte port and canonical planar binary64 audio, emits
+frame-major little-endian IEEE-F64 WAV, and selects RIFF or RF64 solely from
+the exact declared layout. The writer is bounded, handles short writes, rejects
+non-finite samples, preserves signed zero and subnormal payload bits, and owns
+no filesystem or publication policy.
+
+The Windows platform layer supplies the create-new-only
+`WindowsResourceWriter` adapter and `TransactionalAudioExporter`. Export is
+fail-closed: Source identity and destination collision checks precede a unique
+sibling candidate; that candidate is written, closed, decoded through the
+canonical `WavReader`, bit-compared, and checked with both encoded-file SHA-256
+and the private domain-separated `RGSDAU1` decoded-audio SHA-256 before a
+no-replace rename. The committed destination is hashed again. Failed
+transactions best-effort remove only their owned candidate and never replace
+Source or a pre-existing destination.
+
+L1-M09 is a safe Render Preview export boundary, not Final Render. It adds no
+quantizer, PCM24, Float32 output, dither, SRC, normalization, clipping,
+metadata/provenance chunks, UI, persistence, recovery journal, Gold, Reference
+Match, format expansion, or third-party dependency.

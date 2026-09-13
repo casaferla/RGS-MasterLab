@@ -5,6 +5,7 @@ add_library(rgsml_audio STATIC
     src/source_resource.cpp
     src/waveform_summary.cpp
     src/wav_reader.cpp
+    src/wav_writer.cpp
 )
 
 target_include_directories(rgsml_audio

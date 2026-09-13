@@ -99,7 +99,8 @@ if(FIXTURE_CASE STREQUAL "audio_headers")
         source_resource.hpp
         waveform_summary.hpp
         wav_format.hpp
-        wav_reader.hpp)
+        wav_reader.hpp
+        wav_writer.hpp)
     foreach(public_header IN LISTS public_headers)
         string(REPLACE "." "_" header_target "audio_standalone_${public_header}")
         set(header_source "${CMAKE_CURRENT_BINARY_DIR}/${header_target}.cpp")
@@ -244,7 +245,7 @@ endif()
 if(FIXTURE_CASE STREQUAL "platform_headers")
     set(header_source "${CMAKE_CURRENT_BINARY_DIR}/platform_standalone_header.cpp")
     file(WRITE "${header_source}"
-        "#include <rgsml/platform/windows/windows_resource_reader.hpp>\n#include <rgsml/platform/windows/windows_audio_playback_service.hpp>\nint platform_header() { return 0; }\n")
+        "#include <rgsml/platform/windows/windows_resource_reader.hpp>\n#include <rgsml/platform/windows/windows_resource_writer.hpp>\n#include <rgsml/platform/windows/transactional_audio_exporter.hpp>\n#include <rgsml/platform/windows/windows_audio_playback_service.hpp>\nint platform_header() { return 0; }\n")
     add_library(platform_standalone_header OBJECT "${header_source}")
     target_link_libraries(platform_standalone_header PRIVATE rgsml_platform)
     rgsml_apply_project_warnings(platform_standalone_header)

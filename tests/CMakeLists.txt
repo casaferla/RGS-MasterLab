@@ -69,6 +69,65 @@ set_tests_properties(rgsml_audio_wav_reader_tests PROPERTIES
     LABELS "audio;audio_golden"
 )
 
+qt_add_executable(rgsml_audio_wav_writer_tests
+    unit/audio/test_wav_writer.cpp
+)
+
+qt_add_executable(rgsml_export_checksum_tests
+    unit/platform/test_export_checksums.cpp
+)
+
+qt_add_executable(rgsml_transactional_audio_export_tests
+    integration/platform/test_transactional_audio_exporter.cpp
+)
+target_include_directories(rgsml_transactional_audio_export_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/platform/windows/src
+)
+target_compile_definitions(rgsml_transactional_audio_export_tests
+    PRIVATE
+        RGSML_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+target_link_libraries(rgsml_transactional_audio_export_tests
+    PRIVATE
+        rgsml_render
+        rgsml_platform
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_transactional_audio_export_tests)
+add_test(NAME rgsml_transactional_audio_export_tests COMMAND rgsml_transactional_audio_export_tests)
+set_tests_properties(rgsml_transactional_audio_export_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;audio_golden;render;platform;export;transaction"
+)
+target_include_directories(rgsml_export_checksum_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/platform/windows/src
+)
+target_link_libraries(rgsml_export_checksum_tests
+    PRIVATE
+        rgsml_platform
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_export_checksum_tests)
+add_test(NAME rgsml_export_checksum_tests COMMAND rgsml_export_checksum_tests)
+set_tests_properties(rgsml_export_checksum_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;platform;checksum;export"
+)
+target_link_libraries(rgsml_audio_wav_writer_tests
+    PRIVATE
+        rgsml_audio
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_audio_wav_writer_tests)
+add_test(NAME rgsml_audio_wav_writer_tests COMMAND rgsml_audio_wav_writer_tests)
+set_tests_properties(rgsml_audio_wav_writer_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;audio_golden;wav_writer;export"
+)
+
 qt_add_executable(rgsml_waveform_summary_tests
     unit/audio/test_waveform_summary.cpp
 )
@@ -492,6 +551,24 @@ set_tests_properties(rgsml_render_wav_tests PROPERTIES
 )
 
 if(WIN32)
+    qt_add_executable(rgsml_export_functional_gate
+        manual/export/export_functional_gate.cpp
+    )
+    target_include_directories(rgsml_export_functional_gate
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/platform/windows/src
+    )
+    target_link_libraries(rgsml_export_functional_gate
+        PRIVATE
+            rgsml_render
+            rgsml_platform
+            Qt6::Core
+    )
+    set_target_properties(rgsml_export_functional_gate PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+    rgsml_apply_project_warnings(rgsml_export_functional_gate)
+
     qt_add_executable(rgsml_gain_listening_gate
         manual/gain_preview/gain_listening_gate.cpp
     )
