@@ -340,9 +340,9 @@ struct OutputCandidate final {
 }
 
 [[nodiscard]] core::Result<OutputCandidate> make_output_candidate(
-    const audio::WavStreamInfo& sourceInfo)
+    const audio::AudioFormat& sourceFormat,
+    core::FrameCount sourceFrameCount)
 {
-    const auto& sourceFormat = sourceInfo.audio_format();
     const auto defaultOutput = QMediaDevices::defaultAudioOutput();
     if (defaultOutput.isNull() || defaultOutput.mode() != QAudioDevice::Output) {
         return failure<OutputCandidate>(
@@ -366,8 +366,10 @@ struct OutputCandidate final {
         sourceFormat,
         defaultOutput.isFormatSupported(exactFloatFormat),
         defaultOutput.isFormatSupported(exactPcm16Format),
-        pairedRate != 0 && defaultOutput.isFormatSupported(pairedFloatFormat),
-        pairedRate != 0 && defaultOutput.isFormatSupported(pairedPcm16Format));
+        pairedRate != 0
+            && defaultOutput.isFormatSupported(pairedFloatFormat),
+        pairedRate != 0
+            && defaultOutput.isFormatSupported(pairedPcm16Format));
     if (!selected) {
         return core::Result<OutputCandidate>::failure(*selected.error());
     }
@@ -391,7 +393,7 @@ struct OutputCandidate final {
                 sourceFormat.sample_rate(),
                 *outputRate.value(),
                 sourceFormat.channel_layout(),
-                sourceInfo.frame_count(),
+                sourceFrameCount,
             });
         if (!adapter) {
             return core::Result<OutputCandidate>::failure(*adapter.error());
@@ -452,7 +454,9 @@ public:
         if (!reader) {
             return core::Status::failure(*reader.error());
         }
-        auto output = make_output_candidate((*reader.value())->info());
+        auto output = make_output_candidate(
+            (*reader.value())->info().audio_format(),
+            (*reader.value())->info().frame_count());
         if (!output) {
             return core::Status::failure(*output.error());
         }
@@ -465,6 +469,27 @@ public:
             return installed;
         }
         preparedSource_ = source;
+        preparedPcm_.reset();
+        return core::Status::success();
+    }
+
+    [[nodiscard]] core::Status prepare_pcm(audio::AudioBufferView source)
+    {
+        auto output = make_output_candidate(
+            source.format(), source.frame_count());
+        if (!output) {
+            return core::Status::failure(*output.error());
+        }
+        auto installed = engine_.install_pcm_candidate(
+            source,
+            std::move(output.value()->output),
+            output.value()->sampleFormat,
+            std::move(output.value()->rateAdapter));
+        if (!installed) {
+            return installed;
+        }
+        preparedSource_.reset();
+        preparedPcm_ = source;
         return core::Status::success();
     }
 
@@ -473,6 +498,7 @@ public:
         auto cleared = engine_.clear();
         if (cleared) {
             preparedSource_.reset();
+            preparedPcm_.reset();
         }
         return cleared;
     }
@@ -484,11 +510,14 @@ public:
             return core::Status::failure(*snapshot.error());
         }
         if (snapshot.value()->state == core::PlaybackState::STOPPED
-            && preparedSource_) {
+            && (preparedSource_ || preparedPcm_)) {
             const auto preservedPosition = snapshot.value()->position;
             const auto preservedLoop = snapshot.value()->loop;
-            const auto source = *preparedSource_;
-            auto reprepared = prepare(source);
+            const auto source = preparedSource_;
+            const auto pcm = preparedPcm_;
+            auto reprepared = source
+                ? prepare(*source)
+                : prepare_pcm(*pcm);
             if (!reprepared) {
                 return reprepared;
             }
@@ -534,6 +563,7 @@ private:
     internal::PlaybackEngine engine_;
     QTimer* timer_{nullptr};
     std::optional<core::ResourceReference> preparedSource_;
+    std::optional<audio::AudioBufferView> preparedPcm_;
 };
 
 }  // namespace
@@ -574,6 +604,13 @@ public:
     {
         return invoke_status([source](PlaybackWorker& worker) {
             return worker.prepare(source);
+        });
+    }
+
+    [[nodiscard]] core::Status prepare_pcm(audio::AudioBufferView source)
+    {
+        return invoke_status([source](PlaybackWorker& worker) {
+            return worker.prepare_pcm(source);
         });
     }
 
@@ -684,6 +721,12 @@ core::Status WindowsAudioPlaybackService::prepare(
     const core::ResourceReference& source)
 {
     return impl_->prepare(source);
+}
+
+core::Status WindowsAudioPlaybackService::prepare_pcm(
+    audio::AudioBufferView source)
+{
+    return impl_->prepare_pcm(source);
 }
 
 core::Status WindowsAudioPlaybackService::clear()

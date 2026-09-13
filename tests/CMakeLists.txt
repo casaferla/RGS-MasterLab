@@ -237,8 +237,12 @@ set_tests_properties(rgsml_source_selection_tests PROPERTIES
 
 qt_add_executable(rgsml_source_metadata_panel_smoke
     ui_smoke/test_source_metadata_panel.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
@@ -252,6 +256,7 @@ target_link_libraries(rgsml_source_metadata_panel_smoke
     PRIVATE
         rgsml_audio
         rgsml_platform
+        rgsml_render
         rgsml_ui
         rgsml_uiplugin
         Qt6::Core
@@ -273,6 +278,74 @@ set_tests_properties(rgsml_source_metadata_panel_smoke PROPERTIES
 
 qt_add_executable(rgsml_playback_support_tests
     unit/platform/test_playback_support.cpp
+)
+
+qt_add_executable(rgsml_audition_source_selector_tests
+    unit/app/test_audition_source_selector.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
+)
+target_include_directories(rgsml_audition_source_selector_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_audition_source_selector_tests
+    PRIVATE
+        rgsml_render
+        rgsml_platform
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_audition_source_selector_tests)
+add_test(
+    NAME rgsml_audition_source_selector_tests
+    COMMAND rgsml_audition_source_selector_tests
+)
+set_tests_properties(rgsml_audition_source_selector_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;gold_audition;playback;render"
+)
+
+qt_add_executable(rgsml_windows_resource_identity_tests
+    integration/platform/test_windows_resource_identity.cpp
+)
+target_link_libraries(rgsml_windows_resource_identity_tests
+    PRIVATE
+        rgsml_platform
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_windows_resource_identity_tests)
+add_test(
+    NAME rgsml_windows_resource_identity_tests
+    COMMAND rgsml_windows_resource_identity_tests
+)
+set_tests_properties(rgsml_windows_resource_identity_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "platform;resource_identity;gold_audition"
+)
+
+qt_add_executable(rgsml_pcm_playback_tests
+    integration/platform/test_pcm_playback.cpp
+)
+target_include_directories(rgsml_pcm_playback_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/platform/windows/src/internal
+)
+target_link_libraries(rgsml_pcm_playback_tests
+    PRIVATE
+        rgsml_audio
+        rgsml_platform
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_pcm_playback_tests)
+add_test(NAME rgsml_pcm_playback_tests COMMAND rgsml_pcm_playback_tests)
+set_tests_properties(rgsml_pcm_playback_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "platform;playback;gold_audition"
 )
 target_include_directories(rgsml_playback_support_tests
     PRIVATE

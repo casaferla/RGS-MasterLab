@@ -147,6 +147,10 @@ ApplicationWindow {
             }
         }
 
+        AuditionSourceSelector {
+            width: parent.width
+        }
+
         Rectangle {
             objectName: "playbackTransportPanel"
             width: parent.width
@@ -315,11 +319,13 @@ ApplicationWindow {
                 anchors.topMargin: 10
                 height: 190
                 presentation: sourceWaveform
-                positionFrames: playbackTransport.positionFrames
+                positionFrames: auditionSelector.sourcePlayheadVisible
+                    ? playbackTransport.positionFrames : 0
                 durationFrames: playbackTransport.durationFrames
                 waveformColor: "#73d6ff"
                 zeroLineColor: "#505862"
-                playheadColor: "#f5c96a"
+                playheadColor: auditionSelector.sourcePlayheadVisible
+                    ? "#f5c96a" : "transparent"
                 overrangeColor: "#ff7d8a"
                 regionColor: "#487a9660"
                 regionHandleColor: "#f1f3f5"

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/audio_playback_service.hpp>
 
 #include <memory>
@@ -20,6 +21,9 @@ public:
 
     [[nodiscard]] core::Status prepare(
         const core::ResourceReference& source) override;
+    // Windows-specific borrowed canonical-PCM seam. The caller must keep the
+    // backing AudioBuffer alive until clear() returns.
+    [[nodiscard]] core::Status prepare_pcm(audio::AudioBufferView source);
     [[nodiscard]] core::Status clear() override;
     [[nodiscard]] core::Status play() override;
     [[nodiscard]] core::Status pause() override;

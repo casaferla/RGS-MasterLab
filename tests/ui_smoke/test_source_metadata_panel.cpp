@@ -1,4 +1,6 @@
 #include "audition_region_view_model.hpp"
+#include "audition_source_selector.hpp"
+#include "gold_selection_view_model.hpp"
 #include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "waveform_item.hpp"
@@ -90,12 +92,27 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     model.set_playback_transport(&playbackTransport);
     ui::WaveformPresentation waveformPresentation;
     app::AuditionRegionViewModel auditionRegion{&playbackTransport};
+    app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    app::GoldSelectionViewModel goldSelection{&auditionSelector};
+    playbackTransport.set_pcm_prepare_handler(
+        [observedPlayback](audio::AudioBufferView view) {
+            observedPlayback->state = core::PlaybackState::STOPPED;
+            observedPlayback->position = view.absolute_start_frame();
+            observedPlayback->duration = *core::FrameCount::create(
+                view.absolute_end_frame().value()).value();
+            observedPlayback->loop.reset();
+            return core::Status::success();
+        });
     model.set_source_committed_handler(
-        [&model, &auditionRegion](const core::ResourceReference&) {
+        [&model, &auditionRegion, &auditionSelector, &goldSelection](
+            const core::ResourceReference& source) {
             const auto frames = core::FrameCount::create(model.frame_count());
             const auto rate = core::SampleRate::create(model.sample_rate_hz());
             QVERIFY(frames && rate);
             auditionRegion.source_committed(*frames.value(), *rate.value());
+            QVERIFY(auditionSelector.source_committed(source));
+            QVERIFY(auditionSelector.switch_to(app::AuditionTarget::PREPARED));
+            goldSelection.sourceChanged();
         });
     waveformPresentation.set_seek_handler(
         [&auditionRegion](core::FrameIndex position) {
@@ -129,6 +146,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("sourceWaveform"), &waveformPresentation);
     engine.rootContext()->setContextProperty(
         QStringLiteral("auditionRegion"), &auditionRegion);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("auditionSelector"), &auditionSelector);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("goldSelection"), &goldSelection);
     engine.loadFromModule("Rgsml.Ui", "Main");
     QCOMPARE(engine.rootObjects().size(), 1);
 
@@ -161,6 +182,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!playPause->property("enabled").toBool());
     QVERIFY(!stop->property("enabled").toBool());
     QCOMPARE(playbackState->property("text").toString(), QStringLiteral("No Source"));
+    auto* preparedTarget = root->findChild<QObject*>(
+        QStringLiteral("auditionPreparedButton"));
+    auto* processedTarget = root->findChild<QObject*>(
+        QStringLiteral("auditionProcessedButton"));
+    auto* goldTarget = root->findChild<QObject*>(
+        QStringLiteral("auditionGoldButton"));
+    auto* pickGold = root->findChild<QObject*>(QStringLiteral("goldOpenButton"));
+    auto* clearGold = root->findChild<QObject*>(QStringLiteral("goldClearButton"));
+    auto* goldState = root->findChild<QObject*>(QStringLiteral("goldStateLabel"));
+    QVERIFY(preparedTarget && processedTarget && goldTarget);
+    QVERIFY(pickGold && clearGold && goldState);
+    QVERIFY(!preparedTarget->property("enabled").toBool());
+    QVERIFY(!processedTarget->property("enabled").toBool());
+    QVERIFY(!goldTarget->property("enabled").toBool());
+    QVERIFY(!clearGold->property("enabled").toBool());
+    QCOMPARE(goldState->property("text").toString(), QStringLiteral("Gold: not loaded"));
     QVERIFY(empty->property("visible").toBool());
     QVERIFY(!display->property("visible").toBool());
     auto* waveformPanel = root->findChild<QObject*>(
@@ -277,6 +314,28 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(stop->property("enabled").toBool());
     QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Stopped"));
     QVERIFY(playbackTime->property("text").toString().contains(QStringLiteral("/")));
+    QCOMPARE(root->findChild<QObject*>(QStringLiteral("activeAuditionTargetLabel"))
+                 ->property("text").toString(), QStringLiteral("Active: PREPARED"));
+    QVERIFY(!preparedTarget->property("enabled").toBool());
+
+    const auto goldPath = write_file(
+        directory, QStringLiteral("UI Gold.wav"), valid_wav());
+    goldSelection.selectGold(QUrl::fromLocalFile(goldPath));
+    QCoreApplication::processEvents();
+    QVERIFY(goldSelection.has_gold());
+    QVERIFY(goldTarget->property("enabled").toBool());
+    QVERIFY(clearGold->property("enabled").toBool());
+    QVERIFY(QMetaObject::invokeMethod(goldTarget, "clicked"));
+    QCoreApplication::processEvents();
+    QCOMPARE(root->findChild<QObject*>(QStringLiteral("activeAuditionTargetLabel"))
+                 ->property("text").toString(), QStringLiteral("Active: GOLD"));
+    QVERIFY(!auditionSelector.source_playhead_visible());
+    goldSelection.clearGold();
+    QCoreApplication::processEvents();
+    QVERIFY(!goldSelection.has_gold());
+    QVERIFY(auditionSelector.source_playhead_visible());
+    QCOMPARE(root->findChild<QObject*>(QStringLiteral("activeAuditionTargetLabel"))
+                 ->property("text").toString(), QStringLiteral("Active: PREPARED"));
 
     waveformPresentation.publish_building();
     QCoreApplication::processEvents();
@@ -351,6 +410,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY(focused && focused->hasActiveFocus());
     }
 
+    const int stopCallsBeforeTransportExercise = observedPlayback->stopCalls;
     QVERIFY(QMetaObject::invokeMethod(playPause, "clicked"));
     QCoreApplication::processEvents();
     QCOMPARE(observedPlayback->playCalls, 1);
@@ -361,7 +421,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Paused"));
     QVERIFY(QMetaObject::invokeMethod(stop, "clicked"));
     QCoreApplication::processEvents();
-    QCOMPARE(observedPlayback->stopCalls, 1);
+    QCOMPARE(observedPlayback->stopCalls, stopCallsBeforeTransportExercise + 1);
     QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Stopped"));
 
     const auto invalidPath = write_file(

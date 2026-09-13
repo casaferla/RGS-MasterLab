@@ -5,6 +5,7 @@ add_library(rgsml_platform STATIC
     windows/src/windows_resource_writer.cpp
     windows/src/windows_resource_reader.cpp
     windows/src/windows_audio_playback_service.cpp
+    windows/src/windows_resource_identity.cpp
 )
 
 target_include_directories(rgsml_platform
@@ -12,6 +13,7 @@ target_include_directories(rgsml_platform
         ${CMAKE_CURRENT_SOURCE_DIR}/windows/include
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/windows/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/../audio/src/internal
 )
 
 target_link_libraries(rgsml_platform

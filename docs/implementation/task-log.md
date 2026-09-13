@@ -184,3 +184,29 @@
 - RF-2: MATERIALIZED_AT_L1-M08; frozen Phase-12 estimates unchanged.
 - Integration: NOT_MERGED_TO_MAIN
 - Next task: TASK_013_NOT_PREPARED_OR_STARTED
+
+## L1-M06 — Gold Reference Picker and truthful audition routing
+
+- Status: READY_FOR_REVIEW.
+- Baseline: `87605710b66d7dc8342f3e96db809d371fbb9e9f`.
+- Branch: `task/L1-M06-gold-audition-routing`.
+- Scope: app-owned PREPARED/PROCESSED/GOLD routing, independent Gold picker,
+  two cue domains, strong Windows same-file rejection, and a private borrowed
+  PCM input for the existing Windows playback engine.
+- Authorized targeted forward delta: the existing playback SRC now consumes
+  either WavReader-backed or borrowed immutable PCM-backed frames through one
+  private bounded input seam. Mathematics, coefficients, rate/output policy,
+  public `IAudioPlaybackService`, render/audio/DSP contracts, WAV-only input,
+  and ToolchainManifest inputs are unchanged.
+- Automated qualification: Debug 65/65; Release 65/65; focused L1-M06 5/5;
+  dependency/public-header contracts 27/27; tests-off 0 tests; staged deploy
+  smoke PASS.
+- Material PO finding resolved: a 44.1 kHz WAV was playable as GOLD but not as
+  PREPARED/Source because PCM playback disabled the paired candidate and the
+  SRC input was WavReader-only. The permanent eight-case WAV/PCM exact/paired
+  44.1/48 matrix is PASS with identical downstream SRC output.
+- Material findings resolved: missing app/render link, missing QuickDialogs2
+  QML composition, and incomplete private-source constructor placement.
+- Human M+L gate: PASS, including minimal 44.1 kHz Source retest; Play available,
+  correct playback, no evident click/dropout.
+- Integration: NOT_MERGED_TO_MAIN.

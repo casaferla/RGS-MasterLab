@@ -265,3 +265,26 @@ L1-M09 is a safe Render Preview export boundary, not Final Render. It adds no
 quantizer, PCM24, Float32 output, dither, SRC, normalization, clipping,
 metadata/provenance chunks, UI, persistence, recovery journal, Gold, Reference
 Match, format expansion, or third-party dependency.
+
+## Gold Reference and truthful audition routing
+
+L1-M06 adds an application-owned `AuditionSourceSelector` with exactly three
+truthful targets: PREPARED, PROCESSED, and GOLD. PREPARED and PROCESSED share
+one absolute Source-frame cue; GOLD owns an independent cue, timeline, rate,
+duration, and read-only resource identity. Gold never enters a Source chain,
+and the Source waveform playhead is suppressed while GOLD is active.
+
+Authoritative Render Preview PCM remains owned by the application. The Windows
+backend borrows an immutable canonical `AudioBufferView` only while that owner
+is alive and is synchronously stopped and cleared before replacement or
+destruction. A private WAV/PCM source abstraction feeds the existing
+`PlaybackEngine`, queue, encoder, output, and `QAudioSink`; the public
+`IAudioPlaybackService` and all render/audio/DSP contracts remain unchanged.
+The existing file-backed WAV playback SRC policy is unchanged.
+
+Gold selection is independent from Source selection and remains WAV-only.
+Candidate commit follows metadata probing and a fail-closed two-stage identity
+check: canonical `ResourceReference` identity followed by Windows volume/file
+identity, so aliases and hardlinks to Source are rejected without losing a
+previous valid Gold. This milestone adds no Gold analysis, matching, level
+matching, persistence, alternate engine, or temporary-WAV bridge.

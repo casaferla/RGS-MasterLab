@@ -1,5 +1,6 @@
 #pragma once
 
+#include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/audio_playback_service.hpp>
 #include <rgsml/core/resource_reference.hpp>
 
@@ -8,6 +9,7 @@
 #include <QTimer>
 
 #include <memory>
+#include <functional>
 #include <optional>
 
 namespace rgsml::app {
@@ -28,6 +30,7 @@ class PlaybackTransportViewModel final : public QObject {
     Q_PROPERTY(QString errorMessage READ error_message NOTIFY playbackChanged)
 
 public:
+    using PcmPrepareHandler = std::function<core::Status(audio::AudioBufferView)>;
     explicit PlaybackTransportViewModel(
         std::unique_ptr<core::IAudioPlaybackService> service,
         QObject* parent = nullptr);
@@ -48,6 +51,14 @@ public:
     void prepare_source(
         const core::ResourceReference& source,
         qint64 sampleRateHz);
+    void set_pcm_prepare_handler(PcmPrepareHandler handler);
+    [[nodiscard]] core::Status prepare_file(
+        const core::ResourceReference& source,
+        qint64 sampleRateHz);
+    [[nodiscard]] core::Status prepare_pcm(audio::AudioBufferView source);
+    [[nodiscard]] core::Status stop_and_clear();
+    [[nodiscard]] core::Status seek_target_frame(core::FrameIndex position);
+    void set_source_derived_active(bool active) noexcept;
     [[nodiscard]] core::Status seek_source_frame(core::FrameIndex position);
     [[nodiscard]] core::Status set_loop_source_range(
         std::optional<core::FrameRange> loop);
@@ -66,6 +77,8 @@ private:
     [[nodiscard]] QString format_frames(qint64 frames) const;
 
     std::unique_ptr<core::IAudioPlaybackService> service_;
+    PcmPrepareHandler pcmPrepareHandler_;
+    bool sourceDerivedActive_{true};
     QTimer refreshTimer_;
     core::PlaybackState state_{core::PlaybackState::NO_SOURCE};
     qint64 positionFrames_{0};

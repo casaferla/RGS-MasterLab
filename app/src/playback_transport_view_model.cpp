@@ -122,11 +122,23 @@ void PlaybackTransportViewModel::prepare_source(
     const core::ResourceReference& source,
     qint64 sampleRateHz)
 {
+    static_cast<void>(prepare_file(source, sampleRateHz));
+}
+
+void PlaybackTransportViewModel::set_pcm_prepare_handler(
+    PcmPrepareHandler handler)
+{
+    pcmPrepareHandler_ = std::move(handler);
+}
+
+core::Status PlaybackTransportViewModel::stop_and_clear()
+{
     if (!service_) {
         playbackAvailable_ = false;
         errorMessage_ = QStringLiteral("Playback service is unavailable.");
         emit playbackChanged();
-        return;
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState, "Playback service is unavailable."});
     }
 
     auto current = service_->snapshot();
@@ -134,13 +146,27 @@ void PlaybackTransportViewModel::prepare_source(
         const auto stopped = service_->stop();
         if (!stopped) {
             publish_failure(*stopped.error());
-            return;
+            return stopped;
         }
     }
     const auto cleared = service_->clear();
     if (!cleared) {
         publish_failure(*cleared.error());
-        return;
+        return cleared;
+    }
+    sampleRateHz_ = 0;
+    errorMessage_.clear();
+    refresh();
+    return core::Status::success();
+}
+
+core::Status PlaybackTransportViewModel::prepare_file(
+    const core::ResourceReference& source,
+    qint64 sampleRateHz)
+{
+    auto cleared = stop_and_clear();
+    if (!cleared) {
+        return cleared;
     }
 
     const auto prepared = service_->prepare(source);
@@ -151,15 +177,43 @@ void PlaybackTransportViewModel::prepare_source(
         durationFrames_ = 0;
         sampleRateHz_ = 0;
         publish_failure(*prepared.error());
-        return;
+        return prepared;
     }
     sampleRateHz_ = sampleRateHz;
     playbackAvailable_ = true;
     errorMessage_.clear();
     refresh();
+    return core::Status::success();
 }
 
-core::Status PlaybackTransportViewModel::seek_source_frame(
+core::Status PlaybackTransportViewModel::prepare_pcm(audio::AudioBufferView source)
+{
+    if (!pcmPrepareHandler_) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "The Windows PCM audition seam is unavailable."});
+    }
+    auto cleared = stop_and_clear();
+    if (!cleared) {
+        return cleared;
+    }
+    auto prepared = pcmPrepareHandler_(source);
+    if (!prepared) {
+        publish_failure(*prepared.error());
+        return prepared;
+    }
+    sampleRateHz_ = source.format().sample_rate().value();
+    errorMessage_.clear();
+    refresh();
+    return core::Status::success();
+}
+
+void PlaybackTransportViewModel::set_source_derived_active(bool active) noexcept
+{
+    sourceDerivedActive_ = active;
+}
+
+core::Status PlaybackTransportViewModel::seek_target_frame(
     core::FrameIndex position)
 {
     if (!service_) {
@@ -167,7 +221,7 @@ core::Status PlaybackTransportViewModel::seek_source_frame(
             core::ErrorCode::InvalidState,
             "Playback service is unavailable."});
     }
-    const auto result = service_->seek(position);
+    auto result = service_->seek(position);
     if (!result) {
         publish_failure(*result.error());
         return result;
@@ -177,9 +231,23 @@ core::Status PlaybackTransportViewModel::seek_source_frame(
     return core::Status::success();
 }
 
+core::Status PlaybackTransportViewModel::seek_source_frame(
+    core::FrameIndex position)
+{
+    if (!sourceDerivedActive_) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "Source waveform seek is unavailable during Gold audition."});
+    }
+    return seek_target_frame(position);
+}
+
 core::Status PlaybackTransportViewModel::set_loop_source_range(
     std::optional<core::FrameRange> loop)
 {
+    if (!sourceDerivedActive_) {
+        return core::Status::success();
+    }
     if (!service_) {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,

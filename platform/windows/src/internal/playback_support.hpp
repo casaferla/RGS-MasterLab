@@ -68,12 +68,14 @@ public:
     [[nodiscard]] virtual std::optional<core::Error> error() const = 0;
 };
 
+class IPlaybackSource;
+
 class PlaybackEngine final {
 public:
     static constexpr std::int64_t kDecodeBlockFrames = 1024;
     static constexpr std::size_t kMaximumPumpIterations = 16U;
 
-    PlaybackEngine() = default;
+    PlaybackEngine();
     ~PlaybackEngine() noexcept;
 
     PlaybackEngine(const PlaybackEngine&) = delete;
@@ -81,6 +83,12 @@ public:
 
     [[nodiscard]] core::Status install_candidate(
         std::unique_ptr<audio::WavReader> reader,
+        std::unique_ptr<IPlaybackOutput> output,
+        DeviceSampleFormat sampleFormat,
+        std::optional<audio::PlaybackSampleRateAdapter> rateAdapter =
+            std::nullopt);
+    [[nodiscard]] core::Status install_pcm_candidate(
+        audio::AudioBufferView source,
         std::unique_ptr<IPlaybackOutput> output,
         DeviceSampleFormat sampleFormat,
         std::optional<audio::PlaybackSampleRateAdapter> rateAdapter =
@@ -104,16 +112,22 @@ private:
     [[nodiscard]] std::int64_t output_to_source_frame(
         std::int64_t outputFrame) const noexcept;
     [[nodiscard]] std::int64_t output_boundary() const noexcept;
+    [[nodiscard]] bool has_source() const noexcept;
+    [[nodiscard]] const audio::AudioFormat& source_format() const noexcept;
+    [[nodiscard]] core::Result<core::FrameCount> read_source_frames(
+        core::FrameIndex absoluteStart,
+        audio::MutableAudioBufferView destination);
     void update_position() noexcept;
     void record_runtime_error(core::Error error) noexcept;
     void reset_queue_state(std::int64_t frame) noexcept;
 
-    std::unique_ptr<audio::WavReader> reader_;
+    std::unique_ptr<IPlaybackSource> source_;
     std::unique_ptr<IPlaybackOutput> output_;
     std::optional<DeviceSampleFormat> sampleFormat_;
     std::optional<audio::PlaybackSampleRateAdapter> rateAdapter_;
     core::PlaybackState state_{core::PlaybackState::NO_SOURCE};
     core::FrameIndex position_{0};
+    core::FrameIndex sourceBegin_{0};
     std::optional<core::FrameCount> duration_;
     std::optional<core::FrameCount> outputDuration_;
     std::optional<core::FrameRange> loop_;

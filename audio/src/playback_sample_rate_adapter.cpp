@@ -2,6 +2,8 @@
 
 #include <rgsml/audio/audio_buffer.hpp>
 
+#include "internal/playback_src_input.hpp"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -16,6 +18,31 @@
 
 namespace rgsml::audio {
 namespace {
+
+class WavPlaybackSrcInput final : public internal::PlaybackSrcInput {
+public:
+    explicit WavPlaybackSrcInput(WavReader& reader) noexcept : reader_(reader) {}
+
+    [[nodiscard]] const AudioFormat& format() const noexcept override
+    {
+        return reader_.info().audio_format();
+    }
+
+    [[nodiscard]] core::FrameCount frame_count() const noexcept override
+    {
+        return reader_.info().frame_count();
+    }
+
+    [[nodiscard]] core::Result<core::FrameCount> read_frames(
+        core::FrameIndex localStart,
+        MutableAudioBufferView destination) override
+    {
+        return reader_.read_frames(localStart, destination);
+    }
+
+private:
+    WavReader& reader_;
+};
 
 constexpr std::array<std::uint64_t, 30'721> kKernel44100To48000{
 #include "internal/playback_src_kernel_44100_48000.inc"
@@ -479,23 +506,35 @@ core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
     core::FrameIndex absoluteOutputStart,
     MutableAudioBufferView destination) const
 {
+    WavPlaybackSrcInput input{source};
+    return internal::read_playback_src_frames(
+        *this, input, absoluteOutputStart, destination);
+}
+
+core::Result<core::FrameCount> internal::read_playback_src_frames(
+    const PlaybackSampleRateAdapter& adapter,
+    PlaybackSrcInput& source,
+    core::FrameIndex absoluteOutputStart,
+    MutableAudioBufferView destination)
+{
     const auto requested = destination.frame_count().value();
     if (absoluteOutputStart.value() < 0
         || requested < 0
-        || requested > kMaximumOutputBlockFrames
+        || requested > PlaybackSampleRateAdapter::kMaximumOutputBlockFrames
         || absoluteOutputStart != destination.absolute_start_frame()
-        || destination.format().sample_rate() != spec_.outputRate
-        || destination.format().channel_layout() != spec_.channelLayout
+        || destination.format().sample_rate() != adapter.output_rate()
+        || destination.format().channel_layout() != adapter.channel_layout()
         || destination.timebase().frame_domain_id() != FrameDomainId::OUTPUT_RATE
-        || source.info().audio_format().sample_rate() != spec_.inputRate
-        || source.info().audio_format().channel_layout() != spec_.channelLayout
-        || source.info().frame_count() != spec_.totalInputFrames) {
+        || source.format().sample_rate() != adapter.input_rate()
+        || source.format().channel_layout() != adapter.channel_layout()
+        || source.frame_count() != adapter.input_frame_count()) {
         return failure<core::FrameCount>(
             core::ErrorCode::InvalidArgument,
             "Playback SRC reader or destination metadata is incoherent.");
     }
-    if (absoluteOutputStart.value() > outputFrames_.value()
-        || requested > outputFrames_.value() - absoluteOutputStart.value()) {
+    if (absoluteOutputStart.value() > adapter.output_frame_count().value()
+        || requested > adapter.output_frame_count().value()
+            - absoluteOutputStart.value()) {
         return failure<core::FrameCount>(
             core::ErrorCode::OutOfRange,
             "Playback SRC output range is outside the prepared track.");
@@ -503,7 +542,7 @@ core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
     if (requested == 0) {
         return core::Result<core::FrameCount>::success(destination.frame_count());
     }
-    if (spec_.totalInputFrames.value() == 0) {
+    if (adapter.input_frame_count().value() == 0) {
         return failure<core::FrameCount>(
             core::ErrorCode::OutOfRange,
             "Playback SRC cannot produce frames from an empty Source.");
@@ -511,14 +550,14 @@ core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
 
     auto firstWindow = convolution_window(
         absoluteOutputStart.value(),
-        static_cast<std::uint32_t>(interpolation_),
-        static_cast<std::uint32_t>(decimation_),
-        coefficientCount_);
+        static_cast<std::uint32_t>(adapter.interpolation_factor()),
+        static_cast<std::uint32_t>(adapter.decimation_factor()),
+        adapter.kernel_size());
     auto lastWindow = convolution_window(
         absoluteOutputStart.value() + requested - 1,
-        static_cast<std::uint32_t>(interpolation_),
-        static_cast<std::uint32_t>(decimation_),
-        coefficientCount_);
+        static_cast<std::uint32_t>(adapter.interpolation_factor()),
+        static_cast<std::uint32_t>(adapter.decimation_factor()),
+        adapter.kernel_size());
     if (!firstWindow) {
         return core::Result<core::FrameCount>::failure(*firstWindow.error());
     }
@@ -526,12 +565,12 @@ core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
         return core::Result<core::FrameCount>::failure(*lastWindow.error());
     }
 
-    std::int64_t minimumSource = spec_.totalInputFrames.value();
+    std::int64_t minimumSource = adapter.input_frame_count().value();
     std::int64_t maximumSource = 0;
     for (std::int64_t logical = firstWindow.value()->firstInput;
          logical <= lastWindow.value()->lastInput;
          ++logical) {
-        auto reflected = reflect_frame(logical, spec_.totalInputFrames.value());
+        auto reflected = reflect_frame(logical, adapter.input_frame_count().value());
         if (!reflected) {
             return core::Result<core::FrameCount>::failure(*reflected.error());
         }
@@ -540,7 +579,8 @@ core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
     }
     const auto sourceWindowFrames = maximumSource - minimumSource + 1;
     constexpr auto kMaximumSourceWindowFrames =
-        kMaximumOutputBlockFrames + (kTapsPerPhase * 2) + 4;
+        PlaybackSampleRateAdapter::kMaximumOutputBlockFrames
+        + (PlaybackSampleRateAdapter::kTapsPerPhase * 2) + 4;
     if (sourceWindowFrames > kMaximumSourceWindowFrames) {
         return failure<core::FrameCount>(
             core::ErrorCode::InvalidState,
@@ -552,7 +592,7 @@ core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
         return core::Result<core::FrameCount>::failure(*sourceFrameCount.error());
     }
     auto sourceWindow = AudioBuffer::create(
-        source.info().audio_format(),
+        source.format(),
         FrameDomainId::SOURCE_PROCESSING_RATE,
         core::FrameIndex{minimumSource},
         *sourceFrameCount.value());
@@ -573,7 +613,7 @@ core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
     std::array<std::span<const double>, 2> sourcePlanes{};
     std::array<std::span<double>, 2> destinationPlanes{};
     for (std::size_t channel = 0;
-         channel < source.info().audio_format().channel_count();
+         channel < source.format().channel_count();
          ++channel) {
         auto sourcePlane = sourceWindow.value()->view().channel(channel);
         auto destinationPlane = destination.channel(channel);
@@ -590,14 +630,14 @@ core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
     for (std::int64_t localOutput = 0; localOutput < requested; ++localOutput) {
         auto window = convolution_window(
             absoluteOutputStart.value() + localOutput,
-            static_cast<std::uint32_t>(interpolation_),
-            static_cast<std::uint32_t>(decimation_),
-            coefficientCount_);
+            static_cast<std::uint32_t>(adapter.interpolation_factor()),
+            static_cast<std::uint32_t>(adapter.decimation_factor()),
+            adapter.kernel_size());
         if (!window) {
             return core::Result<core::FrameCount>::failure(*window.error());
         }
         for (std::size_t channel = 0;
-             channel < source.info().audio_format().channel_count();
+             channel < source.format().channel_count();
              ++channel) {
             double accumulator = 0.0;
             auto coefficient = window.value()->firstCoefficient;
@@ -605,7 +645,7 @@ core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
                  logical <= window.value()->lastInput;
                  ++logical) {
                 auto reflected = reflect_frame(
-                    logical, spec_.totalInputFrames.value());
+                    logical, adapter.input_frame_count().value());
                 if (!reflected) {
                     return core::Result<core::FrameCount>::failure(
                         *reflected.error());
@@ -619,11 +659,12 @@ core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
                         "Non-finite canonical sample reached playback SRC.");
                 }
                 const auto kernel = std::bit_cast<double>(
-                    coefficientBits_[coefficient]);
+                    adapter.coefficient_bits(coefficient));
                 const auto product = sample * kernel;
                 accumulator = accumulator + product;
                 if (logical != window.value()->lastInput) {
-                    coefficient -= static_cast<std::size_t>(interpolation_);
+                    coefficient -= static_cast<std::size_t>(
+                        adapter.interpolation_factor());
                 }
             }
             if (!std::isfinite(accumulator)) {

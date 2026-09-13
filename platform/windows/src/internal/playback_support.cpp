@@ -2,6 +2,8 @@
 
 #include <rgsml/audio/audio_buffer.hpp>
 
+#include "playback_src_input.hpp"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -12,6 +14,13 @@
 #include <utility>
 
 namespace rgsml::platform::windows::internal {
+class IPlaybackSource : public audio::internal::PlaybackSrcInput {
+public:
+    virtual ~IPlaybackSource() noexcept = default;
+    [[nodiscard]] virtual core::FrameIndex absolute_begin() const noexcept = 0;
+    [[nodiscard]] virtual core::Status close() = 0;
+};
+
 namespace {
 
 template <typename T>
@@ -61,7 +70,98 @@ void append_u32_le(std::vector<std::byte>& bytes, std::uint32_t value)
     return (lowerInteger % 2) == 0 ? lowerInteger : lowerInteger + 1;
 }
 
+class WavPlaybackSource final : public IPlaybackSource {
+public:
+    explicit WavPlaybackSource(std::unique_ptr<audio::WavReader> reader) noexcept
+        : reader_(std::move(reader))
+    {
+    }
+    [[nodiscard]] const audio::AudioFormat& format() const noexcept override
+    {
+        return reader_->info().audio_format();
+    }
+    [[nodiscard]] core::FrameIndex absolute_begin() const noexcept override
+    {
+        return core::FrameIndex{0};
+    }
+    [[nodiscard]] core::FrameCount frame_count() const noexcept override
+    {
+        return reader_->info().frame_count();
+    }
+    [[nodiscard]] core::Result<core::FrameCount> read_frames(
+        core::FrameIndex localStart,
+        audio::MutableAudioBufferView destination) override
+    {
+        return reader_->read_frames(localStart, destination);
+    }
+    [[nodiscard]] core::Status close() override { return reader_->close(); }
+
+private:
+    std::unique_ptr<audio::WavReader> reader_;
+};
+
+class PcmPlaybackSource final : public IPlaybackSource {
+public:
+    explicit PcmPlaybackSource(audio::AudioBufferView source) noexcept
+        : source_(source)
+    {
+    }
+    [[nodiscard]] const audio::AudioFormat& format() const noexcept override
+    {
+        return source_.format();
+    }
+    [[nodiscard]] core::FrameIndex absolute_begin() const noexcept override
+    {
+        return source_.absolute_start_frame();
+    }
+    [[nodiscard]] core::FrameCount frame_count() const noexcept override
+    {
+        return source_.frame_count();
+    }
+    [[nodiscard]] core::Result<core::FrameCount> read_frames(
+        core::FrameIndex localStart,
+        audio::MutableAudioBufferView destination) override
+    {
+        const auto absoluteStart = core::FrameIndex{
+            source_.absolute_start_frame().value() + localStart.value()};
+        auto input = source_.subview(absoluteStart, destination.frame_count());
+        if (!input) {
+            return core::Result<core::FrameCount>::failure(*input.error());
+        }
+        if (input.value()->format() != destination.format()
+            || destination.timebase().frame_domain_id()
+                != audio::FrameDomainId::SOURCE_PROCESSING_RATE) {
+            return failure<core::FrameCount>(
+                core::ErrorCode::InvalidArgument,
+                "PCM playback block metadata is incoherent.");
+        }
+        for (std::size_t channel = 0;
+             channel < input.value()->format().channel_count();
+             ++channel) {
+            auto sourceChannel = input.value()->channel(channel);
+            auto destinationChannel = destination.channel(channel);
+            if (!sourceChannel || !destinationChannel) {
+                return core::Result<core::FrameCount>::failure(
+                    *(sourceChannel ? destinationChannel.error() : sourceChannel.error()));
+            }
+            std::copy(
+                sourceChannel.value()->begin(), sourceChannel.value()->end(),
+                destinationChannel.value()->begin());
+        }
+        return core::Result<core::FrameCount>::success(destination.frame_count());
+    }
+    [[nodiscard]] core::Status close() override
+    {
+        return core::Status::success();
+    }
+
+private:
+    audio::AudioBufferView source_;
+};
+
 }  // namespace
+
+PlaybackEngine::PlaybackEngine() = default;
 
 core::Result<DeviceFormat> select_device_format(
     const audio::AudioFormat& sourceFormat,
@@ -202,8 +302,8 @@ PlaybackEngine::~PlaybackEngine() noexcept
     if (output_) {
         static_cast<void>(output_->stop());
     }
-    if (reader_) {
-        static_cast<void>(reader_->close());
+    if (source_) {
+        static_cast<void>(source_->close());
     }
 }
 
@@ -225,15 +325,22 @@ core::Status PlaybackEngine::install_candidate(
             return stopped;
         }
     }
-    if (reader_) {
-        static_cast<void>(reader_->close());
+    if (source_) {
+        static_cast<void>(source_->close());
     }
 
+    sourceBegin_ = core::FrameIndex{0};
     duration_ = reader->info().frame_count();
     outputDuration_ = rateAdapter
         ? rateAdapter->output_frame_count()
         : reader->info().frame_count();
-    reader_ = std::move(reader);
+    try {
+        source_ = std::make_unique<WavPlaybackSource>(std::move(reader));
+    } catch (const std::bad_alloc&) {
+        return status_failure(
+            core::ErrorCode::IoFailure,
+            "Unable to allocate the WAV playback input source.");
+    }
     output_ = std::move(output);
     sampleFormat_ = sampleFormat;
     rateAdapter_ = std::move(rateAdapter);
@@ -246,6 +353,68 @@ core::Status PlaybackEngine::install_candidate(
     return core::Status::success();
 }
 
+core::Status PlaybackEngine::install_pcm_candidate(
+    audio::AudioBufferView source,
+    std::unique_ptr<IPlaybackOutput> output,
+    DeviceSampleFormat sampleFormat,
+    std::optional<audio::PlaybackSampleRateAdapter> rateAdapter)
+{
+    if (!output
+        || source.timebase().frame_domain_id()
+            != audio::FrameDomainId::SOURCE_PROCESSING_RATE
+        || source.frame_count().value() <= 0) {
+        return status_failure(
+            core::ErrorCode::InvalidArgument,
+            "PCM playback requires a non-empty Source-domain canonical view and output.");
+    }
+    if (rateAdapter
+        && (rateAdapter->input_rate() != source.format().sample_rate()
+            || rateAdapter->channel_layout()
+                != source.format().channel_layout()
+            || rateAdapter->input_frame_count() != source.frame_count())) {
+        return status_failure(
+            core::ErrorCode::InvalidArgument,
+            "PCM playback SRC metadata is incoherent with the immutable Source view.");
+    }
+
+    if (output_) {
+        auto stopped = output_->stop();
+        if (!stopped) {
+            return stopped;
+        }
+    }
+    if (source_) {
+        static_cast<void>(source_->close());
+    }
+
+    auto duration = core::FrameCount::create(source.absolute_end_frame().value());
+    if (!duration) {
+        return core::Status::failure(*duration.error());
+    }
+    sourceBegin_ = source.absolute_start_frame();
+    duration_ = *duration.value();
+    outputDuration_ = rateAdapter
+        ? rateAdapter->output_frame_count()
+        : source.frame_count();
+    try {
+        source_ = std::make_unique<PcmPlaybackSource>(source);
+    } catch (const std::bad_alloc&) {
+        return status_failure(
+            core::ErrorCode::IoFailure,
+            "Unable to allocate the PCM playback input source.");
+    }
+    output_ = std::move(output);
+    sampleFormat_ = sampleFormat;
+    rateAdapter_ = std::move(rateAdapter);
+    state_ = core::PlaybackState::STOPPED;
+    position_ = sourceBegin_;
+    loop_.reset();
+    loopTraversalEligible_ = false;
+    runtimeError_.reset();
+    reset_queue_state(sourceBegin_.value());
+    return core::Status::success();
+}
+
 core::Status PlaybackEngine::clear()
 {
     if (output_) {
@@ -254,13 +423,13 @@ core::Status PlaybackEngine::clear()
             return stopped;
         }
     }
-    if (reader_) {
-        auto closed = reader_->close();
+    if (source_) {
+        auto closed = source_->close();
         if (!closed) {
             return closed;
         }
     }
-    reader_.reset();
+    source_.reset();
     output_.reset();
     sampleFormat_.reset();
     rateAdapter_.reset();
@@ -271,13 +440,14 @@ core::Status PlaybackEngine::clear()
     runtimeError_.reset();
     state_ = core::PlaybackState::NO_SOURCE;
     position_ = core::FrameIndex{0};
+    sourceBegin_ = core::FrameIndex{0};
     reset_queue_state(0);
     return core::Status::success();
 }
 
 core::Status PlaybackEngine::play()
 {
-    if (!reader_ || !output_ || !duration_ || !outputDuration_ || !sampleFormat_) {
+    if (!has_source() || !output_ || !duration_ || !outputDuration_ || !sampleFormat_) {
         return status_failure(
             core::ErrorCode::InvalidState,
             "Playback requires a prepared Source.");
@@ -299,7 +469,7 @@ core::Status PlaybackEngine::play()
     }
 
     if (position_.value() == duration_->value()) {
-        position_ = core::FrameIndex{0};
+        position_ = sourceBegin_;
         loopTraversalEligible_ = loop_.has_value();
     }
     auto stopped = output_->stop();
@@ -348,7 +518,7 @@ core::Status PlaybackEngine::pause()
 
 core::Status PlaybackEngine::stop()
 {
-    if (!reader_ || !output_) {
+    if (!has_source() || !output_) {
         return status_failure(
             core::ErrorCode::InvalidState,
             "Stop requires a prepared Source.");
@@ -359,21 +529,21 @@ core::Status PlaybackEngine::stop()
     }
     output_->clear_queue();
     state_ = core::PlaybackState::STOPPED;
-    position_ = core::FrameIndex{0};
+    position_ = sourceBegin_;
     loopTraversalEligible_ = loop_.has_value();
     runtimeError_.reset();
-    reset_queue_state(0);
+    reset_queue_state(sourceBegin_.value());
     return core::Status::success();
 }
 
 core::Status PlaybackEngine::seek(core::FrameIndex position)
 {
-    if (!reader_ || !output_ || !duration_ || !outputDuration_) {
+    if (!has_source() || !output_ || !duration_ || !outputDuration_) {
         return status_failure(
             core::ErrorCode::InvalidState,
             "Seek requires a prepared Source.");
     }
-    if (position.value() < 0 || position.value() > duration_->value()) {
+    if (position < sourceBegin_ || position.value() > duration_->value()) {
         return status_failure(
             core::ErrorCode::OutOfRange,
             "Playback seek position is out of range.");
@@ -409,13 +579,13 @@ core::Status PlaybackEngine::seek(core::FrameIndex position)
 
 core::Status PlaybackEngine::set_loop(std::optional<core::FrameRange> loop)
 {
-    if (!reader_ || !duration_ || !outputDuration_) {
+    if (!has_source() || !duration_ || !outputDuration_) {
         return status_failure(
             core::ErrorCode::InvalidState,
             "Loop configuration requires a prepared Source.");
     }
     if (loop) {
-        if (loop->begin().value() < 0
+        if (loop->begin() < sourceBegin_
             || loop->end().value() <= loop->begin().value()
             || loop->end().value() > duration_->value()) {
             return status_failure(
@@ -521,7 +691,7 @@ core::Status PlaybackEngine::prefill()
 
 core::Status PlaybackEngine::pump_once()
 {
-    if (!reader_ || !output_ || !duration_ || !outputDuration_ || !sampleFormat_) {
+    if (!has_source() || !output_ || !duration_ || !outputDuration_ || !sampleFormat_) {
         return status_failure(
             core::ErrorCode::InvalidState,
             "Playback pump has no prepared session.");
@@ -572,34 +742,36 @@ core::Status PlaybackEngine::pump_once()
     if (!blockFrameCount) {
         return core::Status::failure(*blockFrameCount.error());
     }
-    auto blockFormat = reader_->info().audio_format();
+    auto blockFormat = source_format();
     auto blockDomain = audio::FrameDomainId::SOURCE_PROCESSING_RATE;
     if (rateAdapter_) {
         auto outputFormat = audio::AudioFormat::create(
             rateAdapter_->output_rate(),
-            reader_->info().audio_format().channel_layout());
+            source_format().channel_layout());
         if (!outputFormat) {
             return core::Status::failure(*outputFormat.error());
         }
         blockFormat = *outputFormat.value();
         blockDomain = audio::FrameDomainId::OUTPUT_RATE;
     }
+    const auto blockAbsoluteStart = rateAdapter_
+        ? core::FrameIndex{scheduledOutputFrame_}
+        : core::FrameIndex{sourceBegin_.value() + scheduledOutputFrame_};
     auto block = audio::AudioBuffer::create(
         blockFormat,
         blockDomain,
-        core::FrameIndex{scheduledOutputFrame_},
+        blockAbsoluteStart,
         *blockFrameCount.value());
     if (!block) {
         return core::Status::failure(*block.error());
     }
     auto decoded = rateAdapter_
-        ? rateAdapter_->read_frames(
-            *reader_,
+        ? audio::internal::read_playback_src_frames(
+            *rateAdapter_,
+            *source_,
             core::FrameIndex{scheduledOutputFrame_},
             block.value()->mutable_view())
-        : reader_->read_frames(
-            core::FrameIndex{scheduledOutputFrame_},
-            block.value()->mutable_view());
+        : read_source_frames(blockAbsoluteStart, block.value()->mutable_view());
     if (!decoded) {
         return core::Status::failure(*decoded.error());
     }
@@ -653,7 +825,7 @@ void PlaybackEngine::update_position() noexcept
         candidateOutput = std::min(candidateOutput, outputDuration_->value());
     }
     position_ = core::FrameIndex{std::max<std::int64_t>(
-        0, output_to_source_frame(candidateOutput))};
+        sourceBegin_.value(), output_to_source_frame(candidateOutput))};
 }
 
 void PlaybackEngine::record_runtime_error(core::Error error) noexcept
@@ -680,11 +852,12 @@ void PlaybackEngine::reset_queue_state(std::int64_t frame) noexcept
 std::int64_t PlaybackEngine::source_to_output_frame(
     std::int64_t sourceFrame) const noexcept
 {
+    const auto localFrame = sourceFrame - sourceBegin_.value();
     if (!rateAdapter_) {
-        return sourceFrame;
+        return localFrame;
     }
     auto mapped = rateAdapter_->map_input_frame_to_output(
-        core::FrameIndex{sourceFrame});
+        core::FrameIndex{localFrame});
     return mapped ? mapped.value()->value() : outputDuration_->value();
 }
 
@@ -692,11 +865,13 @@ std::int64_t PlaybackEngine::output_to_source_frame(
     std::int64_t outputFrame) const noexcept
 {
     if (!rateAdapter_) {
-        return outputFrame;
+        return sourceBegin_.value() + outputFrame;
     }
     auto mapped = rateAdapter_->map_output_frame_to_input_cursor(
         core::FrameIndex{outputFrame});
-    return mapped ? mapped.value()->value() : duration_->value();
+    return mapped
+        ? sourceBegin_.value() + mapped.value()->value()
+        : duration_->value();
 }
 
 std::int64_t PlaybackEngine::output_boundary() const noexcept
@@ -704,6 +879,30 @@ std::int64_t PlaybackEngine::output_boundary() const noexcept
     return loop_ && loopTraversalEligible_
         ? source_to_output_frame(loop_->end().value())
         : outputDuration_->value();
+}
+
+bool PlaybackEngine::has_source() const noexcept
+{
+    return source_ != nullptr;
+}
+
+const audio::AudioFormat& PlaybackEngine::source_format() const noexcept
+{
+    return source_->format();
+}
+
+core::Result<core::FrameCount> PlaybackEngine::read_source_frames(
+    core::FrameIndex absoluteStart,
+    audio::MutableAudioBufferView destination)
+{
+    if (!source_) {
+        return failure<core::FrameCount>(
+            core::ErrorCode::InvalidState,
+            "Playback has no prepared input source.");
+    }
+    return source_->read_frames(
+        core::FrameIndex{absoluteStart.value() - sourceBegin_.value()},
+        destination);
 }
 
 }  // namespace rgsml::platform::windows::internal

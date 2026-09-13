@@ -1,4 +1,6 @@
 #include "audition_region_view_model.hpp"
+#include "audition_source_selector.hpp"
+#include "gold_selection_view_model.hpp"
 #include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
@@ -42,16 +44,29 @@ int main(int argc, char* argv[])
 
     auto playbackService = std::make_unique<
         rgsml::platform::windows::WindowsAudioPlaybackService>();
+    auto* windowsPlayback = playbackService.get();
     rgsml::app::PlaybackTransportViewModel playbackTransport{
         std::move(playbackService)};
+    playbackTransport.set_pcm_prepare_handler(
+        [windowsPlayback](rgsml::audio::AudioBufferView source) {
+            return windowsPlayback->prepare_pcm(source);
+        });
     rgsml::ui::WaveformPresentation waveformPresentation;
     rgsml::app::AuditionRegionViewModel auditionRegion{&playbackTransport};
     rgsml::app::SourceWaveformViewModel sourceWaveform{
         &waveformPresentation};
     rgsml::app::SourceSelectionViewModel sourceSelection;
-    sourceSelection.set_playback_transport(&playbackTransport);
+    rgsml::app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    auditionSelector.set_source_loop_provider([&auditionRegion] {
+        return auditionRegion.loop_enabled()
+            ? auditionRegion.region()
+            : std::nullopt;
+    });
+    rgsml::app::GoldSelectionViewModel goldSelection{
+        &auditionSelector};
     sourceSelection.set_source_committed_handler(
-        [&sourceWaveform, &sourceSelection, &auditionRegion](
+        [&sourceWaveform, &sourceSelection, &auditionRegion,
+         &auditionSelector, &goldSelection](
             const rgsml::core::ResourceReference& source) {
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
@@ -61,6 +76,12 @@ int main(int argc, char* argv[])
                 auditionRegion.source_committed(
                     *frameCount.value(), *sampleRate.value());
             }
+            const auto prepared = auditionSelector.source_committed(source);
+            if (prepared) {
+                static_cast<void>(auditionSelector.switch_to(
+                    rgsml::app::AuditionTarget::PREPARED));
+            }
+            goldSelection.sourceChanged();
             sourceWaveform.source_committed(source);
         });
     waveformPresentation.set_seek_handler(
@@ -99,6 +120,12 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("auditionRegion"),
         &auditionRegion);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("auditionSelector"),
+        &auditionSelector);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("goldSelection"),
+        &goldSelection);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

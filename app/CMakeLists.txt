@@ -1,6 +1,10 @@
 qt_add_executable(rgsml_app
+    src/audition_source_selector.cpp
+    src/audition_source_selector.hpp
     src/audition_region_view_model.cpp
     src/audition_region_view_model.hpp
+    src/gold_selection_view_model.cpp
+    src/gold_selection_view_model.hpp
     src/main.cpp
     src/playback_transport_view_model.cpp
     src/playback_transport_view_model.hpp
@@ -20,6 +24,7 @@ target_link_libraries(rgsml_app
         rgsml_core
         rgsml_audio
         rgsml_platform
+        rgsml_render
         rgsml_ui
         rgsml_uiplugin
         Qt6::Core
