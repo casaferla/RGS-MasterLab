@@ -47,6 +47,7 @@ public:
     [[nodiscard]] core::FrameCount minimum_span() const noexcept;
     [[nodiscard]] core::FrameCount source_frame_count() const noexcept;
     [[nodiscard]] bool is_full_fit() const noexcept;
+    [[nodiscard]] double zoom_position() const noexcept;
 
     [[nodiscard]] core::FrameIndex frame_boundary(
         std::int64_t physicalBoundary,
@@ -60,6 +61,10 @@ public:
 
     [[nodiscard]] bool zoom(
         bool zoomIn,
+        std::int64_t anchorPhysicalBoundary,
+        std::int64_t physicalWidth) noexcept;
+    [[nodiscard]] bool set_zoom_position(
+        double position,
         std::int64_t anchorPhysicalBoundary,
         std::int64_t physicalWidth) noexcept;
     [[nodiscard]] bool pan_from_snapshot(

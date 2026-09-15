@@ -1,124 +1,86 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Dialogs
 
-Rectangle {
+Item {
     id: root
     objectName: "auditionSourceSelectorPanel"
-    height: content.implicitHeight + 32
-    radius: 10
-    color: "#22262c"
-    border.color: "#343a42"
 
-    FileDialog {
-        id: goldDialog
-        objectName: "goldFileDialog"
-        title: "Open Gold Reference WAV"
-        fileMode: FileDialog.OpenFile
-        nameFilters: ["WAV audio (*.wav *.wave)"]
-        onAccepted: goldSelection.selectGold(selectedFile)
-        onRejected: goldSelection.cancelGoldSelection()
+    property Item previousTabItem
+    property Item nextTabItem
+    property alias firstTarget: preparedButton
+    property alias lastTarget: goldButton
+
+    implicitWidth: content.implicitWidth
+    implicitHeight: 36
+
+    Row {
+        id: content
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 6
+
+        Label {
+            anchors.verticalCenter: parent.verticalCenter
+            color: "#8A97A3"
+            font.family: "Segoe UI"
+            font.pixelSize: 10
+            font.weight: Font.DemiBold
+            text: "AUDITION TARGET"
+        }
+
+        StudioButton {
+            id: preparedButton
+            objectName: "auditionPreparedButton"
+            text: "PREPARED"
+            contentPadding: 12
+            implicitHeight: 30
+            enabled: auditionSelector.preparedAvailable
+            selected: auditionSelector.activeTarget === "PREPARED"
+            onClicked: auditionSelector.selectPrepared()
+            KeyNavigation.backtab: root.previousTabItem
+            KeyNavigation.tab: processedButton
+            Accessible.name: "Audition Prepared realization"
+            Accessible.description: selected ? "Selected" : "Available audition target"
+        }
+
+        StudioButton {
+            id: processedButton
+            objectName: "auditionProcessedButton"
+            text: "PROCESSED"
+            contentPadding: 12
+            implicitHeight: 30
+            enabled: auditionSelector.processedAvailable
+            selected: auditionSelector.activeTarget === "PROCESSED"
+            onClicked: auditionSelector.selectProcessed()
+            KeyNavigation.backtab: preparedButton
+            KeyNavigation.tab: goldButton
+            Accessible.name: "Audition Processed realization"
+            Accessible.description: enabled ? (selected ? "Selected" : "Available audition target")
+                                            : "Unavailable audition target"
+        }
+
+        StudioButton {
+            id: goldButton
+            objectName: "auditionGoldButton"
+            text: "GOLD"
+            tone: "gold"
+            contentPadding: 12
+            implicitHeight: 30
+            enabled: auditionSelector.goldAvailable
+            selected: auditionSelector.activeTarget === "GOLD"
+            onClicked: auditionSelector.selectGold()
+            KeyNavigation.backtab: processedButton
+            KeyNavigation.tab: root.nextTabItem
+            Accessible.name: "Audition Gold Reference"
+            Accessible.description: enabled ? (selected ? "Selected" : "Available audition target")
+                                            : "Unavailable audition target"
+        }
     }
 
-    Column {
-        id: content
-        anchors.fill: parent
-        anchors.margins: 16
-        spacing: 10
-
-        Label {
-            color: "#f1f3f5"
-            font.pixelSize: 16
-            font.weight: Font.DemiBold
-            text: "Audition source"
-        }
-
-        Row {
-            spacing: 8
-
-            Button {
-                objectName: "auditionPreparedButton"
-                text: "PREPARED"
-                enabled: auditionSelector.preparedAvailable
-                         && auditionSelector.activeTarget !== "PREPARED"
-                onClicked: auditionSelector.selectPrepared()
-                Accessible.name: "Audition prepared realization"
-            }
-            Button {
-                objectName: "auditionProcessedButton"
-                text: "PROCESSED"
-                enabled: auditionSelector.processedAvailable
-                         && auditionSelector.activeTarget !== "PROCESSED"
-                onClicked: auditionSelector.selectProcessed()
-                Accessible.name: "Audition processed realization"
-            }
-            Button {
-                objectName: "auditionGoldButton"
-                text: "GOLD"
-                enabled: auditionSelector.goldAvailable
-                         && auditionSelector.activeTarget !== "GOLD"
-                onClicked: auditionSelector.selectGold()
-                Accessible.name: "Audition Gold Reference"
-            }
-        }
-
-        Label {
-            objectName: "activeAuditionTargetLabel"
-            color: "#8ee3b1"
-            text: "Active: " + auditionSelector.activeTarget
-        }
-
-        Row {
-            spacing: 8
-            Button {
-                objectName: "goldOpenButton"
-                text: "Pick Gold WAV…"
-                onClicked: goldDialog.open()
-                Accessible.name: "Pick independent Gold Reference WAV"
-            }
-            Button {
-                objectName: "goldClearButton"
-                text: "Clear Gold"
-                enabled: goldSelection.hasGold
-                onClicked: goldSelection.clearGold()
-                Accessible.name: "Clear Gold Reference"
-            }
-        }
-
-        Label {
-            objectName: "goldStateLabel"
-            width: parent.width
-            color: goldSelection.hasGold ? "#d7dce2" : "#aeb5bd"
-            elide: Text.ElideMiddle
-            text: goldSelection.hasGold
-                ? "Gold: " + goldSelection.displayName
-                : "Gold: not loaded"
-        }
-        Label {
-            objectName: "goldMetadataLabel"
-            visible: goldSelection.hasGold
-            color: "#aeb5bd"
-            text: goldSelection.metadata
-        }
-        Label {
-            objectName: "goldErrorLabel"
-            visible: goldSelection.errorMessage.length > 0
-            width: parent.width
-            wrapMode: Text.Wrap
-            color: "#ffd9dc"
-            text: goldSelection.errorMessage
-            Accessible.role: Accessible.AlertMessage
-            Accessible.name: text
-        }
-        Label {
-            objectName: "auditionRoutingStatus"
-            visible: auditionSelector.statusText.length > 0
-            width: parent.width
-            wrapMode: Text.Wrap
-            color: "#ffd9dc"
-            text: auditionSelector.statusText
-            Accessible.role: Accessible.AlertMessage
-            Accessible.name: text
-        }
+    Label {
+        objectName: "activeAuditionTargetLabel"
+        visible: false
+        text: "Active: " + auditionSelector.activeTarget
+        Accessible.role: Accessible.StaticText
+        Accessible.name: text
     }
 }

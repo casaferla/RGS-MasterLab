@@ -51,9 +51,16 @@ Item {
         required property string segmentName
         property int segmentMaximumLength: 0
 
-        width: segmentName === "fraction" ? 104
-             : segmentName === "hours" ? 58 : 42
-        height: 34
+        width: segmentName === "fraction" ? 100
+             : segmentName === "hours" ? 54 : 40
+        height: 36
+        color: enabled ? "#E6EEF0" : "#6B7A87"
+        selectedTextColor: "#07131B"
+        selectionColor: "#43C7F3"
+        placeholderTextColor: "#6B7A87"
+        font.family: "Cascadia Mono"
+        font.pixelSize: 13
+        font.weight: Font.Medium
         horizontalAlignment: TextInput.AlignHCenter
         selectByMouse: true
         activeFocusOnTab: true
@@ -62,6 +69,12 @@ Item {
             ? segmentMaximumLength : 32767
         validator: RegularExpressionValidator {
             regularExpression: /^[0-9]*$/
+        }
+        background: Rectangle {
+            radius: 3
+            color: segment.enabled ? "#071117" : "#0C151C"
+            border.width: segment.activeFocus ? 2 : 1
+            border.color: segment.activeFocus ? "#3DA6FF" : "#2A3947"
         }
         Accessible.name: root.endpointName + " " + segmentName
         Accessible.description: segmentName === "fraction"
@@ -110,6 +123,9 @@ Item {
             objectName: root.objectPrefix + "HoursMinutesSeparator"
             anchors.verticalCenter: hoursField.verticalCenter
             text: ":"
+            color: "#8A97A3"
+            font.family: "Cascadia Mono"
+            font.pixelSize: 14
             Accessible.role: Accessible.StaticText
         }
 
@@ -132,6 +148,9 @@ Item {
             objectName: root.objectPrefix + "MinutesSecondsSeparator"
             anchors.verticalCenter: hoursField.verticalCenter
             text: ":"
+            color: "#8A97A3"
+            font.family: "Cascadia Mono"
+            font.pixelSize: 14
             Accessible.role: Accessible.StaticText
         }
 
@@ -154,6 +173,9 @@ Item {
             objectName: root.objectPrefix + "SecondsFractionSeparator"
             anchors.verticalCenter: hoursField.verticalCenter
             text: "."
+            color: "#8A97A3"
+            font.family: "Cascadia Mono"
+            font.pixelSize: 14
             Accessible.role: Accessible.StaticText
         }
 

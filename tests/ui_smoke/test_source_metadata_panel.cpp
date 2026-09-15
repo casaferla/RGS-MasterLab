@@ -11,6 +11,8 @@
 #include "../unit/platform/fake_playback_service.hpp"
 
 #include <QCoreApplication>
+#include <QDebug>
+#include <QDir>
 #include <QFile>
 #include <QGuiApplication>
 #include <QLibraryInfo>
@@ -18,6 +20,8 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
+#include <QQuickWindow>
+#include <QQuickStyle>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -58,10 +62,37 @@ namespace {
     };
 }
 
-[[nodiscard]] std::shared_ptr<const audio::WaveformSummary> valid_summary()
+[[nodiscard]] QByteArray visual_wav()
 {
     using namespace wav_support;
-    const auto qbytes = valid_wav();
+    constexpr std::size_t frameCount = 192'000U;
+    std::vector<std::int64_t> codes;
+    codes.reserve(frameCount * 2U);
+    for (std::size_t frame = 0; frame < frameCount; ++frame) {
+        const auto phase = static_cast<std::int64_t>(frame % 1'600U);
+        const auto triangle = phase < 800 ? phase - 400 : 1'200 - phase;
+        const auto section = static_cast<std::int64_t>((frame / 12'000U) % 8U);
+        const auto envelope = 16 + section * 5;
+        const auto left = std::clamp<std::int64_t>(triangle * envelope, -30'000, 30'000);
+        const auto right = std::clamp<std::int64_t>(
+            ((phase + 211) % 1'600 - 400) * (50 - section * 3),
+            -30'000,
+            30'000);
+        codes.push_back(left);
+        codes.push_back(right);
+    }
+    const auto bytes = make_wav(
+        1U, 16U, 2U, 48'000U, pcm_payload(codes, 16U));
+    return QByteArray{
+        reinterpret_cast<const char*>(bytes.data()),
+        static_cast<qsizetype>(bytes.size()),
+    };
+}
+
+[[nodiscard]] std::shared_ptr<const audio::WaveformSummary> summary_from_wav(
+    const QByteArray& qbytes)
+{
+    using namespace wav_support;
     Bytes bytes(static_cast<std::size_t>(qbytes.size()));
     std::memcpy(bytes.data(), qbytes.constData(), static_cast<std::size_t>(qbytes.size()));
     auto reader = audio::WavReader::open(
@@ -71,6 +102,35 @@ namespace {
     Q_ASSERT(summary);
     return std::make_shared<audio::WaveformSummary>(
         std::move(*summary.value()));
+}
+
+[[nodiscard]] std::shared_ptr<const audio::WaveformSummary> valid_summary()
+{
+    return summary_from_wav(valid_wav());
+}
+
+[[nodiscard]] bool capture_visual_evidence(
+    QWindow* window,
+    const QString& fileName,
+    QSize size)
+{
+    const auto outputDirectory = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+    if (outputDirectory.isEmpty()) {
+        return true;
+    }
+    if (!QDir{}.mkpath(outputDirectory)) {
+        return false;
+    }
+    auto* quickWindow = qobject_cast<QQuickWindow*>(window);
+    if (quickWindow == nullptr) {
+        return false;
+    }
+    window->resize(size);
+    window->show();
+    QTest::qWait(150);
+    const auto image = quickWindow->grabWindow();
+    return !image.isNull()
+        && image.save(QDir{outputDirectory}.filePath(fileName), "PNG");
 }
 
 }  // namespace
@@ -156,7 +216,19 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* root = engine.rootObjects().front();
     auto* window = qobject_cast<QWindow*>(root);
     QVERIFY(window);
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceOpenButton")));
+    QCOMPARE(window->minimumWidth(), 1184);
+    QCOMPARE(window->minimumHeight(), 688);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("applicationHeader")));
+    auto* desktopMenu = root->findChild<QObject*>(QStringLiteral("desktopMenuBar"));
+    QVERIFY(desktopMenu);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("controlStripElasticCenter")));
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("statusBar")));
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("gui01_1184x688_unavailable.png"),
+        QSize{1184, 688}));
+    auto* sourceOpen = root->findChild<QObject*>(QStringLiteral("sourceOpenButton"));
+    QVERIFY(sourceOpen);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceFileDialog")));
     auto* empty = root->findChild<QObject*>(QStringLiteral("sourceEmptyState"));
     auto* display = root->findChild<QObject*>(QStringLiteral("sourceDisplayName"));
@@ -220,6 +292,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* zoomIn = root->findChild<QObject*>(QStringLiteral("waveformZoomInButton"));
     auto* zoomOut = root->findChild<QObject*>(QStringLiteral("waveformZoomOutButton"));
     auto* fitSource = root->findChild<QObject*>(QStringLiteral("waveformFitSourceButton"));
+    auto* continuousZoom = root->findChild<QObject*>(
+        QStringLiteral("waveformZoomControl"));
     const std::array segmentNames{
         QStringLiteral("auditionRegionStartHours"),
         QStringLiteral("auditionRegionStartMinutes"),
@@ -238,8 +312,27 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* fitRegion = root->findChild<QObject*>(QStringLiteral("waveformFitRegionButton"));
     auto* loopRegion = root->findChild<QObject*>(QStringLiteral("auditionRegionLoopCheckBox"));
     auto* clearRegion = root->findChild<QObject*>(QStringLiteral("auditionRegionClearButton"));
-    QVERIFY(zoomIn && zoomOut && fitSource);
+    QVERIFY(zoomIn && zoomOut && continuousZoom && fitSource);
     QVERIFY(fitRegion && loopRegion && clearRegion);
+
+    const std::array menuNames{
+        QStringLiteral("File"),
+        QStringLiteral("Edit"),
+        QStringLiteral("View"),
+        QStringLiteral("Transport"),
+        QStringLiteral("Help"),
+    };
+    for (const auto& menuName : menuNames) {
+        auto* label = root->findChild<QObject*>(
+            QStringLiteral("desktopMenuBarLabel_") + menuName);
+        QVERIFY(label);
+        QCOMPARE(label->property("text").toString(), menuName);
+        QVERIFY(label->parent());
+        QCOMPARE(
+            label->parent()->property("text").toString(),
+            QStringLiteral("&") + menuName);
+    }
+
     QVERIFY(!zoomIn->property("enabled").toBool());
     for (auto* field : segmentFields) {
         QVERIFY(!field->property("enabled").toBool());
@@ -316,7 +409,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(playbackTime->property("text").toString().contains(QStringLiteral("/")));
     QCOMPARE(root->findChild<QObject*>(QStringLiteral("activeAuditionTargetLabel"))
                  ->property("text").toString(), QStringLiteral("Active: PREPARED"));
-    QVERIFY(!preparedTarget->property("enabled").toBool());
+    QVERIFY(preparedTarget->property("enabled").toBool());
+    QVERIFY(preparedTarget->property("selected").toBool());
 
     const auto goldPath = write_file(
         directory, QStringLiteral("UI Gold.wav"), valid_wav());
@@ -376,6 +470,94 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(fitRegion->property("enabled").toBool());
     QVERIFY(loopRegion->property("enabled").toBool());
     QVERIFY(clearRegion->property("enabled").toBool());
+
+    const auto visualSourceBytes = visual_wav();
+    const auto visualSourcePath = write_file(
+        directory, QStringLiteral("GUI-01 Visual Source.wav"), visualSourceBytes);
+    QVERIFY(!visualSourcePath.isEmpty());
+    model.selectSource(QUrl::fromLocalFile(visualSourcePath));
+    waveformPresentation.publish_ready(summary_from_wav(visualSourceBytes));
+    const auto visualRegion = core::FrameRange::create(
+        core::FrameIndex{48'000}, core::FrameIndex{144'000});
+    QVERIFY(visualRegion);
+    QVERIFY(auditionRegion.set_region(*visualRegion.value()));
+    QCoreApplication::processEvents();
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("gui01_1440x900_prepared.png"),
+        QSize{1440, 900}));
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("gui01_1184x688_prepared.png"),
+        QSize{1184, 688}));
+
+    goldSelection.selectGold(QUrl::fromLocalFile(goldPath));
+    QCoreApplication::processEvents();
+    QVERIFY(QMetaObject::invokeMethod(goldTarget, "clicked"));
+    QCoreApplication::processEvents();
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("gui01_1440x900_gold.png"),
+        QSize{1440, 900}));
+    QVERIFY(QMetaObject::invokeMethod(zoomIn, "clicked"));
+    QCoreApplication::processEvents();
+    QVERIFY(zoomOut->property("enabled").toBool());
+    QVERIFY(fitSource->property("enabled").toBool());
+
+    const std::array globalTabOrder{
+        sourceOpen,
+        pickGold,
+        clearGold,
+        waveformObject,
+        zoomOut,
+        continuousZoom,
+        zoomIn,
+        fitSource,
+        preparedTarget,
+        goldTarget,
+        stop,
+        playPause,
+        segmentFields[0],
+        segmentFields[1],
+        segmentFields[2],
+        segmentFields[3],
+        segmentFields[4],
+        segmentFields[5],
+        segmentFields[6],
+        segmentFields[7],
+        fitRegion,
+        loopRegion,
+        clearRegion,
+    };
+    auto* firstGlobalTabItem = qobject_cast<QQuickItem*>(globalTabOrder.front());
+    QVERIFY(firstGlobalTabItem);
+    firstGlobalTabItem->forceActiveFocus(Qt::TabFocusReason);
+    QCoreApplication::processEvents();
+    QVERIFY(firstGlobalTabItem->hasActiveFocus());
+    for (std::size_t index = 1; index < globalTabOrder.size(); ++index) {
+        QTest::keyClick(window, Qt::Key_Tab);
+        QCoreApplication::processEvents();
+        auto* focused = qobject_cast<QQuickItem*>(globalTabOrder[index]);
+        QVERIFY(focused && focused->hasActiveFocus());
+    }
+    QTest::keyClick(window, Qt::Key_Tab);
+    QCoreApplication::processEvents();
+    QVERIFY(firstGlobalTabItem->hasActiveFocus());
+    qInfo().noquote()
+        << "GUI01_GLOBAL_TAB_ORDER=Source -> Waveform -> Precision Navigator"
+           " -> Audition Target Selector -> Transport -> Region Time Editor"
+           " -> Region Actions";
+    qInfo().noquote()
+        << "GUI01_REGION_TIME_EDITOR_TAB_ORDER=Start HH -> MM -> SS -> FRACTION"
+           " -> End HH -> MM -> SS -> FRACTION";
+
+    goldSelection.clearGold();
+    QCoreApplication::processEvents();
+
+    model.selectSource(QUrl::fromLocalFile(validPath));
+    waveformPresentation.publish_ready(valid_summary());
+    QVERIFY(auditionRegion.set_region(*oneFrameRegion.value()));
+    QCoreApplication::processEvents();
 
     auto* firstSegment = qobject_cast<QQuickItem*>(segmentFields.front());
     QVERIFY(firstSegment);
@@ -446,12 +628,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     waveformPresentation.publish_ready(valid_summary());
     QCoreApplication::processEvents();
 
-    window->resize(800, 500);
+    window->resize(1184, 688);
     QCoreApplication::processEvents();
-    QCOMPARE(window->size(), QSize(800, 500));
-    window->resize(1600, 900);
+    QCOMPARE(window->size(), QSize(1184, 688));
+    window->resize(1440, 900);
     QCoreApplication::processEvents();
-    QCOMPARE(window->size(), QSize(1600, 900));
+    QCOMPARE(window->size(), QSize(1440, 900));
     window->close();
     QCoreApplication::processEvents();
 }
@@ -460,6 +642,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
 int main(int argc, char* argv[])
 {
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
     QGuiApplication application(argc, argv);
     rgsml::tests::SourceMetadataPanelSmokeTest test;
     return QTest::qExec(&test, argc, argv);

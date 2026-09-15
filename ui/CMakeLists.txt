@@ -7,6 +7,7 @@ qt_add_qml_module(rgsml_ui
         qml/AuditionSourceSelector.qml
         qml/Main.qml
         qml/SegmentedTimeEditor.qml
+        qml/StudioButton.qml
     SOURCES
         src/internal/waveform_geometry.cpp
         src/internal/waveform_geometry.hpp

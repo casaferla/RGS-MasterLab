@@ -13,6 +13,7 @@
 #include <QLibraryInfo>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickStyle>
 #include <QTimer>
 
 #include <cstdio>
@@ -35,6 +36,7 @@ void smokeMessageHandler(QtMsgType type, const QMessageLogContext&, const QStrin
 
 int main(int argc, char* argv[])
 {
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
     QGuiApplication application(argc, argv);
     application.setApplicationName(QStringLiteral("RGS MasterLab"));
     const bool deploySmoke = application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));

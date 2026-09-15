@@ -226,6 +226,16 @@ bool WaveformViewport::is_full_fit() const noexcept
     return enabled() && start_ == 0 && end_ == sourceFrames_;
 }
 
+double WaveformViewport::zoom_position() const noexcept
+{
+    if (!enabled() || minimumSpan_ >= sourceFrames_) {
+        return 0.0;
+    }
+    const auto available = static_cast<long double>(sourceFrames_ - minimumSpan_);
+    const auto hidden = static_cast<long double>(sourceFrames_ - (end_ - start_));
+    return static_cast<double>(std::clamp(hidden / available, 0.0L, 1.0L));
+}
+
 core::FrameIndex WaveformViewport::frame_boundary(
     std::int64_t physicalBoundary,
     std::int64_t physicalWidth) const noexcept
@@ -314,6 +324,27 @@ bool WaveformViewport::zoom(
     const auto candidate = zoomIn
         ? std::max(minimumSpan_, ceil_ratio(span, 4, 5))
         : std::min(sourceFrames_, ceil_ratio(span, 5, 4));
+    return set_span_anchored(candidate, anchorPhysicalBoundary, physicalWidth);
+}
+
+bool WaveformViewport::set_zoom_position(
+    double position,
+    std::int64_t anchorPhysicalBoundary,
+    std::int64_t physicalWidth) noexcept
+{
+    if (!enabled() || !std::isfinite(position)) {
+        return false;
+    }
+    const auto bounded = std::clamp(position, 0.0, 1.0);
+    const auto available = static_cast<long double>(sourceFrames_ - minimumSpan_);
+    const auto requested = static_cast<long double>(minimumSpan_)
+        + (1.0L - static_cast<long double>(bounded)) * available;
+    std::int64_t candidate = minimumSpan_;
+    if (requested >= static_cast<long double>(sourceFrames_)) {
+        candidate = sourceFrames_;
+    } else if (requested > static_cast<long double>(minimumSpan_)) {
+        candidate = static_cast<std::int64_t>(std::floor(requested + 0.5L));
+    }
     return set_span_anchored(candidate, anchorPhysicalBoundary, physicalWidth);
 }
 

@@ -99,6 +99,11 @@ bool WaveformPresentation::full_fit() const noexcept
     return viewport_->is_full_fit();
 }
 
+double WaveformPresentation::zoom_position() const noexcept
+{
+    return can_navigate() ? viewport_->zoom_position() : 0.0;
+}
+
 QString WaveformPresentation::viewport_start_text() const
 {
     return can_navigate()
@@ -396,6 +401,16 @@ void WaveformPresentation::zoomOut()
 {
     constexpr std::int64_t virtualWidth = 1'000;
     static_cast<void>(zoom_keyboard(false, virtualWidth));
+}
+
+void WaveformPresentation::setZoomPosition(double position)
+{
+    constexpr std::int64_t virtualWidth = 1'000;
+    if (can_navigate()
+        && viewport_->set_zoom_position(
+            position, keyboard_anchor(virtualWidth), virtualWidth)) {
+        emit changed();
+    }
 }
 
 void WaveformPresentation::fitSource()

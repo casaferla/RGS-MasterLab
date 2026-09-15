@@ -210,3 +210,21 @@
 - Human M+L gate: PASS, including minimal 44.1 kHz Source retest; Play available,
   correct playback, no evident click/dropout.
 - Integration: NOT_MERGED_TO_MAIN.
+
+## GUI-01 — Core Source / Waveform / Audition Shell v1
+
+- Status: TECHNICAL_DELIVERY_READY_FOR_PO_VISUAL_GATE.
+- Baseline: `88829c376e18541848dc471e279ffc7c3cabe179`.
+- Branch: `task/GUI-01-core-shell`.
+- Scope: frozen desktop Core Shell over the accepted M05/M06 Source, waveform,
+  Region, transport, Gold, cue, and audition-routing ViewModels; 1184 x 688
+  minimum; 1440 x 900 reference; no future workspaces.
+- Automated qualification: Debug 65/65; Release 65/65; focused GUI/viewport
+  2/2; dependency/public-header contracts 27/27; tests-off 0 tests; staged
+  deploy smoke PASS; QML runtime log empty.
+- Visual evidence: four actual QQuickWindow captures covering both sizes,
+  PREPARED, GOLD, and unavailable/disabled states.
+- ToolchainManifest build/stage: byte-identical, SHA-256
+  `05701BF7E061F6AFFB9B687D4D6D389048B7D2CEC57CC4CFCE5075FF1B22355B`.
+- Input scope: WAV_ONLY. M10 / Task 013: NOT_STARTED / NOT_PREPARED.
+- Integration: NOT_MERGED_TO_MAIN.

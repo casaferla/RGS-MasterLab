@@ -17,6 +17,7 @@ private slots:
     void sourceSizesAndMinimumSpan();
     void mappingEndpointsAndSmallExhaustiveMonotonicity();
     void zoomPanFitAndDragSnapshotAreDeterministic();
+    void continuousZoomPositionIsBoundedAndDeterministic();
     void invalidSourceIsDisabled();
 };
 
@@ -187,6 +188,29 @@ void WaveformViewportTest::zoomPanFitAndDragSnapshotAreDeterministic()
     QVERIFY(first.visible_span().value() >= first.minimum_span().value());
     QVERIFY(first.visible_range().begin().value() >= 0);
     QVERIFY(first.visible_range().end().value() <= frames.value());
+}
+
+void WaveformViewportTest::continuousZoomPositionIsBoundedAndDeterministic()
+{
+    const auto frames = *core::FrameCount::create(480'000).value();
+    const auto base = *core::FrameCount::create(8).value();
+    ui::internal::WaveformViewport viewport;
+    QVERIFY(viewport.reset(frames, base));
+    QCOMPARE(viewport.zoom_position(), 0.0);
+
+    QVERIFY(viewport.set_zoom_position(0.5, 500, 1'000));
+    QCOMPARE(viewport.visible_span().value(), std::int64_t{240'256});
+    QCOMPARE(viewport.zoom_position(), 0.5);
+
+    QVERIFY(viewport.set_zoom_position(1.0, 500, 1'000));
+    QCOMPARE(viewport.visible_span(), viewport.minimum_span());
+    QCOMPARE(viewport.zoom_position(), 1.0);
+
+    QVERIFY(viewport.set_zoom_position(-1.0, 500, 1'000));
+    QVERIFY(viewport.is_full_fit());
+    QCOMPARE(viewport.zoom_position(), 0.0);
+    QVERIFY(!viewport.set_zoom_position(
+        std::numeric_limits<double>::quiet_NaN(), 500, 1'000));
 }
 
 void WaveformViewportTest::invalidSourceIsDisabled()

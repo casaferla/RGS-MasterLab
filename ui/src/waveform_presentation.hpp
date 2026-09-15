@@ -29,6 +29,7 @@ class WaveformPresentation final : public QObject {
     Q_PROPERTY(qint64 payloadBytes READ payload_bytes NOTIFY changed)
     Q_PROPERTY(bool canNavigate READ can_navigate NOTIFY changed)
     Q_PROPERTY(bool fullFit READ full_fit NOTIFY changed)
+    Q_PROPERTY(double zoomPosition READ zoom_position NOTIFY changed)
     Q_PROPERTY(QString viewportStartText READ viewport_start_text NOTIFY changed)
     Q_PROPERTY(QString viewportEndText READ viewport_end_text NOTIFY changed)
     Q_PROPERTY(QString viewportDurationText READ viewport_duration_text NOTIFY changed)
@@ -61,6 +62,7 @@ public:
     [[nodiscard]] qint64 payload_bytes() const noexcept;
     [[nodiscard]] bool can_navigate() const noexcept;
     [[nodiscard]] bool full_fit() const noexcept;
+    [[nodiscard]] double zoom_position() const noexcept;
     [[nodiscard]] QString viewport_start_text() const;
     [[nodiscard]] QString viewport_end_text() const;
     [[nodiscard]] QString viewport_duration_text() const;
@@ -114,6 +116,7 @@ public:
     Q_INVOKABLE void requestRetry();
     Q_INVOKABLE void zoomIn();
     Q_INVOKABLE void zoomOut();
+    Q_INVOKABLE void setZoomPosition(double position);
     Q_INVOKABLE void fitSource();
     Q_INVOKABLE void fitRegion();
 
