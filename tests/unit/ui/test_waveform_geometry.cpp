@@ -22,10 +22,20 @@ class WaveformGeometryTest final : public QObject {
 
 private slots:
     void physicalWidthIsClamped();
+    void frozenOverlayGeometryIsExact();
     void finestBoundedLevelIsSelected();
     void adjacentBucketSpansCoverViewportWithoutGaps();
     void visibleWindowIsBoundedAndSummaryRemainsImmutable();
 };
+
+void WaveformGeometryTest::frozenOverlayGeometryIsExact()
+{
+    QCOMPARE(ui::internal::kWaveformPlayheadWidth, 2.0F);
+    QCOMPARE(ui::internal::kWaveformPlayheadMarkerSize, 8.0F);
+    QCOMPARE(ui::internal::kWaveformRegionBoundaryWidth, 2.0F);
+    QCOMPARE(ui::internal::kWaveformRegionHandleWidth, 6.0F);
+    QCOMPARE(ui::internal::kWaveformRegionHandleHeight, 16.0F);
+}
 
 void WaveformGeometryTest::physicalWidthIsClamped()
 {

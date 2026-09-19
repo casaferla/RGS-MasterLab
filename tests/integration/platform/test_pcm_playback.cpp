@@ -2,8 +2,10 @@
 #include "../../unit/audio/wav_test_support.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include <QTest>
+#include <QElapsedTimer>
 
 #include <algorithm>
 #include <bit>
@@ -72,6 +74,12 @@ public:
     }
 
     const std::vector<std::byte>& history() const noexcept { return history_; }
+    void drain() noexcept
+    {
+        processed_ += static_cast<std::int64_t>(queue_.size() / 8U);
+        queue_.clear();
+        state_ = OutputState::IDLE;
+    }
     std::int64_t processed_{0};
 
 private:
@@ -115,6 +123,10 @@ private slots:
     void clearBeforeOwnerDestructionLeavesNoBorrowedInput();
     void repeatedWavAndPcmReplacementUsesOneEngine();
     void wavAndPcmBackingsShareExactAndPairedRatePaths();
+    void tenSecondSourceMaintainsOutputRateDuration_data();
+    void tenSecondSourceMaintainsOutputRateDuration();
+    void realDeviceTenSecondRateProbe_data();
+    void realDeviceTenSecondRateProbe();
 };
 
 void PcmPlaybackTest::borrowedPartialTimelineAndLoopUseTheExistingEngine()
@@ -301,8 +313,112 @@ void PcmPlaybackTest::wavAndPcmBackingsShareExactAndPairedRatePaths()
     }
 }
 
+void PcmPlaybackTest::tenSecondSourceMaintainsOutputRateDuration_data()
+{
+    QTest::addColumn<int>("inputRate");
+    QTest::addColumn<int>("outputRate");
+    QTest::newRow("44100-to-48000") << 44'100 << 48'000;
+    QTest::newRow("48000-exact") << 48'000 << 48'000;
+}
+
+void PcmPlaybackTest::tenSecondSourceMaintainsOutputRateDuration()
+{
+    QFETCH(int, inputRate);
+    QFETCH(int, outputRate);
+    auto rate = core::SampleRate::create(inputRate);
+    QVERIFY(rate);
+    auto format = audio::AudioFormat::create(
+        *rate.value(), audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto count = core::FrameCount::create(10LL * inputRate);
+    QVERIFY(count);
+    auto source = audio::AudioBuffer::create(
+        *format.value(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0}, *count.value());
+    QVERIFY(source);
+    std::optional<audio::PlaybackSampleRateAdapter> adapter;
+    if (inputRate != outputRate) {
+        auto pairedRate = core::SampleRate::create(outputRate);
+        QVERIFY(pairedRate);
+        auto created = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{
+                *rate.value(), *pairedRate.value(),
+                audio::ChannelLayout::STEREO_LR, *count.value()});
+        QVERIFY(created);
+        adapter.emplace(std::move(*created.value()));
+    }
+    PlaybackEngine engine;
+    auto output = std::make_unique<RecordingOutput>();
+    auto* observed = output.get();
+    QVERIFY(engine.install_pcm_candidate(
+        source.value()->view(), std::move(output),
+        DeviceSampleFormat::IEEE_F32, std::move(adapter)));
+    QElapsedTimer elapsed;
+    elapsed.start();
+    QVERIFY(engine.play());
+    constexpr std::int64_t kExpectedOutputFrames = 480'000;
+    for (int tick = 0; tick < 2'000; ++tick) {
+        observed->drain();
+        engine.tick();
+        if (engine.snapshot().value()->state == core::PlaybackState::STOPPED) {
+            break;
+        }
+    }
+    qInfo("PLAYBACK_TIMING input=%d output=%d generated_frames=%lld elapsed_ms=%lld",
+          inputRate, outputRate,
+          static_cast<long long>(observed->processed_),
+          static_cast<long long>(elapsed.elapsed()));
+    QCOMPARE(observed->processed_, kExpectedOutputFrames);
+    QCOMPARE(engine.snapshot().value()->position.value(),
+             std::int64_t{10LL * inputRate});
+    // Allow bounded host scheduling overhead in the offline throughput check;
+    // the opt-in device probe separately checks eight-second wall-clock progress.
+    QVERIFY2(elapsed.elapsed() < 12'000,
+             "Playback preparation must stay near real-time for ten seconds of output.");
+}
+
+void PcmPlaybackTest::realDeviceTenSecondRateProbe_data()
+{
+    QTest::addColumn<int>("inputRate");
+    QTest::newRow("44100") << 44'100;
+    QTest::newRow("48000") << 48'000;
+}
+
+void PcmPlaybackTest::realDeviceTenSecondRateProbe()
+{
+    if (qEnvironmentVariableIsEmpty("RGSML_REAL_DEVICE_TIMING")) {
+        QSKIP("Opt-in real-device timing probe; set RGSML_REAL_DEVICE_TIMING=1.");
+    }
+    QFETCH(int, inputRate);
+    auto rate = core::SampleRate::create(inputRate);
+    QVERIFY(rate);
+    auto format = audio::AudioFormat::create(
+        *rate.value(), audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto count = core::FrameCount::create(10LL * inputRate);
+    QVERIFY(count);
+    auto source = audio::AudioBuffer::create(
+        *format.value(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0}, *count.value());
+    QVERIFY(source);
+    platform::windows::WindowsAudioPlaybackService service;
+    QVERIFY(service.prepare_pcm(source.value()->view()));
+    QVERIFY(service.play());
+    QTest::qWait(8'000);
+    auto snapshot = service.snapshot();
+    QVERIFY(snapshot);
+    qInfo("REAL_DEVICE_TIMING input=%d source_frame=%lld after_ms=8000",
+          inputRate,
+          static_cast<long long>(snapshot.value()->position.value()));
+    QCOMPARE(snapshot.value()->state, core::PlaybackState::PLAYING);
+    QVERIFY(snapshot.value()->position.value() >= 7LL * inputRate);
+    QVERIFY(snapshot.value()->position.value() <= 9LL * inputRate);
+    QVERIFY(service.stop());
+    QVERIFY(service.clear());
+}
+
 }  // namespace rgsml::tests
 
-QTEST_APPLESS_MAIN(rgsml::tests::PcmPlaybackTest)
+QTEST_GUILESS_MAIN(rgsml::tests::PcmPlaybackTest)
 
 #include "test_pcm_playback.moc"

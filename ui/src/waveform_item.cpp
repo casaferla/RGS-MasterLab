@@ -695,23 +695,44 @@ QSGNode* WaveformItem::updatePaintNode(
                 {left, 0.0F}, {right, bottom}, {right, 0.0F},
             },
             regionColor_));
+        std::vector<Vertex> boundaries;
         std::vector<Vertex> handles;
+        const auto append_rectangle = [](std::vector<Vertex>& vertices,
+                                          float left,
+                                          float top,
+                                          float right,
+                                          float bottomEdge) {
+            vertices.insert(vertices.end(), {
+                {left, top}, {left, bottomEdge}, {right, bottomEdge},
+                {left, top}, {right, bottomEdge}, {right, top},
+            });
+        };
+        const auto append_boundary = [&](std::int64_t frame) {
+            const auto x = static_cast<float>(logicalBoundary(
+                presentation_->physical_pixel_boundary(frame, physicalWidth)));
+            const auto boundaryLeft = std::clamp(
+                x - internal::kWaveformRegionBoundaryWidth * 0.5F, 0.0F,
+                std::max(0.0F, static_cast<float>(width())
+                    - internal::kWaveformRegionBoundaryWidth));
+            append_rectangle(boundaries, boundaryLeft, 0.0F, boundaryLeft + internal::kWaveformRegionBoundaryWidth, bottom);
+            const auto handleLeft = std::clamp(
+                x - internal::kWaveformRegionHandleWidth * 0.5F, 0.0F,
+                std::max(0.0F, static_cast<float>(width())
+                    - internal::kWaveformRegionHandleWidth));
+            append_rectangle(handles, handleLeft, 0.0F, handleLeft + internal::kWaveformRegionHandleWidth,
+                internal::kWaveformRegionHandleHeight);
+        };
         if (overlayRegion->begin().value() >= visibleRange.begin().value()
             && overlayRegion->begin().value() <= visibleRange.end().value()) {
-            const auto x = static_cast<float>(logicalBoundary(
-                presentation_->physical_pixel_boundary(
-                    overlayRegion->begin().value(), physicalWidth)));
-            handles.insert(handles.end(), {{x, 0.0F}, {x, bottom}});
+            append_boundary(overlayRegion->begin().value());
         }
         if (overlayRegion->end().value() >= visibleRange.begin().value()
             && overlayRegion->end().value() <= visibleRange.end().value()) {
-            const auto x = static_cast<float>(logicalBoundary(
-                presentation_->physical_pixel_boundary(
-                    overlayRegion->end().value(), physicalWidth)));
-            handles.insert(handles.end(), {{x, 0.0F}, {x, bottom}});
+            append_boundary(overlayRegion->end().value());
         }
-        if (!handles.empty()) {
-            root->appendChildNode(make_lines(handles, regionHandleColor_));
+        if (!boundaries.empty()) {
+            root->appendChildNode(make_triangles(boundaries, regionHandleColor_));
+            root->appendChildNode(make_triangles(handles, regionHandleColor_));
         }
     }
 
@@ -722,8 +743,24 @@ QSGNode* WaveformItem::updatePaintNode(
         const float x = static_cast<float>(xPhysical >= physicalWidth
             ? width()
             : static_cast<double>(xPhysical) / devicePixelRatio);
-        root->appendChildNode(make_lines(
-            std::vector<Vertex>{{x, 0.0F}, {x, static_cast<float>(height())}},
+        const auto playheadLeft = std::clamp(
+            x - internal::kWaveformPlayheadWidth * 0.5F, 0.0F,
+            std::max(0.0F, static_cast<float>(width())
+                - internal::kWaveformPlayheadWidth));
+        const auto playheadRight = playheadLeft + internal::kWaveformPlayheadWidth;
+        const auto markerLeft = std::clamp(
+            x - internal::kWaveformPlayheadMarkerSize * 0.5F, 0.0F,
+            std::max(0.0F, static_cast<float>(width())
+                - internal::kWaveformPlayheadMarkerSize));
+        root->appendChildNode(make_triangles(
+            std::vector<Vertex>{
+                {playheadLeft, 0.0F}, {playheadLeft, static_cast<float>(height())},
+                {playheadRight, static_cast<float>(height())},
+                {playheadLeft, 0.0F}, {playheadRight, static_cast<float>(height())},
+                {playheadRight, 0.0F},
+                {markerLeft, 0.0F}, {markerLeft + internal::kWaveformPlayheadMarkerSize, 0.0F},
+                {x, internal::kWaveformPlayheadMarkerSize},
+            },
             playheadColor_));
     }
 

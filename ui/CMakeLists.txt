@@ -8,6 +8,10 @@ qt_add_qml_module(rgsml_ui
         qml/Main.qml
         qml/SegmentedTimeEditor.qml
         qml/StudioButton.qml
+        qml/StudioIcon.qml
+        qml/StudioIconButton.qml
+        qml/StudioToggle.qml
+        qml/TransportButton.qml
     SOURCES
         src/internal/waveform_geometry.cpp
         src/internal/waveform_geometry.hpp

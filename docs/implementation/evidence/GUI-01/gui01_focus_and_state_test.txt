@@ -1,0 +1,12 @@
+********* Start testing of rgsml::tests::SourceMetadataPanelSmokeTest *********
+Config: Using QtTest library 6.8.3, Qt 6.8.3 (x86_64-little_endian-llp64 shared (dynamic) debug build; by MSVC 2022), windows 10
+INFO   : rgsml::tests::SourceMetadataPanelSmokeTest::initTestCase() entering
+PASS   : rgsml::tests::SourceMetadataPanelSmokeTest::initTestCase()
+INFO   : rgsml::tests::SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle() entering
+QINFO  : rgsml::tests::SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle() GUI01_GLOBAL_TAB_ORDER=Source -> Waveform -> Precision Navigator -> Audition Target Selector -> Transport -> Region Time Editor -> Region Actions
+QINFO  : rgsml::tests::SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle() GUI01_REGION_TIME_EDITOR_TAB_ORDER=Start HH -> MM -> SS -> FRACTION -> End HH -> MM -> SS -> FRACTION
+PASS   : rgsml::tests::SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
+INFO   : rgsml::tests::SourceMetadataPanelSmokeTest::cleanupTestCase() entering
+PASS   : rgsml::tests::SourceMetadataPanelSmokeTest::cleanupTestCase()
+Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 18213ms
+********* Finished testing of rgsml::tests::SourceMetadataPanelSmokeTest *********

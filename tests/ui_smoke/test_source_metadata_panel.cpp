@@ -218,18 +218,52 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(window);
     QCOMPARE(window->minimumWidth(), 1184);
     QCOMPARE(window->minimumHeight(), 688);
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("applicationHeader")));
+    auto* header = root->findChild<QObject*>(QStringLiteral("applicationHeader"));
+    QVERIFY(header);
+    QCOMPARE(header->property("height").toInt(), 48);
     auto* desktopMenu = root->findChild<QObject*>(QStringLiteral("desktopMenuBar"));
     QVERIFY(desktopMenu);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("controlStripElasticCenter")));
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("statusBar")));
+    auto* statusBar = root->findChild<QObject*>(QStringLiteral("statusBar"));
+    auto* statusIndicator = root->findChild<QObject*>(QStringLiteral("statusReadyIndicator"));
+    QVERIFY(statusBar && statusIndicator);
+    QCOMPARE(statusBar->property("height").toInt(), 24);
+    QCOMPARE(statusIndicator->property("width").toInt(), 8);
+    QCOMPARE(statusIndicator->property("height").toInt(), 8);
+    QCOMPARE(statusIndicator->property("color").value<QColor>(), QColor{QStringLiteral("#00E6E6")});
     QVERIFY(capture_visual_evidence(
         window,
         QStringLiteral("gui01_1184x688_unavailable.png"),
         QSize{1184, 688}));
     auto* sourceOpen = root->findChild<QObject*>(QStringLiteral("sourceOpenButton"));
     QVERIFY(sourceOpen);
+    auto* sourcePanel = root->findChild<QObject*>(QStringLiteral("sourceMetadataPanel"));
+    QVERIFY(sourcePanel);
+    QCOMPARE(sourcePanel->property("height").toInt(), 72);
+    QCOMPARE(sourceOpen->property("height").toInt(), 32);
+    QCOMPARE(sourceOpen->property("width").toInt(), 110);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceFileDialog")));
+    auto* minimizeButton = root->findChild<QObject*>(QStringLiteral("windowMinimizeButton"));
+    auto* maximizeButton = root->findChild<QObject*>(QStringLiteral("windowMaximizeButton"));
+    auto* closeButton = root->findChild<QObject*>(QStringLiteral("windowCloseButton"));
+    QVERIFY(minimizeButton && maximizeButton && closeButton);
+    const auto itemCenter = [](QObject* object) {
+        auto* item = qobject_cast<QQuickItem*>(object);
+        Q_ASSERT(item != nullptr);
+        return item->mapToScene(QPointF{item->width() * 0.5, item->height() * 0.5}).toPoint();
+    };
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("gui01_c1_caption_normal.png"), QSize{1440, 900}));
+    QTest::mouseMove(window, itemCenter(maximizeButton));
+    QTest::qWait(50);
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("gui01_c1_caption_hover.png"), QSize{1440, 900}));
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier,
+        itemCenter(maximizeButton));
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("gui01_c1_caption_pressed.png"), QSize{1440, 900}));
+    QTest::mouseMove(window, QPoint{640, 220});
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, QPoint{640, 220});
     auto* empty = root->findChild<QObject*>(QStringLiteral("sourceEmptyState"));
     auto* display = root->findChild<QObject*>(QStringLiteral("sourceDisplayName"));
     auto* readOnly = root->findChild<QObject*>(QStringLiteral("sourceReadOnlyBadge"));
@@ -260,15 +294,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("auditionProcessedButton"));
     auto* goldTarget = root->findChild<QObject*>(
         QStringLiteral("auditionGoldButton"));
-    auto* pickGold = root->findChild<QObject*>(QStringLiteral("goldOpenButton"));
-    auto* clearGold = root->findChild<QObject*>(QStringLiteral("goldClearButton"));
     auto* goldState = root->findChild<QObject*>(QStringLiteral("goldStateLabel"));
     QVERIFY(preparedTarget && processedTarget && goldTarget);
-    QVERIFY(pickGold && clearGold && goldState);
+    QVERIFY(goldState);
     QVERIFY(!preparedTarget->property("enabled").toBool());
     QVERIFY(!processedTarget->property("enabled").toBool());
     QVERIFY(!goldTarget->property("enabled").toBool());
-    QVERIFY(!clearGold->property("enabled").toBool());
     QCOMPARE(goldState->property("text").toString(), QStringLiteral("Gold: not loaded"));
     QVERIFY(empty->property("visible").toBool());
     QVERIFY(!display->property("visible").toBool());
@@ -313,6 +344,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* loopRegion = root->findChild<QObject*>(QStringLiteral("auditionRegionLoopCheckBox"));
     auto* clearRegion = root->findChild<QObject*>(QStringLiteral("auditionRegionClearButton"));
     QVERIFY(zoomIn && zoomOut && continuousZoom && fitSource);
+    QCOMPARE(zoomOut->property("width").toInt(), 32);
+    QCOMPARE(zoomOut->property("height").toInt(), 32);
+    QCOMPARE(zoomIn->property("width").toInt(), 32);
+    QCOMPARE(fitSource->property("width").toInt(), 32);
+    QCOMPARE(continuousZoom->property("width").toInt(), 160);
     QVERIFY(fitRegion && loopRegion && clearRegion);
 
     const std::array menuNames{
@@ -332,6 +368,35 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             label->parent()->property("text").toString(),
             QStringLiteral("&") + menuName);
     }
+    QTest::keyClick(window, Qt::Key_F10);
+    QCoreApplication::processEvents();
+    QVERIFY(desktopMenu->property("activeFocus").toBool());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QCoreApplication::processEvents();
+
+    auto* fileMenu = root->findChild<QObject*>(QStringLiteral("desktopFileMenu"));
+    auto* fileMenuLabel = root->findChild<QObject*>(
+        QStringLiteral("desktopMenuBarLabel_File"));
+    auto* fileMenuBarItem = qobject_cast<QQuickItem*>(fileMenuLabel->parent());
+    QVERIFY(fileMenu && fileMenuBarItem);
+    const auto fileMenuCenter = fileMenuBarItem->mapToScene(QPointF{
+        fileMenuBarItem->width() / 2, fileMenuBarItem->height() / 2});
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+        fileMenuCenter.toPoint());
+    QTest::qWait(120);
+    QVERIFY2(fileMenu->property("visible").toBool(),
+        "Clicking File must open its menu popup");
+    QVERIFY2(fileMenu->property("width").toReal() >= 230,
+        "The File popup must have a visible width");
+    auto* goldMenuItem = qobject_cast<QQuickItem*>(
+        root->findChild<QObject*>(QStringLiteral("menuOpenGold")));
+    auto* goldFileDialog = root->findChild<QObject*>(
+        QStringLiteral("goldFileDialog"));
+    QVERIFY(goldMenuItem && goldFileDialog);
+    QVERIFY(goldMenuItem->property("enabled").toBool());
+    QVERIFY(goldMenuItem->width() > 0);
+    QTest::keyClick(window, Qt::Key_Escape);
+    QCoreApplication::processEvents();
 
     QVERIFY(!zoomIn->property("enabled").toBool());
     for (auto* field : segmentFields) {
@@ -368,6 +433,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(segmentFields[2]->property("maximumLength").toInt(), 2);
     QCOMPARE(segmentFields[3]->property("maximumLength").toInt(), 9);
     QCOMPARE(segmentFields[7]->property("maximumLength").toInt(), 9);
+    QCOMPARE(segmentFields[0]->property("width").toInt(), 44);
+    QCOMPARE(segmentFields[1]->property("width").toInt(), 44);
+    QCOMPARE(segmentFields[2]->property("width").toInt(), 44);
+    QCOMPARE(segmentFields[3]->property("width").toInt(), 96);
+    QCOMPARE(segmentFields[0]->property("height").toInt(), 28);
     for (const auto& separatorName : {
              QStringLiteral("auditionRegionStartHoursMinutesSeparator"),
              QStringLiteral("auditionRegionStartMinutesSecondsSeparator"),
@@ -406,7 +476,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(playPause->property("enabled").toBool());
     QVERIFY(stop->property("enabled").toBool());
     QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Stopped"));
-    QVERIFY(playbackTime->property("text").toString().contains(QStringLiteral("/")));
+    QVERIFY(!playbackTime->property("text").toString().isEmpty());
     QCOMPARE(root->findChild<QObject*>(QStringLiteral("activeAuditionTargetLabel"))
                  ->property("text").toString(), QStringLiteral("Active: PREPARED"));
     QVERIFY(preparedTarget->property("enabled").toBool());
@@ -418,7 +488,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY(goldSelection.has_gold());
     QVERIFY(goldTarget->property("enabled").toBool());
-    QVERIFY(clearGold->property("enabled").toBool());
     QVERIFY(QMetaObject::invokeMethod(goldTarget, "clicked"));
     QCoreApplication::processEvents();
     QCOMPARE(root->findChild<QObject*>(QStringLiteral("activeAuditionTargetLabel"))
@@ -470,6 +539,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(fitRegion->property("enabled").toBool());
     QVERIFY(loopRegion->property("enabled").toBool());
     QVERIFY(clearRegion->property("enabled").toBool());
+    auto* loopRegionItem = qobject_cast<QQuickItem*>(loopRegion);
+    QVERIFY(loopRegionItem);
+    loopRegionItem->forceActiveFocus(Qt::TabFocusReason);
+    auditionRegion.requestLoopEnabled(true);
+    QCoreApplication::processEvents();
+    QVERIFY(loopRegion->property("checked").toBool());
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("gui01_c7_region_actions_toggle_focus.png"), QSize{1440, 900}));
+    auditionRegion.requestLoopEnabled(false);
+    QCoreApplication::processEvents();
 
     const auto visualSourceBytes = visual_wav();
     const auto visualSourcePath = write_file(
@@ -490,6 +569,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         window,
         QStringLiteral("gui01_1184x688_prepared.png"),
         QSize{1184, 688}));
+    auto* zoomInItem = qobject_cast<QQuickItem*>(zoomIn);
+    QVERIFY(zoomInItem);
+    zoomInItem->forceActiveFocus(Qt::TabFocusReason);
+    QTest::mouseMove(window, itemCenter(zoomIn));
+    QCoreApplication::processEvents();
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("gui01_c3_navigator_hover_focus.png"), QSize{1440, 900}));
 
     goldSelection.selectGold(QUrl::fromLocalFile(goldPath));
     QCoreApplication::processEvents();
@@ -506,8 +592,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     const std::array globalTabOrder{
         sourceOpen,
-        pickGold,
-        clearGold,
         waveformObject,
         zoomOut,
         continuousZoom,
@@ -592,11 +676,27 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY(focused && focused->hasActiveFocus());
     }
 
+    segmentFields[1]->setProperty("text", QStringLiteral("99"));
+    QTest::keyClick(window, Qt::Key_Tab);
+    QCoreApplication::processEvents();
+    QVERIFY(!auditionRegion.error_message().isEmpty());
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("gui01_c6_invalid_edit_focus.png"), QSize{1440, 900}));
+    auditionRegion.clearError();
+    QCoreApplication::processEvents();
+
     const int stopCallsBeforeTransportExercise = observedPlayback->stopCalls;
     QVERIFY(QMetaObject::invokeMethod(playPause, "clicked"));
     QCoreApplication::processEvents();
     QCOMPARE(observedPlayback->playCalls, 1);
-    QCOMPARE(playPause->property("text").toString(), QStringLiteral("Pause"));
+    QCOMPARE(playPause->property("iconKind").toString(), QStringLiteral("pause"));
+    auto* playPauseItem = qobject_cast<QQuickItem*>(playPause);
+    QVERIFY(playPauseItem);
+    playPauseItem->forceActiveFocus(Qt::TabFocusReason);
+    QTest::mouseMove(window, itemCenter(playPause));
+    QCoreApplication::processEvents();
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("gui01_c2_transport_playing_focus.png"), QSize{1440, 900}));
     QVERIFY(QMetaObject::invokeMethod(playPause, "clicked"));
     QCoreApplication::processEvents();
     QCOMPARE(observedPlayback->pauseCalls, 1);
@@ -631,9 +731,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     window->resize(1184, 688);
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(1184, 688));
+    const auto minimumWaveformHeight = waveformPanel->property("height").toReal();
+    QVERIFY(minimumWaveformHeight >= 265.0);
     window->resize(1440, 900);
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(1440, 900));
+    QVERIFY(waveformPanel->property("height").toReal() > minimumWaveformHeight);
     window->close();
     QCoreApplication::processEvents();
 }

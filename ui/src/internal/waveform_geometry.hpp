@@ -6,6 +6,12 @@
 
 namespace rgsml::ui::internal {
 
+inline constexpr float kWaveformPlayheadWidth = 2.0F;
+inline constexpr float kWaveformPlayheadMarkerSize = 8.0F;
+inline constexpr float kWaveformRegionBoundaryWidth = 2.0F;
+inline constexpr float kWaveformRegionHandleWidth = 6.0F;
+inline constexpr float kWaveformRegionHandleHeight = 16.0F;
+
 struct WaveformBucketSpan final {
     double left{0.0};
     double right{0.0};
