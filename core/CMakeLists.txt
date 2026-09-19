@@ -6,6 +6,7 @@ add_library(rgsml_core STATIC
     src/processing_state.cpp
     src/rational.cpp
     src/resource_reference.cpp
+    src/sha256.cpp
     src/uuid.cpp
 )
 

@@ -4,6 +4,7 @@
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/frame_time.hpp>
 #include <rgsml/core/result.hpp>
+#include <rgsml/core/sha256.hpp>
 
 #include <array>
 #include <cstddef>
@@ -13,27 +14,11 @@
 
 namespace rgsml::platform::windows::internal {
 
-using Sha256Digest = std::array<std::byte, 32>;
-
-class Sha256 final {
-public:
-    Sha256() noexcept;
-
-    void update(std::span<const std::byte> bytes) noexcept;
-    [[nodiscard]] Sha256Digest finalize() noexcept;
-
-private:
-    void transform(const std::byte* block) noexcept;
-
-    std::array<std::uint32_t, 8> state_{};
-    std::array<std::byte, 64> buffer_{};
-    std::uint64_t total_bytes_{0};
-    std::size_t buffered_{0};
-    bool finalized_{false};
-};
-
-[[nodiscard]] std::string sha256_hex(const Sha256Digest& digest);
-[[nodiscard]] std::string sha256_hex(std::span<const std::byte> bytes);
+// Existing private callers retain their spelling; implementation and ownership
+// are now solely in rgsml_core. No duplicate SHA implementation is kept here.
+using core::Sha256;
+using core::Sha256Digest;
+using core::sha256_hex;
 
 // Streaming implementation of rgsml.canonical-decoded-audio/1.0.0.
 class CanonicalDecodedAudioHasher final {
@@ -49,12 +34,12 @@ private:
     CanonicalDecodedAudioHasher(
         audio::AudioFormat format,
         core::FrameCount frameCount,
-        Sha256 sha) noexcept;
+        core::Sha256 sha) noexcept;
 
     audio::AudioFormat format_;
     core::FrameCount frame_count_;
     std::int64_t frames_hashed_{0};
-    Sha256 sha_;
+    core::Sha256 sha_;
     bool finalized_{false};
 };
 

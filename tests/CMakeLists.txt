@@ -11,6 +11,33 @@ qt_add_executable(rgsml_tests
     unit/core/include_uuid.cpp
 )
 
+qt_add_executable(rgsml_m10_sha_tests spikes/l1_m10/test_sha256.cpp)
+target_link_libraries(rgsml_m10_sha_tests PRIVATE rgsml_core Qt6::Test)
+rgsml_apply_project_warnings(rgsml_m10_sha_tests)
+add_test(NAME rgsml_m10_sha_tests COMMAND rgsml_m10_sha_tests)
+set_tests_properties(rgsml_m10_sha_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l1_m10;sha256")
+
+qt_add_executable(rgsml_m10_json_tests spikes/l1_m10/test_strict_json.cpp)
+target_link_libraries(rgsml_m10_json_tests PRIVATE rgsml_vendor_json Qt6::Test)
+if(MSVC)
+    target_compile_options(rgsml_m10_json_tests PRIVATE /EHsc)
+endif()
+rgsml_apply_project_warnings(rgsml_m10_json_tests)
+add_test(NAME rgsml_m10_json_tests COMMAND rgsml_m10_json_tests)
+set_tests_properties(rgsml_m10_json_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l1_m10;json")
+
+qt_add_executable(rgsml_m10_store_tests spikes/l1_m10/test_store_stream.cpp)
+target_link_libraries(rgsml_m10_store_tests PRIVATE rgsml_core MINIZIP::minizip Qt6::Test)
+rgsml_apply_project_warnings(rgsml_m10_store_tests)
+add_test(NAME rgsml_m10_store_tests COMMAND rgsml_m10_store_tests)
+set_tests_properties(rgsml_m10_store_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "l1_m10;minizip;store")
+
 target_link_libraries(rgsml_tests
     PRIVATE
         rgsml_core
