@@ -1,0 +1,65 @@
+name: Windows Full Qualification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-windows-qualification:
+    name: Full Windows Qualification Matrix
+    runs-on: windows-2022
+    env:
+      RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Qt 6.8.3 via aqtinstall
+        run: |
+          pip install aqtinstall
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+
+      - name: Configure Windows MSVC
+        run: |
+          cmake --preset windows-msvc
+
+      - name: Clean-build Debug
+        run: |
+          cmake --build --preset windows-msvc-debug-clean
+
+      - name: Run Full Debug CTest
+        run: |
+          ctest --preset windows-msvc-debug --output-on-failure
+
+      - name: Clean-build Release
+        run: |
+          cmake --build --preset windows-msvc-release-clean
+
+      - name: Run Full Release CTest
+        run: |
+          ctest --preset windows-msvc-release --output-on-failure
+
+      - name: Configure Release (Tests OFF)
+        run: |
+          cmake -B build/windows-msvc-tests-off -G "Visual Studio 17 2022" -A x64 `
+            -DRGSML_BUILD_TESTS=OFF `
+            -DRGSML_WARNINGS_AS_ERRORS=ON
+
+      - name: Build Release (Tests OFF)
+        run: |
+          cmake --build build/windows-msvc-tests-off --config Release
+
+      - name: Install/Stage Release Build
+        run: |
+          cmake --install build/windows-msvc --config Release --prefix build/windows-msvc/stage/L1-M02/Release
+
+      - name: Run Deploy Smoke Test
+        run: |
+          & build/windows-msvc/stage/L1-M02/Release/bin/RGSMasterLab.exe --rgsml-deploy-smoke

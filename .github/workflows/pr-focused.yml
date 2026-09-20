@@ -1,0 +1,91 @@
+name: PR Focused CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-portable-dsp:
+    name: Linux Portable DSP Guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install system dependencies & Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+
+      - name: Install Qt 6.8.3 via aqtinstall
+        run: |
+          pip install aqtinstall
+          python -m aqt install-qt linux desktop 6.8.3 gcc_64 -m qtmultimedia
+
+      - name: Configure CMake (Portable DSP)
+        run: |
+          cmake -B build-linux -G Ninja \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/6.8.3/gcc_64" \
+            -DRGSML_BUILD_TESTS=ON \
+            -DRGSML_WARNINGS_AS_ERRORS=ON
+
+      - name: Build Focused DSP Targets
+        run: |
+          cmake --build build-linux --target \
+            rgsml_dsp_module_descriptor_tests \
+            rgsml_dsp_module_registry_tests \
+            rgsml_dsp_processing_chain_tests \
+            rgsml_dsp_structural_integration_tests \
+            rgsml_gain_tests \
+            rgsml_gain_golden_tests
+
+      - name: Run Focused DSP Tests
+        run: |
+          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_)" --output-on-failure
+
+  windows-focused-dsp:
+    name: Windows Focused DSP
+    runs-on: windows-2022
+    env:
+      RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Qt 6.8.3 via aqtinstall
+        run: |
+          pip install aqtinstall
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+
+      - name: Configure CMake (Windows MSVC)
+        run: |
+          cmake --preset windows-msvc
+
+      - name: Build Focused DSP Targets (Release)
+        run: |
+          cmake --build build/windows-msvc --config Release --target `
+            rgsml_dsp_module_descriptor_tests `
+            rgsml_dsp_module_registry_tests `
+            rgsml_dsp_processing_chain_tests `
+            rgsml_dsp_structural_integration_tests `
+            rgsml_gain_tests `
+            rgsml_gain_golden_tests
+
+      - name: Run Focused DSP Tests (Release)
+        run: |
+          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_)" --output-on-failure
