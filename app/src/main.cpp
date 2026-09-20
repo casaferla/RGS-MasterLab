@@ -2,6 +2,7 @@
 #include "audition_source_selector.hpp"
 #include "gold_selection_view_model.hpp"
 #include "playback_transport_view_model.hpp"
+#include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
 
@@ -66,6 +67,8 @@ int main(int argc, char* argv[])
     });
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
+    rgsml::app::ProjectSessionViewModel projectSession{
+        &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport};
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection](
@@ -128,6 +131,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("goldSelection"),
         &goldSelection);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("projectSession"),
+        &projectSession);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

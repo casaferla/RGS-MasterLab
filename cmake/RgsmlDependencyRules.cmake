@@ -11,7 +11,7 @@ function(rgsml_assert_target_dependencies)
             "RGSML_DEPENDENCY_RULE_CONFIGURATION: target '${ARG_TARGET}' does not exist")
     endif()
     if(NOT ARG_FORBIDDEN_LAYERS)
-        set(ARG_FORBIDDEN_LAYERS QT QML PLATFORM DSP UI AUDIO)
+        set(ARG_FORBIDDEN_LAYERS QT QML PLATFORM DSP UI AUDIO PROJECT)
     endif()
 
     set(pending_targets "${ARG_TARGET}")

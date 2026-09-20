@@ -38,6 +38,7 @@ rgsml_generate_current_toolchain_manifest("${RGSML_TOOLCHAIN_MANIFEST}")
 
 add_subdirectory(core)
 add_subdirectory(third_party)
+add_subdirectory(project)
 add_subdirectory(audio)
 add_subdirectory(dsp)
 add_subdirectory(render)

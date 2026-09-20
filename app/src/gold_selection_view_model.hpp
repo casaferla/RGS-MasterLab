@@ -28,6 +28,8 @@ public:
     [[nodiscard]] QString display_name() const;
     [[nodiscard]] QString metadata() const;
     [[nodiscard]] QString error_message() const;
+    [[nodiscard]] const audio::SourceResource* gold_resource() const noexcept;
+    [[nodiscard]] core::Status adopt_probed_gold(audio::SourceResource candidate);
 
     Q_INVOKABLE void selectGold(const QUrl& selectedFile);
     Q_INVOKABLE void cancelGoldSelection() noexcept;

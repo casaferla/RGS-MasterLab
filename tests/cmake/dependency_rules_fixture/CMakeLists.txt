@@ -13,6 +13,11 @@ include("${RGSML_SOURCE_DIR}/cmake/RgsmlWarnings.cmake")
 include("${RGSML_SOURCE_DIR}/cmake/RgsmlDependencyRules.cmake")
 add_subdirectory("${RGSML_SOURCE_DIR}/core" rgsml_core_build)
 
+if(FIXTURE_CASE MATCHES "^project_")
+    add_subdirectory("${RGSML_SOURCE_DIR}/third_party" rgsml_vendor_build)
+    add_subdirectory("${RGSML_SOURCE_DIR}/project" rgsml_project_build)
+endif()
+
 if(FIXTURE_CASE MATCHES "^(audio_|platform_|dsp_|render_)"
     OR FIXTURE_CASE STREQUAL "core_negative_audio"
     OR FIXTURE_CASE STREQUAL "core_negative_dsp")
@@ -166,6 +171,38 @@ if(FIXTURE_CASE STREQUAL "render_graph")
     rgsml_assert_target_dependencies(
         TARGET rgsml_dsp
         FORBIDDEN_LAYERS QT QML PLATFORM UI PROJECT RENDER)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "project_graph")
+    rgsml_assert_target_dependencies(TARGET rgsml_project
+        FORBIDDEN_LAYERS QT QML PLATFORM AUDIO DSP RENDER UI)
+    return()
+endif()
+
+if(FIXTURE_CASE STREQUAL "project_headers")
+    foreach(public_header IN ITEMS
+        opaque_json_value.hpp project_document.hpp project_snapshot.hpp
+        project_repository.hpp)
+        string(REPLACE "." "_" header_target "project_standalone_${public_header}")
+        set(header_source "${CMAKE_CURRENT_BINARY_DIR}/${header_target}.cpp")
+        file(WRITE "${header_source}"
+            "#include <rgsml/project/${public_header}>\nint ${header_target}() { return 0; }\n")
+        add_library("${header_target}" OBJECT "${header_source}")
+        target_link_libraries("${header_target}" PRIVATE rgsml_project)
+        rgsml_apply_project_warnings("${header_target}")
+    endforeach()
+    return()
+endif()
+
+if(FIXTURE_CASE MATCHES "^project_negative_(qt|qml|platform|audio|dsp|render|ui)$")
+    string(REGEX REPLACE "^project_negative_" "" forbidden_layer "${FIXTURE_CASE}")
+    string(TOUPPER "${forbidden_layer}" forbidden_layer)
+    add_library(fixture_forbidden INTERFACE)
+    set_property(TARGET fixture_forbidden PROPERTY RGSML_DEPENDENCY_LAYER "${forbidden_layer}")
+    target_link_libraries(rgsml_project PRIVATE fixture_forbidden)
+    rgsml_assert_target_dependencies(TARGET rgsml_project
+        FORBIDDEN_LAYERS QT QML PLATFORM AUDIO DSP RENDER UI)
     return()
 endif()
 

@@ -39,6 +39,11 @@ QString GoldSelectionViewModel::error_message() const
     return errorMessage_;
 }
 
+const audio::SourceResource* GoldSelectionViewModel::gold_resource() const noexcept
+{
+    return gold_ ? &*gold_ : nullptr;
+}
+
 void GoldSelectionViewModel::selectGold(const QUrl& selectedFile)
 {
     if (!selectedFile.isValid() || !selectedFile.isLocalFile()) {
@@ -72,24 +77,32 @@ void GoldSelectionViewModel::selectGold(const QUrl& selectedFile)
         emit changed();
         return;
     }
-    const auto& info = candidate.value()->wav_info();
+    (void)adopt_probed_gold(std::move(*candidate.value()));
+}
+
+core::Status GoldSelectionViewModel::adopt_probed_gold(audio::SourceResource candidate)
+{
+    const auto& info = candidate.wav_info();
     auto committed = selector_->set_gold(
-        candidate.value()->reference(),
+        candidate.reference(),
         info.audio_format().sample_rate(),
         info.frame_count());
     if (!committed) {
         errorMessage_ = QString::fromStdString(committed.error()->message());
         emit changed();
-        return;
+        return committed;
     }
-    gold_.emplace(std::move(*candidate.value()));
-    displayName_ = name;
+    gold_.emplace(std::move(candidate));
+    displayName_ = QString::fromUtf8(
+        gold_->reference().display_name().data(),
+        static_cast<qsizetype>(gold_->reference().display_name().size()));
     metadata_ = QStringLiteral("%1 Hz · %2 channel(s) · %3 frames · read-only")
         .arg(info.audio_format().sample_rate().value())
         .arg(info.audio_format().channel_count())
         .arg(info.frame_count().value());
     errorMessage_.clear();
     emit changed();
+    return core::Status::success();
 }
 
 void GoldSelectionViewModel::cancelGoldSelection() noexcept

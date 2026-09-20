@@ -31,5 +31,5 @@ rgsml_apply_project_warnings(rgsml_platform)
 include("${CMAKE_CURRENT_LIST_DIR}/../cmake/RgsmlDependencyRules.cmake")
 rgsml_assert_target_dependencies(
     TARGET rgsml_platform
-    FORBIDDEN_LAYERS DSP QML UI
+    FORBIDDEN_LAYERS DSP QML UI PROJECT
 )

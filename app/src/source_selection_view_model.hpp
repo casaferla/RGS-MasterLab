@@ -46,6 +46,8 @@ public:
     [[nodiscard]] QString duration_label() const;
     [[nodiscard]] bool read_only() const noexcept;
     [[nodiscard]] QString error_message() const;
+    [[nodiscard]] const audio::SourceResource* source_resource() const noexcept;
+    void adopt_probed_source(audio::SourceResource candidate);
 
     void set_playback_transport(PlaybackTransportViewModel* playback) noexcept;
     void set_source_committed_handler(SourceCommittedHandler handler);

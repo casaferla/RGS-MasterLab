@@ -12,6 +12,87 @@ qt_add_executable(rgsml_tests
 )
 
 qt_add_executable(rgsml_m10_sha_tests spikes/l1_m10/test_sha256.cpp)
+
+qt_add_executable(rgsml_project_value_tests unit/project/test_project_snapshot.cpp)
+
+add_test(NAME rgsml_project_dependency_contract_tests
+    COMMAND "${CMAKE_COMMAND}"
+        "-DRGSML_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DRGSML_TEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+        "-DTEST_GENERATOR=${CMAKE_GENERATOR}"
+        "-DTEST_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+        "-DTEST_CONFIG=$<CONFIG>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/dependency_rules_fixture/test_project_dependency_rules.cmake")
+set_tests_properties(rgsml_project_dependency_contract_tests PROPERTIES
+    RUN_SERIAL TRUE LABELS "dependency_contract;project")
+
+qt_add_executable(rgsml_project_json_tests unit/project/test_project_json.cpp)
+
+qt_add_executable(rgsml_project_roundtrip_tests unit/project/test_project_json.cpp)
+target_include_directories(rgsml_project_roundtrip_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/project/src/internal)
+target_link_libraries(rgsml_project_roundtrip_tests PRIVATE rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_project_roundtrip_tests)
+add_test(NAME rgsml_project_roundtrip_tests COMMAND rgsml_project_roundtrip_tests)
+set_tests_properties(rgsml_project_roundtrip_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;roundtrip")
+
+qt_add_executable(rgsml_project_package_tests unit/project/test_project_package.cpp)
+target_include_directories(rgsml_project_package_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/project/src/internal)
+
+qt_add_executable(rgsml_project_security_tests unit/project/test_project_package.cpp)
+target_include_directories(rgsml_project_security_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/project/src/internal)
+target_link_libraries(rgsml_project_security_tests PRIVATE rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_project_security_tests)
+add_test(NAME rgsml_project_security_tests COMMAND rgsml_project_security_tests)
+set_tests_properties(rgsml_project_security_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;security")
+
+qt_add_executable(rgsml_project_session_tests
+    integration/app/test_project_session.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp)
+target_include_directories(rgsml_project_session_tests PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_project_session_tests PRIVATE
+    rgsml_project rgsml_render rgsml_platform rgsml_ui Qt6::Core Qt6::Test)
+rgsml_apply_project_warnings(rgsml_project_session_tests)
+add_test(NAME rgsml_project_session_tests COMMAND rgsml_project_session_tests)
+set_tests_properties(rgsml_project_session_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;app")
+target_link_libraries(rgsml_project_package_tests PRIVATE rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_project_package_tests)
+add_test(NAME rgsml_project_package_tests COMMAND rgsml_project_package_tests)
+set_tests_properties(rgsml_project_package_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;package;security")
+target_include_directories(rgsml_project_json_tests PRIVATE ${CMAKE_SOURCE_DIR}/project/src/internal)
+target_link_libraries(rgsml_project_json_tests PRIVATE rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_project_json_tests)
+add_test(NAME rgsml_project_json_tests COMMAND rgsml_project_json_tests)
+set_tests_properties(rgsml_project_json_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;json")
+target_link_libraries(rgsml_project_value_tests PRIVATE rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_project_value_tests)
+add_test(NAME rgsml_project_value_tests COMMAND rgsml_project_value_tests)
+set_tests_properties(rgsml_project_value_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;project_value")
 target_link_libraries(rgsml_m10_sha_tests PRIVATE rgsml_core Qt6::Test)
 rgsml_apply_project_warnings(rgsml_m10_sha_tests)
 add_test(NAME rgsml_m10_sha_tests COMMAND rgsml_m10_sha_tests)
@@ -264,6 +345,8 @@ set_tests_properties(rgsml_source_selection_tests PROPERTIES
 
 qt_add_executable(rgsml_source_metadata_panel_smoke
     ui_smoke/test_source_metadata_panel.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
@@ -283,6 +366,7 @@ target_link_libraries(rgsml_source_metadata_panel_smoke
     PRIVATE
         rgsml_audio
         rgsml_platform
+        rgsml_project
         rgsml_render
         rgsml_ui
         rgsml_uiplugin

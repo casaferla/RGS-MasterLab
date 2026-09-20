@@ -26,11 +26,13 @@ ApplicationWindow {
     readonly property color error: "#F27683"
 
     property string statusText: {
+        if (projectSession.errorMessage.length > 0) return projectSession.errorMessage
         if (sourceSelection.errorMessage.length > 0) return sourceSelection.errorMessage
         if (goldSelection.errorMessage.length > 0) return goldSelection.errorMessage
         if (auditionSelector.statusText.length > 0) return auditionSelector.statusText
         if (playbackTransport.errorMessage.length > 0) return playbackTransport.errorMessage
         if (auditionRegion.errorMessage.length > 0) return auditionRegion.errorMessage
+        if (projectSession.degraded) return projectSession.statusText
         if (sourceWaveform.state === "BUILDING") return "Analyzing Source waveform"
         if (!sourceSelection.hasSource) return "Ready | Open a Source WAV"
         return "Ready | " + sourceSelection.sampleRateHz + " Hz | " + sourceSelection.sampleFormatLabel + " | " + sourceSelection.channelLayoutLabel
@@ -46,6 +48,8 @@ ApplicationWindow {
 
     FileDialog { id: sourceDialog; objectName: "sourceFileDialog"; title: "Open Source WAV"; fileMode: FileDialog.OpenFile; nameFilters: ["WAV audio (*.wav *.wave)"]; onAccepted: sourceSelection.selectSource(selectedFile); onRejected: sourceSelection.cancelSourceSelection() }
     FileDialog { id: goldDialog; objectName: "goldFileDialog"; title: "Open Gold Reference WAV"; fileMode: FileDialog.OpenFile; nameFilters: ["WAV audio (*.wav *.wave)"]; onAccepted: goldSelection.selectGold(selectedFile); onRejected: goldSelection.cancelGoldSelection() }
+    FileDialog { id: projectOpenDialog; objectName: "projectOpenFileDialog"; title: "Open RGS MasterLab Project"; fileMode: FileDialog.OpenFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.openProject(selectedFile); onRejected: projectSession.cancelProjectOpen() }
+    FileDialog { id: projectSaveDialog; objectName: "projectSaveFileDialog"; title: "Save RGS MasterLab Project As"; fileMode: FileDialog.SaveFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.saveProjectAs(selectedFile); onRejected: projectSession.cancelProjectSave() }
 
     Shortcut {
         sequence: "F10"
@@ -102,13 +106,13 @@ ApplicationWindow {
                         width: 230
                         title: "&File"; background: Rectangle { color: root.surface; border.color: root.border }
                         StudioMenuItem { text: "New Project"; enabled: false }
-                        StudioMenuItem { text: "Open Project"; enabled: false }
+                        StudioMenuItem { objectName: "menuOpenProject"; text: "Open Project…"; onTriggered: projectOpenDialog.open() }
                         MenuSeparator { }
                         StudioMenuItem { objectName: "menuOpenSource"; text: "Open Source\tCtrl+O"; onTriggered: sourceDialog.open() }
                         StudioMenuItem { objectName: "menuOpenGold"; text: "Open Gold Reference"; onTriggered: goldDialog.open() }
                         StudioMenuItem { objectName: "menuClearGold"; text: "Clear Gold Reference"; enabled: goldSelection.hasGold; onTriggered: goldSelection.clearGold() }
                         MenuSeparator { }
-                        StudioMenuItem { text: "Save Project"; enabled: false }
+                        StudioMenuItem { objectName: "menuSaveProjectAs"; text: "Save Project As…"; enabled: projectSession.canSaveProject; onTriggered: projectSaveDialog.open() }
                         StudioMenuItem { text: "Export"; enabled: false }
                         MenuSeparator { }
                         StudioMenuItem { text: "Exit"; onTriggered: root.close() }

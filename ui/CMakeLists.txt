@@ -39,3 +39,6 @@ target_link_libraries(rgsml_ui
 set_property(TARGET rgsml_ui PROPERTY RGSML_DEPENDENCY_LAYER UI)
 
 rgsml_apply_project_warnings(rgsml_ui)
+
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/RgsmlDependencyRules.cmake")
+rgsml_assert_target_dependencies(TARGET rgsml_ui FORBIDDEN_LAYERS PROJECT)

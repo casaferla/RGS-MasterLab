@@ -6,6 +6,8 @@ qt_add_executable(rgsml_app
     src/gold_selection_view_model.cpp
     src/gold_selection_view_model.hpp
     src/main.cpp
+    src/project_session_view_model.cpp
+    src/project_session_view_model.hpp
     src/playback_transport_view_model.cpp
     src/playback_transport_view_model.hpp
     src/source_selection_view_model.cpp
@@ -22,6 +24,7 @@ set_target_properties(rgsml_app PROPERTIES
 target_link_libraries(rgsml_app
     PRIVATE
         rgsml_core
+        rgsml_project
         rgsml_audio
         rgsml_platform
         rgsml_render

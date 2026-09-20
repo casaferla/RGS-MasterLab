@@ -171,6 +171,11 @@ QString SourceSelectionViewModel::error_message() const
     return errorMessage_;
 }
 
+const audio::SourceResource* SourceSelectionViewModel::source_resource() const noexcept
+{
+    return source_ ? &*source_ : nullptr;
+}
+
 void SourceSelectionViewModel::set_playback_transport(
     PlaybackTransportViewModel* playback) noexcept
 {
@@ -219,13 +224,18 @@ void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
         return;
     }
 
-    const auto& info = candidate.value()->wav_info();
+    adopt_probed_source(std::move(*candidate.value()));
+}
+
+void SourceSelectionViewModel::adopt_probed_source(audio::SourceResource candidate)
+{
+    const auto& info = candidate.wav_info();
     const auto sampleRate = info.audio_format().sample_rate().value();
     const auto frames = info.frame_count().value();
 
     displayName_ = QString::fromUtf8(
-        candidate.value()->reference().display_name().data(),
-        static_cast<qsizetype>(candidate.value()->reference().display_name().size()));
+        candidate.reference().display_name().data(),
+        static_cast<qsizetype>(candidate.reference().display_name().size()));
     containerLabel_ = container_label_for(info.container_kind());
     sampleFormatLabel_ = sample_format_label_for(info.encoded_sample_format());
     sampleRateHz_ = sampleRate;
@@ -233,7 +243,7 @@ void SourceSelectionViewModel::selectSource(const QUrl& selectedFile)
     channelCount_ = static_cast<int>(info.audio_format().channel_count());
     frameCount_ = frames;
     durationLabel_ = format_duration(frames, sampleRate);
-    source_ = std::move(*candidate.value());
+    source_ = std::move(candidate);
 
     if (sourceCommittedHandler_) {
         sourceCommittedHandler_(source_->reference());

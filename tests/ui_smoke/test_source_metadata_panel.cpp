@@ -2,6 +2,7 @@
 #include "audition_source_selector.hpp"
 #include "gold_selection_view_model.hpp"
 #include "playback_transport_view_model.hpp"
+#include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "waveform_item.hpp"
 #include "waveform_presentation.hpp"
@@ -154,6 +155,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     app::AuditionRegionViewModel auditionRegion{&playbackTransport};
     app::AuditionSourceSelector auditionSelector{&playbackTransport};
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
+    app::ProjectSessionViewModel projectSession{
+        &model, &goldSelection, &auditionRegion, &playbackTransport};
     playbackTransport.set_pcm_prepare_handler(
         [observedPlayback](audio::AudioBufferView view) {
             observedPlayback->state = core::PlaybackState::STOPPED;
@@ -210,6 +213,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("auditionSelector"), &auditionSelector);
     engine.rootContext()->setContextProperty(
         QStringLiteral("goldSelection"), &goldSelection);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("projectSession"), &projectSession);
     engine.loadFromModule("Rgsml.Ui", "Main");
     QCOMPARE(engine.rootObjects().size(), 1);
 
@@ -395,6 +400,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(goldMenuItem && goldFileDialog);
     QVERIFY(goldMenuItem->property("enabled").toBool());
     QVERIFY(goldMenuItem->width() > 0);
+    auto* openProjectItem = root->findChild<QObject*>(
+        QStringLiteral("menuOpenProject"));
+    auto* saveProjectItem = root->findChild<QObject*>(
+        QStringLiteral("menuSaveProjectAs"));
+    QVERIFY(openProjectItem && saveProjectItem);
+    QVERIFY(openProjectItem->property("enabled").toBool());
+    QVERIFY(!saveProjectItem->property("enabled").toBool());
+    QVERIFY(root->findChild<QObject*>(
+        QStringLiteral("projectOpenFileDialog")));
+    QVERIFY(root->findChild<QObject*>(
+        QStringLiteral("projectSaveFileDialog")));
     QTest::keyClick(window, Qt::Key_Escape);
     QCoreApplication::processEvents();
 
@@ -456,6 +472,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         directory, QStringLiteral("UI Source.wav"), valid_wav());
     model.selectSource(QUrl::fromLocalFile(validPath));
     QCoreApplication::processEvents();
+    QVERIFY(saveProjectItem->property("enabled").toBool());
     QVERIFY(!empty->property("visible").toBool());
     QVERIFY(display->property("visible").toBool());
     QCOMPARE(display->property("text").toString(), QStringLiteral("UI Source.wav"));
