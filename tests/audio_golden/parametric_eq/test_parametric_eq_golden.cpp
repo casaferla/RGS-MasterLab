@@ -1,4 +1,4 @@
-#include "../render/render_test_support.hpp"
+#include "../../unit/render/render_test_support.hpp"
 #include "../../oracles/parametric_eq/parametric_eq_oracle.hpp"
 
 #include <rgsml/core/error.hpp>
@@ -14,7 +14,6 @@
 #include <complex>
 #include <limits>
 #include <memory>
-#include <numbers>
 #include <utility>
 #include <vector>
 
