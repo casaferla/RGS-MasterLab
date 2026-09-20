@@ -58,8 +58,8 @@ jobs:
 
       - name: Install/Stage Release Build
         run: |
-          cmake --install build/windows-msvc --config Release --prefix build/windows-msvc/stage/L1-M02/Release
+          cmake --install build/windows-msvc --config Release --prefix build/windows-msvc/stage/CI/Release
 
       - name: Run Deploy Smoke Test
         run: |
-          & build/windows-msvc/stage/L1-M02/Release/bin/RGSMasterLab.exe --rgsml-deploy-smoke
+          & build/windows-msvc/stage/CI/Release/bin/RGSMasterLab.exe --rgsml-deploy-smoke
