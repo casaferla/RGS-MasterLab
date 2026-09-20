@@ -79,17 +79,32 @@ function(rgsml_generate_current_toolchain_manifest output)
         set(architecture "${CMAKE_SYSTEM_PROCESSOR}")
     endif()
 
+    set(windows_sdk_version "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
+    if(windows_sdk_version STREQUAL "")
+        set(windows_sdk_version "not-applicable")
+    endif()
+
+    set(generator_platform "${CMAKE_GENERATOR_PLATFORM}")
+    if(generator_platform STREQUAL "")
+        set(generator_platform "not-applicable")
+    endif()
+
+    set(toolset "${CMAKE_VS_PLATFORM_TOOLSET}")
+    if(toolset STREQUAL "")
+        set(toolset "not-applicable")
+    endif()
+
     rgsml_write_toolchain_manifest(
         OUTPUT "${output}"
         SYSTEM_NAME "${CMAKE_SYSTEM_NAME}"
         ARCHITECTURE "${architecture}"
-        WINDOWS_SDK_VERSION "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}"
+        WINDOWS_SDK_VERSION "${windows_sdk_version}"
         CMAKE_VERSION "${CMAKE_VERSION}"
         GENERATOR "${CMAKE_GENERATOR}"
-        GENERATOR_PLATFORM "${CMAKE_GENERATOR_PLATFORM}"
+        GENERATOR_PLATFORM "${generator_platform}"
         COMPILER_ID "${CMAKE_CXX_COMPILER_ID}"
         COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}"
-        TOOLSET "${CMAKE_VS_PLATFORM_TOOLSET}"
+        TOOLSET "${toolset}"
         QT_VERSION "${Qt6_VERSION}"
         GIT_VERSION "${detected_git_version}"
     )

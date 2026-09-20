@@ -51,7 +51,7 @@ jobs:
 
       - name: Run Focused DSP Tests
         run: |
-          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_)" --output-on-failure
+          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_|toolchain_manifest_)" --output-on-failure
 
   windows-focused-dsp:
     name: Windows Focused DSP
@@ -88,4 +88,4 @@ jobs:
 
       - name: Run Focused DSP Tests (Release)
         run: |
-          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_)" --output-on-failure
+          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_|toolchain_manifest_)" --output-on-failure
