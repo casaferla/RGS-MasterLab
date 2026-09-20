@@ -43,10 +43,11 @@ constexpr auto kEqParameterSchema = "rgsml.dsp.parametric-eq.parameters/1.0.0";
     const DspProcessSpec& spec,
     const ParametricEqParameters& parameters)
 {
+    const double sr = static_cast<double>(spec.audio_format.sample_rate().value());
     if (!valid_domain(spec.frame_domain_id)
         || spec.maximum_block_frames.value() <= 0
-        || !std::isfinite(spec.audio_format.sample_rate_hz())
-        || spec.audio_format.sample_rate_hz() <= 0.0) {
+        || !std::isfinite(sr)
+        || sr <= 0.0) {
         return rgsml::core::Status::failure(eq_error(
             rgsml::core::ErrorCode::InvalidArgument,
             "INVALID_DSP_PROCESS_SPEC",
@@ -188,8 +189,9 @@ rgsml::core::Result<DspRuntimeRequirements> ParametricEqModule::runtime_requirem
         return rgsml::core::Result<DspRuntimeRequirements>::failure(*valid.error());
     }
 
+    const double sr = static_cast<double>(spec.audio_format.sample_rate().value());
     auto coeffs = internal::compute_parametric_eq_coefficients(
-        impl_->parameters, spec.audio_format.sample_rate_hz());
+        impl_->parameters, sr);
     if (!coeffs) {
         return rgsml::core::Result<DspRuntimeRequirements>::failure(*coeffs.error());
     }
@@ -215,8 +217,9 @@ rgsml::core::Status ParametricEqModule::prepare(const DspProcessSpec& spec)
         return valid;
     }
 
+    const double sr = static_cast<double>(spec.audio_format.sample_rate().value());
     auto coeffs = internal::compute_parametric_eq_coefficients(
-        impl_->parameters, spec.audio_format.sample_rate_hz());
+        impl_->parameters, sr);
     if (!coeffs) {
         return rgsml::core::Status::failure(*coeffs.error());
     }

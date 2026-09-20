@@ -254,7 +254,7 @@ Result<ParametricEqCoefficients> compute_parametric_eq_coefficients(
 
             if (order % 2 != 0) {
                 // 1st order section
-                double b0 = 0.0, b1 = 0.0, a0 = 1.0 + K, a1 = K - 1.0;
+                double b0 = 0.0, b1 = 0.0;
                 if (is_hp) {
                     b0 = 1.0 / (1.0 + K);
                     b1 = -b0;
