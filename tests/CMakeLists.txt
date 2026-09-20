@@ -862,20 +862,44 @@ add_test(
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_toolchain_manifest.cmake"
 )
 
+set(expected_manifest_architecture "${CMAKE_GENERATOR_PLATFORM}")
+if(expected_manifest_architecture STREQUAL "Win32")
+    set(expected_manifest_architecture "x86")
+elseif(expected_manifest_architecture STREQUAL "ARM64")
+    set(expected_manifest_architecture "arm64")
+elseif(expected_manifest_architecture STREQUAL "")
+    set(expected_manifest_architecture "${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+
+set(expected_manifest_windows_sdk "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
+if(expected_manifest_windows_sdk STREQUAL "")
+    set(expected_manifest_windows_sdk "not-applicable")
+endif()
+
+set(expected_manifest_generator_platform "${CMAKE_GENERATOR_PLATFORM}")
+if(expected_manifest_generator_platform STREQUAL "")
+    set(expected_manifest_generator_platform "not-applicable")
+endif()
+
+set(expected_manifest_toolset "${CMAKE_VS_PLATFORM_TOOLSET}")
+if(expected_manifest_toolset STREQUAL "")
+    set(expected_manifest_toolset "not-applicable")
+endif()
+
 add_test(
     NAME toolchain_manifest_current_contract
     COMMAND
         "${CMAKE_COMMAND}"
         "-DMANIFEST=${RGSML_TOOLCHAIN_MANIFEST}"
         "-DEXPECTED_SYSTEM=${CMAKE_SYSTEM_NAME}"
-        "-DEXPECTED_ARCHITECTURE=${CMAKE_GENERATOR_PLATFORM}"
-        "-DEXPECTED_SDK=${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}"
+        "-DEXPECTED_ARCHITECTURE=${expected_manifest_architecture}"
+        "-DEXPECTED_SDK=${expected_manifest_windows_sdk}"
         "-DEXPECTED_CMAKE=${CMAKE_VERSION}"
         "-DEXPECTED_GENERATOR=${CMAKE_GENERATOR}"
-        "-DEXPECTED_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+        "-DEXPECTED_PLATFORM=${expected_manifest_generator_platform}"
         "-DEXPECTED_COMPILER_ID=${CMAKE_CXX_COMPILER_ID}"
         "-DEXPECTED_COMPILER_VERSION=${CMAKE_CXX_COMPILER_VERSION}"
-        "-DEXPECTED_TOOLSET=${CMAKE_VS_PLATFORM_TOOLSET}"
+        "-DEXPECTED_TOOLSET=${expected_manifest_toolset}"
         "-DEXPECTED_QT=${Qt6_VERSION}"
         "-DEXPECTED_GIT=${RGSML_DETECTED_GIT_VERSION}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_current_toolchain_manifest.cmake"
