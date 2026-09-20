@@ -17,7 +17,7 @@ struct IndependentBiquadCoeffs final {
     double a2{0.0};
 };
 
-// O1: Independent coefficient oracle
+// O1: Independent coefficient oracle using double precision binary64 reference math
 inline IndependentBiquadCoeffs compute_bell_coeffs(double f, double gain_db, double q, double fs)
 {
     const double w0 = 2.0 * std::numbers::pi * f / fs;
@@ -114,6 +114,18 @@ inline std::complex<double> biquad_transfer_function(
     const std::complex<double> num = c.b0 + c.b1 * z1 + c.b2 * z2;
     const std::complex<double> den = 1.0 + c.a1 * z1 + c.a2 * z2;
     return num / den;
+}
+
+// O4: Rendered signal verification helper (RMS difference)
+inline double compute_rms_diff(const std::vector<double>& a, const std::vector<double>& b)
+{
+    if (a.size() != b.size() || a.empty()) return 0.0;
+    double sum = 0.0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        const double diff = a[i] - b[i];
+        sum += diff * diff;
+    }
+    return std::sqrt(sum / static_cast<double>(a.size()));
 }
 
 }  // namespace rgsml::tests::oracles

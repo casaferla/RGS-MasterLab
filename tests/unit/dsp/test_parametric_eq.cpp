@@ -14,6 +14,7 @@
 #include <complex>
 #include <limits>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace rgsml::tests {
@@ -25,6 +26,15 @@ using namespace render_support;
 [[nodiscard]] const ModuleDescriptor& eq_descriptor(const ModuleRegistry& registry)
 {
     return registry.find_descriptor("rgsml.dsp.parametric-eq").value()->get();
+}
+
+[[nodiscard]] std::unique_ptr<ParametricEqModule> make_eq_module(
+    const ModuleRegistry& registry,
+    const ParametricEqParameters& params)
+{
+    auto res = ParametricEqModule::create(eq_descriptor(registry), params);
+    Q_ASSERT(res);
+    return std::move(*res.value());
 }
 
 class ParametricEqTest final : public QObject {
@@ -87,7 +97,7 @@ void ParametricEqTest::routingAndMidSideMath()
     std::vector<EqBandParameters> bands;
     bands.push_back(mid_band);
     auto params = *ParametricEqParameters::create(bands).value();
-    auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
+    auto module = make_eq_module(*registry.value(), params);
 
     const DspProcessSpec spec{
         format(rgsml::audio::ChannelLayout::STEREO_LR, 48000.0),
@@ -128,7 +138,7 @@ void ParametricEqTest::canonicalChunkSizesInvariance()
     impulse[0] = 1.0;
 
     // Process all samples in one large block
-    auto mod1 = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
+    auto mod1 = make_eq_module(*registry.value(), params);
     const DspProcessSpec spec1{
         format(rgsml::audio::ChannelLayout::MONO_C, 48000.0),
         rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
@@ -143,7 +153,7 @@ void ParametricEqTest::canonicalChunkSizesInvariance()
 
     // Process using required canonical chunk sizes: 1, 2, 3, 7, 31, 64, 127, 256, 511, 1024, 4096, 8191
     const std::array<std::size_t, 12> chunk_sizes{1, 2, 3, 7, 31, 64, 127, 256, 511, 1024, 4096, 8191};
-    auto mod2 = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
+    auto mod2 = make_eq_module(*registry.value(), params);
     QVERIFY(mod2->prepare(spec1));
 
     std::vector<double> out2_samples(total_samples, 0.0);
@@ -189,8 +199,8 @@ void ParametricEqTest::multibandCanonicalOrderAndDisabledBands()
     std::vector<EqBandParameters> single_band{band1};
     auto params_single = *ParametricEqParameters::create(single_band).value();
 
-    auto mod_with_disabled = *ParametricEqModule::create(eq_descriptor(*registry.value()), params_with_disabled).value();
-    auto mod_single = *ParametricEqModule::create(eq_descriptor(*registry.value()), params_single).value();
+    auto mod_with_disabled = make_eq_module(*registry.value(), params_with_disabled);
+    auto mod_single = make_eq_module(*registry.value(), params_single);
 
     const DspProcessSpec spec{
         format(rgsml::audio::ChannelLayout::MONO_C, 48000.0),
@@ -225,7 +235,7 @@ void ParametricEqTest::settlingAndRuntimeRequirements()
     std::vector<EqBandParameters> bands;
     bands.push_back(band);
     auto params = *ParametricEqParameters::create(bands).value();
-    auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
+    auto module = make_eq_module(*registry.value(), params);
 
     const DspProcessSpec spec{
         format(rgsml::audio::ChannelLayout::STEREO_LR, 48000.0),
@@ -250,7 +260,7 @@ void ParametricEqTest::rejectsInvalidAndNonFinite()
     std::vector<EqBandParameters> bands;
     bands.push_back(high_freq_band);
     auto params = *ParametricEqParameters::create(bands).value();
-    auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
+    auto module = make_eq_module(*registry.value(), params);
 
     // Fs = 44100 -> 0.45 * Fs = 19845 Hz < 20000 Hz
     const DspProcessSpec spec{
@@ -266,7 +276,7 @@ void ParametricEqTest::rejectsInvalidAndNonFinite()
     std::vector<EqBandParameters> mono_bands;
     mono_bands.push_back(side_band);
     auto mono_params = *ParametricEqParameters::create(mono_bands).value();
-    auto mono_module = *ParametricEqModule::create(eq_descriptor(*registry.value()), mono_params).value();
+    auto mono_module = make_eq_module(*registry.value(), mono_params);
     const DspProcessSpec mono_spec{
         format(rgsml::audio::ChannelLayout::MONO_C, 48000.0),
         rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
@@ -283,7 +293,7 @@ void ParametricEqTest::rejectionAtomicityAndPreparedState()
     auto band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{1000.0, 6.0, 0.707}).value();
     std::vector<EqBandParameters> bands{band};
     auto params = *ParametricEqParameters::create(bands).value();
-    auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
+    auto module = make_eq_module(*registry.value(), params);
 
     std::vector<double> sample{1.0};
     auto in = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, sample);
