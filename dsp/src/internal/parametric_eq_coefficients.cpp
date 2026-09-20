@@ -1,4 +1,4 @@
-#include <rgsml/dsp/internal/parametric_eq_coefficients.hpp>
+#include "parametric_eq_coefficients.hpp"
 
 #include <rgsml/core/error.hpp>
 

@@ -2,8 +2,9 @@
 
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/error.hpp>
-#include <rgsml/dsp/internal/parametric_eq_coefficients.hpp>
 #include <rgsml/dsp/module_descriptor.hpp>
+
+#include "internal/parametric_eq_coefficients.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -128,6 +129,7 @@ struct ParametricEqModule::Impl final {
     ParametricEqParameters parameters;
     std::optional<DspProcessSpec> prepared_spec;
     std::vector<BandRuntimeState> band_states;
+    std::vector<BandRuntimeState> backup_band_states;
     std::int64_t total_settling_frames{0};
     std::vector<double> scratch_ch0;
     std::vector<double> scratch_ch1;
@@ -150,7 +152,7 @@ rgsml::core::Result<std::unique_ptr<ParametricEqModule>> ParametricEqModule::cre
 
     try {
         auto impl = std::make_unique<Impl>(Impl{
-            &descriptor, std::move(parameters), std::nullopt, {}, 0, {}, {}});
+            &descriptor, std::move(parameters), std::nullopt, {}, {}, 0, {}, {}});
         return rgsml::core::Result<std::unique_ptr<ParametricEqModule>>::success(
             std::unique_ptr<ParametricEqModule>{new ParametricEqModule{std::move(impl)}});
     } catch (...) {
@@ -240,6 +242,8 @@ rgsml::core::Status ParametricEqModule::prepare(const DspProcessSpec& spec)
         impl_->band_states.push_back(std::move(band_state));
     }
 
+    impl_->backup_band_states = impl_->band_states;
+
     impl_->total_settling_frames = coeffs.value()->total_settling_frames;
     const std::size_t max_frames = static_cast<std::size_t>(spec.maximum_block_frames.value());
     impl_->scratch_ch0.assign(max_frames, 0.0);
@@ -256,6 +260,9 @@ rgsml::core::Status ParametricEqModule::prepare(const DspProcessSpec& spec)
 void ParametricEqModule::reset() noexcept
 {
     for (auto& band : impl_->band_states) {
+        band.reset();
+    }
+    for (auto& band : impl_->backup_band_states) {
         band.reset();
     }
 }
@@ -323,8 +330,8 @@ rgsml::core::Status ParametricEqModule::process(
             std::copy(in_ch1.begin(), in_ch1.end(), impl_->scratch_ch1.begin());
         }
 
-        // Backup band states in case output contains non-finite samples
-        auto state_backup = impl_->band_states;
+        // Backup band states in case output contains non-finite samples (reuses pre-allocated capacity)
+        impl_->backup_band_states = impl_->band_states;
 
         const double kSqrt2 = std::numbers::sqrt2;
 
@@ -449,7 +456,7 @@ rgsml::core::Status ParametricEqModule::process(
         for (std::size_t f = 0; f < num_frames; ++f) {
             if (!std::isfinite(impl_->scratch_ch0[f])
                 || (channel_count == 2 && !std::isfinite(impl_->scratch_ch1[f]))) {
-                impl_->band_states = std::move(state_backup);
+                impl_->band_states = impl_->backup_band_states;
                 return rgsml::core::Status::failure(eq_error(
                     rgsml::core::ErrorCode::InvalidAudioSample,
                     "NONFINITE_OUTPUT_SAMPLE",
