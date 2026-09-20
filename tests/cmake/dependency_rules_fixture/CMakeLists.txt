@@ -137,10 +137,14 @@ endif()
 
 if(FIXTURE_CASE STREQUAL "dsp_headers")
     set(public_headers
+        gain_module.hpp
+        gain_parameters.hpp
         imodule.hpp
         module_descriptor.hpp
         module_instance.hpp
         module_registry.hpp
+        parametric_eq_module.hpp
+        parametric_eq_parameters.hpp
         processing_chain.hpp)
     foreach(public_header IN LISTS public_headers)
         string(REPLACE "." "_" header_target "dsp_standalone_${public_header}")
