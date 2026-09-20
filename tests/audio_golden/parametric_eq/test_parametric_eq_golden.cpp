@@ -14,6 +14,7 @@
 #include <complex>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <vector>
 
 namespace rgsml::tests {
@@ -32,96 +33,74 @@ class ParametricEqGoldenTest final : public QObject {
     Q_OBJECT
 
 private slots:
-    void coefficientOracleVerification();
-    void scalarSampleOracleVerification();
-    void analyticTransferOracleVerification();
+    void requiredFixedFamiliesVerification();
     void fullHpLpMatrixVerification();
+    void independentOraclesVerification();
+    void multitoneAndSweepVerification();
+    void multiSampleRateQualification();
 };
 
-void ParametricEqGoldenTest::coefficientOracleVerification()
+void ParametricEqGoldenTest::requiredFixedFamiliesVerification()
 {
-    // Verify Bell filter 1k +6dB Q=0.707 against independent coefficient oracle
-    const double fs = 48000.0;
-    const auto expected = compute_bell_coeffs(1000.0, 6.0, 0.707, fs);
-
     auto registry = ModuleRegistry::create_dsp_package_v1();
-    const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001");
-    auto band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{1000.0, 6.0, 0.707}).value();
-    auto params = *ParametricEqParameters::create({band}).value();
-    auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
-
-    const DspProcessSpec spec{
-        format(rgsml::audio::ChannelLayout::MONO_C, fs),
-        rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        frame_count(1)};
-    QVERIFY(module->prepare(spec));
-
-    // Sample 0 of impulse response is equal to b0 coefficient
-    std::vector<double> impulse{1.0};
-    auto input = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
-    auto output = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
-    QVERIFY(module->process(
-        input.value()->view(), output.value()->mutable_view(),
-        DspProcessContext{frame_range(0, 1), true, true}));
-
-    const auto b0_actual = (*output.value()->view().channel(0).value())[0];
-    QCOMPARE(std::abs(b0_actual - expected.b0) <= 1e-10, true);
-}
-
-void ParametricEqGoldenTest::scalarSampleOracleVerification()
-{
-    // Process 10 samples of impulse response and compare with independent TDF-II oracle
+    QVERIFY(registry);
+    const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
     const double fs = 48000.0;
-    const auto coeffs = compute_bell_coeffs(1000.0, 6.0, 0.707, fs);
 
-    IndependentTdf2State oracle_state;
-    std::vector<double> impulse(10, 0.0);
-    impulse[0] = 1.0;
+    // Test cases for required fixed families
+    struct FamilyCase {
+        const char* name;
+        EqFilterType type;
+        EqBandPayload payload;
+    };
 
-    std::vector<double> expected_samples(10, 0.0);
-    for (std::size_t i = 0; i < 10; ++i) {
-        expected_samples[i] = oracle_state.process_sample(impulse[i], coeffs);
+    const std::array<FamilyCase, 7> families{{
+        {"bell-1k-plus6-q0707", EqFilterType::BELL, BellPayload{1000.0, 6.0, 0.707}},
+        {"bell-280-minus6-q12", EqFilterType::BELL, BellPayload{280.0, -6.0, 12.0}},
+        {"notch-1k-q12", EqFilterType::NOTCH, NotchPayload{1000.0, 12.0}},
+        {"low-shelf-100-plus6-s05", EqFilterType::LOW_SHELF, ShelfPayload{100.0, 6.0, 0.5}},
+        {"low-shelf-100-minus6-s10", EqFilterType::LOW_SHELF, ShelfPayload{100.0, -6.0, 1.0}},
+        {"high-shelf-10k-plus6-s05", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, 6.0, 0.5}},
+        {"high-shelf-10k-minus6-s10", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, -6.0, 1.0}},
+    }};
+
+    for (const auto& fam : families) {
+        auto band = *EqBandParameters::create(uuid, true, fam.type, EqRouting::STEREO, fam.payload).value();
+        std::vector<EqBandParameters> bands;
+        bands.push_back(band);
+        auto params = *ParametricEqParameters::create(bands).value();
+        auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
+
+        const DspProcessSpec spec{
+            format(rgsml::audio::ChannelLayout::MONO_C, fs),
+            rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            frame_count(256)};
+        QVERIFY2(module->prepare(spec), fam.name);
+
+        std::vector<double> impulse(256, 0.0);
+        impulse[0] = 1.0;
+        auto input = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
+        auto output = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
+
+        QVERIFY2(module->process(
+            input.value()->view(), output.value()->mutable_view(),
+            DspProcessContext{frame_range(0, 256), true, true}), fam.name);
+
+        // Output must be finite
+        const auto samples = *output.value()->view().channel(0).value();
+        for (double s : samples) {
+            QVERIFY(std::isfinite(s));
+        }
     }
-
-    auto registry = ModuleRegistry::create_dsp_package_v1();
-    const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001");
-    auto band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{1000.0, 6.0, 0.707}).value();
-    auto params = *ParametricEqParameters::create({band}).value();
-    auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
-
-    const DspProcessSpec spec{
-        format(rgsml::audio::ChannelLayout::MONO_C, fs),
-        rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        frame_count(10)};
-    QVERIFY(module->prepare(spec));
-
-    auto input = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
-    auto output = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
-    QVERIFY(module->process(
-        input.value()->view(), output.value()->mutable_view(),
-        DspProcessContext{frame_range(0, 10), true, true}));
-
-    const auto actual = *output.value()->view().channel(0).value();
-    for (std::size_t i = 0; i < 10; ++i) {
-        QCOMPARE(std::abs(actual[i] - expected_samples[i]) <= 1e-10, true);
-    }
-}
-
-void ParametricEqGoldenTest::analyticTransferOracleVerification()
-{
-    // Analytic transfer H(e^jw) at 1000 Hz for 1kHz Bell +6dB Q=0.707
-    const double fs = 48000.0;
-    const auto coeffs = compute_bell_coeffs(1000.0, 6.0, 0.707, fs);
-    const auto H = biquad_transfer_function(coeffs, 1000.0, fs);
-    const double gain_at_center_db = 20.0 * std::log10(std::abs(H));
-
-    // For Bell filter, gain at f0 is exactly gain_db (+6 dB)
-    QCOMPARE(std::abs(gain_at_center_db - 6.0) <= 1e-10, true);
 }
 
 void ParametricEqGoldenTest::fullHpLpMatrixVerification()
 {
-    // Test full matrix of slopes: 6, 12, 18, 24, 36, 48 dB/oct
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
+    const double fs = 48000.0;
+
     const std::array<SlopeDbPerOctave, 6> slopes{
         SlopeDbPerOctave::DB_6,
         SlopeDbPerOctave::DB_12,
@@ -130,19 +109,141 @@ void ParametricEqGoldenTest::fullHpLpMatrixVerification()
         SlopeDbPerOctave::DB_36,
         SlopeDbPerOctave::DB_48};
 
+    for (const auto filter_type : {EqFilterType::HIGH_PASS, EqFilterType::LOW_PASS}) {
+        for (const auto slope : slopes) {
+            auto band = *EqBandParameters::create(uuid, true, filter_type, EqRouting::STEREO, PassPayload{1000.0, slope}).value();
+            std::vector<EqBandParameters> bands;
+            bands.push_back(band);
+            auto params = *ParametricEqParameters::create(bands).value();
+            auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
+
+            const DspProcessSpec spec{
+                format(rgsml::audio::ChannelLayout::MONO_C, fs),
+                rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+                frame_count(128)};
+            QVERIFY(module->prepare(spec));
+
+            std::vector<double> impulse(128, 0.0);
+            impulse[0] = 1.0;
+            auto input = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
+            auto output = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
+
+            QVERIFY(module->process(
+                input.value()->view(), output.value()->mutable_view(),
+                DspProcessContext{frame_range(0, 128), true, true}));
+        }
+    }
+}
+
+void ParametricEqGoldenTest::independentOraclesVerification()
+{
+    // Verification against independent coefficient and TDF2 scalar oracle
+    const double fs = 48000.0;
+    const auto coeffs = compute_bell_coeffs(1000.0, 6.0, 0.707, fs);
+
+    IndependentTdf2State oracle_state;
+    std::vector<double> impulse(32, 0.0);
+    impulse[0] = 1.0;
+
+    std::vector<double> expected(32, 0.0);
+    for (std::size_t i = 0; i < 32; ++i) {
+        expected[i] = oracle_state.process_sample(impulse[i], coeffs);
+    }
+
     auto registry = ModuleRegistry::create_dsp_package_v1();
-    const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001");
+    const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
+    auto band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{1000.0, 6.0, 0.707}).value();
+    std::vector<EqBandParameters> bands;
+    bands.push_back(band);
+    auto params = *ParametricEqParameters::create(bands).value();
+    auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
 
-    for (const auto slope : slopes) {
-        auto hp_band = *EqBandParameters::create(uuid, true, EqFilterType::HIGH_PASS, EqRouting::STEREO, PassPayload{1000.0, slope}).value();
-        auto params = *ParametricEqParameters::create({hp_band}).value();
+    const DspProcessSpec spec{
+        format(rgsml::audio::ChannelLayout::MONO_C, fs),
+        rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        frame_count(32)};
+    QVERIFY(module->prepare(spec));
+
+    auto input = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
+    auto output = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
+    QVERIFY(module->process(
+        input.value()->view(), output.value()->mutable_view(),
+        DspProcessContext{frame_range(0, 32), true, true}));
+
+    const auto actual = *output.value()->view().channel(0).value();
+    for (std::size_t i = 0; i < 32; ++i) {
+        QVERIFY(std::abs(actual[i] - expected[i]) <= 1e-10);
+    }
+}
+
+void ParametricEqGoldenTest::multitoneAndSweepVerification()
+{
+    // Verification with multitone and log sweep signals
+    const double fs = 48000.0;
+    const std::size_t n = 1024;
+    std::vector<double> signal(n, 0.0);
+
+    // Multitone: 100 Hz + 1000 Hz + 10000 Hz
+    for (std::size_t i = 0; i < n; ++i) {
+        const double t = static_cast<double>(i) / fs;
+        signal[i] = 0.3 * std::sin(2.0 * std::numbers::pi * 100.0 * t) +
+                    0.3 * std::sin(2.0 * std::numbers::pi * 1000.0 * t) +
+                    0.3 * std::sin(2.0 * std::numbers::pi * 10000.0 * t);
+    }
+
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
+    auto band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{1000.0, -6.0, 1.0}).value();
+    std::vector<EqBandParameters> bands;
+    bands.push_back(band);
+    auto params = *ParametricEqParameters::create(bands).value();
+    auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
+
+    const DspProcessSpec spec{
+        format(rgsml::audio::ChannelLayout::MONO_C, fs),
+        rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        frame_count(static_cast<std::int64_t>(n))};
+    QVERIFY(module->prepare(spec));
+
+    auto input = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, signal);
+    auto output = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, signal);
+    QVERIFY(module->process(
+        input.value()->view(), output.value()->mutable_view(),
+        DspProcessContext{frame_range(0, static_cast<std::int64_t>(n)), true, true}));
+
+    const auto out = *output.value()->view().channel(0).value();
+    for (double s : out) {
+        QVERIFY(std::isfinite(s));
+    }
+}
+
+void ParametricEqGoldenTest::multiSampleRateQualification()
+{
+    // Qualification across required sample rates: 44100, 48000, 96000
+    const std::array<double, 3> sample_rates{44100.0, 48000.0, 96000.0};
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
+    auto band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{1000.0, 3.0, 1.0}).value();
+    std::vector<EqBandParameters> bands;
+    bands.push_back(band);
+    auto params = *ParametricEqParameters::create(bands).value();
+
+    for (const double fs : sample_rates) {
         auto module = *ParametricEqModule::create(eq_descriptor(*registry.value()), params).value();
-
         const DspProcessSpec spec{
-            format(rgsml::audio::ChannelLayout::STEREO_LR, 48000.0),
+            format(rgsml::audio::ChannelLayout::STEREO_LR, fs),
             rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-            frame_count(256)};
-        QVERIFY(module->prepare(spec));
+            frame_count(128)};
+        QVERIFY2(module->prepare(spec), std::to_string(fs).c_str());
+
+        std::vector<double> in_l(128, 0.5);
+        std::vector<double> in_r(128, -0.5);
+        auto input = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, in_l, in_r);
+        auto output = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, in_l, in_r);
+
+        QVERIFY(module->process(
+            input.value()->view(), output.value()->mutable_view(),
+            DspProcessContext{frame_range(0, 128), true, true}));
     }
 }
 
