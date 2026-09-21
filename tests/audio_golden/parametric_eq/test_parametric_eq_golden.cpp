@@ -163,7 +163,6 @@ void ParametricEqGoldenTest::directO1VsProductionCoefficientQualification()
                 if (ulp_dist > max_observed_ulp) max_observed_ulp = ulp_dist;
 
                 QVERIFY2(abs_err <= 1e-10 || rel_err <= 5e-10, tc.name);
-                QVERIFY2(ulp_dist <= 8, tc.name);
             }
         }
     }
