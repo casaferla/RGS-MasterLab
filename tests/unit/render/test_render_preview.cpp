@@ -68,6 +68,9 @@ private slots:
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
     void mixedGainAndEqOrderAndBypassIdentity();
+    void activeMixedGainAndEqChainIntegration();
+    void bindingOrderInvariance();
+    void eqSignatureContent();
     void errorOrderingActiveUnsupportedModuleFailsTruthfully();
 };
 
@@ -297,6 +300,7 @@ void RenderPreviewTest::parametricEqPreviewAndCausalPrerollEquivalence()
         right[i] = std::cos(2.0 * M_PI * 1000.0 * static_cast<double>(i) / 48000.0);
     }
     auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    const auto source_bits_before = bits(source.value()->view());
     auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
     auto chain = empty_chain(*registry.value());
     const auto eq_id = make_id("25000000-0000-0000-0000-000000000001");
@@ -328,6 +332,9 @@ void RenderPreviewTest::parametricEqPreviewAndCausalPrerollEquivalence()
         QVERIFY(mid_res);
         QCOMPARE(bits(mid_res.value()->view()), expected_bits);
     }
+
+    // Qualification requirement 4: Verify Source bits are identical AFTER all renders
+    QCOMPARE(bits(source.value()->view()), source_bits_before);
 }
 
 void RenderPreviewTest::mixedGainAndEqOrderAndBypassIdentity()
@@ -360,6 +367,162 @@ void RenderPreviewTest::mixedGainAndEqOrderAndBypassIdentity()
     QCOMPARE(res.value()->signatures().size(), std::size_t{2});
     QCOMPARE(res.value()->signatures()[0].disposition, rgsml::render::ModuleExecutionDisposition::BYPASS_IDENTITY);
     QCOMPARE(res.value()->signatures()[1].disposition, rgsml::render::ModuleExecutionDisposition::BYPASS_IDENTITY);
+}
+
+void RenderPreviewTest::activeMixedGainAndEqChainIntegration()
+{
+    // Qualification requirement 1: Active mixed Gain + EQ
+    std::vector<double> left(100U);
+    std::vector<double> right(100U);
+    for (std::size_t i = 0; i < 100U; ++i) {
+        left[i] = std::sin(2.0 * M_PI * 1000.0 * static_cast<double>(i) / 48000.0);
+        right[i] = std::cos(2.0 * M_PI * 1000.0 * static_cast<double>(i) / 48000.0);
+    }
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    auto chain = empty_chain(*registry.value());
+
+    const auto gain_id = make_id("28000000-0000-0000-0000-000000000001");
+    const auto eq_id = make_id("28000000-0000-0000-0000-000000000002");
+    QVERIFY(chain.add(gain_id, "rgsml.dsp.gain", 0));
+    QVERIFY(chain.add(eq_id, "rgsml.dsp.parametric-eq", 1));
+
+    const rgsml::dsp::ModuleExecutionBinding gain_binding{gain_id, gain(6.0)};
+    const rgsml::dsp::ModuleExecutionBinding eq_binding{eq_id, bell_eq(1000.0, 6.0, 1.414)};
+
+    auto req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {gain_binding, eq_binding}, frame_count(64));
+    QVERIFY(req);
+
+    auto res = rgsml::render::render_preview(*req.value(), *registry.value());
+    QVERIFY(res);
+
+    // Verify non-identity output
+    QVERIFY(bits(res.value()->view()) != bits(source.value()->view()));
+
+    // Verify signatures appear in ProcessingChain order with PROCESSED disposition
+    const auto& sigs = res.value()->signatures();
+    QCOMPARE(sigs.size(), std::size_t{2});
+
+    QCOMPARE(sigs[0].instance_id, gain_id);
+    QCOMPARE(sigs[0].type_id, std::string{"rgsml.dsp.gain"});
+    QCOMPARE(sigs[0].disposition, rgsml::render::ModuleExecutionDisposition::PROCESSED);
+
+    QCOMPARE(sigs[1].instance_id, eq_id);
+    QCOMPARE(sigs[1].type_id, std::string{"rgsml.dsp.parametric-eq"});
+    QCOMPARE(sigs[1].disposition, rgsml::render::ModuleExecutionDisposition::PROCESSED);
+}
+
+void RenderPreviewTest::bindingOrderInvariance()
+{
+    // Qualification requirement 2: Binding collection order MUST NOT control execution
+    std::vector<double> left(100U);
+    std::vector<double> right(100U);
+    for (std::size_t i = 0; i < 100U; ++i) {
+        left[i] = std::sin(2.0 * M_PI * 1000.0 * static_cast<double>(i) / 48000.0);
+        right[i] = std::cos(2.0 * M_PI * 1000.0 * static_cast<double>(i) / 48000.0);
+    }
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    auto chain = empty_chain(*registry.value());
+
+    const auto gain_id = make_id("29000000-0000-0000-0000-000000000001");
+    const auto eq_id = make_id("29000000-0000-0000-0000-000000000002");
+    QVERIFY(chain.add(gain_id, "rgsml.dsp.gain", 0));
+    QVERIFY(chain.add(eq_id, "rgsml.dsp.parametric-eq", 1));
+
+    const rgsml::dsp::ModuleExecutionBinding gain_binding{gain_id, gain(6.0)};
+    const rgsml::dsp::ModuleExecutionBinding eq_binding{eq_id, bell_eq(1000.0, 6.0, 1.414)};
+
+    // Supply bindings in forward order (gain -> eq)
+    auto req_forward = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {gain_binding, eq_binding}, frame_count(64));
+    QVERIFY(req_forward);
+    auto res_forward = rgsml::render::render_preview(*req_forward.value(), *registry.value());
+    QVERIFY(res_forward);
+
+    // Supply bindings in REVERSED order (eq -> gain)
+    auto req_reversed = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {eq_binding, gain_binding}, frame_count(64));
+    QVERIFY(req_reversed);
+    auto res_reversed = rgsml::render::render_preview(*req_reversed.value(), *registry.value());
+    QVERIFY(res_reversed);
+
+    // Output must match exactly
+    QCOMPARE(bits(res_reversed.value()->view()), bits(res_forward.value()->view()));
+
+    // Execution signatures must still be in chain order (gain_id -> eq_id)
+    const auto& sigs = res_reversed.value()->signatures();
+    QCOMPARE(sigs.size(), std::size_t{2});
+    QCOMPARE(sigs[0].instance_id, gain_id);
+    QCOMPARE(sigs[1].instance_id, eq_id);
+}
+
+void RenderPreviewTest::eqSignatureContent()
+{
+    // Qualification requirement 3: EQ signature contains ONLY enabled bands
+    const auto band_enabled_id = *rgsml::core::Uuid::parse("30000000-0000-0000-0000-000000000001").value();
+    const auto band_disabled_id = *rgsml::core::Uuid::parse("30000000-0000-0000-0000-000000000002").value();
+
+    auto enabled_band = rgsml::dsp::EqBandParameters::create(
+        band_enabled_id,
+        true,
+        rgsml::dsp::EqFilterType::BELL,
+        rgsml::dsp::EqRouting::STEREO,
+        rgsml::dsp::BellPayload{1000.0, 6.0, 0.707});
+    QVERIFY(enabled_band);
+
+    auto disabled_band = rgsml::dsp::EqBandParameters::create(
+        band_disabled_id,
+        false,
+        rgsml::dsp::EqFilterType::LOW_SHELF,
+        rgsml::dsp::EqRouting::LEFT,
+        rgsml::dsp::ShelfPayload{100.0, -12.0, 1.0});
+    QVERIFY(disabled_band);
+
+    auto eq_params = rgsml::dsp::ParametricEqParameters::create({*enabled_band.value(), *disabled_band.value()});
+    QVERIFY(eq_params);
+
+    const std::array samples{0.25, -0.5, 0.5};
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    auto chain = empty_chain(*registry.value());
+
+    const auto eq_id = make_id("30000000-0000-0000-0000-000000000003");
+    QVERIFY(chain.add(eq_id, "rgsml.dsp.parametric-eq", 0));
+
+    const rgsml::dsp::ModuleExecutionBinding binding{eq_id, *eq_params.value()};
+
+    auto req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 3), chain,
+        {binding}, frame_count(64));
+    QVERIFY(req);
+
+    auto res = rgsml::render::render_preview(*req.value(), *registry.value());
+    QVERIFY(res);
+
+    const auto& sigs = res.value()->signatures();
+    QCOMPARE(sigs.size(), std::size_t{1});
+    QCOMPARE(sigs[0].instance_id, eq_id);
+
+    const auto* eq_payload = std::get_if<rgsml::render::ParametricEqExecutionSignaturePayload>(&sigs[0].payload);
+    QVERIFY(eq_payload != nullptr);
+
+    // Verify only 1 enabled band appears and disabled band is absent
+    QCOMPARE(eq_payload->enabled_bands.size(), std::size_t{1});
+
+    const auto& band_sig = eq_payload->enabled_bands[0];
+    QCOMPARE(band_sig.filter_type, rgsml::dsp::EqFilterType::BELL);
+    QCOMPARE(band_sig.routing, rgsml::dsp::EqRouting::STEREO);
+
+    const auto* bell = std::get_if<rgsml::dsp::BellPayload>(&band_sig.payload);
+    QVERIFY(bell != nullptr);
+    QCOMPARE(bell->frequency_hz, 1000.0);
+    QCOMPARE(bell->gain_db, 6.0);
+    QCOMPARE(bell->q, 0.707);
 }
 
 void RenderPreviewTest::errorOrderingActiveUnsupportedModuleFailsTruthfully()
