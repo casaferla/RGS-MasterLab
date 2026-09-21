@@ -84,7 +84,7 @@ void GainTest::descriptorFactoryAndApiValidation()
         descriptor.parameter_schema_id(),
         std::optional<std::string_view>{"rgsml.dsp.gain.parameters/1.0.0"});
     QCOMPARE(registry.value()->descriptors().size(), std::size_t{11});
-    QCOMPARE(registry.value()->factory_count(), std::size_t{1});
+    QCOMPARE(registry.value()->factory_count(), std::size_t{2});
     QVERIFY(registry.value()->has_factory("rgsml.dsp.gain"));
     auto default_module = registry.value()->create_module("rgsml.dsp.gain");
     QVERIFY(default_module);

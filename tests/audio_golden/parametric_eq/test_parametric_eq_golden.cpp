@@ -100,9 +100,10 @@ void ParametricEqGoldenTest::requiredFixedFamiliesVerification()
             QVERIFY(std::isfinite(s));
         }
 
-        // Numerical check for bell-1k-plus6-q0707: first sample equals b0 coefficient
+        // Numerical check for Bell filters: first sample equals b0 coefficient
         if (fam.type == EqFilterType::BELL) {
-            const auto expected = compute_bell_coeffs(1000.0, 6.0, 0.707, fs);
+            const auto bell = std::get<BellPayload>(fam.payload);
+            const auto expected = compute_bell_coeffs(bell.frequency_hz, bell.gain_db, bell.q, fs);
             QVERIFY(std::abs(samples[0] - expected.b0) <= 1e-10);
         }
     }
@@ -277,8 +278,21 @@ void ParametricEqGoldenTest::multiSampleRateQualification()
 
         std::vector<double> in_l(128, 0.5);
         std::vector<double> in_r(128, -0.5);
-        auto input = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, in_l, in_r);
-        auto output = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, in_l, in_r);
+        auto input = rgsml::audio::AudioBuffer::create(
+            format(rgsml::audio::ChannelLayout::STEREO_LR, fs),
+            rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            frame_range(0, 128));
+        auto output = rgsml::audio::AudioBuffer::create(
+            format(rgsml::audio::ChannelLayout::STEREO_LR, fs),
+            rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            frame_range(0, 128));
+        QVERIFY(input);
+        QVERIFY(output);
+
+        auto in_l_span = *input.value()->mutable_view().channel(0).value();
+        auto in_r_span = *input.value()->mutable_view().channel(1).value();
+        std::copy(in_l.begin(), in_l.end(), in_l_span.begin());
+        std::copy(in_r.begin(), in_r.end(), in_r_span.begin());
 
         QVERIFY(module->process(
             input.value()->view(), output.value()->mutable_view(),
