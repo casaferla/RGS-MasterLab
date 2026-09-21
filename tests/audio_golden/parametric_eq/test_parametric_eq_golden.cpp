@@ -291,6 +291,7 @@ void ParametricEqGoldenTest::multitoneAndSweepVerification()
     verify_rendered_against_o2(actual_multitone, expected_multitone);
 
     // Log sweep verification
+    module->reset();
     std::vector<double> sweep(n, 0.0);
     const double f_start = 20.0;
     const double f_end = 20000.0;
