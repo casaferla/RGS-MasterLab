@@ -197,7 +197,7 @@ void ModuleDescriptorTest::catalogMatchesFrozenMatrix()
     auto registry = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry.value() != nullptr);
     QCOMPARE(registry.value()->descriptors().size(), std::size_t{11});
-    QCOMPARE(registry.value()->factory_count(), std::size_t{1});
+    QCOMPARE(registry.value()->factory_count(), std::size_t{2});
 
     struct Expected final {
         const char* id;
@@ -217,7 +217,7 @@ void ModuleDescriptorTest::catalogMatchesFrozenMatrix()
         {"rgsml.dsp.declip", {ModuleCategory::RESTORATION}, {ProcessingStage::RESTORE_PREP}, {ChainSegment::REPAIR}, true, PlacementClass::INLINE_CHAIN, std::nullopt, false, false, std::nullopt, std::nullopt},
         {"rgsml.dsp.dehum", {ModuleCategory::RESTORATION}, {ProcessingStage::RESTORE_PREP}, {ChainSegment::REPAIR}, true, PlacementClass::INLINE_CHAIN, std::nullopt, false, false, std::nullopt, std::nullopt},
         {"rgsml.dsp.gain", {ModuleCategory::UTILITY}, {ProcessingStage::RESTORE_PREP, ProcessingStage::MASTER}, {ChainSegment::PRE_MASTER_CONDITIONING, ChainSegment::MANUAL, ChainSegment::DNA_LINKED, ChainSegment::REF_LINKED}, true, PlacementClass::INLINE_CHAIN, std::nullopt, false, false, "1.0.0", "rgsml.dsp.gain.parameters/1.0.0"},
-        {"rgsml.dsp.parametric-eq", {ModuleCategory::FILTER_EQ}, {ProcessingStage::RESTORE_PREP, ProcessingStage::MASTER}, {ChainSegment::REPAIR, ChainSegment::PRE_MASTER_CONDITIONING, ChainSegment::MANUAL, ChainSegment::DNA_LINKED, ChainSegment::REF_LINKED}, true, PlacementClass::INLINE_CHAIN, std::nullopt, false, false, std::nullopt, std::nullopt},
+        {"rgsml.dsp.parametric-eq", {ModuleCategory::FILTER_EQ}, {ProcessingStage::RESTORE_PREP, ProcessingStage::MASTER}, {ChainSegment::REPAIR, ChainSegment::PRE_MASTER_CONDITIONING, ChainSegment::MANUAL, ChainSegment::DNA_LINKED, ChainSegment::REF_LINKED}, true, PlacementClass::INLINE_CHAIN, std::nullopt, false, false, "1.0.0", "rgsml.dsp.parametric-eq.parameters/1.0.0"},
         {"rgsml.dsp.compressor", {ModuleCategory::DYNAMICS}, {ProcessingStage::MASTER}, {ChainSegment::MANUAL, ChainSegment::DNA_LINKED, ChainSegment::REF_LINKED}, true, PlacementClass::INLINE_CHAIN, std::nullopt, false, false, std::nullopt, std::nullopt},
         {"rgsml.dsp.stereo-ms", {ModuleCategory::SPATIAL}, {ProcessingStage::MASTER}, {ChainSegment::MANUAL, ChainSegment::DNA_LINKED, ChainSegment::REF_LINKED}, true, PlacementClass::INLINE_CHAIN, std::nullopt, false, false, std::nullopt, std::nullopt},
         {"rgsml.dsp.true-peak-limiter", {ModuleCategory::DYNAMICS, ModuleCategory::OUTPUT}, {ProcessingStage::MASTER}, {ChainSegment::TERMINAL}, false, PlacementClass::TERMINAL_SLOT, TerminalSlot::FINAL_TRUE_PEAK_LIMITER, false, true, std::nullopt, std::nullopt},
@@ -248,7 +248,7 @@ void ModuleDescriptorTest::catalogMatchesFrozenMatrix()
             QCOMPARE(*descriptor.algorithm_version(), std::string_view{*row.algorithm});
             QVERIFY(descriptor.parameter_schema_id().has_value());
             QCOMPARE(*descriptor.parameter_schema_id(), std::string_view{*row.schema});
-            if (descriptor.type_id() == "rgsml.dsp.gain") {
+            if (descriptor.type_id() == "rgsml.dsp.gain" || descriptor.type_id() == "rgsml.dsp.parametric-eq") {
                 QVERIFY(descriptor.recommended_before().empty());
             } else {
                 QCOMPARE(descriptor.recommended_before().size(), std::size_t{1});

@@ -3,6 +3,8 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/dsp/gain_module.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
+#include <rgsml/dsp/parametric_eq_module.hpp>
+#include <rgsml/dsp/parametric_eq_parameters.hpp>
 
 #include <algorithm>
 #include <array>
@@ -20,6 +22,7 @@ using rgsml::core::ErrorCode;
 using rgsml::core::Result;
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
+constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 
 class GainFactory final : public IModuleFactory {
 public:
@@ -40,6 +43,36 @@ public:
             return Result<std::unique_ptr<IModule>>::failure(*parameters.error());
         }
         auto module = GainModule::create(descriptor_, *parameters.value());
+        if (!module) {
+            return Result<std::unique_ptr<IModule>>::failure(*module.error());
+        }
+        std::unique_ptr<IModule> result = std::move(*module.value());
+        return Result<std::unique_ptr<IModule>>::success(std::move(result));
+    }
+
+private:
+    ModuleDescriptor descriptor_;
+};
+
+class ParametricEqFactory final : public IModuleFactory {
+public:
+    explicit ParametricEqFactory(ModuleDescriptor descriptor)
+        : descriptor_(std::move(descriptor))
+    {
+    }
+
+    [[nodiscard]] std::string_view module_type_id() const noexcept override
+    {
+        return descriptor_.type_id();
+    }
+
+    [[nodiscard]] Result<std::unique_ptr<IModule>> create() const override
+    {
+        auto parameters = ParametricEqParameters::create_legacy_default();
+        if (!parameters) {
+            return Result<std::unique_ptr<IModule>>::failure(*parameters.error());
+        }
+        auto module = ParametricEqModule::create(descriptor_, *parameters.value());
         if (!module) {
             return Result<std::unique_ptr<IModule>>::failure(*module.error());
         }
@@ -162,7 +195,12 @@ private:
         {REPAIR, PRE_MASTER_CONDITIONING, MANUAL, DNA_LINKED, REF_LINKED},
         true,
         INLINE_CHAIN,
-        std::nullopt));
+        std::nullopt,
+        {},
+        false,
+        false,
+        "1.0.0",
+        "rgsml.dsp.parametric-eq.parameters/1.0.0"));
     specs.push_back(make_spec(
         "rgsml.dsp.compressor",
         {DYNAMICS},
@@ -367,6 +405,8 @@ Result<ModuleRegistry> ModuleRegistry::create_dsp_package_v1()
         std::shared_ptr<const IModuleFactory> factory;
         if (canonical_descriptor.type_id() == kGainTypeId) {
             factory = std::make_shared<GainFactory>(canonical_descriptor);
+        } else if (canonical_descriptor.type_id() == kEqTypeId) {
+            factory = std::make_shared<ParametricEqFactory>(canonical_descriptor);
         }
         registrations.push_back(ModuleRegistration{
             std::move(canonical_descriptor),
