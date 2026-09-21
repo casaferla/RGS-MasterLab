@@ -281,11 +281,13 @@ void ParametricEqGoldenTest::multiSampleRateQualification()
         auto input = rgsml::audio::AudioBuffer::create(
             format(rgsml::audio::ChannelLayout::STEREO_LR, fs),
             rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-            frame_range(0, 128));
+            rgsml::core::FrameIndex{0},
+            frame_count(128));
         auto output = rgsml::audio::AudioBuffer::create(
             format(rgsml::audio::ChannelLayout::STEREO_LR, fs),
             rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-            frame_range(0, 128));
+            rgsml::core::FrameIndex{0},
+            frame_count(128));
         QVERIFY(input);
         QVERIFY(output);
 
