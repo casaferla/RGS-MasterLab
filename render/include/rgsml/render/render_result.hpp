@@ -6,9 +6,11 @@
 #include <rgsml/core/frame_time.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/module_instance.hpp>
+#include <rgsml/dsp/parametric_eq_parameters.hpp>
 
 #include <cstdint>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace rgsml::dsp {
@@ -20,20 +22,52 @@ namespace rgsml::render {
 class RenderRequest;
 class RenderResult;
 
-enum class GainExecutionDisposition : std::uint8_t {
+enum class ModuleExecutionDisposition : std::uint8_t {
     PROCESSED,
     BYPASS_IDENTITY,
 };
 
-struct GainExecutionSignature final {
+struct GainExecutionSignaturePayload final {
+    double gain_db{0.0};
+
+    friend bool operator==(
+        const GainExecutionSignaturePayload&,
+        const GainExecutionSignaturePayload&) = default;
+};
+
+struct EqBandSignaturePayload final {
+    rgsml::dsp::EqFilterType filter_type;
+    rgsml::dsp::EqRouting routing;
+    rgsml::dsp::EqBandPayload payload;
+
+    friend bool operator==(
+        const EqBandSignaturePayload&,
+        const EqBandSignaturePayload&) = default;
+};
+
+struct ParametricEqExecutionSignaturePayload final {
+    std::vector<EqBandSignaturePayload> enabled_bands;
+
+    friend bool operator==(
+        const ParametricEqExecutionSignaturePayload&,
+        const ParametricEqExecutionSignaturePayload&) = default;
+};
+
+using ModuleExecutionSignaturePayload = std::variant<
+    GainExecutionSignaturePayload,
+    ParametricEqExecutionSignaturePayload>;
+
+struct ModuleExecutionSignature final {
     rgsml::dsp::ModuleInstanceId instance_id;
     std::string type_id;
     std::string algorithm_version;
     std::string parameter_schema_id;
-    double gain_db;
-    GainExecutionDisposition disposition;
+    ModuleExecutionDisposition disposition;
+    ModuleExecutionSignaturePayload payload;
 
-    friend bool operator==(const GainExecutionSignature&, const GainExecutionSignature&) = default;
+    friend bool operator==(
+        const ModuleExecutionSignature&,
+        const ModuleExecutionSignature&) = default;
 };
 
 class RenderResult final {
@@ -49,8 +83,8 @@ public:
     [[nodiscard]] rgsml::core::FrameRange render_window() const noexcept;
     [[nodiscard]] rgsml::audio::FrameDomainId frame_domain_id() const noexcept;
     [[nodiscard]] std::uint64_t chain_revision() const noexcept;
-    [[nodiscard]] const std::vector<GainExecutionSignature>&
-    gain_signatures() const noexcept;
+    [[nodiscard]] const std::vector<ModuleExecutionSignature>&
+    signatures() const noexcept;
 
 private:
     friend rgsml::core::Result<RenderResult> render_preview(
@@ -62,13 +96,13 @@ private:
         rgsml::core::FrameRange render_window,
         rgsml::audio::FrameDomainId frame_domain_id,
         std::uint64_t chain_revision,
-        std::vector<GainExecutionSignature> gain_signatures) noexcept;
+        std::vector<ModuleExecutionSignature> signatures) noexcept;
 
     rgsml::audio::AudioBuffer buffer_;
     rgsml::core::FrameRange render_window_;
     rgsml::audio::FrameDomainId frame_domain_id_;
     std::uint64_t chain_revision_;
-    std::vector<GainExecutionSignature> gain_signatures_;
+    std::vector<ModuleExecutionSignature> signatures_;
 };
 
 }  // namespace rgsml::render

@@ -1,6 +1,8 @@
 #include <rgsml/render/render_request.hpp>
 
 #include <rgsml/core/error.hpp>
+#include <rgsml/dsp/gain_parameters.hpp>
+#include <rgsml/dsp/parametric_eq_parameters.hpp>
 
 #include <algorithm>
 #include <string>
@@ -10,6 +12,7 @@ namespace rgsml::render {
 namespace {
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
+constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 
 [[nodiscard]] rgsml::core::Error request_error(
     rgsml::core::ErrorCode code,
@@ -20,13 +23,18 @@ constexpr auto kGainTypeId = "rgsml.dsp.gain";
         code, std::move(message), {{"category", std::move(category)}}};
 }
 
+[[nodiscard]] bool is_supported_parameterized_builtin(std::string_view type_id) noexcept
+{
+    return type_id == kGainTypeId || type_id == kEqTypeId;
+}
+
 }  // namespace
 
 rgsml::core::Result<RenderRequest> RenderRequest::create(
     rgsml::audio::AudioBufferView source,
     rgsml::core::FrameRange render_window,
     const rgsml::dsp::ProcessingChain& chain,
-    std::vector<GainParameterBinding> gain_bindings,
+    std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
     rgsml::core::FrameCount maximum_block_frames)
 {
     if (source.timebase().frame_domain_id()
@@ -45,52 +53,78 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
             "Render window or maximum block size is outside the accepted Source range."));
     }
 
-    for (std::size_t index = 0; index < gain_bindings.size(); ++index) {
+    // Check duplicate bindings
+    for (std::size_t index = 0; index < bindings.size(); ++index) {
         const auto duplicate = std::find_if(
-            gain_bindings.begin(),
-            gain_bindings.begin() + static_cast<std::ptrdiff_t>(index),
-            [&gain_bindings, index](const GainParameterBinding& candidate) {
-                return candidate.instance_id == gain_bindings[index].instance_id;
+            bindings.begin(),
+            bindings.begin() + static_cast<std::ptrdiff_t>(index),
+            [&bindings, index](const rgsml::dsp::ModuleExecutionBinding& candidate) {
+                return candidate.instance_id == bindings[index].instance_id;
             });
-        if (duplicate != gain_bindings.begin() + static_cast<std::ptrdiff_t>(index)) {
+        if (duplicate != bindings.begin() + static_cast<std::ptrdiff_t>(index)) {
             return rgsml::core::Result<RenderRequest>::failure(request_error(
                 rgsml::core::ErrorCode::InvalidArgument,
-                "DUPLICATE_GAIN_PARAMETER_BINDING",
-                "A Gain instance has more than one parameter binding."));
+                "DUPLICATE_PARAMETER_BINDING",
+                "A module instance has more than one parameter binding."));
         }
     }
 
-    for (const auto& instance : chain.instances()) {
-        const auto binding = std::find_if(
-            gain_bindings.begin(),
-            gain_bindings.end(),
-            [&instance](const GainParameterBinding& candidate) {
-                return candidate.instance_id == instance.instance_id();
+    // Check each binding targets an instance in chain, and if that instance is a supported builtin, payload matches type
+    for (const auto& binding : bindings) {
+        const auto instance_it = std::find_if(
+            chain.instances().begin(),
+            chain.instances().end(),
+            [&binding](const rgsml::dsp::ModuleInstance& inst) {
+                return inst.instance_id() == binding.instance_id;
             });
-        if (instance.module_type_id() == kGainTypeId) {
-            if (binding == gain_bindings.end()) {
-                return rgsml::core::Result<RenderRequest>::failure(request_error(
-                    rgsml::core::ErrorCode::InvalidArgument,
-                    "MISSING_GAIN_PARAMETER_BINDING",
-                    "Every Gain snapshot entry requires exactly one value-owned binding."));
-            }
-        } else if (binding != gain_bindings.end()) {
+        if (instance_it == chain.instances().end()) {
             return rgsml::core::Result<RenderRequest>::failure(request_error(
                 rgsml::core::ErrorCode::InvalidArgument,
-                "GAIN_PARAMETER_TYPE_MISMATCH",
-                "A Gain binding targets a non-Gain chain instance."));
+                "ORPHAN_PARAMETER_BINDING",
+                "A parameter binding does not identify an instance in the chain snapshot."));
+        }
+
+        const auto type_id = instance_it->module_type_id();
+        if (!is_supported_parameterized_builtin(type_id)) {
+            return rgsml::core::Result<RenderRequest>::failure(request_error(
+                rgsml::core::ErrorCode::InvalidArgument,
+                "UNSUPPORTED_MODULE_BINDING",
+                "A parameter binding was provided for an unsupported or non-parameterized module."));
+        }
+
+        if (type_id == kGainTypeId) {
+            if (!std::holds_alternative<rgsml::dsp::GainParameters>(binding.parameters)) {
+                return rgsml::core::Result<RenderRequest>::failure(request_error(
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "A Gain binding contained a non-Gain payload."));
+            }
+        } else if (type_id == kEqTypeId) {
+            if (!std::holds_alternative<rgsml::dsp::ParametricEqParameters>(binding.parameters)) {
+                return rgsml::core::Result<RenderRequest>::failure(request_error(
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "A Parametric EQ binding contained a non-Parametric EQ payload."));
+            }
         }
     }
-    if (gain_bindings.size()
-        != static_cast<std::size_t>(std::ranges::count_if(
-            chain.instances(),
-            [](const rgsml::dsp::ModuleInstance& instance) {
-                return instance.module_type_id() == kGainTypeId;
-            }))) {
-        return rgsml::core::Result<RenderRequest>::failure(request_error(
-            rgsml::core::ErrorCode::InvalidArgument,
-            "UNKNOWN_GAIN_PARAMETER_BINDING",
-            "A Gain binding does not identify an instance in the chain snapshot."));
+
+    // Check each supported built-in instance in chain has EXACTLY ONE binding (even if bypassed)
+    for (const auto& instance : chain.instances()) {
+        if (is_supported_parameterized_builtin(instance.module_type_id())) {
+            const auto binding = std::find_if(
+                bindings.begin(),
+                bindings.end(),
+                [&instance](const rgsml::dsp::ModuleExecutionBinding& candidate) {
+                    return candidate.instance_id == instance.instance_id();
+                });
+            if (binding == bindings.end()) {
+                return rgsml::core::Result<RenderRequest>::failure(request_error(
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "MISSING_PARAMETER_BINDING",
+                    "Every supported parameterized module snapshot entry requires exactly one binding."));
+            }
+        }
     }
 
     try {
@@ -101,7 +135,7 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
             chain.revision(),
             std::vector<rgsml::dsp::ModuleInstance>{
                 chain.instances().begin(), chain.instances().end()},
-            std::move(gain_bindings),
+            std::move(bindings),
             maximum_block_frames});
     } catch (...) {
         return rgsml::core::Result<RenderRequest>::failure(request_error(
@@ -117,14 +151,14 @@ RenderRequest::RenderRequest(
     rgsml::dsp::ProcessingChainContext chain_context,
     std::uint64_t chain_revision,
     std::vector<rgsml::dsp::ModuleInstance> chain_instances,
-    std::vector<GainParameterBinding> gain_bindings,
+    std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
     rgsml::core::FrameCount maximum_block_frames) noexcept
     : source_(source)
     , render_window_(render_window)
     , chain_context_(chain_context)
     , chain_revision_(chain_revision)
     , chain_instances_(std::move(chain_instances))
-    , gain_bindings_(std::move(gain_bindings))
+    , bindings_(std::move(bindings))
     , maximum_block_frames_(maximum_block_frames)
 {
 }
@@ -140,9 +174,9 @@ std::span<const rgsml::dsp::ModuleInstance> RenderRequest::chain_instances() con
 {
     return chain_instances_;
 }
-std::span<const GainParameterBinding> RenderRequest::gain_bindings() const noexcept
+std::span<const rgsml::dsp::ModuleExecutionBinding> RenderRequest::bindings() const noexcept
 {
-    return gain_bindings_;
+    return bindings_;
 }
 rgsml::core::FrameCount RenderRequest::maximum_block_frames() const noexcept
 {

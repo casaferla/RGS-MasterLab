@@ -4,6 +4,7 @@
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
+#include <rgsml/dsp/module_execution_binding.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/platform/windows/windows_resource_identity.hpp>
@@ -393,7 +394,7 @@ core::Status AuditionSourceSelector::materialize_prepared(
     if (!chain) return core::Status::failure(*chain.error());
     auto request = render::RenderRequest::create(
         decoded.value()->view(), decoded.value()->view().absolute_range(),
-        *chain.value(), std::vector<render::GainParameterBinding>{},
+        *chain.value(), std::vector<dsp::ModuleExecutionBinding>{},
         *core::FrameCount::create(kRealizationBlockFrames).value());
     if (!request) return core::Status::failure(*request.error());
     auto rendered = render::render_preview(*request.value(), *registry.value());

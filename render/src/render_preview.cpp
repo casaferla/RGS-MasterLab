@@ -2,7 +2,10 @@
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/core/error.hpp>
-#include <rgsml/dsp/gain_module.hpp>
+#include <rgsml/dsp/gain_parameters.hpp>
+#include <rgsml/dsp/imodule.hpp>
+#include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/dsp/parametric_eq_parameters.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -17,6 +20,7 @@ namespace rgsml::render {
 namespace {
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
+constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 
 [[nodiscard]] rgsml::core::Error render_error(
     rgsml::core::ErrorCode code,
@@ -27,15 +31,15 @@ constexpr auto kGainTypeId = "rgsml.dsp.gain";
         code, std::move(message), {{"category", std::move(category)}}};
 }
 
-[[nodiscard]] const GainParameterBinding* find_binding(
+[[nodiscard]] const rgsml::dsp::ModuleExecutionBinding* find_binding(
     const RenderRequest& request,
     const rgsml::dsp::ModuleInstanceId& id) noexcept
 {
-    const auto bindings = request.gain_bindings();
+    const auto bindings = request.bindings();
     const auto iterator = std::find_if(
         bindings.begin(),
         bindings.end(),
-        [&id](const GainParameterBinding& binding) {
+        [&id](const rgsml::dsp::ModuleExecutionBinding& binding) {
             return binding.instance_id == id;
         });
     return iterator == bindings.end() ? nullptr : std::addressof(*iterator);
@@ -69,15 +73,16 @@ rgsml::core::Result<RenderResult> render_preview(
 {
     try {
         const auto source = request.source();
-        const auto range_length = request.render_window().length();
+        const auto window = request.render_window();
+        const auto range_length = window.length();
         if (!range_length) {
             return rgsml::core::Result<RenderResult>::failure(*range_length.error());
         }
 
-        std::vector<std::unique_ptr<rgsml::dsp::GainModule>> modules;
-        std::vector<GainExecutionSignature> signatures;
+        std::vector<std::unique_ptr<rgsml::dsp::IModule>> modules;
+        std::vector<ModuleExecutionSignature> signatures;
         modules.reserve(request.chain_instances().size());
-        signatures.reserve(request.gain_bindings().size());
+        signatures.reserve(request.bindings().size());
 
         const rgsml::dsp::DspProcessSpec process_spec{
             source.format(),
@@ -89,32 +94,66 @@ rgsml::core::Result<RenderResult> render_preview(
             if (!descriptor) {
                 return rgsml::core::Result<RenderResult>::failure(*descriptor.error());
             }
+
+            const bool is_gain = (instance.module_type_id() == kGainTypeId);
+            const bool is_eq = (instance.module_type_id() == kEqTypeId);
+
             if (!instance.active()) {
-                if (instance.module_type_id() == kGainTypeId) {
+                if (is_gain || is_eq) {
                     const auto* binding = find_binding(request, instance.instance_id());
-                    signatures.push_back(GainExecutionSignature{
-                        instance.instance_id(),
-                        std::string{kGainTypeId},
-                        "1.0.0",
-                        "rgsml.dsp.gain.parameters/1.0.0",
-                        binding->parameters.gain_db(),
-                        GainExecutionDisposition::BYPASS_IDENTITY});
+                    if (is_gain) {
+                        const auto* gain_params = std::get_if<rgsml::dsp::GainParameters>(&binding->parameters);
+                        signatures.push_back(ModuleExecutionSignature{
+                            instance.instance_id(),
+                            std::string{kGainTypeId},
+                            std::string{descriptor.value()->get().algorithm_version().value_or("1.0.0")},
+                            std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.gain.parameters/1.0.0")},
+                            ModuleExecutionDisposition::BYPASS_IDENTITY,
+                            GainExecutionSignaturePayload{gain_params->gain_db()}});
+                    } else {
+                        const auto* eq_params = std::get_if<rgsml::dsp::ParametricEqParameters>(&binding->parameters);
+                        std::vector<EqBandSignaturePayload> enabled_bands;
+                        for (const auto& band : eq_params->bands()) {
+                            if (band.enabled()) {
+                                enabled_bands.push_back(EqBandSignaturePayload{
+                                    band.filter_type(),
+                                    band.routing(),
+                                    band.payload()});
+                            }
+                        }
+                        signatures.push_back(ModuleExecutionSignature{
+                            instance.instance_id(),
+                            std::string{kEqTypeId},
+                            std::string{descriptor.value()->get().algorithm_version().value_or("1.0.0")},
+                            std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.parametric-eq.parameters/1.0.0")},
+                            ModuleExecutionDisposition::BYPASS_IDENTITY,
+                            ParametricEqExecutionSignaturePayload{std::move(enabled_bands)}});
+                    }
                 }
                 continue;
             }
-            if (instance.module_type_id() != kGainTypeId
-                || !registry.has_factory(instance.module_type_id())) {
+
+            if (!registry.has_factory(instance.module_type_id())) {
                 return rgsml::core::Result<RenderResult>::failure(render_error(
                     rgsml::core::ErrorCode::UnsupportedOperation,
                     "MODULE_IMPLEMENTATION_UNAVAILABLE",
                     "An active chain node has no production implementation."));
             }
+
             const auto* binding = find_binding(request, instance.instance_id());
-            auto module = rgsml::dsp::GainModule::create(
-                descriptor.value()->get(), binding->parameters);
+            if (binding == nullptr) {
+                return rgsml::core::Result<RenderResult>::failure(render_error(
+                    rgsml::core::ErrorCode::UnsupportedOperation,
+                    "MODULE_IMPLEMENTATION_UNAVAILABLE",
+                    "An active chain node has no parameter binding."));
+            }
+
+            auto module = registry.create_module(
+                instance.module_type_id(), binding->parameters);
             if (!module) {
                 return rgsml::core::Result<RenderResult>::failure(*module.error());
             }
+
             auto requirements = (*module.value())->runtime_requirements(process_spec);
             if (!requirements) {
                 return rgsml::core::Result<RenderResult>::failure(*requirements.error());
@@ -123,50 +162,130 @@ rgsml::core::Result<RenderResult> render_preview(
             if (required.execution_model != rgsml::dsp::DspExecutionModel::STREAMING_CAUSAL
                 || required.algorithmic_latency_frames.value() != 0
                 || required.look_ahead_frames.value() != 0
-                || required.pre_context_frames.value() != 0
-                || required.post_context_frames.value() != 0
-                || required.effective_tail_frames.value() != 0
                 || required.requires_prepass) {
                 return rgsml::core::Result<RenderResult>::failure(render_error(
                     rgsml::core::ErrorCode::UnsupportedOperation,
                     "UNSUPPORTED_RENDER_REQUIREMENTS",
-                    "L1-M08 Preview accepts only zero-context streaming-causal Gain."));
+                    "Render Preview accepts only streaming-causal modules with zero latency and zero lookahead."));
             }
+
             auto prepared = (*module.value())->prepare(process_spec);
             if (!prepared) {
                 return rgsml::core::Result<RenderResult>::failure(*prepared.error());
             }
             (*module.value())->reset();
             modules.push_back(std::move(*module.value()));
-            signatures.push_back(GainExecutionSignature{
-                instance.instance_id(),
-                std::string{kGainTypeId},
-                "1.0.0",
-                "rgsml.dsp.gain.parameters/1.0.0",
-                binding->parameters.gain_db(),
-                GainExecutionDisposition::PROCESSED});
+
+            if (is_gain) {
+                const auto* gain_params = std::get_if<rgsml::dsp::GainParameters>(&binding->parameters);
+                signatures.push_back(ModuleExecutionSignature{
+                    instance.instance_id(),
+                    std::string{kGainTypeId},
+                    std::string{descriptor.value()->get().algorithm_version().value_or("1.0.0")},
+                    std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.gain.parameters/1.0.0")},
+                    ModuleExecutionDisposition::PROCESSED,
+                    GainExecutionSignaturePayload{gain_params->gain_db()}});
+            } else if (is_eq) {
+                const auto* eq_params = std::get_if<rgsml::dsp::ParametricEqParameters>(&binding->parameters);
+                std::vector<EqBandSignaturePayload> enabled_bands;
+                for (const auto& band : eq_params->bands()) {
+                    if (band.enabled()) {
+                        enabled_bands.push_back(EqBandSignaturePayload{
+                            band.filter_type(),
+                            band.routing(),
+                            band.payload()});
+                    }
+                }
+                signatures.push_back(ModuleExecutionSignature{
+                    instance.instance_id(),
+                    std::string{kEqTypeId},
+                    std::string{descriptor.value()->get().algorithm_version().value_or("1.0.0")},
+                    std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.parametric-eq.parameters/1.0.0")},
+                    ModuleExecutionDisposition::PROCESSED,
+                    ParametricEqExecutionSignaturePayload{std::move(enabled_bands)}});
+            }
         }
 
         auto result_buffer = rgsml::audio::AudioBuffer::create(
             source.format(),
             source.timebase().frame_domain_id(),
-            request.render_window().begin(),
+            window.begin(),
             *range_length.value());
         if (!result_buffer) {
             return rgsml::core::Result<RenderResult>::failure(*result_buffer.error());
         }
 
-        std::int64_t completed = 0;
-        while (completed < range_length.value()->value()) {
-            const auto remaining = range_length.value()->value() - completed;
-            const auto chunk_value = std::min(
-                remaining, request.maximum_block_frames().value());
-            const auto chunk_count = *rgsml::core::FrameCount::create(chunk_value).value();
-            const rgsml::core::FrameIndex chunk_start{
-                request.render_window().begin().value() + completed};
-            const rgsml::core::FrameIndex chunk_end{chunk_start.value() + chunk_value};
+        const auto max_block_size = request.maximum_block_frames().value();
+        const auto source_start = source.absolute_start_frame().value();
+        const auto source_end = source.absolute_end_frame().value();
+        const auto window_begin = window.begin().value();
+        const auto window_end = window.end().value();
+
+        // Phase 1: Causal Preroll [source_start, window_begin)
+        std::int64_t preroll_cursor = source_start;
+        while (preroll_cursor < window_begin) {
+            const auto remaining = window_begin - preroll_cursor;
+            const auto chunk_size = std::min(remaining, max_block_size);
+            const auto chunk_count = *rgsml::core::FrameCount::create(chunk_size).value();
+            const rgsml::core::FrameIndex chunk_start{preroll_cursor};
+            const rgsml::core::FrameIndex chunk_end{preroll_cursor + chunk_size};
             const auto chunk_range = *rgsml::core::FrameRange::create(
                 chunk_start, chunk_end).value();
+
+            auto source_chunk = source.subview(chunk_start, chunk_count);
+            if (!source_chunk) {
+                return rgsml::core::Result<RenderResult>::failure(render_error(
+                    rgsml::core::ErrorCode::InvalidFrameRange,
+                    "INVALID_RENDER_CHUNK",
+                    "Render Preview could not materialize a validated preroll chunk range."));
+            }
+
+            if (!modules.empty()) {
+                auto first_block = rgsml::audio::AudioBuffer::create(
+                    source.format(),
+                    source.timebase().frame_domain_id(),
+                    chunk_start,
+                    chunk_count);
+                auto second_block = rgsml::audio::AudioBuffer::create(
+                    source.format(),
+                    source.timebase().frame_domain_id(),
+                    chunk_start,
+                    chunk_count);
+                if (!first_block || !second_block) {
+                    const auto* error = first_block ? second_block.error() : first_block.error();
+                    return rgsml::core::Result<RenderResult>::failure(*error);
+                }
+
+                auto current = *source_chunk.value();
+                for (std::size_t index = 0; index < modules.size(); ++index) {
+                    auto destination = (index % 2U == 0U)
+                        ? first_block.value()->mutable_view()
+                        : second_block.value()->mutable_view();
+                    const rgsml::dsp::DspProcessContext context{
+                        chunk_range,
+                        preroll_cursor == source_start,
+                        preroll_cursor + chunk_size == source_end};
+                    auto processed = modules[index]->process(current, destination, context);
+                    if (!processed) {
+                        return rgsml::core::Result<RenderResult>::failure(*processed.error());
+                    }
+                    current = destination.as_const();
+                }
+            }
+            preroll_cursor += chunk_size;
+        }
+
+        // Phase 2: Preview Window Render [window_begin, window_end)
+        std::int64_t window_cursor = window_begin;
+        while (window_cursor < window_end) {
+            const auto remaining = window_end - window_cursor;
+            const auto chunk_size = std::min(remaining, max_block_size);
+            const auto chunk_count = *rgsml::core::FrameCount::create(chunk_size).value();
+            const rgsml::core::FrameIndex chunk_start{window_cursor};
+            const rgsml::core::FrameIndex chunk_end{window_cursor + chunk_size};
+            const auto chunk_range = *rgsml::core::FrameRange::create(
+                chunk_start, chunk_end).value();
+
             auto source_chunk = source.subview(chunk_start, chunk_count);
             auto result_chunk = result_buffer.value()->mutable_view().subview(
                 chunk_start, chunk_count);
@@ -200,13 +319,13 @@ rgsml::core::Result<RenderResult> render_preview(
 
                 auto current = *source_chunk.value();
                 for (std::size_t index = 0; index < modules.size(); ++index) {
-                    auto destination = index % 2U == 0U
+                    auto destination = (index % 2U == 0U)
                         ? first_block.value()->mutable_view()
                         : second_block.value()->mutable_view();
                     const rgsml::dsp::DspProcessContext context{
                         chunk_range,
-                        chunk_start == source.absolute_start_frame(),
-                        chunk_end == source.absolute_end_frame()};
+                        window_cursor == source_start,
+                        window_cursor + chunk_size == source_end};
                     auto processed = modules[index]->process(current, destination, context);
                     if (!processed) {
                         return rgsml::core::Result<RenderResult>::failure(*processed.error());
@@ -218,12 +337,12 @@ rgsml::core::Result<RenderResult> render_preview(
                     return rgsml::core::Result<RenderResult>::failure(*copied.error());
                 }
             }
-            completed += chunk_value;
+            window_cursor += chunk_size;
         }
 
         return rgsml::core::Result<RenderResult>::success(RenderResult{
             std::move(*result_buffer.value()),
-            request.render_window(),
+            window,
             source.timebase().frame_domain_id(),
             request.chain_revision(),
             std::move(signatures)});
