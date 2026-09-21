@@ -116,12 +116,13 @@ void ModuleRegistryTest::emptyLookupAndUnavailableCatalog()
 
     auto catalog = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(catalog.value() != nullptr);
-    QCOMPARE(catalog.value()->factory_count(), std::size_t{1});
+    QCOMPARE(catalog.value()->factory_count(), std::size_t{2});
     for (const auto& descriptor : catalog.value()->descriptors()) {
-        const auto isGain = descriptor.type_id() == "rgsml.dsp.gain";
-        QCOMPARE(catalog.value()->has_factory(descriptor.type_id()), isGain);
+        const auto hasProdFactory = descriptor.type_id() == "rgsml.dsp.gain"
+            || descriptor.type_id() == "rgsml.dsp.parametric-eq";
+        QCOMPARE(catalog.value()->has_factory(descriptor.type_id()), hasProdFactory);
         auto module = catalog.value()->create_module(descriptor.type_id());
-        if (isGain) {
+        if (hasProdFactory) {
             QVERIFY(module.value() != nullptr);
             QCOMPARE((*module.value())->descriptor().type_id(), descriptor.type_id());
         } else {

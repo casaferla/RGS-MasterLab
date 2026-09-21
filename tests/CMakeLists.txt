@@ -689,6 +689,21 @@ set_tests_properties(rgsml_gain_tests PROPERTIES
     LABELS "dsp;gain"
 )
 
+qt_add_executable(rgsml_parametric_eq_tests
+    unit/dsp/test_parametric_eq.cpp
+)
+target_link_libraries(rgsml_parametric_eq_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_parametric_eq_tests)
+add_test(NAME rgsml_parametric_eq_tests COMMAND rgsml_parametric_eq_tests)
+set_tests_properties(rgsml_parametric_eq_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;parametric_eq"
+)
+
 qt_add_executable(rgsml_render_preview_tests
     unit/render/test_render_preview.cpp
 )
@@ -717,6 +732,21 @@ add_test(NAME rgsml_gain_golden_tests COMMAND rgsml_gain_golden_tests)
 set_tests_properties(rgsml_gain_golden_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "dsp;gain;audio_golden"
+)
+
+qt_add_executable(rgsml_parametric_eq_golden_tests
+    audio_golden/parametric_eq/test_parametric_eq_golden.cpp
+)
+target_link_libraries(rgsml_parametric_eq_golden_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_parametric_eq_golden_tests)
+add_test(NAME rgsml_parametric_eq_golden_tests COMMAND rgsml_parametric_eq_golden_tests)
+set_tests_properties(rgsml_parametric_eq_golden_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;parametric_eq;audio_golden"
 )
 
 qt_add_executable(rgsml_render_wav_tests
