@@ -3,6 +3,7 @@
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/imodule.hpp>
 #include <rgsml/dsp/module_descriptor.hpp>
+#include <rgsml/dsp/module_parameter_payload.hpp>
 
 #include <functional>
 #include <memory>
@@ -42,6 +43,11 @@ public:
     [[nodiscard]] std::size_t factory_count() const noexcept;
     [[nodiscard]] rgsml::core::Result<std::unique_ptr<IModule>>
     create_module(std::string_view type_id) const;
+
+    [[nodiscard]] rgsml::core::Result<std::unique_ptr<IModule>>
+    create_module(
+        std::string_view type_id,
+        const ModuleParameterPayload& payload) const;
 
 private:
     explicit ModuleRegistry(std::vector<ModuleRegistration> registrations);

@@ -517,4 +517,74 @@ ModuleRegistry::create_module(std::string_view type_id) const
     }
 }
 
+Result<std::unique_ptr<IModule>>
+ModuleRegistry::create_module(
+    std::string_view type_id,
+    const ModuleParameterPayload& payload) const
+{
+    const auto iterator = std::lower_bound(
+        registrations_.begin(),
+        registrations_.end(),
+        type_id,
+        [](const ModuleRegistration& registration, std::string_view value) {
+            return unsigned_ascii_less(registration.descriptor.type_id(), value);
+        });
+    if (iterator == registrations_.end() || iterator->descriptor.type_id() != type_id) {
+        return Result<std::unique_ptr<IModule>>::failure(registry_error(
+            ErrorCode::ResourceNotFound,
+            "MODULE_TYPE_NOT_FOUND",
+            "The requested module type is not registered."));
+    }
+    if (!iterator->factory) {
+        return Result<std::unique_ptr<IModule>>::failure(registry_error(
+            ErrorCode::UnsupportedOperation,
+            "MODULE_IMPLEMENTATION_UNAVAILABLE",
+            "No production implementation is registered for this descriptor."));
+    }
+
+    try {
+        if (type_id == kGainTypeId) {
+            const auto* gain_params = std::get_if<GainParameters>(&payload);
+            if (gain_params == nullptr) {
+                return Result<std::unique_ptr<IModule>>::failure(registry_error(
+                    ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "Gain module requires GainParameters payload."));
+            }
+            auto module = GainModule::create(iterator->descriptor, *gain_params);
+            if (!module) {
+                return Result<std::unique_ptr<IModule>>::failure(*module.error());
+            }
+            std::unique_ptr<IModule> result = std::move(*module.value());
+            return Result<std::unique_ptr<IModule>>::success(std::move(result));
+        }
+
+        if (type_id == kEqTypeId) {
+            const auto* eq_params = std::get_if<ParametricEqParameters>(&payload);
+            if (eq_params == nullptr) {
+                return Result<std::unique_ptr<IModule>>::failure(registry_error(
+                    ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "Parametric EQ module requires ParametricEqParameters payload."));
+            }
+            auto module = ParametricEqModule::create(iterator->descriptor, *eq_params);
+            if (!module) {
+                return Result<std::unique_ptr<IModule>>::failure(*module.error());
+            }
+            std::unique_ptr<IModule> result = std::move(*module.value());
+            return Result<std::unique_ptr<IModule>>::success(std::move(result));
+        }
+
+        return Result<std::unique_ptr<IModule>>::failure(registry_error(
+            ErrorCode::InvalidArgument,
+            "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+            "The specified module type is not parameterized or unsupported."));
+    } catch (...) {
+        return Result<std::unique_ptr<IModule>>::failure(registry_error(
+            ErrorCode::InvalidState,
+            "MODULE_IMPLEMENTATION_UNAVAILABLE",
+            "Module creation threw across its public boundary."));
+    }
+}
+
 }  // namespace rgsml::dsp

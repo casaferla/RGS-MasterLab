@@ -141,7 +141,9 @@ if(FIXTURE_CASE STREQUAL "dsp_headers")
         gain_parameters.hpp
         imodule.hpp
         module_descriptor.hpp
+        module_execution_binding.hpp
         module_instance.hpp
+        module_parameter_payload.hpp
         module_registry.hpp
         parametric_eq_module.hpp
         parametric_eq_parameters.hpp

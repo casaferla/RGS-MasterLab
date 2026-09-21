@@ -1,7 +1,9 @@
 #include "test_support.hpp"
 
 #include <rgsml/core/error.hpp>
+#include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/dsp/parametric_eq_parameters.hpp>
 
 #include <QtTest/QTest>
 
@@ -102,6 +104,7 @@ private slots:
     void deterministicConstructionAndDuplicates();
     void validatesOrderGraphAndFactoryIdentity();
     void testOnlyFactoryResolution();
+    void configuredModuleCreation();
 };
 
 void ModuleRegistryTest::emptyLookupAndUnavailableCatalog()
@@ -276,6 +279,38 @@ void ModuleRegistryTest::testOnlyFactoryResolution()
     QCOMPARE(
         error_category(*rejected.error()),
         std::string_view{"MODULE_IMPLEMENTATION_UNAVAILABLE"});
+}
+
+void ModuleRegistryTest::configuredModuleCreation()
+{
+    auto catalog = ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(catalog.value() != nullptr);
+
+    // Gain creation
+    auto gain_params = GainParameters::create(6.0);
+    QVERIFY(gain_params.value() != nullptr);
+    ModuleParameterPayload gain_payload{*gain_params.value()};
+    auto gain_mod = catalog.value()->create_module("rgsml.dsp.gain", gain_payload);
+    QVERIFY(gain_mod.value() != nullptr);
+    QCOMPARE((*gain_mod.value())->descriptor().type_id(), std::string_view{"rgsml.dsp.gain"});
+
+    // Parametric EQ creation
+    auto eq_params = ParametricEqParameters::create_legacy_default();
+    QVERIFY(eq_params.value() != nullptr);
+    ModuleParameterPayload eq_payload{*eq_params.value()};
+    auto eq_mod = catalog.value()->create_module("rgsml.dsp.parametric-eq", eq_payload);
+    QVERIFY(eq_mod.value() != nullptr);
+    QCOMPARE((*eq_mod.value())->descriptor().type_id(), std::string_view{"rgsml.dsp.parametric-eq"});
+
+    // Payload mismatch
+    auto mismatch = catalog.value()->create_module("rgsml.dsp.gain", eq_payload);
+    QVERIFY(mismatch.error() != nullptr);
+    QCOMPARE(error_category(*mismatch.error()), std::string_view{"MODULE_PARAMETER_PAYLOAD_MISMATCH"});
+
+    // Unsupported module configured creation
+    auto compressor = catalog.value()->create_module("rgsml.dsp.compressor", gain_payload);
+    QVERIFY(compressor.error() != nullptr);
+    QCOMPARE(error_category(*compressor.error()), std::string_view{"MODULE_IMPLEMENTATION_UNAVAILABLE"});
 }
 
 }  // namespace
