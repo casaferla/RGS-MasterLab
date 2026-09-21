@@ -62,6 +62,29 @@ Result<EqBandParameters> EqBandParameters::create(
     EqRouting routing,
     EqBandPayload payload)
 {
+    if (filter_type != EqFilterType::BELL &&
+        filter_type != EqFilterType::NOTCH &&
+        filter_type != EqFilterType::LOW_SHELF &&
+        filter_type != EqFilterType::HIGH_SHELF &&
+        filter_type != EqFilterType::HIGH_PASS &&
+        filter_type != EqFilterType::LOW_PASS) {
+        return Result<EqBandParameters>::failure(param_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_FILTER_TYPE",
+            "Filter type value is invalid or unrecognized."));
+    }
+
+    if (routing != EqRouting::STEREO &&
+        routing != EqRouting::MID &&
+        routing != EqRouting::SIDE &&
+        routing != EqRouting::LEFT &&
+        routing != EqRouting::RIGHT) {
+        return Result<EqBandParameters>::failure(param_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_ROUTING",
+            "Routing value is invalid or unrecognized."));
+    }
+
     switch (filter_type) {
     case EqFilterType::BELL: {
         const auto* p = std::get_if<BellPayload>(&payload);
@@ -166,6 +189,18 @@ Result<EqBandParameters> EqBandParameters::create(
                 ErrorCode::OutOfRange,
                 "FREQUENCY_OUT_OF_RANGE",
                 "Frequency must be in range [20, 20000] Hz."));
+        }
+        const auto s = p->slope_db_per_octave;
+        if (s != SlopeDbPerOctave::DB_6 &&
+            s != SlopeDbPerOctave::DB_12 &&
+            s != SlopeDbPerOctave::DB_18 &&
+            s != SlopeDbPerOctave::DB_24 &&
+            s != SlopeDbPerOctave::DB_36 &&
+            s != SlopeDbPerOctave::DB_48) {
+            return Result<EqBandParameters>::failure(param_error(
+                ErrorCode::InvalidArgument,
+                "INVALID_SLOPE",
+                "Slope value is invalid or unrecognized."));
         }
         break;
     }

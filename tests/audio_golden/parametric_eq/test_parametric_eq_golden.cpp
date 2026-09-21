@@ -23,6 +23,7 @@ namespace {
 using namespace rgsml::dsp;
 using namespace render_support;
 using namespace oracles;
+using namespace oracles::ref_constants;
 
 [[nodiscard]] const ModuleDescriptor& eq_descriptor(const ModuleRegistry& registry)
 {
@@ -36,6 +37,25 @@ using namespace oracles;
     auto res = ParametricEqModule::create(eq_descriptor(registry), params);
     Q_ASSERT(res);
     return std::move(*res.value());
+}
+
+void verify_rendered_against_o2(
+    std::span<const double> actual,
+    std::span<const double> expected)
+{
+    QCOMPARE(actual.size(), expected.size());
+    const double max_abs = compute_max_abs_diff(actual, expected);
+    const double rms = compute_rms_diff(actual, expected);
+
+    QVERIFY2(max_abs <= 2e-6, std::to_string(max_abs).c_str());
+    QVERIFY2(rms <= 5e-7, std::to_string(rms).c_str());
+
+    for (std::size_t i = 0; i < actual.size(); ++i) {
+        if (std::abs(expected[i]) >= 1e-4) {
+            const double rel = std::abs(actual[i] - expected[i]) / std::abs(expected[i]);
+            QVERIFY2(rel <= 2e-5, std::to_string(rel).c_str());
+        }
+    }
 }
 
 class ParametricEqGoldenTest final : public QObject {
@@ -56,21 +76,26 @@ void ParametricEqGoldenTest::requiredFixedFamiliesVerification()
     const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
     const double fs = 48000.0;
 
-    // Test cases for required fixed families
     struct FamilyCase {
         const char* name;
         EqFilterType type;
         EqBandPayload payload;
+        IndependentBiquadCoeffs expected_coeffs;
     };
 
-    const std::array<FamilyCase, 7> families{{
-        {"bell-1k-plus6-q0707", EqFilterType::BELL, BellPayload{1000.0, 6.0, 0.707}},
-        {"bell-280-minus6-q12", EqFilterType::BELL, BellPayload{280.0, -6.0, 12.0}},
-        {"notch-1k-q12", EqFilterType::NOTCH, NotchPayload{1000.0, 12.0}},
-        {"low-shelf-100-plus6-s05", EqFilterType::LOW_SHELF, ShelfPayload{100.0, 6.0, 0.5}},
-        {"low-shelf-100-minus6-s10", EqFilterType::LOW_SHELF, ShelfPayload{100.0, -6.0, 1.0}},
-        {"high-shelf-10k-plus6-s05", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, 6.0, 0.5}},
-        {"high-shelf-10k-minus6-s10", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, -6.0, 1.0}},
+    const std::array<FamilyCase, 12> families{{
+        {"bell-1k-plus6-q0707", EqFilterType::BELL, BellPayload{1000.0, 6.0, 0.707}, BELL_1K_PLUS6_Q0707},
+        {"bell-280-minus6-q12", EqFilterType::BELL, BellPayload{280.0, -6.0, 12.0}, BELL_280_MINUS6_Q12},
+        {"bell-1k-plus6-q010", EqFilterType::BELL, BellPayload{1000.0, 6.0, 0.10}, BELL_1K_PLUS6_Q010},
+        {"notch-1k-q12", EqFilterType::NOTCH, NotchPayload{1000.0, 12.0}, NOTCH_1K_Q12},
+        {"low-shelf-100-plus6-s05", EqFilterType::LOW_SHELF, ShelfPayload{100.0, 6.0, 0.5}, LOW_SHELF_100_PLUS6_S05},
+        {"low-shelf-100-plus6-s10", EqFilterType::LOW_SHELF, ShelfPayload{100.0, 6.0, 1.0}, LOW_SHELF_100_PLUS6_S10},
+        {"low-shelf-100-minus6-s05", EqFilterType::LOW_SHELF, ShelfPayload{100.0, -6.0, 0.5}, LOW_SHELF_100_MINUS6_S05},
+        {"low-shelf-100-minus6-s10", EqFilterType::LOW_SHELF, ShelfPayload{100.0, -6.0, 1.0}, LOW_SHELF_100_MINUS6_S10},
+        {"high-shelf-10k-plus6-s05", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, 6.0, 0.5}, HIGH_SHELF_10K_PLUS6_S05},
+        {"high-shelf-10k-plus6-s10", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, 6.0, 1.0}, HIGH_SHELF_10K_PLUS6_S10},
+        {"high-shelf-10k-minus6-s05", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, -6.0, 0.5}, HIGH_SHELF_10K_MINUS6_S05},
+        {"high-shelf-10k-minus6-s10", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, -6.0, 1.0}, HIGH_SHELF_10K_MINUS6_S10},
     }};
 
     for (const auto& fam : families) {
@@ -94,17 +119,39 @@ void ParametricEqGoldenTest::requiredFixedFamiliesVerification()
             input.value()->view(), output.value()->mutable_view(),
             DspProcessContext{frame_range(0, 256), true, true}), fam.name);
 
-        // Output must be finite
-        const auto samples = *output.value()->view().channel(0).value();
-        for (double s : samples) {
-            QVERIFY(std::isfinite(s));
-        }
+        const auto actual = *output.value()->view().channel(0).value();
 
-        // Numerical check for Bell filters: first sample equals b0 coefficient
+        // O2 reference render from authoritative constants
+        std::vector<double> expected(256, 0.0);
+        IndependentCascadeTdf2State o2_cascade({fam.expected_coeffs});
+        o2_cascade.process_block(impulse, expected);
+
+        verify_rendered_against_o2(actual, expected);
+
+        // O3 Analytic Transfer Verification
         if (fam.type == EqFilterType::BELL) {
             const auto bell = std::get<BellPayload>(fam.payload);
-            const auto expected = compute_bell_coeffs(bell.frequency_hz, bell.gain_db, bell.q, fs);
-            QVERIFY(std::abs(samples[0] - expected.b0) <= 1e-10);
+            const auto h = biquad_transfer_function(fam.expected_coeffs, bell.frequency_hz, fs);
+            const double gain_lin = std::pow(10.0, bell.gain_db / 20.0);
+            QVERIFY(std::abs(std::abs(h) - gain_lin) <= 1e-10);
+        } else if (fam.type == EqFilterType::NOTCH) {
+            const auto notch = std::get<NotchPayload>(fam.payload);
+            const auto h = biquad_transfer_function(fam.expected_coeffs, notch.frequency_hz, fs);
+            QVERIFY(std::abs(h) <= 1e-10);
+        } else if (fam.type == EqFilterType::LOW_SHELF) {
+            const auto shelf = std::get<ShelfPayload>(fam.payload);
+            const auto h_dc = biquad_transfer_function(fam.expected_coeffs, 0.0, fs);
+            const auto h_nyq = biquad_transfer_function(fam.expected_coeffs, fs / 2.0, fs);
+            const double gain_lin = std::pow(10.0, shelf.gain_db / 20.0);
+            QVERIFY(std::abs(std::abs(h_dc) - gain_lin) <= 1e-10);
+            QVERIFY(std::abs(std::abs(h_nyq) - 1.0) <= 1e-10);
+        } else if (fam.type == EqFilterType::HIGH_SHELF) {
+            const auto shelf = std::get<ShelfPayload>(fam.payload);
+            const auto h_dc = biquad_transfer_function(fam.expected_coeffs, 0.0, fs);
+            const auto h_nyq = biquad_transfer_function(fam.expected_coeffs, fs / 2.0, fs);
+            const double gain_lin = std::pow(10.0, shelf.gain_db / 20.0);
+            QVERIFY(std::abs(std::abs(h_dc) - 1.0) <= 1e-10);
+            QVERIFY(std::abs(std::abs(h_nyq) - gain_lin) <= 1e-10);
         }
     }
 }
@@ -116,17 +163,25 @@ void ParametricEqGoldenTest::fullHpLpMatrixVerification()
     const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
     const double fs = 48000.0;
 
-    const std::array<SlopeDbPerOctave, 6> slopes{
-        SlopeDbPerOctave::DB_6,
-        SlopeDbPerOctave::DB_12,
-        SlopeDbPerOctave::DB_18,
-        SlopeDbPerOctave::DB_24,
-        SlopeDbPerOctave::DB_36,
-        SlopeDbPerOctave::DB_48};
+    struct SlopeCase {
+        SlopeDbPerOctave slope;
+        std::vector<IndependentBiquadCoeffs> hp_sections;
+        std::vector<IndependentBiquadCoeffs> lp_sections;
+    };
 
-    for (const auto filter_type : {EqFilterType::HIGH_PASS, EqFilterType::LOW_PASS}) {
-        for (const auto slope : slopes) {
-            auto band = *EqBandParameters::create(uuid, true, filter_type, EqRouting::STEREO, PassPayload{1000.0, slope}).value();
+    const std::array<SlopeCase, 6> slopes{{
+        {SlopeDbPerOctave::DB_6, {HP_6_SECTIONS, HP_6_SECTIONS + 1}, {LP_6_SECTIONS, LP_6_SECTIONS + 1}},
+        {SlopeDbPerOctave::DB_12, {HP_12_SECTIONS, HP_12_SECTIONS + 1}, {LP_12_SECTIONS, LP_12_SECTIONS + 1}},
+        {SlopeDbPerOctave::DB_18, {HP_18_SECTIONS, HP_18_SECTIONS + 2}, {LP_18_SECTIONS, LP_18_SECTIONS + 2}},
+        {SlopeDbPerOctave::DB_24, {HP_24_SECTIONS, HP_24_SECTIONS + 2}, {LP_24_SECTIONS, LP_24_SECTIONS + 2}},
+        {SlopeDbPerOctave::DB_36, {HP_36_SECTIONS, HP_36_SECTIONS + 3}, {LP_36_SECTIONS, LP_36_SECTIONS + 3}},
+        {SlopeDbPerOctave::DB_48, {HP_48_SECTIONS, HP_48_SECTIONS + 4}, {LP_48_SECTIONS, LP_48_SECTIONS + 4}},
+    }};
+
+    for (const auto& sc : slopes) {
+        for (const auto filter_type : {EqFilterType::HIGH_PASS, EqFilterType::LOW_PASS}) {
+            const auto& sections = (filter_type == EqFilterType::HIGH_PASS) ? sc.hp_sections : sc.lp_sections;
+            auto band = *EqBandParameters::create(uuid, true, filter_type, EqRouting::STEREO, PassPayload{1000.0, sc.slope}).value();
             std::vector<EqBandParameters> bands{band};
             auto params = *ParametricEqParameters::create(bands).value();
             auto module = make_eq_module(*registry.value(), params);
@@ -146,28 +201,33 @@ void ParametricEqGoldenTest::fullHpLpMatrixVerification()
                 input.value()->view(), output.value()->mutable_view(),
                 DspProcessContext{frame_range(0, 128), true, true}));
 
-            const auto samples = *output.value()->view().channel(0).value();
-            for (double s : samples) {
-                QVERIFY(std::isfinite(s));
-            }
+            const auto actual = *output.value()->view().channel(0).value();
+
+            std::vector<double> expected(128, 0.0);
+            IndependentCascadeTdf2State o2_cascade(sections);
+            o2_cascade.process_block(impulse, expected);
+
+            verify_rendered_against_o2(actual, expected);
+
+            // O3 Cutoff Magnitude Verification: |H(fcut)| == 1 / sqrt(2)
+            const auto h_cut = cascade_transfer_function(sections, 1000.0, fs);
+            const double target_mag = 1.0 / std::numbers::sqrt2;
+            QVERIFY2(std::abs(std::abs(h_cut) - target_mag) <= 1e-10, std::to_string(std::abs(std::abs(h_cut) - target_mag)).c_str());
         }
     }
 }
 
 void ParametricEqGoldenTest::independentOraclesVerification()
 {
-    // Verification against independent coefficient and TDF2 scalar oracle
     const double fs = 48000.0;
-    const auto coeffs = compute_bell_coeffs(1000.0, 6.0, 0.707, fs);
+    const auto& coeffs = BELL_1K_PLUS6_Q0707;
 
-    IndependentTdf2State oracle_state;
     std::vector<double> impulse(32, 0.0);
     impulse[0] = 1.0;
 
     std::vector<double> expected(32, 0.0);
-    for (std::size_t i = 0; i < 32; ++i) {
-        expected[i] = oracle_state.process_sample(impulse[i], coeffs);
-    }
+    IndependentCascadeTdf2State o2_cascade({coeffs});
+    o2_cascade.process_block(impulse, expected);
 
     auto registry = ModuleRegistry::create_dsp_package_v1();
     const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
@@ -189,23 +249,15 @@ void ParametricEqGoldenTest::independentOraclesVerification()
         DspProcessContext{frame_range(0, 32), true, true}));
 
     const auto actual = *output.value()->view().channel(0).value();
-    for (std::size_t i = 0; i < 32; ++i) {
-        QVERIFY(std::abs(actual[i] - expected[i]) <= 1e-10);
-    }
-
-    // Verify RMS diff (O4 oracle)
-    const double rms = compute_rms_diff(actual, expected);
-    QVERIFY(rms <= 1e-10);
+    verify_rendered_against_o2(actual, expected);
 }
 
 void ParametricEqGoldenTest::multitoneAndSweepVerification()
 {
-    // Verification with multitone and log sweep signals
     const double fs = 48000.0;
     const std::size_t n = 1024;
     std::vector<double> signal(n, 0.0);
 
-    // Multitone: 100 Hz + 1000 Hz + 10000 Hz
     for (std::size_t i = 0; i < n; ++i) {
         const double t = static_cast<double>(i) / fs;
         signal[i] = 0.3 * std::sin(2.0 * std::numbers::pi * 100.0 * t) +
@@ -215,7 +267,7 @@ void ParametricEqGoldenTest::multitoneAndSweepVerification()
 
     auto registry = ModuleRegistry::create_dsp_package_v1();
     const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
-    auto band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{1000.0, -6.0, 1.0}).value();
+    auto band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{1000.0, 6.0, 0.707}).value();
     std::vector<EqBandParameters> bands{band};
     auto params = *ParametricEqParameters::create(bands).value();
     auto module = make_eq_module(*registry.value(), params);
@@ -232,10 +284,11 @@ void ParametricEqGoldenTest::multitoneAndSweepVerification()
         input.value()->view(), output.value()->mutable_view(),
         DspProcessContext{frame_range(0, static_cast<std::int64_t>(n)), true, true}));
 
-    const auto out = *output.value()->view().channel(0).value();
-    for (double s : out) {
-        QVERIFY(std::isfinite(s));
-    }
+    const auto actual_multitone = *output.value()->view().channel(0).value();
+    std::vector<double> expected_multitone(n, 0.0);
+    IndependentCascadeTdf2State o2_multitone({BELL_1K_PLUS6_Q0707});
+    o2_multitone.process_block(signal, expected_multitone);
+    verify_rendered_against_o2(actual_multitone, expected_multitone);
 
     // Log sweep verification
     std::vector<double> sweep(n, 0.0);
@@ -252,39 +305,49 @@ void ParametricEqGoldenTest::multitoneAndSweepVerification()
         in_sweep.value()->view(), out_sweep.value()->mutable_view(),
         DspProcessContext{frame_range(0, static_cast<std::int64_t>(n)), true, true}));
 
-    const auto sweep_res = *out_sweep.value()->view().channel(0).value();
-    for (double s : sweep_res) {
-        QVERIFY(std::isfinite(s));
-    }
+    const auto actual_sweep = *out_sweep.value()->view().channel(0).value();
+    std::vector<double> expected_sweep(n, 0.0);
+    IndependentCascadeTdf2State o2_sweep({BELL_1K_PLUS6_Q0707});
+    o2_sweep.process_block(sweep, expected_sweep);
+    verify_rendered_against_o2(actual_sweep, expected_sweep);
 }
 
 void ParametricEqGoldenTest::multiSampleRateQualification()
 {
-    // Qualification across required sample rates: 44100, 48000, 96000
-    const std::array<double, 3> sample_rates{44100.0, 48000.0, 96000.0};
+    struct SrCase {
+        double fs;
+        IndependentBiquadCoeffs coeffs;
+    };
+
+    const std::array<SrCase, 3> sample_rates{{
+        {44100.0, BELL_1K_PLUS3_Q1_44100},
+        {48000.0, BELL_1K_PLUS3_Q1_48000},
+        {96000.0, BELL_1K_PLUS3_Q1_96000},
+    }};
+
     auto registry = ModuleRegistry::create_dsp_package_v1();
     const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
     auto band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{1000.0, 3.0, 1.0}).value();
     std::vector<EqBandParameters> bands{band};
     auto params = *ParametricEqParameters::create(bands).value();
 
-    for (const double fs : sample_rates) {
+    for (const auto& sr : sample_rates) {
         auto module = make_eq_module(*registry.value(), params);
         const DspProcessSpec spec{
-            format(rgsml::audio::ChannelLayout::STEREO_LR, fs),
+            format(rgsml::audio::ChannelLayout::STEREO_LR, sr.fs),
             rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
             frame_count(128)};
-        QVERIFY2(module->prepare(spec), std::to_string(fs).c_str());
+        QVERIFY2(module->prepare(spec), std::to_string(sr.fs).c_str());
 
         std::vector<double> in_l(128, 0.5);
         std::vector<double> in_r(128, -0.5);
         auto input = rgsml::audio::AudioBuffer::create(
-            format(rgsml::audio::ChannelLayout::STEREO_LR, fs),
+            format(rgsml::audio::ChannelLayout::STEREO_LR, sr.fs),
             rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
             rgsml::core::FrameIndex{0},
             frame_count(128));
         auto output = rgsml::audio::AudioBuffer::create(
-            format(rgsml::audio::ChannelLayout::STEREO_LR, fs),
+            format(rgsml::audio::ChannelLayout::STEREO_LR, sr.fs),
             rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
             rgsml::core::FrameIndex{0},
             frame_count(128));
@@ -299,6 +362,19 @@ void ParametricEqGoldenTest::multiSampleRateQualification()
         QVERIFY(module->process(
             input.value()->view(), output.value()->mutable_view(),
             DspProcessContext{frame_range(0, 128), true, true}));
+
+        const auto out_l = *output.value()->view().channel(0).value();
+        const auto out_r = *output.value()->view().channel(1).value();
+
+        std::vector<double> expected_l(128, 0.0);
+        std::vector<double> expected_r(128, 0.0);
+        IndependentCascadeTdf2State o2_l({sr.coeffs});
+        IndependentCascadeTdf2State o2_r({sr.coeffs});
+        o2_l.process_block(in_l, expected_l);
+        o2_r.process_block(in_r, expected_r);
+
+        verify_rendered_against_o2(out_l, expected_l);
+        verify_rendered_against_o2(out_r, expected_r);
     }
 }
 
