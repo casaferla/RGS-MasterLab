@@ -50,11 +50,12 @@ jobs:
             rgsml_gain_golden_tests \
             rgsml_parametric_eq_tests \
             rgsml_parametric_eq_golden_tests \
-            rgsml_render_preview_tests
+            rgsml_render_preview_tests \
+            rgsml_audition_source_selector_tests
 
       - name: Run Focused DSP Tests
         run: |
-          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_|rgsml_render_preview_tests|toolchain_manifest_)" --output-on-failure
+          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|toolchain_manifest_)" --output-on-failure
 
   windows-focused-dsp:
     name: Windows Focused DSP
@@ -90,8 +91,9 @@ jobs:
             rgsml_gain_golden_tests `
             rgsml_parametric_eq_tests `
             rgsml_parametric_eq_golden_tests `
-            rgsml_render_preview_tests
+            rgsml_render_preview_tests `
+            rgsml_audition_source_selector_tests
 
       - name: Run Focused DSP Tests (Release)
         run: |
-          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_|rgsml_render_preview_tests|toolchain_manifest_)" --output-on-failure
+          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|toolchain_manifest_)" --output-on-failure
