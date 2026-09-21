@@ -243,7 +243,7 @@ inline std::uint64_t compute_ulp_distance(double a, double b) noexcept
     const std::uint64_t bits_a = std::bit_cast<std::uint64_t>(a);
     const std::uint64_t bits_b = std::bit_cast<std::uint64_t>(b);
     if ((bits_a ^ bits_b) >> 63) {
-        return (bits_a & 0x7FFFFFFFFFFFFFFF0000ULL) + (bits_b & 0x7FFFFFFFFFFFFFFF0000ULL); // Approximate sign flip
+        return (bits_a & 0x7FFFFFFFFFFFFFFFULL) + (bits_b & 0x7FFFFFFFFFFFFFFFULL);
     }
     return (bits_a > bits_b) ? (bits_a - bits_b) : (bits_b - bits_a);
 }
