@@ -236,10 +236,24 @@ inline std::complex<double> cascade_transfer_function(
     return h;
 }
 
+inline std::uint64_t compute_ulp_distance(double a, double b) noexcept
+{
+    if (a == b) return 0;
+    if (std::isnan(a) || std::isnan(b)) return std::numeric_limits<std::uint64_t>::max();
+    const std::uint64_t bits_a = std::bit_cast<std::uint64_t>(a);
+    const std::uint64_t bits_b = std::bit_cast<std::uint64_t>(b);
+    if ((bits_a ^ bits_b) >> 63) {
+        return (bits_a & 0x7FFFFFFFFFFFFFFF0000ULL) + (bits_b & 0x7FFFFFFFFFFFFFFF0000ULL); // Approximate sign flip
+    }
+    return (bits_a > bits_b) ? (bits_a - bits_b) : (bits_b - bits_a);
+}
+
 // O4: Rendered signal verification helper (RMS difference)
 inline double compute_rms_diff(std::span<const double> a, std::span<const double> b)
 {
-    if (a.size() != b.size() || a.empty()) return 0.0;
+    if (a.size() != b.size() || a.empty()) {
+        return std::numeric_limits<double>::infinity();
+    }
     double sum = 0.0;
     for (std::size_t i = 0; i < a.size(); ++i) {
         const double diff = a[i] - b[i];
@@ -250,7 +264,9 @@ inline double compute_rms_diff(std::span<const double> a, std::span<const double
 
 inline double compute_max_abs_diff(std::span<const double> a, std::span<const double> b)
 {
-    if (a.size() != b.size()) return 0.0;
+    if (a.size() != b.size() || a.empty()) {
+        return std::numeric_limits<double>::infinity();
+    }
     double max_diff = 0.0;
     for (std::size_t i = 0; i < a.size(); ++i) {
         const double diff = std::abs(a[i] - b[i]);
