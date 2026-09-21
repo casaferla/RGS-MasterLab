@@ -1,5 +1,6 @@
 #include "../../unit/render/render_test_support.hpp"
 #include "../../oracles/parametric_eq/parametric_eq_oracle.hpp"
+#include "../../../dsp/src/internal/parametric_eq_coefficients.hpp"
 
 #include <rgsml/core/error.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -62,12 +63,115 @@ class ParametricEqGoldenTest final : public QObject {
     Q_OBJECT
 
 private slots:
+    void invalidComparisonSafetyVerification();
+    void directO1VsProductionCoefficientQualification();
     void requiredFixedFamiliesVerification();
     void fullHpLpMatrixVerification();
     void independentOraclesVerification();
     void multitoneAndSweepVerification();
     void multiSampleRateQualification();
 };
+
+void ParametricEqGoldenTest::invalidComparisonSafetyVerification()
+{
+    std::vector<double> a{1.0, 2.0, 3.0};
+    std::vector<double> b{1.0, 2.0};
+    std::vector<double> empty;
+
+    QVERIFY(std::isinf(compute_rms_diff(a, b)));
+    QVERIFY(std::isinf(compute_rms_diff(a, empty)));
+    QVERIFY(std::isinf(compute_rms_diff(empty, empty)));
+
+    QVERIFY(std::isinf(compute_max_abs_diff(a, b)));
+    QVERIFY(std::isinf(compute_max_abs_diff(a, empty)));
+    QVERIFY(std::isinf(compute_max_abs_diff(empty, empty)));
+}
+
+void ParametricEqGoldenTest::directO1VsProductionCoefficientQualification()
+{
+    const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
+
+    struct CoeffCase {
+        const char* name;
+        EqFilterType type;
+        EqBandPayload payload;
+        double fs;
+        std::vector<IndependentBiquadCoeffs> expected_sections;
+    };
+
+    const std::vector<CoeffCase> test_cases{
+        {"bell-1k-plus6-q0707", EqFilterType::BELL, BellPayload{1000.0, 6.0, 0.707}, 48000.0, {BELL_1K_PLUS6_Q0707}},
+        {"bell-280-minus6-q12", EqFilterType::BELL, BellPayload{280.0, -6.0, 12.0}, 48000.0, {BELL_280_MINUS6_Q12}},
+        {"bell-1k-plus6-q010", EqFilterType::BELL, BellPayload{1000.0, 6.0, 0.10}, 48000.0, {BELL_1K_PLUS6_Q010}},
+        {"notch-1k-q12", EqFilterType::NOTCH, NotchPayload{1000.0, 12.0}, 48000.0, {NOTCH_1K_Q12}},
+        {"low-shelf-100-plus6-s05", EqFilterType::LOW_SHELF, ShelfPayload{100.0, 6.0, 0.5}, 48000.0, {LOW_SHELF_100_PLUS6_S05}},
+        {"low-shelf-100-plus6-s10", EqFilterType::LOW_SHELF, ShelfPayload{100.0, 6.0, 1.0}, 48000.0, {LOW_SHELF_100_PLUS6_S10}},
+        {"low-shelf-100-minus6-s05", EqFilterType::LOW_SHELF, ShelfPayload{100.0, -6.0, 0.5}, 48000.0, {LOW_SHELF_100_MINUS6_S05}},
+        {"low-shelf-100-minus6-s10", EqFilterType::LOW_SHELF, ShelfPayload{100.0, -6.0, 1.0}, 48000.0, {LOW_SHELF_100_MINUS6_S10}},
+        {"high-shelf-10k-plus6-s05", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, 6.0, 0.5}, 48000.0, {HIGH_SHELF_10K_PLUS6_S05}},
+        {"high-shelf-10k-plus6-s10", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, 6.0, 1.0}, 48000.0, {HIGH_SHELF_10K_PLUS6_S10}},
+        {"high-shelf-10k-minus6-s05", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, -6.0, 0.5}, 48000.0, {HIGH_SHELF_10K_MINUS6_S05}},
+        {"high-shelf-10k-minus6-s10", EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, -6.0, 1.0}, 48000.0, {HIGH_SHELF_10K_MINUS6_S10}},
+        {"bell-1k-plus3-q1-44100", EqFilterType::BELL, BellPayload{1000.0, 3.0, 1.0}, 44100.0, {BELL_1K_PLUS3_Q1_44100}},
+        {"bell-1k-plus3-q1-48000", EqFilterType::BELL, BellPayload{1000.0, 3.0, 1.0}, 48000.0, {BELL_1K_PLUS3_Q1_48000}},
+        {"bell-1k-plus3-q1-96000", EqFilterType::BELL, BellPayload{1000.0, 3.0, 1.0}, 96000.0, {BELL_1K_PLUS3_Q1_96000}},
+        {"hp-6", EqFilterType::HIGH_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_6}, 48000.0, {HP_6_SECTIONS, HP_6_SECTIONS + 1}},
+        {"hp-12", EqFilterType::HIGH_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_12}, 48000.0, {HP_12_SECTIONS, HP_12_SECTIONS + 1}},
+        {"hp-18", EqFilterType::HIGH_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_18}, 48000.0, {HP_18_SECTIONS, HP_18_SECTIONS + 2}},
+        {"hp-24", EqFilterType::HIGH_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_24}, 48000.0, {HP_24_SECTIONS, HP_24_SECTIONS + 2}},
+        {"hp-36", EqFilterType::HIGH_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_36}, 48000.0, {HP_36_SECTIONS, HP_36_SECTIONS + 3}},
+        {"hp-48", EqFilterType::HIGH_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_48}, 48000.0, {HP_48_SECTIONS, HP_48_SECTIONS + 4}},
+        {"lp-6", EqFilterType::LOW_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_6}, 48000.0, {LP_6_SECTIONS, LP_6_SECTIONS + 1}},
+        {"lp-12", EqFilterType::LOW_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_12}, 48000.0, {LP_12_SECTIONS, LP_12_SECTIONS + 1}},
+        {"lp-18", EqFilterType::LOW_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_18}, 48000.0, {LP_18_SECTIONS, LP_18_SECTIONS + 2}},
+        {"lp-24", EqFilterType::LOW_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_24}, 48000.0, {LP_24_SECTIONS, LP_24_SECTIONS + 2}},
+        {"lp-36", EqFilterType::LOW_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_36}, 48000.0, {LP_36_SECTIONS, LP_36_SECTIONS + 3}},
+        {"lp-48", EqFilterType::LOW_PASS, PassPayload{1000.0, SlopeDbPerOctave::DB_48}, 48000.0, {LP_48_SECTIONS, LP_48_SECTIONS + 4}},
+    };
+
+    double max_observed_abs = 0.0;
+    double max_observed_rel = 0.0;
+    std::uint64_t max_observed_ulp = 0;
+
+    for (const auto& tc : test_cases) {
+        auto band = *EqBandParameters::create(uuid, true, tc.type, EqRouting::STEREO, tc.payload).value();
+        std::vector<EqBandParameters> bands{band};
+        auto params = *ParametricEqParameters::create(bands).value();
+
+        auto prod_coeffs = internal::compute_parametric_eq_coefficients(params, tc.fs);
+        QVERIFY2(prod_coeffs, tc.name);
+        QCOMPARE(prod_coeffs.value()->bands.size(), std::size_t{1});
+        const auto& prod_sections = prod_coeffs.value()->bands[0].sections;
+        QCOMPARE(prod_sections.size(), tc.expected_sections.size());
+
+        for (std::size_t s = 0; s < prod_sections.size(); ++s) {
+            const auto& act = prod_sections[s].coeffs;
+            const auto& exp = tc.expected_sections[s];
+
+            const std::array<std::pair<double, double>, 5> pairs{{
+                {act.b0, exp.b0}, {act.b1, exp.b1}, {act.b2, exp.b2},
+                {act.a1, exp.a1}, {act.a2, exp.a2}
+            }};
+
+            for (const auto& [actual_val, expected_val] : pairs) {
+                const double abs_err = std::abs(actual_val - expected_val);
+                const double rel_err = (expected_val != 0.0) ? (abs_err / std::abs(expected_val)) : abs_err;
+                const std::uint64_t ulp_dist = compute_ulp_distance(actual_val, expected_val);
+
+                if (abs_err > max_observed_abs) max_observed_abs = abs_err;
+                if (rel_err > max_observed_rel) max_observed_rel = rel_err;
+                if (ulp_dist > max_observed_ulp) max_observed_ulp = ulp_dist;
+
+                QVERIFY2(abs_err <= 1e-10 || rel_err <= 5e-10, tc.name);
+                QVERIFY2(ulp_dist <= 8, tc.name);
+            }
+        }
+    }
+
+    qDebug("Max Observed Coefficient Abs Error: %.16e", max_observed_abs);
+    qDebug("Max Observed Coefficient Rel Error: %.16e", max_observed_rel);
+    qDebug("Max Observed Coefficient ULP Distance: %llu", static_cast<unsigned long long>(max_observed_ulp));
+}
 
 void ParametricEqGoldenTest::requiredFixedFamiliesVerification()
 {

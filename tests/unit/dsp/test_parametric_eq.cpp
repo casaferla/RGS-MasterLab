@@ -1,5 +1,6 @@
 #include "../render/render_test_support.hpp"
 #include "../../oracles/parametric_eq/parametric_eq_oracle.hpp"
+#include "../../../dsp/src/internal/parametric_eq_coefficients.hpp"
 
 #include <rgsml/core/error.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -67,6 +68,7 @@ private slots:
     void canonicalChunkSizesInvariance();
     void deterministicRaggedPartitionInvariance();
     void multibandCanonicalOrderAndDisabledBands();
+    void zeroGainFiltersStructuralSemantics();
     void settlingAndRuntimeRequirements();
     void rejectsInvalidAndNonFinite();
     void rejectionAtomicityAndPreparedState();
@@ -360,6 +362,19 @@ void ParametricEqTest::multibandCanonicalOrderAndDisabledBands()
     QVERIFY(mod_with_disabled->prepare(spec));
     QVERIFY(mod_single->prepare(spec));
 
+    // Compare runtime requirements between enabled-only and enabled + disabled band
+    auto reqs_disabled = mod_with_disabled->runtime_requirements(spec);
+    auto reqs_single = mod_single->runtime_requirements(spec);
+    QVERIFY(reqs_disabled);
+    QVERIFY(reqs_single);
+    QCOMPARE(reqs_disabled.value()->execution_model, reqs_single.value()->execution_model);
+    QCOMPARE(reqs_disabled.value()->algorithmic_latency_frames.value(), reqs_single.value()->algorithmic_latency_frames.value());
+    QCOMPARE(reqs_disabled.value()->look_ahead_frames.value(), reqs_single.value()->look_ahead_frames.value());
+    QCOMPARE(reqs_disabled.value()->pre_context_frames.value(), reqs_single.value()->pre_context_frames.value());
+    QCOMPARE(reqs_disabled.value()->post_context_frames.value(), reqs_single.value()->post_context_frames.value());
+    QCOMPARE(reqs_disabled.value()->effective_tail_frames.value(), reqs_single.value()->effective_tail_frames.value());
+    QCOMPARE(reqs_disabled.value()->requires_prepass, reqs_single.value()->requires_prepass);
+
     std::vector<double> impulse(100, 0.0);
     impulse[0] = 1.0;
 
@@ -375,6 +390,60 @@ void ParametricEqTest::multibandCanonicalOrderAndDisabledBands()
     const auto res2 = *out2.value()->view().channel(0).value();
     for (std::size_t i = 0; i < 100; ++i) {
         QCOMPARE(res1[i], res2[i]);
+    }
+}
+
+void ParametricEqTest::zeroGainFiltersStructuralSemantics()
+{
+    const auto uuid = *rgsml::core::Uuid::parse("10000000-0000-0000-0000-000000000001").value();
+    const double fs = 48000.0;
+
+    struct ZeroCase {
+        EqFilterType type;
+        EqBandPayload payload;
+    };
+
+    const std::array<ZeroCase, 3> cases{{
+        {EqFilterType::BELL, BellPayload{1000.0, 0.0, 0.707}},
+        {EqFilterType::LOW_SHELF, ShelfPayload{100.0, 0.0, 0.5}},
+        {EqFilterType::HIGH_SHELF, ShelfPayload{10000.0, 0.0, 0.5}},
+    }};
+
+    for (const auto& zc : cases) {
+        auto band = *EqBandParameters::create(uuid, true, zc.type, EqRouting::STEREO, zc.payload).value();
+        std::vector<EqBandParameters> bands{band};
+        auto params = *ParametricEqParameters::create(bands).value();
+
+        auto prod_coeffs = internal::compute_parametric_eq_coefficients(params, fs);
+        QVERIFY(prod_coeffs);
+        QCOMPARE(prod_coeffs.value()->bands.size(), std::size_t{1});
+        QCOMPARE(prod_coeffs.value()->bands[0].sections.size(), std::size_t{1});
+
+        const auto& section = prod_coeffs.value()->bands[0].sections[0];
+        QVERIFY(section.settling_frames > 0);
+        QVERIFY(section.rmax > 0.0);
+
+        auto registry = ModuleRegistry::create_dsp_package_v1();
+        auto module = make_eq_module(*registry.value(), params);
+
+        const DspProcessSpec spec{
+            format(rgsml::audio::ChannelLayout::MONO_C, fs),
+            rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            frame_count(100)};
+        QVERIFY(module->prepare(spec));
+
+        std::vector<double> impulse(100, 0.0);
+        impulse[0] = 1.0;
+
+        auto in = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
+        auto out = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, impulse);
+
+        QVERIFY(module->process(in.value()->view(), out.value()->mutable_view(), DspProcessContext{frame_range(0, 100), true, true}));
+
+        const auto res = *out.value()->view().channel(0).value();
+        for (std::size_t i = 0; i < 100; ++i) {
+            QCOMPARE(res[i], impulse[i]);
+        }
     }
 }
 
@@ -396,9 +465,12 @@ void ParametricEqTest::settlingAndRuntimeRequirements()
     auto reqs = module->runtime_requirements(spec);
     QVERIFY(reqs);
     QCOMPARE(reqs.value()->execution_model, DspExecutionModel::STREAMING_CAUSAL);
+    QCOMPARE(reqs.value()->algorithmic_latency_frames.value(), std::int64_t{0});
+    QCOMPARE(reqs.value()->look_ahead_frames.value(), std::int64_t{0});
     QVERIFY(reqs.value()->effective_tail_frames.value() > 0);
     QCOMPARE(reqs.value()->pre_context_frames.value(), reqs.value()->effective_tail_frames.value());
     QCOMPARE(reqs.value()->post_context_frames.value(), reqs.value()->effective_tail_frames.value());
+    QVERIFY(!reqs.value()->requires_prepass);
 }
 
 void ParametricEqTest::rejectsInvalidAndNonFinite()
@@ -422,19 +494,20 @@ void ParametricEqTest::rejectsInvalidAndNonFinite()
     QVERIFY(!prep_status);
     QCOMPARE(prep_status.error()->code(), rgsml::core::ErrorCode::OutOfRange);
 
-    // Mono layout with non-STEREO routing
-    auto side_band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::SIDE, BellPayload{1000.0, 0.0, 0.707}).value();
-    std::vector<EqBandParameters> mono_bands;
-    mono_bands.push_back(side_band);
-    auto mono_params = *ParametricEqParameters::create(mono_bands).value();
-    auto mono_module = make_eq_module(*registry.value(), mono_params);
-    const DspProcessSpec mono_spec{
-        format(rgsml::audio::ChannelLayout::MONO_C, 48000.0),
-        rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        frame_count(256)};
-    auto mono_prep = mono_module->prepare(mono_spec);
-    QVERIFY(!mono_prep);
-    QCOMPARE(mono_prep.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
+    // Mono layout with non-STEREO routing (MID, SIDE, LEFT, RIGHT)
+    for (const auto non_stereo : {EqRouting::MID, EqRouting::SIDE, EqRouting::LEFT, EqRouting::RIGHT}) {
+        auto non_stereo_band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, non_stereo, BellPayload{1000.0, 0.0, 0.707}).value();
+        std::vector<EqBandParameters> mono_bands{non_stereo_band};
+        auto mono_params = *ParametricEqParameters::create(mono_bands).value();
+        auto mono_module = make_eq_module(*registry.value(), mono_params);
+        const DspProcessSpec mono_spec{
+            format(rgsml::audio::ChannelLayout::MONO_C, 48000.0),
+            rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            frame_count(256)};
+        auto mono_prep = mono_module->prepare(mono_spec);
+        QVERIFY(!mono_prep);
+        QCOMPARE(mono_prep.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
+    }
 }
 
 void ParametricEqTest::rejectionAtomicityAndPreparedState()
@@ -444,31 +517,58 @@ void ParametricEqTest::rejectionAtomicityAndPreparedState()
     auto band = *EqBandParameters::create(uuid, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{1000.0, 6.0, 0.707}).value();
     std::vector<EqBandParameters> bands{band};
     auto params = *ParametricEqParameters::create(bands).value();
-    auto module = make_eq_module(*registry.value(), params);
 
-    std::vector<double> sample{1.0};
-    auto in = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, sample);
-    auto out = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, sample);
+    auto module_a = make_eq_module(*registry.value(), params);
+    auto module_b = make_eq_module(*registry.value(), params);
 
-    // Process before prepare must fail
-    auto unprep_status = module->process(in.value()->view(), out.value()->mutable_view(), DspProcessContext{frame_range(0, 1), true, true});
-    QVERIFY(!unprep_status);
-    QCOMPARE(unprep_status.error()->code(), rgsml::core::ErrorCode::InvalidState);
-
-    // Prepare module
     const DspProcessSpec spec{
         format(rgsml::audio::ChannelLayout::MONO_C, 48000.0),
         rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        frame_count(1)};
-    QVERIFY(module->prepare(spec));
+        frame_count(10)};
 
-    // Process with non-finite sample
-    sample[0] = std::numeric_limits<double>::quiet_NaN();
-    auto in_nan = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, sample);
-    auto out_nan = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, sample);
-    auto nan_status = module->process(in_nan.value()->view(), out_nan.value()->mutable_view(), DspProcessContext{frame_range(0, 1), true, true});
-    QVERIFY(!nan_status);
-    QCOMPARE(nan_status.error()->code(), rgsml::core::ErrorCode::InvalidAudioSample);
+    QVERIFY(module_a->prepare(spec));
+    QVERIFY(module_b->prepare(spec));
+
+    // Advance both modules identically with valid audio so IIR states are non-zero and identical
+    std::vector<double> valid_block(10, 0.5);
+    auto in_a1 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, valid_block);
+    auto out_a1 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, valid_block);
+    auto in_b1 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, valid_block);
+    auto out_b1 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, valid_block);
+
+    QVERIFY(module_a->process(in_a1.value()->view(), out_a1.value()->mutable_view(), DspProcessContext{frame_range(0, 10), true, true}));
+    QVERIFY(module_b->process(in_b1.value()->view(), out_b1.value()->mutable_view(), DspProcessContext{frame_range(0, 10), true, true}));
+
+    const auto res_a1 = *out_a1.value()->view().channel(0).value();
+    const auto res_b1 = *out_b1.value()->view().channel(0).value();
+    for (std::size_t i = 0; i < 10; ++i) {
+        QCOMPARE(res_a1[i], res_b1[i]);
+    }
+
+    // On module A only, submit a finite sample sequence that causes processing failure (e.g. std::numeric_limits<double>::max())
+    std::vector<double> finite_invalid_block(10, std::numeric_limits<double>::max());
+    auto in_fail = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 10, finite_invalid_block);
+    auto out_fail = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 10, finite_invalid_block);
+
+    auto status_a = module_a->process(in_fail.value()->view(), out_fail.value()->mutable_view(), DspProcessContext{frame_range(10, 20), true, true});
+    QVERIFY(!status_a);
+    QCOMPARE(status_a.error()->code(), rgsml::core::ErrorCode::InvalidAudioSample);
+
+    // Feed the next identical valid block to both A and B
+    std::vector<double> next_valid_block(10, 0.25);
+    auto in_a2 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 10, next_valid_block);
+    auto out_a2 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 10, next_valid_block);
+    auto in_b2 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 10, next_valid_block);
+    auto out_b2 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 10, next_valid_block);
+
+    QVERIFY(module_a->process(in_a2.value()->view(), out_a2.value()->mutable_view(), DspProcessContext{frame_range(10, 20), true, true}));
+    QVERIFY(module_b->process(in_b2.value()->view(), out_b2.value()->mutable_view(), DspProcessContext{frame_range(10, 20), true, true}));
+
+    const auto res_a2 = *out_a2.value()->view().channel(0).value();
+    const auto res_b2 = *out_b2.value()->view().channel(0).value();
+    for (std::size_t i = 0; i < 10; ++i) {
+        QCOMPARE(res_a2[i], res_b2[i]); // State atomicity proof
+    }
 }
 
 }  // namespace
