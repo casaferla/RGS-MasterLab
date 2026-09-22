@@ -249,8 +249,7 @@ void EqViewModelTest::testDeterministicStaleCompletionRejection()
         auto request = render::RenderRequest::create(
             prepared->view(), prepared->view().absolute_range(),
             *chain.value(), {}, *core::FrameCount::create(7).value());
-        auto result = render::render_preview(*request.value(), *registry.value());
-        return std::move(*result.value());
+        return render::render_preview(*request.value(), *registry.value());
     });
 
     // Edit 1 -> generation 1
@@ -283,7 +282,7 @@ void EqViewModelTest::testCurrentFailurePreservesLastGoodAudio()
     };
 
     bool failNext = false;
-    vm.set_preview_executor([prepared, &failNext](const EqViewModel::PreviewJob& job) {
+    vm.set_preview_executor([prepared, &failNext](const EqViewModel::PreviewJob&) {
         if (failNext) {
             return core::Result<render::RenderResult>::failure(core::Error{
                 core::ErrorCode::InvalidState, "Simulated render failure."});
@@ -296,8 +295,7 @@ void EqViewModelTest::testCurrentFailurePreservesLastGoodAudio()
         auto request = render::RenderRequest::create(
             prepared->view(), prepared->view().absolute_range(),
             *chain.value(), {}, *core::FrameCount::create(7).value());
-        auto result = render::render_preview(*request.value(), *registry.value());
-        return std::move(*result.value());
+        return render::render_preview(*request.value(), *registry.value());
     });
 
     // 1. Successful commit
