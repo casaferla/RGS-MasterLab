@@ -338,7 +338,7 @@ void EqViewModelTest::testDeterministicStaleCompletionRejection()
     std::condition_variable cv;
     std::atomic<int> executorCalls{0};
 
-    vm.set_preview_executor([&](const EqViewModel::PreviewJob& job) {
+    vm.set_preview_executor([&](const EqViewModel::PreviewJob&) {
         const int callNum = ++executorCalls;
         if (callNum == 1) { // Job 1 (gen 1) blocks
             std::unique_lock lock{cvMutex};
@@ -446,7 +446,7 @@ void EqViewModelTest::testCrossSourceStalePreviewInvalidation()
 
     QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
     QCOMPARE(publishedResults.size(), std::size_t{1});
-    QCOMPARE(publishedResults[0]->buffer().format().sample_rate().value(), 44100);
+    QCOMPARE(publishedResults[0]->view().format().sample_rate().value(), 44100);
 }
 
 void EqViewModelTest::testRealProductionPathActiveAndBypass()
