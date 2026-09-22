@@ -1,5 +1,6 @@
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
+#include "eq_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "playback_transport_view_model.hpp"
 #include "project_session_view_model.hpp"
@@ -65,13 +66,24 @@ int main(int argc, char* argv[])
             ? auditionRegion.region()
             : std::nullopt;
     });
+    rgsml::app::EqViewModel eqViewModel{
+        [&auditionSelector] {
+            return auditionSelector.prepared_realization_snapshot();
+        },
+        [&auditionSelector](rgsml::render::RenderResult result) {
+            return auditionSelector.set_processed_realization(std::move(result));
+        },
+        [] {
+            return rgsml::core::Uuid::create_random();
+        }
+    };
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
     rgsml::app::ProjectSessionViewModel projectSession{
         &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport};
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
-         &auditionSelector, &goldSelection](
+         &auditionSelector, &goldSelection, &eqViewModel](
             const rgsml::core::ResourceReference& source) {
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
@@ -85,6 +97,7 @@ int main(int argc, char* argv[])
             if (prepared) {
                 static_cast<void>(auditionSelector.switch_to(
                     rgsml::app::AuditionTarget::PREPARED));
+                eqViewModel.trigger_preview();
             }
             goldSelection.sourceChanged();
             sourceWaveform.source_committed(source);
@@ -128,6 +141,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("auditionSelector"),
         &auditionSelector);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("eqViewModel"),
+        &eqViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("goldSelection"),
         &goldSelection);

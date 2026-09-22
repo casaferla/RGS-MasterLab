@@ -1,6 +1,8 @@
 qt_add_executable(rgsml_app
     src/audition_source_selector.cpp
     src/audition_source_selector.hpp
+    src/eq_view_model.cpp
+    src/eq_view_model.hpp
     src/audition_region_view_model.cpp
     src/audition_region_view_model.hpp
     src/gold_selection_view_model.cpp
