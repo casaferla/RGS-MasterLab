@@ -3,6 +3,7 @@ add_library(rgsml_dsp STATIC
     src/gain_module.cpp
     src/parametric_eq_parameters.cpp
     src/parametric_eq_module.cpp
+    src/parametric_eq_response.cpp
     src/internal/parametric_eq_coefficients.cpp
     src/module_descriptor.cpp
     src/module_registry.cpp

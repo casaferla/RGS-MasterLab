@@ -60,12 +60,12 @@ AuditionSourceSelector::~AuditionSourceSelector() noexcept
 
 bool AuditionSourceSelector::prepared_available() const noexcept
 {
-    return prepared_.has_value();
+    return prepared_ != nullptr;
 }
 
 bool AuditionSourceSelector::processed_available() const noexcept
 {
-    return processed_.has_value();
+    return processed_ != nullptr;
 }
 
 bool AuditionSourceSelector::gold_available() const noexcept
@@ -106,6 +106,18 @@ core::FrameIndex AuditionSourceSelector::source_derived_cue() const noexcept
 core::FrameIndex AuditionSourceSelector::gold_cue() const noexcept
 {
     return goldCue_;
+}
+
+std::shared_ptr<const render::RenderResult>
+AuditionSourceSelector::prepared_realization_snapshot() const noexcept
+{
+    return prepared_;
+}
+
+std::shared_ptr<const render::RenderResult>
+AuditionSourceSelector::processed_realization_snapshot() const noexcept
+{
+    return processed_;
 }
 
 void AuditionSourceSelector::set_source_loop_provider(SourceLoopProvider provider)
@@ -162,7 +174,7 @@ core::Status AuditionSourceSelector::set_prepared_realization(
         }
         activeTarget_.reset();
     }
-    prepared_.emplace(std::move(realization));
+    prepared_ = std::make_shared<const render::RenderResult>(std::move(realization));
     emit changed();
     return core::Status::success();
 }
@@ -177,7 +189,7 @@ core::Status AuditionSourceSelector::set_processed_realization(
         }
         activeTarget_.reset();
     }
-    processed_.emplace(std::move(realization));
+    processed_ = std::make_shared<const render::RenderResult>(std::move(realization));
     emit changed();
     return core::Status::success();
 }
@@ -399,7 +411,7 @@ core::Status AuditionSourceSelector::materialize_prepared(
     if (!request) return core::Status::failure(*request.error());
     auto rendered = render::render_preview(*request.value(), *registry.value());
     if (!rendered) return core::Status::failure(*rendered.error());
-    prepared_.emplace(std::move(*rendered.value()));
+    prepared_ = std::make_shared<const render::RenderResult>(std::move(*rendered.value()));
     emit changed();
     return core::Status::success();
 }

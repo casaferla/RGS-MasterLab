@@ -9,6 +9,7 @@
 #include <QString>
 
 #include <functional>
+#include <memory>
 #include <optional>
 
 namespace rgsml::app {
@@ -49,6 +50,8 @@ public:
     [[nodiscard]] std::optional<AuditionTarget> active_target() const noexcept;
     [[nodiscard]] core::FrameIndex source_derived_cue() const noexcept;
     [[nodiscard]] core::FrameIndex gold_cue() const noexcept;
+    [[nodiscard]] std::shared_ptr<const render::RenderResult> prepared_realization_snapshot() const noexcept;
+    [[nodiscard]] std::shared_ptr<const render::RenderResult> processed_realization_snapshot() const noexcept;
 
     void set_source_loop_provider(SourceLoopProvider provider);
     [[nodiscard]] core::Status source_committed(
@@ -83,8 +86,8 @@ private:
     PlaybackTransportViewModel* playback_;
     SourceLoopProvider sourceLoopProvider_;
     std::optional<core::ResourceReference> source_;
-    std::optional<render::RenderResult> prepared_;
-    std::optional<render::RenderResult> processed_;
+    std::shared_ptr<const render::RenderResult> prepared_;
+    std::shared_ptr<const render::RenderResult> processed_;
     std::optional<core::ResourceReference> gold_;
     std::optional<core::SampleRate> goldRate_;
     std::optional<core::FrameCount> goldFrames_;

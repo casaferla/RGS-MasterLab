@@ -147,6 +147,7 @@ if(FIXTURE_CASE STREQUAL "dsp_headers")
         module_registry.hpp
         parametric_eq_module.hpp
         parametric_eq_parameters.hpp
+        parametric_eq_response.hpp
         processing_chain.hpp)
     foreach(public_header IN LISTS public_headers)
         string(REPLACE "." "_" header_target "dsp_standalone_${public_header}")
