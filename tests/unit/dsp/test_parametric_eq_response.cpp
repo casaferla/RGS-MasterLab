@@ -1,5 +1,7 @@
 #include <rgsml/dsp/parametric_eq_response.hpp>
 
+#include <bit>
+
 #include "../../oracles/parametric_eq/parametric_eq_oracle.hpp"
 
 #include <QtTest/QTest>
