@@ -324,6 +324,8 @@ qt_add_executable(rgsml_source_selection_tests
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
 )
 target_include_directories(rgsml_source_selection_tests
     PRIVATE

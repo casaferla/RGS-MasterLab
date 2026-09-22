@@ -95,8 +95,9 @@ jobs:
             rgsml_parametric_eq_response_tests `
             rgsml_eq_view_model_tests `
             rgsml_render_preview_tests `
-            rgsml_audition_source_selector_tests
+            rgsml_audition_source_selector_tests `
+            rgsml_source_metadata_panel_smoke
 
       - name: Run Focused DSP Tests (Release)
         run: |
-          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|toolchain_manifest_)" --output-on-failure
+          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|toolchain_manifest_)" --output-on-failure

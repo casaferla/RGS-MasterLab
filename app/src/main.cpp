@@ -72,7 +72,12 @@ int main(int argc, char* argv[])
             return auditionSelector.prepared_realization_snapshot();
         },
         [&auditionSelector](rgsml::render::RenderResult result) {
-            return auditionSelector.set_processed_realization(std::move(result));
+            const bool wasProcessed = auditionSelector.active_target() == rgsml::app::AuditionTarget::PROCESSED;
+            auto status = auditionSelector.set_processed_realization(std::move(result));
+            if (status && wasProcessed) {
+                static_cast<void>(auditionSelector.switch_to(rgsml::app::AuditionTarget::PROCESSED));
+            }
+            return status;
         },
         [] {
             const auto str = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
@@ -149,6 +154,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("projectSession"),
         &projectSession);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("eqViewModel"),
+        &eqViewModel);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

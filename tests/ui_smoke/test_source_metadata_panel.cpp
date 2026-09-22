@@ -1,5 +1,6 @@
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
+#include "eq_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "playback_transport_view_model.hpp"
 #include "project_session_view_model.hpp"
@@ -154,6 +155,19 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     ui::WaveformPresentation waveformPresentation;
     app::AuditionRegionViewModel auditionRegion{&playbackTransport};
     app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    app::EqViewModel eqViewModel{
+        [&auditionSelector] {
+            return auditionSelector.prepared_realization_snapshot();
+        },
+        [&auditionSelector](render::RenderResult result) {
+            const bool wasProcessed = auditionSelector.active_target() == app::AuditionTarget::PROCESSED;
+            auto status = auditionSelector.set_processed_realization(std::move(result));
+            if (status && wasProcessed) {
+                static_cast<void>(auditionSelector.switch_to(app::AuditionTarget::PROCESSED));
+            }
+            return status;
+        }
+    };
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
     app::ProjectSessionViewModel projectSession{
         &model, &goldSelection, &auditionRegion, &playbackTransport};
@@ -167,7 +181,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             return core::Status::success();
         });
     model.set_source_committed_handler(
-        [&model, &auditionRegion, &auditionSelector, &goldSelection](
+        [&model, &auditionRegion, &auditionSelector, &goldSelection, &eqViewModel](
             const core::ResourceReference& source) {
             const auto frames = core::FrameCount::create(model.frame_count());
             const auto rate = core::SampleRate::create(model.sample_rate_hz());
@@ -175,6 +189,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             auditionRegion.source_committed(*frames.value(), *rate.value());
             QVERIFY(auditionSelector.source_committed(source));
             QVERIFY(auditionSelector.switch_to(app::AuditionTarget::PREPARED));
+            eqViewModel.trigger_preview();
             goldSelection.sourceChanged();
         });
     waveformPresentation.set_seek_handler(
@@ -215,6 +230,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("goldSelection"), &goldSelection);
     engine.rootContext()->setContextProperty(
         QStringLiteral("projectSession"), &projectSession);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("eqViewModel"), &eqViewModel);
     engine.loadFromModule("Rgsml.Ui", "Main");
     QCOMPARE(engine.rootObjects().size(), 1);
 
@@ -400,6 +417,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(goldMenuItem && goldFileDialog);
     QVERIFY(goldMenuItem->property("enabled").toBool());
     QVERIFY(goldMenuItem->width() > 0);
+    auto* eqMenuItem = root->findChild<QObject*>(
+        QStringLiteral("menuViewParametricEq"));
+    QVERIFY(eqMenuItem);
+    QVERIFY(!eqMenuItem->property("enabled").toBool());
+
     auto* openProjectItem = root->findChild<QObject*>(
         QStringLiteral("menuOpenProject"));
     auto* saveProjectItem = root->findChild<QObject*>(
@@ -473,6 +495,78 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     model.selectSource(QUrl::fromLocalFile(validPath));
     QCoreApplication::processEvents();
     QVERIFY(saveProjectItem->property("enabled").toBool());
+    QVERIFY(eqMenuItem->property("enabled").toBool());
+
+    // Exercise Parametric EQ Tool Window & Editor
+    auto* eqToolWindow = root->findChild<QObject*>(QStringLiteral("parametricEqToolWindow"));
+    QVERIFY(eqToolWindow);
+    auto* eqWindowObj = qobject_cast<QWindow*>(eqToolWindow);
+    QVERIFY(eqWindowObj);
+    QCOMPARE(eqToolWindow->property("title").toString(), QStringLiteral("Parametric EQ — RGS MasterLab"));
+
+    QVERIFY(QMetaObject::invokeMethod(eqMenuItem, "triggered"));
+    QCoreApplication::processEvents();
+    QVERIFY(eqToolWindow->property("visible").toBool());
+
+    auto* eqEditor = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
+    QVERIFY(eqEditor);
+    auto* eqGraph = eqEditor->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
+    QVERIFY(eqGraph);
+    QVERIFY(!eqViewModel.selected_band_response_points().isEmpty());
+
+    auto* addBandBtn = eqEditor->findChild<QObject*>(QStringLiteral("addBandButton"));
+    auto* removeBandBtn = eqEditor->findChild<QObject*>(QStringLiteral("removeBandButton"));
+    QVERIFY(addBandBtn && removeBandBtn);
+    QCOMPARE(eqViewModel.band_count(), 1);
+    QVERIFY(addBandBtn->property("enabled").toBool());
+    QVERIFY(!removeBandBtn->property("enabled").toBool());
+
+    QVERIFY(QMetaObject::invokeMethod(addBandBtn, "clicked"));
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.band_count(), 2);
+    QVERIFY(removeBandBtn->property("enabled").toBool());
+
+    auto* routeMidBtn = eqEditor->findChild<QObject*>(QStringLiteral("routingButton_MID"));
+    QVERIFY(routeMidBtn);
+    QVERIFY(QMetaObject::invokeMethod(routeMidBtn, "clicked"));
+    QCoreApplication::processEvents();
+    QVERIFY(eqViewModel.mixed_routing());
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_mixed_routing.png"), QSize{1040, 660}));
+
+    eqViewModel.setDraftFrequencyText(QStringLiteral("99999"));
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.validation_field(), QStringLiteral("frequency"));
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_invalid_draft.png"), QSize{1040, 660}));
+
+    eqViewModel.cancelDraft();
+    QCoreApplication::processEvents();
+    QVERIFY(eqViewModel.validation_field().isEmpty());
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_1040x660_active.png"), QSize{1040, 660}));
+
+    auto* abBypassBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonBypass"));
+    QVERIFY(abBypassBtn);
+    QVERIFY(QMetaObject::invokeMethod(abBypassBtn, "clicked"));
+    QCoreApplication::processEvents();
+    QVERIFY(eqViewModel.bypass());
+
+    auto* abActiveBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonActive"));
+    QVERIFY(abActiveBtn);
+    QVERIFY(QMetaObject::invokeMethod(abActiveBtn, "clicked"));
+    QCoreApplication::processEvents();
+    QVERIFY(!eqViewModel.bypass());
+
+    // Window close preserves state
+    eqWindowObj->close();
+    QCoreApplication::processEvents();
+    QVERIFY(!eqToolWindow->property("visible").toBool());
+    QCOMPARE(eqViewModel.band_count(), 2);
+
+    QVERIFY(QMetaObject::invokeMethod(eqMenuItem, "triggered"));
+    QCoreApplication::processEvents();
+    QVERIFY(eqToolWindow->property("visible").toBool());
+    QCOMPARE(eqViewModel.band_count(), 2);
+    eqWindowObj->close();
+    QCoreApplication::processEvents();
     QVERIFY(!empty->property("visible").toBool());
     QVERIFY(display->property("visible").toBool());
     QCOMPARE(display->property("text").toString(), QStringLiteral("UI Source.wav"));

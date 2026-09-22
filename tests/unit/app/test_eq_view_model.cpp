@@ -69,6 +69,7 @@ private slots:
     void testGraphDragNoPreviewReleaseOneCommit();
     void testMixedRouting();
     void testSelectedBandResponseOnly();
+    void testBandSummariesAndValidationPresentation();
 };
 
 void EqViewModelTest::testInvalidTextDraftAndCommitRejection()
@@ -617,6 +618,39 @@ void EqViewModelTest::testSelectedBandResponseOnly()
     EqViewModel vm;
     QVERIFY(!vm.selected_band_response_points().isEmpty());
     QCOMPARE(vm.selected_band_response_points().size(), 100);
+}
+
+void EqViewModelTest::testBandSummariesAndValidationPresentation()
+{
+    EqViewModel vm;
+    QCOMPARE(vm.band_summaries().size(), 1);
+    QVERIFY(vm.validation_field().isEmpty());
+    QVERIFY(vm.validation_message().isEmpty());
+
+    auto summary0 = vm.band_summaries().at(0).toMap();
+    QCOMPARE(summary0.value("index").toInt(), 0);
+    QVERIFY(!summary0.value("bandId").toString().isEmpty());
+    QVERIFY(summary0.value("enabled").toBool());
+    QCOMPARE(summary0.value("filter").toString(), QStringLiteral("BELL"));
+    QCOMPARE(summary0.value("routing").toString(), QStringLiteral("STEREO"));
+    QCOMPARE(summary0.value("frequency").toDouble(), 1000.0);
+    QCOMPARE(summary0.value("gain").toDouble(), 0.0);
+    QVERIFY(summary0.value("gainApplicable").toBool());
+
+    vm.setDraftFrequencyText(QStringLiteral("abc"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("frequency"));
+    QVERIFY(!vm.validation_message().isEmpty());
+
+    vm.cancelDraft();
+    QVERIFY(vm.validation_field().isEmpty());
+    QVERIFY(vm.validation_message().isEmpty());
+
+    vm.setDraftGainText(QStringLiteral("25"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("gain"));
+    QVERIFY(!vm.validation_message().isEmpty());
+
+    vm.cancelDraft();
+    QVERIFY(vm.validation_field().isEmpty());
 }
 
 }  // namespace

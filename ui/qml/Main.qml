@@ -50,6 +50,7 @@ ApplicationWindow {
     FileDialog { id: goldDialog; objectName: "goldFileDialog"; title: "Open Gold Reference WAV"; fileMode: FileDialog.OpenFile; nameFilters: ["WAV audio (*.wav *.wave)"]; onAccepted: goldSelection.selectGold(selectedFile); onRejected: goldSelection.cancelGoldSelection() }
     FileDialog { id: projectOpenDialog; objectName: "projectOpenFileDialog"; title: "Open RGS MasterLab Project"; fileMode: FileDialog.OpenFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.openProject(selectedFile); onRejected: projectSession.cancelProjectOpen() }
     FileDialog { id: projectSaveDialog; objectName: "projectSaveFileDialog"; title: "Save RGS MasterLab Project As"; fileMode: FileDialog.SaveFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.saveProjectAs(selectedFile); onRejected: projectSession.cancelProjectSave() }
+    ParametricEqEditorWindow { id: eqWindow; objectName: "parametricEqToolWindow"; viewModel: eqViewModel }
 
     Shortcut {
         sequence: "F10"
@@ -128,6 +129,8 @@ ApplicationWindow {
                     Menu {
                         title: "&View"
                         background: Rectangle { color: root.surface; border.color: root.border }
+                        StudioMenuItem { objectName: "menuViewParametricEq"; text: "Parametric EQ…"; enabled: auditionSelector.preparedAvailable; onTriggered: { eqWindow.show(); eqWindow.raise(); eqWindow.requestActivate() } }
+                        MenuSeparator { }
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: sourceWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
                         StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
                         StudioMenuItem { text: "Fit Source\tHome"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }

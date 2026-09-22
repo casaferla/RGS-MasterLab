@@ -63,3 +63,10 @@ jobs:
       - name: Run Deploy Smoke Test
         run: |
           & build/windows-msvc/stage/CI/Release/bin/RGSMasterLab.exe --rgsml-deploy-smoke
+
+      - name: Upload Staged Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-MasterLab-Windows-Staged-Release-${{ github.sha }}
+          path: build/windows-msvc/stage/CI/Release/**
+          retention-days: 7

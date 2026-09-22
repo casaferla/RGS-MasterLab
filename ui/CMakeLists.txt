@@ -6,10 +6,14 @@ qt_add_qml_module(rgsml_ui
     QML_FILES
         qml/AuditionSourceSelector.qml
         qml/Main.qml
+        qml/ParametricEqEditor.qml
+        qml/ParametricEqEditorWindow.qml
+        qml/ParametricEqGraph.qml
         qml/SegmentedTimeEditor.qml
         qml/StudioButton.qml
         qml/StudioIcon.qml
         qml/StudioIconButton.qml
+        qml/StudioNumericField.qml
         qml/StudioToggle.qml
         qml/TransportButton.qml
     SOURCES

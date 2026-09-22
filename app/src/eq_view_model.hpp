@@ -48,6 +48,9 @@ class EqViewModel final : public QObject {
     Q_PROPERTY(bool routeAvailable READ route_available NOTIFY changed)
     Q_PROPERTY(bool mixedRouting READ mixed_routing NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
+    Q_PROPERTY(QVariantList bandSummaries READ band_summaries NOTIFY changed)
+    Q_PROPERTY(QString validationField READ validation_field NOTIFY changed)
+    Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
     Q_PROPERTY(quint64 previewGeneration READ preview_generation NOTIFY changed)
     Q_PROPERTY(QString previewStatus READ preview_status NOTIFY changed)
     Q_PROPERTY(QString previewError READ preview_error NOTIFY changed)
@@ -124,6 +127,10 @@ public:
     [[nodiscard]] bool mixed_routing() const noexcept;
     [[nodiscard]] bool bypass() const noexcept;
 
+    [[nodiscard]] QVariantList band_summaries() const;
+    [[nodiscard]] QString validation_field() const;
+    [[nodiscard]] QString validation_message() const;
+
     [[nodiscard]] quint64 preview_generation() const noexcept;
     [[nodiscard]] QString preview_status() const;
     [[nodiscard]] QString preview_error() const;
@@ -177,6 +184,7 @@ private:
         double max_freq);
 
     void update_response_grid();
+    void update_validation_state();
     void request_preview();
     void worker_loop();
     void publish_preview_result(
@@ -199,6 +207,9 @@ private:
     std::uint64_t staleResultsDiscarded_{0};
     QString previewStatus_{QStringLiteral("IDLE")};
     QString previewError_;
+
+    QString validationField_;
+    QString validationMessage_;
 
     QVariantList responseGrid_;
 
