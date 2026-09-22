@@ -3,11 +3,13 @@
 #include <rgsml/core/frame_time.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/uuid.hpp>
+#include <rgsml/dsp/module_instance.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/render/render_result.hpp>
 
 #include <QObject>
 #include <QString>
+#include <QVariant>
 
 #include <condition_variable>
 #include <cstdint>
@@ -103,7 +105,7 @@ public:
     [[nodiscard]] QString preview_error() const;
     [[nodiscard]] QVariantList selected_band_response_points() const;
 
-    [[nodiscard]] core::Uuid instance_id() const noexcept;
+    [[nodiscard]] dsp::ModuleInstanceId instance_id() const noexcept;
     [[nodiscard]] const dsp::ParametricEqParameters& committed_parameters() const noexcept;
     [[nodiscard]] std::uint64_t stale_results_discarded() const noexcept;
 
@@ -140,7 +142,7 @@ private:
         dsp::ParametricEqParameters parameters;
         bool bypass;
         std::shared_ptr<const render::RenderResult> preparedSnapshot;
-        core::Uuid instanceId;
+        dsp::ModuleInstanceId instanceId;
     };
 
     [[nodiscard]] core::SampleRate current_sample_rate() const noexcept;
@@ -163,9 +165,9 @@ private:
     ProcessedRealizationPublisher publisher_;
     IdGenerator idGenerator_;
 
-    core::Uuid instanceId_;
+    dsp::ModuleInstanceId instanceId_;
     std::vector<dsp::EqBandParameters> committedBands_;
-    dsp::ParametricEqParameters committedParams_;
+    dsp::ParametricEqParameters committedParams_{*dsp::ParametricEqParameters::create_legacy_default().value()};
     DraftBand draftBand_;
     std::size_t selectedIndex_{0};
     bool bypass_{false};

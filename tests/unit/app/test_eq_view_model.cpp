@@ -4,6 +4,13 @@
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/render/render_result.hpp>
 
+#include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/dsp/processing_chain.hpp>
+#include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/render_request.hpp>
+
+#include <QUuid>
+#include <QVariant>
 #include <QtTest/QTest>
 
 #include <atomic>
@@ -20,18 +27,23 @@ using namespace rgsml::app;
 
 [[nodiscard]] std::shared_ptr<render::RenderResult> make_test_prepared_result()
 {
-    const std::array left{0.5, -0.25, 0.75, -0.5};
-    const std::array right{-0.5, 0.25, -0.75, 0.5};
-    auto format = *rgsml::audio::AudioFormat::create(
-        rgsml::audio::SampleFormat::FLOAT64, rgsml::audio::ChannelLayout::STEREO_LR, 48000).value();
-    auto buf = *rgsml::audio::AudioBuffer::create(
-        format, rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, rgsml::core::FrameIndex{0}, rgsml::core::FrameCount{4}).value();
-    buf->mutable_view().channel(0).value()->copy_from(left);
-    buf->mutable_view().channel(1).value()->copy_from(right);
-
-    auto result = *render::RenderResult::create(
-        buf->view(), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, 1, {}).value();
-    return std::make_shared<render::RenderResult>(std::move(result));
+    auto rate = core::SampleRate::create(48000);
+    auto format = audio::AudioFormat::create(*rate.value(), audio::ChannelLayout::STEREO_LR);
+    auto count = core::FrameCount::create(100);
+    auto buffer = audio::AudioBuffer::create(
+        *format.value(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0}, *count.value());
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    auto chain = dsp::ProcessingChain::create(
+        *registry.value(),
+        dsp::ProcessingChainContext{
+            dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL});
+    auto request = render::RenderRequest::create(
+        buffer.value()->view(), buffer.value()->view().absolute_range(),
+        *chain.value(), {}, *core::FrameCount::create(7).value());
+    auto result = render::render_preview(*request.value(), *registry.value());
+    Q_ASSERT(result);
+    return std::make_shared<render::RenderResult>(std::move(*result.value()));
 }
 
 class EqViewModelTest final : public QObject {

@@ -13,6 +13,7 @@
 
 #include <QGuiApplication>
 #include <QLibraryInfo>
+#include <QUuid>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
@@ -74,7 +75,8 @@ int main(int argc, char* argv[])
             return auditionSelector.set_processed_realization(std::move(result));
         },
         [] {
-            return rgsml::core::Uuid::create_random();
+            const auto str = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+            return *rgsml::core::Uuid::parse(str).value();
         }
     };
     rgsml::app::GoldSelectionViewModel goldSelection{
