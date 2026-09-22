@@ -498,38 +498,47 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(eqMenuItem->property("enabled").toBool());
 
     // Exercise Parametric EQ Tool Window & Editor
+    qInfo().noquote() << "M12B_SMOKE_PHASE=menu";
+    QVERIFY2(eqMenuItem != nullptr, "menuViewParametricEq must exist");
+    QVERIFY2(eqMenuItem->property("enabled").toBool(), "menuViewParametricEq must be enabled when Source is available");
+
+    qInfo().noquote() << "M12B_SMOKE_PHASE=window-open";
     auto* eqToolWindow = root->findChild<QObject*>(QStringLiteral("parametricEqToolWindow"));
-    QVERIFY(eqToolWindow);
+    QVERIFY2(eqToolWindow != nullptr, "parametricEqToolWindow must exist in QML hierarchy");
     auto* eqWindowObj = qobject_cast<QWindow*>(eqToolWindow);
-    QVERIFY(eqWindowObj);
+    QVERIFY2(eqWindowObj != nullptr, "parametricEqToolWindow must be a QWindow");
     QCOMPARE(eqToolWindow->property("title").toString(), QStringLiteral("Parametric EQ — RGS MasterLab"));
 
-    QVERIFY(QMetaObject::invokeMethod(eqMenuItem, "triggered"));
+    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem must succeed");
     QCoreApplication::processEvents();
-    QVERIFY(eqToolWindow->property("visible").toBool());
+    QVERIFY2(eqToolWindow->property("visible").toBool(), "parametricEqToolWindow must be visible after menu trigger");
 
+    qInfo().noquote() << "M12B_SMOKE_PHASE=editor-lookup";
     auto* eqEditor = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
-    QVERIFY(eqEditor);
+    QVERIFY2(eqEditor != nullptr, "parametricEqEditor must exist inside eqToolWindow");
     auto* eqGraph = eqEditor->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
-    QVERIFY(eqGraph);
-    QVERIFY(!eqViewModel.selected_band_response_points().isEmpty());
+    QVERIFY2(eqGraph != nullptr, "parametricEqGraph must exist inside eqEditor");
+    QVERIFY2(!eqViewModel.selected_band_response_points().isEmpty(), "eqViewModel response points must not be empty");
 
+    qInfo().noquote() << "M12B_SMOKE_PHASE=band-controls";
     auto* addBandBtn = eqEditor->findChild<QObject*>(QStringLiteral("addBandButton"));
     auto* removeBandBtn = eqEditor->findChild<QObject*>(QStringLiteral("removeBandButton"));
-    QVERIFY(addBandBtn && removeBandBtn);
+    QVERIFY2(addBandBtn != nullptr && removeBandBtn != nullptr, "Add and Remove band buttons must exist");
     QCOMPARE(eqViewModel.band_count(), 1);
-    QVERIFY(addBandBtn->property("enabled").toBool());
-    QVERIFY(!removeBandBtn->property("enabled").toBool());
+    QVERIFY2(addBandBtn->property("enabled").toBool(), "Add band button must be enabled initially");
+    QVERIFY2(!removeBandBtn->property("enabled").toBool(), "Remove band button must be disabled when 1 band exists");
 
-    QVERIFY(QMetaObject::invokeMethod(addBandBtn, "clicked"));
+    QVERIFY2(QMetaObject::invokeMethod(addBandBtn, "clicked"), "Clicking addBandButton must succeed");
     QCoreApplication::processEvents();
     QCOMPARE(eqViewModel.band_count(), 2);
-    QVERIFY(removeBandBtn->property("enabled").toBool());
+    QVERIFY2(removeBandBtn->property("enabled").toBool(), "Remove band button must be enabled when 2 bands exist");
 
+    qInfo().noquote() << "M12B_SMOKE_PHASE=mono-routing";
     auto* routeMidBtn = eqEditor->findChild<QObject*>(QStringLiteral("routingButton_MID"));
-    QVERIFY(routeMidBtn);
-    QVERIFY(!routeMidBtn->property("enabled").toBool()); // Disabled for mono source
+    QVERIFY2(routeMidBtn != nullptr, "routingButton_MID must exist");
+    QVERIFY2(!routeMidBtn->property("enabled").toBool(), "MID routing must be disabled for mono source");
 
+    qInfo().noquote() << "M12B_SMOKE_PHASE=invalid-draft";
     eqViewModel.setDraftFrequencyText(QStringLiteral("99999"));
     QCoreApplication::processEvents();
     QCOMPARE(eqViewModel.validation_field(), QStringLiteral("frequency"));
@@ -537,30 +546,31 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     eqViewModel.cancelDraft();
     QCoreApplication::processEvents();
-    QVERIFY(eqViewModel.validation_field().isEmpty());
+    QVERIFY2(eqViewModel.validation_field().isEmpty(), "Validation field must be empty after cancel");
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_1040x660_active.png"), QSize{1040, 660}));
 
+    qInfo().noquote() << "M12B_SMOKE_PHASE=ab";
     auto* abBypassBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonBypass"));
-    QVERIFY(abBypassBtn);
-    QVERIFY(QMetaObject::invokeMethod(abBypassBtn, "clicked"));
+    QVERIFY2(abBypassBtn != nullptr, "abButtonBypass must exist");
+    QVERIFY2(QMetaObject::invokeMethod(abBypassBtn, "clicked"), "Clicking abButtonBypass must succeed");
     QCoreApplication::processEvents();
-    QVERIFY(eqViewModel.bypass());
+    QVERIFY2(eqViewModel.bypass(), "eqViewModel.bypass must be true after clicking Bypass");
 
     auto* abActiveBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonActive"));
-    QVERIFY(abActiveBtn);
-    QVERIFY(QMetaObject::invokeMethod(abActiveBtn, "clicked"));
+    QVERIFY2(abActiveBtn != nullptr, "abButtonActive must exist");
+    QVERIFY2(QMetaObject::invokeMethod(abActiveBtn, "clicked"), "Clicking abButtonActive must succeed");
     QCoreApplication::processEvents();
-    QVERIFY(!eqViewModel.bypass());
+    QVERIFY2(!eqViewModel.bypass(), "eqViewModel.bypass must be false after clicking Active");
 
-    // Window close preserves state
+    qInfo().noquote() << "M12B_SMOKE_PHASE=reopen";
     eqWindowObj->close();
     QCoreApplication::processEvents();
-    QVERIFY(!eqToolWindow->property("visible").toBool());
+    QVERIFY2(!eqToolWindow->property("visible").toBool(), "Tool window must be hidden after close");
     QCOMPARE(eqViewModel.band_count(), 2);
 
-    QVERIFY(QMetaObject::invokeMethod(eqMenuItem, "triggered"));
+    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Re-triggering eqMenuItem must succeed");
     QCoreApplication::processEvents();
-    QVERIFY(eqToolWindow->property("visible").toBool());
+    QVERIFY2(eqToolWindow->property("visible").toBool(), "Tool window must be visible after reopening");
     QCOMPARE(eqViewModel.band_count(), 2);
     eqWindowObj->close();
     QCoreApplication::processEvents();
@@ -671,16 +681,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
 
     // Verify Mixed routing on stereo source
-    QVERIFY(QMetaObject::invokeMethod(eqMenuItem, "triggered"));
+    qInfo().noquote() << "M12B_SMOKE_PHASE=stereo-mixed-routing";
+    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem on stereo source must succeed");
     QCoreApplication::processEvents();
     auto* eqEditorStereo = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
-    QVERIFY(eqEditorStereo);
+    QVERIFY2(eqEditorStereo != nullptr, "parametricEqEditor must exist on stereo source");
     auto* routeMidBtnStereo = eqEditorStereo->findChild<QObject*>(QStringLiteral("routingButton_MID"));
-    QVERIFY(routeMidBtnStereo);
-    QVERIFY(routeMidBtnStereo->property("enabled").toBool());
-    QVERIFY(QMetaObject::invokeMethod(routeMidBtnStereo, "clicked"));
+    QVERIFY2(routeMidBtnStereo != nullptr, "routingButton_MID must exist on stereo source");
+    QVERIFY2(routeMidBtnStereo->property("enabled").toBool(), "routingButton_MID must be enabled on stereo source");
+    QVERIFY2(QMetaObject::invokeMethod(routeMidBtnStereo, "clicked"), "Clicking routingButton_MID must succeed");
     QCoreApplication::processEvents();
-    QVERIFY(eqViewModel.mixed_routing());
+    QVERIFY2(eqViewModel.mixed_routing(), "eqViewModel.mixedRouting must be true after setting band 2 to MID");
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_mixed_routing.png"), QSize{1040, 660}));
     eqWindowObj->close();
     QCoreApplication::processEvents();
