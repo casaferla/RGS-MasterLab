@@ -232,6 +232,27 @@ Rectangle {
                                 ToolTip.visible: hovered
                             }
                         }
+
+                        Rectangle {
+                            visible: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.mixedRouting
+                            Layout.preferredHeight: 20
+                            Layout.preferredWidth: mixedText.width + 12
+                            radius: 3
+                            color: "#2B1A3A"
+                            border.color: "#8B42C0"
+                            border.width: 1
+
+                            Text {
+                                id: mixedText
+                                objectName: "mixedText"
+                                anchors.centerIn: parent
+                                text: "MIXED ROUTING ACTIVE"
+                                color: "#D088FF"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 9
+                                font.weight: Font.Bold
+                            }
+                        }
                     }
 
                     Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2A3947" }

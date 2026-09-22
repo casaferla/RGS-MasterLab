@@ -630,6 +630,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(QMetaObject::invokeMethod(filterBell, "clicked"), "Resetting filter to BELL must succeed");
     QCoreApplication::processEvents();
 
+    // Verify mixedText is hidden when mixedRouting is false on mono source
+    auto* mixedIndicatorMono = find_child_by_name(eqEditor, QStringLiteral("mixedText"));
+    QVERIFY2(mixedIndicatorMono != nullptr, "mixedText object must exist in eqEditor");
+    QVERIFY2(!mixedIndicatorMono->property("visible").toBool(), "MIXED ROUTING ACTIVE indicator must be hidden when mixedRouting is false");
+
     qInfo().noquote() << "M12B_SMOKE_PHASE=mono-routing";
     auto* routeMidBtn = find_child_by_name(eqEditor, QStringLiteral("routingButton_MID"));
     QVERIFY2(routeMidBtn != nullptr, "routingButton_MID must exist");
@@ -811,7 +816,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.mixed_routing(), "eqViewModel.mixedRouting must be true after setting band 2 to MID");
     auto* mixedIndicatorText = find_child_by_name(eqEditorStereo, QStringLiteral("mixedText"));
-    QVERIFY2(mixedIndicatorText != nullptr && mixedIndicatorText->property("visible").toBool(), "MIXED ROUTING ACTIVE indicator must be visible");
+    QVERIFY2(mixedIndicatorText != nullptr, "mixedText object must exist in eqEditorStereo");
+    QVERIFY2(mixedIndicatorText->property("visible").toBool(), "MIXED ROUTING ACTIVE indicator must be visible");
+    QCOMPARE(mixedIndicatorText->property("text").toString(), QStringLiteral("MIXED ROUTING ACTIVE"));
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_mixed_routing.png"), QSize{1040, 660}));
     eqWindowObj->close();
     QCoreApplication::processEvents();
