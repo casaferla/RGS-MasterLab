@@ -528,10 +528,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     auto* routeMidBtn = eqEditor->findChild<QObject*>(QStringLiteral("routingButton_MID"));
     QVERIFY(routeMidBtn);
-    QVERIFY(QMetaObject::invokeMethod(routeMidBtn, "clicked"));
-    QCoreApplication::processEvents();
-    QVERIFY(eqViewModel.mixed_routing());
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_mixed_routing.png"), QSize{1040, 660}));
+    QVERIFY(!routeMidBtn->property("enabled").toBool()); // Disabled for mono source
 
     eqViewModel.setDraftFrequencyText(QStringLiteral("99999"));
     QCoreApplication::processEvents();
@@ -671,6 +668,21 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         core::FrameIndex{48'000}, core::FrameIndex{144'000});
     QVERIFY(visualRegion);
     QVERIFY(auditionRegion.set_region(*visualRegion.value()));
+    QCoreApplication::processEvents();
+
+    // Verify Mixed routing on stereo source
+    QVERIFY(QMetaObject::invokeMethod(eqMenuItem, "triggered"));
+    QCoreApplication::processEvents();
+    auto* eqEditorStereo = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
+    QVERIFY(eqEditorStereo);
+    auto* routeMidBtnStereo = eqEditorStereo->findChild<QObject*>(QStringLiteral("routingButton_MID"));
+    QVERIFY(routeMidBtnStereo);
+    QVERIFY(routeMidBtnStereo->property("enabled").toBool());
+    QVERIFY(QMetaObject::invokeMethod(routeMidBtnStereo, "clicked"));
+    QCoreApplication::processEvents();
+    QVERIFY(eqViewModel.mixed_routing());
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_mixed_routing.png"), QSize{1040, 660}));
+    eqWindowObj->close();
     QCoreApplication::processEvents();
     QVERIFY(capture_visual_evidence(
         window,
