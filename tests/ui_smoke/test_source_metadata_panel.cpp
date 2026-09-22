@@ -545,6 +545,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqToolWindow->property("title").toString(), QStringLiteral("Parametric EQ — RGS MasterLab"));
 
     QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem must succeed");
+    eqWindowObj->requestActivate();
+    QTest::qWait(50);
     QCoreApplication::processEvents();
     QVERIFY2(eqToolWindow->property("visible").toBool(), "parametricEqToolWindow must be visible after menu trigger");
 
@@ -578,6 +580,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // Keyboard Space activation on bandSelectorButton_0
     auto* band0Item = qobject_cast<QQuickItem*>(band0Btn);
     QVERIFY2(band0Item != nullptr, "bandSelectorButton_0 must be a QQuickItem");
+    eqWindowObj->requestActivate();
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
     band0Item->forceActiveFocus(Qt::TabFocusReason);
     QVERIFY2(band0Item->hasActiveFocus(), "bandSelectorButton_0 must have active focus");
 
@@ -633,6 +638,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(freqInput != nullptr, "frequencyInput control must exist");
     auto* freqInputItem = qobject_cast<QQuickItem*>(freqInput);
     QVERIFY2(freqInputItem != nullptr, "frequencyInput must be a QQuickItem");
+    eqWindowObj->requestActivate();
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
     freqInputItem->forceActiveFocus(Qt::TabFocusReason);
     QVERIFY2(freqInputItem->hasActiveFocus(), "frequencyInput must receive active focus");
 
