@@ -379,6 +379,9 @@ target_link_libraries(rgsml_source_metadata_panel_smoke
         Qt6::Test
 )
 rgsml_apply_project_warnings(rgsml_source_metadata_panel_smoke)
+if(MSVC)
+    target_compile_options(rgsml_source_metadata_panel_smoke PRIVATE /wd4702)
+endif()
 add_test(
     NAME rgsml_source_metadata_panel_smoke
     COMMAND rgsml_source_metadata_panel_smoke
