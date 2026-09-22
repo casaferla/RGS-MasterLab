@@ -34,6 +34,10 @@ class EqViewModel final : public QObject {
     Q_PROPERTY(double gain READ gain NOTIFY changed)
     Q_PROPERTY(double q READ q NOTIFY changed)
     Q_PROPERTY(double shelfSlope READ shelf_slope NOTIFY changed)
+    Q_PROPERTY(QString frequencyText READ frequency_text NOTIFY changed)
+    Q_PROPERTY(QString gainText READ gain_text NOTIFY changed)
+    Q_PROPERTY(QString qText READ q_text NOTIFY changed)
+    Q_PROPERTY(QString shelfSlopeText READ shelf_slope_text NOTIFY changed)
     Q_PROPERTY(int slopeDbPerOct READ slope_db_per_oct NOTIFY changed)
     Q_PROPERTY(bool gainApplicable READ gain_applicable NOTIFY changed)
     Q_PROPERTY(bool qApplicable READ q_applicable NOTIFY changed)
@@ -54,6 +58,16 @@ public:
     using ProcessedRealizationPublisher = std::function<core::Status(render::RenderResult)>;
     using IdGenerator = std::function<core::Uuid()>;
 
+    struct PreviewJob final {
+        std::uint64_t generation;
+        dsp::ParametricEqParameters parameters;
+        bool bypass;
+        std::shared_ptr<const render::RenderResult> preparedSnapshot;
+        dsp::ModuleInstanceId instanceId;
+    };
+
+    using PreviewExecutor = std::function<core::Result<render::RenderResult>(const PreviewJob&)>;
+
     struct DraftBand final {
         core::Uuid band_id;
         bool enabled{true};
@@ -63,6 +77,10 @@ public:
         double gain_db{0.0};
         double q{0.707};
         double shelf_slope{1.0};
+        QString frequency_text{QStringLiteral("1000")};
+        QString gain_text{QStringLiteral("0")};
+        QString q_text{QStringLiteral("0.707")};
+        QString shelf_slope_text{QStringLiteral("1")};
         dsp::SlopeDbPerOctave slope_db_per_octave{dsp::SlopeDbPerOctave::DB_12};
     };
 
@@ -76,6 +94,8 @@ public:
     EqViewModel(const EqViewModel&) = delete;
     EqViewModel& operator=(const EqViewModel&) = delete;
 
+    void set_preview_executor(PreviewExecutor executor);
+
     // Property getters
     [[nodiscard]] int band_count() const noexcept;
     [[nodiscard]] int selected_index() const noexcept;
@@ -87,6 +107,10 @@ public:
     [[nodiscard]] double gain() const noexcept;
     [[nodiscard]] double q() const noexcept;
     [[nodiscard]] double shelf_slope() const noexcept;
+    [[nodiscard]] QString frequency_text() const;
+    [[nodiscard]] QString gain_text() const;
+    [[nodiscard]] QString q_text() const;
+    [[nodiscard]] QString shelf_slope_text() const;
     [[nodiscard]] int slope_db_per_oct() const noexcept;
 
     [[nodiscard]] bool gain_applicable() const noexcept;
@@ -122,6 +146,12 @@ public:
     Q_INVOKABLE void setDraftGain(double gain);
     Q_INVOKABLE void setDraftQ(double q);
     Q_INVOKABLE void setDraftShelfSlope(double shelfSlope);
+
+    Q_INVOKABLE void setDraftFrequencyText(const QString& text);
+    Q_INVOKABLE void setDraftGainText(const QString& text);
+    Q_INVOKABLE void setDraftQText(const QString& text);
+    Q_INVOKABLE void setDraftShelfSlopeText(const QString& text);
+
     Q_INVOKABLE void setDraftSlopeDbPerOct(int slope);
 
     Q_INVOKABLE bool commitDraft();
@@ -137,14 +167,6 @@ signals:
     void changed();
 
 private:
-    struct PreviewJob final {
-        std::uint64_t generation;
-        dsp::ParametricEqParameters parameters;
-        bool bypass;
-        std::shared_ptr<const render::RenderResult> preparedSnapshot;
-        dsp::ModuleInstanceId instanceId;
-    };
-
     [[nodiscard]] core::SampleRate current_sample_rate() const noexcept;
     [[nodiscard]] bool is_mono_prepared() const noexcept;
     [[nodiscard]] double max_frequency_hz() const noexcept;
@@ -164,6 +186,7 @@ private:
     PreparedSnapshotProvider snapshotProvider_;
     ProcessedRealizationPublisher publisher_;
     IdGenerator idGenerator_;
+    PreviewExecutor previewExecutor_;
 
     dsp::ModuleInstanceId instanceId_;
     std::vector<dsp::EqBandParameters> committedBands_;

@@ -18,21 +18,6 @@ struct EqResponsePoint final {
     friend bool operator==(const EqResponsePoint&, const EqResponsePoint&) = default;
 };
 
-[[nodiscard]] core::Result<std::complex<double>> evaluate_parametric_eq_transfer(
-    const ParametricEqParameters& params,
-    double frequency_hz,
-    core::SampleRate sample_rate);
-
-[[nodiscard]] core::Result<EqResponsePoint> evaluate_parametric_eq_point(
-    const ParametricEqParameters& params,
-    double frequency_hz,
-    core::SampleRate sample_rate);
-
-[[nodiscard]] core::Result<std::vector<EqResponsePoint>> evaluate_parametric_eq_response(
-    const ParametricEqParameters& params,
-    const std::vector<double>& frequencies_hz,
-    core::SampleRate sample_rate);
-
 [[nodiscard]] core::Result<EqResponsePoint> evaluate_band_point(
     const EqBandParameters& band,
     double frequency_hz,

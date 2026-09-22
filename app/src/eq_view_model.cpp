@@ -107,6 +107,11 @@ constexpr std::size_t kResponseGridPoints = 100;
         },
         band.payload());
 
+    draft.frequency_text = QString::number(draft.frequency_hz);
+    draft.gain_text = QString::number(draft.gain_db);
+    draft.q_text = QString::number(draft.q);
+    draft.shelf_slope_text = QString::number(draft.shelf_slope);
+
     return draft;
 }
 
@@ -158,6 +163,12 @@ EqViewModel::~EqViewModel()
     }
 }
 
+void EqViewModel::set_preview_executor(PreviewExecutor executor)
+{
+    const std::scoped_lock lock{workerMutex_};
+    previewExecutor_ = std::move(executor);
+}
+
 int EqViewModel::band_count() const noexcept
 {
     return static_cast<int>(committedBands_.size());
@@ -206,6 +217,26 @@ double EqViewModel::q() const noexcept
 double EqViewModel::shelf_slope() const noexcept
 {
     return draftBand_.shelf_slope;
+}
+
+QString EqViewModel::frequency_text() const
+{
+    return draftBand_.frequency_text;
+}
+
+QString EqViewModel::gain_text() const
+{
+    return draftBand_.gain_text;
+}
+
+QString EqViewModel::q_text() const
+{
+    return draftBand_.q_text;
+}
+
+QString EqViewModel::shelf_slope_text() const
+{
+    return draftBand_.shelf_slope_text;
 }
 
 int EqViewModel::slope_db_per_oct() const noexcept
@@ -316,7 +347,6 @@ void EqViewModel::selectBand(int index)
     draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
     update_response_grid();
     emit changed();
-    // Selection-only changes do NOT request preview.
 }
 
 void EqViewModel::addBand()
@@ -385,19 +415,23 @@ void EqViewModel::setFilter(const QString& filterStr)
     }
 
     draftBand_.filter_type = *filterOpt;
-    // Canonical defaults for new filter type
     switch (draftBand_.filter_type) {
     case dsp::EqFilterType::BELL:
         draftBand_.gain_db = 0.0;
+        draftBand_.gain_text = QStringLiteral("0");
         draftBand_.q = 0.707;
+        draftBand_.q_text = QStringLiteral("0.707");
         break;
     case dsp::EqFilterType::NOTCH:
         draftBand_.q = 0.707;
+        draftBand_.q_text = QStringLiteral("0.707");
         break;
     case dsp::EqFilterType::LOW_SHELF:
     case dsp::EqFilterType::HIGH_SHELF:
         draftBand_.gain_db = 0.0;
+        draftBand_.gain_text = QStringLiteral("0");
         draftBand_.shelf_slope = 1.0;
+        draftBand_.shelf_slope_text = QStringLiteral("1");
         break;
     case dsp::EqFilterType::HIGH_PASS:
     case dsp::EqFilterType::LOW_PASS:
@@ -415,7 +449,7 @@ void EqViewModel::setRouting(const QString& routingStr)
         return;
     }
     if (is_mono_prepared() && *routeOpt != dsp::EqRouting::STEREO) {
-        return; // Mono requires STEREO
+        return;
     }
     draftBand_.routing = *routeOpt;
     commitDraft();
@@ -434,25 +468,65 @@ void EqViewModel::setBypass(bool bypass)
 
 void EqViewModel::setDraftFrequency(double frequency)
 {
-    draftBand_.frequency_hz = frequency;
-    emit changed();
+    setDraftFrequencyText(QString::number(frequency));
 }
 
 void EqViewModel::setDraftGain(double gain)
 {
-    draftBand_.gain_db = gain;
-    emit changed();
+    setDraftGainText(QString::number(gain));
 }
 
 void EqViewModel::setDraftQ(double q)
 {
-    draftBand_.q = q;
-    emit changed();
+    setDraftQText(QString::number(q));
 }
 
 void EqViewModel::setDraftShelfSlope(double shelfSlope)
 {
-    draftBand_.shelf_slope = shelfSlope;
+    setDraftShelfSlopeText(QString::number(shelfSlope));
+}
+
+void EqViewModel::setDraftFrequencyText(const QString& text)
+{
+    draftBand_.frequency_text = text;
+    bool ok = false;
+    const double val = text.toDouble(&ok);
+    if (ok && std::isfinite(val)) {
+        draftBand_.frequency_hz = val;
+    }
+    emit changed();
+}
+
+void EqViewModel::setDraftGainText(const QString& text)
+{
+    draftBand_.gain_text = text;
+    bool ok = false;
+    const double val = text.toDouble(&ok);
+    if (ok && std::isfinite(val)) {
+        draftBand_.gain_db = val;
+    }
+    emit changed();
+}
+
+void EqViewModel::setDraftQText(const QString& text)
+{
+    draftBand_.q_text = text;
+    bool ok = false;
+    const double val = text.toDouble(&ok);
+    if (ok && std::isfinite(val)) {
+        draftBand_.q = val;
+    }
+    emit changed();
+}
+
+void EqViewModel::setDraftShelfSlopeText(const QString& text)
+{
+    draftBand_.shelf_slope_text = text;
+    bool ok = false;
+    const double val = text.toDouble(&ok);
+    if (ok && std::isfinite(val)) {
+        draftBand_.shelf_slope = val;
+    }
     emit changed();
 }
 
@@ -472,11 +546,41 @@ void EqViewModel::setDraftSlopeDbPerOct(int slope)
 
 bool EqViewModel::commitDraft()
 {
+    // Parse raw text for applicable fields
+    bool ok = false;
+
+    const double freq = draftBand_.frequency_text.toDouble(&ok);
+    if (!ok || !std::isfinite(freq)) {
+        return false; // Raw text invalid: reject commit, preserve raw draft text, no preview
+    }
+    draftBand_.frequency_hz = freq;
+
+    if (gain_applicable()) {
+        const double g = draftBand_.gain_text.toDouble(&ok);
+        if (!ok || !std::isfinite(g)) {
+            return false;
+        }
+        draftBand_.gain_db = g;
+    }
+
+    if (q_applicable()) {
+        const double qVal = draftBand_.q_text.toDouble(&ok);
+        if (!ok || !std::isfinite(qVal)) {
+            return false;
+        }
+        draftBand_.q = qVal;
+    }
+
+    if (shelf_slope_applicable()) {
+        const double sVal = draftBand_.shelf_slope_text.toDouble(&ok);
+        if (!ok || !std::isfinite(sVal)) {
+            return false;
+        }
+        draftBand_.shelf_slope = sVal;
+    }
+
     auto bandParamOpt = make_band_parameters(draftBand_, max_frequency_hz());
     if (!bandParamOpt) {
-        // Invalid draft: restore from committed
-        draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
-        emit changed();
         return false;
     }
 
@@ -485,13 +589,17 @@ bool EqViewModel::commitDraft()
 
     auto candidateParamsRes = dsp::ParametricEqParameters::create(candidateBands);
     if (!candidateParamsRes) {
-        draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
-        emit changed();
         return false;
     }
 
     committedBands_ = std::move(candidateBands);
     committedParams_ = std::move(*candidateParamsRes.value());
+
+    // Format raw text fields canonically after valid commit
+    draftBand_.frequency_text = QString::number(draftBand_.frequency_hz);
+    draftBand_.gain_text = QString::number(draftBand_.gain_db);
+    draftBand_.q_text = QString::number(draftBand_.q);
+    draftBand_.shelf_slope_text = QString::number(draftBand_.shelf_slope);
 
     ++previewGeneration_;
     update_response_grid();
@@ -510,12 +618,13 @@ void EqViewModel::cancelDraft()
 void EqViewModel::graphDrag(double frequency, double gain)
 {
     draftBand_.frequency_hz = frequency;
+    draftBand_.frequency_text = QString::number(frequency);
     if (gain_applicable()) {
         draftBand_.gain_db = gain;
+        draftBand_.gain_text = QString::number(gain);
     }
     update_response_grid();
     emit changed();
-    // Graph drag updates visual curve in C++, but does not mutate committed DSP state or trigger preview.
 }
 
 void EqViewModel::graphRelease()
@@ -525,6 +634,7 @@ void EqViewModel::graphRelease()
 
 void EqViewModel::trigger_preview()
 {
+    ++previewGeneration_; // Increment generation on Source/PREPARED replacement
     request_preview();
 }
 
@@ -567,6 +677,10 @@ EqViewModel::DraftBand EqViewModel::make_default_band(core::Uuid id) noexcept
         .gain_db = 0.0,
         .q = 0.707,
         .shelf_slope = 1.0,
+        .frequency_text = QStringLiteral("1000"),
+        .gain_text = QStringLiteral("0"),
+        .q_text = QStringLiteral("0.707"),
+        .shelf_slope_text = QStringLiteral("1"),
         .slope_db_per_octave = dsp::SlopeDbPerOctave::DB_12,
     };
 }
@@ -686,6 +800,7 @@ void EqViewModel::worker_loop()
 {
     while (true) {
         std::optional<PreviewJob> job;
+        PreviewExecutor executor;
         {
             std::unique_lock lock{workerMutex_};
             workerCond_.wait(lock, [this] { return workerStopping_ || pendingJob_.has_value(); });
@@ -694,9 +809,13 @@ void EqViewModel::worker_loop()
             }
             job = std::move(pendingJob_);
             pendingJob_.reset();
+            executor = previewExecutor_;
         }
 
         auto result = [&]() -> core::Result<render::RenderResult> {
+            if (executor) {
+                return executor(*job);
+            }
             try {
                 auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
                 if (!registry) {
