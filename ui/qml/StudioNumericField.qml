@@ -83,7 +83,7 @@ Item {
                 ToolTip.text: root.labelText + (root.unitText.length > 0 ? " (" + root.unitText + ")" : "")
                 ToolTip.visible: editField.activeFocus || hoverArea.containsMouse
 
-                onTextChanged: {
+                onTextEdited: {
                     if (root.fieldName === "frequency") {
                         if (root.viewModel) root.viewModel.setDraftFrequencyText(text)
                     } else if (root.fieldName === "gain") {

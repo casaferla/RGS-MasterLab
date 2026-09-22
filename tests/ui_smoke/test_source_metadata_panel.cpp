@@ -572,12 +572,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(QMetaObject::invokeMethod(addBandBtn, "clicked"), "Clicking addBandButton must succeed");
     QCoreApplication::processEvents();
     QCOMPARE(eqViewModel.band_count(), 2);
+    QCOMPARE(eqViewModel.selected_index(), 1);
     QVERIFY2(removeBandBtn->property("enabled").toBool(), "Remove band button must be enabled when 2 bands exist");
 
-    // Band selection change without extra preview generation
-    const quint64 genBeforeSelect = eqViewModel.preview_generation();
-    eqViewModel.selectBand(0);
-    QCOMPARE(eqViewModel.preview_generation(), genBeforeSelect);
+    // Keyboard Space activation on bandSelectorButton_0
+    auto* band0Item = qobject_cast<QQuickItem*>(band0Btn);
+    QVERIFY2(band0Item != nullptr, "bandSelectorButton_0 must be a QQuickItem");
+    band0Item->forceActiveFocus(Qt::TabFocusReason);
+    QVERIFY2(band0Item->hasActiveFocus(), "bandSelectorButton_0 must have active focus");
+
+    const quint64 genBeforeKeyboardSelect = eqViewModel.preview_generation();
+    QTest::keyClick(eqWindowObj, Qt::Key_Space);
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.selected_index(), 0);
+    QCOMPARE(eqViewModel.preview_generation(), genBeforeKeyboardSelect);
 
     // Filter-specific control visibility & TR-02 HP/LP discrete slope commit
     auto* filterBell = find_child_by_name(eqEditor, QStringLiteral("filterButton_BELL"));
@@ -623,19 +631,24 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     qInfo().noquote() << "M12B_SMOKE_PHASE=invalid-draft";
     auto* freqInput = find_child_by_name(eqEditor, QStringLiteral("frequencyInput"));
     QVERIFY2(freqInput != nullptr, "frequencyInput control must exist");
-    freqInput->setProperty("text", QStringLiteral("99999"));
+    auto* freqInputItem = qobject_cast<QQuickItem*>(freqInput);
+    QVERIFY2(freqInputItem != nullptr, "frequencyInput must be a QQuickItem");
+    freqInputItem->forceActiveFocus(Qt::TabFocusReason);
+    QVERIFY2(freqInputItem->hasActiveFocus(), "frequencyInput must receive active focus");
+
+    QMetaObject::invokeMethod(freqInput, "selectAll");
+    QTest::keyClicks(eqWindowObj, QStringLiteral("99999"));
     QCoreApplication::processEvents();
+
+    QCOMPARE(freqInput->property("text").toString(), QStringLiteral("99999"));
     QCOMPARE(eqViewModel.validation_field(), QStringLiteral("frequency"));
     auto* valMsgText = find_child_by_name(eqEditor, QStringLiteral("validationMessageText"));
     QVERIFY2(valMsgText && valMsgText->property("visible").toBool(), "Validation message text must be visible for invalid draft");
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_invalid_draft.png"), QSize{1040, 660}));
 
-    auto* freqInputItem = qobject_cast<QQuickItem*>(freqInput);
-    if (freqInputItem != nullptr) {
-        freqInputItem->forceActiveFocus(Qt::TabFocusReason);
-    }
     QTest::keyClick(eqWindowObj, Qt::Key_Escape);
     QCoreApplication::processEvents();
+    QCOMPARE(freqInput->property("text").toString(), QStringLiteral("1000"));
     QCOMPARE(eqViewModel.frequency_text(), QStringLiteral("1000"));
     QVERIFY2(eqViewModel.validation_field().isEmpty(), "Validation field must be empty after Escape key cancel");
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_1040x660_active.png"), QSize{1040, 660}));
@@ -785,6 +798,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(QMetaObject::invokeMethod(routeMidBtnStereo, "clicked"), "Clicking routingButton_MID must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.mixed_routing(), "eqViewModel.mixedRouting must be true after setting band 2 to MID");
+    auto* mixedIndicatorText = find_child_by_name(eqEditorStereo, QStringLiteral("mixedText"));
+    QVERIFY2(mixedIndicatorText != nullptr && mixedIndicatorText->property("visible").toBool(), "MIXED ROUTING ACTIVE indicator must be visible");
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_mixed_routing.png"), QSize{1040, 660}));
     eqWindowObj->close();
     QCoreApplication::processEvents();
