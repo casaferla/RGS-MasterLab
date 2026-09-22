@@ -144,9 +144,6 @@ int main(int argc, char* argv[])
         QStringLiteral("auditionSelector"),
         &auditionSelector);
     engine.rootContext()->setContextProperty(
-        QStringLiteral("eqViewModel"),
-        &eqViewModel);
-    engine.rootContext()->setContextProperty(
         QStringLiteral("goldSelection"),
         &goldSelection);
     engine.rootContext()->setContextProperty(

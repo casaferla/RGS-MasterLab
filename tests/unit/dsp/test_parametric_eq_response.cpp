@@ -16,7 +16,6 @@ using rgsml::dsp::EqBandParameters;
 using rgsml::dsp::EqFilterType;
 using rgsml::dsp::EqResponsePoint;
 using rgsml::dsp::EqRouting;
-using rgsml::dsp::ParametricEqParameters;
 using rgsml::dsp::SlopeDbPerOctave;
 
 class ParametricEqResponseTest final : public QObject {
@@ -39,9 +38,8 @@ void ParametricEqResponseTest::testAllSixFilterTypesAgreementWithOracle()
         auto band = *EqBandParameters::create(
             band_id, true, EqFilterType::BELL, EqRouting::STEREO,
             dsp::BellPayload{1000.0, 6.0, 0.707}).value();
-        auto params = *ParametricEqParameters::create({band}).value();
 
-        auto res = dsp::evaluate_parametric_eq_point(params, 1000.0, sample_rate);
+        auto res = dsp::evaluate_band_point(band, 1000.0, sample_rate);
         QVERIFY(res);
 
         const auto oracle_transfer = oracles::biquad_transfer_function(
@@ -55,9 +53,8 @@ void ParametricEqResponseTest::testAllSixFilterTypesAgreementWithOracle()
         auto band = *EqBandParameters::create(
             band_id, true, EqFilterType::NOTCH, EqRouting::STEREO,
             dsp::NotchPayload{1000.0, 12.0}).value();
-        auto params = *ParametricEqParameters::create({band}).value();
 
-        auto res = dsp::evaluate_parametric_eq_point(params, 1000.0, sample_rate);
+        auto res = dsp::evaluate_band_point(band, 1000.0, sample_rate);
         QVERIFY(res);
 
         const auto oracle_transfer = oracles::biquad_transfer_function(
@@ -70,9 +67,8 @@ void ParametricEqResponseTest::testAllSixFilterTypesAgreementWithOracle()
         auto band = *EqBandParameters::create(
             band_id, true, EqFilterType::LOW_SHELF, EqRouting::STEREO,
             dsp::ShelfPayload{100.0, 6.0, 0.5}).value();
-        auto params = *ParametricEqParameters::create({band}).value();
 
-        auto res = dsp::evaluate_parametric_eq_point(params, 100.0, sample_rate);
+        auto res = dsp::evaluate_band_point(band, 100.0, sample_rate);
         QVERIFY(res);
 
         const auto oracle_transfer = oracles::biquad_transfer_function(
@@ -85,9 +81,8 @@ void ParametricEqResponseTest::testAllSixFilterTypesAgreementWithOracle()
         auto band = *EqBandParameters::create(
             band_id, true, EqFilterType::HIGH_SHELF, EqRouting::STEREO,
             dsp::ShelfPayload{10000.0, 6.0, 0.5}).value();
-        auto params = *ParametricEqParameters::create({band}).value();
 
-        auto res = dsp::evaluate_parametric_eq_point(params, 10000.0, sample_rate);
+        auto res = dsp::evaluate_band_point(band, 10000.0, sample_rate);
         QVERIFY(res);
 
         const auto oracle_transfer = oracles::biquad_transfer_function(
@@ -100,9 +95,8 @@ void ParametricEqResponseTest::testAllSixFilterTypesAgreementWithOracle()
         auto band = *EqBandParameters::create(
             band_id, true, EqFilterType::HIGH_PASS, EqRouting::STEREO,
             dsp::PassPayload{1000.0, SlopeDbPerOctave::DB_12}).value();
-        auto params = *ParametricEqParameters::create({band}).value();
 
-        auto res = dsp::evaluate_parametric_eq_point(params, 1000.0, sample_rate);
+        auto res = dsp::evaluate_band_point(band, 1000.0, sample_rate);
         QVERIFY(res);
 
         const auto oracle_transfer = oracles::biquad_transfer_function(
@@ -115,9 +109,8 @@ void ParametricEqResponseTest::testAllSixFilterTypesAgreementWithOracle()
         auto band = *EqBandParameters::create(
             band_id, true, EqFilterType::LOW_PASS, EqRouting::STEREO,
             dsp::PassPayload{1000.0, SlopeDbPerOctave::DB_12}).value();
-        auto params = *ParametricEqParameters::create({band}).value();
 
-        auto res = dsp::evaluate_parametric_eq_point(params, 1000.0, sample_rate);
+        auto res = dsp::evaluate_band_point(band, 1000.0, sample_rate);
         QVERIFY(res);
 
         const auto oracle_transfer = oracles::biquad_transfer_function(
@@ -136,9 +129,8 @@ void ParametricEqResponseTest::testCascadedPassFilters()
         auto band = *EqBandParameters::create(
             band_id, true, EqFilterType::HIGH_PASS, EqRouting::STEREO,
             dsp::PassPayload{1000.0, SlopeDbPerOctave::DB_24}).value();
-        auto params = *ParametricEqParameters::create({band}).value();
 
-        auto res = dsp::evaluate_parametric_eq_point(params, 1000.0, sample_rate);
+        auto res = dsp::evaluate_band_point(band, 1000.0, sample_rate);
         QVERIFY(res);
 
         const auto oracle_transfer = oracles::cascade_transfer_function(
@@ -151,9 +143,8 @@ void ParametricEqResponseTest::testCascadedPassFilters()
         auto band = *EqBandParameters::create(
             band_id, true, EqFilterType::LOW_PASS, EqRouting::STEREO,
             dsp::PassPayload{1000.0, SlopeDbPerOctave::DB_48}).value();
-        auto params = *ParametricEqParameters::create({band}).value();
 
-        auto res = dsp::evaluate_parametric_eq_point(params, 500.0, sample_rate);
+        auto res = dsp::evaluate_band_point(band, 500.0, sample_rate);
         QVERIFY(res);
 
         const auto oracle_transfer = oracles::cascade_transfer_function(
@@ -170,9 +161,8 @@ void ParametricEqResponseTest::testDisabledBandIdentity()
     auto disabled_band = *EqBandParameters::create(
         band_id, false, EqFilterType::BELL, EqRouting::STEREO,
         dsp::BellPayload{1000.0, 18.0, 0.707}).value();
-    auto params = *ParametricEqParameters::create({disabled_band}).value();
 
-    auto res = dsp::evaluate_parametric_eq_point(params, 1000.0, sample_rate);
+    auto res = dsp::evaluate_band_point(disabled_band, 1000.0, sample_rate);
     QVERIFY(res);
     QCOMPARE(res.value()->transfer_function, std::complex<double>(1.0, 0.0));
     QCOMPARE(res.value()->magnitude_db, 0.0);
@@ -186,18 +176,17 @@ void ParametricEqResponseTest::testInvalidInputRejection()
     auto band = *EqBandParameters::create(
         band_id, true, EqFilterType::BELL, EqRouting::STEREO,
         dsp::BellPayload{1000.0, 0.0, 0.707}).value();
-    auto params = *ParametricEqParameters::create({band}).value();
 
     // Frequency > 0.45 * Fs (48000 * 0.45 = 21600 Hz)
-    auto high_freq = dsp::evaluate_parametric_eq_point(params, 22000.0, sample_rate);
+    auto high_freq = dsp::evaluate_band_point(band, 22000.0, sample_rate);
     QVERIFY(!high_freq);
 
     // Negative frequency
-    auto neg_freq = dsp::evaluate_parametric_eq_point(params, -10.0, sample_rate);
+    auto neg_freq = dsp::evaluate_band_point(band, -10.0, sample_rate);
     QVERIFY(!neg_freq);
 
     // NaN frequency
-    auto nan_freq = dsp::evaluate_parametric_eq_point(params, std::numeric_limits<double>::quiet_NaN(), sample_rate);
+    auto nan_freq = dsp::evaluate_band_point(band, std::numeric_limits<double>::quiet_NaN(), sample_rate);
     QVERIFY(!nan_freq);
 }
 

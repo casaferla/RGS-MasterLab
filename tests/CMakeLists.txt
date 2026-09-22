@@ -723,10 +723,6 @@ qt_add_executable(rgsml_eq_view_model_tests
     unit/app/test_eq_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
-    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
-    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
-    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
-    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
 )
 target_include_directories(rgsml_eq_view_model_tests
     PRIVATE
@@ -735,8 +731,9 @@ target_include_directories(rgsml_eq_view_model_tests
 target_link_libraries(rgsml_eq_view_model_tests
     PRIVATE
         rgsml_render
-        rgsml_platform
+        rgsml_dsp
         rgsml_audio
+        rgsml_core
         Qt6::Core
         Qt6::Test
 )

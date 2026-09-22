@@ -55,9 +55,7 @@ constexpr double kPi = std::numbers::pi;
     };
 }
 
-}  // namespace
-
-Result<std::complex<double>> evaluate_parametric_eq_transfer(
+[[nodiscard]] Result<std::complex<double>> evaluate_internal_transfer(
     const ParametricEqParameters& params,
     double frequency_hz,
     core::SampleRate sample_rate)
@@ -97,35 +95,7 @@ Result<std::complex<double>> evaluate_parametric_eq_transfer(
     return Result<std::complex<double>>::success(H_total);
 }
 
-Result<EqResponsePoint> evaluate_parametric_eq_point(
-    const ParametricEqParameters& params,
-    double frequency_hz,
-    core::SampleRate sample_rate)
-{
-    auto transfer = evaluate_parametric_eq_transfer(params, frequency_hz, sample_rate);
-    if (!transfer) {
-        return Result<EqResponsePoint>::failure(*transfer.error());
-    }
-    return Result<EqResponsePoint>::success(
-        make_response_point(frequency_hz, *transfer.value()));
-}
-
-Result<std::vector<EqResponsePoint>> evaluate_parametric_eq_response(
-    const ParametricEqParameters& params,
-    const std::vector<double>& frequencies_hz,
-    core::SampleRate sample_rate)
-{
-    std::vector<EqResponsePoint> points;
-    points.reserve(frequencies_hz.size());
-    for (const double f : frequencies_hz) {
-        auto pt = evaluate_parametric_eq_point(params, f, sample_rate);
-        if (!pt) {
-            return Result<std::vector<EqResponsePoint>>::failure(*pt.error());
-        }
-        points.push_back(std::move(*pt.value()));
-    }
-    return Result<std::vector<EqResponsePoint>>::success(std::move(points));
-}
+}  // namespace
 
 Result<EqResponsePoint> evaluate_band_point(
     const EqBandParameters& band,
@@ -136,7 +106,12 @@ Result<EqResponsePoint> evaluate_band_point(
     if (!single_param) {
         return Result<EqResponsePoint>::failure(*single_param.error());
     }
-    return evaluate_parametric_eq_point(*single_param.value(), frequency_hz, sample_rate);
+    auto transfer = evaluate_internal_transfer(*single_param.value(), frequency_hz, sample_rate);
+    if (!transfer) {
+        return Result<EqResponsePoint>::failure(*transfer.error());
+    }
+    return Result<EqResponsePoint>::success(
+        make_response_point(frequency_hz, *transfer.value()));
 }
 
 Result<std::vector<EqResponsePoint>> evaluate_band_response(
@@ -144,11 +119,16 @@ Result<std::vector<EqResponsePoint>> evaluate_band_response(
     const std::vector<double>& frequencies_hz,
     core::SampleRate sample_rate)
 {
-    auto single_param = ParametricEqParameters::create({band});
-    if (!single_param) {
-        return Result<std::vector<EqResponsePoint>>::failure(*single_param.error());
+    std::vector<EqResponsePoint> points;
+    points.reserve(frequencies_hz.size());
+    for (const double f : frequencies_hz) {
+        auto pt = evaluate_band_point(band, f, sample_rate);
+        if (!pt) {
+            return Result<std::vector<EqResponsePoint>>::failure(*pt.error());
+        }
+        points.push_back(std::move(*pt.value()));
     }
-    return evaluate_parametric_eq_response(*single_param.value(), frequencies_hz, sample_rate);
+    return Result<std::vector<EqResponsePoint>>::success(std::move(points));
 }
 
 }  // namespace rgsml::dsp
