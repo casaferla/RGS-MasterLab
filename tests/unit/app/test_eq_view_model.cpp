@@ -15,7 +15,9 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -54,8 +56,13 @@ private slots:
     void testMonoPreparedRoutingRejection();
     void testAllSixFilterTypesAndApplicability();
     void testStableBandIds();
+    void testBandCardinalityAndRemoveSelection();
+    void testEnabledDisabledSonicCommit();
+    void testHardRangeFamilyRejection();
     void testSampleRateUpperFrequencyBound();
     void testDeterministicStaleCompletionRejection();
+    void testCrossSourceStalePreviewInvalidation();
+    void testRealProductionPathActiveAndBypass();
     void testCurrentFailurePreservesLastGoodAudio();
     void testPreparedInputRemainsImmutable();
     void testSelectionOnlyNoPreview();
@@ -70,27 +77,22 @@ void EqViewModelTest::testInvalidTextDraftAndCommitRejection()
     const quint64 origGen = vm.preview_generation();
     const double origFreq = vm.frequency();
 
-    // Set invalid text drafts
     for (const auto& invalidStr : {QStringLiteral(""), QStringLiteral("-"), QStringLiteral("."), QStringLiteral("abc"), QStringLiteral("1000.abc")}) {
         vm.setDraftFrequencyText(invalidStr);
         QCOMPARE(vm.frequency_text(), invalidStr);
         QCOMPARE(vm.preview_generation(), origGen);
 
-        // Rejected commit
         QVERIFY(!vm.commitDraft());
 
-        // Raw invalid text persists in draft, committed value & generation unchanged, no preview
         QCOMPARE(vm.frequency_text(), invalidStr);
         QCOMPARE(vm.frequency(), origFreq);
         QCOMPARE(vm.preview_generation(), origGen);
     }
 
-    // Cancel restores committed value and text
     vm.cancelDraft();
     QCOMPARE(vm.frequency_text(), QString::number(origFreq));
     QCOMPARE(vm.frequency(), origFreq);
 
-    // Subsequent valid text commit succeeds
     vm.setDraftFrequencyText(QStringLiteral("2500"));
     QVERIFY(vm.commitDraft());
     QCOMPARE(vm.frequency(), 2500.0);
@@ -108,11 +110,9 @@ void EqViewModelTest::testMonoPreparedRoutingRejection()
     const quint64 origGen = vm.preview_generation();
     QVERIFY(!vm.route_available());
 
-    // STEREO is accepted
     vm.setRouting(QStringLiteral("STEREO"));
     QCOMPARE(vm.routing_label(), QStringLiteral("STEREO"));
 
-    // MID, SIDE, LEFT, RIGHT are rejected on mono PREPARED
     for (const auto& invalidRoute : {QStringLiteral("MID"), QStringLiteral("SIDE"), QStringLiteral("LEFT"), QStringLiteral("RIGHT")}) {
         vm.setRouting(invalidRoute);
         QCOMPARE(vm.routing_label(), QStringLiteral("STEREO"));
@@ -124,7 +124,6 @@ void EqViewModelTest::testAllSixFilterTypesAndApplicability()
 {
     EqViewModel vm;
 
-    // 1. BELL
     vm.setFilter(QStringLiteral("BELL"));
     QCOMPARE(vm.filter_label(), QStringLiteral("BELL"));
     QVERIFY(vm.gain_applicable());
@@ -134,14 +133,12 @@ void EqViewModelTest::testAllSixFilterTypesAndApplicability()
     QCOMPARE(vm.gain(), 0.0);
     QCOMPARE(vm.q(), 0.707);
 
-    // 2. NOTCH
     vm.setFilter(QStringLiteral("NOTCH"));
     QCOMPARE(vm.filter_label(), QStringLiteral("NOTCH"));
     QVERIFY(!vm.gain_applicable());
     QVERIFY(vm.q_applicable());
     QCOMPARE(vm.q(), 0.707);
 
-    // 3. LOW_SHELF
     vm.setFilter(QStringLiteral("LOW_SHELF"));
     QCOMPARE(vm.filter_label(), QStringLiteral("LOW_SHELF"));
     QVERIFY(vm.gain_applicable());
@@ -149,19 +146,16 @@ void EqViewModelTest::testAllSixFilterTypesAndApplicability()
     QCOMPARE(vm.gain(), 0.0);
     QCOMPARE(vm.shelf_slope(), 1.0);
 
-    // 4. HIGH_SHELF
     vm.setFilter(QStringLiteral("HIGH_SHELF"));
     QCOMPARE(vm.filter_label(), QStringLiteral("HIGH_SHELF"));
     QVERIFY(vm.gain_applicable());
     QVERIFY(vm.shelf_slope_applicable());
 
-    // 5. HIGH_PASS
     vm.setFilter(QStringLiteral("HIGH_PASS"));
     QCOMPARE(vm.filter_label(), QStringLiteral("HIGH_PASS"));
     QVERIFY(vm.slope_applicable());
     QCOMPARE(vm.slope_db_per_oct(), 12);
 
-    // 6. LOW_PASS
     vm.setFilter(QStringLiteral("LOW_PASS"));
     QCOMPARE(vm.filter_label(), QStringLiteral("LOW_PASS"));
     QVERIFY(vm.slope_applicable());
@@ -186,38 +180,141 @@ void EqViewModelTest::testStableBandIds()
     vm.addBand();
     const QString band1Id = vm.selected_band_id();
     QVERIFY(!band1Id.isEmpty());
-    QVERIFY(band0Id != band1Id); // Unique IDs on add
+    QVERIFY(band0Id != band1Id);
 
-    // Selection does not change bandId
     vm.selectBand(0);
     QCOMPARE(vm.selected_band_id(), band0Id);
 
-    // Filter change does not change bandId
     vm.setFilter(QStringLiteral("NOTCH"));
     QCOMPARE(vm.selected_band_id(), band0Id);
 
-    // Routing change does not change bandId
     vm.setRouting(QStringLiteral("MID"));
     QCOMPARE(vm.selected_band_id(), band0Id);
 
-    // Numeric edits do not change bandId
     vm.setDraftFrequency(3000.0);
     vm.commitDraft();
     QCOMPARE(vm.selected_band_id(), band0Id);
 }
 
+void EqViewModelTest::testBandCardinalityAndRemoveSelection()
+{
+    std::uint32_t idCounter = 0;
+    auto mockIdGen = [&idCounter]() -> rgsml::core::Uuid {
+        ++idCounter;
+        char buf[37];
+        std::snprintf(buf, sizeof(buf), "00000000-0000-0000-0000-%012u", idCounter);
+        return *rgsml::core::Uuid::parse(buf).value();
+    };
+
+    EqViewModel vm{nullptr, nullptr, mockIdGen};
+
+    QCOMPARE(vm.band_count(), 1);
+
+    for (int i = 0; i < 5; ++i) {
+        QVERIFY(vm.add_available());
+        vm.addBand();
+    }
+    QCOMPARE(vm.band_count(), 6);
+    QVERIFY(!vm.add_available());
+
+    // 7th add attempt rejected
+    vm.addBand();
+    QCOMPARE(vm.band_count(), 6);
+
+    // Remove middle band (select index 2, remove -> selected index remains 2, occupying new position)
+    vm.selectBand(2);
+    vm.removeSelectedBand();
+    QCOMPARE(vm.band_count(), 5);
+    QCOMPARE(vm.selected_index(), 2);
+
+    // Remove final band (select index 4, remove -> selected index becomes 3, new final band)
+    vm.selectBand(4);
+    vm.removeSelectedBand();
+    QCOMPARE(vm.band_count(), 4);
+    QCOMPARE(vm.selected_index(), 3);
+
+    for (int i = 0; i < 3; ++i) {
+        vm.removeSelectedBand();
+    }
+    QCOMPARE(vm.band_count(), 1);
+    QVERIFY(!vm.remove_available());
+
+    // Reject removal of final remaining band
+    vm.removeSelectedBand();
+    QCOMPARE(vm.band_count(), 1);
+}
+
+void EqViewModelTest::testEnabledDisabledSonicCommit()
+{
+    EqViewModel vm;
+    const quint64 origGen = vm.preview_generation();
+
+    // Disable selected band
+    vm.setEnabled(false);
+    QCOMPARE(vm.preview_generation(), origGen + 1U);
+    QVERIFY(!vm.enabled());
+    QVERIFY(!vm.committed_parameters().bands()[0].enabled());
+
+    // Re-enable selected band
+    vm.setEnabled(true);
+    QCOMPARE(vm.preview_generation(), origGen + 2U);
+    QVERIFY(vm.enabled());
+    QVERIFY(vm.committed_parameters().bands()[0].enabled());
+}
+
+void EqViewModelTest::testHardRangeFamilyRejection()
+{
+    EqViewModel vm;
+    const quint64 origGen = vm.preview_generation();
+    const auto origParams = vm.committed_parameters();
+
+    // Gain out of range
+    vm.setDraftGain(-19.0);
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), origGen);
+    QCOMPARE(vm.committed_parameters(), origParams);
+
+    vm.setDraftGain(+19.0);
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), origGen);
+    QCOMPARE(vm.committed_parameters(), origParams);
+
+    // Q out of range
+    vm.setDraftQ(0.05);
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), origGen);
+    QCOMPARE(vm.committed_parameters(), origParams);
+
+    vm.setDraftQ(13.0);
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), origGen);
+    QCOMPARE(vm.committed_parameters(), origParams);
+
+    // Shelf slope out of range
+    vm.setFilter(QStringLiteral("LOW_SHELF"));
+    const quint64 shelfGen = vm.preview_generation();
+    const auto shelfParams = vm.committed_parameters();
+
+    vm.setDraftShelfSlope(0.05);
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), shelfGen);
+    QCOMPARE(vm.committed_parameters(), shelfParams);
+
+    vm.setDraftShelfSlope(1.5);
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), shelfGen);
+    QCOMPARE(vm.committed_parameters(), shelfParams);
+}
+
 void EqViewModelTest::testSampleRateUpperFrequencyBound()
 {
-    // PREPARED sample rate = 32000 Hz. Max frequency = 0.45 * 32000 = 14400 Hz.
     auto rate32k = make_test_prepared_result(*core::SampleRate::create(32000).value());
 
     EqViewModel vm{[rate32k] { return rate32k; }};
 
-    // 15000 Hz > 14400 Hz -> rejected
     vm.setDraftFrequency(15000.0);
     QVERIFY(!vm.commitDraft());
 
-    // 14000 Hz <= 14400 Hz -> accepted
     vm.setDraftFrequency(14000.0);
     QVERIFY(vm.commitDraft());
     QCOMPARE(vm.frequency(), 14000.0);
@@ -230,17 +327,23 @@ void EqViewModelTest::testDeterministicStaleCompletionRejection()
 
     EqViewModel vm{
         [prepared] { return prepared; },
-        [&publishedGenerations](render::RenderResult) {
+        [&publishedGenerations](render::RenderResult res) {
+            publishedGenerations.push_back(res.chain_revision());
             return rgsml::core::Status::success();
         }
     };
 
-    std::vector<EqViewModel::PreviewJob> capturedJobs;
-    std::mutex executorMutex;
+    std::atomic<bool> blockJob1{true};
+    std::mutex cvMutex;
+    std::condition_variable cv;
+    std::atomic<int> executorCalls{0};
 
-    vm.set_preview_executor([&capturedJobs, &executorMutex, prepared](const EqViewModel::PreviewJob& job) {
-        const std::scoped_lock lock{executorMutex};
-        capturedJobs.push_back(job);
+    vm.set_preview_executor([&](const EqViewModel::PreviewJob& job) {
+        const int callNum = ++executorCalls;
+        if (callNum == 1) { // Job 1 (gen 1) blocks
+            std::unique_lock lock{cvMutex};
+            cv.wait(lock, [&] { return !blockJob1.load(); });
+        }
         auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
         auto chain = dsp::ProcessingChain::create(
             *registry.value(),
@@ -252,11 +355,115 @@ void EqViewModelTest::testDeterministicStaleCompletionRejection()
         return render::render_preview(*request.value(), *registry.value());
     });
 
-    // Edit 1 -> generation 1
+    // 1. Commit 1 -> starts Job 1 and BLOCKS
     vm.setDraftGain(3.0);
     vm.commitDraft();
 
-    // Edit 2 -> generation 2
+    while (executorCalls.load() < 1) {
+        QTest::qWait(5);
+    }
+
+    // 2. Commit 2 -> advances generation to 2
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+
+    // 3. Unblock Job 1 (generation 1 is now stale)
+    {
+        const std::scoped_lock lock{cvMutex};
+        blockJob1 = false;
+    }
+    cv.notify_all();
+
+    for (int i = 0; i < 100 && vm.preview_status() == QStringLiteral("RENDERING"); ++i) {
+        QTest::qWait(10);
+    }
+
+    QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
+    QCOMPARE(vm.preview_generation(), 2U);
+    QVERIFY(vm.stale_results_discarded() >= 1U);
+}
+
+void EqViewModelTest::testCrossSourceStalePreviewInvalidation()
+{
+    auto preparedA = make_test_prepared_result(*core::SampleRate::create(48000).value());
+    auto preparedB = make_test_prepared_result(*core::SampleRate::create(44100).value());
+
+    std::shared_ptr<const render::RenderResult> currentPrepared = preparedA;
+    std::vector<std::shared_ptr<const render::RenderResult>> publishedResults;
+
+    EqViewModel vm{
+        [&currentPrepared] { return currentPrepared; },
+        [&publishedResults](render::RenderResult res) {
+            publishedResults.push_back(std::make_shared<render::RenderResult>(std::move(res)));
+            return rgsml::core::Status::success();
+        }
+    };
+
+    std::atomic<bool> blockA{true};
+    std::mutex cvMutex;
+    std::condition_variable cv;
+    std::atomic<int> executorCalls{0};
+
+    vm.set_preview_executor([&](const EqViewModel::PreviewJob& job) {
+        const int callNum = ++executorCalls;
+        if (callNum == 1) { // Source A preview blocks
+            std::unique_lock lock{cvMutex};
+            cv.wait(lock, [&] { return !blockA.load(); });
+        }
+        auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+        auto chain = dsp::ProcessingChain::create(
+            *registry.value(),
+            dsp::ProcessingChainContext{
+                dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL});
+        auto request = render::RenderRequest::create(
+            job.preparedSnapshot->view(), job.preparedSnapshot->view().absolute_range(),
+            *chain.value(), {}, *core::FrameCount::create(7).value());
+        return render::render_preview(*request.value(), *registry.value());
+    });
+
+    // Start preview for Source A
+    vm.setDraftGain(3.0);
+    vm.commitDraft();
+
+    while (executorCalls.load() < 1) {
+        QTest::qWait(5);
+    }
+
+    // Replace snapshot with Source B and trigger preview
+    currentPrepared = preparedB;
+    vm.trigger_preview();
+
+    // Unblock Source A preview
+    {
+        const std::scoped_lock lock{cvMutex};
+        blockA = false;
+    }
+    cv.notify_all();
+
+    for (int i = 0; i < 100 && vm.preview_status() == QStringLiteral("RENDERING"); ++i) {
+        QTest::qWait(10);
+    }
+
+    QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
+    QCOMPARE(publishedResults.size(), std::size_t{1});
+    QCOMPARE(publishedResults[0]->buffer().format().sample_rate().value(), 44100);
+}
+
+void EqViewModelTest::testRealProductionPathActiveAndBypass()
+{
+    auto prepared = make_test_prepared_result();
+    std::shared_ptr<render::RenderResult> publishedResult;
+
+    // Use default production PreviewExecutor (nullptr)
+    EqViewModel vm{
+        [prepared] { return prepared; },
+        [&publishedResult](render::RenderResult res) {
+            publishedResult = std::make_shared<render::RenderResult>(std::move(res));
+            return rgsml::core::Status::success();
+        }
+    };
+
+    // Active case
     vm.setDraftGain(6.0);
     vm.commitDraft();
 
@@ -265,7 +472,20 @@ void EqViewModelTest::testDeterministicStaleCompletionRejection()
     }
 
     QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
-    QVERIFY(vm.stale_results_discarded() >= 1U);
+    QVERIFY(publishedResult != nullptr);
+    QCOMPARE(publishedResult->signatures().size(), std::size_t{1});
+    QCOMPARE(publishedResult->signatures()[0].disposition, render::ModuleExecutionDisposition::PROCESSED);
+
+    // Bypass case
+    vm.setBypass(true);
+
+    for (int i = 0; i < 100 && vm.preview_status() == QStringLiteral("RENDERING"); ++i) {
+        QTest::qWait(10);
+    }
+
+    QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
+    QVERIFY(publishedResult != nullptr);
+    QCOMPARE(publishedResult->signatures()[0].disposition, render::ModuleExecutionDisposition::BYPASS_IDENTITY);
 }
 
 void EqViewModelTest::testCurrentFailurePreservesLastGoodAudio()
@@ -298,7 +518,6 @@ void EqViewModelTest::testCurrentFailurePreservesLastGoodAudio()
         return render::render_preview(*request.value(), *registry.value());
     });
 
-    // 1. Successful commit
     vm.setDraftGain(3.0);
     vm.commitDraft();
 
@@ -309,7 +528,6 @@ void EqViewModelTest::testCurrentFailurePreservesLastGoodAudio()
     QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
     QCOMPARE(publishCount, 1);
 
-    // 2. Failed commit
     failNext = true;
     vm.setDraftGain(6.0);
     vm.commitDraft();
@@ -318,11 +536,9 @@ void EqViewModelTest::testCurrentFailurePreservesLastGoodAudio()
         QTest::qWait(10);
     }
 
-    // Publisher was NOT called again on failure
     QCOMPARE(publishCount, 1);
     QCOMPARE(vm.preview_status(), QStringLiteral("ERROR"));
     QVERIFY(!vm.preview_error().isEmpty());
-    // Committed parameters remain the newer committed parameters (6.0 dB)
     QCOMPARE(vm.gain(), 6.0);
 }
 
