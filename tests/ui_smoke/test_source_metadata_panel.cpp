@@ -111,6 +111,41 @@ namespace {
     return summary_from_wav(valid_wav());
 }
 
+[[nodiscard]] QObject* find_child_by_name(QObject* parent, const QString& name)
+{
+    if (parent == nullptr) {
+        return nullptr;
+    }
+    if (parent->objectName() == name) {
+        return parent;
+    }
+    if (auto* quickItem = qobject_cast<QQuickItem*>(parent)) {
+        for (auto* childItem : quickItem->childItems()) {
+            if (childItem == nullptr) {
+                continue;
+            }
+            if (childItem->objectName() == name) {
+                return childItem;
+            }
+            if (auto* found = find_child_by_name(childItem, name)) {
+                return found;
+            }
+        }
+    }
+    for (auto* childObj : parent->children()) {
+        if (childObj == nullptr) {
+            continue;
+        }
+        if (childObj->objectName() == name) {
+            return childObj;
+        }
+        if (auto* found = find_child_by_name(childObj, name)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
 [[nodiscard]] bool capture_visual_evidence(
     QWindow* window,
     const QString& fileName,
@@ -534,7 +569,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(removeBandBtn->property("enabled").toBool(), "Remove band button must be enabled when 2 bands exist");
 
     qInfo().noquote() << "M12B_SMOKE_PHASE=mono-routing";
-    auto* routeMidBtn = eqEditor->findChild<QObject*>(QStringLiteral("routingButton_MID"));
+    auto* routeMidBtn = find_child_by_name(eqEditor, QStringLiteral("routingButton_MID"));
     QVERIFY2(routeMidBtn != nullptr, "routingButton_MID must exist");
     QVERIFY2(!routeMidBtn->property("enabled").toBool(), "MID routing must be disabled for mono source");
 
@@ -686,7 +721,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     auto* eqEditorStereo = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
     QVERIFY2(eqEditorStereo != nullptr, "parametricEqEditor must exist on stereo source");
-    auto* routeMidBtnStereo = eqEditorStereo->findChild<QObject*>(QStringLiteral("routingButton_MID"));
+    auto* routeMidBtnStereo = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_MID"));
     QVERIFY2(routeMidBtnStereo != nullptr, "routingButton_MID must exist on stereo source");
     QVERIFY2(routeMidBtnStereo->property("enabled").toBool(), "routingButton_MID must be enabled on stereo source");
     QVERIFY2(QMetaObject::invokeMethod(routeMidBtnStereo, "clicked"), "Clicking routingButton_MID must succeed");
