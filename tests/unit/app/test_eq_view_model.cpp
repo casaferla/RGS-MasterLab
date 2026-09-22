@@ -221,17 +221,23 @@ void EqViewModelTest::testBandCardinalityAndRemoveSelection()
     vm.addBand();
     QCOMPARE(vm.band_count(), 6);
 
-    // Remove middle band (select index 2, remove -> selected index remains 2, occupying new position)
+    // Remove middle band (select index 2, record next band ID at index 3, remove -> selectedBandId equals nextBandId)
+    vm.selectBand(3);
+    const QString nextBandId = vm.selected_band_id();
     vm.selectBand(2);
     vm.removeSelectedBand();
     QCOMPARE(vm.band_count(), 5);
     QCOMPARE(vm.selected_index(), 2);
+    QCOMPARE(vm.selected_band_id(), nextBandId);
 
-    // Remove final band (select index 4, remove -> selected index becomes 3, new final band)
+    // Remove final band (select index 4, record previous band ID at index 3, remove -> selectedBandId equals prevBandId)
+    vm.selectBand(3);
+    const QString prevBandId = vm.selected_band_id();
     vm.selectBand(4);
     vm.removeSelectedBand();
     QCOMPARE(vm.band_count(), 4);
     QCOMPARE(vm.selected_index(), 3);
+    QCOMPARE(vm.selected_band_id(), prevBandId);
 
     for (int i = 0; i < 3; ++i) {
         vm.removeSelectedBand();
@@ -380,7 +386,8 @@ void EqViewModelTest::testDeterministicStaleCompletionRejection()
 
     QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
     QCOMPARE(vm.preview_generation(), 2U);
-    QVERIFY(vm.stale_results_discarded() >= 1U);
+    QCOMPARE(vm.stale_results_discarded(), 1U);
+    QCOMPARE(publishedGenerations.size(), std::size_t{1});
 }
 
 void EqViewModelTest::testCrossSourceStalePreviewInvalidation()
