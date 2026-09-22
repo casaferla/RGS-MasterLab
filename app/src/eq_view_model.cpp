@@ -121,7 +121,7 @@ EqViewModel::EqViewModel(
     , snapshotProvider_(std::move(snapshotProvider))
     , publisher_(std::move(publisher))
     , idGenerator_(std::move(idGenerator))
-    , instanceId_(*dsp::ModuleInstanceId::create(*core::Uuid::parse("00000000-0000-0000-0000-000000000001").value()).value())
+    , instanceId_(*dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("00000000-0000-0000-0000-000000000001").value()).value())
     , workerThread_([this] { worker_loop(); })
 {
     if (!idGenerator_) {
@@ -130,7 +130,7 @@ EqViewModel::EqViewModel(
             return *core::Uuid::parse(str).value();
         };
     }
-    instanceId_ = *dsp::ModuleInstanceId::create(idGenerator_()).value();
+    instanceId_ = *dsp::ModuleInstanceId::from_uuid(idGenerator_()).value();
 
     const auto firstBandId = idGenerator_();
     draftBand_ = make_default_band(firstBandId);
@@ -533,7 +533,7 @@ core::SampleRate EqViewModel::current_sample_rate() const noexcept
     if (snapshotProvider_) {
         const auto snapshot = snapshotProvider_();
         if (snapshot) {
-            return snapshot->buffer().format().sample_rate();
+            return snapshot->view().format().sample_rate();
         }
     }
     return *core::SampleRate::create(48000).value();
@@ -544,7 +544,7 @@ bool EqViewModel::is_mono_prepared() const noexcept
     if (snapshotProvider_) {
         const auto snapshot = snapshotProvider_();
         if (snapshot) {
-            return snapshot->buffer().format().channel_layout() == audio::ChannelLayout::MONO_C;
+            return snapshot->view().format().channel_layout() == audio::ChannelLayout::MONO_C;
         }
     }
     return false;
