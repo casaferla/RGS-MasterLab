@@ -70,6 +70,7 @@ private slots:
     void testMixedRouting();
     void testSelectedBandResponseOnly();
     void testBandSummariesAndValidationPresentation();
+    void testPreparedSampleRate44100ResponseGridRegression();
 };
 
 void EqViewModelTest::testInvalidTextDraftAndCommitRejection()
@@ -651,6 +652,26 @@ void EqViewModelTest::testBandSummariesAndValidationPresentation()
 
     vm.cancelDraft();
     QVERIFY(vm.validation_field().isEmpty());
+}
+
+void EqViewModelTest::testPreparedSampleRate44100ResponseGridRegression()
+{
+    auto rate441k = make_test_prepared_result(*core::SampleRate::create(44100).value());
+    EqViewModel vm{[rate441k] { return rate441k; }};
+
+    const auto points = vm.selected_band_response_points();
+    QVERIFY(!points.isEmpty());
+    QCOMPARE(points.size(), 100);
+
+    const auto firstPt = points.first().toMap();
+    const auto lastPt = points.last().toMap();
+
+    const double firstFreq = firstPt.value("frequency").toDouble();
+    const double lastFreq = lastPt.value("frequency").toDouble();
+
+    QVERIFY(firstFreq >= 20.0);
+    QVERIFY(lastFreq <= 19845.0);
+    QCOMPARE(lastFreq, 19845.0);
 }
 
 }  // namespace

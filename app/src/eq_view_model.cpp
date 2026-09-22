@@ -834,8 +834,15 @@ void EqViewModel::update_response_grid()
     std::vector<double> freqs;
     freqs.reserve(kResponseGridPoints);
     for (std::size_t i = 0; i < kResponseGridPoints; ++i) {
-        const double frac = static_cast<double>(i) / static_cast<double>(kResponseGridPoints - 1);
-        freqs.push_back(std::exp(logMin + frac * (logMax - logMin)));
+        if (i == 0) {
+            freqs.push_back(minF);
+        } else if (i == kResponseGridPoints - 1) {
+            freqs.push_back(maxF);
+        } else {
+            const double frac = static_cast<double>(i) / static_cast<double>(kResponseGridPoints - 1);
+            const double f = std::exp(logMin + frac * (logMax - logMin));
+            freqs.push_back(std::clamp(f, minF, maxF));
+        }
     }
 
     auto pointsRes = dsp::evaluate_band_response(*bandOpt, freqs, current_sample_rate());
