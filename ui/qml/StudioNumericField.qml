@@ -68,6 +68,20 @@ Item {
                 font.family: "Consolas"
                 font.pixelSize: 12
                 selectByMouse: true
+                activeFocusOnTab: true
+                Accessible.role: Accessible.EditableText
+                Accessible.name: root.labelText + (root.unitText.length > 0 ? " in " + root.unitText : "")
+                Accessible.description: "Direct numeric input field for " + root.labelText
+
+                MouseArea {
+                    id: hoverArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.NoButton
+                }
+
+                ToolTip.text: root.labelText + (root.unitText.length > 0 ? " (" + root.unitText + ")" : "")
+                ToolTip.visible: editField.activeFocus || hoverArea.containsMouse
 
                 onTextEdited: {
                     if (root.fieldName === "frequency") {

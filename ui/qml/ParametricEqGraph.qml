@@ -14,7 +14,18 @@ Rectangle {
     clip: true
 
     readonly property double minFreq: 20.0
-    readonly property double maxFreq: 20000.0
+    readonly property double maxFreq: {
+        if (root.viewModel !== null && root.viewModel !== undefined && root.viewModel.selectedBandResponsePoints) {
+            const points = root.viewModel.selectedBandResponsePoints
+            if (points.length > 0) {
+                const lastPt = points[points.length - 1]
+                if (lastPt && lastPt.frequency > minFreq) {
+                    return lastPt.frequency
+                }
+            }
+        }
+        return 20000.0
+    }
     readonly property double minGain: -18.0
     readonly property double maxGain: 18.0
 

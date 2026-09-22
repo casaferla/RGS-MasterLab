@@ -90,17 +90,25 @@ Rectangle {
                 StudioButton {
                     objectName: "abButtonActive"
                     text: "A: EQ Active"
-                    tone: !root.viewModel || !root.viewModel.bypass ? "primary" : "secondary"
+                    selected: root.viewModel ? !root.viewModel.bypass : true
+                    tone: "primary"
+                    accentColor: "#00C8FF"
                     onClicked: if (root.viewModel) root.viewModel.setBypass(false)
                     Accessible.name: "A: EQ Active"
+                    ToolTip.text: "Activate Parametric EQ processing"
+                    ToolTip.visible: hovered
                 }
 
                 StudioButton {
                     objectName: "abButtonBypass"
                     text: "B: Bypass"
-                    tone: root.viewModel && root.viewModel.bypass ? "warning" : "secondary"
+                    selected: root.viewModel ? root.viewModel.bypass : false
+                    tone: "gold"
+                    accentColor: "#F2B632"
                     onClicked: if (root.viewModel) root.viewModel.setBypass(true)
                     Accessible.name: "B: Bypass"
+                    ToolTip.text: "Bypass Parametric EQ module"
+                    ToolTip.visible: hovered
                 }
             }
         }
@@ -120,48 +128,27 @@ Rectangle {
 
             Repeater {
                 model: root.viewModel ? root.viewModel.bandSummaries : []
-                delegate: Rectangle {
+                delegate: StudioButton {
                     required property var modelData
                     required property int index
 
-                    readonly property bool isSelected: root.viewModel !== null && root.viewModel.selectedIndex === index
-                    readonly property bool isEnabled: modelData.enabled
+                    readonly property bool isSelectedBand: root.viewModel !== null && root.viewModel.selectedIndex === index
+                    readonly property bool isEnabledBand: modelData.enabled
 
-                    Layout.preferredWidth: 90
-                    Layout.preferredHeight: 32
-                    radius: 4
-                    color: isSelected ? "#8B42C0" : (isEnabled ? "#0F1820" : "#0A1015")
-                    border.color: isSelected ? "#E6EEF0" : "#2A3947"
-                    border.width: isSelected ? 2 : 1
+                    objectName: "bandSelectorButton_" + index
+                    text: (index + 1) + " " + modelData.filter.replace("_", " ")
+                    selected: isSelectedBand
+                    tone: isSelectedBand ? "primary" : "secondary"
+                    minimumControlWidth: 90
+                    contentPadding: 8
+                    activeFocusOnTab: true
+                    opacity: isEnabledBand ? 1.0 : 0.5
 
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        spacing: 4
+                    onClicked: if (root.viewModel) root.viewModel.selectBand(index)
 
-                        Text {
-                            text: index + 1
-                            color: isSelected ? "#FFFFFF" : (isEnabled ? "#00C8FF" : "#586773")
-                            font.family: "Segoe UI"
-                            font.pixelSize: 12
-                            font.weight: Font.Bold
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: modelData.filter.replace("_", " ")
-                            color: isSelected ? "#E6EEF0" : (isEnabled ? "#8A97A3" : "#485866")
-                            font.family: "Segoe UI"
-                            font.pixelSize: 9
-                            elide: Text.ElideRight
-                        }
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: if (root.viewModel) root.viewModel.selectBand(index)
-                    }
+                    Accessible.name: "Band " + (index + 1) + " " + modelData.filter.replace("_", " ") + (isEnabledBand ? "" : " (disabled)")
+                    ToolTip.text: "Select Band " + (index + 1) + " (" + modelData.filter.replace("_", " ") + ", " + modelData.routing + ")"
+                    ToolTip.visible: hovered
                 }
             }
 
@@ -237,9 +224,12 @@ Rectangle {
                                 required property var modelData
                                 objectName: "filterButton_" + modelData.token
                                 text: modelData.label
+                                selected: root.viewModel && root.viewModel.filter === modelData.token
                                 tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
                                 onClicked: if (root.viewModel) root.viewModel.setFilter(modelData.token)
                                 Accessible.name: "Filter type " + modelData.label
+                                ToolTip.text: "Set filter type to " + modelData.label
+                                ToolTip.visible: hovered
                             }
                         }
                     }
@@ -262,9 +252,12 @@ Rectangle {
                                 objectName: "routingButton_" + modelData.token
                                 text: modelData.label
                                 enabled: modelData.token === "STEREO" || (root.viewModel && root.viewModel.routeAvailable)
+                                selected: root.viewModel && root.viewModel.routing === modelData.token
                                 tone: root.viewModel && root.viewModel.routing === modelData.token ? "primary" : "secondary"
                                 onClicked: if (root.viewModel) root.viewModel.setRouting(modelData.token)
                                 Accessible.name: "Routing " + modelData.label
+                                ToolTip.text: "Set channel routing to " + modelData.label
+                                ToolTip.visible: hovered
                             }
                         }
                     }
@@ -327,9 +320,17 @@ Rectangle {
                                 required property int modelData
                                 objectName: "slopeButton_" + modelData
                                 text: modelData + " dB"
+                                selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
                                 tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
-                                onClicked: if (root.viewModel) root.viewModel.setDraftSlopeDbPerOct(modelData)
+                                onClicked: {
+                                    if (root.viewModel) {
+                                        root.viewModel.setDraftSlopeDbPerOct(modelData)
+                                        root.viewModel.commitDraft()
+                                    }
+                                }
                                 Accessible.name: "Slope " + modelData + " dB per octave"
+                                ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
+                                ToolTip.visible: hovered
                             }
                         }
                     }

@@ -554,8 +554,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* eqGraph = eqEditor->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
     QVERIFY2(eqGraph != nullptr, "parametricEqGraph must exist inside eqEditor");
     QVERIFY2(!eqViewModel.selected_band_response_points().isEmpty(), "eqViewModel response points must not be empty");
+    QCOMPARE(eqGraph->property("maxFreq").toDouble(), 19845.0); // TR-01: 44.1 kHz C++ endpoint (0.45 * 44100)
+    QVERIFY2(eqEditor->findChild<QObject*>(QStringLiteral("spectrumAnalyzer")) == nullptr, "No fake analyzer or spectrum item must exist");
 
     qInfo().noquote() << "M12B_SMOKE_PHASE=band-controls";
+    auto* band0Btn = find_child_by_name(eqEditor, QStringLiteral("bandSelectorButton_0"));
+    QVERIFY2(band0Btn != nullptr, "bandSelectorButton_0 must exist");
+    QVERIFY2(band0Btn->property("activeFocusOnTab").toBool(), "Band selector button must be Tab focusable");
+
     auto* addBandBtn = eqEditor->findChild<QObject*>(QStringLiteral("addBandButton"));
     auto* removeBandBtn = eqEditor->findChild<QObject*>(QStringLiteral("removeBandButton"));
     QVERIFY2(addBandBtn != nullptr && removeBandBtn != nullptr, "Add and Remove band buttons must exist");
@@ -568,34 +574,86 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqViewModel.band_count(), 2);
     QVERIFY2(removeBandBtn->property("enabled").toBool(), "Remove band button must be enabled when 2 bands exist");
 
+    // Band selection change without extra preview generation
+    const quint64 genBeforeSelect = eqViewModel.preview_generation();
+    eqViewModel.selectBand(0);
+    QCOMPARE(eqViewModel.preview_generation(), genBeforeSelect);
+
+    // Filter-specific control visibility & TR-02 HP/LP discrete slope commit
+    auto* filterBell = find_child_by_name(eqEditor, QStringLiteral("filterButton_BELL"));
+    auto* filterNotch = find_child_by_name(eqEditor, QStringLiteral("filterButton_NOTCH"));
+    auto* filterLowShelf = find_child_by_name(eqEditor, QStringLiteral("filterButton_LOW_SHELF"));
+    auto* filterHighPass = find_child_by_name(eqEditor, QStringLiteral("filterButton_HIGH_PASS"));
+    auto* gainFieldObj = find_child_by_name(eqEditor, QStringLiteral("gainField"));
+    auto* qFieldObj = find_child_by_name(eqEditor, QStringLiteral("qField"));
+    auto* shelfSlopeFieldObj = find_child_by_name(eqEditor, QStringLiteral("shelfSlopeField"));
+
+    QVERIFY2(filterBell && filterNotch && filterLowShelf && filterHighPass, "Filter buttons must exist");
+    QVERIFY2(gainFieldObj->property("visible").toBool(), "Gain field must be visible for Bell filter");
+    QVERIFY2(qFieldObj->property("visible").toBool(), "Q field must be visible for Bell filter");
+
+    QVERIFY2(QMetaObject::invokeMethod(filterNotch, "clicked"), "Clicking filterButton_NOTCH must succeed");
+    QCoreApplication::processEvents();
+    QVERIFY2(!gainFieldObj->property("visible").toBool(), "Gain field must be hidden for Notch filter");
+
+    QVERIFY2(QMetaObject::invokeMethod(filterLowShelf, "clicked"), "Clicking filterButton_LOW_SHELF must succeed");
+    QCoreApplication::processEvents();
+    QVERIFY2(shelfSlopeFieldObj->property("visible").toBool(), "Shelf slope field must be visible for Low Shelf filter");
+
+    QVERIFY2(QMetaObject::invokeMethod(filterHighPass, "clicked"), "Clicking filterButton_HIGH_PASS must succeed");
+    QCoreApplication::processEvents();
+
+    auto* slope24Btn = find_child_by_name(eqEditor, QStringLiteral("slopeButton_24"));
+    QVERIFY2(slope24Btn != nullptr, "slopeButton_24 must exist for High Pass filter");
+    const quint64 genBeforeSlope = eqViewModel.preview_generation();
+    QVERIFY2(QMetaObject::invokeMethod(slope24Btn, "clicked"), "Clicking slopeButton_24 must succeed");
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.slope_db_per_oct(), 24);
+    QCOMPARE(eqViewModel.preview_generation(), genBeforeSlope + 1U);
+
+    // Reset filter to BELL for remaining tests
+    QVERIFY2(QMetaObject::invokeMethod(filterBell, "clicked"), "Resetting filter to BELL must succeed");
+    QCoreApplication::processEvents();
+
     qInfo().noquote() << "M12B_SMOKE_PHASE=mono-routing";
     auto* routeMidBtn = find_child_by_name(eqEditor, QStringLiteral("routingButton_MID"));
     QVERIFY2(routeMidBtn != nullptr, "routingButton_MID must exist");
     QVERIFY2(!routeMidBtn->property("enabled").toBool(), "MID routing must be disabled for mono source");
 
     qInfo().noquote() << "M12B_SMOKE_PHASE=invalid-draft";
-    eqViewModel.setDraftFrequencyText(QStringLiteral("99999"));
+    auto* freqInput = find_child_by_name(eqEditor, QStringLiteral("frequencyInput"));
+    QVERIFY2(freqInput != nullptr, "frequencyInput control must exist");
+    freqInput->setProperty("text", QStringLiteral("99999"));
     QCoreApplication::processEvents();
     QCOMPARE(eqViewModel.validation_field(), QStringLiteral("frequency"));
+    auto* valMsgText = find_child_by_name(eqEditor, QStringLiteral("validationMessageText"));
+    QVERIFY2(valMsgText && valMsgText->property("visible").toBool(), "Validation message text must be visible for invalid draft");
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_invalid_draft.png"), QSize{1040, 660}));
 
-    eqViewModel.cancelDraft();
+    auto* freqInputItem = qobject_cast<QQuickItem*>(freqInput);
+    if (freqInputItem != nullptr) {
+        freqInputItem->forceActiveFocus(Qt::TabFocusReason);
+    }
+    QTest::keyClick(eqWindowObj, Qt::Key_Escape);
     QCoreApplication::processEvents();
-    QVERIFY2(eqViewModel.validation_field().isEmpty(), "Validation field must be empty after cancel");
+    QCOMPARE(eqViewModel.frequency_text(), QStringLiteral("1000"));
+    QVERIFY2(eqViewModel.validation_field().isEmpty(), "Validation field must be empty after Escape key cancel");
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_1040x660_active.png"), QSize{1040, 660}));
 
     qInfo().noquote() << "M12B_SMOKE_PHASE=ab";
     auto* abBypassBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonBypass"));
-    QVERIFY2(abBypassBtn != nullptr, "abButtonBypass must exist");
+    auto* abActiveBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonActive"));
+    QVERIFY2(abBypassBtn != nullptr && abActiveBtn != nullptr, "A and B buttons must exist");
+
     QVERIFY2(QMetaObject::invokeMethod(abBypassBtn, "clicked"), "Clicking abButtonBypass must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.bypass(), "eqViewModel.bypass must be true after clicking Bypass");
+    QVERIFY2(abBypassBtn->property("selected").toBool(), "Bypass button must be selected when bypassed");
 
-    auto* abActiveBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonActive"));
-    QVERIFY2(abActiveBtn != nullptr, "abButtonActive must exist");
     QVERIFY2(QMetaObject::invokeMethod(abActiveBtn, "clicked"), "Clicking abButtonActive must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(!eqViewModel.bypass(), "eqViewModel.bypass must be false after clicking Active");
+    QVERIFY2(abActiveBtn->property("selected").toBool(), "Active button must be selected when active");
 
     qInfo().noquote() << "M12B_SMOKE_PHASE=reopen";
     eqWindowObj->close();
