@@ -578,7 +578,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(removeBandBtn->property("enabled").toBool(), "Remove band button must be enabled when 2 bands exist");
 
     // Keyboard Space activation on bandSelectorButton_0
-    auto* band0Item = qobject_cast<QQuickItem*>(band0Btn);
+    auto* band0BtnCurrent = find_child_by_name(eqEditor, QStringLiteral("bandSelectorButton_0"));
+    QVERIFY2(band0BtnCurrent != nullptr, "bandSelectorButton_0 must exist after band addition");
+    auto* band0Item = qobject_cast<QQuickItem*>(band0BtnCurrent);
     QVERIFY2(band0Item != nullptr, "bandSelectorButton_0 must be a QQuickItem");
     eqWindowObj->requestActivate();
     QTest::qWait(50);
