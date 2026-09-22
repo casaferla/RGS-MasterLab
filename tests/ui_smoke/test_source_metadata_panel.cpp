@@ -759,6 +759,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(zoomOut->property("enabled").toBool());
     QVERIFY(fitSource->property("enabled").toBool());
 
+    for (int i = 0; i < 100 && !auditionSelector.processed_available(); ++i) {
+        QTest::qWait(10);
+    }
+    QVERIFY2(auditionSelector.processed_available(), "PROCESSED audition target must be available after EQ preview");
+    QVERIFY2(processedTarget->property("enabled").toBool(), "auditionProcessedButton must be enabled when PROCESSED is available");
+
     const std::array globalTabOrder{
         sourceOpen,
         waveformObject,
@@ -767,6 +773,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         zoomIn,
         fitSource,
         preparedTarget,
+        processedTarget,
         goldTarget,
         stop,
         playPause,
