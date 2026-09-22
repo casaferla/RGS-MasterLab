@@ -637,7 +637,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(freqInputItem->hasActiveFocus(), "frequencyInput must receive active focus");
 
     QMetaObject::invokeMethod(freqInput, "selectAll");
-    QTest::keyClicks(eqWindowObj, QStringLiteral("99999"));
+    for (const char c : std::string_view{"99999"}) {
+        QTest::keyClick(eqWindowObj, c);
+    }
     QCoreApplication::processEvents();
 
     QCOMPARE(freqInput->property("text").toString(), QStringLiteral("99999"));
