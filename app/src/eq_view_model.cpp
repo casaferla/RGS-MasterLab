@@ -8,6 +8,8 @@
 #include <rgsml/render/render_request.hpp>
 
 #include <QMetaObject>
+#include <QUuid>
+#include <QVariant>
 #include <QVariantMap>
 
 #include <algorithm>
@@ -119,12 +121,16 @@ EqViewModel::EqViewModel(
     , snapshotProvider_(std::move(snapshotProvider))
     , publisher_(std::move(publisher))
     , idGenerator_(std::move(idGenerator))
+    , instanceId_(*dsp::ModuleInstanceId::create(*core::Uuid::parse("00000000-0000-0000-0000-000000000001").value()).value())
     , workerThread_([this] { worker_loop(); })
 {
     if (!idGenerator_) {
-        idGenerator_ = [] { return core::Uuid::create_random(); };
+        idGenerator_ = [] {
+            const auto str = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+            return *core::Uuid::parse(str).value();
+        };
     }
-    instanceId_ = idGenerator_();
+    instanceId_ = *dsp::ModuleInstanceId::create(idGenerator_()).value();
 
     const auto firstBandId = idGenerator_();
     draftBand_ = make_default_band(firstBandId);
@@ -283,7 +289,7 @@ QVariantList EqViewModel::selected_band_response_points() const
     return responseGrid_;
 }
 
-core::Uuid EqViewModel::instance_id() const noexcept
+dsp::ModuleInstanceId EqViewModel::instance_id() const noexcept
 {
     return instanceId_;
 }
@@ -527,7 +533,7 @@ core::SampleRate EqViewModel::current_sample_rate() const noexcept
     if (snapshotProvider_) {
         const auto snapshot = snapshotProvider_();
         if (snapshot) {
-            return snapshot->sample_rate();
+            return snapshot->buffer().format().sample_rate();
         }
     }
     return *core::SampleRate::create(48000).value();
@@ -538,7 +544,7 @@ bool EqViewModel::is_mono_prepared() const noexcept
     if (snapshotProvider_) {
         const auto snapshot = snapshotProvider_();
         if (snapshot) {
-            return snapshot->view().channel_layout() == audio::ChannelLayout::MONO_C;
+            return snapshot->buffer().format().channel_layout() == audio::ChannelLayout::MONO_C;
         }
     }
     return false;
@@ -702,15 +708,13 @@ void EqViewModel::worker_loop()
                 if (!chain) {
                     return core::Result<render::RenderResult>::failure(*chain.error());
                 }
-                if (!chain.value()->add(job->instanceId, "rgsml.dsp.parametric-eq", 0)) {
-                    return core::Result<render::RenderResult>::failure(core::Error{
-                        core::ErrorCode::InvalidState,
-                        "Could not add EQ instance to processing chain."});
+                auto addStatus = chain.value()->add(job->instanceId, "rgsml.dsp.parametric-eq", 0);
+                if (!addStatus) {
+                    return core::Result<render::RenderResult>::failure(*addStatus.error());
                 }
-                if (!chain.value()->set_user_bypass(job->instanceId, job->bypass)) {
-                    return core::Result<render::RenderResult>::failure(core::Error{
-                        core::ErrorCode::InvalidState,
-                        "Could not set EQ bypass state."});
+                auto bypassStatus = chain.value()->set_user_bypass(job->instanceId, job->bypass);
+                if (!bypassStatus) {
+                    return core::Result<render::RenderResult>::failure(*bypassStatus.error());
                 }
 
                 dsp::ModuleExecutionBinding binding{job->instanceId, job->parameters};
