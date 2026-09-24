@@ -71,6 +71,9 @@ private slots:
     void testSelectedBandResponseOnly();
     void testBandSummariesAndValidationPresentation();
     void testPreparedSampleRate44100ResponseGridRegression();
+    void testSelectionOnlyNoCommitOrPreview();
+    void testGraphDragReleaseAndPersistenceAcrossSelection();
+    void testNonGainFilterGraphDragNoGainMutation();
 };
 
 void EqViewModelTest::testInvalidTextDraftAndCommitRejection()
@@ -672,6 +675,72 @@ void EqViewModelTest::testPreparedSampleRate44100ResponseGridRegression()
     QVERIFY(firstFreq >= 20.0);
     QVERIFY(lastFreq <= 19845.0);
     QCOMPARE(lastFreq, 19845.0);
+}
+
+void EqViewModelTest::testSelectionOnlyNoCommitOrPreview()
+{
+    EqViewModel vm;
+    vm.addBand(); // Adds Band 1 at index 1, preview_generation = 1
+    const quint64 genBeforeSelection = vm.preview_generation();
+    const auto paramsBeforeSelection = vm.committed_parameters();
+
+    // Select Band 0
+    vm.selectBand(0);
+    QCOMPARE(vm.selected_index(), 0);
+    QCOMPARE(vm.preview_generation(), genBeforeSelection);
+    QCOMPARE(vm.committed_parameters(), paramsBeforeSelection);
+
+    // Select Band 1
+    vm.selectBand(1);
+    QCOMPARE(vm.selected_index(), 1);
+    QCOMPARE(vm.preview_generation(), genBeforeSelection);
+    QCOMPARE(vm.committed_parameters(), paramsBeforeSelection);
+}
+
+void EqViewModelTest::testGraphDragReleaseAndPersistenceAcrossSelection()
+{
+    EqViewModel vm;
+    vm.addBand(); // Band 1 at index 1
+    const quint64 genBeforeDrag = vm.preview_generation();
+
+    // Drag Band 1 to 2500 Hz, +6 dB
+    vm.graphDrag(2500.0, 6.0);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), 6.0);
+    QCOMPARE(vm.preview_generation(), genBeforeDrag);
+
+    // Release commits Band 1
+    vm.graphRelease();
+    QCOMPARE(vm.preview_generation(), genBeforeDrag + 1U);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), 6.0);
+
+    // Switch to Band 0 and then back to Band 1
+    vm.selectBand(0);
+    QCOMPARE(vm.selected_index(), 0);
+
+    vm.selectBand(1);
+    QCOMPARE(vm.selected_index(), 1);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), 6.0);
+}
+
+void EqViewModelTest::testNonGainFilterGraphDragNoGainMutation()
+{
+    EqViewModel vm;
+    vm.setFilter(QStringLiteral("HIGH_PASS"));
+    QVERIFY(!vm.gain_applicable());
+    const double originalGain = vm.gain();
+
+    const quint64 genBeforeDrag = vm.preview_generation();
+    vm.graphDrag(500.0, 12.0); // Pass +12 dB gain attempt to non-gain filter
+    QCOMPARE(vm.frequency(), 500.0);
+    QCOMPARE(vm.gain(), originalGain); // Gain must not mutate for HIGH_PASS
+
+    vm.graphRelease();
+    QCOMPARE(vm.preview_generation(), genBeforeDrag + 1U);
+    QCOMPARE(vm.frequency(), 500.0);
+    QCOMPARE(vm.gain(), originalGain);
 }
 
 }  // namespace

@@ -183,12 +183,39 @@ core::Status AuditionSourceSelector::set_processed_realization(
     render::RenderResult realization)
 {
     if (activeTarget_ == AuditionTarget::PROCESSED) {
+        bool wasPlaying = false;
+        auto snapshot = playback_->playback_snapshot();
+        if (snapshot) {
+            sourceDerivedCue_ = snapshot.value()->position;
+            wasPlaying = (snapshot.value()->state == core::PlaybackState::PLAYING);
+        }
         auto cleared = playback_->stop_and_clear();
         if (!cleared) {
+            fail_closed(*cleared.error());
             return cleared;
         }
-        activeTarget_.reset();
+        processed_ = std::make_shared<const render::RenderResult>(std::move(realization));
+        playback_->set_source_derived_active(true);
+        auto preparedStatus = prepare_realization(*processed_);
+        if (!preparedStatus) {
+            fail_closed(*preparedStatus.error());
+            return preparedStatus;
+        }
+        if (wasPlaying) {
+            playback_->playOrResume();
+            auto newSnapshot = playback_->playback_snapshot();
+            if (newSnapshot && newSnapshot.value()->state != core::PlaybackState::PLAYING) {
+                fail_closed(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "Failed to resume playback after audition target switch."});
+                return unavailable("Failed to resume playback after audition target switch.");
+            }
+        }
+        statusText_.clear();
+        emit changed();
+        return core::Status::success();
     }
+
     processed_ = std::make_shared<const render::RenderResult>(std::move(realization));
     emit changed();
     return core::Status::success();

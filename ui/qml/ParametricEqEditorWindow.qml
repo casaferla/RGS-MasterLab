@@ -13,6 +13,7 @@ ApplicationWindow {
     minimumWidth: 900
     minimumHeight: 580
 
+    transientParent: ApplicationWindow.window
     visible: false
 
     // Window Frame Slate Material

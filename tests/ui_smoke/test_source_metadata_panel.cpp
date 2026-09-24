@@ -611,6 +611,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqViewModel.selected_index(), 0);
     QCOMPARE(eqViewModel.preview_generation(), genBeforeKeyboardSelect);
 
+    // Verify selection-only click on band handle 1 does not increment preview generation
+    auto* band1BtnCurrent = find_child_by_name(eqEditor, QStringLiteral("bandSelectorButton_1"));
+    QVERIFY2(band1BtnCurrent != nullptr, "bandSelectorButton_1 must exist");
+    const quint64 genBeforeSelectionClick = eqViewModel.preview_generation();
+    QVERIFY(QMetaObject::invokeMethod(band1BtnCurrent, "clicked"));
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.selected_index(), 1);
+    QCOMPARE(eqViewModel.preview_generation(), genBeforeSelectionClick);
+
     // Filter-specific control visibility & TR-02 HP/LP discrete slope commit
     auto* filterBell = find_child_by_name(eqEditor, QStringLiteral("filterButton_BELL"));
     auto* filterNotch = find_child_by_name(eqEditor, QStringLiteral("filterButton_NOTCH"));
@@ -1221,6 +1230,21 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     eqWindowObj->close();
     QCoreApplication::processEvents();
+
+    const std::array cornerNames{
+        QStringLiteral("resizeTopLeft"),
+        QStringLiteral("resizeTopRight"),
+        QStringLiteral("resizeBottomLeft"),
+        QStringLiteral("resizeBottomRight"),
+    };
+    for (const auto& cornerName : cornerNames) {
+        auto* cornerObj = root->findChild<QObject*>(cornerName);
+        QVERIFY2(cornerObj != nullptr, qPrintable(QStringLiteral("Corner %1 must exist").arg(cornerName)));
+        auto* cornerItem = qobject_cast<QQuickItem*>(cornerObj);
+        QVERIFY2(cornerItem != nullptr, qPrintable(QStringLiteral("Corner %1 must be a QQuickItem").arg(cornerName)));
+        QCOMPARE(cornerItem->property("width").toInt(), 8);
+        QCOMPARE(cornerItem->property("height").toInt(), 8);
+    }
 
     window->resize(1184, 688);
     QCoreApplication::processEvents();

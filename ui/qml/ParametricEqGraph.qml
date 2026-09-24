@@ -306,31 +306,39 @@ Rectangle {
                 id: handleMouse
                 anchors.fill: parent
                 hoverEnabled: true
-                drag.target: isSelected ? parent : null
-                drag.axis: modelData.gainApplicable ? Drag.XAndYAxis : Drag.XAxis
-                drag.minimumX: root.plotX - parent.width / 2
-                drag.maximumX: root.plotX + root.plotW - parent.width / 2
-                drag.minimumY: root.plotY - parent.height / 2
-                drag.maximumY: root.plotY + root.plotH - parent.height / 2
 
-                onPressed: {
+                property point pressScenePos: Qt.point(0, 0)
+                property bool isDragging: false
+
+                onPressed: function(mouse) {
+                    pressScenePos = mapToItem(root, mouse.x, mouse.y)
+                    isDragging = false
                     if (!isSelected) {
                         root.viewModel.selectBand(index)
                     }
                 }
 
-                onPositionChanged: {
-                    if (pressed && isSelected) {
-                        const newCenterX = parent.x + parent.width / 2
-                        const newCenterY = parent.y + parent.height / 2
-                        const newFreq = root.xToFreq(newCenterX)
-                        const newGain = root.yToGain(newCenterY)
-                        root.viewModel.graphDrag(newFreq, newGain)
+                onPositionChanged: function(mouse) {
+                    if (pressed) {
+                        const currentPos = mapToItem(root, mouse.x, mouse.y)
+                        const dx = currentPos.x - pressScenePos.x
+                        const dy = currentPos.y - pressScenePos.y
+                        if (!isDragging && Math.sqrt(dx * dx + dy * dy) > 3.0) {
+                            isDragging = true
+                        }
+                        if (isDragging) {
+                            const clampX = Math.max(root.plotX, Math.min(root.plotX + root.plotW, currentPos.x))
+                            const clampY = Math.max(root.plotY, Math.min(root.plotY + root.plotH, currentPos.y))
+                            const newFreq = root.xToFreq(clampX)
+                            const newGain = root.yToGain(clampY)
+                            root.viewModel.graphDrag(newFreq, newGain)
+                        }
                     }
                 }
 
-                onReleased: {
-                    if (isSelected) {
+                onReleased: function(mouse) {
+                    if (isDragging) {
+                        isDragging = false
                         root.viewModel.graphRelease()
                     }
                 }

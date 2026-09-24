@@ -412,4 +412,9 @@ ApplicationWindow {
     MouseArea { z: 1000; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 5; cursorShape: Qt.SizeHorCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.RightEdge) }
     MouseArea { z: 1000; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 5; cursorShape: Qt.SizeVerCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.TopEdge) }
     MouseArea { z: 1000; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 5; cursorShape: Qt.SizeVerCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.BottomEdge) }
+
+    MouseArea { objectName: "resizeTopLeft"; z: 1001; anchors.left: parent.left; anchors.top: parent.top; width: 8; height: 8; cursorShape: Qt.SizeFDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.TopEdge | Qt.LeftEdge) }
+    MouseArea { objectName: "resizeTopRight"; z: 1001; anchors.right: parent.right; anchors.top: parent.top; width: 8; height: 8; cursorShape: Qt.SizeBDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.TopEdge | Qt.RightEdge) }
+    MouseArea { objectName: "resizeBottomLeft"; z: 1001; anchors.left: parent.left; anchors.bottom: parent.bottom; width: 8; height: 8; cursorShape: Qt.SizeBDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.BottomEdge | Qt.LeftEdge) }
+    MouseArea { objectName: "resizeBottomRight"; z: 1001; anchors.right: parent.right; anchors.bottom: parent.bottom; width: 8; height: 8; cursorShape: Qt.SizeFDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.BottomEdge | Qt.RightEdge) }
 }

@@ -110,6 +110,7 @@ private slots:
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
     void playIntentIsRestoredAcrossTargetSwitches();
+    void activeProcessedRealizationReplacementPreservesCueAndState();
 };
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
@@ -273,6 +274,79 @@ void AuditionSourceSelectorTest::playIntentIsRestoredAcrossTargetSwitches()
     QCOMPARE(observed->state, core::PlaybackState::STOPPED);
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+}
+
+void AuditionSourceSelectorTest::activeProcessedRealizationReplacementPreservesCueAndState()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 200)));
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+
+    // Case 1: PROCESSED is PLAYING at cue 42 -> replace Processed realization
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    transport.playOrResume();
+    observed->position = core::FrameIndex{42};
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{42});
+    QCOMPARE(observed->position.value(), std::int64_t{42});
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    // Case 2: PROCESSED is PAUSED at cue 55 -> replace Processed realization
+    observed->position = core::FrameIndex{55};
+    transport.pause();
+    QCOMPARE(observed->state, core::PlaybackState::PAUSED);
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{55});
+    QCOMPARE(observed->position.value(), std::int64_t{55});
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+
+    // Case 3: PROCESSED is STOPPED -> replace Processed realization
+    transport.stop();
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+
+    // Case 4: PREPARED is active -> replace Processed realization
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+
+    // Case 5: GOLD is active -> replace Processed realization
+    auto gold = core::ResourceReference::create(
+        "rgsml.windows.local-file", "C:/Gold/reference.wav", true, false, "reference.wav");
+    QVERIFY(gold);
+    QVERIFY(selector.set_gold(
+        std::move(*gold.value()), *core::SampleRate::create(48'000).value(),
+        *core::FrameCount::create(200).value()));
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::GOLD});
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::GOLD});
+
+    // Case 6: Fail-closed path on invalid replacement range
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    observed->position = core::FrameIndex{150};
+
+    // Realization range [0..100) does not contain cue 150
+    QVERIFY(!selector.set_processed_realization(realization(0, 100)));
+    QVERIFY(!selector.active_target());
+    QCOMPARE(observed->state, core::PlaybackState::NO_SOURCE);
+    QVERIFY(!selector.status_text().isEmpty());
 }
 
 }  // namespace rgsml::tests
