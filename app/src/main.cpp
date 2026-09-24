@@ -6,6 +6,7 @@
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
+#include "windows_window_chrome_helper.hpp"
 
 #include "waveform_presentation.hpp"
 
@@ -159,6 +160,27 @@ int main(int argc, char* argv[])
         [] { QCoreApplication::exit(EXIT_FAILURE); },
         Qt::QueuedConnection);
     engine.loadFromModule("Rgsml.Ui", "Main");
+
+#ifdef _WIN32
+    if (!engine.rootObjects().isEmpty()) {
+        auto* rootWindow = qobject_cast<QQuickWindow*>(engine.rootObjects().front());
+        if (rootWindow != nullptr) {
+            static rgsml::app::WindowsWindowChromeHelper chromeHelper{rootWindow};
+            const std::array exclusionNames{
+                QStringLiteral("desktopMenuBar"),
+                QStringLiteral("headerAuditionTargetSelector"),
+                QStringLiteral("windowMinimizeButton"),
+                QStringLiteral("windowMaximizeButton"),
+                QStringLiteral("windowCloseButton"),
+            };
+            for (const auto& name : exclusionNames) {
+                if (auto* item = rootWindow->findChild<QQuickItem*>(name)) {
+                    chromeHelper.add_exclusion_item(item);
+                }
+            }
+        }
+    }
+#endif
 
     if (deploySmoke && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, &QCoreApplication::quit);

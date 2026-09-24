@@ -7,6 +7,7 @@
 #include "source_selection_view_model.hpp"
 #include "waveform_item.hpp"
 #include "waveform_presentation.hpp"
+#include "windows_window_chrome_helper.hpp"
 
 #include "../audio_golden/wav/golden_vectors.hpp"
 #include "../unit/audio/wav_test_support.hpp"
@@ -1252,6 +1253,44 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(50);
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(1280, 720));
+
+#ifdef _WIN32
+    // Native Windows Window Chrome Helper Hit-Test Exclusions
+    auto* rootQuickWindow = qobject_cast<QQuickWindow*>(window);
+    QVERIFY(rootQuickWindow != nullptr);
+    rgsml::app::WindowsWindowChromeHelper testChromeHelper{rootQuickWindow};
+    const std::array chromeExclusionNames{
+        QStringLiteral("desktopMenuBar"),
+        QStringLiteral("headerAuditionTargetSelector"),
+        QStringLiteral("windowMinimizeButton"),
+        QStringLiteral("windowMaximizeButton"),
+        QStringLiteral("windowCloseButton"),
+    };
+    for (const auto& name : chromeExclusionNames) {
+        auto* item = rootQuickWindow->findChild<QQuickItem*>(name);
+        QVERIFY2(item != nullptr, qPrintable(QStringLiteral("Exclusion item %1 must exist").arg(name)));
+        testChromeHelper.add_exclusion_item(item);
+    }
+
+    MSG testMsg{};
+    testMsg.hwnd = reinterpret_cast<HWND>(rootQuickWindow->winId());
+    testMsg.message = WM_NCHITTEST;
+
+    // Test a point over empty header space (x=300, y=20 in screen coordinates)
+    const QPoint globalHeaderPt = rootQuickWindow->mapToGlobal(QPoint{300, 20});
+    testMsg.lParam = MAKELPARAM(globalHeaderPt.x(), globalHeaderPt.y());
+    qintptr hitResult = 0;
+    QVERIFY(testChromeHelper.nativeEventFilter("windows_generic_MSG", &testMsg, &hitResult));
+    QCOMPARE(hitResult, static_cast<qintptr>(HTCAPTION));
+
+    // Test a point over windowCloseButton (exclusion item)
+    auto* closeBtnItem = rootQuickWindow->findChild<QQuickItem*>(QStringLiteral("windowCloseButton"));
+    QVERIFY(closeBtnItem != nullptr);
+    const QPoint closeGlobalPt = closeBtnItem->mapToGlobal(QPointF{closeBtnItem->width() * 0.5, closeBtnItem->height() * 0.5}).toPoint();
+    testMsg.lParam = MAKELPARAM(closeGlobalPt.x(), closeGlobalPt.y());
+    hitResult = 0;
+    QVERIFY(!testChromeHelper.nativeEventFilter("windows_generic_MSG", &testMsg, &hitResult));
+#endif
 
     auto* windowMaximizeBtn = root->findChild<QObject*>(QStringLiteral("windowMaximizeButton"));
     QVERIFY2(windowMaximizeBtn != nullptr, "windowMaximizeButton must exist");

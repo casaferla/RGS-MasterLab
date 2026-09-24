@@ -16,6 +16,8 @@ qt_add_executable(rgsml_app
     src/source_selection_view_model.hpp
     src/source_waveform_view_model.cpp
     src/source_waveform_view_model.hpp
+    src/windows_window_chrome_helper.cpp
+    src/windows_window_chrome_helper.hpp
 )
 
 set_target_properties(rgsml_app PROPERTIES
