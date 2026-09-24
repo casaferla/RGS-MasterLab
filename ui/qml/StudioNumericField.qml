@@ -1,120 +1,109 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 
 Item {
-    id: root
+    id: control
+
     property string labelText: ""
     property string unitText: ""
     property string fieldName: ""
     property string rawText: ""
     property var viewModel: null
-    property bool isInvalid: viewModel !== null && viewModel !== undefined && viewModel.validationField === fieldName && viewModel.validationMessage.length > 0
 
-    signal commitRequested()
-    signal cancelRequested()
+    readonly property bool isInvalid: viewModel !== null && viewModel !== undefined && viewModel.validationField === fieldName
 
-    implicitWidth: 160
-    implicitHeight: 32
+    implicitWidth: 164 + (unitText.length > 0 ? unitTextLabel.implicitWidth + 8 : 0)
+    implicitHeight: 50
 
-    ColumnLayout {
+    Column {
         anchors.fill: parent
-        spacing: 2
+        spacing: 6
 
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 4
-
-            Text {
-                text: root.labelText
-                color: root.isInvalid ? "#F27683" : "#8A97A3"
-                font.family: "Segoe UI"
-                font.pixelSize: 10
-                font.weight: Font.DemiBold
-            }
-
-            Item { Layout.fillWidth: true }
-
-            Text {
-                text: root.unitText
-                color: "#586773"
-                font.family: "Segoe UI"
-                font.pixelSize: 10
-            }
+        Text {
+            id: label
+            text: control.labelText
+            color: "#A1B5C9"
+            font.family: "Segoe UI"
+            font.pixelSize: 12
+            font.weight: Font.Bold
+            height: 16
         }
 
-        Rectangle {
-            id: inputBorder
-            Layout.fillWidth: true
-            Layout.preferredHeight: 28
-            color: "#050C11"
-            border.color: {
-                if (root.isInvalid) return "#F27683"
-                if (editField.activeFocus) return "#00C8FF"
-                return "#2A3947"
-            }
-            border.width: editField.activeFocus || root.isInvalid ? 2 : 1
-            radius: 3
+        Row {
+            spacing: 8
 
-            TextInput {
-                id: editField
-                objectName: root.fieldName + "Input"
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                verticalAlignment: Text.AlignVCenter
-                text: root.rawText
-                color: root.isInvalid ? "#F27683" : "#E6EEF0"
-                font.family: "Consolas"
-                font.pixelSize: 12
-                selectByMouse: true
-                activeFocusOnTab: true
-                Accessible.role: Accessible.EditableText
-                Accessible.name: root.labelText + (root.unitText.length > 0 ? " in " + root.unitText : "")
-                Accessible.description: "Direct numeric input field for " + root.labelText
+            Rectangle {
+                width: 164
+                height: 28
+                radius: 4
+                color: "#0E1F2E"
+                border.width: input.activeFocus ? 2 : 1
+                border.color: {
+                    if (control.isInvalid) return "#F27683"
+                    if (input.activeFocus) return "#00C8FF"
+                    return "#2C5A78"
+                }
 
-                MouseArea {
-                    id: hoverArea
+                // Focus/Invalid Overlays
+                Rectangle {
                     anchors.fill: parent
-                    hoverEnabled: true
-                    acceptedButtons: Qt.NoButton
+                    radius: 3
+                    color: control.isInvalid ? "#14F27683" : (input.activeFocus ? "#1400C8FF" : "transparent")
                 }
 
-                ToolTip.text: root.labelText + (root.unitText.length > 0 ? " (" + root.unitText + ")" : "")
-                ToolTip.visible: editField.activeFocus || hoverArea.containsMouse
+                TextInput {
+                    id: input
+                    objectName: control.fieldName + "Input"
+                    anchors.fill: parent
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    verticalAlignment: TextInput.AlignVCenter
+                    horizontalAlignment: TextInput.AlignRight
 
-                onTextEdited: {
-                    if (root.fieldName === "frequency") {
-                        if (root.viewModel) root.viewModel.setDraftFrequencyText(text)
-                    } else if (root.fieldName === "gain") {
-                        if (root.viewModel) root.viewModel.setDraftGainText(text)
-                    } else if (root.fieldName === "q") {
-                        if (root.viewModel) root.viewModel.setDraftQText(text)
-                    } else if (root.fieldName === "shelfSlope") {
-                        if (root.viewModel) root.viewModel.setDraftShelfSlopeText(text)
+                    text: control.rawText
+                    font.family: "Consolas"
+                    font.pixelSize: 16
+                    color: control.isInvalid ? "#F27683" : "#F5F8FC"
+                    selectByMouse: true
+                    selectionColor: "#4000C8FF"
+                    selectedTextColor: "#F5F8FC"
+                    activeFocusOnTab: true
+
+                    onTextEdited: {
+                        if (control.viewModel) {
+                            control.viewModel.setDraftValue(control.fieldName, input.text)
+                        }
                     }
-                }
 
-                Keys.onReturnPressed: {
-                    if (root.viewModel) root.viewModel.commitDraft()
-                    root.commitRequested()
-                }
-
-                Keys.onEnterPressed: {
-                    if (root.viewModel) root.viewModel.commitDraft()
-                    root.commitRequested()
-                }
-
-                Keys.onEscapePressed: {
-                    if (root.viewModel) root.viewModel.cancelDraft()
-                    root.cancelRequested()
-                }
-
-                onActiveFocusChanged: {
-                    if (!activeFocus && root.viewModel) {
-                        root.viewModel.commitDraft()
+                    Keys.onReturnPressed: {
+                        if (control.viewModel) control.viewModel.commitDraft()
                     }
+                    Keys.onEnterPressed: {
+                        if (control.viewModel) control.viewModel.commitDraft()
+                    }
+                    Keys.onEscapePressed: {
+                        if (control.viewModel) control.viewModel.cancelDraft()
+                    }
+
+                    onActiveFocusChanged: {
+                        if (!activeFocus && control.viewModel) {
+                            control.viewModel.commitDraft()
+                        }
+                    }
+
+                    Accessible.name: control.labelText + " numeric input field"
+                    Accessible.description: control.isInvalid ? (control.viewModel ? control.viewModel.validationMessage : "") : ""
                 }
+            }
+
+            Text {
+                id: unitTextLabel
+                visible: control.unitText.length > 0
+                anchors.verticalCenter: parent.verticalCenter
+                text: control.unitText
+                color: "#A1B5C9"
+                font.family: "Segoe UI"
+                font.pixelSize: 12
             }
         }
     }

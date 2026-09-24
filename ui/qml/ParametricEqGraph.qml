@@ -1,15 +1,19 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Shapes
 
 Rectangle {
     id: root
     property var viewModel: null
 
-    color: "#050C11"
-    border.color: "#2A3947"
+    color: "#081824"
+    border.color: "#1A3E55"
     border.width: 1
-    radius: 4
+    radius: 6
+
+    gradient: Gradient {
+        GradientStop { position: 0.0; color: "#0D2A3A" }
+        GradientStop { position: 1.0; color: "#06141D" }
+    }
 
     clip: true
 
@@ -29,109 +33,110 @@ Rectangle {
     readonly property double minGain: -18.0
     readonly property double maxGain: 18.0
 
+    // Board04 plotRect specifications
+    readonly property real plotX: 52
+    readonly property real plotY: 10
+    readonly property real plotW: width - plotX - 12
+    readonly property real plotH: height - plotY - 22
+
     function freqToX(freq) {
-        if (freq <= minFreq) return 0
-        if (freq >= maxFreq) return width
+        if (freq <= minFreq) return plotX
+        if (freq >= maxFreq) return plotX + plotW
         const logMin = Math.log10(minFreq)
         const logMax = Math.log10(maxFreq)
-        return width * (Math.log10(freq) - logMin) / (logMax - logMin)
+        return plotX + plotW * (Math.log10(freq) - logMin) / (logMax - logMin)
     }
 
     function xToFreq(x) {
-        if (x <= 0) return minFreq
-        if (x >= width) return maxFreq
+        if (x <= plotX) return minFreq
+        if (x >= plotX + plotW) return maxFreq
         const logMin = Math.log10(minFreq)
         const logMax = Math.log10(maxFreq)
-        return Math.pow(10, logMin + (x / width) * (logMax - logMin))
+        return Math.pow(10, logMin + ((x - plotX) / plotW) * (logMax - logMin))
     }
 
     function gainToY(gain) {
-        if (gain <= minGain) return height
-        if (gain >= maxGain) return 0
-        return height * (1.0 - (gain - minGain) / (maxGain - minGain))
+        if (gain <= minGain) return plotY + plotH
+        if (gain >= maxGain) return plotY
+        return plotY + plotH * (1.0 - (gain - minGain) / (maxGain - minGain))
     }
 
     function yToGain(y) {
-        if (y <= 0) return maxGain
-        if (y >= height) return minGain
-        return maxGain - (y / height) * (maxGain - minGain)
+        if (y <= plotY) return maxGain
+        if (y >= plotY + plotH) return minGain
+        return maxGain - ((y - plotY) / plotH) * (maxGain - minGain)
+    }
+
+    // Top inset highlight
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.margins: 1
+        height: 1
+        color: "#1A1AA0C6"
     }
 
     // Grid lines (vertical frequency landmarks)
     Repeater {
-        model: [100, 1000, 10000]
+        model: [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
         delegate: Item {
             required property real modelData
             readonly property real lineX: root.freqToX(modelData)
+            readonly property bool isMajor: modelData === 100 || modelData === 1000 || modelData === 10000
             anchors.fill: parent
 
             Rectangle {
                 x: parent.lineX
-                y: 0
+                y: root.plotY
                 width: 1
-                height: parent.height
-                color: "#182836"
+                height: root.plotH
+                color: parent.isMajor ? "#66405466" : "#2E2A3A49"
             }
 
             Text {
-                x: parent.lineX + 4
-                y: parent.height - 18
-                text: parent.modelData >= 1000 ? (parent.modelData / 1000) + "k" : parent.modelData
-                color: "#384956"
-                font.family: "Segoe UI"
-                font.pixelSize: 9
+                x: parent.lineX - implicitWidth / 2
+                y: root.plotY + root.plotH + 4
+                text: {
+                    if (parent.modelData >= 1000) {
+                        const kVal = parent.modelData / 1000.0
+                        return (kVal === Math.floor(kVal) ? kVal : kVal.toFixed(3)) + "k"
+                    }
+                    return parent.modelData
+                }
+                color: "#A1B5C9"
+                font.family: "Consolas"
+                font.pixelSize: 10
+                visible: parent.isMajor || root.plotW >= 700
             }
         }
     }
 
     // Grid lines (horizontal gain landmarks)
     Repeater {
-        model: [-12, -6, 0, 6, 12]
+        model: [-18, -12, -6, 0, 6, 12, 18]
         delegate: Item {
             required property real modelData
             readonly property real lineY: root.gainToY(modelData)
+            readonly property bool isZero: modelData === 0
             anchors.fill: parent
 
             Rectangle {
-                x: 0
+                x: root.plotX
                 y: parent.lineY
-                width: parent.width
+                width: root.plotW
                 height: 1
-                color: parent.modelData === 0 ? "#2D4354" : "#13212C"
+                color: parent.isZero ? "#996B7C8F" : "#2E2A3A49"
             }
 
             Text {
                 x: 6
-                y: parent.lineY - 12
+                y: parent.lineY - 6
                 text: (parent.modelData > 0 ? "+" : "") + parent.modelData + " dB"
-                color: parent.modelData === 0 ? "#4D6374" : "#283846"
-                font.family: "Segoe UI"
-                font.pixelSize: 9
+                color: parent.isZero ? "#F5F8FC" : "#A1B5C9"
+                font.family: "Consolas"
+                font.pixelSize: 10
             }
-        }
-    }
-
-    // Mixed Routing Indicator
-    Rectangle {
-        visible: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.mixedRouting
-        anchors.top: parent.top
-        anchors.right: parent.right
-        anchors.margins: 12
-        width: mixedText.width + 16
-        height: 22
-        color: "#2B1A3A"
-        border.color: "#8B42C0"
-        border.width: 1
-        radius: 3
-
-        Text {
-            id: mixedText
-            anchors.centerIn: parent
-            text: "MIXED ROUTING ACTIVE"
-            color: "#D088FF"
-            font.family: "Segoe UI"
-            font.pixelSize: 10
-            font.weight: Font.DemiBold
         }
     }
 
@@ -154,34 +159,65 @@ Rectangle {
             const points = root.viewModel.selectedBandResponsePoints
             if (points.length < 2) return
 
-            ctx.beginPath()
-            ctx.lineWidth = 2
-            ctx.strokeStyle = "#8B42C0"
+            const zeroY = root.gainToY(0)
 
+            // Fill under curve split at zero
+            for (let i = 0; i < points.length - 1; ++i) {
+                const pt1 = points[i]
+                const pt2 = points[i + 1]
+                const px1 = root.freqToX(pt1.frequency)
+                const py1 = root.gainToY(pt1.magnitudeDb)
+                const px2 = root.freqToX(pt2.frequency)
+                const py2 = root.gainToY(pt2.magnitudeDb)
+
+                ctx.beginPath()
+                ctx.moveTo(px1, py1)
+                ctx.lineTo(px2, py2)
+                ctx.lineTo(px2, zeroY)
+                ctx.lineTo(px1, zeroY)
+                ctx.closePath()
+                ctx.fillStyle = "#242ED3FF"
+                ctx.fill()
+            }
+
+            // Halo Under-stroke
+            ctx.beginPath()
+            ctx.lineWidth = 6
+            ctx.strokeStyle = "#592ED3FF"
             for (let i = 0; i < points.length; ++i) {
                 const pt = points[i]
                 const px = root.freqToX(pt.frequency)
                 const py = root.gainToY(pt.magnitudeDb)
-                if (i === 0) {
-                    ctx.moveTo(px, py)
-                } else {
-                    ctx.lineTo(px, py)
-                }
+                if (i === 0) ctx.moveTo(px, py)
+                else ctx.lineTo(px, py)
             }
             ctx.stroke()
 
-            // Fill area under curve
-            const lastPt = points[points.length - 1]
-            const zeroY = root.gainToY(0)
-            ctx.lineTo(root.freqToX(lastPt.frequency), zeroY)
-            ctx.lineTo(root.freqToX(points[0].frequency), zeroY)
-            ctx.closePath()
-            ctx.fillStyle = "#1A8B42C0"
-            ctx.fill()
+            // Main Stroke
+            ctx.beginPath()
+            ctx.lineWidth = 2
+            ctx.strokeStyle = "#FF2ED3FF"
+            for (let i = 0; i < points.length; ++i) {
+                const pt = points[i]
+                const px = root.freqToX(pt.frequency)
+                const py = root.gainToY(pt.magnitudeDb)
+                if (i === 0) ctx.moveTo(px, py)
+                else ctx.lineTo(px, py)
+            }
+            ctx.stroke()
         }
     }
 
-    // Band Handles
+    // Band Handles (Exact Board04 Colors)
+    readonly property var bandColors: [
+        "#FF2ED3FF", // Band 1
+        "#FF2FD98F", // Band 2
+        "#FFC8D94A", // Band 3
+        "#FFFF7A9A", // Band 4
+        "#FFB56CFF", // Band 5
+        "#FF6FC8FF"  // Band 6
+    ]
+
     Repeater {
         model: root.viewModel ? root.viewModel.bandSummaries : []
         delegate: Item {
@@ -195,31 +231,39 @@ Rectangle {
 
             x: handleX - handleCircle.width / 2
             y: handleY - handleCircle.height / 2
-            width: isSelected ? 24 : 18
-            height: isSelected ? 24 : 18
+            width: isSelected ? 24 : 20
+            height: isSelected ? 24 : 20
+
+            // Hover ring
+            Rectangle {
+                visible: handleMouse.containsMouse
+                anchors.centerIn: parent
+                width: 28
+                height: 28
+                radius: 14
+                color: "transparent"
+                border.color: "#1400C8FF"
+                border.width: 1
+            }
 
             Rectangle {
                 id: handleCircle
                 anchors.fill: parent
                 radius: width / 2
-                color: {
-                    if (!isEnabled) return "#1A2630"
-                    if (isSelected) return "#8B42C0"
-                    return "#223545"
-                }
+                color: !isEnabled ? "#992A3A49" : "#FF0E2233"
                 border.color: {
-                    if (!isEnabled) return "#3A4B58"
-                    if (isSelected) return "#E6EEF0"
-                    return "#00C8FF"
+                    if (!isEnabled) return "#99566676"
+                    if (isSelected) return "#FFFFFFFF"
+                    return root.bandColors[index % root.bandColors.length]
                 }
-                border.width: isSelected ? 2 : 1
+                border.width: 2
 
                 Text {
                     anchors.centerIn: parent
                     text: index + 1
-                    color: !isEnabled ? "#485866" : "#E6EEF0"
+                    color: !isEnabled ? "#99A6B2BF" : (isSelected ? "#FFFFFFFF" : "#E6FFFFFF")
                     font.family: "Segoe UI"
-                    font.pixelSize: isSelected ? 11 : 9
+                    font.pixelSize: 12
                     font.weight: Font.Bold
                 }
             }
@@ -227,12 +271,13 @@ Rectangle {
             MouseArea {
                 id: handleMouse
                 anchors.fill: parent
+                hoverEnabled: true
                 drag.target: isSelected ? parent : null
                 drag.axis: modelData.gainApplicable ? Drag.XAndYAxis : Drag.XAxis
-                drag.minimumX: -parent.width / 2
-                drag.maximumX: root.width - parent.width / 2
-                drag.minimumY: -parent.height / 2
-                drag.maximumY: root.height - parent.height / 2
+                drag.minimumX: root.plotX - parent.width / 2
+                drag.maximumX: root.plotX + root.plotW - parent.width / 2
+                drag.minimumY: root.plotY - parent.height / 2
+                drag.maximumY: root.plotY + root.plotH - parent.height / 2
 
                 onPressed: {
                     if (!isSelected) {
