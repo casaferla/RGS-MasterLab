@@ -127,6 +127,9 @@ ApplicationWindow {
                         StudioMenuItem { text: "Preferences"; enabled: false }
                     }
                     Menu {
+                        objectName: "desktopViewMenu"
+                        popupType: Popup.Item
+                        width: 230
                         title: "&View"
                         background: Rectangle { color: root.surface; border.color: root.border }
                         StudioMenuItem { objectName: "menuViewParametricEq"; text: "Parametric EQ…"; enabled: auditionSelector.preparedAvailable; onTriggered: { eqWindow.show(); eqWindow.raise(); eqWindow.requestActivate() } }
