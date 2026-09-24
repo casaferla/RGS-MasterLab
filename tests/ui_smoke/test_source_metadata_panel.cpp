@@ -9,14 +9,6 @@
 #include "waveform_presentation.hpp"
 #include "windows_window_chrome_helper.hpp"
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <windowsx.h>
-#endif
-
 #include "../audio_golden/wav/golden_vectors.hpp"
 #include "../unit/audio/wav_test_support.hpp"
 #include "../unit/platform/fake_playback_service.hpp"
@@ -1263,6 +1255,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(window->size(), QSize(1280, 720));
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#include <windows.h>
+#include <windowsx.h>
+
     // Native Windows Window Chrome Helper Hit-Test Exclusions
     auto* rootQuickWindow = qobject_cast<QQuickWindow*>(window);
     QVERIFY(rootQuickWindow != nullptr);
