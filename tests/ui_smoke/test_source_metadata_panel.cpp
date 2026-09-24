@@ -532,23 +532,40 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(saveProjectItem->property("enabled").toBool());
     QVERIFY(eqMenuItem->property("enabled").toBool());
 
-    // Exercise Parametric EQ Tool Window & Editor
-    qInfo().noquote() << "M12B_SMOKE_PHASE=menu";
-    QVERIFY2(eqMenuItem != nullptr, "menuViewParametricEq must exist");
-    QVERIFY2(eqMenuItem->property("enabled").toBool(), "menuViewParametricEq must be enabled when Source is available");
+    // Exercise View Menu real mouse interaction when Source is loaded
+    qInfo().noquote() << "M12B_SMOKE_PHASE=view-menu-real-click";
+    auto* viewMenuLabel = root->findChild<QObject*>(QStringLiteral("desktopMenuBarLabel_View"));
+    auto* viewMenu = root->findChild<QObject*>(QStringLiteral("desktopViewMenu"));
+    QVERIFY(viewMenuLabel && viewMenu);
+    auto* viewMenuBarItem = qobject_cast<QQuickItem*>(viewMenuLabel->parent());
+    QVERIFY(viewMenuBarItem);
+    const auto viewMenuCenter = viewMenuBarItem->mapToScene(QPointF{
+        viewMenuBarItem->width() / 2, viewMenuBarItem->height() / 2});
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, viewMenuCenter.toPoint());
+    QTest::qWait(120);
+    QCoreApplication::processEvents();
+    QVERIFY2(viewMenu->property("visible").toBool(), "Clicking View menu must open desktopViewMenu");
+    QVERIFY2(viewMenu->property("width").toReal() >= 230, "desktopViewMenu width must be >= 230");
 
-    qInfo().noquote() << "M12B_SMOKE_PHASE=window-open";
+    auto* realEqMenuItem = root->findChild<QObject*>(QStringLiteral("menuViewParametricEq"));
+    auto* realEqMenuQuickItem = qobject_cast<QQuickItem*>(realEqMenuItem);
+    QVERIFY(realEqMenuItem && realEqMenuQuickItem);
+    QVERIFY(realEqMenuItem->property("visible").toBool());
+    QVERIFY(realEqMenuItem->property("enabled").toBool());
+    QVERIFY(realEqMenuQuickItem->width() > 0);
+
+    const auto eqMenuCenter = realEqMenuQuickItem->mapToScene(QPointF{
+        realEqMenuQuickItem->width() / 2, realEqMenuQuickItem->height() / 2});
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, eqMenuCenter.toPoint());
+    QTest::qWait(120);
+    QCoreApplication::processEvents();
+
     auto* eqToolWindow = root->findChild<QObject*>(QStringLiteral("parametricEqToolWindow"));
     QVERIFY2(eqToolWindow != nullptr, "parametricEqToolWindow must exist in QML hierarchy");
     auto* eqWindowObj = qobject_cast<QWindow*>(eqToolWindow);
     QVERIFY2(eqWindowObj != nullptr, "parametricEqToolWindow must be a QWindow");
     QCOMPARE(eqToolWindow->property("title").toString(), QStringLiteral("Parametric EQ — RGS MasterLab"));
-
-    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem must succeed");
-    eqWindowObj->requestActivate();
-    QTest::qWait(50);
-    QCoreApplication::processEvents();
-    QVERIFY2(eqToolWindow->property("visible").toBool(), "parametricEqToolWindow must be visible after menu trigger");
+    QVERIFY2(eqToolWindow->property("visible").toBool(), "parametricEqToolWindow must be visible after real mouse click on View menu item");
 
     qInfo().noquote() << "M12B_SMOKE_PHASE=editor-lookup";
     auto* eqEditor = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
@@ -982,6 +999,36 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY(QMetaObject::invokeMethod(goldTarget, "clicked"));
     QCoreApplication::processEvents();
+
+    const std::array studioButtonNames{
+        QStringLiteral("auditionPreparedButton"),
+        QStringLiteral("auditionProcessedButton"),
+        QStringLiteral("auditionGoldButton"),
+        QStringLiteral("waveformFitRegionButton"),
+        QStringLiteral("auditionRegionClearButton"),
+        QStringLiteral("sourceOpenButton"),
+    };
+    for (const auto& btnName : studioButtonNames) {
+        auto* btnObj = root->findChild<QObject*>(btnName);
+        QVERIFY2(btnObj != nullptr, qPrintable(QStringLiteral("Button %1 must exist").arg(btnName)));
+        auto* btnItem = qobject_cast<QQuickItem*>(btnObj);
+        QVERIFY2(btnItem != nullptr, qPrintable(QStringLiteral("Button %1 must be a QQuickItem").arg(btnName)));
+        auto* contentRowObj = btnObj->findChild<QObject*>(QStringLiteral("contentRow"));
+        QVERIFY2(contentRowObj != nullptr, qPrintable(QStringLiteral("contentRow must exist in %1").arg(btnName)));
+        auto* contentRowItem = qobject_cast<QQuickItem*>(contentRowObj);
+        QVERIFY2(contentRowItem != nullptr, qPrintable(QStringLiteral("contentRow must be a QQuickItem in %1").arg(btnName)));
+
+        const auto btnCenter = btnItem->mapToScene(QPointF{btnItem->width() * 0.5, btnItem->height() * 0.5});
+        const auto rowCenter = contentRowItem->mapToScene(QPointF{contentRowItem->width() * 0.5, contentRowItem->height() * 0.5});
+
+        QVERIFY2(std::abs(btnCenter.x() - rowCenter.x()) <= 1.0,
+            qPrintable(QStringLiteral("Button %1 contentRow horizontal center diff %2 > 1.0 px")
+                .arg(btnName).arg(std::abs(btnCenter.x() - rowCenter.x()))));
+        QVERIFY2(std::abs(btnCenter.y() - rowCenter.y()) <= 1.0,
+            qPrintable(QStringLiteral("Button %1 contentRow vertical center diff %2 > 1.0 px")
+                .arg(btnName).arg(std::abs(btnCenter.y() - rowCenter.y()))));
+    }
+
     QVERIFY(capture_visual_evidence(
         window,
         QStringLiteral("gui01_1440x900_gold.png"),

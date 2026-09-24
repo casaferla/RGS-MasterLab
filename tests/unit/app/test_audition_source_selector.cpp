@@ -262,11 +262,11 @@ void AuditionSourceSelectorTest::playIntentIsRestoredAcrossTargetSwitches()
     QCOMPARE(observed->position.value(), std::int64_t{45});
     QCOMPARE(observed->state, core::PlaybackState::PLAYING);
 
-    // 3. PAUSED switch -> remains PAUSED
+    // 3. PAUSED switch -> prepares new target at cue point in STOPPED state
     transport.pause();
     QCOMPARE(observed->state, core::PlaybackState::PAUSED);
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
-    QCOMPARE(observed->state, core::PlaybackState::PAUSED);
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
 
     // 4. STOPPED switch -> remains STOPPED
     transport.stop();
