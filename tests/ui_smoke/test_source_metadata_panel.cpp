@@ -10,6 +10,9 @@
 #include "windows_window_chrome_helper.hpp"
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <windowsx.h>
 #endif
