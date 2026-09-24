@@ -9,6 +9,11 @@
 #include "waveform_presentation.hpp"
 #include "windows_window_chrome_helper.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#include <windowsx.h>
+#endif
+
 #include "../audio_golden/wav/golden_vectors.hpp"
 #include "../unit/audio/wav_test_support.hpp"
 #include "../unit/platform/fake_playback_service.hpp"

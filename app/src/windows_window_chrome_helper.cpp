@@ -37,6 +37,7 @@ bool WindowsWindowChromeHelper::nativeEventFilter(
     void* message,
     qintptr* result)
 {
+    Q_UNUSED(eventType);
     if (window_ == nullptr || message == nullptr || result == nullptr) {
         return false;
     }
