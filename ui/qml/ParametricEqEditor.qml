@@ -44,11 +44,11 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 16
         spacing: 12
 
         // Header Strip (48 lp)
         RowLayout {
+            objectName: "eqHeaderRegion"
             Layout.fillWidth: true
             Layout.preferredHeight: 48
             spacing: 12
@@ -150,6 +150,7 @@ Rectangle {
 
         // Band Selector Strip (40 lp)
         Rectangle {
+            objectName: "eqBandStripRegion"
             Layout.fillWidth: true
             Layout.preferredHeight: 40
             color: "#12243F"
@@ -224,6 +225,7 @@ Rectangle {
 
         // Selected-Band Inspector Panel (128 lp Fixed)
         Rectangle {
+            objectName: "eqInspectorRegion"
             Layout.fillWidth: true
             Layout.preferredHeight: 128
             color: "#12243F"
@@ -266,6 +268,7 @@ Rectangle {
 
                     // Subrow 1: Filter Selection (581 lp group)
                     RowLayout {
+                        objectName: "eqFilterGroup"
                         Layout.fillWidth: true
                         Layout.preferredHeight: 28
                         spacing: 8
@@ -311,6 +314,7 @@ Rectangle {
 
                     // Subrow 2: Routing Selection (404 lp group) + Mixed Badge (164 lp)
                     RowLayout {
+                        objectName: "eqRoutingGroup"
                         Layout.fillWidth: true
                         Layout.preferredHeight: 28
                         spacing: 8
@@ -353,6 +357,7 @@ Rectangle {
 
                         // Mixed Routing Badge (164 x 28 lp)
                         Rectangle {
+                            objectName: "mixedRoutingBadge"
                             visible: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.mixedRouting
                             Layout.preferredHeight: 28
                             Layout.preferredWidth: 164
@@ -459,6 +464,7 @@ Rectangle {
 
         // Validation & Preview Error Strip (24 lp)
         Rectangle {
+            objectName: "eqStatusRegion"
             Layout.fillWidth: true
             Layout.preferredHeight: 24
             color: "transparent"

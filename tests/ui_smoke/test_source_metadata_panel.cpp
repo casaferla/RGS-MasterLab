@@ -897,8 +897,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     auto* addBtn1040 = eqEditorStereo->findChild<QObject*>(QStringLiteral("addBandButton"));
     auto* removeBtn1040 = eqEditorStereo->findChild<QObject*>(QStringLiteral("removeBandButton"));
-    auto* bellBtn = find_child_by_name(eqEditorStereo, QStringLiteral("filterButton_BELL"));
-    auto* stereoBtn = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_STEREO"));
+    auto* filterGroupObj = eqEditorStereo->findChild<QObject*>(QStringLiteral("eqFilterGroup"));
+    auto* routingGroupObj = eqEditorStereo->findChild<QObject*>(QStringLiteral("eqRoutingGroup"));
     auto* leftBtn = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_LEFT"));
 
     QVERIFY2(leftBtn != nullptr, "routingButton_LEFT must exist");
@@ -907,8 +907,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     const QString geomEditor1040 = itemGeometry(eqEditorStereo);
     const QString geomAdd1040 = itemGeometry(addBtn1040);
     const QString geomRemove1040 = itemGeometry(removeBtn1040);
-    const QString geomFilterGroup = itemGeometry(bellBtn ? bellBtn->parent() : nullptr);
-    const QString geomRoutingGroup = itemGeometry(stereoBtn ? stereoBtn->parent() : nullptr);
+    const QString geomFilterGroup = itemGeometry(filterGroupObj);
+    const QString geomRoutingGroup = itemGeometry(routingGroupObj);
     const QSize actualClient1040 = eqWindowObj->size();
 
     // Resize to 900x580 and sample compact geometry
