@@ -71,7 +71,15 @@ Item {
 
                     onTextEdited: {
                         if (control.viewModel) {
-                            control.viewModel.setDraftValue(control.fieldName, input.text)
+                            if (control.fieldName === "frequency") {
+                                control.viewModel.setDraftFrequencyText(input.text)
+                            } else if (control.fieldName === "gain") {
+                                control.viewModel.setDraftGainText(input.text)
+                            } else if (control.fieldName === "q") {
+                                control.viewModel.setDraftQText(input.text)
+                            } else if (control.fieldName === "shelfSlope") {
+                                control.viewModel.setDraftShelfSlopeText(input.text)
+                            }
                         }
                     }
 
