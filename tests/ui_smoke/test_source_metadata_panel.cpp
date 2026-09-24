@@ -1287,8 +1287,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     testMsg.hwnd = reinterpret_cast<HWND>(rootQuickWindow->winId());
     testMsg.message = WM_NCHITTEST;
 
-    // Test a point over empty header space (x=300, y=20 in screen coordinates)
-    const QPoint globalHeaderPt = rootQuickWindow->mapToGlobal(QPoint{300, 20});
+    // Test a point over empty header space in the elastic spacer (x=700, y=20 in screen coordinates)
+    const QPoint globalHeaderPt = rootQuickWindow->mapToGlobal(QPoint{700, 20});
     testMsg.lParam = MAKELPARAM(globalHeaderPt.x(), globalHeaderPt.y());
     qintptr hitResult = 0;
     QVERIFY(testChromeHelper.nativeEventFilter("windows_generic_MSG", &testMsg, &hitResult));
