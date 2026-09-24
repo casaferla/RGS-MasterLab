@@ -109,6 +109,7 @@ private slots:
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
+    void playIntentIsRestoredAcrossTargetSwitches();
 };
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
@@ -228,6 +229,50 @@ void AuditionSourceSelectorTest::loopOutsideRealizationIsNotAppliedAndLifecycleC
     }
     QVERIFY(observed->clearCalls >= 2);
     QCOMPARE(observed->state, core::PlaybackState::NO_SOURCE);
+}
+
+void AuditionSourceSelectorTest::playIntentIsRestoredAcrossTargetSwitches()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 100)));
+    QVERIFY(selector.set_processed_realization(realization(0, 100)));
+
+    // 1. PREPARED playing -> PROCESSED
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    transport.playOrResume();
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+    observed->position = core::FrameIndex{30};
+
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{30});
+    QCOMPARE(observed->position.value(), std::int64_t{30});
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    // 2. PROCESSED playing -> PREPARED
+    observed->position = core::FrameIndex{45};
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{45});
+    QCOMPARE(observed->position.value(), std::int64_t{45});
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    // 3. PAUSED switch -> remains PAUSED
+    transport.pause();
+    QCOMPARE(observed->state, core::PlaybackState::PAUSED);
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(observed->state, core::PlaybackState::PAUSED);
+
+    // 4. STOPPED switch -> remains STOPPED
+    transport.stop();
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
 }
 
 }  // namespace rgsml::tests

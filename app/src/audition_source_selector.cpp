@@ -270,6 +270,14 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
         return core::Status::success();
     }
 
+    bool wasPlaying = false;
+    if (activeTarget_) {
+        auto snapshot = playback_->playback_snapshot();
+        if (snapshot && snapshot.value()->state == core::PlaybackState::PLAYING) {
+            wasPlaying = true;
+        }
+    }
+
     auto stored = store_active_cue();
     if (!stored) {
         fail_closed(*stored.error());
@@ -298,6 +306,18 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
         fail_closed(*preparedStatus.error());
         return preparedStatus;
     }
+
+    if (wasPlaying) {
+        playback_->playOrResume();
+        auto newSnapshot = playback_->playback_snapshot();
+        if (newSnapshot && newSnapshot.value()->state != core::PlaybackState::PLAYING) {
+            fail_closed(core::Error{
+                core::ErrorCode::InvalidState,
+                "Failed to resume playback after audition target switch."});
+            return unavailable("Failed to resume playback after audition target switch.");
+        }
+    }
+
     activeTarget_ = target;
     statusText_.clear();
     emit changed();
