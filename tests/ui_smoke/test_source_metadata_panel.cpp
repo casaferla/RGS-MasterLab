@@ -1051,45 +1051,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(auditionRegion.set_region(*oneFrameRegion.value()));
     QCoreApplication::processEvents();
 
-    // Verify 44.1 kHz Mono evidence and routing restrictions on 44.1 kHz source
-    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem on 44.1 kHz source must succeed");
-    QCoreApplication::processEvents();
-
-    // Explicitly wait for previewStatus to settle to READY on 44.1 kHz mono source
-    for (int i = 0; i < 100 && eqViewModel.preview_status() != QStringLiteral("READY"); ++i) {
-        QTest::qWait(10);
-    }
-    if (eqViewModel.preview_status() == QStringLiteral("ERROR")) {
-        QFAIL(qPrintable(QStringLiteral("EQ preview failed: ") + eqViewModel.preview_error()));
-    }
-    QCOMPARE(eqViewModel.preview_status(), QStringLiteral("READY"));
-    QVERIFY2(eqViewModel.preview_error().isEmpty(), "previewError must be empty for 44.1 kHz mono source");
-
-    auto* eqEditor441 = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
-    QVERIFY2(eqEditor441 != nullptr, "parametricEqEditor must exist on 44.1 kHz source");
-    auto* eqGraph441 = eqEditor441->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
-    QVERIFY2(eqGraph441 != nullptr, "parametricEqGraph must exist on 44.1 kHz source");
-    QCOMPARE(eqGraph441->property("maxFreq").toDouble(), 19845.0);
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_graph_44100_end.png"), QSize{1040, 660}));
-
-    // Capture 900x580 mono evidence
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_900x580_mono.png"), QSize{900, 580}));
-
-    // Verify mono routing restrictions
-    auto* routeStereoMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_STEREO"));
-    auto* routeMidMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_MID"));
-    auto* routeSideMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_SIDE"));
-    auto* routeLeftMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_LEFT"));
-    auto* routeRightMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_RIGHT"));
-    QVERIFY2(routeStereoMono && routeStereoMono->property("enabled").toBool(), "STEREO routing must be enabled on mono source");
-    QVERIFY2(routeMidMono && !routeMidMono->property("enabled").toBool(), "MID routing must be disabled on mono source");
-    QVERIFY2(routeSideMono && !routeSideMono->property("enabled").toBool(), "SIDE routing must be disabled on mono source");
-    QVERIFY2(routeLeftMono && !routeLeftMono->property("enabled").toBool(), "LEFT routing must be disabled on mono source");
-    QVERIFY2(routeRightMono && !routeRightMono->property("enabled").toBool(), "RIGHT routing must be disabled on mono source");
-
-    eqWindowObj->close();
-    QCoreApplication::processEvents();
-
     auto* firstSegment = qobject_cast<QQuickItem*>(segmentFields.front());
     QVERIFY(firstSegment);
     firstSegment->forceActiveFocus(Qt::TabFocusReason);
@@ -1173,6 +1134,45 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(QMetaObject::invokeMethod(waveformRetry, "clicked"));
     QCOMPARE(retrySpy.count(), 1);
     waveformPresentation.publish_ready(valid_summary());
+    QCoreApplication::processEvents();
+
+    // Verify 44.1 kHz Mono evidence and routing restrictions on 44.1 kHz source
+    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem on 44.1 kHz source must succeed");
+    QCoreApplication::processEvents();
+
+    // Explicitly wait for previewStatus to settle to READY on 44.1 kHz mono source
+    for (int i = 0; i < 100 && eqViewModel.preview_status() != QStringLiteral("READY"); ++i) {
+        QTest::qWait(10);
+    }
+    if (eqViewModel.preview_status() == QStringLiteral("ERROR")) {
+        QFAIL(qPrintable(QStringLiteral("EQ preview failed: ") + eqViewModel.preview_error()));
+    }
+    QCOMPARE(eqViewModel.preview_status(), QStringLiteral("READY"));
+    QVERIFY2(eqViewModel.preview_error().isEmpty(), "previewError must be empty for 44.1 kHz mono source");
+
+    auto* eqEditor441 = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
+    QVERIFY2(eqEditor441 != nullptr, "parametricEqEditor must exist on 44.1 kHz source");
+    auto* eqGraph441 = eqEditor441->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
+    QVERIFY2(eqGraph441 != nullptr, "parametricEqGraph must exist on 44.1 kHz source");
+    QCOMPARE(eqGraph441->property("maxFreq").toDouble(), 19845.0);
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_graph_44100_end.png"), QSize{1040, 660}));
+
+    // Capture 900x580 mono evidence
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_900x580_mono.png"), QSize{900, 580}));
+
+    // Verify mono routing restrictions
+    auto* routeStereoMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_STEREO"));
+    auto* routeMidMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_MID"));
+    auto* routeSideMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_SIDE"));
+    auto* routeLeftMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_LEFT"));
+    auto* routeRightMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_RIGHT"));
+    QVERIFY2(routeStereoMono && routeStereoMono->property("enabled").toBool(), "STEREO routing must be enabled on mono source");
+    QVERIFY2(routeMidMono && !routeMidMono->property("enabled").toBool(), "MID routing must be disabled on mono source");
+    QVERIFY2(routeSideMono && !routeSideMono->property("enabled").toBool(), "SIDE routing must be disabled on mono source");
+    QVERIFY2(routeLeftMono && !routeLeftMono->property("enabled").toBool(), "LEFT routing must be disabled on mono source");
+    QVERIFY2(routeRightMono && !routeRightMono->property("enabled").toBool(), "RIGHT routing must be disabled on mono source");
+
+    eqWindowObj->close();
     QCoreApplication::processEvents();
 
     window->resize(1184, 688);
