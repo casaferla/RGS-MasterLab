@@ -41,6 +41,7 @@ Item {
                 border.color: {
                     if (control.isInvalid) return "#F27683"
                     if (input.activeFocus) return "#00C8FF"
+                    if (fieldMouseArea.containsMouse) return "#5900C8FF"
                     return "#2C5A78"
                 }
 
@@ -49,6 +50,13 @@ Item {
                     anchors.fill: parent
                     radius: 3
                     color: control.isInvalid ? "#14F27683" : (input.activeFocus ? "#1400C8FF" : "transparent")
+                }
+
+                MouseArea {
+                    id: fieldMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: input.forceActiveFocus()
                 }
 
                 TextInput {

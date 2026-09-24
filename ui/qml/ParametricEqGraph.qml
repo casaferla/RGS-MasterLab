@@ -15,8 +15,6 @@ Rectangle {
         GradientStop { position: 1.0; color: "#06141D" }
     }
 
-    clip: true
-
     readonly property double minFreq: 20.0
     readonly property double maxFreq: {
         if (root.viewModel !== null && root.viewModel !== undefined && root.viewModel.selectedBandResponsePoints) {
@@ -77,27 +75,29 @@ Rectangle {
         color: "#1A1AA0C6"
     }
 
-    // Grid lines (vertical frequency landmarks)
+    // Unclipped Frequency Labels Gutter (below plotRect)
     Repeater {
         model: [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
         delegate: Item {
             required property real modelData
             readonly property real lineX: root.freqToX(modelData)
             readonly property bool isMajor: modelData === 100 || modelData === 1000 || modelData === 10000
-            anchors.fill: parent
+            readonly property bool isEndpoint: modelData === 20000
 
-            Rectangle {
-                x: parent.lineX
-                y: root.plotY
-                width: 1
-                height: root.plotH
-                color: parent.isMajor ? "#66405466" : "#2E2A3A49"
-            }
+            anchors.fill: parent
 
             Text {
                 x: parent.lineX - implicitWidth / 2
                 y: root.plotY + root.plotH + 4
                 text: {
+                    if (parent.isEndpoint) {
+                        const actualMax = root.maxFreq
+                        if (actualMax >= 1000) {
+                            const kVal = actualMax / 1000.0
+                            return (kVal === Math.floor(kVal) ? kVal : kVal.toFixed(3)) + "k"
+                        }
+                        return actualMax
+                    }
                     if (parent.modelData >= 1000) {
                         const kVal = parent.modelData / 1000.0
                         return (kVal === Math.floor(kVal) ? kVal : kVal.toFixed(3)) + "k"
@@ -107,12 +107,12 @@ Rectangle {
                 color: "#A1B5C9"
                 font.family: "Consolas"
                 font.pixelSize: 10
-                visible: parent.isMajor || root.plotW >= 700
+                visible: parent.isMajor || parent.isEndpoint || root.plotW >= 700
             }
         }
     }
 
-    // Grid lines (horizontal gain landmarks)
+    // Unclipped Gain Labels Gutter (left of plotRect)
     Repeater {
         model: [-18, -12, -6, 0, 6, 12, 18]
         delegate: Item {
@@ -120,14 +120,6 @@ Rectangle {
             readonly property real lineY: root.gainToY(modelData)
             readonly property bool isZero: modelData === 0
             anchors.fill: parent
-
-            Rectangle {
-                x: root.plotX
-                y: parent.lineY
-                width: root.plotW
-                height: 1
-                color: parent.isZero ? "#996B7C8F" : "#2E2A3A49"
-            }
 
             Text {
                 x: 6
@@ -140,75 +132,117 @@ Rectangle {
         }
     }
 
-    // Response Curve Canvas
-    Canvas {
-        id: curveCanvas
-        anchors.fill: parent
+    // Internal Clipped Plot Area (Grid, Curve, Fill)
+    Item {
+        id: plotArea
+        x: root.plotX
+        y: root.plotY
+        width: root.plotW
+        height: root.plotH
+        clip: true
 
-        Connections {
-            target: root.viewModel
-            function onChanged() { curveCanvas.requestPaint() }
+        // Grid lines (vertical frequency landmarks)
+        Repeater {
+            model: [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+            delegate: Rectangle {
+                required property real modelData
+                readonly property real lineX: root.freqToX(modelData) - root.plotX
+                readonly property bool isMajor: modelData === 100 || modelData === 1000 || modelData === 10000
+
+                x: lineX
+                y: 0
+                width: 1
+                height: root.plotH
+                color: isMajor ? "#66405466" : "#2E2A3A49"
+            }
         }
 
-        onPaint: {
-            const ctx = getContext("2d")
-            ctx.clearRect(0, 0, width, height)
+        // Grid lines (horizontal gain landmarks)
+        Repeater {
+            model: [-18, -12, -6, 0, 6, 12, 18]
+            delegate: Rectangle {
+                required property real modelData
+                readonly property real lineY: root.gainToY(modelData) - root.plotY
+                readonly property bool isZero: modelData === 0
 
-            if (!root.viewModel || !root.viewModel.selectedBandResponsePoints) return
+                x: 0
+                y: lineY
+                width: root.plotW
+                height: 1
+                color: isZero ? "#996B7C8F" : "#2E2A3A49"
+            }
+        }
 
-            const points = root.viewModel.selectedBandResponsePoints
-            if (points.length < 2) return
+        // Response Curve Canvas
+        Canvas {
+            id: curveCanvas
+            anchors.fill: parent
 
-            const zeroY = root.gainToY(0)
+            Connections {
+                target: root.viewModel
+                function onChanged() { curveCanvas.requestPaint() }
+            }
 
-            // Fill under curve split at zero
-            for (let i = 0; i < points.length - 1; ++i) {
-                const pt1 = points[i]
-                const pt2 = points[i + 1]
-                const px1 = root.freqToX(pt1.frequency)
-                const py1 = root.gainToY(pt1.magnitudeDb)
-                const px2 = root.freqToX(pt2.frequency)
-                const py2 = root.gainToY(pt2.magnitudeDb)
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
 
+                if (!root.viewModel || !root.viewModel.selectedBandResponsePoints) return
+
+                const points = root.viewModel.selectedBandResponsePoints
+                if (points.length < 2) return
+
+                const zeroY = root.gainToY(0) - root.plotY
+
+                // Fill under curve split at zero
+                for (let i = 0; i < points.length - 1; ++i) {
+                    const pt1 = points[i]
+                    const pt2 = points[i + 1]
+                    const px1 = root.freqToX(pt1.frequency) - root.plotX
+                    const py1 = root.gainToY(pt1.magnitudeDb) - root.plotY
+                    const px2 = root.freqToX(pt2.frequency) - root.plotX
+                    const py2 = root.gainToY(pt2.magnitudeDb) - root.plotY
+
+                    ctx.beginPath()
+                    ctx.moveTo(px1, py1)
+                    ctx.lineTo(px2, py2)
+                    ctx.lineTo(px2, zeroY)
+                    ctx.lineTo(px1, zeroY)
+                    ctx.closePath()
+                    ctx.fillStyle = "#242ED3FF"
+                    ctx.fill()
+                }
+
+                // Halo Under-stroke
                 ctx.beginPath()
-                ctx.moveTo(px1, py1)
-                ctx.lineTo(px2, py2)
-                ctx.lineTo(px2, zeroY)
-                ctx.lineTo(px1, zeroY)
-                ctx.closePath()
-                ctx.fillStyle = "#242ED3FF"
-                ctx.fill()
-            }
+                ctx.lineWidth = 6
+                ctx.strokeStyle = "#592ED3FF"
+                for (let i = 0; i < points.length; ++i) {
+                    const pt = points[i]
+                    const px = root.freqToX(pt.frequency) - root.plotX
+                    const py = root.gainToY(pt.magnitudeDb) - root.plotY
+                    if (i === 0) ctx.moveTo(px, py)
+                    else ctx.lineTo(px, py)
+                }
+                ctx.stroke()
 
-            // Halo Under-stroke
-            ctx.beginPath()
-            ctx.lineWidth = 6
-            ctx.strokeStyle = "#592ED3FF"
-            for (let i = 0; i < points.length; ++i) {
-                const pt = points[i]
-                const px = root.freqToX(pt.frequency)
-                const py = root.gainToY(pt.magnitudeDb)
-                if (i === 0) ctx.moveTo(px, py)
-                else ctx.lineTo(px, py)
+                // Main Stroke
+                ctx.beginPath()
+                ctx.lineWidth = 2
+                ctx.strokeStyle = "#FF2ED3FF"
+                for (let i = 0; i < points.length; ++i) {
+                    const pt = points[i]
+                    const px = root.freqToX(pt.frequency) - root.plotX
+                    const py = root.gainToY(pt.magnitudeDb) - root.plotY
+                    if (i === 0) ctx.moveTo(px, py)
+                    else ctx.lineTo(px, py)
+                }
+                ctx.stroke()
             }
-            ctx.stroke()
-
-            // Main Stroke
-            ctx.beginPath()
-            ctx.lineWidth = 2
-            ctx.strokeStyle = "#FF2ED3FF"
-            for (let i = 0; i < points.length; ++i) {
-                const pt = points[i]
-                const px = root.freqToX(pt.frequency)
-                const py = root.gainToY(pt.magnitudeDb)
-                if (i === 0) ctx.moveTo(px, py)
-                else ctx.lineTo(px, py)
-            }
-            ctx.stroke()
         }
     }
 
-    // Band Handles (Exact Board04 Colors)
+    // Band Handles (Unclipped Siblings Above plotArea)
     readonly property var bandColors: [
         "#FF2ED3FF", // Band 1
         "#FF2FD98F", // Band 2

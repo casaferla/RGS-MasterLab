@@ -9,6 +9,18 @@ Item {
     implicitWidth: 992
     implicitHeight: 612
 
+    readonly property bool isCompactActionMode: width < 916
+
+    function getFilterAbbrev(token) {
+        if (token === "BELL") return "BELL"
+        if (token === "NOTCH") return "NOTCH"
+        if (token === "LOW_SHELF") return "LS"
+        if (token === "HIGH_SHELF") return "HS"
+        if (token === "HIGH_PASS") return "HP"
+        if (token === "LOW_PASS") return "LP"
+        return token
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 12
@@ -139,7 +151,7 @@ Item {
                         readonly property bool isEnabledBand: modelData.enabled
 
                         objectName: "bandSelectorButton_" + index
-                        text: (index + 1) + " " + modelData.filter.replace("_", " ")
+                        text: (index + 1) + " " + root.getFilterAbbrev(modelData.filter)
                         selected: isSelectedBand
                         tone: isSelectedBand ? "primary" : "secondary"
                         minimumControlWidth: 90
@@ -161,7 +173,8 @@ Item {
 
                 StudioButton {
                     objectName: "addBandButton"
-                    text: "+ Add Band"
+                    text: root.isCompactActionMode ? "+ Add" : "+ Add Band"
+                    minimumControlWidth: root.isCompactActionMode ? 96 : 128
                     enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
                     onClicked: if (root.viewModel) root.viewModel.addBand()
                     Accessible.name: "Add Band"
@@ -169,7 +182,8 @@ Item {
 
                 StudioButton {
                     objectName: "removeBandButton"
-                    text: "- Remove Band"
+                    text: root.isCompactActionMode ? "- Remove" : "- Remove Band"
+                    minimumControlWidth: root.isCompactActionMode ? 96 : 128
                     enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
                     onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
                     Accessible.name: "Remove Band"
@@ -195,21 +209,20 @@ Item {
             border.width: 1
             radius: 6
 
-            ColumnLayout {
+            RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 16
                 anchors.rightMargin: 16
                 anchors.topMargin: 6
                 anchors.bottomMargin: 8
-                spacing: 4
+                spacing: 8
 
-                // Filter & Routing Row
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 28
-                    spacing: 8
+                // Left Column (160 lp): Band Enabled Toggle
+                ColumnLayout {
+                    Layout.preferredWidth: 160
+                    Layout.fillHeight: true
+                    spacing: 4
 
-                    // Left Column: Band Enabled
                     StudioToggle {
                         objectName: "bandEnabledToggle"
                         text: "Band " + (root.viewModel ? root.viewModel.selectedIndex + 1 : 1) + " Enabled"
@@ -218,64 +231,101 @@ Item {
                         Accessible.name: "Enable or disable band"
                     }
 
-                    Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
+                    Item { Layout.fillHeight: true }
+                }
 
-                    // Filter Selection (6 segments x 96 lp)
+                Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: "#2C5A78" }
+
+                // Right Column: Two Subrows + Numeric Tier
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 4
+
+                    // Subrow 1: Filter Selection (581 lp group)
                     RowLayout {
-                        spacing: 1
-                        Text { text: "FILTER:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
-                        Repeater {
-                            model: [
-                                { label: "Bell", token: "BELL" },
-                                { label: "Notch", token: "NOTCH" },
-                                { label: "Low Shelf", token: "LOW_SHELF" },
-                                { label: "High Shelf", token: "HIGH_SHELF" },
-                                { label: "High Pass", token: "HIGH_PASS" },
-                                { label: "Low Pass", token: "LOW_PASS" }
-                            ]
-                            delegate: StudioButton {
-                                required property var modelData
-                                objectName: "filterButton_" + modelData.token
-                                text: modelData.label
-                                minimumControlWidth: 96
-                                contentPadding: 4
-                                selected: root.viewModel && root.viewModel.filter === modelData.token
-                                tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
-                                onClicked: if (root.viewModel) root.viewModel.setFilter(modelData.token)
-                                Accessible.name: "Filter type " + modelData.label
-                                ToolTip.text: "Set filter type to " + modelData.label
-                                ToolTip.visible: hovered
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 28
+                        spacing: 8
+
+                        Text {
+                            text: "FILTER:"
+                            color: "#A1B5C9"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 12
+                            font.weight: Font.Bold
+                            Layout.preferredWidth: 56
+                        }
+
+                        RowLayout {
+                            spacing: 1
+                            Repeater {
+                                model: [
+                                    { label: "Bell", token: "BELL" },
+                                    { label: "Notch", token: "NOTCH" },
+                                    { label: "Low Shelf", token: "LOW_SHELF" },
+                                    { label: "High Shelf", token: "HIGH_SHELF" },
+                                    { label: "High Pass", token: "HIGH_PASS" },
+                                    { label: "Low Pass", token: "LOW_PASS" }
+                                ]
+                                delegate: StudioSegmentButton {
+                                    required property var modelData
+                                    objectName: "filterButton_" + modelData.token
+                                    text: modelData.label
+                                    minimumControlWidth: 96
+                                    contentPadding: 4
+                                    selected: root.viewModel && root.viewModel.filter === modelData.token
+                                    tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
+                                    onClicked: if (root.viewModel) root.viewModel.setFilter(modelData.token)
+                                    Accessible.name: "Filter type " + modelData.label
+                                    ToolTip.text: "Set filter type to " + modelData.label
+                                    ToolTip.visible: hovered
+                                }
                             }
                         }
+
+                        Item { Layout.fillWidth: true }
                     }
 
-                    Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
-
-                    // Routing Selection (5 segments x 80 lp)
+                    // Subrow 2: Routing Selection (404 lp group) + Mixed Badge (164 lp)
                     RowLayout {
-                        spacing: 1
-                        Text { text: "ROUTING:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
-                        Repeater {
-                            model: [
-                                { label: "Stereo", token: "STEREO" },
-                                { label: "Mid", token: "MID" },
-                                { label: "Side", token: "SIDE" },
-                                { label: "Left", token: "LEFT" },
-                                { label: "Right", token: "RIGHT" }
-                            ]
-                            delegate: StudioButton {
-                                required property var modelData
-                                objectName: "routingButton_" + modelData.token
-                                text: modelData.label
-                                minimumControlWidth: 80
-                                contentPadding: 4
-                                enabled: modelData.token === "STEREO" || (root.viewModel && root.viewModel.routeAvailable)
-                                selected: root.viewModel && root.viewModel.routing === modelData.token
-                                tone: root.viewModel && root.viewModel.routing === modelData.token ? "primary" : "secondary"
-                                onClicked: if (root.viewModel) root.viewModel.setRouting(modelData.token)
-                                Accessible.name: "Routing " + modelData.label
-                                ToolTip.text: "Set channel routing to " + modelData.label
-                                ToolTip.visible: hovered
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 28
+                        spacing: 8
+
+                        Text {
+                            text: "ROUTING:"
+                            color: "#A1B5C9"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 12
+                            font.weight: Font.Bold
+                            Layout.preferredWidth: 56
+                        }
+
+                        RowLayout {
+                            spacing: 1
+                            Repeater {
+                                model: [
+                                    { label: "Stereo", token: "STEREO" },
+                                    { label: "Mid", token: "MID" },
+                                    { label: "Side", token: "SIDE" },
+                                    { label: "Left", token: "LEFT" },
+                                    { label: "Right", token: "RIGHT" }
+                                ]
+                                delegate: StudioSegmentButton {
+                                    required property var modelData
+                                    objectName: "routingButton_" + modelData.token
+                                    text: modelData.label
+                                    minimumControlWidth: 80
+                                    contentPadding: 4
+                                    enabled: modelData.token === "STEREO" || (root.viewModel && root.viewModel.routeAvailable)
+                                    selected: root.viewModel && root.viewModel.routing === modelData.token
+                                    tone: root.viewModel && root.viewModel.routing === modelData.token ? "primary" : "secondary"
+                                    onClicked: if (root.viewModel) root.viewModel.setRouting(modelData.token)
+                                    Accessible.name: "Routing " + modelData.label
+                                    ToolTip.text: "Set channel routing to " + modelData.label
+                                    ToolTip.visible: hovered
+                                }
                             }
                         }
 
@@ -300,87 +350,87 @@ Item {
                                 font.weight: Font.DemiBold
                             }
                         }
+
+                        Item { Layout.fillWidth: true }
                     }
 
-                    Item { Layout.fillWidth: true }
-                }
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#1C3A59" }
 
-                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#1C3A59" }
-
-                // Numeric Fields Tier (50 lp)
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 50
-                    spacing: 16
-
-                    StudioNumericField {
-                        objectName: "frequencyField"
-                        labelText: "FREQUENCY"
-                        unitText: "Hz"
-                        fieldName: "frequency"
-                        rawText: root.viewModel ? root.viewModel.frequencyText : "1000"
-                        viewModel: root.viewModel
-                    }
-
-                    StudioNumericField {
-                        objectName: "gainField"
-                        visible: root.viewModel ? root.viewModel.gainApplicable : true
-                        labelText: "GAIN"
-                        unitText: "dB"
-                        fieldName: "gain"
-                        rawText: root.viewModel ? root.viewModel.gainText : "0"
-                        viewModel: root.viewModel
-                    }
-
-                    StudioNumericField {
-                        objectName: "qField"
-                        visible: root.viewModel ? root.viewModel.qApplicable : true
-                        labelText: "Q"
-                        unitText: ""
-                        fieldName: "q"
-                        rawText: root.viewModel ? root.viewModel.qText : "0.707"
-                        viewModel: root.viewModel
-                    }
-
-                    StudioNumericField {
-                        objectName: "shelfSlopeField"
-                        visible: root.viewModel ? root.viewModel.shelfSlopeApplicable : false
-                        labelText: "SHELF SLOPE"
-                        unitText: ""
-                        fieldName: "shelfSlope"
-                        rawText: root.viewModel ? root.viewModel.shelfSlopeText : "1"
-                        viewModel: root.viewModel
-                    }
-
-                    // HP/LP Slope DB/OCT (6 segments x 80 lp)
+                    // Numeric Fields Tier (50 lp)
                     RowLayout {
-                        visible: root.viewModel ? root.viewModel.slopeApplicable : false
-                        spacing: 1
-                        Text { text: "SLOPE:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
-                        Repeater {
-                            model: [6, 12, 18, 24, 36, 48]
-                            delegate: StudioButton {
-                                required property int modelData
-                                objectName: "slopeButton_" + modelData
-                                text: modelData + " dB"
-                                minimumControlWidth: 80
-                                contentPadding: 4
-                                selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
-                                tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
-                                onClicked: {
-                                    if (root.viewModel) {
-                                        root.viewModel.setDraftSlopeDbPerOct(modelData)
-                                        root.viewModel.commitDraft()
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 50
+                        spacing: 16
+
+                        StudioNumericField {
+                            objectName: "frequencyField"
+                            labelText: "FREQUENCY"
+                            unitText: "Hz"
+                            fieldName: "frequency"
+                            rawText: root.viewModel ? root.viewModel.frequencyText : "1000"
+                            viewModel: root.viewModel
+                        }
+
+                        StudioNumericField {
+                            objectName: "gainField"
+                            visible: root.viewModel ? root.viewModel.gainApplicable : true
+                            labelText: "GAIN"
+                            unitText: "dB"
+                            fieldName: "gain"
+                            rawText: root.viewModel ? root.viewModel.gainText : "0"
+                            viewModel: root.viewModel
+                        }
+
+                        StudioNumericField {
+                            objectName: "qField"
+                            visible: root.viewModel ? root.viewModel.qApplicable : true
+                            labelText: "Q"
+                            unitText: ""
+                            fieldName: "q"
+                            rawText: root.viewModel ? root.viewModel.qText : "0.707"
+                            viewModel: root.viewModel
+                        }
+
+                        StudioNumericField {
+                            objectName: "shelfSlopeField"
+                            visible: root.viewModel ? root.viewModel.shelfSlopeApplicable : false
+                            labelText: "SHELF SLOPE"
+                            unitText: ""
+                            fieldName: "shelfSlope"
+                            rawText: root.viewModel ? root.viewModel.shelfSlopeText : "1"
+                            viewModel: root.viewModel
+                        }
+
+                        // HP/LP Slope DB/OCT (6 segments x 80 lp)
+                        RowLayout {
+                            visible: root.viewModel ? root.viewModel.slopeApplicable : false
+                            spacing: 1
+                            Text { text: "SLOPE:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
+                            Repeater {
+                                model: [6, 12, 18, 24, 36, 48]
+                                delegate: StudioSegmentButton {
+                                    required property int modelData
+                                    objectName: "slopeButton_" + modelData
+                                    text: modelData + " dB"
+                                    minimumControlWidth: 80
+                                    contentPadding: 4
+                                    selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
+                                    tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
+                                    onClicked: {
+                                        if (root.viewModel) {
+                                            root.viewModel.setDraftSlopeDbPerOct(modelData)
+                                            root.viewModel.commitDraft()
+                                        }
                                     }
+                                    Accessible.name: "Slope " + modelData + " dB per octave"
+                                    ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
+                                    ToolTip.visible: hovered
                                 }
-                                Accessible.name: "Slope " + modelData + " dB per octave"
-                                ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
-                                ToolTip.visible: hovered
                             }
                         }
-                    }
 
-                    Item { Layout.fillWidth: true }
+                        Item { Layout.fillWidth: true }
+                    }
                 }
             }
         }

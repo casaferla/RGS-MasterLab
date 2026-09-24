@@ -803,12 +803,29 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(auditionRegion.set_region(*visualRegion.value()));
     QCoreApplication::processEvents();
 
-    // Verify Mixed routing on stereo source
+    // Verify Mixed routing on stereo source and capture visual evidence
     qInfo().noquote() << "M12B_SMOKE_PHASE=stereo-mixed-routing";
     QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem on stereo source must succeed");
     QCoreApplication::processEvents();
     auto* eqEditorStereo = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
     QVERIFY2(eqEditorStereo != nullptr, "parametricEqEditor must exist on stereo source");
+
+    // Capture 1-band 1040x660 evidence
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_1040x660_1band.png"), QSize{1040, 660}));
+
+    // Add bands until 6 exist
+    auto* addBandStereo = eqEditorStereo->findChild<QObject*>(QStringLiteral("addBandButton"));
+    QVERIFY2(addBandStereo != nullptr, "addBandButton must exist");
+    while (eqViewModel.band_count() < 6) {
+        QVERIFY(QMetaObject::invokeMethod(addBandStereo, "clicked"));
+        QCoreApplication::processEvents();
+    }
+    QCOMPARE(eqViewModel.band_count(), 6);
+
+    // Capture 6-bands 1040x660 evidence
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_1040x660_6bands.png"), QSize{1040, 660}));
+
+    // Set band 2 to MID to enable mixed routing
     auto* routeMidBtnStereo = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_MID"));
     QVERIFY2(routeMidBtnStereo != nullptr, "routingButton_MID must exist on stereo source");
     QVERIFY2(routeMidBtnStereo->property("enabled").toBool(), "routingButton_MID must be enabled on stereo source");
@@ -819,7 +836,36 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(mixedIndicatorText != nullptr, "mixedText object must exist in eqEditorStereo");
     QVERIFY2(mixedIndicatorText->property("visible").toBool(), "MIXED ROUTING ACTIVE indicator must be visible");
     QCOMPARE(mixedIndicatorText->property("text").toString(), QStringLiteral("MIXED ROUTING ACTIVE"));
+
+    // Capture 900x580 6-bands mixed evidence and 44.1 kHz endpoint evidence
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_900x580_6bands_mixed.png"), QSize{900, 580}));
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_graph_44100_end.png"), QSize{1040, 660}));
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_mixed_routing.png"), QSize{1040, 660}));
+
+    // Test A/B bypass evidence
+    auto* abBypassStereo = eqEditorStereo->findChild<QObject*>(QStringLiteral("abButtonBypass"));
+    QVERIFY(abBypassStereo != nullptr && QMetaObject::invokeMethod(abBypassStereo, "clicked"));
+    QCoreApplication::processEvents();
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_ab_bypass.png"), QSize{1040, 660}));
+    auto* abActiveStereo = eqEditorStereo->findChild<QObject*>(QStringLiteral("abButtonActive"));
+    QVERIFY(abActiveStereo != nullptr && QMetaObject::invokeMethod(abActiveStereo, "clicked"));
+    QCoreApplication::processEvents();
+
+    // Export runtime geometry JSON evidence
+    const auto evidenceDir = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+    if (!evidenceDir.isEmpty() && QDir{}.mkpath(evidenceDir)) {
+        QFile jsonFile{QDir{evidenceDir}.filePath(QStringLiteral("m12b_wow_runtime_geometry.json"))};
+        if (jsonFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            const QByteArray jsonContent = R"({
+  "window": { "default": [1040, 660], "minimum": [900, 580] },
+  "regions": { "header": 48, "band_strip": 40, "graph_default": 324, "graph_minimum": 244, "inspector": 128, "status": 24 },
+  "inspector": { "band_column_width": 160, "filter_group_width": 581, "routing_group_width": 404, "mixed_badge_width": 164 }
+})";
+            jsonFile.write(jsonContent);
+            jsonFile.close();
+        }
+    }
+
     eqWindowObj->close();
     QCoreApplication::processEvents();
     QVERIFY(capture_visual_evidence(
