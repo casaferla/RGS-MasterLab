@@ -876,9 +876,18 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_keyboard_focus.png"), QSize{1040, 660}));
     }
 
+    // Restore band 2 routing to STEREO before switching away from stereo source
+    auto* routeStereoBtnStereo = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_STEREO"));
+    QVERIFY2(routeStereoBtnStereo != nullptr, "routingButton_STEREO must exist");
+    QVERIFY2(QMetaObject::invokeMethod(routeStereoBtnStereo, "clicked"), "Clicking routingButton_STEREO must succeed");
+    QCoreApplication::processEvents();
+    QVERIFY2(!eqViewModel.mixed_routing(), "eqViewModel.mixedRouting must be false after restoring band 2 to STEREO");
+
     // Query OBSERVED runtime geometry at 1040x660 and 900x580
     eqWindowObj->resize(1040, 660);
+    QTest::qWait(50);
     QCoreApplication::processEvents();
+
     auto itemGeometry = [](QObject* obj) -> QString {
         auto* item = qobject_cast<QQuickItem*>(obj);
         if (item == nullptr) return QStringLiteral("[0,0,0,0]");
@@ -886,31 +895,59 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             .arg(item->x()).arg(item->y()).arg(item->width()).arg(item->height());
     };
 
-    auto* filterGroup = find_child_by_name(eqEditorStereo, QStringLiteral("filterButton_BELL")) ? find_child_by_name(eqEditorStereo, QStringLiteral("filterButton_BELL"))->parent() : nullptr;
-    auto* routingGroup = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_STEREO")) ? find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_STEREO"))->parent() : nullptr;
+    auto* addBtn1040 = eqEditorStereo->findChild<QObject*>(QStringLiteral("addBandButton"));
+    auto* removeBtn1040 = eqEditorStereo->findChild<QObject*>(QStringLiteral("removeBandButton"));
+    auto* bellBtn = find_child_by_name(eqEditorStereo, QStringLiteral("filterButton_BELL"));
+    auto* stereoBtn = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_STEREO"));
+    auto* leftBtn = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_LEFT"));
+
+    QVERIFY2(leftBtn != nullptr, "routingButton_LEFT must exist");
+    QVERIFY2(qobject_cast<QQuickItem*>(leftBtn)->isVisible(), "routingButton_LEFT must be visible at 1040x660");
+
+    const QString geomEditor1040 = itemGeometry(eqEditorStereo);
+    const QString geomAdd1040 = itemGeometry(addBtn1040);
+    const QString geomRemove1040 = itemGeometry(removeBtn1040);
+    const QString geomFilterGroup = itemGeometry(bellBtn ? bellBtn->parent() : nullptr);
+    const QString geomRoutingGroup = itemGeometry(stereoBtn ? stereoBtn->parent() : nullptr);
+    const QSize actualClient1040 = eqWindowObj->size();
+
+    // Resize to 900x580 and sample compact geometry
+    eqWindowObj->resize(900, 580);
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+
+    const QSize actualClient900 = eqWindowObj->size();
+    const QString geomAdd900 = itemGeometry(addBtn1040);
+    const QString geomRemove900 = itemGeometry(removeBtn1040);
+
+    QVERIFY2(qobject_cast<QQuickItem*>(leftBtn)->isVisible(), "routingButton_LEFT must remain visible at 900x580");
 
     const auto jsonGeometry = QString(R"({
+  "requested_1040x660": [1040, 660],
+  "actual_client_1040x660": [%1, %2],
   "observed_1040x660": {
-    "window": [1040, 660],
-    "editor": %1,
-    "add_button": %2,
-    "remove_button": %3,
-    "filter_group": %4,
-    "routing_group": %5
+    "editor": %3,
+    "add_button": %4,
+    "remove_button": %5,
+    "filter_group": %6,
+    "routing_group": %7
   },
+  "requested_900x580": [900, 580],
+  "actual_client_900x580": [%8, %9],
   "observed_900x580": {
-    "window": [900, 580],
-    "add_button_compact": %6,
-    "remove_button_compact": %7
+    "add_button_compact": %10,
+    "remove_button_compact": %11
   }
 })")
-        .arg(itemGeometry(eqEditorStereo))
-        .arg(itemGeometry(eqEditorStereo->findChild<QObject*>(QStringLiteral("addBandButton"))))
-        .arg(itemGeometry(eqEditorStereo->findChild<QObject*>(QStringLiteral("removeBandButton"))))
-        .arg(itemGeometry(filterGroup))
-        .arg(itemGeometry(routingGroup))
-        .arg(itemGeometry(eqEditorStereo->findChild<QObject*>(QStringLiteral("addBandButton"))))
-        .arg(itemGeometry(eqEditorStereo->findChild<QObject*>(QStringLiteral("removeBandButton"))));
+        .arg(actualClient1040.width()).arg(actualClient1040.height())
+        .arg(geomEditor1040)
+        .arg(geomAdd1040)
+        .arg(geomRemove1040)
+        .arg(geomFilterGroup)
+        .arg(geomRoutingGroup)
+        .arg(actualClient900.width()).arg(actualClient900.height())
+        .arg(geomAdd900)
+        .arg(geomRemove900);
 
     const auto evidenceDir = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
     if (!evidenceDir.isEmpty() && QDir{}.mkpath(evidenceDir)) {
@@ -929,6 +966,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem on 44.1 kHz source must succeed");
     QCoreApplication::processEvents();
+
+    // Explicitly wait for previewStatus to settle to READY on 44.1 kHz mono source
+    for (int i = 0; i < 100 && eqViewModel.preview_status() != QStringLiteral("READY"); ++i) {
+        QTest::qWait(10);
+    }
+    if (eqViewModel.preview_status() == QStringLiteral("ERROR")) {
+        QFAIL(qPrintable(QStringLiteral("EQ preview failed: ") + eqViewModel.preview_error()));
+    }
+    QCOMPARE(eqViewModel.preview_status(), QStringLiteral("READY"));
+    QVERIFY2(eqViewModel.preview_error().isEmpty(), "previewError must be empty for 44.1 kHz mono source");
+
     auto* eqEditor441 = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
     QVERIFY2(eqEditor441 != nullptr, "parametricEqEditor must exist on 44.1 kHz source");
     auto* eqGraph441 = eqEditor441->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
@@ -938,6 +986,18 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     // Capture 900x580 mono evidence
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_900x580_mono.png"), QSize{900, 580}));
+
+    // Verify mono routing restrictions
+    auto* routeStereoMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_STEREO"));
+    auto* routeMidMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_MID"));
+    auto* routeSideMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_SIDE"));
+    auto* routeLeftMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_LEFT"));
+    auto* routeRightMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_RIGHT"));
+    QVERIFY2(routeStereoMono && routeStereoMono->property("enabled").toBool(), "STEREO routing must be enabled on mono source");
+    QVERIFY2(routeMidMono && !routeMidMono->property("enabled").toBool(), "MID routing must be disabled on mono source");
+    QVERIFY2(routeSideMono && !routeSideMono->property("enabled").toBool(), "SIDE routing must be disabled on mono source");
+    QVERIFY2(routeLeftMono && !routeLeftMono->property("enabled").toBool(), "LEFT routing must be disabled on mono source");
+    QVERIFY2(routeRightMono && !routeRightMono->property("enabled").toBool(), "RIGHT routing must be disabled on mono source");
 
     eqWindowObj->close();
     QCoreApplication::processEvents();
