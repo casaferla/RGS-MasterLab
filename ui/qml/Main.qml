@@ -25,6 +25,51 @@ ApplicationWindow {
     readonly property color warning: "#F2B632"
     readonly property color error: "#F27683"
 
+    property rect normalGeometry: Qt.rect(100, 100, 1440, 900)
+
+    function captureNormalGeometry() {
+        if (root.visibility === Window.Windowed || (root.visibility !== Window.Maximized && root.visibility !== Window.Minimized && root.visibility !== Window.FullScreen)) {
+            normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
+        }
+    }
+
+    function toggleMaximizeRestore() {
+        if (root.visibility === Window.Maximized) {
+            restoreNormalWindow()
+        } else {
+            captureNormalGeometry()
+            root.showMaximized()
+        }
+    }
+
+    function restoreNormalWindow() {
+        root.showNormal()
+        restoreTimer.restart()
+    }
+
+    Timer {
+        id: restoreTimer
+        interval: 10
+        repeat: false
+        onTriggered: {
+            if (root.visibility !== Window.Maximized) {
+                if (root.normalGeometry.width > 0 && root.normalGeometry.height > 0) {
+                    root.width = Math.max(root.minimumWidth, root.normalGeometry.width)
+                    root.height = Math.max(root.minimumHeight, root.normalGeometry.height)
+                    if (root.normalGeometry.x >= 0 && root.normalGeometry.y >= 0) {
+                        root.x = root.normalGeometry.x
+                        root.y = root.normalGeometry.y
+                    }
+                }
+            }
+        }
+    }
+
+    onXChanged: captureNormalGeometry()
+    onYChanged: captureNormalGeometry()
+    onWidthChanged: captureNormalGeometry()
+    onHeightChanged: captureNormalGeometry()
+
     property string statusText: {
         if (projectSession.errorMessage.length > 0) return projectSession.errorMessage
         if (sourceSelection.errorMessage.length > 0) return sourceSelection.errorMessage
@@ -72,7 +117,37 @@ ApplicationWindow {
             color: root.surface
             border.color: root.border
 
-            MouseArea { anchors.fill: parent; acceptedButtons: Qt.LeftButton; onPressed: root.startSystemMove(); onDoubleClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized() }
+            MouseArea {
+                id: headerMouseArea
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton
+                hoverEnabled: true
+
+                property point pressPoint: Qt.point(0, 0)
+                property bool isDraggingFromMaximized: false
+
+                onPressed: function(mouse) {
+                    pressPoint = Qt.point(mouse.x, mouse.y)
+                    isDraggingFromMaximized = false
+                    if (root.visibility !== Window.Maximized) {
+                        root.startSystemMove()
+                    }
+                }
+
+                onPositionChanged: function(mouse) {
+                    if (pressed && root.visibility === Window.Maximized && !isDraggingFromMaximized) {
+                        const dx = mouse.x - pressPoint.x
+                        const dy = mouse.y - pressPoint.y
+                        if (Math.abs(dy) > 4 || Math.abs(dx) > 4) {
+                            isDraggingFromMaximized = true
+                            root.restoreNormalWindow()
+                            root.startSystemMove()
+                        }
+                    }
+                }
+
+                onDoubleClicked: root.toggleMaximizeRestore()
+            }
 
             RowLayout {
                 anchors.fill: parent
@@ -160,7 +235,7 @@ ApplicationWindow {
                 Row {
                     Layout.preferredHeight: 48; spacing: 0
                     StudioIconButton { objectName: "windowMinimizeButton"; width: 46; height: 48; controlSize: 46; iconKind: "minimize"; activeFocusOnTab: false; onClicked: root.showMinimized(); Accessible.name: "Minimize window" }
-                    StudioIconButton { objectName: "windowMaximizeButton"; width: 46; height: 48; controlSize: 46; iconKind: root.visibility === Window.Maximized ? "restore" : "maximize"; activeFocusOnTab: false; onClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized(); Accessible.name: root.visibility === Window.Maximized ? "Restore window" : "Maximize window" }
+                    StudioIconButton { objectName: "windowMaximizeButton"; width: 46; height: 48; controlSize: 46; iconKind: root.visibility === Window.Maximized ? "restore" : "maximize"; activeFocusOnTab: false; onClicked: root.toggleMaximizeRestore(); Accessible.name: root.visibility === Window.Maximized ? "Restore window" : "Maximize window" }
                     StudioIconButton { objectName: "windowCloseButton"; width: 48; height: 48; controlSize: 48; tone: "close"; iconKind: "close"; activeFocusOnTab: false; onClicked: root.close(); Accessible.name: "Close window" }
                 }
             }

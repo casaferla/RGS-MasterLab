@@ -1246,6 +1246,30 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QCOMPARE(cornerItem->property("height").toInt(), 8);
     }
 
+    // Maximize / Restore geometry preservation test
+    window->showNormal();
+    window->resize(1280, 720);
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    QCOMPARE(window->size(), QSize(1280, 720));
+
+    auto* windowMaximizeBtn = root->findChild<QObject*>(QStringLiteral("windowMaximizeButton"));
+    QVERIFY2(windowMaximizeBtn != nullptr, "windowMaximizeButton must exist");
+
+    // Click maximize
+    QVERIFY(QMetaObject::invokeMethod(windowMaximizeBtn, "clicked"));
+    QTest::qWait(100);
+    QCoreApplication::processEvents();
+    QCOMPARE(window->visibility(), QWindow::Maximized);
+
+    // Click restore
+    QVERIFY(QMetaObject::invokeMethod(windowMaximizeBtn, "clicked"));
+    QTest::qWait(100);
+    QCoreApplication::processEvents();
+    QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->width(), 1280);
+    QCOMPARE(window->height(), 720);
+
     window->resize(1184, 688);
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(1184, 688));
