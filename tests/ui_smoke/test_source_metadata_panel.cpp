@@ -876,6 +876,51 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_keyboard_focus.png"), QSize{1040, 660}));
     }
 
+    // Query OBSERVED runtime geometry at 1040x660 and 900x580
+    eqWindowObj->resize(1040, 660);
+    QCoreApplication::processEvents();
+    auto itemGeometry = [](QObject* obj) -> QString {
+        auto* item = qobject_cast<QQuickItem*>(obj);
+        if (item == nullptr) return QStringLiteral("[0,0,0,0]");
+        return QString("[%1,%2,%3,%4]")
+            .arg(item->x()).arg(item->y()).arg(item->width()).arg(item->height());
+    };
+
+    auto* filterGroup = find_child_by_name(eqEditorStereo, QStringLiteral("filterButton_BELL")) ? find_child_by_name(eqEditorStereo, QStringLiteral("filterButton_BELL"))->parent() : nullptr;
+    auto* routingGroup = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_STEREO")) ? find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_STEREO"))->parent() : nullptr;
+
+    const auto jsonGeometry = QString(R"({
+  "observed_1040x660": {
+    "window": [1040, 660],
+    "editor": %1,
+    "add_button": %2,
+    "remove_button": %3,
+    "filter_group": %4,
+    "routing_group": %5
+  },
+  "observed_900x580": {
+    "window": [900, 580],
+    "add_button_compact": %6,
+    "remove_button_compact": %7
+  }
+})")
+        .arg(itemGeometry(eqEditorStereo))
+        .arg(itemGeometry(eqEditorStereo->findChild<QObject*>(QStringLiteral("addBandButton"))))
+        .arg(itemGeometry(eqEditorStereo->findChild<QObject*>(QStringLiteral("removeBandButton"))))
+        .arg(itemGeometry(filterGroup))
+        .arg(itemGeometry(routingGroup))
+        .arg(itemGeometry(eqEditorStereo->findChild<QObject*>(QStringLiteral("addBandButton"))))
+        .arg(itemGeometry(eqEditorStereo->findChild<QObject*>(QStringLiteral("removeBandButton"))));
+
+    const auto evidenceDir = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+    if (!evidenceDir.isEmpty() && QDir{}.mkpath(evidenceDir)) {
+        QFile jsonFile{QDir{evidenceDir}.filePath(QStringLiteral("m12b_wow_runtime_geometry.json"))};
+        if (jsonFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            jsonFile.write(jsonGeometry.toUtf8());
+            jsonFile.close();
+        }
+    }
+
     eqWindowObj->close();
     QCoreApplication::processEvents();
 
@@ -893,51 +938,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     // Capture 900x580 mono evidence
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_900x580_mono.png"), QSize{900, 580}));
-
-    // Query OBSERVED runtime geometry at 1040x660 and 900x580
-    eqWindowObj->resize(1040, 660);
-    QCoreApplication::processEvents();
-    auto itemGeometry = [](QObject* obj) -> QString {
-        auto* item = qobject_cast<QQuickItem*>(obj);
-        if (item == nullptr) return QStringLiteral("[0,0,0,0]");
-        return QString("[%1,%2,%3,%4]")
-            .arg(item->x()).arg(item->y()).arg(item->width()).arg(item->height());
-    };
-
-    auto* filterGroup = find_child_by_name(eqEditor441, QStringLiteral("filterButton_BELL")) ? find_child_by_name(eqEditor441, QStringLiteral("filterButton_BELL"))->parent() : nullptr;
-    auto* routingGroup = find_child_by_name(eqEditor441, QStringLiteral("routingButton_STEREO")) ? find_child_by_name(eqEditor441, QStringLiteral("routingButton_STEREO"))->parent() : nullptr;
-
-    const auto jsonGeometry = QString(R"({
-  "observed_1040x660": {
-    "window": [1040, 660],
-    "editor": %1,
-    "add_button": %2,
-    "remove_button": %3,
-    "filter_group": %4,
-    "routing_group": %5
-  },
-  "observed_900x580": {
-    "window": [900, 580],
-    "add_button_compact": %6,
-    "remove_button_compact": %7
-  }
-})")
-        .arg(itemGeometry(eqEditor441))
-        .arg(itemGeometry(eqEditor441->findChild<QObject*>(QStringLiteral("addBandButton"))))
-        .arg(itemGeometry(eqEditor441->findChild<QObject*>(QStringLiteral("removeBandButton"))))
-        .arg(itemGeometry(filterGroup))
-        .arg(itemGeometry(routingGroup))
-        .arg(itemGeometry(eqEditor441->findChild<QObject*>(QStringLiteral("addBandButton"))))
-        .arg(itemGeometry(eqEditor441->findChild<QObject*>(QStringLiteral("removeBandButton"))));
-
-    const auto evidenceDir = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
-    if (!evidenceDir.isEmpty() && QDir{}.mkpath(evidenceDir)) {
-        QFile jsonFile{QDir{evidenceDir}.filePath(QStringLiteral("m12b_wow_runtime_geometry.json"))};
-        if (jsonFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            jsonFile.write(jsonGeometry.toUtf8());
-            jsonFile.close();
-        }
-    }
 
     eqWindowObj->close();
     QCoreApplication::processEvents();
