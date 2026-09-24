@@ -2,12 +2,33 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Item {
+Rectangle {
     id: root
     property var viewModel: null
 
     implicitWidth: 992
     implicitHeight: 612
+
+    // Board02 Editor Panel Material
+    radius: 8
+    color: "#0F2236"
+    border.color: "#27465F"
+    border.width: 1
+
+    gradient: Gradient {
+        GradientStop { position: 0.0; color: "#17324D" }
+        GradientStop { position: 1.0; color: "#0C1A2A" }
+    }
+
+    // Top highlight
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.margins: 1
+        height: 1
+        color: "#262A6C9F"
+    }
 
     readonly property bool isCompactActionMode: width < 916
 
@@ -23,6 +44,7 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
+        anchors.margins: 16
         spacing: 12
 
         // Header Strip (48 lp)
@@ -457,6 +479,18 @@ Item {
                 font.pixelSize: 12
                 visible: text.length > 0
                 elide: Text.ElideRight
+
+                ToolTip.text: text
+                ToolTip.visible: messageMouseArea.containsMouse && text.length > 0
+
+                Accessible.name: text
+                Accessible.description: text
+
+                MouseArea {
+                    id: messageMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                }
             }
         }
     }

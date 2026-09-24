@@ -837,10 +837,24 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(mixedIndicatorText->property("visible").toBool(), "MIXED ROUTING ACTIVE indicator must be visible");
     QCOMPARE(mixedIndicatorText->property("text").toString(), QStringLiteral("MIXED ROUTING ACTIVE"));
 
-    // Capture 900x580 6-bands mixed evidence and 44.1 kHz endpoint evidence
+    // Capture 900x580 6-bands mixed evidence
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_900x580_6bands_mixed.png"), QSize{900, 580}));
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_graph_44100_end.png"), QSize{1040, 660}));
     QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_mixed_routing.png"), QSize{1040, 660}));
+
+    // Test High Pass filter and capture 6 discrete slope choices
+    auto* filterHPStereo = find_child_by_name(eqEditorStereo, QStringLiteral("filterButton_HIGH_PASS"));
+    QVERIFY(filterHPStereo != nullptr && QMetaObject::invokeMethod(filterHPStereo, "clicked"));
+    QCoreApplication::processEvents();
+    for (int slopeVal : {6, 12, 18, 24, 36, 48}) {
+        auto* slopeBtn = find_child_by_name(eqEditorStereo, QString("slopeButton_%1").arg(slopeVal));
+        QVERIFY2(slopeBtn != nullptr, "All six slope buttons must exist for High Pass filter");
+    }
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_hp_lp_six_slope.png"), QSize{1040, 660}));
+
+    // Reset filter to Bell
+    auto* filterBellStereo = find_child_by_name(eqEditorStereo, QStringLiteral("filterButton_BELL"));
+    QVERIFY(filterBellStereo != nullptr && QMetaObject::invokeMethod(filterBellStereo, "clicked"));
+    QCoreApplication::processEvents();
 
     // Test A/B bypass evidence
     auto* abBypassStereo = eqEditorStereo->findChild<QObject*>(QStringLiteral("abButtonBypass"));
@@ -851,23 +865,84 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(abActiveStereo != nullptr && QMetaObject::invokeMethod(abActiveStereo, "clicked"));
     QCoreApplication::processEvents();
 
-    // Export runtime geometry JSON evidence
+    // Test keyboard focus evidence
+    auto* freqFieldStereo = find_child_by_name(eqEditorStereo, QStringLiteral("frequencyInput"));
+    if (auto* freqItem = qobject_cast<QQuickItem*>(freqFieldStereo)) {
+        eqWindowObj->requestActivate();
+        QTest::qWait(50);
+        QCoreApplication::processEvents();
+        freqItem->forceActiveFocus(Qt::TabFocusReason);
+        QCoreApplication::processEvents();
+        QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_keyboard_focus.png"), QSize{1040, 660}));
+    }
+
+    eqWindowObj->close();
+    QCoreApplication::processEvents();
+
+    // Load real 44.1 kHz WAV source to verify endpoint label and capture m12b_wow_graph_44100_end.png
+    model.selectSource(QUrl::fromLocalFile(validPath));
+    QCoreApplication::processEvents();
+    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem on 44.1 kHz source must succeed");
+    QCoreApplication::processEvents();
+    auto* eqEditor441 = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
+    QVERIFY2(eqEditor441 != nullptr, "parametricEqEditor must exist on 44.1 kHz source");
+    auto* eqGraph441 = eqEditor441->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
+    QVERIFY2(eqGraph441 != nullptr, "parametricEqGraph must exist on 44.1 kHz source");
+    QCOMPARE(eqGraph441->property("maxFreq").toDouble(), 19845.0);
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_graph_44100_end.png"), QSize{1040, 660}));
+
+    // Capture 900x580 mono evidence
+    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_900x580_mono.png"), QSize{900, 580}));
+
+    // Query OBSERVED runtime geometry at 1040x660 and 900x580
+    eqWindowObj->resize(1040, 660);
+    QCoreApplication::processEvents();
+    auto itemGeometry = [](QObject* obj) -> QString {
+        auto* item = qobject_cast<QQuickItem*>(obj);
+        if (item == nullptr) return QStringLiteral("[0,0,0,0]");
+        return QString("[%1,%2,%3,%4]")
+            .arg(item->x()).arg(item->y()).arg(item->width()).arg(item->height());
+    };
+
+    auto* filterGroup = find_child_by_name(eqEditor441, QStringLiteral("filterButton_BELL")) ? find_child_by_name(eqEditor441, QStringLiteral("filterButton_BELL"))->parent() : nullptr;
+    auto* routingGroup = find_child_by_name(eqEditor441, QStringLiteral("routingButton_STEREO")) ? find_child_by_name(eqEditor441, QStringLiteral("routingButton_STEREO"))->parent() : nullptr;
+
+    const auto jsonGeometry = QString(R"({
+  "observed_1040x660": {
+    "window": [1040, 660],
+    "editor": %1,
+    "add_button": %2,
+    "remove_button": %3,
+    "filter_group": %4,
+    "routing_group": %5
+  },
+  "observed_900x580": {
+    "window": [900, 580],
+    "add_button_compact": %6,
+    "remove_button_compact": %7
+  }
+})")
+        .arg(itemGeometry(eqEditor441))
+        .arg(itemGeometry(eqEditor441->findChild<QObject*>(QStringLiteral("addBandButton"))))
+        .arg(itemGeometry(eqEditor441->findChild<QObject*>(QStringLiteral("removeBandButton"))))
+        .arg(itemGeometry(filterGroup))
+        .arg(itemGeometry(routingGroup))
+        .arg(itemGeometry(eqEditor441->findChild<QObject*>(QStringLiteral("addBandButton"))))
+        .arg(itemGeometry(eqEditor441->findChild<QObject*>(QStringLiteral("removeBandButton"))));
+
     const auto evidenceDir = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
     if (!evidenceDir.isEmpty() && QDir{}.mkpath(evidenceDir)) {
         QFile jsonFile{QDir{evidenceDir}.filePath(QStringLiteral("m12b_wow_runtime_geometry.json"))};
         if (jsonFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            const QByteArray jsonContent = R"({
-  "window": { "default": [1040, 660], "minimum": [900, 580] },
-  "regions": { "header": 48, "band_strip": 40, "graph_default": 324, "graph_minimum": 244, "inspector": 128, "status": 24 },
-  "inspector": { "band_column_width": 160, "filter_group_width": 581, "routing_group_width": 404, "mixed_badge_width": 164 }
-})";
-            jsonFile.write(jsonContent);
+            jsonFile.write(jsonGeometry.toUtf8());
             jsonFile.close();
         }
     }
 
     eqWindowObj->close();
     QCoreApplication::processEvents();
+
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("main_shell_1440x900_postwow.png"), QSize{1440, 900}));
     QVERIFY(capture_visual_evidence(
         window,
         QStringLiteral("gui01_1440x900_prepared.png"),
