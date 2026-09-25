@@ -991,12 +991,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqViewModel.selected_index(), 0);
     QVERIFY2(eqViewModel.frequency_text().toDouble() > initialFreq, "Released frequency position must persist across re-selection");
 
-    // Restore band 2 routing to STEREO before switching away from stereo source
+    // Restore band 5 (6th band) routing to STEREO before switching away from stereo source
+    eqViewModel.selectBand(5);
+    QCoreApplication::processEvents();
     auto* routeStereoBtnStereo = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_STEREO"));
     QVERIFY2(routeStereoBtnStereo != nullptr, "routingButton_STEREO must exist");
     QVERIFY2(QMetaObject::invokeMethod(routeStereoBtnStereo, "clicked"), "Clicking routingButton_STEREO must succeed");
     QCoreApplication::processEvents();
-    QVERIFY2(!eqViewModel.mixed_routing(), "eqViewModel.mixedRouting must be false after restoring band 2 to STEREO");
+    QVERIFY2(!eqViewModel.mixed_routing(), "eqViewModel.mixedRouting must be false after restoring band 5 to STEREO");
 
     // Query OBSERVED runtime geometry at 1040x660 and 900x580
     eqWindowObj->resize(1040, 660);
