@@ -1272,13 +1272,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* rootQuickWindow = qobject_cast<QQuickWindow*>(window);
     QVERIFY(rootQuickWindow != nullptr);
 
+    rgsml::app::WindowsWindowChromeHelper testChromeHelper{rootQuickWindow};
+
     const HWND rootHwnd = reinterpret_cast<HWND>(rootQuickWindow->winId());
     QVERIFY(rootHwnd != nullptr);
     const LONG rootStyle = GetWindowLongW(rootHwnd, GWL_STYLE);
     QVERIFY2((rootStyle & WS_THICKFRAME) != 0, "rootQuickWindow must have WS_THICKFRAME style flag");
     QVERIFY2((rootStyle & WS_MAXIMIZEBOX) != 0, "rootQuickWindow must have WS_MAXIMIZEBOX style flag");
-
-    rgsml::app::WindowsWindowChromeHelper testChromeHelper{rootQuickWindow};
     const std::array chromeExclusionNames{
         QStringLiteral("desktopMenuBar"),
         QStringLiteral("headerAuditionTargetSelector"),
