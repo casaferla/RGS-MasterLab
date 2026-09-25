@@ -72,6 +72,14 @@ bool WindowsWindowChromeHelper::nativeEventFilter(
         return false;
     }
 
+    if (msg->message == WM_GETMINMAXINFO) {
+        auto* mmi = reinterpret_cast<MINMAXINFO*>(msg->lParam);
+        if (mmi != nullptr) {
+            mmi->ptMaxTrackSize.x = 10000;
+            mmi->ptMaxTrackSize.y = 10000;
+        }
+    }
+
     if (msg->message == WM_NCCALCSIZE) {
         if (msg->wParam == TRUE) {
             *result = 0;
