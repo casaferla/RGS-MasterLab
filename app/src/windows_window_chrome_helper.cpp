@@ -22,6 +22,10 @@ WindowsWindowChromeHelper::WindowsWindowChromeHelper(QQuickWindow* window)
     : window_(window)
 {
     if (window_ != nullptr) {
+        if (!window_->handle()) {
+            window_->create();
+        }
+        nativeWindowId_ = static_cast<quintptr>(window_->winId());
         QCoreApplication::instance()->installNativeEventFilter(this);
     }
 }
@@ -46,12 +50,12 @@ bool WindowsWindowChromeHelper::nativeEventFilter(
     qintptr* result)
 {
     Q_UNUSED(eventType);
-    if (window_ == nullptr || message == nullptr || result == nullptr) {
+    if (window_ == nullptr || nativeWindowId_ == 0 || message == nullptr || result == nullptr) {
         return false;
     }
 
     auto* msg = static_cast<MSG*>(message);
-    if (msg->hwnd != reinterpret_cast<HWND>(window_->winId())) {
+    if (msg->hwnd != reinterpret_cast<HWND>(nativeWindowId_)) {
         return false;
     }
 

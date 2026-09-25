@@ -24,6 +24,7 @@ public:
 
 private:
     QPointer<QQuickWindow> window_;
+    quintptr nativeWindowId_{0};
     std::vector<QPointer<QQuickItem>> exclusions_;
 };
 
