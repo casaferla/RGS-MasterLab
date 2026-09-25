@@ -26,25 +26,37 @@ ApplicationWindow {
     readonly property color error: "#F27683"
 
     property rect normalGeometry: Qt.rect(100, 100, 1440, 900)
+    property bool isChangingWindowState: false
 
     function captureNormalGeometry() {
-        if (root.visibility === Window.Windowed || (root.visibility !== Window.Maximized && root.visibility !== Window.Minimized && root.visibility !== Window.FullScreen)) {
+        if (!isChangingWindowState && root.visibility === Window.Windowed && root.windowState === Qt.WindowNoState) {
             normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
         }
     }
 
     function toggleMaximizeRestore() {
-        if (root.visibility === Window.Maximized) {
+        if (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized) {
             restoreNormalWindow()
         } else {
             captureNormalGeometry()
+            isChangingWindowState = true
             root.showMaximized()
+            stateResetTimer.restart()
         }
     }
 
     function restoreNormalWindow() {
+        isChangingWindowState = true
         root.showNormal()
         restoreTimer.restart()
+        stateResetTimer.restart()
+    }
+
+    Timer {
+        id: stateResetTimer
+        interval: 200
+        repeat: false
+        onTriggered: isChangingWindowState = false
     }
 
     Timer {
@@ -52,7 +64,7 @@ ApplicationWindow {
         interval: 10
         repeat: false
         onTriggered: {
-            if (root.visibility !== Window.Maximized) {
+            if (root.visibility !== Window.Maximized && root.windowState !== Qt.WindowMaximized) {
                 if (root.normalGeometry.width > 0 && root.normalGeometry.height > 0) {
                     root.width = Math.max(root.minimumWidth, root.normalGeometry.width)
                     root.height = Math.max(root.minimumHeight, root.normalGeometry.height)
