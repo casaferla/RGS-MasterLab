@@ -111,6 +111,7 @@ private slots:
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
     void playIntentIsRestoredAcrossTargetSwitches();
     void activeProcessedRealizationReplacementPreservesCueAndState();
+    void eofCueIsCanonicalizedToRangeBegin();
 };
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
@@ -347,6 +348,49 @@ void AuditionSourceSelectorTest::activeProcessedRealizationReplacementPreservesC
     QVERIFY(!selector.active_target());
     QCOMPARE(observed->state, core::PlaybackState::NO_SOURCE);
     QVERIFY(!selector.status_text().isEmpty());
+}
+
+void AuditionSourceSelectorTest::eofCueIsCanonicalizedToRangeBegin()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 100)));
+    QVERIFY(selector.set_processed_realization(realization(0, 100)));
+
+    // 1. PREPARED replay at EOF (cue == range.end() == 100) -> canonicalizes to 0
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    observed->position = core::FrameIndex{100}; // at EOF
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED)); // store cue 100
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{100});
+
+    // Replay PREPARED at EOF -> should canonicalize cue 100 to 0 and succeed
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{0});
+    QCOMPARE(observed->position.value(), std::int64_t{0});
+
+    // 2. PROCESSED replay at EOF
+    observed->position = core::FrameIndex{100}; // at EOF
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED)); // store cue 100
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{100});
+
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{0});
+    QCOMPARE(observed->position.value(), std::int64_t{0});
+
+    // 3. Processed realization replacement at EOF
+    observed->position = core::FrameIndex{100};
+    QVERIFY(selector.set_processed_realization(realization(0, 100)));
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{0});
+    QCOMPARE(observed->position.value(), std::int64_t{0});
+
+    // 4. Out of bounds cue rejections (cue < begin or cue > end)
+    observed->position = core::FrameIndex{150}; // cue > end (100)
+    QVERIFY(!selector.set_processed_realization(realization(0, 100)));
+    QVERIFY(!selector.active_target());
 }
 
 }  // namespace rgsml::tests

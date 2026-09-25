@@ -82,6 +82,15 @@ ApplicationWindow {
     onWidthChanged: captureNormalGeometry()
     onHeightChanged: captureNormalGeometry()
 
+    readonly property bool hasError: {
+        return projectSession.errorMessage.length > 0
+            || sourceSelection.errorMessage.length > 0
+            || goldSelection.errorMessage.length > 0
+            || auditionSelector.statusText.length > 0
+            || playbackTransport.errorMessage.length > 0
+            || auditionRegion.errorMessage.length > 0
+    }
+
     property string statusText: {
         if (projectSession.errorMessage.length > 0) return projectSession.errorMessage
         if (sourceSelection.errorMessage.length > 0) return sourceSelection.errorMessage
@@ -117,7 +126,10 @@ ApplicationWindow {
 
     onClosing: function(close) {
         if (playbackTransport.canStop) playbackTransport.stop()
-        if (eqWindow) eqWindow.close()
+        if (eqWindow) {
+            eqWindow.forceClose = true
+            eqWindow.close()
+        }
         close.accepted = true
     }
 
@@ -145,10 +157,8 @@ ApplicationWindow {
                 onPressed: function(mouse) {
                     pressPoint = Qt.point(mouse.x, mouse.y)
                     isDraggingFromMaximized = false
-                    if (Qt.platform.os !== "windows") {
-                        if (root.visibility !== Window.Maximized) {
-                            root.startSystemMove()
-                        }
+                    if (root.visibility !== Window.Maximized) {
+                        root.startSystemMove()
                     }
                 }
 
@@ -159,9 +169,7 @@ ApplicationWindow {
                         if (Math.abs(dy) > 4 || Math.abs(dx) > 4) {
                             isDraggingFromMaximized = true
                             root.restoreNormalWindow()
-                            if (Qt.platform.os !== "windows") {
-                                root.startSystemMove()
-                            }
+                            root.startSystemMove()
                         }
                     }
                 }
@@ -486,7 +494,7 @@ ApplicationWindow {
             border.color: root.border
             RowLayout {
                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
-                Rectangle { objectName: "statusReadyIndicator"; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: sourceSelection.errorMessage.length > 0 || goldSelection.errorMessage.length > 0 || playbackTransport.errorMessage.length > 0 ? root.error : "#00E6E6" }
+                Rectangle { objectName: "statusReadyIndicator"; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: root.hasError ? root.error : "#00E6E6" }
                 Label { objectName: "statusBarMessage"; Layout.fillWidth: true; text: root.statusText; color: root.textSecondary; font.pixelSize: 10; elide: Text.ElideRight }
             }
         }

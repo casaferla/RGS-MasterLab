@@ -166,6 +166,7 @@ public:
 
     Q_INVOKABLE void graphDrag(double frequency, double gain);
     Q_INVOKABLE void graphRelease();
+    Q_INVOKABLE void adjustSecondaryParameter(int steps, bool shiftPressed);
 
     // Trigger explicit preview render (e.g., when PREPARED realization becomes available)
     void trigger_preview();

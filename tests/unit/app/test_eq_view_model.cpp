@@ -74,6 +74,8 @@ private slots:
     void testSelectionOnlyNoCommitOrPreview();
     void testGraphDragReleaseAndPersistenceAcrossSelection();
     void testNonGainFilterGraphDragNoGainMutation();
+    void testDensifiedResponseGridIncludesExactF0AndLocalRefinement();
+    void testSecondaryParameterWheelAdjustmentAndDebounceCommit();
 };
 
 void EqViewModelTest::testInvalidTextDraftAndCommitRejection()
@@ -621,7 +623,7 @@ void EqViewModelTest::testSelectedBandResponseOnly()
 {
     EqViewModel vm;
     QVERIFY(!vm.selected_band_response_points().isEmpty());
-    QCOMPARE(vm.selected_band_response_points().size(), 100);
+    QVERIFY(vm.selected_band_response_points().size() >= 512);
 }
 
 void EqViewModelTest::testBandSummariesAndValidationPresentation()
@@ -664,7 +666,7 @@ void EqViewModelTest::testPreparedSampleRate44100ResponseGridRegression()
 
     const auto points = vm.selected_band_response_points();
     QVERIFY(!points.isEmpty());
-    QCOMPARE(points.size(), 100);
+    QVERIFY(points.size() >= 512);
 
     const auto firstPt = points.first().toMap();
     const auto lastPt = points.last().toMap();
@@ -741,6 +743,58 @@ void EqViewModelTest::testNonGainFilterGraphDragNoGainMutation()
     QCOMPARE(vm.preview_generation(), genBeforeDrag + 1U);
     QCOMPARE(vm.frequency(), 500.0);
     QCOMPARE(vm.gain(), originalGain);
+}
+
+void EqViewModelTest::testDensifiedResponseGridIncludesExactF0AndLocalRefinement()
+{
+    EqViewModel vm;
+    vm.setDraftFrequency(1234.5);
+    vm.setDraftQ(12.0); // High Q
+    vm.commitDraft();
+
+    const auto points = vm.selected_band_response_points();
+    QVERIFY(points.size() >= 512);
+    QVERIFY(points.size() <= 1024);
+
+    bool exactF0Found = false;
+    for (const auto& varPt : points) {
+        const double f = varPt.toMap().value("frequency").toDouble();
+        if (std::abs(f - 1234.5) < 1e-5) {
+            exactF0Found = true;
+            break;
+        }
+    }
+    QVERIFY2(exactF0Found, "Exact f0 (1234.5 Hz) must be present in the response grid");
+}
+
+void EqViewModelTest::testSecondaryParameterWheelAdjustmentAndDebounceCommit()
+{
+    EqViewModel vm;
+    const quint64 genStart = vm.preview_generation();
+
+    // 1. Bell filter Q adjustment (normal step vs shift step)
+    vm.setFilter(QStringLiteral("BELL"));
+    const double initialQ = vm.q();
+    vm.adjustSecondaryParameter(1, false); // Wheel up
+    QVERIFY(vm.q() > initialQ);
+    QCOMPARE(vm.preview_generation(), genStart); // No preview render per wheel step
+
+    vm.adjustSecondaryParameter(-1, true); // Shift wheel down
+    QVERIFY(vm.q() < initialQ * 1.03);
+
+    // 2. Shelf filter slope adjustment
+    vm.setFilter(QStringLiteral("LOW_SHELF"));
+    const double initialShelfSlope = vm.shelf_slope();
+    vm.adjustSecondaryParameter(-1, false); // Wheel down
+    QCOMPARE(vm.shelf_slope(), initialShelfSlope - 0.05);
+
+    // 3. High pass slope discrete stepping
+    vm.setFilter(QStringLiteral("HIGH_PASS"));
+    QCOMPARE(vm.slope_db_per_oct(), 12);
+    vm.adjustSecondaryParameter(1, false); // Wheel up
+    QCOMPARE(vm.slope_db_per_oct(), 18);
+    vm.adjustSecondaryParameter(-1, false); // Wheel down
+    QCOMPARE(vm.slope_db_per_oct(), 12);
 }
 
 }  // namespace

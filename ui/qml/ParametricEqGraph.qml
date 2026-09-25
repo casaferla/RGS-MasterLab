@@ -312,6 +312,30 @@ Rectangle {
                 property point pressScenePos: Qt.point(0, 0)
                 property bool isDragging: false
 
+                Timer {
+                    id: wheelDebounceTimer
+                    interval: 200
+                    repeat: false
+                    onTriggered: {
+                        if (root.viewModel) {
+                            root.viewModel.commitDraft()
+                        }
+                    }
+                }
+
+                onWheel: function(wheel) {
+                    if (!isSelected) {
+                        root.viewModel.selectBand(index)
+                    }
+                    const steps = wheel.angleDelta.y > 0 ? 1 : (wheel.angleDelta.y < 0 ? -1 : 0)
+                    if (steps !== 0) {
+                        const shiftPressed = (wheel.modifiers & Qt.ShiftModifier) !== 0
+                        root.viewModel.adjustSecondaryParameter(steps, shiftPressed)
+                        wheelDebounceTimer.restart()
+                    }
+                    wheel.accepted = true
+                }
+
                 onPressed: function(mouse) {
                     pressScenePos = mapToItem(root, mouse.x, mouse.y)
                     isDragging = false

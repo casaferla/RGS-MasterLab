@@ -390,7 +390,10 @@ core::Status AuditionSourceSelector::prepare_realization(
     const render::RenderResult& realization)
 {
     const auto range = realization.render_window();
-    if (sourceDerivedCue_ < range.begin() || sourceDerivedCue_ >= range.end()) {
+    if (sourceDerivedCue_.value() == range.end().value()) {
+        sourceDerivedCue_ = range.begin();
+    }
+    if (sourceDerivedCue_ < range.begin() || sourceDerivedCue_ > range.end()) {
         return unavailable("Source cue is outside the available realization range.");
     }
     auto prepared = playback_->prepare_pcm(realization.view());

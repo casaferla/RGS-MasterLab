@@ -47,8 +47,15 @@ ApplicationWindow {
         viewModel: root.viewModel
     }
 
+    property bool forceClose: false
+
     onClosing: function(close) {
-        close.accepted = false
-        root.hide()
+        if (forceClose) {
+            close.accepted = true
+            root.hide()
+        } else {
+            close.accepted = false
+            root.hide()
+        }
     }
 }

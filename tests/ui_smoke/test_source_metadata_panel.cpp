@@ -1323,6 +1323,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     eqWindowObj->close();
     QCoreApplication::processEvents();
     QVERIFY2(!eqToolWindow->property("visible").toBool(), "EQ tool window must be hidden after closing EQ alone");
+    QVERIFY2(!eqToolWindow->property("forceClose").toBool(), "EQ tool window forceClose must remain false when EQ is closed alone");
     QVERIFY2(window->isVisible(), "Main application window must remain visible after closing EQ tool window alone");
 
     // Reopen EQ window and verify it is visible
@@ -1424,8 +1425,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(validDraggablePt.x() >= 0, "A valid non-interactive draggable header test point must exist");
     testMsg.lParam = MAKELPARAM(validDraggablePt.x(), validDraggablePt.y());
     qintptr hitResult = 0;
-    QVERIFY(testChromeHelper.nativeEventFilter("windows_generic_MSG", &testMsg, &hitResult));
-    QCOMPARE(hitResult, static_cast<qintptr>(HTCAPTION));
+    // WM_NCHITTEST returns false so QML headerMouseArea startSystemMove() handles main window move authority
+    QVERIFY(!testChromeHelper.nativeEventFilter("windows_generic_MSG", &testMsg, &hitResult));
 
     // Test a point over windowCloseButton (exclusion item)
     auto* closeBtnItem = rootQuickWindow->findChild<QQuickItem*>(QStringLiteral("windowCloseButton"));

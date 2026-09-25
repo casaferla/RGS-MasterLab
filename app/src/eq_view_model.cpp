@@ -30,7 +30,7 @@ constexpr double kMinQ = 0.10;
 constexpr double kMaxQ = 12.0;
 constexpr double kMinSlope = 0.10;
 constexpr double kMaxSlope = 1.0;
-constexpr std::size_t kResponseGridPoints = 100;
+constexpr std::size_t kResponseGridPoints = 512;
 
 [[nodiscard]] QString filter_to_string(dsp::EqFilterType type)
 {
@@ -716,6 +716,51 @@ void EqViewModel::graphRelease()
     static_cast<void>(commitDraft());
 }
 
+void EqViewModel::adjustSecondaryParameter(int steps, bool shiftPressed)
+{
+    if (steps == 0) {
+        return;
+    }
+
+    switch (draftBand_.filter_type) {
+    case dsp::EqFilterType::BELL:
+    case dsp::EqFilterType::NOTCH: {
+        // Q multiplicative adjustment: normal ~3% per notch, Shift ~0.8% per notch
+        const double factor = shiftPressed ? 1.008 : 1.03;
+        double newQ = draftBand_.q * std::pow(factor, steps);
+        newQ = std::clamp(newQ, kMinQ, kMaxQ);
+        draftBand_.q = newQ;
+        draftBand_.q_text = QString::number(newQ, 'f', 3);
+        break;
+    }
+    case dsp::EqFilterType::LOW_SHELF:
+    case dsp::EqFilterType::HIGH_SHELF: {
+        // Shelf slope linear adjustment: normal ~0.05, Shift ~0.01
+        const double stepVal = shiftPressed ? 0.01 : 0.05;
+        double newSlope = draftBand_.shelf_slope + steps * stepVal;
+        newSlope = std::clamp(newSlope, kMinSlope, kMaxSlope);
+        draftBand_.shelf_slope = newSlope;
+        draftBand_.shelf_slope_text = QString::number(newSlope, 'f', 2);
+        break;
+    }
+    case dsp::EqFilterType::HIGH_PASS:
+    case dsp::EqFilterType::LOW_PASS: {
+        // Slope dB/oct discrete steps: 6, 12, 18, 24, 36, 48
+        const std::array<int, 6> slopes{6, 12, 18, 24, 36, 48};
+        int currentVal = static_cast<int>(draftBand_.slope_db_per_octave);
+        auto it = std::find(slopes.begin(), slopes.end(), currentVal);
+        int idx = (it != slopes.end()) ? static_cast<int>(std::distance(slopes.begin(), it)) : 1;
+        idx = std::clamp(idx + (steps > 0 ? 1 : -1), 0, static_cast<int>(slopes.size() - 1));
+        setDraftSlopeDbPerOct(slopes[static_cast<std::size_t>(idx)]);
+        return;
+    }
+    }
+
+    update_response_grid();
+    update_validation_state();
+    emit changed();
+}
+
 void EqViewModel::trigger_preview()
 {
     update_response_grid();
@@ -832,7 +877,9 @@ void EqViewModel::update_response_grid()
     const double logMax = std::log(maxF);
 
     std::vector<double> freqs;
-    freqs.reserve(kResponseGridPoints);
+    freqs.reserve(kResponseGridPoints + 128);
+
+    // 1. Baseline log-spaced points
     for (std::size_t i = 0; i < kResponseGridPoints; ++i) {
         if (i == 0) {
             freqs.push_back(minF);
@@ -845,7 +892,49 @@ void EqViewModel::update_response_grid()
         }
     }
 
-    auto pointsRes = dsp::evaluate_band_response(*bandOpt, freqs, current_sample_rate());
+    // 2. ALWAYS inject exact f0
+    const double f0 = draftBand_.frequency_hz;
+    if (f0 >= minF && f0 <= maxF) {
+        freqs.push_back(f0);
+    }
+
+    // 3. Add local refinement around f0 for High-Q Bell and Notch filters
+    if ((draftBand_.filter_type == dsp::EqFilterType::BELL || draftBand_.filter_type == dsp::EqFilterType::NOTCH)
+        && draftBand_.q > 1.0 && f0 >= minF && f0 <= maxF) {
+        // Fractional offsets around f0 based on Q width
+        const double bandwidthFrac = 1.0 / std::max(0.1, draftBand_.q);
+        const std::array<double, 12> localRatios{
+            1.0 - 0.5 * bandwidthFrac, 1.0 - 0.25 * bandwidthFrac,
+            1.0 - 0.1 * bandwidthFrac, 1.0 - 0.05 * bandwidthFrac,
+            1.0 - 0.02 * bandwidthFrac, 1.0 - 0.01 * bandwidthFrac,
+            1.0 + 0.01 * bandwidthFrac, 1.0 + 0.02 * bandwidthFrac,
+            1.0 + 0.05 * bandwidthFrac, 1.0 + 0.1 * bandwidthFrac,
+            1.0 + 0.25 * bandwidthFrac, 1.0 + 0.5 * bandwidthFrac
+        };
+        for (const double ratio : localRatios) {
+            const double rf = f0 * ratio;
+            if (rf >= minF && rf <= maxF) {
+                freqs.push_back(rf);
+            }
+        }
+    }
+
+    // 4. Sort and remove duplicates / near-duplicates
+    std::sort(freqs.begin(), freqs.end());
+    std::vector<double> uniqueFreqs;
+    uniqueFreqs.reserve(freqs.size());
+    for (const double f : freqs) {
+        if (uniqueFreqs.empty() || std::abs(f - uniqueFreqs.back()) > 1e-6) {
+            uniqueFreqs.push_back(f);
+        }
+    }
+
+    // 5. Enforce hard point count cap <= 1024
+    if (uniqueFreqs.size() > 1024) {
+        uniqueFreqs.resize(1024);
+    }
+
+    auto pointsRes = dsp::evaluate_band_response(*bandOpt, uniqueFreqs, current_sample_rate());
     if (!pointsRes) {
         return;
     }
