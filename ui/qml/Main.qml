@@ -28,13 +28,13 @@ ApplicationWindow {
     property rect normalGeometry: Qt.rect(100, 100, 1440, 900)
 
     function captureNormalGeometry() {
-        if (root.visibility === Window.Windowed || (root.visibility !== Window.Maximized && root.visibility !== Window.Minimized && root.visibility !== Window.FullScreen)) {
+        if ((root.visibility === Window.Windowed || root.visibility === Window.AutomaticVisibility) && root.windowState === Qt.WindowNoState) {
             normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
         }
     }
 
     function toggleMaximizeRestore() {
-        if (root.visibility === Window.Maximized) {
+        if (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized) {
             restoreNormalWindow()
         } else {
             captureNormalGeometry()
