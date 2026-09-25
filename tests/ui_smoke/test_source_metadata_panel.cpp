@@ -1391,9 +1391,38 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     testMsg.hwnd = reinterpret_cast<HWND>(rootQuickWindow->winId());
     testMsg.message = WM_NCHITTEST;
 
-    // Test a point over empty header space in the elastic spacer (x=700, y=20 in screen coordinates)
-    const QPoint globalHeaderPt = rootQuickWindow->mapToGlobal(QPoint{700, 20});
-    testMsg.lParam = MAKELPARAM(globalHeaderPt.x(), globalHeaderPt.y());
+    // Dynamically scan candidate points across header (y=20) outside all exclusions
+    std::vector<QQuickItem*> exclusionItems;
+    for (const auto& name : chromeExclusionNames) {
+        if (auto* item = rootQuickWindow->findChild<QQuickItem*>(name)) {
+            exclusionItems.push_back(item);
+        }
+    }
+
+    QPoint validDraggablePt{-1, -1};
+    const int winW = rootQuickWindow->width();
+    for (int candX = 10; candX <= winW - 10; candX += 10) {
+        const QPoint localPt{candX, 20};
+        const QPoint globalPt = rootQuickWindow->mapToGlobal(localPt);
+        bool insideExclusion = false;
+        for (auto* exclItem : exclusionItems) {
+            if (exclItem != nullptr && exclItem->isVisible() && exclItem->isEnabled()) {
+                const QPointF itemLocal = exclItem->mapFromGlobal(globalPt);
+                if (itemLocal.x() >= 0 && itemLocal.x() < exclItem->width()
+                    && itemLocal.y() >= 0 && itemLocal.y() < exclItem->height()) {
+                    insideExclusion = true;
+                    break;
+                }
+            }
+        }
+        if (!insideExclusion) {
+            validDraggablePt = globalPt;
+            break;
+        }
+    }
+
+    QVERIFY2(validDraggablePt.x() >= 0, "A valid non-interactive draggable header test point must exist");
+    testMsg.lParam = MAKELPARAM(validDraggablePt.x(), validDraggablePt.y());
     qintptr hitResult = 0;
     QVERIFY(testChromeHelper.nativeEventFilter("windows_generic_MSG", &testMsg, &hitResult));
     QCOMPARE(hitResult, static_cast<qintptr>(HTCAPTION));
