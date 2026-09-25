@@ -29,7 +29,7 @@ ApplicationWindow {
     property bool isChangingWindowState: false
 
     function captureNormalGeometry() {
-        if (!isChangingWindowState && root.visibility === Window.Windowed && root.windowState === Qt.WindowNoState) {
+        if (!isChangingWindowState && root.visibility === Window.Windowed) {
             normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
         }
     }
@@ -38,7 +38,7 @@ ApplicationWindow {
         if (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized) {
             restoreNormalWindow()
         } else {
-            captureNormalGeometry()
+            normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
             isChangingWindowState = true
             root.showMaximized()
             stateResetTimer.restart()
