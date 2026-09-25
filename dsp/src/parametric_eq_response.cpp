@@ -119,15 +119,51 @@ Result<std::vector<EqResponsePoint>> evaluate_band_response(
     const std::vector<double>& frequencies_hz,
     core::SampleRate sample_rate)
 {
+    const double Fs = static_cast<double>(sample_rate.value());
+    if (!std::isfinite(Fs) || Fs <= 0.0) {
+        return Result<std::vector<EqResponsePoint>>::failure(response_error(
+            ErrorCode::InvalidArgument,
+            "Sample rate must be positive binary64."));
+    }
+
+    auto single_param = ParametricEqParameters::create({band});
+    if (!single_param) {
+        return Result<std::vector<EqResponsePoint>>::failure(*single_param.error());
+    }
+
+    auto coeffs_res = internal::compute_parametric_eq_coefficients(*single_param.value(), Fs);
+    if (!coeffs_res) {
+        return Result<std::vector<EqResponsePoint>>::failure(*coeffs_res.error());
+    }
+
     std::vector<EqResponsePoint> points;
     points.reserve(frequencies_hz.size());
-    for (const double f : frequencies_hz) {
-        auto pt = evaluate_band_point(band, f, sample_rate);
-        if (!pt) {
-            return Result<std::vector<EqResponsePoint>>::failure(*pt.error());
+
+    for (const double frequency_hz : frequencies_hz) {
+        if (!std::isfinite(frequency_hz) || frequency_hz < 0.0) {
+            return Result<std::vector<EqResponsePoint>>::failure(response_error(
+                ErrorCode::InvalidArgument,
+                "Frequency must be finite and non-negative."));
         }
-        points.push_back(std::move(*pt.value()));
+        if (frequency_hz > 0.45 * Fs) {
+            return Result<std::vector<EqResponsePoint>>::failure(response_error(
+                ErrorCode::OutOfRange,
+                "Frequency exceeds 0.45 * Fs limit."));
+        }
+
+        std::complex<double> H_total(1.0, 0.0);
+        for (const auto& b : coeffs_res.value()->bands) {
+            if (!b.enabled) {
+                continue;
+            }
+            for (const auto& sec : b.sections) {
+                H_total *= evaluate_biquad_transfer(sec.coeffs, frequency_hz, Fs);
+            }
+        }
+
+        points.push_back(make_response_point(frequency_hz, H_total));
     }
+
     return Result<std::vector<EqResponsePoint>>::success(std::move(points));
 }
 
