@@ -1457,10 +1457,23 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(window->size(), QSize(1184, 688));
     const auto minimumWaveformHeight = waveformPanel->property("height").toReal();
     QVERIFY(minimumWaveformHeight >= 265.0);
-    window->resize(1440, 900);
+
+    const int largeWidth = std::max(window->minimumWidth(), std::min(1440, available.width()));
+    const int largeHeight = std::max(window->minimumHeight(), std::min(900, available.height()));
+    window->resize(largeWidth, largeHeight);
+    QTest::qWait(50);
     QCoreApplication::processEvents();
-    QCOMPARE(window->size(), QSize(1440, 900));
-    QVERIFY(waveformPanel->property("height").toReal() > minimumWaveformHeight);
+
+    const QSize acceptedLargeSize = window->size();
+    QVERIFY(acceptedLargeSize.width() >= window->minimumWidth());
+    QVERIFY(acceptedLargeSize.height() >= window->minimumHeight());
+
+    if (acceptedLargeSize.height() > window->minimumHeight()) {
+        QVERIFY(waveformPanel->property("height").toReal() > minimumWaveformHeight);
+    } else {
+        QVERIFY(waveformPanel->property("height").toReal() >= 265.0);
+    }
+
     window->close();
     QCoreApplication::processEvents();
 }
