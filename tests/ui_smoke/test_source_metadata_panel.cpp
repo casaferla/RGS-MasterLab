@@ -32,6 +32,19 @@
 
 #include <memory>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#include <windows.h>
+#include <windowsx.h>
+#endif
+
 namespace rgsml::tests {
 namespace {
 
@@ -1255,17 +1268,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(window->size(), QSize(1280, 720));
 
 #ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-
-#include <windows.h>
-#include <windowsx.h>
-
     // Native Windows Window Chrome Helper Hit-Test Exclusions
     auto* rootQuickWindow = qobject_cast<QQuickWindow*>(window);
     QVERIFY(rootQuickWindow != nullptr);
