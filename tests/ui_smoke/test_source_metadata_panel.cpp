@@ -923,6 +923,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* eqGraphItem = qobject_cast<QQuickItem*>(eqGraphObj);
     QVERIFY2(eqGraphItem != nullptr, "parametricEqGraph must be a QQuickItem");
 
+    // Set Band 0 frequency to 100 Hz so its handle is spatially separated from other bands
+    eqViewModel.selectBand(0);
+    eqViewModel.setDraftFrequencyText(QStringLiteral("100"));
+    QVERIFY(eqViewModel.commitDraft());
+    QCoreApplication::processEvents();
+
     // Obtain delegate handle item for band 0 (index 0)
     QQuickItem* band0HandleItem = nullptr;
     for (auto* childItem : eqGraphItem->childItems()) {
