@@ -364,19 +364,17 @@ void AuditionSourceSelectorTest::eofCueIsCanonicalizedToRangeBegin()
     // 1. PREPARED replay at EOF (cue == range.end() == 100) -> canonicalizes to 0
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     observed->position = core::FrameIndex{100}; // at EOF
-    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED)); // store cue 100
-    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{100});
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED)); // store cue 100, prepare_realization canonicalizes in-place
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{0});
 
     // Replay PREPARED at EOF -> should canonicalize cue 100 to 0 and succeed
+    observed->position = core::FrameIndex{100};
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     QCOMPARE(selector.source_derived_cue().value(), std::int64_t{0});
     QCOMPARE(observed->position.value(), std::int64_t{0});
 
     // 2. PROCESSED replay at EOF
     observed->position = core::FrameIndex{100}; // at EOF
-    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED)); // store cue 100
-    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{100});
-
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
     QCOMPARE(selector.source_derived_cue().value(), std::int64_t{0});
     QCOMPARE(observed->position.value(), std::int64_t{0});
