@@ -26,6 +26,19 @@ WindowsWindowChromeHelper::WindowsWindowChromeHelper(QQuickWindow* window)
             window_->create();
         }
         nativeWindowId_ = static_cast<quintptr>(window_->winId());
+
+        const auto hwnd = reinterpret_cast<HWND>(nativeWindowId_);
+        const LONG style = GetWindowLongW(hwnd, GWL_STYLE);
+        SetWindowLongW(hwnd, GWL_STYLE, style | WS_THICKFRAME | WS_MAXIMIZEBOX | WS_CAPTION | WS_SYSMENU);
+        SetWindowPos(
+            hwnd,
+            nullptr,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+
         QCoreApplication::instance()->installNativeEventFilter(this);
     }
 }
@@ -57,6 +70,13 @@ bool WindowsWindowChromeHelper::nativeEventFilter(
     auto* msg = static_cast<MSG*>(message);
     if (msg->hwnd != reinterpret_cast<HWND>(nativeWindowId_)) {
         return false;
+    }
+
+    if (msg->message == WM_NCCALCSIZE) {
+        if (msg->wParam == TRUE) {
+            *result = 0;
+            return true;
+        }
     }
 
     if (msg->message == WM_NCHITTEST) {

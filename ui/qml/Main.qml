@@ -129,8 +129,10 @@ ApplicationWindow {
                 onPressed: function(mouse) {
                     pressPoint = Qt.point(mouse.x, mouse.y)
                     isDraggingFromMaximized = false
-                    if (root.visibility !== Window.Maximized) {
-                        root.startSystemMove()
+                    if (Qt.platform.os !== "windows") {
+                        if (root.visibility !== Window.Maximized) {
+                            root.startSystemMove()
+                        }
                     }
                 }
 
@@ -141,7 +143,9 @@ ApplicationWindow {
                         if (Math.abs(dy) > 4 || Math.abs(dx) > 4) {
                             isDraggingFromMaximized = true
                             root.restoreNormalWindow()
-                            root.startSystemMove()
+                            if (Qt.platform.os !== "windows") {
+                                root.startSystemMove()
+                            }
                         }
                     }
                 }
