@@ -95,7 +95,7 @@ ApplicationWindow {
     FileDialog { id: goldDialog; objectName: "goldFileDialog"; title: "Open Gold Reference WAV"; fileMode: FileDialog.OpenFile; nameFilters: ["WAV audio (*.wav *.wave)"]; onAccepted: goldSelection.selectGold(selectedFile); onRejected: goldSelection.cancelGoldSelection() }
     FileDialog { id: projectOpenDialog; objectName: "projectOpenFileDialog"; title: "Open RGS MasterLab Project"; fileMode: FileDialog.OpenFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.openProject(selectedFile); onRejected: projectSession.cancelProjectOpen() }
     FileDialog { id: projectSaveDialog; objectName: "projectSaveFileDialog"; title: "Save RGS MasterLab Project As"; fileMode: FileDialog.SaveFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.saveProjectAs(selectedFile); onRejected: projectSession.cancelProjectSave() }
-    ParametricEqEditorWindow { id: eqWindow; objectName: "parametricEqToolWindow"; viewModel: eqViewModel }
+    ParametricEqEditorWindow { id: eqWindow; objectName: "parametricEqToolWindow"; viewModel: eqViewModel; transientParent: root }
 
     Shortcut {
         sequence: "F10"
@@ -103,7 +103,11 @@ ApplicationWindow {
         onActivated: desktopMenu.forceActiveFocus(Qt.ShortcutFocusReason)
     }
 
-    onClosing: function(close) { if (playbackTransport.canStop) playbackTransport.stop(); close.accepted = true }
+    onClosing: function(close) {
+        if (playbackTransport.canStop) playbackTransport.stop()
+        if (eqWindow) eqWindow.close()
+        close.accepted = true
+    }
 
     Column {
         anchors.fill: parent

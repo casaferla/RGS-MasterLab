@@ -165,16 +165,18 @@ Rectangle {
                 spacing: 8
 
                 Repeater {
-                    model: root.viewModel ? root.viewModel.bandSummaries : []
+                    model: root.viewModel ? root.viewModel.bandCount : 0
                     delegate: StudioButton {
-                        required property var modelData
                         required property int index
 
+                        readonly property var bandSummary: (root.viewModel && root.viewModel.bandSummaries && index < root.viewModel.bandSummaries.length) ? root.viewModel.bandSummaries[index] : null
                         readonly property bool isSelectedBand: root.viewModel !== null && root.viewModel.selectedIndex === index
-                        readonly property bool isEnabledBand: modelData.enabled
+                        readonly property bool isEnabledBand: bandSummary ? bandSummary.enabled : true
+                        readonly property string filterType: bandSummary ? bandSummary.filter : "BELL"
+                        readonly property string routingType: bandSummary ? bandSummary.routing : "STEREO"
 
                         objectName: "bandSelectorButton_" + index
-                        text: (index + 1) + " " + root.getFilterAbbrev(modelData.filter)
+                        text: (index + 1) + " " + root.getFilterAbbrev(filterType)
                         selected: isSelectedBand
                         tone: isSelectedBand ? "primary" : "secondary"
                         minimumControlWidth: 90
@@ -184,8 +186,8 @@ Rectangle {
 
                         onClicked: if (root.viewModel) root.viewModel.selectBand(index)
 
-                        Accessible.name: "Band " + (index + 1) + " " + modelData.filter.replace("_", " ") + (isEnabledBand ? "" : " (disabled)")
-                        ToolTip.text: "Select Band " + (index + 1) + " (" + modelData.filter.replace("_", " ") + ", " + modelData.routing + ")"
+                        Accessible.name: "Band " + (index + 1) + " " + filterType.replace("_", " ") + (isEnabledBand ? "" : " (disabled)")
+                        ToolTip.text: "Select Band " + (index + 1) + " (" + filterType.replace("_", " ") + ", " + routingType + ")"
                         ToolTip.visible: hovered
                     }
                 }

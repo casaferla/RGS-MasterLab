@@ -916,6 +916,75 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_keyboard_focus.png"), QSize{1040, 660}));
     }
 
+    // Real QML multi-move graph handle drag smoke test
+    qInfo().noquote() << "M12B_SMOKE_PHASE=real-graph-handle-multi-drag";
+    auto* eqGraphObj = eqEditorStereo->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
+    QVERIFY2(eqGraphObj != nullptr, "parametricEqGraph must exist for real drag smoke test");
+    auto* eqGraphItem = qobject_cast<QQuickItem*>(eqGraphObj);
+    QVERIFY2(eqGraphItem != nullptr, "parametricEqGraph must be a QQuickItem");
+
+    // Obtain delegate handle item for band 0 (index 0)
+    QQuickItem* band0HandleItem = nullptr;
+    for (auto* childItem : eqGraphItem->childItems()) {
+        if (childItem != nullptr && childItem->property("index").isValid() && childItem->property("index").toInt() == 0) {
+            band0HandleItem = childItem;
+            break;
+        }
+    }
+    QVERIFY2(band0HandleItem != nullptr, "Band 0 handle delegate item must exist in graph");
+    QPointer<QQuickItem> trackedHandleDelegate = band0HandleItem;
+
+    eqWindowObj->requestActivate();
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+
+    const QPoint handleCenterLocal = QPoint{
+        static_cast<int>(band0HandleItem->width() * 0.5),
+        static_cast<int>(band0HandleItem->height() * 0.5)
+    };
+    const QPoint handleCenterScene = band0HandleItem->mapToScene(handleCenterLocal).toPoint();
+
+    const quint64 genBeforeDrag = eqViewModel.preview_generation();
+    const double initialFreq = eqViewModel.frequency_text().toDouble();
+    const double initialGain = eqViewModel.gain_text().toDouble();
+
+    // Mouse press on actual handle
+    QTest::mousePress(eqWindowObj, Qt::LeftButton, Qt::NoModifier, handleCenterScene);
+    QTest::qWait(20);
+    QCoreApplication::processEvents();
+
+    // issue MULTIPLE mouseMove events across substantial horizontal/vertical distance
+    QPoint dragPt = handleCenterScene;
+    for (int step = 1; step <= 5; ++step) {
+        dragPt += QPoint{15, -10}; // Move right and up
+        QTest::mouseMove(eqWindowObj, dragPt);
+        QTest::qWait(20);
+        QCoreApplication::processEvents();
+
+        QVERIFY2(!trackedHandleDelegate.isNull(), "Handle delegate must NOT be destroyed/recreated during drag move step");
+        QCOMPARE(eqViewModel.preview_generation(), genBeforeDrag); // No render requested on intermediate drag moves
+    }
+
+    QVERIFY2(eqViewModel.frequency_text().toDouble() > initialFreq, "Draft frequency must continuously update during drag");
+    QVERIFY2(eqViewModel.gain_text().toDouble() > initialGain, "Draft gain must continuously update during drag");
+
+    // Mouse release
+    QTest::mouseRelease(eqWindowObj, Qt::LeftButton, Qt::NoModifier, dragPt);
+    QTest::qWait(20);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(eqViewModel.preview_generation(), genBeforeDrag + 1U); // Exactly one preview generation increment on release
+
+    // Select another band then select dragged band again to verify persistence
+    eqViewModel.selectBand(1);
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.selected_index(), 1);
+
+    eqViewModel.selectBand(0);
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.selected_index(), 0);
+    QVERIFY2(eqViewModel.frequency_text().toDouble() > initialFreq, "Released frequency position must persist across re-selection");
+
     // Restore band 2 routing to STEREO before switching away from stereo source
     auto* routeStereoBtnStereo = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_STEREO"));
     QVERIFY2(routeStereoBtnStereo != nullptr, "routingButton_STEREO must exist");
@@ -1242,8 +1311,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(routeLeftMono && !routeLeftMono->property("enabled").toBool(), "LEFT routing must be disabled on mono source");
     QVERIFY2(routeRightMono && !routeRightMono->property("enabled").toBool(), "RIGHT routing must be disabled on mono source");
 
+    // Test Blocker C EQ tool window lifetime: Close EQ alone -> EQ hidden, Main remains open
     eqWindowObj->close();
     QCoreApplication::processEvents();
+    QVERIFY2(!eqToolWindow->property("visible").toBool(), "EQ tool window must be hidden after closing EQ alone");
+    QVERIFY2(window->isVisible(), "Main application window must remain visible after closing EQ tool window alone");
+
+    // Reopen EQ window and verify it is visible
+    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Re-triggering View -> Parametric EQ must reopen tool window");
+    QCoreApplication::processEvents();
+    QVERIFY2(eqToolWindow->property("visible").toBool(), "EQ tool window must be visible after reopening");
 
     const std::array cornerNames{
         QStringLiteral("resizeTopLeft"),

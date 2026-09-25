@@ -253,15 +253,17 @@ Rectangle {
     ]
 
     Repeater {
-        model: root.viewModel ? root.viewModel.bandSummaries : []
+        model: root.viewModel ? root.viewModel.bandCount : 0
         delegate: Item {
-            required property var modelData
             required property int index
 
+            readonly property var bandSummary: (root.viewModel && root.viewModel.bandSummaries && index < root.viewModel.bandSummaries.length) ? root.viewModel.bandSummaries[index] : null
             readonly property bool isSelected: root.viewModel !== null && root.viewModel.selectedIndex === index
-            readonly property bool isEnabled: modelData.enabled
-            readonly property real handleX: root.freqToX(modelData.frequency)
-            readonly property real handleY: root.gainToY(modelData.gainApplicable ? modelData.gain : 0)
+            readonly property bool isEnabled: bandSummary ? bandSummary.enabled : true
+            readonly property real bandFreq: bandSummary ? bandSummary.frequency : 1000.0
+            readonly property real bandGain: (bandSummary && bandSummary.gainApplicable) ? bandSummary.gain : 0.0
+            readonly property real handleX: root.freqToX(bandFreq)
+            readonly property real handleY: root.gainToY(bandGain)
 
             x: handleX - handleCircle.width / 2
             y: handleY - handleCircle.height / 2
