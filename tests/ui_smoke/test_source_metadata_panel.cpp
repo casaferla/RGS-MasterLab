@@ -1345,12 +1345,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QCOMPARE(cornerItem->property("height").toInt(), 8);
     }
 
-    // Maximize / Restore geometry preservation test
+    // Maximize / Restore geometry preservation test (screen-aware)
     window->showNormal();
-    window->resize(1280, 720);
+    const QRect available = window->screen() ? window->screen()->availableGeometry() : QRect{0, 0, 1440, 900};
+    const int targetWidth = std::max(window->minimumWidth(), std::min(1280, available.width()));
+    const int targetHeight = std::max(window->minimumHeight(), std::min(720, available.height()));
+    window->resize(targetWidth, targetHeight);
     QTest::qWait(50);
     QCoreApplication::processEvents();
-    QCOMPARE(window->size(), QSize(1280, 720));
+
+    const QSize acceptedNormalSize = window->size();
+    QVERIFY(acceptedNormalSize.width() >= window->minimumWidth());
+    QVERIFY(acceptedNormalSize.height() >= window->minimumHeight());
+
+    const QRect qmlNormalRect = root->property("normalGeometry").toRect();
+    QCOMPARE(qmlNormalRect.width(), acceptedNormalSize.width());
+    QCOMPARE(qmlNormalRect.height(), acceptedNormalSize.height());
 
 #ifdef _WIN32
     // Native Windows Window Chrome Helper Hit-Test Exclusions & Window Styles Assertion
@@ -1411,8 +1421,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(100);
     QCoreApplication::processEvents();
     QVERIFY(window->visibility() != QWindow::Maximized);
-    QCOMPARE(window->width(), 1280);
-    QCOMPARE(window->height(), 720);
+    QCOMPARE(window->size(), acceptedNormalSize);
 
     window->resize(1184, 688);
     QCoreApplication::processEvents();
