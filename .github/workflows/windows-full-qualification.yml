@@ -34,9 +34,12 @@ jobs:
         run: |
           cmake --build --preset windows-msvc-debug-clean
 
+      # GitHub-hosted Windows runners expose no physical audio output endpoints.
+      # playback_device label (rgsml_playback_device_probe) is excluded from headless CI only.
+      # Real hardware playback device qualification remains mandatory at manual Windows PO Gate M.
       - name: Run Full Debug CTest
         run: |
-          ctest --preset windows-msvc-debug --output-on-failure
+          ctest --preset windows-msvc-debug --output-on-failure -LE playback_device
 
       - name: Clean-build Release
         run: |
@@ -44,7 +47,7 @@ jobs:
 
       - name: Run Full Release CTest
         run: |
-          ctest --preset windows-msvc-release --output-on-failure
+          ctest --preset windows-msvc-release --output-on-failure -LE playback_device
 
       - name: Configure Release (Tests OFF)
         run: |
@@ -63,3 +66,10 @@ jobs:
       - name: Run Deploy Smoke Test
         run: |
           & build/windows-msvc/stage/CI/Release/bin/RGSMasterLab.exe --rgsml-deploy-smoke
+
+      - name: Upload Staged Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-MasterLab-Windows-Staged-Release-${{ github.sha }}
+          path: build/windows-msvc/stage/CI/Release/**
+          retention-days: 7
