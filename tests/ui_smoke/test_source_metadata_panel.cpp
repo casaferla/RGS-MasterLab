@@ -1473,14 +1473,19 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(100);
     QCoreApplication::processEvents();
     QCOMPARE(window->visibility(), QWindow::Maximized);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("restore"));
 
     QVERIFY(QMetaObject::invokeMethod(windowMaximizeBtn, "clicked"));
     QTest::qWait(100);
     QCoreApplication::processEvents();
     QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->visibility(), QWindow::Windowed);
     QCOMPARE(window->size(), acceptedNormalSize);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("maximize"));
 
     // Path B: Native/External Maximize (showMaximized) -> Custom Restore button click
+    // Note: CI offscreen platform cannot run native Windows Aero drag gesture engine,
+    // so showMaximized() simulates external/native window state maximize.
     // 1 & 2. Establish and wait for stable known normal geometry
     window->showNormal();
     window->resize(acceptedNormalSize);
@@ -1499,31 +1504,40 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(500);
     QCoreApplication::processEvents();
     QCOMPARE(window->visibility(), QWindow::Maximized);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("restore"));
 
     // 5. Invoke windowMaximizeButton.clicked() while natively maximized
     QVERIFY(QMetaObject::invokeMethod(windowMaximizeBtn, "clicked"));
 
-    // 6. Wait for restore to settle beyond restore and state reset timers
+    // 6. Wait for restore to settle beyond state reset timer
     QTest::qWait(500);
     QCoreApplication::processEvents();
 
-    // 7. Assert window is Windowed, width & height match saved normal values, and normalGeometry was preserved
+    // 7. Assert window is Windowed, width/height/x/y match saved normal values, and button icon agrees with Windowed state
     QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->visibility(), QWindow::Windowed);
     QCOMPARE(window->size(), acceptedNormalSize);
-    QCOMPARE(root->property("normalGeometry").toRect().width(), capturedNormalGeomBeforeNative.width());
-    QCOMPARE(root->property("normalGeometry").toRect().height(), capturedNormalGeomBeforeNative.height());
+    QCOMPARE(window->geometry(), capturedNormalGeomBeforeNative);
+    QCOMPARE(root->property("normalGeometry").toRect(), capturedNormalGeomBeforeNative);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("maximize"));
+    QVERIFY(!root->property("isChangingWindowState").toBool());
+    QVERIFY(!root->property("isRestoringNormal").toBool());
 
     // 8. Wait again beyond all capture timers and assert restored size does NOT jump back to maximized geometry
     QTest::qWait(400);
     QCoreApplication::processEvents();
     QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->visibility(), QWindow::Windowed);
     QCOMPARE(window->size(), acceptedNormalSize);
+    QCOMPARE(window->geometry(), capturedNormalGeomBeforeNative);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("maximize"));
 
     // Path C: Restore from Maximized via header drag simulation
     window->showMaximized();
     QTest::qWait(500);
     QCoreApplication::processEvents();
     QCOMPARE(window->visibility(), QWindow::Maximized);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("restore"));
 
     QMetaObject::invokeMethod(root, "restoreMaximizedDrag",
         Q_ARG(QVariant, 200), Q_ARG(QVariant, 100),
@@ -1532,7 +1546,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
 
     QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->visibility(), QWindow::Windowed);
     QCOMPARE(window->size(), acceptedNormalSize);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("maximize"));
+
+    // Verify stability after restoreTimer (30ms) and stateResetTimer (350ms) settle
+    QTest::qWait(400);
+    QCoreApplication::processEvents();
+    QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->visibility(), QWindow::Windowed);
+    QCOMPARE(window->size(), acceptedNormalSize);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("maximize"));
 
     window->resize(1184, 688);
     QCoreApplication::processEvents();
