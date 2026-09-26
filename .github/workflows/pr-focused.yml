@@ -95,8 +95,39 @@ jobs:
             rgsml_parametric_eq_response_tests `
             rgsml_eq_view_model_tests `
             rgsml_render_preview_tests `
-            rgsml_audition_source_selector_tests
+            rgsml_audition_source_selector_tests `
+            rgsml_source_metadata_panel_smoke
+
+      - name: Run Windows UI Smoke Diagnostic
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
+        run: |
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
+          $log = "$env:GITHUB_WORKSPACE\m12b-smoke.txt"
+          & build/windows-msvc/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          $exitCode = $LASTEXITCODE
+          if (Test-Path $log) {
+              Get-Content $log
+          } else {
+              Write-Host "M12B_SMOKE_LOG_NOT_CREATED"
+          }
+          if ($exitCode -ne 0) {
+              exit $exitCode
+          }
 
       - name: Run Focused DSP Tests (Release)
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
         run: |
-          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|toolchain_manifest_)" --output-on-failure
+          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|toolchain_manifest_)" --output-on-failure --verbose
+
+      - name: Upload Visual Evidence Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M12B-Visual-Evidence-${{ github.sha }}
+          path: |
+            ${{ github.workspace }}\build\visual-evidence\*.png
+            ${{ github.workspace }}\build\visual-evidence\*.json
+          retention-days: 7

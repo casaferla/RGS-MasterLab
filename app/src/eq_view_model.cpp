@@ -30,7 +30,7 @@ constexpr double kMinQ = 0.10;
 constexpr double kMaxQ = 12.0;
 constexpr double kMinSlope = 0.10;
 constexpr double kMaxSlope = 1.0;
-constexpr std::size_t kResponseGridPoints = 100;
+constexpr std::size_t kResponseGridPoints = 512;
 
 [[nodiscard]] QString filter_to_string(dsp::EqFilterType type)
 {
@@ -148,6 +148,7 @@ EqViewModel::EqViewModel(
     committedParams_ = *paramsRes.value();
 
     update_response_grid();
+    update_validation_state();
 }
 
 EqViewModel::~EqViewModel()
@@ -300,6 +301,79 @@ bool EqViewModel::bypass() const noexcept
     return bypass_;
 }
 
+bool EqViewModel::can_undo() const noexcept
+{
+    return !undoStack_.empty();
+}
+
+bool EqViewModel::can_redo() const noexcept
+{
+    return !redoStack_.empty();
+}
+
+QVariantList EqViewModel::band_summaries() const
+{
+    QVariantList list;
+    list.reserve(static_cast<qsizetype>(committedBands_.size()));
+    for (std::size_t i = 0; i < committedBands_.size(); ++i) {
+        const auto& band = committedBands_[i];
+        QVariantMap map;
+        map.insert(QStringLiteral("index"), static_cast<int>(i));
+        map.insert(QStringLiteral("bandId"), QString::fromStdString(band.band_id().to_string()));
+        map.insert(QStringLiteral("enabled"), band.enabled());
+        map.insert(QStringLiteral("filter"), filter_to_string(band.filter_type()));
+        map.insert(QStringLiteral("routing"), routing_to_string(band.routing()));
+
+        double freq = 1000.0;
+        double gain = 0.0;
+        bool gainApp = false;
+
+        std::visit(
+            [&freq, &gain, &gainApp](const auto& payload) {
+                using T = std::decay_t<decltype(payload)>;
+                if constexpr (std::is_same_v<T, dsp::BellPayload>) {
+                    freq = payload.frequency_hz;
+                    gain = payload.gain_db;
+                    gainApp = true;
+                } else if constexpr (std::is_same_v<T, dsp::NotchPayload>) {
+                    freq = payload.frequency_hz;
+                    gainApp = false;
+                } else if constexpr (std::is_same_v<T, dsp::ShelfPayload>) {
+                    freq = payload.frequency_hz;
+                    gain = payload.gain_db;
+                    gainApp = true;
+                } else if constexpr (std::is_same_v<T, dsp::PassPayload>) {
+                    freq = payload.frequency_hz;
+                    gainApp = false;
+                }
+            },
+            band.payload());
+
+        if (i == selectedIndex_) {
+            freq = draftBand_.frequency_hz;
+            gain = draftBand_.gain_db;
+            gainApp = gain_applicable();
+        }
+
+        map.insert(QStringLiteral("frequency"), freq);
+        map.insert(QStringLiteral("gain"), gain);
+        map.insert(QStringLiteral("gainApplicable"), gainApp);
+
+        list.append(map);
+    }
+    return list;
+}
+
+QString EqViewModel::validation_field() const
+{
+    return validationField_;
+}
+
+QString EqViewModel::validation_message() const
+{
+    return validationMessage_;
+}
+
 quint64 EqViewModel::preview_generation() const noexcept
 {
     return previewGeneration_;
@@ -318,6 +392,25 @@ QString EqViewModel::preview_error() const
 QVariantList EqViewModel::selected_band_response_points() const
 {
     return responseGrid_;
+}
+
+QVariantList EqViewModel::combined_response_points() const
+{
+    return combinedResponseGrid_;
+}
+
+bool EqViewModel::show_combined_response() const noexcept
+{
+    return showCombinedResponse_;
+}
+
+void EqViewModel::setShowCombinedResponse(bool show)
+{
+    if (showCombinedResponse_ == show) {
+        return;
+    }
+    showCombinedResponse_ = show;
+    emit changed(); // View state only: no undo snapshot, no audio preview request
 }
 
 dsp::ModuleInstanceId EqViewModel::instance_id() const noexcept
@@ -346,6 +439,7 @@ void EqViewModel::selectBand(int index)
     selectedIndex_ = static_cast<std::size_t>(index);
     draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
     update_response_grid();
+    update_validation_state();
     emit changed();
 }
 
@@ -354,6 +448,7 @@ void EqViewModel::addBand()
     if (committedBands_.size() >= 6U) {
         return;
     }
+    const auto preState = capture_current_snapshot();
     const auto newId = idGenerator_();
     auto defaultDraft = make_default_band(newId);
     auto newParam = make_band_parameters(defaultDraft, max_frequency_hz());
@@ -366,12 +461,14 @@ void EqViewModel::addBand()
         committedBands_.pop_back();
         return;
     }
+    push_undo_snapshot(preState);
     committedParams_ = *paramsRes.value();
     selectedIndex_ = committedBands_.size() - 1U;
     draftBand_ = defaultDraft;
 
     ++previewGeneration_;
     update_response_grid();
+    update_validation_state();
     emit changed();
     request_preview();
 }
@@ -381,15 +478,19 @@ void EqViewModel::removeSelectedBand()
     if (committedBands_.size() <= 1U) {
         return;
     }
-    committedBands_.erase(committedBands_.begin() + selectedIndex_);
-    if (selectedIndex_ >= committedBands_.size()) {
-        selectedIndex_ = committedBands_.size() - 1U;
-    }
-    auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
+    const auto preState = capture_current_snapshot();
+    auto candidateBands = committedBands_;
+    candidateBands.erase(candidateBands.begin() + selectedIndex_);
+    auto paramsRes = dsp::ParametricEqParameters::create(candidateBands);
     if (!paramsRes) {
         return;
     }
+    push_undo_snapshot(preState);
+    committedBands_ = std::move(candidateBands);
     committedParams_ = *paramsRes.value();
+    if (selectedIndex_ >= committedBands_.size()) {
+        selectedIndex_ = committedBands_.size() - 1U;
+    }
     draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
 
     ++previewGeneration_;
@@ -460,8 +561,104 @@ void EqViewModel::setBypass(bool bypass)
     if (bypass_ == bypass) {
         return;
     }
+    const auto preState = capture_current_snapshot();
+    push_undo_snapshot(preState);
     bypass_ = bypass;
     ++previewGeneration_;
+    emit changed();
+    request_preview();
+}
+
+void EqViewModel::undo()
+{
+    if (undoStack_.empty()) {
+        return;
+    }
+    const auto preState = capture_current_snapshot();
+    const auto prevSnapshot = undoStack_.back();
+    undoStack_.pop_back();
+    redoStack_.push_back(preState);
+
+    restore_snapshot(prevSnapshot);
+    ++previewGeneration_;
+    emit changed();
+    request_preview();
+}
+
+void EqViewModel::redo()
+{
+    if (redoStack_.empty()) {
+        return;
+    }
+    const auto preState = capture_current_snapshot();
+    const auto nextSnapshot = redoStack_.back();
+    redoStack_.pop_back();
+    undoStack_.push_back(preState);
+
+    restore_snapshot(nextSnapshot);
+    ++previewGeneration_;
+    emit changed();
+    request_preview();
+}
+
+void EqViewModel::resetToFlat()
+{
+    const auto preState = capture_current_snapshot();
+
+    // Check if already canonical Flat
+    const auto defaultId = idGenerator_();
+    auto flatDraft = make_default_band(defaultId);
+    auto flatParam = make_band_parameters(flatDraft, max_frequency_hz());
+
+    if (committedBands_.size() == 1U
+        && !bypass_
+        && flatParam.has_value()
+        && committedBands_[0] == *flatParam) {
+        return; // Already flat: no-op
+    }
+
+    if (!flatParam) {
+        return;
+    }
+
+    push_undo_snapshot(preState);
+
+    committedBands_ = { *flatParam };
+    auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
+    Q_ASSERT(paramsRes);
+    committedParams_ = *paramsRes.value();
+    selectedIndex_ = 0;
+    draftBand_ = flatDraft;
+    bypass_ = false;
+
+    ++previewGeneration_;
+    update_response_grid();
+    update_validation_state();
+    emit changed();
+    request_preview();
+}
+
+void EqViewModel::resetForNewSource()
+{
+    const auto defaultId = idGenerator_();
+    draftBand_ = make_default_band(defaultId);
+    auto firstBandParam = make_band_parameters(draftBand_, max_frequency_hz());
+    Q_ASSERT(firstBandParam.has_value());
+
+    committedBands_ = { *firstBandParam };
+    auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
+    Q_ASSERT(paramsRes);
+    committedParams_ = *paramsRes.value();
+
+    selectedIndex_ = 0;
+    bypass_ = false;
+
+    undoStack_.clear();
+    redoStack_.clear();
+
+    ++previewGeneration_;
+    update_response_grid();
+    update_validation_state();
     emit changed();
     request_preview();
 }
@@ -494,6 +691,8 @@ void EqViewModel::setDraftFrequencyText(const QString& text)
     if (ok && std::isfinite(val)) {
         draftBand_.frequency_hz = val;
     }
+    update_response_grid();
+    update_validation_state();
     emit changed();
 }
 
@@ -505,6 +704,8 @@ void EqViewModel::setDraftGainText(const QString& text)
     if (ok && std::isfinite(val)) {
         draftBand_.gain_db = val;
     }
+    update_response_grid();
+    update_validation_state();
     emit changed();
 }
 
@@ -516,6 +717,8 @@ void EqViewModel::setDraftQText(const QString& text)
     if (ok && std::isfinite(val)) {
         draftBand_.q = val;
     }
+    update_response_grid();
+    update_validation_state();
     emit changed();
 }
 
@@ -527,6 +730,8 @@ void EqViewModel::setDraftShelfSlopeText(const QString& text)
     if (ok && std::isfinite(val)) {
         draftBand_.shelf_slope = val;
     }
+    update_response_grid();
+    update_validation_state();
     emit changed();
 }
 
@@ -541,17 +746,24 @@ void EqViewModel::setDraftSlopeDbPerOct(int slope)
     case 48: draftBand_.slope_db_per_octave = dsp::SlopeDbPerOctave::DB_48; break;
     default: return;
     }
+    update_response_grid();
+    update_validation_state();
     emit changed();
 }
 
 bool EqViewModel::commitDraft()
 {
-    // Parse raw text for applicable fields
+    update_validation_state();
+    if (!validationField_.isEmpty()) {
+        emit changed();
+        return false;
+    }
+
     bool ok = false;
 
     const double freq = draftBand_.frequency_text.toDouble(&ok);
     if (!ok || !std::isfinite(freq)) {
-        return false; // Raw text invalid: reject commit, preserve raw draft text, no preview
+        return false;
     }
     draftBand_.frequency_hz = freq;
 
@@ -592,6 +804,11 @@ bool EqViewModel::commitDraft()
         return false;
     }
 
+    const auto preState = capture_current_snapshot();
+    if (candidateBands != committedBands_) {
+        push_undo_snapshot(preState);
+    }
+
     committedBands_ = std::move(candidateBands);
     committedParams_ = std::move(*candidateParamsRes.value());
 
@@ -603,6 +820,7 @@ bool EqViewModel::commitDraft()
 
     ++previewGeneration_;
     update_response_grid();
+    update_validation_state();
     emit changed();
     request_preview();
     return true;
@@ -612,6 +830,7 @@ void EqViewModel::cancelDraft()
 {
     draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
     update_response_grid();
+    update_validation_state();
     emit changed();
 }
 
@@ -624,6 +843,7 @@ void EqViewModel::graphDrag(double frequency, double gain)
         draftBand_.gain_text = QString::number(gain);
     }
     update_response_grid();
+    update_validation_state();
     emit changed();
 }
 
@@ -632,8 +852,55 @@ void EqViewModel::graphRelease()
     static_cast<void>(commitDraft());
 }
 
+void EqViewModel::adjustSecondaryParameter(int steps, bool shiftPressed)
+{
+    if (steps == 0) {
+        return;
+    }
+
+    switch (draftBand_.filter_type) {
+    case dsp::EqFilterType::BELL:
+    case dsp::EqFilterType::NOTCH: {
+        // Q multiplicative adjustment: normal ~3% per notch, Shift ~0.8% per notch
+        const double factor = shiftPressed ? 1.008 : 1.03;
+        double newQ = draftBand_.q * std::pow(factor, steps);
+        newQ = std::clamp(newQ, kMinQ, kMaxQ);
+        draftBand_.q = newQ;
+        draftBand_.q_text = QString::number(newQ, 'f', 3);
+        break;
+    }
+    case dsp::EqFilterType::LOW_SHELF:
+    case dsp::EqFilterType::HIGH_SHELF: {
+        // Shelf slope linear adjustment: normal ~0.05, Shift ~0.01
+        const double stepVal = shiftPressed ? 0.01 : 0.05;
+        double newSlope = draftBand_.shelf_slope + steps * stepVal;
+        newSlope = std::clamp(newSlope, kMinSlope, kMaxSlope);
+        draftBand_.shelf_slope = newSlope;
+        draftBand_.shelf_slope_text = QString::number(newSlope, 'f', 2);
+        break;
+    }
+    case dsp::EqFilterType::HIGH_PASS:
+    case dsp::EqFilterType::LOW_PASS: {
+        // Slope dB/oct discrete steps: 6, 12, 18, 24, 36, 48
+        const std::array<int, 6> slopes{6, 12, 18, 24, 36, 48};
+        int currentVal = static_cast<int>(draftBand_.slope_db_per_octave);
+        auto it = std::find(slopes.begin(), slopes.end(), currentVal);
+        int idx = (it != slopes.end()) ? static_cast<int>(std::distance(slopes.begin(), it)) : 1;
+        idx = std::clamp(idx + (steps > 0 ? 1 : -1), 0, static_cast<int>(slopes.size() - 1));
+        setDraftSlopeDbPerOct(slopes[static_cast<std::size_t>(idx)]);
+        return;
+    }
+    }
+
+    update_response_grid();
+    update_validation_state();
+    emit changed();
+}
+
 void EqViewModel::trigger_preview()
 {
+    update_response_grid();
+    update_validation_state();
     ++previewGeneration_; // Increment generation on Source/PREPARED replacement
     request_preview();
 }
@@ -735,10 +1002,9 @@ std::optional<dsp::EqBandParameters> EqViewModel::make_band_parameters(
 void EqViewModel::update_response_grid()
 {
     responseGrid_.clear();
-    const auto bandOpt = make_band_parameters(draftBand_, max_frequency_hz());
-    if (!bandOpt) {
-        return;
-    }
+    combinedResponseGrid_.clear();
+
+    const auto selectedBandOpt = make_band_parameters(draftBand_, max_frequency_hz());
 
     const double minF = kMinFreq;
     const double maxF = max_frequency_hz();
@@ -746,23 +1012,209 @@ void EqViewModel::update_response_grid()
     const double logMax = std::log(maxF);
 
     std::vector<double> freqs;
-    freqs.reserve(kResponseGridPoints);
+    freqs.reserve(kResponseGridPoints + 128);
+
+    // 1. Baseline log-spaced points
     for (std::size_t i = 0; i < kResponseGridPoints; ++i) {
-        const double frac = static_cast<double>(i) / static_cast<double>(kResponseGridPoints - 1);
-        freqs.push_back(std::exp(logMin + frac * (logMax - logMin)));
+        if (i == 0) {
+            freqs.push_back(minF);
+        } else if (i == kResponseGridPoints - 1) {
+            freqs.push_back(maxF);
+        } else {
+            const double frac = static_cast<double>(i) / static_cast<double>(kResponseGridPoints - 1);
+            const double f = std::exp(logMin + frac * (logMax - logMin));
+            freqs.push_back(std::clamp(f, minF, maxF));
+        }
     }
 
-    auto pointsRes = dsp::evaluate_band_response(*bandOpt, freqs, current_sample_rate());
-    if (!pointsRes) {
+    // 2. ALWAYS inject exact f0 of selected band
+    const double f0 = draftBand_.frequency_hz;
+    if (f0 >= minF && f0 <= maxF) {
+        freqs.push_back(f0);
+    }
+
+    // 3. Add local refinement around f0 for High-Q Bell and Notch filters
+    if ((draftBand_.filter_type == dsp::EqFilterType::BELL || draftBand_.filter_type == dsp::EqFilterType::NOTCH)
+        && draftBand_.q > 1.0 && f0 >= minF && f0 <= maxF) {
+        const double bandwidthFrac = 1.0 / std::max(0.1, draftBand_.q);
+        const std::array<double, 12> localRatios{
+            1.0 - 0.5 * bandwidthFrac, 1.0 - 0.25 * bandwidthFrac,
+            1.0 - 0.1 * bandwidthFrac, 1.0 - 0.05 * bandwidthFrac,
+            1.0 - 0.02 * bandwidthFrac, 1.0 - 0.01 * bandwidthFrac,
+            1.0 + 0.01 * bandwidthFrac, 1.0 + 0.02 * bandwidthFrac,
+            1.0 + 0.05 * bandwidthFrac, 1.0 + 0.1 * bandwidthFrac,
+            1.0 + 0.25 * bandwidthFrac, 1.0 + 0.5 * bandwidthFrac
+        };
+        for (const double ratio : localRatios) {
+            const double rf = f0 * ratio;
+            if (rf >= minF && rf <= maxF) {
+                freqs.push_back(rf);
+            }
+        }
+    }
+
+    // Also inject center frequencies of all other enabled bands into freqs for accurate combined response
+    for (std::size_t i = 0; i < committedBands_.size(); ++i) {
+        if (i == selectedIndex_) continue;
+        const auto& b = committedBands_[i];
+        if (!b.enabled()) continue;
+        std::visit([&freqs, minF, maxF](const auto& payload) {
+            const double cf = payload.frequency_hz;
+            if (cf >= minF && cf <= maxF) {
+                freqs.push_back(cf);
+            }
+        }, b.payload());
+    }
+
+    // 4. Sort and remove duplicates / near-duplicates
+    std::sort(freqs.begin(), freqs.end());
+    std::vector<double> uniqueFreqs;
+    uniqueFreqs.reserve(freqs.size());
+    for (const double f : freqs) {
+        if (uniqueFreqs.empty() || std::abs(f - uniqueFreqs.back()) > 1e-6) {
+            uniqueFreqs.push_back(f);
+        }
+    }
+
+    // 5. Enforce hard point count cap <= 1024
+    if (uniqueFreqs.size() > 1024) {
+        uniqueFreqs.resize(1024);
+    }
+
+    // A. Selected Band Response
+    if (selectedBandOpt) {
+        auto pointsRes = dsp::evaluate_band_response(*selectedBandOpt, uniqueFreqs, current_sample_rate());
+        if (pointsRes) {
+            for (const auto& pt : *pointsRes.value()) {
+                QVariantMap pointMap;
+                pointMap.insert(QStringLiteral("frequency"), pt.frequency_hz);
+                pointMap.insert(QStringLiteral("magnitudeDb"), pt.magnitude_db);
+                pointMap.insert(QStringLiteral("phaseRad"), pt.phase_rad);
+                responseGrid_.append(pointMap);
+            }
+        }
+    }
+
+    // B. Combined Whole-EQ Response across all active bands (using draftBand_ for selected band)
+    auto activeBands = committedBands_;
+    if (selectedIndex_ < activeBands.size() && selectedBandOpt) {
+        activeBands[selectedIndex_] = *selectedBandOpt;
+    }
+
+    auto combinedParamsRes = dsp::ParametricEqParameters::create(activeBands);
+    if (combinedParamsRes) {
+        auto combinedPointsRes = dsp::evaluate_parametric_eq_response(
+            *combinedParamsRes.value(), uniqueFreqs, current_sample_rate());
+        if (combinedPointsRes) {
+            for (const auto& pt : *combinedPointsRes.value()) {
+                QVariantMap pointMap;
+                pointMap.insert(QStringLiteral("frequency"), pt.frequency_hz);
+                pointMap.insert(QStringLiteral("magnitudeDb"), pt.magnitude_db);
+                pointMap.insert(QStringLiteral("phaseRad"), pt.phase_rad);
+                combinedResponseGrid_.append(pointMap);
+            }
+        }
+    }
+}
+
+void EqViewModel::push_undo_snapshot(EqStateSnapshot previousSnapshot)
+{
+    undoStack_.push_back(std::move(previousSnapshot));
+    if (undoStack_.size() > 50U) {
+        undoStack_.erase(undoStack_.begin());
+    }
+    redoStack_.clear();
+}
+
+EqViewModel::EqStateSnapshot EqViewModel::capture_current_snapshot() const
+{
+    return EqStateSnapshot{
+        .bands = committedBands_,
+        .selectedIndex = selectedIndex_,
+        .bypass = bypass_,
+    };
+}
+
+void EqViewModel::restore_snapshot(const EqStateSnapshot& snapshot)
+{
+    committedBands_ = snapshot.bands;
+    auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
+    Q_ASSERT(paramsRes);
+    committedParams_ = *paramsRes.value();
+
+    selectedIndex_ = std::min(snapshot.selectedIndex, committedBands_.empty() ? 0U : committedBands_.size() - 1U);
+    draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
+    bypass_ = snapshot.bypass;
+
+    update_response_grid();
+    update_validation_state();
+}
+
+void EqViewModel::update_validation_state()
+{
+    validationField_.clear();
+    validationMessage_.clear();
+
+    if (is_mono_prepared() && draftBand_.routing != dsp::EqRouting::STEREO) {
+        validationField_ = QStringLiteral("routing");
+        validationMessage_ = QStringLiteral("Mono sources only support STEREO routing.");
         return;
     }
 
-    for (const auto& pt : *pointsRes.value()) {
-        QVariantMap pointMap;
-        pointMap.insert(QStringLiteral("frequency"), pt.frequency_hz);
-        pointMap.insert(QStringLiteral("magnitudeDb"), pt.magnitude_db);
-        pointMap.insert(QStringLiteral("phaseRad"), pt.phase_rad);
-        responseGrid_.append(pointMap);
+    bool ok = false;
+    const double freq = draftBand_.frequency_text.toDouble(&ok);
+    if (!ok || !std::isfinite(freq)) {
+        validationField_ = QStringLiteral("frequency");
+        validationMessage_ = QStringLiteral("Invalid frequency numeric syntax.");
+        return;
+    }
+    const double maxF = max_frequency_hz();
+    if (freq < kMinFreq || freq > maxF) {
+        validationField_ = QStringLiteral("frequency");
+        validationMessage_ = QString::asprintf("Frequency must be between %.0f Hz and %.0f Hz.", kMinFreq, maxF);
+        return;
+    }
+
+    if (gain_applicable()) {
+        const double g = draftBand_.gain_text.toDouble(&ok);
+        if (!ok || !std::isfinite(g)) {
+            validationField_ = QStringLiteral("gain");
+            validationMessage_ = QStringLiteral("Invalid gain numeric syntax.");
+            return;
+        }
+        if (g < kMinGain || g > kMaxGain) {
+            validationField_ = QStringLiteral("gain");
+            validationMessage_ = QStringLiteral("Gain must be between -18 dB and +18 dB.");
+            return;
+        }
+    }
+
+    if (q_applicable()) {
+        const double qVal = draftBand_.q_text.toDouble(&ok);
+        if (!ok || !std::isfinite(qVal)) {
+            validationField_ = QStringLiteral("q");
+            validationMessage_ = QStringLiteral("Invalid Q numeric syntax.");
+            return;
+        }
+        if (qVal < kMinQ || qVal > kMaxQ) {
+            validationField_ = QStringLiteral("q");
+            validationMessage_ = QStringLiteral("Q must be between 0.10 and 12.0.");
+            return;
+        }
+    }
+
+    if (shelf_slope_applicable()) {
+        const double sVal = draftBand_.shelf_slope_text.toDouble(&ok);
+        if (!ok || !std::isfinite(sVal)) {
+            validationField_ = QStringLiteral("shelfSlope");
+            validationMessage_ = QStringLiteral("Invalid shelf slope numeric syntax.");
+            return;
+        }
+        if (sVal < kMinSlope || sVal > kMaxSlope) {
+            validationField_ = QStringLiteral("shelfSlope");
+            validationMessage_ = QStringLiteral("Shelf slope must be between 0.10 and 1.0.");
+            return;
+        }
     }
 }
 
