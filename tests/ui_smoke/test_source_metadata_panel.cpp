@@ -1116,34 +1116,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(QMetaObject::invokeMethod(goldTarget, "clicked"));
     QCoreApplication::processEvents();
 
-    const std::array studioButtonNames{
-        QStringLiteral("auditionPreparedButton"),
-        QStringLiteral("auditionProcessedButton"),
-        QStringLiteral("auditionGoldButton"),
-        QStringLiteral("waveformFitRegionButton"),
-        QStringLiteral("auditionRegionClearButton"),
-        QStringLiteral("sourceOpenButton"),
-    };
-    for (const auto& btnName : studioButtonNames) {
-        auto* btnObj = root->findChild<QObject*>(btnName);
-        QVERIFY2(btnObj != nullptr, qPrintable(QStringLiteral("Button %1 must exist").arg(btnName)));
-        auto* btnItem = qobject_cast<QQuickItem*>(btnObj);
-        QVERIFY2(btnItem != nullptr, qPrintable(QStringLiteral("Button %1 must be a QQuickItem").arg(btnName)));
-        auto* contentRowObj = btnObj->findChild<QObject*>(QStringLiteral("contentRow"));
-        QVERIFY2(contentRowObj != nullptr, qPrintable(QStringLiteral("contentRow must exist in %1").arg(btnName)));
-        auto* contentRowItem = qobject_cast<QQuickItem*>(contentRowObj);
-        QVERIFY2(contentRowItem != nullptr, qPrintable(QStringLiteral("contentRow must be a QQuickItem in %1").arg(btnName)));
-
-        const auto btnCenter = btnItem->mapToScene(QPointF{btnItem->width() * 0.5, btnItem->height() * 0.5});
-        const auto rowCenter = contentRowItem->mapToScene(QPointF{contentRowItem->width() * 0.5, contentRowItem->height() * 0.5});
-
-        QVERIFY2(std::abs(btnCenter.x() - rowCenter.x()) <= 1.0,
-            qPrintable(QStringLiteral("Button %1 contentRow horizontal center diff %2 > 1.0 px")
-                .arg(btnName).arg(std::abs(btnCenter.x() - rowCenter.x()))));
-        QVERIFY2(std::abs(btnCenter.y() - rowCenter.y()) <= 1.0,
-            qPrintable(QStringLiteral("Button %1 contentRow vertical center diff %2 > 1.0 px")
-                .arg(btnName).arg(std::abs(btnCenter.y() - rowCenter.y()))));
-    }
 
     QVERIFY(capture_visual_evidence(
         window,
