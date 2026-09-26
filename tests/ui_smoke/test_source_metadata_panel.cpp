@@ -1359,9 +1359,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(acceptedNormalSize.width() >= window->minimumWidth());
     QVERIFY(acceptedNormalSize.height() >= window->minimumHeight());
 
-    const QRect qmlNormalRect = root->property("normalGeometry").toRect();
-    QCOMPARE(qmlNormalRect.width(), acceptedNormalSize.width());
-    QCOMPARE(qmlNormalRect.height(), acceptedNormalSize.height());
+    QTRY_COMPARE_WITH_TIMEOUT(root->property("normalGeometry").toRect().width(), acceptedNormalSize.width(), 1000);
+    QTRY_COMPARE_WITH_TIMEOUT(root->property("normalGeometry").toRect().height(), acceptedNormalSize.height(), 1000);
 
 #ifdef _WIN32
     // Native Windows Window Chrome Helper Hit-Test Exclusions & Window Styles Assertion

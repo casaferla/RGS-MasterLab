@@ -94,6 +94,12 @@ ApplicationWindow {
     onYChanged: captureNormalGeometry()
     onWidthChanged: captureNormalGeometry()
     onHeightChanged: captureNormalGeometry()
+    onVisibilityChanged: {
+        if (visibility === Window.Windowed) {
+            captureNormalGeometry()
+        }
+    }
+    Component.onCompleted: captureNormalGeometry()
 
     readonly property bool hasError: {
         return projectSession.errorMessage.length > 0
