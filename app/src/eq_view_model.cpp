@@ -1103,29 +1103,16 @@ void EqViewModel::update_response_grid()
 
     auto combinedParamsRes = dsp::ParametricEqParameters::create(activeBands);
     if (combinedParamsRes) {
-        for (const double f : uniqueFreqs) {
-            // Evaluate whole-EQ combined transfer H_total at frequency f
-            std::complex<double> H_total(1.0, 0.0);
-
-            for (const auto& band : combinedParamsRes.value()->bands()) {
-                if (!band.enabled()) continue;
-                auto singleParam = dsp::ParametricEqParameters::create({band});
-                if (!singleParam) continue;
-                auto pts = dsp::evaluate_band_response(band, {f}, current_sample_rate());
-                if (pts && !pts.value()->empty()) {
-                    H_total *= pts.value()->front().transfer_function;
-                }
+        auto combinedPointsRes = dsp::evaluate_parametric_eq_response(
+            *combinedParamsRes.value(), uniqueFreqs, current_sample_rate());
+        if (combinedPointsRes) {
+            for (const auto& pt : *combinedPointsRes.value()) {
+                QVariantMap pointMap;
+                pointMap.insert(QStringLiteral("frequency"), pt.frequency_hz);
+                pointMap.insert(QStringLiteral("magnitudeDb"), pt.magnitude_db);
+                pointMap.insert(QStringLiteral("phaseRad"), pt.phase_rad);
+                combinedResponseGrid_.append(pointMap);
             }
-
-            const double mag_lin = std::abs(H_total);
-            const double mag_db = mag_lin > 1e-15 ? 20.0 * std::log10(mag_lin) : -300.0;
-            const double phase_rad = std::arg(H_total);
-
-            QVariantMap pointMap;
-            pointMap.insert(QStringLiteral("frequency"), f);
-            pointMap.insert(QStringLiteral("magnitudeDb"), mag_db);
-            pointMap.insert(QStringLiteral("phaseRad"), phase_rad);
-            combinedResponseGrid_.append(pointMap);
         }
     }
 }
