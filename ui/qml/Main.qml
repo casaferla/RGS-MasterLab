@@ -33,14 +33,14 @@ ApplicationWindow {
         interval: 150
         repeat: false
         onTriggered: {
-            if (!root.isChangingWindowState && root.visibility === Window.Windowed && root.windowState === Qt.WindowNoState) {
+            if (!root.isChangingWindowState && root.visibility === Window.Windowed) {
                 root.normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
             }
         }
     }
 
     function captureNormalGeometry() {
-        if (!isChangingWindowState && root.visibility === Window.Windowed && root.windowState === Qt.WindowNoState) {
+        if (!isChangingWindowState && root.visibility === Window.Windowed) {
             normalGeometryCaptureTimer.restart()
         }
     }
@@ -49,7 +49,7 @@ ApplicationWindow {
         if (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized) {
             restoreNormalWindow()
         } else {
-            if (root.visibility === Window.Windowed && root.windowState === Qt.WindowNoState) {
+            if (root.visibility === Window.Windowed) {
                 normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
             }
             isChangingWindowState = true
