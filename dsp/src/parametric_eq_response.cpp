@@ -114,8 +114,8 @@ Result<EqResponsePoint> evaluate_band_point(
         make_response_point(frequency_hz, *transfer.value()));
 }
 
-Result<std::vector<EqResponsePoint>> evaluate_band_response(
-    const EqBandParameters& band,
+Result<std::vector<EqResponsePoint>> evaluate_parametric_eq_response(
+    const ParametricEqParameters& params,
     const std::vector<double>& frequencies_hz,
     core::SampleRate sample_rate)
 {
@@ -126,12 +126,7 @@ Result<std::vector<EqResponsePoint>> evaluate_band_response(
             "Sample rate must be positive binary64."));
     }
 
-    auto single_param = ParametricEqParameters::create({band});
-    if (!single_param) {
-        return Result<std::vector<EqResponsePoint>>::failure(*single_param.error());
-    }
-
-    auto coeffs_res = internal::compute_parametric_eq_coefficients(*single_param.value(), Fs);
+    auto coeffs_res = internal::compute_parametric_eq_coefficients(params, Fs);
     if (!coeffs_res) {
         return Result<std::vector<EqResponsePoint>>::failure(*coeffs_res.error());
     }
@@ -165,6 +160,18 @@ Result<std::vector<EqResponsePoint>> evaluate_band_response(
     }
 
     return Result<std::vector<EqResponsePoint>>::success(std::move(points));
+}
+
+Result<std::vector<EqResponsePoint>> evaluate_band_response(
+    const EqBandParameters& band,
+    const std::vector<double>& frequencies_hz,
+    core::SampleRate sample_rate)
+{
+    auto single_param = ParametricEqParameters::create({band});
+    if (!single_param) {
+        return Result<std::vector<EqResponsePoint>>::failure(*single_param.error());
+    }
+    return evaluate_parametric_eq_response(*single_param.value(), frequencies_hz, sample_rate);
 }
 
 }  // namespace rgsml::dsp

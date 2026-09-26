@@ -238,7 +238,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             auditionRegion.source_committed(*frames.value(), *rate.value());
             QVERIFY(auditionSelector.source_committed(source));
             QVERIFY(auditionSelector.switch_to(app::AuditionTarget::PREPARED));
-            eqViewModel.trigger_preview();
+            eqViewModel.resetForNewSource();
+            QCOMPARE(eqViewModel.band_count(), 1);
+            QCOMPARE(eqViewModel.selected_index(), 0);
+            QCOMPARE(eqViewModel.filter_label(), QStringLiteral("BELL"));
+            QCOMPARE(eqViewModel.routing_label(), QStringLiteral("STEREO"));
+            QCOMPARE(eqViewModel.frequency(), 1000.0);
+            QCOMPARE(eqViewModel.gain(), 0.0);
+            QCOMPARE(eqViewModel.q(), 0.707);
+            QVERIFY(!eqViewModel.bypass());
+            QVERIFY(!eqViewModel.can_undo());
+            QVERIFY(!eqViewModel.can_redo());
             goldSelection.sourceChanged();
         });
     waveformPresentation.set_seek_handler(
@@ -599,6 +609,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* removeBandBtn = eqEditor->findChild<QObject*>(QStringLiteral("removeBandButton"));
     QVERIFY2(addBandBtn != nullptr && removeBandBtn != nullptr, "Add and Remove band buttons must exist");
     QCOMPARE(eqViewModel.band_count(), 1);
+    QVERIFY2(!eqViewModel.can_undo(), "can_undo must be false initially for canonical Flat EQ");
+    QVERIFY2(!eqViewModel.can_redo(), "can_redo must be false initially for canonical Flat EQ");
     QVERIFY2(addBandBtn->property("enabled").toBool(), "Add band button must be enabled initially");
     QVERIFY2(!removeBandBtn->property("enabled").toBool(), "Remove band button must be disabled when 1 band exists");
 

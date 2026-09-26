@@ -77,6 +77,7 @@ private slots:
     void testDensifiedResponseGridIncludesExactF0AndLocalRefinement();
     void testSecondaryParameterWheelAdjustmentAndDebounceCommit();
     void testNewSourceResetClearsStateAndHistory();
+    void testResetToFlatAlreadyFlatIsNoOp();
     void testResetToFlatUndoRedo();
     void testHistoryStackDepthCapAt50();
     void testNewEditInvalidatesRedoStack();
@@ -818,11 +819,50 @@ void EqViewModelTest::testNewSourceResetClearsStateAndHistory()
 
     QCOMPARE(vm.band_count(), 1);
     QCOMPARE(vm.selected_index(), 0);
+    QCOMPARE(vm.filter_label(), QStringLiteral("BELL"));
+    QCOMPARE(vm.routing_label(), QStringLiteral("STEREO"));
     QCOMPARE(vm.frequency(), 1000.0);
     QCOMPARE(vm.gain(), 0.0);
+    QCOMPARE(vm.q(), 0.707);
     QVERIFY(!vm.bypass());
     QVERIFY(!vm.can_undo());
     QVERIFY(!vm.can_redo());
+}
+
+void EqViewModelTest::testResetToFlatAlreadyFlatIsNoOp()
+{
+    EqViewModel vm;
+    const QString origId = vm.selected_band_id();
+    const quint64 origGen = vm.preview_generation();
+
+    // 1. Calling resetToFlat on initial Flat EQ is a no-op
+    vm.resetToFlat();
+    QCOMPARE(vm.selected_band_id(), origId);
+    QCOMPARE(vm.preview_generation(), origGen);
+    QVERIFY(!vm.can_undo());
+    QVERIFY(!vm.can_redo());
+
+    // 2. Create non-flat state, then Undo back to canonical Flat so Redo is available
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+    QVERIFY(vm.can_undo());
+
+    vm.undo(); // Now back to canonical Flat, and Redo is available
+    QVERIFY(vm.can_redo());
+    const QString flatIdAfterUndo = vm.selected_band_id();
+    const quint64 genAfterUndo = vm.preview_generation();
+
+    // Call resetToFlat while in canonical Flat state with active Redo stack
+    vm.resetToFlat();
+
+    // Verify it is a true no-op
+    QCOMPARE(vm.selected_band_id(), flatIdAfterUndo);
+    QCOMPARE(vm.preview_generation(), genAfterUndo);
+    QVERIFY(vm.can_redo()); // Redo stack MUST remain preserved!
+
+    // Verify Redo can still be executed to restore the non-flat state
+    vm.redo();
+    QCOMPARE(vm.gain(), 6.0);
 }
 
 void EqViewModelTest::testResetToFlatUndoRedo()
@@ -900,7 +940,7 @@ void EqViewModelTest::testNewEditInvalidatesRedoStack()
 void EqViewModelTest::testWholeEqCombinedResponseEvaluation()
 {
     EqViewModel vm;
-    // Flat 1-band initial state -> combined response should be 0 dB
+    // Flat 1-band initial state -> combined response should be ~0 dB
     const auto flatPoints = vm.combined_response_points();
     QVERIFY(!flatPoints.isEmpty());
     for (const auto& varPt : flatPoints) {
@@ -908,28 +948,39 @@ void EqViewModelTest::testWholeEqCombinedResponseEvaluation()
         QVERIFY2(std::abs(mag) < 1e-3, "Flat EQ combined response must be ~0 dB");
     }
 
-    // Add Band 2: High Shelf 8 kHz +6 dB
+    // Add Band 2: High Shelf 8 kHz +6 dB and commit
     vm.addBand();
     vm.setFilter(QStringLiteral("HIGH_SHELF"));
     vm.setDraftFrequency(8000.0);
     vm.setDraftGain(6.0);
     vm.commitDraft();
 
-    // Select Band 1 (index 0): Bell 1 kHz +6 dB
+    // Select Band 1 (index 0): Bell 1 kHz +6 dB and commit
     vm.selectBand(0);
     vm.setDraftGain(6.0);
     vm.commitDraft();
 
-    // Verify selection change alone does not change combined response points
-    const auto combined1 = vm.combined_response_points();
-    vm.selectBand(1);
-    const auto combined2 = vm.combined_response_points();
-    QCOMPARE(combined1, combined2);
+    const auto combinedCommitted1 = vm.combined_response_points();
 
-    // Disable Band 2 (index 1) -> combined response at 8 kHz must decrease
+    // Verify selection change alone does not change combined response points
+    vm.selectBand(1);
+    const auto combinedCommitted2 = vm.combined_response_points();
+    QCOMPARE(combinedCommitted1, combinedCommitted2);
+
+    // Verify uncommitted draft change on selected band does NOT alter combined response
+    vm.setDraftGain(12.0); // draft edit only, not committed!
+    const auto combinedDuringDraft = vm.combined_response_points();
+    QCOMPARE(combinedDuringDraft, combinedCommitted1);
+
+    // Commit the edit -> combined response DOES update
+    vm.commitDraft();
+    const auto combinedAfterCommit = vm.combined_response_points();
+    QVERIFY(combinedAfterCommit != combinedCommitted1);
+
+    // Disable Band 2 (index 1) -> combined response changes
     vm.setEnabled(false);
     const auto combinedDisabled = vm.combined_response_points();
-    QVERIFY(combinedDisabled.size() > 0);
+    QVERIFY(combinedDisabled != combinedAfterCommit);
 }
 
 void EqViewModelTest::testOverallToggleIsViewStateOnly()
