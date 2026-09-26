@@ -76,6 +76,10 @@ private slots:
     void testNonGainFilterGraphDragNoGainMutation();
     void testDensifiedResponseGridIncludesExactF0AndLocalRefinement();
     void testSecondaryParameterWheelAdjustmentAndDebounceCommit();
+    void testNewSourceResetClearsStateAndHistory();
+    void testResetToFlatUndoRedo();
+    void testHistoryStackDepthCapAt50();
+    void testNewEditInvalidatesRedoStack();
 };
 
 void EqViewModelTest::testInvalidTextDraftAndCommitRejection()
@@ -795,6 +799,100 @@ void EqViewModelTest::testSecondaryParameterWheelAdjustmentAndDebounceCommit()
     QCOMPARE(vm.slope_db_per_oct(), 18);
     vm.adjustSecondaryParameter(-1, false); // Wheel down
     QCOMPARE(vm.slope_db_per_oct(), 12);
+}
+
+void EqViewModelTest::testNewSourceResetClearsStateAndHistory()
+{
+    EqViewModel vm;
+    vm.addBand();
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+    vm.setBypass(true);
+
+    QCOMPARE(vm.band_count(), 2);
+    QVERIFY(vm.can_undo());
+
+    vm.resetForNewSource();
+
+    QCOMPARE(vm.band_count(), 1);
+    QCOMPARE(vm.selected_index(), 0);
+    QCOMPARE(vm.frequency(), 1000.0);
+    QCOMPARE(vm.gain(), 0.0);
+    QVERIFY(!vm.bypass());
+    QVERIFY(!vm.can_undo());
+    QVERIFY(!vm.can_redo());
+}
+
+void EqViewModelTest::testResetToFlatUndoRedo()
+{
+    EqViewModel vm;
+    vm.addBand();
+    vm.setDraftFrequency(2500.0);
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+
+    QCOMPARE(vm.band_count(), 2);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), 6.0);
+
+    vm.resetToFlat();
+
+    QCOMPARE(vm.band_count(), 1);
+    QCOMPARE(vm.frequency(), 1000.0);
+    QCOMPARE(vm.gain(), 0.0);
+    QVERIFY(vm.can_undo());
+
+    vm.undo();
+
+    QCOMPARE(vm.band_count(), 2);
+    QCOMPARE(vm.selected_index(), 1);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), 6.0);
+    QVERIFY(vm.can_redo());
+
+    vm.redo();
+
+    QCOMPARE(vm.band_count(), 1);
+    QCOMPARE(vm.frequency(), 1000.0);
+    QCOMPARE(vm.gain(), 0.0);
+}
+
+void EqViewModelTest::testHistoryStackDepthCapAt50()
+{
+    EqViewModel vm;
+    for (int i = 1; i <= 60; ++i) {
+        vm.setDraftGain(static_cast<double>(i) * 0.1);
+        vm.commitDraft();
+    }
+
+    QVERIFY(vm.can_undo());
+
+    int undoCount = 0;
+    while (vm.can_undo()) {
+        vm.undo();
+        ++undoCount;
+    }
+
+    QCOMPARE(undoCount, 50); // Capped at exactly 50 history steps
+}
+
+void EqViewModelTest::testNewEditInvalidatesRedoStack()
+{
+    EqViewModel vm;
+    vm.setDraftGain(3.0);
+    vm.commitDraft();
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+
+    QVERIFY(vm.can_undo());
+    vm.undo();
+    QVERIFY(vm.can_redo());
+
+    // Perform a new edit after undo
+    vm.setDraftGain(9.0);
+    vm.commitDraft();
+
+    QVERIFY(!vm.can_redo()); // Redo stack must be cleared
 }
 
 }  // namespace

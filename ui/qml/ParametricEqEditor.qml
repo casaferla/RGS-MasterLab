@@ -118,9 +118,46 @@ Rectangle {
                 }
             }
 
-            // A/B Controls (32 lp)
+            // History & Reset Flat + A/B Controls (32 lp)
             RowLayout {
                 spacing: 2
+
+                StudioButton {
+                    objectName: "eqUndoButton"
+                    text: "Undo"
+                    minimumControlWidth: 64
+                    enabled: root.viewModel ? root.viewModel.canUndo : false
+                    onClicked: if (root.viewModel) root.viewModel.undo()
+                    Accessible.name: "Undo EQ edit"
+                    ToolTip.text: "Undo last EQ edit (Ctrl+Z)"
+                    ToolTip.visible: hovered
+                    Shortcut { sequence: "StandardKey.Undo"; enabled: root.viewModel && root.viewModel.canUndo; onActivated: root.viewModel.undo() }
+                }
+
+                StudioButton {
+                    objectName: "eqRedoButton"
+                    text: "Redo"
+                    minimumControlWidth: 64
+                    enabled: root.viewModel ? root.viewModel.canRedo : false
+                    onClicked: if (root.viewModel) root.viewModel.redo()
+                    Accessible.name: "Redo EQ edit"
+                    ToolTip.text: "Redo last EQ edit (Ctrl+Y)"
+                    ToolTip.visible: hovered
+                    Shortcut { sequence: "StandardKey.Redo"; enabled: root.viewModel && root.viewModel.canRedo; onActivated: root.viewModel.redo() }
+                }
+
+                StudioButton {
+                    objectName: "eqResetFlatButton"
+                    text: "Reset Flat"
+                    minimumControlWidth: 88
+                    enabled: root.viewModel !== null && root.viewModel !== undefined
+                    onClicked: if (root.viewModel) root.viewModel.resetToFlat()
+                    Accessible.name: "Reset EQ to Flat"
+                    ToolTip.text: "Reset all EQ parameters to Flat baseline"
+                    ToolTip.visible: hovered
+                }
+
+                Item { Layout.preferredWidth: 8 }
 
                 StudioButton {
                     objectName: "abButtonActive"

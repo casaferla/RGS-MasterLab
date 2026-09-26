@@ -713,7 +713,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     qInfo().noquote() << "M12B_SMOKE_PHASE=ab";
     auto* abBypassBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonBypass"));
     auto* abActiveBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonActive"));
+    auto* undoBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqUndoButton"));
+    auto* redoBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqRedoButton"));
+    auto* resetFlatBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqResetFlatButton"));
+
     QVERIFY2(abBypassBtn != nullptr && abActiveBtn != nullptr, "A and B buttons must exist");
+    QVERIFY2(undoBtn != nullptr && redoBtn != nullptr && resetFlatBtn != nullptr, "Undo, Redo, and Reset Flat buttons must exist");
+    QVERIFY2(!undoBtn->property("enabled").toBool(), "Undo button must be disabled when history is empty");
+    QVERIFY2(!redoBtn->property("enabled").toBool(), "Redo button must be disabled when redo history is empty");
+    QVERIFY2(resetFlatBtn->property("enabled").toBool(), "Reset Flat button must be enabled");
 
     QVERIFY2(QMetaObject::invokeMethod(abBypassBtn, "clicked"), "Clicking abButtonBypass must succeed");
     QCoreApplication::processEvents();

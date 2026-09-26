@@ -100,7 +100,7 @@ int main(int argc, char* argv[])
             if (prepared) {
                 static_cast<void>(auditionSelector.switch_to(
                     rgsml::app::AuditionTarget::PREPARED));
-                eqViewModel.trigger_preview();
+                eqViewModel.resetForNewSource();
             }
             goldSelection.sourceChanged();
             sourceWaveform.source_committed(source);

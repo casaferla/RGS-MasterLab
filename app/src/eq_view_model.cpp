@@ -301,6 +301,16 @@ bool EqViewModel::bypass() const noexcept
     return bypass_;
 }
 
+bool EqViewModel::can_undo() const noexcept
+{
+    return !undoStack_.empty();
+}
+
+bool EqViewModel::can_redo() const noexcept
+{
+    return !redoStack_.empty();
+}
+
 QVariantList EqViewModel::band_summaries() const
 {
     QVariantList list;
@@ -419,6 +429,7 @@ void EqViewModel::addBand()
     if (committedBands_.size() >= 6U) {
         return;
     }
+    const auto preState = capture_current_snapshot();
     const auto newId = idGenerator_();
     auto defaultDraft = make_default_band(newId);
     auto newParam = make_band_parameters(defaultDraft, max_frequency_hz());
@@ -431,6 +442,7 @@ void EqViewModel::addBand()
         committedBands_.pop_back();
         return;
     }
+    push_undo_snapshot(preState);
     committedParams_ = *paramsRes.value();
     selectedIndex_ = committedBands_.size() - 1U;
     draftBand_ = defaultDraft;
@@ -447,15 +459,19 @@ void EqViewModel::removeSelectedBand()
     if (committedBands_.size() <= 1U) {
         return;
     }
-    committedBands_.erase(committedBands_.begin() + selectedIndex_);
-    if (selectedIndex_ >= committedBands_.size()) {
-        selectedIndex_ = committedBands_.size() - 1U;
-    }
-    auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
+    const auto preState = capture_current_snapshot();
+    auto candidateBands = committedBands_;
+    candidateBands.erase(candidateBands.begin() + selectedIndex_);
+    auto paramsRes = dsp::ParametricEqParameters::create(candidateBands);
     if (!paramsRes) {
         return;
     }
+    push_undo_snapshot(preState);
+    committedBands_ = std::move(candidateBands);
     committedParams_ = *paramsRes.value();
+    if (selectedIndex_ >= committedBands_.size()) {
+        selectedIndex_ = committedBands_.size() - 1U;
+    }
     draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
 
     ++previewGeneration_;
@@ -526,8 +542,104 @@ void EqViewModel::setBypass(bool bypass)
     if (bypass_ == bypass) {
         return;
     }
+    const auto preState = capture_current_snapshot();
+    push_undo_snapshot(preState);
     bypass_ = bypass;
     ++previewGeneration_;
+    emit changed();
+    request_preview();
+}
+
+void EqViewModel::undo()
+{
+    if (undoStack_.empty()) {
+        return;
+    }
+    const auto preState = capture_current_snapshot();
+    const auto prevSnapshot = undoStack_.back();
+    undoStack_.pop_back();
+    redoStack_.push_back(preState);
+
+    restore_snapshot(prevSnapshot);
+    ++previewGeneration_;
+    emit changed();
+    request_preview();
+}
+
+void EqViewModel::redo()
+{
+    if (redoStack_.empty()) {
+        return;
+    }
+    const auto preState = capture_current_snapshot();
+    const auto nextSnapshot = redoStack_.back();
+    redoStack_.pop_back();
+    undoStack_.push_back(preState);
+
+    restore_snapshot(nextSnapshot);
+    ++previewGeneration_;
+    emit changed();
+    request_preview();
+}
+
+void EqViewModel::resetToFlat()
+{
+    const auto preState = capture_current_snapshot();
+
+    // Check if already canonical Flat
+    const auto defaultId = idGenerator_();
+    auto flatDraft = make_default_band(defaultId);
+    auto flatParam = make_band_parameters(flatDraft, max_frequency_hz());
+
+    if (committedBands_.size() == 1U
+        && !bypass_
+        && flatParam.has_value()
+        && committedBands_[0] == *flatParam) {
+        return; // Already flat: no-op
+    }
+
+    if (!flatParam) {
+        return;
+    }
+
+    push_undo_snapshot(preState);
+
+    committedBands_ = { *flatParam };
+    auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
+    Q_ASSERT(paramsRes);
+    committedParams_ = *paramsRes.value();
+    selectedIndex_ = 0;
+    draftBand_ = flatDraft;
+    bypass_ = false;
+
+    ++previewGeneration_;
+    update_response_grid();
+    update_validation_state();
+    emit changed();
+    request_preview();
+}
+
+void EqViewModel::resetForNewSource()
+{
+    const auto defaultId = idGenerator_();
+    draftBand_ = make_default_band(defaultId);
+    auto firstBandParam = make_band_parameters(draftBand_, max_frequency_hz());
+    Q_ASSERT(firstBandParam.has_value());
+
+    committedBands_ = { *firstBandParam };
+    auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
+    Q_ASSERT(paramsRes);
+    committedParams_ = *paramsRes.value();
+
+    selectedIndex_ = 0;
+    bypass_ = false;
+
+    undoStack_.clear();
+    redoStack_.clear();
+
+    ++previewGeneration_;
+    update_response_grid();
+    update_validation_state();
     emit changed();
     request_preview();
 }
@@ -671,6 +783,11 @@ bool EqViewModel::commitDraft()
     auto candidateParamsRes = dsp::ParametricEqParameters::create(candidateBands);
     if (!candidateParamsRes) {
         return false;
+    }
+
+    const auto preState = capture_current_snapshot();
+    if (candidateBands != committedBands_) {
+        push_undo_snapshot(preState);
     }
 
     committedBands_ = std::move(candidateBands);
@@ -946,6 +1063,39 @@ void EqViewModel::update_response_grid()
         pointMap.insert(QStringLiteral("phaseRad"), pt.phase_rad);
         responseGrid_.append(pointMap);
     }
+}
+
+void EqViewModel::push_undo_snapshot(EqStateSnapshot previousSnapshot)
+{
+    undoStack_.push_back(std::move(previousSnapshot));
+    if (undoStack_.size() > 50U) {
+        undoStack_.erase(undoStack_.begin());
+    }
+    redoStack_.clear();
+}
+
+EqViewModel::EqStateSnapshot EqViewModel::capture_current_snapshot() const
+{
+    return EqStateSnapshot{
+        .bands = committedBands_,
+        .selectedIndex = selectedIndex_,
+        .bypass = bypass_,
+    };
+}
+
+void EqViewModel::restore_snapshot(const EqStateSnapshot& snapshot)
+{
+    committedBands_ = snapshot.bands;
+    auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
+    Q_ASSERT(paramsRes);
+    committedParams_ = *paramsRes.value();
+
+    selectedIndex_ = std::min(snapshot.selectedIndex, committedBands_.empty() ? 0U : committedBands_.size() - 1U);
+    draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
+    bypass_ = snapshot.bypass;
+
+    update_response_grid();
+    update_validation_state();
 }
 
 void EqViewModel::update_validation_state()

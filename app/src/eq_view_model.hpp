@@ -48,6 +48,8 @@ class EqViewModel final : public QObject {
     Q_PROPERTY(bool routeAvailable READ route_available NOTIFY changed)
     Q_PROPERTY(bool mixedRouting READ mixed_routing NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
+    Q_PROPERTY(bool canUndo READ can_undo NOTIFY changed)
+    Q_PROPERTY(bool canRedo READ can_redo NOTIFY changed)
     Q_PROPERTY(QVariantList bandSummaries READ band_summaries NOTIFY changed)
     Q_PROPERTY(QString validationField READ validation_field NOTIFY changed)
     Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
@@ -67,6 +69,18 @@ public:
         bool bypass;
         std::shared_ptr<const render::RenderResult> preparedSnapshot;
         dsp::ModuleInstanceId instanceId;
+    };
+
+    struct EqStateSnapshot final {
+        std::vector<dsp::EqBandParameters> bands;
+        std::size_t selectedIndex{0};
+        bool bypass{false};
+
+        bool operator==(const EqStateSnapshot& other) const noexcept {
+            return selectedIndex == other.selectedIndex
+                && bypass == other.bypass
+                && bands == other.bands;
+        }
     };
 
     using PreviewExecutor = std::function<core::Result<render::RenderResult>(const PreviewJob&)>;
@@ -126,6 +140,8 @@ public:
     [[nodiscard]] bool route_available() const noexcept;
     [[nodiscard]] bool mixed_routing() const noexcept;
     [[nodiscard]] bool bypass() const noexcept;
+    [[nodiscard]] bool can_undo() const noexcept;
+    [[nodiscard]] bool can_redo() const noexcept;
 
     [[nodiscard]] QVariantList band_summaries() const;
     [[nodiscard]] QString validation_field() const;
@@ -148,6 +164,11 @@ public:
     Q_INVOKABLE void setFilter(const QString& filter);
     Q_INVOKABLE void setRouting(const QString& routing);
     Q_INVOKABLE void setBypass(bool bypass);
+
+    Q_INVOKABLE void undo();
+    Q_INVOKABLE void redo();
+    Q_INVOKABLE void resetToFlat();
+    Q_INVOKABLE void resetForNewSource();
 
     Q_INVOKABLE void setDraftFrequency(double frequency);
     Q_INVOKABLE void setDraftGain(double gain);
@@ -187,6 +208,9 @@ private:
     void update_response_grid();
     void update_validation_state();
     void request_preview();
+    void push_undo_snapshot(EqStateSnapshot previousSnapshot);
+    [[nodiscard]] EqStateSnapshot capture_current_snapshot() const;
+    void restore_snapshot(const EqStateSnapshot& snapshot);
     void worker_loop();
     void publish_preview_result(
         std::uint64_t generation,
@@ -203,6 +227,9 @@ private:
     DraftBand draftBand_;
     std::size_t selectedIndex_{0};
     bool bypass_{false};
+
+    std::vector<EqStateSnapshot> undoStack_;
+    std::vector<EqStateSnapshot> redoStack_;
 
     std::uint64_t previewGeneration_{0};
     std::uint64_t staleResultsDiscarded_{0};
