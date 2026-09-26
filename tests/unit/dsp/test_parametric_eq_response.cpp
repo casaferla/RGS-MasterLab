@@ -26,6 +26,9 @@ private slots:
     void testCascadedPassFilters();
     void testDisabledBandIdentity();
     void testInvalidInputRejection();
+    void testWholeEqMultiBandResponseAndDisabledExclusion();
+    void testCanonicalFlatWholeEqResponse();
+    void testEvaluateParametricEqResponseValidation();
 };
 
 void ParametricEqResponseTest::testAllSixFilterTypesAgreementWithOracle()
@@ -188,6 +191,99 @@ void ParametricEqResponseTest::testInvalidInputRejection()
     // NaN frequency
     auto nan_freq = dsp::evaluate_band_point(band, std::numeric_limits<double>::quiet_NaN(), sample_rate);
     QVERIFY(!nan_freq);
+}
+
+void ParametricEqResponseTest::testWholeEqMultiBandResponseAndDisabledExclusion()
+{
+    const auto sample_rate = *core::SampleRate::create(48000).value();
+    const auto id1 = *core::Uuid::parse("10000000-0000-0000-0000-000000000011").value();
+    const auto id2 = *core::Uuid::parse("10000000-0000-0000-0000-000000000012").value();
+    const auto id3 = *core::Uuid::parse("10000000-0000-0000-0000-000000000013").value();
+
+    auto band1 = *EqBandParameters::create(
+        id1, true, EqFilterType::BELL, EqRouting::STEREO,
+        dsp::BellPayload{1000.0, 6.0, 0.707}).value();
+    auto band2 = *EqBandParameters::create(
+        id2, true, EqFilterType::HIGH_SHELF, EqRouting::STEREO,
+        dsp::ShelfPayload{8000.0, -3.0, 1.0}).value();
+    auto band3_disabled = *EqBandParameters::create(
+        id3, false, EqFilterType::BELL, EqRouting::STEREO,
+        dsp::BellPayload{500.0, 12.0, 2.0}).value();
+
+    auto paramsRes = dsp::ParametricEqParameters::create({band1, band2, band3_disabled});
+    QVERIFY(paramsRes);
+
+    const std::vector<double> freqs{100.0, 500.0, 1000.0, 8000.0};
+
+    auto wholeRes = dsp::evaluate_parametric_eq_response(*paramsRes.value(), freqs, sample_rate);
+    QVERIFY(wholeRes);
+    QCOMPARE(wholeRes.value()->size(), freqs.size());
+
+    auto b1Res = dsp::evaluate_band_response(band1, freqs, sample_rate);
+    auto b2Res = dsp::evaluate_band_response(band2, freqs, sample_rate);
+    auto b3Res = dsp::evaluate_band_response(band3_disabled, freqs, sample_rate);
+    QVERIFY(b1Res && b2Res && b3Res);
+
+    for (std::size_t i = 0; i < freqs.size(); ++i) {
+        const auto& wholePt = (*wholeRes.value())[i];
+        const auto& b1Pt = (*b1Res.value())[i];
+        const auto& b2Pt = (*b2Res.value())[i];
+        const auto& b3Pt = (*b3Res.value())[i];
+
+        // Disabled band contributes identity transfer (1.0, 0.0)
+        QCOMPARE(b3Pt.transfer_function, std::complex<double>(1.0, 0.0));
+
+        const std::complex<double> expectedH = b1Pt.transfer_function * b2Pt.transfer_function;
+        QCOMPARE_LE(std::abs(wholePt.transfer_function - expectedH), 1e-12);
+        QCOMPARE_LE(std::abs(wholePt.magnitude_db - (b1Pt.magnitude_db + b2Pt.magnitude_db)), 1e-9);
+    }
+}
+
+void ParametricEqResponseTest::testCanonicalFlatWholeEqResponse()
+{
+    const auto sample_rate = *core::SampleRate::create(48000).value();
+    const auto id = *core::Uuid::parse("10000000-0000-0000-0000-000000000021").value();
+
+    auto flatBand = *EqBandParameters::create(
+        id, true, EqFilterType::BELL, EqRouting::STEREO,
+        dsp::BellPayload{1000.0, 0.0, 0.707}).value();
+
+    auto paramsRes = dsp::ParametricEqParameters::create({flatBand});
+    QVERIFY(paramsRes);
+
+    const std::vector<double> freqs{20.0, 100.0, 1000.0, 10000.0, 20000.0};
+    auto res = dsp::evaluate_parametric_eq_response(*paramsRes.value(), freqs, sample_rate);
+    QVERIFY(res);
+
+    for (const auto& pt : *res.value()) {
+        QCOMPARE_LE(std::abs(pt.magnitude_db), 1e-9);
+        QCOMPARE_LE(std::abs(pt.transfer_function - std::complex<double>(1.0, 0.0)), 1e-9);
+    }
+}
+
+void ParametricEqResponseTest::testEvaluateParametricEqResponseValidation()
+{
+    const auto sample_rate = *core::SampleRate::create(48000).value();
+    const auto id = *core::Uuid::parse("10000000-0000-0000-0000-000000000031").value();
+
+    auto band = *EqBandParameters::create(
+        id, true, EqFilterType::BELL, EqRouting::STEREO,
+        dsp::BellPayload{1000.0, 3.0, 0.707}).value();
+    auto params = *dsp::ParametricEqParameters::create({band}).value();
+
+    // Out of range frequency > 0.45 * Fs (21600 Hz)
+    auto outOfRange = dsp::evaluate_parametric_eq_response(params, {22000.0}, sample_rate);
+    QVERIFY(!outOfRange);
+    QCOMPARE(outOfRange.error()->code(), core::ErrorCode::OutOfRange);
+
+    // Negative frequency
+    auto negFreq = dsp::evaluate_parametric_eq_response(params, {-5.0}, sample_rate);
+    QVERIFY(!negFreq);
+    QCOMPARE(negFreq.error()->code(), core::ErrorCode::InvalidArgument);
+
+    // Invalid sample rate
+    auto zeroFsRate = core::SampleRate::create(0);
+    QVERIFY(!zeroFsRate);
 }
 
 }  // namespace

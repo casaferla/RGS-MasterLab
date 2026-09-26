@@ -69,6 +69,20 @@ private slots:
     void testGraphDragNoPreviewReleaseOneCommit();
     void testMixedRouting();
     void testSelectedBandResponseOnly();
+    void testBandSummariesAndValidationPresentation();
+    void testPreparedSampleRate44100ResponseGridRegression();
+    void testSelectionOnlyNoCommitOrPreview();
+    void testGraphDragReleaseAndPersistenceAcrossSelection();
+    void testNonGainFilterGraphDragNoGainMutation();
+    void testDensifiedResponseGridIncludesExactF0AndLocalRefinement();
+    void testSecondaryParameterWheelAdjustmentAndDebounceCommit();
+    void testNewSourceResetClearsStateAndHistory();
+    void testResetToFlatAlreadyFlatIsNoOp();
+    void testResetToFlatUndoRedo();
+    void testHistoryStackDepthCapAt50();
+    void testNewEditInvalidatesRedoStack();
+    void testWholeEqCombinedResponseEvaluation();
+    void testOverallToggleIsViewStateOnly();
 };
 
 void EqViewModelTest::testInvalidTextDraftAndCommitRejection()
@@ -616,7 +630,378 @@ void EqViewModelTest::testSelectedBandResponseOnly()
 {
     EqViewModel vm;
     QVERIFY(!vm.selected_band_response_points().isEmpty());
-    QCOMPARE(vm.selected_band_response_points().size(), 100);
+    QVERIFY(vm.selected_band_response_points().size() >= 512);
+}
+
+void EqViewModelTest::testBandSummariesAndValidationPresentation()
+{
+    EqViewModel vm;
+    QCOMPARE(vm.band_summaries().size(), 1);
+    QVERIFY(vm.validation_field().isEmpty());
+    QVERIFY(vm.validation_message().isEmpty());
+
+    auto summary0 = vm.band_summaries().at(0).toMap();
+    QCOMPARE(summary0.value("index").toInt(), 0);
+    QVERIFY(!summary0.value("bandId").toString().isEmpty());
+    QVERIFY(summary0.value("enabled").toBool());
+    QCOMPARE(summary0.value("filter").toString(), QStringLiteral("BELL"));
+    QCOMPARE(summary0.value("routing").toString(), QStringLiteral("STEREO"));
+    QCOMPARE(summary0.value("frequency").toDouble(), 1000.0);
+    QCOMPARE(summary0.value("gain").toDouble(), 0.0);
+    QVERIFY(summary0.value("gainApplicable").toBool());
+
+    vm.setDraftFrequencyText(QStringLiteral("abc"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("frequency"));
+    QVERIFY(!vm.validation_message().isEmpty());
+
+    vm.cancelDraft();
+    QVERIFY(vm.validation_field().isEmpty());
+    QVERIFY(vm.validation_message().isEmpty());
+
+    vm.setDraftGainText(QStringLiteral("25"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("gain"));
+    QVERIFY(!vm.validation_message().isEmpty());
+
+    vm.cancelDraft();
+    QVERIFY(vm.validation_field().isEmpty());
+}
+
+void EqViewModelTest::testPreparedSampleRate44100ResponseGridRegression()
+{
+    auto rate441k = make_test_prepared_result(*core::SampleRate::create(44100).value());
+    EqViewModel vm{[rate441k] { return rate441k; }};
+
+    const auto points = vm.selected_band_response_points();
+    QVERIFY(!points.isEmpty());
+    QVERIFY(points.size() >= 512);
+
+    const auto firstPt = points.first().toMap();
+    const auto lastPt = points.last().toMap();
+
+    const double firstFreq = firstPt.value("frequency").toDouble();
+    const double lastFreq = lastPt.value("frequency").toDouble();
+
+    QVERIFY(firstFreq >= 20.0);
+    QVERIFY(lastFreq <= 19845.0);
+    QCOMPARE(lastFreq, 19845.0);
+}
+
+void EqViewModelTest::testSelectionOnlyNoCommitOrPreview()
+{
+    EqViewModel vm;
+    vm.addBand(); // Adds Band 1 at index 1, preview_generation = 1
+    const quint64 genBeforeSelection = vm.preview_generation();
+    const auto paramsBeforeSelection = vm.committed_parameters();
+
+    // Select Band 0
+    vm.selectBand(0);
+    QCOMPARE(vm.selected_index(), 0);
+    QCOMPARE(vm.preview_generation(), genBeforeSelection);
+    QCOMPARE(vm.committed_parameters(), paramsBeforeSelection);
+
+    // Select Band 1
+    vm.selectBand(1);
+    QCOMPARE(vm.selected_index(), 1);
+    QCOMPARE(vm.preview_generation(), genBeforeSelection);
+    QCOMPARE(vm.committed_parameters(), paramsBeforeSelection);
+}
+
+void EqViewModelTest::testGraphDragReleaseAndPersistenceAcrossSelection()
+{
+    EqViewModel vm;
+    vm.addBand(); // Band 1 at index 1
+    const quint64 genBeforeDrag = vm.preview_generation();
+
+    // Drag Band 1 to 2500 Hz, +6 dB
+    vm.graphDrag(2500.0, 6.0);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), 6.0);
+    QCOMPARE(vm.preview_generation(), genBeforeDrag);
+
+    // Release commits Band 1
+    vm.graphRelease();
+    QCOMPARE(vm.preview_generation(), genBeforeDrag + 1U);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), 6.0);
+
+    // Switch to Band 0 and then back to Band 1
+    vm.selectBand(0);
+    QCOMPARE(vm.selected_index(), 0);
+
+    vm.selectBand(1);
+    QCOMPARE(vm.selected_index(), 1);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), 6.0);
+}
+
+void EqViewModelTest::testNonGainFilterGraphDragNoGainMutation()
+{
+    EqViewModel vm;
+    vm.setFilter(QStringLiteral("HIGH_PASS"));
+    QVERIFY(!vm.gain_applicable());
+    const double originalGain = vm.gain();
+
+    const quint64 genBeforeDrag = vm.preview_generation();
+    vm.graphDrag(500.0, 12.0); // Pass +12 dB gain attempt to non-gain filter
+    QCOMPARE(vm.frequency(), 500.0);
+    QCOMPARE(vm.gain(), originalGain); // Gain must not mutate for HIGH_PASS
+
+    vm.graphRelease();
+    QCOMPARE(vm.preview_generation(), genBeforeDrag + 1U);
+    QCOMPARE(vm.frequency(), 500.0);
+    QCOMPARE(vm.gain(), originalGain);
+}
+
+void EqViewModelTest::testDensifiedResponseGridIncludesExactF0AndLocalRefinement()
+{
+    EqViewModel vm;
+    vm.setDraftFrequency(1234.5);
+    vm.setDraftQ(12.0); // High Q
+    vm.commitDraft();
+
+    const auto points = vm.selected_band_response_points();
+    QVERIFY(points.size() >= 512);
+    QVERIFY(points.size() <= 1024);
+
+    bool exactF0Found = false;
+    for (const auto& varPt : points) {
+        const double f = varPt.toMap().value("frequency").toDouble();
+        if (std::abs(f - 1234.5) < 1e-5) {
+            exactF0Found = true;
+            break;
+        }
+    }
+    QVERIFY2(exactF0Found, "Exact f0 (1234.5 Hz) must be present in the response grid");
+}
+
+void EqViewModelTest::testSecondaryParameterWheelAdjustmentAndDebounceCommit()
+{
+    EqViewModel vm;
+    const quint64 genStart = vm.preview_generation();
+
+    // 1. Bell filter Q adjustment (normal step vs shift step)
+    vm.setFilter(QStringLiteral("BELL"));
+    const double initialQ = vm.q();
+    vm.adjustSecondaryParameter(1, false); // Wheel up
+    QVERIFY(vm.q() > initialQ);
+    QCOMPARE(vm.preview_generation(), genStart); // No preview render per wheel step
+
+    vm.adjustSecondaryParameter(-1, true); // Shift wheel down
+    QVERIFY(vm.q() < initialQ * 1.03);
+
+    // 2. Shelf filter slope adjustment
+    vm.setFilter(QStringLiteral("LOW_SHELF"));
+    const double initialShelfSlope = vm.shelf_slope();
+    vm.adjustSecondaryParameter(-1, false); // Wheel down
+    QCOMPARE(vm.shelf_slope(), initialShelfSlope - 0.05);
+
+    // 3. High pass slope discrete stepping
+    vm.setFilter(QStringLiteral("HIGH_PASS"));
+    QCOMPARE(vm.slope_db_per_oct(), 12);
+    vm.adjustSecondaryParameter(1, false); // Wheel up
+    QCOMPARE(vm.slope_db_per_oct(), 18);
+    vm.adjustSecondaryParameter(-1, false); // Wheel down
+    QCOMPARE(vm.slope_db_per_oct(), 12);
+}
+
+void EqViewModelTest::testNewSourceResetClearsStateAndHistory()
+{
+    EqViewModel vm;
+    vm.addBand();
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+    vm.setBypass(true);
+
+    QCOMPARE(vm.band_count(), 2);
+    QVERIFY(vm.can_undo());
+
+    vm.resetForNewSource();
+
+    QCOMPARE(vm.band_count(), 1);
+    QCOMPARE(vm.selected_index(), 0);
+    QCOMPARE(vm.filter_label(), QStringLiteral("BELL"));
+    QCOMPARE(vm.routing_label(), QStringLiteral("STEREO"));
+    QCOMPARE(vm.frequency(), 1000.0);
+    QCOMPARE(vm.gain(), 0.0);
+    QCOMPARE(vm.q(), 0.707);
+    QVERIFY(!vm.bypass());
+    QVERIFY(!vm.can_undo());
+    QVERIFY(!vm.can_redo());
+}
+
+void EqViewModelTest::testResetToFlatAlreadyFlatIsNoOp()
+{
+    EqViewModel vm;
+    const QString origId = vm.selected_band_id();
+    const quint64 origGen = vm.preview_generation();
+
+    // 1. Calling resetToFlat on initial Flat EQ is a no-op
+    vm.resetToFlat();
+    QCOMPARE(vm.selected_band_id(), origId);
+    QCOMPARE(vm.preview_generation(), origGen);
+    QVERIFY(!vm.can_undo());
+    QVERIFY(!vm.can_redo());
+
+    // 2. Create non-flat state, then Undo back to canonical Flat so Redo is available
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+    QVERIFY(vm.can_undo());
+
+    vm.undo(); // Now back to canonical Flat, and Redo is available
+    QVERIFY(vm.can_redo());
+    const QString flatIdAfterUndo = vm.selected_band_id();
+    const quint64 genAfterUndo = vm.preview_generation();
+
+    // Call resetToFlat while in canonical Flat state with active Redo stack
+    vm.resetToFlat();
+
+    // Verify it is a true no-op
+    QCOMPARE(vm.selected_band_id(), flatIdAfterUndo);
+    QCOMPARE(vm.preview_generation(), genAfterUndo);
+    QVERIFY(vm.can_redo()); // Redo stack MUST remain preserved!
+
+    // Verify Redo can still be executed to restore the non-flat state
+    vm.redo();
+    QCOMPARE(vm.gain(), 6.0);
+}
+
+void EqViewModelTest::testResetToFlatUndoRedo()
+{
+    EqViewModel vm;
+    vm.addBand();
+    vm.setDraftFrequency(2500.0);
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+
+    QCOMPARE(vm.band_count(), 2);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), 6.0);
+
+    vm.resetToFlat();
+
+    QCOMPARE(vm.band_count(), 1);
+    QCOMPARE(vm.frequency(), 1000.0);
+    QCOMPARE(vm.gain(), 0.0);
+    QVERIFY(vm.can_undo());
+
+    vm.undo();
+
+    QCOMPARE(vm.band_count(), 2);
+    QCOMPARE(vm.selected_index(), 1);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), 6.0);
+    QVERIFY(vm.can_redo());
+
+    vm.redo();
+
+    QCOMPARE(vm.band_count(), 1);
+    QCOMPARE(vm.frequency(), 1000.0);
+    QCOMPARE(vm.gain(), 0.0);
+}
+
+void EqViewModelTest::testHistoryStackDepthCapAt50()
+{
+    EqViewModel vm;
+    for (int i = 1; i <= 60; ++i) {
+        vm.setDraftGain(static_cast<double>(i) * 0.1);
+        vm.commitDraft();
+    }
+
+    QVERIFY(vm.can_undo());
+
+    int undoCount = 0;
+    while (vm.can_undo()) {
+        vm.undo();
+        ++undoCount;
+    }
+
+    QCOMPARE(undoCount, 50); // Capped at exactly 50 history steps
+}
+
+void EqViewModelTest::testNewEditInvalidatesRedoStack()
+{
+    EqViewModel vm;
+    vm.setDraftGain(3.0);
+    vm.commitDraft();
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+
+    QVERIFY(vm.can_undo());
+    vm.undo();
+    QVERIFY(vm.can_redo());
+
+    // Perform a new edit after undo
+    vm.setDraftGain(9.0);
+    vm.commitDraft();
+
+    QVERIFY(!vm.can_redo()); // Redo stack must be cleared
+}
+
+void EqViewModelTest::testWholeEqCombinedResponseEvaluation()
+{
+    EqViewModel vm;
+    // Flat 1-band initial state -> combined response should be ~0 dB
+    const auto flatPoints = vm.combined_response_points();
+    QVERIFY(!flatPoints.isEmpty());
+    for (const auto& varPt : flatPoints) {
+        const double mag = varPt.toMap().value("magnitudeDb").toDouble();
+        QVERIFY2(std::abs(mag) < 1e-3, "Flat EQ combined response must be ~0 dB");
+    }
+
+    // Add Band 2: High Shelf 8 kHz +6 dB and commit
+    vm.addBand();
+    vm.setFilter(QStringLiteral("HIGH_SHELF"));
+    vm.setDraftFrequency(8000.0);
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+
+    // Select Band 1 (index 0): Bell 1 kHz +6 dB and commit
+    vm.selectBand(0);
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+
+    const auto combinedCommitted1 = vm.combined_response_points();
+
+    // Verify selection change alone does not change combined response points
+    vm.selectBand(1);
+    const auto combinedCommitted2 = vm.combined_response_points();
+    QCOMPARE(combinedCommitted1, combinedCommitted2);
+
+    // Verify uncommitted draft change on selected band does NOT alter combined response
+    vm.setDraftGain(12.0); // draft edit only, not committed!
+    const auto combinedDuringDraft = vm.combined_response_points();
+    QCOMPARE(combinedDuringDraft, combinedCommitted1);
+
+    // Commit the edit -> combined response DOES update
+    vm.commitDraft();
+    const auto combinedAfterCommit = vm.combined_response_points();
+    QVERIFY(combinedAfterCommit != combinedCommitted1);
+
+    // Disable Band 2 (index 1) -> combined response changes
+    vm.setEnabled(false);
+    const auto combinedDisabled = vm.combined_response_points();
+    QVERIFY(combinedDisabled != combinedAfterCommit);
+}
+
+void EqViewModelTest::testOverallToggleIsViewStateOnly()
+{
+    EqViewModel vm;
+    const quint64 genBefore = vm.preview_generation();
+    const bool canUndoBefore = vm.can_undo();
+    const bool canRedoBefore = vm.can_redo();
+
+    QVERIFY(!vm.show_combined_response());
+
+    vm.setShowCombinedResponse(true);
+
+    QVERIFY(vm.show_combined_response());
+    QCOMPARE(vm.preview_generation(), genBefore); // No preview request
+    QCOMPARE(vm.can_undo(), canUndoBefore); // No undo entry
+    QCOMPARE(vm.can_redo(), canRedoBefore);
+
+    vm.setShowCombinedResponse(false);
+    QVERIFY(!vm.show_combined_response());
+    QCOMPARE(vm.preview_generation(), genBefore);
 }
 
 }  // namespace
