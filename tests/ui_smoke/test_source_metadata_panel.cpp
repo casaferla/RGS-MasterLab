@@ -7,7 +7,6 @@
 #include "source_selection_view_model.hpp"
 #include "waveform_item.hpp"
 #include "waveform_presentation.hpp"
-#include "windows_window_chrome_helper.hpp"
 
 #include "../audio_golden/wav/golden_vectors.hpp"
 #include "../unit/audio/wav_test_support.hpp"

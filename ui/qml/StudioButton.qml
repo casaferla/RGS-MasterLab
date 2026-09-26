@@ -17,40 +17,36 @@ Button {
     hoverEnabled: true
     padding: 0
 
-    contentItem: Item {
-        id: wrapperItem
-        Row {
-            id: contentRow
-            objectName: "contentRow"
-            anchors.centerIn: parent
-            spacing: control.iconKind.length > 0 && label.visible ? 8 : 0
-            StudioIcon {
-                visible: control.iconKind.length > 0
-                width: visible ? 16 : 0
-                height: 16
-                anchors.verticalCenter: parent.verticalCenter
-                kind: control.iconKind
-                strokeColor: label.color
-                fillColor: label.color
-            }
-            Text {
-                id: label
-                visible: control.text.length > 0
-                anchors.verticalCenter: parent.verticalCenter
-                text: control.text
-                font.family: "Segoe UI"
-                font.pixelSize: 12
-                font.weight: control.selected || control.tone === "primary"
-                    ? Font.DemiBold : Font.Normal
-                color: !control.enabled ? "#6E7E8D"
-                     : control.tone === "primary" ? "#F4F9FC"
-                     : control.tone === "gold" && control.selected ? "#FFF4C8"
-                     : control.down ? "#B8C7D9"
-                     : control.hovered ? "#FFFFFF" : "#DDE6F3"
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
-            }
+    contentItem: Row {
+        id: contentRow
+        anchors.centerIn: parent
+        spacing: control.iconKind.length > 0 && label.visible ? 8 : 0
+        StudioIcon {
+            visible: control.iconKind.length > 0
+            width: visible ? 16 : 0
+            height: 16
+            anchors.verticalCenter: parent.verticalCenter
+            kind: control.iconKind
+            strokeColor: label.color
+            fillColor: label.color
+        }
+        Text {
+            id: label
+            visible: control.text.length > 0
+            anchors.verticalCenter: parent.verticalCenter
+            text: control.text
+            font.family: "Segoe UI"
+            font.pixelSize: 12
+            font.weight: control.selected || control.tone === "primary"
+                ? Font.DemiBold : Font.Normal
+            color: !control.enabled ? "#6E7E8D"
+                 : control.tone === "primary" ? "#F4F9FC"
+                 : control.tone === "gold" && control.selected ? "#FFF4C8"
+                 : control.down ? "#B8C7D9"
+                 : control.hovered ? "#FFFFFF" : "#DDE6F3"
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
         }
     }
 
