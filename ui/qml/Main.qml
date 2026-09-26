@@ -86,6 +86,21 @@ ApplicationWindow {
         stateResetTimer.restart()
     }
 
+    function restoreMaximizedDrag(targetX, targetY, targetWidth, targetHeight) {
+        normalGeometryCaptureTimer.stop()
+        isChangingWindowState = true
+
+        root.width = Math.max(root.minimumWidth, targetWidth)
+        root.height = Math.max(root.minimumHeight, targetHeight)
+        root.x = targetX
+        root.y = targetY
+
+        root.showNormal()
+
+        restoreTimer.restart()
+        stateResetTimer.restart()
+    }
+
     Timer {
         id: stateResetTimer
         interval: 350
@@ -107,10 +122,6 @@ ApplicationWindow {
                 if (root.normalGeometry.width > 0 && root.normalGeometry.height > 0) {
                     root.width = Math.max(root.minimumWidth, root.normalGeometry.width)
                     root.height = Math.max(root.minimumHeight, root.normalGeometry.height)
-                    if (root.normalGeometry.x >= 0 && root.normalGeometry.y >= 0) {
-                        root.x = root.normalGeometry.x
-                        root.y = root.normalGeometry.y
-                    }
                 }
             }
         }
@@ -205,23 +216,36 @@ ApplicationWindow {
                 hoverEnabled: true
 
                 property point pressPoint: Qt.point(0, 0)
+                property double pressRatioX: 0.5
+                property bool dragStartedMaximized: false
                 property bool isDraggingFromMaximized: false
 
                 onPressed: function(mouse) {
                     pressPoint = Qt.point(mouse.x, mouse.y)
+                    pressRatioX = root.width > 0 ? (mouse.x / root.width) : 0.5
+                    dragStartedMaximized = (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized)
                     isDraggingFromMaximized = false
-                    if (root.visibility !== Window.Maximized) {
+
+                    if (!dragStartedMaximized) {
                         root.startSystemMove()
                     }
                 }
 
                 onPositionChanged: function(mouse) {
-                    if (pressed && root.visibility === Window.Maximized && !isDraggingFromMaximized) {
+                    if (pressed && dragStartedMaximized && !isDraggingFromMaximized) {
                         const dx = mouse.x - pressPoint.x
                         const dy = mouse.y - pressPoint.y
                         if (Math.abs(dy) > 4 || Math.abs(dx) > 4) {
                             isDraggingFromMaximized = true
-                            root.restoreNormalWindow()
+
+                            const normalW = Math.max(root.minimumWidth, root.normalGeometry.width > 0 ? root.normalGeometry.width : 1440)
+                            const normalH = Math.max(root.minimumHeight, root.normalGeometry.height > 0 ? root.normalGeometry.height : 900)
+
+                            const globalPt = headerMouseArea.mapToGlobal(Qt.point(mouse.x, mouse.y))
+                            const targetX = globalPt.x - (pressRatioX * normalW)
+                            const targetY = globalPt.y - pressPoint.y
+
+                            root.restoreMaximizedDrag(targetX, targetY, normalW, normalH)
                             root.startSystemMove()
                         }
                     }

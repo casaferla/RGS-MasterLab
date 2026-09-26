@@ -1519,6 +1519,21 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(window->visibility() != QWindow::Maximized);
     QCOMPARE(window->size(), acceptedNormalSize);
 
+    // Path C: Restore from Maximized via header drag simulation
+    window->showMaximized();
+    QTest::qWait(500);
+    QCoreApplication::processEvents();
+    QCOMPARE(window->visibility(), QWindow::Maximized);
+
+    QMetaObject::invokeMethod(root, "restoreMaximizedDrag",
+        Q_ARG(QVariant, 200), Q_ARG(QVariant, 100),
+        Q_ARG(QVariant, acceptedNormalSize.width()), Q_ARG(QVariant, acceptedNormalSize.height()));
+    QTest::qWait(500);
+    QCoreApplication::processEvents();
+
+    QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->size(), acceptedNormalSize);
+
     window->resize(1184, 688);
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(1184, 688));
