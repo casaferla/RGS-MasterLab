@@ -6,10 +6,15 @@ qt_add_qml_module(rgsml_ui
     QML_FILES
         qml/AuditionSourceSelector.qml
         qml/Main.qml
+        qml/ParametricEqEditor.qml
+        qml/ParametricEqEditorWindow.qml
+        qml/ParametricEqGraph.qml
         qml/SegmentedTimeEditor.qml
         qml/StudioButton.qml
         qml/StudioIcon.qml
         qml/StudioIconButton.qml
+        qml/StudioNumericField.qml
+        qml/StudioSegmentButton.qml
         qml/StudioToggle.qml
         qml/TransportButton.qml
     SOURCES
@@ -39,6 +44,10 @@ target_link_libraries(rgsml_ui
 set_property(TARGET rgsml_ui PROPERTY RGSML_DEPENDENCY_LAYER UI)
 
 rgsml_apply_project_warnings(rgsml_ui)
+
+if(MSVC)
+    target_compile_options(rgsml_ui PRIVATE /wd4702)
+endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/../cmake/RgsmlDependencyRules.cmake")
 rgsml_assert_target_dependencies(TARGET rgsml_ui FORBIDDEN_LAYERS PROJECT)

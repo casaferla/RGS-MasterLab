@@ -25,6 +25,91 @@ ApplicationWindow {
     readonly property color warning: "#F2B632"
     readonly property color error: "#F27683"
 
+    property rect normalGeometry: Qt.rect(100, 100, 1440, 900)
+    property bool isChangingWindowState: false
+
+    Timer {
+        id: normalGeometryCaptureTimer
+        interval: 150
+        repeat: false
+        onTriggered: {
+            if (!root.isChangingWindowState && root.visibility === Window.Windowed) {
+                root.normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
+            }
+        }
+    }
+
+    function captureNormalGeometry() {
+        if (!isChangingWindowState && root.visibility === Window.Windowed) {
+            normalGeometryCaptureTimer.restart()
+        }
+    }
+
+    function toggleMaximizeRestore() {
+        if (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized) {
+            restoreNormalWindow()
+        } else {
+            if (root.visibility === Window.Windowed) {
+                normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
+            }
+            isChangingWindowState = true
+            root.showMaximized()
+            stateResetTimer.restart()
+        }
+    }
+
+    function restoreNormalWindow() {
+        isChangingWindowState = true
+        root.showNormal()
+        restoreTimer.restart()
+        stateResetTimer.restart()
+    }
+
+    Timer {
+        id: stateResetTimer
+        interval: 300
+        repeat: false
+        onTriggered: isChangingWindowState = false
+    }
+
+    Timer {
+        id: restoreTimer
+        interval: 10
+        repeat: false
+        onTriggered: {
+            if (root.visibility !== Window.Maximized && root.windowState !== Qt.WindowMaximized) {
+                if (root.normalGeometry.width > 0 && root.normalGeometry.height > 0) {
+                    root.width = Math.max(root.minimumWidth, root.normalGeometry.width)
+                    root.height = Math.max(root.minimumHeight, root.normalGeometry.height)
+                    if (root.normalGeometry.x >= 0 && root.normalGeometry.y >= 0) {
+                        root.x = root.normalGeometry.x
+                        root.y = root.normalGeometry.y
+                    }
+                }
+            }
+        }
+    }
+
+    onXChanged: captureNormalGeometry()
+    onYChanged: captureNormalGeometry()
+    onWidthChanged: captureNormalGeometry()
+    onHeightChanged: captureNormalGeometry()
+    onVisibilityChanged: function() {
+        if (root.visibility === Window.Windowed) {
+            captureNormalGeometry()
+        }
+    }
+    Component.onCompleted: captureNormalGeometry()
+
+    readonly property bool hasError: {
+        return projectSession.errorMessage.length > 0
+            || sourceSelection.errorMessage.length > 0
+            || goldSelection.errorMessage.length > 0
+            || auditionSelector.statusText.length > 0
+            || playbackTransport.errorMessage.length > 0
+            || auditionRegion.errorMessage.length > 0
+    }
+
     property string statusText: {
         if (projectSession.errorMessage.length > 0) return projectSession.errorMessage
         if (sourceSelection.errorMessage.length > 0) return sourceSelection.errorMessage
@@ -50,6 +135,7 @@ ApplicationWindow {
     FileDialog { id: goldDialog; objectName: "goldFileDialog"; title: "Open Gold Reference WAV"; fileMode: FileDialog.OpenFile; nameFilters: ["WAV audio (*.wav *.wave)"]; onAccepted: goldSelection.selectGold(selectedFile); onRejected: goldSelection.cancelGoldSelection() }
     FileDialog { id: projectOpenDialog; objectName: "projectOpenFileDialog"; title: "Open RGS MasterLab Project"; fileMode: FileDialog.OpenFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.openProject(selectedFile); onRejected: projectSession.cancelProjectOpen() }
     FileDialog { id: projectSaveDialog; objectName: "projectSaveFileDialog"; title: "Save RGS MasterLab Project As"; fileMode: FileDialog.SaveFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.saveProjectAs(selectedFile); onRejected: projectSession.cancelProjectSave() }
+    ParametricEqEditorWindow { id: eqWindow; objectName: "parametricEqToolWindow"; viewModel: eqViewModel; transientParent: root }
 
     Shortcut {
         sequence: "F10"
@@ -57,7 +143,15 @@ ApplicationWindow {
         onActivated: desktopMenu.forceActiveFocus(Qt.ShortcutFocusReason)
     }
 
-    onClosing: function(close) { if (playbackTransport.canStop) playbackTransport.stop(); close.accepted = true }
+    onClosing: function(close) {
+        if (playbackTransport.canStop) playbackTransport.stop()
+        if (eqWindow) {
+            eqWindow.forceClose = true
+            eqWindow.close()
+        }
+        close.accepted = true
+        Qt.quit()
+    }
 
     Column {
         anchors.fill: parent
@@ -71,7 +165,37 @@ ApplicationWindow {
             color: root.surface
             border.color: root.border
 
-            MouseArea { anchors.fill: parent; acceptedButtons: Qt.LeftButton; onPressed: root.startSystemMove(); onDoubleClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized() }
+            MouseArea {
+                id: headerMouseArea
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton
+                hoverEnabled: true
+
+                property point pressPoint: Qt.point(0, 0)
+                property bool isDraggingFromMaximized: false
+
+                onPressed: function(mouse) {
+                    pressPoint = Qt.point(mouse.x, mouse.y)
+                    isDraggingFromMaximized = false
+                    if (root.visibility !== Window.Maximized) {
+                        root.startSystemMove()
+                    }
+                }
+
+                onPositionChanged: function(mouse) {
+                    if (pressed && root.visibility === Window.Maximized && !isDraggingFromMaximized) {
+                        const dx = mouse.x - pressPoint.x
+                        const dy = mouse.y - pressPoint.y
+                        if (Math.abs(dy) > 4 || Math.abs(dx) > 4) {
+                            isDraggingFromMaximized = true
+                            root.restoreNormalWindow()
+                            root.startSystemMove()
+                        }
+                    }
+                }
+
+                onDoubleClicked: root.toggleMaximizeRestore()
+            }
 
             RowLayout {
                 anchors.fill: parent
@@ -126,8 +250,13 @@ ApplicationWindow {
                         StudioMenuItem { text: "Preferences"; enabled: false }
                     }
                     Menu {
+                        objectName: "desktopViewMenu"
+                        popupType: Popup.Item
+                        width: 230
                         title: "&View"
                         background: Rectangle { color: root.surface; border.color: root.border }
+                        StudioMenuItem { objectName: "menuViewParametricEq"; text: "Parametric EQ…"; enabled: auditionSelector.preparedAvailable; onTriggered: { eqWindow.show(); eqWindow.raise(); eqWindow.requestActivate() } }
+                        MenuSeparator { }
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: sourceWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
                         StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
                         StudioMenuItem { text: "Fit Source\tHome"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }
@@ -154,7 +283,7 @@ ApplicationWindow {
                 Row {
                     Layout.preferredHeight: 48; spacing: 0
                     StudioIconButton { objectName: "windowMinimizeButton"; width: 46; height: 48; controlSize: 46; iconKind: "minimize"; activeFocusOnTab: false; onClicked: root.showMinimized(); Accessible.name: "Minimize window" }
-                    StudioIconButton { objectName: "windowMaximizeButton"; width: 46; height: 48; controlSize: 46; iconKind: root.visibility === Window.Maximized ? "restore" : "maximize"; activeFocusOnTab: false; onClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized(); Accessible.name: root.visibility === Window.Maximized ? "Restore window" : "Maximize window" }
+                    StudioIconButton { objectName: "windowMaximizeButton"; width: 46; height: 48; controlSize: 46; iconKind: root.visibility === Window.Maximized ? "restore" : "maximize"; activeFocusOnTab: false; onClicked: root.toggleMaximizeRestore(); Accessible.name: root.visibility === Window.Maximized ? "Restore window" : "Maximize window" }
                     StudioIconButton { objectName: "windowCloseButton"; width: 48; height: 48; controlSize: 48; tone: "close"; iconKind: "close"; activeFocusOnTab: false; onClicked: root.close(); Accessible.name: "Close window" }
                 }
             }
@@ -385,7 +514,7 @@ ApplicationWindow {
             border.color: root.border
             RowLayout {
                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
-                Rectangle { objectName: "statusReadyIndicator"; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: sourceSelection.errorMessage.length > 0 || goldSelection.errorMessage.length > 0 || playbackTransport.errorMessage.length > 0 ? root.error : "#00E6E6" }
+                Rectangle { objectName: "statusReadyIndicator"; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: root.hasError ? root.error : "#00E6E6" }
                 Label { objectName: "statusBarMessage"; Layout.fillWidth: true; text: root.statusText; color: root.textSecondary; font.pixelSize: 10; elide: Text.ElideRight }
             }
         }
@@ -406,4 +535,9 @@ ApplicationWindow {
     MouseArea { z: 1000; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 5; cursorShape: Qt.SizeHorCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.RightEdge) }
     MouseArea { z: 1000; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 5; cursorShape: Qt.SizeVerCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.TopEdge) }
     MouseArea { z: 1000; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 5; cursorShape: Qt.SizeVerCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.BottomEdge) }
+
+    MouseArea { objectName: "resizeTopLeft"; z: 1001; anchors.left: parent.left; anchors.top: parent.top; width: 8; height: 8; cursorShape: Qt.SizeFDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.TopEdge | Qt.LeftEdge) }
+    MouseArea { objectName: "resizeTopRight"; z: 1001; anchors.right: parent.right; anchors.top: parent.top; width: 8; height: 8; cursorShape: Qt.SizeBDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.TopEdge | Qt.RightEdge) }
+    MouseArea { objectName: "resizeBottomLeft"; z: 1001; anchors.left: parent.left; anchors.bottom: parent.bottom; width: 8; height: 8; cursorShape: Qt.SizeBDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.BottomEdge | Qt.LeftEdge) }
+    MouseArea { objectName: "resizeBottomRight"; z: 1001; anchors.right: parent.right; anchors.bottom: parent.bottom; width: 8; height: 8; cursorShape: Qt.SizeFDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.BottomEdge | Qt.RightEdge) }
 }

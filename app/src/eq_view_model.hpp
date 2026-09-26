@@ -48,10 +48,17 @@ class EqViewModel final : public QObject {
     Q_PROPERTY(bool routeAvailable READ route_available NOTIFY changed)
     Q_PROPERTY(bool mixedRouting READ mixed_routing NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
+    Q_PROPERTY(bool canUndo READ can_undo NOTIFY changed)
+    Q_PROPERTY(bool canRedo READ can_redo NOTIFY changed)
+    Q_PROPERTY(QVariantList bandSummaries READ band_summaries NOTIFY changed)
+    Q_PROPERTY(QString validationField READ validation_field NOTIFY changed)
+    Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
     Q_PROPERTY(quint64 previewGeneration READ preview_generation NOTIFY changed)
     Q_PROPERTY(QString previewStatus READ preview_status NOTIFY changed)
     Q_PROPERTY(QString previewError READ preview_error NOTIFY changed)
     Q_PROPERTY(QVariantList selectedBandResponsePoints READ selected_band_response_points NOTIFY changed)
+    Q_PROPERTY(QVariantList combinedResponsePoints READ combined_response_points NOTIFY changed)
+    Q_PROPERTY(bool showCombinedResponse READ show_combined_response WRITE setShowCombinedResponse NOTIFY changed)
 
 public:
     using PreparedSnapshotProvider = std::function<std::shared_ptr<const render::RenderResult>()>;
@@ -64,6 +71,18 @@ public:
         bool bypass;
         std::shared_ptr<const render::RenderResult> preparedSnapshot;
         dsp::ModuleInstanceId instanceId;
+    };
+
+    struct EqStateSnapshot final {
+        std::vector<dsp::EqBandParameters> bands;
+        std::size_t selectedIndex{0};
+        bool bypass{false};
+
+        bool operator==(const EqStateSnapshot& other) const noexcept {
+            return selectedIndex == other.selectedIndex
+                && bypass == other.bypass
+                && bands == other.bands;
+        }
     };
 
     using PreviewExecutor = std::function<core::Result<render::RenderResult>(const PreviewJob&)>;
@@ -123,11 +142,20 @@ public:
     [[nodiscard]] bool route_available() const noexcept;
     [[nodiscard]] bool mixed_routing() const noexcept;
     [[nodiscard]] bool bypass() const noexcept;
+    [[nodiscard]] bool can_undo() const noexcept;
+    [[nodiscard]] bool can_redo() const noexcept;
+
+    [[nodiscard]] QVariantList band_summaries() const;
+    [[nodiscard]] QString validation_field() const;
+    [[nodiscard]] QString validation_message() const;
 
     [[nodiscard]] quint64 preview_generation() const noexcept;
     [[nodiscard]] QString preview_status() const;
     [[nodiscard]] QString preview_error() const;
     [[nodiscard]] QVariantList selected_band_response_points() const;
+    [[nodiscard]] QVariantList combined_response_points() const;
+    [[nodiscard]] bool show_combined_response() const noexcept;
+    void setShowCombinedResponse(bool show);
 
     [[nodiscard]] dsp::ModuleInstanceId instance_id() const noexcept;
     [[nodiscard]] const dsp::ParametricEqParameters& committed_parameters() const noexcept;
@@ -141,6 +169,11 @@ public:
     Q_INVOKABLE void setFilter(const QString& filter);
     Q_INVOKABLE void setRouting(const QString& routing);
     Q_INVOKABLE void setBypass(bool bypass);
+
+    Q_INVOKABLE void undo();
+    Q_INVOKABLE void redo();
+    Q_INVOKABLE void resetToFlat();
+    Q_INVOKABLE void resetForNewSource();
 
     Q_INVOKABLE void setDraftFrequency(double frequency);
     Q_INVOKABLE void setDraftGain(double gain);
@@ -159,6 +192,7 @@ public:
 
     Q_INVOKABLE void graphDrag(double frequency, double gain);
     Q_INVOKABLE void graphRelease();
+    Q_INVOKABLE void adjustSecondaryParameter(int steps, bool shiftPressed);
 
     // Trigger explicit preview render (e.g., when PREPARED realization becomes available)
     void trigger_preview();
@@ -177,7 +211,11 @@ private:
         double max_freq);
 
     void update_response_grid();
+    void update_validation_state();
     void request_preview();
+    void push_undo_snapshot(EqStateSnapshot previousSnapshot);
+    [[nodiscard]] EqStateSnapshot capture_current_snapshot() const;
+    void restore_snapshot(const EqStateSnapshot& snapshot);
     void worker_loop();
     void publish_preview_result(
         std::uint64_t generation,
@@ -195,12 +233,20 @@ private:
     std::size_t selectedIndex_{0};
     bool bypass_{false};
 
+    std::vector<EqStateSnapshot> undoStack_;
+    std::vector<EqStateSnapshot> redoStack_;
+
     std::uint64_t previewGeneration_{0};
     std::uint64_t staleResultsDiscarded_{0};
     QString previewStatus_{QStringLiteral("IDLE")};
     QString previewError_;
 
+    QString validationField_;
+    QString validationMessage_;
+
     QVariantList responseGrid_;
+    QVariantList combinedResponseGrid_;
+    bool showCombinedResponse_{false};
 
     std::mutex workerMutex_;
     std::condition_variable workerCond_;
