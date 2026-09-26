@@ -52,7 +52,7 @@ ApplicationWindow {
     onClosing: function(close) {
         if (forceClose) {
             close.accepted = true
-            root.hide()
+            root.destroy()
         } else {
             close.accepted = false
             root.hide()

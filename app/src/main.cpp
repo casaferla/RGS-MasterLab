@@ -159,6 +159,12 @@ int main(int argc, char* argv[])
         &application,
         [] { QCoreApplication::exit(EXIT_FAILURE); },
         Qt::QueuedConnection);
+    QObject::connect(
+        &engine,
+        &QQmlEngine::quit,
+        &application,
+        &QCoreApplication::quit,
+        Qt::QueuedConnection);
     engine.loadFromModule("Rgsml.Ui", "Main");
 
 #ifdef _WIN32

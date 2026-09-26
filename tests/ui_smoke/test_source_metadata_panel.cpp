@@ -1352,7 +1352,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     const int targetWidth = std::max(window->minimumWidth(), std::min(1280, available.width()));
     const int targetHeight = std::max(window->minimumHeight(), std::min(720, available.height()));
     window->resize(targetWidth, targetHeight);
-    QTest::qWait(50);
+    QTest::qWait(200);
     QCoreApplication::processEvents();
 
     const QSize acceptedNormalSize = window->size();
