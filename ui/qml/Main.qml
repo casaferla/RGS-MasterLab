@@ -94,8 +94,8 @@ ApplicationWindow {
     onYChanged: captureNormalGeometry()
     onWidthChanged: captureNormalGeometry()
     onHeightChanged: captureNormalGeometry()
-    onVisibilityChanged: {
-        if (visibility === Window.Windowed) {
+    onVisibilityChanged: function() {
+        if (root.visibility === Window.Windowed) {
             captureNormalGeometry()
         }
     }
