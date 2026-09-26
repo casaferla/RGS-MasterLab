@@ -57,6 +57,8 @@ class EqViewModel final : public QObject {
     Q_PROPERTY(QString previewStatus READ preview_status NOTIFY changed)
     Q_PROPERTY(QString previewError READ preview_error NOTIFY changed)
     Q_PROPERTY(QVariantList selectedBandResponsePoints READ selected_band_response_points NOTIFY changed)
+    Q_PROPERTY(QVariantList combinedResponsePoints READ combined_response_points NOTIFY changed)
+    Q_PROPERTY(bool showCombinedResponse READ show_combined_response WRITE setShowCombinedResponse NOTIFY changed)
 
 public:
     using PreparedSnapshotProvider = std::function<std::shared_ptr<const render::RenderResult>()>;
@@ -151,6 +153,9 @@ public:
     [[nodiscard]] QString preview_status() const;
     [[nodiscard]] QString preview_error() const;
     [[nodiscard]] QVariantList selected_band_response_points() const;
+    [[nodiscard]] QVariantList combined_response_points() const;
+    [[nodiscard]] bool show_combined_response() const noexcept;
+    void setShowCombinedResponse(bool show);
 
     [[nodiscard]] dsp::ModuleInstanceId instance_id() const noexcept;
     [[nodiscard]] const dsp::ParametricEqParameters& committed_parameters() const noexcept;
@@ -240,6 +245,8 @@ private:
     QString validationMessage_;
 
     QVariantList responseGrid_;
+    QVariantList combinedResponseGrid_;
+    bool showCombinedResponse_{false};
 
     std::mutex workerMutex_;
     std::condition_variable workerCond_;

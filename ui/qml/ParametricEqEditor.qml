@@ -157,6 +157,24 @@ Rectangle {
                     ToolTip.visible: hovered
                 }
 
+                StudioButton {
+                    objectName: "eqOverallToggleButton"
+                    text: "Overall"
+                    selected: root.viewModel ? root.viewModel.showCombinedResponse : false
+                    tone: root.viewModel && root.viewModel.showCombinedResponse ? "primary" : "secondary"
+                    accentColor: "#B3A989F2"
+                    minimumControlWidth: 72
+                    enabled: root.viewModel !== null && root.viewModel !== undefined
+                    onClicked: {
+                        if (root.viewModel) {
+                            root.viewModel.showCombinedResponse = !root.viewModel.showCombinedResponse
+                        }
+                    }
+                    Accessible.name: "Toggle Overall combined response curve"
+                    ToolTip.text: "Show or hide the combined total response curve of all active EQ bands"
+                    ToolTip.visible: hovered
+                }
+
                 Item { Layout.preferredWidth: 8 }
 
                 StudioButton {

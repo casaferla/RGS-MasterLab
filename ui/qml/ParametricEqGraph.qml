@@ -187,12 +187,54 @@ Rectangle {
                 const ctx = getContext("2d")
                 ctx.clearRect(0, 0, width, height)
 
-                if (!root.viewModel || !root.viewModel.selectedBandResponsePoints) return
+                if (!root.viewModel) return
 
+                const isBypassed = root.viewModel.bypass
+
+                // 1. Render Combined Whole-EQ Response Curve (when showCombinedResponse is true)
+                if (root.viewModel.showCombinedResponse && root.viewModel.combinedResponsePoints) {
+                    const cPoints = root.viewModel.combinedResponsePoints
+                    if (cPoints.length >= 2) {
+                        const strokeAlpha = isBypassed ? "#80A989F2" : "#FFA989F2"
+                        const haloAlpha = isBypassed ? "#20A989F2" : "#40A989F2"
+
+                        // Combined Halo
+                        ctx.beginPath()
+                        ctx.lineWidth = 4
+                        ctx.strokeStyle = haloAlpha
+                        for (let i = 0; i < cPoints.length; ++i) {
+                            const pt = cPoints[i]
+                            const px = root.freqToX(pt.frequency) - root.plotX
+                            const py = root.gainToY(pt.magnitudeDb) - root.plotY
+                            if (i === 0) ctx.moveTo(px, py)
+                            else ctx.lineTo(px, py)
+                        }
+                        ctx.stroke()
+
+                        // Combined Main Stroke
+                        ctx.beginPath()
+                        ctx.lineWidth = 2
+                        ctx.strokeStyle = strokeAlpha
+                        for (let i = 0; i < cPoints.length; ++i) {
+                            const pt = cPoints[i]
+                            const px = root.freqToX(pt.frequency) - root.plotX
+                            const py = root.gainToY(pt.magnitudeDb) - root.plotY
+                            if (i === 0) ctx.moveTo(px, py)
+                            else ctx.lineTo(px, py)
+                        }
+                        ctx.stroke()
+                    }
+                }
+
+                // 2. Render Selected Band Response Curve
+                if (!root.viewModel.selectedBandResponsePoints) return
                 const points = root.viewModel.selectedBandResponsePoints
                 if (points.length < 2) return
 
                 const zeroY = root.gainToY(0) - root.plotY
+                const fillAlpha = isBypassed ? "#102ED3FF" : "#242ED3FF"
+                const haloAlpha = isBypassed ? "#252ED3FF" : "#592ED3FF"
+                const strokeAlpha = isBypassed ? "#802ED3FF" : "#FF2ED3FF"
 
                 // Fill under curve split at zero
                 for (let i = 0; i < points.length - 1; ++i) {
@@ -209,14 +251,14 @@ Rectangle {
                     ctx.lineTo(px2, zeroY)
                     ctx.lineTo(px1, zeroY)
                     ctx.closePath()
-                    ctx.fillStyle = "#242ED3FF"
+                    ctx.fillStyle = fillAlpha
                     ctx.fill()
                 }
 
                 // Halo Under-stroke
                 ctx.beginPath()
                 ctx.lineWidth = 6
-                ctx.strokeStyle = "#592ED3FF"
+                ctx.strokeStyle = haloAlpha
                 for (let i = 0; i < points.length; ++i) {
                     const pt = points[i]
                     const px = root.freqToX(pt.frequency) - root.plotX
@@ -229,7 +271,7 @@ Rectangle {
                 // Main Stroke
                 ctx.beginPath()
                 ctx.lineWidth = 2
-                ctx.strokeStyle = "#FF2ED3FF"
+                ctx.strokeStyle = strokeAlpha
                 for (let i = 0; i < points.length; ++i) {
                     const pt = points[i]
                     const px = root.freqToX(pt.frequency) - root.plotX

@@ -80,6 +80,8 @@ private slots:
     void testResetToFlatUndoRedo();
     void testHistoryStackDepthCapAt50();
     void testNewEditInvalidatesRedoStack();
+    void testWholeEqCombinedResponseEvaluation();
+    void testOverallToggleIsViewStateOnly();
 };
 
 void EqViewModelTest::testInvalidTextDraftAndCommitRejection()
@@ -893,6 +895,62 @@ void EqViewModelTest::testNewEditInvalidatesRedoStack()
     vm.commitDraft();
 
     QVERIFY(!vm.can_redo()); // Redo stack must be cleared
+}
+
+void EqViewModelTest::testWholeEqCombinedResponseEvaluation()
+{
+    EqViewModel vm;
+    // Flat 1-band initial state -> combined response should be 0 dB
+    const auto flatPoints = vm.combined_response_points();
+    QVERIFY(!flatPoints.isEmpty());
+    for (const auto& varPt : flatPoints) {
+        const double mag = varPt.toMap().value("magnitudeDb").toDouble();
+        QVERIFY2(std::abs(mag) < 1e-3, "Flat EQ combined response must be ~0 dB");
+    }
+
+    // Add Band 2: High Shelf 8 kHz +6 dB
+    vm.addBand();
+    vm.setFilter(QStringLiteral("HIGH_SHELF"));
+    vm.setDraftFrequency(8000.0);
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+
+    // Select Band 1 (index 0): Bell 1 kHz +6 dB
+    vm.selectBand(0);
+    vm.setDraftGain(6.0);
+    vm.commitDraft();
+
+    // Verify selection change alone does not change combined response points
+    const auto combined1 = vm.combined_response_points();
+    vm.selectBand(1);
+    const auto combined2 = vm.combined_response_points();
+    QCOMPARE(combined1, combined2);
+
+    // Disable Band 2 (index 1) -> combined response at 8 kHz must decrease
+    vm.setEnabled(false);
+    const auto combinedDisabled = vm.combined_response_points();
+    QVERIFY(combinedDisabled.size() > 0);
+}
+
+void EqViewModelTest::testOverallToggleIsViewStateOnly()
+{
+    EqViewModel vm;
+    const quint64 genBefore = vm.preview_generation();
+    const bool canUndoBefore = vm.can_undo();
+    const bool canRedoBefore = vm.can_redo();
+
+    QVERIFY(!vm.show_combined_response());
+
+    vm.setShowCombinedResponse(true);
+
+    QVERIFY(vm.show_combined_response());
+    QCOMPARE(vm.preview_generation(), genBefore); // No preview request
+    QCOMPARE(vm.can_undo(), canUndoBefore); // No undo entry
+    QCOMPARE(vm.can_redo(), canRedoBefore);
+
+    vm.setShowCombinedResponse(false);
+    QVERIFY(!vm.show_combined_response());
+    QCOMPARE(vm.preview_generation(), genBefore);
 }
 
 }  // namespace

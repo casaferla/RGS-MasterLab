@@ -394,6 +394,25 @@ QVariantList EqViewModel::selected_band_response_points() const
     return responseGrid_;
 }
 
+QVariantList EqViewModel::combined_response_points() const
+{
+    return combinedResponseGrid_;
+}
+
+bool EqViewModel::show_combined_response() const noexcept
+{
+    return showCombinedResponse_;
+}
+
+void EqViewModel::setShowCombinedResponse(bool show)
+{
+    if (showCombinedResponse_ == show) {
+        return;
+    }
+    showCombinedResponse_ = show;
+    emit changed(); // View state only: no undo snapshot, no audio preview request
+}
+
 dsp::ModuleInstanceId EqViewModel::instance_id() const noexcept
 {
     return instanceId_;
@@ -983,10 +1002,9 @@ std::optional<dsp::EqBandParameters> EqViewModel::make_band_parameters(
 void EqViewModel::update_response_grid()
 {
     responseGrid_.clear();
-    const auto bandOpt = make_band_parameters(draftBand_, max_frequency_hz());
-    if (!bandOpt) {
-        return;
-    }
+    combinedResponseGrid_.clear();
+
+    const auto selectedBandOpt = make_band_parameters(draftBand_, max_frequency_hz());
 
     const double minF = kMinFreq;
     const double maxF = max_frequency_hz();
@@ -1009,7 +1027,7 @@ void EqViewModel::update_response_grid()
         }
     }
 
-    // 2. ALWAYS inject exact f0
+    // 2. ALWAYS inject exact f0 of selected band
     const double f0 = draftBand_.frequency_hz;
     if (f0 >= minF && f0 <= maxF) {
         freqs.push_back(f0);
@@ -1018,7 +1036,6 @@ void EqViewModel::update_response_grid()
     // 3. Add local refinement around f0 for High-Q Bell and Notch filters
     if ((draftBand_.filter_type == dsp::EqFilterType::BELL || draftBand_.filter_type == dsp::EqFilterType::NOTCH)
         && draftBand_.q > 1.0 && f0 >= minF && f0 <= maxF) {
-        // Fractional offsets around f0 based on Q width
         const double bandwidthFrac = 1.0 / std::max(0.1, draftBand_.q);
         const std::array<double, 12> localRatios{
             1.0 - 0.5 * bandwidthFrac, 1.0 - 0.25 * bandwidthFrac,
@@ -1036,6 +1053,19 @@ void EqViewModel::update_response_grid()
         }
     }
 
+    // Also inject center frequencies of all other enabled bands into freqs for accurate combined response
+    for (std::size_t i = 0; i < committedBands_.size(); ++i) {
+        if (i == selectedIndex_) continue;
+        const auto& b = committedBands_[i];
+        if (!b.enabled()) continue;
+        std::visit([&freqs, minF, maxF](const auto& payload) {
+            const double cf = payload.frequency_hz;
+            if (cf >= minF && cf <= maxF) {
+                freqs.push_back(cf);
+            }
+        }, b.payload());
+    }
+
     // 4. Sort and remove duplicates / near-duplicates
     std::sort(freqs.begin(), freqs.end());
     std::vector<double> uniqueFreqs;
@@ -1051,17 +1081,53 @@ void EqViewModel::update_response_grid()
         uniqueFreqs.resize(1024);
     }
 
-    auto pointsRes = dsp::evaluate_band_response(*bandOpt, uniqueFreqs, current_sample_rate());
-    if (!pointsRes) {
-        return;
+    // A. Selected Band Response
+    if (selectedBandOpt) {
+        auto pointsRes = dsp::evaluate_band_response(*selectedBandOpt, uniqueFreqs, current_sample_rate());
+        if (pointsRes) {
+            for (const auto& pt : *pointsRes.value()) {
+                QVariantMap pointMap;
+                pointMap.insert(QStringLiteral("frequency"), pt.frequency_hz);
+                pointMap.insert(QStringLiteral("magnitudeDb"), pt.magnitude_db);
+                pointMap.insert(QStringLiteral("phaseRad"), pt.phase_rad);
+                responseGrid_.append(pointMap);
+            }
+        }
     }
 
-    for (const auto& pt : *pointsRes.value()) {
-        QVariantMap pointMap;
-        pointMap.insert(QStringLiteral("frequency"), pt.frequency_hz);
-        pointMap.insert(QStringLiteral("magnitudeDb"), pt.magnitude_db);
-        pointMap.insert(QStringLiteral("phaseRad"), pt.phase_rad);
-        responseGrid_.append(pointMap);
+    // B. Combined Whole-EQ Response across all active bands (using draftBand_ for selected band)
+    auto activeBands = committedBands_;
+    if (selectedIndex_ < activeBands.size() && selectedBandOpt) {
+        activeBands[selectedIndex_] = *selectedBandOpt;
+    }
+
+    auto combinedParamsRes = dsp::ParametricEqParameters::create(activeBands);
+    if (combinedParamsRes) {
+        for (const double f : uniqueFreqs) {
+            // Evaluate whole-EQ combined transfer H_total at frequency f
+            std::complex<double> H_total(1.0, 0.0);
+            const double Fs = static_cast<double>(current_sample_rate().value());
+
+            for (const auto& band : combinedParamsRes.value()->bands()) {
+                if (!band.enabled()) continue;
+                auto singleParam = dsp::ParametricEqParameters::create({band});
+                if (!singleParam) continue;
+                auto pts = dsp::evaluate_band_response(band, {f}, current_sample_rate());
+                if (pts && !pts.value()->empty()) {
+                    H_total *= pts.value()->front().transfer_function;
+                }
+            }
+
+            const double mag_lin = std::abs(H_total);
+            const double mag_db = mag_lin > 1e-15 ? 20.0 * std::log10(mag_lin) : -300.0;
+            const double phase_rad = std::arg(H_total);
+
+            QVariantMap pointMap;
+            pointMap.insert(QStringLiteral("frequency"), f);
+            pointMap.insert(QStringLiteral("magnitudeDb"), mag_db);
+            pointMap.insert(QStringLiteral("phaseRad"), phase_rad);
+            combinedResponseGrid_.append(pointMap);
+        }
     }
 }
 
