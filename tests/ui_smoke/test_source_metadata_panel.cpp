@@ -1351,13 +1351,77 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTRY_COMPARE_WITH_TIMEOUT(root->property("normalGeometry").toRect().height(), acceptedNormalSize.height(), 2000);
 
 #ifdef _WIN32
+    // Native Windows Window Chrome Helper Hit-Test Exclusions & Window Styles Assertion
     auto* rootQuickWindow = qobject_cast<QQuickWindow*>(window);
     QVERIFY(rootQuickWindow != nullptr);
+
+    rgsml::app::WindowsWindowChromeHelper testChromeHelper{rootQuickWindow};
+
     const HWND rootHwnd = reinterpret_cast<HWND>(rootQuickWindow->winId());
     QVERIFY(rootHwnd != nullptr);
     const LONG rootStyle = GetWindowLongW(rootHwnd, GWL_STYLE);
     QVERIFY2((rootStyle & WS_THICKFRAME) != 0, "rootQuickWindow must have WS_THICKFRAME style flag");
     QVERIFY2((rootStyle & WS_MAXIMIZEBOX) != 0, "rootQuickWindow must have WS_MAXIMIZEBOX style flag");
+    const std::array chromeExclusionNames{
+        QStringLiteral("desktopMenuBar"),
+        QStringLiteral("headerAuditionTargetSelector"),
+        QStringLiteral("windowMinimizeButton"),
+        QStringLiteral("windowMaximizeButton"),
+        QStringLiteral("windowCloseButton"),
+    };
+    for (const auto& name : chromeExclusionNames) {
+        auto* item = rootQuickWindow->findChild<QQuickItem*>(name);
+        QVERIFY2(item != nullptr, qPrintable(QStringLiteral("Exclusion item %1 must exist").arg(name)));
+        testChromeHelper.add_exclusion_item(item);
+    }
+
+    MSG testMsg{};
+    testMsg.hwnd = reinterpret_cast<HWND>(rootQuickWindow->winId());
+    testMsg.message = WM_NCHITTEST;
+
+    // Dynamically scan candidate points across header (y=20) outside all exclusions
+    std::vector<QQuickItem*> exclusionItems;
+    for (const auto& name : chromeExclusionNames) {
+        if (auto* item = rootQuickWindow->findChild<QQuickItem*>(name)) {
+            exclusionItems.push_back(item);
+        }
+    }
+
+    QPoint validDraggablePt{-1, -1};
+    const int winW = rootQuickWindow->width();
+    for (int candX = 10; candX <= winW - 10; candX += 10) {
+        const QPoint localPt{candX, 20};
+        const QPoint globalPt = rootQuickWindow->mapToGlobal(localPt);
+        bool insideExclusion = false;
+        for (auto* exclItem : exclusionItems) {
+            if (exclItem != nullptr && exclItem->isVisible() && exclItem->isEnabled()) {
+                const QPointF itemLocal = exclItem->mapFromGlobal(globalPt);
+                if (itemLocal.x() >= 0 && itemLocal.x() < exclItem->width()
+                    && itemLocal.y() >= 0 && itemLocal.y() < exclItem->height()) {
+                    insideExclusion = true;
+                    break;
+                }
+            }
+        }
+        if (!insideExclusion) {
+            validDraggablePt = globalPt;
+            break;
+        }
+    }
+
+    QVERIFY2(validDraggablePt.x() >= 0, "A valid non-interactive draggable header test point must exist");
+    testMsg.lParam = MAKELPARAM(validDraggablePt.x(), validDraggablePt.y());
+    qintptr hitResult = 0;
+    // WM_NCHITTEST returns false so QML headerMouseArea startSystemMove() handles main window move authority
+    QVERIFY(!testChromeHelper.nativeEventFilter("windows_generic_MSG", &testMsg, &hitResult));
+
+    // Test a point over windowCloseButton (exclusion item)
+    auto* closeBtnItem = rootQuickWindow->findChild<QQuickItem*>(QStringLiteral("windowCloseButton"));
+    QVERIFY(closeBtnItem != nullptr);
+    const QPoint closeGlobalPt = closeBtnItem->mapToGlobal(QPointF{closeBtnItem->width() * 0.5, closeBtnItem->height() * 0.5}).toPoint();
+    testMsg.lParam = MAKELPARAM(closeGlobalPt.x(), closeGlobalPt.y());
+    hitResult = 0;
+    QVERIFY(!testChromeHelper.nativeEventFilter("windows_generic_MSG", &testMsg, &hitResult));
 #endif
 
     auto* windowMaximizeBtn = root->findChild<QObject*>(QStringLiteral("windowMaximizeButton"));
