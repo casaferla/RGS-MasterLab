@@ -112,6 +112,7 @@ ApplicationWindow {
 
         root.showNormal()
 
+        restoreTimer.restart()
         stateResetTimer.restart()
     }
 
@@ -124,6 +125,20 @@ ApplicationWindow {
             isRestoringNormal = false
             if (root.visibility === Window.Windowed && root.windowState !== Qt.WindowMaximized) {
                 captureNormalGeometry()
+            }
+        }
+    }
+
+    Timer {
+        id: restoreTimer
+        interval: 30
+        repeat: false
+        onTriggered: {
+            if (root.visibility === Window.Windowed && root.windowState !== Qt.WindowMaximized) {
+                if (root.normalGeometry.width > 0 && root.normalGeometry.height > 0) {
+                    root.width = Math.max(root.minimumWidth, root.normalGeometry.width)
+                    root.height = Math.max(root.minimumHeight, root.normalGeometry.height)
+                }
             }
         }
     }

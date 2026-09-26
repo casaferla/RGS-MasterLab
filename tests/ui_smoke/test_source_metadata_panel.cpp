@@ -1537,6 +1537,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(500);
     QCoreApplication::processEvents();
     QCOMPARE(window->visibility(), QWindow::Maximized);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("restore"));
 
     QMetaObject::invokeMethod(root, "restoreMaximizedDrag",
         Q_ARG(QVariant, 200), Q_ARG(QVariant, 100),
@@ -1545,7 +1546,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
 
     QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->visibility(), QWindow::Windowed);
     QCOMPARE(window->size(), acceptedNormalSize);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("maximize"));
+
+    // Verify stability after restoreTimer (30ms) and stateResetTimer (350ms) settle
+    QTest::qWait(400);
+    QCoreApplication::processEvents();
+    QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->visibility(), QWindow::Windowed);
+    QCOMPARE(window->size(), acceptedNormalSize);
+    QCOMPARE(windowMaximizeBtn->property("iconKind").toString(), QStringLiteral("maximize"));
 
     window->resize(1184, 688);
     QCoreApplication::processEvents();
