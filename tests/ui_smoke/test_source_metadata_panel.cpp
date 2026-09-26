@@ -719,7 +719,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     QVERIFY2(abBypassBtn != nullptr && abActiveBtn != nullptr, "A and B buttons must exist");
     QVERIFY2(undoBtn != nullptr && redoBtn != nullptr && resetFlatBtn != nullptr, "Undo, Redo, and Reset Flat buttons must exist");
-    QVERIFY2(!undoBtn->property("enabled").toBool(), "Undo button must be disabled when history is empty");
+    QVERIFY2(undoBtn->property("enabled").toBool(), "Undo button must be enabled after band addition edit");
     QVERIFY2(!redoBtn->property("enabled").toBool(), "Redo button must be disabled when redo history is empty");
     QVERIFY2(resetFlatBtn->property("enabled").toBool(), "Reset Flat button must be enabled");
 
