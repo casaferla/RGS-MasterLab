@@ -1106,7 +1106,6 @@ void EqViewModel::update_response_grid()
         for (const double f : uniqueFreqs) {
             // Evaluate whole-EQ combined transfer H_total at frequency f
             std::complex<double> H_total(1.0, 0.0);
-            const double Fs = static_cast<double>(current_sample_rate().value());
 
             for (const auto& band : combinedParamsRes.value()->bands()) {
                 if (!band.enabled()) continue;
