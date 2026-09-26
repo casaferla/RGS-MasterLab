@@ -350,7 +350,7 @@ Rectangle {
                                     { label: "High Pass", token: "HIGH_PASS" },
                                     { label: "Low Pass", token: "LOW_PASS" }
                                 ]
-                                delegate: StudioSegmentButton {
+                                delegate: StudioButton {
                                     required property var modelData
                                     objectName: "filterButton_" + modelData.token
                                     text: modelData.label
@@ -395,7 +395,7 @@ Rectangle {
                                     { label: "Left", token: "LEFT" },
                                     { label: "Right", token: "RIGHT" }
                                 ]
-                                delegate: StudioSegmentButton {
+                                delegate: StudioButton {
                                     required property var modelData
                                     objectName: "routingButton_" + modelData.token
                                     text: modelData.label
@@ -492,7 +492,7 @@ Rectangle {
                             Text { text: "SLOPE:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
                             Repeater {
                                 model: [6, 12, 18, 24, 36, 48]
-                                delegate: StudioSegmentButton {
+                                delegate: StudioButton {
                                     required property int modelData
                                     objectName: "slopeButton_" + modelData
                                     text: modelData + " dB"
