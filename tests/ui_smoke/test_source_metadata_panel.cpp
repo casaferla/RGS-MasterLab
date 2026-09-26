@@ -1468,15 +1468,53 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* windowMaximizeBtn = root->findChild<QObject*>(QStringLiteral("windowMaximizeButton"));
     QVERIFY2(windowMaximizeBtn != nullptr, "windowMaximizeButton must exist");
 
-    // Click maximize
+    // Path A: Custom button maximize -> custom button restore
     QVERIFY(QMetaObject::invokeMethod(windowMaximizeBtn, "clicked"));
     QTest::qWait(100);
     QCoreApplication::processEvents();
     QCOMPARE(window->visibility(), QWindow::Maximized);
 
-    // Click restore
     QVERIFY(QMetaObject::invokeMethod(windowMaximizeBtn, "clicked"));
     QTest::qWait(100);
+    QCoreApplication::processEvents();
+    QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->size(), acceptedNormalSize);
+
+    // Path B: Native/External Maximize (showMaximized) -> Custom Restore button click
+    // 1 & 2. Establish and wait for stable known normal geometry
+    window->showNormal();
+    window->resize(acceptedNormalSize);
+    QTest::qWait(200);
+    QCoreApplication::processEvents();
+
+    QTRY_COMPARE_WITH_TIMEOUT(root->property("normalGeometry").toRect().width(), acceptedNormalSize.width(), 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(root->property("normalGeometry").toRect().height(), acceptedNormalSize.height(), 2000);
+
+    const QRect capturedNormalGeomBeforeNative = root->property("normalGeometry").toRect();
+
+    // 3. Maximize QQuickWindow independently of toggleMaximizeRestore(), representing native/external maximization
+    window->showMaximized();
+
+    // 4. Allow transition to settle beyond existing capture/reset timer intervals
+    QTest::qWait(500);
+    QCoreApplication::processEvents();
+    QCOMPARE(window->visibility(), QWindow::Maximized);
+
+    // 5. Invoke windowMaximizeButton.clicked() while natively maximized
+    QVERIFY(QMetaObject::invokeMethod(windowMaximizeBtn, "clicked"));
+
+    // 6. Wait for restore to settle beyond restore and state reset timers
+    QTest::qWait(500);
+    QCoreApplication::processEvents();
+
+    // 7. Assert window is Windowed, width & height match saved normal values, and normalGeometry was preserved
+    QVERIFY(window->visibility() != QWindow::Maximized);
+    QCOMPARE(window->size(), acceptedNormalSize);
+    QCOMPARE(root->property("normalGeometry").toRect().width(), capturedNormalGeomBeforeNative.width());
+    QCOMPARE(root->property("normalGeometry").toRect().height(), capturedNormalGeomBeforeNative.height());
+
+    // 8. Wait again beyond all capture timers and assert restored size does NOT jump back to maximized geometry
+    QTest::qWait(400);
     QCoreApplication::processEvents();
     QVERIFY(window->visibility() != QWindow::Maximized);
     QCOMPARE(window->size(), acceptedNormalSize);

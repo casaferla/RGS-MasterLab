@@ -33,14 +33,22 @@ ApplicationWindow {
         interval: 150
         repeat: false
         onTriggered: {
-            if (!root.isChangingWindowState && root.visibility === Window.Windowed) {
+            if (!root.isChangingWindowState
+                && root.visibility === Window.Windowed
+                && root.windowState !== Qt.WindowMaximized
+                && root.width >= root.minimumWidth
+                && root.height >= root.minimumHeight) {
                 root.normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
             }
         }
     }
 
     function captureNormalGeometry() {
-        if (!isChangingWindowState && root.visibility === Window.Windowed) {
+        if (!isChangingWindowState
+            && root.visibility === Window.Windowed
+            && root.windowState !== Qt.WindowMaximized
+            && root.width >= root.minimumWidth
+            && root.height >= root.minimumHeight) {
             normalGeometryCaptureTimer.restart()
         }
     }
@@ -49,9 +57,10 @@ ApplicationWindow {
         if (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized) {
             restoreNormalWindow()
         } else {
-            if (root.visibility === Window.Windowed) {
-                normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
+            if (root.visibility === Window.Windowed && root.windowState !== Qt.WindowMaximized) {
+                root.normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
             }
+            normalGeometryCaptureTimer.stop()
             isChangingWindowState = true
             root.showMaximized()
             stateResetTimer.restart()
@@ -59,25 +68,42 @@ ApplicationWindow {
     }
 
     function restoreNormalWindow() {
+        normalGeometryCaptureTimer.stop()
         isChangingWindowState = true
+
+        if (root.normalGeometry.width > 0 && root.normalGeometry.height > 0) {
+            root.width = Math.max(root.minimumWidth, root.normalGeometry.width)
+            root.height = Math.max(root.minimumHeight, root.normalGeometry.height)
+            if (root.normalGeometry.x >= 0 && root.normalGeometry.y >= 0) {
+                root.x = root.normalGeometry.x
+                root.y = root.normalGeometry.y
+            }
+        }
+
         root.showNormal()
+
         restoreTimer.restart()
         stateResetTimer.restart()
     }
 
     Timer {
         id: stateResetTimer
-        interval: 300
+        interval: 350
         repeat: false
-        onTriggered: isChangingWindowState = false
+        onTriggered: {
+            isChangingWindowState = false
+            if (root.visibility === Window.Windowed && root.windowState !== Qt.WindowMaximized) {
+                captureNormalGeometry()
+            }
+        }
     }
 
     Timer {
         id: restoreTimer
-        interval: 10
+        interval: 30
         repeat: false
         onTriggered: {
-            if (root.visibility !== Window.Maximized && root.windowState !== Qt.WindowMaximized) {
+            if (root.visibility === Window.Windowed && root.windowState !== Qt.WindowMaximized) {
                 if (root.normalGeometry.width > 0 && root.normalGeometry.height > 0) {
                     root.width = Math.max(root.minimumWidth, root.normalGeometry.width)
                     root.height = Math.max(root.minimumHeight, root.normalGeometry.height)
@@ -95,8 +121,15 @@ ApplicationWindow {
     onWidthChanged: captureNormalGeometry()
     onHeightChanged: captureNormalGeometry()
     onVisibilityChanged: function() {
-        if (root.visibility === Window.Windowed) {
+        if (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized) {
+            normalGeometryCaptureTimer.stop()
+        } else if (root.visibility === Window.Windowed && !isChangingWindowState) {
             captureNormalGeometry()
+        }
+    }
+    onWindowStateChanged: function() {
+        if (root.windowState === Qt.WindowMaximized || root.visibility === Window.Maximized) {
+            normalGeometryCaptureTimer.stop()
         }
     }
     Component.onCompleted: captureNormalGeometry()
