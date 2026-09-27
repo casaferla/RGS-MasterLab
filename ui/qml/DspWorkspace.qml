@@ -9,25 +9,26 @@ Rectangle {
     property var viewModel: null
     property int selectedModuleIndex: 0
     property bool isCompact: false
-    property Item chainContainer: null
 
     color: "transparent"
 
-    states: [
-        State {
-            name: "COMPACT"
-            when: root.isCompact && root.chainContainer !== null
+    property alias chainSelector: realChainSelector
 
-            ParentChange {
-                target: chainSelector
-                parent: root.chainContainer
-            }
-            AnchorChanges {
-                target: chainSelector
-                anchors.fill: root.chainContainer
-            }
+    Item {
+        id: workspaceItemPool
+        visible: false
+        width: 0
+        height: 0
+
+        DspChainSelector {
+            id: realChainSelector
+            objectName: "dspChainSelector"
+            isCompact: root.isCompact
+            selectedIndex: root.selectedModuleIndex
+            eqViewModel: root.viewModel
+            onSelectedIndexChanged: root.selectedModuleIndex = selectedIndex
         }
-    ]
+    }
 
     RowLayout {
         id: dspWorkspaceRow
@@ -35,15 +36,12 @@ Rectangle {
         anchors.fill: parent
         spacing: 8
 
-        DspChainSelector {
-            id: chainSelector
-            objectName: "dspChainSelector"
-            Layout.preferredWidth: root.isCompact ? 164 : 180
+        LayoutItemProxy {
+            id: standardChainProxy
+            target: realChainSelector
+            visible: !root.isCompact
+            Layout.preferredWidth: 180
             Layout.fillHeight: true
-            isCompact: root.isCompact
-            selectedIndex: root.selectedModuleIndex
-            eqViewModel: root.viewModel
-            onSelectedIndexChanged: root.selectedModuleIndex = selectedIndex
         }
 
         DspEditorHost {
@@ -52,7 +50,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             viewModel: root.viewModel
-            activeChainRow: chainSelector.findChild ? chainSelector.findChild("dspChainRow_0") : null
+            activeChainRow: realChainSelector.findChild ? realChainSelector.findChild("dspChainRow_0") : null
         }
     }
 }
