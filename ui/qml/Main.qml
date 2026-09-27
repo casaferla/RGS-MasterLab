@@ -991,3 +991,4 @@ ApplicationWindow {
     Label { objectName: "sourceFramesMetadata"; visible: false; text: "Frames  " + sourceSelection.frameCount }
     Label { objectName: "playbackStateLabel"; visible: false; text: playbackTransport.stateLabel }
 }
+}
