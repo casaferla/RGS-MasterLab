@@ -883,10 +883,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(res1440.metrics.width, 1440);
     QCOMPARE(res1440.metrics.height, 900);
     QCOMPARE(res1440.metrics.isCompact, false);
-    QCOMPARE(res1440.metrics.sourceHeight, 72.0);
+    QCOMPARE(res1440.metrics.sourceHeight, 52.0);
     QVERIFY2(res1440.metrics.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
-    QCOMPARE(res1440.metrics.controlHeight, 72.0);
-    QCOMPARE(res1440.metrics.regionHeight, 72.0);
+    QCOMPARE(res1440.metrics.controlHeight, 64.0);
+    QCOMPARE(res1440.metrics.regionHeight, 56.0);
     QVERIFY2(res1440.metrics.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
 
     const auto res1184 = evaluate_layout_at_size(engine, 1184, 688);

@@ -185,7 +185,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: root.isCompactLayout ? 48 : 72
+                Layout.preferredHeight: root.isCompactLayout ? 48 : 52
                 color: root.panel
                 border.color: root.border
                 radius: 5
@@ -286,7 +286,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: root.isCompactLayout ? 64 : 72
+                Layout.preferredHeight: 64
                 color: root.panel
                 border.color: root.border
                 radius: 5
@@ -347,7 +347,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: root.isCompactLayout ? 56 : 72
+                Layout.preferredHeight: root.isCompactLayout ? 56 : 56
                 color: root.panel
                 border.color: root.border
                 radius: 5
