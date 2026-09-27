@@ -397,7 +397,7 @@ ApplicationWindow {
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
                 Layout.minimumHeight: 300
-                eqViewModel: eqViewModel
+                viewModel: eqViewModel
             }
         }
 

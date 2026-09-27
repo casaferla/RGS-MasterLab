@@ -6,7 +6,7 @@ Rectangle {
     id: root
     objectName: "dspWorkspace"
 
-    property var eqViewModel: null
+    property var viewModel: null
     property int selectedModuleIndex: 0
 
     color: "transparent"
@@ -21,7 +21,7 @@ Rectangle {
             Layout.preferredWidth: 180
             Layout.fillHeight: true
             selectedIndex: root.selectedModuleIndex
-            eqViewModel: root.eqViewModel
+            eqViewModel: root.viewModel
             onSelectedIndexChanged: root.selectedModuleIndex = selectedIndex
         }
 
@@ -30,7 +30,7 @@ Rectangle {
             objectName: "dspEditorHost"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            viewModel: root.eqViewModel
+            viewModel: root.viewModel
             activeChainRow: chainSelector.findChild ? chainSelector.findChild("dspChainRow_0") : null
         }
     }
