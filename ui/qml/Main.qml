@@ -275,6 +275,7 @@ ApplicationWindow {
             Rectangle {
                 id: waveformPanel
                 objectName: "sourceWaveformPanel"
+                Layout.ignored: root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.fillHeight: root.isCompactLayout
                 Layout.preferredHeight: root.isCompactLayout ? 0 : 180
@@ -334,10 +335,11 @@ ApplicationWindow {
             Rectangle {
                 id: controlStrip
                 objectName: "controlStrip"
+                Layout.ignored: root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.leftMargin: root.isCompactLayout ? 0 : 12
                 Layout.rightMargin: root.isCompactLayout ? 0 : 12
-                Layout.preferredHeight: root.isCompactLayout ? 36 : 72
+                Layout.preferredHeight: root.isCompactLayout ? 34 : 72
                 color: root.isCompactLayout ? "transparent" : root.panel
                 border.color: root.isCompactLayout ? "transparent" : root.border
                 radius: 5
@@ -395,6 +397,7 @@ ApplicationWindow {
             Rectangle {
                 id: regionPanel
                 objectName: "auditionRegionControls"
+                Layout.ignored: root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.leftMargin: root.isCompactLayout ? 0 : 12
                 Layout.rightMargin: root.isCompactLayout ? 0 : 12
@@ -884,6 +887,7 @@ ApplicationWindow {
             DspWorkspace {
                 id: dspWorkspace
                 objectName: "dspWorkspace"
+                Layout.ignored: root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: root.isCompactLayout ? 0 : 12
