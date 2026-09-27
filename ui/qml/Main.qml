@@ -226,7 +226,7 @@ ApplicationWindow {
                 id: waveformPanel
                 objectName: "sourceWaveformPanel"
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.isCompactLayout ? 110 : 190
+                Layout.preferredHeight: root.isCompactLayout ? 110 : 180
                 Layout.minimumHeight: root.isCompactLayout ? 96 : 180
                 color: "#050C11"
                 border.color: root.border
@@ -286,7 +286,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: root.isCompactLayout ? 56 : 88
+                Layout.preferredHeight: root.isCompactLayout ? 56 : 72
                 color: root.panel
                 border.color: root.border
                 radius: 5

@@ -885,7 +885,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(res1440.metrics.isCompact, false);
     QCOMPARE(res1440.metrics.sourceHeight, 72.0);
     QVERIFY2(res1440.metrics.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
-    QCOMPARE(res1440.metrics.controlHeight, 88.0);
+    QCOMPARE(res1440.metrics.controlHeight, 72.0);
     QCOMPARE(res1440.metrics.regionHeight, 72.0);
     QVERIFY2(res1440.metrics.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
 
