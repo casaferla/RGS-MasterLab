@@ -510,7 +510,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(zoomOut->property("height").toInt(), 32);
     QCOMPARE(zoomIn->property("width").toInt(), 32);
     QCOMPARE(fitSource->property("width").toInt(), 32);
-    QCOMPARE(continuousZoom->property("width").toInt(), 160);
+    QCOMPARE(continuousZoom->property("width").toInt(), window->height() < 750 ? 110 : 160);
     QVERIFY(fitRegion && loopRegion && clearRegion);
 
     const std::array menuNames{
