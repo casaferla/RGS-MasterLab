@@ -7,7 +7,7 @@ Rectangle {
     objectName: "dspChainSelector"
 
     implicitWidth: isCompact ? 164 : 180
-    implicitHeight: isCompact ? 36 : 300
+    implicitHeight: 300
 
     property int selectedIndex: 0
     property var eqViewModel: null
@@ -18,7 +18,7 @@ Rectangle {
     border.width: 1
     radius: 6
 
-    // Header label (Standard mode)
+    // Header label
     Rectangle {
         id: chainHeader
         anchors.top: parent.top
@@ -28,12 +28,11 @@ Rectangle {
         color: "#0F2030"
         border.color: "#1E354A"
         border.width: 1
-        visible: !root.isCompact
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
             Text {
                 text: "DSP CHAIN"
                 color: "#8A9EA8"
@@ -44,21 +43,28 @@ Rectangle {
         }
     }
 
-    // ScrollView (Standard mode) or Grid Container (Compact mode)
-    Item {
-        id: chainContent
-        anchors.top: root.isCompact ? parent.top : chainHeader.bottom
+    ScrollView {
+        id: chainScrollView
+        anchors.top: chainHeader.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.margins: root.isCompact ? 2 : 4
+        anchors.margins: 4
+        clip: true
 
-        // Parametric EQ Row
-        Rectangle {
-            id: eqRow
-            objectName: "dspChainRow_0"
-            anchors.fill: parent
-            radius: 4
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+        ColumnLayout {
+            width: chainScrollView.availableWidth
+            spacing: 4
+
+            // Parametric EQ Row
+            Rectangle {
+                id: eqRow
+                objectName: "dspChainRow_0"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 52
+                radius: 4
 
             property bool isSelected: root.selectedIndex === 0
             property bool isDefaultState: root.eqViewModel ? root.eqViewModel.isDefault : true

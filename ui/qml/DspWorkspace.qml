@@ -23,8 +23,8 @@ Rectangle {
             id: chainSelector
             objectName: "dspChainSelector"
             parent: (root.isCompact && root.chainContainer) ? root.chainContainer : dspWorkspaceRow
-            Layout.preferredWidth: root.isCompact ? 190 : 180
-            Layout.fillHeight: !root.isCompact
+            Layout.preferredWidth: root.isCompact ? 164 : 180
+            Layout.fillHeight: true
             isCompact: root.isCompact
             selectedIndex: root.selectedModuleIndex
             eqViewModel: root.viewModel

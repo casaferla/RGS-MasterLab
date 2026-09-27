@@ -228,14 +228,6 @@ ApplicationWindow {
                             onClicked: sourceDialog.open(); Accessible.name: text
                         }
 
-                        // Compact DSP Chain Container
-                        Item {
-                            id: compactChainContainer
-                            objectName: "compactChainContainer"
-                            visible: root.isCompactLayout
-                            Layout.preferredWidth: 190
-                            Layout.preferredHeight: 36
-                        }
                     }
 
                     ColumnLayout {
@@ -252,7 +244,7 @@ ApplicationWindow {
             Rectangle {
                 id: waveformPanel
                 objectName: "sourceWaveformPanel"
-                parent: root.isCompactLayout ? compactBottomLeft : mainColumnLayout
+                parent: root.isCompactLayout ? compactWaveformHost : mainColumnLayout
                 anchors.fill: root.isCompactLayout ? parent : undefined
                 Layout.fillWidth: true
                 Layout.fillHeight: root.isCompactLayout
@@ -420,7 +412,7 @@ ApplicationWindow {
                 }
             }
 
-            // Compact Authored Bottom Split (42% Waveform / 58% DSP EQ Workspace)
+            // Compact Authored Bottom Split (43% Left Context Area / 57% Right DSP Editor Area)
             RowLayout {
                 id: compactBottomSplit
                 objectName: "compactBottomSplit"
@@ -429,15 +421,148 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                spacing: 12
+                spacing: 8
 
-                Item {
+                // Left Context Area (~43% width)
+                Rectangle {
                     id: compactBottomLeft
                     objectName: "compactBottomLeft"
-                    Layout.preferredWidth: parent.width * 0.42
+                    Layout.preferredWidth: parent.width * 0.43
                     Layout.fillHeight: true
+                    color: "transparent"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        spacing: 6
+
+                        // Left Subcolumn: Waveform (Top) + Future Control Placeholders (Bottom)
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            spacing: 6
+
+                            // Upper Left: Waveform Host
+                            Item {
+                                id: compactWaveformHost
+                                objectName: "compactWaveformHost"
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Layout.minimumHeight: 200
+                            }
+
+                            // Lower Left: Future Controls Visual Shell Placeholders (Prepare, Restore, Automatch)
+                            Rectangle {
+                                id: compactPlaceholdersPanel
+                                objectName: "compactPlaceholdersPanel"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 160
+                                color: root.panel
+                                border.color: root.border
+                                radius: 5
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 8
+                                    spacing: 6
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Rectangle {
+                                            objectName: "preparePlaceholderPanel"
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 28
+                                            color: "#0F2030"
+                                            border.color: "#1E354A"
+                                            radius: 4
+                                            Text { anchors.centerIn: parent; text: "PREPARE (SHELL)"; color: "#586D7C"; font.family: "Segoe UI"; font.pixelSize: 10; font.weight: Font.Bold }
+                                        }
+
+                                        Rectangle {
+                                            objectName: "restorePlaceholderPanel"
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 28
+                                            color: "#0F2030"
+                                            border.color: "#1E354A"
+                                            radius: 4
+                                            Text { anchors.centerIn: parent; text: "RESTORE (SHELL)"; color: "#586D7C"; font.family: "Segoe UI"; font.pixelSize: 10; font.weight: Font.Bold }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        objectName: "automatchPlaceholderPanel"
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        color: "#0F2030"
+                                        border.color: "#1E354A"
+                                        radius: 4
+
+                                        ColumnLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 6
+                                            spacing: 4
+
+                                            Text { text: "AUTOMATCH DOMAINS"; color: "#6A8090"; font.family: "Segoe UI"; font.pixelSize: 9; font.weight: Font.Bold }
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                Layout.fillHeight: true
+                                                spacing: 4
+
+                                                Repeater {
+                                                    model: [
+                                                        { name: "Tonal", key: "Tonal" },
+                                                        { name: "Dynamics", key: "Dynamics" },
+                                                        { name: "Stereo", key: "Stereo" },
+                                                        { name: "Loudness", key: "Loudness" }
+                                                    ]
+                                                    delegate: ColumnLayout {
+                                                        required property var modelData
+                                                        Layout.fillWidth: true
+                                                        Layout.fillHeight: true
+                                                        spacing: 2
+
+                                                        Rectangle {
+                                                            objectName: "automatchKnob_" + modelData.key
+                                                            Layout.preferredWidth: 32
+                                                            Layout.preferredHeight: 32
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            radius: 16
+                                                            color: "#162838"
+                                                            border.color: "#2C4356"
+                                                            border.width: 1
+                                                            Rectangle { width: 2; height: 10; color: "#586D7C"; anchors.top: parent.top; anchors.topMargin: 4; anchors.horizontalCenter: parent.horizontalCenter }
+                                                        }
+
+                                                        Text {
+                                                            text: modelData.name
+                                                            color: "#586D7C"
+                                                            font.family: "Segoe UI"
+                                                            font.pixelSize: 9
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Right Edge of Left Context Area: Vertical Single-Column DSP Chain Container (max 164px width)
+                        Item {
+                            id: compactChainContainer
+                            objectName: "compactChainContainer"
+                            visible: root.isCompactLayout
+                            Layout.preferredWidth: 164
+                            Layout.fillHeight: true
+                        }
+                    }
                 }
 
+                // Right DSP Editor Area (~57% width)
                 Item {
                     id: compactBottomRight
                     objectName: "compactBottomRight"

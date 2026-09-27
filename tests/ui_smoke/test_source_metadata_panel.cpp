@@ -399,6 +399,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dspChainSelectorObj != nullptr, "dspChainSelector must exist in dspWorkspace");
     QVERIFY2(dspEditorHostObj != nullptr, "dspEditorHost must exist in dspWorkspace");
 
+    // Verify visual shell placeholders exist
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("preparePlaceholderPanel")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("restorePlaceholderPanel")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchPlaceholderPanel")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Tonal")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Dynamics")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Stereo")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Loudness")) != nullptr);
+
     // Verify no production standalone EQ tool window exists
     QVERIFY2(root->findChild<QObject*>(QStringLiteral("parametricEqToolWindow")) == nullptr,
         "No production ParametricEqEditorWindow instance must exist in Main");
