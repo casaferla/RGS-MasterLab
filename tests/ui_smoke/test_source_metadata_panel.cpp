@@ -575,7 +575,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* eqGraph = eqEditor->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
     QVERIFY2(eqGraph != nullptr, "parametricEqGraph must exist inside eqEditor");
     QVERIFY2(!eqViewModel.selected_band_response_points().isEmpty(), "eqViewModel response points must not be empty");
-    QCOMPARE(eqGraph->property("maxFreq").toDouble(), 19845.0);
+    QCOMPARE(eqGraph->property("maxFreq").toDouble(), 20000.0); // 48 kHz initial default rate without loaded source
     QVERIFY2(eqEditor->findChild<QObject*>(QStringLiteral("spectrumAnalyzer")) == nullptr, "No fake analyzer or spectrum item must exist");
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=dsp-chain-row-led-and-byp";
@@ -741,6 +741,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QCoreApplication::processEvents();
     }
     QCOMPARE(eqViewModel.band_count(), 6);
+
+    // Verify 44.1 kHz source maxFreq endpoint (0.45 * 44100 = 19845 Hz)
+    QCOMPARE(eqGraph->property("maxFreq").toDouble(), 19845.0);
 
     // Verify 6 Band selector accent colors
     const std::array expectedColors{
