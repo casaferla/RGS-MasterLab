@@ -1,3 +1,4 @@
+#include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
 #include "gold_selection_view_model.hpp"
 #include "playback_transport_view_model.hpp"
@@ -400,21 +401,26 @@ void AuditionSourceSelectorTest::loopRegionIntentPreservedAcrossAuditionRebinds(
     install_pcm_handler(transport, observed);
 
     app::AuditionSourceSelector selector{&transport};
+    app::AuditionRegionViewModel regionModel{&transport};
 
-    std::optional<core::FrameRange> activeRegion = *core::FrameRange::create(
-        core::FrameIndex{10}, core::FrameIndex{50}).value();
-    bool loopEnabled = true;
+    const auto frameCount = *core::FrameCount::create(200).value();
+    const auto sampleRate = *core::SampleRate::create(48000).value();
+    regionModel.source_committed(frameCount, sampleRate);
+    regionModel.set_waveform_ready(true);
 
-    selector.set_source_loop_provider([&activeRegion, &loopEnabled] {
-        return loopEnabled ? activeRegion : std::nullopt;
+    selector.set_source_loop_provider([&regionModel] {
+        return regionModel.loop_enabled() ? regionModel.region() : std::nullopt;
     });
 
     QVERIFY(selector.set_prepared_realization(realization(0, 200)));
     QVERIFY(selector.set_processed_realization(realization(0, 200)));
 
-    // 1. PREPARED active, loop enabled
+    // 1. PREPARED active, set region [10, 50], enable Loop Region
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
-    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+    const auto testRange = *core::FrameRange::create(core::FrameIndex{10}, core::FrameIndex{50}).value();
+    QVERIFY(regionModel.set_region(testRange));
+    QVERIFY(regionModel.set_loop_enabled(true));
+    QVERIFY(regionModel.loop_enabled());
     QVERIFY(observed->loop.has_value());
     QCOMPARE(observed->loop->begin().value(), std::int64_t{10});
     QCOMPARE(observed->loop->end().value(), std::int64_t{50});
@@ -427,6 +433,7 @@ void AuditionSourceSelectorTest::loopRegionIntentPreservedAcrossAuditionRebinds(
     // 2. Switch PREPARED -> PROCESSED while PLAYING with armed loop
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
     QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QVERIFY(regionModel.loop_enabled());
     QVERIFY(observed->loop.has_value());
     QCOMPARE(observed->loop->begin().value(), std::int64_t{10});
     QCOMPARE(observed->loop->end().value(), std::int64_t{50});
@@ -437,6 +444,7 @@ void AuditionSourceSelectorTest::loopRegionIntentPreservedAcrossAuditionRebinds(
     observed->position = core::FrameIndex{35};
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+    QVERIFY(regionModel.loop_enabled());
     QVERIFY(observed->loop.has_value());
     QCOMPARE(observed->loop->begin().value(), std::int64_t{10});
     QCOMPARE(observed->loop->end().value(), std::int64_t{50});
@@ -451,6 +459,7 @@ void AuditionSourceSelectorTest::loopRegionIntentPreservedAcrossAuditionRebinds(
     for (int rep = 1; rep <= 3; ++rep) {
         QVERIFY(selector.set_processed_realization(realization(0, 200)));
         QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+        QVERIFY(regionModel.loop_enabled());
         QVERIFY(observed->loop.has_value());
         QCOMPARE(observed->loop->begin().value(), std::int64_t{10});
         QCOMPARE(observed->loop->end().value(), std::int64_t{50});
@@ -458,9 +467,24 @@ void AuditionSourceSelectorTest::loopRegionIntentPreservedAcrossAuditionRebinds(
         QCOMPARE(observed->state, core::PlaybackState::PLAYING);
     }
 
-    // 5. Disarming loop provider intent removes backend loop on rebind/switch
-    loopEnabled = false;
+    // 5. Explicit user disable Loop Region disarms intent and backend loop
+    QVERIFY(regionModel.set_loop_enabled(false));
+    QVERIFY(!regionModel.loop_enabled());
+    QVERIFY(!observed->loop.has_value());
+
+    // Switch targets after user disable -> loop remains disarmed
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QVERIFY(!regionModel.loop_enabled());
+    QVERIFY(!observed->loop.has_value());
+
+    // 6. User re-enables loop and clears region
+    QVERIFY(regionModel.set_loop_enabled(true));
+    QVERIFY(regionModel.loop_enabled());
+    QVERIFY(observed->loop.has_value());
+
+    QVERIFY(regionModel.clear_region());
+    QVERIFY(!regionModel.has_region());
+    QVERIFY(!regionModel.loop_enabled());
     QVERIFY(!observed->loop.has_value());
 }
 

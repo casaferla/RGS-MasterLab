@@ -308,7 +308,6 @@ core::Status AuditionRegionViewModel::clear_region()
             return invalid_region("Playback transport is unavailable.");
         }
         const auto disabled = playback_->set_loop_source_range(std::nullopt);
-        synchronize_playback();
         if (!disabled) {
             publish_error(*disabled.error());
             return disabled;
@@ -572,6 +571,10 @@ void AuditionRegionViewModel::publish_region(
     std::optional<core::FrameRange> region)
 {
     region_ = std::move(region);
+    if (!region_) {
+        loopEnabled_ = false;
+        lastCanLoop_ = false;
+    }
     errorMessage_.clear();
     emit changed();
 }
