@@ -782,20 +782,88 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     // Verify Docked EQ at 1440x900 and 1184x688 reference compositions
     qInfo().noquote() << "M12C_SMOKE_PHASE=responsive-composition";
-    window->resize(1440, 900);
-    QTest::qWait(50);
-    QCoreApplication::processEvents();
-    QCOMPARE(window->size(), QSize(1440, 900));
-    QVERIFY2(dspEditorHostObj->property("height").toReal() >= 400.0, "dspEditorHost must be dominant around 1440x900");
-    QVERIFY(capture_visual_evidence(window, QStringLiteral("gui01_1440x900_prepared.png"), QSize{1440, 900}));
 
-    window->resize(1184, 688);
+    // 1. Offscreen QML layout harness to evaluate exact logical compositions at 1440x900 and 1184x688
+    // independent of CI physical HyperVMonitor screen clamping.
+    const auto evaluateLayoutAtSize = [&engine](int logicalWidth, int logicalHeight) {
+        QQmlComponent component{&engine, QUrl{QStringLiteral("qrc:/qt/qml/Rgsml/Ui/qml/Main.qml")}};
+        QScopedPointer<QObject> obj{component.create()};
+        Q_ASSERT(obj != nullptr);
+        auto* qwin = qobject_cast<QQuickWindow*>(obj.get());
+        Q_ASSERT(qwin != nullptr);
+        qwin->setProperty("width", logicalWidth);
+        qwin->setProperty("height", logicalHeight);
+        QCoreApplication::processEvents();
+
+        auto* workspace = obj->findChild<QObject*>(QStringLiteral("dspWorkspace"));
+        auto* host = obj->findChild<QObject*>(QStringLiteral("dspEditorHost"));
+        auto* waveform = obj->findChild<QObject*>(QStringLiteral("sourceWaveformPanel"));
+        auto* source = obj->findChild<QObject*>(QStringLiteral("sourceMetadataPanel"));
+        auto* control = obj->findChild<QObject*>(QStringLiteral("controlStrip"));
+        auto* region = obj->findChild<QObject*>(QStringLiteral("auditionRegionControls"));
+
+        Q_ASSERT(workspace && host && waveform && source && control && region);
+
+        struct LayoutEval {
+            int width;
+            int height;
+            bool isCompact;
+            double sourceHeight;
+            double waveformHeight;
+            double controlHeight;
+            double regionHeight;
+            double workspaceHeight;
+            double hostHeight;
+        };
+
+        return LayoutEval{
+            logicalWidth,
+            logicalHeight,
+            obj->property("isCompactLayout").toBool(),
+            source->property("height").toDouble(),
+            waveform->property("height").toDouble(),
+            control->property("height").toDouble(),
+            region->property("height").toDouble(),
+            workspace->property("height").toDouble(),
+            host->property("height").toDouble()
+        };
+    };
+
+    // Evaluate exact logical 1440x900 reference composition
+    const auto layout1440 = evaluateLayoutAtSize(1440, 900);
+    QCOMPARE(layout1440.isCompact, false);
+    QCOMPARE(layout1440.sourceHeight, 72.0);
+    QVERIFY2(layout1440.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
+    QCOMPARE(layout1440.controlHeight, 88.0);
+    QCOMPARE(layout1440.regionHeight, 72.0);
+    QVERIFY2(layout1440.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
+
+    // Evaluate exact logical 1184x688 minimum composition
+    const auto layout1184 = evaluateLayoutAtSize(1184, 688);
+    QCOMPARE(layout1184.isCompact, true);
+    QCOMPARE(layout1184.sourceHeight, 48.0);
+    QVERIFY2(layout1184.waveformHeight >= 96.0, "Waveform height must be >= 96 px at 1184x688");
+    QCOMPARE(layout1184.controlHeight, 56.0);
+    QCOMPARE(layout1184.regionHeight, 56.0);
+    QVERIFY2(layout1184.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
+
+    // 2. Native window resize & visual evidence capture clamped to available monitor geometry
+    const QRect available = window->screen() ? window->screen()->availableGeometry() : QRect{0, 0, 1440, 900};
+    const int normalW = std::max(window->minimumWidth(), std::min(1440, available.width()));
+    const int normalH = std::max(window->minimumHeight(), std::min(900, available.height()));
+    window->resize(normalW, normalH);
     QTest::qWait(50);
     QCoreApplication::processEvents();
-    QCOMPARE(window->size(), QSize(1184, 688));
-    QVERIFY2(dspWorkspaceObj->property("height").toReal() >= 300.0, "dspWorkspace must receive min 300 px height near 1184x688");
-    QVERIFY2(waveformPanel->property("height").toReal() >= 96.0, "waveformPanel must retain min ~96 px height near 1184x688");
-    QVERIFY(capture_visual_evidence(window, QStringLiteral("gui01_1184x688_prepared.png"), QSize{1184, 688}));
+    QCOMPARE(window->size(), QSize(normalW, normalH));
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("gui01_1440x900_prepared.png"), QSize{normalW, normalH}));
+
+    const int compactW = std::max(window->minimumWidth(), std::min(1184, available.width()));
+    const int compactH = std::max(window->minimumHeight(), std::min(688, available.height()));
+    window->resize(compactW, compactH);
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    QCOMPARE(window->size(), QSize(compactW, compactH));
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("gui01_1184x688_prepared.png"), QSize{compactW, compactH}));
 
     window->close();
     QCoreApplication::processEvents();
