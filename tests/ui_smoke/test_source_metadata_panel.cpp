@@ -169,6 +169,98 @@ namespace {
         && image.save(QDir{outputDirectory}.filePath(fileName), "PNG");
 }
 
+struct LayoutEvalMetrics {
+    int width{0};
+    int height{0};
+    bool visible{false};
+    bool isCompact{false};
+    double sourceHeight{0.0};
+    double waveformHeight{0.0};
+    double controlHeight{0.0};
+    double regionHeight{0.0};
+    double workspaceHeight{0.0};
+    double hostHeight{0.0};
+};
+
+struct LayoutEvalResult {
+    bool valid{false};
+    QString errorMessage;
+    LayoutEvalMetrics metrics{};
+};
+
+[[nodiscard]] LayoutEvalResult evaluate_layout_at_size(
+    QQmlEngine& engine,
+    int logicalWidth,
+    int logicalHeight)
+{
+    QQmlComponent component{&engine, QUrl{QStringLiteral("qrc:/qt/qml/Rgsml/Ui/qml/Main.qml")}};
+    if (component.status() == QQmlComponent::Error) {
+        return LayoutEvalResult{
+            .valid = false,
+            .errorMessage = QStringLiteral("Main.qml component error: ") + component.errorString(),
+            .metrics = {}
+        };
+    }
+
+    QVariantMap initialProperties;
+    initialProperties.insert(QStringLiteral("visible"), false);
+    initialProperties.insert(QStringLiteral("width"), logicalWidth);
+    initialProperties.insert(QStringLiteral("height"), logicalHeight);
+
+    QScopedPointer<QObject> obj{component.createWithInitialProperties(initialProperties)};
+    if (!obj) {
+        return LayoutEvalResult{
+            .valid = false,
+            .errorMessage = QStringLiteral("Main.qml component creation returned null: ") + component.errorString(),
+            .metrics = {}
+        };
+    }
+
+    auto* qwin = qobject_cast<QQuickWindow*>(obj.get());
+    if (!qwin) {
+        return LayoutEvalResult{
+            .valid = false,
+            .errorMessage = QStringLiteral("Created root object is not a QQuickWindow"),
+            .metrics = {}
+        };
+    }
+
+    QCoreApplication::processEvents();
+
+    auto* workspace = obj->findChild<QObject*>(QStringLiteral("dspWorkspace"));
+    auto* host = obj->findChild<QObject*>(QStringLiteral("dspEditorHost"));
+    auto* waveform = obj->findChild<QObject*>(QStringLiteral("sourceWaveformPanel"));
+    auto* source = obj->findChild<QObject*>(QStringLiteral("sourceMetadataPanel"));
+    auto* control = obj->findChild<QObject*>(QStringLiteral("controlStrip"));
+    auto* region = obj->findChild<QObject*>(QStringLiteral("auditionRegionControls"));
+
+    if (!workspace || !host || !waveform || !source || !control || !region) {
+        return LayoutEvalResult{
+            .valid = false,
+            .errorMessage = QStringLiteral("One or more required Main child components not found in offscreen harness"),
+            .metrics = {}
+        };
+    }
+
+    LayoutEvalMetrics metrics;
+    metrics.width = qwin->property("width").toInt();
+    metrics.height = qwin->property("height").toInt();
+    metrics.visible = qwin->property("visible").toBool();
+    metrics.isCompact = obj->property("isCompactLayout").toBool();
+    metrics.sourceHeight = source->property("height").toDouble();
+    metrics.waveformHeight = waveform->property("height").toDouble();
+    metrics.controlHeight = control->property("height").toDouble();
+    metrics.regionHeight = region->property("height").toDouble();
+    metrics.workspaceHeight = workspace->property("height").toDouble();
+    metrics.hostHeight = host->property("height").toDouble();
+
+    return LayoutEvalResult{
+        .valid = true,
+        .errorMessage = {},
+        .metrics = metrics
+    };
+}
+
 }  // namespace
 
 class SourceMetadataPanelSmokeTest final : public QObject {
@@ -785,75 +877,29 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     // 1. Offscreen QML layout harness to evaluate exact logical compositions at 1440x900 and 1184x688
     // independent of CI physical HyperVMonitor screen clamping.
-    const auto evaluateLayoutAtSize = [&engine](int logicalWidth, int logicalHeight) {
-        QQmlComponent component{&engine, QUrl{QStringLiteral("qrc:/qt/qml/Rgsml/Ui/qml/Main.qml")}};
-        QVariantMap initialProperties;
-        initialProperties.insert(QStringLiteral("visible"), false);
-        initialProperties.insert(QStringLiteral("width"), logicalWidth);
-        initialProperties.insert(QStringLiteral("height"), logicalHeight);
+    const auto res1440 = evaluate_layout_at_size(engine, 1440, 900);
+    QVERIFY2(res1440.valid, qPrintable(res1440.errorMessage));
+    QCOMPARE(res1440.metrics.visible, false);
+    QCOMPARE(res1440.metrics.width, 1440);
+    QCOMPARE(res1440.metrics.height, 900);
+    QCOMPARE(res1440.metrics.isCompact, false);
+    QCOMPARE(res1440.metrics.sourceHeight, 72.0);
+    QVERIFY2(res1440.metrics.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
+    QCOMPARE(res1440.metrics.controlHeight, 88.0);
+    QCOMPARE(res1440.metrics.regionHeight, 72.0);
+    QVERIFY2(res1440.metrics.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
 
-        QScopedPointer<QObject> obj{component.createWithInitialProperties(initialProperties)};
-        QVERIFY2(obj != nullptr, "Main.qml component creation with initial properties must succeed");
-        auto* qwin = qobject_cast<QQuickWindow*>(obj.get());
-        QVERIFY2(qwin != nullptr, "Created root object must be a QQuickWindow");
-
-        QCOMPARE(qwin->property("visible").toBool(), false);
-        QCOMPARE(qwin->property("width").toInt(), logicalWidth);
-        QCOMPARE(qwin->property("height").toInt(), logicalHeight);
-
-        QCoreApplication::processEvents();
-
-        auto* workspace = obj->findChild<QObject*>(QStringLiteral("dspWorkspace"));
-        auto* host = obj->findChild<QObject*>(QStringLiteral("dspEditorHost"));
-        auto* waveform = obj->findChild<QObject*>(QStringLiteral("sourceWaveformPanel"));
-        auto* source = obj->findChild<QObject*>(QStringLiteral("sourceMetadataPanel"));
-        auto* control = obj->findChild<QObject*>(QStringLiteral("controlStrip"));
-        auto* region = obj->findChild<QObject*>(QStringLiteral("auditionRegionControls"));
-
-        QVERIFY2(workspace && host && waveform && source && control && region, "All required Main child components must exist in offscreen harness");
-
-        struct LayoutEval {
-            int width;
-            int height;
-            bool isCompact;
-            double sourceHeight;
-            double waveformHeight;
-            double controlHeight;
-            double regionHeight;
-            double workspaceHeight;
-            double hostHeight;
-        };
-
-        return LayoutEval{
-            logicalWidth,
-            logicalHeight,
-            obj->property("isCompactLayout").toBool(),
-            source->property("height").toDouble(),
-            waveform->property("height").toDouble(),
-            control->property("height").toDouble(),
-            region->property("height").toDouble(),
-            workspace->property("height").toDouble(),
-            host->property("height").toDouble()
-        };
-    };
-
-    // Evaluate exact logical 1440x900 reference composition
-    const auto layout1440 = evaluateLayoutAtSize(1440, 900);
-    QCOMPARE(layout1440.isCompact, false);
-    QCOMPARE(layout1440.sourceHeight, 72.0);
-    QVERIFY2(layout1440.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
-    QCOMPARE(layout1440.controlHeight, 88.0);
-    QCOMPARE(layout1440.regionHeight, 72.0);
-    QVERIFY2(layout1440.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
-
-    // Evaluate exact logical 1184x688 minimum composition
-    const auto layout1184 = evaluateLayoutAtSize(1184, 688);
-    QCOMPARE(layout1184.isCompact, true);
-    QCOMPARE(layout1184.sourceHeight, 48.0);
-    QVERIFY2(layout1184.waveformHeight >= 96.0, "Waveform height must be >= 96 px at 1184x688");
-    QCOMPARE(layout1184.controlHeight, 56.0);
-    QCOMPARE(layout1184.regionHeight, 56.0);
-    QVERIFY2(layout1184.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
+    const auto res1184 = evaluate_layout_at_size(engine, 1184, 688);
+    QVERIFY2(res1184.valid, qPrintable(res1184.errorMessage));
+    QCOMPARE(res1184.metrics.visible, false);
+    QCOMPARE(res1184.metrics.width, 1184);
+    QCOMPARE(res1184.metrics.height, 688);
+    QCOMPARE(res1184.metrics.isCompact, true);
+    QCOMPARE(res1184.metrics.sourceHeight, 48.0);
+    QVERIFY2(res1184.metrics.waveformHeight >= 96.0, "Waveform height must be >= 96 px at 1184x688");
+    QCOMPARE(res1184.metrics.controlHeight, 56.0);
+    QCOMPARE(res1184.metrics.regionHeight, 56.0);
+    QVERIFY2(res1184.metrics.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
 
     // 2. Native window resize & visual evidence capture clamped to available monitor geometry
     const QRect available = window->screen() ? window->screen()->availableGeometry() : QRect{0, 0, 1440, 900};
