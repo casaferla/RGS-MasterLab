@@ -7,8 +7,6 @@
 #include "source_selection_view_model.hpp"
 #include "waveform_item.hpp"
 #include "waveform_presentation.hpp"
-#include "windows_window_chrome_helper.hpp"
-
 #include "../audio_golden/wav/golden_vectors.hpp"
 #include "../unit/audio/wav_test_support.hpp"
 #include "../unit/platform/fake_playback_service.hpp"
@@ -31,19 +29,6 @@
 #include <QWindow>
 
 #include <memory>
-
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-
-#include <windows.h>
-#include <windowsx.h>
-#endif
 
 namespace rgsml::tests {
 namespace {
@@ -324,27 +309,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(sourceOpen->property("height").toInt(), 32);
     QCOMPARE(sourceOpen->property("width").toInt(), 110);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceFileDialog")));
-    auto* minimizeButton = root->findChild<QObject*>(QStringLiteral("windowMinimizeButton"));
-    auto* maximizeButton = root->findChild<QObject*>(QStringLiteral("windowMaximizeButton"));
-    auto* closeButton = root->findChild<QObject*>(QStringLiteral("windowCloseButton"));
-    QVERIFY(minimizeButton && maximizeButton && closeButton);
-    const auto itemCenter = [](QObject* object) {
-        auto* item = qobject_cast<QQuickItem*>(object);
-        Q_ASSERT(item != nullptr);
-        return item->mapToScene(QPointF{item->width() * 0.5, item->height() * 0.5}).toPoint();
-    };
+    QVERIFY2((window->flags() & Qt::FramelessWindowHint) == 0, "Main window must NOT be frameless (native windowing model)");
     QVERIFY(capture_visual_evidence(window,
         QStringLiteral("gui01_c1_caption_normal.png"), QSize{1440, 900}));
-    QTest::mouseMove(window, itemCenter(maximizeButton));
-    QTest::qWait(50);
-    QVERIFY(capture_visual_evidence(window,
-        QStringLiteral("gui01_c1_caption_hover.png"), QSize{1440, 900}));
-    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier,
-        itemCenter(maximizeButton));
-    QVERIFY(capture_visual_evidence(window,
-        QStringLiteral("gui01_c1_caption_pressed.png"), QSize{1440, 900}));
-    QTest::mouseMove(window, QPoint{640, 220});
-    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, QPoint{640, 220});
     auto* empty = root->findChild<QObject*>(QStringLiteral("sourceEmptyState"));
     auto* display = root->findChild<QObject*>(QStringLiteral("sourceDisplayName"));
     auto* readOnly = root->findChild<QObject*>(QStringLiteral("sourceReadOnlyBadge"));
@@ -1360,179 +1327,31 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY2(eqToolWindow->property("visible").toBool(), "EQ tool window must be visible after reopening");
 
-    const std::array cornerNames{
-        QStringLiteral("resizeTopLeft"),
-        QStringLiteral("resizeTopRight"),
-        QStringLiteral("resizeBottomLeft"),
-        QStringLiteral("resizeBottomRight"),
-    };
-    for (const auto& cornerName : cornerNames) {
-        auto* cornerObj = root->findChild<QObject*>(cornerName);
-        QVERIFY2(cornerObj != nullptr, qPrintable(QStringLiteral("Corner %1 must exist").arg(cornerName)));
-        auto* cornerItem = qobject_cast<QQuickItem*>(cornerObj);
-        QVERIFY2(cornerItem != nullptr, qPrintable(QStringLiteral("Corner %1 must be a QQuickItem").arg(cornerName)));
-        QCOMPARE(cornerItem->property("width").toInt(), 8);
-        QCOMPARE(cornerItem->property("height").toInt(), 8);
-    }
-
-    // Maximize / Restore geometry preservation test (screen-aware)
+    // Native windowing model state transition verification
     window->showNormal();
     const QRect available = window->screen() ? window->screen()->availableGeometry() : QRect{0, 0, 1440, 900};
     const int targetWidth = std::max(window->minimumWidth(), std::min(1280, available.width()));
     const int targetHeight = std::max(window->minimumHeight(), std::min(720, available.height()));
     window->resize(targetWidth, targetHeight);
-    QTest::qWait(200);
+    QTest::qWait(100);
     QCoreApplication::processEvents();
 
     const QSize acceptedNormalSize = window->size();
     QVERIFY(acceptedNormalSize.width() >= window->minimumWidth());
     QVERIFY(acceptedNormalSize.height() >= window->minimumHeight());
 
-    QTRY_COMPARE_WITH_TIMEOUT(root->property("normalGeometry").toRect().width(), acceptedNormalSize.width(), 2000);
-    QTRY_COMPARE_WITH_TIMEOUT(root->property("normalGeometry").toRect().height(), acceptedNormalSize.height(), 2000);
-
-#ifdef _WIN32
-    // Native Windows Window Chrome Helper Hit-Test Exclusions & Window Styles Assertion
-    auto* rootQuickWindow = qobject_cast<QQuickWindow*>(window);
-    QVERIFY(rootQuickWindow != nullptr);
-
-    rgsml::app::WindowsWindowChromeHelper testChromeHelper{rootQuickWindow};
-
-    const HWND rootHwnd = reinterpret_cast<HWND>(rootQuickWindow->winId());
-    QVERIFY(rootHwnd != nullptr);
-    const LONG rootStyle = GetWindowLongW(rootHwnd, GWL_STYLE);
-    QVERIFY2((rootStyle & WS_THICKFRAME) != 0, "rootQuickWindow must have WS_THICKFRAME style flag");
-    QVERIFY2((rootStyle & WS_MAXIMIZEBOX) != 0, "rootQuickWindow must have WS_MAXIMIZEBOX style flag");
-    const std::array chromeExclusionNames{
-        QStringLiteral("desktopMenuBar"),
-        QStringLiteral("headerAuditionTargetSelector"),
-        QStringLiteral("windowMinimizeButton"),
-        QStringLiteral("windowMaximizeButton"),
-        QStringLiteral("windowCloseButton"),
-    };
-    for (const auto& name : chromeExclusionNames) {
-        auto* item = rootQuickWindow->findChild<QQuickItem*>(name);
-        QVERIFY2(item != nullptr, qPrintable(QStringLiteral("Exclusion item %1 must exist").arg(name)));
-        testChromeHelper.add_exclusion_item(item);
-    }
-
-    MSG testMsg{};
-    testMsg.hwnd = reinterpret_cast<HWND>(rootQuickWindow->winId());
-    testMsg.message = WM_NCHITTEST;
-
-    // Dynamically scan candidate points across header (y=20) outside all exclusions
-    std::vector<QQuickItem*> exclusionItems;
-    for (const auto& name : chromeExclusionNames) {
-        if (auto* item = rootQuickWindow->findChild<QQuickItem*>(name)) {
-            exclusionItems.push_back(item);
-        }
-    }
-
-    QPoint validDraggablePt{-1, -1};
-    const int winW = rootQuickWindow->width();
-    for (int candX = 10; candX <= winW - 10; candX += 10) {
-        const QPoint localPt{candX, 20};
-        const QPoint globalPt = rootQuickWindow->mapToGlobal(localPt);
-        bool insideExclusion = false;
-        for (auto* exclItem : exclusionItems) {
-            if (exclItem != nullptr && exclItem->isVisible() && exclItem->isEnabled()) {
-                const QPointF itemLocal = exclItem->mapFromGlobal(globalPt);
-                if (itemLocal.x() >= 0 && itemLocal.x() < exclItem->width()
-                    && itemLocal.y() >= 0 && itemLocal.y() < exclItem->height()) {
-                    insideExclusion = true;
-                    break;
-                }
-            }
-        }
-        if (!insideExclusion) {
-            validDraggablePt = globalPt;
-            break;
-        }
-    }
-
-    QVERIFY2(validDraggablePt.x() >= 0, "A valid non-interactive draggable header test point must exist");
-    testMsg.lParam = MAKELPARAM(validDraggablePt.x(), validDraggablePt.y());
-    qintptr hitResult = 0;
-    // WM_NCHITTEST returns false so QML headerMouseArea startSystemMove() handles main window move authority
-    QVERIFY(!testChromeHelper.nativeEventFilter("windows_generic_MSG", &testMsg, &hitResult));
-
-    // Test a point over windowCloseButton (exclusion item)
-    auto* closeBtnItem = rootQuickWindow->findChild<QQuickItem*>(QStringLiteral("windowCloseButton"));
-    QVERIFY(closeBtnItem != nullptr);
-    const QPoint closeGlobalPt = closeBtnItem->mapToGlobal(QPointF{closeBtnItem->width() * 0.5, closeBtnItem->height() * 0.5}).toPoint();
-    testMsg.lParam = MAKELPARAM(closeGlobalPt.x(), closeGlobalPt.y());
-    hitResult = 0;
-    QVERIFY(!testChromeHelper.nativeEventFilter("windows_generic_MSG", &testMsg, &hitResult));
-#endif
-
-    auto* windowMaximizeBtn = root->findChild<QObject*>(QStringLiteral("windowMaximizeButton"));
-    QVERIFY2(windowMaximizeBtn != nullptr, "windowMaximizeButton must exist");
-
-    // Path A: Custom button maximize -> custom button restore
-    QVERIFY(QMetaObject::invokeMethod(windowMaximizeBtn, "clicked"));
+    window->showMaximized();
     QTest::qWait(100);
     QCoreApplication::processEvents();
     QCOMPARE(window->visibility(), QWindow::Maximized);
 
-    QVERIFY(QMetaObject::invokeMethod(windowMaximizeBtn, "clicked"));
-    QTest::qWait(100);
-    QCoreApplication::processEvents();
-    QVERIFY(window->visibility() != QWindow::Maximized);
-    QCOMPARE(window->size(), acceptedNormalSize);
-
-    // Path B: Native/External Maximize (showMaximized) -> Custom Restore button click
-    // 1 & 2. Establish and wait for stable known normal geometry
     window->showNormal();
-    window->resize(acceptedNormalSize);
-    QTest::qWait(200);
-    QCoreApplication::processEvents();
-
-    QTRY_COMPARE_WITH_TIMEOUT(root->property("normalGeometry").toRect().width(), acceptedNormalSize.width(), 2000);
-    QTRY_COMPARE_WITH_TIMEOUT(root->property("normalGeometry").toRect().height(), acceptedNormalSize.height(), 2000);
-
-    const QRect capturedNormalGeomBeforeNative = root->property("normalGeometry").toRect();
-
-    // 3. Maximize QQuickWindow independently of toggleMaximizeRestore(), representing native/external maximization
-    window->showMaximized();
-
-    // 4. Allow transition to settle beyond existing capture/reset timer intervals
-    QTest::qWait(500);
-    QCoreApplication::processEvents();
-    QCOMPARE(window->visibility(), QWindow::Maximized);
-
-    // 5. Invoke windowMaximizeButton.clicked() while natively maximized
-    QVERIFY(QMetaObject::invokeMethod(windowMaximizeBtn, "clicked"));
-
-    // 6. Wait for restore to settle beyond restore and state reset timers
-    QTest::qWait(500);
-    QCoreApplication::processEvents();
-
-    // 7. Assert window is Windowed, width & height match saved normal values, and normalGeometry was preserved
-    QVERIFY(window->visibility() != QWindow::Maximized);
-    QCOMPARE(window->size(), acceptedNormalSize);
-    QCOMPARE(root->property("normalGeometry").toRect().width(), capturedNormalGeomBeforeNative.width());
-    QCOMPARE(root->property("normalGeometry").toRect().height(), capturedNormalGeomBeforeNative.height());
-
-    // 8. Wait again beyond all capture timers and assert restored size does NOT jump back to maximized geometry
-    QTest::qWait(400);
+    QTest::qWait(100);
     QCoreApplication::processEvents();
     QVERIFY(window->visibility() != QWindow::Maximized);
     QCOMPARE(window->size(), acceptedNormalSize);
 
-    // Path C: Restore from Maximized via header drag simulation
-    window->showMaximized();
-    QTest::qWait(500);
-    QCoreApplication::processEvents();
-    QCOMPARE(window->visibility(), QWindow::Maximized);
-
-    QMetaObject::invokeMethod(root, "restoreMaximizedDrag",
-        Q_ARG(QVariant, 200), Q_ARG(QVariant, 100),
-        Q_ARG(QVariant, acceptedNormalSize.width()), Q_ARG(QVariant, acceptedNormalSize.height()));
-    QTest::qWait(500);
-    QCoreApplication::processEvents();
-
-    QVERIFY(window->visibility() != QWindow::Maximized);
-    QCOMPARE(window->size(), acceptedNormalSize);
+    qInfo() << "NATIVE_WINDOW_NOTE=drag-to-top, drag-down restore and Aero Snap remain real-Windows manual acceptance items.";
 
     window->resize(1184, 688);
     QCoreApplication::processEvents();
