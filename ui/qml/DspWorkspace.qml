@@ -8,6 +8,7 @@ Rectangle {
 
     property var viewModel: null
     property int selectedModuleIndex: 0
+    property bool isCompact: false
 
     color: "transparent"
 
@@ -18,7 +19,7 @@ Rectangle {
         DspChainSelector {
             id: chainSelector
             objectName: "dspChainSelector"
-            Layout.preferredWidth: (parent && parent.width < 960) ? 164 : 180
+            Layout.preferredWidth: root.isCompact ? 164 : 180
             Layout.fillHeight: true
             selectedIndex: root.selectedModuleIndex
             eqViewModel: root.viewModel

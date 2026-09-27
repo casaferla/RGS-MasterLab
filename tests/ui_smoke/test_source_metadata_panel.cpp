@@ -405,6 +405,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     QVERIFY(capture_visual_evidence(
         window,
+        QStringLiteral("m12c_b1_compact_1184x688.png"),
+        QSize{1184, 688}));
+    QVERIFY(capture_visual_evidence(
+        window,
         QStringLiteral("gui01_1184x688_unavailable.png"),
         QSize{1184, 688}));
     auto* sourceOpen = root->findChild<QObject*>(QStringLiteral("sourceOpenButton"));
@@ -883,11 +887,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(res1440.metrics.width, 1440);
     QCOMPARE(res1440.metrics.height, 900);
     QCOMPARE(res1440.metrics.isCompact, false);
-    QCOMPARE(res1440.metrics.sourceHeight, 52.0);
+    QCOMPARE(res1440.metrics.sourceHeight, 72.0);
     QVERIFY2(res1440.metrics.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
-    QCOMPARE(res1440.metrics.controlHeight, 64.0);
-    QCOMPARE(res1440.metrics.regionHeight, 56.0);
-    QVERIFY2(res1440.metrics.workspaceHeight >= 400.0, "dspWorkspace must be dominant (>= 400 px) at 1440x900");
+    QCOMPARE(res1440.metrics.controlHeight, 72.0);
+    QCOMPARE(res1440.metrics.regionHeight, 72.0);
+    QVERIFY2(res1440.metrics.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
 
     const auto res1184 = evaluate_layout_at_size(engine, 1184, 688);
     QVERIFY2(res1184.valid, qPrintable(res1184.errorMessage));
@@ -895,11 +899,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(res1184.metrics.width, 1184);
     QCOMPARE(res1184.metrics.height, 688);
     QCOMPARE(res1184.metrics.isCompact, true);
-    QCOMPARE(res1184.metrics.sourceHeight, 48.0);
-    QVERIFY2(res1184.metrics.waveformHeight >= 96.0, "Waveform height must be >= 96 px at 1184x688");
-    QCOMPARE(res1184.metrics.controlHeight, 64.0);
-    QCOMPARE(res1184.metrics.regionHeight, 56.0);
+    QVERIFY2(res1184.metrics.sourceHeight >= 100.0, "Upper compact source/audition composition must exist and be visible");
+    QVERIFY2(res1184.metrics.waveformHeight >= 135.0, "Waveform height must be >= 135 px at 1184x688");
     QVERIFY2(res1184.metrics.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
+    QCOMPARE(dspChainSelectorObj->property("width").toInt(), 164);
 
     // 2. Native window resize & visual evidence capture clamped to available monitor geometry
     const QRect available = window->screen() ? window->screen()->availableGeometry() : QRect{0, 0, 1440, 900};

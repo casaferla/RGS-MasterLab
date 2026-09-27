@@ -175,6 +175,8 @@ ApplicationWindow {
         }
 
         ColumnLayout {
+            id: mainColumnLayout
+            objectName: "mainColumnLayout"
             width: parent.width
             height: parent.height - applicationHeader.height - statusBar.height
             spacing: 6
@@ -185,39 +187,55 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: root.isCompactLayout ? 48 : 52
+                Layout.preferredHeight: root.isCompactLayout ? 116 : 72
                 color: root.panel
                 border.color: root.border
                 radius: 5
-                RowLayout {
+
+                ColumnLayout {
                     anchors.fill: parent
                     anchors.leftMargin: 12
                     anchors.rightMargin: 12
                     anchors.topMargin: root.isCompactLayout ? 6 : 14
                     anchors.bottomMargin: root.isCompactLayout ? 6 : 14
-                    spacing: 12
-                    Rectangle {
-                        Layout.preferredWidth: root.isCompactLayout ? 32 : 40; Layout.preferredHeight: root.isCompactLayout ? 32 : 40; radius: 5; color: "#0E2632"; border.color: sourceSelection.hasSource ? root.accent : root.border
-                        StudioIcon { anchors.centerIn: parent; width: root.isCompactLayout ? 20 : 24; height: root.isCompactLayout ? 20 : 24; kind: "source"; strokeColor: sourceSelection.hasSource ? root.accent : root.textSecondary }
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true; Layout.fillHeight: true; spacing: root.isCompactLayout ? 1 : 3
-                        Label { id: sourceDisplayName; objectName: "sourceDisplayName"; Layout.fillWidth: true; visible: sourceSelection.hasSource; text: sourceSelection.hasSource ? sourceSelection.displayName : "No Source selected"; color: sourceSelection.hasSource ? root.textPrimary : root.textSecondary; font.family: "Segoe UI"; font.pixelSize: root.isCompactLayout ? 12 : 14; font.weight: Font.DemiBold; elide: Text.ElideRight }
-                        RowLayout {
-                            Layout.fillWidth: true; spacing: 16
-                            Label { objectName: "sourceFormatMetadata"; visible: sourceSelection.hasSource; text: "FORMAT  " + sourceSelection.sampleFormatLabel; color: root.textSecondary; font.pixelSize: 10 }
-                            Label { objectName: "sourceRateMetadata"; visible: sourceSelection.hasSource; text: "SAMPLE RATE  " + sourceSelection.sampleRateHz + " Hz"; color: root.textSecondary; font.pixelSize: 10 }
-                            Label { objectName: "sourceBitDepthMetadata"; visible: sourceSelection.hasSource; text: "BIT DEPTH  " + sourceSelection.sampleFormatLabel; color: root.textSecondary; font.pixelSize: 10 }
-                            Label { objectName: "sourceChannelsMetadata"; visible: sourceSelection.hasSource; text: "CHANNELS  " + sourceSelection.channelLayoutLabel; color: root.textSecondary; font.pixelSize: 10 }
-                            Label { objectName: "sourceDurationMetadata"; visible: sourceSelection.hasSource; text: "DURATION  " + sourceSelection.durationLabel; color: root.textSecondary; font.pixelSize: 10 }
-                            Label { visible: !sourceSelection.hasSource; text: "Choose a WAV Source to begin"; color: "#667783"; font.pixelSize: 10 }
-                            Item { Layout.fillWidth: true }
+                    spacing: root.isCompactLayout ? 4 : 0
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: root.isCompactLayout ? 32 : 44
+                        spacing: 12
+                        Rectangle {
+                            Layout.preferredWidth: root.isCompactLayout ? 28 : 40; Layout.preferredHeight: root.isCompactLayout ? 28 : 40; radius: 5; color: "#0E2632"; border.color: sourceSelection.hasSource ? root.accent : root.border
+                            StudioIcon { anchors.centerIn: parent; width: root.isCompactLayout ? 18 : 24; height: root.isCompactLayout ? 18 : 24; kind: "source"; strokeColor: sourceSelection.hasSource ? root.accent : root.textSecondary }
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true; Layout.fillHeight: true; spacing: root.isCompactLayout ? 1 : 3
+                            Label { id: sourceDisplayName; objectName: "sourceDisplayName"; Layout.fillWidth: true; visible: sourceSelection.hasSource; text: sourceSelection.hasSource ? sourceSelection.displayName : "No Source selected"; color: sourceSelection.hasSource ? root.textPrimary : root.textSecondary; font.family: "Segoe UI"; font.pixelSize: root.isCompactLayout ? 12 : 14; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 16
+                                Label { objectName: "sourceFormatMetadata"; visible: sourceSelection.hasSource; text: "FORMAT  " + sourceSelection.sampleFormatLabel; color: root.textSecondary; font.pixelSize: 10 }
+                                Label { objectName: "sourceRateMetadata"; visible: sourceSelection.hasSource; text: "SAMPLE RATE  " + sourceSelection.sampleRateHz + " Hz"; color: root.textSecondary; font.pixelSize: 10 }
+                                Label { objectName: "sourceBitDepthMetadata"; visible: sourceSelection.hasSource; text: "BIT DEPTH  " + sourceSelection.sampleFormatLabel; color: root.textSecondary; font.pixelSize: 10 }
+                                Label { objectName: "sourceChannelsMetadata"; visible: sourceSelection.hasSource; text: "CHANNELS  " + sourceSelection.channelLayoutLabel; color: root.textSecondary; font.pixelSize: 10 }
+                                Label { objectName: "sourceDurationMetadata"; visible: sourceSelection.hasSource; text: "DURATION  " + sourceSelection.durationLabel; color: root.textSecondary; font.pixelSize: 10 }
+                                Label { visible: !sourceSelection.hasSource; text: "Choose a WAV Source to begin"; color: "#667783"; font.pixelSize: 10 }
+                                Item { Layout.fillWidth: true }
+                            }
+                        }
+                        StudioButton {
+                            id: sourceOpenButton; objectName: "sourceOpenButton"; text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: root.isCompactLayout ? 96 : 110
+                            KeyNavigation.backtab: clearRegionButton; KeyNavigation.tab: waveformOverview
+                            onClicked: sourceDialog.open(); Accessible.name: text
                         }
                     }
-                    StudioButton {
-                        id: sourceOpenButton; objectName: "sourceOpenButton"; text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: 110
-                        KeyNavigation.backtab: clearRegionButton; KeyNavigation.tab: waveformOverview
-                        onClicked: sourceDialog.open(); Accessible.name: text
+
+                    ColumnLayout {
+                        id: compactControlsContainer
+                        objectName: "compactControlsContainer"
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        visible: root.isCompactLayout
+                        spacing: 2
                     }
                 }
             }
@@ -226,8 +244,8 @@ ApplicationWindow {
                 id: waveformPanel
                 objectName: "sourceWaveformPanel"
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.isCompactLayout ? 116 : 180
-                Layout.minimumHeight: root.isCompactLayout ? 96 : 180
+                Layout.preferredHeight: root.isCompactLayout ? 140 : 180
+                Layout.minimumHeight: root.isCompactLayout ? 120 : 180
                 color: "#050C11"
                 border.color: root.border
                 radius: 5
@@ -283,23 +301,24 @@ ApplicationWindow {
             Rectangle {
                 id: controlStrip
                 objectName: "controlStrip"
+                parent: root.isCompactLayout ? compactControlsContainer : mainColumnLayout
                 Layout.fillWidth: true
-                Layout.leftMargin: 12
-                Layout.rightMargin: 12
-                Layout.preferredHeight: 64
-                color: root.panel
-                border.color: root.border
+                Layout.leftMargin: root.isCompactLayout ? 0 : 12
+                Layout.rightMargin: root.isCompactLayout ? 0 : 12
+                Layout.preferredHeight: root.isCompactLayout ? 36 : 72
+                color: root.isCompactLayout ? "transparent" : root.panel
+                border.color: root.isCompactLayout ? "transparent" : root.border
                 radius: 5
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 12
-                    anchors.rightMargin: 12
+                    anchors.leftMargin: root.isCompactLayout ? 0 : 12
+                    anchors.rightMargin: root.isCompactLayout ? 0 : 12
                     spacing: 8
                     StudioIconButton { id: zoomOutButton; objectName: "waveformZoomOutButton"; iconKind: "zoom-out"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: waveformOverview; KeyNavigation.tab: zoomControl; onClicked: sourceWaveform.zoomOut(); Accessible.name: "Zoom out Source waveform" }
                     Slider {
                         id: zoomControl
                         objectName: "waveformZoomControl"
-                        Layout.preferredWidth: 160
+                        Layout.preferredWidth: root.isCompactLayout ? 110 : 160
                         from: 0.0; to: 1.0; stepSize: 0.001
                         enabled: sourceWaveform.canNavigate
                         activeFocusOnTab: true
@@ -315,26 +334,26 @@ ApplicationWindow {
                     StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: sourceWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
                     Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
                     TransportButton { id: stopButton; objectName: "stopButton"; iconKind: "stop"; enabled: playbackTransport.canStop; KeyNavigation.backtab: auditionTargetSelector.lastTarget; KeyNavigation.tab: playPauseButton; onClicked: playbackTransport.stop(); Accessible.name: "Stop" }
-                    Item { Layout.preferredWidth: 16 }
+                    Item { Layout.preferredWidth: root.isCompactLayout ? 8 : 16 }
                     TransportButton { id: playPauseButton; objectName: "playPauseButton"; primary: true; iconKind: playbackTransport.isPlaying ? "pause" : "play"; enabled: playbackTransport.canPlay || playbackTransport.canPause; KeyNavigation.backtab: stopButton; KeyNavigation.tab: auditionStartEditor.firstField; onClicked: playbackTransport.isPlaying ? playbackTransport.pause() : playbackTransport.playOrResume(); Accessible.name: playbackTransport.isPlaying ? "Pause" : "Play" }
-                    Item { Layout.preferredWidth: 16 }
+                    Item { Layout.preferredWidth: root.isCompactLayout ? 8 : 16 }
                     Rectangle {
                         objectName: "transportTimeModule"
-                        Layout.preferredWidth: 246
-                        Layout.preferredHeight: root.isCompactLayout ? 44 : 56
+                        Layout.preferredWidth: root.isCompactLayout ? 210 : 246
+                        Layout.preferredHeight: root.isCompactLayout ? 34 : 56
                         color: "#050D12"
                         border.color: root.border
                         radius: 5
                         RowLayout {
-                            anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16; spacing: 16
+                            anchors.fill: parent; anchors.leftMargin: root.isCompactLayout ? 10 : 16; anchors.rightMargin: root.isCompactLayout ? 10 : 16; spacing: root.isCompactLayout ? 10 : 16
                             ColumnLayout { spacing: 1
                                 Label { text: "CURRENT POSITION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
-                                Label { objectName: "playbackTimeLabel"; text: playbackTransport.positionLabel; color: root.textPrimary; font.family: "Consolas"; font.pixelSize: root.isCompactLayout ? 16 : 20 }
+                                Label { objectName: "playbackTimeLabel"; text: playbackTransport.positionLabel; color: root.textPrimary; font.family: "Consolas"; font.pixelSize: root.isCompactLayout ? 14 : 20 }
                             }
-                            Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; Layout.topMargin: 6; Layout.bottomMargin: 6; color: root.border }
+                            Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; Layout.topMargin: 4; Layout.bottomMargin: 4; color: root.border }
                             ColumnLayout { spacing: 1
                                 Label { text: "TOTAL DURATION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
-                                Label { text: playbackTransport.durationLabel; color: root.textPrimary; font.family: "Consolas"; font.pixelSize: root.isCompactLayout ? 16 : 20 }
+                                Label { text: playbackTransport.durationLabel; color: root.textPrimary; font.family: "Consolas"; font.pixelSize: root.isCompactLayout ? 14 : 20 }
                             }
                         }
                     }
@@ -344,18 +363,19 @@ ApplicationWindow {
             Rectangle {
                 id: regionPanel
                 objectName: "auditionRegionControls"
+                parent: root.isCompactLayout ? compactControlsContainer : mainColumnLayout
                 Layout.fillWidth: true
-                Layout.leftMargin: 12
-                Layout.rightMargin: 12
-                Layout.preferredHeight: root.isCompactLayout ? 56 : 56
-                color: root.panel
-                border.color: root.border
+                Layout.leftMargin: root.isCompactLayout ? 0 : 12
+                Layout.rightMargin: root.isCompactLayout ? 0 : 12
+                Layout.preferredHeight: root.isCompactLayout ? 34 : 72
+                color: root.isCompactLayout ? "transparent" : root.panel
+                border.color: root.isCompactLayout ? "transparent" : root.border
                 radius: 5
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 12
-                    anchors.rightMargin: 12
-                    spacing: 12
+                    anchors.leftMargin: root.isCompactLayout ? 0 : 12
+                    anchors.rightMargin: root.isCompactLayout ? 0 : 12
+                    spacing: root.isCompactLayout ? 8 : 12
                     ColumnLayout {
                         spacing: 1
                         Label { text: "START"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
@@ -367,7 +387,7 @@ ApplicationWindow {
                             onEscapeRequested: auditionRegion.clearError(); onNudgeBackwardRequested: auditionRegion.nudgeStartBackward(); onNudgeForwardRequested: auditionRegion.nudgeStartForward()
                         }
                     }
-                    Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 32; color: root.border }
+                    Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 28; color: root.border }
                     ColumnLayout {
                         spacing: 1
                         Label { text: "END"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
@@ -398,6 +418,7 @@ ApplicationWindow {
                 Layout.rightMargin: 12
                 Layout.minimumHeight: 300
                 viewModel: eqViewModel
+                isCompact: root.isCompactLayout
             }
         }
 
