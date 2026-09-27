@@ -742,8 +742,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     }
     QCOMPARE(eqViewModel.band_count(), 6);
 
-    // Verify 44.1 kHz source maxFreq endpoint (0.45 * 44100 = 19845 Hz)
-    QCOMPARE(eqGraph->property("maxFreq").toDouble(), 19845.0);
+    // Verify 48 kHz visual_wav() source maxFreq endpoint (0.45 * 48000 = 21600 Hz, capped at 20000 Hz)
+    QCOMPARE(eqGraph->property("maxFreq").toDouble(), 20000.0);
 
     // Verify 6 Band selector accent colors
     const std::array expectedColors{
