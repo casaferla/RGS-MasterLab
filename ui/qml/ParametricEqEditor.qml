@@ -9,28 +9,18 @@ Rectangle {
     implicitWidth: 992
     implicitHeight: 612
 
-    // Board02 Editor Panel Material
-    radius: 8
-    color: "#0F2236"
-    border.color: "#27465F"
-    border.width: 1
-
-    gradient: Gradient {
-        GradientStop { position: 0.0; color: "#17324D" }
-        GradientStop { position: 1.0; color: "#0C1A2A" }
-    }
-
-    // Top highlight
-    Rectangle {
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.margins: 1
-        height: 1
-        color: "#262A6C9F"
-    }
+    color: "transparent"
 
     readonly property bool isCompactActionMode: width < 916
+
+    readonly property var bandColors: [
+        "#2ED3FF", // 1 Cyan
+        "#2FD98F", // 2 Emerald
+        "#FFD84A", // 3 Warm Yellow
+        "#FF6B6B", // 4 Coral Red
+        "#4F7CFF", // 5 Cobalt Blue
+        "#F5F8FC"  // 6 Neutral White
+    ]
 
     function getFilterAbbrev(token) {
         if (token === "BELL") return "BELL"
@@ -44,162 +34,44 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 12
+        spacing: 8
 
-        // Header Strip (48 lp)
+        // Top Toolbar Strip (Reset Flat & Overall)
         RowLayout {
-            objectName: "eqHeaderRegion"
+            objectName: "eqTopToolbarRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 48
-            spacing: 12
-
-            ColumnLayout {
-                spacing: 1
-                Text {
-                    text: "Parametric EQ"
-                    color: "#F5F8FC"
-                    font.family: "Segoe UI"
-                    font.pixelSize: 20
-                    font.weight: Font.DemiBold
-                }
-                Text {
-                    text: "Manual Mastering"
-                    color: "#A1B5C9"
-                    font.family: "Segoe UI"
-                    font.pixelSize: 12
-                }
-            }
+            Layout.preferredHeight: 32
+            spacing: 8
 
             Item { Layout.fillWidth: true }
 
-            // Preview Status Badge
-            Rectangle {
-                Layout.preferredHeight: 28
-                Layout.preferredWidth: statusText.implicitWidth + 24
-                radius: 6
-                color: {
-                    if (!root.viewModel) return "#0F2236"
-                    const status = root.viewModel.previewStatus
-                    if (status === "RENDERING") return "#2A2814"
-                    if (status === "READY") return "#1400D47A"
-                    if (status === "ERROR") return "#14F27683"
-                    return "#0F2236"
-                }
-                border.color: {
-                    if (!root.viewModel) return "#27465F"
-                    const status = root.viewModel.previewStatus
-                    if (status === "RENDERING") return "#F2B632"
-                    if (status === "READY") return "#00D47A"
-                    if (status === "ERROR") return "#F27683"
-                    return "#27465F"
-                }
-                border.width: 1
-
-                Text {
-                    id: statusText
-                    anchors.centerIn: parent
-                    text: {
-                        if (!root.viewModel) return "NO PREVIEW"
-                        const status = root.viewModel.previewStatus
-                        if (status === "NO_PREPARED_REALIZATION" || status === "IDLE") return "NO PREVIEW"
-                        return status
-                    }
-                    color: {
-                        if (!root.viewModel) return "#A1B5C9"
-                        const status = root.viewModel.previewStatus
-                        if (status === "RENDERING") return "#F2B632"
-                        if (status === "READY") return "#00D47A"
-                        if (status === "ERROR") return "#F27683"
-                        return "#A1B5C9"
-                    }
-                    font.family: "Segoe UI"
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
-                }
+            StudioButton {
+                objectName: "eqResetFlatButton"
+                text: "Reset Flat"
+                minimumControlWidth: 88
+                enabled: root.viewModel !== null && root.viewModel !== undefined
+                onClicked: if (root.viewModel) root.viewModel.resetToFlat()
+                Accessible.name: "Reset EQ to Flat"
+                ToolTip.text: "Reset all EQ parameters to Flat baseline"
+                ToolTip.visible: hovered
             }
 
-            // History & Reset Flat + A/B Controls (32 lp)
-            RowLayout {
-                spacing: 2
-
-                StudioButton {
-                    objectName: "eqUndoButton"
-                    text: "Undo"
-                    minimumControlWidth: 64
-                    enabled: root.viewModel ? root.viewModel.canUndo : false
-                    onClicked: if (root.viewModel) root.viewModel.undo()
-                    Accessible.name: "Undo EQ edit"
-                    ToolTip.text: "Undo last EQ edit (Ctrl+Z)"
-                    ToolTip.visible: hovered
-                    Shortcut { sequence: "StandardKey.Undo"; enabled: root.viewModel && root.viewModel.canUndo; onActivated: root.viewModel.undo() }
-                }
-
-                StudioButton {
-                    objectName: "eqRedoButton"
-                    text: "Redo"
-                    minimumControlWidth: 64
-                    enabled: root.viewModel ? root.viewModel.canRedo : false
-                    onClicked: if (root.viewModel) root.viewModel.redo()
-                    Accessible.name: "Redo EQ edit"
-                    ToolTip.text: "Redo last EQ edit (Ctrl+Y)"
-                    ToolTip.visible: hovered
-                    Shortcut { sequence: "StandardKey.Redo"; enabled: root.viewModel && root.viewModel.canRedo; onActivated: root.viewModel.redo() }
-                }
-
-                StudioButton {
-                    objectName: "eqResetFlatButton"
-                    text: "Reset Flat"
-                    minimumControlWidth: 88
-                    enabled: root.viewModel !== null && root.viewModel !== undefined
-                    onClicked: if (root.viewModel) root.viewModel.resetToFlat()
-                    Accessible.name: "Reset EQ to Flat"
-                    ToolTip.text: "Reset all EQ parameters to Flat baseline"
-                    ToolTip.visible: hovered
-                }
-
-                StudioButton {
-                    objectName: "eqOverallToggleButton"
-                    text: "Overall"
-                    selected: root.viewModel ? root.viewModel.showCombinedResponse : false
-                    tone: root.viewModel && root.viewModel.showCombinedResponse ? "primary" : "secondary"
-                    accentColor: "#B3A989F2"
-                    minimumControlWidth: 72
-                    enabled: root.viewModel !== null && root.viewModel !== undefined
-                    onClicked: {
-                        if (root.viewModel) {
-                            root.viewModel.showCombinedResponse = !root.viewModel.showCombinedResponse
-                        }
+            StudioButton {
+                objectName: "eqOverallToggleButton"
+                text: "Overall"
+                selected: root.viewModel ? root.viewModel.showCombinedResponse : false
+                tone: root.viewModel && root.viewModel.showCombinedResponse ? "primary" : "secondary"
+                accentColor: "#A989F2"
+                minimumControlWidth: 72
+                enabled: root.viewModel !== null && root.viewModel !== undefined
+                onClicked: {
+                    if (root.viewModel) {
+                        root.viewModel.showCombinedResponse = !root.viewModel.showCombinedResponse
                     }
-                    Accessible.name: "Toggle Overall combined response curve"
-                    ToolTip.text: "Show or hide the combined total response curve of all active EQ bands"
-                    ToolTip.visible: hovered
                 }
-
-                Item { Layout.preferredWidth: 8 }
-
-                StudioButton {
-                    objectName: "abButtonActive"
-                    text: "A: EQ Active"
-                    selected: root.viewModel ? !root.viewModel.bypass : true
-                    tone: "primary"
-                    accentColor: "#00C8FF"
-                    onClicked: if (root.viewModel) root.viewModel.setBypass(false)
-                    Accessible.name: "A: EQ Active"
-                    ToolTip.text: "Activate Parametric EQ processing"
-                    ToolTip.visible: hovered
-                }
-
-                StudioButton {
-                    objectName: "abButtonBypass"
-                    text: "B: Bypass"
-                    selected: root.viewModel ? root.viewModel.bypass : false
-                    tone: "gold"
-                    accentColor: "#F2B632"
-                    onClicked: if (root.viewModel) root.viewModel.setBypass(true)
-                    Accessible.name: "B: Bypass"
-                    ToolTip.text: "Bypass Parametric EQ module"
-                    ToolTip.visible: hovered
-                }
+                Accessible.name: "Toggle Overall combined response curve"
+                ToolTip.text: "Show or hide the combined total response curve of all active EQ bands"
+                ToolTip.visible: hovered
             }
         }
 
@@ -229,11 +101,13 @@ Rectangle {
                         readonly property bool isEnabledBand: bandSummary ? bandSummary.enabled : true
                         readonly property string filterType: bandSummary ? bandSummary.filter : "BELL"
                         readonly property string routingType: bandSummary ? bandSummary.routing : "STEREO"
+                        readonly property color bandHue: root.bandColors[index % root.bandColors.length]
 
                         objectName: "bandSelectorButton_" + index
                         text: (index + 1) + " " + root.getFilterAbbrev(filterType)
                         selected: isSelectedBand
                         tone: isSelectedBand ? "primary" : "secondary"
+                        accentColor: bandHue
                         minimumControlWidth: 90
                         contentPadding: 8
                         activeFocusOnTab: true
@@ -271,12 +145,12 @@ Rectangle {
             }
         }
 
-        // Response Graph (Flexible 324 lp default / 244 lp min)
+        // Response Graph (Flexible min 200 lp)
         ParametricEqGraph {
             objectName: "parametricEqGraph"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: 244
+            Layout.minimumHeight: 200
             viewModel: root.viewModel
         }
 

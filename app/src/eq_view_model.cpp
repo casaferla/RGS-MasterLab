@@ -319,6 +319,11 @@ bool EqViewModel::mixed_routing() const noexcept
     return activeRoutings.size() > 1U;
 }
 
+bool EqViewModel::is_default() const noexcept
+{
+    return is_canonical_flat(committedBands_, false);
+}
+
 bool EqViewModel::bypass() const noexcept
 {
     return bypass_;

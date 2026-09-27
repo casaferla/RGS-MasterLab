@@ -47,6 +47,7 @@ class EqViewModel final : public QObject {
     Q_PROPERTY(bool removeAvailable READ remove_available NOTIFY changed)
     Q_PROPERTY(bool routeAvailable READ route_available NOTIFY changed)
     Q_PROPERTY(bool mixedRouting READ mixed_routing NOTIFY changed)
+    Q_PROPERTY(bool isDefault READ is_default NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
     Q_PROPERTY(bool canUndo READ can_undo NOTIFY changed)
     Q_PROPERTY(bool canRedo READ can_redo NOTIFY changed)
@@ -141,6 +142,7 @@ public:
     [[nodiscard]] bool remove_available() const noexcept;
     [[nodiscard]] bool route_available() const noexcept;
     [[nodiscard]] bool mixed_routing() const noexcept;
+    [[nodiscard]] bool is_default() const noexcept;
     [[nodiscard]] bool bypass() const noexcept;
     [[nodiscard]] bool can_undo() const noexcept;
     [[nodiscard]] bool can_redo() const noexcept;

@@ -83,6 +83,7 @@ private slots:
     void testNewEditInvalidatesRedoStack();
     void testWholeEqCombinedResponseEvaluation();
     void testOverallToggleIsViewStateOnly();
+    void testIsDefaultSemantics();
 };
 
 void EqViewModelTest::testInvalidTextDraftAndCommitRejection()

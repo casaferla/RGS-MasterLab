@@ -65,6 +65,16 @@ Rectangle {
         return maxGain - ((y - plotY) / plotH) * (maxGain - minGain)
     }
 
+    // Frozen Band Color Tokens (1:1 with band selector buttons)
+    readonly property var bandColors: [
+        "#2ED3FF", // Band 1 Cyan
+        "#2FD98F", // Band 2 Emerald
+        "#FFD84A", // Band 3 Warm Yellow
+        "#FF6B6B", // Band 4 Coral Red
+        "#4F7CFF", // Band 5 Cobalt Blue
+        "#F5F8FC"  // Band 6 Neutral White
+    ]
+
     // Top inset highlight
     Rectangle {
         anchors.top: parent.top
@@ -191,7 +201,7 @@ Rectangle {
 
                 const isBypassed = root.viewModel.bypass
 
-                // 1. Render Combined Whole-EQ Response Curve (when showCombinedResponse is true)
+                // 1. Render Combined Whole-EQ Response Curve (Reserved Lavender #A989F2)
                 if (root.viewModel.showCombinedResponse && root.viewModel.combinedResponsePoints) {
                     const cPoints = root.viewModel.combinedResponsePoints
                     if (cPoints.length >= 2) {
@@ -231,10 +241,13 @@ Rectangle {
                 const points = root.viewModel.selectedBandResponsePoints
                 if (points.length < 2) return
 
+                const selectedBandIdx = root.viewModel.selectedIndex
+                const bandHex = root.bandColors[selectedBandIdx % root.bandColors.length]
+
                 const zeroY = root.gainToY(0) - root.plotY
-                const fillAlpha = isBypassed ? "#102ED3FF" : "#242ED3FF"
-                const haloAlpha = isBypassed ? "#252ED3FF" : "#592ED3FF"
-                const strokeAlpha = isBypassed ? "#802ED3FF" : "#FF2ED3FF"
+                const fillAlpha = isBypassed ? "#10" + bandHex.substring(1) : "#24" + bandHex.substring(1)
+                const haloAlpha = isBypassed ? "#25" + bandHex.substring(1) : "#59" + bandHex.substring(1)
+                const strokeAlpha = isBypassed ? "#80" + bandHex.substring(1) : "#FF" + bandHex.substring(1)
 
                 // Fill under curve split at zero
                 for (let i = 0; i < points.length - 1; ++i) {
@@ -285,15 +298,6 @@ Rectangle {
     }
 
     // Band Handles (Unclipped Siblings Above plotArea)
-    readonly property var bandColors: [
-        "#FF2ED3FF", // Band 1
-        "#FF2FD98F", // Band 2
-        "#FFC8D94A", // Band 3
-        "#FFFF7A9A", // Band 4
-        "#FFB56CFF", // Band 5
-        "#FF6FC8FF"  // Band 6
-    ]
-
     Repeater {
         model: root.viewModel ? root.viewModel.bandCount : 0
         delegate: Item {
@@ -329,12 +333,20 @@ Rectangle {
                 anchors.fill: parent
                 radius: width / 2
                 color: !isEnabled ? "#992A3A49" : "#FF0E2233"
-                border.color: {
-                    if (!isEnabled) return "#99566676"
-                    if (isSelected) return "#FFFFFFFF"
-                    return root.bandColors[index % root.bandColors.length]
+                border.color: !isEnabled ? "#99566676" : root.bandColors[index % root.bandColors.length]
+                border.width: isSelected ? 3 : 2
+
+                // Outer selection white ring emphasis (retaining identity border color underneath)
+                Rectangle {
+                    visible: isSelected
+                    anchors.centerIn: parent
+                    width: parent.width + 6
+                    height: parent.height + 6
+                    radius: width / 2
+                    color: "transparent"
+                    border.color: "#FFFFFF"
+                    border.width: 1.5
                 }
-                border.width: 2
 
                 Text {
                     anchors.centerIn: parent
