@@ -112,6 +112,7 @@ ApplicationWindow {
                     background: Item { }
                     delegate: MenuBarItem {
                         id: menuBarItem
+                        objectName: "desktopMenuBarItem_" + menuBarItem.text.replace("&", "")
                         implicitWidth: contentItem.implicitWidth + 24
                         implicitHeight: 48
                         contentItem: Text { objectName: "desktopMenuBarLabel_" + menuBarItem.text.replace("&", ""); text: menuBarItem.text.replace("&", ""); color: menuBarItem.highlighted ? root.textPrimary : root.textSecondary; font.family: "Segoe UI"; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
