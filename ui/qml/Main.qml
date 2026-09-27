@@ -223,7 +223,7 @@ ApplicationWindow {
                             }
                         }
                         StudioButton {
-                            id: sourceOpenButton; objectName: "sourceOpenButton"; text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: root.isCompactLayout ? 96 : 110
+                            id: sourceOpenButton; objectName: "sourceOpenButton"; text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: 110
                             KeyNavigation.backtab: clearRegionButton; KeyNavigation.tab: waveformOverview
                             onClicked: sourceDialog.open(); Accessible.name: text
                         }
