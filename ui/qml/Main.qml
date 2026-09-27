@@ -13,7 +13,7 @@ ApplicationWindow {
     visible: true
     title: "RGS MasterLab"
     color: "#071117"
-    flags: Qt.Window | Qt.FramelessWindowHint
+    flags: Qt.Window
 
     readonly property color surface: "#0F1820"
     readonly property color surfaceRaised: "#13222F"
@@ -24,150 +24,6 @@ ApplicationWindow {
     readonly property color accent: "#00C8FF"
     readonly property color warning: "#F2B632"
     readonly property color error: "#F27683"
-
-    property rect normalGeometry: Qt.rect(100, 100, 1440, 900)
-    property bool isChangingWindowState: false
-    property bool isRestoringNormal: false
-
-    Timer {
-        id: normalGeometryCaptureTimer
-        interval: 150
-        repeat: false
-        onTriggered: {
-            if (!root.isChangingWindowState
-                && !root.isRestoringNormal
-                && root.visibility === Window.Windowed
-                && root.windowState !== Qt.WindowMaximized
-                && root.width >= root.minimumWidth
-                && root.height >= root.minimumHeight) {
-                root.normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
-            }
-        }
-    }
-
-    function captureNormalGeometry() {
-        if (!isChangingWindowState
-            && !isRestoringNormal
-            && root.visibility === Window.Windowed
-            && root.windowState !== Qt.WindowMaximized
-            && root.width >= root.minimumWidth
-            && root.height >= root.minimumHeight) {
-            normalGeometryCaptureTimer.restart()
-        }
-    }
-
-    function toggleMaximizeRestore() {
-        if (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized) {
-            restoreNormalWindow()
-        } else {
-            if (root.visibility === Window.Windowed && root.windowState !== Qt.WindowMaximized) {
-                root.normalGeometry = Qt.rect(root.x, root.y, root.width, root.height)
-            }
-            normalGeometryCaptureTimer.stop()
-            isChangingWindowState = true
-            isRestoringNormal = false
-            root.showMaximized()
-            stateResetTimer.restart()
-        }
-    }
-
-    function restoreNormalWindow() {
-        normalGeometryCaptureTimer.stop()
-        isChangingWindowState = true
-        isRestoringNormal = true
-
-        root.showNormal()
-
-        if (root.visibility === Window.Windowed && root.windowState !== Qt.WindowMaximized) {
-            applyRestoredNormalGeometry()
-        }
-    }
-
-    function applyRestoredNormalGeometry() {
-        if (!isRestoringNormal)
-            return
-        isRestoringNormal = false
-
-        if (root.normalGeometry.width > 0 && root.normalGeometry.height > 0) {
-            root.width = Math.max(root.minimumWidth, root.normalGeometry.width)
-            root.height = Math.max(root.minimumHeight, root.normalGeometry.height)
-            if (root.normalGeometry.x >= 0 && root.normalGeometry.y >= 0) {
-                root.x = root.normalGeometry.x
-                root.y = root.normalGeometry.y
-            }
-        }
-
-        stateResetTimer.restart()
-    }
-
-    function restoreMaximizedDrag(targetX, targetY, targetWidth, targetHeight) {
-        normalGeometryCaptureTimer.stop()
-        isChangingWindowState = true
-        isRestoringNormal = false
-
-        root.width = Math.max(root.minimumWidth, targetWidth)
-        root.height = Math.max(root.minimumHeight, targetHeight)
-        root.x = targetX
-        root.y = targetY
-
-        root.showNormal()
-
-        restoreTimer.restart()
-        stateResetTimer.restart()
-    }
-
-    Timer {
-        id: stateResetTimer
-        interval: 350
-        repeat: false
-        onTriggered: {
-            isChangingWindowState = false
-            isRestoringNormal = false
-            if (root.visibility === Window.Windowed && root.windowState !== Qt.WindowMaximized) {
-                captureNormalGeometry()
-            }
-        }
-    }
-
-    Timer {
-        id: restoreTimer
-        interval: 30
-        repeat: false
-        onTriggered: {
-            if (root.visibility === Window.Windowed && root.windowState !== Qt.WindowMaximized) {
-                if (root.normalGeometry.width > 0 && root.normalGeometry.height > 0) {
-                    root.width = Math.max(root.minimumWidth, root.normalGeometry.width)
-                    root.height = Math.max(root.minimumHeight, root.normalGeometry.height)
-                }
-            }
-        }
-    }
-
-    onXChanged: captureNormalGeometry()
-    onYChanged: captureNormalGeometry()
-    onWidthChanged: captureNormalGeometry()
-    onHeightChanged: captureNormalGeometry()
-    onVisibilityChanged: function() {
-        if (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized) {
-            normalGeometryCaptureTimer.stop()
-        } else if (root.visibility === Window.Windowed) {
-            if (isRestoringNormal) {
-                applyRestoredNormalGeometry()
-            } else if (!isChangingWindowState) {
-                captureNormalGeometry()
-            }
-        }
-    }
-    onWindowStateChanged: function() {
-        if (root.windowState === Qt.WindowMaximized || root.visibility === Window.Maximized) {
-            normalGeometryCaptureTimer.stop()
-        } else if (root.visibility === Window.Windowed && root.windowState !== Qt.WindowMaximized) {
-            if (isRestoringNormal) {
-                applyRestoredNormalGeometry()
-            }
-        }
-    }
-    Component.onCompleted: captureNormalGeometry()
 
     readonly property bool hasError: {
         return projectSession.errorMessage.length > 0
@@ -233,54 +89,10 @@ ApplicationWindow {
             color: root.surface
             border.color: root.border
 
-            MouseArea {
-                id: headerMouseArea
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton
-                hoverEnabled: true
-
-                property point pressPoint: Qt.point(0, 0)
-                property double pressRatioX: 0.5
-                property bool dragStartedMaximized: false
-                property bool isDraggingFromMaximized: false
-
-                onPressed: function(mouse) {
-                    pressPoint = Qt.point(mouse.x, mouse.y)
-                    pressRatioX = root.width > 0 ? (mouse.x / root.width) : 0.5
-                    dragStartedMaximized = (root.visibility === Window.Maximized || root.windowState === Qt.WindowMaximized)
-                    isDraggingFromMaximized = false
-
-                    if (!dragStartedMaximized) {
-                        root.startSystemMove()
-                    }
-                }
-
-                onPositionChanged: function(mouse) {
-                    if (pressed && dragStartedMaximized && !isDraggingFromMaximized) {
-                        const dx = mouse.x - pressPoint.x
-                        const dy = mouse.y - pressPoint.y
-                        if (Math.abs(dy) > 4 || Math.abs(dx) > 4) {
-                            isDraggingFromMaximized = true
-
-                            const normalW = Math.max(root.minimumWidth, root.normalGeometry.width > 0 ? root.normalGeometry.width : 1440)
-                            const normalH = Math.max(root.minimumHeight, root.normalGeometry.height > 0 ? root.normalGeometry.height : 900)
-
-                            const globalPt = headerMouseArea.mapToGlobal(Qt.point(mouse.x, mouse.y))
-                            const targetX = globalPt.x - (pressRatioX * normalW)
-                            const targetY = globalPt.y - pressPoint.y
-
-                            root.restoreMaximizedDrag(targetX, targetY, normalW, normalH)
-                            root.startSystemMove()
-                        }
-                    }
-                }
-
-                onDoubleClicked: root.toggleMaximizeRestore()
-            }
-
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 12
+                anchors.rightMargin: 12
                 spacing: 12
                 Rectangle {
                     Layout.preferredWidth: 40; Layout.preferredHeight: 40; radius: 4; color: "#8B111B"; border.color: "#C8CDD3"
@@ -300,6 +112,7 @@ ApplicationWindow {
                     background: Item { }
                     delegate: MenuBarItem {
                         id: menuBarItem
+                        objectName: "desktopMenuBarItem_" + menuBarItem.text.replace("&", "")
                         implicitWidth: contentItem.implicitWidth + 24
                         implicitHeight: 48
                         contentItem: Text { objectName: "desktopMenuBarLabel_" + menuBarItem.text.replace("&", ""); text: menuBarItem.text.replace("&", ""); color: menuBarItem.highlighted ? root.textPrimary : root.textSecondary; font.family: "Segoe UI"; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
@@ -361,12 +174,6 @@ ApplicationWindow {
 
                 Item { Layout.fillWidth: true }
                 AuditionSourceSelector { id: auditionTargetSelector; objectName: "headerAuditionTargetSelector"; Layout.preferredWidth: implicitWidth; Layout.alignment: Qt.AlignVCenter; previousTabItem: fitSourceButton; nextTabItem: stopButton }
-                Row {
-                    Layout.preferredHeight: 48; spacing: 0
-                    StudioIconButton { objectName: "windowMinimizeButton"; width: 46; height: 48; controlSize: 46; iconKind: "minimize"; activeFocusOnTab: false; onClicked: root.showMinimized(); Accessible.name: "Minimize window" }
-                    StudioIconButton { objectName: "windowMaximizeButton"; width: 46; height: 48; controlSize: 46; iconKind: root.visibility === Window.Maximized ? "restore" : "maximize"; activeFocusOnTab: false; onClicked: root.toggleMaximizeRestore(); Accessible.name: root.visibility === Window.Maximized ? "Restore window" : "Maximize window" }
-                    StudioIconButton { objectName: "windowCloseButton"; width: 48; height: 48; controlSize: 48; tone: "close"; iconKind: "close"; activeFocusOnTab: false; onClicked: root.close(); Accessible.name: "Close window" }
-                }
             }
         }
 
@@ -611,14 +418,4 @@ ApplicationWindow {
     Label { objectName: "sourceContainerMetadata"; visible: false; text: "Container  " + sourceSelection.containerLabel }
     Label { objectName: "sourceFramesMetadata"; visible: false; text: "Frames  " + sourceSelection.frameCount }
     Label { objectName: "playbackStateLabel"; visible: false; text: playbackTransport.stateLabel }
-
-    MouseArea { z: 1000; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 5; cursorShape: Qt.SizeHorCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.LeftEdge) }
-    MouseArea { z: 1000; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 5; cursorShape: Qt.SizeHorCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.RightEdge) }
-    MouseArea { z: 1000; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 5; cursorShape: Qt.SizeVerCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.TopEdge) }
-    MouseArea { z: 1000; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 5; cursorShape: Qt.SizeVerCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.BottomEdge) }
-
-    MouseArea { objectName: "resizeTopLeft"; z: 1001; anchors.left: parent.left; anchors.top: parent.top; width: 8; height: 8; cursorShape: Qt.SizeFDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.TopEdge | Qt.LeftEdge) }
-    MouseArea { objectName: "resizeTopRight"; z: 1001; anchors.right: parent.right; anchors.top: parent.top; width: 8; height: 8; cursorShape: Qt.SizeBDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.TopEdge | Qt.RightEdge) }
-    MouseArea { objectName: "resizeBottomLeft"; z: 1001; anchors.left: parent.left; anchors.bottom: parent.bottom; width: 8; height: 8; cursorShape: Qt.SizeBDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.BottomEdge | Qt.LeftEdge) }
-    MouseArea { objectName: "resizeBottomRight"; z: 1001; anchors.right: parent.right; anchors.bottom: parent.bottom; width: 8; height: 8; cursorShape: Qt.SizeFDiagCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.BottomEdge | Qt.RightEdge) }
 }
