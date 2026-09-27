@@ -253,6 +253,7 @@ ApplicationWindow {
                 id: waveformPanel
                 objectName: "sourceWaveformPanel"
                 parent: root.isCompactLayout ? compactBottomLeft : mainColumnLayout
+                anchors.fill: root.isCompactLayout ? parent : undefined
                 Layout.fillWidth: true
                 Layout.fillHeight: root.isCompactLayout
                 Layout.preferredHeight: root.isCompactLayout ? 0 : 180
@@ -450,6 +451,7 @@ ApplicationWindow {
                 id: dspWorkspace
                 objectName: "dspWorkspace"
                 parent: root.isCompactLayout ? compactBottomRight : mainColumnLayout
+                anchors.fill: root.isCompactLayout ? parent : undefined
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: root.isCompactLayout ? 0 : 12
