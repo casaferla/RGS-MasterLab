@@ -450,48 +450,62 @@ ApplicationWindow {
                                 Layout.minimumHeight: 200
                             }
 
-                            // Lower Left: Future Controls Visual Shell Placeholders (Prepare, Restore, Automatch)
+                            // Lower Left: Adaptive Context Workspace (Prepare / Restoration <-> Gold / Automatch)
                             Rectangle {
-                                id: compactPlaceholdersPanel
-                                objectName: "compactPlaceholdersPanel"
+                                id: adaptiveContextWorkspace
+                                objectName: "adaptiveContextWorkspace"
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 160
                                 color: root.panel
                                 border.color: root.border
                                 radius: 5
 
+                                property string activeContextMode: "GOLD_AUTOMATCH"
+
                                 ColumnLayout {
                                     anchors.fill: parent
-                                    anchors.margins: 8
-                                    spacing: 6
+                                    anchors.margins: 6
+                                    spacing: 4
 
                                     RowLayout {
                                         Layout.fillWidth: true
+                                        Layout.preferredHeight: 24
                                         spacing: 6
 
-                                        Rectangle {
-                                            objectName: "preparePlaceholderPanel"
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 28
-                                            color: "#0F2030"
-                                            border.color: "#1E354A"
-                                            radius: 4
-                                            Text { anchors.centerIn: parent; text: "PREPARE (SHELL)"; color: "#586D7C"; font.family: "Segoe UI"; font.pixelSize: 10; font.weight: Font.Bold }
+                                        Text {
+                                            text: "ADAPTIVE CONTEXT"
+                                            color: "#8A9EA8"
+                                            font.family: "Segoe UI"
+                                            font.pixelSize: 9
+                                            font.weight: Font.Bold
                                         }
 
-                                        Rectangle {
-                                            objectName: "restorePlaceholderPanel"
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 28
-                                            color: "#0F2030"
-                                            border.color: "#1E354A"
-                                            radius: 4
-                                            Text { anchors.centerIn: parent; text: "RESTORE (SHELL)"; color: "#586D7C"; font.family: "Segoe UI"; font.pixelSize: 10; font.weight: Font.Bold }
+                                        Item { Layout.fillWidth: true }
+
+                                        StudioSegmentButton {
+                                            objectName: "adaptiveModeToggle_Gold"
+                                            text: "Gold / Automatch"
+                                            selected: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
+                                            minimumControlWidth: 100
+                                            contentPadding: 2
+                                            onClicked: adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
+                                        }
+
+                                        StudioSegmentButton {
+                                            objectName: "adaptiveModeToggle_Restoration"
+                                            text: "Prepare / Restoration"
+                                            selected: adaptiveContextWorkspace.activeContextMode === "PREPARE_RESTORATION"
+                                            minimumControlWidth: 110
+                                            contentPadding: 2
+                                            onClicked: adaptiveContextWorkspace.activeContextMode = "PREPARE_RESTORATION"
                                         }
                                     }
 
+                                    // View 1: Gold / Automatch (Default View)
                                     Rectangle {
-                                        objectName: "automatchPlaceholderPanel"
+                                        id: goldAutomatchView
+                                        objectName: "goldAutomatchView"
+                                        visible: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
                                         color: "#0F2030"
@@ -503,47 +517,154 @@ ApplicationWindow {
                                             anchors.margins: 6
                                             spacing: 4
 
-                                            Text { text: "AUTOMATCH DOMAINS"; color: "#6A8090"; font.family: "Segoe UI"; font.pixelSize: 9; font.weight: Font.Bold }
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                Rectangle {
+                                                    objectName: "goldReferenceCard"
+                                                    Layout.fillWidth: true
+                                                    Layout.preferredHeight: 30
+                                                    color: "#142838"
+                                                    border.color: goldSelection.hasGold ? root.accent : "#233A4E"
+                                                    radius: 4
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 8
+                                                        anchors.rightMargin: 8
+                                                        spacing: 6
+                                                        StudioIcon { width: 16; height: 18; kind: "gold"; strokeColor: goldSelection.hasGold ? root.accent : "#586773" }
+                                                        Text {
+                                                            objectName: "goldReferenceStatus"
+                                                            text: goldSelection.hasGold ? ("GOLD  " + goldSelection.displayName) : "NO GOLD REFERENCE LOADED"
+                                                            color: goldSelection.hasGold ? root.textPrimary : "#586D7C"
+                                                            font.family: "Segoe UI"
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                            elide: Text.ElideRight
+                                                        }
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    objectName: "matchAmountControl"
+                                                    Layout.preferredWidth: 140
+                                                    Layout.preferredHeight: 30
+                                                    color: "#142838"
+                                                    border.color: "#233A4E"
+                                                    radius: 4
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 6
+                                                        anchors.rightMargin: 6
+                                                        spacing: 4
+                                                        Text { text: "MATCH"; color: "#586D7C"; font.pixelSize: 8; font.weight: Font.Bold }
+                                                        Slider {
+                                                            objectName: "matchAmountSlider"
+                                                            Layout.fillWidth: true
+                                                            from: 0.0; to: 1.0; value: 0.0; enabled: false
+                                                        }
+                                                    }
+                                                }
+                                            }
 
                                             RowLayout {
                                                 Layout.fillWidth: true
                                                 Layout.fillHeight: true
                                                 spacing: 4
 
-                                                Repeater {
-                                                    model: [
-                                                        { name: "Tonal", key: "Tonal" },
-                                                        { name: "Dynamics", key: "Dynamics" },
-                                                        { name: "Stereo", key: "Stereo" },
-                                                        { name: "Loudness", key: "Loudness" }
-                                                    ]
-                                                    delegate: ColumnLayout {
-                                                        required property var modelData
-                                                        Layout.fillWidth: true
-                                                        Layout.fillHeight: true
-                                                        spacing: 2
-
-                                                        Rectangle {
-                                                            objectName: "automatchKnob_" + modelData.key
-                                                            Layout.preferredWidth: 32
-                                                            Layout.preferredHeight: 32
-                                                            Layout.alignment: Qt.AlignHCenter
-                                                            radius: 16
-                                                            color: "#162838"
-                                                            border.color: "#2C4356"
-                                                            border.width: 1
-                                                            Rectangle { width: 2; height: 10; color: "#586D7C"; anchors.top: parent.top; anchors.topMargin: 4; anchors.horizontalCenter: parent.horizontalCenter }
-                                                        }
-
-                                                        Text {
-                                                            text: modelData.name
-                                                            color: "#586D7C"
-                                                            font.family: "Segoe UI"
-                                                            font.pixelSize: 9
-                                                            Layout.alignment: Qt.AlignHCenter
-                                                        }
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true; Layout.fillHeight: true; spacing: 2
+                                                    Rectangle {
+                                                        objectName: "automatchKnob_Tonal"
+                                                        Layout.preferredWidth: 28; Layout.preferredHeight: 28; Layout.alignment: Qt.AlignHCenter
+                                                        radius: 14; color: "#162838"; border.color: "#2C4356"; border.width: 1
+                                                        Rectangle { width: 2; height: 8; color: "#586D7C"; anchors.top: parent.top; anchors.topMargin: 3; anchors.horizontalCenter: parent.horizontalCenter }
                                                     }
+                                                    Text { text: "Tonal"; color: "#586D7C"; font.pixelSize: 9; Layout.alignment: Qt.AlignHCenter }
                                                 }
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true; Layout.fillHeight: true; spacing: 2
+                                                    Rectangle {
+                                                        objectName: "automatchKnob_Dynamics"
+                                                        Layout.preferredWidth: 28; Layout.preferredHeight: 28; Layout.alignment: Qt.AlignHCenter
+                                                        radius: 14; color: "#162838"; border.color: "#2C4356"; border.width: 1
+                                                        Rectangle { width: 2; height: 8; color: "#586D7C"; anchors.top: parent.top; anchors.topMargin: 3; anchors.horizontalCenter: parent.horizontalCenter }
+                                                    }
+                                                    Text { text: "Dynamics"; color: "#586D7C"; font.pixelSize: 9; Layout.alignment: Qt.AlignHCenter }
+                                                }
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true; Layout.fillHeight: true; spacing: 2
+                                                    Rectangle {
+                                                        objectName: "automatchKnob_Stereo"
+                                                        Layout.preferredWidth: 28; Layout.preferredHeight: 28; Layout.alignment: Qt.AlignHCenter
+                                                        radius: 14; color: "#162838"; border.color: "#2C4356"; border.width: 1
+                                                        Rectangle { width: 2; height: 8; color: "#586D7C"; anchors.top: parent.top; anchors.topMargin: 3; anchors.horizontalCenter: parent.horizontalCenter }
+                                                    }
+                                                    Text { text: "Stereo"; color: "#586D7C"; font.pixelSize: 9; Layout.alignment: Qt.AlignHCenter }
+                                                }
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true; Layout.fillHeight: true; spacing: 2
+                                                    Rectangle {
+                                                        objectName: "automatchKnob_Loudness"
+                                                        Layout.preferredWidth: 28; Layout.preferredHeight: 28; Layout.alignment: Qt.AlignHCenter
+                                                        radius: 14; color: "#162838"; border.color: "#2C4356"; border.width: 1
+                                                        Rectangle { width: 2; height: 8; color: "#586D7C"; anchors.top: parent.top; anchors.topMargin: 3; anchors.horizontalCenter: parent.horizontalCenter }
+                                                    }
+                                                    Text { text: "Loudness"; color: "#586D7C"; font.pixelSize: 9; Layout.alignment: Qt.AlignHCenter }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // View 2: Prepare / Restoration (Alternate View)
+                                    Rectangle {
+                                        id: prepareRestorationView
+                                        objectName: "prepareRestorationView"
+                                        visible: adaptiveContextWorkspace.activeContextMode === "PREPARE_RESTORATION"
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        color: "#0F2030"
+                                        border.color: "#1E354A"
+                                        radius: 4
+
+                                        ColumnLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 6
+                                            spacing: 4
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 6
+
+                                                Rectangle {
+                                                    objectName: "sourceHealthCard"
+                                                    Layout.fillWidth: true
+                                                    Layout.preferredHeight: 28
+                                                    color: "#142838"; border.color: "#233A4E"; radius: 4
+                                                    Text { anchors.centerIn: parent; text: "SOURCE HEALTH: OPTIMAL"; color: "#586D7C"; font.pixelSize: 9; font.weight: Font.Bold }
+                                                }
+
+                                                Rectangle {
+                                                    objectName: "restorationPlanCard"
+                                                    Layout.fillWidth: true
+                                                    Layout.preferredHeight: 28
+                                                    color: "#142838"; border.color: "#233A4E"; radius: 4
+                                                    Text { anchors.centerIn: parent; text: "RESTORATION PLAN"; color: "#586D7C"; font.pixelSize: 9; font.weight: Font.Bold }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                objectName: "restorationControlsGroup"
+                                                Layout.fillWidth: true
+                                                Layout.fillHeight: true
+                                                color: "#142838"; border.color: "#233A4E"; radius: 4
+                                                Text { anchors.centerIn: parent; text: "RESTORATION CONTROLS (SHELL)"; color: "#586D7C"; font.pixelSize: 10; font.weight: Font.Bold }
                                             }
                                         }
                                     }

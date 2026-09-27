@@ -13,6 +13,20 @@ Rectangle {
 
     color: "transparent"
 
+    function updateChainParenting() {
+        if (root.isCompact && root.chainContainer) {
+            chainSelector.parent = root.chainContainer
+            chainSelector.anchors.fill = chainSelector.parent
+        } else {
+            chainSelector.parent = dspWorkspaceRow
+            chainSelector.anchors.fill = undefined
+        }
+    }
+
+    onIsCompactChanged: Qt.callLater(updateChainParenting)
+    onChainContainerChanged: Qt.callLater(updateChainParenting)
+    Component.onCompleted: updateChainParenting()
+
     RowLayout {
         id: dspWorkspaceRow
         objectName: "dspWorkspaceRow"
@@ -22,7 +36,6 @@ Rectangle {
         DspChainSelector {
             id: chainSelector
             objectName: "dspChainSelector"
-            parent: (root.isCompact && root.chainContainer) ? root.chainContainer : dspWorkspaceRow
             Layout.preferredWidth: root.isCompact ? 164 : 180
             Layout.fillHeight: true
             isCompact: root.isCompact

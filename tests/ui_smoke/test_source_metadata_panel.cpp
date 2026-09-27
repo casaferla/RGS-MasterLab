@@ -399,14 +399,21 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dspChainSelectorObj != nullptr, "dspChainSelector must exist in dspWorkspace");
     QVERIFY2(dspEditorHostObj != nullptr, "dspEditorHost must exist in dspWorkspace");
 
-    // Verify visual shell placeholders exist
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("preparePlaceholderPanel")) != nullptr);
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("restorePlaceholderPanel")) != nullptr);
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchPlaceholderPanel")) != nullptr);
+    // Verify Adaptive Context Workspace and visual shell placeholders exist
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("goldAutomatchView")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("prepareRestorationView")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("goldReferenceCard")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("goldReferenceStatus")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("matchAmountControl")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("matchAmountSlider")) != nullptr);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Tonal")) != nullptr);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Dynamics")) != nullptr);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Stereo")) != nullptr);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Loudness")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceHealthCard")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("restorationPlanCard")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("restorationControlsGroup")) != nullptr);
 
     // Verify no production standalone EQ tool window exists
     QVERIFY2(root->findChild<QObject*>(QStringLiteral("parametricEqToolWindow")) == nullptr,

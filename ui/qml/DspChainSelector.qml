@@ -66,18 +66,18 @@ Rectangle {
                 Layout.preferredHeight: 52
                 radius: 4
 
-            property bool isSelected: root.selectedIndex === 0
-            property bool isDefaultState: root.eqViewModel ? root.eqViewModel.isDefault : true
-            property bool isBypassed: root.eqViewModel ? root.eqViewModel.bypass : false
-            property bool hasError: root.eqViewModel ? (root.eqViewModel.previewStatus === "ERROR") : false
+                property bool isSelected: root.selectedIndex === 0
+                property bool isDefaultState: root.eqViewModel ? root.eqViewModel.isDefault : true
+                property bool isBypassed: root.eqViewModel ? root.eqViewModel.bypass : false
+                property bool hasError: root.eqViewModel ? (root.eqViewModel.previewStatus === "ERROR") : false
 
-            color: isSelected ? "#1A324A" : (rowMouse.containsMouse ? "#122538" : "#0D1D2B")
-            border.color: isSelected ? "#00C8FF" : "#1A324A"
-            border.width: isSelected ? 2 : 1
+                color: isSelected ? "#1A324A" : (rowMouse.containsMouse ? "#122538" : "#0D1D2B")
+                border.color: isSelected ? "#00C8FF" : "#1A324A"
+                border.width: isSelected ? 2 : 1
 
-            activeFocusOnTab: true
+                activeFocusOnTab: true
 
-            MouseArea {
+                MouseArea {
                 id: rowMouse
                 anchors.fill: parent
                 hoverEnabled: true
