@@ -74,36 +74,40 @@ ApplicationWindow {
         Qt.quit()
     }
 
-    function updateCompactLayoutParenting() {
-        if (root.isCompactLayout) {
-            waveformPanel.parent = compactWaveformHost
-            waveformPanel.anchors.fill = compactWaveformHost
+    states: [
+        State {
+            name: "COMPACT"
+            when: root.isCompactLayout
 
-            controlStrip.parent = compactControlsContainer
-            controlStrip.anchors.fill = undefined
+            ParentChange {
+                target: waveformPanel
+                parent: compactWaveformHost
+            }
+            AnchorChanges {
+                target: waveformPanel
+                anchors.fill: compactWaveformHost
+            }
 
-            regionPanel.parent = compactControlsContainer
-            regionPanel.anchors.fill = undefined
+            ParentChange {
+                target: controlStrip
+                parent: compactControlsContainer
+            }
 
-            dspWorkspace.parent = compactBottomRight
-            dspWorkspace.anchors.fill = compactBottomRight
-        } else {
-            waveformPanel.parent = mainColumnLayout
-            waveformPanel.anchors.fill = undefined
+            ParentChange {
+                target: regionPanel
+                parent: compactControlsContainer
+            }
 
-            controlStrip.parent = mainColumnLayout
-            controlStrip.anchors.fill = undefined
-
-            regionPanel.parent = mainColumnLayout
-            regionPanel.anchors.fill = undefined
-
-            dspWorkspace.parent = mainColumnLayout
-            dspWorkspace.anchors.fill = undefined
+            ParentChange {
+                target: dspWorkspace
+                parent: compactBottomRight
+            }
+            AnchorChanges {
+                target: dspWorkspace
+                anchors.fill: compactBottomRight
+            }
         }
-    }
-
-    onIsCompactLayoutChanged: Qt.callLater(updateCompactLayoutParenting)
-    Component.onCompleted: Qt.callLater(updateCompactLayoutParenting)
+    ]
 
     Column {
         anchors.fill: parent
@@ -218,7 +222,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: root.isCompactLayout ? 124 : 72
+                Layout.preferredHeight: root.isCompactLayout ? 118 : 72
                 color: root.panel
                 border.color: root.border
                 radius: 5
@@ -275,7 +279,6 @@ ApplicationWindow {
             Rectangle {
                 id: waveformPanel
                 objectName: "sourceWaveformPanel"
-                Layout.ignored: root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.fillHeight: root.isCompactLayout
                 Layout.preferredHeight: root.isCompactLayout ? 0 : 180
@@ -335,7 +338,6 @@ ApplicationWindow {
             Rectangle {
                 id: controlStrip
                 objectName: "controlStrip"
-                Layout.ignored: root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.leftMargin: root.isCompactLayout ? 0 : 12
                 Layout.rightMargin: root.isCompactLayout ? 0 : 12
@@ -397,7 +399,6 @@ ApplicationWindow {
             Rectangle {
                 id: regionPanel
                 objectName: "auditionRegionControls"
-                Layout.ignored: root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.leftMargin: root.isCompactLayout ? 0 : 12
                 Layout.rightMargin: root.isCompactLayout ? 0 : 12
@@ -457,7 +458,7 @@ ApplicationWindow {
                 Rectangle {
                     id: compactBottomLeft
                     objectName: "compactBottomLeft"
-                    Layout.preferredWidth: parent.width * 0.43
+                    Layout.preferredWidth: (root.width - 32) * 0.43
                     Layout.fillHeight: true
                     color: "transparent"
 
@@ -887,7 +888,6 @@ ApplicationWindow {
             DspWorkspace {
                 id: dspWorkspace
                 objectName: "dspWorkspace"
-                Layout.ignored: root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: root.isCompactLayout ? 0 : 12

@@ -13,19 +13,21 @@ Rectangle {
 
     color: "transparent"
 
-    function updateChainParenting() {
-        if (root.isCompact && root.chainContainer) {
-            chainSelector.parent = root.chainContainer
-            chainSelector.anchors.fill = chainSelector.parent
-        } else {
-            chainSelector.parent = dspWorkspaceRow
-            chainSelector.anchors.fill = undefined
-        }
-    }
+    states: [
+        State {
+            name: "COMPACT"
+            when: root.isCompact && root.chainContainer !== null
 
-    onIsCompactChanged: Qt.callLater(updateChainParenting)
-    onChainContainerChanged: Qt.callLater(updateChainParenting)
-    Component.onCompleted: updateChainParenting()
+            ParentChange {
+                target: chainSelector
+                parent: root.chainContainer
+            }
+            AnchorChanges {
+                target: chainSelector
+                anchors.fill: root.chainContainer
+            }
+        }
+    ]
 
     RowLayout {
         id: dspWorkspaceRow
