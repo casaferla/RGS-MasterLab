@@ -13,7 +13,7 @@ ApplicationWindow {
     visible: true
     title: "RGS MasterLab"
     color: "#071117"
-    flags: Qt.Window | Qt.FramelessWindowHint
+    flags: Qt.Window
 
     readonly property color surface: "#0F1820"
     readonly property color surfaceRaised: "#13222F"
@@ -24,6 +24,15 @@ ApplicationWindow {
     readonly property color accent: "#00C8FF"
     readonly property color warning: "#F2B632"
     readonly property color error: "#F27683"
+
+    readonly property bool hasError: {
+        return projectSession.errorMessage.length > 0
+            || sourceSelection.errorMessage.length > 0
+            || goldSelection.errorMessage.length > 0
+            || auditionSelector.statusText.length > 0
+            || playbackTransport.errorMessage.length > 0
+            || auditionRegion.errorMessage.length > 0
+    }
 
     property string statusText: {
         if (projectSession.errorMessage.length > 0) return projectSession.errorMessage
@@ -50,6 +59,7 @@ ApplicationWindow {
     FileDialog { id: goldDialog; objectName: "goldFileDialog"; title: "Open Gold Reference WAV"; fileMode: FileDialog.OpenFile; nameFilters: ["WAV audio (*.wav *.wave)"]; onAccepted: goldSelection.selectGold(selectedFile); onRejected: goldSelection.cancelGoldSelection() }
     FileDialog { id: projectOpenDialog; objectName: "projectOpenFileDialog"; title: "Open RGS MasterLab Project"; fileMode: FileDialog.OpenFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.openProject(selectedFile); onRejected: projectSession.cancelProjectOpen() }
     FileDialog { id: projectSaveDialog; objectName: "projectSaveFileDialog"; title: "Save RGS MasterLab Project As"; fileMode: FileDialog.SaveFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.saveProjectAs(selectedFile); onRejected: projectSession.cancelProjectSave() }
+    ParametricEqEditorWindow { id: eqWindow; objectName: "parametricEqToolWindow"; viewModel: eqViewModel; transientParent: root }
 
     Shortcut {
         sequence: "F10"
@@ -57,7 +67,15 @@ ApplicationWindow {
         onActivated: desktopMenu.forceActiveFocus(Qt.ShortcutFocusReason)
     }
 
-    onClosing: function(close) { if (playbackTransport.canStop) playbackTransport.stop(); close.accepted = true }
+    onClosing: function(close) {
+        if (playbackTransport.canStop) playbackTransport.stop()
+        if (eqWindow) {
+            eqWindow.forceClose = true
+            eqWindow.close()
+        }
+        close.accepted = true
+        Qt.quit()
+    }
 
     Column {
         anchors.fill: parent
@@ -71,11 +89,10 @@ ApplicationWindow {
             color: root.surface
             border.color: root.border
 
-            MouseArea { anchors.fill: parent; acceptedButtons: Qt.LeftButton; onPressed: root.startSystemMove(); onDoubleClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized() }
-
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 12
+                anchors.rightMargin: 12
                 spacing: 12
                 Rectangle {
                     Layout.preferredWidth: 40; Layout.preferredHeight: 40; radius: 4; color: "#8B111B"; border.color: "#C8CDD3"
@@ -95,6 +112,7 @@ ApplicationWindow {
                     background: Item { }
                     delegate: MenuBarItem {
                         id: menuBarItem
+                        objectName: "desktopMenuBarItem_" + menuBarItem.text.replace("&", "")
                         implicitWidth: contentItem.implicitWidth + 24
                         implicitHeight: 48
                         contentItem: Text { objectName: "desktopMenuBarLabel_" + menuBarItem.text.replace("&", ""); text: menuBarItem.text.replace("&", ""); color: menuBarItem.highlighted ? root.textPrimary : root.textSecondary; font.family: "Segoe UI"; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
@@ -126,8 +144,13 @@ ApplicationWindow {
                         StudioMenuItem { text: "Preferences"; enabled: false }
                     }
                     Menu {
+                        objectName: "desktopViewMenu"
+                        popupType: Popup.Item
+                        width: 230
                         title: "&View"
                         background: Rectangle { color: root.surface; border.color: root.border }
+                        StudioMenuItem { objectName: "menuViewParametricEq"; text: "Parametric EQ…"; enabled: auditionSelector.preparedAvailable; onTriggered: { eqWindow.show(); eqWindow.raise(); eqWindow.requestActivate() } }
+                        MenuSeparator { }
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: sourceWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
                         StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
                         StudioMenuItem { text: "Fit Source\tHome"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }
@@ -151,12 +174,6 @@ ApplicationWindow {
 
                 Item { Layout.fillWidth: true }
                 AuditionSourceSelector { id: auditionTargetSelector; objectName: "headerAuditionTargetSelector"; Layout.preferredWidth: implicitWidth; Layout.alignment: Qt.AlignVCenter; previousTabItem: fitSourceButton; nextTabItem: stopButton }
-                Row {
-                    Layout.preferredHeight: 48; spacing: 0
-                    StudioIconButton { objectName: "windowMinimizeButton"; width: 46; height: 48; controlSize: 46; iconKind: "minimize"; activeFocusOnTab: false; onClicked: root.showMinimized(); Accessible.name: "Minimize window" }
-                    StudioIconButton { objectName: "windowMaximizeButton"; width: 46; height: 48; controlSize: 46; iconKind: root.visibility === Window.Maximized ? "restore" : "maximize"; activeFocusOnTab: false; onClicked: root.visibility === Window.Maximized ? root.showNormal() : root.showMaximized(); Accessible.name: root.visibility === Window.Maximized ? "Restore window" : "Maximize window" }
-                    StudioIconButton { objectName: "windowCloseButton"; width: 48; height: 48; controlSize: 48; tone: "close"; iconKind: "close"; activeFocusOnTab: false; onClicked: root.close(); Accessible.name: "Close window" }
-                }
             }
         }
 
@@ -385,7 +402,7 @@ ApplicationWindow {
             border.color: root.border
             RowLayout {
                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
-                Rectangle { objectName: "statusReadyIndicator"; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: sourceSelection.errorMessage.length > 0 || goldSelection.errorMessage.length > 0 || playbackTransport.errorMessage.length > 0 ? root.error : "#00E6E6" }
+                Rectangle { objectName: "statusReadyIndicator"; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: root.hasError ? root.error : "#00E6E6" }
                 Label { objectName: "statusBarMessage"; Layout.fillWidth: true; text: root.statusText; color: root.textSecondary; font.pixelSize: 10; elide: Text.ElideRight }
             }
         }
@@ -401,9 +418,4 @@ ApplicationWindow {
     Label { objectName: "sourceContainerMetadata"; visible: false; text: "Container  " + sourceSelection.containerLabel }
     Label { objectName: "sourceFramesMetadata"; visible: false; text: "Frames  " + sourceSelection.frameCount }
     Label { objectName: "playbackStateLabel"; visible: false; text: playbackTransport.stateLabel }
-
-    MouseArea { z: 1000; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 5; cursorShape: Qt.SizeHorCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.LeftEdge) }
-    MouseArea { z: 1000; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 5; cursorShape: Qt.SizeHorCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.RightEdge) }
-    MouseArea { z: 1000; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 5; cursorShape: Qt.SizeVerCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.TopEdge) }
-    MouseArea { z: 1000; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 5; cursorShape: Qt.SizeVerCursor; enabled: root.visibility !== Window.Maximized; onPressed: root.startSystemResize(Qt.BottomEdge) }
 }

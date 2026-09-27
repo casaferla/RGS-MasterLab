@@ -357,6 +357,10 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/windows_window_chrome_helper.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/windows_window_chrome_helper.hpp
 )
 target_include_directories(rgsml_source_metadata_panel_smoke
     PRIVATE
@@ -377,6 +381,9 @@ target_link_libraries(rgsml_source_metadata_panel_smoke
         Qt6::Test
 )
 rgsml_apply_project_warnings(rgsml_source_metadata_panel_smoke)
+if(MSVC)
+    target_compile_options(rgsml_source_metadata_panel_smoke PRIVATE /wd4702)
+endif()
 add_test(
     NAME rgsml_source_metadata_panel_smoke
     COMMAND rgsml_source_metadata_panel_smoke
@@ -395,6 +402,8 @@ qt_add_executable(rgsml_audition_source_selector_tests
     unit/app/test_audition_source_selector.cpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp

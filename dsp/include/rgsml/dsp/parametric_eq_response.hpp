@@ -28,4 +28,9 @@ struct EqResponsePoint final {
     const std::vector<double>& frequencies_hz,
     core::SampleRate sample_rate);
 
+[[nodiscard]] core::Result<std::vector<EqResponsePoint>> evaluate_parametric_eq_response(
+    const ParametricEqParameters& params,
+    const std::vector<double>& frequencies_hz,
+    core::SampleRate sample_rate);
+
 }  // namespace rgsml::dsp

@@ -99,7 +99,7 @@ int main(int argc, char* argv[])
             if (prepared) {
                 static_cast<void>(auditionSelector.switch_to(
                     rgsml::app::AuditionTarget::PREPARED));
-                eqViewModel.trigger_preview();
+                eqViewModel.resetForNewSource();
             }
             goldSelection.sourceChanged();
             sourceWaveform.source_committed(source);
@@ -149,11 +149,20 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("projectSession"),
         &projectSession);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("eqViewModel"),
+        &eqViewModel);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,
         &application,
         [] { QCoreApplication::exit(EXIT_FAILURE); },
+        Qt::QueuedConnection);
+    QObject::connect(
+        &engine,
+        &QQmlEngine::quit,
+        &application,
+        &QCoreApplication::quit,
         Qt::QueuedConnection);
     engine.loadFromModule("Rgsml.Ui", "Main");
 

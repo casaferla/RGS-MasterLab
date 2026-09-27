@@ -1,3 +1,4 @@
+#include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
 #include "gold_selection_view_model.hpp"
 #include "playback_transport_view_model.hpp"
@@ -109,6 +110,10 @@ private slots:
     void partialRealizationRejectsCueOutsideAbsoluteRange();
     void failedGoldSelectionPreservesPriorGoldAndSourceRealization();
     void loopOutsideRealizationIsNotAppliedAndLifecycleClearsBorrowedPcm();
+    void playIntentIsRestoredAcrossTargetSwitches();
+    void activeProcessedRealizationReplacementPreservesCueAndState();
+    void eofCueIsCanonicalizedToRangeBegin();
+    void loopRegionIntentPreservedAcrossAuditionRebinds();
 };
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
@@ -228,6 +233,259 @@ void AuditionSourceSelectorTest::loopOutsideRealizationIsNotAppliedAndLifecycleC
     }
     QVERIFY(observed->clearCalls >= 2);
     QCOMPARE(observed->state, core::PlaybackState::NO_SOURCE);
+}
+
+void AuditionSourceSelectorTest::playIntentIsRestoredAcrossTargetSwitches()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 100)));
+    QVERIFY(selector.set_processed_realization(realization(0, 100)));
+
+    // 1. PREPARED playing -> PROCESSED
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    transport.playOrResume();
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+    observed->position = core::FrameIndex{30};
+
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{30});
+    QCOMPARE(observed->position.value(), std::int64_t{30});
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    // 2. PROCESSED playing -> PREPARED
+    observed->position = core::FrameIndex{45};
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{45});
+    QCOMPARE(observed->position.value(), std::int64_t{45});
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    // 3. PAUSED switch -> prepares new target at cue point in STOPPED state
+    transport.pause();
+    QCOMPARE(observed->state, core::PlaybackState::PAUSED);
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+
+    // 4. STOPPED switch -> remains STOPPED
+    transport.stop();
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+}
+
+void AuditionSourceSelectorTest::activeProcessedRealizationReplacementPreservesCueAndState()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 200)));
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+
+    // Case 1: PROCESSED is PLAYING at cue 42 -> replace Processed realization
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    transport.playOrResume();
+    observed->position = core::FrameIndex{42};
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{42});
+    QCOMPARE(observed->position.value(), std::int64_t{42});
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    // Case 2: PROCESSED is PAUSED at cue 55 -> replace Processed realization
+    observed->position = core::FrameIndex{55};
+    transport.pause();
+    QCOMPARE(observed->state, core::PlaybackState::PAUSED);
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{55});
+    QCOMPARE(observed->position.value(), std::int64_t{55});
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+
+    // Case 3: PROCESSED is STOPPED -> replace Processed realization
+    transport.stop();
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+
+    // Case 4: PREPARED is active -> replace Processed realization
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+
+    // Case 5: GOLD is active -> replace Processed realization
+    auto gold = core::ResourceReference::create(
+        "rgsml.windows.local-file", "C:/Gold/reference.wav", true, false, "reference.wav");
+    QVERIFY(gold);
+    QVERIFY(selector.set_gold(
+        std::move(*gold.value()), *core::SampleRate::create(48'000).value(),
+        *core::FrameCount::create(200).value()));
+    QVERIFY(selector.switch_to(app::AuditionTarget::GOLD));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::GOLD});
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::GOLD});
+
+    // Case 6: Fail-closed path on invalid replacement range
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    observed->position = core::FrameIndex{150};
+
+    // Realization range [0..100) does not contain cue 150
+    QVERIFY(!selector.set_processed_realization(realization(0, 100)));
+    QVERIFY(!selector.active_target());
+    QCOMPARE(observed->state, core::PlaybackState::NO_SOURCE);
+    QVERIFY(!selector.status_text().isEmpty());
+}
+
+void AuditionSourceSelectorTest::eofCueIsCanonicalizedToRangeBegin()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 100)));
+    QVERIFY(selector.set_processed_realization(realization(0, 100)));
+
+    // 1. PREPARED replay at EOF (cue == range.end() == 100) -> canonicalizes to 0
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    observed->position = core::FrameIndex{100}; // at EOF
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED)); // store cue 100, prepare_realization canonicalizes in-place
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{0});
+
+    // Replay PREPARED at EOF -> should canonicalize cue 100 to 0 and succeed
+    observed->position = core::FrameIndex{100};
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{0});
+    QCOMPARE(observed->position.value(), std::int64_t{0});
+
+    // 2. PROCESSED replay at EOF
+    observed->position = core::FrameIndex{100}; // at EOF
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{0});
+    QCOMPARE(observed->position.value(), std::int64_t{0});
+
+    // 3. Processed realization replacement at EOF
+    observed->position = core::FrameIndex{100};
+    QVERIFY(selector.set_processed_realization(realization(0, 100)));
+    QCOMPARE(selector.source_derived_cue().value(), std::int64_t{0});
+    QCOMPARE(observed->position.value(), std::int64_t{0});
+
+    // 4. Out of bounds cue rejections (cue < begin or cue > end)
+    observed->position = core::FrameIndex{150}; // cue > end (100)
+    QVERIFY(!selector.set_processed_realization(realization(0, 100)));
+    QVERIFY(!selector.active_target());
+}
+
+void AuditionSourceSelectorTest::loopRegionIntentPreservedAcrossAuditionRebinds()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+
+    app::AuditionSourceSelector selector{&transport};
+    app::AuditionRegionViewModel regionModel{&transport};
+
+    const auto frameCount = *core::FrameCount::create(200).value();
+    const auto sampleRate = *core::SampleRate::create(48000).value();
+    regionModel.source_committed(frameCount, sampleRate);
+    regionModel.set_waveform_ready(true);
+
+    selector.set_source_loop_provider([&regionModel] {
+        return regionModel.loop_enabled() ? regionModel.region() : std::nullopt;
+    });
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 200)));
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+
+    // 1. PREPARED active, set region [10, 50], enable Loop Region
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    const auto testRange = *core::FrameRange::create(core::FrameIndex{10}, core::FrameIndex{50}).value();
+    QVERIFY(regionModel.set_region(testRange));
+    QVERIFY(regionModel.set_loop_enabled(true));
+    QVERIFY(regionModel.loop_enabled());
+    QVERIFY(observed->loop.has_value());
+    QCOMPARE(observed->loop->begin().value(), std::int64_t{10});
+    QCOMPARE(observed->loop->end().value(), std::int64_t{50});
+
+    // Start playback
+    transport.playOrResume();
+    observed->position = core::FrameIndex{25};
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    // 2. Switch PREPARED -> PROCESSED while PLAYING with armed loop
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QVERIFY(regionModel.loop_enabled());
+    QVERIFY(observed->loop.has_value());
+    QCOMPARE(observed->loop->begin().value(), std::int64_t{10});
+    QCOMPARE(observed->loop->end().value(), std::int64_t{50});
+    QCOMPARE(observed->position.value(), std::int64_t{25});
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    // 3. Switch PROCESSED -> PREPARED while PLAYING with armed loop
+    observed->position = core::FrameIndex{35};
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+    QVERIFY(regionModel.loop_enabled());
+    QVERIFY(observed->loop.has_value());
+    QCOMPARE(observed->loop->begin().value(), std::int64_t{10});
+    QCOMPARE(observed->loop->end().value(), std::int64_t{50});
+    QCOMPARE(observed->position.value(), std::int64_t{35});
+    QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+
+    // 4. Active PROCESSED replacement (e.g. EQ parameter edit / A-B toggle)
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    observed->position = core::FrameIndex{40};
+
+    // Replace Processed realization multiple times
+    for (int rep = 1; rep <= 3; ++rep) {
+        QVERIFY(selector.set_processed_realization(realization(0, 200)));
+        QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+        QVERIFY(regionModel.loop_enabled());
+        QVERIFY(observed->loop.has_value());
+        QCOMPARE(observed->loop->begin().value(), std::int64_t{10});
+        QCOMPARE(observed->loop->end().value(), std::int64_t{50});
+        QCOMPARE(observed->position.value(), std::int64_t{40});
+        QCOMPARE(observed->state, core::PlaybackState::PLAYING);
+    }
+
+    // 5. Explicit user disable Loop Region disarms intent and backend loop
+    QVERIFY(regionModel.set_loop_enabled(false));
+    QVERIFY(!regionModel.loop_enabled());
+    QVERIFY(!observed->loop.has_value());
+
+    // Switch targets after user disable -> loop remains disarmed
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QVERIFY(!regionModel.loop_enabled());
+    QVERIFY(!observed->loop.has_value());
+
+    // 6. User re-enables loop and clears region
+    QVERIFY(regionModel.set_loop_enabled(true));
+    QVERIFY(regionModel.loop_enabled());
+    QVERIFY(observed->loop.has_value());
+
+    QVERIFY(regionModel.clear_region());
+    QVERIFY(!regionModel.has_region());
+    QVERIFY(!regionModel.loop_enabled());
+    QVERIFY(!observed->loop.has_value());
 }
 
 }  // namespace rgsml::tests
