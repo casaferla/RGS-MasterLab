@@ -9,18 +9,23 @@ Rectangle {
     property var viewModel: null
     property int selectedModuleIndex: 0
     property bool isCompact: false
+    property Item chainContainer: null
 
     color: "transparent"
 
     RowLayout {
+        id: dspWorkspaceRow
+        objectName: "dspWorkspaceRow"
         anchors.fill: parent
         spacing: 8
 
         DspChainSelector {
             id: chainSelector
             objectName: "dspChainSelector"
-            Layout.preferredWidth: root.isCompact ? 164 : 180
-            Layout.fillHeight: true
+            parent: (root.isCompact && root.chainContainer) ? root.chainContainer : dspWorkspaceRow
+            Layout.preferredWidth: root.isCompact ? 190 : 180
+            Layout.fillHeight: !root.isCompact
+            isCompact: root.isCompact
             selectedIndex: root.selectedModuleIndex
             eqViewModel: root.viewModel
             onSelectedIndexChanged: root.selectedModuleIndex = selectedIndex

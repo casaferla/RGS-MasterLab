@@ -405,7 +405,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     QVERIFY(capture_visual_evidence(
         window,
-        QStringLiteral("m12c_b1_compact_1184x688.png"),
+        QStringLiteral("m12c_b1_compact_authored_split_1184x688.png"),
         QSize{1184, 688}));
     QVERIFY(capture_visual_evidence(
         window,

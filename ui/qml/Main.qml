@@ -227,6 +227,15 @@ ApplicationWindow {
                             KeyNavigation.backtab: clearRegionButton; KeyNavigation.tab: waveformOverview
                             onClicked: sourceDialog.open(); Accessible.name: text
                         }
+
+                        // Compact DSP Chain Container
+                        Item {
+                            id: compactChainContainer
+                            objectName: "compactChainContainer"
+                            visible: root.isCompactLayout
+                            Layout.preferredWidth: 190
+                            Layout.preferredHeight: 36
+                        }
                     }
 
                     ColumnLayout {
@@ -243,8 +252,10 @@ ApplicationWindow {
             Rectangle {
                 id: waveformPanel
                 objectName: "sourceWaveformPanel"
+                parent: root.isCompactLayout ? compactBottomLeft : mainColumnLayout
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.isCompactLayout ? 140 : 180
+                Layout.fillHeight: root.isCompactLayout
+                Layout.preferredHeight: root.isCompactLayout ? 0 : 180
                 Layout.minimumHeight: root.isCompactLayout ? 120 : 180
                 color: "#050C11"
                 border.color: root.border
@@ -318,7 +329,7 @@ ApplicationWindow {
                     Slider {
                         id: zoomControl
                         objectName: "waveformZoomControl"
-                        Layout.preferredWidth: 160
+                        Layout.preferredWidth: root.isCompactLayout ? 110 : 160
                         from: 0.0; to: 1.0; stepSize: 0.001
                         enabled: sourceWaveform.canNavigate
                         activeFocusOnTab: true
@@ -408,17 +419,45 @@ ApplicationWindow {
                 }
             }
 
-            // Docked DSP Workspace
-            DspWorkspace {
-                id: dspWorkspace
-                objectName: "dspWorkspace"
+            // Compact Authored Bottom Split (42% Waveform / 58% DSP EQ Workspace)
+            RowLayout {
+                id: compactBottomSplit
+                objectName: "compactBottomSplit"
+                visible: root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
+                spacing: 12
+
+                Item {
+                    id: compactBottomLeft
+                    objectName: "compactBottomLeft"
+                    Layout.preferredWidth: parent.width * 0.42
+                    Layout.fillHeight: true
+                }
+
+                Item {
+                    id: compactBottomRight
+                    objectName: "compactBottomRight"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                }
+            }
+
+            // Docked DSP Workspace
+            DspWorkspace {
+                id: dspWorkspace
+                objectName: "dspWorkspace"
+                parent: root.isCompactLayout ? compactBottomRight : mainColumnLayout
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.leftMargin: root.isCompactLayout ? 0 : 12
+                Layout.rightMargin: root.isCompactLayout ? 0 : 12
                 Layout.minimumHeight: 300
                 viewModel: eqViewModel
                 isCompact: root.isCompactLayout
+                chainContainer: compactChainContainer
             }
         }
 
