@@ -318,7 +318,7 @@ ApplicationWindow {
                     Slider {
                         id: zoomControl
                         objectName: "waveformZoomControl"
-                        Layout.preferredWidth: root.isCompactLayout ? 110 : 160
+                        Layout.preferredWidth: 160
                         from: 0.0; to: 1.0; stepSize: 0.001
                         enabled: sourceWaveform.canNavigate
                         activeFocusOnTab: true
