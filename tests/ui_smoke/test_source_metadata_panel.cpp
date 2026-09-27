@@ -405,8 +405,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(root->findChild<QObject*>(QStringLiteral("prepareRestorationView")) != nullptr);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("goldReferenceCard")) != nullptr);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("goldReferenceStatus")) != nullptr);
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("matchAmountControl")) != nullptr);
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("matchAmountSlider")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("totalMatchAmountKnob")) != nullptr);
+    QVERIFY2(root->findChild<QObject*>(QStringLiteral("matchAmountSlider")) == nullptr, "No Match Amount slider must remain in visual shell");
     QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Tonal")) != nullptr);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Dynamics")) != nullptr);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Stereo")) != nullptr);
@@ -419,6 +419,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(root->findChild<QObject*>(QStringLiteral("parametricEqToolWindow")) == nullptr,
         "No production ParametricEqEditorWindow instance must exist in Main");
 
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("m12c_b1_compact_final_polish_1184x688.png"),
+        QSize{1184, 688}));
     QVERIFY(capture_visual_evidence(
         window,
         QStringLiteral("m12c_b1_compact_authored_split_1184x688.png"),

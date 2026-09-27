@@ -74,6 +74,37 @@ ApplicationWindow {
         Qt.quit()
     }
 
+    function updateCompactLayoutParenting() {
+        if (root.isCompactLayout) {
+            waveformPanel.parent = compactWaveformHost
+            waveformPanel.anchors.fill = compactWaveformHost
+
+            controlStrip.parent = compactControlsContainer
+            controlStrip.anchors.fill = undefined
+
+            regionPanel.parent = compactControlsContainer
+            regionPanel.anchors.fill = undefined
+
+            dspWorkspace.parent = compactBottomRight
+            dspWorkspace.anchors.fill = compactBottomRight
+        } else {
+            waveformPanel.parent = mainColumnLayout
+            waveformPanel.anchors.fill = undefined
+
+            controlStrip.parent = mainColumnLayout
+            controlStrip.anchors.fill = undefined
+
+            regionPanel.parent = mainColumnLayout
+            regionPanel.anchors.fill = undefined
+
+            dspWorkspace.parent = mainColumnLayout
+            dspWorkspace.anchors.fill = undefined
+        }
+    }
+
+    onIsCompactLayoutChanged: Qt.callLater(updateCompactLayoutParenting)
+    Component.onCompleted: Qt.callLater(updateCompactLayoutParenting)
+
     Column {
         anchors.fill: parent
         spacing: 0
@@ -187,7 +218,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: root.isCompactLayout ? 116 : 72
+                Layout.preferredHeight: root.isCompactLayout ? 124 : 72
                 color: root.panel
                 border.color: root.border
                 radius: 5
@@ -244,8 +275,6 @@ ApplicationWindow {
             Rectangle {
                 id: waveformPanel
                 objectName: "sourceWaveformPanel"
-                parent: root.isCompactLayout ? compactWaveformHost : mainColumnLayout
-                anchors.fill: root.isCompactLayout ? parent : undefined
                 Layout.fillWidth: true
                 Layout.fillHeight: root.isCompactLayout
                 Layout.preferredHeight: root.isCompactLayout ? 0 : 180
@@ -305,7 +334,6 @@ ApplicationWindow {
             Rectangle {
                 id: controlStrip
                 objectName: "controlStrip"
-                parent: root.isCompactLayout ? compactControlsContainer : mainColumnLayout
                 Layout.fillWidth: true
                 Layout.leftMargin: root.isCompactLayout ? 0 : 12
                 Layout.rightMargin: root.isCompactLayout ? 0 : 12
@@ -367,7 +395,6 @@ ApplicationWindow {
             Rectangle {
                 id: regionPanel
                 objectName: "auditionRegionControls"
-                parent: root.isCompactLayout ? compactControlsContainer : mainColumnLayout
                 Layout.fillWidth: true
                 Layout.leftMargin: root.isCompactLayout ? 0 : 12
                 Layout.rightMargin: root.isCompactLayout ? 0 : 12
@@ -464,40 +491,47 @@ ApplicationWindow {
 
                                 ColumnLayout {
                                     anchors.fill: parent
-                                    anchors.margins: 6
-                                    spacing: 4
+                                    anchors.margins: 8
+                                    spacing: 6
 
+                                    // Header Row: Clean baseline alignment
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: 24
-                                        spacing: 6
+                                        Layout.preferredHeight: 22
+                                        spacing: 8
 
                                         Text {
                                             text: "ADAPTIVE CONTEXT"
                                             color: "#8A9EA8"
                                             font.family: "Segoe UI"
-                                            font.pixelSize: 9
+                                            font.pixelSize: 10
                                             font.weight: Font.Bold
+                                            Layout.alignment: Qt.AlignVCenter
                                         }
 
                                         Item { Layout.fillWidth: true }
 
-                                        StudioSegmentButton {
-                                            objectName: "adaptiveModeToggle_Gold"
-                                            text: "Gold / Automatch"
-                                            selected: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
-                                            minimumControlWidth: 100
-                                            contentPadding: 2
-                                            onClicked: adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
-                                        }
+                                        RowLayout {
+                                            spacing: 4
+                                            Layout.alignment: Qt.AlignVCenter
 
-                                        StudioSegmentButton {
-                                            objectName: "adaptiveModeToggle_Restoration"
-                                            text: "Prepare / Restoration"
-                                            selected: adaptiveContextWorkspace.activeContextMode === "PREPARE_RESTORATION"
-                                            minimumControlWidth: 110
-                                            contentPadding: 2
-                                            onClicked: adaptiveContextWorkspace.activeContextMode = "PREPARE_RESTORATION"
+                                            StudioSegmentButton {
+                                                objectName: "adaptiveModeToggle_Gold"
+                                                text: "Gold / Automatch"
+                                                selected: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
+                                                minimumControlWidth: 105
+                                                contentPadding: 3
+                                                onClicked: adaptiveContextWorkspace.activeContextMode = "GOLD_AUTOMATCH"
+                                            }
+
+                                            StudioSegmentButton {
+                                                objectName: "adaptiveModeToggle_Restoration"
+                                                text: "Prepare / Restoration"
+                                                selected: adaptiveContextWorkspace.activeContextMode === "PREPARE_RESTORATION"
+                                                minimumControlWidth: 115
+                                                contentPadding: 3
+                                                onClicked: adaptiveContextWorkspace.activeContextMode = "PREPARE_RESTORATION"
+                                            }
                                         }
                                     }
 
@@ -508,24 +542,28 @@ ApplicationWindow {
                                         visible: adaptiveContextWorkspace.activeContextMode === "GOLD_AUTOMATCH"
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
-                                        color: "#0F2030"
+                                        color: "#0B1824"
                                         border.color: "#1E354A"
                                         radius: 4
 
                                         ColumnLayout {
                                             anchors.fill: parent
                                             anchors.margins: 6
-                                            spacing: 4
+                                            spacing: 6
 
+                                            // Global Row: Gold Reference Card + Global Total Match Amount Rotary Knob
                                             RowLayout {
                                                 Layout.fillWidth: true
+                                                Layout.preferredHeight: 46
                                                 spacing: 8
 
+                                                // Gold Reference Identity Card
                                                 Rectangle {
+                                                    id: goldReferenceCard
                                                     objectName: "goldReferenceCard"
                                                     Layout.fillWidth: true
-                                                    Layout.preferredHeight: 30
-                                                    color: "#142838"
+                                                    Layout.fillHeight: true
+                                                    color: "#122434"
                                                     border.color: goldSelection.hasGold ? root.accent : "#233A4E"
                                                     radius: 4
 
@@ -534,8 +572,14 @@ ApplicationWindow {
                                                         anchors.leftMargin: 8
                                                         anchors.rightMargin: 8
                                                         spacing: 6
-                                                        StudioIcon { width: 16; height: 18; kind: "gold"; strokeColor: goldSelection.hasGold ? root.accent : "#586773" }
+                                                        StudioIcon {
+                                                            width: 16
+                                                            height: 18
+                                                            kind: "gold"
+                                                            strokeColor: goldSelection.hasGold ? root.accent : "#586773"
+                                                        }
                                                         Text {
+                                                            id: goldReferenceStatus
                                                             objectName: "goldReferenceStatus"
                                                             text: goldSelection.hasGold ? ("GOLD  " + goldSelection.displayName) : "NO GOLD REFERENCE LOADED"
                                                             color: goldSelection.hasGold ? root.textPrimary : "#586D7C"
@@ -543,80 +587,224 @@ ApplicationWindow {
                                                             font.pixelSize: 10
                                                             font.weight: Font.DemiBold
                                                             elide: Text.ElideRight
+                                                            Layout.fillWidth: true
                                                         }
                                                     }
                                                 }
 
+                                                // Global Control Container: Total Match Amount Rotary Knob
                                                 Rectangle {
-                                                    objectName: "matchAmountControl"
-                                                    Layout.preferredWidth: 140
-                                                    Layout.preferredHeight: 30
-                                                    color: "#142838"
-                                                    border.color: "#233A4E"
+                                                    objectName: "totalMatchAmountContainer"
+                                                    Layout.preferredWidth: 130
+                                                    Layout.fillHeight: true
+                                                    color: "#122434"
+                                                    border.color: "#2C4356"
                                                     radius: 4
 
                                                     RowLayout {
                                                         anchors.fill: parent
-                                                        anchors.leftMargin: 6
-                                                        anchors.rightMargin: 6
-                                                        spacing: 4
-                                                        Text { text: "MATCH"; color: "#586D7C"; font.pixelSize: 8; font.weight: Font.Bold }
-                                                        Slider {
-                                                            objectName: "matchAmountSlider"
+                                                        anchors.leftMargin: 8
+                                                        anchors.rightMargin: 8
+                                                        spacing: 6
+
+                                                        // Primary Global Knob
+                                                        Rectangle {
+                                                            id: totalMatchAmountKnob
+                                                            objectName: "totalMatchAmountKnob"
+                                                            Layout.preferredWidth: 32
+                                                            Layout.preferredHeight: 32
+                                                            Layout.alignment: Qt.AlignVCenter
+                                                            radius: 16
+                                                            color: "#1A3248"
+                                                            border.color: root.accent
+                                                            border.width: 1.5
+
+                                                            Rectangle {
+                                                                width: 2
+                                                                height: 10
+                                                                color: root.accent
+                                                                anchors.top: parent.top
+                                                                anchors.topMargin: 3
+                                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                            }
+                                                        }
+
+                                                        ColumnLayout {
                                                             Layout.fillWidth: true
-                                                            from: 0.0; to: 1.0; value: 0.0; enabled: false
+                                                            Layout.alignment: Qt.AlignVCenter
+                                                            spacing: 1
+
+                                                            Text {
+                                                                text: "TOTAL MATCH"
+                                                                color: root.textPrimary
+                                                                font.family: "Segoe UI"
+                                                                font.pixelSize: 9
+                                                                font.weight: Font.Bold
+                                                            }
+                                                            Text {
+                                                                text: "0%"
+                                                                color: "#586D7C"
+                                                                font.family: "Segoe UI"
+                                                                font.pixelSize: 8
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
 
-                                            RowLayout {
+                                            // Domain Controls Row: Four Equal Domain Knobs
+                                            Rectangle {
                                                 Layout.fillWidth: true
                                                 Layout.fillHeight: true
-                                                spacing: 4
+                                                color: "#0F2030"
+                                                border.color: "#192D3E"
+                                                radius: 4
 
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true; Layout.fillHeight: true; spacing: 2
-                                                    Rectangle {
-                                                        objectName: "automatchKnob_Tonal"
-                                                        Layout.preferredWidth: 28; Layout.preferredHeight: 28; Layout.alignment: Qt.AlignHCenter
-                                                        radius: 14; color: "#162838"; border.color: "#2C4356"; border.width: 1
-                                                        Rectangle { width: 2; height: 8; color: "#586D7C"; anchors.top: parent.top; anchors.topMargin: 3; anchors.horizontalCenter: parent.horizontalCenter }
-                                                    }
-                                                    Text { text: "Tonal"; color: "#586D7C"; font.pixelSize: 9; Layout.alignment: Qt.AlignHCenter }
-                                                }
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 8
+                                                    anchors.rightMargin: 8
+                                                    spacing: 4
 
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true; Layout.fillHeight: true; spacing: 2
-                                                    Rectangle {
-                                                        objectName: "automatchKnob_Dynamics"
-                                                        Layout.preferredWidth: 28; Layout.preferredHeight: 28; Layout.alignment: Qt.AlignHCenter
-                                                        radius: 14; color: "#162838"; border.color: "#2C4356"; border.width: 1
-                                                        Rectangle { width: 2; height: 8; color: "#586D7C"; anchors.top: parent.top; anchors.topMargin: 3; anchors.horizontalCenter: parent.horizontalCenter }
-                                                    }
-                                                    Text { text: "Dynamics"; color: "#586D7C"; font.pixelSize: 9; Layout.alignment: Qt.AlignHCenter }
-                                                }
+                                                    // Domain 1: Tonal
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        Layout.alignment: Qt.AlignVCenter
+                                                        spacing: 3
 
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true; Layout.fillHeight: true; spacing: 2
-                                                    Rectangle {
-                                                        objectName: "automatchKnob_Stereo"
-                                                        Layout.preferredWidth: 28; Layout.preferredHeight: 28; Layout.alignment: Qt.AlignHCenter
-                                                        radius: 14; color: "#162838"; border.color: "#2C4356"; border.width: 1
-                                                        Rectangle { width: 2; height: 8; color: "#586D7C"; anchors.top: parent.top; anchors.topMargin: 3; anchors.horizontalCenter: parent.horizontalCenter }
-                                                    }
-                                                    Text { text: "Stereo"; color: "#586D7C"; font.pixelSize: 9; Layout.alignment: Qt.AlignHCenter }
-                                                }
+                                                        Rectangle {
+                                                            objectName: "automatchKnob_Tonal"
+                                                            Layout.preferredWidth: 26
+                                                            Layout.preferredHeight: 26
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            radius: 13
+                                                            color: "#162838"
+                                                            border.color: "#2C4356"
+                                                            border.width: 1
 
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true; Layout.fillHeight: true; spacing: 2
-                                                    Rectangle {
-                                                        objectName: "automatchKnob_Loudness"
-                                                        Layout.preferredWidth: 28; Layout.preferredHeight: 28; Layout.alignment: Qt.AlignHCenter
-                                                        radius: 14; color: "#162838"; border.color: "#2C4356"; border.width: 1
-                                                        Rectangle { width: 2; height: 8; color: "#586D7C"; anchors.top: parent.top; anchors.topMargin: 3; anchors.horizontalCenter: parent.horizontalCenter }
+                                                            Rectangle {
+                                                                width: 2
+                                                                height: 8
+                                                                color: "#586D7C"
+                                                                anchors.top: parent.top
+                                                                anchors.topMargin: 3
+                                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                            }
+                                                        }
+
+                                                        Text {
+                                                            text: "Tonal"
+                                                            color: "#586D7C"
+                                                            font.family: "Segoe UI"
+                                                            font.pixelSize: 9
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                        }
                                                     }
-                                                    Text { text: "Loudness"; color: "#586D7C"; font.pixelSize: 9; Layout.alignment: Qt.AlignHCenter }
+
+                                                    // Domain 2: Dynamics
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        Layout.alignment: Qt.AlignVCenter
+                                                        spacing: 3
+
+                                                        Rectangle {
+                                                            objectName: "automatchKnob_Dynamics"
+                                                            Layout.preferredWidth: 26
+                                                            Layout.preferredHeight: 26
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            radius: 13
+                                                            color: "#162838"
+                                                            border.color: "#2C4356"
+                                                            border.width: 1
+
+                                                            Rectangle {
+                                                                width: 2
+                                                                height: 8
+                                                                color: "#586D7C"
+                                                                anchors.top: parent.top
+                                                                anchors.topMargin: 3
+                                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                            }
+                                                        }
+
+                                                        Text {
+                                                            text: "Dynamics"
+                                                            color: "#586D7C"
+                                                            font.family: "Segoe UI"
+                                                            font.pixelSize: 9
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                        }
+                                                    }
+
+                                                    // Domain 3: Stereo
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        Layout.alignment: Qt.AlignVCenter
+                                                        spacing: 3
+
+                                                        Rectangle {
+                                                            objectName: "automatchKnob_Stereo"
+                                                            Layout.preferredWidth: 26
+                                                            Layout.preferredHeight: 26
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            radius: 13
+                                                            color: "#162838"
+                                                            border.color: "#2C4356"
+                                                            border.width: 1
+
+                                                            Rectangle {
+                                                                width: 2
+                                                                height: 8
+                                                                color: "#586D7C"
+                                                                anchors.top: parent.top
+                                                                anchors.topMargin: 3
+                                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                            }
+                                                        }
+
+                                                        Text {
+                                                            text: "Stereo"
+                                                            color: "#586D7C"
+                                                            font.family: "Segoe UI"
+                                                            font.pixelSize: 9
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                        }
+                                                    }
+
+                                                    // Domain 4: Loudness
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        Layout.alignment: Qt.AlignVCenter
+                                                        spacing: 3
+
+                                                        Rectangle {
+                                                            objectName: "automatchKnob_Loudness"
+                                                            Layout.preferredWidth: 26
+                                                            Layout.preferredHeight: 26
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            radius: 13
+                                                            color: "#162838"
+                                                            border.color: "#2C4356"
+                                                            border.width: 1
+
+                                                            Rectangle {
+                                                                width: 2
+                                                                height: 8
+                                                                color: "#586D7C"
+                                                                anchors.top: parent.top
+                                                                anchors.topMargin: 3
+                                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                            }
+                                                        }
+
+                                                        Text {
+                                                            text: "Loudness"
+                                                            color: "#586D7C"
+                                                            font.family: "Segoe UI"
+                                                            font.pixelSize: 9
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -696,8 +884,6 @@ ApplicationWindow {
             DspWorkspace {
                 id: dspWorkspace
                 objectName: "dspWorkspace"
-                parent: root.isCompactLayout ? compactBottomRight : mainColumnLayout
-                anchors.fill: root.isCompactLayout ? parent : undefined
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: root.isCompactLayout ? 0 : 12
