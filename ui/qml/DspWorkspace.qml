@@ -18,7 +18,7 @@ Rectangle {
         DspChainSelector {
             id: chainSelector
             objectName: "dspChainSelector"
-            Layout.preferredWidth: 180
+            Layout.preferredWidth: (parent && parent.width < 960) ? 164 : 180
             Layout.fillHeight: true
             selectedIndex: root.selectedModuleIndex
             eqViewModel: root.viewModel

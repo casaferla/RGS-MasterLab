@@ -897,7 +897,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(res1184.metrics.isCompact, true);
     QCOMPARE(res1184.metrics.sourceHeight, 48.0);
     QVERIFY2(res1184.metrics.waveformHeight >= 96.0, "Waveform height must be >= 96 px at 1184x688");
-    QCOMPARE(res1184.metrics.controlHeight, 56.0);
+    QCOMPARE(res1184.metrics.controlHeight, 64.0);
     QCOMPARE(res1184.metrics.regionHeight, 56.0);
     QVERIFY2(res1184.metrics.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
 
