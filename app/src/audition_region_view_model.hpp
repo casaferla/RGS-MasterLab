@@ -116,6 +116,7 @@ private:
     std::int64_t sampleRate_{0};
     bool waveformReady_{false};
     bool loopEnabled_{false};
+    bool lastCanLoop_{false};
     QString errorMessage_;
 };
 

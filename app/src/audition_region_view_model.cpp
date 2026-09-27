@@ -345,12 +345,13 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
     }
     const auto result = playback_->set_loop_source_range(
         enabled ? region_ : std::nullopt);
-    synchronize_playback();
     if (!result) {
         publish_error(*result.error());
         return result;
     }
-    if (enabled) {
+    loopEnabled_ = enabled;
+    lastCanLoop_ = can_loop();
+    if (enabled && positionBeforeLoopUpdate) {
         return reposition_if_outside(*region_, *positionBeforeLoopUpdate);
     }
     errorMessage_.clear();
@@ -384,6 +385,7 @@ void AuditionRegionViewModel::source_committed(
     waveformReady_ = false;
     region_.reset();
     loopEnabled_ = false;
+    lastCanLoop_ = false;
     errorMessage_.clear();
     emit changed();
 }
@@ -394,6 +396,7 @@ void AuditionRegionViewModel::set_waveform_ready(bool ready)
         return;
     }
     waveformReady_ = ready;
+    lastCanLoop_ = can_loop();
     emit changed();
 }
 
@@ -402,10 +405,9 @@ void AuditionRegionViewModel::synchronize_playback()
     if (!playback_) {
         return;
     }
-    const auto snapshot = playback_->playback_snapshot();
-    const bool actual = snapshot && snapshot.value()->loop.has_value();
-    if (loopEnabled_ != actual) {
-        loopEnabled_ = actual;
+    const bool currentCanLoop = can_loop();
+    if (lastCanLoop_ != currentCanLoop) {
+        lastCanLoop_ = currentCanLoop;
         emit changed();
     }
 }
