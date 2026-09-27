@@ -402,6 +402,8 @@ qt_add_executable(rgsml_audition_source_selector_tests
     unit/app/test_audition_source_selector.cpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp

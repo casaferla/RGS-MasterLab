@@ -829,6 +829,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(loopRegion->property("checked").toBool());
     QVERIFY(capture_visual_evidence(window,
         QStringLiteral("gui01_c7_region_actions_toggle_focus.png"), QSize{1440, 900}));
+
+    // Verify Loop Region toggle remains checked and enabled across target switch and EQ preview publication
+    QVERIFY2(QMetaObject::invokeMethod(preparedTarget, "clicked"), "Switching target must succeed");
+    QCoreApplication::processEvents();
+    QVERIFY2(loopRegion->property("checked").toBool(), "Loop Region toggle must remain checked after target switch");
+    QVERIFY2(loopRegion->property("enabled").toBool(), "Loop Region toggle must remain enabled after target switch");
+
     auditionRegion.requestLoopEnabled(false);
     QCoreApplication::processEvents();
 
