@@ -902,7 +902,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(res1184.metrics.sourceHeight >= 100.0, "Upper compact source/audition composition must exist and be visible");
     QVERIFY2(res1184.metrics.waveformHeight >= 135.0, "Waveform height must be >= 135 px at 1184x688");
     QVERIFY2(res1184.metrics.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
-    QCOMPARE(dspChainSelectorObj->property("width").toInt(), 164);
 
     // 2. Native window resize & visual evidence capture clamped to available monitor geometry
     const QRect available = window->screen() ? window->screen()->availableGeometry() : QRect{0, 0, 1440, 900};
@@ -920,6 +919,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(50);
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(compactW, compactH));
+    QCOMPARE(dspChainSelectorObj->property("width").toInt(), 164);
     QVERIFY(capture_visual_evidence(window, QStringLiteral("gui01_1184x688_prepared.png"), QSize{compactW, compactH}));
 
     window->close();
