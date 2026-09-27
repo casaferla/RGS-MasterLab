@@ -787,12 +787,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // independent of CI physical HyperVMonitor screen clamping.
     const auto evaluateLayoutAtSize = [&engine](int logicalWidth, int logicalHeight) {
         QQmlComponent component{&engine, QUrl{QStringLiteral("qrc:/qt/qml/Rgsml/Ui/qml/Main.qml")}};
-        QScopedPointer<QObject> obj{component.create()};
-        Q_ASSERT(obj != nullptr);
+        QVariantMap initialProperties;
+        initialProperties.insert(QStringLiteral("visible"), false);
+        initialProperties.insert(QStringLiteral("width"), logicalWidth);
+        initialProperties.insert(QStringLiteral("height"), logicalHeight);
+
+        QScopedPointer<QObject> obj{component.createWithInitialProperties(initialProperties)};
+        QVERIFY2(obj != nullptr, "Main.qml component creation with initial properties must succeed");
         auto* qwin = qobject_cast<QQuickWindow*>(obj.get());
-        Q_ASSERT(qwin != nullptr);
-        qwin->setProperty("width", logicalWidth);
-        qwin->setProperty("height", logicalHeight);
+        QVERIFY2(qwin != nullptr, "Created root object must be a QQuickWindow");
+
+        QCOMPARE(qwin->property("visible").toBool(), false);
+        QCOMPARE(qwin->property("width").toInt(), logicalWidth);
+        QCOMPARE(qwin->property("height").toInt(), logicalHeight);
+
         QCoreApplication::processEvents();
 
         auto* workspace = obj->findChild<QObject*>(QStringLiteral("dspWorkspace"));
@@ -802,7 +810,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         auto* control = obj->findChild<QObject*>(QStringLiteral("controlStrip"));
         auto* region = obj->findChild<QObject*>(QStringLiteral("auditionRegionControls"));
 
-        Q_ASSERT(workspace && host && waveform && source && control && region);
+        QVERIFY2(workspace && host && waveform && source && control && region, "All required Main child components must exist in offscreen harness");
 
         struct LayoutEval {
             int width;
