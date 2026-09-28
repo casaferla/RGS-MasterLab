@@ -34,12 +34,33 @@ jobs:
         run: |
           cmake --build --preset windows-msvc-debug-clean
 
+      # Run the UI smoke directly in Debug with verbose QtTest output.
+      # This preserves full Debug coverage while making any UI failure actionable;
+      # the generic CTest pass below excludes the same ui_smoke label to avoid duplication.
+      - name: Run Debug UI Smoke Diagnostic
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\\build\\visual-evidence-debug
+        run: |
+          $env:PATH = "$env:RGSML_QT_ROOT\\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\\qml"
+          $log = "$env:GITHUB_WORKSPACE\\debug-ui-smoke.txt"
+          & build/windows-msvc/Debug/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          $exitCode = $LASTEXITCODE
+          if (Test-Path $log) {
+              Get-Content $log
+          } else {
+              Write-Host "DEBUG_UI_SMOKE_LOG_NOT_CREATED"
+          }
+          if ($exitCode -ne 0) {
+              exit $exitCode
+          }
+
       # GitHub-hosted Windows runners expose no physical audio output endpoints.
       # playback_device label (rgsml_playback_device_probe) is excluded from headless CI only.
       # Real hardware playback device qualification remains mandatory at manual Windows PO Gate M.
       - name: Run Full Debug CTest
         run: |
-          ctest --preset windows-msvc-debug --output-on-failure -LE playback_device
+          ctest --preset windows-msvc-debug --output-on-failure -LE "playback_device|ui_smoke"
 
       - name: Clean-build Release
         run: |
