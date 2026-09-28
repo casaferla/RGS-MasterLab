@@ -932,6 +932,49 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
     QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{1000});
     QVERIFY(engine.handoff_pcm(newBuf.view(), lifetime2));
     QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{0});
+
+    // Test 6: Nonzero processed-frame origin rebase - logical position must not double count
+    PlaybackEngine engineRebase;
+    auto rebaseOutput = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+    auto* observedRebase = rebaseOutput.get();
+    QVERIFY(engineRebase.install_pcm_candidate(
+        oldBuf.view(), std::move(rebaseOutput), DeviceSampleFormat::PCM_S16, std::nullopt, lifetime1));
+    QVERIFY(engineRebase.play());
+    observedRebase->set_processed_frames(100);
+    engineRebase.tick();
+    QCOMPARE(engineRebase.snapshot().value()->position.value(), std::int64_t{100});
+
+    QVERIFY(engineRebase.handoff_pcm(newBuf.view(), lifetime2));
+    QCOMPARE(engineRebase.snapshot().value()->position.value(), std::int64_t{100});
+
+    observedRebase->set_processed_frames(150); // +50 frames since handoff
+    engineRebase.tick();
+    QCOMPARE(engineRebase.snapshot().value()->position.value(), std::int64_t{150});
+
+    // Test 7: Paired SRC crossfade (44.1 kHz -> 48 kHz and 48 kHz -> 44.1 kHz)
+    auto srcInputRate = core::SampleRate::create(44'100);
+    auto srcOutputRate = core::SampleRate::create(48'000);
+    QVERIFY(srcInputRate && srcOutputRate);
+    auto srcAdapter = audio::PlaybackSampleRateAdapter::create(
+        audio::PlaybackRateSpec{
+            *srcInputRate.value(),
+            *srcOutputRate.value(),
+            audio::ChannelLayout::STEREO_LR,
+            frame_count(1000),
+        });
+    QVERIFY(srcAdapter);
+
+    PlaybackEngine srcEngine;
+    auto srcOutput = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+    auto pcm441Old = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
+    auto pcm441New = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
+
+    QVERIFY(srcEngine.install_pcm_candidate(
+        pcm441Old.view(), std::move(srcOutput), DeviceSampleFormat::PCM_S16, std::move(*srcAdapter.value()), lifetime1));
+    QVERIFY(srcEngine.play());
+    QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
+    QVERIFY(srcEngine.handoff_pcm(pcm441New.view(), lifetime2));
+    QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
 }
 
 void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()

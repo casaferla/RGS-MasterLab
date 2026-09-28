@@ -206,7 +206,7 @@ core::Status AuditionSourceSelector::set_processed_realization(
         }
 
         const auto loop = sourceLoopProvider_ ? sourceLoopProvider_() : std::nullopt;
-        if (loop && loop->begin() >= range.begin() && loop->end() <= range.end()) {
+        if (!loop || (loop->begin() >= range.begin() && loop->end() <= range.end())) {
             static_cast<void>(playback_->set_loop_source_range(loop));
         } else {
             static_cast<void>(playback_->set_loop_source_range(std::nullopt));

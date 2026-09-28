@@ -142,6 +142,7 @@ private:
     std::size_t pendingOffset_{0U};
     bool eofScheduled_{false};
     std::optional<core::Error> runtimeError_;
+    std::int64_t processedFrameBaseline_{0};
 };
 
 }  // namespace rgsml::platform::windows::internal
