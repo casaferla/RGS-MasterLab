@@ -176,6 +176,12 @@ struct LayoutEvalMetrics {
     bool isCompact{false};
     bool adaptiveContextVisible{false};
     bool eqInspectorContained{false};
+    double eqEditorHeight{0.0};
+    double eqGraphHeight{0.0};
+    double eqInspectorY{0.0};
+    double eqInspectorHeight{0.0};
+    double eqStatusY{0.0};
+    double eqStatusHeight{0.0};
     double sourceHeight{0.0};
     double waveformHeight{0.0};
     double controlHeight{0.0};
@@ -237,10 +243,12 @@ struct LayoutEvalResult {
     auto* region = obj->findChild<QObject*>(QStringLiteral("auditionRegionControls"));
     auto* adaptiveContext = obj->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace"));
     auto* eqEditor = obj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
+    auto* eqGraph = obj->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
     auto* eqInspector = obj->findChild<QObject*>(QStringLiteral("eqInspectorRegion"));
+    auto* eqStatus = obj->findChild<QObject*>(QStringLiteral("eqStatusRegion"));
 
     if (!workspace || !host || !waveform || !source || !control || !region
-        || !adaptiveContext || !eqEditor || !eqInspector) {
+        || !adaptiveContext || !eqEditor || !eqGraph || !eqInspector || !eqStatus) {
         return LayoutEvalResult{
             .valid = false,
             .errorMessage = QStringLiteral("One or more required Main child components not found in offscreen harness"),
@@ -256,12 +264,28 @@ struct LayoutEvalResult {
     metrics.adaptiveContextVisible = adaptiveContext->property("visible").toBool();
     if (auto* editorItem = qobject_cast<QQuickItem*>(eqEditor);
         editorItem != nullptr) {
+        metrics.eqEditorHeight = editorItem->height();
+
+        if (auto* graphItem = qobject_cast<QQuickItem*>(eqGraph);
+            graphItem != nullptr) {
+            metrics.eqGraphHeight = graphItem->height();
+        }
+
         if (auto* inspectorItem = qobject_cast<QQuickItem*>(eqInspector);
             inspectorItem != nullptr) {
             const QPointF inspectorTopLeft = inspectorItem->mapToItem(editorItem, QPointF{0.0, 0.0});
+            metrics.eqInspectorY = inspectorTopLeft.y();
+            metrics.eqInspectorHeight = inspectorItem->height();
             metrics.eqInspectorContained =
                 inspectorTopLeft.y() >= -0.5
                 && inspectorTopLeft.y() + inspectorItem->height() <= editorItem->height() + 0.5;
+        }
+
+        if (auto* statusItem = qobject_cast<QQuickItem*>(eqStatus);
+            statusItem != nullptr) {
+            const QPointF statusTopLeft = statusItem->mapToItem(editorItem, QPointF{0.0, 0.0});
+            metrics.eqStatusY = statusTopLeft.y();
+            metrics.eqStatusHeight = statusItem->height();
         }
     }
     metrics.sourceHeight = source->property("height").toDouble();
@@ -940,6 +964,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(res1920Short.valid, qPrintable(res1920Short.errorMessage));
     QCOMPARE(res1920Short.metrics.isCompact, true);
     QVERIFY2(res1920Short.metrics.adaptiveContextVisible, "Adaptive Context must not disappear in a wide, short window");
+    qInfo().noquote()
+        << "M12C_GEOMETRY_1920x688"
+        << "editorH=" << res1920Short.metrics.eqEditorHeight
+        << "graphH=" << res1920Short.metrics.eqGraphHeight
+        << "inspectorY=" << res1920Short.metrics.eqInspectorY
+        << "inspectorH=" << res1920Short.metrics.eqInspectorHeight
+        << "inspectorBottom=" << (res1920Short.metrics.eqInspectorY + res1920Short.metrics.eqInspectorHeight)
+        << "statusY=" << res1920Short.metrics.eqStatusY
+        << "statusH=" << res1920Short.metrics.eqStatusHeight;
     QVERIFY2(res1920Short.metrics.eqInspectorContained, "EQ inspector must remain vertically contained in a wide, short window");
     QVERIFY2(res1920Short.metrics.waveformHeight >= 135.0, "Waveform must remain recognizable in a wide, short window");
 
