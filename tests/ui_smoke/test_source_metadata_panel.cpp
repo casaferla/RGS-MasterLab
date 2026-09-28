@@ -552,6 +552,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* fitSource = root->findChild<QObject*>(QStringLiteral("waveformFitSourceButton"));
     auto* continuousZoom = root->findChild<QObject*>(
         QStringLiteral("waveformZoomControl"));
+    auto* transportTimeModule = root->findChild<QObject*>(
+        QStringLiteral("transportTimeModule"));
     const std::array segmentNames{
         QStringLiteral("auditionRegionStartHours"),
         QStringLiteral("auditionRegionStartMinutes"),
@@ -570,12 +572,18 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* fitRegion = root->findChild<QObject*>(QStringLiteral("waveformFitRegionButton"));
     auto* loopRegion = root->findChild<QObject*>(QStringLiteral("auditionRegionLoopCheckBox"));
     auto* clearRegion = root->findChild<QObject*>(QStringLiteral("auditionRegionClearButton"));
-    QVERIFY(zoomIn && zoomOut && continuousZoom && fitSource);
+    QVERIFY(zoomIn && zoomOut && continuousZoom && fitSource && transportTimeModule);
     QCOMPARE(zoomOut->property("width").toInt(), 32);
     QCOMPARE(zoomOut->property("height").toInt(), 32);
     QCOMPARE(zoomIn->property("width").toInt(), 32);
     QCOMPARE(fitSource->property("width").toInt(), 32);
-    QCOMPARE(continuousZoom->property("width").toInt(), window->height() < 750 ? 110 : 160);
+    QCOMPARE(continuousZoom->property("width").toInt(), 160);
+    QCOMPARE(stop->property("width").toInt(), 44);
+    QCOMPARE(stop->property("height").toInt(), 44);
+    QCOMPARE(playPause->property("width").toInt(), 68);
+    QCOMPARE(playPause->property("height").toInt(), 68);
+    QCOMPARE(transportTimeModule->property("width").toInt(), 246);
+    QCOMPARE(transportTimeModule->property("height").toInt(), 56);
     QVERIFY(fitRegion && loopRegion && clearRegion);
 
     const std::array menuNames{
@@ -984,7 +992,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(res1184.metrics.isCompact, true);
     QVERIFY2(res1184.metrics.adaptiveContextVisible, "Adaptive Context must remain visible at minimum composition");
     QVERIFY2(res1184.metrics.eqInspectorContained, "EQ inspector must be vertically contained at minimum composition");
-    QVERIFY2(res1184.metrics.sourceHeight >= 140.0, "Upper compact source/audition composition must exist and be visible");
+    QVERIFY2(res1184.metrics.sourceHeight >= 170.0, "Upper compact source/audition composition must preserve full-size transport controls");
     QVERIFY2(res1184.metrics.waveformHeight >= 135.0, "Waveform height must be >= 135 px at 1184x688");
     QVERIFY2(res1184.metrics.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
 

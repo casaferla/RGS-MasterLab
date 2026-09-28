@@ -156,7 +156,7 @@ ApplicationWindow {
                 Slider {
                     id: zoomControl
                     objectName: "waveformZoomControl"
-                    Layout.preferredWidth: root.isCompactLayout ? 110 : 160
+                    Layout.preferredWidth: 160
                     from: 0.0; to: 1.0; stepSize: 0.001
                     enabled: sourceWaveform.canNavigate
                     activeFocusOnTab: true
@@ -171,27 +171,27 @@ ApplicationWindow {
                 StudioIconButton { id: zoomInButton; objectName: "waveformZoomInButton"; iconKind: "zoom-in"; enabled: sourceWaveform.canNavigate && sourceWaveform.zoomPosition < 1.0; KeyNavigation.backtab: zoomControl; KeyNavigation.tab: fitSourceButton; onClicked: sourceWaveform.zoomIn(); Accessible.name: "Zoom in Source waveform" }
                 StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: sourceWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
-                TransportButton { id: stopButton; objectName: "stopButton"; compact: root.isCompactLayout; iconKind: "stop"; enabled: playbackTransport.canStop; KeyNavigation.backtab: auditionTargetSelector.lastTarget; KeyNavigation.tab: playPauseButton; onClicked: playbackTransport.stop(); Accessible.name: "Stop" }
+                TransportButton { id: stopButton; objectName: "stopButton"; compact: false; iconKind: "stop"; enabled: playbackTransport.canStop; KeyNavigation.backtab: auditionTargetSelector.lastTarget; KeyNavigation.tab: playPauseButton; onClicked: playbackTransport.stop(); Accessible.name: "Stop" }
                 Item { Layout.preferredWidth: root.isCompactLayout ? 8 : 16 }
-                TransportButton { id: playPauseButton; objectName: "playPauseButton"; compact: root.isCompactLayout; primary: true; iconKind: playbackTransport.isPlaying ? "pause" : "play"; enabled: playbackTransport.canPlay || playbackTransport.canPause; KeyNavigation.backtab: stopButton; KeyNavigation.tab: auditionStartEditor.firstField; onClicked: playbackTransport.isPlaying ? playbackTransport.pause() : playbackTransport.playOrResume(); Accessible.name: playbackTransport.isPlaying ? "Pause" : "Play" }
+                TransportButton { id: playPauseButton; objectName: "playPauseButton"; compact: false; primary: true; iconKind: playbackTransport.isPlaying ? "pause" : "play"; enabled: playbackTransport.canPlay || playbackTransport.canPause; KeyNavigation.backtab: stopButton; KeyNavigation.tab: auditionStartEditor.firstField; onClicked: playbackTransport.isPlaying ? playbackTransport.pause() : playbackTransport.playOrResume(); Accessible.name: playbackTransport.isPlaying ? "Pause" : "Play" }
                 Item { Layout.preferredWidth: root.isCompactLayout ? 8 : 16 }
                 Rectangle {
                     objectName: "transportTimeModule"
-                    Layout.preferredWidth: root.isCompactLayout ? 210 : 246
-                    Layout.preferredHeight: root.isCompactLayout ? 34 : 56
+                    Layout.preferredWidth: 246
+                    Layout.preferredHeight: 56
                     color: "#050D12"
                     border.color: root.border
                     radius: 5
                     RowLayout {
-                        anchors.fill: parent; anchors.leftMargin: root.isCompactLayout ? 10 : 16; anchors.rightMargin: root.isCompactLayout ? 10 : 16; spacing: root.isCompactLayout ? 10 : 16
+                        anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16; spacing: 16
                         ColumnLayout { spacing: 1
                             Label { text: "CURRENT POSITION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
-                            Label { objectName: "playbackTimeLabel"; text: playbackTransport.positionLabel; color: root.textPrimary; font.family: "Consolas"; font.pixelSize: root.isCompactLayout ? 14 : 20 }
+                            Label { objectName: "playbackTimeLabel"; text: playbackTransport.positionLabel; color: root.textPrimary; font.family: "Consolas"; font.pixelSize: 20 }
                         }
                         Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; Layout.topMargin: 4; Layout.bottomMargin: 4; color: root.border }
                         ColumnLayout { spacing: 1
                             Label { text: "TOTAL DURATION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
-                            Label { text: playbackTransport.durationLabel; color: root.textPrimary; font.family: "Consolas"; font.pixelSize: root.isCompactLayout ? 14 : 20 }
+                            Label { text: playbackTransport.durationLabel; color: root.textPrimary; font.family: "Consolas"; font.pixelSize: 20 }
                         }
                     }
                 }
@@ -463,7 +463,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: root.isCompactLayout ? 148 : 196
+                Layout.preferredHeight: root.isCompactLayout ? 172 : 196
                 color: root.panel
                 border.color: root.border
                 radius: 5
@@ -516,7 +516,7 @@ ApplicationWindow {
                             id: compactControlStripProxy
                             target: realControlStrip
                             Layout.fillWidth: true
-                            Layout.preferredHeight: root.isCompactLayout ? 44 : 72
+                            Layout.preferredHeight: 72
                         }
 
                         LayoutItemProxy {

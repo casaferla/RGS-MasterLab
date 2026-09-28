@@ -157,7 +157,7 @@ Rectangle {
             // The response graph is the vertically elastic surface. A constant low
             // minimum avoids a vertical breakpoint and lets the layout consume exactly
             // the height left after the fixed control tiers.
-            Layout.minimumHeight: 120
+            Layout.minimumHeight: 110
             viewModel: root.viewModel
         }
 
