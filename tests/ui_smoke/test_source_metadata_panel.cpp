@@ -633,7 +633,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* eqMenuItem = root->findChild<QObject*>(
         QStringLiteral("menuViewParametricEq"));
     QVERIFY(eqMenuItem);
-    QVERIFY(!eqMenuItem->property("enabled").toBool());
+    QCOMPARE(eqMenuItem->property("text").toString(), QStringLiteral("Parametric EQ"));
+    QVERIFY(eqMenuItem->property("enabled").toBool());
 
     auto* openProjectItem = root->findChild<QObject*>(
         QStringLiteral("menuOpenProject"));

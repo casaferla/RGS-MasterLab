@@ -321,7 +321,15 @@ ApplicationWindow {
                         width: 230
                         title: "&View"
                         background: Rectangle { color: root.surface; border.color: root.border }
-                        StudioMenuItem { objectName: "menuViewParametricEq"; text: "Parametric EQ…"; enabled: auditionSelector.preparedAvailable; onTriggered: { realDspWorkspace.selectedModuleIndex = 0 } }
+                        StudioMenuItem {
+                            objectName: "menuViewParametricEq"
+                            text: "Parametric EQ"
+                            enabled: true
+                            onTriggered: {
+                                realDspWorkspace.selectedModuleIndex = 0
+                                realDspWorkspace.editorHost.forceActiveFocus()
+                            }
+                        }
                         MenuSeparator { }
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: sourceWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
                         StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
