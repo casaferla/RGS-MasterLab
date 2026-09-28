@@ -164,7 +164,7 @@ Rectangle {
             // The response graph is the vertically elastic surface. A constant low
             // minimum avoids a vertical breakpoint and lets the layout consume exactly
             // the height left after the fixed control tiers.
-            Layout.minimumHeight: 110
+            Layout.minimumHeight: 102
             viewModel: root.viewModel
         }
 
@@ -172,7 +172,7 @@ Rectangle {
         Rectangle {
             objectName: "eqInspectorRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 128
+            Layout.preferredHeight: 136
             color: "#12243F"
             border.color: "#2C5A78"
             border.width: 1
@@ -182,8 +182,8 @@ Rectangle {
                 anchors.fill: parent
                 anchors.leftMargin: 8
                 anchors.rightMargin: 8
-                anchors.topMargin: 6
-                anchors.bottomMargin: 8
+                anchors.topMargin: 4
+                anchors.bottomMargin: 4
                 spacing: 8
 
                 // Right Column: Two Subrows + Numeric Tier
@@ -312,7 +312,7 @@ Rectangle {
                     // Numeric Fields Tier (50 lp)
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 50
+                        Layout.preferredHeight: 58
                         spacing: 12
 
                         StudioNumericField {
@@ -358,33 +358,79 @@ Rectangle {
                             viewModel: root.viewModel
                         }
 
-                        // HP/LP Slope DB/OCT. Compact width keeps all six choices visible.
+                        // HP/LP Slope DB/OCT: one fixed visual scale at every width.
+                        // Two permanent rows avoid both clipping and responsive miniaturization.
                         RowLayout {
                             objectName: "slopeControls"
                             visible: root.viewModel ? root.viewModel.slopeApplicable : false
-                            spacing: 1
-                            Text { text: "SLOPE:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
-                            Repeater {
-                                model: [6, 12, 18, 24, 36, 48]
-                                delegate: StudioSegmentButton {
-                                    required property int modelData
-                                    objectName: "slopeButton_" + modelData
-                                    text: modelData + " dB"
-                                    minimumControlWidth: 80
-                                    contentPadding: 4
-                                    selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
-                                    tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
-                                    onClicked: {
-                                        if (root.viewModel) {
-                                            root.viewModel.setDraftSlopeDbPerOct(modelData)
-                                            root.viewModel.commitDraft()
+                            spacing: 8
+
+                            Text {
+                                text: "SLOPE:"
+                                color: "#A1B5C9"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 12
+                                font.weight: Font.Bold
+                                Layout.preferredWidth: 44
+                                Layout.alignment: Qt.AlignTop
+                                Layout.topMargin: 6
+                            }
+
+                            ColumnLayout {
+                                spacing: 1
+
+                                RowLayout {
+                                    spacing: 1
+                                    Repeater {
+                                        model: [6, 12, 18]
+                                        delegate: StudioSegmentButton {
+                                            required property int modelData
+                                            objectName: "slopeButton_" + modelData
+                                            text: modelData + " dB"
+                                            minimumControlWidth: 80
+                                            contentPadding: 4
+                                            selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
+                                            tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
+                                            onClicked: {
+                                                if (root.viewModel) {
+                                                    root.viewModel.setDraftSlopeDbPerOct(modelData)
+                                                    root.viewModel.commitDraft()
+                                                }
+                                            }
+                                            Accessible.name: "Slope " + modelData + " dB per octave"
+                                            ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
+                                            ToolTip.visible: hovered
                                         }
                                     }
-                                    Accessible.name: "Slope " + modelData + " dB per octave"
-                                    ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
-                                    ToolTip.visible: hovered
+                                }
+
+                                RowLayout {
+                                    spacing: 1
+                                    Repeater {
+                                        model: [24, 36, 48]
+                                        delegate: StudioSegmentButton {
+                                            required property int modelData
+                                            objectName: "slopeButton_" + modelData
+                                            text: modelData + " dB"
+                                            minimumControlWidth: 80
+                                            contentPadding: 4
+                                            selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
+                                            tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
+                                            onClicked: {
+                                                if (root.viewModel) {
+                                                    root.viewModel.setDraftSlopeDbPerOct(modelData)
+                                                    root.viewModel.commitDraft()
+                                                }
+                                            }
+                                            Accessible.name: "Slope " + modelData + " dB per octave"
+                                            ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
+                                            ToolTip.visible: hovered
+                                        }
+                                    }
                                 }
                             }
+
+                            Item { Layout.fillWidth: true }
                         }
 
                         Item { Layout.fillWidth: true }
