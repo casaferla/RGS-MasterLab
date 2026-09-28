@@ -88,7 +88,7 @@ struct Session final {
           source(), selector(&transport), gold(&selector), region(&transport),
           project(&source, &gold, &region, &transport)
     {
-        transport.set_pcm_prepare_handler([this](audio::AudioBufferView view) {
+        transport.set_pcm_prepare_handler([this](audio::AudioBufferView view, std::shared_ptr<const void>) {
             observed->state = core::PlaybackState::STOPPED;
             observed->position = view.absolute_start_frame();
             observed->duration = *core::FrameCount::create(

@@ -1013,11 +1013,11 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         auto newPcm = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 1000);
 
         // Fill oldPcm with 1.0, newPcm with -1.0
-        auto mutableOld = oldPcm.mutable_view();
-        auto mutableNew = newPcm.mutable_view();
+        auto queuedMutableOld = oldPcm.mutable_view();
+        auto queuedMutableNew = newPcm.mutable_view();
         for (std::size_t ch = 0; ch < 2; ++ch) {
-            auto oldCh = mutableOld.channel(ch);
-            auto newCh = mutableNew.channel(ch);
+            auto oldCh = queuedMutableOld.channel(ch);
+            auto newCh = queuedMutableNew.channel(ch);
             std::fill(oldCh.value()->begin(), oldCh.value()->end(), 1.0);
             std::fill(newCh.value()->begin(), newCh.value()->end(), -1.0);
         }
