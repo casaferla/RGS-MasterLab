@@ -423,7 +423,7 @@ core::Status PlaybackEngine::handoff_pcm(
     }
 
     // PLAYING state: perform 15 ms complementary linear crossfade
-    const double rateHz = source.format().sample_rate().value();
+    const double rateHz = static_cast<double>(source.format().sample_rate().value());
     const auto xfadeFramesRequested = static_cast<std::int64_t>(
         std::floor(0.015 * rateHz + 0.5));
     const std::int64_t boundary = output_boundary();
@@ -499,10 +499,11 @@ core::Status PlaybackEngine::handoff_pcm(
 
     const auto channels = source.format().channel_count();
     const double N = static_cast<double>(xfadeFrames);
+    auto blendedView = blendedBuffer.value()->mutable_view();
     for (std::size_t ch = 0; ch < channels; ++ch) {
         auto oldPlane = oldBuffer.value()->view().channel(ch);
         auto newPlane = newBuffer.value()->view().channel(ch);
-        auto blendPlane = blendedBuffer.value()->mutable_view().mutable_channel(ch);
+        auto blendPlane = blendedView.channel(ch);
         if (!oldPlane || !newPlane || !blendPlane) {
             return status_failure(
                 core::ErrorCode::InvalidArgument,
