@@ -459,7 +459,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: 128
+                Layout.preferredHeight: 148
                 color: root.panel
                 border.color: root.border
                 radius: 5
@@ -519,7 +519,7 @@ ApplicationWindow {
                             id: compactRegionPanelProxy
                             target: realRegionPanel
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 34
+                            Layout.preferredHeight: 50
                         }
                     }
                 }

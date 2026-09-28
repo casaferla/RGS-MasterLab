@@ -150,7 +150,7 @@ Rectangle {
             objectName: "parametricEqGraph"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: root.isCompactActionMode ? 170 : 200
+            Layout.minimumHeight: root.isCompactActionMode ? 164 : 200
             viewModel: root.viewModel
         }
 
@@ -158,7 +158,7 @@ Rectangle {
         Rectangle {
             objectName: "eqInspectorRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.isCompactActionMode ? 118 : 128
+            Layout.preferredHeight: root.isCompactActionMode ? 124 : 128
             color: "#12243F"
             border.color: "#2C5A78"
             border.width: 1
@@ -317,7 +317,7 @@ Rectangle {
                     // Numeric Fields Tier (50 lp)
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: root.isCompactActionMode ? 46 : 50
+                        Layout.preferredHeight: root.isCompactActionMode ? 40 : 50
                         spacing: root.isCompactActionMode ? 8 : 16
 
                         StudioNumericField {
