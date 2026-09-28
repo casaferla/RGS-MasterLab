@@ -801,6 +801,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* filterNotch = find_child_by_name(eqEditor, QStringLiteral("filterButton_NOTCH"));
     auto* filterLowShelf = find_child_by_name(eqEditor, QStringLiteral("filterButton_LOW_SHELF"));
     auto* filterHighPass = find_child_by_name(eqEditor, QStringLiteral("filterButton_HIGH_PASS"));
+    auto* frequencyFieldObj = find_child_by_name(eqEditor, QStringLiteral("frequencyField"));
     auto* gainFieldObj = find_child_by_name(eqEditor, QStringLiteral("gainField"));
     auto* qFieldObj = find_child_by_name(eqEditor, QStringLiteral("qField"));
     auto* shelfSlopeFieldObj = find_child_by_name(eqEditor, QStringLiteral("shelfSlopeField"));
