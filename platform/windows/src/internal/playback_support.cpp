@@ -432,71 +432,29 @@ core::Status PlaybackEngine::handoff_pcm(
         return core::Status::success();
     }
 
-    // PLAYING state: perform 15 ms complementary linear crossfade
+    // PLAYING state: determine deterministic future handoff boundary on continuous output timeline
+    const std::int64_t scheduledHandoffOutputFrame = scheduledOutputFrame_;
+    const std::int64_t handoffSourceFrameValue = output_to_source_frame(scheduledHandoffOutputFrame);
+    core::FrameIndex handoffSourceFrame{handoffSourceFrameValue};
+    std::int64_t handoffOutputFrame = scheduledHandoffOutputFrame;
+
+    if (handoffSourceFrame == newEnd) {
+        handoffSourceFrame = newBegin;
+        handoffOutputFrame = source_to_output_frame(newBegin.value());
+    } else if (handoffSourceFrame < newBegin || handoffSourceFrame > newEnd) {
+        return status_failure(
+            core::ErrorCode::OutOfRange,
+            "Scheduled handoff position is outside candidate realization range.");
+    }
+
     const double outputRateHz = rateAdapter_
         ? static_cast<double>(rateAdapter_->output_rate().value())
         : static_cast<double>(source.format().sample_rate().value());
     const auto xfadeOutputFramesRequested = static_cast<std::int64_t>(
         std::floor(0.015 * outputRateHz + 0.5));
     const std::int64_t boundary = output_boundary();
-    const std::int64_t currentOutputFrame = source_to_output_frame(position_.value());
     const std::int64_t xfadeOutputFrames = std::max<std::int64_t>(
-        0, std::min(xfadeOutputFramesRequested, boundary - currentOutputFrame));
-
-    if (xfadeOutputFrames <= 0) {
-        try {
-            source_ = std::make_unique<PcmPlaybackSource>(source, std::move(lifetime));
-        } catch (const std::bad_alloc&) {
-            return status_failure(
-                core::ErrorCode::IoFailure,
-                "Unable to allocate PCM playback source during handoff.");
-        }
-        sourceBegin_ = newBegin;
-        duration_ = *newDuration.value();
-        outputDuration_ = rateAdapter_
-            ? rateAdapter_->output_frame_count()
-            : source.frame_count();
-        output_->clear_queue();
-        reset_queue_state(position_.value());
-        return prefill();
-    }
-
-    auto xfadeCount = core::FrameCount::create(xfadeOutputFrames);
-    if (!xfadeCount) {
-        return core::Status::failure(*xfadeCount.error());
-    }
-
-    auto xfadeFormat = source.format();
-    auto xfadeDomain = audio::FrameDomainId::SOURCE_PROCESSING_RATE;
-    if (rateAdapter_) {
-        auto outputFormat = audio::AudioFormat::create(
-            rateAdapter_->output_rate(),
-            source.format().channel_layout());
-        if (!outputFormat) {
-            return core::Status::failure(*outputFormat.error());
-        }
-        xfadeFormat = *outputFormat.value();
-        xfadeDomain = audio::FrameDomainId::OUTPUT_RATE;
-    }
-
-    const auto xfadeAbsoluteStart = rateAdapter_
-        ? core::FrameIndex{currentOutputFrame}
-        : core::FrameIndex{sourceBegin_.value() + currentOutputFrame};
-
-    auto oldBuffer = audio::AudioBuffer::create(
-        xfadeFormat, xfadeDomain, xfadeAbsoluteStart, *xfadeCount.value());
-    if (!oldBuffer) {
-        return core::Status::failure(*oldBuffer.error());
-    }
-    auto readOld = rateAdapter_
-        ? audio::internal::read_playback_src_frames(
-            *rateAdapter_, *source_, core::FrameIndex{currentOutputFrame}, oldBuffer.value()->mutable_view())
-        : read_source_frames(xfadeAbsoluteStart, oldBuffer.value()->mutable_view());
-    if (!readOld || readOld.value()->value() != xfadeOutputFrames) {
-        return status_failure(
-            core::ErrorCode::TruncatedAudioData,
-            "Failed to read old source frames for crossfade.");
-    }
+        0, std::min(xfadeOutputFramesRequested, boundary - handoffOutputFrame));
 
     std::unique_ptr<IPlaybackSource> newSource;
     try {
@@ -507,56 +465,108 @@ core::Status PlaybackEngine::handoff_pcm(
             "Unable to allocate new PCM playback source for crossfade.");
     }
 
-    auto newBuffer = audio::AudioBuffer::create(
-        xfadeFormat, xfadeDomain, xfadeAbsoluteStart, *xfadeCount.value());
-    if (!newBuffer) {
-        return core::Status::failure(*newBuffer.error());
-    }
-    auto readNew = rateAdapter_
-        ? audio::internal::read_playback_src_frames(
-            *rateAdapter_, *newSource, core::FrameIndex{currentOutputFrame}, newBuffer.value()->mutable_view())
-        : newSource->read_frames(
-            core::FrameIndex{position_.value() - newBegin.value()}, newBuffer.value()->mutable_view());
-    if (!readNew || readNew.value()->value() != xfadeOutputFrames) {
-        return status_failure(
-            core::ErrorCode::TruncatedAudioData,
-            "Failed to read new source frames for crossfade.");
-    }
+    if (xfadeOutputFrames > 0) {
+        auto xfadeCount = core::FrameCount::create(xfadeOutputFrames);
+        if (!xfadeCount) {
+            return core::Status::failure(*xfadeCount.error());
+        }
 
-    auto blendedBuffer = audio::AudioBuffer::create(
-        xfadeFormat, xfadeDomain, xfadeAbsoluteStart, *xfadeCount.value());
-    if (!blendedBuffer) {
-        return core::Status::failure(*blendedBuffer.error());
-    }
+        auto xfadeFormat = source.format();
+        auto xfadeDomain = audio::FrameDomainId::SOURCE_PROCESSING_RATE;
+        if (rateAdapter_) {
+            auto outputFormat = audio::AudioFormat::create(
+                rateAdapter_->output_rate(),
+                source.format().channel_layout());
+            if (!outputFormat) {
+                return core::Status::failure(*outputFormat.error());
+            }
+            xfadeFormat = *outputFormat.value();
+            xfadeDomain = audio::FrameDomainId::OUTPUT_RATE;
+        }
 
-    const auto channels = xfadeFormat.channel_count();
-    const double N = static_cast<double>(xfadeOutputFrames);
-    auto blendedView = blendedBuffer.value()->mutable_view();
-    for (std::size_t ch = 0; ch < channels; ++ch) {
-        auto oldPlane = oldBuffer.value()->view().channel(ch);
-        auto newPlane = newBuffer.value()->view().channel(ch);
-        auto blendPlane = blendedView.channel(ch);
-        if (!oldPlane || !newPlane || !blendPlane) {
+        const auto xfadeAbsoluteStart = rateAdapter_
+            ? core::FrameIndex{handoffOutputFrame}
+            : core::FrameIndex{sourceBegin_.value() + handoffOutputFrame};
+
+        auto oldBuffer = audio::AudioBuffer::create(
+            xfadeFormat, xfadeDomain, xfadeAbsoluteStart, *xfadeCount.value());
+        if (!oldBuffer) {
+            return core::Status::failure(*oldBuffer.error());
+        }
+        auto readOld = rateAdapter_
+            ? audio::internal::read_playback_src_frames(
+                *rateAdapter_, *source_, core::FrameIndex{handoffOutputFrame}, oldBuffer.value()->mutable_view())
+            : read_source_frames(xfadeAbsoluteStart, oldBuffer.value()->mutable_view());
+        if (!readOld || readOld.value()->value() != xfadeOutputFrames) {
             return status_failure(
-                core::ErrorCode::InvalidArgument,
-                "Incoherent channel access during crossfade.");
+                core::ErrorCode::TruncatedAudioData,
+                "Failed to read old source frames for crossfade.");
         }
-        for (std::int64_t i = 0; i < xfadeOutputFrames; ++i) {
-            const double alpha = static_cast<double>(i) / N;
-            const double oldSample = (*oldPlane.value())[static_cast<std::size_t>(i)];
-            const double newSample = (*newPlane.value())[static_cast<std::size_t>(i)];
-            (*blendPlane.value())[static_cast<std::size_t>(i)] =
-                (1.0 - alpha) * oldSample + alpha * newSample;
+
+        auto newBuffer = audio::AudioBuffer::create(
+            xfadeFormat, xfadeDomain, xfadeAbsoluteStart, *xfadeCount.value());
+        if (!newBuffer) {
+            return core::Status::failure(*newBuffer.error());
         }
+        auto readNew = rateAdapter_
+            ? audio::internal::read_playback_src_frames(
+                *rateAdapter_, *newSource, core::FrameIndex{handoffOutputFrame}, newBuffer.value()->mutable_view())
+            : newSource->read_frames(
+                core::FrameIndex{handoffSourceFrame.value() - newBegin.value()}, newBuffer.value()->mutable_view());
+        if (!readNew || readNew.value()->value() != xfadeOutputFrames) {
+            return status_failure(
+                core::ErrorCode::TruncatedAudioData,
+                "Failed to read new source frames for crossfade.");
+        }
+
+        auto blendedBuffer = audio::AudioBuffer::create(
+            xfadeFormat, xfadeDomain, xfadeAbsoluteStart, *xfadeCount.value());
+        if (!blendedBuffer) {
+            return core::Status::failure(*blendedBuffer.error());
+        }
+
+        const auto channels = xfadeFormat.channel_count();
+        const double N = static_cast<double>(xfadeOutputFrames);
+        auto blendedView = blendedBuffer.value()->mutable_view();
+        for (std::size_t ch = 0; ch < channels; ++ch) {
+            auto oldPlane = oldBuffer.value()->view().channel(ch);
+            auto newPlane = newBuffer.value()->view().channel(ch);
+            auto blendPlane = blendedView.channel(ch);
+            if (!oldPlane || !newPlane || !blendPlane) {
+                return status_failure(
+                    core::ErrorCode::InvalidArgument,
+                    "Incoherent channel access during crossfade.");
+            }
+            for (std::int64_t i = 0; i < xfadeOutputFrames; ++i) {
+                const double alpha = static_cast<double>(i) / N;
+                const double oldSample = (*oldPlane.value())[static_cast<std::size_t>(i)];
+                const double newSample = (*newPlane.value())[static_cast<std::size_t>(i)];
+                (*blendPlane.value())[static_cast<std::size_t>(i)] =
+                    (1.0 - alpha) * oldSample + alpha * newSample;
+            }
+        }
+
+        auto encodedCrossfade = encode_device_block(
+            blendedBuffer.value()->view(), *sampleFormat_);
+        if (!encodedCrossfade) {
+            return core::Status::failure(*encodedCrossfade.error());
+        }
+
+        // Seamlessly append crossfade block to pendingBytes_ WITHOUT clear_queue() or reset_queue_state()
+        if (pendingBytes_.empty()) {
+            pendingBytes_ = std::move(*encodedCrossfade.value());
+            pendingOffset_ = 0U;
+        } else {
+            pendingBytes_.insert(
+                pendingBytes_.end(),
+                encodedCrossfade.value()->begin(),
+                encodedCrossfade.value()->end());
+        }
+        scheduledOutputFrame_ = handoffOutputFrame + xfadeOutputFrames;
+    } else {
+        scheduledOutputFrame_ = handoffOutputFrame;
     }
 
-    auto encodedCrossfade = encode_device_block(
-        blendedBuffer.value()->view(), *sampleFormat_);
-    if (!encodedCrossfade) {
-        return core::Status::failure(*encodedCrossfade.error());
-    }
-
-    output_->clear_queue();
     source_ = std::move(newSource);
     sourceBegin_ = newBegin;
     duration_ = *newDuration.value();
@@ -564,11 +574,6 @@ core::Status PlaybackEngine::handoff_pcm(
         ? rateAdapter_->output_frame_count()
         : source.frame_count();
 
-    reset_queue_state(position_.value());
-    playbackStartOutputFrame_ = currentOutputFrame;
-    pendingBytes_ = std::move(*encodedCrossfade.value());
-    pendingOffset_ = 0U;
-    scheduledOutputFrame_ = currentOutputFrame + xfadeOutputFrames;
     if (!loop_ && scheduledOutputFrame_ == outputDuration_->value()) {
         eofScheduled_ = true;
     } else if (loop_ && loopTraversalEligible_

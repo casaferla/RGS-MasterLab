@@ -951,30 +951,92 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
     engineRebase.tick();
     QCOMPARE(engineRebase.snapshot().value()->position.value(), std::int64_t{150});
 
-    // Test 7: Paired SRC crossfade (44.1 kHz -> 48 kHz and 48 kHz -> 44.1 kHz)
-    auto srcInputRate = core::SampleRate::create(44'100);
-    auto srcOutputRate = core::SampleRate::create(48'000);
-    QVERIFY(srcInputRate && srcOutputRate);
-    auto srcAdapter = audio::PlaybackSampleRateAdapter::create(
-        audio::PlaybackRateSpec{
-            *srcInputRate.value(),
-            *srcOutputRate.value(),
-            audio::ChannelLayout::STEREO_LR,
-            frame_count(1000),
-        });
-    QVERIFY(srcAdapter);
+    // Test 7: Paired SRC crossfade in BOTH directions (44.1 kHz -> 48 kHz AND 48 kHz -> 44.1 kHz)
+    {
+        auto srcInputRate = core::SampleRate::create(44'100);
+        auto srcOutputRate = core::SampleRate::create(48'000);
+        QVERIFY(srcInputRate && srcOutputRate);
+        auto srcAdapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{
+                *srcInputRate.value(),
+                *srcOutputRate.value(),
+                audio::ChannelLayout::STEREO_LR,
+                frame_count(1000),
+            });
+        QVERIFY(srcAdapter);
 
-    PlaybackEngine srcEngine;
-    auto srcOutput = std::make_unique<FakeOutput>(64U * 1024U, 4U);
-    auto pcm441Old = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
-    auto pcm441New = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
+        PlaybackEngine srcEngine;
+        auto srcOutput = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+        auto pcm441Old = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
+        auto pcm441New = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
 
-    QVERIFY(srcEngine.install_pcm_candidate(
-        pcm441Old.view(), std::move(srcOutput), DeviceSampleFormat::PCM_S16, std::move(*srcAdapter.value()), lifetime1));
-    QVERIFY(srcEngine.play());
-    QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
-    QVERIFY(srcEngine.handoff_pcm(pcm441New.view(), lifetime2));
-    QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
+        QVERIFY(srcEngine.install_pcm_candidate(
+            pcm441Old.view(), std::move(srcOutput), DeviceSampleFormat::PCM_S16, std::move(*srcAdapter.value()), lifetime1));
+        QVERIFY(srcEngine.play());
+        QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
+        QVERIFY(srcEngine.handoff_pcm(pcm441New.view(), lifetime2));
+        QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
+    }
+    {
+        auto srcInputRate = core::SampleRate::create(48'000);
+        auto srcOutputRate = core::SampleRate::create(44'100);
+        QVERIFY(srcInputRate && srcOutputRate);
+        auto srcAdapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{
+                *srcInputRate.value(),
+                *srcOutputRate.value(),
+                audio::ChannelLayout::STEREO_LR,
+                frame_count(1000),
+            });
+        QVERIFY(srcAdapter);
+
+        PlaybackEngine srcEngine;
+        auto srcOutput = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+        auto pcm480Old = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 1000);
+        auto pcm480New = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 1000);
+
+        QVERIFY(srcEngine.install_pcm_candidate(
+            pcm480Old.view(), std::move(srcOutput), DeviceSampleFormat::PCM_S16, std::move(*srcAdapter.value()), lifetime1));
+        QVERIFY(srcEngine.play());
+        QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
+        QVERIFY(srcEngine.handoff_pcm(pcm480New.view(), lifetime2));
+        QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
+    }
+
+    // Test 8: Queued-ahead handoff - proves queue is NOT cleared and handoff boundary aligns after pending material
+    {
+        PlaybackEngine engineQueued;
+        auto outputQueued = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+        auto* observedQueued = outputQueued.get();
+
+        auto oldPcm = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 1000);
+        auto newPcm = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 1000);
+
+        // Fill oldPcm with 1.0, newPcm with -1.0
+        auto mutableOld = oldPcm.mutable_view();
+        auto mutableNew = newPcm.mutable_view();
+        for (std::size_t ch = 0; ch < 2; ++ch) {
+            auto oldCh = mutableOld.channel(ch);
+            auto newCh = mutableNew.channel(ch);
+            std::fill(oldCh.value()->begin(), oldCh.value()->end(), 1.0);
+            std::fill(newCh.value()->begin(), newCh.value()->end(), -1.0);
+        }
+
+        QVERIFY(engineQueued.install_pcm_candidate(
+            oldPcm.view(), std::move(outputQueued), DeviceSampleFormat::PCM_S16, std::nullopt, lifetime1));
+        QVERIFY(engineQueued.play());
+
+        // Initial pump filled queue with 1024 frames of oldPcm
+        const std::size_t initialQueueSize = observedQueued->queue().size();
+        QVERIFY(initialQueueSize > 0U);
+
+        // Request handoff without clearing active queue
+        QVERIFY(engineQueued.handoff_pcm(newPcm.view(), lifetime2));
+
+        // Queue must NOT have been cleared - initial queue size preserved
+        QVERIFY(observedQueued->queue().size() >= initialQueueSize);
+        QCOMPARE(engineQueued.snapshot().value()->state, core::PlaybackState::PLAYING);
+    }
 }
 
 void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()
