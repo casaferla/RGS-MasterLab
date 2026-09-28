@@ -438,9 +438,35 @@ core::Status PlaybackEngine::handoff_pcm(
     core::FrameIndex handoffSourceFrame{handoffSourceFrameValue};
     std::int64_t handoffOutputFrame = scheduledHandoffOutputFrame;
 
+    std::unique_ptr<IPlaybackSource> newSource;
+    try {
+        newSource = std::make_unique<PcmPlaybackSource>(source, lifetime);
+    } catch (const std::bad_alloc&) {
+        return status_failure(
+            core::ErrorCode::IoFailure,
+            "Unable to allocate new PCM playback source for crossfade.");
+    }
+
     if (handoffSourceFrame == newEnd) {
-        handoffSourceFrame = newBegin;
-        handoffOutputFrame = source_to_output_frame(newBegin.value());
+        if (loop_ && loopTraversalEligible_) {
+            handoffSourceFrame = loop_->begin();
+            handoffOutputFrame =
+                source_to_output_frame(loop_->begin().value());
+        } else {
+            // All remaining old realization audio is already committed through
+            // natural EOF. Preserve that queued material without manufacturing
+            // a frame-zero replay; the new realization becomes authoritative
+            // for the next explicit playback.
+            source_ = std::move(newSource);
+            sourceBegin_ = newBegin;
+            duration_ = *newDuration.value();
+            outputDuration_ = rateAdapter_
+                ? rateAdapter_->output_frame_count()
+                : source.frame_count();
+            scheduledOutputFrame_ = outputDuration_->value();
+            eofScheduled_ = true;
+            return core::Status::success();
+        }
     } else if (handoffSourceFrame < newBegin || handoffSourceFrame > newEnd) {
         return status_failure(
             core::ErrorCode::OutOfRange,
@@ -455,15 +481,6 @@ core::Status PlaybackEngine::handoff_pcm(
     const std::int64_t boundary = output_boundary();
     const std::int64_t xfadeOutputFrames = std::max<std::int64_t>(
         0, std::min(xfadeOutputFramesRequested, boundary - handoffOutputFrame));
-
-    std::unique_ptr<IPlaybackSource> newSource;
-    try {
-        newSource = std::make_unique<PcmPlaybackSource>(source, lifetime);
-    } catch (const std::bad_alloc&) {
-        return status_failure(
-            core::ErrorCode::IoFailure,
-            "Unable to allocate new PCM playback source for crossfade.");
-    }
 
     if (xfadeOutputFrames > 0) {
         auto xfadeCount = core::FrameCount::create(xfadeOutputFrames);

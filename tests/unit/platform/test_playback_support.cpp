@@ -853,13 +853,19 @@ void PlaybackSupportTest::stateMachineAndBoundedPump()
 
 void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
 {
-    // Test 1: PLAYING state seamless handoff with 15 ms complementary linear crossfade
-    // 48 kHz stereo PCM buffer with 1000 frames (20.83 ms total)
-    const std::int64_t totalFrames = 1000;
-    auto oldBuf = make_buffer(48000, audio::ChannelLayout::STEREO_LR, totalFrames);
-    auto newBuf = make_buffer(48000, audio::ChannelLayout::STEREO_LR, totalFrames);
+    // Test 1: PLAYING replacement uses the deterministic future queued boundary,
+    // not the stale/current cue, then emits a 15 ms complementary linear crossfade.
+    constexpr std::int64_t totalFrames = 5000;
+    constexpr std::size_t bytesPerFrame = 4U;
+    constexpr std::size_t queuedCapacityFrames = 512U;
+    constexpr std::size_t handoffBoundaryFrames = 1024U;
+    constexpr std::size_t xfadeFrames48k = 720U;
 
-    // Fill old buffer with 1.0, new buffer with 0.0
+    auto oldBuf = make_buffer(
+        48000, audio::ChannelLayout::STEREO_LR, totalFrames);
+    auto newBuf = make_buffer(
+        48000, audio::ChannelLayout::STEREO_LR, totalFrames);
+
     auto mutableOld = oldBuf.mutable_view();
     auto mutableNew = newBuf.mutable_view();
     for (std::size_t ch = 0; ch < 2; ++ch) {
@@ -870,149 +876,263 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
     }
 
     PlaybackEngine engine;
-    auto output = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+    auto output = std::make_unique<FakeOutput>(
+        queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
     auto* observed = output.get();
 
     auto lifetime1 = std::make_shared<int>(42);
     QVERIFY(engine.install_pcm_candidate(
-        oldBuf.view(), std::move(output), DeviceSampleFormat::PCM_S16, std::nullopt, lifetime1));
+        oldBuf.view(),
+        std::move(output),
+        DeviceSampleFormat::PCM_S16,
+        std::nullopt,
+        lifetime1));
     QVERIFY(engine.play());
-    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PLAYING);
+    QCOMPARE(
+        engine.snapshot().value()->state,
+        core::PlaybackState::PLAYING);
+    QCOMPARE(
+        observed->history().size(),
+        queuedCapacityFrames * bytesPerFrame);
 
-    // Handoff to new buffer while PLAYING at position 0
     auto lifetime2 = std::make_shared<int>(84);
     QVERIFY(engine.handoff_pcm(newBuf.view(), lifetime2));
-    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PLAYING);
+    QCOMPARE(
+        engine.snapshot().value()->state,
+        core::PlaybackState::PLAYING);
+    QCOMPARE(observed->stopCalls, 0);
 
-    // 15 ms at 48 kHz = 720 frames.
-    // Check initial crossfaded output history
-    // At index i in [0..720):
-    // sample = (1 - i/720) * 1.0 + (i/720) * 0.0 = 1.0 - i/720
-    // In PCM16, sample * 32768.0 = 32768 * (1 - i/720)
+    const auto requiredHistoryBytes =
+        (handoffBoundaryFrames + xfadeFrames48k + 1U) * bytesPerFrame;
+    for (int iteration = 0;
+         iteration < 8
+             && observed->history().size() < requiredHistoryBytes;
+         ++iteration) {
+        observed->consume_all();
+        engine.tick();
+    }
+
     const auto& history = observed->history();
-    QVERIFY(history.size() >= 720U * 4U);
+    QVERIFY(history.size() >= requiredHistoryBytes);
 
-    // First frame (i=0): alpha = 0.0 -> value = 1.0 -> PCM16 32767
-    QCOMPARE(read_i16(history, 0U), static_cast<std::int16_t>(32767));
+    // All material before the future boundary remains old realization audio.
+    QCOMPARE(
+        read_i16(history, (handoffBoundaryFrames - 1U) * bytesPerFrame),
+        static_cast<std::int16_t>(32767));
 
-    // Midpoint frame (i=360): alpha = 0.5 -> value = 0.5 -> PCM16 16384
-    QCOMPARE(read_i16(history, 360U * 4U), static_cast<std::int16_t>(16384));
+    // Crossfade starts exactly at the queued future boundary.
+    QCOMPARE(
+        read_i16(history, handoffBoundaryFrames * bytesPerFrame),
+        static_cast<std::int16_t>(32767));
+    QCOMPARE(
+        read_i16(
+            history,
+            (handoffBoundaryFrames + 360U) * bytesPerFrame),
+        static_cast<std::int16_t>(16384));
+    QCOMPARE(
+        read_i16(
+            history,
+            (handoffBoundaryFrames + 719U) * bytesPerFrame),
+        static_cast<std::int16_t>(46));
 
-    // End of crossfade frame (i=719): alpha = 719/720 ~ 0.9986 -> value ~ 0.00139 -> PCM16 ~ 46
-    QCOMPARE(read_i16(history, 719U * 4U), static_cast<std::int16_t>(46));
+    // The first post-crossfade frame is new-only.
+    QCOMPARE(
+        read_i16(
+            history,
+            (handoffBoundaryFrames + xfadeFrames48k) * bytesPerFrame),
+        static_cast<std::int16_t>(0));
 
-    // After crossfade, next frame read from newBuf (0.0 -> PCM16 0)
-    observed->consume_all();
-    engine.tick();
-    QVERIFY(observed->history().size() >= 721U * 4U);
-    QCOMPARE(read_i16(observed->history(), 720U * 4U), static_cast<std::int16_t>(0));
-
-    // Test 2: PAUSED state handoff - remains PAUSED without auto-start
+    // Test 2: PAUSED replacement remains PAUSED without auto-start.
     QVERIFY(engine.pause());
-    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PAUSED);
+    QCOMPARE(
+        engine.snapshot().value()->state,
+        core::PlaybackState::PAUSED);
     const auto pausedPos = engine.snapshot().value()->position;
     QVERIFY(engine.handoff_pcm(oldBuf.view(), lifetime1));
-    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PAUSED);
+    QCOMPARE(
+        engine.snapshot().value()->state,
+        core::PlaybackState::PAUSED);
     QCOMPARE(engine.snapshot().value()->position, pausedPos);
 
-    // Test 3: STOPPED state handoff - remains STOPPED without auto-start
+    // Test 3: STOPPED replacement remains STOPPED without auto-start.
     QVERIFY(engine.stop());
-    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::STOPPED);
+    QCOMPARE(
+        engine.snapshot().value()->state,
+        core::PlaybackState::STOPPED);
     QVERIFY(engine.handoff_pcm(newBuf.view(), lifetime2));
-    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::STOPPED);
+    QCOMPARE(
+        engine.snapshot().value()->state,
+        core::PlaybackState::STOPPED);
 
-    // Test 4: Atomic failure on incompatible candidate - preserves old state
+    // Test 4: Atomic failure on incompatible candidate preserves old state.
     QVERIFY(engine.play());
-    auto diffRateBuf = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
+    auto diffRateBuf =
+        make_buffer(44100, audio::ChannelLayout::STEREO_LR, totalFrames);
     QVERIFY(!engine.handoff_pcm(diffRateBuf.view()));
-    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PLAYING);
+    QCOMPARE(
+        engine.snapshot().value()->state,
+        core::PlaybackState::PLAYING);
 
-    // Test 5: Active PROCESSED replacement when cue is at EOF (cue == range.end()) canonicalizes to range.begin() (0)
-    QVERIFY(engine.seek(core::FrameIndex{1000}));
-    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{1000});
+    // Test 5: A non-playing EOF cue canonicalizes to range.begin() without autoplay.
+    QVERIFY(engine.seek(core::FrameIndex{totalFrames}));
+    QCOMPARE(
+        engine.snapshot().value()->position.value(),
+        totalFrames);
+    QCOMPARE(
+        engine.snapshot().value()->state,
+        core::PlaybackState::STOPPED);
     QVERIFY(engine.handoff_pcm(newBuf.view(), lifetime2));
-    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{0});
+    QCOMPARE(
+        engine.snapshot().value()->position.value(),
+        std::int64_t{0});
+    QCOMPARE(
+        engine.snapshot().value()->state,
+        core::PlaybackState::STOPPED);
 
-    // Test 6: Nonzero processed-frame origin rebase - logical position must not double count
+    // Test 6: Cumulative backend processed frames remain rebased correctly.
     PlaybackEngine engineRebase;
-    auto rebaseOutput = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+    auto rebaseOutput =
+        std::make_unique<FakeOutput>(64U * 1024U, bytesPerFrame);
     auto* observedRebase = rebaseOutput.get();
     QVERIFY(engineRebase.install_pcm_candidate(
-        oldBuf.view(), std::move(rebaseOutput), DeviceSampleFormat::PCM_S16, std::nullopt, lifetime1));
+        oldBuf.view(),
+        std::move(rebaseOutput),
+        DeviceSampleFormat::PCM_S16,
+        std::nullopt,
+        lifetime1));
     QVERIFY(engineRebase.play());
     observedRebase->set_processed_frames(100);
     engineRebase.tick();
-    QCOMPARE(engineRebase.snapshot().value()->position.value(), std::int64_t{100});
+    QCOMPARE(
+        engineRebase.snapshot().value()->position.value(),
+        std::int64_t{100});
 
     QVERIFY(engineRebase.handoff_pcm(newBuf.view(), lifetime2));
-    QCOMPARE(engineRebase.snapshot().value()->position.value(), std::int64_t{100});
+    QCOMPARE(
+        engineRebase.snapshot().value()->position.value(),
+        std::int64_t{100});
 
-    observedRebase->set_processed_frames(150); // +50 frames since handoff
+    observedRebase->set_processed_frames(150);
     engineRebase.tick();
-    QCOMPARE(engineRebase.snapshot().value()->position.value(), std::int64_t{150});
+    QCOMPARE(
+        engineRebase.snapshot().value()->position.value(),
+        std::int64_t{150});
 
-    // Test 7: Paired SRC crossfade in BOTH directions (44.1 kHz -> 48 kHz AND 48 kHz -> 44.1 kHz)
-    {
-        auto srcInputRate = core::SampleRate::create(44'100);
-        auto srcOutputRate = core::SampleRate::create(48'000);
+    // Test 7: paired-rate SRC crossfades are generated in OUTPUT_RATE frames
+    // in both supported directions and do not stop/restart the output.
+    const auto verifySrcCrossfade = [&](
+        std::uint32_t inputRateValue,
+        std::uint32_t outputRateValue,
+        std::size_t expectedXfadeFrames) {
+        auto srcInputRate = core::SampleRate::create(inputRateValue);
+        auto srcOutputRate = core::SampleRate::create(outputRateValue);
         QVERIFY(srcInputRate && srcOutputRate);
         auto srcAdapter = audio::PlaybackSampleRateAdapter::create(
             audio::PlaybackRateSpec{
                 *srcInputRate.value(),
                 *srcOutputRate.value(),
                 audio::ChannelLayout::STEREO_LR,
-                frame_count(1000),
+                frame_count(totalFrames),
             });
         QVERIFY(srcAdapter);
 
         PlaybackEngine srcEngine;
-        auto srcOutput = std::make_unique<FakeOutput>(64U * 1024U, 4U);
-        auto pcm441Old = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
-        auto pcm441New = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
+        auto srcOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedSrc = srcOutput.get();
+        auto srcOld = make_buffer(
+            inputRateValue,
+            audio::ChannelLayout::STEREO_LR,
+            totalFrames);
+        auto srcNew = make_buffer(
+            inputRateValue,
+            audio::ChannelLayout::STEREO_LR,
+            totalFrames);
+
+        auto srcMutableOld = srcOld.mutable_view();
+        auto srcMutableNew = srcNew.mutable_view();
+        for (std::size_t ch = 0; ch < 2; ++ch) {
+            auto oldCh = srcMutableOld.channel(ch);
+            auto newCh = srcMutableNew.channel(ch);
+            std::fill(oldCh.value()->begin(), oldCh.value()->end(), 1.0);
+            std::fill(newCh.value()->begin(), newCh.value()->end(), 0.0);
+        }
 
         QVERIFY(srcEngine.install_pcm_candidate(
-            pcm441Old.view(), std::move(srcOutput), DeviceSampleFormat::PCM_S16, std::move(*srcAdapter.value()), lifetime1));
+            srcOld.view(),
+            std::move(srcOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::move(*srcAdapter.value()),
+            lifetime1));
         QVERIFY(srcEngine.play());
-        QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
-        QVERIFY(srcEngine.handoff_pcm(pcm441New.view(), lifetime2));
-        QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
-    }
+        QCOMPARE(
+            srcEngine.snapshot().value()->state,
+            core::PlaybackState::PLAYING);
+        QVERIFY(srcEngine.handoff_pcm(srcNew.view(), lifetime2));
+        QCOMPARE(
+            srcEngine.snapshot().value()->state,
+            core::PlaybackState::PLAYING);
+        QCOMPARE(observedSrc->stopCalls, 0);
+
+        const auto requiredBytes =
+            (handoffBoundaryFrames + expectedXfadeFrames + 1U)
+            * bytesPerFrame;
+        for (int iteration = 0;
+             iteration < 8
+                 && observedSrc->history().size() < requiredBytes;
+             ++iteration) {
+            observedSrc->consume_all();
+            srcEngine.tick();
+        }
+        const auto& srcHistory = observedSrc->history();
+        QVERIFY(srcHistory.size() >= requiredBytes);
+        QCOMPARE(
+            read_i16(
+                srcHistory,
+                (handoffBoundaryFrames - 1U) * bytesPerFrame),
+            static_cast<std::int16_t>(32767));
+        QCOMPARE(
+            read_i16(
+                srcHistory,
+                handoffBoundaryFrames * bytesPerFrame),
+            static_cast<std::int16_t>(32767));
+        QCOMPARE(
+            read_i16(
+                srcHistory,
+                (handoffBoundaryFrames + expectedXfadeFrames / 2U)
+                    * bytesPerFrame),
+            static_cast<std::int16_t>(16384));
+        const auto lastCrossfadeSample = read_i16(
+            srcHistory,
+            (handoffBoundaryFrames + expectedXfadeFrames - 1U)
+                * bytesPerFrame);
+        QVERIFY(lastCrossfadeSample > 0);
+        QVERIFY(lastCrossfadeSample < 100);
+        QCOMPARE(
+            read_i16(
+                srcHistory,
+                (handoffBoundaryFrames + expectedXfadeFrames)
+                    * bytesPerFrame),
+            static_cast<std::int16_t>(0));
+    };
+
+    verifySrcCrossfade(44'100U, 48'000U, 720U);
+    verifySrcCrossfade(48'000U, 44'100U, 662U);
+
+    // Test 8: if all remaining old audio is already committed through natural
+    // EOF, replacement must not append a frame-zero crossfade or replay.
     {
-        auto srcInputRate = core::SampleRate::create(48'000);
-        auto srcOutputRate = core::SampleRate::create(44'100);
-        QVERIFY(srcInputRate && srcOutputRate);
-        auto srcAdapter = audio::PlaybackSampleRateAdapter::create(
-            audio::PlaybackRateSpec{
-                *srcInputRate.value(),
-                *srcOutputRate.value(),
-                audio::ChannelLayout::STEREO_LR,
-                frame_count(1000),
-            });
-        QVERIFY(srcAdapter);
-
-        PlaybackEngine srcEngine;
-        auto srcOutput = std::make_unique<FakeOutput>(64U * 1024U, 4U);
-        auto pcm480Old = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 1000);
-        auto pcm480New = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 1000);
-
-        QVERIFY(srcEngine.install_pcm_candidate(
-            pcm480Old.view(), std::move(srcOutput), DeviceSampleFormat::PCM_S16, std::move(*srcAdapter.value()), lifetime1));
-        QVERIFY(srcEngine.play());
-        QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
-        QVERIFY(srcEngine.handoff_pcm(pcm480New.view(), lifetime2));
-        QCOMPARE(srcEngine.snapshot().value()->state, core::PlaybackState::PLAYING);
-    }
-
-    // Test 8: Queued-ahead handoff - proves queue is NOT cleared and handoff boundary aligns after pending material
-    {
+        constexpr std::int64_t shortFrames = 1000;
         PlaybackEngine engineQueued;
-        auto outputQueued = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+        auto outputQueued =
+            std::make_unique<FakeOutput>(64U * 1024U, bytesPerFrame);
         auto* observedQueued = outputQueued.get();
 
-        auto oldPcm = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 1000);
-        auto newPcm = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 1000);
+        auto oldPcm = make_buffer(
+            48000, audio::ChannelLayout::STEREO_LR, shortFrames);
+        auto newPcm = make_buffer(
+            48000, audio::ChannelLayout::STEREO_LR, shortFrames);
 
-        // Fill oldPcm with 1.0, newPcm with -1.0
         auto queuedMutableOld = oldPcm.mutable_view();
         auto queuedMutableNew = newPcm.mutable_view();
         for (std::size_t ch = 0; ch < 2; ++ch) {
@@ -1023,19 +1143,47 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         }
 
         QVERIFY(engineQueued.install_pcm_candidate(
-            oldPcm.view(), std::move(outputQueued), DeviceSampleFormat::PCM_S16, std::nullopt, lifetime1));
+            oldPcm.view(),
+            std::move(outputQueued),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1));
         QVERIFY(engineQueued.play());
 
-        // Initial pump filled queue with 1024 frames of oldPcm
-        const std::size_t initialQueueSize = observedQueued->queue().size();
-        QVERIFY(initialQueueSize > 0U);
+        const std::size_t initialQueueSize =
+            observedQueued->queue().size();
+        const std::size_t initialHistorySize =
+            observedQueued->history().size();
+        QCOMPARE(
+            initialQueueSize,
+            static_cast<std::size_t>(shortFrames) * bytesPerFrame);
 
-        // Request handoff without clearing active queue
         QVERIFY(engineQueued.handoff_pcm(newPcm.view(), lifetime2));
+        QCOMPARE(
+            engineQueued.snapshot().value()->state,
+            core::PlaybackState::PLAYING);
+        QCOMPARE(observedQueued->queue().size(), initialQueueSize);
+        QCOMPARE(observedQueued->history().size(), initialHistorySize);
+        QCOMPARE(observedQueued->stopCalls, 0);
 
-        // Queue must NOT have been cleared - initial queue size preserved
-        QVERIFY(observedQueued->queue().size() >= initialQueueSize);
-        QCOMPARE(engineQueued.snapshot().value()->state, core::PlaybackState::PLAYING);
+        observedQueued->consume_all();
+        engineQueued.tick();
+        QCOMPARE(
+            engineQueued.snapshot().value()->state,
+            core::PlaybackState::STOPPED);
+        QCOMPARE(
+            engineQueued.snapshot().value()->position.value(),
+            shortFrames);
+        QCOMPARE(observedQueued->history().size(), initialHistorySize);
+
+        // The new realization is authoritative only for the next explicit play.
+        QVERIFY(engineQueued.play());
+        QVERIFY(
+            observedQueued->history().size()
+            >= initialHistorySize + bytesPerFrame);
+        QCOMPARE(
+            read_i16(observedQueued->history(), initialHistorySize),
+            static_cast<std::int16_t>(-32768));
     }
 }
 
