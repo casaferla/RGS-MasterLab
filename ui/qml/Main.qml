@@ -398,7 +398,6 @@ ApplicationWindow {
             LayoutItemProxy {
                 id: standardWaveformProxy
                 target: realWaveformPanel
-                visible: !root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.preferredHeight: 180
             }
@@ -406,7 +405,6 @@ ApplicationWindow {
             LayoutItemProxy {
                 id: standardControlStripProxy
                 target: realControlStrip
-                visible: !root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.preferredHeight: 72
             }
@@ -414,7 +412,6 @@ ApplicationWindow {
             LayoutItemProxy {
                 id: standardRegionPanelProxy
                 target: realRegionPanel
-                visible: !root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.preferredHeight: 72
             }
@@ -422,7 +419,6 @@ ApplicationWindow {
             LayoutItemProxy {
                 id: standardDspWorkspaceProxy
                 target: realDspWorkspace
-                visible: !root.isCompactLayout
                 Layout.fillWidth: true
                 Layout.fillHeight: true
             }
@@ -494,7 +490,6 @@ ApplicationWindow {
                         LayoutItemProxy {
                             id: compactControlStripProxy
                             target: realControlStrip
-                            visible: root.isCompactLayout
                             Layout.fillWidth: true
                             Layout.preferredHeight: 36
                         }
@@ -502,7 +497,6 @@ ApplicationWindow {
                         LayoutItemProxy {
                             id: compactRegionPanelProxy
                             target: realRegionPanel
-                            visible: root.isCompactLayout
                             Layout.fillWidth: true
                             Layout.preferredHeight: 34
                         }
@@ -542,7 +536,6 @@ ApplicationWindow {
                             id: compactWaveformProxy
                             objectName: "compactWaveformHost"
                             target: realWaveformPanel
-                            visible: root.isCompactLayout
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.minimumHeight: 135
@@ -936,7 +929,6 @@ ApplicationWindow {
                         id: compactChainProxy
                         objectName: "compactChainContainer"
                         target: realDspWorkspace.chainSelector
-                        visible: root.isCompactLayout
                         Layout.minimumWidth: 164
                         Layout.preferredWidth: 164
                         Layout.maximumWidth: 164
@@ -949,7 +941,6 @@ ApplicationWindow {
                     id: compactDspWorkspaceProxy
                     objectName: "compactBottomRight"
                     target: realDspWorkspace
-                    visible: root.isCompactLayout
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.minimumWidth: 0
