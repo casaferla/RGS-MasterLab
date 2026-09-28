@@ -25,7 +25,11 @@ ApplicationWindow {
     readonly property color warning: "#F2B632"
     readonly property color error: "#F27683"
 
-    readonly property bool isCompactLayout: root.height < 750
+    // Composition and control density are intentionally decoupled.
+    // M12C keeps the authored Waveform/Adaptive Context + DSP Chain + docked editor
+    // composition at every supported desktop size; only control density changes.
+    readonly property bool useAdaptiveDspComposition: true
+    readonly property bool isCompactLayout: root.width < 1360 || root.height < 750
 
     readonly property bool hasError: {
         return projectSession.errorMessage.length > 0
@@ -351,12 +355,12 @@ ApplicationWindow {
             objectName: "mainColumnLayout"
             width: parent.width
             height: parent.height - applicationHeader.height - statusBar.height
-            visible: !root.isCompactLayout
+            visible: !root.useAdaptiveDspComposition
             spacing: 6
 
             Rectangle {
                 id: standardSourcePanel
-                objectName: root.isCompactLayout ? "standardSourceMetadataPanel" : "sourceMetadataPanel"
+                objectName: root.useAdaptiveDspComposition ? "standardSourceMetadataPanel" : "sourceMetadataPanel"
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
@@ -450,16 +454,16 @@ ApplicationWindow {
             id: compactMainLayout
             width: parent.width
             height: parent.height - applicationHeader.height - statusBar.height
-            visible: root.isCompactLayout
+            visible: root.useAdaptiveDspComposition
             spacing: 6
 
             Rectangle {
                 id: compactSourcePanel
-                objectName: root.isCompactLayout ? "sourceMetadataPanel" : "compactSourceMetadataPanel"
+                objectName: root.useAdaptiveDspComposition ? "sourceMetadataPanel" : "compactSourceMetadataPanel"
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: 148
+                Layout.preferredHeight: root.isCompactLayout ? 148 : 196
                 color: root.panel
                 border.color: root.border
                 radius: 5
@@ -512,14 +516,14 @@ ApplicationWindow {
                             id: compactControlStripProxy
                             target: realControlStrip
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 44
+                            Layout.preferredHeight: root.isCompactLayout ? 44 : 72
                         }
 
                         LayoutItemProxy {
                             id: compactRegionPanelProxy
                             target: realRegionPanel
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 50
+                            Layout.preferredHeight: root.isCompactLayout ? 50 : 72
                         }
                     }
                 }

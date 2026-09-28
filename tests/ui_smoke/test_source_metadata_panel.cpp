@@ -174,6 +174,8 @@ struct LayoutEvalMetrics {
     int height{0};
     bool visible{false};
     bool isCompact{false};
+    bool adaptiveContextVisible{false};
+    bool eqInspectorContained{false};
     double sourceHeight{0.0};
     double waveformHeight{0.0};
     double controlHeight{0.0};
@@ -233,8 +235,12 @@ struct LayoutEvalResult {
     auto* source = obj->findChild<QObject*>(QStringLiteral("sourceMetadataPanel"));
     auto* control = obj->findChild<QObject*>(QStringLiteral("controlStrip"));
     auto* region = obj->findChild<QObject*>(QStringLiteral("auditionRegionControls"));
+    auto* adaptiveContext = obj->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace"));
+    auto* eqEditor = obj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
+    auto* eqInspector = obj->findChild<QObject*>(QStringLiteral("eqInspectorRegion"));
 
-    if (!workspace || !host || !waveform || !source || !control || !region) {
+    if (!workspace || !host || !waveform || !source || !control || !region
+        || !adaptiveContext || !eqEditor || !eqInspector) {
         return LayoutEvalResult{
             .valid = false,
             .errorMessage = QStringLiteral("One or more required Main child components not found in offscreen harness"),
@@ -247,6 +253,17 @@ struct LayoutEvalResult {
     metrics.height = qwin->property("height").toInt();
     metrics.visible = qwin->property("visible").toBool();
     metrics.isCompact = obj->property("isCompactLayout").toBool();
+    metrics.adaptiveContextVisible = adaptiveContext->property("visible").toBool();
+    if (auto* editorItem = qobject_cast<QQuickItem*>(eqEditor);
+        editorItem != nullptr) {
+        if (auto* inspectorItem = qobject_cast<QQuickItem*>(eqInspector);
+            inspectorItem != nullptr) {
+            const QPointF inspectorTopLeft = inspectorItem->mapToItem(editorItem, QPointF{0.0, 0.0});
+            metrics.eqInspectorContained =
+                inspectorTopLeft.y() >= -0.5
+                && inspectorTopLeft.y() + inspectorItem->height() <= editorItem->height() + 0.5;
+        }
+    }
     metrics.sourceHeight = source->property("height").toDouble();
     metrics.waveformHeight = waveform->property("height").toDouble();
     metrics.controlHeight = control->property("height").toDouble();
@@ -911,11 +928,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(res1440.metrics.width, 1440);
     QCOMPARE(res1440.metrics.height, 900);
     QCOMPARE(res1440.metrics.isCompact, false);
-    QCOMPARE(res1440.metrics.sourceHeight, 72.0);
+    QVERIFY2(res1440.metrics.adaptiveContextVisible, "Adaptive Context must remain present at 1440x900");
+    QVERIFY2(res1440.metrics.eqInspectorContained, "EQ inspector must be vertically contained at 1440x900");
+    QVERIFY2(res1440.metrics.sourceHeight >= 190.0, "Adaptive source/transport composition must have full standard-density height at 1440x900");
     QVERIFY2(res1440.metrics.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
     QCOMPARE(res1440.metrics.controlHeight, 72.0);
     QCOMPARE(res1440.metrics.regionHeight, 72.0);
     QVERIFY2(res1440.metrics.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
+
+    const auto res1920Short = evaluate_layout_at_size(engine, 1920, 688);
+    QVERIFY2(res1920Short.valid, qPrintable(res1920Short.errorMessage));
+    QCOMPARE(res1920Short.metrics.isCompact, true);
+    QVERIFY2(res1920Short.metrics.adaptiveContextVisible, "Adaptive Context must not disappear in a wide, short window");
+    QVERIFY2(res1920Short.metrics.eqInspectorContained, "EQ inspector must remain vertically contained in a wide, short window");
+    QVERIFY2(res1920Short.metrics.waveformHeight >= 135.0, "Waveform must remain recognizable in a wide, short window");
 
     const auto res1184 = evaluate_layout_at_size(engine, 1184, 688);
     QVERIFY2(res1184.valid, qPrintable(res1184.errorMessage));
@@ -923,7 +949,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(res1184.metrics.width, 1184);
     QCOMPARE(res1184.metrics.height, 688);
     QCOMPARE(res1184.metrics.isCompact, true);
-    QVERIFY2(res1184.metrics.sourceHeight >= 100.0, "Upper compact source/audition composition must exist and be visible");
+    QVERIFY2(res1184.metrics.adaptiveContextVisible, "Adaptive Context must remain visible at minimum composition");
+    QVERIFY2(res1184.metrics.eqInspectorContained, "EQ inspector must be vertically contained at minimum composition");
+    QVERIFY2(res1184.metrics.sourceHeight >= 140.0, "Upper compact source/audition composition must exist and be visible");
     QVERIFY2(res1184.metrics.waveformHeight >= 135.0, "Waveform height must be >= 135 px at 1184x688");
     QVERIFY2(res1184.metrics.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
 
@@ -944,6 +972,26 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(compactW, compactH));
     QCOMPARE(dspChainSelectorObj->property("width").toInt(), 164);
+
+    // HP/LP compact slope controls must all remain usable at the minimum window size.
+    QVERIFY2(QMetaObject::invokeMethod(filterHighPass, "clicked"), "High Pass must remain selectable at minimum size");
+    QCoreApplication::processEvents();
+    auto* eqEditorItemCompact = qobject_cast<QQuickItem*>(eqEditor);
+    QVERIFY2(eqEditorItemCompact != nullptr, "parametricEqEditor must be a QQuickItem");
+    for (const int slope : std::array{6, 12, 18, 24, 36, 48}) {
+        auto* slopeObj = find_child_by_name(eqEditor, QString("slopeButton_%1").arg(slope));
+        auto* slopeItem = qobject_cast<QQuickItem*>(slopeObj);
+        QVERIFY2(slopeItem != nullptr && slopeItem->isVisible(),
+            qPrintable(QString("Slope %1 control must be visible at minimum size").arg(slope)));
+        const QPointF p = slopeItem->mapToItem(eqEditorItemCompact, QPointF{0.0, 0.0});
+        QVERIFY2(p.x() >= -0.5 && p.x() + slopeItem->width() <= eqEditorItemCompact->width() + 0.5,
+            qPrintable(QString("Slope %1 control must be horizontally contained at minimum size").arg(slope)));
+        QVERIFY2(p.y() >= -0.5 && p.y() + slopeItem->height() <= eqEditorItemCompact->height() + 0.5,
+            qPrintable(QString("Slope %1 control must be vertically contained at minimum size").arg(slope)));
+    }
+    QVERIFY2(QMetaObject::invokeMethod(filterBell, "clicked"), "Bell must be restorable after minimum-size slope check");
+    QCoreApplication::processEvents();
+
     QVERIFY(capture_visual_evidence(window, QStringLiteral("gui01_1184x688_prepared.png"), QSize{compactW, compactH}));
 
     window->close();

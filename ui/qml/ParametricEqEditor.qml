@@ -11,7 +11,11 @@ Rectangle {
 
     color: "transparent"
 
-    readonly property bool isCompactActionMode: width < 916
+    // Horizontal and vertical constraints are independent.
+    // Short-but-wide windows compact vertically without relabeling horizontal actions.
+    readonly property bool isCompactWidthMode: width < 916
+    readonly property bool isCompactHeightMode: height < 456
+    readonly property bool isCompactDensity: isCompactWidthMode || isCompactHeightMode
 
     readonly property var bandColors: [
         "#2ED3FF", // 1 Cyan
@@ -89,7 +93,7 @@ Rectangle {
                 anchors.fill: parent
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
-                spacing: root.isCompactActionMode ? 4 : 8
+                spacing: root.isCompactWidthMode ? 4 : 8
 
                 Repeater {
                     model: root.viewModel ? root.viewModel.bandCount : 0
@@ -108,8 +112,8 @@ Rectangle {
                         selected: isSelectedBand
                         tone: isSelectedBand ? "primary" : "secondary"
                         accentColor: bandHue
-                        minimumControlWidth: root.isCompactActionMode ? 58 : 90
-                        contentPadding: root.isCompactActionMode ? 4 : 8
+                        minimumControlWidth: root.isCompactWidthMode ? 58 : 90
+                        contentPadding: root.isCompactWidthMode ? 4 : 8
                         activeFocusOnTab: true
                         opacity: isEnabledBand ? 1.0 : 0.5
 
@@ -127,9 +131,9 @@ Rectangle {
 
                 StudioButton {
                     objectName: "addBandButton"
-                    text: root.isCompactActionMode ? "+ Add" : "+ Add Band"
-                    minimumControlWidth: root.isCompactActionMode ? 76 : 128
-                    contentPadding: root.isCompactActionMode ? 8 : 16
+                    text: root.isCompactWidthMode ? "+ Add" : "+ Add Band"
+                    minimumControlWidth: root.isCompactWidthMode ? 76 : 128
+                    contentPadding: root.isCompactWidthMode ? 8 : 16
                     enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
                     onClicked: if (root.viewModel) root.viewModel.addBand()
                     Accessible.name: "Add Band"
@@ -137,9 +141,9 @@ Rectangle {
 
                 StudioButton {
                     objectName: "removeBandButton"
-                    text: root.isCompactActionMode ? "- Remove" : "- Remove Band"
-                    minimumControlWidth: root.isCompactActionMode ? 76 : 128
-                    contentPadding: root.isCompactActionMode ? 8 : 16
+                    text: root.isCompactWidthMode ? "- Remove" : "- Remove Band"
+                    minimumControlWidth: root.isCompactWidthMode ? 76 : 128
+                    contentPadding: root.isCompactWidthMode ? 8 : 16
                     enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
                     onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
                     Accessible.name: "Remove Band"
@@ -152,7 +156,7 @@ Rectangle {
             objectName: "parametricEqGraph"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: root.isCompactActionMode ? 164 : 200
+            Layout.minimumHeight: root.isCompactDensity ? 164 : 200
             viewModel: root.viewModel
         }
 
@@ -160,7 +164,7 @@ Rectangle {
         Rectangle {
             objectName: "eqInspectorRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.isCompactActionMode ? 124 : 128
+            Layout.preferredHeight: root.isCompactDensity ? 124 : 128
             color: "#12243F"
             border.color: "#2C5A78"
             border.width: 1
@@ -176,7 +180,7 @@ Rectangle {
 
                 // Left Column (160 lp): Band Enabled Toggle
                 ColumnLayout {
-                    Layout.preferredWidth: root.isCompactActionMode ? 136 : 160
+                    Layout.preferredWidth: root.isCompactWidthMode ? 136 : 160
                     Layout.fillHeight: true
                     spacing: 4
 
@@ -230,8 +234,8 @@ Rectangle {
                                     required property var modelData
                                     objectName: "filterButton_" + modelData.token
                                     text: modelData.label
-                                    minimumControlWidth: root.isCompactActionMode ? 66 : 96
-                                    contentPadding: root.isCompactActionMode ? 2 : 4
+                                    minimumControlWidth: root.isCompactWidthMode ? 66 : 96
+                                    contentPadding: root.isCompactWidthMode ? 2 : 4
                                     selected: root.viewModel && root.viewModel.filter === modelData.token
                                     tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
                                     onClicked: if (root.viewModel) root.viewModel.setFilter(modelData.token)
@@ -275,8 +279,8 @@ Rectangle {
                                     required property var modelData
                                     objectName: "routingButton_" + modelData.token
                                     text: modelData.label
-                                    minimumControlWidth: root.isCompactActionMode ? 68 : 80
-                                    contentPadding: root.isCompactActionMode ? 2 : 4
+                                    minimumControlWidth: root.isCompactWidthMode ? 68 : 80
+                                    contentPadding: root.isCompactWidthMode ? 2 : 4
                                     enabled: modelData.token === "STEREO" || (root.viewModel && root.viewModel.routeAvailable)
                                     selected: root.viewModel && root.viewModel.routing === modelData.token
                                     tone: root.viewModel && root.viewModel.routing === modelData.token ? "primary" : "secondary"
@@ -319,12 +323,12 @@ Rectangle {
                     // Numeric Fields Tier (50 lp)
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: root.isCompactActionMode ? 40 : 50
-                        spacing: root.isCompactActionMode ? 8 : 16
+                        Layout.preferredHeight: root.isCompactDensity ? 40 : 50
+                        spacing: root.isCompactWidthMode ? 8 : 16
 
                         StudioNumericField {
                             objectName: "frequencyField"
-                            compact: root.isCompactActionMode
+                            compact: root.isCompactDensity
                             labelText: "FREQUENCY"
                             unitText: "Hz"
                             fieldName: "frequency"
@@ -334,7 +338,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "gainField"
-                            compact: root.isCompactActionMode
+                            compact: root.isCompactDensity
                             visible: root.viewModel ? root.viewModel.gainApplicable : true
                             labelText: "GAIN"
                             unitText: "dB"
@@ -345,7 +349,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "qField"
-                            compact: root.isCompactActionMode
+                            compact: root.isCompactDensity
                             visible: root.viewModel ? root.viewModel.qApplicable : true
                             labelText: "Q"
                             unitText: ""
@@ -356,7 +360,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "shelfSlopeField"
-                            compact: root.isCompactActionMode
+                            compact: root.isCompactDensity
                             visible: root.viewModel ? root.viewModel.shelfSlopeApplicable : false
                             labelText: "SHELF SLOPE"
                             unitText: ""
@@ -365,8 +369,9 @@ Rectangle {
                             viewModel: root.viewModel
                         }
 
-                        // HP/LP Slope DB/OCT (6 segments x 80 lp)
+                        // HP/LP Slope DB/OCT. Compact width keeps all six choices visible.
                         RowLayout {
+                            objectName: "slopeControls"
                             visible: root.viewModel ? root.viewModel.slopeApplicable : false
                             spacing: 1
                             Text { text: "SLOPE:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
@@ -375,9 +380,9 @@ Rectangle {
                                 delegate: StudioSegmentButton {
                                     required property int modelData
                                     objectName: "slopeButton_" + modelData
-                                    text: modelData + " dB"
-                                    minimumControlWidth: 80
-                                    contentPadding: 4
+                                    text: root.isCompactWidthMode ? modelData.toString() : modelData + " dB"
+                                    minimumControlWidth: root.isCompactWidthMode ? 44 : 80
+                                    contentPadding: root.isCompactWidthMode ? 2 : 4
                                     selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
                                     tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
                                     onClicked: {
@@ -390,6 +395,14 @@ Rectangle {
                                     ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
                                     ToolTip.visible: hovered
                                 }
+                            }
+                            Text {
+                                visible: root.isCompactWidthMode
+                                text: "dB/oct"
+                                color: "#A1B5C9"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 11
+                                Layout.leftMargin: 4
                             }
                         }
 
