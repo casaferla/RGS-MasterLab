@@ -243,6 +243,7 @@ private slots:
     void explicitSeekLoopTraversalEofAndSrcIdentity();
     void loopCommandIsPositionNeutralAcrossStates();
     void partialWritesNaturalEofAndRuntimeError();
+    void seamlessPcmHandoffCrossfadeAndStateMatrix();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -848,6 +849,83 @@ void PlaybackSupportTest::stateMachineAndBoundedPump()
     QVERIFY(!engine.snapshot().value()->loop);
     QVERIFY(engine.clear());
     QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::NO_SOURCE);
+}
+
+void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
+{
+    // Test 1: PLAYING state seamless handoff with 15 ms complementary linear crossfade
+    // 48 kHz stereo PCM buffer with 1000 frames (20.83 ms total)
+    const std::int64_t totalFrames = 1000;
+    auto oldBuf = make_buffer(48000, audio::ChannelLayout::STEREO_LR, totalFrames);
+    auto newBuf = make_buffer(48000, audio::ChannelLayout::STEREO_LR, totalFrames);
+
+    // Fill old buffer with 1.0, new buffer with 0.0
+    auto mutableOld = oldBuf.mutable_view();
+    auto mutableNew = newBuf.mutable_view();
+    for (std::size_t ch = 0; ch < 2; ++ch) {
+        auto oldCh = mutableOld.channel(ch);
+        auto newCh = mutableNew.channel(ch);
+        std::fill(oldCh.value()->begin(), oldCh.value()->end(), 1.0);
+        std::fill(newCh.value()->begin(), newCh.value()->end(), 0.0);
+    }
+
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+    auto* observed = output.get();
+
+    auto lifetime1 = std::make_shared<int>(42);
+    QVERIFY(engine.install_pcm_candidate(
+        oldBuf.view(), std::move(output), DeviceSampleFormat::PCM_S16, std::nullopt, lifetime1));
+    QVERIFY(engine.play());
+    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PLAYING);
+
+    // Handoff to new buffer while PLAYING at position 0
+    auto lifetime2 = std::make_shared<int>(84);
+    QVERIFY(engine.handoff_pcm(newBuf.view(), lifetime2));
+    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PLAYING);
+
+    // 15 ms at 48 kHz = 720 frames.
+    // Check initial crossfaded output history
+    // At index i in [0..720):
+    // sample = (1 - i/720) * 1.0 + (i/720) * 0.0 = 1.0 - i/720
+    // In PCM16, sample * 32768.0 = 32768 * (1 - i/720)
+    const auto& history = observed->history();
+    QVERIFY(history.size() >= 720U * 4U);
+
+    // First frame (i=0): alpha = 0.0 -> value = 1.0 -> PCM16 32767
+    QCOMPARE(read_i16(history, 0U), static_cast<std::int16_t>(32767));
+
+    // Midpoint frame (i=360): alpha = 0.5 -> value = 0.5 -> PCM16 16384
+    QCOMPARE(read_i16(history, 360U * 4U), static_cast<std::int16_t>(16384));
+
+    // End of crossfade frame (i=719): alpha = 719/720 ~ 0.9986 -> value ~ 0.00139 -> PCM16 ~ 46
+    QCOMPARE(read_i16(history, 719U * 4U), static_cast<std::int16_t>(46));
+
+    // After crossfade, next frame read from newBuf (0.0 -> PCM16 0)
+    observed->consume_all();
+    engine.tick();
+    QVERIFY(observed->history().size() >= 721U * 4U);
+    QCOMPARE(read_i16(observed->history(), 720U * 4U), static_cast<std::int16_t>(0));
+
+    // Test 2: PAUSED state handoff - remains PAUSED without auto-start
+    QVERIFY(engine.pause());
+    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PAUSED);
+    const auto pausedPos = engine.snapshot().value()->position;
+    QVERIFY(engine.handoff_pcm(oldBuf.view(), lifetime1));
+    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PAUSED);
+    QCOMPARE(engine.snapshot().value()->position, pausedPos);
+
+    // Test 3: STOPPED state handoff - remains STOPPED without auto-start
+    QVERIFY(engine.stop());
+    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::STOPPED);
+    QVERIFY(engine.handoff_pcm(newBuf.view(), lifetime2));
+    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::STOPPED);
+
+    // Test 4: Atomic failure on incompatible candidate - preserves old state
+    QVERIFY(engine.play());
+    auto diffRateBuf = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
+    QVERIFY(!engine.handoff_pcm(diffRateBuf.view()));
+    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PLAYING);
 }
 
 void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()

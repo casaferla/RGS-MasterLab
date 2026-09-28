@@ -102,8 +102,11 @@ private:
 
 class PcmPlaybackSource final : public IPlaybackSource {
 public:
-    explicit PcmPlaybackSource(audio::AudioBufferView source) noexcept
+    explicit PcmPlaybackSource(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime = nullptr) noexcept
         : source_(source)
+        , lifetime_(std::move(lifetime))
     {
     }
     [[nodiscard]] const audio::AudioFormat& format() const noexcept override
@@ -157,6 +160,7 @@ public:
 
 private:
     audio::AudioBufferView source_;
+    std::shared_ptr<const void> lifetime_;
 };
 
 }  // namespace
@@ -353,11 +357,201 @@ core::Status PlaybackEngine::install_candidate(
     return core::Status::success();
 }
 
+core::Status PlaybackEngine::handoff_pcm(
+    audio::AudioBufferView source,
+    std::shared_ptr<const void> lifetime)
+{
+    if (!has_source() || !output_ || !duration_ || !outputDuration_ || !sampleFormat_) {
+        return status_failure(
+            core::ErrorCode::InvalidState,
+            "Playback handoff requires an active prepared session.");
+    }
+    if (source.timebase().frame_domain_id()
+            != audio::FrameDomainId::SOURCE_PROCESSING_RATE
+        || source.frame_count().value() <= 0) {
+        return status_failure(
+            core::ErrorCode::InvalidArgument,
+            "PCM handoff requires a non-empty Source-domain canonical view.");
+    }
+    if (source.format() != source_format()) {
+        return status_failure(
+            core::ErrorCode::InvalidArgument,
+            "PCM handoff candidate format does not match active playback format.");
+    }
+    if (rateAdapter_
+        && (rateAdapter_->input_rate() != source.format().sample_rate()
+            || rateAdapter_->channel_layout()
+                != source.format().channel_layout()
+            || rateAdapter_->input_frame_count() != source.frame_count())) {
+        return status_failure(
+            core::ErrorCode::InvalidArgument,
+            "PCM handoff SRC metadata is incoherent with candidate view.");
+    }
+
+    const auto newBegin = source.absolute_start_frame();
+    const auto newEnd = source.absolute_end_frame();
+    if (state_ == core::PlaybackState::PLAYING) {
+        update_position();
+    }
+
+    if (position_ < newBegin || position_ > newEnd) {
+        return status_failure(
+            core::ErrorCode::OutOfRange,
+            "Current playback cue is outside candidate handoff realization range.");
+    }
+
+    auto newDuration = core::FrameCount::create(newEnd.value());
+    if (!newDuration) {
+        return core::Status::failure(*newDuration.error());
+    }
+
+    if (state_ != core::PlaybackState::PLAYING) {
+        try {
+            source_ = std::make_unique<PcmPlaybackSource>(source, std::move(lifetime));
+        } catch (const std::bad_alloc&) {
+            return status_failure(
+                core::ErrorCode::IoFailure,
+                "Unable to allocate PCM playback source during handoff.");
+        }
+        sourceBegin_ = newBegin;
+        duration_ = *newDuration.value();
+        outputDuration_ = rateAdapter_
+            ? rateAdapter_->output_frame_count()
+            : source.frame_count();
+        reset_queue_state(position_.value());
+        return core::Status::success();
+    }
+
+    // PLAYING state: perform 15 ms complementary linear crossfade
+    const double rateHz = source.format().sample_rate().value();
+    const auto xfadeFramesRequested = static_cast<std::int64_t>(
+        std::floor(0.015 * rateHz + 0.5));
+    const std::int64_t boundary = output_boundary();
+    const std::int64_t currentOutputFrame = source_to_output_frame(position_.value());
+    const std::int64_t xfadeFrames = std::max<std::int64_t>(
+        0, std::min(xfadeFramesRequested, boundary - currentOutputFrame));
+
+    if (xfadeFrames <= 0) {
+        try {
+            source_ = std::make_unique<PcmPlaybackSource>(source, std::move(lifetime));
+        } catch (const std::bad_alloc&) {
+            return status_failure(
+                core::ErrorCode::IoFailure,
+                "Unable to allocate PCM playback source during handoff.");
+        }
+        sourceBegin_ = newBegin;
+        duration_ = *newDuration.value();
+        outputDuration_ = rateAdapter_
+            ? rateAdapter_->output_frame_count()
+            : source.frame_count();
+        output_->clear_queue();
+        reset_queue_state(position_.value());
+        return prefill();
+    }
+
+    auto xfadeCount = core::FrameCount::create(xfadeFrames);
+    if (!xfadeCount) {
+        return core::Status::failure(*xfadeCount.error());
+    }
+
+    auto oldBuffer = audio::AudioBuffer::create(
+        source_format(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        position_, *xfadeCount.value());
+    if (!oldBuffer) {
+        return core::Status::failure(*oldBuffer.error());
+    }
+    auto readOld = read_source_frames(position_, oldBuffer.value()->mutable_view());
+    if (!readOld || readOld.value()->value() != xfadeFrames) {
+        return status_failure(
+            core::ErrorCode::TruncatedAudioData,
+            "Failed to read old source frames for crossfade.");
+    }
+
+    std::unique_ptr<IPlaybackSource> newSource;
+    try {
+        newSource = std::make_unique<PcmPlaybackSource>(source, lifetime);
+    } catch (const std::bad_alloc&) {
+        return status_failure(
+            core::ErrorCode::IoFailure,
+            "Unable to allocate new PCM playback source for crossfade.");
+    }
+
+    auto newBuffer = audio::AudioBuffer::create(
+        source.format(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        position_, *xfadeCount.value());
+    if (!newBuffer) {
+        return core::Status::failure(*newBuffer.error());
+    }
+    const auto localNewStart = core::FrameIndex{position_.value() - newBegin.value()};
+    auto readNew = newSource->read_frames(localNewStart, newBuffer.value()->mutable_view());
+    if (!readNew || readNew.value()->value() != xfadeFrames) {
+        return status_failure(
+            core::ErrorCode::TruncatedAudioData,
+            "Failed to read new source frames for crossfade.");
+    }
+
+    auto blendedBuffer = audio::AudioBuffer::create(
+        source.format(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        position_, *xfadeCount.value());
+    if (!blendedBuffer) {
+        return core::Status::failure(*blendedBuffer.error());
+    }
+
+    const auto channels = source.format().channel_count();
+    const double N = static_cast<double>(xfadeFrames);
+    for (std::size_t ch = 0; ch < channels; ++ch) {
+        auto oldPlane = oldBuffer.value()->view().channel(ch);
+        auto newPlane = newBuffer.value()->view().channel(ch);
+        auto blendPlane = blendedBuffer.value()->mutable_view().mutable_channel(ch);
+        if (!oldPlane || !newPlane || !blendPlane) {
+            return status_failure(
+                core::ErrorCode::InvalidArgument,
+                "Incoherent channel access during crossfade.");
+        }
+        for (std::int64_t i = 0; i < xfadeFrames; ++i) {
+            const double alpha = static_cast<double>(i) / N;
+            const double oldSample = (*oldPlane.value())[static_cast<std::size_t>(i)];
+            const double newSample = (*newPlane.value())[static_cast<std::size_t>(i)];
+            (*blendPlane.value())[static_cast<std::size_t>(i)] =
+                (1.0 - alpha) * oldSample + alpha * newSample;
+        }
+    }
+
+    auto encodedCrossfade = encode_device_block(
+        blendedBuffer.value()->view(), *sampleFormat_);
+    if (!encodedCrossfade) {
+        return core::Status::failure(*encodedCrossfade.error());
+    }
+
+    output_->clear_queue();
+    source_ = std::move(newSource);
+    sourceBegin_ = newBegin;
+    duration_ = *newDuration.value();
+    outputDuration_ = rateAdapter_
+        ? rateAdapter_->output_frame_count()
+        : source.frame_count();
+
+    reset_queue_state(position_.value());
+    playbackStartOutputFrame_ = currentOutputFrame;
+    pendingBytes_ = std::move(*encodedCrossfade.value());
+    pendingOffset_ = 0U;
+    scheduledOutputFrame_ = currentOutputFrame + xfadeFrames;
+    if (!loop_ && scheduledOutputFrame_ == outputDuration_->value()) {
+        eofScheduled_ = true;
+    } else if (loop_ && loopTraversalEligible_
+        && scheduledOutputFrame_ == output_boundary()) {
+        scheduledOutputFrame_ = source_to_output_frame(loop_->begin().value());
+    }
+
+    return prefill();
+}
+
 core::Status PlaybackEngine::install_pcm_candidate(
     audio::AudioBufferView source,
     std::unique_ptr<IPlaybackOutput> output,
     DeviceSampleFormat sampleFormat,
-    std::optional<audio::PlaybackSampleRateAdapter> rateAdapter)
+    std::optional<audio::PlaybackSampleRateAdapter> rateAdapter,
+    std::shared_ptr<const void> lifetime)
 {
     if (!output
         || source.timebase().frame_domain_id()
@@ -397,7 +591,7 @@ core::Status PlaybackEngine::install_pcm_candidate(
         ? rateAdapter->output_frame_count()
         : source.frame_count();
     try {
-        source_ = std::make_unique<PcmPlaybackSource>(source);
+        source_ = std::make_unique<PcmPlaybackSource>(source, std::move(lifetime));
     } catch (const std::bad_alloc&) {
         return status_failure(
             core::ErrorCode::IoFailure,

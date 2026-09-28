@@ -131,6 +131,12 @@ void PlaybackTransportViewModel::set_pcm_prepare_handler(
     pcmPrepareHandler_ = std::move(handler);
 }
 
+void PlaybackTransportViewModel::set_pcm_handoff_handler(
+    PcmHandoffHandler handler)
+{
+    pcmHandoffHandler_ = std::move(handler);
+}
+
 core::Status PlaybackTransportViewModel::stop_and_clear()
 {
     if (!service_) {
@@ -186,7 +192,9 @@ core::Status PlaybackTransportViewModel::prepare_file(
     return core::Status::success();
 }
 
-core::Status PlaybackTransportViewModel::prepare_pcm(audio::AudioBufferView source)
+core::Status PlaybackTransportViewModel::prepare_pcm(
+    audio::AudioBufferView source,
+    std::shared_ptr<const void> lifetime)
 {
     if (!pcmPrepareHandler_) {
         return core::Status::failure(core::Error{
@@ -197,10 +205,30 @@ core::Status PlaybackTransportViewModel::prepare_pcm(audio::AudioBufferView sour
     if (!cleared) {
         return cleared;
     }
-    auto prepared = pcmPrepareHandler_(source);
+    auto prepared = pcmPrepareHandler_(source, std::move(lifetime));
     if (!prepared) {
         publish_failure(*prepared.error());
         return prepared;
+    }
+    sampleRateHz_ = source.format().sample_rate().value();
+    errorMessage_.clear();
+    refresh();
+    return core::Status::success();
+}
+
+core::Status PlaybackTransportViewModel::handoff_pcm(
+    audio::AudioBufferView source,
+    std::shared_ptr<const void> lifetime)
+{
+    if (!pcmHandoffHandler_) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "The Windows PCM handoff seam is unavailable."});
+    }
+    auto handedOff = pcmHandoffHandler_(source, std::move(lifetime));
+    if (!handedOff) {
+        publish_failure(*handedOff.error());
+        return handedOff;
     }
     sampleRateHz_ = source.format().sample_rate().value();
     errorMessage_.clear();

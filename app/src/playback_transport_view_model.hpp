@@ -30,7 +30,11 @@ class PlaybackTransportViewModel final : public QObject {
     Q_PROPERTY(QString errorMessage READ error_message NOTIFY playbackChanged)
 
 public:
-    using PcmPrepareHandler = std::function<core::Status(audio::AudioBufferView)>;
+    using PcmPrepareHandler = std::function<core::Status(
+        audio::AudioBufferView, std::shared_ptr<const void>)>;
+    using PcmHandoffHandler = std::function<core::Status(
+        audio::AudioBufferView, std::shared_ptr<const void>)>;
+
     explicit PlaybackTransportViewModel(
         std::unique_ptr<core::IAudioPlaybackService> service,
         QObject* parent = nullptr);
@@ -52,10 +56,16 @@ public:
         const core::ResourceReference& source,
         qint64 sampleRateHz);
     void set_pcm_prepare_handler(PcmPrepareHandler handler);
+    void set_pcm_handoff_handler(PcmHandoffHandler handler);
     [[nodiscard]] core::Status prepare_file(
         const core::ResourceReference& source,
         qint64 sampleRateHz);
-    [[nodiscard]] core::Status prepare_pcm(audio::AudioBufferView source);
+    [[nodiscard]] core::Status prepare_pcm(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime = nullptr);
+    [[nodiscard]] core::Status handoff_pcm(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime = nullptr);
     [[nodiscard]] core::Status stop_and_clear();
     [[nodiscard]] core::Status seek_target_frame(core::FrameIndex position);
     void set_source_derived_active(bool active) noexcept;
@@ -78,6 +88,7 @@ private:
 
     std::unique_ptr<core::IAudioPlaybackService> service_;
     PcmPrepareHandler pcmPrepareHandler_;
+    PcmHandoffHandler pcmHandoffHandler_;
     bool sourceDerivedActive_{true};
     QTimer refreshTimer_;
     core::PlaybackState state_{core::PlaybackState::NO_SOURCE};

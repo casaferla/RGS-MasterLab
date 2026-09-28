@@ -92,7 +92,11 @@ public:
         std::unique_ptr<IPlaybackOutput> output,
         DeviceSampleFormat sampleFormat,
         std::optional<audio::PlaybackSampleRateAdapter> rateAdapter =
-            std::nullopt);
+            std::nullopt,
+        std::shared_ptr<const void> lifetime = nullptr);
+    [[nodiscard]] core::Status handoff_pcm(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime = nullptr);
     [[nodiscard]] core::Status clear();
     [[nodiscard]] core::Status play();
     [[nodiscard]] core::Status pause();

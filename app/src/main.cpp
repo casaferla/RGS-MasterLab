@@ -53,8 +53,16 @@ int main(int argc, char* argv[])
     rgsml::app::PlaybackTransportViewModel playbackTransport{
         std::move(playbackService)};
     playbackTransport.set_pcm_prepare_handler(
-        [windowsPlayback](rgsml::audio::AudioBufferView source) {
-            return windowsPlayback->prepare_pcm(source);
+        [windowsPlayback](
+            rgsml::audio::AudioBufferView source,
+            std::shared_ptr<const void> lifetime) {
+            return windowsPlayback->prepare_pcm(source, std::move(lifetime));
+        });
+    playbackTransport.set_pcm_handoff_handler(
+        [windowsPlayback](
+            rgsml::audio::AudioBufferView source,
+            std::shared_ptr<const void> lifetime) {
+            return windowsPlayback->handoff_pcm(source, std::move(lifetime));
         });
     rgsml::ui::WaveformPresentation waveformPresentation;
     rgsml::app::AuditionRegionViewModel auditionRegion{&playbackTransport};

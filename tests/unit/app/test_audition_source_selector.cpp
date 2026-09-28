@@ -57,12 +57,18 @@ void install_pcm_handler(
     FakePlaybackService* service)
 {
     transport.set_pcm_prepare_handler(
-        [service](audio::AudioBufferView view) {
+        [service](audio::AudioBufferView view, std::shared_ptr<const void>) {
             service->state = core::PlaybackState::STOPPED;
             service->position = view.absolute_start_frame();
             service->duration = *core::FrameCount::create(
                 view.absolute_end_frame().value()).value();
             service->loop.reset();
+            return core::Status::success();
+        });
+    transport.set_pcm_handoff_handler(
+        [service](audio::AudioBufferView view, std::shared_ptr<const void>) {
+            service->duration = *core::FrameCount::create(
+                view.absolute_end_frame().value()).value();
             return core::Status::success();
         });
 }
@@ -114,6 +120,7 @@ private slots:
     void activeProcessedRealizationReplacementPreservesCueAndState();
     void eofCueIsCanonicalizedToRangeBegin();
     void loopRegionIntentPreservedAcrossAuditionRebinds();
+    void seamlessProcessedHandoffPreservesStateAndTargetRaces();
 };
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
@@ -391,6 +398,52 @@ void AuditionSourceSelectorTest::eofCueIsCanonicalizedToRangeBegin()
     observed->position = core::FrameIndex{150}; // cue > end (100)
     QVERIFY(!selector.set_processed_realization(realization(0, 100)));
     QVERIFY(!selector.active_target());
+}
+
+void AuditionSourceSelectorTest::seamlessProcessedHandoffPreservesStateAndTargetRaces()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 200)));
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+
+    // 1. Target race condition: switch to PREPARED while PROCESSED replacement is pending
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+
+    // User switches away to PREPARED
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+
+    // Processed realization completes afterwards -> MUST NOT switch target back to PROCESSED
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PREPARED});
+
+    // 2. PAUSED state handoff: replacement when PAUSED preserves PAUSED state
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    transport.playOrResume();
+    observed->position = core::FrameIndex{60};
+    transport.pause();
+    QCOMPARE(observed->state, core::PlaybackState::PAUSED);
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(observed->state, core::PlaybackState::PAUSED);
+    QCOMPARE(observed->position.value(), std::int64_t{60});
+
+    // 3. Failure atomicity: failed replacement preserves old realization, cue, and state
+    observed->position = core::FrameIndex{80};
+    // Incompatible candidate (e.g. range [0..50) when cue is 80)
+    QVERIFY(!selector.set_processed_realization(realization(0, 50)));
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(observed->state, core::PlaybackState::PAUSED);
+    QCOMPARE(observed->position.value(), std::int64_t{80});
+    QVERIFY(selector.processed_available());
+    QCOMPARE(selector.processed_realization_snapshot()->render_window().end().value(), std::int64_t{200});
 }
 
 void AuditionSourceSelectorTest::loopRegionIntentPreservedAcrossAuditionRebinds()
