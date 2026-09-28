@@ -10,9 +10,16 @@ Rectangle {
     property int selectedModuleIndex: 0
     property bool isCompact: false
 
+    property alias chainSelector: realChainSelector
+    property alias editorHost: realEditorHost
+
     color: "transparent"
 
-    property alias chainSelector: realChainSelector
+    // Logical workspace geometry follows the active docked editor/chain geometry.
+    // The visual children are independently rehosted by Main.qml LayoutItemProxy
+    // instances so no proxy ever targets both a parent and its descendant.
+    width: realEditorHost.width
+    height: Math.max(realEditorHost.height, realChainSelector.height)
 
     Item {
         id: workspaceItemPool
@@ -28,27 +35,10 @@ Rectangle {
             eqViewModel: root.viewModel
             onSelectedIndexChanged: root.selectedModuleIndex = selectedIndex
         }
-    }
-
-    RowLayout {
-        id: dspWorkspaceRow
-        objectName: "dspWorkspaceRow"
-        anchors.fill: parent
-        spacing: 8
-
-        LayoutItemProxy {
-            id: standardChainProxy
-            target: realChainSelector
-            visible: !root.isCompact
-            Layout.preferredWidth: 180
-            Layout.fillHeight: true
-        }
 
         DspEditorHost {
-            id: editorHost
+            id: realEditorHost
             objectName: "dspEditorHost"
-            Layout.fillWidth: true
-            Layout.fillHeight: true
             viewModel: root.viewModel
             activeChainRow: realChainSelector.findChild ? realChainSelector.findChild("dspChainRow_0") : null
         }

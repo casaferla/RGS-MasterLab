@@ -416,11 +416,30 @@ ApplicationWindow {
                 Layout.preferredHeight: 72
             }
 
-            LayoutItemProxy {
-                id: standardDspWorkspaceProxy
-                target: realDspWorkspace
+            RowLayout {
+                id: standardDspWorkspaceLayout
+                objectName: "standardDspWorkspaceLayout"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                spacing: 8
+
+                LayoutItemProxy {
+                    id: standardChainProxy
+                    target: realDspWorkspace.chainSelector
+                    Layout.minimumWidth: 180
+                    Layout.preferredWidth: 180
+                    Layout.maximumWidth: 180
+                    Layout.fillHeight: true
+                }
+
+                LayoutItemProxy {
+                    id: standardDspEditorHostProxy
+                    target: realDspWorkspace.editorHost
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumWidth: 0
+                    Layout.minimumHeight: 400
+                }
             }
         }
 
@@ -938,9 +957,9 @@ ApplicationWindow {
 
                 // Right DSP Editor Area (~57% width)
                 LayoutItemProxy {
-                    id: compactDspWorkspaceProxy
+                    id: compactDspEditorHostProxy
                     objectName: "compactBottomRight"
-                    target: realDspWorkspace
+                    target: realDspWorkspace.editorHost
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.minimumWidth: 0
