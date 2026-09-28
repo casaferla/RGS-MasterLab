@@ -339,7 +339,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     app::ProjectSessionViewModel projectSession{
         &model, &goldSelection, &auditionRegion, &playbackTransport};
     playbackTransport.set_pcm_prepare_handler(
-        [observedPlayback](audio::AudioBufferView view) {
+        [observedPlayback](audio::AudioBufferView view, std::shared_ptr<const void>) {
             observedPlayback->state = core::PlaybackState::STOPPED;
             observedPlayback->position = view.absolute_start_frame();
             observedPlayback->duration = *core::FrameCount::create(
