@@ -356,7 +356,7 @@ ApplicationWindow {
 
             Rectangle {
                 id: standardSourcePanel
-                objectName: "sourceMetadataPanel"
+                objectName: root.isCompactLayout ? "standardSourceMetadataPanel" : "sourceMetadataPanel"
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
@@ -438,11 +438,11 @@ ApplicationWindow {
 
             Rectangle {
                 id: compactSourcePanel
-                objectName: "sourceMetadataPanel"
+                objectName: root.isCompactLayout ? "sourceMetadataPanel" : "compactSourceMetadataPanel"
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: 118
+                Layout.preferredHeight: 120
                 color: root.panel
                 border.color: root.border
                 radius: 5
@@ -457,7 +457,7 @@ ApplicationWindow {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 28
+                        Layout.preferredHeight: 32
                         spacing: 12
                         Rectangle {
                             Layout.preferredWidth: 24; Layout.preferredHeight: 24; radius: 4; color: "#0E2632"; border.color: sourceSelection.hasSource ? root.accent : root.border
@@ -478,7 +478,7 @@ ApplicationWindow {
                             }
                         }
                         StudioButton {
-                            id: sourceOpenButton; objectName: "sourceOpenButton"; text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: 110; Layout.preferredHeight: 26
+                            id: sourceOpenButton; objectName: "sourceOpenButton"; text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: 110; Layout.preferredHeight: 32
                             KeyNavigation.backtab: clearRegionButton; KeyNavigation.tab: waveformOverview
                             onClicked: sourceDialog.open(); Accessible.name: text
                         }
@@ -496,7 +496,7 @@ ApplicationWindow {
                             target: realControlStrip
                             visible: root.isCompactLayout
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 32
+                            Layout.preferredHeight: 36
                         }
 
                         LayoutItemProxy {
@@ -504,7 +504,7 @@ ApplicationWindow {
                             target: realRegionPanel
                             visible: root.isCompactLayout
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 32
+                            Layout.preferredHeight: 34
                         }
                     }
                 }
@@ -528,9 +528,14 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     color: "transparent"
 
-                    ColumnLayout {
+                    RowLayout {
                         anchors.fill: parent
                         spacing: 6
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            spacing: 6
 
                         // Upper Left: Waveform Host
                         Item {
@@ -544,8 +549,7 @@ ApplicationWindow {
                                 id: compactWaveformProxy
                                 target: realWaveformPanel
                                 visible: root.isCompactLayout
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
+                                anchors.fill: parent
                             }
                         }
 
@@ -880,6 +884,7 @@ ApplicationWindow {
                                             }
                                         }
                                     }
+                                }
 
                                 // View 2: Prepare / Restoration (Alternate View)
                                 Rectangle {
@@ -942,8 +947,7 @@ ApplicationWindow {
                             id: compactChainProxy
                             target: realDspWorkspace.chainSelector
                             visible: root.isCompactLayout
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
+                            anchors.fill: parent
                         }
                     }
                 }
@@ -959,8 +963,7 @@ ApplicationWindow {
                         id: compactDspWorkspaceProxy
                         target: realDspWorkspace
                         visible: root.isCompactLayout
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
+                        anchors.fill: parent
                     }
                 }
             }
