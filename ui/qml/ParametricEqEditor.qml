@@ -197,7 +197,7 @@ Rectangle {
                         objectName: "eqFilterGroup"
                         Layout.fillWidth: true
                         Layout.preferredHeight: 28
-                        spacing: 4
+                        spacing: 8
 
                         Text {
                             text: "FILTER:"
