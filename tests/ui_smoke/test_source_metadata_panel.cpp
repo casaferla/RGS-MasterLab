@@ -1015,6 +1015,37 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(dspChainSelectorObj->property("width").toInt(), 164);
 
     // HP/LP compact slope controls must all remain usable at the minimum window size.
+    // Minimum-size UI must preserve the same control scale and labels as the wide layout.
+    QCOMPARE(addBandBtn->property("text").toString(), QStringLiteral("+ Add Band"));
+    QCOMPARE(removeBandBtn->property("text").toString(), QStringLiteral("- Remove Band"));
+    QVERIFY(addBandBtn->property("width").toReal() >= 128.0);
+    QVERIFY(removeBandBtn->property("width").toReal() >= 128.0);
+
+    for (int bandIndex = 0; bandIndex < eqViewModel.band_count(); ++bandIndex) {
+        auto* bandButton = find_child_by_name(eqEditor, QString("bandSelectorButton_%1").arg(bandIndex));
+        QVERIFY2(bandButton != nullptr, "Band selector must exist at minimum size");
+        QVERIFY2(bandButton->property("width").toReal() >= 90.0, "Band selector must keep full width at minimum size");
+    }
+
+    for (const auto& token : {QStringLiteral("BELL"), QStringLiteral("NOTCH"), QStringLiteral("LOW_SHELF"),
+                              QStringLiteral("HIGH_SHELF"), QStringLiteral("HIGH_PASS"), QStringLiteral("LOW_PASS")}) {
+        auto* filterButton = find_child_by_name(eqEditor, QStringLiteral("filterButton_") + token);
+        QVERIFY2(filterButton != nullptr, "Filter button must exist at minimum size");
+        QVERIFY2(filterButton->property("width").toReal() >= 96.0, "Filter button must keep full width at minimum size");
+    }
+
+    for (const auto& token : {QStringLiteral("STEREO"), QStringLiteral("MID"), QStringLiteral("SIDE"),
+                              QStringLiteral("LEFT"), QStringLiteral("RIGHT")}) {
+        auto* routingButton = find_child_by_name(eqEditor, QStringLiteral("routingButton_") + token);
+        QVERIFY2(routingButton != nullptr, "Routing button must exist at minimum size");
+        QVERIFY2(routingButton->property("width").toReal() >= 80.0, "Routing button must keep full width at minimum size");
+    }
+
+    for (auto* numericField : {frequencyFieldObj, gainFieldObj, qFieldObj}) {
+        QVERIFY2(numericField != nullptr, "Numeric field must exist at minimum size");
+        QCOMPARE(numericField->property("compact").toBool(), false);
+    }
+
     QVERIFY2(QMetaObject::invokeMethod(filterHighPass, "clicked"), "High Pass must remain selectable at minimum size");
     QCoreApplication::processEvents();
     auto* eqEditorItemCompact = qobject_cast<QQuickItem*>(eqEditor);
@@ -1024,6 +1055,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         auto* slopeItem = qobject_cast<QQuickItem*>(slopeObj);
         QVERIFY2(slopeItem != nullptr && slopeItem->isVisible(),
             qPrintable(QString("Slope %1 control must be visible at minimum size").arg(slope)));
+        QVERIFY2(slopeObj->property("width").toReal() >= 80.0,
+            qPrintable(QString("Slope %1 control must keep full width at minimum size").arg(slope)));
+        QCOMPARE(slopeObj->property("text").toString(), QString::number(slope) + QStringLiteral(" dB"));
         const QPointF p = slopeItem->mapToItem(eqEditorItemCompact, QPointF{0.0, 0.0});
         QVERIFY2(p.x() >= -0.5 && p.x() + slopeItem->width() <= eqEditorItemCompact->width() + 0.5,
             qPrintable(QString("Slope %1 control must be horizontally contained at minimum size").arg(slope)));

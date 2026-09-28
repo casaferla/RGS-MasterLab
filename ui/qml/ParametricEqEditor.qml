@@ -11,9 +11,8 @@ Rectangle {
 
     color: "transparent"
 
-    // Horizontal compaction is driven only by available editor width.
-    // Vertical resizing must not switch control variants; the graph absorbs height changes.
-    readonly property bool isCompactWidthMode: width < 916
+    // One visual scale at every supported window size.
+    // Responsive behavior may redistribute free space, but never miniaturizes controls.
 
     readonly property var bandColors: [
         "#2ED3FF", // 1 Cyan
@@ -38,12 +37,20 @@ Rectangle {
         anchors.fill: parent
         spacing: 8
 
-        // Top Toolbar Strip (Reset Flat & Overall)
+        // Unified toolbar: fixed control scale at every supported width.
         RowLayout {
             objectName: "eqTopToolbarRegion"
             Layout.fillWidth: true
             Layout.preferredHeight: 32
-            spacing: 8
+            spacing: 6
+
+            StudioToggle {
+                objectName: "bandEnabledToggle"
+                text: "Band " + (root.viewModel ? root.viewModel.selectedIndex + 1 : 1) + " Enabled"
+                checked: root.viewModel ? root.viewModel.enabled : true
+                onClicked: if (root.viewModel) root.viewModel.setEnabled(checked)
+                Accessible.name: "Enable or disable band"
+            }
 
             Item { Layout.fillWidth: true }
 
@@ -75,6 +82,28 @@ Rectangle {
                 ToolTip.text: "Show or hide the combined total response curve of all active EQ bands"
                 ToolTip.visible: hovered
             }
+
+            Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
+
+            StudioButton {
+                objectName: "addBandButton"
+                text: "+ Add Band"
+                minimumControlWidth: 128
+                contentPadding: 16
+                enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
+                onClicked: if (root.viewModel) root.viewModel.addBand()
+                Accessible.name: "Add Band"
+            }
+
+            StudioButton {
+                objectName: "removeBandButton"
+                text: "- Remove Band"
+                minimumControlWidth: 128
+                contentPadding: 16
+                enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
+                onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
+                Accessible.name: "Remove Band"
+            }
         }
 
         // Band Selector Strip (40 lp)
@@ -91,7 +120,7 @@ Rectangle {
                 anchors.fill: parent
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
-                spacing: root.isCompactWidthMode ? 4 : 8
+                spacing: 4
 
                 Repeater {
                     model: root.viewModel ? root.viewModel.bandCount : 0
@@ -110,8 +139,8 @@ Rectangle {
                         selected: isSelectedBand
                         tone: isSelectedBand ? "primary" : "secondary"
                         accentColor: bandHue
-                        minimumControlWidth: root.isCompactWidthMode ? 58 : 90
-                        contentPadding: root.isCompactWidthMode ? 4 : 8
+                        minimumControlWidth: 90
+                        contentPadding: 8
                         activeFocusOnTab: true
                         opacity: isEnabledBand ? 1.0 : 0.5
 
@@ -124,28 +153,6 @@ Rectangle {
                 }
 
                 Item { Layout.fillWidth: true }
-
-                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
-
-                StudioButton {
-                    objectName: "addBandButton"
-                    text: root.isCompactWidthMode ? "+ Add" : "+ Add Band"
-                    minimumControlWidth: root.isCompactWidthMode ? 76 : 128
-                    contentPadding: root.isCompactWidthMode ? 8 : 16
-                    enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
-                    onClicked: if (root.viewModel) root.viewModel.addBand()
-                    Accessible.name: "Add Band"
-                }
-
-                StudioButton {
-                    objectName: "removeBandButton"
-                    text: root.isCompactWidthMode ? "- Remove" : "- Remove Band"
-                    minimumControlWidth: root.isCompactWidthMode ? 76 : 128
-                    contentPadding: root.isCompactWidthMode ? 8 : 16
-                    enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
-                    onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
-                    Accessible.name: "Remove Band"
-                }
             }
         }
 
@@ -165,7 +172,7 @@ Rectangle {
         Rectangle {
             objectName: "eqInspectorRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.isCompactWidthMode ? 124 : 128
+            Layout.preferredHeight: 128
             color: "#12243F"
             border.color: "#2C5A78"
             border.width: 1
@@ -173,30 +180,11 @@ Rectangle {
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 16
-                anchors.rightMargin: 16
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
                 anchors.topMargin: 6
                 anchors.bottomMargin: 8
                 spacing: 8
-
-                // Left Column (160 lp): Band Enabled Toggle
-                ColumnLayout {
-                    Layout.preferredWidth: root.isCompactWidthMode ? 136 : 160
-                    Layout.fillHeight: true
-                    spacing: 4
-
-                    StudioToggle {
-                        objectName: "bandEnabledToggle"
-                        text: "Band " + (root.viewModel ? root.viewModel.selectedIndex + 1 : 1) + " Enabled"
-                        checked: root.viewModel ? root.viewModel.enabled : true
-                        onClicked: if (root.viewModel) root.viewModel.setEnabled(checked)
-                        Accessible.name: "Enable or disable band"
-                    }
-
-                    Item { Layout.fillHeight: true }
-                }
-
-                Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: "#2C5A78" }
 
                 // Right Column: Two Subrows + Numeric Tier
                 ColumnLayout {
@@ -209,7 +197,7 @@ Rectangle {
                         objectName: "eqFilterGroup"
                         Layout.fillWidth: true
                         Layout.preferredHeight: 28
-                        spacing: 8
+                        spacing: 4
 
                         Text {
                             text: "FILTER:"
@@ -217,7 +205,7 @@ Rectangle {
                             font.family: "Segoe UI"
                             font.pixelSize: 12
                             font.weight: Font.Bold
-                            Layout.preferredWidth: 56
+                            Layout.preferredWidth: 44
                         }
 
                         RowLayout {
@@ -235,8 +223,8 @@ Rectangle {
                                     required property var modelData
                                     objectName: "filterButton_" + modelData.token
                                     text: modelData.label
-                                    minimumControlWidth: root.isCompactWidthMode ? 66 : 96
-                                    contentPadding: root.isCompactWidthMode ? 2 : 4
+                                    minimumControlWidth: 96
+                                    contentPadding: 4
                                     selected: root.viewModel && root.viewModel.filter === modelData.token
                                     tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
                                     onClicked: if (root.viewModel) root.viewModel.setFilter(modelData.token)
@@ -263,7 +251,7 @@ Rectangle {
                             font.family: "Segoe UI"
                             font.pixelSize: 12
                             font.weight: Font.Bold
-                            Layout.preferredWidth: 56
+                            Layout.preferredWidth: 44
                         }
 
                         RowLayout {
@@ -280,8 +268,8 @@ Rectangle {
                                     required property var modelData
                                     objectName: "routingButton_" + modelData.token
                                     text: modelData.label
-                                    minimumControlWidth: root.isCompactWidthMode ? 68 : 80
-                                    contentPadding: root.isCompactWidthMode ? 2 : 4
+                                    minimumControlWidth: 80
+                                    contentPadding: 4
                                     enabled: modelData.token === "STEREO" || (root.viewModel && root.viewModel.routeAvailable)
                                     selected: root.viewModel && root.viewModel.routing === modelData.token
                                     tone: root.viewModel && root.viewModel.routing === modelData.token ? "primary" : "secondary"
@@ -324,12 +312,12 @@ Rectangle {
                     // Numeric Fields Tier (50 lp)
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: root.isCompactWidthMode ? 40 : 50
-                        spacing: root.isCompactWidthMode ? 8 : 16
+                        Layout.preferredHeight: 50
+                        spacing: 12
 
                         StudioNumericField {
                             objectName: "frequencyField"
-                            compact: root.isCompactWidthMode
+                            compact: false
                             labelText: "FREQUENCY"
                             unitText: "Hz"
                             fieldName: "frequency"
@@ -339,7 +327,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "gainField"
-                            compact: root.isCompactWidthMode
+                            compact: false
                             visible: root.viewModel ? root.viewModel.gainApplicable : true
                             labelText: "GAIN"
                             unitText: "dB"
@@ -350,7 +338,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "qField"
-                            compact: root.isCompactWidthMode
+                            compact: false
                             visible: root.viewModel ? root.viewModel.qApplicable : true
                             labelText: "Q"
                             unitText: ""
@@ -361,7 +349,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "shelfSlopeField"
-                            compact: root.isCompactWidthMode
+                            compact: false
                             visible: root.viewModel ? root.viewModel.shelfSlopeApplicable : false
                             labelText: "SHELF SLOPE"
                             unitText: ""
@@ -375,15 +363,15 @@ Rectangle {
                             objectName: "slopeControls"
                             visible: root.viewModel ? root.viewModel.slopeApplicable : false
                             spacing: 1
-                            Text { text: root.isCompactWidthMode ? "SLOPE dB/oct:" : "SLOPE:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
+                            Text { text: "SLOPE:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
                             Repeater {
                                 model: [6, 12, 18, 24, 36, 48]
                                 delegate: StudioSegmentButton {
                                     required property int modelData
                                     objectName: "slopeButton_" + modelData
-                                    text: root.isCompactWidthMode ? modelData.toString() : modelData + " dB"
-                                    minimumControlWidth: root.isCompactWidthMode ? 32 : 80
-                                    contentPadding: root.isCompactWidthMode ? 2 : 4
+                                    text: modelData + " dB"
+                                    minimumControlWidth: 80
+                                    contentPadding: 4
                                     selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
                                     tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
                                     onClicked: {
