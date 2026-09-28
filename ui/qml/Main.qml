@@ -538,19 +538,14 @@ ApplicationWindow {
                             spacing: 6
 
                         // Upper Left: Waveform Host
-                        Item {
-                            id: compactWaveformHost
+                        LayoutItemProxy {
+                            id: compactWaveformProxy
                             objectName: "compactWaveformHost"
+                            target: realWaveformPanel
+                            visible: root.isCompactLayout
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.minimumHeight: 135
-
-                            LayoutItemProxy {
-                                id: compactWaveformProxy
-                                target: realWaveformPanel
-                                visible: root.isCompactLayout
-                                anchors.fill: parent
-                            }
                         }
 
                         // Lower Left: Adaptive Context Workspace (Prepare / Restoration <-> Gold / Automatch)
@@ -936,35 +931,29 @@ ApplicationWindow {
                         }
                     }
 
-                    // Right Edge of Left Context Area: Vertical Single-Column DSP Chain Container (max 164px width)
-                    Item {
-                        id: compactChainContainer
+                    // Right Edge of Left Context Area: Vertical Single-Column DSP Chain (frozen 164 px)
+                    LayoutItemProxy {
+                        id: compactChainProxy
                         objectName: "compactChainContainer"
+                        target: realDspWorkspace.chainSelector
+                        visible: root.isCompactLayout
+                        Layout.minimumWidth: 164
                         Layout.preferredWidth: 164
+                        Layout.maximumWidth: 164
                         Layout.fillHeight: true
-
-                        LayoutItemProxy {
-                            id: compactChainProxy
-                            target: realDspWorkspace.chainSelector
-                            visible: root.isCompactLayout
-                            anchors.fill: parent
-                        }
                     }
                 }
 
                 // Right DSP Editor Area (~57% width)
-                Item {
-                    id: compactBottomRight
+                LayoutItemProxy {
+                    id: compactDspWorkspaceProxy
                     objectName: "compactBottomRight"
+                    target: realDspWorkspace
+                    visible: root.isCompactLayout
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-
-                    LayoutItemProxy {
-                        id: compactDspWorkspaceProxy
-                        target: realDspWorkspace
-                        visible: root.isCompactLayout
-                        anchors.fill: parent
-                    }
+                    Layout.minimumWidth: 0
+                    Layout.minimumHeight: 300
                 }
             }
         }
