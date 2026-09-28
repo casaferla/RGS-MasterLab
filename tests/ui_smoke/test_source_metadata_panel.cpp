@@ -1056,7 +1056,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* filterLowPassItem = qobject_cast<QQuickItem*>(find_child_by_name(eqEditor, QStringLiteral("filterButton_LOW_PASS")));
     QVERIFY2(filterLowPassItem != nullptr, "Low Pass button must exist at minimum size");
     const QPointF filterLowPassPos = filterLowPassItem->mapToItem(eqEditorItemForAlignment, QPointF{0.0, 0.0});
-    QVERIFY2(filterLowPassPos.x() + filterLowPassItem->width() <= eqEditorItemCompact->width() - 8.0,
+    QVERIFY2(filterLowPassPos.x() + filterLowPassItem->width() <= eqEditorItemForAlignment->width() - 8.0,
         "Low Pass button must stay clear of the inspector right border at minimum size");
 
     for (auto* numericField : {frequencyFieldObj, gainFieldObj, qFieldObj}) {
