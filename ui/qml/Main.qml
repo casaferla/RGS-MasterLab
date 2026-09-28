@@ -145,7 +145,7 @@ ApplicationWindow {
             id: realControlStrip
             objectName: "controlStrip"
             color: root.isCompactLayout ? "transparent" : root.panel
-            border.color: root.isCompactLayout ? "transparent" : root.border
+            border.color: root.border
             radius: 5
             RowLayout {
                 anchors.fill: parent
@@ -202,7 +202,7 @@ ApplicationWindow {
             id: realRegionPanel
             objectName: "auditionRegionControls"
             color: root.isCompactLayout ? "transparent" : root.panel
-            border.color: root.isCompactLayout ? "transparent" : root.border
+            border.color: root.border
             radius: 5
             RowLayout {
                 anchors.fill: parent
