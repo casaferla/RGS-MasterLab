@@ -89,7 +89,7 @@ Rectangle {
                 anchors.fill: parent
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
-                spacing: 8
+                spacing: root.isCompactActionMode ? 4 : 8
 
                 Repeater {
                     model: root.viewModel ? root.viewModel.bandCount : 0
@@ -108,8 +108,8 @@ Rectangle {
                         selected: isSelectedBand
                         tone: isSelectedBand ? "primary" : "secondary"
                         accentColor: bandHue
-                        minimumControlWidth: 90
-                        contentPadding: 8
+                        minimumControlWidth: root.isCompactActionMode ? 58 : 90
+                        contentPadding: root.isCompactActionMode ? 4 : 8
                         activeFocusOnTab: true
                         opacity: isEnabledBand ? 1.0 : 0.5
 
@@ -128,7 +128,8 @@ Rectangle {
                 StudioButton {
                     objectName: "addBandButton"
                     text: root.isCompactActionMode ? "+ Add" : "+ Add Band"
-                    minimumControlWidth: root.isCompactActionMode ? 96 : 128
+                    minimumControlWidth: root.isCompactActionMode ? 76 : 128
+                    contentPadding: root.isCompactActionMode ? 8 : 16
                     enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
                     onClicked: if (root.viewModel) root.viewModel.addBand()
                     Accessible.name: "Add Band"
@@ -137,7 +138,8 @@ Rectangle {
                 StudioButton {
                     objectName: "removeBandButton"
                     text: root.isCompactActionMode ? "- Remove" : "- Remove Band"
-                    minimumControlWidth: root.isCompactActionMode ? 96 : 128
+                    minimumControlWidth: root.isCompactActionMode ? 76 : 128
+                    contentPadding: root.isCompactActionMode ? 8 : 16
                     enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
                     onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
                     Accessible.name: "Remove Band"
