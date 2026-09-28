@@ -1033,7 +1033,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
                               QStringLiteral("HIGH_SHELF"), QStringLiteral("HIGH_PASS"), QStringLiteral("LOW_PASS")}) {
         auto* filterButton = find_child_by_name(eqEditor, QStringLiteral("filterButton_") + token);
         QVERIFY2(filterButton != nullptr, "Filter button must exist at minimum size");
-        QVERIFY2(filterButton->property("width").toReal() >= 96.0, "Filter button must keep full width at minimum size");
+        QVERIFY2(filterButton->property("width").toReal() >= 88.0, "Filter button must keep the unified 88 px width at minimum size");
     }
 
     for (const auto& token : {QStringLiteral("STEREO"), QStringLiteral("MID"), QStringLiteral("SIDE"),
@@ -1042,6 +1042,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY2(routingButton != nullptr, "Routing button must exist at minimum size");
         QVERIFY2(routingButton->property("width").toReal() >= 80.0, "Routing button must keep full width at minimum size");
     }
+
+    auto* filterBellItem = qobject_cast<QQuickItem*>(filterBell);
+    auto* routeStereoItem = qobject_cast<QQuickItem*>(find_child_by_name(eqEditor, QStringLiteral("routingButton_STEREO")));
+    QVERIFY2(filterBellItem && routeStereoItem, "Filter and routing anchors must be QQuickItems");
+    const QPointF filterBellPos = filterBellItem->mapToItem(eqEditorItemCompact, QPointF{0.0, 0.0});
+    const QPointF routeStereoPos = routeStereoItem->mapToItem(eqEditorItemCompact, QPointF{0.0, 0.0});
+    QVERIFY2(qAbs(filterBellPos.x() - routeStereoPos.x()) <= 0.5,
+        "FILTER and ROUTING first buttons must share the same left edge at minimum size");
+
+    auto* filterLowPassItem = qobject_cast<QQuickItem*>(find_child_by_name(eqEditor, QStringLiteral("filterButton_LOW_PASS")));
+    QVERIFY2(filterLowPassItem != nullptr, "Low Pass button must exist at minimum size");
+    const QPointF filterLowPassPos = filterLowPassItem->mapToItem(eqEditorItemCompact, QPointF{0.0, 0.0});
+    QVERIFY2(filterLowPassPos.x() + filterLowPassItem->width() <= eqEditorItemCompact->width() - 8.0,
+        "Low Pass button must stay clear of the inspector right border at minimum size");
 
     for (auto* numericField : {frequencyFieldObj, gainFieldObj, qFieldObj}) {
         QVERIFY2(numericField != nullptr, "Numeric field must exist at minimum size");

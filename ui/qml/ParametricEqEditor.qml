@@ -205,7 +205,7 @@ Rectangle {
                             font.family: "Segoe UI"
                             font.pixelSize: 12
                             font.weight: Font.Bold
-                            Layout.preferredWidth: 44
+                            Layout.preferredWidth: 64
                         }
 
                         RowLayout {
@@ -223,7 +223,7 @@ Rectangle {
                                     required property var modelData
                                     objectName: "filterButton_" + modelData.token
                                     text: modelData.label
-                                    minimumControlWidth: 96
+                                    minimumControlWidth: 88
                                     contentPadding: 4
                                     selected: root.viewModel && root.viewModel.filter === modelData.token
                                     tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
@@ -251,7 +251,7 @@ Rectangle {
                             font.family: "Segoe UI"
                             font.pixelSize: 12
                             font.weight: Font.Bold
-                            Layout.preferredWidth: 44
+                            Layout.preferredWidth: 64
                         }
 
                         RowLayout {
