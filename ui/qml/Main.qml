@@ -567,7 +567,7 @@ ApplicationWindow {
                             id: adaptiveContextWorkspace
                             objectName: "adaptiveContextWorkspace"
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 176
+                            Layout.preferredHeight: 212
                             color: root.panel
                             border.color: root.border
                             radius: 5

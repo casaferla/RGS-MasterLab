@@ -174,7 +174,7 @@ Rectangle {
 
                 // Left Column (160 lp): Band Enabled Toggle
                 ColumnLayout {
-                    Layout.preferredWidth: root.isCompactActionMode ? 112 : 160
+                    Layout.preferredWidth: root.isCompactActionMode ? 136 : 160
                     Layout.fillHeight: true
                     spacing: 4
 
