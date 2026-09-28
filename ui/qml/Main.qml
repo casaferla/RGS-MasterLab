@@ -582,7 +582,9 @@ ApplicationWindow {
                                 // Compact header: title and mode tabs use separate rows so neither clips.
                                 ColumnLayout {
                                     Layout.fillWidth: true
+                                    Layout.minimumHeight: 44
                                     Layout.preferredHeight: 44
+                                    Layout.maximumHeight: 44
                                     spacing: 3
 
                                     Text {
@@ -637,7 +639,9 @@ ApplicationWindow {
                                         // Global Row: Gold Reference Card + Global Total Match Amount Rotary Knob
                                         RowLayout {
                                             Layout.fillWidth: true
+                                            Layout.minimumHeight: 46
                                             Layout.preferredHeight: 46
+                                            Layout.maximumHeight: 46
                                             spacing: 8
 
                                             // Gold Reference Identity Card
@@ -739,6 +743,7 @@ ApplicationWindow {
                                         Rectangle {
                                             Layout.fillWidth: true
                                             Layout.fillHeight: true
+                                            Layout.minimumHeight: 48
                                             color: "#0F2030"
                                             border.color: "#192D3E"
                                             radius: 4
