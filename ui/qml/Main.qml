@@ -438,7 +438,9 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.minimumWidth: 0
+                    Layout.preferredWidth: 0
                     Layout.minimumHeight: 400
+                    Layout.preferredHeight: 400
                 }
             }
         }
@@ -963,7 +965,9 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.minimumWidth: 0
+                    Layout.preferredWidth: 0
                     Layout.minimumHeight: 300
+                    Layout.preferredHeight: 300
                 }
             }
         }
