@@ -156,7 +156,9 @@ Rectangle {
             objectName: "parametricEqGraph"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: root.isCompactDensity ? 164 : 200
+            // The response graph is the vertically elastic surface. Preserve the
+            // inspector/control tiers and let the graph contract in short windows.
+            Layout.minimumHeight: root.isCompactHeightMode ? 132 : (root.isCompactWidthMode ? 164 : 200)
             viewModel: root.viewModel
         }
 
@@ -374,14 +376,14 @@ Rectangle {
                             objectName: "slopeControls"
                             visible: root.viewModel ? root.viewModel.slopeApplicable : false
                             spacing: 1
-                            Text { text: "SLOPE:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
+                            Text { text: root.isCompactWidthMode ? "SLOPE dB/oct:" : "SLOPE:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
                             Repeater {
                                 model: [6, 12, 18, 24, 36, 48]
                                 delegate: StudioSegmentButton {
                                     required property int modelData
                                     objectName: "slopeButton_" + modelData
                                     text: root.isCompactWidthMode ? modelData.toString() : modelData + " dB"
-                                    minimumControlWidth: root.isCompactWidthMode ? 44 : 80
+                                    minimumControlWidth: root.isCompactWidthMode ? 32 : 80
                                     contentPadding: root.isCompactWidthMode ? 2 : 4
                                     selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
                                     tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
@@ -395,14 +397,6 @@ Rectangle {
                                     ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
                                     ToolTip.visible: hovered
                                 }
-                            }
-                            Text {
-                                visible: root.isCompactWidthMode
-                                text: "dB/oct"
-                                color: "#A1B5C9"
-                                font.family: "Segoe UI"
-                                font.pixelSize: 11
-                                Layout.leftMargin: 4
                             }
                         }
 
