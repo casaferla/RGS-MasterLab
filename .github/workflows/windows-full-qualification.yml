@@ -66,9 +66,27 @@ jobs:
         run: |
           cmake --build --preset windows-msvc-release-clean
 
+      - name: Run Release UI Smoke Diagnostic
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\\build\\visual-evidence-release
+        run: |
+          $env:PATH = "$env:RGSML_QT_ROOT\\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\\qml"
+          $log = "$env:GITHUB_WORKSPACE\\release-ui-smoke.txt"
+          & build/windows-msvc/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          $exitCode = $LASTEXITCODE
+          if (Test-Path $log) {
+              Get-Content $log
+          } else {
+              Write-Host "RELEASE_UI_SMOKE_LOG_NOT_CREATED"
+          }
+          if ($exitCode -ne 0) {
+              exit $exitCode
+          }
+
       - name: Run Full Release CTest
         run: |
-          ctest --preset windows-msvc-release --output-on-failure -LE playback_device
+          ctest --preset windows-msvc-release --output-on-failure -LE "playback_device|ui_smoke"
 
       - name: Configure Release (Tests OFF)
         run: |
