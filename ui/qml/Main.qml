@@ -167,9 +167,9 @@ ApplicationWindow {
                 StudioIconButton { id: zoomInButton; objectName: "waveformZoomInButton"; iconKind: "zoom-in"; enabled: sourceWaveform.canNavigate && sourceWaveform.zoomPosition < 1.0; KeyNavigation.backtab: zoomControl; KeyNavigation.tab: fitSourceButton; onClicked: sourceWaveform.zoomIn(); Accessible.name: "Zoom in Source waveform" }
                 StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: sourceWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
-                TransportButton { id: stopButton; objectName: "stopButton"; iconKind: "stop"; enabled: playbackTransport.canStop; KeyNavigation.backtab: auditionTargetSelector.lastTarget; KeyNavigation.tab: playPauseButton; onClicked: playbackTransport.stop(); Accessible.name: "Stop" }
+                TransportButton { id: stopButton; objectName: "stopButton"; compact: root.isCompactLayout; iconKind: "stop"; enabled: playbackTransport.canStop; KeyNavigation.backtab: auditionTargetSelector.lastTarget; KeyNavigation.tab: playPauseButton; onClicked: playbackTransport.stop(); Accessible.name: "Stop" }
                 Item { Layout.preferredWidth: root.isCompactLayout ? 8 : 16 }
-                TransportButton { id: playPauseButton; objectName: "playPauseButton"; primary: true; iconKind: playbackTransport.isPlaying ? "pause" : "play"; enabled: playbackTransport.canPlay || playbackTransport.canPause; KeyNavigation.backtab: stopButton; KeyNavigation.tab: auditionStartEditor.firstField; onClicked: playbackTransport.isPlaying ? playbackTransport.pause() : playbackTransport.playOrResume(); Accessible.name: playbackTransport.isPlaying ? "Pause" : "Play" }
+                TransportButton { id: playPauseButton; objectName: "playPauseButton"; compact: root.isCompactLayout; primary: true; iconKind: playbackTransport.isPlaying ? "pause" : "play"; enabled: playbackTransport.canPlay || playbackTransport.canPause; KeyNavigation.backtab: stopButton; KeyNavigation.tab: auditionStartEditor.firstField; onClicked: playbackTransport.isPlaying ? playbackTransport.pause() : playbackTransport.playOrResume(); Accessible.name: playbackTransport.isPlaying ? "Pause" : "Play" }
                 Item { Layout.preferredWidth: root.isCompactLayout ? 8 : 16 }
                 Rectangle {
                     objectName: "transportTimeModule"
@@ -459,7 +459,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: 120
+                Layout.preferredHeight: 128
                 color: root.panel
                 border.color: root.border
                 radius: 5
@@ -512,7 +512,7 @@ ApplicationWindow {
                             id: compactControlStripProxy
                             target: realControlStrip
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 36
+                            Layout.preferredHeight: 44
                         }
 
                         LayoutItemProxy {
