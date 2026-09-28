@@ -567,7 +567,7 @@ ApplicationWindow {
                             id: adaptiveContextWorkspace
                             objectName: "adaptiveContextWorkspace"
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 142
+                            Layout.preferredHeight: 176
                             color: root.panel
                             border.color: root.border
                             radius: 5
@@ -579,11 +579,11 @@ ApplicationWindow {
                                 anchors.margins: 8
                                 spacing: 6
 
-                                // Header Row: Clean baseline alignment
-                                RowLayout {
+                                // Compact header: title and mode tabs use separate rows so neither clips.
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: 22
-                                    spacing: 8
+                                    Layout.preferredHeight: 44
+                                    spacing: 3
 
                                     Text {
                                         text: "ADAPTIVE CONTEXT"
@@ -591,14 +591,10 @@ ApplicationWindow {
                                         font.family: "Segoe UI"
                                         font.pixelSize: 10
                                         font.weight: Font.Bold
-                                        Layout.alignment: Qt.AlignVCenter
                                     }
-
-                                    Item { Layout.fillWidth: true }
 
                                     RowLayout {
                                         spacing: 4
-                                        Layout.alignment: Qt.AlignVCenter
 
                                         StudioSegmentButton {
                                             objectName: "adaptiveModeToggle_Gold"
@@ -617,6 +613,8 @@ ApplicationWindow {
                                             contentPadding: 3
                                             onClicked: adaptiveContextWorkspace.activeContextMode = "PREPARE_RESTORATION"
                                         }
+
+                                        Item { Layout.fillWidth: true }
                                     }
                                 }
 

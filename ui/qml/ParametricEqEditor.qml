@@ -150,7 +150,7 @@ Rectangle {
             objectName: "parametricEqGraph"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: 200
+            Layout.minimumHeight: root.isCompactActionMode ? 170 : 200
             viewModel: root.viewModel
         }
 
@@ -158,7 +158,7 @@ Rectangle {
         Rectangle {
             objectName: "eqInspectorRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 128
+            Layout.preferredHeight: root.isCompactActionMode ? 118 : 128
             color: "#12243F"
             border.color: "#2C5A78"
             border.width: 1
@@ -174,7 +174,7 @@ Rectangle {
 
                 // Left Column (160 lp): Band Enabled Toggle
                 ColumnLayout {
-                    Layout.preferredWidth: 160
+                    Layout.preferredWidth: root.isCompactActionMode ? 112 : 160
                     Layout.fillHeight: true
                     spacing: 4
 
@@ -228,8 +228,8 @@ Rectangle {
                                     required property var modelData
                                     objectName: "filterButton_" + modelData.token
                                     text: modelData.label
-                                    minimumControlWidth: 96
-                                    contentPadding: 4
+                                    minimumControlWidth: root.isCompactActionMode ? 66 : 96
+                                    contentPadding: root.isCompactActionMode ? 2 : 4
                                     selected: root.viewModel && root.viewModel.filter === modelData.token
                                     tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
                                     onClicked: if (root.viewModel) root.viewModel.setFilter(modelData.token)
@@ -273,8 +273,8 @@ Rectangle {
                                     required property var modelData
                                     objectName: "routingButton_" + modelData.token
                                     text: modelData.label
-                                    minimumControlWidth: 80
-                                    contentPadding: 4
+                                    minimumControlWidth: root.isCompactActionMode ? 68 : 80
+                                    contentPadding: root.isCompactActionMode ? 2 : 4
                                     enabled: modelData.token === "STEREO" || (root.viewModel && root.viewModel.routeAvailable)
                                     selected: root.viewModel && root.viewModel.routing === modelData.token
                                     tone: root.viewModel && root.viewModel.routing === modelData.token ? "primary" : "secondary"
@@ -317,11 +317,12 @@ Rectangle {
                     // Numeric Fields Tier (50 lp)
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 50
-                        spacing: 16
+                        Layout.preferredHeight: root.isCompactActionMode ? 46 : 50
+                        spacing: root.isCompactActionMode ? 8 : 16
 
                         StudioNumericField {
                             objectName: "frequencyField"
+                            compact: root.isCompactActionMode
                             labelText: "FREQUENCY"
                             unitText: "Hz"
                             fieldName: "frequency"
@@ -331,6 +332,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "gainField"
+                            compact: root.isCompactActionMode
                             visible: root.viewModel ? root.viewModel.gainApplicable : true
                             labelText: "GAIN"
                             unitText: "dB"
@@ -341,6 +343,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "qField"
+                            compact: root.isCompactActionMode
                             visible: root.viewModel ? root.viewModel.qApplicable : true
                             labelText: "Q"
                             unitText: ""
@@ -351,6 +354,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "shelfSlopeField"
+                            compact: root.isCompactActionMode
                             visible: root.viewModel ? root.viewModel.shelfSlopeApplicable : false
                             labelText: "SHELF SLOPE"
                             unitText: ""
