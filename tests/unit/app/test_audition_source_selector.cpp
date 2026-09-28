@@ -318,7 +318,7 @@ void AuditionSourceSelectorTest::activeProcessedRealizationReplacementPreservesC
     QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
     QCOMPARE(selector.source_derived_cue().value(), std::int64_t{55});
     QCOMPARE(observed->position.value(), std::int64_t{55});
-    QCOMPARE(observed->state, core::PlaybackState::STOPPED);
+    QCOMPARE(observed->state, core::PlaybackState::PAUSED);
 
     // Case 3: PROCESSED is STOPPED -> replace Processed realization
     transport.stop();
@@ -348,14 +348,16 @@ void AuditionSourceSelectorTest::activeProcessedRealizationReplacementPreservesC
     QVERIFY(selector.set_processed_realization(realization(0, 200)));
     QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::GOLD});
 
-    // Case 6: Fail-closed path on invalid replacement range
+    // Case 6: Atomic failure path on invalid replacement range
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
     observed->position = core::FrameIndex{150};
 
-    // Realization range [0..100) does not contain cue 150
+    // Realization range [0..100) does not contain cue 150 -> fails atomically
     QVERIFY(!selector.set_processed_realization(realization(0, 100)));
-    QVERIFY(!selector.active_target());
-    QCOMPARE(observed->state, core::PlaybackState::NO_SOURCE);
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QCOMPARE(observed->position.value(), std::int64_t{150});
+    QVERIFY(selector.processed_available());
+    QCOMPARE(selector.processed_realization_snapshot()->render_window().end().value(), std::int64_t{200});
     QVERIFY(!selector.status_text().isEmpty());
 }
 
@@ -397,7 +399,8 @@ void AuditionSourceSelectorTest::eofCueIsCanonicalizedToRangeBegin()
     // 4. Out of bounds cue rejections (cue < begin or cue > end)
     observed->position = core::FrameIndex{150}; // cue > end (100)
     QVERIFY(!selector.set_processed_realization(realization(0, 100)));
-    QVERIFY(!selector.active_target());
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    QVERIFY(selector.processed_available());
 }
 
 void AuditionSourceSelectorTest::seamlessProcessedHandoffPreservesStateAndTargetRaces()
