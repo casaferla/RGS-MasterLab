@@ -11,11 +11,9 @@ Rectangle {
 
     color: "transparent"
 
-    // Horizontal and vertical constraints are independent.
-    // Short-but-wide windows compact vertically without relabeling horizontal actions.
+    // Horizontal compaction is driven only by available editor width.
+    // Vertical resizing must not switch control variants; the graph absorbs height changes.
     readonly property bool isCompactWidthMode: width < 916
-    readonly property bool isCompactHeightMode: height < 456
-    readonly property bool isCompactDensity: isCompactWidthMode || isCompactHeightMode
 
     readonly property var bandColors: [
         "#2ED3FF", // 1 Cyan
@@ -156,9 +154,10 @@ Rectangle {
             objectName: "parametricEqGraph"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            // The response graph is the vertically elastic surface. Preserve the
-            // inspector/control tiers and let the graph contract in short windows.
-            Layout.minimumHeight: root.isCompactHeightMode ? 132 : (root.isCompactWidthMode ? 164 : 200)
+            // The response graph is the vertically elastic surface. A constant low
+            // minimum avoids a vertical breakpoint and lets the layout consume exactly
+            // the height left after the fixed control tiers.
+            Layout.minimumHeight: 120
             viewModel: root.viewModel
         }
 
@@ -166,7 +165,7 @@ Rectangle {
         Rectangle {
             objectName: "eqInspectorRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.isCompactDensity ? 124 : 128
+            Layout.preferredHeight: root.isCompactWidthMode ? 124 : 128
             color: "#12243F"
             border.color: "#2C5A78"
             border.width: 1
@@ -325,12 +324,12 @@ Rectangle {
                     // Numeric Fields Tier (50 lp)
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: root.isCompactDensity ? 40 : 50
+                        Layout.preferredHeight: root.isCompactWidthMode ? 40 : 50
                         spacing: root.isCompactWidthMode ? 8 : 16
 
                         StudioNumericField {
                             objectName: "frequencyField"
-                            compact: root.isCompactDensity
+                            compact: root.isCompactWidthMode
                             labelText: "FREQUENCY"
                             unitText: "Hz"
                             fieldName: "frequency"
@@ -340,7 +339,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "gainField"
-                            compact: root.isCompactDensity
+                            compact: root.isCompactWidthMode
                             visible: root.viewModel ? root.viewModel.gainApplicable : true
                             labelText: "GAIN"
                             unitText: "dB"
@@ -351,7 +350,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "qField"
-                            compact: root.isCompactDensity
+                            compact: root.isCompactWidthMode
                             visible: root.viewModel ? root.viewModel.qApplicable : true
                             labelText: "Q"
                             unitText: ""
@@ -362,7 +361,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "shelfSlopeField"
-                            compact: root.isCompactDensity
+                            compact: root.isCompactWidthMode
                             visible: root.viewModel ? root.viewModel.shelfSlopeApplicable : false
                             labelText: "SHELF SLOPE"
                             unitText: ""
