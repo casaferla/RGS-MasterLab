@@ -83,6 +83,7 @@ private slots:
     void testNewEditInvalidatesRedoStack();
     void testWholeEqCombinedResponseEvaluation();
     void testOverallToggleIsViewStateOnly();
+    void testIsDefaultSemantics();
 };
 
 void EqViewModelTest::testInvalidTextDraftAndCommitRejection()
@@ -1002,6 +1003,42 @@ void EqViewModelTest::testOverallToggleIsViewStateOnly()
     vm.setShowCombinedResponse(false);
     QVERIFY(!vm.show_combined_response());
     QCOMPARE(vm.preview_generation(), genBefore);
+}
+
+void EqViewModelTest::testIsDefaultSemantics()
+{
+    EqViewModel vm;
+
+    // 1. Initial canonical Flat EQ state
+    QVERIFY(vm.is_default());
+    QCOMPARE(vm.property("isDefault").toBool(), true);
+
+    // 2. Bypass state does not alter is_default()
+    vm.setBypass(true);
+    QVERIFY(vm.bypass());
+    QVERIFY(vm.is_default());
+
+    vm.setBypass(false);
+    QVERIFY(!vm.bypass());
+    QVERIFY(vm.is_default());
+
+    // 3. Manual parameter change makes state non-default
+    vm.setDraftGain(3.0);
+    vm.commitDraft();
+    QVERIFY(!vm.is_default());
+    QCOMPARE(vm.property("isDefault").toBool(), false);
+
+    // 4. Reset to Flat restores default status
+    vm.resetToFlat();
+    QVERIFY(vm.is_default());
+
+    // 5. Adding a second band makes state non-default
+    vm.addBand();
+    QVERIFY(!vm.is_default());
+
+    // 6. Undo restores default status
+    vm.undo();
+    QVERIFY(vm.is_default());
 }
 
 }  // namespace

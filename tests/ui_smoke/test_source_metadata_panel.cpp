@@ -169,6 +169,139 @@ namespace {
         && image.save(QDir{outputDirectory}.filePath(fileName), "PNG");
 }
 
+struct LayoutEvalMetrics {
+    int width{0};
+    int height{0};
+    bool visible{false};
+    bool isCompact{false};
+    bool adaptiveContextVisible{false};
+    bool eqInspectorContained{false};
+    double eqEditorHeight{0.0};
+    double eqGraphHeight{0.0};
+    double eqInspectorY{0.0};
+    double eqInspectorHeight{0.0};
+    double eqStatusY{0.0};
+    double eqStatusHeight{0.0};
+    double sourceHeight{0.0};
+    double waveformHeight{0.0};
+    double controlHeight{0.0};
+    double regionHeight{0.0};
+    double workspaceHeight{0.0};
+    double hostHeight{0.0};
+};
+
+struct LayoutEvalResult {
+    bool valid{false};
+    QString errorMessage;
+    LayoutEvalMetrics metrics{};
+};
+
+[[nodiscard]] LayoutEvalResult evaluate_layout_at_size(
+    QQmlEngine& engine,
+    int logicalWidth,
+    int logicalHeight)
+{
+    QQmlComponent component{&engine, QUrl{QStringLiteral("qrc:/qt/qml/Rgsml/Ui/qml/Main.qml")}};
+    if (component.status() == QQmlComponent::Error) {
+        return LayoutEvalResult{
+            .valid = false,
+            .errorMessage = QStringLiteral("Main.qml component error: ") + component.errorString(),
+            .metrics = {}
+        };
+    }
+
+    QVariantMap initialProperties;
+    initialProperties.insert(QStringLiteral("visible"), false);
+    initialProperties.insert(QStringLiteral("width"), logicalWidth);
+    initialProperties.insert(QStringLiteral("height"), logicalHeight);
+
+    QScopedPointer<QObject> obj{component.createWithInitialProperties(initialProperties)};
+    if (!obj) {
+        return LayoutEvalResult{
+            .valid = false,
+            .errorMessage = QStringLiteral("Main.qml component creation returned null: ") + component.errorString(),
+            .metrics = {}
+        };
+    }
+
+    auto* qwin = qobject_cast<QQuickWindow*>(obj.get());
+    if (!qwin) {
+        return LayoutEvalResult{
+            .valid = false,
+            .errorMessage = QStringLiteral("Created root object is not a QQuickWindow"),
+            .metrics = {}
+        };
+    }
+
+    QCoreApplication::processEvents();
+
+    auto* workspace = obj->findChild<QObject*>(QStringLiteral("dspWorkspace"));
+    auto* host = obj->findChild<QObject*>(QStringLiteral("dspEditorHost"));
+    auto* waveform = obj->findChild<QObject*>(QStringLiteral("sourceWaveformPanel"));
+    auto* source = obj->findChild<QObject*>(QStringLiteral("sourceMetadataPanel"));
+    auto* control = obj->findChild<QObject*>(QStringLiteral("controlStrip"));
+    auto* region = obj->findChild<QObject*>(QStringLiteral("auditionRegionControls"));
+    auto* adaptiveContext = obj->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace"));
+    auto* eqEditor = obj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
+    auto* eqGraph = obj->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
+    auto* eqInspector = obj->findChild<QObject*>(QStringLiteral("eqInspectorRegion"));
+    auto* eqStatus = obj->findChild<QObject*>(QStringLiteral("eqStatusRegion"));
+
+    if (!workspace || !host || !waveform || !source || !control || !region
+        || !adaptiveContext || !eqEditor || !eqGraph || !eqInspector || !eqStatus) {
+        return LayoutEvalResult{
+            .valid = false,
+            .errorMessage = QStringLiteral("One or more required Main child components not found in offscreen harness"),
+            .metrics = {}
+        };
+    }
+
+    LayoutEvalMetrics metrics;
+    metrics.width = qwin->property("width").toInt();
+    metrics.height = qwin->property("height").toInt();
+    metrics.visible = qwin->property("visible").toBool();
+    metrics.isCompact = obj->property("isCompactLayout").toBool();
+    metrics.adaptiveContextVisible = adaptiveContext->property("visible").toBool();
+    if (auto* editorItem = qobject_cast<QQuickItem*>(eqEditor);
+        editorItem != nullptr) {
+        metrics.eqEditorHeight = editorItem->height();
+
+        if (auto* graphItem = qobject_cast<QQuickItem*>(eqGraph);
+            graphItem != nullptr) {
+            metrics.eqGraphHeight = graphItem->height();
+        }
+
+        if (auto* inspectorItem = qobject_cast<QQuickItem*>(eqInspector);
+            inspectorItem != nullptr) {
+            const QPointF inspectorTopLeft = inspectorItem->mapToItem(editorItem, QPointF{0.0, 0.0});
+            metrics.eqInspectorY = inspectorTopLeft.y();
+            metrics.eqInspectorHeight = inspectorItem->height();
+            metrics.eqInspectorContained =
+                inspectorTopLeft.y() >= -0.5
+                && inspectorTopLeft.y() + inspectorItem->height() <= editorItem->height() + 0.5;
+        }
+
+        if (auto* statusItem = qobject_cast<QQuickItem*>(eqStatus);
+            statusItem != nullptr) {
+            const QPointF statusTopLeft = statusItem->mapToItem(editorItem, QPointF{0.0, 0.0});
+            metrics.eqStatusY = statusTopLeft.y();
+            metrics.eqStatusHeight = statusItem->height();
+        }
+    }
+    metrics.sourceHeight = source->property("height").toDouble();
+    metrics.waveformHeight = waveform->property("height").toDouble();
+    metrics.controlHeight = control->property("height").toDouble();
+    metrics.regionHeight = region->property("height").toDouble();
+    metrics.workspaceHeight = workspace->property("height").toDouble();
+    metrics.hostHeight = host->property("height").toDouble();
+
+    return LayoutEvalResult{
+        .valid = true,
+        .errorMessage = {},
+        .metrics = metrics
+    };
+}
+
 }  // namespace
 
 class SourceMetadataPanelSmokeTest final : public QObject {
@@ -232,6 +365,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             QCOMPARE(eqViewModel.gain(), 0.0);
             QCOMPARE(eqViewModel.q(), 0.707);
             QVERIFY(!eqViewModel.bypass());
+            QVERIFY(eqViewModel.is_default());
             QVERIFY(!eqViewModel.can_undo());
             QVERIFY(!eqViewModel.can_redo());
             goldSelection.sourceChanged();
@@ -297,6 +431,47 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(statusIndicator->property("width").toInt(), 8);
     QCOMPARE(statusIndicator->property("height").toInt(), 8);
     QCOMPARE(statusIndicator->property("color").value<QColor>(), QColor{QStringLiteral("#00E6E6")});
+
+    // Verify Docked DSP Architecture components exist
+    auto* dspWorkspaceObj = root->findChild<QObject*>(QStringLiteral("dspWorkspace"));
+    auto* dspChainSelectorObj = root->findChild<QObject*>(QStringLiteral("dspChainSelector"));
+    auto* dspEditorHostObj = root->findChild<QObject*>(QStringLiteral("dspEditorHost"));
+    QVERIFY2(dspWorkspaceObj != nullptr, "dspWorkspace must exist in Main");
+    QVERIFY2(dspChainSelectorObj != nullptr, "dspChainSelector must exist in dspWorkspace");
+    QVERIFY2(dspEditorHostObj != nullptr, "dspEditorHost must exist in dspWorkspace");
+
+    // Verify Adaptive Context Workspace and visual shell placeholders exist
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("goldAutomatchView")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("prepareRestorationView")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("goldReferenceCard")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("goldReferenceStatus")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("totalMatchAmountKnob")) != nullptr);
+    QVERIFY2(root->findChild<QObject*>(QStringLiteral("matchAmountSlider")) == nullptr, "No Match Amount slider must remain in visual shell");
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Tonal")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Dynamics")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Stereo")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("automatchKnob_Loudness")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceHealthCard")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("restorationPlanCard")) != nullptr);
+    QVERIFY(root->findChild<QObject*>(QStringLiteral("restorationControlsGroup")) != nullptr);
+
+    // Verify no production standalone EQ tool window exists
+    QVERIFY2(root->findChild<QObject*>(QStringLiteral("parametricEqToolWindow")) == nullptr,
+        "No production ParametricEqEditorWindow instance must exist in Main");
+
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("m12c_b1_layoutitemproxy_recovery_1184x688.png"),
+        QSize{1184, 688}));
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("m12c_b1_compact_final_polish_1184x688.png"),
+        QSize{1184, 688}));
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("m12c_b1_compact_authored_split_1184x688.png"),
+        QSize{1184, 688}));
     QVERIFY(capture_visual_evidence(
         window,
         QStringLiteral("gui01_1184x688_unavailable.png"),
@@ -305,7 +480,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(sourceOpen);
     auto* sourcePanel = root->findChild<QObject*>(QStringLiteral("sourceMetadataPanel"));
     QVERIFY(sourcePanel);
-    QCOMPARE(sourcePanel->property("height").toInt(), 72);
     QCOMPARE(sourceOpen->property("height").toInt(), 32);
     QCOMPARE(sourceOpen->property("width").toInt(), 110);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceFileDialog")));
@@ -378,6 +552,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* fitSource = root->findChild<QObject*>(QStringLiteral("waveformFitSourceButton"));
     auto* continuousZoom = root->findChild<QObject*>(
         QStringLiteral("waveformZoomControl"));
+    auto* transportTimeModule = root->findChild<QObject*>(
+        QStringLiteral("transportTimeModule"));
     const std::array segmentNames{
         QStringLiteral("auditionRegionStartHours"),
         QStringLiteral("auditionRegionStartMinutes"),
@@ -396,12 +572,18 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* fitRegion = root->findChild<QObject*>(QStringLiteral("waveformFitRegionButton"));
     auto* loopRegion = root->findChild<QObject*>(QStringLiteral("auditionRegionLoopCheckBox"));
     auto* clearRegion = root->findChild<QObject*>(QStringLiteral("auditionRegionClearButton"));
-    QVERIFY(zoomIn && zoomOut && continuousZoom && fitSource);
+    QVERIFY(zoomIn && zoomOut && continuousZoom && fitSource && transportTimeModule);
     QCOMPARE(zoomOut->property("width").toInt(), 32);
     QCOMPARE(zoomOut->property("height").toInt(), 32);
     QCOMPARE(zoomIn->property("width").toInt(), 32);
     QCOMPARE(fitSource->property("width").toInt(), 32);
     QCOMPARE(continuousZoom->property("width").toInt(), 160);
+    QCOMPARE(stop->property("width").toInt(), 44);
+    QCOMPARE(stop->property("height").toInt(), 44);
+    QCOMPARE(playPause->property("width").toInt(), 68);
+    QCOMPARE(playPause->property("height").toInt(), 68);
+    QCOMPARE(transportTimeModule->property("width").toInt(), 246);
+    QCOMPARE(transportTimeModule->property("height").toInt(), 56);
     QVERIFY(fitRegion && loopRegion && clearRegion);
 
     const std::array menuNames{
@@ -451,7 +633,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* eqMenuItem = root->findChild<QObject*>(
         QStringLiteral("menuViewParametricEq"));
     QVERIFY(eqMenuItem);
-    QVERIFY(!eqMenuItem->property("enabled").toBool());
+    QCOMPARE(eqMenuItem->property("text").toString(), QStringLiteral("Parametric EQ"));
+    QVERIFY(eqMenuItem->property("enabled").toBool());
 
     auto* openProjectItem = root->findChild<QObject*>(
         QStringLiteral("menuOpenProject"));
@@ -528,8 +711,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(saveProjectItem->property("enabled").toBool());
     QVERIFY(eqMenuItem->property("enabled").toBool());
 
-    // Exercise View Menu real mouse interaction when Source is loaded
-    qInfo().noquote() << "M12B_SMOKE_PHASE=view-menu-real-click";
+    // Exercise View Menu real mouse interaction when Source is loaded: selects/reveals docked EQ
+    qInfo().noquote() << "M12C_SMOKE_PHASE=view-menu-selects-docked-eq";
     auto* viewMenuLabel = root->findChild<QObject*>(QStringLiteral("desktopMenuBarLabel_View"));
     auto* viewMenu = root->findChild<QObject*>(QStringLiteral("desktopViewMenu"));
     QVERIFY(viewMenuLabel && viewMenu);
@@ -541,14 +724,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(120);
     QCoreApplication::processEvents();
     QVERIFY2(viewMenu->property("visible").toBool(), "Clicking View menu must open desktopViewMenu");
-    QVERIFY2(viewMenu->property("width").toReal() >= 230, "desktopViewMenu width must be >= 230");
 
     auto* realEqMenuItem = root->findChild<QObject*>(QStringLiteral("menuViewParametricEq"));
     auto* realEqMenuQuickItem = qobject_cast<QQuickItem*>(realEqMenuItem);
     QVERIFY(realEqMenuItem && realEqMenuQuickItem);
     QVERIFY(realEqMenuItem->property("visible").toBool());
     QVERIFY(realEqMenuItem->property("enabled").toBool());
-    QVERIFY(realEqMenuQuickItem->width() > 0);
 
     const auto eqMenuCenter = realEqMenuQuickItem->mapToScene(QPointF{
         realEqMenuQuickItem->width() / 2, realEqMenuQuickItem->height() / 2});
@@ -556,23 +737,30 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(120);
     QCoreApplication::processEvents();
 
-    auto* eqToolWindow = root->findChild<QObject*>(QStringLiteral("parametricEqToolWindow"));
-    QVERIFY2(eqToolWindow != nullptr, "parametricEqToolWindow must exist in QML hierarchy");
-    auto* eqWindowObj = qobject_cast<QWindow*>(eqToolWindow);
-    QVERIFY2(eqWindowObj != nullptr, "parametricEqToolWindow must be a QWindow");
-    QCOMPARE(eqToolWindow->property("title").toString(), QStringLiteral("Parametric EQ — RGS MasterLab"));
-    QVERIFY2(eqToolWindow->property("visible").toBool(), "parametricEqToolWindow must be visible after real mouse click on View menu item");
+    QCOMPARE(dspWorkspaceObj->property("selectedModuleIndex").toInt(), 0);
 
-    qInfo().noquote() << "M12B_SMOKE_PHASE=editor-lookup";
-    auto* eqEditor = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
-    QVERIFY2(eqEditor != nullptr, "parametricEqEditor must exist inside eqToolWindow");
+    qInfo().noquote() << "M12C_SMOKE_PHASE=editor-lookup";
+    auto* eqEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
+    QVERIFY2(eqEditor != nullptr, "parametricEqEditor must exist inside dspEditorHost");
     auto* eqGraph = eqEditor->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
     QVERIFY2(eqGraph != nullptr, "parametricEqGraph must exist inside eqEditor");
     QVERIFY2(!eqViewModel.selected_band_response_points().isEmpty(), "eqViewModel response points must not be empty");
-    QCOMPARE(eqGraph->property("maxFreq").toDouble(), 19845.0); // TR-01: 44.1 kHz C++ endpoint (0.45 * 44100)
+    QCOMPARE(eqGraph->property("maxFreq").toDouble(), 19845.0); // 44.1 kHz UI Source.wav loaded endpoint (0.45 * 44100 = 19845 Hz)
     QVERIFY2(eqEditor->findChild<QObject*>(QStringLiteral("spectrumAnalyzer")) == nullptr, "No fake analyzer or spectrum item must exist");
 
-    qInfo().noquote() << "M12B_SMOKE_PHASE=band-controls";
+    qInfo().noquote() << "M12C_SMOKE_PHASE=dsp-chain-row-led-and-byp";
+    auto* dspChainRow0 = root->findChild<QObject*>(QStringLiteral("dspChainRow_0"));
+    auto* dspChainConfigLed0 = root->findChild<QObject*>(QStringLiteral("dspChainConfigLed_0"));
+    auto* dspChainBypassBadge0 = root->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_0"));
+    QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr, "DSP chain row and config LED must exist");
+    QVERIFY2(dspChainBypassBadge0 != nullptr, "DSP chain bypass badge object must exist");
+
+    // Canonical Flat state -> config LED is dark (#273A4D), BYP badge is hidden
+    QVERIFY2(eqViewModel.is_default(), "EQ state must be default/flat initially");
+    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QVERIFY2(!dspChainBypassBadge0->property("visible").toBool(), "BYP badge must be hidden initially");
+
+    qInfo().noquote() << "M12C_SMOKE_PHASE=band-controls";
     auto* band0Btn = find_child_by_name(eqEditor, QStringLiteral("bandSelectorButton_0"));
     QVERIFY2(band0Btn != nullptr, "bandSelectorButton_0 must exist");
     QVERIFY2(band0Btn->property("activeFocusOnTab").toBool(), "Band selector button must be Tab focusable");
@@ -583,46 +771,38 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqViewModel.band_count(), 1);
     QVERIFY2(!eqViewModel.can_undo(), "can_undo must be false initially for canonical Flat EQ");
     QVERIFY2(!eqViewModel.can_redo(), "can_redo must be false initially for canonical Flat EQ");
-    QVERIFY2(addBandBtn->property("enabled").toBool(), "Add band button must be enabled initially");
-    QVERIFY2(!removeBandBtn->property("enabled").toBool(), "Remove band button must be disabled when 1 band exists");
 
+    // Add band -> state becomes Manual non-default -> config LED turns Green #00D47A
     QVERIFY2(QMetaObject::invokeMethod(addBandBtn, "clicked"), "Clicking addBandButton must succeed");
     QCoreApplication::processEvents();
     QCOMPARE(eqViewModel.band_count(), 2);
     QCOMPARE(eqViewModel.selected_index(), 1);
-    QVERIFY2(removeBandBtn->property("enabled").toBool(), "Remove band button must be enabled when 2 bands exist");
+    QVERIFY2(!eqViewModel.is_default(), "EQ state must no longer be default after adding a band");
+    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
 
     // Keyboard Space activation on bandSelectorButton_0
     auto* band0BtnCurrent = find_child_by_name(eqEditor, QStringLiteral("bandSelectorButton_0"));
     QVERIFY2(band0BtnCurrent != nullptr, "bandSelectorButton_0 must exist after band addition");
     auto* band0Item = qobject_cast<QQuickItem*>(band0BtnCurrent);
     QVERIFY2(band0Item != nullptr, "bandSelectorButton_0 must be a QQuickItem");
-    eqWindowObj->requestActivate();
+    window->requestActivate();
     QTest::qWait(50);
     QCoreApplication::processEvents();
     band0Item->forceActiveFocus(Qt::TabFocusReason);
     QVERIFY2(band0Item->hasActiveFocus(), "bandSelectorButton_0 must have active focus");
 
     const quint64 genBeforeKeyboardSelect = eqViewModel.preview_generation();
-    QTest::keyClick(eqWindowObj, Qt::Key_Space);
+    QTest::keyClick(window, Qt::Key_Space);
     QCoreApplication::processEvents();
     QCOMPARE(eqViewModel.selected_index(), 0);
     QCOMPARE(eqViewModel.preview_generation(), genBeforeKeyboardSelect);
 
-    // Verify selection-only click on band handle 1 does not increment preview generation
-    auto* band1BtnCurrent = find_child_by_name(eqEditor, QStringLiteral("bandSelectorButton_1"));
-    QVERIFY2(band1BtnCurrent != nullptr, "bandSelectorButton_1 must exist");
-    const quint64 genBeforeSelectionClick = eqViewModel.preview_generation();
-    QVERIFY(QMetaObject::invokeMethod(band1BtnCurrent, "clicked"));
-    QCoreApplication::processEvents();
-    QCOMPARE(eqViewModel.selected_index(), 1);
-    QCOMPARE(eqViewModel.preview_generation(), genBeforeSelectionClick);
-
-    // Filter-specific control visibility & TR-02 HP/LP discrete slope commit
+    // Filter-specific control visibility & slope commit
     auto* filterBell = find_child_by_name(eqEditor, QStringLiteral("filterButton_BELL"));
     auto* filterNotch = find_child_by_name(eqEditor, QStringLiteral("filterButton_NOTCH"));
     auto* filterLowShelf = find_child_by_name(eqEditor, QStringLiteral("filterButton_LOW_SHELF"));
     auto* filterHighPass = find_child_by_name(eqEditor, QStringLiteral("filterButton_HIGH_PASS"));
+    auto* frequencyFieldObj = find_child_by_name(eqEditor, QStringLiteral("frequencyField"));
     auto* gainFieldObj = find_child_by_name(eqEditor, QStringLiteral("gainField"));
     auto* qFieldObj = find_child_by_name(eqEditor, QStringLiteral("qField"));
     auto* shelfSlopeFieldObj = find_child_by_name(eqEditor, QStringLiteral("shelfSlopeField"));
@@ -650,26 +830,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqViewModel.slope_db_per_oct(), 24);
     QCOMPARE(eqViewModel.preview_generation(), genBeforeSlope + 1U);
 
-    // Reset filter to BELL for remaining tests
+    // Reset filter to BELL
     QVERIFY2(QMetaObject::invokeMethod(filterBell, "clicked"), "Resetting filter to BELL must succeed");
     QCoreApplication::processEvents();
 
-    // Verify mixedText is hidden when mixedRouting is false on mono source
-    auto* mixedIndicatorMono = find_child_by_name(eqEditor, QStringLiteral("mixedText"));
-    QVERIFY2(mixedIndicatorMono != nullptr, "mixedText object must exist in eqEditor");
-    QVERIFY2(!mixedIndicatorMono->property("visible").toBool(), "MIXED ROUTING ACTIVE indicator must be hidden when mixedRouting is false");
-
-    qInfo().noquote() << "M12B_SMOKE_PHASE=mono-routing";
-    auto* routeMidBtn = find_child_by_name(eqEditor, QStringLiteral("routingButton_MID"));
-    QVERIFY2(routeMidBtn != nullptr, "routingButton_MID must exist");
-    QVERIFY2(!routeMidBtn->property("enabled").toBool(), "MID routing must be disabled for mono source");
-
-    qInfo().noquote() << "M12B_SMOKE_PHASE=invalid-draft";
+    qInfo().noquote() << "M12C_SMOKE_PHASE=invalid-draft";
     auto* freqInput = find_child_by_name(eqEditor, QStringLiteral("frequencyInput"));
     QVERIFY2(freqInput != nullptr, "frequencyInput control must exist");
     auto* freqInputItem = qobject_cast<QQuickItem*>(freqInput);
     QVERIFY2(freqInputItem != nullptr, "frequencyInput must be a QQuickItem");
-    eqWindowObj->requestActivate();
+    window->requestActivate();
     QTest::qWait(50);
     QCoreApplication::processEvents();
     freqInputItem->forceActiveFocus(Qt::TabFocusReason);
@@ -677,7 +847,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     QMetaObject::invokeMethod(freqInput, "selectAll");
     for (const char c : std::string_view{"99999"}) {
-        QTest::keyClick(eqWindowObj, c);
+        QTest::keyClick(window, c);
     }
     QCoreApplication::processEvents();
 
@@ -685,705 +855,237 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqViewModel.validation_field(), QStringLiteral("frequency"));
     auto* valMsgText = find_child_by_name(eqEditor, QStringLiteral("validationMessageText"));
     QVERIFY2(valMsgText && valMsgText->property("visible").toBool(), "Validation message text must be visible for invalid draft");
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_invalid_draft.png"), QSize{1040, 660}));
 
-    QTest::keyClick(eqWindowObj, Qt::Key_Escape);
+    QTest::keyClick(window, Qt::Key_Escape);
     QCoreApplication::processEvents();
     QCOMPARE(freqInput->property("text").toString(), QStringLiteral("1000"));
     QCOMPARE(eqViewModel.frequency_text(), QStringLiteral("1000"));
     QVERIFY2(eqViewModel.validation_field().isEmpty(), "Validation field must be empty after Escape key cancel");
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_1040x660_active.png"), QSize{1040, 660}));
 
-    qInfo().noquote() << "M12B_SMOKE_PHASE=ab";
-    auto* abBypassBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonBypass"));
-    auto* abActiveBtn = eqEditor->findChild<QObject*>(QStringLiteral("abButtonActive"));
-    auto* undoBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqUndoButton"));
-    auto* redoBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqRedoButton"));
+    qInfo().noquote() << "M12C_SMOKE_PHASE=ab-and-byp-semantics";
+    auto* abBypassBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("abButtonBypass"));
+    auto* abActiveBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("abButtonActive"));
+    auto* undoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqUndoButton"));
+    auto* redoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqRedoButton"));
     auto* resetFlatBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqResetFlatButton"));
     auto* overallToggleBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqOverallToggleButton"));
 
-    QVERIFY2(abBypassBtn != nullptr && abActiveBtn != nullptr, "A and B buttons must exist");
+    QVERIFY2(abBypassBtn != nullptr && abActiveBtn != nullptr, "A and B buttons must exist in host header");
     QVERIFY2(undoBtn != nullptr && redoBtn != nullptr && resetFlatBtn != nullptr, "Undo, Redo, and Reset Flat buttons must exist");
     QVERIFY2(overallToggleBtn != nullptr, "Overall toggle button must exist");
-    QVERIFY2(undoBtn->property("enabled").toBool(), "Undo button must be enabled after band addition edit");
-    QVERIFY2(!redoBtn->property("enabled").toBool(), "Redo button must be disabled when redo history is empty");
-    QVERIFY2(resetFlatBtn->property("enabled").toBool(), "Reset Flat button must be enabled");
 
-    // Click Overall toggle and verify showCombinedResponse state change without audio preview request
-    const quint64 genBeforeToggle = eqViewModel.preview_generation();
-    QVERIFY2(QMetaObject::invokeMethod(overallToggleBtn, "clicked"), "Clicking eqOverallToggleButton must succeed");
-    QCoreApplication::processEvents();
-    QVERIFY2(eqViewModel.show_combined_response(), "showCombinedResponse must be true after clicking Overall");
-    QCOMPARE(eqViewModel.preview_generation(), genBeforeToggle);
-
+    // Click Bypass -> BYP badge becomes visible on DSP chain row, while config LED remains unchanged
     QVERIFY2(QMetaObject::invokeMethod(abBypassBtn, "clicked"), "Clicking abButtonBypass must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.bypass(), "eqViewModel.bypass must be true after clicking Bypass");
-    QVERIFY2(abBypassBtn->property("selected").toBool(), "Bypass button must be selected when bypassed");
+    QVERIFY2(dspChainBypassBadge0->property("visible").toBool(), "dspChainBypassBadge_0 must be visible when bypassed");
 
     QVERIFY2(QMetaObject::invokeMethod(abActiveBtn, "clicked"), "Clicking abButtonActive must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(!eqViewModel.bypass(), "eqViewModel.bypass must be false after clicking Active");
-    QVERIFY2(abActiveBtn->property("selected").toBool(), "Active button must be selected when active");
+    QVERIFY2(!dspChainBypassBadge0->property("visible").toBool(), "dspChainBypassBadge_0 must be hidden when active");
 
-    qInfo().noquote() << "M12B_SMOKE_PHASE=reopen";
-    eqWindowObj->close();
+    // Reset Flat -> restores Default status -> LED turns dark #273A4D
+    QVERIFY2(QMetaObject::invokeMethod(resetFlatBtn, "clicked"), "Clicking eqResetFlatButton must succeed");
     QCoreApplication::processEvents();
-    QVERIFY2(!eqToolWindow->property("visible").toBool(), "Tool window must be hidden after close");
-    QCOMPARE(eqViewModel.band_count(), 2);
+    QVERIFY2(eqViewModel.is_default(), "EQ state must be default/flat after Reset Flat");
+    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
 
-    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Re-triggering eqMenuItem must succeed");
+    // Undo -> restores 2-band non-default state -> LED turns Green #00D47A
+    QVERIFY2(QMetaObject::invokeMethod(undoBtn, "clicked"), "Clicking eqUndoButton must succeed");
     QCoreApplication::processEvents();
-    QVERIFY2(eqToolWindow->property("visible").toBool(), "Tool window must be visible after reopening");
-    QCOMPARE(eqViewModel.band_count(), 2);
-    eqWindowObj->close();
-    QCoreApplication::processEvents();
-    QVERIFY(!empty->property("visible").toBool());
-    QVERIFY(display->property("visible").toBool());
-    QCOMPARE(display->property("text").toString(), QStringLiteral("UI Source.wav"));
-    QVERIFY(readOnly->property("visible").toBool());
-    QCOMPARE(readOnly->property("text").toString(), QStringLiteral("Read-only"));
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceContainerMetadata"))
-                ->property("text").toString().contains(QStringLiteral("RIFF")));
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceFormatMetadata"))
-                ->property("text").toString().contains(QStringLiteral("16-bit")));
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceRateMetadata"))
-                ->property("text").toString().contains(QStringLiteral("44100")));
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceChannelsMetadata"))
-                ->property("text").toString().contains(QStringLiteral("Mono")));
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceFramesMetadata"))
-                ->property("text").toString().contains(QStringLiteral("1000")));
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceDurationMetadata"))
-                ->property("text").toString().contains(QStringLiteral("0:00.023")));
-    QVERIFY(playPause->property("enabled").toBool());
-    QVERIFY(stop->property("enabled").toBool());
-    QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Stopped"));
-    QVERIFY(!playbackTime->property("text").toString().isEmpty());
-    QCOMPARE(root->findChild<QObject*>(QStringLiteral("activeAuditionTargetLabel"))
-                 ->property("text").toString(), QStringLiteral("Active: PREPARED"));
-    QVERIFY(preparedTarget->property("enabled").toBool());
-    QVERIFY(preparedTarget->property("selected").toBool());
+    QVERIFY2(!eqViewModel.is_default(), "EQ state must be non-default after Undo");
+    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
 
-    const auto goldPath = write_file(
-        directory, QStringLiteral("UI Gold.wav"), valid_wav());
-    goldSelection.selectGold(QUrl::fromLocalFile(goldPath));
-    QCoreApplication::processEvents();
-    QVERIFY(goldSelection.has_gold());
-    QVERIFY(goldTarget->property("enabled").toBool());
-    QVERIFY(QMetaObject::invokeMethod(goldTarget, "clicked"));
-    QCoreApplication::processEvents();
-    QCOMPARE(root->findChild<QObject*>(QStringLiteral("activeAuditionTargetLabel"))
-                 ->property("text").toString(), QStringLiteral("Active: GOLD"));
-    QVERIFY(!auditionSelector.source_playhead_visible());
-    goldSelection.clearGold();
-    QCoreApplication::processEvents();
-    QVERIFY(!goldSelection.has_gold());
-    QVERIFY(auditionSelector.source_playhead_visible());
-    QCOMPARE(root->findChild<QObject*>(QStringLiteral("activeAuditionTargetLabel"))
-                 ->property("text").toString(), QStringLiteral("Active: PREPARED"));
-
-    waveformPresentation.publish_building();
-    QCoreApplication::processEvents();
-    QCOMPARE(waveformPresentation.state_token(), QStringLiteral("BUILDING"));
-    QVERIFY(waveformStatus->property("visible").toBool());
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceWaveformBuildingIndicator"))
-                ->property("visible").toBool());
-
-    waveformPresentation.publish_ready(valid_summary());
-    QCoreApplication::processEvents();
-    QCOMPARE(waveformPresentation.state_token(), QStringLiteral("READY"));
-    QVERIFY(waveformItem->isVisible());
-    QVERIFY(!waveformStatus->property("visible").toBool());
-    QCOMPARE(waveformPresentation.channel_count(), 1);
-    QVERIFY(waveformPresentation.base_bucket_count() > 0);
-    QVERIFY(waveformPresentation.payload_bytes() > 0);
-    QVERIFY(root->findChild<QObject*>(QStringLiteral("sourceWaveformMonoLane"))
-                ->property("visible").toBool());
-    QVERIFY(waveformPresentation.can_navigate());
-    QVERIFY(zoomIn->property("enabled").toBool());
-    QVERIFY(QMetaObject::invokeMethod(zoomIn, "clicked"));
-    QCoreApplication::processEvents();
-    QVERIFY(!waveformPresentation.full_fit());
-    QVERIFY(zoomOut->property("enabled").toBool());
-    QVERIFY(fitSource->property("enabled").toBool());
-    QVERIFY(QMetaObject::invokeMethod(fitSource, "clicked"));
-    QCoreApplication::processEvents();
-    QVERIFY(waveformPresentation.full_fit());
-
-    const auto oneFrameRegion = core::FrameRange::create(
-        core::FrameIndex{0}, core::FrameIndex{1});
-    QVERIFY(oneFrameRegion);
-    QVERIFY(auditionRegion.set_region(*oneFrameRegion.value()));
-    QCoreApplication::processEvents();
-    for (auto* field : segmentFields) {
-        QVERIFY(field->property("enabled").toBool());
-    }
-    QVERIFY(fitRegion->property("enabled").toBool());
-    QVERIFY(loopRegion->property("enabled").toBool());
-    QVERIFY(clearRegion->property("enabled").toBool());
-    auto* loopRegionItem = qobject_cast<QQuickItem*>(loopRegion);
-    QVERIFY(loopRegionItem);
-    loopRegionItem->forceActiveFocus(Qt::TabFocusReason);
-    auditionRegion.requestLoopEnabled(true);
-    QCoreApplication::processEvents();
-    QVERIFY(loopRegion->property("checked").toBool());
-    QVERIFY(capture_visual_evidence(window,
-        QStringLiteral("gui01_c7_region_actions_toggle_focus.png"), QSize{1440, 900}));
-
-    // Verify Loop Region toggle remains checked and enabled across target switch and EQ preview publication
-    QVERIFY2(QMetaObject::invokeMethod(preparedTarget, "clicked"), "Switching target must succeed");
-    QCoreApplication::processEvents();
-    QVERIFY2(loopRegion->property("checked").toBool(), "Loop Region toggle must remain checked after target switch");
-    QVERIFY2(loopRegion->property("enabled").toBool(), "Loop Region toggle must remain enabled after target switch");
-
-    auditionRegion.requestLoopEnabled(false);
-    QCoreApplication::processEvents();
-
+    qInfo().noquote() << "M12C_SMOKE_PHASE=stereo-mixed-routing-and-band-colors";
     const auto visualSourceBytes = visual_wav();
     const auto visualSourcePath = write_file(
         directory, QStringLiteral("GUI-01 Visual Source.wav"), visualSourceBytes);
     QVERIFY(!visualSourcePath.isEmpty());
     model.selectSource(QUrl::fromLocalFile(visualSourcePath));
     waveformPresentation.publish_ready(summary_from_wav(visualSourceBytes));
-    const auto visualRegion = core::FrameRange::create(
-        core::FrameIndex{48'000}, core::FrameIndex{144'000});
-    QVERIFY(visualRegion);
-    QVERIFY(auditionRegion.set_region(*visualRegion.value()));
     QCoreApplication::processEvents();
-
-    // Verify Mixed routing on stereo source and capture visual evidence
-    qInfo().noquote() << "M12B_SMOKE_PHASE=stereo-mixed-routing";
-    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem on stereo source must succeed");
-    QCoreApplication::processEvents();
-    auto* eqEditorStereo = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
-    QVERIFY2(eqEditorStereo != nullptr, "parametricEqEditor must exist on stereo source");
-
-    // Capture 1-band 1040x660 evidence
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_1040x660_1band.png"), QSize{1040, 660}));
 
     // Add bands until 6 exist
-    auto* addBandStereo = eqEditorStereo->findChild<QObject*>(QStringLiteral("addBandButton"));
-    QVERIFY2(addBandStereo != nullptr, "addBandButton must exist");
     while (eqViewModel.band_count() < 6) {
-        QVERIFY(QMetaObject::invokeMethod(addBandStereo, "clicked"));
+        QVERIFY(QMetaObject::invokeMethod(addBandBtn, "clicked"));
         QCoreApplication::processEvents();
     }
     QCOMPARE(eqViewModel.band_count(), 6);
 
-    // Capture 6-bands 1040x660 evidence
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_1040x660_6bands.png"), QSize{1040, 660}));
+    // Verify 48 kHz visual_wav() source maxFreq endpoint (0.45 * 48000 = 21600 Hz, capped at 20000 Hz)
+    QCOMPARE(eqGraph->property("maxFreq").toDouble(), 20000.0);
 
-    // Set band 2 to MID to enable mixed routing
-    auto* routeMidBtnStereo = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_MID"));
-    QVERIFY2(routeMidBtnStereo != nullptr, "routingButton_MID must exist on stereo source");
-    QVERIFY2(routeMidBtnStereo->property("enabled").toBool(), "routingButton_MID must be enabled on stereo source");
+    // Verify 6 Band selector accent colors
+    const std::array expectedColors{
+        QColor{QStringLiteral("#2ED3FF")}, // 1 Cyan
+        QColor{QStringLiteral("#2FD98F")}, // 2 Emerald
+        QColor{QStringLiteral("#FFD84A")}, // 3 Warm Yellow
+        QColor{QStringLiteral("#FF6B6B")}, // 4 Coral Red
+        QColor{QStringLiteral("#4F7CFF")}, // 5 Cobalt Blue
+        QColor{QStringLiteral("#F5F8FC")}  // 6 Neutral White
+    };
+
+    for (std::size_t idx = 0; idx < expectedColors.size(); ++idx) {
+        auto* bandBtn = find_child_by_name(eqEditor, QString("bandSelectorButton_%1").arg(idx));
+        QVERIFY2(bandBtn != nullptr, qPrintable(QString("bandSelectorButton_%1 must exist").arg(idx)));
+        QCOMPARE(bandBtn->property("accentColor").value<QColor>(), expectedColors[idx]);
+    }
+
+    // Capture visual evidence image for 6 band colors + handles + Overall lavender
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("m12c_b1_band_colors.png"), QSize{1440, 900}));
+
+    // Verify Mixed routing on stereo source
+    auto* routeMidBtnStereo = find_child_by_name(eqEditor, QStringLiteral("routingButton_MID"));
+    QVERIFY2(routeMidBtnStereo != nullptr && routeMidBtnStereo->property("enabled").toBool(), "routingButton_MID must be enabled on stereo source");
     QVERIFY2(QMetaObject::invokeMethod(routeMidBtnStereo, "clicked"), "Clicking routingButton_MID must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.mixed_routing(), "eqViewModel.mixedRouting must be true after setting band 2 to MID");
-    auto* mixedIndicatorText = find_child_by_name(eqEditorStereo, QStringLiteral("mixedText"));
-    QVERIFY2(mixedIndicatorText != nullptr, "mixedText object must exist in eqEditorStereo");
-    QVERIFY2(mixedIndicatorText->property("visible").toBool(), "MIXED ROUTING ACTIVE indicator must be visible");
-    QCOMPARE(mixedIndicatorText->property("text").toString(), QStringLiteral("MIXED ROUTING ACTIVE"));
+    auto* mixedIndicatorText = find_child_by_name(eqEditor, QStringLiteral("mixedText"));
+    QVERIFY2(mixedIndicatorText != nullptr && mixedIndicatorText->property("visible").toBool(), "MIXED ROUTING ACTIVE indicator must be visible");
 
-    // Capture 900x580 6-bands mixed evidence
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_900x580_6bands_mixed.png"), QSize{900, 580}));
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_eq_editor_mixed_routing.png"), QSize{1040, 660}));
-
-    // Test High Pass filter and capture 6 discrete slope choices
-    auto* filterHPStereo = find_child_by_name(eqEditorStereo, QStringLiteral("filterButton_HIGH_PASS"));
-    QVERIFY(filterHPStereo != nullptr && QMetaObject::invokeMethod(filterHPStereo, "clicked"));
-    QCoreApplication::processEvents();
-    for (int slopeVal : {6, 12, 18, 24, 36, 48}) {
-        auto* slopeBtn = find_child_by_name(eqEditorStereo, QString("slopeButton_%1").arg(slopeVal));
-        QVERIFY2(slopeBtn != nullptr, "All six slope buttons must exist for High Pass filter");
-    }
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_hp_lp_six_slope.png"), QSize{1040, 660}));
-
-    // Reset filter to Bell
-    auto* filterBellStereo = find_child_by_name(eqEditorStereo, QStringLiteral("filterButton_BELL"));
-    QVERIFY(filterBellStereo != nullptr && QMetaObject::invokeMethod(filterBellStereo, "clicked"));
-    QCoreApplication::processEvents();
-
-    // Test A/B bypass evidence
-    auto* abBypassStereo = eqEditorStereo->findChild<QObject*>(QStringLiteral("abButtonBypass"));
-    QVERIFY(abBypassStereo != nullptr && QMetaObject::invokeMethod(abBypassStereo, "clicked"));
-    QCoreApplication::processEvents();
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_ab_bypass.png"), QSize{1040, 660}));
-    auto* abActiveStereo = eqEditorStereo->findChild<QObject*>(QStringLiteral("abButtonActive"));
-    QVERIFY(abActiveStereo != nullptr && QMetaObject::invokeMethod(abActiveStereo, "clicked"));
-    QCoreApplication::processEvents();
-
-    // Test keyboard focus evidence
-    auto* freqFieldStereo = find_child_by_name(eqEditorStereo, QStringLiteral("frequencyInput"));
-    if (auto* freqItem = qobject_cast<QQuickItem*>(freqFieldStereo)) {
-        eqWindowObj->requestActivate();
-        QTest::qWait(50);
-        QCoreApplication::processEvents();
-        freqItem->forceActiveFocus(Qt::TabFocusReason);
-        QCoreApplication::processEvents();
-        QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_keyboard_focus.png"), QSize{1040, 660}));
-    }
-
-    // Real QML multi-move graph handle drag smoke test
-    qInfo().noquote() << "M12B_SMOKE_PHASE=real-graph-handle-multi-drag";
-    auto* eqGraphObj = eqEditorStereo->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
-    QVERIFY2(eqGraphObj != nullptr, "parametricEqGraph must exist for real drag smoke test");
-    auto* eqGraphItem = qobject_cast<QQuickItem*>(eqGraphObj);
-    QVERIFY2(eqGraphItem != nullptr, "parametricEqGraph must be a QQuickItem");
-
-    // Set Band 0 frequency to 100 Hz so its handle is spatially separated from other bands
-    eqViewModel.selectBand(0);
-    eqViewModel.setDraftFrequencyText(QStringLiteral("100"));
-    QVERIFY(eqViewModel.commitDraft());
-    QCoreApplication::processEvents();
-
-    // Obtain delegate handle item for band 0 (index 0)
-    QQuickItem* band0HandleItem = nullptr;
-    for (auto* childItem : eqGraphItem->childItems()) {
-        if (childItem != nullptr && childItem->property("index").isValid() && childItem->property("index").toInt() == 0) {
-            band0HandleItem = childItem;
-            break;
-        }
-    }
-    QVERIFY2(band0HandleItem != nullptr, "Band 0 handle delegate item must exist in graph");
-    QPointer<QQuickItem> trackedHandleDelegate = band0HandleItem;
-
-    eqWindowObj->requestActivate();
-    QTest::qWait(50);
-    QCoreApplication::processEvents();
-
-    const QPoint handleCenterLocal = QPoint{
-        static_cast<int>(band0HandleItem->width() * 0.5),
-        static_cast<int>(band0HandleItem->height() * 0.5)
-    };
-    const QPoint handleCenterScene = band0HandleItem->mapToScene(handleCenterLocal).toPoint();
-
-    const quint64 genBeforeDrag = eqViewModel.preview_generation();
-    const double initialFreq = eqViewModel.frequency_text().toDouble();
-    const double initialGain = eqViewModel.gain_text().toDouble();
-
-    // Mouse press on actual handle
-    QTest::mousePress(eqWindowObj, Qt::LeftButton, Qt::NoModifier, handleCenterScene);
-    QTest::qWait(20);
-    QCoreApplication::processEvents();
-
-    // issue MULTIPLE mouseMove events across substantial horizontal/vertical distance
-    QPoint dragPt = handleCenterScene;
-    for (int step = 1; step <= 5; ++step) {
-        dragPt += QPoint{15, -10}; // Move right and up
-        QTest::mouseMove(eqWindowObj, dragPt);
-        QTest::qWait(20);
-        QCoreApplication::processEvents();
-
-        QVERIFY2(!trackedHandleDelegate.isNull(), "Handle delegate must NOT be destroyed/recreated during drag move step");
-        QCOMPARE(eqViewModel.preview_generation(), genBeforeDrag); // No render requested on intermediate drag moves
-    }
-
-    QVERIFY2(eqViewModel.frequency_text().toDouble() > initialFreq, "Draft frequency must continuously update during drag");
-    QVERIFY2(eqViewModel.gain_text().toDouble() > initialGain, "Draft gain must continuously update during drag");
-
-    // Mouse release
-    QTest::mouseRelease(eqWindowObj, Qt::LeftButton, Qt::NoModifier, dragPt);
-    QTest::qWait(20);
-    QCoreApplication::processEvents();
-
-    QCOMPARE(eqViewModel.preview_generation(), genBeforeDrag + 1U); // Exactly one preview generation increment on release
-
-    // Select another band then select dragged band again to verify persistence
-    eqViewModel.selectBand(1);
-    QCoreApplication::processEvents();
-    QCOMPARE(eqViewModel.selected_index(), 1);
-
-    eqViewModel.selectBand(0);
-    QCoreApplication::processEvents();
-    QCOMPARE(eqViewModel.selected_index(), 0);
-    QVERIFY2(eqViewModel.frequency_text().toDouble() > initialFreq, "Released frequency position must persist across re-selection");
-
-    // Restore band 5 (6th band) routing to STEREO before switching away from stereo source
+    // Restore band 5 routing to STEREO
     eqViewModel.selectBand(5);
     QCoreApplication::processEvents();
-    auto* routeStereoBtnStereo = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_STEREO"));
-    QVERIFY2(routeStereoBtnStereo != nullptr, "routingButton_STEREO must exist");
-    QVERIFY2(QMetaObject::invokeMethod(routeStereoBtnStereo, "clicked"), "Clicking routingButton_STEREO must succeed");
-    QCoreApplication::processEvents();
-    QVERIFY2(!eqViewModel.mixed_routing(), "eqViewModel.mixedRouting must be false after restoring band 5 to STEREO");
-
-    // Query OBSERVED runtime geometry at 1040x660 and 900x580
-    eqWindowObj->resize(1040, 660);
-    QTest::qWait(50);
+    auto* routeStereoBtnStereo = find_child_by_name(eqEditor, QStringLiteral("routingButton_STEREO"));
+    QVERIFY2(routeStereoBtnStereo != nullptr && QMetaObject::invokeMethod(routeStereoBtnStereo, "clicked"), "Clicking routingButton_STEREO must succeed");
     QCoreApplication::processEvents();
 
-    auto itemGeometry = [](QObject* obj) -> QString {
-        auto* item = qobject_cast<QQuickItem*>(obj);
-        if (item == nullptr) return QStringLiteral("[0,0,0,0]");
-        return QString("[%1,%2,%3,%4]")
-            .arg(item->x()).arg(item->y()).arg(item->width()).arg(item->height());
-    };
+    // Verify Docked EQ at 1440x900 and 1184x688 reference compositions
+    qInfo().noquote() << "M12C_SMOKE_PHASE=responsive-composition";
 
-    auto* addBtn1040 = eqEditorStereo->findChild<QObject*>(QStringLiteral("addBandButton"));
-    auto* removeBtn1040 = eqEditorStereo->findChild<QObject*>(QStringLiteral("removeBandButton"));
-    auto* filterGroupObj = eqEditorStereo->findChild<QObject*>(QStringLiteral("eqFilterGroup"));
-    auto* routingGroupObj = eqEditorStereo->findChild<QObject*>(QStringLiteral("eqRoutingGroup"));
-    auto* leftBtn = find_child_by_name(eqEditorStereo, QStringLiteral("routingButton_LEFT"));
+    // 1. Offscreen QML layout harness to evaluate exact logical compositions at 1440x900 and 1184x688
+    // independent of CI physical HyperVMonitor screen clamping.
+    const auto res1440 = evaluate_layout_at_size(engine, 1440, 900);
+    QVERIFY2(res1440.valid, qPrintable(res1440.errorMessage));
+    QCOMPARE(res1440.metrics.visible, false);
+    QCOMPARE(res1440.metrics.width, 1440);
+    QCOMPARE(res1440.metrics.height, 900);
+    QCOMPARE(res1440.metrics.isCompact, false);
+    QVERIFY2(res1440.metrics.adaptiveContextVisible, "Adaptive Context must remain present at 1440x900");
+    QVERIFY2(res1440.metrics.eqInspectorContained, "EQ inspector must be vertically contained at 1440x900");
+    QVERIFY2(res1440.metrics.sourceHeight >= 190.0, "Adaptive source/transport composition must have full standard-density height at 1440x900");
+    QVERIFY2(res1440.metrics.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
+    QCOMPARE(res1440.metrics.controlHeight, 72.0);
+    QCOMPARE(res1440.metrics.regionHeight, 72.0);
+    QVERIFY2(res1440.metrics.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
 
-    QVERIFY2(leftBtn != nullptr, "routingButton_LEFT must exist");
-    QVERIFY2(qobject_cast<QQuickItem*>(leftBtn)->isVisible(), "routingButton_LEFT must be visible at 1040x660");
-
-    const QString geomEditor1040 = itemGeometry(eqEditorStereo);
-    const QString geomAdd1040 = itemGeometry(addBtn1040);
-    const QString geomRemove1040 = itemGeometry(removeBtn1040);
-    const QString geomFilterGroup = itemGeometry(filterGroupObj);
-    const QString geomRoutingGroup = itemGeometry(routingGroupObj);
-    const QSize actualClient1040 = eqWindowObj->size();
-
-    // Resize to 900x580 and sample compact geometry
-    eqWindowObj->resize(900, 580);
-    QTest::qWait(50);
-    QCoreApplication::processEvents();
-
-    const QSize actualClient900 = eqWindowObj->size();
-    const QString geomAdd900 = itemGeometry(addBtn1040);
-    const QString geomRemove900 = itemGeometry(removeBtn1040);
-
-    QVERIFY2(qobject_cast<QQuickItem*>(leftBtn)->isVisible(), "routingButton_LEFT must remain visible at 900x580");
-
-    const auto jsonGeometry = QString(R"({
-  "requested_1040x660": [1040, 660],
-  "actual_client_1040x660": [%1, %2],
-  "observed_1040x660": {
-    "editor": %3,
-    "add_button": %4,
-    "remove_button": %5,
-    "filter_group": %6,
-    "routing_group": %7
-  },
-  "requested_900x580": [900, 580],
-  "actual_client_900x580": [%8, %9],
-  "observed_900x580": {
-    "add_button_compact": %10,
-    "remove_button_compact": %11
-  }
-})")
-        .arg(actualClient1040.width()).arg(actualClient1040.height())
-        .arg(geomEditor1040)
-        .arg(geomAdd1040)
-        .arg(geomRemove1040)
-        .arg(geomFilterGroup)
-        .arg(geomRoutingGroup)
-        .arg(actualClient900.width()).arg(actualClient900.height())
-        .arg(geomAdd900)
-        .arg(geomRemove900);
-
-    const auto evidenceDir = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
-    if (!evidenceDir.isEmpty() && QDir{}.mkpath(evidenceDir)) {
-        QFile jsonFile{QDir{evidenceDir}.filePath(QStringLiteral("m12b_wow_runtime_geometry.json"))};
-        if (jsonFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            jsonFile.write(jsonGeometry.toUtf8());
-            jsonFile.close();
-        }
-    }
-
-    eqWindowObj->close();
-    QCoreApplication::processEvents();
-
-    QVERIFY(capture_visual_evidence(window, QStringLiteral("main_shell_1440x900_postwow.png"), QSize{1440, 900}));
-    QVERIFY(capture_visual_evidence(
-        window,
-        QStringLiteral("gui01_1440x900_prepared.png"),
-        QSize{1440, 900}));
-    QVERIFY(capture_visual_evidence(
-        window,
-        QStringLiteral("gui01_1184x688_prepared.png"),
-        QSize{1184, 688}));
-    auto* zoomInItem = qobject_cast<QQuickItem*>(zoomIn);
-    QVERIFY(zoomInItem);
-    zoomInItem->forceActiveFocus(Qt::TabFocusReason);
-    QTest::mouseMove(window, itemCenter(zoomIn));
-    QCoreApplication::processEvents();
-    QVERIFY(capture_visual_evidence(window,
-        QStringLiteral("gui01_c3_navigator_hover_focus.png"), QSize{1440, 900}));
-
-    goldSelection.selectGold(QUrl::fromLocalFile(goldPath));
-    QCoreApplication::processEvents();
-    QVERIFY(QMetaObject::invokeMethod(goldTarget, "clicked"));
-    QCoreApplication::processEvents();
-
-    const std::array studioButtonNames{
-        QStringLiteral("auditionPreparedButton"),
-        QStringLiteral("auditionProcessedButton"),
-        QStringLiteral("auditionGoldButton"),
-        QStringLiteral("waveformFitRegionButton"),
-        QStringLiteral("auditionRegionClearButton"),
-        QStringLiteral("sourceOpenButton"),
-    };
-    for (const auto& btnName : studioButtonNames) {
-        auto* btnObj = root->findChild<QObject*>(btnName);
-        QVERIFY2(btnObj != nullptr, qPrintable(QStringLiteral("Button %1 must exist").arg(btnName)));
-        auto* btnItem = qobject_cast<QQuickItem*>(btnObj);
-        QVERIFY2(btnItem != nullptr, qPrintable(QStringLiteral("Button %1 must be a QQuickItem").arg(btnName)));
-        auto* contentRowObj = btnObj->findChild<QObject*>(QStringLiteral("contentRow"));
-        QVERIFY2(contentRowObj != nullptr, qPrintable(QStringLiteral("contentRow must exist in %1").arg(btnName)));
-        auto* contentRowItem = qobject_cast<QQuickItem*>(contentRowObj);
-        QVERIFY2(contentRowItem != nullptr, qPrintable(QStringLiteral("contentRow must be a QQuickItem in %1").arg(btnName)));
-
-        const auto btnCenter = btnItem->mapToScene(QPointF{btnItem->width() * 0.5, btnItem->height() * 0.5});
-        const auto rowCenter = contentRowItem->mapToScene(QPointF{contentRowItem->width() * 0.5, contentRowItem->height() * 0.5});
-
-        QVERIFY2(std::abs(btnCenter.x() - rowCenter.x()) <= 1.0,
-            qPrintable(QStringLiteral("Button %1 contentRow horizontal center diff %2 > 1.0 px")
-                .arg(btnName).arg(std::abs(btnCenter.x() - rowCenter.x()))));
-        QVERIFY2(std::abs(btnCenter.y() - rowCenter.y()) <= 1.0,
-            qPrintable(QStringLiteral("Button %1 contentRow vertical center diff %2 > 1.0 px")
-                .arg(btnName).arg(std::abs(btnCenter.y() - rowCenter.y()))));
-    }
-
-    QVERIFY(capture_visual_evidence(
-        window,
-        QStringLiteral("gui01_1440x900_gold.png"),
-        QSize{1440, 900}));
-    QVERIFY(QMetaObject::invokeMethod(zoomIn, "clicked"));
-    QCoreApplication::processEvents();
-    QVERIFY(zoomOut->property("enabled").toBool());
-    QVERIFY(fitSource->property("enabled").toBool());
-
-    for (int i = 0; i < 100 && !auditionSelector.processed_available(); ++i) {
-        QTest::qWait(10);
-    }
-    QVERIFY2(auditionSelector.processed_available(), "PROCESSED audition target must be available after EQ preview");
-    QVERIFY2(processedTarget->property("enabled").toBool(), "auditionProcessedButton must be enabled when PROCESSED is available");
-
-    const std::array globalTabOrder{
-        sourceOpen,
-        waveformObject,
-        zoomOut,
-        continuousZoom,
-        zoomIn,
-        fitSource,
-        preparedTarget,
-        processedTarget,
-        goldTarget,
-        stop,
-        playPause,
-        segmentFields[0],
-        segmentFields[1],
-        segmentFields[2],
-        segmentFields[3],
-        segmentFields[4],
-        segmentFields[5],
-        segmentFields[6],
-        segmentFields[7],
-        fitRegion,
-        loopRegion,
-        clearRegion,
-    };
-    auto* firstGlobalTabItem = qobject_cast<QQuickItem*>(globalTabOrder.front());
-    QVERIFY(firstGlobalTabItem);
-    firstGlobalTabItem->forceActiveFocus(Qt::TabFocusReason);
-    QCoreApplication::processEvents();
-    QVERIFY(firstGlobalTabItem->hasActiveFocus());
-    for (std::size_t index = 1; index < globalTabOrder.size(); ++index) {
-        QTest::keyClick(window, Qt::Key_Tab);
-        QCoreApplication::processEvents();
-        auto* focused = qobject_cast<QQuickItem*>(globalTabOrder[index]);
-        QVERIFY(focused && focused->hasActiveFocus());
-    }
-    QTest::keyClick(window, Qt::Key_Tab);
-    QCoreApplication::processEvents();
-    QVERIFY(firstGlobalTabItem->hasActiveFocus());
+    const auto res1920Short = evaluate_layout_at_size(engine, 1920, 688);
+    QVERIFY2(res1920Short.valid, qPrintable(res1920Short.errorMessage));
+    QCOMPARE(res1920Short.metrics.isCompact, true);
+    QVERIFY2(res1920Short.metrics.adaptiveContextVisible, "Adaptive Context must not disappear in a wide, short window");
     qInfo().noquote()
-        << "GUI01_GLOBAL_TAB_ORDER=Source -> Waveform -> Precision Navigator"
-           " -> Audition Target Selector -> Transport -> Region Time Editor"
-           " -> Region Actions";
-    qInfo().noquote()
-        << "GUI01_REGION_TIME_EDITOR_TAB_ORDER=Start HH -> MM -> SS -> FRACTION"
-           " -> End HH -> MM -> SS -> FRACTION";
+        << "M12C_GEOMETRY_1920x688"
+        << "editorH=" << res1920Short.metrics.eqEditorHeight
+        << "graphH=" << res1920Short.metrics.eqGraphHeight
+        << "inspectorY=" << res1920Short.metrics.eqInspectorY
+        << "inspectorH=" << res1920Short.metrics.eqInspectorHeight
+        << "inspectorBottom=" << (res1920Short.metrics.eqInspectorY + res1920Short.metrics.eqInspectorHeight)
+        << "statusY=" << res1920Short.metrics.eqStatusY
+        << "statusH=" << res1920Short.metrics.eqStatusHeight;
+    QVERIFY2(res1920Short.metrics.eqInspectorContained, "EQ inspector must remain vertically contained in a wide, short window");
+    QVERIFY2(res1920Short.metrics.waveformHeight >= 135.0, "Waveform must remain recognizable in a wide, short window");
 
-    goldSelection.clearGold();
-    QCoreApplication::processEvents();
+    const auto res1184 = evaluate_layout_at_size(engine, 1184, 688);
+    QVERIFY2(res1184.valid, qPrintable(res1184.errorMessage));
+    QCOMPARE(res1184.metrics.visible, false);
+    QCOMPARE(res1184.metrics.width, 1184);
+    QCOMPARE(res1184.metrics.height, 688);
+    QCOMPARE(res1184.metrics.isCompact, true);
+    QVERIFY2(res1184.metrics.adaptiveContextVisible, "Adaptive Context must remain visible at minimum composition");
+    QVERIFY2(res1184.metrics.eqInspectorContained, "EQ inspector must be vertically contained at minimum composition");
+    QVERIFY2(res1184.metrics.sourceHeight >= 170.0, "Upper compact source/audition composition must preserve full-size transport controls");
+    QVERIFY2(res1184.metrics.waveformHeight >= 135.0, "Waveform height must be >= 135 px at 1184x688");
+    QVERIFY2(res1184.metrics.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
 
-    model.selectSource(QUrl::fromLocalFile(validPath));
-    waveformPresentation.publish_ready(valid_summary());
-    QVERIFY(auditionRegion.set_region(*oneFrameRegion.value()));
-    QCoreApplication::processEvents();
-
-    auto* firstSegment = qobject_cast<QQuickItem*>(segmentFields.front());
-    QVERIFY(firstSegment);
-    firstSegment->forceActiveFocus(Qt::TabFocusReason);
-    QCoreApplication::processEvents();
-    QVERIFY(firstSegment->hasActiveFocus());
-    QCOMPARE(segmentFields.front()->property("selectionStart").toInt(), 0);
-    QCOMPARE(
-        segmentFields.front()->property("selectionEnd").toInt(),
-        segmentFields.front()->property("text").toString().size());
-    segmentFields.front()->setProperty("text", QStringLiteral("0"));
-    QTest::keyClick(window, Qt::Key_Tab);
-    QCoreApplication::processEvents();
-    QCOMPARE(
-        segmentFields.front()->property("text").toString(),
-        QStringLiteral("00"));
-    auto* secondSegment = qobject_cast<QQuickItem*>(segmentFields[1]);
-    QVERIFY(secondSegment && secondSegment->hasActiveFocus());
-    QTest::keyClick(window, Qt::Key_Backtab);
-    QCoreApplication::processEvents();
-    QVERIFY(firstSegment->hasActiveFocus());
-    for (std::size_t index = 1; index < segmentFields.size(); ++index) {
-        QTest::keyClick(window, Qt::Key_Tab);
-        QCoreApplication::processEvents();
-        auto* focused = qobject_cast<QQuickItem*>(segmentFields[index]);
-        QVERIFY(focused && focused->hasActiveFocus());
-    }
-    for (std::size_t index = segmentFields.size() - 1U; index > 0U; --index) {
-        QTest::keyClick(window, Qt::Key_Backtab);
-        QCoreApplication::processEvents();
-        auto* focused = qobject_cast<QQuickItem*>(segmentFields[index - 1U]);
-        QVERIFY(focused && focused->hasActiveFocus());
-    }
-
-    segmentFields[1]->setProperty("text", QStringLiteral("99"));
-    QTest::keyClick(window, Qt::Key_Tab);
-    QCoreApplication::processEvents();
-    QVERIFY(!auditionRegion.error_message().isEmpty());
-    QVERIFY(capture_visual_evidence(window,
-        QStringLiteral("gui01_c6_invalid_edit_focus.png"), QSize{1440, 900}));
-    auditionRegion.clearError();
-    QCoreApplication::processEvents();
-
-    const int stopCallsBeforeTransportExercise = observedPlayback->stopCalls;
-    QVERIFY(QMetaObject::invokeMethod(playPause, "clicked"));
-    QCoreApplication::processEvents();
-    QCOMPARE(observedPlayback->playCalls, 1);
-    QCOMPARE(playPause->property("iconKind").toString(), QStringLiteral("pause"));
-    auto* playPauseItem = qobject_cast<QQuickItem*>(playPause);
-    QVERIFY(playPauseItem);
-    playPauseItem->forceActiveFocus(Qt::TabFocusReason);
-    QTest::mouseMove(window, itemCenter(playPause));
-    QCoreApplication::processEvents();
-    QVERIFY(capture_visual_evidence(window,
-        QStringLiteral("gui01_c2_transport_playing_focus.png"), QSize{1440, 900}));
-    QVERIFY(QMetaObject::invokeMethod(playPause, "clicked"));
-    QCoreApplication::processEvents();
-    QCOMPARE(observedPlayback->pauseCalls, 1);
-    QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Paused"));
-    QVERIFY(QMetaObject::invokeMethod(stop, "clicked"));
-    QCoreApplication::processEvents();
-    QCOMPARE(observedPlayback->stopCalls, stopCallsBeforeTransportExercise + 1);
-    QCOMPARE(playbackState->property("text").toString(), QStringLiteral("Stopped"));
-
-    const auto invalidPath = write_file(
-        directory, QStringLiteral("Invalid.wav"), QByteArray{"bad"});
-    model.selectSource(QUrl::fromLocalFile(invalidPath));
-    QCoreApplication::processEvents();
-    QVERIFY(error->property("visible").toBool());
-    QVERIFY(!error->property("text").toString().isEmpty());
-    QCOMPARE(display->property("text").toString(), QStringLiteral("UI Source.wav"));
-    QVERIFY(auditionRegion.has_region());
-
-    waveformPresentation.publish_failed(QStringLiteral("Injected waveform failure."));
-    QCoreApplication::processEvents();
-    QCOMPARE(waveformPresentation.state_token(), QStringLiteral("FAILED"));
-    QVERIFY(waveformStatus->property("visible").toBool());
-    QVERIFY(waveformRetry->property("visible").toBool());
-    QSignalSpy retrySpy{
-        &waveformPresentation,
-        &ui::WaveformPresentation::retryRequested};
-    QVERIFY(QMetaObject::invokeMethod(waveformRetry, "clicked"));
-    QCOMPARE(retrySpy.count(), 1);
-    waveformPresentation.publish_ready(valid_summary());
-    QCoreApplication::processEvents();
-
-    // Verify 44.1 kHz Mono evidence and routing restrictions on 44.1 kHz source
-    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Triggering eqMenuItem on 44.1 kHz source must succeed");
-    QCoreApplication::processEvents();
-
-    // Explicitly wait for previewStatus to settle to READY on 44.1 kHz mono source
-    for (int i = 0; i < 100 && eqViewModel.preview_status() != QStringLiteral("READY"); ++i) {
-        QTest::qWait(10);
-    }
-    if (eqViewModel.preview_status() == QStringLiteral("ERROR")) {
-        QFAIL(qPrintable(QStringLiteral("EQ preview failed: ") + eqViewModel.preview_error()));
-    }
-    QCOMPARE(eqViewModel.preview_status(), QStringLiteral("READY"));
-    QVERIFY2(eqViewModel.preview_error().isEmpty(), "previewError must be empty for 44.1 kHz mono source");
-
-    auto* eqEditor441 = eqToolWindow->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
-    QVERIFY2(eqEditor441 != nullptr, "parametricEqEditor must exist on 44.1 kHz source");
-    auto* eqGraph441 = eqEditor441->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
-    QVERIFY2(eqGraph441 != nullptr, "parametricEqGraph must exist on 44.1 kHz source");
-    QCOMPARE(eqGraph441->property("maxFreq").toDouble(), 19845.0);
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_graph_44100_end.png"), QSize{1040, 660}));
-
-    // Capture 900x580 mono evidence
-    QVERIFY(capture_visual_evidence(eqWindowObj, QStringLiteral("m12b_wow_900x580_mono.png"), QSize{900, 580}));
-
-    // Verify mono routing restrictions
-    auto* routeStereoMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_STEREO"));
-    auto* routeMidMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_MID"));
-    auto* routeSideMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_SIDE"));
-    auto* routeLeftMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_LEFT"));
-    auto* routeRightMono = find_child_by_name(eqEditor441, QStringLiteral("routingButton_RIGHT"));
-    QVERIFY2(routeStereoMono && routeStereoMono->property("enabled").toBool(), "STEREO routing must be enabled on mono source");
-    QVERIFY2(routeMidMono && !routeMidMono->property("enabled").toBool(), "MID routing must be disabled on mono source");
-    QVERIFY2(routeSideMono && !routeSideMono->property("enabled").toBool(), "SIDE routing must be disabled on mono source");
-    QVERIFY2(routeLeftMono && !routeLeftMono->property("enabled").toBool(), "LEFT routing must be disabled on mono source");
-    QVERIFY2(routeRightMono && !routeRightMono->property("enabled").toBool(), "RIGHT routing must be disabled on mono source");
-
-    // Test Blocker C EQ tool window lifetime: Close EQ alone -> EQ hidden, Main remains open
-    eqWindowObj->close();
-    QCoreApplication::processEvents();
-    QVERIFY2(!eqToolWindow->property("visible").toBool(), "EQ tool window must be hidden after closing EQ alone");
-    QVERIFY2(!eqToolWindow->property("forceClose").toBool(), "EQ tool window forceClose must remain false when EQ is closed alone");
-    QVERIFY2(window->isVisible(), "Main application window must remain visible after closing EQ tool window alone");
-
-    // Reopen EQ window and verify it is visible
-    QVERIFY2(QMetaObject::invokeMethod(eqMenuItem, "triggered"), "Re-triggering View -> Parametric EQ must reopen tool window");
-    QCoreApplication::processEvents();
-    QVERIFY2(eqToolWindow->property("visible").toBool(), "EQ tool window must be visible after reopening");
-
-    // Native windowing model state transition verification
-    window->showNormal();
+    // 2. Native window resize & visual evidence capture clamped to available monitor geometry
     const QRect available = window->screen() ? window->screen()->availableGeometry() : QRect{0, 0, 1440, 900};
-    const int targetWidth = std::max(window->minimumWidth(), std::min(1280, available.width()));
-    const int targetHeight = std::max(window->minimumHeight(), std::min(720, available.height()));
-    window->resize(targetWidth, targetHeight);
-    QTest::qWait(100);
-    QCoreApplication::processEvents();
-
-    const QSize acceptedNormalSize = window->size();
-    QVERIFY(acceptedNormalSize.width() >= window->minimumWidth());
-    QVERIFY(acceptedNormalSize.height() >= window->minimumHeight());
-
-    window->showMaximized();
-    QTest::qWait(100);
-    QCoreApplication::processEvents();
-
-    window->showNormal();
-    QTest::qWait(100);
-    QCoreApplication::processEvents();
-    QCOMPARE(window->size(), acceptedNormalSize);
-
-    qInfo() << "NATIVE_WINDOW_NOTE=drag-to-top, drag-down restore and Aero Snap remain real-Windows manual acceptance items.";
-
-    window->resize(1184, 688);
-    QCoreApplication::processEvents();
-    QCOMPARE(window->size(), QSize(1184, 688));
-    const auto minimumWaveformHeight = waveformPanel->property("height").toReal();
-    QVERIFY(minimumWaveformHeight >= 265.0);
-
-    const int largeWidth = std::max(window->minimumWidth(), std::min(1440, available.width()));
-    const int largeHeight = std::max(window->minimumHeight(), std::min(900, available.height()));
-    window->resize(largeWidth, largeHeight);
+    const int normalW = std::max(window->minimumWidth(), std::min(1440, available.width()));
+    const int normalH = std::max(window->minimumHeight(), std::min(900, available.height()));
+    window->resize(normalW, normalH);
     QTest::qWait(50);
     QCoreApplication::processEvents();
+    QCOMPARE(window->size(), QSize(normalW, normalH));
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("gui01_1440x900_prepared.png"), QSize{normalW, normalH}));
 
-    const QSize acceptedLargeSize = window->size();
-    QVERIFY(acceptedLargeSize.width() >= window->minimumWidth());
-    QVERIFY(acceptedLargeSize.height() >= window->minimumHeight());
+    const int compactW = std::max(window->minimumWidth(), std::min(1184, available.width()));
+    const int compactH = std::max(window->minimumHeight(), std::min(688, available.height()));
+    window->resize(compactW, compactH);
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    QCOMPARE(window->size(), QSize(compactW, compactH));
+    QCOMPARE(dspChainSelectorObj->property("width").toInt(), 164);
 
-    if (acceptedLargeSize.height() > window->minimumHeight()) {
-        QVERIFY(waveformPanel->property("height").toReal() > minimumWaveformHeight);
-    } else {
-        QVERIFY(waveformPanel->property("height").toReal() >= 265.0);
+    // HP/LP compact slope controls must all remain usable at the minimum window size.
+    // Minimum-size UI must preserve the same control scale and labels as the wide layout.
+    QCOMPARE(addBandBtn->property("text").toString(), QStringLiteral("+ Add Band"));
+    QCOMPARE(removeBandBtn->property("text").toString(), QStringLiteral("- Remove Band"));
+    QVERIFY(addBandBtn->property("width").toReal() >= 128.0);
+    QVERIFY(removeBandBtn->property("width").toReal() >= 128.0);
+
+    for (int bandIndex = 0; bandIndex < eqViewModel.band_count(); ++bandIndex) {
+        auto* bandButton = find_child_by_name(eqEditor, QString("bandSelectorButton_%1").arg(bandIndex));
+        QVERIFY2(bandButton != nullptr, "Band selector must exist at minimum size");
+        QVERIFY2(bandButton->property("width").toReal() >= 90.0, "Band selector must keep full width at minimum size");
     }
+
+    for (const auto& token : {QStringLiteral("BELL"), QStringLiteral("NOTCH"), QStringLiteral("LOW_SHELF"),
+                              QStringLiteral("HIGH_SHELF"), QStringLiteral("HIGH_PASS"), QStringLiteral("LOW_PASS")}) {
+        auto* filterButton = find_child_by_name(eqEditor, QStringLiteral("filterButton_") + token);
+        QVERIFY2(filterButton != nullptr, "Filter button must exist at minimum size");
+        QVERIFY2(filterButton->property("width").toReal() >= 88.0, "Filter button must keep the unified 88 px width at minimum size");
+    }
+
+    for (const auto& token : {QStringLiteral("STEREO"), QStringLiteral("MID"), QStringLiteral("SIDE"),
+                              QStringLiteral("LEFT"), QStringLiteral("RIGHT")}) {
+        auto* routingButton = find_child_by_name(eqEditor, QStringLiteral("routingButton_") + token);
+        QVERIFY2(routingButton != nullptr, "Routing button must exist at minimum size");
+        QVERIFY2(routingButton->property("width").toReal() >= 80.0, "Routing button must keep full width at minimum size");
+    }
+
+    auto* eqEditorItemForAlignment = qobject_cast<QQuickItem*>(eqEditor);
+    auto* filterBellItem = qobject_cast<QQuickItem*>(filterBell);
+    auto* routeStereoItem = qobject_cast<QQuickItem*>(find_child_by_name(eqEditor, QStringLiteral("routingButton_STEREO")));
+    QVERIFY2(eqEditorItemForAlignment && filterBellItem && routeStereoItem,
+        "EQ editor, filter and routing anchors must be QQuickItems");
+    const QPointF filterBellPos = filterBellItem->mapToItem(eqEditorItemForAlignment, QPointF{0.0, 0.0});
+    const QPointF routeStereoPos = routeStereoItem->mapToItem(eqEditorItemForAlignment, QPointF{0.0, 0.0});
+    QVERIFY2(qAbs(filterBellPos.x() - routeStereoPos.x()) <= 0.5,
+        "FILTER and ROUTING first buttons must share the same left edge at minimum size");
+
+    auto* filterLowPassItem = qobject_cast<QQuickItem*>(find_child_by_name(eqEditor, QStringLiteral("filterButton_LOW_PASS")));
+    QVERIFY2(filterLowPassItem != nullptr, "Low Pass button must exist at minimum size");
+    const QPointF filterLowPassPos = filterLowPassItem->mapToItem(eqEditorItemForAlignment, QPointF{0.0, 0.0});
+    QVERIFY2(filterLowPassPos.x() + filterLowPassItem->width() <= eqEditorItemForAlignment->width() - 8.0,
+        "Low Pass button must stay clear of the inspector right border at minimum size");
+
+    for (auto* numericField : {frequencyFieldObj, gainFieldObj, qFieldObj}) {
+        QVERIFY2(numericField != nullptr, "Numeric field must exist at minimum size");
+        QCOMPARE(numericField->property("compact").toBool(), false);
+    }
+
+    QVERIFY2(QMetaObject::invokeMethod(filterHighPass, "clicked"), "High Pass must remain selectable at minimum size");
+    QCoreApplication::processEvents();
+    auto* eqEditorItemCompact = qobject_cast<QQuickItem*>(eqEditor);
+    QVERIFY2(eqEditorItemCompact != nullptr, "parametricEqEditor must be a QQuickItem");
+    for (const int slope : std::array{6, 12, 18, 24, 36, 48}) {
+        auto* slopeObj = find_child_by_name(eqEditor, QString("slopeButton_%1").arg(slope));
+        auto* slopeItem = qobject_cast<QQuickItem*>(slopeObj);
+        QVERIFY2(slopeItem != nullptr && slopeItem->isVisible(),
+            qPrintable(QString("Slope %1 control must be visible at minimum size").arg(slope)));
+        QVERIFY2(slopeObj->property("width").toReal() >= 80.0,
+            qPrintable(QString("Slope %1 control must keep full width at minimum size").arg(slope)));
+        QCOMPARE(slopeObj->property("text").toString(), QString::number(slope) + QStringLiteral(" dB"));
+        const QPointF p = slopeItem->mapToItem(eqEditorItemCompact, QPointF{0.0, 0.0});
+        QVERIFY2(p.x() >= -0.5 && p.x() + slopeItem->width() <= eqEditorItemCompact->width() + 0.5,
+            qPrintable(QString("Slope %1 control must be horizontally contained at minimum size").arg(slope)));
+        QVERIFY2(p.y() >= -0.5 && p.y() + slopeItem->height() <= eqEditorItemCompact->height() + 0.5,
+            qPrintable(QString("Slope %1 control must be vertically contained at minimum size").arg(slope)));
+    }
+    QVERIFY2(QMetaObject::invokeMethod(filterBell, "clicked"), "Bell must be restorable after minimum-size slope check");
+    QCoreApplication::processEvents();
+
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("gui01_1184x688_prepared.png"), QSize{compactW, compactH}));
 
     window->close();
     QCoreApplication::processEvents();

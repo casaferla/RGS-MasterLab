@@ -9,32 +9,34 @@ Item {
     property string fieldName: ""
     property string rawText: ""
     property var viewModel: null
+    property bool compact: false
 
     readonly property bool isInvalid: viewModel !== null && viewModel !== undefined && viewModel.validationField === fieldName
 
-    implicitWidth: 164 + (unitText.length > 0 ? unitTextLabel.implicitWidth + 8 : 0)
-    implicitHeight: 50
+    readonly property int fieldWidth: compact ? 120 : 164
+    implicitWidth: fieldWidth + (unitText.length > 0 ? unitTextLabel.implicitWidth + (compact ? 6 : 8) : 0)
+    implicitHeight: compact ? 40 : 50
 
     Column {
         anchors.fill: parent
-        spacing: 6
+        spacing: control.compact ? 2 : 6
 
         Text {
             id: label
             text: control.labelText
             color: "#A1B5C9"
             font.family: "Segoe UI"
-            font.pixelSize: 12
+            font.pixelSize: control.compact ? 11 : 12
             font.weight: Font.Bold
-            height: 16
+            height: control.compact ? 14 : 16
         }
 
         Row {
-            spacing: 8
+            spacing: control.compact ? 6 : 8
 
             Rectangle {
-                width: 164
-                height: 28
+                width: control.fieldWidth
+                height: control.compact ? 24 : 28
                 radius: 4
                 color: "#0E1F2E"
                 border.width: input.activeFocus ? 2 : 1
@@ -70,7 +72,7 @@ Item {
 
                     text: control.rawText
                     font.family: "Consolas"
-                    font.pixelSize: 16
+                    font.pixelSize: control.compact ? 14 : 16
                     color: control.isInvalid ? "#F27683" : "#F5F8FC"
                     selectByMouse: true
                     selectionColor: "#4000C8FF"

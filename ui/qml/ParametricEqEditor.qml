@@ -9,28 +9,19 @@ Rectangle {
     implicitWidth: 992
     implicitHeight: 612
 
-    // Board02 Editor Panel Material
-    radius: 8
-    color: "#0F2236"
-    border.color: "#27465F"
-    border.width: 1
+    color: "transparent"
 
-    gradient: Gradient {
-        GradientStop { position: 0.0; color: "#17324D" }
-        GradientStop { position: 1.0; color: "#0C1A2A" }
-    }
+    // One visual scale at every supported window size.
+    // Responsive behavior may redistribute free space, but never miniaturizes controls.
 
-    // Top highlight
-    Rectangle {
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.margins: 1
-        height: 1
-        color: "#262A6C9F"
-    }
-
-    readonly property bool isCompactActionMode: width < 916
+    readonly property var bandColors: [
+        "#2ED3FF", // 1 Cyan
+        "#2FD98F", // 2 Emerald
+        "#FFD84A", // 3 Warm Yellow
+        "#FF6B6B", // 4 Coral Red
+        "#4F7CFF", // 5 Cobalt Blue
+        "#F5F8FC"  // 6 Neutral White
+    ]
 
     function getFilterAbbrev(token) {
         if (token === "BELL") return "BELL"
@@ -44,162 +35,74 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 12
+        spacing: 8
 
-        // Header Strip (48 lp)
+        // Unified toolbar: fixed control scale at every supported width.
         RowLayout {
-            objectName: "eqHeaderRegion"
+            objectName: "eqTopToolbarRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 48
-            spacing: 12
+            Layout.preferredHeight: 32
+            spacing: 6
 
-            ColumnLayout {
-                spacing: 1
-                Text {
-                    text: "Parametric EQ"
-                    color: "#F5F8FC"
-                    font.family: "Segoe UI"
-                    font.pixelSize: 20
-                    font.weight: Font.DemiBold
-                }
-                Text {
-                    text: "Manual Mastering"
-                    color: "#A1B5C9"
-                    font.family: "Segoe UI"
-                    font.pixelSize: 12
-                }
+            StudioToggle {
+                objectName: "bandEnabledToggle"
+                text: "Band " + (root.viewModel ? root.viewModel.selectedIndex + 1 : 1) + " Enabled"
+                checked: root.viewModel ? root.viewModel.enabled : true
+                onClicked: if (root.viewModel) root.viewModel.setEnabled(checked)
+                Accessible.name: "Enable or disable band"
             }
 
             Item { Layout.fillWidth: true }
 
-            // Preview Status Badge
-            Rectangle {
-                Layout.preferredHeight: 28
-                Layout.preferredWidth: statusText.implicitWidth + 24
-                radius: 6
-                color: {
-                    if (!root.viewModel) return "#0F2236"
-                    const status = root.viewModel.previewStatus
-                    if (status === "RENDERING") return "#2A2814"
-                    if (status === "READY") return "#1400D47A"
-                    if (status === "ERROR") return "#14F27683"
-                    return "#0F2236"
-                }
-                border.color: {
-                    if (!root.viewModel) return "#27465F"
-                    const status = root.viewModel.previewStatus
-                    if (status === "RENDERING") return "#F2B632"
-                    if (status === "READY") return "#00D47A"
-                    if (status === "ERROR") return "#F27683"
-                    return "#27465F"
-                }
-                border.width: 1
-
-                Text {
-                    id: statusText
-                    anchors.centerIn: parent
-                    text: {
-                        if (!root.viewModel) return "NO PREVIEW"
-                        const status = root.viewModel.previewStatus
-                        if (status === "NO_PREPARED_REALIZATION" || status === "IDLE") return "NO PREVIEW"
-                        return status
-                    }
-                    color: {
-                        if (!root.viewModel) return "#A1B5C9"
-                        const status = root.viewModel.previewStatus
-                        if (status === "RENDERING") return "#F2B632"
-                        if (status === "READY") return "#00D47A"
-                        if (status === "ERROR") return "#F27683"
-                        return "#A1B5C9"
-                    }
-                    font.family: "Segoe UI"
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
-                }
+            StudioButton {
+                objectName: "eqResetFlatButton"
+                text: "Reset Flat"
+                minimumControlWidth: 88
+                enabled: root.viewModel !== null && root.viewModel !== undefined
+                onClicked: if (root.viewModel) root.viewModel.resetToFlat()
+                Accessible.name: "Reset EQ to Flat"
+                ToolTip.text: "Reset all EQ parameters to Flat baseline"
+                ToolTip.visible: hovered
             }
 
-            // History & Reset Flat + A/B Controls (32 lp)
-            RowLayout {
-                spacing: 2
-
-                StudioButton {
-                    objectName: "eqUndoButton"
-                    text: "Undo"
-                    minimumControlWidth: 64
-                    enabled: root.viewModel ? root.viewModel.canUndo : false
-                    onClicked: if (root.viewModel) root.viewModel.undo()
-                    Accessible.name: "Undo EQ edit"
-                    ToolTip.text: "Undo last EQ edit (Ctrl+Z)"
-                    ToolTip.visible: hovered
-                    Shortcut { sequence: "StandardKey.Undo"; enabled: root.viewModel && root.viewModel.canUndo; onActivated: root.viewModel.undo() }
-                }
-
-                StudioButton {
-                    objectName: "eqRedoButton"
-                    text: "Redo"
-                    minimumControlWidth: 64
-                    enabled: root.viewModel ? root.viewModel.canRedo : false
-                    onClicked: if (root.viewModel) root.viewModel.redo()
-                    Accessible.name: "Redo EQ edit"
-                    ToolTip.text: "Redo last EQ edit (Ctrl+Y)"
-                    ToolTip.visible: hovered
-                    Shortcut { sequence: "StandardKey.Redo"; enabled: root.viewModel && root.viewModel.canRedo; onActivated: root.viewModel.redo() }
-                }
-
-                StudioButton {
-                    objectName: "eqResetFlatButton"
-                    text: "Reset Flat"
-                    minimumControlWidth: 88
-                    enabled: root.viewModel !== null && root.viewModel !== undefined
-                    onClicked: if (root.viewModel) root.viewModel.resetToFlat()
-                    Accessible.name: "Reset EQ to Flat"
-                    ToolTip.text: "Reset all EQ parameters to Flat baseline"
-                    ToolTip.visible: hovered
-                }
-
-                StudioButton {
-                    objectName: "eqOverallToggleButton"
-                    text: "Overall"
-                    selected: root.viewModel ? root.viewModel.showCombinedResponse : false
-                    tone: root.viewModel && root.viewModel.showCombinedResponse ? "primary" : "secondary"
-                    accentColor: "#B3A989F2"
-                    minimumControlWidth: 72
-                    enabled: root.viewModel !== null && root.viewModel !== undefined
-                    onClicked: {
-                        if (root.viewModel) {
-                            root.viewModel.showCombinedResponse = !root.viewModel.showCombinedResponse
-                        }
+            StudioButton {
+                objectName: "eqOverallToggleButton"
+                text: "Overall"
+                selected: root.viewModel ? root.viewModel.showCombinedResponse : false
+                tone: root.viewModel && root.viewModel.showCombinedResponse ? "primary" : "secondary"
+                accentColor: "#A989F2"
+                minimumControlWidth: 72
+                enabled: root.viewModel !== null && root.viewModel !== undefined
+                onClicked: {
+                    if (root.viewModel) {
+                        root.viewModel.showCombinedResponse = !root.viewModel.showCombinedResponse
                     }
-                    Accessible.name: "Toggle Overall combined response curve"
-                    ToolTip.text: "Show or hide the combined total response curve of all active EQ bands"
-                    ToolTip.visible: hovered
                 }
+                Accessible.name: "Toggle Overall combined response curve"
+                ToolTip.text: "Show or hide the combined total response curve of all active EQ bands"
+                ToolTip.visible: hovered
+            }
 
-                Item { Layout.preferredWidth: 8 }
+            Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
 
-                StudioButton {
-                    objectName: "abButtonActive"
-                    text: "A: EQ Active"
-                    selected: root.viewModel ? !root.viewModel.bypass : true
-                    tone: "primary"
-                    accentColor: "#00C8FF"
-                    onClicked: if (root.viewModel) root.viewModel.setBypass(false)
-                    Accessible.name: "A: EQ Active"
-                    ToolTip.text: "Activate Parametric EQ processing"
-                    ToolTip.visible: hovered
-                }
+            StudioButton {
+                objectName: "addBandButton"
+                text: "+ Add Band"
+                minimumControlWidth: 128
+                contentPadding: 16
+                enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
+                onClicked: if (root.viewModel) root.viewModel.addBand()
+                Accessible.name: "Add Band"
+            }
 
-                StudioButton {
-                    objectName: "abButtonBypass"
-                    text: "B: Bypass"
-                    selected: root.viewModel ? root.viewModel.bypass : false
-                    tone: "gold"
-                    accentColor: "#F2B632"
-                    onClicked: if (root.viewModel) root.viewModel.setBypass(true)
-                    Accessible.name: "B: Bypass"
-                    ToolTip.text: "Bypass Parametric EQ module"
-                    ToolTip.visible: hovered
-                }
+            StudioButton {
+                objectName: "removeBandButton"
+                text: "- Remove Band"
+                minimumControlWidth: 128
+                contentPadding: 16
+                enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
+                onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
+                Accessible.name: "Remove Band"
             }
         }
 
@@ -217,7 +120,7 @@ Rectangle {
                 anchors.fill: parent
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
-                spacing: 8
+                spacing: 4
 
                 Repeater {
                     model: root.viewModel ? root.viewModel.bandCount : 0
@@ -229,11 +132,13 @@ Rectangle {
                         readonly property bool isEnabledBand: bandSummary ? bandSummary.enabled : true
                         readonly property string filterType: bandSummary ? bandSummary.filter : "BELL"
                         readonly property string routingType: bandSummary ? bandSummary.routing : "STEREO"
+                        readonly property color bandHue: root.bandColors[index % root.bandColors.length]
 
                         objectName: "bandSelectorButton_" + index
                         text: (index + 1) + " " + root.getFilterAbbrev(filterType)
                         selected: isSelectedBand
                         tone: isSelectedBand ? "primary" : "secondary"
+                        accentColor: bandHue
                         minimumControlWidth: 90
                         contentPadding: 8
                         activeFocusOnTab: true
@@ -248,35 +153,18 @@ Rectangle {
                 }
 
                 Item { Layout.fillWidth: true }
-
-                Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
-
-                StudioButton {
-                    objectName: "addBandButton"
-                    text: root.isCompactActionMode ? "+ Add" : "+ Add Band"
-                    minimumControlWidth: root.isCompactActionMode ? 96 : 128
-                    enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
-                    onClicked: if (root.viewModel) root.viewModel.addBand()
-                    Accessible.name: "Add Band"
-                }
-
-                StudioButton {
-                    objectName: "removeBandButton"
-                    text: root.isCompactActionMode ? "- Remove" : "- Remove Band"
-                    minimumControlWidth: root.isCompactActionMode ? 96 : 128
-                    enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
-                    onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
-                    Accessible.name: "Remove Band"
-                }
             }
         }
 
-        // Response Graph (Flexible 324 lp default / 244 lp min)
+        // Response Graph (Flexible min 200 lp)
         ParametricEqGraph {
             objectName: "parametricEqGraph"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: 244
+            // The response graph is the vertically elastic surface. A constant low
+            // minimum avoids a vertical breakpoint and lets the layout consume exactly
+            // the height left after the fixed control tiers.
+            Layout.minimumHeight: 102
             viewModel: root.viewModel
         }
 
@@ -284,7 +172,7 @@ Rectangle {
         Rectangle {
             objectName: "eqInspectorRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 128
+            Layout.preferredHeight: 136
             color: "#12243F"
             border.color: "#2C5A78"
             border.width: 1
@@ -292,30 +180,11 @@ Rectangle {
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 16
-                anchors.rightMargin: 16
-                anchors.topMargin: 6
-                anchors.bottomMargin: 8
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                anchors.topMargin: 4
+                anchors.bottomMargin: 4
                 spacing: 8
-
-                // Left Column (160 lp): Band Enabled Toggle
-                ColumnLayout {
-                    Layout.preferredWidth: 160
-                    Layout.fillHeight: true
-                    spacing: 4
-
-                    StudioToggle {
-                        objectName: "bandEnabledToggle"
-                        text: "Band " + (root.viewModel ? root.viewModel.selectedIndex + 1 : 1) + " Enabled"
-                        checked: root.viewModel ? root.viewModel.enabled : true
-                        onClicked: if (root.viewModel) root.viewModel.setEnabled(checked)
-                        Accessible.name: "Enable or disable band"
-                    }
-
-                    Item { Layout.fillHeight: true }
-                }
-
-                Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: "#2C5A78" }
 
                 // Right Column: Two Subrows + Numeric Tier
                 ColumnLayout {
@@ -336,7 +205,7 @@ Rectangle {
                             font.family: "Segoe UI"
                             font.pixelSize: 12
                             font.weight: Font.Bold
-                            Layout.preferredWidth: 56
+                            Layout.preferredWidth: 64
                         }
 
                         RowLayout {
@@ -354,7 +223,7 @@ Rectangle {
                                     required property var modelData
                                     objectName: "filterButton_" + modelData.token
                                     text: modelData.label
-                                    minimumControlWidth: 96
+                                    minimumControlWidth: 88
                                     contentPadding: 4
                                     selected: root.viewModel && root.viewModel.filter === modelData.token
                                     tone: root.viewModel && root.viewModel.filter === modelData.token ? "primary" : "secondary"
@@ -382,7 +251,7 @@ Rectangle {
                             font.family: "Segoe UI"
                             font.pixelSize: 12
                             font.weight: Font.Bold
-                            Layout.preferredWidth: 56
+                            Layout.preferredWidth: 64
                         }
 
                         RowLayout {
@@ -443,11 +312,12 @@ Rectangle {
                     // Numeric Fields Tier (50 lp)
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 50
-                        spacing: 16
+                        Layout.preferredHeight: 58
+                        spacing: 12
 
                         StudioNumericField {
                             objectName: "frequencyField"
+                            compact: false
                             labelText: "FREQUENCY"
                             unitText: "Hz"
                             fieldName: "frequency"
@@ -457,6 +327,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "gainField"
+                            compact: false
                             visible: root.viewModel ? root.viewModel.gainApplicable : true
                             labelText: "GAIN"
                             unitText: "dB"
@@ -467,6 +338,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "qField"
+                            compact: false
                             visible: root.viewModel ? root.viewModel.qApplicable : true
                             labelText: "Q"
                             unitText: ""
@@ -477,6 +349,7 @@ Rectangle {
 
                         StudioNumericField {
                             objectName: "shelfSlopeField"
+                            compact: false
                             visible: root.viewModel ? root.viewModel.shelfSlopeApplicable : false
                             labelText: "SHELF SLOPE"
                             unitText: ""
@@ -485,32 +358,79 @@ Rectangle {
                             viewModel: root.viewModel
                         }
 
-                        // HP/LP Slope DB/OCT (6 segments x 80 lp)
+                        // HP/LP Slope DB/OCT: one fixed visual scale at every width.
+                        // Two permanent rows avoid both clipping and responsive miniaturization.
                         RowLayout {
+                            objectName: "slopeControls"
                             visible: root.viewModel ? root.viewModel.slopeApplicable : false
-                            spacing: 1
-                            Text { text: "SLOPE:"; color: "#A1B5C9"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold; Layout.rightMargin: 4 }
-                            Repeater {
-                                model: [6, 12, 18, 24, 36, 48]
-                                delegate: StudioSegmentButton {
-                                    required property int modelData
-                                    objectName: "slopeButton_" + modelData
-                                    text: modelData + " dB"
-                                    minimumControlWidth: 80
-                                    contentPadding: 4
-                                    selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
-                                    tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
-                                    onClicked: {
-                                        if (root.viewModel) {
-                                            root.viewModel.setDraftSlopeDbPerOct(modelData)
-                                            root.viewModel.commitDraft()
+                            spacing: 8
+
+                            Text {
+                                text: "SLOPE:"
+                                color: "#A1B5C9"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 12
+                                font.weight: Font.Bold
+                                Layout.preferredWidth: 44
+                                Layout.alignment: Qt.AlignTop
+                                Layout.topMargin: 6
+                            }
+
+                            ColumnLayout {
+                                spacing: 1
+
+                                RowLayout {
+                                    spacing: 1
+                                    Repeater {
+                                        model: [6, 12, 18]
+                                        delegate: StudioSegmentButton {
+                                            required property int modelData
+                                            objectName: "slopeButton_" + modelData
+                                            text: modelData + " dB"
+                                            minimumControlWidth: 80
+                                            contentPadding: 4
+                                            selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
+                                            tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
+                                            onClicked: {
+                                                if (root.viewModel) {
+                                                    root.viewModel.setDraftSlopeDbPerOct(modelData)
+                                                    root.viewModel.commitDraft()
+                                                }
+                                            }
+                                            Accessible.name: "Slope " + modelData + " dB per octave"
+                                            ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
+                                            ToolTip.visible: hovered
                                         }
                                     }
-                                    Accessible.name: "Slope " + modelData + " dB per octave"
-                                    ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
-                                    ToolTip.visible: hovered
+                                }
+
+                                RowLayout {
+                                    spacing: 1
+                                    Repeater {
+                                        model: [24, 36, 48]
+                                        delegate: StudioSegmentButton {
+                                            required property int modelData
+                                            objectName: "slopeButton_" + modelData
+                                            text: modelData + " dB"
+                                            minimumControlWidth: 80
+                                            contentPadding: 4
+                                            selected: root.viewModel && root.viewModel.slopeDbPerOct === modelData
+                                            tone: root.viewModel && root.viewModel.slopeDbPerOct === modelData ? "primary" : "secondary"
+                                            onClicked: {
+                                                if (root.viewModel) {
+                                                    root.viewModel.setDraftSlopeDbPerOct(modelData)
+                                                    root.viewModel.commitDraft()
+                                                }
+                                            }
+                                            Accessible.name: "Slope " + modelData + " dB per octave"
+                                            ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
+                                            ToolTip.visible: hovered
+                                        }
+                                    }
                                 }
                             }
+
+                            Item { Layout.fillWidth: true }
                         }
 
                         Item { Layout.fillWidth: true }

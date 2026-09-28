@@ -6,16 +6,21 @@ Button {
 
     property string iconKind: "play"
     property bool primary: false
+    property bool compact: false
     property color accentColor: "#00C8FF"
 
-    implicitWidth: primary ? 68 : 44
-    implicitHeight: implicitWidth
+    readonly property int resolvedControlSize: compact ? (primary ? 40 : 32) : (primary ? 68 : 44)
+    readonly property int resolvedIconSize: compact ? (primary ? 20 : 16) : (primary ? 28 : 18)
+    readonly property int focusHaloExtra: compact ? 4 : (primary ? 12 : 6)
+
+    implicitWidth: resolvedControlSize
+    implicitHeight: resolvedControlSize
     activeFocusOnTab: true
     hoverEnabled: true
     padding: 0
 
     contentItem: StudioIcon {
-        width: control.primary ? 28 : 18
+        width: control.resolvedIconSize
         height: width
         anchors.centerIn: parent
         kind: control.iconKind
@@ -28,7 +33,7 @@ Button {
     background: Item {
         Rectangle {
             anchors.centerIn: parent
-            width: parent.width + (control.primary ? 12 : 6)
+            width: parent.width + control.focusHaloExtra
             height: width
             radius: width / 2
             color: "transparent"
