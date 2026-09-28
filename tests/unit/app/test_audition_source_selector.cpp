@@ -69,6 +69,9 @@ void install_pcm_handler(
         [service](audio::AudioBufferView view, std::shared_ptr<const void>) {
             service->duration = *core::FrameCount::create(
                 view.absolute_end_frame().value()).value();
+            if (service->position == view.absolute_end_frame()) {
+                service->position = view.absolute_start_frame();
+            }
             return core::Status::success();
         });
 }

@@ -926,6 +926,12 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
     auto diffRateBuf = make_buffer(44100, audio::ChannelLayout::STEREO_LR, 1000);
     QVERIFY(!engine.handoff_pcm(diffRateBuf.view()));
     QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PLAYING);
+
+    // Test 5: Active PROCESSED replacement when cue is at EOF (cue == range.end()) canonicalizes to range.begin() (0)
+    QVERIFY(engine.seek(core::FrameIndex{1000}));
+    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{1000});
+    QVERIFY(engine.handoff_pcm(newBuf.view(), lifetime2));
+    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{0});
 }
 
 void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()

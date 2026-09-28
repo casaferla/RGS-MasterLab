@@ -394,7 +394,9 @@ core::Status PlaybackEngine::handoff_pcm(
         update_position();
     }
 
-    if (position_ < newBegin || position_ > newEnd) {
+    if (position_ == newEnd) {
+        position_ = newBegin;
+    } else if (position_ < newBegin || position_ > newEnd) {
         return status_failure(
             core::ErrorCode::OutOfRange,
             "Current playback cue is outside candidate handoff realization range.");
