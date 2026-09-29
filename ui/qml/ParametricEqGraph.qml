@@ -192,7 +192,6 @@ Rectangle {
         // Live Spectrum Overlay Canvas (Subordinate to EQ curves)
         Canvas {
             id: spectrumCanvas
-            objectName: "spectrumCanvas"
             anchors.fill: parent
             visible: root.spectrumViewModel ? root.spectrumViewModel.spectrumEnabled : true
 

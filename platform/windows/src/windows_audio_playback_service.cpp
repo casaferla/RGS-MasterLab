@@ -481,6 +481,10 @@ public:
         timer_->setTimerType(Qt::PreciseTimer);
         QObject::connect(timer_, &QTimer::timeout, this, [this] {
             static_cast<void>(engine_.tick());
+            auto snap = engine_.snapshot();
+            if (snap && snap.value()->state == core::PlaybackState::STOPPED && analyzer_ != nullptr) {
+                analyzer_->invalidate_and_clear();
+            }
         });
         timer_->start();
         return core::Status::success();

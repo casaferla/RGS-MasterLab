@@ -55,8 +55,7 @@ void LiveSpectrumAnalyzer::push_audio_bytes(
 
 void LiveSpectrumAnalyzer::invalidate_and_clear()
 {
-    clear_requested_.store(true, std::memory_order_release);
-    current_generation_.store(0, std::memory_order_release);
+    ring_.clear();
     current_epoch_.fetch_add(1, std::memory_order_release);
 
     std::lock_guard<std::mutex> lock(snapshot_mutex_);
@@ -67,6 +66,7 @@ void LiveSpectrumAnalyzer::invalidate_and_clear()
 void LiveSpectrumAnalyzer::set_stream_generation(std::uint64_t generation)
 {
     current_generation_.store(generation, std::memory_order_release);
+    current_epoch_.fetch_add(1, std::memory_order_release);
 }
 
 SpectrumSnapshot LiveSpectrumAnalyzer::latest_snapshot() const
@@ -98,7 +98,8 @@ void LiveSpectrumAnalyzer::reconfigure_if_needed(std::uint32_t sampleRateHz, std
     smoothed_temporal_a2_.resize(log_grid_.point_count, 0.0);
     dbfs_output_.resize(log_grid_.point_count, -90.0);
 
-    ingress_float_buffer_.resize(32768 * config_.channel_count);
+    ingress_frame_buffer_.resize(65536);
+    drop_frame_buffer_.resize(65536);
     sliding_window_interleaved_.resize(config_.window_size * config_.channel_count, 0.0f);
     sliding_window_frames_ = 0;
     hop_accumulator_ = 0;
@@ -108,12 +109,6 @@ void LiveSpectrumAnalyzer::reconfigure_if_needed(std::uint32_t sampleRateHz, std
 void LiveSpectrumAnalyzer::worker_loop()
 {
     while (running_.load(std::memory_order_relaxed)) {
-        if (clear_requested_.exchange(false, std::memory_order_acq_rel)) {
-            ring_.clear();
-            sliding_window_frames_ = 0;
-            hop_accumulator_ = 0;
-            first_window_processed_ = false;
-        }
 
         const std::size_t avail = ring_.available_frames();
         if (avail == 0) {
@@ -121,70 +116,76 @@ void LiveSpectrumAnalyzer::worker_loop()
             continue;
         }
 
-        SpscFrameRing::IngressMeta meta;
-        const std::size_t popped = ring_.pop_frames_to_float(
-            ingress_float_buffer_.size() / std::max<std::size_t>(1, config_.channel_count),
-            ingress_float_buffer_.data(),
-            meta);
+        AnalysisFrame firstFrame;
+        std::size_t totalPoppedInBatch = 0;
 
-        if (popped == 0) {
+        if (ring_.pop_frames(1, &firstFrame) > 0) {
+            reconfigure_if_needed(firstFrame.sample_rate_hz, firstFrame.channel_count);
+            ingress_frame_buffer_[0] = firstFrame;
+            totalPoppedInBatch = 1;
+
+            const std::size_t remainingAvail = ring_.available_frames();
+            const std::size_t overflowThreshold = config_.window_size + 2 * config_.hop_size;
+
+            if (remainingAvail + 1 > overflowThreshold) {
+                const std::size_t targetRemaining = config_.window_size > 0 ? config_.window_size - 1 : 0;
+                if (remainingAvail > targetRemaining) {
+                    const std::size_t discardCount = remainingAvail - targetRemaining;
+                    ring_.pop_frames(
+                        std::min(discardCount, drop_frame_buffer_.size()),
+                        drop_frame_buffer_.data());
+                }
+                sliding_window_frames_ = 0;
+                hop_accumulator_ = 0;
+                first_window_processed_ = false;
+            }
+
+            const std::size_t additionalPopped = ring_.pop_frames(
+                ingress_frame_buffer_.size() - totalPoppedInBatch,
+                ingress_frame_buffer_.data() + totalPoppedInBatch);
+            totalPoppedInBatch += additionalPopped;
+        }
+
+        if (totalPoppedInBatch == 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             continue;
         }
 
-        reconfigure_if_needed(meta.sample_rate_hz, meta.channel_count);
+        for (std::size_t i = 0; i < totalPoppedInBatch; ++i) {
+            const auto& frame = ingress_frame_buffer_[i];
 
-        const std::size_t channels = config_.channel_count;
-        const std::size_t windowCap = config_.window_size;
+            // Gating: check if frame belongs to new stream generation or epoch
+            if (frame.stream_generation != active_window_generation_
+                || frame.analysis_epoch != active_window_epoch_) {
+                sliding_window_frames_ = 0;
+                hop_accumulator_ = 0;
+                first_window_processed_ = false;
+                active_window_generation_ = frame.stream_generation;
+                active_window_epoch_ = frame.analysis_epoch;
+            }
 
-        const std::size_t overflowThreshold = config_.window_size + 2 * config_.hop_size;
-        if (ring_.available_frames() > overflowThreshold) {
-            ring_.clear();
-            sliding_window_frames_ = 0;
-            hop_accumulator_ = 0;
-            first_window_processed_ = false;
-        }
+            reconfigure_if_needed(frame.sample_rate_hz, frame.channel_count);
 
-        std::size_t processedInBatch = 0;
-        while (processedInBatch < popped) {
-            if (sliding_window_frames_ < windowCap) {
-                const std::size_t needed = windowCap - sliding_window_frames_;
-                const std::size_t toCopy = std::min(needed, popped - processedInBatch);
-                std::copy(
-                    ingress_float_buffer_.begin() + processedInBatch * channels,
-                    ingress_float_buffer_.begin() + (processedInBatch + toCopy) * channels,
-                    sliding_window_interleaved_.begin() + sliding_window_frames_ * channels);
-                sliding_window_frames_ += toCopy;
-                processedInBatch += toCopy;
+            const std::size_t channels = config_.channel_count;
+            const std::size_t windowCap = config_.window_size;
 
-                if (sliding_window_frames_ == windowCap) {
-                    process_window();
-                    hop_accumulator_ = 0;
-                }
-            } else {
+            sliding_window_interleaved_[sliding_window_frames_ * channels + 0] = frame.sample_l;
+            if (channels > 1) {
+                sliding_window_interleaved_[sliding_window_frames_ * channels + 1] = frame.sample_r;
+            }
+            ++sliding_window_frames_;
+
+            if (sliding_window_frames_ == windowCap) {
+                process_window();
                 const std::size_t hopSize = config_.hop_size;
-                const std::size_t neededForHop = hopSize - hop_accumulator_;
-                const std::size_t toCopy = std::min(neededForHop, popped - processedInBatch);
-
-                // Shift left by toCopy frames
-                std::move(
-                    sliding_window_interleaved_.begin() + toCopy * channels,
-                    sliding_window_interleaved_.end(),
-                    sliding_window_interleaved_.begin());
-
-                // Append new frames
-                std::copy(
-                    ingress_float_buffer_.begin() + processedInBatch * channels,
-                    ingress_float_buffer_.begin() + (processedInBatch + toCopy) * channels,
-                    sliding_window_interleaved_.end() - toCopy * channels);
-
-                sliding_window_frames_ = windowCap;
-                hop_accumulator_ += toCopy;
-                processedInBatch += toCopy;
-
-                if (hop_accumulator_ >= hopSize) {
-                    process_window();
-                    hop_accumulator_ = 0;
+                if (windowCap > hopSize) {
+                    std::move(
+                        sliding_window_interleaved_.begin() + hopSize * channels,
+                        sliding_window_interleaved_.end(),
+                        sliding_window_interleaved_.begin());
+                    sliding_window_frames_ = windowCap - hopSize;
+                } else {
+                    sliding_window_frames_ = 0;
                 }
             }
         }
@@ -225,11 +226,19 @@ void LiveSpectrumAnalyzer::process_window()
 
     power_to_dbfs(smoothed_temporal_a2_, dbfs_output_);
 
+    const std::uint64_t analyzedGen = active_window_generation_;
+    const std::uint64_t analyzedEpoch = active_window_epoch_;
+
+    if (analyzedGen != current_generation_.load(std::memory_order_relaxed)
+        || analyzedEpoch != current_epoch_.load(std::memory_order_relaxed)) {
+        return;
+    }
+
     {
         std::lock_guard<std::mutex> lock(snapshot_mutex_);
         latest_snapshot_.valid = true;
-        latest_snapshot_.stream_generation = current_generation_.load(std::memory_order_relaxed);
-        latest_snapshot_.analysis_epoch = current_epoch_.load(std::memory_order_relaxed);
+        latest_snapshot_.stream_generation = analyzedGen;
+        latest_snapshot_.analysis_epoch = analyzedEpoch;
         latest_snapshot_.sequence_number = ++sequence_counter_;
         latest_snapshot_.sample_rate_hz = config_.sample_rate_hz;
         latest_snapshot_.point_count = log_grid_.point_count;

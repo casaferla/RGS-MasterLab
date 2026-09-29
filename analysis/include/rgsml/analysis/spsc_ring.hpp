@@ -14,9 +14,18 @@ enum class SampleEncoding : std::uint8_t {
     PCM16_LE = 1
 };
 
+struct AnalysisFrame final {
+    float sample_l{0.0f};
+    float sample_r{0.0f};
+    std::uint32_t sample_rate_hz{44100};
+    std::uint8_t channel_count{2};
+    std::uint64_t stream_generation{0};
+    std::uint64_t analysis_epoch{0};
+};
+
 class SpscFrameRing final {
 public:
-    explicit SpscFrameRing(std::size_t frameCapacity = 32768);
+    explicit SpscFrameRing(std::size_t frameCapacity = 65536);
 
     void reset(std::size_t frameCapacity);
 
@@ -30,18 +39,9 @@ public:
         std::uint64_t streamGeneration,
         std::uint64_t analysisEpoch) noexcept;
 
-    struct IngressMeta {
-        std::uint32_t sample_rate_hz{0};
-        std::uint8_t channel_count{0};
-        SampleEncoding encoding{SampleEncoding::IEEE_FLOAT32};
-        std::uint64_t stream_generation{0};
-        std::uint64_t analysis_epoch{0};
-    };
-
-    std::size_t pop_frames_to_float(
+    std::size_t pop_frames(
         std::size_t maxFrames,
-        float* outInterleavedFloat,
-        IngressMeta& outMeta) noexcept;
+        AnalysisFrame* outFrames) noexcept;
 
     [[nodiscard]] std::size_t available_frames() const noexcept;
     [[nodiscard]] std::size_t capacity() const noexcept { return capacity_; }
@@ -50,17 +50,17 @@ public:
 
 private:
     std::size_t capacity_{0};
-    std::vector<std::uint8_t> byte_buffer_;
-    std::size_t bytes_per_frame_{8};
+    std::vector<AnalysisFrame> ring_buffer_;
 
+    // Producer-owned partial frame remainder state
     std::array<std::uint8_t, 64> remainder_buffer_{};
     std::size_t remainder_len_{0};
 
-    std::atomic<std::uint32_t> sample_rate_hz_{44100};
-    std::atomic<std::uint8_t> channel_count_{2};
-    std::atomic<SampleEncoding> encoding_{SampleEncoding::IEEE_FLOAT32};
-    std::atomic<std::uint64_t> stream_generation_{0};
-    std::atomic<std::uint64_t> analysis_epoch_{0};
+    std::uint32_t producer_rate_hz_{0};
+    std::uint8_t producer_channels_{0};
+    SampleEncoding producer_encoding_{SampleEncoding::IEEE_FLOAT32};
+    std::uint64_t producer_generation_{0};
+    std::uint64_t producer_epoch_{0};
 
     std::atomic<std::size_t> head_{0};
     std::atomic<std::size_t> tail_{0};

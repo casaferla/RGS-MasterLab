@@ -42,6 +42,8 @@ private:
 
     bool spectrumEnabled_{true};
     bool hasValidSpectrum_{false};
+    std::uint64_t lastStreamGeneration_{0};
+    std::uint64_t lastAnalysisEpoch_{0};
     std::uint64_t lastSequenceNumber_{0};
 
     QVariantList pointsList_;

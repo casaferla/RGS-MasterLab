@@ -49,10 +49,20 @@ void LiveSpectrumViewModel::onPollTimer()
         return;
     }
 
-    if (snapshot.sequence_number == lastSequenceNumber_) {
+    if (snapshot.stream_generation < lastStreamGeneration_) {
         return;
     }
+    if (snapshot.stream_generation == lastStreamGeneration_) {
+        if (snapshot.analysis_epoch < lastAnalysisEpoch_) {
+            return;
+        }
+        if (snapshot.analysis_epoch == lastAnalysisEpoch_ && snapshot.sequence_number <= lastSequenceNumber_) {
+            return;
+        }
+    }
 
+    lastStreamGeneration_ = snapshot.stream_generation;
+    lastAnalysisEpoch_ = snapshot.analysis_epoch;
     lastSequenceNumber_ = snapshot.sequence_number;
     hasValidSpectrum_ = true;
 

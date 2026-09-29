@@ -38,6 +38,7 @@ public:
     void set_stream_generation(std::uint64_t generation);
 
     [[nodiscard]] SpectrumSnapshot latest_snapshot() const;
+    [[nodiscard]] std::uint64_t current_epoch() const noexcept { return current_epoch_.load(std::memory_order_relaxed); }
 
 private:
     void worker_loop();
@@ -50,8 +51,8 @@ private:
     SpscFrameRing ring_{32768};
     std::vector<std::uint8_t> producer_remainder_buffer_;
 
-    std::atomic<std::uint64_t> current_generation_{0};
-    std::atomic<std::uint64_t> current_epoch_{0};
+    std::atomic<std::uint64_t> current_generation_{1};
+    std::atomic<std::uint64_t> current_epoch_{1};
     std::atomic<bool> clear_requested_{false};
 
     SpectrumConfig config_;
@@ -60,7 +61,8 @@ private:
     LogGrid log_grid_;
     TemporalSmoother temporal_smoother_;
 
-    std::vector<float> ingress_float_buffer_;
+    std::vector<AnalysisFrame> ingress_frame_buffer_;
+    std::vector<AnalysisFrame> drop_frame_buffer_;
     std::vector<double> channel0_samples_;
     std::vector<double> channel1_samples_;
     std::vector<std::complex<double>> channel0_fft_;
@@ -74,6 +76,9 @@ private:
     std::vector<float> sliding_window_interleaved_;
     std::size_t sliding_window_frames_{0};
     std::size_t hop_accumulator_{0};
+
+    std::uint64_t active_window_generation_{0};
+    std::uint64_t active_window_epoch_{0};
 
     mutable std::mutex snapshot_mutex_;
     SpectrumSnapshot latest_snapshot_;
