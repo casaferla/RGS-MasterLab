@@ -25,11 +25,15 @@ ApplicationWindow {
     readonly property color warning: "#F2B632"
     readonly property color error: "#F27683"
 
-    // Composition and control density are intentionally decoupled.
-    // M12C keeps the authored Waveform/Adaptive Context + DSP Chain + docked editor
-    // composition at every supported desktop size; only control density changes.
+    // Minimum-first desktop composition: the supported 1184 x 688 geometry is
+    // already complete and readable. Larger windows expand elastic content
+    // continuously; width/height thresholds must not switch control density.
     readonly property bool useAdaptiveDspComposition: true
-    readonly property bool isCompactLayout: root.width < 1360 || root.height < 750
+    readonly property int sourceTransportPanelHeight: 196
+    readonly property int transportStripHeight: 72
+    readonly property int auditionRegionStripHeight: 72
+    readonly property int upperStripHorizontalPadding: 12
+    readonly property int auditionRegionVerticalPadding: 6
 
     readonly property bool hasError: {
         return projectSession.errorMessage.length > 0
@@ -144,13 +148,14 @@ ApplicationWindow {
         Rectangle {
             id: realControlStrip
             objectName: "controlStrip"
-            color: root.isCompactLayout ? "transparent" : root.panel
+            color: "transparent"
             border.color: root.border
             radius: 5
             RowLayout {
+                objectName: "controlStripContent"
                 anchors.fill: parent
-                anchors.leftMargin: root.isCompactLayout ? 0 : 12
-                anchors.rightMargin: root.isCompactLayout ? 0 : 12
+                anchors.leftMargin: root.upperStripHorizontalPadding
+                anchors.rightMargin: root.upperStripHorizontalPadding
                 spacing: 8
                 StudioIconButton { id: zoomOutButton; objectName: "waveformZoomOutButton"; iconKind: "zoom-out"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: waveformOverview; KeyNavigation.tab: zoomControl; onClicked: sourceWaveform.zoomOut(); Accessible.name: "Zoom out Source waveform" }
                 Slider {
@@ -172,9 +177,9 @@ ApplicationWindow {
                 StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: sourceWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
                 TransportButton { id: stopButton; objectName: "stopButton"; compact: false; iconKind: "stop"; enabled: playbackTransport.canStop; KeyNavigation.backtab: auditionTargetSelector.lastTarget; KeyNavigation.tab: playPauseButton; onClicked: playbackTransport.stop(); Accessible.name: "Stop" }
-                Item { Layout.preferredWidth: root.isCompactLayout ? 8 : 16 }
+                Item { Layout.preferredWidth: 8 }
                 TransportButton { id: playPauseButton; objectName: "playPauseButton"; compact: false; primary: true; iconKind: playbackTransport.isPlaying ? "pause" : "play"; enabled: playbackTransport.canPlay || playbackTransport.canPause; KeyNavigation.backtab: stopButton; KeyNavigation.tab: auditionStartEditor.firstField; onClicked: playbackTransport.isPlaying ? playbackTransport.pause() : playbackTransport.playOrResume(); Accessible.name: playbackTransport.isPlaying ? "Pause" : "Play" }
-                Item { Layout.preferredWidth: root.isCompactLayout ? 8 : 16 }
+                Item { Layout.preferredWidth: 8 }
                 Rectangle {
                     objectName: "transportTimeModule"
                     Layout.preferredWidth: 246
@@ -201,14 +206,17 @@ ApplicationWindow {
         Rectangle {
             id: realRegionPanel
             objectName: "auditionRegionControls"
-            color: root.isCompactLayout ? "transparent" : root.panel
+            color: "transparent"
             border.color: root.border
             radius: 5
             RowLayout {
+                objectName: "auditionRegionContent"
                 anchors.fill: parent
-                anchors.leftMargin: root.isCompactLayout ? 0 : 12
-                anchors.rightMargin: root.isCompactLayout ? 0 : 12
-                spacing: root.isCompactLayout ? 8 : 12
+                anchors.leftMargin: root.upperStripHorizontalPadding
+                anchors.rightMargin: root.upperStripHorizontalPadding
+                anchors.topMargin: root.auditionRegionVerticalPadding
+                anchors.bottomMargin: root.auditionRegionVerticalPadding
+                spacing: 8
                 ColumnLayout {
                     spacing: 1
                     Label { text: "START"; color: root.textSecondary; font.pixelSize: 9; font.weight: Font.DemiBold }
@@ -245,7 +253,6 @@ ApplicationWindow {
             id: realDspWorkspace
             objectName: "dspWorkspace"
             viewModel: eqViewModel
-            isCompact: root.isCompactLayout
         }
     }
 
@@ -357,7 +364,7 @@ ApplicationWindow {
             }
         }
 
-        // Main Layout Container in Standard Mode (!isCompactLayout)
+        // Legacy standard container (inactive while adaptive composition is authoritative)
         ColumnLayout {
             id: standardMainLayout
             objectName: "mainColumnLayout"
@@ -457,7 +464,7 @@ ApplicationWindow {
             }
         }
 
-        // Main Layout Container in Compact Mode (isCompactLayout)
+        // Authoritative minimum-first adaptive desktop composition
         ColumnLayout {
             id: compactMainLayout
             width: parent.width
@@ -471,7 +478,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
-                Layout.preferredHeight: root.isCompactLayout ? 172 : 196
+                Layout.preferredHeight: root.sourceTransportPanelHeight
                 color: root.panel
                 border.color: root.border
                 radius: 5
@@ -524,14 +531,14 @@ ApplicationWindow {
                             id: compactControlStripProxy
                             target: realControlStrip
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 72
+                            Layout.preferredHeight: root.transportStripHeight
                         }
 
                         LayoutItemProxy {
                             id: compactRegionPanelProxy
                             target: realRegionPanel
                             Layout.fillWidth: true
-                            Layout.preferredHeight: root.isCompactLayout ? 50 : 72
+                            Layout.preferredHeight: root.auditionRegionStripHeight
                         }
                     }
                 }
