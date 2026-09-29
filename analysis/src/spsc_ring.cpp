@@ -64,8 +64,10 @@ std::size_t SpscFrameRing::push_pcm_bytes(
     std::uint8_t channelCount,
     SampleEncoding encoding,
     std::uint64_t streamGeneration,
-    std::uint64_t analysisEpoch) noexcept
+    std::uint64_t analysisEpoch,
+    bool& outOverflowOccurred) noexcept
 {
+    outOverflowOccurred = false;
     if (byteCount == 0 && remainder_len_ == 0) {
         return 0;
     }
@@ -76,7 +78,7 @@ std::size_t SpscFrameRing::push_pcm_bytes(
         return 0;
     }
 
-    // If stream identity or format changed, discard incomplete old producer remainder!
+    // If stream identity or format changed, discard incomplete old producer remainder
     if (producer_rate_hz_ != sampleRateHz
         || producer_channels_ != channelCount
         || producer_encoding_ != encoding
@@ -110,13 +112,13 @@ std::size_t SpscFrameRing::push_pcm_bytes(
             if (capacity_ - 1 - curFrames > 0) {
                 AnalysisFrame& frame = ring_buffer_[head];
                 decode_sample_pair(remainder_buffer_.data(), channelCount, encoding, frame.sample_l, frame.sample_r);
-                frame.sample_rate_hz = sampleRateHz;
-                frame.channel_count = channelCount;
                 frame.stream_generation = streamGeneration;
                 frame.analysis_epoch = analysisEpoch;
 
                 head = (head + 1) % capacity_;
                 ++pushedFrames;
+            } else {
+                outOverflowOccurred = true;
             }
         } else {
             std::memcpy(remainder_buffer_.data() + remainder_len_, inPtr, inRem);
@@ -141,19 +143,14 @@ std::size_t SpscFrameRing::push_pcm_bytes(
         const std::size_t countToPush = std::min(directFrames, freeFrames);
 
         if (countToPush < directFrames) {
-            // Capacity overflow! Advance producer analysis epoch for discontinuity
-            ++producer_epoch_;
+            outOverflowOccurred = true;
         }
-
-        const std::uint64_t effectiveEpoch = (countToPush < directFrames) ? producer_epoch_ : analysisEpoch;
 
         for (std::size_t f = 0; f < countToPush; ++f) {
             AnalysisFrame& frame = ring_buffer_[head];
             decode_sample_pair(inPtr + f * frameBytes, channelCount, encoding, frame.sample_l, frame.sample_r);
-            frame.sample_rate_hz = sampleRateHz;
-            frame.channel_count = channelCount;
             frame.stream_generation = streamGeneration;
-            frame.analysis_epoch = effectiveEpoch;
+            frame.analysis_epoch = analysisEpoch;
 
             head = (head + 1) % capacity_;
         }
@@ -175,9 +172,14 @@ std::size_t SpscFrameRing::pop_frames(
     }
 
     auto tail = tail_.load(std::memory_order_relaxed);
-    for (std::size_t f = 0; f < count; ++f) {
-        outFrames[f] = ring_buffer_[tail];
-        tail = (tail + 1) % capacity_;
+
+    if (outFrames != nullptr) {
+        for (std::size_t f = 0; f < count; ++f) {
+            outFrames[f] = ring_buffer_[tail];
+            tail = (tail + 1) % capacity_;
+        }
+    } else {
+        tail = (tail + count) % capacity_;
     }
 
     tail_.store(tail, std::memory_order_release);

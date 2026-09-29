@@ -25,19 +25,19 @@ public:
     void start();
     void stop();
 
+    // Lock-free push from audio callback. Automatically applies analyzer's current generation & epoch.
     void push_audio_bytes(
         const void* pcmData,
         std::size_t byteCount,
         std::uint32_t sampleRateHz,
         std::uint8_t channelCount,
-        SampleEncoding encoding,
-        std::uint64_t streamGeneration,
-        std::uint64_t analysisEpoch);
+        SampleEncoding encoding);
 
     void invalidate_and_clear();
     void set_stream_generation(std::uint64_t generation);
 
     [[nodiscard]] SpectrumSnapshot latest_snapshot() const;
+    [[nodiscard]] std::uint64_t current_generation() const noexcept { return current_generation_.load(std::memory_order_relaxed); }
     [[nodiscard]] std::uint64_t current_epoch() const noexcept { return current_epoch_.load(std::memory_order_relaxed); }
 
 private:
@@ -49,11 +49,9 @@ private:
     std::thread worker_thread_;
 
     SpscFrameRing ring_{32768};
-    std::vector<std::uint8_t> producer_remainder_buffer_;
 
     std::atomic<std::uint64_t> current_generation_{1};
     std::atomic<std::uint64_t> current_epoch_{1};
-    std::atomic<bool> clear_requested_{false};
 
     SpectrumConfig config_;
     HannWindow hann_;
@@ -61,8 +59,8 @@ private:
     LogGrid log_grid_;
     TemporalSmoother temporal_smoother_;
 
+    // Small bounded consumer batch buffer (4096 frames = 98 KiB)
     std::vector<AnalysisFrame> ingress_frame_buffer_;
-    std::vector<AnalysisFrame> drop_frame_buffer_;
     std::vector<double> channel0_samples_;
     std::vector<double> channel1_samples_;
     std::vector<std::complex<double>> channel0_fft_;

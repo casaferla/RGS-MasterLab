@@ -130,12 +130,14 @@ private slots:
     void testSpscRingFloat32AndPcm16()
     {
         rgsml::analysis::SpscFrameRing ring(100);
+        bool overflow = false;
         std::vector<float> f32In = {0.5f, -0.5f, 0.25f, -0.25f};
         std::size_t pushed = ring.push_pcm_bytes(
             f32In.data(), f32In.size() * sizeof(float),
-            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, 1);
+            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, 1, overflow);
 
         QCOMPARE(pushed, std::size_t(2));
+        QVERIFY(!overflow);
         QCOMPARE(ring.available_frames(), std::size_t(2));
 
         rgsml::analysis::AnalysisFrame frames[2];
@@ -151,13 +153,14 @@ private slots:
         std::vector<std::int16_t> pcm16In = {-32768, 32767, 0, 16384};
         pushed = ring.push_pcm_bytes(
             pcm16In.data(), pcm16In.size() * sizeof(std::int16_t),
-            48000, 2, rgsml::analysis::SampleEncoding::PCM16_LE, 2, 5);
+            48000, 2, rgsml::analysis::SampleEncoding::PCM16_LE, 2, 5, overflow);
 
         QCOMPARE(pushed, std::size_t(2));
+        QVERIFY(!overflow);
         popped = ring.pop_frames(2, frames);
         QCOMPARE(popped, std::size_t(2));
         QCOMPARE(frames[0].sample_l, -1.0f);
-        QCOMPARE(frames[0].sample_rate_hz, std::uint32_t(48000));
+        QCOMPARE(ring.sample_rate_hz(), std::uint32_t(48000));
         QCOMPARE(frames[0].stream_generation, std::uint64_t(2));
         QCOMPARE(frames[0].analysis_epoch, std::uint64_t(5));
     }
@@ -165,12 +168,13 @@ private slots:
     void testPartialFrameRemainderDiscardOnIdentityChange()
     {
         rgsml::analysis::SpscFrameRing ring(100);
+        bool overflow = false;
 
         // Push partial frame (3 bytes of Float32 stereo which requires 8 bytes)
         std::uint8_t partialBytes[3] = {1, 2, 3};
         ring.push_pcm_bytes(
             partialBytes, 3,
-            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, 1);
+            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, 1, overflow);
 
         QCOMPARE(ring.available_frames(), std::size_t(0));
 
@@ -178,7 +182,7 @@ private slots:
         std::vector<float> f32In = {0.75f, 0.75f};
         ring.push_pcm_bytes(
             f32In.data(), f32In.size() * sizeof(float),
-            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 2, 2);
+            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 2, 2, overflow);
 
         QCOMPARE(ring.available_frames(), std::size_t(1));
         rgsml::analysis::AnalysisFrame frame;
@@ -187,19 +191,18 @@ private slots:
         QCOMPARE(frame.stream_generation, std::uint64_t(2));
     }
 
-    void testOverflowAdvancesAnalysisEpoch()
+    void testOverflowFlagReporting()
     {
         rgsml::analysis::SpscFrameRing ring(4); // tiny capacity: max 3 writable frames
+        bool overflow = false;
 
         std::vector<float> f32In(20, 0.1f); // 10 frames > capacity
         std::size_t pushed = ring.push_pcm_bytes(
             f32In.data(), f32In.size() * sizeof(float),
-            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, 100);
+            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, 100, overflow);
 
         QCOMPARE(pushed, std::size_t(3));
-        rgsml::analysis::AnalysisFrame frame;
-        ring.pop_frames(1, &frame);
-        QVERIFY(frame.analysis_epoch > 100); // Epoch advanced due to producer capacity overflow
+        QVERIFY(overflow); // SpscFrameRing correctly flagged capacity overflow to caller
     }
 };
 

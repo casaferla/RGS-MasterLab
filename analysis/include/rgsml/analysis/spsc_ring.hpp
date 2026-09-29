@@ -17,19 +17,18 @@ enum class SampleEncoding : std::uint8_t {
 struct AnalysisFrame final {
     float sample_l{0.0f};
     float sample_r{0.0f};
-    std::uint32_t sample_rate_hz{44100};
-    std::uint8_t channel_count{2};
     std::uint64_t stream_generation{0};
     std::uint64_t analysis_epoch{0};
 };
 
 class SpscFrameRing final {
 public:
-    explicit SpscFrameRing(std::size_t frameCapacity = 65536);
+    explicit SpscFrameRing(std::size_t frameCapacity = 32768);
 
     void reset(std::size_t frameCapacity);
 
     // Lock-free, zero allocation on hot audio callback
+    // Returns number of frames pushed; sets overflowOccurred = true if capacity was exhausted
     std::size_t push_pcm_bytes(
         const void* pcmData,
         std::size_t byteCount,
@@ -37,15 +36,20 @@ public:
         std::uint8_t channelCount,
         SampleEncoding encoding,
         std::uint64_t streamGeneration,
-        std::uint64_t analysisEpoch) noexcept;
+        std::uint64_t analysisEpoch,
+        bool& outOverflowOccurred) noexcept;
 
+    // Pops up to maxFrames into outFrames. If outFrames is nullptr, discards frames without copying.
     std::size_t pop_frames(
         std::size_t maxFrames,
         AnalysisFrame* outFrames) noexcept;
 
     [[nodiscard]] std::size_t available_frames() const noexcept;
     [[nodiscard]] std::size_t capacity() const noexcept { return capacity_; }
+    [[nodiscard]] std::uint32_t sample_rate_hz() const noexcept { return producer_rate_hz_; }
+    [[nodiscard]] std::uint8_t channel_count() const noexcept { return producer_channels_; }
 
+    // SPSC: clear is ONLY called by consumer thread
     void clear() noexcept;
 
 private:

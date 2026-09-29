@@ -20,7 +20,7 @@ private slots:
         analyzer.push_audio_bytes(
             sig.pcm_interleaved_f32.data(),
             sig.pcm_interleaved_f32.size() * sizeof(float),
-            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, analyzer.current_epoch());
+            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -49,7 +49,6 @@ private slots:
         rgsml::analysis::LiveSpectrumAnalyzer analyzer;
         analyzer.start();
 
-        // 250 Hz and 4000 Hz dual tone
         auto sig1 = rgsml::tests::oracle::generate_sine_wave(250.0, -6.0, 0.5, 44100, true);
         auto sig2 = rgsml::tests::oracle::generate_sine_wave(4000.0, -12.0, 0.5, 44100, true);
 
@@ -60,7 +59,7 @@ private slots:
 
         analyzer.push_audio_bytes(
             dualTone.data(), dualTone.size() * sizeof(float),
-            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, analyzer.current_epoch());
+            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         auto snapshot = analyzer.latest_snapshot();
@@ -69,7 +68,6 @@ private slots:
         QVERIFY(snapshot.valid);
         QVERIFY(snapshot.dbfs_powers.size() == 512);
 
-        // Verify two separate energy regions near 250 Hz and 4000 Hz
         double power250 = -90.0;
         double power4000 = -90.0;
         for (std::size_t i = 0; i < snapshot.point_count; ++i) {
@@ -97,11 +95,11 @@ private slots:
 
         analyzerMono.push_audio_bytes(
             sigMono.pcm_interleaved_f32.data(), sigMono.pcm_interleaved_f32.size() * sizeof(float),
-            44100, 1, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, analyzerMono.current_epoch());
+            44100, 1, rgsml::analysis::SampleEncoding::IEEE_FLOAT32);
 
         analyzerStereo.push_audio_bytes(
             sigStereo.pcm_interleaved_f32.data(), sigStereo.pcm_interleaved_f32.size() * sizeof(float),
-            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, analyzerStereo.current_epoch());
+            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -112,7 +110,6 @@ private slots:
 
         QVERIFY(snapMono.valid && snapStereo.valid);
 
-        // Identical stereo must match mono (NO artificial +3 dB gain!)
         for (std::size_t i = 0; i < snapMono.point_count; ++i) {
             QCOMPARE_LE(std::abs(snapMono.dbfs_powers[i] - snapStereo.dbfs_powers[i]), 0.5);
         }
@@ -123,12 +120,11 @@ private slots:
         rgsml::analysis::LiveSpectrumAnalyzer analyzer;
         analyzer.start();
 
-        // Phase offset pi = anti-phase stereo (L = -R)
         auto sig = rgsml::tests::oracle::generate_sine_wave(1000.0, -6.0, 0.5, 44100, true, std::numbers::pi);
 
         analyzer.push_audio_bytes(
             sig.pcm_interleaved_f32.data(), sig.pcm_interleaved_f32.size() * sizeof(float),
-            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, analyzer.current_epoch());
+            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -140,7 +136,6 @@ private slots:
         for (double p : snapshot.dbfs_powers) {
             maxDbfs = std::max(maxDbfs, p);
         }
-        // Power in anti-phase stereo MUST NOT cancel!
         QVERIFY(maxDbfs > -10.0);
     }
 
@@ -154,7 +149,7 @@ private slots:
         analyzer.push_audio_bytes(
             sig.pcm_interleaved_f32.data(),
             sig.pcm_interleaved_f32.size() * sizeof(float),
-            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32, 1, analyzer.current_epoch());
+            44100, 2, rgsml::analysis::SampleEncoding::IEEE_FLOAT32);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 

@@ -102,15 +102,11 @@ public:
         rgsml::analysis::LiveSpectrumAnalyzer* analyzer,
         std::uint32_t sampleRate,
         std::uint8_t channels,
-        rgsml::analysis::SampleEncoding encoding,
-        std::uint64_t gen,
-        std::uint64_t epoch)
+        rgsml::analysis::SampleEncoding encoding)
     {
         sampleRate_ = sampleRate;
         channelCount_ = channels;
         encoding_ = encoding;
-        streamGeneration_.store(gen, std::memory_order_relaxed);
-        analysisEpoch_.store(epoch, std::memory_order_relaxed);
         analyzer_.store(analyzer, std::memory_order_release);
     }
 
@@ -150,9 +146,7 @@ protected:
                 count,
                 sampleRate_,
                 channelCount_,
-                encoding_,
-                streamGeneration_.load(std::memory_order_relaxed),
-                analysisEpoch_.load(std::memory_order_relaxed));
+                encoding_);
         }
 
         return static_cast<qint64>(count);
@@ -173,8 +167,6 @@ private:
     std::uint32_t sampleRate_{44100};
     std::uint8_t channelCount_{2};
     rgsml::analysis::SampleEncoding encoding_{rgsml::analysis::SampleEncoding::IEEE_FLOAT32};
-    std::atomic<std::uint64_t> streamGeneration_{0};
-    std::atomic<std::uint64_t> analysisEpoch_{0};
 };
 
 class QtPlaybackOutput final : public IPlaybackOutput {
@@ -215,16 +207,14 @@ public:
     }
 
     void attach_analyzer(
-        rgsml::analysis::LiveSpectrumAnalyzer* analyzer,
-        std::uint64_t gen,
-        std::uint64_t epoch) override
+        rgsml::analysis::LiveSpectrumAnalyzer* analyzer) override
     {
         const auto sampleRate = static_cast<std::uint32_t>(format_.sampleRate());
         const auto channels = static_cast<std::uint8_t>(format_.channelCount());
         const auto encoding = (format_.sampleFormat() == QAudioFormat::Float)
             ? rgsml::analysis::SampleEncoding::IEEE_FLOAT32
             : rgsml::analysis::SampleEncoding::PCM16_LE;
-        queue_.attach_analyzer(analyzer, sampleRate, channels, encoding, gen, epoch);
+        queue_.attach_analyzer(analyzer, sampleRate, channels, encoding);
     }
 
     [[nodiscard]] core::Status start() override
@@ -521,7 +511,8 @@ public:
             return core::Status::failure(*output.error());
         }
         if (analyzer_ != nullptr) {
-            output.value()->output->attach_analyzer(analyzer_, streamGeneration_, analysisEpoch_);
+            output.value()->output->attach_analyzer(analyzer_);
+            output.value()->output->attach_analyzer(analyzer_);
         }
         auto installed = engine_.install_candidate(
             std::move(*reader.value()),

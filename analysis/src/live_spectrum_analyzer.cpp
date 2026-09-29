@@ -39,23 +39,29 @@ void LiveSpectrumAnalyzer::push_audio_bytes(
     std::size_t byteCount,
     std::uint32_t sampleRateHz,
     std::uint8_t channelCount,
-    SampleEncoding encoding,
-    std::uint64_t streamGeneration,
-    std::uint64_t analysisEpoch)
+    SampleEncoding encoding)
 {
+    const std::uint64_t gen = current_generation_.load(std::memory_order_relaxed);
+    const std::uint64_t epoch = current_epoch_.load(std::memory_order_relaxed);
+    bool overflow = false;
+
     ring_.push_pcm_bytes(
         pcmData,
         byteCount,
         sampleRateHz,
         channelCount,
         encoding,
-        streamGeneration,
-        analysisEpoch);
+        gen,
+        epoch,
+        overflow);
+
+    if (overflow) {
+        current_epoch_.fetch_add(1, std::memory_order_release);
+    }
 }
 
 void LiveSpectrumAnalyzer::invalidate_and_clear()
 {
-    ring_.clear();
     current_epoch_.fetch_add(1, std::memory_order_release);
 
     std::lock_guard<std::mutex> lock(snapshot_mutex_);
@@ -98,8 +104,7 @@ void LiveSpectrumAnalyzer::reconfigure_if_needed(std::uint32_t sampleRateHz, std
     smoothed_temporal_a2_.resize(log_grid_.point_count, 0.0);
     dbfs_output_.resize(log_grid_.point_count, -90.0);
 
-    ingress_frame_buffer_.resize(65536);
-    drop_frame_buffer_.resize(65536);
+    ingress_frame_buffer_.resize(4096);
     sliding_window_interleaved_.resize(config_.window_size * config_.channel_count, 0.0f);
     sliding_window_frames_ = 0;
     hop_accumulator_ = 0;
@@ -109,7 +114,6 @@ void LiveSpectrumAnalyzer::reconfigure_if_needed(std::uint32_t sampleRateHz, std
 void LiveSpectrumAnalyzer::worker_loop()
 {
     while (running_.load(std::memory_order_relaxed)) {
-
         const std::size_t avail = ring_.available_frames();
         if (avail == 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -120,7 +124,7 @@ void LiveSpectrumAnalyzer::worker_loop()
         std::size_t totalPoppedInBatch = 0;
 
         if (ring_.pop_frames(1, &firstFrame) > 0) {
-            reconfigure_if_needed(firstFrame.sample_rate_hz, firstFrame.channel_count);
+            reconfigure_if_needed(ring_.sample_rate_hz(), ring_.channel_count());
             ingress_frame_buffer_[0] = firstFrame;
             totalPoppedInBatch = 1;
 
@@ -131,9 +135,7 @@ void LiveSpectrumAnalyzer::worker_loop()
                 const std::size_t targetRemaining = config_.window_size > 0 ? config_.window_size - 1 : 0;
                 if (remainingAvail > targetRemaining) {
                     const std::size_t discardCount = remainingAvail - targetRemaining;
-                    ring_.pop_frames(
-                        std::min(discardCount, drop_frame_buffer_.size()),
-                        drop_frame_buffer_.data());
+                    ring_.pop_frames(discardCount, nullptr);
                 }
                 sliding_window_frames_ = 0;
                 hop_accumulator_ = 0;
@@ -154,7 +156,6 @@ void LiveSpectrumAnalyzer::worker_loop()
         for (std::size_t i = 0; i < totalPoppedInBatch; ++i) {
             const auto& frame = ingress_frame_buffer_[i];
 
-            // Gating: check if frame belongs to new stream generation or epoch
             if (frame.stream_generation != active_window_generation_
                 || frame.analysis_epoch != active_window_epoch_) {
                 sliding_window_frames_ = 0;
@@ -164,7 +165,7 @@ void LiveSpectrumAnalyzer::worker_loop()
                 active_window_epoch_ = frame.analysis_epoch;
             }
 
-            reconfigure_if_needed(frame.sample_rate_hz, frame.channel_count);
+            reconfigure_if_needed(ring_.sample_rate_hz(), ring_.channel_count());
 
             const std::size_t channels = config_.channel_count;
             const std::size_t windowCap = config_.window_size;

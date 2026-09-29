@@ -921,16 +921,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle must default to ON");
     auto* spectrumCanvasObj = eqGraph->findChild<QObject*>(QStringLiteral("spectrumCanvas"));
     QVERIFY2(spectrumCanvasObj != nullptr, "spectrumCanvas must exist inside ParametricEqGraph");
+    QVERIFY2(spectrumCanvasObj->property("visible").toBool(), "spectrumCanvas must be visible when SPECTRUM is ON");
 
     const bool undoStateBeforeToggle = eqViewModel.can_undo();
+    const quint64 previewGenBeforeToggle = eqViewModel.preview_generation();
+
     QVERIFY(QMetaObject::invokeMethod(spectrumToggleBtn, "clicked"));
     QCoreApplication::processEvents();
     QVERIFY2(!liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle click must set spectrumEnabled to false");
+    QVERIFY2(!spectrumCanvasObj->property("visible").toBool(), "spectrumCanvas must be hidden when SPECTRUM is OFF");
     QCOMPARE(eqViewModel.can_undo(), undoStateBeforeToggle);
+    QCOMPARE(eqViewModel.preview_generation(), previewGenBeforeToggle);
 
     QVERIFY(QMetaObject::invokeMethod(spectrumToggleBtn, "clicked"));
     QCoreApplication::processEvents();
     QVERIFY2(liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle click must restore spectrumEnabled to true");
+    QVERIFY2(spectrumCanvasObj->property("visible").toBool(), "spectrumCanvas must be restored visible when SPECTRUM is ON");
 
     // Click Bypass -> BYP badge becomes visible on DSP chain row, while config LED remains unchanged
     QVERIFY2(QMetaObject::invokeMethod(abBypassBtn, "clicked"), "Clicking abButtonBypass must succeed");
