@@ -1055,7 +1055,10 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         for (std::size_t ch = 0; ch < 2; ++ch) {
             auto oldCh = srcMutableOld.channel(ch);
             auto newCh = srcMutableNew.channel(ch);
-            std::fill(oldCh.value()->begin(), oldCh.value()->end(), 1.0);
+            // Keep SRC qualification below full scale: FIR passband ripple can
+            // cross unity by a sub-LSB amount, while PCM16 audition correctly
+            // rejects canonical samples outside [-1.0, +1.0].
+            std::fill(oldCh.value()->begin(), oldCh.value()->end(), 0.5);
             std::fill(newCh.value()->begin(), newCh.value()->end(), 0.0);
         }
 
@@ -1090,22 +1093,19 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         }
         const auto& srcHistory = observedSrc->history();
         QVERIFY(srcHistory.size() >= requiredBytes);
-        QCOMPARE(
-            read_i16(
-                srcHistory,
-                (handoffBoundaryFrames - 1U) * bytesPerFrame),
-            static_cast<std::int16_t>(32767));
-        QCOMPARE(
-            read_i16(
-                srcHistory,
-                handoffBoundaryFrames * bytesPerFrame),
-            static_cast<std::int16_t>(32767));
-        QCOMPARE(
-            read_i16(
-                srcHistory,
-                (handoffBoundaryFrames + expectedXfadeFrames / 2U)
-                    * bytesPerFrame),
-            static_cast<std::int16_t>(16384));
+        const auto oldBeforeBoundary = read_i16(
+            srcHistory,
+            (handoffBoundaryFrames - 1U) * bytesPerFrame);
+        const auto oldAtBoundary = read_i16(
+            srcHistory,
+            handoffBoundaryFrames * bytesPerFrame);
+        const auto midpoint = read_i16(
+            srcHistory,
+            (handoffBoundaryFrames + expectedXfadeFrames / 2U)
+                * bytesPerFrame);
+        QVERIFY(std::abs(static_cast<int>(oldBeforeBoundary) - 16384) <= 1);
+        QVERIFY(std::abs(static_cast<int>(oldAtBoundary) - 16384) <= 1);
+        QVERIFY(std::abs(static_cast<int>(midpoint) - 8192) <= 1);
         const auto lastCrossfadeSample = read_i16(
             srcHistory,
             (handoffBoundaryFrames + expectedXfadeFrames - 1U)
