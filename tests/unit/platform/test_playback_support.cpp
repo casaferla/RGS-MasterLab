@@ -1123,6 +1123,120 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
     verifySrcCrossfade(44'100U, 48'000U, 720U);
     verifySrcCrossfade(48'000U, 44'100U, 662U);
 
+    // Test 9: an active Loop Region survives a PLAYING handoff. The
+    // future-boundary crossfade occurs before the loop end, then playback
+    // traverses the armed loop using only the new realization without a stop.
+    {
+        constexpr std::int64_t loopEndFrame = 3000;
+        PlaybackEngine loopEngine;
+        auto loopOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedLoop = loopOutput.get();
+
+        auto loopOld = make_buffer(
+            48000, audio::ChannelLayout::STEREO_LR, totalFrames);
+        auto loopNew = make_buffer(
+            48000, audio::ChannelLayout::STEREO_LR, totalFrames);
+        auto loopMutableOld = loopOld.mutable_view();
+        auto loopMutableNew = loopNew.mutable_view();
+        for (std::size_t ch = 0; ch < 2; ++ch) {
+            auto oldCh = loopMutableOld.channel(ch);
+            auto newCh = loopMutableNew.channel(ch);
+            std::fill(oldCh.value()->begin(), oldCh.value()->end(), 0.5);
+            std::fill(newCh.value()->begin(), newCh.value()->end(), -0.5);
+        }
+
+        QVERIFY(loopEngine.install_pcm_candidate(
+            loopOld.view(),
+            std::move(loopOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1));
+        auto loopRange = core::FrameRange::create(
+            core::FrameIndex{0},
+            core::FrameIndex{loopEndFrame});
+        QVERIFY(loopRange);
+        QVERIFY(loopEngine.set_loop(*loopRange.value()));
+        QVERIFY(loopEngine.play());
+
+        const int stopCallsBeforeLoopHandoff = observedLoop->stopCalls;
+        QVERIFY(loopEngine.handoff_pcm(loopNew.view(), lifetime2));
+        auto loopSnapshot = loopEngine.snapshot();
+        QVERIFY(loopSnapshot);
+        QCOMPARE(
+            loopSnapshot.value()->state,
+            core::PlaybackState::PLAYING);
+        QVERIFY(loopSnapshot.value()->loop.has_value());
+        QCOMPARE(
+            loopSnapshot.value()->loop->begin().value(),
+            std::int64_t{0});
+        QCOMPARE(
+            loopSnapshot.value()->loop->end().value(),
+            loopEndFrame);
+        QCOMPARE(
+            observedLoop->stopCalls,
+            stopCallsBeforeLoopHandoff);
+
+        const auto requiredLoopHistoryBytes =
+            (static_cast<std::size_t>(loopEndFrame) + 1U)
+            * bytesPerFrame;
+        for (int iteration = 0;
+             iteration < 12
+                 && observedLoop->history().size()
+                     < requiredLoopHistoryBytes;
+             ++iteration) {
+            observedLoop->consume_all();
+            loopEngine.tick();
+        }
+
+        const auto& loopHistory = observedLoop->history();
+        QVERIFY(loopHistory.size() >= requiredLoopHistoryBytes);
+        QVERIFY(
+            std::abs(
+                static_cast<int>(
+                    read_i16(
+                        loopHistory,
+                        (handoffBoundaryFrames - 1U)
+                            * bytesPerFrame))
+                - 16384)
+            <= 1);
+        QVERIFY(
+            std::abs(
+                static_cast<int>(
+                    read_i16(
+                        loopHistory,
+                        handoffBoundaryFrames * bytesPerFrame))
+                - 16384)
+            <= 1);
+        QVERIFY(
+            std::abs(
+                static_cast<int>(
+                    read_i16(
+                        loopHistory,
+                        (handoffBoundaryFrames + xfadeFrames48k)
+                            * bytesPerFrame))
+                + 16384)
+            <= 1);
+
+        // Linear output frame loopEndFrame is the first frame after the
+        // traversal boundary, so it must be the new realization at loop begin.
+        QVERIFY(
+            std::abs(
+                static_cast<int>(
+                    read_i16(
+                        loopHistory,
+                        static_cast<std::size_t>(loopEndFrame)
+                            * bytesPerFrame))
+                + 16384)
+            <= 1);
+        QCOMPARE(
+            observedLoop->stopCalls,
+            stopCallsBeforeLoopHandoff);
+        QCOMPARE(
+            loopEngine.snapshot().value()->state,
+            core::PlaybackState::PLAYING);
+    }
+
     // Test 8: if all remaining old audio is already committed through natural
     // EOF, replacement must not append a frame-zero crossfade or replay.
     {
