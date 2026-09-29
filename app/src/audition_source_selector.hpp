@@ -77,7 +77,8 @@ signals:
 private:
     [[nodiscard]] core::Status store_active_cue();
     [[nodiscard]] core::Status prepare_realization(
-        const render::RenderResult& realization);
+        const render::RenderResult& realization,
+        std::shared_ptr<const void> lifetime = nullptr);
     [[nodiscard]] core::Status materialize_prepared(
         const core::ResourceReference& source);
     void fail_closed(const core::Error& error);

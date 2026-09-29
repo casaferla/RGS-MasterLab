@@ -54,48 +54,47 @@ class BufferedAudioDevice final : public QIODevice {
 public:
     explicit BufferedAudioDevice(qsizetype capacity)
         : capacity_(capacity)
+        , buffer_(static_cast<std::size_t>(capacity), std::byte{0})
     {
         open(QIODevice::ReadOnly);
     }
 
     [[nodiscard]] std::size_t writable_bytes() const noexcept
     {
-        QMutexLocker lock{&mutex_};
-        return static_cast<std::size_t>(capacity_ - buffer_.size());
+        const auto head = head_.load(std::memory_order_relaxed);
+        const auto tail = tail_.load(std::memory_order_acquire);
+        const auto count = (head >= tail) ? (head - tail) : (capacity_ - (tail - head));
+        return static_cast<std::size_t>(capacity_ - 1 - count);
     }
 
     [[nodiscard]] std::size_t queued_bytes() const noexcept
     {
-        QMutexLocker lock{&mutex_};
-        return static_cast<std::size_t>(buffer_.size());
+        const auto head = head_.load(std::memory_order_acquire);
+        const auto tail = tail_.load(std::memory_order_relaxed);
+        return static_cast<std::size_t>((head >= tail) ? (head - tail) : (capacity_ - (tail - head)));
     }
 
     [[nodiscard]] std::size_t append(std::span<const std::byte> bytes)
     {
-        qsizetype accepted = 0;
-        {
-            QMutexLocker lock{&mutex_};
-            const auto available = capacity_ - buffer_.size();
-            accepted = std::min(
-                available,
-                static_cast<qsizetype>(std::min<std::size_t>(
-                    bytes.size(),
-                    static_cast<std::size_t>(std::numeric_limits<qsizetype>::max()))));
-            if (accepted > 0) {
-                buffer_.append(
-                    reinterpret_cast<const char*>(bytes.data()), accepted);
-            }
+        const auto available = writable_bytes();
+        const auto accepted = std::min(available, bytes.size());
+        if (accepted == 0) {
+            return 0;
         }
-        if (accepted > 0) {
-            emit readyRead();
+
+        auto head = head_.load(std::memory_order_relaxed);
+        for (std::size_t i = 0; i < accepted; ++i) {
+            buffer_[head] = bytes[i];
+            head = (head + 1) % capacity_;
         }
-        return static_cast<std::size_t>(accepted);
+        head_.store(head, std::memory_order_release);
+        emit readyRead();
+        return accepted;
     }
 
     void clear() noexcept
     {
-        QMutexLocker lock{&mutex_};
-        buffer_.clear();
+        tail_.store(head_.load(std::memory_order_relaxed), std::memory_order_release);
     }
 
     [[nodiscard]] bool isSequential() const override
@@ -105,8 +104,7 @@ public:
 
     [[nodiscard]] qint64 bytesAvailable() const override
     {
-        QMutexLocker lock{&mutex_};
-        return static_cast<qint64>(buffer_.size()) + QIODevice::bytesAvailable();
+        return static_cast<qint64>(queued_bytes()) + QIODevice::bytesAvailable();
     }
 
 protected:
@@ -115,17 +113,18 @@ protected:
         if (maximumBytes <= 0) {
             return 0;
         }
-        QMutexLocker lock{&mutex_};
-        const auto count = std::min(
-            static_cast<qsizetype>(maximumBytes), buffer_.size());
-        if (count <= 0) {
+        const auto available = queued_bytes();
+        const auto count = std::min(static_cast<std::size_t>(maximumBytes), available);
+        if (count == 0) {
             return 0;
         }
-        std::memcpy(
-            destination,
-            buffer_.constData(),
-            static_cast<std::size_t>(count));
-        buffer_.remove(0, count);
+
+        auto tail = tail_.load(std::memory_order_relaxed);
+        for (std::size_t i = 0; i < count; ++i) {
+            destination[i] = static_cast<char>(buffer_[tail]);
+            tail = (tail + 1) % capacity_;
+        }
+        tail_.store(tail, std::memory_order_release);
         return static_cast<qint64>(count);
     }
 
@@ -135,9 +134,10 @@ protected:
     }
 
 private:
-    mutable QMutex mutex_;
-    QByteArray buffer_;
-    qsizetype capacity_;
+    std::size_t capacity_;
+    std::vector<std::byte> buffer_;
+    std::atomic<std::size_t> head_{0};
+    std::atomic<std::size_t> tail_{0};
 };
 
 class QtPlaybackOutput final : public IPlaybackOutput {
@@ -473,7 +473,9 @@ public:
         return core::Status::success();
     }
 
-    [[nodiscard]] core::Status prepare_pcm(audio::AudioBufferView source)
+    [[nodiscard]] core::Status prepare_pcm(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime = nullptr)
     {
         auto output = make_output_candidate(
             source.format(), source.frame_count());
@@ -484,9 +486,23 @@ public:
             source,
             std::move(output.value()->output),
             output.value()->sampleFormat,
-            std::move(output.value()->rateAdapter));
+            std::move(output.value()->rateAdapter),
+            std::move(lifetime));
         if (!installed) {
             return installed;
+        }
+        preparedSource_.reset();
+        preparedPcm_ = source;
+        return core::Status::success();
+    }
+
+    [[nodiscard]] core::Status handoff_pcm(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime = nullptr)
+    {
+        auto handedOff = engine_.handoff_pcm(source, lifetime);
+        if (!handedOff) {
+            return handedOff;
         }
         preparedSource_.reset();
         preparedPcm_ = source;
@@ -607,10 +623,21 @@ public:
         });
     }
 
-    [[nodiscard]] core::Status prepare_pcm(audio::AudioBufferView source)
+    [[nodiscard]] core::Status prepare_pcm(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime = nullptr)
     {
-        return invoke_status([source](PlaybackWorker& worker) {
-            return worker.prepare_pcm(source);
+        return invoke_status([source, lifetime = std::move(lifetime)](PlaybackWorker& worker) mutable {
+            return worker.prepare_pcm(source, std::move(lifetime));
+        });
+    }
+
+    [[nodiscard]] core::Status handoff_pcm(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime = nullptr)
+    {
+        return invoke_status([source, lifetime = std::move(lifetime)](PlaybackWorker& worker) mutable {
+            return worker.handoff_pcm(source, std::move(lifetime));
         });
     }
 
@@ -726,7 +753,21 @@ core::Status WindowsAudioPlaybackService::prepare(
 core::Status WindowsAudioPlaybackService::prepare_pcm(
     audio::AudioBufferView source)
 {
-    return impl_->prepare_pcm(source);
+    return impl_->prepare_pcm(source, nullptr);
+}
+
+core::Status WindowsAudioPlaybackService::prepare_pcm(
+    audio::AudioBufferView source,
+    std::shared_ptr<const void> lifetime)
+{
+    return impl_->prepare_pcm(source, std::move(lifetime));
+}
+
+core::Status WindowsAudioPlaybackService::handoff_pcm(
+    audio::AudioBufferView source,
+    std::shared_ptr<const void> lifetime)
+{
+    return impl_->handoff_pcm(source, std::move(lifetime));
 }
 
 core::Status WindowsAudioPlaybackService::clear()

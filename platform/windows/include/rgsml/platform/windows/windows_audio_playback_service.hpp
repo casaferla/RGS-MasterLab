@@ -24,6 +24,12 @@ public:
     // Windows-specific borrowed canonical-PCM seam. The caller must keep the
     // backing AudioBuffer alive until clear() returns.
     [[nodiscard]] core::Status prepare_pcm(audio::AudioBufferView source);
+    [[nodiscard]] core::Status prepare_pcm(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime);
+    [[nodiscard]] core::Status handoff_pcm(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime = nullptr);
     [[nodiscard]] core::Status clear() override;
     [[nodiscard]] core::Status play() override;
     [[nodiscard]] core::Status pause() override;

@@ -92,7 +92,11 @@ public:
         std::unique_ptr<IPlaybackOutput> output,
         DeviceSampleFormat sampleFormat,
         std::optional<audio::PlaybackSampleRateAdapter> rateAdapter =
-            std::nullopt);
+            std::nullopt,
+        std::shared_ptr<const void> lifetime = nullptr);
+    [[nodiscard]] core::Status handoff_pcm(
+        audio::AudioBufferView source,
+        std::shared_ptr<const void> lifetime = nullptr);
     [[nodiscard]] core::Status clear();
     [[nodiscard]] core::Status play();
     [[nodiscard]] core::Status pause();
@@ -138,6 +142,7 @@ private:
     std::size_t pendingOffset_{0U};
     bool eofScheduled_{false};
     std::optional<core::Error> runtimeError_;
+    std::int64_t processedFrameBaseline_{0};
 };
 
 }  // namespace rgsml::platform::windows::internal

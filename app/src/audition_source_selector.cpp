@@ -182,41 +182,43 @@ core::Status AuditionSourceSelector::set_prepared_realization(
 core::Status AuditionSourceSelector::set_processed_realization(
     render::RenderResult realization)
 {
+    auto candidate = std::make_shared<const render::RenderResult>(std::move(realization));
+
     if (activeTarget_ == AuditionTarget::PROCESSED) {
-        bool wasPlaying = false;
+        const auto range = candidate->render_window();
         auto snapshot = playback_->playback_snapshot();
         if (snapshot) {
             sourceDerivedCue_ = snapshot.value()->position;
-            wasPlaying = (snapshot.value()->state == core::PlaybackState::PLAYING);
         }
-        auto cleared = playback_->stop_and_clear();
-        if (!cleared) {
-            fail_closed(*cleared.error());
-            return cleared;
+        if (sourceDerivedCue_.value() == range.end().value()) {
+            sourceDerivedCue_ = range.begin();
         }
-        processed_ = std::make_shared<const render::RenderResult>(std::move(realization));
+        if (sourceDerivedCue_ < range.begin() || sourceDerivedCue_ > range.end()) {
+            publish_error(QStringLiteral("Source cue is outside the available realization range."));
+            return unavailable("Source cue is outside the available realization range.");
+        }
+
         playback_->set_source_derived_active(true);
-        auto preparedStatus = prepare_realization(*processed_);
-        if (!preparedStatus) {
-            fail_closed(*preparedStatus.error());
-            return preparedStatus;
+        auto handedOff = playback_->handoff_pcm(candidate->view(), candidate);
+        if (!handedOff) {
+            publish_error(QString::fromStdString(handedOff.error()->message()));
+            return handedOff;
         }
-        if (wasPlaying) {
-            playback_->playOrResume();
-            auto newSnapshot = playback_->playback_snapshot();
-            if (newSnapshot && newSnapshot.value()->state != core::PlaybackState::PLAYING) {
-                fail_closed(core::Error{
-                    core::ErrorCode::InvalidState,
-                    "Failed to resume playback after audition target switch."});
-                return unavailable("Failed to resume playback after audition target switch.");
-            }
+
+        const auto loop = sourceLoopProvider_ ? sourceLoopProvider_() : std::nullopt;
+        if (!loop || (loop->begin() >= range.begin() && loop->end() <= range.end())) {
+            static_cast<void>(playback_->set_loop_source_range(loop));
+        } else {
+            static_cast<void>(playback_->set_loop_source_range(std::nullopt));
         }
+
+        processed_ = candidate;
         statusText_.clear();
         emit changed();
         return core::Status::success();
     }
 
-    processed_ = std::make_shared<const render::RenderResult>(std::move(realization));
+    processed_ = candidate;
     emit changed();
     return core::Status::success();
 }
@@ -326,8 +328,8 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
         }
     } else {
         playback_->set_source_derived_active(true);
-        preparedStatus = prepare_realization(
-            target == AuditionTarget::PREPARED ? *prepared_ : *processed_);
+        const auto& real = (target == AuditionTarget::PREPARED ? prepared_ : processed_);
+        preparedStatus = prepare_realization(*real, real);
     }
     if (!preparedStatus) {
         fail_closed(*preparedStatus.error());
@@ -387,7 +389,8 @@ core::Status AuditionSourceSelector::store_active_cue()
 }
 
 core::Status AuditionSourceSelector::prepare_realization(
-    const render::RenderResult& realization)
+    const render::RenderResult& realization,
+    std::shared_ptr<const void> lifetime)
 {
     const auto range = realization.render_window();
     if (sourceDerivedCue_.value() == range.end().value()) {
@@ -396,7 +399,7 @@ core::Status AuditionSourceSelector::prepare_realization(
     if (sourceDerivedCue_ < range.begin() || sourceDerivedCue_ > range.end()) {
         return unavailable("Source cue is outside the available realization range.");
     }
-    auto prepared = playback_->prepare_pcm(realization.view());
+    auto prepared = playback_->prepare_pcm(realization.view(), std::move(lifetime));
     if (!prepared) {
         return prepared;
     }
