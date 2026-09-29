@@ -7,6 +7,8 @@ qt_add_executable(rgsml_app
     src/audition_region_view_model.hpp
     src/gold_selection_view_model.cpp
     src/gold_selection_view_model.hpp
+    src/live_spectrum_view_model.cpp
+    src/live_spectrum_view_model.hpp
     src/main.cpp
     src/project_session_view_model.cpp
     src/project_session_view_model.hpp

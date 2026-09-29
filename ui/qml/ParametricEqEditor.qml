@@ -5,6 +5,7 @@ import QtQuick.Layouts
 Rectangle {
     id: root
     property var viewModel: null
+    property var spectrumViewModel: null
 
     implicitWidth: 992
     implicitHeight: 612
@@ -80,6 +81,24 @@ Rectangle {
                 }
                 Accessible.name: "Toggle Overall combined response curve"
                 ToolTip.text: "Show or hide the combined total response curve of all active EQ bands"
+                ToolTip.visible: hovered
+            }
+
+            StudioButton {
+                objectName: "eqSpectrumToggleButton"
+                text: "Spectrum"
+                selected: root.spectrumViewModel ? root.spectrumViewModel.spectrumEnabled : true
+                tone: root.spectrumViewModel && root.spectrumViewModel.spectrumEnabled ? "primary" : "secondary"
+                accentColor: "#3A7BD5"
+                minimumControlWidth: 80
+                enabled: root.spectrumViewModel !== null && root.spectrumViewModel !== undefined
+                onClicked: {
+                    if (root.spectrumViewModel) {
+                        root.spectrumViewModel.toggleSpectrum()
+                    }
+                }
+                Accessible.name: "Toggle Live Spectrum display"
+                ToolTip.text: "Show or hide the real-time Live Spectrum overlay"
                 ToolTip.visible: hovered
             }
 
@@ -166,6 +185,7 @@ Rectangle {
             // the height left after the fixed control tiers.
             Layout.minimumHeight: 102
             viewModel: root.viewModel
+            spectrumViewModel: root.spectrumViewModel
         }
 
         // Selected-Band Inspector Panel (128 lp Fixed)

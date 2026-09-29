@@ -2,7 +2,9 @@
 #include "audition_source_selector.hpp"
 #include "eq_view_model.hpp"
 #include "gold_selection_view_model.hpp"
+#include "live_spectrum_view_model.hpp"
 #include "playback_transport_view_model.hpp"
+#include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "waveform_item.hpp"
@@ -105,7 +107,7 @@ namespace {
         std::move(*summary.value()));
 }
 
-[[nodiscard]] std::shared_ptr<const audio::WaveformSummary> valid_summary()
+[[maybe_unused]] [[nodiscard]] std::shared_ptr<const audio::WaveformSummary> valid_summary()
 {
     return summary_from_wav(valid_wav());
 }
@@ -368,6 +370,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
     app::ProjectSessionViewModel projectSession{
         &model, &goldSelection, &auditionRegion, &playbackTransport};
+    analysis::LiveSpectrumAnalyzer spectrumAnalyzer;
+    spectrumAnalyzer.start();
+    app::LiveSpectrumViewModel liveSpectrumVM{&spectrumAnalyzer};
     playbackTransport.set_pcm_prepare_handler(
         [observedPlayback](audio::AudioBufferView view, std::shared_ptr<const void>) {
             observedPlayback->state = core::PlaybackState::STOPPED;
@@ -440,6 +445,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("projectSession"), &projectSession);
     engine.rootContext()->setContextProperty(
         QStringLiteral("eqViewModel"), &eqViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("liveSpectrumViewModel"), &liveSpectrumVM);
     engine.loadFromModule("Rgsml.Ui", "Main");
     QCOMPARE(engine.rootObjects().size(), 1);
 
@@ -519,6 +526,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         Q_ASSERT(item != nullptr);
         return item->mapToScene(QPointF{item->width() * 0.5, item->height() * 0.5}).toPoint();
     };
+    (void)itemCenter;
     QVERIFY(capture_visual_evidence(window,
         QStringLiteral("gui01_c1_caption_normal.png"), QSize{1440, 900}));
     auto* empty = root->findChild<QObject*>(QStringLiteral("sourceEmptyState"));
@@ -903,10 +911,26 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* redoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqRedoButton"));
     auto* resetFlatBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqResetFlatButton"));
     auto* overallToggleBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqOverallToggleButton"));
+    auto* spectrumToggleBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqSpectrumToggleButton"));
 
     QVERIFY2(abBypassBtn != nullptr && abActiveBtn != nullptr, "A and B buttons must exist in host header");
     QVERIFY2(undoBtn != nullptr && redoBtn != nullptr && resetFlatBtn != nullptr, "Undo, Redo, and Reset Flat buttons must exist");
     QVERIFY2(overallToggleBtn != nullptr, "Overall toggle button must exist");
+    QVERIFY2(spectrumToggleBtn != nullptr, "Spectrum toggle button must exist");
+
+    QVERIFY2(liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle must default to ON");
+    auto* spectrumCanvasObj = eqGraph->findChild<QObject*>(QStringLiteral("spectrumCanvas"));
+    QVERIFY2(spectrumCanvasObj != nullptr, "spectrumCanvas must exist inside ParametricEqGraph");
+
+    const bool undoStateBeforeToggle = eqViewModel.can_undo();
+    QVERIFY(QMetaObject::invokeMethod(spectrumToggleBtn, "clicked"));
+    QCoreApplication::processEvents();
+    QVERIFY2(!liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle click must set spectrumEnabled to false");
+    QCOMPARE(eqViewModel.can_undo(), undoStateBeforeToggle);
+
+    QVERIFY(QMetaObject::invokeMethod(spectrumToggleBtn, "clicked"));
+    QCoreApplication::processEvents();
+    QVERIFY2(liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle click must restore spectrumEnabled to true");
 
     // Click Bypass -> BYP badge becomes visible on DSP chain row, while config LED remains unchanged
     QVERIFY2(QMetaObject::invokeMethod(abBypassBtn, "clicked"), "Clicking abButtonBypass must succeed");

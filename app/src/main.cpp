@@ -2,7 +2,9 @@
 #include "audition_source_selector.hpp"
 #include "eq_view_model.hpp"
 #include "gold_selection_view_model.hpp"
+#include "live_spectrum_view_model.hpp"
 #include "playback_transport_view_model.hpp"
+#include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
@@ -47,9 +49,15 @@ int main(int argc, char* argv[])
         qInstallMessageHandler(smokeMessageHandler);
     }
 
+    rgsml::analysis::LiveSpectrumAnalyzer spectrumAnalyzer;
+    spectrumAnalyzer.start();
+
     auto playbackService = std::make_unique<
         rgsml::platform::windows::WindowsAudioPlaybackService>();
     auto* windowsPlayback = playbackService.get();
+    windowsPlayback->attach_analyzer(&spectrumAnalyzer);
+
+    rgsml::app::LiveSpectrumViewModel liveSpectrumViewModel{&spectrumAnalyzer};
     rgsml::app::PlaybackTransportViewModel playbackTransport{
         std::move(playbackService)};
     playbackTransport.set_pcm_prepare_handler(
@@ -160,6 +168,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("eqViewModel"),
         &eqViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("liveSpectrumViewModel"),
+        &liveSpectrumViewModel);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

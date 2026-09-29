@@ -4,6 +4,7 @@ import QtQuick.Controls
 Rectangle {
     id: root
     property var viewModel: null
+    property var spectrumViewModel: null
 
     color: "#081824"
     border.color: "#1A3E55"
@@ -57,6 +58,11 @@ Rectangle {
         if (gain <= minGain) return plotY + plotH
         if (gain >= maxGain) return plotY
         return plotY + plotH * (1.0 - (gain - minGain) / (maxGain - minGain))
+    }
+
+    function spectrumDbToY(db) {
+        const clampedDb = Math.max(-90, Math.min(0, db))
+        return plotY + plotH * ((0 - clampedDb) / 90)
     }
 
     function yToGain(y) {
@@ -180,6 +186,68 @@ Rectangle {
                 width: root.plotW
                 height: 1
                 color: isZero ? "#996B7C8F" : "#2E2A3A49"
+            }
+        }
+
+        // Live Spectrum Overlay Canvas (Subordinate to EQ curves)
+        Canvas {
+            id: spectrumCanvas
+            anchors.fill: parent
+            visible: root.spectrumViewModel ? root.spectrumViewModel.spectrumEnabled : true
+
+            Connections {
+                target: root.spectrumViewModel
+                function onSpectrumPointsChanged() { spectrumCanvas.requestPaint() }
+                function onSpectrumEnabledChanged() { spectrumCanvas.requestPaint() }
+            }
+
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+
+                if (!root.spectrumViewModel || !root.spectrumViewModel.spectrumEnabled || !root.spectrumViewModel.hasValidSpectrum) {
+                    return
+                }
+
+                const pts = root.spectrumViewModel.spectrumPoints
+                if (!pts || pts.length < 2) return
+
+                const bottomY = root.plotH
+
+                // Low-opacity desaturated slate fill
+                ctx.beginPath()
+                for (let i = 0; i < pts.length; ++i) {
+                    const pt = pts[i]
+                    const px = root.freqToX(pt.x) - root.plotX
+                    const py = root.spectrumDbToY(pt.y) - root.plotY
+                    if (i === 0) {
+                        ctx.moveTo(px, py)
+                    } else {
+                        ctx.lineTo(px, py)
+                    }
+                }
+                ctx.lineTo(root.freqToX(pts[pts.length - 1].x) - root.plotX, bottomY)
+                ctx.lineTo(root.freqToX(pts[0].x) - root.plotX, bottomY)
+                ctx.closePath()
+
+                ctx.fillStyle = "rgba(74, 90, 120, 0.20)"
+                ctx.fill()
+
+                // Desaturated blue-gray trace (~1px line)
+                ctx.beginPath()
+                for (let i = 0; i < pts.length; ++i) {
+                    const pt = pts[i]
+                    const px = root.freqToX(pt.x) - root.plotX
+                    const py = root.spectrumDbToY(pt.y) - root.plotY
+                    if (i === 0) {
+                        ctx.moveTo(px, py)
+                    } else {
+                        ctx.lineTo(px, py)
+                    }
+                }
+                ctx.lineWidth = 1.0
+                ctx.strokeStyle = "rgba(120, 140, 175, 0.55)"
+                ctx.stroke()
             }
         }
 

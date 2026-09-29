@@ -13,6 +13,10 @@
 #include <span>
 #include <vector>
 
+namespace rgsml::analysis {
+class LiveSpectrumAnalyzer;
+}
+
 namespace rgsml::platform::windows::internal {
 
 enum class DeviceSampleFormat {
@@ -66,6 +70,10 @@ public:
     [[nodiscard]] virtual std::int64_t processed_frames() const noexcept = 0;
     [[nodiscard]] virtual OutputState state() const noexcept = 0;
     [[nodiscard]] virtual std::optional<core::Error> error() const = 0;
+    virtual void attach_analyzer(
+        analysis::LiveSpectrumAnalyzer* /*analyzer*/,
+        std::uint64_t /*gen*/,
+        std::uint64_t /*epoch*/) {}
 };
 
 class IPlaybackSource;

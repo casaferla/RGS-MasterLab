@@ -253,6 +253,7 @@ ApplicationWindow {
             id: realDspWorkspace
             objectName: "dspWorkspace"
             viewModel: eqViewModel
+            spectrumViewModel: typeof liveSpectrumViewModel !== "undefined" ? liveSpectrumViewModel : null
         }
     }
 

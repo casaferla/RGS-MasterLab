@@ -20,6 +20,7 @@ target_link_libraries(rgsml_platform
     PUBLIC
         rgsml_core
         rgsml_audio
+        rgsml_analysis
     PRIVATE
         Qt6::Core
         Qt6::Multimedia
