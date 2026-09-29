@@ -173,7 +173,6 @@ struct LayoutEvalMetrics {
     int width{0};
     int height{0};
     bool visible{false};
-    bool isCompact{false};
     bool adaptiveContextVisible{false};
     bool eqInspectorContained{false};
     double eqEditorHeight{0.0};
@@ -186,6 +185,12 @@ struct LayoutEvalMetrics {
     double waveformHeight{0.0};
     double controlHeight{0.0};
     double regionHeight{0.0};
+    double controlContentLeft{0.0};
+    double controlContentRight{0.0};
+    double regionContentLeft{0.0};
+    double regionContentRight{0.0};
+    double regionContentTop{0.0};
+    double regionContentBottom{0.0};
     double workspaceHeight{0.0};
     double hostHeight{0.0};
 };
@@ -241,6 +246,8 @@ struct LayoutEvalResult {
     auto* source = obj->findChild<QObject*>(QStringLiteral("sourceMetadataPanel"));
     auto* control = obj->findChild<QObject*>(QStringLiteral("controlStrip"));
     auto* region = obj->findChild<QObject*>(QStringLiteral("auditionRegionControls"));
+    auto* controlContent = obj->findChild<QObject*>(QStringLiteral("controlStripContent"));
+    auto* regionContent = obj->findChild<QObject*>(QStringLiteral("auditionRegionContent"));
     auto* adaptiveContext = obj->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace"));
     auto* eqEditor = obj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
     auto* eqGraph = obj->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
@@ -248,6 +255,7 @@ struct LayoutEvalResult {
     auto* eqStatus = obj->findChild<QObject*>(QStringLiteral("eqStatusRegion"));
 
     if (!workspace || !host || !waveform || !source || !control || !region
+        || !controlContent || !regionContent
         || !adaptiveContext || !eqEditor || !eqGraph || !eqInspector || !eqStatus) {
         return LayoutEvalResult{
             .valid = false,
@@ -260,7 +268,6 @@ struct LayoutEvalResult {
     metrics.width = qwin->property("width").toInt();
     metrics.height = qwin->property("height").toInt();
     metrics.visible = qwin->property("visible").toBool();
-    metrics.isCompact = obj->property("isCompactLayout").toBool();
     metrics.adaptiveContextVisible = adaptiveContext->property("visible").toBool();
     if (auto* editorItem = qobject_cast<QQuickItem*>(eqEditor);
         editorItem != nullptr) {
@@ -292,6 +299,29 @@ struct LayoutEvalResult {
     metrics.waveformHeight = waveform->property("height").toDouble();
     metrics.controlHeight = control->property("height").toDouble();
     metrics.regionHeight = region->property("height").toDouble();
+
+    if (auto* controlItem = qobject_cast<QQuickItem*>(control);
+        controlItem != nullptr) {
+        if (auto* contentItem = qobject_cast<QQuickItem*>(controlContent);
+            contentItem != nullptr) {
+            metrics.controlContentLeft = contentItem->x();
+            metrics.controlContentRight =
+                controlItem->width() - (contentItem->x() + contentItem->width());
+        }
+    }
+    if (auto* regionItem = qobject_cast<QQuickItem*>(region);
+        regionItem != nullptr) {
+        if (auto* contentItem = qobject_cast<QQuickItem*>(regionContent);
+            contentItem != nullptr) {
+            metrics.regionContentLeft = contentItem->x();
+            metrics.regionContentRight =
+                regionItem->width() - (contentItem->x() + contentItem->width());
+            metrics.regionContentTop = contentItem->y();
+            metrics.regionContentBottom =
+                regionItem->height() - (contentItem->y() + contentItem->height());
+        }
+    }
+
     metrics.workspaceHeight = workspace->property("height").toDouble();
     metrics.hostHeight = host->property("height").toDouble();
 
@@ -752,8 +782,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* dspChainRow0 = root->findChild<QObject*>(QStringLiteral("dspChainRow_0"));
     auto* dspChainConfigLed0 = root->findChild<QObject*>(QStringLiteral("dspChainConfigLed_0"));
     auto* dspChainBypassBadge0 = root->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_0"));
+    auto* dspChainStateText0 = root->findChild<QObject*>(QStringLiteral("dspChainStateText_0"));
     QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr, "DSP chain row and config LED must exist");
     QVERIFY2(dspChainBypassBadge0 != nullptr, "DSP chain bypass badge object must exist");
+    QVERIFY2(dspChainStateText0 != nullptr, "DSP chain state text must exist");
 
     // Canonical Flat state -> config LED is dark (#273A4D), BYP badge is hidden
     QVERIFY2(eqViewModel.is_default(), "EQ state must be default/flat initially");
@@ -779,6 +811,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqViewModel.selected_index(), 1);
     QVERIFY2(!eqViewModel.is_default(), "EQ state must no longer be default after adding a band");
     QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
+    QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("Manual Edit"));
+    QVERIFY2(dspChainStateText0->property("visible").toBool(), "Manual Edit must be visible for a non-default EQ");
 
     // Keyboard Space activation on bandSelectorButton_0
     auto* band0BtnCurrent = find_child_by_name(eqEditor, QStringLiteral("bandSelectorButton_0"));
@@ -951,38 +985,39 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(routeStereoBtnStereo != nullptr && QMetaObject::invokeMethod(routeStereoBtnStereo, "clicked"), "Clicking routingButton_STEREO must succeed");
     QCoreApplication::processEvents();
 
-    // Verify Docked EQ at 1440x900 and 1184x688 reference compositions
+    // Verify the minimum-first docked composition at representative sizes.
     qInfo().noquote() << "M12C_SMOKE_PHASE=responsive-composition";
 
-    // 1. Offscreen QML layout harness to evaluate exact logical compositions at 1440x900 and 1184x688
-    // independent of CI physical HyperVMonitor screen clamping.
+    // Offscreen QML layout harness is independent of CI physical monitor clamping.
+    // There is no width/height density breakpoint: the upper strips keep stable
+    // geometry and padding while waveform/editor surfaces absorb extra space.
+    const auto verifyUpperPadding = [](const LayoutEvalMetrics& metrics) {
+        QCOMPARE(metrics.sourceHeight, 196.0);
+        QCOMPARE(metrics.controlHeight, 72.0);
+        QCOMPARE(metrics.regionHeight, 72.0);
+        QCOMPARE(metrics.controlContentLeft, 12.0);
+        QCOMPARE(metrics.controlContentRight, 12.0);
+        QCOMPARE(metrics.regionContentLeft, 12.0);
+        QCOMPARE(metrics.regionContentRight, 12.0);
+        QCOMPARE(metrics.regionContentTop, 6.0);
+        QCOMPARE(metrics.regionContentBottom, 6.0);
+    };
+
     const auto res1440 = evaluate_layout_at_size(engine, 1440, 900);
     QVERIFY2(res1440.valid, qPrintable(res1440.errorMessage));
     QCOMPARE(res1440.metrics.visible, false);
     QCOMPARE(res1440.metrics.width, 1440);
     QCOMPARE(res1440.metrics.height, 900);
-    QCOMPARE(res1440.metrics.isCompact, false);
+    verifyUpperPadding(res1440.metrics);
     QVERIFY2(res1440.metrics.adaptiveContextVisible, "Adaptive Context must remain present at 1440x900");
     QVERIFY2(res1440.metrics.eqInspectorContained, "EQ inspector must be vertically contained at 1440x900");
-    QVERIFY2(res1440.metrics.sourceHeight >= 190.0, "Adaptive source/transport composition must have full standard-density height at 1440x900");
     QVERIFY2(res1440.metrics.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
-    QCOMPARE(res1440.metrics.controlHeight, 72.0);
-    QCOMPARE(res1440.metrics.regionHeight, 72.0);
     QVERIFY2(res1440.metrics.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
 
     const auto res1920Short = evaluate_layout_at_size(engine, 1920, 688);
     QVERIFY2(res1920Short.valid, qPrintable(res1920Short.errorMessage));
-    QCOMPARE(res1920Short.metrics.isCompact, true);
+    verifyUpperPadding(res1920Short.metrics);
     QVERIFY2(res1920Short.metrics.adaptiveContextVisible, "Adaptive Context must not disappear in a wide, short window");
-    qInfo().noquote()
-        << "M12C_GEOMETRY_1920x688"
-        << "editorH=" << res1920Short.metrics.eqEditorHeight
-        << "graphH=" << res1920Short.metrics.eqGraphHeight
-        << "inspectorY=" << res1920Short.metrics.eqInspectorY
-        << "inspectorH=" << res1920Short.metrics.eqInspectorHeight
-        << "inspectorBottom=" << (res1920Short.metrics.eqInspectorY + res1920Short.metrics.eqInspectorHeight)
-        << "statusY=" << res1920Short.metrics.eqStatusY
-        << "statusH=" << res1920Short.metrics.eqStatusHeight;
     QVERIFY2(res1920Short.metrics.eqInspectorContained, "EQ inspector must remain vertically contained in a wide, short window");
     QVERIFY2(res1920Short.metrics.waveformHeight >= 135.0, "Waveform must remain recognizable in a wide, short window");
 
@@ -991,12 +1026,32 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(res1184.metrics.visible, false);
     QCOMPARE(res1184.metrics.width, 1184);
     QCOMPARE(res1184.metrics.height, 688);
-    QCOMPARE(res1184.metrics.isCompact, true);
+    verifyUpperPadding(res1184.metrics);
     QVERIFY2(res1184.metrics.adaptiveContextVisible, "Adaptive Context must remain visible at minimum composition");
     QVERIFY2(res1184.metrics.eqInspectorContained, "EQ inspector must be vertically contained at minimum composition");
-    QVERIFY2(res1184.metrics.sourceHeight >= 170.0, "Upper compact source/audition composition must preserve full-size transport controls");
     QVERIFY2(res1184.metrics.waveformHeight >= 135.0, "Waveform height must be >= 135 px at 1184x688");
     QVERIFY2(res1184.metrics.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
+
+    // Regression around the removed hard breakpoints.
+    const auto res1359x751 = evaluate_layout_at_size(engine, 1359, 751);
+    const auto res1361x751 = evaluate_layout_at_size(engine, 1361, 751);
+    QVERIFY2(res1359x751.valid, qPrintable(res1359x751.errorMessage));
+    QVERIFY2(res1361x751.valid, qPrintable(res1361x751.errorMessage));
+    verifyUpperPadding(res1359x751.metrics);
+    verifyUpperPadding(res1361x751.metrics);
+    QCOMPARE(res1359x751.metrics.sourceHeight, res1361x751.metrics.sourceHeight);
+    QCOMPARE(res1359x751.metrics.controlHeight, res1361x751.metrics.controlHeight);
+    QCOMPARE(res1359x751.metrics.regionHeight, res1361x751.metrics.regionHeight);
+
+    const auto res1440x749 = evaluate_layout_at_size(engine, 1440, 749);
+    const auto res1440x751 = evaluate_layout_at_size(engine, 1440, 751);
+    QVERIFY2(res1440x749.valid, qPrintable(res1440x749.errorMessage));
+    QVERIFY2(res1440x751.valid, qPrintable(res1440x751.errorMessage));
+    verifyUpperPadding(res1440x749.metrics);
+    verifyUpperPadding(res1440x751.metrics);
+    QCOMPARE(res1440x749.metrics.sourceHeight, res1440x751.metrics.sourceHeight);
+    QCOMPARE(res1440x749.metrics.controlHeight, res1440x751.metrics.controlHeight);
+    QCOMPARE(res1440x749.metrics.regionHeight, res1440x751.metrics.regionHeight);
 
     // 2. Native window resize & visual evidence capture clamped to available monitor geometry
     const QRect available = window->screen() ? window->screen()->availableGeometry() : QRect{0, 0, 1440, 900};
@@ -1015,6 +1070,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(compactW, compactH));
     QCOMPARE(dspChainSelectorObj->property("width").toInt(), 164);
+    QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("Manual Edit"));
+    QVERIFY2(dspChainStateText0->property("visible").toBool(),
+        "Manual Edit must remain visible at the minimum supported window size");
 
     // HP/LP compact slope controls must all remain usable at the minimum window size.
     // Minimum-size UI must preserve the same control scale and labels as the wide layout.

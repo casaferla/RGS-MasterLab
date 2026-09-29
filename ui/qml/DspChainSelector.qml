@@ -6,12 +6,11 @@ Rectangle {
     id: root
     objectName: "dspChainSelector"
 
-    implicitWidth: isCompact ? 164 : 180
+    implicitWidth: 180
     implicitHeight: 300
 
     property int selectedIndex: 0
     property var eqViewModel: null
-    property bool isCompact: false
 
     color: "#0B1622"
     border.color: "#1E354A"
@@ -122,23 +121,24 @@ Rectangle {
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: root.isCompact ? 0 : 2
+                    spacing: 2
 
                     Text {
                         text: "Parametric EQ"
                         color: eqRow.isSelected ? "#F5F8FC" : "#C4D4E0"
                         font.family: "Segoe UI"
-                        font.pixelSize: root.isCompact ? 11 : 12
+                        font.pixelSize: 12
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                     }
 
                     Text {
+                        objectName: "dspChainStateText_0"
                         text: eqRow.isDefaultState ? "Flat Default" : "Manual Edit"
                         color: "#7A8E9E"
                         font.family: "Segoe UI"
                         font.pixelSize: 9
-                        visible: !root.isCompact || eqRow.isDefaultState
+                        visible: true
                     }
                 }
 

@@ -8,7 +8,6 @@ Rectangle {
 
     property var viewModel: null
     property int selectedModuleIndex: 0
-    property bool isCompact: false
 
     property alias chainSelector: realChainSelector
     property alias editorHost: realEditorHost
@@ -30,7 +29,6 @@ Rectangle {
         DspChainSelector {
             id: realChainSelector
             objectName: "dspChainSelector"
-            isCompact: root.isCompact
             selectedIndex: root.selectedModuleIndex
             eqViewModel: root.viewModel
             onSelectedIndexChanged: root.selectedModuleIndex = selectedIndex
