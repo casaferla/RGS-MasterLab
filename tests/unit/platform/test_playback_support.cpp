@@ -895,12 +895,13 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         observed->history().size(),
         queuedCapacityFrames * bytesPerFrame);
 
+    const int stopCallsBeforeHandoff = observed->stopCalls;
     auto lifetime2 = std::make_shared<int>(84);
     QVERIFY(engine.handoff_pcm(newBuf.view(), lifetime2));
     QCOMPARE(
         engine.snapshot().value()->state,
         core::PlaybackState::PLAYING);
-    QCOMPARE(observed->stopCalls, 0);
+    QCOMPARE(observed->stopCalls, stopCallsBeforeHandoff);
 
     const auto requiredHistoryBytes =
         (handoffBoundaryFrames + xfadeFrames48k + 1U) * bytesPerFrame;
@@ -1068,11 +1069,14 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         QCOMPARE(
             srcEngine.snapshot().value()->state,
             core::PlaybackState::PLAYING);
+        const int stopCallsBeforeSrcHandoff = observedSrc->stopCalls;
         QVERIFY(srcEngine.handoff_pcm(srcNew.view(), lifetime2));
         QCOMPARE(
             srcEngine.snapshot().value()->state,
             core::PlaybackState::PLAYING);
-        QCOMPARE(observedSrc->stopCalls, 0);
+        QCOMPARE(
+            observedSrc->stopCalls,
+            stopCallsBeforeSrcHandoff);
 
         const auto requiredBytes =
             (handoffBoundaryFrames + expectedXfadeFrames + 1U)
@@ -1149,6 +1153,8 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::nullopt,
             lifetime1));
         QVERIFY(engineQueued.play());
+        const int stopCallsBeforeQueuedHandoff =
+            observedQueued->stopCalls;
 
         const std::size_t initialQueueSize =
             observedQueued->queue().size();
@@ -1164,7 +1170,9 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             core::PlaybackState::PLAYING);
         QCOMPARE(observedQueued->queue().size(), initialQueueSize);
         QCOMPARE(observedQueued->history().size(), initialHistorySize);
-        QCOMPARE(observedQueued->stopCalls, 0);
+        QCOMPARE(
+            observedQueued->stopCalls,
+            stopCallsBeforeQueuedHandoff);
 
         observedQueued->consume_all();
         engineQueued.tick();
