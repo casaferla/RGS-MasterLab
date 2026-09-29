@@ -160,7 +160,7 @@ private slots:
         popped = ring.pop_frames(2, frames);
         QCOMPARE(popped, std::size_t(2));
         QCOMPARE(frames[0].sample_l, -1.0f);
-        QCOMPARE(ring.sample_rate_hz(), std::uint32_t(48000));
+        QCOMPARE(frames[0].sample_rate_hz, std::uint32_t(48000));
         QCOMPARE(frames[0].stream_generation, std::uint64_t(2));
         QCOMPARE(frames[0].analysis_epoch, std::uint64_t(5));
     }

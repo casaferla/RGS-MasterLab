@@ -52,6 +52,7 @@ private:
 
     std::atomic<std::uint64_t> current_generation_{1};
     std::atomic<std::uint64_t> current_epoch_{1};
+    std::atomic<bool> clear_requested_{false};
 
     SpectrumConfig config_;
     HannWindow hann_;

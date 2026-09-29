@@ -472,9 +472,13 @@ public:
         QObject::connect(timer_, &QTimer::timeout, this, [this] {
             static_cast<void>(engine_.tick());
             auto snap = engine_.snapshot();
-            if (snap && snap.value()->state == core::PlaybackState::STOPPED && analyzer_ != nullptr) {
-                analyzer_->invalidate_and_clear();
+            const bool isPlaying = snap && (snap.value()->state == core::PlaybackState::PLAYING);
+            if (wasPlaying_ && snap && snap.value()->state == core::PlaybackState::STOPPED) {
+                if (analyzer_ != nullptr) {
+                    analyzer_->invalidate_and_clear();
+                }
             }
+            wasPlaying_ = isPlaying;
         });
         timer_->start();
         return core::Status::success();
@@ -490,12 +494,6 @@ public:
 
     [[nodiscard]] core::Status prepare(const core::ResourceReference& source)
     {
-        if (analyzer_ != nullptr) {
-            streamGeneration_++;
-            analysisEpoch_++;
-            analyzer_->set_stream_generation(streamGeneration_);
-            analyzer_->invalidate_and_clear();
-        }
         auto resource = WindowsResourceReader::open_read_only(source);
         if (!resource) {
             return core::Status::failure(*resource.error());
@@ -512,7 +510,6 @@ public:
         }
         if (analyzer_ != nullptr) {
             output.value()->output->attach_analyzer(analyzer_);
-            output.value()->output->attach_analyzer(analyzer_);
         }
         auto installed = engine_.install_candidate(
             std::move(*reader.value()),
@@ -521,6 +518,10 @@ public:
             std::move(output.value()->rateAdapter));
         if (!installed) {
             return installed;
+        }
+        if (analyzer_ != nullptr) {
+            analyzer_->set_stream_generation(nextStreamGeneration_++);
+            analyzer_->invalidate_and_clear();
         }
         preparedSource_ = source;
         preparedPcm_.reset();
@@ -531,19 +532,13 @@ public:
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr)
     {
-        if (analyzer_ != nullptr) {
-            streamGeneration_++;
-            analysisEpoch_++;
-            analyzer_->set_stream_generation(streamGeneration_);
-            analyzer_->invalidate_and_clear();
-        }
         auto output = make_output_candidate(
             source.format(), source.frame_count());
         if (!output) {
             return core::Status::failure(*output.error());
         }
         if (analyzer_ != nullptr) {
-            output.value()->output->attach_analyzer(analyzer_, streamGeneration_, analysisEpoch_);
+            output.value()->output->attach_analyzer(analyzer_);
         }
         auto installed = engine_.install_pcm_candidate(
             source,
@@ -553,6 +548,10 @@ public:
             std::move(lifetime));
         if (!installed) {
             return installed;
+        }
+        if (analyzer_ != nullptr) {
+            analyzer_->set_stream_generation(nextStreamGeneration_++);
+            analyzer_->invalidate_and_clear();
         }
         preparedSource_.reset();
         preparedPcm_ = source;
@@ -655,8 +654,8 @@ public:
 private:
     internal::PlaybackEngine engine_;
     rgsml::analysis::LiveSpectrumAnalyzer* analyzer_{nullptr};
-    std::uint64_t streamGeneration_{1};
-    std::uint64_t analysisEpoch_{1};
+    std::uint64_t nextStreamGeneration_{2};
+    bool wasPlaying_{false};
     QTimer* timer_{nullptr};
     std::optional<core::ResourceReference> preparedSource_;
     std::optional<audio::AudioBufferView> preparedPcm_;

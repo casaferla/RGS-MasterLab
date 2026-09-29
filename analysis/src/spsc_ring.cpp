@@ -112,6 +112,8 @@ std::size_t SpscFrameRing::push_pcm_bytes(
             if (capacity_ - 1 - curFrames > 0) {
                 AnalysisFrame& frame = ring_buffer_[head];
                 decode_sample_pair(remainder_buffer_.data(), channelCount, encoding, frame.sample_l, frame.sample_r);
+                frame.sample_rate_hz = sampleRateHz;
+                frame.channel_count = channelCount;
                 frame.stream_generation = streamGeneration;
                 frame.analysis_epoch = analysisEpoch;
 
@@ -149,6 +151,8 @@ std::size_t SpscFrameRing::push_pcm_bytes(
         for (std::size_t f = 0; f < countToPush; ++f) {
             AnalysisFrame& frame = ring_buffer_[head];
             decode_sample_pair(inPtr + f * frameBytes, channelCount, encoding, frame.sample_l, frame.sample_r);
+            frame.sample_rate_hz = sampleRateHz;
+            frame.channel_count = channelCount;
             frame.stream_generation = streamGeneration;
             frame.analysis_epoch = analysisEpoch;
 

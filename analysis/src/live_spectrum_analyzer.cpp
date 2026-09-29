@@ -62,6 +62,7 @@ void LiveSpectrumAnalyzer::push_audio_bytes(
 
 void LiveSpectrumAnalyzer::invalidate_and_clear()
 {
+    clear_requested_.store(true, std::memory_order_release);
     current_epoch_.fetch_add(1, std::memory_order_release);
 
     std::lock_guard<std::mutex> lock(snapshot_mutex_);
@@ -114,6 +115,12 @@ void LiveSpectrumAnalyzer::reconfigure_if_needed(std::uint32_t sampleRateHz, std
 void LiveSpectrumAnalyzer::worker_loop()
 {
     while (running_.load(std::memory_order_relaxed)) {
+        if (clear_requested_.exchange(false, std::memory_order_acq_rel)) {
+            sliding_window_frames_ = 0;
+            hop_accumulator_ = 0;
+            first_window_processed_ = false;
+        }
+
         const std::size_t avail = ring_.available_frames();
         if (avail == 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -124,7 +131,7 @@ void LiveSpectrumAnalyzer::worker_loop()
         std::size_t totalPoppedInBatch = 0;
 
         if (ring_.pop_frames(1, &firstFrame) > 0) {
-            reconfigure_if_needed(ring_.sample_rate_hz(), ring_.channel_count());
+            reconfigure_if_needed(firstFrame.sample_rate_hz, firstFrame.channel_count);
             ingress_frame_buffer_[0] = firstFrame;
             totalPoppedInBatch = 1;
 
@@ -157,15 +164,16 @@ void LiveSpectrumAnalyzer::worker_loop()
             const auto& frame = ingress_frame_buffer_[i];
 
             if (frame.stream_generation != active_window_generation_
-                || frame.analysis_epoch != active_window_epoch_) {
+                || frame.analysis_epoch != active_window_epoch_
+                || frame.sample_rate_hz != config_.sample_rate_hz
+                || frame.channel_count != config_.channel_count) {
                 sliding_window_frames_ = 0;
                 hop_accumulator_ = 0;
                 first_window_processed_ = false;
                 active_window_generation_ = frame.stream_generation;
                 active_window_epoch_ = frame.analysis_epoch;
+                reconfigure_if_needed(frame.sample_rate_hz, frame.channel_count);
             }
-
-            reconfigure_if_needed(ring_.sample_rate_hz(), ring_.channel_count());
 
             const std::size_t channels = config_.channel_count;
             const std::size_t windowCap = config_.window_size;
