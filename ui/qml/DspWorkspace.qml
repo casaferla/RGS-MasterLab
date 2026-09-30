@@ -7,6 +7,7 @@ Rectangle {
     objectName: "dspWorkspace"
 
     property var viewModel: null
+    property var spectrumViewModel: null
     property int selectedModuleIndex: 0
 
     property alias chainSelector: realChainSelector
@@ -38,6 +39,7 @@ Rectangle {
             id: realEditorHost
             objectName: "dspEditorHost"
             viewModel: root.viewModel
+            spectrumViewModel: root.spectrumViewModel
             activeChainRow: realChainSelector.findChild ? realChainSelector.findChild("dspChainRow_0") : null
         }
     }
