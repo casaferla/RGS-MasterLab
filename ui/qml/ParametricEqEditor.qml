@@ -112,6 +112,8 @@ Rectangle {
                 enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
                 onClicked: if (root.viewModel) root.viewModel.addBand()
                 Accessible.name: "Add Band"
+                ToolTip.text: "Add a new EQ band"
+                ToolTip.visible: hovered
             }
 
             StudioButton {
@@ -122,6 +124,8 @@ Rectangle {
                 enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
                 onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
                 Accessible.name: "Remove Band"
+                ToolTip.text: "Remove the selected EQ band"
+                ToolTip.visible: hovered
             }
         }
 
