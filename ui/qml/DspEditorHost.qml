@@ -7,6 +7,7 @@ Rectangle {
     objectName: "dspEditorHost"
 
     property var viewModel: null
+    property var spectrumViewModel: null
     property string moduleTitle: "Parametric EQ"
     property string moduleContext: "Manual Mastering"
     property Item activeChainRow: null
@@ -184,6 +185,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             viewModel: root.viewModel
+            spectrumViewModel: root.spectrumViewModel
         }
     }
 }

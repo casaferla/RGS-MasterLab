@@ -5,6 +5,10 @@
 
 #include <memory>
 
+namespace rgsml::analysis {
+class LiveSpectrumAnalyzer;
+}
+
 namespace rgsml::platform::windows {
 
 // Windows owner-thread adapter for the frozen playback control-plane port.
@@ -38,6 +42,8 @@ public:
     [[nodiscard]] core::Status set_loop(
         std::optional<core::FrameRange> loop) override;
     [[nodiscard]] core::Result<core::PlaybackSnapshot> snapshot() const override;
+
+    void attach_analyzer(analysis::LiveSpectrumAnalyzer* analyzer);
 
 private:
     class Impl;

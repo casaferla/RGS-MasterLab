@@ -2,6 +2,7 @@
 
 #include "internal/playback_support.hpp"
 
+#include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
@@ -97,6 +98,18 @@ public:
         tail_.store(head_.load(std::memory_order_relaxed), std::memory_order_release);
     }
 
+    void attach_analyzer(
+        rgsml::analysis::LiveSpectrumAnalyzer* analyzer,
+        std::uint32_t sampleRate,
+        std::uint8_t channels,
+        rgsml::analysis::SampleEncoding encoding)
+    {
+        sampleRate_ = sampleRate;
+        channelCount_ = channels;
+        encoding_ = encoding;
+        analyzer_.store(analyzer, std::memory_order_release);
+    }
+
     [[nodiscard]] bool isSequential() const override
     {
         return true;
@@ -125,6 +138,17 @@ protected:
             tail = (tail + 1) % capacity_;
         }
         tail_.store(tail, std::memory_order_release);
+
+        auto* analyzer = analyzer_.load(std::memory_order_acquire);
+        if (analyzer != nullptr) {
+            analyzer->push_audio_bytes(
+                destination,
+                count,
+                sampleRate_,
+                channelCount_,
+                encoding_);
+        }
+
         return static_cast<qint64>(count);
     }
 
@@ -138,6 +162,11 @@ private:
     std::vector<std::byte> buffer_;
     std::atomic<std::size_t> head_{0};
     std::atomic<std::size_t> tail_{0};
+
+    std::atomic<rgsml::analysis::LiveSpectrumAnalyzer*> analyzer_{nullptr};
+    std::uint32_t sampleRate_{44100};
+    std::uint8_t channelCount_{2};
+    rgsml::analysis::SampleEncoding encoding_{rgsml::analysis::SampleEncoding::IEEE_FLOAT32};
 };
 
 class QtPlaybackOutput final : public IPlaybackOutput {
@@ -175,6 +204,17 @@ public:
     void clear_queue() noexcept override
     {
         queue_.clear();
+    }
+
+    void attach_analyzer(
+        rgsml::analysis::LiveSpectrumAnalyzer* analyzer) override
+    {
+        const auto sampleRate = static_cast<std::uint32_t>(format_.sampleRate());
+        const auto channels = static_cast<std::uint8_t>(format_.channelCount());
+        const auto encoding = (format_.sampleFormat() == QAudioFormat::Float)
+            ? rgsml::analysis::SampleEncoding::IEEE_FLOAT32
+            : rgsml::analysis::SampleEncoding::PCM16_LE;
+        queue_.attach_analyzer(analyzer, sampleRate, channels, encoding);
     }
 
     [[nodiscard]] core::Status start() override
@@ -431,6 +471,14 @@ public:
         timer_->setTimerType(Qt::PreciseTimer);
         QObject::connect(timer_, &QTimer::timeout, this, [this] {
             static_cast<void>(engine_.tick());
+            auto snap = engine_.snapshot();
+            const bool isPlaying = snap && (snap.value()->state == core::PlaybackState::PLAYING);
+            if (wasPlaying_ && snap && snap.value()->state == core::PlaybackState::STOPPED) {
+                if (analyzer_ != nullptr) {
+                    analyzer_->invalidate_and_clear();
+                }
+            }
+            wasPlaying_ = isPlaying;
         });
         timer_->start();
         return core::Status::success();
@@ -460,6 +508,9 @@ public:
         if (!output) {
             return core::Status::failure(*output.error());
         }
+        if (analyzer_ != nullptr) {
+            output.value()->output->attach_analyzer(analyzer_);
+        }
         auto installed = engine_.install_candidate(
             std::move(*reader.value()),
             std::move(output.value()->output),
@@ -467,6 +518,10 @@ public:
             std::move(output.value()->rateAdapter));
         if (!installed) {
             return installed;
+        }
+        if (analyzer_ != nullptr) {
+            analyzer_->set_stream_generation(nextStreamGeneration_++);
+            analyzer_->invalidate_and_clear();
         }
         preparedSource_ = source;
         preparedPcm_.reset();
@@ -482,6 +537,9 @@ public:
         if (!output) {
             return core::Status::failure(*output.error());
         }
+        if (analyzer_ != nullptr) {
+            output.value()->output->attach_analyzer(analyzer_);
+        }
         auto installed = engine_.install_pcm_candidate(
             source,
             std::move(output.value()->output),
@@ -490,6 +548,10 @@ public:
             std::move(lifetime));
         if (!installed) {
             return installed;
+        }
+        if (analyzer_ != nullptr) {
+            analyzer_->set_stream_generation(nextStreamGeneration_++);
+            analyzer_->invalidate_and_clear();
         }
         preparedSource_.reset();
         preparedPcm_ = source;
@@ -551,16 +613,25 @@ public:
 
     [[nodiscard]] core::Status pause()
     {
+        if (analyzer_ != nullptr) {
+            analyzer_->invalidate_and_clear();
+        }
         return engine_.pause();
     }
 
     [[nodiscard]] core::Status stop()
     {
+        if (analyzer_ != nullptr) {
+            analyzer_->invalidate_and_clear();
+        }
         return engine_.stop();
     }
 
     [[nodiscard]] core::Status seek(core::FrameIndex position)
     {
+        if (analyzer_ != nullptr) {
+            analyzer_->invalidate_and_clear();
+        }
         return engine_.seek(position);
     }
 
@@ -575,8 +646,16 @@ public:
         return engine_.snapshot();
     }
 
+    void attach_analyzer(rgsml::analysis::LiveSpectrumAnalyzer* analyzer)
+    {
+        analyzer_ = analyzer;
+    }
+
 private:
     internal::PlaybackEngine engine_;
+    rgsml::analysis::LiveSpectrumAnalyzer* analyzer_{nullptr};
+    std::uint64_t nextStreamGeneration_{2};
+    bool wasPlaying_{false};
     QTimer* timer_{nullptr};
     std::optional<core::ResourceReference> preparedSource_;
     std::optional<audio::AudioBufferView> preparedPcm_;
@@ -707,6 +786,17 @@ public:
         return std::move(*result);
     }
 
+    void attach_analyzer(analysis::LiveSpectrumAnalyzer* analyzer)
+    {
+        if (!ready_ || worker_ == nullptr) {
+            return;
+        }
+        static_cast<void>(QMetaObject::invokeMethod(
+            worker_,
+            [this, analyzer] { worker_->attach_analyzer(analyzer); },
+            Qt::BlockingQueuedConnection));
+    }
+
 private:
     template <typename Operation>
     [[nodiscard]] core::Status invoke_status(Operation&& operation)
@@ -805,6 +895,12 @@ core::Result<core::PlaybackSnapshot>
 WindowsAudioPlaybackService::snapshot() const
 {
     return impl_->snapshot();
+}
+
+void WindowsAudioPlaybackService::attach_analyzer(
+    analysis::LiveSpectrumAnalyzer* analyzer)
+{
+    impl_->attach_analyzer(analyzer);
 }
 
 }  // namespace rgsml::platform::windows

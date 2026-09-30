@@ -5,6 +5,7 @@ import QtQuick.Layouts
 Rectangle {
     id: root
     property var viewModel: null
+    property var spectrumViewModel: null
 
     implicitWidth: 992
     implicitHeight: 612
@@ -83,6 +84,24 @@ Rectangle {
                 ToolTip.visible: hovered
             }
 
+            StudioButton {
+                objectName: "eqSpectrumToggleButton"
+                text: "Spectrum"
+                selected: root.spectrumViewModel ? root.spectrumViewModel.spectrumEnabled : true
+                tone: root.spectrumViewModel && root.spectrumViewModel.spectrumEnabled ? "primary" : "secondary"
+                accentColor: "#3A7BD5"
+                minimumControlWidth: 80
+                enabled: root.spectrumViewModel !== null && root.spectrumViewModel !== undefined
+                onClicked: {
+                    if (root.spectrumViewModel) {
+                        root.spectrumViewModel.toggleSpectrum()
+                    }
+                }
+                Accessible.name: "Toggle Live Spectrum display"
+                ToolTip.text: "Show or hide the real-time Live Spectrum overlay"
+                ToolTip.visible: hovered
+            }
+
             Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
 
             StudioButton {
@@ -93,6 +112,8 @@ Rectangle {
                 enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
                 onClicked: if (root.viewModel) root.viewModel.addBand()
                 Accessible.name: "Add Band"
+                ToolTip.text: "Add a new EQ band"
+                ToolTip.visible: hovered
             }
 
             StudioButton {
@@ -103,6 +124,8 @@ Rectangle {
                 enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
                 onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
                 Accessible.name: "Remove Band"
+                ToolTip.text: "Remove the selected EQ band"
+                ToolTip.visible: hovered
             }
         }
 
@@ -166,6 +189,7 @@ Rectangle {
             // the height left after the fixed control tiers.
             Layout.minimumHeight: 102
             viewModel: root.viewModel
+            spectrumViewModel: root.spectrumViewModel
         }
 
         // Selected-Band Inspector Panel (128 lp Fixed)

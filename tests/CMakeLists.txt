@@ -353,6 +353,8 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
     ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/live_spectrum_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/live_spectrum_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
@@ -369,6 +371,7 @@ target_include_directories(rgsml_source_metadata_panel_smoke
 target_link_libraries(rgsml_source_metadata_panel_smoke
     PRIVATE
         rgsml_audio
+        rgsml_analysis
         rgsml_platform
         rgsml_project
         rgsml_render
@@ -1006,3 +1009,48 @@ add_test(
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_install_deploy_smoke.cmake"
 )
 set_tests_properties(install_deploy_smoke PROPERTIES RUN_SERIAL TRUE)
+
+qt_add_executable(rgsml_analysis_tests
+    unit/analysis/rgsml_analysis_test.cpp
+)
+target_link_libraries(rgsml_analysis_tests
+    PRIVATE
+        rgsml_analysis
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_analysis_tests)
+add_test(NAME rgsml_analysis_tests COMMAND rgsml_analysis_tests)
+set_tests_properties(rgsml_analysis_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;unit"
+)
+
+qt_add_executable(rgsml_live_spectrum_oracle_tests
+    unit/analysis/live_spectrum_oracle_test.cpp
+)
+target_link_libraries(rgsml_live_spectrum_oracle_tests
+    PRIVATE
+        rgsml_analysis
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_live_spectrum_oracle_tests)
+add_test(NAME rgsml_live_spectrum_oracle_tests COMMAND rgsml_live_spectrum_oracle_tests)
+set_tests_properties(rgsml_live_spectrum_oracle_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;oracle"
+)
+
+qt_add_executable(rgsml_live_spectrum_stress_tests
+    unit/analysis/live_spectrum_stress_test.cpp
+)
+target_link_libraries(rgsml_live_spectrum_stress_tests
+    PRIVATE
+        rgsml_analysis
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_live_spectrum_stress_tests)
+add_test(NAME rgsml_live_spectrum_stress_tests COMMAND rgsml_live_spectrum_stress_tests)
+set_tests_properties(rgsml_live_spectrum_stress_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;stress"
+)
