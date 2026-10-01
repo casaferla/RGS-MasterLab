@@ -77,6 +77,7 @@ private:
     std::optional<core::ResourceReference> lastSource_;
     std::optional<core::ResourceReference> lastGold_;
     bool degraded_{false};
+    bool sessionChainMaterialized_{false};
     QString projectDisplayName_;
     QString errorMessage_;
     QString statusText_;

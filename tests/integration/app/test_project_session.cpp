@@ -133,7 +133,7 @@ private slots:
     void clear_region_and_replace_source_save_as();
     void invalid_gold_and_hardlink_preflight_preserve_session();
     void region_bounds_and_degraded_opaque_preservation();
-    void degraded_project_save_fail_closed();
+    void externally_opened_processing_preserved_not_overwritten();
     void mastering_chain_normal_save();
     void mastering_chain_repeated_save();
     void mastering_chain_source_replacement_regression();
@@ -334,7 +334,7 @@ void ProjectSessionTest::region_bounds_and_degraded_opaque_preservation()
              future.value()->canonical_utf8());
 }
 
-void ProjectSessionTest::degraded_project_save_fail_closed()
+void ProjectSessionTest::externally_opened_processing_preserved_not_overwritten()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
@@ -349,25 +349,45 @@ void ProjectSessionTest::degraded_project_save_fail_closed()
     auto original = load_project(first);
     QVERIFY(original);
     auto doc = original.value()->document();
+
+    // Attach external chain ID & extension metadata
+    const auto externalChainId = *core::Uuid::parse("90000000-0000-4000-8000-000000000001").value();
+    doc.pipeline.masteringChainId = externalChainId;
+    project::Chain extChain;
+    extChain.chainId = externalChainId;
+    extChain.stage = "MASTER";
+    extChain.segment = "MANUAL";
+    doc.chains.push_back(extChain);
+
     auto future = project::OpaqueJsonValue::parse("{\"future\":{\"enabled\":true}}");
     QVERIFY(future);
     doc.extensions = *future.value();
-    auto degraded = project::ProjectSnapshot::create(doc);
-    QVERIFY(degraded);
-    const auto futurePath = dir.filePath(QStringLiteral("future_degraded.rgsml"));
-    QVERIFY(write_project(futurePath, *degraded.value()));
 
-    // Open degraded project into session with active mastering chain
+    auto externalProject = project::ProjectSnapshot::create(doc);
+    QVERIFY(externalProject);
+    const auto externalPath = dir.filePath(QStringLiteral("external.rgsml"));
+    QVERIFY(write_project(externalPath, *externalProject.value()));
+
+    // Open external project into session with active MasteringChainState
     Session session;
-    session.project.openProject(QUrl::fromLocalFile(futurePath));
+    session.project.openProject(QUrl::fromLocalFile(externalPath));
     QCOMPARE(session.project.error_message(), QString());
-    QVERIFY(session.project.degraded());
 
-    // Attempting to Save As must fail closed for degraded project
-    const auto attemptSave = dir.filePath(QStringLiteral("attempt_save.rgsml"));
-    session.project.saveProjectAs(QUrl::fromLocalFile(attemptSave));
-    QVERIFY(!session.project.error_message().isEmpty());
-    QVERIFY(!QFile::exists(attemptSave));
+    // Save As with unchanged Source must succeed and preserve external processing state
+    const auto savedPath = dir.filePath(QStringLiteral("saved_external.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(savedPath));
+    QCOMPARE(session.project.error_message(), QString());
+
+    auto reloaded = load_project(savedPath);
+    QVERIFY(reloaded);
+    const auto& reloadedDoc = reloaded.value()->document();
+
+    // Verify external masteringChainId and chains are exactly preserved, NOT replaced by live B4 chain
+    QVERIFY(reloadedDoc.pipeline.masteringChainId.has_value());
+    QCOMPARE(*reloadedDoc.pipeline.masteringChainId, externalChainId);
+    QCOMPARE(reloadedDoc.chains.size(), std::size_t{1});
+    QCOMPARE(reloadedDoc.chains[0].chainId, externalChainId);
+    QCOMPARE(reloadedDoc.extensions.canonical_utf8(), future.value()->canonical_utf8());
 }
 
 void ProjectSessionTest::mastering_chain_normal_save()

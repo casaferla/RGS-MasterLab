@@ -110,18 +110,11 @@ namespace {
         return true;
     }
 
-    if (doc.chains.empty()) {
-        return false;
+    if (doc.pipeline.masteringChainId || !doc.chains.empty()) {
+        return true;
     }
 
-    // A single mastering chain matching pipeline.masteringChainId is the supported B4 mastering chain topology
-    if (doc.chains.size() == 1U && doc.pipeline.masteringChainId &&
-        doc.chains[0].chainId == *doc.pipeline.masteringChainId &&
-        doc.chains[0].stage == "MASTER" && doc.chains[0].segment == "MANUAL") {
-        return false;
-    }
-
-    return true;
+    return false;
 }
 
 }  // namespace
@@ -212,7 +205,7 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
     project::ProjectDocument doc;
     std::vector<project::OptionalEntry> optional;
     if (opened_) { doc = opened_->document(); optional = opened_->optional_entries(); }
-    if (opened_ && doc.sourceResourceId != *sourceId_ && has_future_semantics(doc)) {
+    if (opened_ && doc.sourceResourceId != *sourceId_ && !sessionChainMaterialized_ && has_future_semantics(doc)) {
         return core::Result<project::ProjectSnapshot>::failure(core::Error{
             core::ErrorCode::UnsupportedOperation,
             "Cannot replace Source while preserved future project semantics refer to it"});
@@ -262,15 +255,7 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
         else *found = std::move(value);
     }
 
-    if (masteringChainState_) {
-        // Enforce degraded/unsupported safety rule: if saving an opened project that has future/degraded semantics
-        // or unsupported mastering chain topology, fail deterministically rather than overwriting or corrupting.
-        if (opened_ && (degraded_ || has_future_semantics(doc))) {
-            return core::Result<project::ProjectSnapshot>::failure(core::Error{
-                core::ErrorCode::UnsupportedOperation,
-                "Cannot save project with unsupported or degraded processing semantics"});
-        }
-
+    if (masteringChainState_ && (!opened_ || sessionChainMaterialized_)) {
         const auto chainId = masteringChainState_->chain_id();
         doc.pipeline.masteringChainId = chainId;
 
@@ -445,6 +430,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     const auto persistedName = doc.displayName;
     const bool isDegraded = has_future_semantics(doc);
     opened_.emplace(std::move(*opened.value()));
+    sessionChainMaterialized_ = false;
     projectId_ = persistedProjectId;
     sourceId_ = persistedSourceId;
     referenceId_ = persistedReferenceId;
@@ -489,7 +475,11 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
                 std::move(*reader.value()));
         });
     if (!result) { publish_error(*result.error()); return; }
+    const bool wasNewSession = !opened_;
     opened_.emplace(std::move(*snapshot.value()));
+    if (wasNewSession || sessionChainMaterialized_) {
+        sessionChainMaterialized_ = true;
+    }
     clearedRegionId_.reset();
     projectDisplayName_ = QString::fromUtf8(opened_->document().displayName.data(),
         static_cast<qsizetype>(opened_->document().displayName.size()));
