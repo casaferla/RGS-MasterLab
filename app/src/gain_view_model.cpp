@@ -2,6 +2,8 @@
 
 #include <rgsml/dsp/module_registry.hpp>
 
+#include <QUuid>
+
 #include <cmath>
 #include <utility>
 
@@ -17,9 +19,9 @@ GainViewModel::GainViewModel(
 {
     if (!externalChainState_) {
         auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
-        auto chain_id = *core::Uuid::parse("10000000-0000-4000-8000-000000000001").value();
-        auto gain_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000010").value()).value();
-        auto eq_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000020").value()).value();
+        const auto chain_id = *core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+        const auto gain_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value()).value();
+        const auto eq_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value()).value();
         auto defaultState = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
         ownedChainState_ = std::make_unique<MasteringChainState>(std::move(*defaultState.value()));
     }

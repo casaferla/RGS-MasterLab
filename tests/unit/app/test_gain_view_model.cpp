@@ -25,6 +25,7 @@ private slots:
     void testResetToDefault();
     void testResetForNewSource();
     void testAuthorityIsolation();
+    void testFallbackViewModelsGenerateUniqueUuids();
 };
 
 void GainViewModelTest::testValidGainBoundsAccepted()
@@ -248,6 +249,19 @@ void GainViewModelTest::testAuthorityIsolation()
     QCOMPARE(state.value()->parametric_eq_parameters(), origEqParams);
     QCOMPARE(state.value()->gain_instance_id(), gain_id);
     QCOMPARE(state.value()->eq_instance_id(), eq_id);
+}
+
+void GainViewModelTest::testFallbackViewModelsGenerateUniqueUuids()
+{
+    GainViewModel vm1;
+    GainViewModel vm2;
+
+    QCOMPARE(vm1.gain_db(), 0.0);
+    QCOMPARE(vm2.gain_db(), 0.0);
+
+    QVERIFY(vm1.setGainDb(3.0));
+    QCOMPARE(vm1.gain_db(), 3.0);
+    QCOMPARE(vm2.gain_db(), 0.0);
 }
 
 }  // namespace

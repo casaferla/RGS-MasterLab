@@ -152,9 +152,9 @@ EqViewModel::EqViewModel(
 
     if (!externalChainState_) {
         auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
-        auto chain_id = *core::Uuid::parse("10000000-0000-4000-8000-000000000001").value();
-        auto gain_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000010").value()).value();
-        auto eq_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000020").value()).value();
+        const auto chain_id = *core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+        const auto gain_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value()).value();
+        const auto eq_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value()).value();
         auto defaultState = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
         ownedChainState_ = std::make_unique<MasteringChainState>(std::move(*defaultState.value()));
     }
@@ -167,15 +167,22 @@ EqViewModel::EqViewModel(
 
     connect(&active_preview_controller(), &MasteringPreviewController::changed, this, &EqViewModel::changed);
 
-    const auto firstBandId = idGenerator_();
-    draftBand_ = make_default_band(firstBandId);
-    auto firstBandParam = make_band_parameters(draftBand_, kMaxFreqCap);
-    Q_ASSERT(firstBandParam.has_value());
-    committedBands_.push_back(*firstBandParam);
+    const auto& authBands = active_chain_state().parametric_eq_parameters().bands();
+    if (!authBands.empty()) {
+        committedBands_ = authBands;
+        selectedIndex_ = 0;
+        draftBand_ = band_to_draft(committedBands_[0]);
+    } else {
+        const auto firstBandId = idGenerator_();
+        draftBand_ = make_default_band(firstBandId);
+        auto firstBandParam = make_band_parameters(draftBand_, kMaxFreqCap);
+        Q_ASSERT(firstBandParam.has_value());
+        committedBands_.push_back(*firstBandParam);
 
-    auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
-    Q_ASSERT(paramsRes);
-    static_cast<void>(active_chain_state().set_parametric_eq_parameters(*paramsRes.value()));
+        auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
+        Q_ASSERT(paramsRes);
+        static_cast<void>(active_chain_state().set_parametric_eq_parameters(*paramsRes.value()));
+    }
 
     update_response_grid();
     update_validation_state();
@@ -648,8 +655,8 @@ void EqViewModel::redo()
 
 void EqViewModel::resetToFlat()
 {
-    if (is_canonical_flat(committedBands_)) {
-        return; // Already canonical Flat: true no-op
+    if (is_canonical_flat(committedBands_) && !bypass()) {
+        return; // Already canonical Flat AND not bypassed: true no-op
     }
 
     const auto preState = capture_current_snapshot();
