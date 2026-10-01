@@ -908,15 +908,19 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(!eqViewModel.can_undo(), "can_undo must be false initially for canonical Flat EQ");
     QVERIFY2(!eqViewModel.can_redo(), "can_redo must be false initially for canonical Flat EQ");
 
-    // Add band -> state becomes Manual non-default -> config LED turns Green #00D47A
+    // Add band -> EQ state becomes Manual non-default -> EQ config LED (row 1) turns Green #00D47A
     QVERIFY2(QMetaObject::invokeMethod(addBandBtn, "clicked"), "Clicking addBandButton must succeed");
     QCoreApplication::processEvents();
     QCOMPARE(eqViewModel.band_count(), 2);
     QCOMPARE(eqViewModel.selected_index(), 1);
     QVERIFY2(!eqViewModel.is_default(), "EQ state must no longer be default after adding a band");
-    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
-    QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("Manual Edit"));
-    QVERIFY2(dspChainStateText0->property("visible").toBool(), "Manual Edit must be visible for a non-default EQ");
+    QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
+    QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
+    QVERIFY2(dspChainStateText1->property("visible").toBool(), "Manual Edit must be visible for a non-default EQ");
+
+    // Input Gain (row 0) remains dark/default and unchanged after EQ-only edit
+    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
 
     // Keyboard Space activation on bandSelectorButton_0
     auto* band0BtnCurrent = find_child_by_name(eqEditor, QStringLiteral("bandSelectorButton_0"));
