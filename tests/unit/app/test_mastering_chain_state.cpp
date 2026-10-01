@@ -1,7 +1,8 @@
+#include "mastering_chain_state.hpp"
+
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
-#include <rgsml/dsp/mastering_chain_state.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 
@@ -13,8 +14,19 @@
 namespace rgsml::tests {
 namespace {
 
+using namespace rgsml::app;
 using namespace rgsml::dsp;
 using rgsml::core::Uuid;
+
+[[nodiscard]] Uuid test_uuid(const char* text)
+{
+    return *Uuid::parse(text).value();
+}
+
+[[nodiscard]] ModuleInstanceId test_instance_id(const char* text)
+{
+    return *ModuleInstanceId::from_uuid(test_uuid(text)).value();
+}
 
 class MasteringChainStateTest final : public QObject {
     Q_OBJECT
@@ -22,11 +34,10 @@ class MasteringChainStateTest final : public QObject {
 private slots:
     void defaultTopologyAndCanonicalOrder();
     void stableInstanceIdsDuringEdits();
-    void gainParameterUpdates();
-    void eqParameterUpdates();
+    void rejectionOfNilOrDuplicateIdentities();
+    void gainAndEqParameterUpdates();
     void bypassAndActiveState();
     void executionBindingsGeneration();
-    void rejectionOfDuplicateInstanceIds();
 };
 
 void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
@@ -34,20 +45,25 @@ void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
     auto registry = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);
 
-    auto state = MasteringChainState::create_default(*registry.value());
+    const auto chain_id = test_uuid("10000000-0000-4000-8000-000000000001");
+    const auto gain_id = test_instance_id("10000000-0000-4000-8000-000000000010");
+    const auto eq_id = test_instance_id("10000000-0000-4000-8000-000000000020");
+
+    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
     QVERIFY(state);
 
+    QCOMPARE(state.value()->chain_id(), chain_id);
     QCOMPARE(state.value()->module_count(), std::size_t{2});
     const auto instances = state.value()->instances();
     QCOMPARE(instances.size(), std::size_t{2});
 
     // Index 0: Input Gain
     QCOMPARE(instances[0].module_type_id(), std::string_view("rgsml.dsp.gain"));
-    QCOMPARE(instances[0].instance_id(), state.value()->gain_instance_id());
+    QCOMPARE(instances[0].instance_id(), gain_id);
 
     // Index 1: Parametric EQ
     QCOMPARE(instances[1].module_type_id(), std::string_view("rgsml.dsp.parametric-eq"));
-    QCOMPARE(instances[1].instance_id(), state.value()->eq_instance_id());
+    QCOMPARE(instances[1].instance_id(), eq_id);
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
@@ -55,11 +71,12 @@ void MasteringChainStateTest::stableInstanceIdsDuringEdits()
     auto registry = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);
 
-    const auto custom_gain_id = *ModuleInstanceId::from_uuid(*Uuid::parse("a1111111-1111-4111-8111-111111111111").value()).value();
-    const auto custom_eq_id = *ModuleInstanceId::from_uuid(*Uuid::parse("a2222222-2222-4222-8222-222222222222").value()).value();
+    const auto chain_id = test_uuid("a0000000-0000-4000-8000-000000000001");
+    const auto custom_gain_id = test_instance_id("a1111111-1111-4111-8111-111111111111");
+    const auto custom_eq_id = test_instance_id("a2222222-2222-4222-8222-222222222222");
 
     auto state = MasteringChainState::create_default(
-        *registry.value(), Uuid{}, custom_gain_id, custom_eq_id);
+        *registry.value(), chain_id, custom_gain_id, custom_eq_id);
     QVERIFY(state);
 
     QCOMPARE(state.value()->gain_instance_id(), custom_gain_id);
@@ -80,12 +97,39 @@ void MasteringChainStateTest::stableInstanceIdsDuringEdits()
     QCOMPARE(state.value()->eq_instance_id(), custom_eq_id);
 }
 
-void MasteringChainStateTest::gainParameterUpdates()
+void MasteringChainStateTest::rejectionOfNilOrDuplicateIdentities()
 {
     auto registry = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);
 
-    auto state = MasteringChainState::create_default(*registry.value());
+    const auto valid_chain = test_uuid("b0000000-0000-4000-8000-000000000001");
+    const auto valid_gain = test_instance_id("b1111111-1111-4111-8111-111111111111");
+    const auto valid_eq = test_instance_id("b2222222-2222-4222-8222-222222222222");
+
+    // Nil chain ID rejected
+    QVERIFY(!MasteringChainState::create_default(*registry.value(), Uuid{}, valid_gain, valid_eq));
+
+    // Constructing StrongId with nil UUID is rejected
+    auto nil_strong_id = ModuleInstanceId::from_uuid(Uuid{});
+    QVERIFY(!nil_strong_id);
+    QCOMPARE(nil_strong_id.error()->code(), rgsml::core::ErrorCode::InvalidUuid);
+
+    // Duplicate instance IDs rejected
+    auto rejected_dup = MasteringChainState::create_default(*registry.value(), valid_chain, valid_gain, valid_gain);
+    QVERIFY(!rejected_dup);
+    QCOMPARE(rejected_dup.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
+}
+
+void MasteringChainStateTest::gainAndEqParameterUpdates()
+{
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    const auto chain_id = test_uuid("c0000000-0000-4000-8000-000000000001");
+    const auto gain_id = test_instance_id("c1111111-1111-4111-8111-111111111111");
+    const auto eq_id = test_instance_id("c2222222-2222-4222-8222-222222222222");
+
+    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
     QVERIFY(state);
 
     QCOMPARE(state.value()->gain_parameters().gain_db(), 0.0);
@@ -93,19 +137,9 @@ void MasteringChainStateTest::gainParameterUpdates()
     auto updated_gain = GainParameters::create(4.5);
     QVERIFY(updated_gain);
     QVERIFY(state.value()->set_gain_parameters(*updated_gain.value()));
-
     QCOMPARE(state.value()->gain_parameters().gain_db(), 4.5);
-}
 
-void MasteringChainStateTest::eqParameterUpdates()
-{
-    auto registry = ModuleRegistry::create_dsp_package_v1();
-    QVERIFY(registry);
-
-    auto state = MasteringChainState::create_default(*registry.value());
-    QVERIFY(state);
-
-    const auto id1 = *Uuid::parse("00000000-0000-4000-8000-000000000001").value();
+    const auto id1 = test_uuid("00000000-0000-4000-8000-000000000001");
     auto band = EqBandParameters::create(
         id1, true, EqFilterType::BELL, EqRouting::STEREO, BellPayload{2000.0, -3.0, 1.0});
     QVERIFY(band);
@@ -122,10 +156,12 @@ void MasteringChainStateTest::bypassAndActiveState()
     auto registry = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);
 
-    auto state = MasteringChainState::create_default(*registry.value());
-    QVERIFY(state);
+    const auto chain_id = test_uuid("d0000000-0000-4000-8000-000000000001");
+    const auto gain_id = test_instance_id("d1111111-1111-4111-8111-111111111111");
+    const auto eq_id = test_instance_id("d2222222-2222-4222-8222-222222222222");
 
-    const auto& gain_id = state.value()->gain_instance_id();
+    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
+    QVERIFY(state);
 
     // Initial state: not bypassed
     auto bypass_res = state.value()->is_bypassed(gain_id);
@@ -153,7 +189,11 @@ void MasteringChainStateTest::executionBindingsGeneration()
     auto registry = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);
 
-    auto state = MasteringChainState::create_default(*registry.value());
+    const auto chain_id = test_uuid("e0000000-0000-4000-8000-000000000001");
+    const auto gain_id = test_instance_id("e1111111-1111-4111-8111-111111111111");
+    const auto eq_id = test_instance_id("e2222222-2222-4222-8222-222222222222");
+
+    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
     QVERIFY(state);
 
     auto gain_params = GainParameters::create(-3.0);
@@ -164,30 +204,14 @@ void MasteringChainStateTest::executionBindingsGeneration()
     QCOMPARE(bindings.size(), std::size_t{2});
 
     // Binding 0: Gain
-    QCOMPARE(bindings[0].instance_id, state.value()->gain_instance_id());
+    QCOMPARE(bindings[0].instance_id, gain_id);
     QVERIFY(std::holds_alternative<GainParameters>(bindings[0].parameters));
     QCOMPARE(std::get<GainParameters>(bindings[0].parameters).gain_db(), -3.0);
 
     // Binding 1: Parametric EQ
-    QCOMPARE(bindings[1].instance_id, state.value()->eq_instance_id());
+    QCOMPARE(bindings[1].instance_id, eq_id);
     QVERIFY(std::holds_alternative<ParametricEqParameters>(bindings[1].parameters));
     QCOMPARE(std::get<ParametricEqParameters>(bindings[1].parameters), state.value()->parametric_eq_parameters());
-}
-
-void MasteringChainStateTest::rejectionOfDuplicateInstanceIds()
-{
-    auto registry = ModuleRegistry::create_dsp_package_v1();
-    QVERIFY(registry);
-
-    const auto same_id = *ModuleInstanceId::from_uuid(*Uuid::parse("a1111111-1111-4111-8111-111111111111").value()).value();
-
-    auto gain_params = GainParameters::create(0.0);
-    auto eq_params = ParametricEqParameters::create_legacy_default();
-
-    auto rejected = MasteringChainState::create(
-        *registry.value(), Uuid{}, same_id, *gain_params.value(), false, same_id, *eq_params.value(), false);
-    QVERIFY(!rejected);
-    QCOMPARE(rejected.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
 }
 
 }  // namespace

@@ -9,7 +9,6 @@ add_library(rgsml_dsp STATIC
     src/module_registry.cpp
     src/processing_chain.cpp
     src/module_parameter_codec.cpp
-    src/mastering_chain_state.cpp
 )
 
 target_include_directories(rgsml_dsp
@@ -21,6 +20,7 @@ target_link_libraries(rgsml_dsp
     PUBLIC
         rgsml_core
         rgsml_audio
+    PRIVATE
         rgsml_vendor_json
 )
 

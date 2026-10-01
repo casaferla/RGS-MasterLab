@@ -747,18 +747,25 @@ set_tests_properties(rgsml_module_parameter_codec_tests PROPERTIES
 )
 
 qt_add_executable(rgsml_mastering_chain_state_tests
-    unit/dsp/test_mastering_chain_state.cpp
+    unit/app/test_mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+)
+target_include_directories(rgsml_mastering_chain_state_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
 )
 target_link_libraries(rgsml_mastering_chain_state_tests
     PRIVATE
         rgsml_dsp
+        rgsml_core
         Qt6::Test
 )
 rgsml_apply_project_warnings(rgsml_mastering_chain_state_tests)
 add_test(NAME rgsml_mastering_chain_state_tests COMMAND rgsml_mastering_chain_state_tests)
 set_tests_properties(rgsml_mastering_chain_state_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    LABELS "dsp;mastering_chain"
+    LABELS "app;mastering_chain"
 )
 
 qt_add_executable(rgsml_eq_view_model_tests

@@ -1,10 +1,10 @@
-#include <rgsml/dsp/mastering_chain_state.hpp>
+#include "mastering_chain_state.hpp"
 
 #include <rgsml/core/error.hpp>
 
 #include <utility>
 
-namespace rgsml::dsp {
+namespace rgsml::app {
 namespace {
 
 using rgsml::core::Error;
@@ -12,6 +12,7 @@ using rgsml::core::ErrorCode;
 using rgsml::core::Result;
 using rgsml::core::Status;
 using rgsml::core::Uuid;
+using namespace rgsml::dsp;
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
@@ -21,35 +22,14 @@ constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
     return Error{code, std::move(message), {{"category", std::move(category)}}};
 }
 
-[[nodiscard]] Uuid default_chain_uuid()
-{
-    return *Uuid::parse("00000000-0000-4000-8000-000000000001").value();
-}
-
-[[nodiscard]] ModuleInstanceId default_gain_instance_id()
-{
-    return *ModuleInstanceId::from_uuid(*Uuid::parse("00000000-0000-4000-8000-000000000010").value()).value();
-}
-
-[[nodiscard]] ModuleInstanceId default_eq_instance_id()
-{
-    return *ModuleInstanceId::from_uuid(*Uuid::parse("00000000-0000-4000-8000-000000000020").value()).value();
-}
-
 }  // namespace
 
 Result<MasteringChainState> MasteringChainState::create_default(
     const ModuleRegistry& registry,
     Uuid chain_id,
-    std::optional<ModuleInstanceId> gain_id,
-    std::optional<ModuleInstanceId> eq_id)
+    ModuleInstanceId gain_id,
+    ModuleInstanceId eq_id)
 {
-    if (chain_id == Uuid{}) {
-        chain_id = default_chain_uuid();
-    }
-    const auto effective_gain_id = gain_id.value_or(default_gain_instance_id());
-    const auto effective_eq_id = eq_id.value_or(default_eq_instance_id());
-
     auto default_gain = GainParameters::create(0.0);
     if (!default_gain) {
         return Result<MasteringChainState>::failure(*default_gain.error());
@@ -62,10 +42,10 @@ Result<MasteringChainState> MasteringChainState::create_default(
     return create(
         registry,
         chain_id,
-        effective_gain_id,
+        gain_id,
         *default_gain.value(),
         false,
-        effective_eq_id,
+        eq_id,
         *default_eq.value(),
         false);
 }
@@ -80,6 +60,24 @@ Result<MasteringChainState> MasteringChainState::create(
     ParametricEqParameters eq_params,
     bool eq_bypassed)
 {
+    if (chain_id.is_nil()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_CHAIN_ID",
+            "MasteringChainState requires an explicit non-nil chain_id."));
+    }
+    if (gain_id.uuid().is_nil()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_MODULE_INSTANCE_ID",
+            "MasteringChainState requires an explicit non-nil gain_instance_id."));
+    }
+    if (eq_id.uuid().is_nil()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_MODULE_INSTANCE_ID",
+            "MasteringChainState requires an explicit non-nil eq_instance_id."));
+    }
     if (gain_id == eq_id) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument,
@@ -197,4 +195,4 @@ std::vector<ModuleExecutionBinding> MasteringChainState::execution_bindings() co
         ModuleExecutionBinding{eq_id_, eq_params_}};
 }
 
-}  // namespace rgsml::dsp
+}  // namespace rgsml::app
