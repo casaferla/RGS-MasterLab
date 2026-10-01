@@ -438,19 +438,25 @@ void ProjectSessionTest::mastering_chain_normal_save()
     QCOMPARE(chain.chainId, session.chainId);
     QCOMPARE(chain.stage, std::string("MASTER"));
     QCOMPARE(chain.segment, std::string("MANUAL"));
+    QCOMPARE(chain.revision, session.masteringChainState->chain().revision());
     QCOMPARE(chain.modules.size(), std::size_t{2});
 
     // Verify Module 0: Input Gain
+    auto gainInstance = session.masteringChainState->gain_instance();
+    QVERIFY(gainInstance);
+    const auto& gainAuthority = gainInstance.value()->get();
     const auto& m0 = chain.modules[0];
     QCOMPARE(m0.instanceId, session.gainId.uuid());
     QCOMPARE(m0.typeId, std::string("rgsml.dsp.gain"));
-    QVERIFY(m0.enabled);
+    QCOMPARE(m0.enabled, gainAuthority.enabled());
+    QCOMPARE(m0.userBypass, gainAuthority.user_bypass());
+    QCOMPARE(m0.controllerSuspended, gainAuthority.controller_suspended());
+    QCOMPARE(m0.domainSuspended, gainAuthority.domain_suspended());
     QVERIFY(m0.userBypass);
-    QVERIFY(!m0.controllerSuspended);
-    QVERIFY(!m0.domainSuspended);
     QCOMPARE(m0.provenance, std::string("MANUAL"));
     QCOMPARE(m0.owner, std::string("USER"));
     QCOMPARE(m0.linkState, std::string("UNLINKED"));
+    QVERIFY(m0.semanticNodeId == gainAuthority.semantic_node_id());
     QVERIFY(m0.algorithmVersion.has_value());
     QCOMPARE(*m0.algorithmVersion, std::string("1.0.0"));
     QVERIFY(m0.parameterSchemaId.has_value());
@@ -458,17 +464,24 @@ void ProjectSessionTest::mastering_chain_normal_save()
 
     auto decodedGain = dsp::decode_gain_parameters_json(m0.parameters.canonical_utf8());
     QVERIFY(decodedGain);
-    QCOMPARE(decodedGain.value()->gain_db(), 6.0);
+    QCOMPARE(*decodedGain.value(), *gainParams.value());
 
     // Verify Module 1: Parametric EQ
+    auto eqInstance = session.masteringChainState->eq_instance();
+    QVERIFY(eqInstance);
+    const auto& eqAuthority = eqInstance.value()->get();
     const auto& m1 = chain.modules[1];
     QCOMPARE(m1.instanceId, session.eqId.uuid());
     QCOMPARE(m1.typeId, std::string("rgsml.dsp.parametric-eq"));
-    QVERIFY(m1.enabled);
+    QCOMPARE(m1.enabled, eqAuthority.enabled());
+    QCOMPARE(m1.userBypass, eqAuthority.user_bypass());
+    QCOMPARE(m1.controllerSuspended, eqAuthority.controller_suspended());
+    QCOMPARE(m1.domainSuspended, eqAuthority.domain_suspended());
     QVERIFY(!m1.userBypass);
     QCOMPARE(m1.provenance, std::string("MANUAL"));
     QCOMPARE(m1.owner, std::string("USER"));
     QCOMPARE(m1.linkState, std::string("UNLINKED"));
+    QVERIFY(m1.semanticNodeId == eqAuthority.semantic_node_id());
     QVERIFY(m1.algorithmVersion.has_value());
     QCOMPARE(*m1.algorithmVersion, std::string("1.0.0"));
     QVERIFY(m1.parameterSchemaId.has_value());
