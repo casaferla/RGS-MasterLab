@@ -266,12 +266,11 @@ Item {
                             selectedTextColor: root.textPrimary
                             activeFocusOnTab: true
 
-                            onTextEdited: {
-                                if (root.viewModel) {
-                                    root.viewModel.setGainDbText(gainInput.text)
-                                }
-                            }
-
+                            // Treat typed text as a local draft. Committing on
+                            // every keystroke would both reformat partial input
+                            // (for example "3" -> "3.0") and request a full-chain
+                            // preview before the user has finished entering a value.
+                            // Enter/Return commits the complete text exactly once.
                             Keys.onReturnPressed: {
                                 if (root.viewModel) {
                                     root.viewModel.setGainDbText(gainInput.text)
