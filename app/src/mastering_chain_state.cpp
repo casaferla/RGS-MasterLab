@@ -85,8 +85,10 @@ Result<MasteringChainState> MasteringChainState::create(
             "Gain and Parametric EQ module instance IDs must be unique."));
     }
 
+    auto reg_ptr = std::make_shared<const ModuleRegistry>(registry);
+
     auto chain_res = ProcessingChain::create(
-        registry,
+        *reg_ptr,
         ProcessingChainContext{ProcessingStage::MASTER, ChainSegment::MANUAL});
     if (!chain_res) {
         return Result<MasteringChainState>::failure(*chain_res.error());
@@ -116,6 +118,7 @@ Result<MasteringChainState> MasteringChainState::create(
     }
 
     return Result<MasteringChainState>::success(MasteringChainState{
+        std::move(reg_ptr),
         chain_id,
         std::move(chain),
         gain_id,
@@ -125,13 +128,15 @@ Result<MasteringChainState> MasteringChainState::create(
 }
 
 MasteringChainState::MasteringChainState(
+    std::shared_ptr<const ModuleRegistry> registry,
     Uuid chain_id,
     ProcessingChain chain,
     ModuleInstanceId gain_id,
     GainParameters gain_params,
     ModuleInstanceId eq_id,
     ParametricEqParameters eq_params) noexcept
-    : chain_id_(chain_id)
+    : registry_(std::move(registry))
+    , chain_id_(chain_id)
     , chain_(std::move(chain))
     , gain_id_(gain_id)
     , gain_params_(std::move(gain_params))

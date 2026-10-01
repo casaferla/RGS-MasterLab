@@ -361,6 +361,12 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
     ${CMAKE_SOURCE_DIR}/app/src/windows_window_chrome_helper.cpp
     ${CMAKE_SOURCE_DIR}/app/src/windows_window_chrome_helper.hpp
 )
@@ -772,6 +778,10 @@ qt_add_executable(rgsml_eq_view_model_tests
     unit/app/test_eq_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
 )
 target_include_directories(rgsml_eq_view_model_tests
     PRIVATE
@@ -791,6 +801,62 @@ add_test(NAME rgsml_eq_view_model_tests COMMAND rgsml_eq_view_model_tests)
 set_tests_properties(rgsml_eq_view_model_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "app;parametric_eq;view_model;render"
+)
+
+qt_add_executable(rgsml_gain_view_model_tests
+    unit/app/test_gain_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
+)
+target_include_directories(rgsml_gain_view_model_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_gain_view_model_tests
+    PRIVATE
+        rgsml_render
+        rgsml_dsp
+        rgsml_audio
+        rgsml_core
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_gain_view_model_tests)
+add_test(NAME rgsml_gain_view_model_tests COMMAND rgsml_gain_view_model_tests)
+set_tests_properties(rgsml_gain_view_model_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;gain;view_model;render"
+)
+
+qt_add_executable(rgsml_mastering_preview_controller_tests
+    unit/app/test_mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
+)
+target_include_directories(rgsml_mastering_preview_controller_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_mastering_preview_controller_tests
+    PRIVATE
+        rgsml_render
+        rgsml_dsp
+        rgsml_audio
+        rgsml_core
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_mastering_preview_controller_tests)
+add_test(NAME rgsml_mastering_preview_controller_tests COMMAND rgsml_mastering_preview_controller_tests)
+set_tests_properties(rgsml_mastering_preview_controller_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;mastering_chain;render"
 )
 
 qt_add_executable(rgsml_render_preview_tests

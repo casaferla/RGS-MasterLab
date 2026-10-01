@@ -1,10 +1,14 @@
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
 #include "eq_view_model.hpp"
+#include "gain_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "live_spectrum_view_model.hpp"
+#include "mastering_chain_state.hpp"
+#include "mastering_preview_controller.hpp"
 #include "playback_transport_view_model.hpp"
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
+#include <rgsml/dsp/module_registry.hpp>
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
@@ -83,25 +87,36 @@ int main(int argc, char* argv[])
             ? auditionRegion.region()
             : std::nullopt;
     });
-    rgsml::app::EqViewModel eqViewModel{
+    auto moduleRegistry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto chainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+    const auto gainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+    const auto eqUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+    const auto gainInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+    auto masteringChainStateRes = rgsml::app::MasteringChainState::create_default(
+        *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId);
+    auto masteringChainState = std::move(*masteringChainStateRes.value());
+
+    rgsml::app::MasteringPreviewController previewController{
+        &masteringChainState,
         [&auditionSelector] {
             return auditionSelector.prepared_realization_snapshot();
         },
         [&auditionSelector](rgsml::render::RenderResult result) {
             return auditionSelector.set_processed_realization(std::move(result));
-        },
-        [] {
-            const auto str = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
-            return *rgsml::core::Uuid::parse(str).value();
         }
     };
+
+    rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
+    rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
+
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
     rgsml::app::ProjectSessionViewModel projectSession{
         &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport};
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
-         &auditionSelector, &goldSelection, &eqViewModel](
+         &auditionSelector, &goldSelection, &gainViewModel, &eqViewModel](
             const rgsml::core::ResourceReference& source) {
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
@@ -115,6 +130,7 @@ int main(int argc, char* argv[])
             if (prepared) {
                 static_cast<void>(auditionSelector.switch_to(
                     rgsml::app::AuditionTarget::PREPARED));
+                gainViewModel.resetForNewSource();
                 eqViewModel.resetForNewSource();
             }
             goldSelection.sourceChanged();
@@ -165,6 +181,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("projectSession"),
         &projectSession);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("gainViewModel"),
+        &gainViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("eqViewModel"),
         &eqViewModel);

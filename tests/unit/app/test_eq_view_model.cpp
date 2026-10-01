@@ -495,8 +495,10 @@ void EqViewModelTest::testRealProductionPathActiveAndBypass()
 
     QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
     QVERIFY(publishedResult != nullptr);
-    QCOMPARE(publishedResult->signatures().size(), std::size_t{1});
-    QCOMPARE(publishedResult->signatures()[0].disposition, render::ModuleExecutionDisposition::PROCESSED);
+    QCOMPARE(publishedResult->signatures().size(), std::size_t{2});
+    QCOMPARE(publishedResult->signatures()[0].type_id, std::string("rgsml.dsp.gain"));
+    QCOMPARE(publishedResult->signatures()[1].type_id, std::string("rgsml.dsp.parametric-eq"));
+    QCOMPARE(publishedResult->signatures()[1].disposition, render::ModuleExecutionDisposition::PROCESSED);
 
     // Bypass case
     vm.setBypass(true);
@@ -507,7 +509,7 @@ void EqViewModelTest::testRealProductionPathActiveAndBypass()
 
     QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
     QVERIFY(publishedResult != nullptr);
-    QCOMPARE(publishedResult->signatures()[0].disposition, render::ModuleExecutionDisposition::BYPASS_IDENTITY);
+    QCOMPARE(publishedResult->signatures()[1].disposition, render::ModuleExecutionDisposition::BYPASS_IDENTITY);
 }
 
 void EqViewModelTest::testCurrentFailurePreservesLastGoodAudio()
