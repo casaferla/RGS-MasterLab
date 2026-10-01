@@ -9,6 +9,8 @@ qt_add_executable(rgsml_app
     src/gold_selection_view_model.hpp
     src/live_spectrum_view_model.cpp
     src/live_spectrum_view_model.hpp
+    src/mastering_chain_state.cpp
+    src/mastering_chain_state.hpp
     src/main.cpp
     src/project_session_view_model.cpp
     src/project_session_view_model.hpp
@@ -32,6 +34,7 @@ target_link_libraries(rgsml_app
         rgsml_core
         rgsml_project
         rgsml_audio
+        rgsml_dsp
         rgsml_platform
         rgsml_render
         rgsml_ui

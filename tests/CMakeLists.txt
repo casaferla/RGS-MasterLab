@@ -731,6 +731,43 @@ set_tests_properties(rgsml_parametric_eq_response_tests PROPERTIES
     LABELS "dsp;parametric_eq;response"
 )
 
+qt_add_executable(rgsml_module_parameter_codec_tests
+    unit/dsp/test_module_parameter_codec.cpp
+)
+target_link_libraries(rgsml_module_parameter_codec_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_module_parameter_codec_tests)
+add_test(NAME rgsml_module_parameter_codec_tests COMMAND rgsml_module_parameter_codec_tests)
+set_tests_properties(rgsml_module_parameter_codec_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;codec"
+)
+
+qt_add_executable(rgsml_mastering_chain_state_tests
+    unit/app/test_mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+)
+target_include_directories(rgsml_mastering_chain_state_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_mastering_chain_state_tests
+    PRIVATE
+        rgsml_dsp
+        rgsml_core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_mastering_chain_state_tests)
+add_test(NAME rgsml_mastering_chain_state_tests COMMAND rgsml_mastering_chain_state_tests)
+set_tests_properties(rgsml_mastering_chain_state_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;mastering_chain"
+)
+
 qt_add_executable(rgsml_eq_view_model_tests
     unit/app/test_eq_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
