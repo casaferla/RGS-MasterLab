@@ -5,6 +5,7 @@
 #include "audition_region_view_model.hpp"
 #include "mastering_chain_state.hpp"
 #include "playback_transport_view_model.hpp"
+#include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/project/project_repository.hpp>
@@ -385,13 +386,13 @@ void ProjectSessionTest::mastering_chain_normal_save()
     QVERIFY(session.masteringChainState->set_user_bypass(session.gainId, true));
 
     // Configure genuinely non-default EQ
-    auto bandId1 = dsp::EqBandId::create("band-1");
-    auto bandId2 = dsp::EqBandId::create("band-2");
+    auto bandId1 = core::Uuid::parse("10000000-0000-0000-0000-000000000001");
+    auto bandId2 = core::Uuid::parse("10000000-0000-0000-0000-000000000002");
     QVERIFY(bandId1 && bandId2);
-    auto band1 = dsp::EqBandParameters::create(*bandId1.value(), dsp::EqFilterType::BELL,
-        dsp::EqRoutingDomain::STEREO, true, 500.0, -3.5, 1.2, std::nullopt);
-    auto band2 = dsp::EqBandParameters::create(*bandId2.value(), dsp::EqFilterType::HIGH_SHELF,
-        dsp::EqRoutingDomain::STEREO, true, 8000.0, 2.0, 0.707, dsp::EqFilterSlope::SLOPE_12_DB_OCT);
+    auto band1 = dsp::EqBandParameters::create(*bandId1.value(), true, dsp::EqFilterType::BELL,
+        dsp::EqRouting::STEREO, dsp::BellPayload{500.0, -3.5, 1.2});
+    auto band2 = dsp::EqBandParameters::create(*bandId2.value(), true, dsp::EqFilterType::HIGH_SHELF,
+        dsp::EqRouting::STEREO, dsp::ShelfPayload{8000.0, 2.0, 0.707});
     QVERIFY(band1 && band2);
     auto eqParams = dsp::ParametricEqParameters::create({*band1.value(), *band2.value()});
     QVERIFY(eqParams);
@@ -456,8 +457,8 @@ void ProjectSessionTest::mastering_chain_normal_save()
     QVERIFY(decodedEq);
     QCOMPARE(*decodedEq.value(), *eqParams.value());
     QCOMPARE(decodedEq.value()->bands().size(), std::size_t{2});
-    QCOMPARE(decodedEq.value()->bands()[0].id().value(), std::string("band-1"));
-    QCOMPARE(decodedEq.value()->bands()[1].id().value(), std::string("band-2"));
+    QCOMPARE(decodedEq.value()->bands()[0].band_id(), *bandId1.value());
+    QCOMPARE(decodedEq.value()->bands()[1].band_id(), *bandId2.value());
 }
 
 void ProjectSessionTest::mastering_chain_repeated_save()
@@ -478,10 +479,10 @@ void ProjectSessionTest::mastering_chain_repeated_save()
     QVERIFY(updatedGain);
     QVERIFY(session.masteringChainState->set_gain_parameters(*updatedGain.value()));
 
-    auto bandIdNew = dsp::EqBandId::create("band-mod");
+    auto bandIdNew = core::Uuid::parse("10000000-0000-0000-0000-000000000003");
     QVERIFY(bandIdNew);
-    auto bandMod = dsp::EqBandParameters::create(*bandIdNew.value(), dsp::EqFilterType::BELL,
-        dsp::EqRoutingDomain::STEREO, true, 1000.0, 4.5, 2.0, std::nullopt);
+    auto bandMod = dsp::EqBandParameters::create(*bandIdNew.value(), true, dsp::EqFilterType::BELL,
+        dsp::EqRouting::STEREO, dsp::BellPayload{1000.0, 4.5, 2.0});
     QVERIFY(bandMod);
     auto updatedEq = dsp::ParametricEqParameters::create({*bandMod.value()});
     QVERIFY(updatedEq);
