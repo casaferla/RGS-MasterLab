@@ -50,9 +50,13 @@ Rectangle {
         }
     }
 
+    // Input Gain has no editor-local Escape semantic, so Escape returns focus
+    // to its chain row. Parametric EQ numeric fields already use Escape to
+    // cancel an in-progress draft; do not let a host Shortcut pre-empt that
+    // established editor behavior. Unhandled Escape still bubbles to Keys above.
     Shortcut {
         sequence: "Escape"
-        enabled: activeChainRow !== null
+        enabled: root.selectedModuleIndex === 0 && activeChainRow !== null
         onActivated: {
             if (activeChainRow) {
                 activeChainRow.forceActiveFocus()
