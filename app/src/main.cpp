@@ -113,7 +113,8 @@ int main(int argc, char* argv[])
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
     rgsml::app::ProjectSessionViewModel projectSession{
-        &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport};
+        &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport,
+        &masteringChainState};
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection, &gainViewModel, &eqViewModel](

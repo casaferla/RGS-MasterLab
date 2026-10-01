@@ -16,6 +16,7 @@ class SourceSelectionViewModel;
 class GoldSelectionViewModel;
 class AuditionRegionViewModel;
 class PlaybackTransportViewModel;
+class MasteringChainState;
 
 class ProjectSessionViewModel final : public QObject {
     Q_OBJECT
@@ -32,6 +33,7 @@ public:
                             GoldSelectionViewModel* gold,
                             AuditionRegionViewModel* region,
                             PlaybackTransportViewModel* playback,
+                            MasteringChainState* masteringChainState = nullptr,
                             UuidFactory uuidFactory = {},
                             QObject* parent = nullptr);
 
@@ -63,6 +65,7 @@ private:
     GoldSelectionViewModel* gold_;
     AuditionRegionViewModel* region_;
     PlaybackTransportViewModel* playback_;
+    MasteringChainState* masteringChainState_{nullptr};
     UuidFactory uuidFactory_;
     std::optional<project::ProjectSnapshot> opened_;
     std::optional<core::Uuid> projectId_;

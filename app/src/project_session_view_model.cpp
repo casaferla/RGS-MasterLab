@@ -2,10 +2,12 @@
 
 #include "audition_region_view_model.hpp"
 #include "gold_selection_view_model.hpp"
+#include "mastering_chain_state.hpp"
 #include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
 
 #include <rgsml/audio/source_resource.hpp>
+#include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/platform/windows/windows_resource_identity.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
@@ -67,10 +69,33 @@ namespace {
     return audio::SourceResource::probe(std::move(*reader.value()));
 }
 
+[[nodiscard]] std::string provenance_to_string(dsp::ModuleProvenance p)
+{
+    switch (p) {
+        case dsp::ModuleProvenance::MANUAL: return "MANUAL";
+    }
+    return "MANUAL";
+}
+
+[[nodiscard]] std::string owner_to_string(dsp::ModuleOwner o)
+{
+    switch (o) {
+        case dsp::ModuleOwner::USER: return "USER";
+    }
+    return "USER";
+}
+
+[[nodiscard]] std::string link_state_to_string(dsp::ModuleLinkState l)
+{
+    switch (l) {
+        case dsp::ModuleLinkState::UNLINKED: return "UNLINKED";
+    }
+    return "UNLINKED";
+}
+
 [[nodiscard]] bool has_future_semantics(const project::ProjectDocument& doc)
 {
-    return !doc.chains.empty() || doc.pipeline.repairChainId ||
-        doc.pipeline.conditioningChainId || doc.pipeline.masteringChainId ||
+    if (doc.pipeline.repairChainId || doc.pipeline.conditioningChainId ||
         doc.activeProfileApplication ||
         doc.timeSelections.analysisScopes.canonical_utf8() != "[]" ||
         doc.timeSelections.processingRegions.canonical_utf8() != "[]" ||
@@ -81,7 +106,22 @@ namespace {
         doc.derivedArtifacts.canonical_utf8() != "[]" ||
         doc.history.canonical_utf8() != "[]" ||
         doc.extensions.canonical_utf8() != "{}" ||
-        doc.timeSelections.auditionRegions.size() > 1U;
+        doc.timeSelections.auditionRegions.size() > 1U) {
+        return true;
+    }
+
+    if (doc.chains.empty()) {
+        return false;
+    }
+
+    // A single mastering chain matching pipeline.masteringChainId is the supported B4 mastering chain topology
+    if (doc.chains.size() == 1U && doc.pipeline.masteringChainId &&
+        doc.chains[0].chainId == *doc.pipeline.masteringChainId &&
+        doc.chains[0].stage == "MASTER" && doc.chains[0].segment == "MANUAL") {
+        return false;
+    }
+
+    return true;
 }
 
 }  // namespace
@@ -89,9 +129,11 @@ namespace {
 ProjectSessionViewModel::ProjectSessionViewModel(
     SourceSelectionViewModel* source, GoldSelectionViewModel* gold,
     AuditionRegionViewModel* region, PlaybackTransportViewModel* playback,
+    MasteringChainState* masteringChainState,
     UuidFactory uuidFactory, QObject* parent)
     : QObject(parent), source_(source), gold_(gold), region_(region),
-      playback_(playback), uuidFactory_(std::move(uuidFactory))
+      playback_(playback), masteringChainState_(masteringChainState),
+      uuidFactory_(std::move(uuidFactory))
 {
     if (!uuidFactory_) {
         uuidFactory_ = [] {
@@ -218,6 +260,87 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
         if (found == doc.timeSelections.auditionRegions.end())
             doc.timeSelections.auditionRegions.push_back(std::move(value));
         else *found = std::move(value);
+    }
+
+    if (masteringChainState_) {
+        const auto chainId = masteringChainState_->chain_id();
+        doc.pipeline.masteringChainId = chainId;
+
+        project::Chain masteringChain;
+        masteringChain.chainId = chainId;
+        masteringChain.stage = "MASTER";
+        masteringChain.segment = "MANUAL";
+        masteringChain.revision = masteringChainState_->chain().revision();
+
+        // Module 0: Input Gain
+        const auto gainInst = masteringChainState_->gain_instance();
+        const auto gainDesc = masteringChainState_->find_descriptor("rgsml.dsp.gain");
+        const auto gainJson = dsp::encode_gain_parameters_json(masteringChainState_->gain_parameters());
+        if (gainInst && gainDesc && gainJson) {
+            const auto& inst = gainInst.value().get();
+            const auto& desc = gainDesc.value().get();
+            auto opaqueJson = project::OpaqueJsonValue::parse(*gainJson.value());
+            if (opaqueJson) {
+                project::Module m0;
+                m0.instanceId = inst.instance_id().uuid();
+                m0.typeId = std::string(inst.module_type_id());
+                m0.enabled = inst.enabled();
+                m0.userBypass = inst.user_bypass();
+                m0.controllerSuspended = inst.controller_suspended();
+                m0.domainSuspended = inst.domain_suspended();
+                m0.provenance = provenance_to_string(inst.provenance());
+                m0.owner = owner_to_string(inst.owner());
+                m0.linkState = link_state_to_string(inst.link_state());
+                m0.semanticNodeId = inst.semantic_node_id();
+                if (desc.algorithm_version()) {
+                    m0.algorithmVersion = std::string(*desc.algorithm_version());
+                }
+                if (desc.parameter_schema_id()) {
+                    m0.parameterSchemaId = std::string(*desc.parameter_schema_id());
+                }
+                m0.parameters = std::move(*opaqueJson.value());
+                masteringChain.modules.push_back(std::move(m0));
+            }
+        }
+
+        // Module 1: Parametric EQ
+        const auto eqInst = masteringChainState_->eq_instance();
+        const auto eqDesc = masteringChainState_->find_descriptor("rgsml.dsp.parametric-eq");
+        const auto eqJson = dsp::encode_parametric_eq_parameters_json(masteringChainState_->parametric_eq_parameters());
+        if (eqInst && eqDesc && eqJson) {
+            const auto& inst = eqInst.value().get();
+            const auto& desc = eqDesc.value().get();
+            auto opaqueJson = project::OpaqueJsonValue::parse(*eqJson.value());
+            if (opaqueJson) {
+                project::Module m1;
+                m1.instanceId = inst.instance_id().uuid();
+                m1.typeId = std::string(inst.module_type_id());
+                m1.enabled = inst.enabled();
+                m1.userBypass = inst.user_bypass();
+                m1.controllerSuspended = inst.controller_suspended();
+                m1.domainSuspended = inst.domain_suspended();
+                m1.provenance = provenance_to_string(inst.provenance());
+                m1.owner = owner_to_string(inst.owner());
+                m1.linkState = link_state_to_string(inst.link_state());
+                m1.semanticNodeId = inst.semantic_node_id();
+                if (desc.algorithm_version()) {
+                    m1.algorithmVersion = std::string(*desc.algorithm_version());
+                }
+                if (desc.parameter_schema_id()) {
+                    m1.parameterSchemaId = std::string(*desc.parameter_schema_id());
+                }
+                m1.parameters = std::move(*opaqueJson.value());
+                masteringChain.modules.push_back(std::move(m1));
+            }
+        }
+
+        auto chainIt = std::find_if(doc.chains.begin(), doc.chains.end(),
+            [chainId](const project::Chain& c) { return c.chainId == chainId; });
+        if (chainIt == doc.chains.end()) {
+            doc.chains.push_back(std::move(masteringChain));
+        } else {
+            *chainIt = std::move(masteringChain);
+        }
     }
     return project::ProjectSnapshot::create(std::move(doc), std::move(optional));
 }

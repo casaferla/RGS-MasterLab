@@ -45,6 +45,7 @@ public:
 
     [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const dsp::ModuleInstance>> gain_instance() const;
     [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const dsp::ModuleInstance>> eq_instance() const;
+    [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const dsp::ModuleDescriptor>> find_descriptor(std::string_view type_id) const;
 
     [[nodiscard]] const dsp::GainParameters& gain_parameters() const noexcept;
     [[nodiscard]] rgsml::core::Status set_gain_parameters(const dsp::GainParameters& params);

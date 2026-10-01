@@ -163,6 +163,15 @@ Result<std::reference_wrapper<const ModuleInstance>> MasteringChainState::eq_ins
     return chain_.find_instance(eq_id_);
 }
 
+Result<std::reference_wrapper<const ModuleDescriptor>> MasteringChainState::find_descriptor(std::string_view type_id) const
+{
+    if (!registry_) {
+        return Result<std::reference_wrapper<const ModuleDescriptor>>::failure(
+            chain_state_error(ErrorCode::InvalidState, "NO_REGISTRY", "MasteringChainState has no valid registry."));
+    }
+    return registry_->find_descriptor(type_id);
+}
+
 const GainParameters& MasteringChainState::gain_parameters() const noexcept { return gain_params_; }
 
 Status MasteringChainState::set_gain_parameters(const GainParameters& params)
