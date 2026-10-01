@@ -357,14 +357,14 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
         auto m0 = serialize_module("rgsml.dsp.gain",
             masteringChainState_->gain_instance(),
             dsp::encode_gain_parameters_json(masteringChainState_->gain_parameters()));
-        if (!m0) return core::Result<project::ProjectSnapshot>::failure(m0.error().value());
+        if (!m0) return core::Result<project::ProjectSnapshot>::failure(*m0.error());
         masteringChain.modules.push_back(std::move(*m0.value()));
 
         // Module 1: Parametric EQ
         auto m1 = serialize_module("rgsml.dsp.parametric-eq",
             masteringChainState_->eq_instance(),
             dsp::encode_parametric_eq_parameters_json(masteringChainState_->parametric_eq_parameters()));
-        if (!m1) return core::Result<project::ProjectSnapshot>::failure(m1.error().value());
+        if (!m1) return core::Result<project::ProjectSnapshot>::failure(*m1.error());
         masteringChain.modules.push_back(std::move(*m1.value()));
 
         auto chainIt = std::find_if(doc.chains.begin(), doc.chains.end(),
