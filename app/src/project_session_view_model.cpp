@@ -277,8 +277,8 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
         const auto gainDesc = masteringChainState_->find_descriptor("rgsml.dsp.gain");
         const auto gainJson = dsp::encode_gain_parameters_json(masteringChainState_->gain_parameters());
         if (gainInst && gainDesc && gainJson) {
-            const auto& inst = gainInst.value().get();
-            const auto& desc = gainDesc.value().get();
+            const auto& inst = gainInst.value()->get();
+            const auto& desc = gainDesc.value()->get();
             auto opaqueJson = project::OpaqueJsonValue::parse(*gainJson.value());
             if (opaqueJson) {
                 project::Module m0;
@@ -308,8 +308,8 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
         const auto eqDesc = masteringChainState_->find_descriptor("rgsml.dsp.parametric-eq");
         const auto eqJson = dsp::encode_parametric_eq_parameters_json(masteringChainState_->parametric_eq_parameters());
         if (eqInst && eqDesc && eqJson) {
-            const auto& inst = eqInst.value().get();
-            const auto& desc = eqDesc.value().get();
+            const auto& inst = eqInst.value()->get();
+            const auto& desc = eqDesc.value()->get();
             auto opaqueJson = project::OpaqueJsonValue::parse(*eqJson.value());
             if (opaqueJson) {
                 project::Module m1;
