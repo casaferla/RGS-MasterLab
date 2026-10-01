@@ -267,6 +267,7 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
 
         // Fail-closed helper for Module serialization
         const auto serialize_module = [&](const std::string_view typeId,
+                                           const std::string_view expectedParameterSchemaId,
                                            const auto& instanceResult,
                                            const auto& jsonCodecResult) -> core::Result<project::Module> {
             if (!instanceResult) {
@@ -299,17 +300,25 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
                     {{"typeId", std::string(typeId)}}});
             }
 
-            if (!desc.algorithm_version() || desc.algorithm_version()->empty()) {
+            if (desc.type_id() != typeId) {
                 return core::Result<project::Module>::failure(core::Error{
                     core::ErrorCode::InvalidArgument,
-                    "Missing algorithmVersion in module descriptor during mastering chain serialization",
+                    "Module descriptor type ID mismatch during mastering chain serialization",
                     {{"typeId", std::string(typeId)}}});
             }
 
-            if (!desc.parameter_schema_id() || desc.parameter_schema_id()->empty()) {
+            constexpr std::string_view expectedAlgorithmVersion{"1.0.0"};
+            if (!desc.algorithm_version() || *desc.algorithm_version() != expectedAlgorithmVersion) {
                 return core::Result<project::Module>::failure(core::Error{
                     core::ErrorCode::InvalidArgument,
-                    "Missing parameterSchemaId in module descriptor during mastering chain serialization",
+                    "Module descriptor algorithmVersion is inconsistent with the frozen v1 contract",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            if (!desc.parameter_schema_id() || *desc.parameter_schema_id() != expectedParameterSchemaId) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Module descriptor parameterSchemaId is inconsistent with the frozen v1 contract",
                     {{"typeId", std::string(typeId)}}});
             }
 
@@ -340,6 +349,7 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
 
         // Module 0: Input Gain
         auto m0 = serialize_module("rgsml.dsp.gain",
+            "rgsml.dsp.gain.parameters/1.0.0",
             masteringChainState_->gain_instance(),
             dsp::encode_gain_parameters_json(masteringChainState_->gain_parameters()));
         if (!m0) return core::Result<project::ProjectSnapshot>::failure(*m0.error());
@@ -347,6 +357,7 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
 
         // Module 1: Parametric EQ
         auto m1 = serialize_module("rgsml.dsp.parametric-eq",
+            "rgsml.dsp.parametric-eq.parameters/1.0.0",
             masteringChainState_->eq_instance(),
             dsp::encode_parametric_eq_parameters_json(masteringChainState_->parametric_eq_parameters()));
         if (!m1) return core::Result<project::ProjectSnapshot>::failure(*m1.error());
