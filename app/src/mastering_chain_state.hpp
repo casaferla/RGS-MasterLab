@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -60,6 +61,7 @@ public:
 
 private:
     MasteringChainState(
+        std::shared_ptr<const dsp::ModuleRegistry> registry,
         rgsml::core::Uuid chain_id,
         dsp::ProcessingChain chain,
         dsp::ModuleInstanceId gain_id,
@@ -67,6 +69,7 @@ private:
         dsp::ModuleInstanceId eq_id,
         dsp::ParametricEqParameters eq_params) noexcept;
 
+    std::shared_ptr<const dsp::ModuleRegistry> registry_;
     rgsml::core::Uuid chain_id_;
     dsp::ProcessingChain chain_;
     dsp::ModuleInstanceId gain_id_;

@@ -1,20 +1,13 @@
 #include "eq_view_model.hpp"
 
-#include <rgsml/dsp/module_execution_binding.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_response.hpp>
-#include <rgsml/dsp/processing_chain.hpp>
-#include <rgsml/render/render_preview.hpp>
-#include <rgsml/render/render_request.hpp>
 
-#include <QMetaObject>
 #include <QUuid>
-#include <QVariant>
 #include <QVariantMap>
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <set>
 #include <string>
 #include <utility>
@@ -78,9 +71,9 @@ constexpr std::size_t kResponseGridPoints = 512;
     return std::nullopt;
 }
 
-[[nodiscard]] bool is_canonical_flat(const std::vector<dsp::EqBandParameters>& bands, bool bypass)
+[[nodiscard]] bool is_canonical_flat(const std::vector<dsp::EqBandParameters>& bands)
 {
-    if (bypass || bands.size() != 1U) {
+    if (bands.size() != 1U) {
         return false;
     }
     const auto& band = bands[0];
@@ -141,16 +134,14 @@ constexpr std::size_t kResponseGridPoints = 512;
 }  // namespace
 
 EqViewModel::EqViewModel(
-    PreparedSnapshotProvider snapshotProvider,
-    ProcessedRealizationPublisher publisher,
+    MasteringChainState* chainState,
+    MasteringPreviewController* previewController,
     IdGenerator idGenerator,
     QObject* parent)
     : QObject(parent)
-    , snapshotProvider_(std::move(snapshotProvider))
-    , publisher_(std::move(publisher))
+    , externalChainState_(chainState)
+    , externalPreviewController_(previewController)
     , idGenerator_(std::move(idGenerator))
-    , instanceId_(*dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("00000000-0000-0000-0000-000000000001").value()).value())
-    , workerThread_([this] { worker_loop(); })
 {
     if (!idGenerator_) {
         idGenerator_ = [] {
@@ -158,39 +149,70 @@ EqViewModel::EqViewModel(
             return *core::Uuid::parse(str).value();
         };
     }
-    instanceId_ = *dsp::ModuleInstanceId::from_uuid(idGenerator_()).value();
 
-    const auto firstBandId = idGenerator_();
-    draftBand_ = make_default_band(firstBandId);
-    auto firstBandParam = make_band_parameters(draftBand_, kMaxFreqCap);
-    Q_ASSERT(firstBandParam.has_value());
-    committedBands_.push_back(*firstBandParam);
+    if (!externalChainState_) {
+        auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+        const auto chain_id = *core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+        const auto gain_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value()).value();
+        const auto eq_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value()).value();
+        auto defaultState = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
+        ownedChainState_ = std::make_unique<MasteringChainState>(std::move(*defaultState.value()));
+    }
 
-    auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
-    Q_ASSERT(paramsRes);
-    committedParams_ = *paramsRes.value();
+    if (!externalPreviewController_) {
+        ownedPreviewController_ = std::make_unique<MasteringPreviewController>(&active_chain_state());
+    } else if (externalChainState_ && !externalPreviewController_->preview_generation()) {
+        externalPreviewController_->set_chain_state(externalChainState_);
+    }
+
+    connect(&active_preview_controller(), &MasteringPreviewController::changed, this, &EqViewModel::changed);
+
+    const auto& authBands = active_chain_state().parametric_eq_parameters().bands();
+    if (!authBands.empty()) {
+        committedBands_ = authBands;
+        selectedIndex_ = 0;
+        draftBand_ = band_to_draft(committedBands_[0]);
+    } else {
+        const auto firstBandId = idGenerator_();
+        draftBand_ = make_default_band(firstBandId);
+        auto firstBandParam = make_band_parameters(draftBand_, kMaxFreqCap);
+        Q_ASSERT(firstBandParam.has_value());
+        committedBands_.push_back(*firstBandParam);
+
+        auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
+        Q_ASSERT(paramsRes);
+        static_cast<void>(active_chain_state().set_parametric_eq_parameters(*paramsRes.value()));
+    }
 
     update_response_grid();
     update_validation_state();
 }
 
-EqViewModel::~EqViewModel()
+EqViewModel::EqViewModel(
+    PreparedSnapshotProvider snapshotProvider,
+    ProcessedRealizationPublisher publisher,
+    IdGenerator idGenerator,
+    QObject* parent)
+    : EqViewModel(nullptr, nullptr, std::move(idGenerator), parent)
 {
-    {
-        const std::scoped_lock lock{workerMutex_};
-        workerStopping_ = true;
-        pendingJob_.reset();
-    }
-    workerCond_.notify_one();
-    if (workerThread_.joinable()) {
-        workerThread_.join();
-    }
+    ownedPreviewController_->set_snapshot_provider(std::move(snapshotProvider));
+    ownedPreviewController_->set_publisher(std::move(publisher));
+    update_response_grid();
+}
+
+MasteringChainState& EqViewModel::active_chain_state() const noexcept
+{
+    return externalChainState_ ? *externalChainState_ : *ownedChainState_;
+}
+
+MasteringPreviewController& EqViewModel::active_preview_controller() const noexcept
+{
+    return externalPreviewController_ ? *externalPreviewController_ : *ownedPreviewController_;
 }
 
 void EqViewModel::set_preview_executor(PreviewExecutor executor)
 {
-    const std::scoped_lock lock{workerMutex_};
-    previewExecutor_ = std::move(executor);
+    active_preview_controller().set_preview_executor(std::move(executor));
 }
 
 int EqViewModel::band_count() const noexcept
@@ -321,12 +343,14 @@ bool EqViewModel::mixed_routing() const noexcept
 
 bool EqViewModel::is_default() const noexcept
 {
-    return is_canonical_flat(committedBands_, false);
+    return is_canonical_flat(committedBands_);
 }
 
 bool EqViewModel::bypass() const noexcept
 {
-    return bypass_;
+    const auto& state = active_chain_state();
+    const auto res = state.is_bypassed(state.eq_instance_id());
+    return res ? *res.value() : false;
 }
 
 bool EqViewModel::can_undo() const noexcept
@@ -353,22 +377,22 @@ QVariantList EqViewModel::band_summaries() const
         map.insert(QStringLiteral("routing"), routing_to_string(band.routing()));
 
         double freq = 1000.0;
-        double gain = 0.0;
+        double gainVal = 0.0;
         bool gainApp = false;
 
         std::visit(
-            [&freq, &gain, &gainApp](const auto& payload) {
+            [&freq, &gainVal, &gainApp](const auto& payload) {
                 using T = std::decay_t<decltype(payload)>;
                 if constexpr (std::is_same_v<T, dsp::BellPayload>) {
                     freq = payload.frequency_hz;
-                    gain = payload.gain_db;
+                    gainVal = payload.gain_db;
                     gainApp = true;
                 } else if constexpr (std::is_same_v<T, dsp::NotchPayload>) {
                     freq = payload.frequency_hz;
                     gainApp = false;
                 } else if constexpr (std::is_same_v<T, dsp::ShelfPayload>) {
                     freq = payload.frequency_hz;
-                    gain = payload.gain_db;
+                    gainVal = payload.gain_db;
                     gainApp = true;
                 } else if constexpr (std::is_same_v<T, dsp::PassPayload>) {
                     freq = payload.frequency_hz;
@@ -379,12 +403,12 @@ QVariantList EqViewModel::band_summaries() const
 
         if (i == selectedIndex_) {
             freq = draftBand_.frequency_hz;
-            gain = draftBand_.gain_db;
+            gainVal = draftBand_.gain_db;
             gainApp = gain_applicable();
         }
 
         map.insert(QStringLiteral("frequency"), freq);
-        map.insert(QStringLiteral("gain"), gain);
+        map.insert(QStringLiteral("gain"), gainVal);
         map.insert(QStringLiteral("gainApplicable"), gainApp);
 
         list.append(map);
@@ -404,17 +428,17 @@ QString EqViewModel::validation_message() const
 
 quint64 EqViewModel::preview_generation() const noexcept
 {
-    return previewGeneration_;
+    return active_preview_controller().preview_generation();
 }
 
 QString EqViewModel::preview_status() const
 {
-    return previewStatus_;
+    return active_preview_controller().preview_status();
 }
 
 QString EqViewModel::preview_error() const
 {
-    return previewError_;
+    return active_preview_controller().preview_error();
 }
 
 QVariantList EqViewModel::selected_band_response_points() const
@@ -443,17 +467,17 @@ void EqViewModel::setShowCombinedResponse(bool show)
 
 dsp::ModuleInstanceId EqViewModel::instance_id() const noexcept
 {
-    return instanceId_;
+    return active_chain_state().eq_instance_id();
 }
 
 const dsp::ParametricEqParameters& EqViewModel::committed_parameters() const noexcept
 {
-    return committedParams_;
+    return active_chain_state().parametric_eq_parameters();
 }
 
 std::uint64_t EqViewModel::stale_results_discarded() const noexcept
 {
-    return staleResultsDiscarded_;
+    return active_preview_controller().stale_results_discarded();
 }
 
 void EqViewModel::selectBand(int index)
@@ -490,11 +514,11 @@ void EqViewModel::addBand()
         return;
     }
     push_undo_snapshot(preState);
-    committedParams_ = *paramsRes.value();
+    static_cast<void>(active_chain_state().set_parametric_eq_parameters(*paramsRes.value()));
+
     selectedIndex_ = committedBands_.size() - 1U;
     draftBand_ = defaultDraft;
 
-    ++previewGeneration_;
     update_response_grid();
     update_validation_state();
     emit changed();
@@ -515,24 +539,24 @@ void EqViewModel::removeSelectedBand()
     }
     push_undo_snapshot(preState);
     committedBands_ = std::move(candidateBands);
-    committedParams_ = *paramsRes.value();
+    static_cast<void>(active_chain_state().set_parametric_eq_parameters(*paramsRes.value()));
+
     if (selectedIndex_ >= committedBands_.size()) {
         selectedIndex_ = committedBands_.size() - 1U;
     }
     draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
 
-    ++previewGeneration_;
     update_response_grid();
     emit changed();
     request_preview();
 }
 
-void EqViewModel::setEnabled(bool enabled)
+void EqViewModel::setEnabled(bool enabledVal)
 {
-    if (draftBand_.enabled == enabled) {
+    if (draftBand_.enabled == enabledVal) {
         return;
     }
-    draftBand_.enabled = enabled;
+    draftBand_.enabled = enabledVal;
     commitDraft();
 }
 
@@ -584,15 +608,17 @@ void EqViewModel::setRouting(const QString& routingStr)
     commitDraft();
 }
 
-void EqViewModel::setBypass(bool bypass)
+void EqViewModel::setBypass(bool bypassVal)
 {
-    if (bypass_ == bypass) {
+    if (bypass() == bypassVal) {
         return;
     }
     const auto preState = capture_current_snapshot();
     push_undo_snapshot(preState);
-    bypass_ = bypass;
-    ++previewGeneration_;
+
+    auto& state = active_chain_state();
+    static_cast<void>(state.set_user_bypass(state.eq_instance_id(), bypassVal));
+
     emit changed();
     request_preview();
 }
@@ -608,7 +634,6 @@ void EqViewModel::undo()
     redoStack_.push_back(preState);
 
     restore_snapshot(prevSnapshot);
-    ++previewGeneration_;
     emit changed();
     request_preview();
 }
@@ -624,15 +649,14 @@ void EqViewModel::redo()
     undoStack_.push_back(preState);
 
     restore_snapshot(nextSnapshot);
-    ++previewGeneration_;
     emit changed();
     request_preview();
 }
 
 void EqViewModel::resetToFlat()
 {
-    if (is_canonical_flat(committedBands_, bypass_)) {
-        return; // Already canonical Flat: true no-op
+    if (is_canonical_flat(committedBands_) && !bypass()) {
+        return; // Already canonical Flat AND not bypassed: true no-op
     }
 
     const auto preState = capture_current_snapshot();
@@ -648,12 +672,14 @@ void EqViewModel::resetToFlat()
     committedBands_ = { *flatParam };
     auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
     Q_ASSERT(paramsRes);
-    committedParams_ = *paramsRes.value();
+
+    auto& state = active_chain_state();
+    static_cast<void>(state.set_parametric_eq_parameters(*paramsRes.value()));
+    static_cast<void>(state.set_user_bypass(state.eq_instance_id(), false));
+
     selectedIndex_ = 0;
     draftBand_ = flatDraft;
-    bypass_ = false;
 
-    ++previewGeneration_;
     update_response_grid();
     update_validation_state();
     emit changed();
@@ -670,39 +696,40 @@ void EqViewModel::resetForNewSource()
     committedBands_ = { *firstBandParam };
     auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
     Q_ASSERT(paramsRes);
-    committedParams_ = *paramsRes.value();
+
+    auto& state = active_chain_state();
+    static_cast<void>(state.set_parametric_eq_parameters(*paramsRes.value()));
+    static_cast<void>(state.set_user_bypass(state.eq_instance_id(), false));
 
     selectedIndex_ = 0;
-    bypass_ = false;
 
     undoStack_.clear();
     redoStack_.clear();
 
-    ++previewGeneration_;
     update_response_grid();
     update_validation_state();
     emit changed();
     request_preview();
 }
 
-void EqViewModel::setDraftFrequency(double frequency)
+void EqViewModel::setDraftFrequency(double frequencyVal)
 {
-    setDraftFrequencyText(QString::number(frequency));
+    setDraftFrequencyText(QString::number(frequencyVal));
 }
 
-void EqViewModel::setDraftGain(double gain)
+void EqViewModel::setDraftGain(double gainVal)
 {
-    setDraftGainText(QString::number(gain));
+    setDraftGainText(QString::number(gainVal));
 }
 
-void EqViewModel::setDraftQ(double q)
+void EqViewModel::setDraftQ(double qVal)
 {
-    setDraftQText(QString::number(q));
+    setDraftQText(QString::number(qVal));
 }
 
-void EqViewModel::setDraftShelfSlope(double shelfSlope)
+void EqViewModel::setDraftShelfSlope(double shelfSlopeVal)
 {
-    setDraftShelfSlopeText(QString::number(shelfSlope));
+    setDraftShelfSlopeText(QString::number(shelfSlopeVal));
 }
 
 void EqViewModel::setDraftFrequencyText(const QString& text)
@@ -783,11 +810,11 @@ bool EqViewModel::commitDraft()
 
     bool ok = false;
 
-    const double freq = draftBand_.frequency_text.toDouble(&ok);
-    if (!ok || !std::isfinite(freq)) {
+    const double freqVal = draftBand_.frequency_text.toDouble(&ok);
+    if (!ok || !std::isfinite(freqVal)) {
         return false;
     }
-    draftBand_.frequency_hz = freq;
+    draftBand_.frequency_hz = freqVal;
 
     if (gain_applicable()) {
         const double g = draftBand_.gain_text.toDouble(&ok);
@@ -832,7 +859,7 @@ bool EqViewModel::commitDraft()
     }
 
     committedBands_ = std::move(candidateBands);
-    committedParams_ = std::move(*candidateParamsRes.value());
+    static_cast<void>(active_chain_state().set_parametric_eq_parameters(*candidateParamsRes.value()));
 
     // Format raw text fields canonically after valid commit
     draftBand_.frequency_text = QString::number(draftBand_.frequency_hz);
@@ -840,7 +867,6 @@ bool EqViewModel::commitDraft()
     draftBand_.q_text = QString::number(draftBand_.q);
     draftBand_.shelf_slope_text = QString::number(draftBand_.shelf_slope);
 
-    ++previewGeneration_;
     update_response_grid();
     update_validation_state();
     emit changed();
@@ -856,13 +882,13 @@ void EqViewModel::cancelDraft()
     emit changed();
 }
 
-void EqViewModel::graphDrag(double frequency, double gain)
+void EqViewModel::graphDrag(double frequencyVal, double gainVal)
 {
-    draftBand_.frequency_hz = frequency;
-    draftBand_.frequency_text = QString::number(frequency);
+    draftBand_.frequency_hz = frequencyVal;
+    draftBand_.frequency_text = QString::number(frequencyVal);
     if (gain_applicable()) {
-        draftBand_.gain_db = gain;
-        draftBand_.gain_text = QString::number(gain);
+        draftBand_.gain_db = gainVal;
+        draftBand_.gain_text = QString::number(gainVal);
     }
     update_response_grid();
     update_validation_state();
@@ -923,14 +949,14 @@ void EqViewModel::trigger_preview()
 {
     update_response_grid();
     update_validation_state();
-    ++previewGeneration_; // Increment generation on Source/PREPARED replacement
     request_preview();
 }
 
 core::SampleRate EqViewModel::current_sample_rate() const noexcept
 {
-    if (snapshotProvider_) {
-        const auto snapshot = snapshotProvider_();
+    const auto& provider = active_preview_controller().snapshot_provider();
+    if (provider) {
+        const auto snapshot = provider();
         if (snapshot) {
             return snapshot->view().format().sample_rate();
         }
@@ -940,8 +966,9 @@ core::SampleRate EqViewModel::current_sample_rate() const noexcept
 
 bool EqViewModel::is_mono_prepared() const noexcept
 {
-    if (snapshotProvider_) {
-        const auto snapshot = snapshotProvider_();
+    const auto& provider = active_preview_controller().snapshot_provider();
+    if (provider) {
+        const auto snapshot = provider();
         if (snapshot) {
             return snapshot->view().format().channel_layout() == audio::ChannelLayout::MONO_C;
         }
@@ -1123,7 +1150,7 @@ void EqViewModel::update_response_grid()
     }
 
     // B. Combined Whole-EQ Response across committed bands (using authoritative DSP API)
-    auto combinedPtsRes = dsp::evaluate_parametric_eq_response(committedParams_, uniqueFreqs, current_sample_rate());
+    auto combinedPtsRes = dsp::evaluate_parametric_eq_response(committed_parameters(), uniqueFreqs, current_sample_rate());
     if (combinedPtsRes) {
         for (const auto& pt : *combinedPtsRes.value()) {
             QVariantMap pointMap;
@@ -1149,7 +1176,7 @@ EqViewModel::EqStateSnapshot EqViewModel::capture_current_snapshot() const
     return EqStateSnapshot{
         .bands = committedBands_,
         .selectedIndex = selectedIndex_,
-        .bypass = bypass_,
+        .bypass = bypass(),
     };
 }
 
@@ -1158,11 +1185,13 @@ void EqViewModel::restore_snapshot(const EqStateSnapshot& snapshot)
     committedBands_ = snapshot.bands;
     auto paramsRes = dsp::ParametricEqParameters::create(committedBands_);
     Q_ASSERT(paramsRes);
-    committedParams_ = *paramsRes.value();
+
+    auto& state = active_chain_state();
+    static_cast<void>(state.set_parametric_eq_parameters(*paramsRes.value()));
+    static_cast<void>(state.set_user_bypass(state.eq_instance_id(), snapshot.bypass));
 
     selectedIndex_ = std::min(snapshot.selectedIndex, committedBands_.empty() ? 0U : committedBands_.size() - 1U);
     draftBand_ = band_to_draft(committedBands_[selectedIndex_]);
-    bypass_ = snapshot.bypass;
 
     update_response_grid();
     update_validation_state();
@@ -1180,14 +1209,14 @@ void EqViewModel::update_validation_state()
     }
 
     bool ok = false;
-    const double freq = draftBand_.frequency_text.toDouble(&ok);
-    if (!ok || !std::isfinite(freq)) {
+    const double freqVal = draftBand_.frequency_text.toDouble(&ok);
+    if (!ok || !std::isfinite(freqVal)) {
         validationField_ = QStringLiteral("frequency");
         validationMessage_ = QStringLiteral("Invalid frequency numeric syntax.");
         return;
     }
     const double maxF = max_frequency_hz();
-    if (freq < kMinFreq || freq > maxF) {
+    if (freqVal < kMinFreq || freqVal > maxF) {
         validationField_ = QStringLiteral("frequency");
         validationMessage_ = QString::asprintf("Frequency must be between %.0f Hz and %.0f Hz.", kMinFreq, maxF);
         return;
@@ -1238,134 +1267,7 @@ void EqViewModel::update_validation_state()
 
 void EqViewModel::request_preview()
 {
-    if (!snapshotProvider_) {
-        return;
-    }
-    auto preparedSnapshot = snapshotProvider_();
-    if (!preparedSnapshot) {
-        previewStatus_ = QStringLiteral("NO_PREPARED_REALIZATION");
-        previewError_ = QStringLiteral("No PREPARED realization available for rendering.");
-        emit changed();
-        return;
-    }
-
-    previewStatus_ = QStringLiteral("RENDERING");
-    previewError_.clear();
-    emit changed();
-
-    {
-        const std::scoped_lock lock{workerMutex_};
-        pendingJob_ = PreviewJob{
-            .generation = previewGeneration_,
-            .parameters = committedParams_,
-            .bypass = bypass_,
-            .preparedSnapshot = std::move(preparedSnapshot),
-            .instanceId = instanceId_,
-        };
-    }
-    workerCond_.notify_one();
-}
-
-void EqViewModel::worker_loop()
-{
-    while (true) {
-        std::optional<PreviewJob> job;
-        PreviewExecutor executor;
-        {
-            std::unique_lock lock{workerMutex_};
-            workerCond_.wait(lock, [this] { return workerStopping_ || pendingJob_.has_value(); });
-            if (workerStopping_) {
-                return;
-            }
-            job = std::move(pendingJob_);
-            pendingJob_.reset();
-            executor = previewExecutor_;
-        }
-
-        auto result = [&]() -> core::Result<render::RenderResult> {
-            if (executor) {
-                return executor(*job);
-            }
-            try {
-                auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
-                if (!registry) {
-                    return core::Result<render::RenderResult>::failure(*registry.error());
-                }
-                auto chain = dsp::ProcessingChain::create(
-                    *registry.value(),
-                    {dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL});
-                if (!chain) {
-                    return core::Result<render::RenderResult>::failure(*chain.error());
-                }
-                auto addStatus = chain.value()->add(job->instanceId, "rgsml.dsp.parametric-eq", 0);
-                if (!addStatus) {
-                    return core::Result<render::RenderResult>::failure(*addStatus.error());
-                }
-                auto bypassStatus = chain.value()->set_user_bypass(job->instanceId, job->bypass);
-                if (!bypassStatus) {
-                    return core::Result<render::RenderResult>::failure(*bypassStatus.error());
-                }
-
-                dsp::ModuleExecutionBinding binding{job->instanceId, job->parameters};
-                auto request = render::RenderRequest::create(
-                    job->preparedSnapshot->view(),
-                    job->preparedSnapshot->view().absolute_range(),
-                    *chain.value(),
-                    {binding},
-                    *core::FrameCount::create(4096).value());
-                if (!request) {
-                    return core::Result<render::RenderResult>::failure(*request.error());
-                }
-
-                return render::render_preview(*request.value(), *registry.value());
-            } catch (...) {
-                return core::Result<render::RenderResult>::failure(core::Error{
-                    core::ErrorCode::InvalidState,
-                    "EQ preview worker encountered an unexpected exception."});
-            }
-        }();
-
-        auto outcome = std::make_shared<core::Result<render::RenderResult>>(std::move(result));
-
-        static_cast<void>(QMetaObject::invokeMethod(
-            this,
-            [this, gen = job->generation, outcome] {
-                publish_preview_result(gen, outcome);
-            },
-            Qt::QueuedConnection));
-    }
-}
-
-void EqViewModel::publish_preview_result(
-    std::uint64_t generation,
-    std::shared_ptr<core::Result<render::RenderResult>> outcome)
-{
-    if (generation != previewGeneration_) {
-        ++staleResultsDiscarded_;
-        return;
-    }
-
-    if (!outcome || !*outcome) {
-        previewStatus_ = QStringLiteral("ERROR");
-        previewError_ = QString::fromStdString(
-            outcome && outcome->error() ? outcome->error()->message() : "Preview rendering failed.");
-        emit changed();
-        return;
-    }
-
-    if (publisher_) {
-        auto pubStatus = publisher_(std::move(*outcome->value()));
-        if (!pubStatus) {
-            previewStatus_ = QStringLiteral("ERROR");
-            previewError_ = QString::fromStdString(pubStatus.error()->message());
-            emit changed();
-            return;
-        }
-    }
-
-    previewStatus_ = QStringLiteral("READY");
-    previewError_.clear();
-    emit changed();
+    active_preview_controller().request_preview();
 }
 
 }  // namespace rgsml::app

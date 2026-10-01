@@ -84,6 +84,8 @@ private slots:
     void testWholeEqCombinedResponseEvaluation();
     void testOverallToggleIsViewStateOnly();
     void testIsDefaultSemantics();
+    void testAttachingToExistingAuthorityPreservesState();
+    void testResetToFlatWhenBypassedClearsBypass();
 };
 
 void EqViewModelTest::testInvalidTextDraftAndCommitRejection()
@@ -495,8 +497,10 @@ void EqViewModelTest::testRealProductionPathActiveAndBypass()
 
     QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
     QVERIFY(publishedResult != nullptr);
-    QCOMPARE(publishedResult->signatures().size(), std::size_t{1});
-    QCOMPARE(publishedResult->signatures()[0].disposition, render::ModuleExecutionDisposition::PROCESSED);
+    QCOMPARE(publishedResult->signatures().size(), std::size_t{2});
+    QCOMPARE(publishedResult->signatures()[0].type_id, std::string("rgsml.dsp.gain"));
+    QCOMPARE(publishedResult->signatures()[1].type_id, std::string("rgsml.dsp.parametric-eq"));
+    QCOMPARE(publishedResult->signatures()[1].disposition, render::ModuleExecutionDisposition::PROCESSED);
 
     // Bypass case
     vm.setBypass(true);
@@ -507,7 +511,7 @@ void EqViewModelTest::testRealProductionPathActiveAndBypass()
 
     QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
     QVERIFY(publishedResult != nullptr);
-    QCOMPARE(publishedResult->signatures()[0].disposition, render::ModuleExecutionDisposition::BYPASS_IDENTITY);
+    QCOMPARE(publishedResult->signatures()[1].disposition, render::ModuleExecutionDisposition::BYPASS_IDENTITY);
 }
 
 void EqViewModelTest::testCurrentFailurePreservesLastGoodAudio()
@@ -1039,6 +1043,99 @@ void EqViewModelTest::testIsDefaultSemantics()
     // 6. Undo restores default status
     vm.undo();
     QVERIFY(vm.is_default());
+}
+
+void EqViewModelTest::testAttachingToExistingAuthorityPreservesState()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto chain_id = *core::Uuid::parse("10000000-0000-4000-8000-000000000001").value();
+    const auto gain_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000010").value()).value();
+    const auto eq_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000020").value()).value();
+
+    const auto band0Id = *core::Uuid::parse("20000000-0000-4000-8000-000000000001").value();
+    const auto band1Id = *core::Uuid::parse("20000000-0000-4000-8000-000000000002").value();
+
+    auto band0 = *dsp::EqBandParameters::create(
+        band0Id, true, dsp::EqFilterType::HIGH_PASS, dsp::EqRouting::STEREO,
+        dsp::PassPayload{80.0, dsp::SlopeDbPerOctave::DB_18}).value();
+    auto band1 = *dsp::EqBandParameters::create(
+        band1Id, true, dsp::EqFilterType::HIGH_SHELF, dsp::EqRouting::SIDE,
+        dsp::ShelfPayload{12000.0, +4.5, 0.75}).value();
+
+    auto customEq = *dsp::ParametricEqParameters::create({band0, band1}).value();
+
+    auto state = MasteringChainState::create(
+        *registry.value(), chain_id, gain_id, *dsp::GainParameters::create(0.0).value(), false,
+        eq_id, customEq, true);
+    QVERIFY(state);
+
+    const auto origEqParams = state.value()->parametric_eq_parameters();
+
+    EqViewModel vm{state.value()};
+
+    QCOMPARE(state.value()->parametric_eq_parameters(), origEqParams);
+    QCOMPARE(vm.band_count(), 2);
+    QCOMPARE(vm.instance_id(), eq_id);
+    QCOMPARE(vm.selected_band_id(), QString::fromStdString(band0Id.to_string()));
+    QCOMPARE(vm.filter_label(), QStringLiteral("HIGH_PASS"));
+    QCOMPARE(vm.frequency(), 80.0);
+
+    vm.selectBand(1);
+    QCOMPARE(vm.selected_band_id(), QString::fromStdString(band1Id.to_string()));
+    QCOMPARE(vm.filter_label(), QStringLiteral("HIGH_SHELF"));
+    QCOMPARE(vm.routing_label(), QStringLiteral("SIDE"));
+    QCOMPARE(vm.frequency(), 12000.0);
+    QCOMPARE(vm.gain(), +4.5);
+
+    QVERIFY(vm.bypass());
+    QVERIFY(*state.value()->is_bypassed(eq_id).value());
+    QCOMPARE(vm.instance_id(), eq_id);
+}
+
+void EqViewModelTest::testResetToFlatWhenBypassedClearsBypass()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto chain_id = *core::Uuid::parse("10000000-0000-4000-8000-000000000001").value();
+    const auto gain_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000010").value()).value();
+    const auto eq_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000020").value()).value();
+    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
+    QVERIFY(state);
+
+    MasteringPreviewController previewController{state.value()};
+    EqViewModel vm{state.value(), &previewController};
+
+    // 1. Start from canonical flat EQ
+    QVERIFY(vm.is_default());
+    QVERIFY(!vm.bypass());
+
+    // 2. Set EQ bypass = true
+    vm.setBypass(true);
+    QVERIFY(vm.bypass());
+    QVERIFY(*state.value()->is_bypassed(eq_id).value());
+    const std::uint64_t genBypassed = vm.preview_generation();
+
+    // 3. Call resetToFlat()
+    vm.resetToFlat();
+
+    // 4. Verify bypass becomes false
+    QVERIFY(!vm.bypass());
+
+    // 5. Verify authoritative MasteringChainState reflects false
+    QVERIFY(!*state.value()->is_bypassed(eq_id).value());
+
+    // 6. Verify exactly one new preview request occurs
+    QCOMPARE(vm.preview_generation(), genBypassed + 1U);
+
+    // 7. Verify undo/redo semantics remain coherent
+    QVERIFY(vm.can_undo());
+    vm.undo();
+    QVERIFY(vm.bypass());
+    QVERIFY(*state.value()->is_bypassed(eq_id).value());
+
+    QVERIFY(vm.can_redo());
+    vm.redo();
+    QVERIFY(!vm.bypass());
+    QVERIFY(!*state.value()->is_bypassed(eq_id).value());
 }
 
 }  // namespace

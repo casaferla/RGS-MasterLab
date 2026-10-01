@@ -1,5 +1,8 @@
 #pragma once
 
+#include "mastering_chain_state.hpp"
+#include "mastering_preview_controller.hpp"
+
 #include <rgsml/core/frame_time.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/uuid.hpp>
@@ -11,13 +14,10 @@
 #include <QString>
 #include <QVariant>
 
-#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <thread>
 #include <vector>
 
 namespace rgsml::app {
@@ -62,17 +62,12 @@ class EqViewModel final : public QObject {
     Q_PROPERTY(bool showCombinedResponse READ show_combined_response WRITE setShowCombinedResponse NOTIFY changed)
 
 public:
-    using PreparedSnapshotProvider = std::function<std::shared_ptr<const render::RenderResult>()>;
-    using ProcessedRealizationPublisher = std::function<core::Status(render::RenderResult)>;
+    using PreparedSnapshotProvider = MasteringPreviewController::PreparedSnapshotProvider;
+    using ProcessedRealizationPublisher = MasteringPreviewController::ProcessedRealizationPublisher;
     using IdGenerator = std::function<core::Uuid()>;
 
-    struct PreviewJob final {
-        std::uint64_t generation;
-        dsp::ParametricEqParameters parameters;
-        bool bypass;
-        std::shared_ptr<const render::RenderResult> preparedSnapshot;
-        dsp::ModuleInstanceId instanceId;
-    };
+    using PreviewJob = MasteringPreviewController::PreviewJob;
+    using PreviewExecutor = MasteringPreviewController::PreviewExecutor;
 
     struct EqStateSnapshot final {
         std::vector<dsp::EqBandParameters> bands;
@@ -85,8 +80,6 @@ public:
                 && bands == other.bands;
         }
     };
-
-    using PreviewExecutor = std::function<core::Result<render::RenderResult>(const PreviewJob&)>;
 
     struct DraftBand final {
         core::Uuid band_id;
@@ -105,11 +98,19 @@ public:
     };
 
     explicit EqViewModel(
-        PreparedSnapshotProvider snapshotProvider = nullptr,
+        MasteringChainState* chainState = nullptr,
+        MasteringPreviewController* previewController = nullptr,
+        IdGenerator idGenerator = nullptr,
+        QObject* parent = nullptr);
+
+    // Overload for backwards-compatibility with tests supplying (snapshotProvider, publisher, idGenerator)
+    explicit EqViewModel(
+        PreparedSnapshotProvider snapshotProvider,
         ProcessedRealizationPublisher publisher = nullptr,
         IdGenerator idGenerator = nullptr,
         QObject* parent = nullptr);
-    ~EqViewModel() override;
+
+    ~EqViewModel() override = default;
 
     EqViewModel(const EqViewModel&) = delete;
     EqViewModel& operator=(const EqViewModel&) = delete;
@@ -196,13 +197,16 @@ public:
     Q_INVOKABLE void graphRelease();
     Q_INVOKABLE void adjustSecondaryParameter(int steps, bool shiftPressed);
 
-    // Trigger explicit preview render (e.g., when PREPARED realization becomes available)
+    // Trigger explicit preview render
     void trigger_preview();
 
 signals:
     void changed();
 
 private:
+    [[nodiscard]] MasteringChainState& active_chain_state() const noexcept;
+    [[nodiscard]] MasteringPreviewController& active_preview_controller() const noexcept;
+
     [[nodiscard]] core::SampleRate current_sample_rate() const noexcept;
     [[nodiscard]] bool is_mono_prepared() const noexcept;
     [[nodiscard]] double max_frequency_hz() const noexcept;
@@ -218,30 +222,21 @@ private:
     void push_undo_snapshot(EqStateSnapshot previousSnapshot);
     [[nodiscard]] EqStateSnapshot capture_current_snapshot() const;
     void restore_snapshot(const EqStateSnapshot& snapshot);
-    void worker_loop();
-    void publish_preview_result(
-        std::uint64_t generation,
-        std::shared_ptr<core::Result<render::RenderResult>> outcome);
 
-    PreparedSnapshotProvider snapshotProvider_;
-    ProcessedRealizationPublisher publisher_;
+    MasteringChainState* externalChainState_{nullptr};
+    std::unique_ptr<MasteringChainState> ownedChainState_;
+
+    MasteringPreviewController* externalPreviewController_{nullptr};
+    std::unique_ptr<MasteringPreviewController> ownedPreviewController_;
+
     IdGenerator idGenerator_;
-    PreviewExecutor previewExecutor_;
 
-    dsp::ModuleInstanceId instanceId_;
     std::vector<dsp::EqBandParameters> committedBands_;
-    dsp::ParametricEqParameters committedParams_{*dsp::ParametricEqParameters::create_legacy_default().value()};
     DraftBand draftBand_;
     std::size_t selectedIndex_{0};
-    bool bypass_{false};
 
     std::vector<EqStateSnapshot> undoStack_;
     std::vector<EqStateSnapshot> redoStack_;
-
-    std::uint64_t previewGeneration_{0};
-    std::uint64_t staleResultsDiscarded_{0};
-    QString previewStatus_{QStringLiteral("IDLE")};
-    QString previewError_;
 
     QString validationField_;
     QString validationMessage_;
@@ -249,12 +244,6 @@ private:
     QVariantList responseGrid_;
     QVariantList combinedResponseGrid_;
     bool showCombinedResponse_{false};
-
-    std::mutex workerMutex_;
-    std::condition_variable workerCond_;
-    std::optional<PreviewJob> pendingJob_;
-    bool workerStopping_{false};
-    std::jthread workerThread_;
 };
 
 }  // namespace rgsml::app
