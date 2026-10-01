@@ -47,7 +47,9 @@ Rectangle {
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
             spectrumViewModel: root.spectrumViewModel
-            activeChainRow: realChainSelector.findChild ? realChainSelector.findChild("dspChainRow_" + root.selectedModuleIndex) : null
+            activeChainRow: root.selectedModuleIndex === 0
+                ? realChainSelector.inputGainRow
+                : realChainSelector.parametricEqRow
         }
     }
 }
