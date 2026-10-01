@@ -3,7 +3,10 @@
 #include "gold_selection_view_model.hpp"
 #include "audition_source_selector.hpp"
 #include "audition_region_view_model.hpp"
+#include "mastering_chain_state.hpp"
 #include "playback_transport_view_model.hpp"
+#include <rgsml/dsp/module_parameter_codec.hpp>
+#include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/project/project_repository.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
@@ -80,13 +83,25 @@ struct Session final {
     app::AuditionSourceSelector selector;
     app::GoldSelectionViewModel gold;
     app::AuditionRegionViewModel region;
+    core::Uuid chainId;
+    dsp::ModuleInstanceId gainId;
+    dsp::ModuleInstanceId eqId;
+    std::unique_ptr<app::MasteringChainState> masteringChainState;
     app::ProjectSessionViewModel project;
 
     Session()
         : observed(new FakePlaybackService()),
           transport(std::unique_ptr<core::IAudioPlaybackService>(observed)),
           source(), selector(&transport), gold(&selector), region(&transport),
-          project(&source, &gold, &region, &transport)
+          chainId(*core::Uuid::parse("10000000-0000-4000-8000-000000000001").value()),
+          gainId(*dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000010").value()).value()),
+          eqId(*dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000020").value()).value()),
+          masteringChainState([this] {
+              auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+              auto state = app::MasteringChainState::create_default(*registry.value(), chainId, gainId, eqId);
+              return std::make_unique<app::MasteringChainState>(std::move(*state.value()));
+          }()),
+          project(&source, &gold, &region, &transport, masteringChainState.get())
     {
         transport.set_pcm_prepare_handler([this](audio::AudioBufferView view, std::shared_ptr<const void>) {
             observed->state = core::PlaybackState::STOPPED;
@@ -117,6 +132,9 @@ private slots:
     void clear_region_and_replace_source_save_as();
     void invalid_gold_and_hardlink_preflight_preserve_session();
     void region_bounds_and_degraded_opaque_preservation();
+    void mastering_chain_normal_save();
+    void mastering_chain_repeated_save();
+    void mastering_chain_source_replacement_regression();
 };
 
 void ProjectSessionTest::source_save_open_existing_fail()
@@ -312,6 +330,155 @@ void ProjectSessionTest::region_bounds_and_degraded_opaque_preservation()
     QVERIFY(reopened);
     QCOMPARE(reopened.value()->document().extensions.canonical_utf8(),
              future.value()->canonical_utf8());
+}
+
+void ProjectSessionTest::mastering_chain_normal_save()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto source = wav(dir, QStringLiteral("source.wav"), 0);
+
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+
+    // Configure non-default Gain
+    auto gainParams = dsp::GainParameters::create(6.0);
+    QVERIFY(gainParams);
+    QVERIFY(session.masteringChainState->set_gain_parameters(*gainParams.value()));
+    QVERIFY(session.masteringChainState->set_user_bypass(session.gainId, true));
+
+    // Configure non-default EQ
+    auto eqParams = dsp::ParametricEqParameters::create_legacy_default();
+    QVERIFY(eqParams);
+    QVERIFY(session.masteringChainState->set_parametric_eq_parameters(*eqParams.value()));
+
+    const auto projectPath = dir.filePath(QStringLiteral("mastering_chain.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(projectPath));
+    QCOMPARE(session.project.error_message(), QString());
+    QVERIFY(!session.project.degraded());
+
+    auto snapshot = load_project(projectPath);
+    QVERIFY(snapshot);
+    const auto& doc = snapshot.value()->document();
+
+    // Verify pipeline.masteringChainId matches authoritative chain ID
+    QVERIFY(doc.pipeline.masteringChainId.has_value());
+    QCOMPARE(*doc.pipeline.masteringChainId, session.chainId);
+
+    // Verify MASTER / MANUAL chain
+    QCOMPARE(doc.chains.size(), std::size_t{1});
+    const auto& chain = doc.chains.front();
+    QCOMPARE(chain.chainId, session.chainId);
+    QCOMPARE(chain.stage, std::string("MASTER"));
+    QCOMPARE(chain.segment, std::string("MANUAL"));
+    QCOMPARE(chain.modules.size(), std::size_t{2});
+
+    // Verify Module 0: Input Gain
+    const auto& m0 = chain.modules[0];
+    QCOMPARE(m0.instanceId, session.gainId.uuid());
+    QCOMPARE(m0.typeId, std::string("rgsml.dsp.gain"));
+    QVERIFY(m0.enabled);
+    QVERIFY(m0.userBypass);
+    QVERIFY(!m0.controllerSuspended);
+    QVERIFY(!m0.domainSuspended);
+    QCOMPARE(m0.provenance, std::string("MANUAL"));
+    QCOMPARE(m0.owner, std::string("USER"));
+    QCOMPARE(m0.linkState, std::string("UNLINKED"));
+    QVERIFY(m0.algorithmVersion.has_value());
+    QCOMPARE(*m0.algorithmVersion, std::string("1.0.0"));
+    QVERIFY(m0.parameterSchemaId.has_value());
+    QCOMPARE(*m0.parameterSchemaId, std::string("rgsml.dsp.gain.parameters/1.0.0"));
+
+    auto decodedGain = dsp::decode_gain_parameters_json(m0.parameters.canonical_utf8());
+    QVERIFY(decodedGain);
+    QCOMPARE(decodedGain.value()->gain_db(), 6.0);
+
+    // Verify Module 1: Parametric EQ
+    const auto& m1 = chain.modules[1];
+    QCOMPARE(m1.instanceId, session.eqId.uuid());
+    QCOMPARE(m1.typeId, std::string("rgsml.dsp.parametric-eq"));
+    QVERIFY(m1.enabled);
+    QVERIFY(!m1.userBypass);
+    QCOMPARE(m1.provenance, std::string("MANUAL"));
+    QCOMPARE(m1.owner, std::string("USER"));
+    QCOMPARE(m1.linkState, std::string("UNLINKED"));
+    QVERIFY(m1.algorithmVersion.has_value());
+    QCOMPARE(*m1.algorithmVersion, std::string("1.0.0"));
+    QVERIFY(m1.parameterSchemaId.has_value());
+    QCOMPARE(*m1.parameterSchemaId, std::string("rgsml.dsp.parametric-eq.parameters/1.0.0"));
+
+    auto decodedEq = dsp::decode_parametric_eq_parameters_json(m1.parameters.canonical_utf8());
+    QVERIFY(decodedEq);
+    QCOMPARE(decodedEq.value()->bands().size(), std::size_t{1});
+}
+
+void ProjectSessionTest::mastering_chain_repeated_save()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto source = wav(dir, QStringLiteral("source.wav"), 0);
+
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(source));
+
+    const auto firstPath = dir.filePath(QStringLiteral("save1.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(firstPath));
+    QCOMPARE(session.project.error_message(), QString());
+
+    // Update Gain parameters
+    auto updatedGain = dsp::GainParameters::create(-3.0);
+    QVERIFY(updatedGain);
+    QVERIFY(session.masteringChainState->set_gain_parameters(*updatedGain.value()));
+
+    const auto secondPath = dir.filePath(QStringLiteral("save2.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(secondPath));
+    QCOMPARE(session.project.error_message(), QString());
+
+    auto snapshot = load_project(secondPath);
+    QVERIFY(snapshot);
+    const auto& doc = snapshot.value()->document();
+
+    QCOMPARE(doc.chains.size(), std::size_t{1});
+    const auto& chain = doc.chains.front();
+    QCOMPARE(chain.chainId, session.chainId);
+    QCOMPARE(chain.modules[0].instanceId, session.gainId.uuid());
+    QCOMPARE(chain.modules[1].instanceId, session.eqId.uuid());
+
+    auto decodedGain = dsp::decode_gain_parameters_json(chain.modules[0].parameters.canonical_utf8());
+    QVERIFY(decodedGain);
+    QCOMPARE(decodedGain.value()->gain_db(), -3.0);
+}
+
+void ProjectSessionTest::mastering_chain_source_replacement_regression()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto firstSource = wav(dir, QStringLiteral("first.wav"), 0);
+    const auto secondSource = wav(dir, QStringLiteral("second.wav"), 1);
+
+    Session session;
+    session.source.selectSource(QUrl::fromLocalFile(firstSource));
+
+    const auto firstProject = dir.filePath(QStringLiteral("first.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(firstProject));
+    QCOMPARE(session.project.error_message(), QString());
+
+    // Replace Source
+    session.source.selectSource(QUrl::fromLocalFile(secondSource));
+
+    const auto replacedProject = dir.filePath(QStringLiteral("replaced.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(replacedProject));
+    QCOMPARE(session.project.error_message(), QString());
+    QVERIFY(!session.project.degraded());
+
+    auto snapshot = load_project(replacedProject);
+    QVERIFY(snapshot);
+    const auto& doc = snapshot.value()->document();
+
+    QCOMPARE(doc.chains.size(), std::size_t{1});
+    QCOMPARE(doc.chains.front().chainId, session.chainId);
+    QCOMPARE(doc.chains.front().modules[0].instanceId, session.gainId.uuid());
+    QCOMPARE(doc.chains.front().modules[1].instanceId, session.eqId.uuid());
 }
 
 }  // namespace rgsml::tests
