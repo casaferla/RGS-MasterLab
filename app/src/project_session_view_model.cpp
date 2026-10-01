@@ -2,10 +2,12 @@
 
 #include "audition_region_view_model.hpp"
 #include "gold_selection_view_model.hpp"
+#include "mastering_chain_state.hpp"
 #include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
 
 #include <rgsml/audio/source_resource.hpp>
+#include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/platform/windows/windows_resource_identity.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
@@ -67,10 +69,33 @@ namespace {
     return audio::SourceResource::probe(std::move(*reader.value()));
 }
 
+[[nodiscard]] std::string provenance_to_string(dsp::ModuleProvenance p)
+{
+    switch (p) {
+        case dsp::ModuleProvenance::MANUAL: return "MANUAL";
+    }
+    return "MANUAL";
+}
+
+[[nodiscard]] std::string owner_to_string(dsp::ModuleOwner o)
+{
+    switch (o) {
+        case dsp::ModuleOwner::USER: return "USER";
+    }
+    return "USER";
+}
+
+[[nodiscard]] std::string link_state_to_string(dsp::ModuleLinkState l)
+{
+    switch (l) {
+        case dsp::ModuleLinkState::UNLINKED: return "UNLINKED";
+    }
+    return "UNLINKED";
+}
+
 [[nodiscard]] bool has_future_semantics(const project::ProjectDocument& doc)
 {
-    return !doc.chains.empty() || doc.pipeline.repairChainId ||
-        doc.pipeline.conditioningChainId || doc.pipeline.masteringChainId ||
+    if (doc.pipeline.repairChainId || doc.pipeline.conditioningChainId ||
         doc.activeProfileApplication ||
         doc.timeSelections.analysisScopes.canonical_utf8() != "[]" ||
         doc.timeSelections.processingRegions.canonical_utf8() != "[]" ||
@@ -81,7 +106,15 @@ namespace {
         doc.derivedArtifacts.canonical_utf8() != "[]" ||
         doc.history.canonical_utf8() != "[]" ||
         doc.extensions.canonical_utf8() != "{}" ||
-        doc.timeSelections.auditionRegions.size() > 1U;
+        doc.timeSelections.auditionRegions.size() > 1U) {
+        return true;
+    }
+
+    if (doc.pipeline.masteringChainId || !doc.chains.empty()) {
+        return true;
+    }
+
+    return false;
 }
 
 }  // namespace
@@ -89,9 +122,11 @@ namespace {
 ProjectSessionViewModel::ProjectSessionViewModel(
     SourceSelectionViewModel* source, GoldSelectionViewModel* gold,
     AuditionRegionViewModel* region, PlaybackTransportViewModel* playback,
+    MasteringChainState* masteringChainState,
     UuidFactory uuidFactory, QObject* parent)
     : QObject(parent), source_(source), gold_(gold), region_(region),
-      playback_(playback), uuidFactory_(std::move(uuidFactory))
+      playback_(playback), masteringChainState_(masteringChainState),
+      uuidFactory_(std::move(uuidFactory))
 {
     if (!uuidFactory_) {
         uuidFactory_ = [] {
@@ -170,7 +205,7 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
     project::ProjectDocument doc;
     std::vector<project::OptionalEntry> optional;
     if (opened_) { doc = opened_->document(); optional = opened_->optional_entries(); }
-    if (opened_ && doc.sourceResourceId != *sourceId_ && has_future_semantics(doc)) {
+    if (opened_ && doc.sourceResourceId != *sourceId_ && !sessionChainMaterialized_ && has_future_semantics(doc)) {
         return core::Result<project::ProjectSnapshot>::failure(core::Error{
             core::ErrorCode::UnsupportedOperation,
             "Cannot replace Source while preserved future project semantics refer to it"});
@@ -218,6 +253,123 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
         if (found == doc.timeSelections.auditionRegions.end())
             doc.timeSelections.auditionRegions.push_back(std::move(value));
         else *found = std::move(value);
+    }
+
+    if (masteringChainState_ && (!opened_ || sessionChainMaterialized_)) {
+        const auto chainId = masteringChainState_->chain_id();
+        doc.pipeline.masteringChainId = chainId;
+
+        project::Chain masteringChain;
+        masteringChain.chainId = chainId;
+        masteringChain.stage = "MASTER";
+        masteringChain.segment = "MANUAL";
+        masteringChain.revision = masteringChainState_->chain().revision();
+
+        // Fail-closed helper for Module serialization
+        const auto serialize_module = [&](const std::string_view typeId,
+                                           const std::string_view expectedParameterSchemaId,
+                                           const auto& instanceResult,
+                                           const auto& jsonCodecResult) -> core::Result<project::Module> {
+            if (!instanceResult) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Failed to obtain module instance for mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+            const auto descResult = masteringChainState_->find_descriptor(typeId);
+            if (!descResult) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Failed to obtain module descriptor for mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+            if (!jsonCodecResult) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Failed to encode module parameters to JSON for mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            const auto& inst = instanceResult.value()->get();
+            const auto& desc = descResult.value()->get();
+
+            if (inst.module_type_id() != typeId) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Module instance type ID mismatch during mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            if (desc.type_id() != typeId) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Module descriptor type ID mismatch during mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            constexpr std::string_view expectedAlgorithmVersion{"1.0.0"};
+            if (!desc.algorithm_version() || *desc.algorithm_version() != expectedAlgorithmVersion) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Module descriptor algorithmVersion is inconsistent with the frozen v1 contract",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            if (!desc.parameter_schema_id() || *desc.parameter_schema_id() != expectedParameterSchemaId) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Module descriptor parameterSchemaId is inconsistent with the frozen v1 contract",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            auto opaqueJson = project::OpaqueJsonValue::parse(*jsonCodecResult.value());
+            if (!opaqueJson) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Failed to parse OpaqueJsonValue for module parameters during mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            project::Module m;
+            m.instanceId = inst.instance_id().uuid();
+            m.typeId = std::string(inst.module_type_id());
+            m.enabled = inst.enabled();
+            m.userBypass = inst.user_bypass();
+            m.controllerSuspended = inst.controller_suspended();
+            m.domainSuspended = inst.domain_suspended();
+            m.provenance = provenance_to_string(inst.provenance());
+            m.owner = owner_to_string(inst.owner());
+            m.linkState = link_state_to_string(inst.link_state());
+            m.semanticNodeId = inst.semantic_node_id();
+            m.algorithmVersion = std::string(*desc.algorithm_version());
+            m.parameterSchemaId = std::string(*desc.parameter_schema_id());
+            m.parameters = std::move(*opaqueJson.value());
+            return core::Result<project::Module>::success(std::move(m));
+        };
+
+        // Module 0: Input Gain
+        auto m0 = serialize_module("rgsml.dsp.gain",
+            "rgsml.dsp.gain.parameters/1.0.0",
+            masteringChainState_->gain_instance(),
+            dsp::encode_gain_parameters_json(masteringChainState_->gain_parameters()));
+        if (!m0) return core::Result<project::ProjectSnapshot>::failure(*m0.error());
+        masteringChain.modules.push_back(std::move(*m0.value()));
+
+        // Module 1: Parametric EQ
+        auto m1 = serialize_module("rgsml.dsp.parametric-eq",
+            "rgsml.dsp.parametric-eq.parameters/1.0.0",
+            masteringChainState_->eq_instance(),
+            dsp::encode_parametric_eq_parameters_json(masteringChainState_->parametric_eq_parameters()));
+        if (!m1) return core::Result<project::ProjectSnapshot>::failure(*m1.error());
+        masteringChain.modules.push_back(std::move(*m1.value()));
+
+        auto chainIt = std::find_if(doc.chains.begin(), doc.chains.end(),
+            [chainId](const project::Chain& c) { return c.chainId == chainId; });
+        if (chainIt == doc.chains.end()) {
+            doc.chains.push_back(std::move(masteringChain));
+        } else {
+            *chainIt = std::move(masteringChain);
+        }
     }
     return project::ProjectSnapshot::create(std::move(doc), std::move(optional));
 }
@@ -289,6 +441,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     const auto persistedName = doc.displayName;
     const bool isDegraded = has_future_semantics(doc);
     opened_.emplace(std::move(*opened.value()));
+    sessionChainMaterialized_ = false;
     projectId_ = persistedProjectId;
     sourceId_ = persistedSourceId;
     referenceId_ = persistedReferenceId;
@@ -333,7 +486,11 @@ void ProjectSessionViewModel::saveProjectAs(const QUrl& selectedFile)
                 std::move(*reader.value()));
         });
     if (!result) { publish_error(*result.error()); return; }
+    const bool wasNewSession = !opened_;
     opened_.emplace(std::move(*snapshot.value()));
+    if (wasNewSession || sessionChainMaterialized_) {
+        sessionChainMaterialized_ = true;
+    }
     clearedRegionId_.reset();
     projectDisplayName_ = QString::fromUtf8(opened_->document().displayName.data(),
         static_cast<qsizetype>(opened_->document().displayName.size()));
