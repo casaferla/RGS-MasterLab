@@ -263,6 +263,14 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
     }
 
     if (masteringChainState_) {
+        // Enforce degraded/unsupported safety rule: if saving an opened project that has future/degraded semantics
+        // or unsupported mastering chain topology, fail deterministically rather than overwriting or corrupting.
+        if (opened_ && (degraded_ || has_future_semantics(doc))) {
+            return core::Result<project::ProjectSnapshot>::failure(core::Error{
+                core::ErrorCode::UnsupportedOperation,
+                "Cannot save project with unsupported or degraded processing semantics"});
+        }
+
         const auto chainId = masteringChainState_->chain_id();
         doc.pipeline.masteringChainId = chainId;
 
@@ -272,67 +280,92 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
         masteringChain.segment = "MANUAL";
         masteringChain.revision = masteringChainState_->chain().revision();
 
-        // Module 0: Input Gain
-        const auto gainInst = masteringChainState_->gain_instance();
-        const auto gainDesc = masteringChainState_->find_descriptor("rgsml.dsp.gain");
-        const auto gainJson = dsp::encode_gain_parameters_json(masteringChainState_->gain_parameters());
-        if (gainInst && gainDesc && gainJson) {
-            const auto& inst = gainInst.value()->get();
-            const auto& desc = gainDesc.value()->get();
-            auto opaqueJson = project::OpaqueJsonValue::parse(*gainJson.value());
-            if (opaqueJson) {
-                project::Module m0;
-                m0.instanceId = inst.instance_id().uuid();
-                m0.typeId = std::string(inst.module_type_id());
-                m0.enabled = inst.enabled();
-                m0.userBypass = inst.user_bypass();
-                m0.controllerSuspended = inst.controller_suspended();
-                m0.domainSuspended = inst.domain_suspended();
-                m0.provenance = provenance_to_string(inst.provenance());
-                m0.owner = owner_to_string(inst.owner());
-                m0.linkState = link_state_to_string(inst.link_state());
-                m0.semanticNodeId = inst.semantic_node_id();
-                if (desc.algorithm_version()) {
-                    m0.algorithmVersion = std::string(*desc.algorithm_version());
-                }
-                if (desc.parameter_schema_id()) {
-                    m0.parameterSchemaId = std::string(*desc.parameter_schema_id());
-                }
-                m0.parameters = std::move(*opaqueJson.value());
-                masteringChain.modules.push_back(std::move(m0));
+        // Fail-closed helper for Module serialization
+        const auto serialize_module = [&](const std::string_view typeId,
+                                           const auto& instanceResult,
+                                           const auto& jsonCodecResult) -> core::Result<project::Module> {
+            if (!instanceResult) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Failed to obtain module instance for mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
             }
-        }
+            const auto descResult = masteringChainState_->find_descriptor(typeId);
+            if (!descResult) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Failed to obtain module descriptor for mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+            if (!jsonCodecResult) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Failed to encode module parameters to JSON for mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            const auto& inst = instanceResult.value()->get();
+            const auto& desc = descResult.value()->get();
+
+            if (inst.module_type_id() != typeId) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Module instance type ID mismatch during mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            if (!desc.algorithm_version() || desc.algorithm_version()->empty()) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Missing algorithmVersion in module descriptor during mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            if (!desc.parameter_schema_id() || desc.parameter_schema_id()->empty()) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Missing parameterSchemaId in module descriptor during mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            auto opaqueJson = project::OpaqueJsonValue::parse(*jsonCodecResult.value());
+            if (!opaqueJson) {
+                return core::Result<project::Module>::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "Failed to parse OpaqueJsonValue for module parameters during mastering chain serialization",
+                    {{"typeId", std::string(typeId)}}});
+            }
+
+            project::Module m;
+            m.instanceId = inst.instance_id().uuid();
+            m.typeId = std::string(inst.module_type_id());
+            m.enabled = inst.enabled();
+            m.userBypass = inst.user_bypass();
+            m.controllerSuspended = inst.controller_suspended();
+            m.domainSuspended = inst.domain_suspended();
+            m.provenance = provenance_to_string(inst.provenance());
+            m.owner = owner_to_string(inst.owner());
+            m.linkState = link_state_to_string(inst.link_state());
+            m.semanticNodeId = inst.semantic_node_id();
+            m.algorithmVersion = std::string(*desc.algorithm_version());
+            m.parameterSchemaId = std::string(*desc.parameter_schema_id());
+            m.parameters = std::move(*opaqueJson.value());
+            return core::Result<project::Module>::success(std::move(m));
+        };
+
+        // Module 0: Input Gain
+        auto m0 = serialize_module("rgsml.dsp.gain",
+            masteringChainState_->gain_instance(),
+            dsp::encode_gain_parameters_json(masteringChainState_->gain_parameters()));
+        if (!m0) return core::Result<project::ProjectSnapshot>::failure(m0.error().value());
+        masteringChain.modules.push_back(std::move(*m0.value()));
 
         // Module 1: Parametric EQ
-        const auto eqInst = masteringChainState_->eq_instance();
-        const auto eqDesc = masteringChainState_->find_descriptor("rgsml.dsp.parametric-eq");
-        const auto eqJson = dsp::encode_parametric_eq_parameters_json(masteringChainState_->parametric_eq_parameters());
-        if (eqInst && eqDesc && eqJson) {
-            const auto& inst = eqInst.value()->get();
-            const auto& desc = eqDesc.value()->get();
-            auto opaqueJson = project::OpaqueJsonValue::parse(*eqJson.value());
-            if (opaqueJson) {
-                project::Module m1;
-                m1.instanceId = inst.instance_id().uuid();
-                m1.typeId = std::string(inst.module_type_id());
-                m1.enabled = inst.enabled();
-                m1.userBypass = inst.user_bypass();
-                m1.controllerSuspended = inst.controller_suspended();
-                m1.domainSuspended = inst.domain_suspended();
-                m1.provenance = provenance_to_string(inst.provenance());
-                m1.owner = owner_to_string(inst.owner());
-                m1.linkState = link_state_to_string(inst.link_state());
-                m1.semanticNodeId = inst.semantic_node_id();
-                if (desc.algorithm_version()) {
-                    m1.algorithmVersion = std::string(*desc.algorithm_version());
-                }
-                if (desc.parameter_schema_id()) {
-                    m1.parameterSchemaId = std::string(*desc.parameter_schema_id());
-                }
-                m1.parameters = std::move(*opaqueJson.value());
-                masteringChain.modules.push_back(std::move(m1));
-            }
-        }
+        auto m1 = serialize_module("rgsml.dsp.parametric-eq",
+            masteringChainState_->eq_instance(),
+            dsp::encode_parametric_eq_parameters_json(masteringChainState_->parametric_eq_parameters()));
+        if (!m1) return core::Result<project::ProjectSnapshot>::failure(m1.error().value());
+        masteringChain.modules.push_back(std::move(*m1.value()));
 
         auto chainIt = std::find_if(doc.chains.begin(), doc.chains.end(),
             [chainId](const project::Chain& c) { return c.chainId == chainId; });

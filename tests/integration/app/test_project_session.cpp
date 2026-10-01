@@ -132,6 +132,7 @@ private slots:
     void clear_region_and_replace_source_save_as();
     void invalid_gold_and_hardlink_preflight_preserve_session();
     void region_bounds_and_degraded_opaque_preservation();
+    void degraded_project_save_fail_closed();
     void mastering_chain_normal_save();
     void mastering_chain_repeated_save();
     void mastering_chain_source_replacement_regression();
@@ -332,6 +333,42 @@ void ProjectSessionTest::region_bounds_and_degraded_opaque_preservation()
              future.value()->canonical_utf8());
 }
 
+void ProjectSessionTest::degraded_project_save_fail_closed()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto source = wav(dir, QStringLiteral("source.wav"), 0);
+
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(source));
+    const auto first = dir.filePath(QStringLiteral("first.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(first));
+    QCOMPARE(author.project.error_message(), QString());
+
+    auto original = load_project(first);
+    QVERIFY(original);
+    auto doc = original.value()->document();
+    auto future = project::OpaqueJsonValue::parse("{\"future\":{\"enabled\":true}}");
+    QVERIFY(future);
+    doc.extensions = *future.value();
+    auto degraded = project::ProjectSnapshot::create(doc);
+    QVERIFY(degraded);
+    const auto futurePath = dir.filePath(QStringLiteral("future_degraded.rgsml"));
+    QVERIFY(write_project(futurePath, *degraded.value()));
+
+    // Open degraded project into session with active mastering chain
+    Session session;
+    session.project.openProject(QUrl::fromLocalFile(futurePath));
+    QCOMPARE(session.project.error_message(), QString());
+    QVERIFY(session.project.degraded());
+
+    // Attempting to Save As must fail closed for degraded project
+    const auto attemptSave = dir.filePath(QStringLiteral("attempt_save.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(attemptSave));
+    QVERIFY(!session.project.error_message().isEmpty());
+    QVERIFY(!QFile::exists(attemptSave));
+}
+
 void ProjectSessionTest::mastering_chain_normal_save()
 {
     QTemporaryDir dir;
@@ -347,8 +384,16 @@ void ProjectSessionTest::mastering_chain_normal_save()
     QVERIFY(session.masteringChainState->set_gain_parameters(*gainParams.value()));
     QVERIFY(session.masteringChainState->set_user_bypass(session.gainId, true));
 
-    // Configure non-default EQ
-    auto eqParams = dsp::ParametricEqParameters::create_legacy_default();
+    // Configure genuinely non-default EQ
+    auto bandId1 = dsp::EqBandId::create("band-1");
+    auto bandId2 = dsp::EqBandId::create("band-2");
+    QVERIFY(bandId1 && bandId2);
+    auto band1 = dsp::EqBandParameters::create(*bandId1.value(), dsp::EqFilterType::BELL,
+        dsp::EqRoutingDomain::STEREO, true, 500.0, -3.5, 1.2, std::nullopt);
+    auto band2 = dsp::EqBandParameters::create(*bandId2.value(), dsp::EqFilterType::HIGH_SHELF,
+        dsp::EqRoutingDomain::STEREO, true, 8000.0, 2.0, 0.707, dsp::EqFilterSlope::SLOPE_12_DB_OCT);
+    QVERIFY(band1 && band2);
+    auto eqParams = dsp::ParametricEqParameters::create({*band1.value(), *band2.value()});
     QVERIFY(eqParams);
     QVERIFY(session.masteringChainState->set_parametric_eq_parameters(*eqParams.value()));
 
@@ -409,7 +454,10 @@ void ProjectSessionTest::mastering_chain_normal_save()
 
     auto decodedEq = dsp::decode_parametric_eq_parameters_json(m1.parameters.canonical_utf8());
     QVERIFY(decodedEq);
-    QCOMPARE(decodedEq.value()->bands().size(), std::size_t{1});
+    QCOMPARE(*decodedEq.value(), *eqParams.value());
+    QCOMPARE(decodedEq.value()->bands().size(), std::size_t{2});
+    QCOMPARE(decodedEq.value()->bands()[0].id().value(), std::string("band-1"));
+    QCOMPARE(decodedEq.value()->bands()[1].id().value(), std::string("band-2"));
 }
 
 void ProjectSessionTest::mastering_chain_repeated_save()
@@ -425,10 +473,19 @@ void ProjectSessionTest::mastering_chain_repeated_save()
     session.project.saveProjectAs(QUrl::fromLocalFile(firstPath));
     QCOMPARE(session.project.error_message(), QString());
 
-    // Update Gain parameters
+    // Modify BOTH Gain and EQ
     auto updatedGain = dsp::GainParameters::create(-3.0);
     QVERIFY(updatedGain);
     QVERIFY(session.masteringChainState->set_gain_parameters(*updatedGain.value()));
+
+    auto bandIdNew = dsp::EqBandId::create("band-mod");
+    QVERIFY(bandIdNew);
+    auto bandMod = dsp::EqBandParameters::create(*bandIdNew.value(), dsp::EqFilterType::BELL,
+        dsp::EqRoutingDomain::STEREO, true, 1000.0, 4.5, 2.0, std::nullopt);
+    QVERIFY(bandMod);
+    auto updatedEq = dsp::ParametricEqParameters::create({*bandMod.value()});
+    QVERIFY(updatedEq);
+    QVERIFY(session.masteringChainState->set_parametric_eq_parameters(*updatedEq.value()));
 
     const auto secondPath = dir.filePath(QStringLiteral("save2.rgsml"));
     session.project.saveProjectAs(QUrl::fromLocalFile(secondPath));
@@ -447,6 +504,10 @@ void ProjectSessionTest::mastering_chain_repeated_save()
     auto decodedGain = dsp::decode_gain_parameters_json(chain.modules[0].parameters.canonical_utf8());
     QVERIFY(decodedGain);
     QCOMPARE(decodedGain.value()->gain_db(), -3.0);
+
+    auto decodedEq = dsp::decode_parametric_eq_parameters_json(chain.modules[1].parameters.canonical_utf8());
+    QVERIFY(decodedEq);
+    QCOMPARE(*decodedEq.value(), *updatedEq.value());
 }
 
 void ProjectSessionTest::mastering_chain_source_replacement_regression()
