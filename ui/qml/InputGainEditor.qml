@@ -165,9 +165,25 @@ Item {
                             when: !gainSlider.pressed
                         }
 
+                        // Keep continuous pointer motion presentation-only.
+                        // Committing every pixel would request a full-chain render for
+                        // every move. Track the drag locally and commit exactly once
+                        // at release. Keyboard moves are discrete and may commit
+                        // immediately because Slider.pressed is false for them.
+                        property real pendingGainDb: root.currentGainDb
+
                         onMoved: {
-                            if (root.viewModel) {
-                                root.viewModel.setGainDb(gainSlider.value)
+                            pendingGainDb = gainSlider.value
+                            if (!gainSlider.pressed && root.viewModel) {
+                                root.viewModel.setGainDb(pendingGainDb)
+                            }
+                        }
+
+                        onPressedChanged: {
+                            if (gainSlider.pressed) {
+                                pendingGainDb = gainSlider.value
+                            } else if (root.viewModel) {
+                                root.viewModel.setGainDb(pendingGainDb)
                             }
                         }
 
