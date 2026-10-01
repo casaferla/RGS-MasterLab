@@ -218,6 +218,28 @@ Result<ProcessingChain> ProcessingChain::create(
     return Result<ProcessingChain>::success(ProcessingChain{registry, context});
 }
 
+Result<ProcessingChain> ProcessingChain::restore(
+    const ModuleRegistry& registry,
+    ProcessingChainContext context,
+    std::uint64_t revision,
+    std::vector<ModuleInstance> instances)
+{
+    if (!valid_context(context)) {
+        return Result<ProcessingChain>::failure(dsp_error(
+            ErrorCode::InvalidArgument,
+            "MODULE_STAGE_NOT_ALLOWED",
+            "Processing-chain stage and segment are inconsistent."));
+    }
+    ProcessingChain chain{registry, context};
+    const auto valid = chain.validate(instances);
+    if (!valid) {
+        return Result<ProcessingChain>::failure(*valid.error());
+    }
+    chain.revision_ = revision;
+    chain.instances_ = std::move(instances);
+    return Result<ProcessingChain>::success(std::move(chain));
+}
+
 ProcessingChain::ProcessingChain(
     const ModuleRegistry& registry,
     ProcessingChainContext context) noexcept

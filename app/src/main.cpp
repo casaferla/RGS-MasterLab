@@ -114,10 +114,10 @@ int main(int argc, char* argv[])
         &auditionSelector};
     rgsml::app::ProjectSessionViewModel projectSession{
         &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport,
-        &masteringChainState};
+        &masteringChainState, &gainViewModel, &eqViewModel, &previewController};
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
-         &auditionSelector, &goldSelection, &gainViewModel, &eqViewModel](
+         &auditionSelector, &goldSelection, &gainViewModel, &eqViewModel, &projectSession](
             const rgsml::core::ResourceReference& source) {
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
@@ -131,8 +131,10 @@ int main(int argc, char* argv[])
             if (prepared) {
                 static_cast<void>(auditionSelector.switch_to(
                     rgsml::app::AuditionTarget::PREPARED));
-                gainViewModel.resetForNewSource();
-                eqViewModel.resetForNewSource();
+                if (!projectSession.is_committing_project_open()) {
+                    gainViewModel.resetForNewSource();
+                    eqViewModel.resetForNewSource();
+                }
             }
             goldSelection.sourceChanged();
             sourceWaveform.source_committed(source);

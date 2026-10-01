@@ -173,6 +173,13 @@ void GainViewModel::resetForNewSource()
     emit changed();
 }
 
+void GainViewModel::refreshFromAuthority()
+{
+    validationError_.clear();
+    draftGainDbText_.clear();
+    emit changed();
+}
+
 void GainViewModel::request_preview()
 {
     if (externalPreviewController_) {

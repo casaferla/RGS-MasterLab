@@ -177,6 +177,7 @@ public:
     Q_INVOKABLE void redo();
     Q_INVOKABLE void resetToFlat();
     Q_INVOKABLE void resetForNewSource();
+    Q_INVOKABLE void refreshFromAuthority();
 
     Q_INVOKABLE void setDraftFrequency(double frequency);
     Q_INVOKABLE void setDraftGain(double gain);

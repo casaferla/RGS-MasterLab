@@ -33,6 +33,7 @@ private slots:
     void failuresAreAtomic();
     void hardAdvisoryAndSingleActiveConstraints();
     void terminalOrderAndRevisionOverflow();
+    void restorePreservesRevisionAndControlState();
 };
 
 void ProcessingChainTest::moduleInstanceControlState()
@@ -364,6 +365,44 @@ void ProcessingChainTest::terminalOrderAndRevisionOverflow()
         *registry.value(),
         {ProcessingStage::RESTORE_PREP, ChainSegment::MANUAL});
     QVERIFY(invalidContext.error() != nullptr);
+}
+
+void ProcessingChainTest::restorePreservesRevisionAndControlState()
+{
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry.value() != nullptr);
+
+    const auto gainId = make_id("00000000-0000-0000-0000-000000000051");
+    const auto eqId = make_id("00000000-0000-0000-0000-000000000052");
+
+    auto gainInst = ModuleInstance::create(ModuleInstanceSpec{
+        gainId, "rgsml.dsp.gain", true, true, false, false,
+        ModuleProvenance::MANUAL, ModuleOwner::USER, ModuleLinkState::UNLINKED, std::nullopt, {}
+    });
+    QVERIFY(gainInst);
+
+    auto eqInst = ModuleInstance::create(ModuleInstanceSpec{
+        eqId, "rgsml.dsp.parametric-eq", true, false, false, false,
+        ModuleProvenance::MANUAL, ModuleOwner::USER, ModuleLinkState::UNLINKED, std::nullopt, {}
+    });
+    QVERIFY(eqInst);
+
+    constexpr std::uint64_t targetRevision = 42U;
+    auto restored = ProcessingChain::restore(
+        *registry.value(),
+        {ProcessingStage::MASTER, ChainSegment::MANUAL},
+        targetRevision,
+        { *gainInst.value(), *eqInst.value() });
+
+    QVERIFY(restored);
+    QCOMPARE(restored.value()->revision(), targetRevision);
+    QCOMPARE(restored.value()->instances().size(), std::size_t{2});
+    QVERIFY(restored.value()->instances()[0].user_bypass());
+    QVERIFY(!restored.value()->instances()[1].user_bypass());
+
+    // Subsequent mutation increments from restored revision
+    QVERIFY(restored.value()->set_user_bypass(gainId, false));
+    QCOMPARE(restored.value()->revision(), targetRevision + 1U);
 }
 
 }  // namespace
