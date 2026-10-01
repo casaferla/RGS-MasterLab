@@ -18,6 +18,9 @@ class GainViewModel final : public QObject {
     Q_PROPERTY(QString gainDbText READ gain_db_text NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
     Q_PROPERTY(QString validationError READ validation_error NOTIFY changed)
+    Q_PROPERTY(quint64 previewGeneration READ preview_generation NOTIFY changed)
+    Q_PROPERTY(QString previewStatus READ preview_status NOTIFY changed)
+    Q_PROPERTY(QString previewError READ preview_error NOTIFY changed)
 
 public:
     explicit GainViewModel(
@@ -33,6 +36,9 @@ public:
     [[nodiscard]] QString gain_db_text() const;
     [[nodiscard]] bool bypass() const noexcept;
     [[nodiscard]] QString validation_error() const;
+    [[nodiscard]] quint64 preview_generation() const noexcept;
+    [[nodiscard]] QString preview_status() const;
+    [[nodiscard]] QString preview_error() const;
 
     Q_INVOKABLE bool setGainDb(double gainDb);
     Q_INVOKABLE bool setGainDbText(const QString& text);

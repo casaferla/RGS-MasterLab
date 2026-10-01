@@ -35,6 +35,12 @@ ApplicationWindow {
     readonly property int upperStripHorizontalPadding: 12
     readonly property int auditionRegionVerticalPadding: 6
 
+    // Capture application context objects under unambiguous names before
+    // passing them into components that expose same-named properties.
+    readonly property var appGainViewModel: typeof gainViewModel !== "undefined" ? gainViewModel : null
+    readonly property var appEqViewModel: typeof eqViewModel !== "undefined" ? eqViewModel : null
+    readonly property var appSpectrumViewModel: typeof liveSpectrumViewModel !== "undefined" ? liveSpectrumViewModel : null
+
     readonly property bool hasError: {
         return projectSession.errorMessage.length > 0
             || sourceSelection.errorMessage.length > 0
@@ -252,8 +258,9 @@ ApplicationWindow {
         DspWorkspace {
             id: realDspWorkspace
             objectName: "dspWorkspace"
-            viewModel: eqViewModel
-            spectrumViewModel: typeof liveSpectrumViewModel !== "undefined" ? liveSpectrumViewModel : null
+            gainViewModel: root.appGainViewModel
+            eqViewModel: root.appEqViewModel
+            spectrumViewModel: root.appSpectrumViewModel
         }
     }
 
@@ -330,11 +337,20 @@ ApplicationWindow {
                         title: "&View"
                         background: Rectangle { color: root.surface; border.color: root.border }
                         StudioMenuItem {
+                            objectName: "menuViewInputGain"
+                            text: "Input Gain"
+                            enabled: true
+                            onTriggered: {
+                                realDspWorkspace.selectedModuleIndex = 0
+                                realDspWorkspace.editorHost.forceActiveFocus()
+                            }
+                        }
+                        StudioMenuItem {
                             objectName: "menuViewParametricEq"
                             text: "Parametric EQ"
                             enabled: true
                             onTriggered: {
-                                realDspWorkspace.selectedModuleIndex = 0
+                                realDspWorkspace.selectedModuleIndex = 1
                                 realDspWorkspace.editorHost.forceActiveFocus()
                             }
                         }

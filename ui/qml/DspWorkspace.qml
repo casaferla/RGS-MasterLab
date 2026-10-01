@@ -6,9 +6,13 @@ Rectangle {
     id: root
     objectName: "dspWorkspace"
 
-    property var viewModel: null
-    property var spectrumViewModel: null
     property int selectedModuleIndex: 0
+    property var gainViewModel: null
+    property var eqViewModel: null
+    property var spectrumViewModel: null
+
+    // Backward-compatibility alias so code referencing workspace.viewModel sets/gets eqViewModel
+    property alias viewModel: root.eqViewModel
 
     property alias chainSelector: realChainSelector
     property alias editorHost: realEditorHost
@@ -31,16 +35,21 @@ Rectangle {
             id: realChainSelector
             objectName: "dspChainSelector"
             selectedIndex: root.selectedModuleIndex
-            eqViewModel: root.viewModel
+            gainViewModel: root.gainViewModel
+            eqViewModel: root.eqViewModel
             onSelectedIndexChanged: root.selectedModuleIndex = selectedIndex
         }
 
         DspEditorHost {
             id: realEditorHost
             objectName: "dspEditorHost"
-            viewModel: root.viewModel
+            selectedModuleIndex: root.selectedModuleIndex
+            gainViewModel: root.gainViewModel
+            eqViewModel: root.eqViewModel
             spectrumViewModel: root.spectrumViewModel
-            activeChainRow: realChainSelector.findChild ? realChainSelector.findChild("dspChainRow_0") : null
+            activeChainRow: root.selectedModuleIndex === 0
+                ? realChainSelector.inputGainRow
+                : realChainSelector.parametricEqRow
         }
     }
 }
