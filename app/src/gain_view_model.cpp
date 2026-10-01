@@ -31,6 +31,11 @@ GainViewModel::GainViewModel(
     } else if (externalChainState_ && !externalPreviewController_->preview_generation()) {
         externalPreviewController_->set_chain_state(externalChainState_);
     }
+
+    auto* controller = externalPreviewController_ ? externalPreviewController_ : ownedPreviewController_.get();
+    if (controller != nullptr) {
+        connect(controller, &MasteringPreviewController::changed, this, &GainViewModel::changed);
+    }
 }
 
 MasteringChainState& GainViewModel::active_chain_state() const noexcept
@@ -61,6 +66,39 @@ bool GainViewModel::bypass() const noexcept
 QString GainViewModel::validation_error() const
 {
     return validationError_;
+}
+
+quint64 GainViewModel::preview_generation() const noexcept
+{
+    if (externalPreviewController_) {
+        return externalPreviewController_->preview_generation();
+    }
+    if (ownedPreviewController_) {
+        return ownedPreviewController_->preview_generation();
+    }
+    return 0;
+}
+
+QString GainViewModel::preview_status() const
+{
+    if (externalPreviewController_) {
+        return externalPreviewController_->preview_status();
+    }
+    if (ownedPreviewController_) {
+        return ownedPreviewController_->preview_status();
+    }
+    return QStringLiteral("IDLE");
+}
+
+QString GainViewModel::preview_error() const
+{
+    if (externalPreviewController_) {
+        return externalPreviewController_->preview_error();
+    }
+    if (ownedPreviewController_) {
+        return ownedPreviewController_->preview_error();
+    }
+    return {};
 }
 
 bool GainViewModel::setGainDb(double gainDb)

@@ -1,6 +1,7 @@
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
 #include "eq_view_model.hpp"
+#include "gain_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "live_spectrum_view_model.hpp"
 #include "playback_transport_view_model.hpp"
@@ -354,6 +355,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     ui::WaveformPresentation waveformPresentation;
     app::AuditionRegionViewModel auditionRegion{&playbackTransport};
     app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    app::GainViewModel gainViewModel;
     app::EqViewModel eqViewModel{
         [&auditionSelector] {
             return auditionSelector.prepared_realization_snapshot();
@@ -383,7 +385,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             return core::Status::success();
         });
     model.set_source_committed_handler(
-        [&model, &auditionRegion, &auditionSelector, &goldSelection, &eqViewModel](
+        [&model, &auditionRegion, &auditionSelector, &goldSelection, &gainViewModel, &eqViewModel](
             const core::ResourceReference& source) {
             const auto frames = core::FrameCount::create(model.frame_count());
             const auto rate = core::SampleRate::create(model.sample_rate_hz());
@@ -391,6 +393,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             auditionRegion.source_committed(*frames.value(), *rate.value());
             QVERIFY(auditionSelector.source_committed(source));
             QVERIFY(auditionSelector.switch_to(app::AuditionTarget::PREPARED));
+            gainViewModel.resetForNewSource();
             eqViewModel.resetForNewSource();
             QCOMPARE(eqViewModel.band_count(), 1);
             QCOMPARE(eqViewModel.selected_index(), 0);
@@ -443,6 +446,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("goldSelection"), &goldSelection);
     engine.rootContext()->setContextProperty(
         QStringLiteral("projectSession"), &projectSession);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("gainViewModel"), &gainViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("eqViewModel"), &eqViewModel);
     engine.rootContext()->setContextProperty(
@@ -668,8 +673,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(goldMenuItem && goldFileDialog);
     QVERIFY(goldMenuItem->property("enabled").toBool());
     QVERIFY(goldMenuItem->width() > 0);
+    auto* gainMenuItem = root->findChild<QObject*>(
+        QStringLiteral("menuViewInputGain"));
     auto* eqMenuItem = root->findChild<QObject*>(
         QStringLiteral("menuViewParametricEq"));
+    QVERIFY(gainMenuItem);
+    QCOMPARE(gainMenuItem->property("text").toString(), QStringLiteral("Input Gain"));
+    QVERIFY(gainMenuItem->property("enabled").toBool());
     QVERIFY(eqMenuItem);
     QCOMPARE(eqMenuItem->property("text").toString(), QStringLiteral("Parametric EQ"));
     QVERIFY(eqMenuItem->property("enabled").toBool());
@@ -749,7 +759,93 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(saveProjectItem->property("enabled").toBool());
     QVERIFY(eqMenuItem->property("enabled").toBool());
 
-    // Exercise View Menu real mouse interaction when Source is loaded: selects/reveals docked EQ
+    // B4.3 Multi-Module Workspace Verification
+    qInfo().noquote() << "M12C_SMOKE_PHASE=dsp-chain-rows-and-input-gain-editor";
+    auto* dspChainRow0 = root->findChild<QObject*>(QStringLiteral("dspChainRow_0"));
+    auto* dspChainConfigLed0 = root->findChild<QObject*>(QStringLiteral("dspChainConfigLed_0"));
+    auto* dspChainBypassBadge0 = root->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_0"));
+    auto* dspChainStateText0 = root->findChild<QObject*>(QStringLiteral("dspChainStateText_0"));
+
+    auto* dspChainRow1 = root->findChild<QObject*>(QStringLiteral("dspChainRow_1"));
+    auto* dspChainConfigLed1 = root->findChild<QObject*>(QStringLiteral("dspChainConfigLed_1"));
+    auto* dspChainBypassBadge1 = root->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_1"));
+    auto* dspChainStateText1 = root->findChild<QObject*>(QStringLiteral("dspChainStateText_1"));
+
+    QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr && dspChainStateText0 != nullptr, "Row 0 (Input Gain) components must exist");
+    QVERIFY2(dspChainRow1 != nullptr && dspChainConfigLed1 != nullptr && dspChainStateText1 != nullptr, "Row 1 (Parametric EQ) components must exist");
+
+    // Default selected module index is 0 (Input Gain)
+    QCOMPARE(dspWorkspaceObj->property("selectedModuleIndex").toInt(), 0);
+
+    // Initial Gain state text & LED
+    QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
+    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QVERIFY2(!dspChainBypassBadge0->property("visible").toBool(), "Gain BYP badge must be hidden initially");
+
+    // Initial EQ state text & LED
+    QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Flat Default"));
+    QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QVERIFY2(!dspChainBypassBadge1->property("visible").toBool(), "EQ BYP badge must be hidden initially");
+
+    // Input Gain Editor controls
+    auto* inputGainEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("inputGainEditor"));
+    QVERIFY2(inputGainEditor != nullptr, "inputGainEditor must exist in dspEditorHost");
+    QVERIFY2(inputGainEditor->property("visible").toBool(), "inputGainEditor must be visible at selectedModuleIndex = 0");
+
+    auto* gainDbDisplay = inputGainEditor->findChild<QObject*>(QStringLiteral("gainDbDisplay"));
+    auto* gainDbInput = inputGainEditor->findChild<QObject*>(QStringLiteral("gainDbInput"));
+    auto* gainSlider = inputGainEditor->findChild<QObject*>(QStringLiteral("gainSlider"));
+    auto* resetGainButton = inputGainEditor->findChild<QObject*>(QStringLiteral("resetGainButton"));
+    auto* gainValidationError = inputGainEditor->findChild<QObject*>(QStringLiteral("gainValidationError"));
+
+    QVERIFY2(gainDbDisplay && gainDbInput && gainSlider && resetGainButton && gainValidationError, "Input Gain editor controls must exist");
+    QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("0.0 dB"));
+    QCOMPARE(gainDbInput->property("text").toString(), QStringLiteral("0.0"));
+
+    // Modify Input Gain to +3.5 dB via ViewModel
+    QVERIFY(gainViewModel.setGainDb(3.5));
+    QCoreApplication::processEvents();
+    QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("+3.5 dB"));
+    QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("+3.5 dB Manual"));
+    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
+
+    // Valid gain bounds: -24.0 and +24.0 accepted
+    QVERIFY(gainViewModel.setGainDb(-24.0));
+    QCoreApplication::processEvents();
+    QCOMPARE(gainViewModel.gain_db(), -24.0);
+
+    QVERIFY(gainViewModel.setGainDb(24.0));
+    QCoreApplication::processEvents();
+    QCOMPARE(gainViewModel.gain_db(), 24.0);
+
+    // Invalid gain text format shows validation error and preserves previous value
+    QVERIFY(!gainViewModel.setGainDbText(QStringLiteral("invalid")));
+    QCoreApplication::processEvents();
+    QVERIFY2(!gainViewModel.validation_error().isEmpty(), "Validation error must be non-empty for invalid gain text");
+    QVERIFY2(gainValidationError->property("visible").toBool(), "gainValidationError must be visible when error exists");
+
+    // Reset button restores 0.0 dB default
+    QVERIFY2(QMetaObject::invokeMethod(resetGainButton, "clicked"), "Clicking resetGainButton must succeed");
+    QCoreApplication::processEvents();
+    QCOMPARE(gainViewModel.gain_db(), 0.0);
+    QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
+    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QVERIFY2(!gainValidationError->property("visible").toBool(), "gainValidationError must be hidden after reset");
+
+    // Escape key in editor host restores focus to active chain row
+    auto* gainDbInputItem = qobject_cast<QQuickItem*>(gainDbInput);
+    auto* dspChainRow0Item = qobject_cast<QQuickItem*>(dspChainRow0);
+    QVERIFY(gainDbInputItem && dspChainRow0Item);
+    window->requestActivate();
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    gainDbInputItem->forceActiveFocus();
+    QVERIFY(gainDbInputItem->hasActiveFocus());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QCoreApplication::processEvents();
+    QVERIFY2(dspChainRow0Item->hasActiveFocus(), "Escape key in editor host must restore focus to active chain row");
+
+    // View Menu switching between Input Gain (0) and Parametric EQ (1)
     qInfo().noquote() << "M12C_SMOKE_PHASE=view-menu-selects-docked-eq";
     auto* viewMenuLabel = root->findChild<QObject*>(QStringLiteral("desktopMenuBarLabel_View"));
     auto* viewMenu = root->findChild<QObject*>(QStringLiteral("desktopViewMenu"));
@@ -769,17 +865,25 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(realEqMenuItem->property("visible").toBool());
     QVERIFY(realEqMenuItem->property("enabled").toBool());
 
+    const double gainDbBeforeSwitch = gainViewModel.gain_db();
+    const bool gainBypassBeforeSwitch = gainViewModel.bypass();
+    const bool eqDefaultBeforeSwitch = eqViewModel.is_default();
+
     const auto eqMenuCenter = realEqMenuQuickItem->mapToScene(QPointF{
         realEqMenuQuickItem->width() / 2, realEqMenuQuickItem->height() / 2});
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, eqMenuCenter.toPoint());
     QTest::qWait(120);
     QCoreApplication::processEvents();
 
-    QCOMPARE(dspWorkspaceObj->property("selectedModuleIndex").toInt(), 0);
+    QCOMPARE(dspWorkspaceObj->property("selectedModuleIndex").toInt(), 1);
+    QCOMPARE(gainViewModel.gain_db(), gainDbBeforeSwitch);
+    QCOMPARE(gainViewModel.bypass(), gainBypassBeforeSwitch);
+    QCOMPARE(eqViewModel.is_default(), eqDefaultBeforeSwitch);
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=editor-lookup";
     auto* eqEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
     QVERIFY2(eqEditor != nullptr, "parametricEqEditor must exist inside dspEditorHost");
+    QVERIFY2(eqEditor->property("visible").toBool(), "parametricEqEditor must be visible at selectedModuleIndex = 1");
     auto* eqGraph = eqEditor->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
     QVERIFY2(eqGraph != nullptr, "parametricEqGraph must exist inside eqEditor");
     QVERIFY2(!eqViewModel.selected_band_response_points().isEmpty(), "eqViewModel response points must not be empty");
@@ -787,18 +891,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(eqEditor->findChild<QObject*>(QStringLiteral("spectrumAnalyzer")) == nullptr, "No fake analyzer or spectrum item must exist");
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=dsp-chain-row-led-and-byp";
-    auto* dspChainRow0 = root->findChild<QObject*>(QStringLiteral("dspChainRow_0"));
-    auto* dspChainConfigLed0 = root->findChild<QObject*>(QStringLiteral("dspChainConfigLed_0"));
-    auto* dspChainBypassBadge0 = root->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_0"));
-    auto* dspChainStateText0 = root->findChild<QObject*>(QStringLiteral("dspChainStateText_0"));
-    QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr, "DSP chain row and config LED must exist");
-    QVERIFY2(dspChainBypassBadge0 != nullptr, "DSP chain bypass badge object must exist");
-    QVERIFY2(dspChainStateText0 != nullptr, "DSP chain state text must exist");
-
     // Canonical Flat state -> config LED is dark (#273A4D), BYP badge is hidden
     QVERIFY2(eqViewModel.is_default(), "EQ state must be default/flat initially");
-    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
-    QVERIFY2(!dspChainBypassBadge0->property("visible").toBool(), "BYP badge must be hidden initially");
+    QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QVERIFY2(!dspChainBypassBadge1->property("visible").toBool(), "EQ BYP badge must be hidden initially");
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=band-controls";
     auto* band0Btn = find_child_by_name(eqEditor, QStringLiteral("bandSelectorButton_0"));
@@ -938,28 +1034,28 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle click must restore spectrumEnabled to true");
     QVERIFY2(spectrumCanvasObj->property("visible").toBool(), "spectrumCanvas must be restored visible when SPECTRUM is ON");
 
-    // Click Bypass -> BYP badge becomes visible on DSP chain row, while config LED remains unchanged
+    // Click Bypass -> BYP badge becomes visible on EQ DSP chain row, while config LED remains unchanged
     QVERIFY2(QMetaObject::invokeMethod(abBypassBtn, "clicked"), "Clicking abButtonBypass must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.bypass(), "eqViewModel.bypass must be true after clicking Bypass");
-    QVERIFY2(dspChainBypassBadge0->property("visible").toBool(), "dspChainBypassBadge_0 must be visible when bypassed");
+    QVERIFY2(dspChainBypassBadge1->property("visible").toBool(), "dspChainBypassBadge_1 must be visible when bypassed");
 
     QVERIFY2(QMetaObject::invokeMethod(abActiveBtn, "clicked"), "Clicking abButtonActive must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(!eqViewModel.bypass(), "eqViewModel.bypass must be false after clicking Active");
-    QVERIFY2(!dspChainBypassBadge0->property("visible").toBool(), "dspChainBypassBadge_0 must be hidden when active");
+    QVERIFY2(!dspChainBypassBadge1->property("visible").toBool(), "dspChainBypassBadge_1 must be hidden when active");
 
     // Reset Flat -> restores Default status -> LED turns dark #273A4D
     QVERIFY2(QMetaObject::invokeMethod(resetFlatBtn, "clicked"), "Clicking eqResetFlatButton must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.is_default(), "EQ state must be default/flat after Reset Flat");
-    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
 
     // Undo -> restores 2-band non-default state -> LED turns Green #00D47A
     QVERIFY2(QMetaObject::invokeMethod(undoBtn, "clicked"), "Clicking eqUndoButton must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(!eqViewModel.is_default(), "EQ state must be non-default after Undo");
-    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
+    QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=stereo-mixed-routing-and-band-colors";
     const auto visualSourceBytes = visual_wav();
@@ -1100,8 +1196,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(compactW, compactH));
     QCOMPARE(dspChainSelectorObj->property("width").toInt(), 164);
-    QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("Manual Edit"));
-    QVERIFY2(dspChainStateText0->property("visible").toBool(),
+    QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
+    QVERIFY2(dspChainStateText1->property("visible").toBool(),
         "Manual Edit must remain visible at the minimum supported window size");
 
     // HP/LP compact slope controls must all remain usable at the minimum window size.

@@ -252,7 +252,8 @@ ApplicationWindow {
         DspWorkspace {
             id: realDspWorkspace
             objectName: "dspWorkspace"
-            viewModel: eqViewModel
+            gainViewModel: typeof gainViewModel !== "undefined" ? gainViewModel : null
+            eqViewModel: typeof eqViewModel !== "undefined" ? eqViewModel : null
             spectrumViewModel: typeof liveSpectrumViewModel !== "undefined" ? liveSpectrumViewModel : null
         }
     }
@@ -330,11 +331,20 @@ ApplicationWindow {
                         title: "&View"
                         background: Rectangle { color: root.surface; border.color: root.border }
                         StudioMenuItem {
+                            objectName: "menuViewInputGain"
+                            text: "Input Gain"
+                            enabled: true
+                            onTriggered: {
+                                realDspWorkspace.selectedModuleIndex = 0
+                                realDspWorkspace.editorHost.forceActiveFocus()
+                            }
+                        }
+                        StudioMenuItem {
                             objectName: "menuViewParametricEq"
                             text: "Parametric EQ"
                             enabled: true
                             onTriggered: {
-                                realDspWorkspace.selectedModuleIndex = 0
+                                realDspWorkspace.selectedModuleIndex = 1
                                 realDspWorkspace.editorHost.forceActiveFocus()
                             }
                         }
