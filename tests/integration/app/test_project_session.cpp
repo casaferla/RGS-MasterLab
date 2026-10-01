@@ -357,6 +357,7 @@ void ProjectSessionTest::externally_opened_processing_preserved_not_overwritten(
     extChain.chainId = externalChainId;
     extChain.stage = "MASTER";
     extChain.segment = "MANUAL";
+    doc.chains.clear();
     doc.chains.push_back(extChain);
 
     auto future = project::OpaqueJsonValue::parse("{\"future\":{\"enabled\":true}}");
