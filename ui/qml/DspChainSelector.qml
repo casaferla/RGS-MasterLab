@@ -13,6 +13,10 @@ Rectangle {
     property var gainViewModel: null
     property var eqViewModel: null
 
+    // Explicit focus targets for the unified editor host.
+    property alias inputGainRow: gainRow
+    property alias parametricEqRow: eqRow
+
     color: "#0B1622"
     border.color: "#1E354A"
     border.width: 1
