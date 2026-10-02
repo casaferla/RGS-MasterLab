@@ -1,11 +1,15 @@
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
+#include "dsp_chain_adapter_model.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "live_spectrum_view_model.hpp"
+#include "mastering_chain_state.hpp"
+#include "mastering_preview_controller.hpp"
 #include "playback_transport_view_model.hpp"
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
+#include <rgsml/dsp/module_registry.hpp>
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "waveform_item.hpp"
@@ -464,20 +468,24 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     ui::WaveformPresentation waveformPresentation;
     app::AuditionRegionViewModel auditionRegion{&playbackTransport};
     app::AuditionSourceSelector auditionSelector{&playbackTransport};
-    app::GainViewModel gainViewModel;
+
+    auto moduleRegistry = dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto chainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto gainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
+    const auto eqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+    auto masteringChainStateRes = app::MasteringChainState::create_default(*moduleRegistry.value(), chainUuid, gainId, eqId);
+    QVERIFY(masteringChainStateRes);
+    auto masteringChainState = std::move(*masteringChainStateRes.value());
+
+    app::GainViewModel gainViewModel{&masteringChainState, nullptr};
     app::EqViewModel eqViewModel{
-        [&auditionSelector] {
-            return auditionSelector.prepared_realization_snapshot();
-        },
-        [&auditionSelector](render::RenderResult result) {
-            const bool wasProcessed = auditionSelector.active_target() == app::AuditionTarget::PROCESSED;
-            auto status = auditionSelector.set_processed_realization(std::move(result));
-            if (status && wasProcessed) {
-                static_cast<void>(auditionSelector.switch_to(app::AuditionTarget::PROCESSED));
-            }
-            return status;
-        }
+        &masteringChainState,
+        nullptr
     };
+    app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &masteringChainState};
+
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
     app::ProjectSessionViewModel projectSession{
         &model, &goldSelection, &auditionRegion, &playbackTransport};
@@ -494,7 +502,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             return core::Status::success();
         });
     model.set_source_committed_handler(
-        [&model, &auditionRegion, &auditionSelector, &goldSelection, &gainViewModel, &eqViewModel](
+        [&model, &auditionRegion, &auditionSelector, &goldSelection, &dspChainAdapterModel](
             const core::ResourceReference& source) {
             const auto frames = core::FrameCount::create(model.frame_count());
             const auto rate = core::SampleRate::create(model.sample_rate_hz());
@@ -502,19 +510,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             auditionRegion.source_committed(*frames.value(), *rate.value());
             QVERIFY(auditionSelector.source_committed(source));
             QVERIFY(auditionSelector.switch_to(app::AuditionTarget::PREPARED));
-            gainViewModel.resetForNewSource();
-            eqViewModel.resetForNewSource();
-            QCOMPARE(eqViewModel.band_count(), 1);
-            QCOMPARE(eqViewModel.selected_index(), 0);
-            QCOMPARE(eqViewModel.filter_label(), QStringLiteral("BELL"));
-            QCOMPARE(eqViewModel.routing_label(), QStringLiteral("STEREO"));
-            QCOMPARE(eqViewModel.frequency(), 1000.0);
-            QCOMPARE(eqViewModel.gain(), 0.0);
-            QCOMPARE(eqViewModel.q(), 0.707);
-            QVERIFY(!eqViewModel.bypass());
-            QVERIFY(eqViewModel.is_default());
-            QVERIFY(!eqViewModel.can_undo());
-            QVERIFY(!eqViewModel.can_redo());
+            dspChainAdapterModel.resetForNewSource();
             goldSelection.sourceChanged();
         });
     waveformPresentation.set_seek_handler(
@@ -559,6 +555,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("gainViewModel"), &gainViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("eqViewModel"), &eqViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("dspChainAdapterModel"), &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"), &liveSpectrumVM);
     engine.loadFromModule("Rgsml.Ui", "Main");

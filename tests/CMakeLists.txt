@@ -1165,3 +1165,38 @@ set_tests_properties(rgsml_live_spectrum_stress_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "analysis;stress"
 )
+
+qt_add_executable(rgsml_dsp_module_adapter_tests
+    unit/app/test_dsp_module_adapter.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
+)
+target_include_directories(rgsml_dsp_module_adapter_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_dsp_module_adapter_tests
+    PRIVATE
+        rgsml_render
+        rgsml_dsp
+        rgsml_audio
+        rgsml_core
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_dsp_module_adapter_tests)
+add_test(NAME rgsml_dsp_module_adapter_tests COMMAND rgsml_dsp_module_adapter_tests)
+set_tests_properties(rgsml_dsp_module_adapter_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;dsp_adapter;view_model"
+)

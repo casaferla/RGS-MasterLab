@@ -258,6 +258,7 @@ ApplicationWindow {
         DspWorkspace {
             id: realDspWorkspace
             objectName: "dspWorkspace"
+            adapterModel: typeof dspChainAdapterModel !== "undefined" ? dspChainAdapterModel : null
             gainViewModel: root.appGainViewModel
             eqViewModel: root.appEqViewModel
             spectrumViewModel: root.appSpectrumViewModel
