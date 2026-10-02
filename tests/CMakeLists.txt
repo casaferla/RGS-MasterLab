@@ -371,6 +371,10 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
