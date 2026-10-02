@@ -64,6 +64,10 @@ qt_add_executable(rgsml_project_session_tests
     ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
