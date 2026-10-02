@@ -58,6 +58,12 @@ qt_add_executable(rgsml_project_session_tests
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp

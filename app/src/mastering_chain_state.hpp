@@ -35,6 +35,15 @@ public:
         dsp::ParametricEqParameters eq_params,
         bool eq_bypassed);
 
+    [[nodiscard]] static rgsml::core::Result<MasteringChainState> restore(
+        std::shared_ptr<const dsp::ModuleRegistry> registry,
+        rgsml::core::Uuid chain_id,
+        dsp::ProcessingChain chain,
+        dsp::ModuleInstanceId gain_id,
+        dsp::GainParameters gain_params,
+        dsp::ModuleInstanceId eq_id,
+        dsp::ParametricEqParameters eq_params);
+
     [[nodiscard]] const rgsml::core::Uuid& chain_id() const noexcept;
     [[nodiscard]] const dsp::ProcessingChain& chain() const noexcept;
     [[nodiscard]] std::span<const dsp::ModuleInstance> instances() const noexcept;

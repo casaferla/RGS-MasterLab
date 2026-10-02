@@ -712,6 +712,34 @@ void EqViewModel::resetForNewSource()
     request_preview();
 }
 
+void EqViewModel::refreshFromAuthority()
+{
+    const auto& authBands = active_chain_state().parametric_eq_parameters().bands();
+    if (!authBands.empty()) {
+        committedBands_ = authBands;
+        selectedIndex_ = 0;
+        draftBand_ = band_to_draft(committedBands_[0]);
+    } else {
+        const auto defaultId = idGenerator_();
+        draftBand_ = make_default_band(defaultId);
+        auto firstBandParam = make_band_parameters(draftBand_, max_frequency_hz());
+        if (firstBandParam) {
+            committedBands_ = { *firstBandParam };
+        }
+        selectedIndex_ = 0;
+    }
+
+    undoStack_.clear();
+    redoStack_.clear();
+
+    validationField_.clear();
+    validationMessage_.clear();
+
+    update_response_grid();
+    update_validation_state();
+    emit changed();
+}
+
 void EqViewModel::setDraftFrequency(double frequencyVal)
 {
     setDraftFrequencyText(QString::number(frequencyVal));

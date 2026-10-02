@@ -25,6 +25,12 @@ public:
     [[nodiscard]] static rgsml::core::Result<ProcessingChain>
     create(const ModuleRegistry& registry, ProcessingChainContext context);
 
+    [[nodiscard]] static rgsml::core::Result<ProcessingChain> restore(
+        const ModuleRegistry& registry,
+        ProcessingChainContext context,
+        std::uint64_t revision,
+        std::vector<ModuleInstance> instances);
+
     [[nodiscard]] ProcessingChainContext context() const noexcept;
     [[nodiscard]] std::uint64_t revision() const noexcept;
     [[nodiscard]] std::span<const ModuleInstance> instances() const noexcept;

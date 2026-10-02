@@ -127,6 +127,80 @@ Result<MasteringChainState> MasteringChainState::create(
         std::move(eq_params)});
 }
 
+Result<MasteringChainState> MasteringChainState::restore(
+    std::shared_ptr<const ModuleRegistry> registry,
+    Uuid chain_id,
+    ProcessingChain chain,
+    ModuleInstanceId gain_id,
+    GainParameters gain_params,
+    ModuleInstanceId eq_id,
+    ParametricEqParameters eq_params)
+{
+    if (!registry) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "NO_REGISTRY",
+            "MasteringChainState restore requires a valid module registry."));
+    }
+    if (chain_id.is_nil()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_CHAIN_ID",
+            "MasteringChainState requires an explicit non-nil chain_id."));
+    }
+    if (gain_id.uuid().is_nil()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_MODULE_INSTANCE_ID",
+            "MasteringChainState requires an explicit non-nil gain_instance_id."));
+    }
+    if (eq_id.uuid().is_nil()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_MODULE_INSTANCE_ID",
+            "MasteringChainState requires an explicit non-nil eq_instance_id."));
+    }
+    if (gain_id == eq_id) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "DUPLICATE_MODULE_INSTANCE_ID",
+            "Gain and Parametric EQ module instance IDs must be unique."));
+    }
+    if (chain.context().stage != ProcessingStage::MASTER || chain.context().segment != ChainSegment::MANUAL) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_CHAIN_CONTEXT",
+            "MasteringChainState requires a MASTER/MANUAL processing chain context."));
+    }
+    if (chain.instances().size() != 2U) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_MODULE_COUNT",
+            "MasteringChainState requires exactly 2 module instances."));
+    }
+    if (chain.instances()[0].instance_id() != gain_id || chain.instances()[0].module_type_id() != kGainTypeId) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_GAIN_MODULE",
+            "Module 0 must be Input Gain with matching instance_id."));
+    }
+    if (chain.instances()[1].instance_id() != eq_id || chain.instances()[1].module_type_id() != kEqTypeId) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_EQ_MODULE",
+            "Module 1 must be Parametric EQ with matching instance_id."));
+    }
+
+    return Result<MasteringChainState>::success(MasteringChainState{
+        std::move(registry),
+        chain_id,
+        std::move(chain),
+        gain_id,
+        std::move(gain_params),
+        eq_id,
+        std::move(eq_params)});
+}
+
 MasteringChainState::MasteringChainState(
     std::shared_ptr<const ModuleRegistry> registry,
     Uuid chain_id,

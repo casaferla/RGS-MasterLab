@@ -1,8 +1,11 @@
 #include "project_session_view_model.hpp"
 
 #include "audition_region_view_model.hpp"
+#include "eq_view_model.hpp"
+#include "gain_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "mastering_chain_state.hpp"
+#include "mastering_preview_controller.hpp"
 #include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
 
@@ -110,11 +113,196 @@ namespace {
         return true;
     }
 
-    if (doc.pipeline.masteringChainId || !doc.chains.empty()) {
+    if (doc.chains.size() > 1U) {
         return true;
     }
 
     return false;
+}
+
+struct MasteringChainCandidate final {
+    std::optional<MasteringChainState> chainState;
+    bool isMaterialized{false};
+};
+
+[[nodiscard]] core::Result<MasteringChainCandidate> validate_mastering_chain(
+    const project::ProjectDocument& doc,
+    const dsp::ModuleRegistry& registry,
+    const ProjectSessionViewModel::UuidFactory& uuidFactory)
+{
+    if (!doc.pipeline.masteringChainId.has_value()) {
+        if (!doc.chains.empty()) {
+            return core::Result<MasteringChainCandidate>::failure(core::Error{
+                core::ErrorCode::InvalidArgument,
+                "Ambiguous project document: pipeline.masteringChainId is absent but doc.chains is not empty"});
+        }
+        const auto chainUuid = uuidFactory();
+        const auto gainUuid = uuidFactory();
+        const auto eqUuid = uuidFactory();
+        const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+        const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+
+        auto defaultState = MasteringChainState::create_default(registry, chainUuid, gainId, eqId);
+        if (!defaultState) {
+            return core::Result<MasteringChainCandidate>::failure(*defaultState.error());
+        }
+        return core::Result<MasteringChainCandidate>::success(
+            MasteringChainCandidate{std::move(*defaultState.value()), true});
+    }
+
+    if (doc.chains.empty()) {
+        return core::Result<MasteringChainCandidate>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "Referenced mastering chain is absent from doc.chains",
+            {{"field", "pipeline.masteringChainId"}}});
+    }
+
+    const auto chainId = *doc.pipeline.masteringChainId;
+    const auto chainIt = std::find_if(doc.chains.begin(), doc.chains.end(),
+        [chainId](const project::Chain& c) { return c.chainId == chainId; });
+    if (chainIt == doc.chains.end()) {
+        return core::Result<MasteringChainCandidate>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "Referenced mastering chain ID not found in doc.chains",
+            {{"field", "pipeline.masteringChainId"}}});
+    }
+
+    const auto& chain = *chainIt;
+    if (chain.stage != "MASTER" || chain.segment != "MANUAL") {
+        return core::Result<MasteringChainCandidate>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "Mastering chain must have stage MASTER and segment MANUAL",
+            {{"stage", chain.stage}, {"segment", chain.segment}}});
+    }
+
+    if (chain.modules.size() != 2U) {
+        return core::Result<MasteringChainCandidate>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "Supported B4 mastering chain must contain exactly 2 modules",
+            {{"moduleCount", std::to_string(chain.modules.size())}}});
+    }
+
+    const auto& m0 = chain.modules[0];
+    const auto& m1 = chain.modules[1];
+
+    if (m0.typeId != "rgsml.dsp.gain") {
+        return core::Result<MasteringChainCandidate>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "Module 0 of supported B4 mastering chain must be rgsml.dsp.gain",
+            {{"typeId", m0.typeId}}});
+    }
+
+    if (m1.typeId != "rgsml.dsp.parametric-eq") {
+        return core::Result<MasteringChainCandidate>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "Module 1 of supported B4 mastering chain must be rgsml.dsp.parametric-eq",
+            {{"typeId", m1.typeId}}});
+    }
+
+    const auto validate_module_metadata = [&](const project::Module& m,
+                                              std::string_view expectedTypeId) -> core::Status {
+        if (m.provenance != "MANUAL" || m.owner != "USER" ||
+            m.linkState != "UNLINKED" || m.semanticNodeId.has_value()) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidArgument,
+                "Module structural ownership/link state is incompatible",
+                {{"typeId", m.typeId}}});
+        }
+
+        auto descRes = registry.find_descriptor(expectedTypeId);
+        if (!descRes) {
+            return core::Status::failure(*descRes.error());
+        }
+        const auto& desc = descRes.value()->get();
+
+        if (!desc.algorithm_version() || !m.algorithmVersion ||
+            *m.algorithmVersion != *desc.algorithm_version()) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidArgument,
+                "Module algorithmVersion missing or does not match authoritative descriptor",
+                {{"typeId", m.typeId}}});
+        }
+
+        if (!desc.parameter_schema_id() || !m.parameterSchemaId ||
+            *m.parameterSchemaId != *desc.parameter_schema_id()) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidArgument,
+                "Module parameterSchemaId missing or does not match authoritative descriptor",
+                {{"typeId", m.typeId}}});
+        }
+
+        return core::Status::success();
+    };
+
+    auto v0 = validate_module_metadata(m0, "rgsml.dsp.gain");
+    if (!v0) return core::Result<MasteringChainCandidate>::failure(*v0.error());
+
+    auto v1 = validate_module_metadata(m1, "rgsml.dsp.parametric-eq");
+    if (!v1) return core::Result<MasteringChainCandidate>::failure(*v1.error());
+
+    auto decodedGain = dsp::decode_gain_parameters_json(m0.parameters.canonical_utf8());
+    if (!decodedGain) return core::Result<MasteringChainCandidate>::failure(*decodedGain.error());
+
+    auto decodedEq = dsp::decode_parametric_eq_parameters_json(m1.parameters.canonical_utf8());
+    if (!decodedEq) return core::Result<MasteringChainCandidate>::failure(*decodedEq.error());
+
+    const auto gainInstanceId = *dsp::ModuleInstanceId::from_uuid(m0.instanceId).value();
+    const auto eqInstanceId = *dsp::ModuleInstanceId::from_uuid(m1.instanceId).value();
+
+    dsp::ModuleInstanceSpec gainSpec{
+        .instance_id = gainInstanceId,
+        .module_type_id = m0.typeId,
+        .enabled = m0.enabled,
+        .user_bypass = m0.userBypass,
+        .controller_suspended = m0.controllerSuspended,
+        .domain_suspended = m0.domainSuspended,
+        .provenance = dsp::ModuleProvenance::MANUAL,
+        .owner = dsp::ModuleOwner::USER,
+        .link_state = dsp::ModuleLinkState::UNLINKED,
+        .semantic_node_id = std::nullopt,
+        .parameter_state = dsp::ModuleParameterState{}
+    };
+    auto gainInst = dsp::ModuleInstance::create(std::move(gainSpec));
+    if (!gainInst) return core::Result<MasteringChainCandidate>::failure(*gainInst.error());
+
+    dsp::ModuleInstanceSpec eqSpec{
+        .instance_id = eqInstanceId,
+        .module_type_id = m1.typeId,
+        .enabled = m1.enabled,
+        .user_bypass = m1.userBypass,
+        .controller_suspended = m1.controllerSuspended,
+        .domain_suspended = m1.domainSuspended,
+        .provenance = dsp::ModuleProvenance::MANUAL,
+        .owner = dsp::ModuleOwner::USER,
+        .link_state = dsp::ModuleLinkState::UNLINKED,
+        .semantic_node_id = std::nullopt,
+        .parameter_state = dsp::ModuleParameterState{}
+    };
+    auto eqInst = dsp::ModuleInstance::create(std::move(eqSpec));
+    if (!eqInst) return core::Result<MasteringChainCandidate>::failure(*eqInst.error());
+
+    // ProcessingChain retains a non-owning pointer to the registry used at
+    // construction. Build it against the same shared registry that
+    // MasteringChainState will own so the pointer remains valid after this
+    // validation helper returns.
+    auto regPtr = std::make_shared<const dsp::ModuleRegistry>(registry);
+    auto chainRes = dsp::ProcessingChain::restore(*regPtr,
+        {dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL},
+        chain.revision,
+        { *gainInst.value(), *eqInst.value() });
+    if (!chainRes) return core::Result<MasteringChainCandidate>::failure(*chainRes.error());
+
+    auto stateRes = MasteringChainState::restore(std::move(regPtr),
+        chainId,
+        std::move(*chainRes.value()),
+        gainInstanceId,
+        *decodedGain.value(),
+        eqInstanceId,
+        *decodedEq.value());
+    if (!stateRes) return core::Result<MasteringChainCandidate>::failure(*stateRes.error());
+
+    return core::Result<MasteringChainCandidate>::success(
+        MasteringChainCandidate{std::move(*stateRes.value()), true});
 }
 
 }  // namespace
@@ -123,9 +311,14 @@ ProjectSessionViewModel::ProjectSessionViewModel(
     SourceSelectionViewModel* source, GoldSelectionViewModel* gold,
     AuditionRegionViewModel* region, PlaybackTransportViewModel* playback,
     MasteringChainState* masteringChainState,
+    GainViewModel* gainViewModel,
+    EqViewModel* eqViewModel,
+    MasteringPreviewController* previewController,
     UuidFactory uuidFactory, QObject* parent)
     : QObject(parent), source_(source), gold_(gold), region_(region),
       playback_(playback), masteringChainState_(masteringChainState),
+      gainViewModel_(gainViewModel), eqViewModel_(eqViewModel),
+      previewController_(previewController),
       uuidFactory_(std::move(uuidFactory))
 {
     if (!uuidFactory_) {
@@ -421,17 +614,58 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         if (!range) { publish_error(*range.error()); return; }
         regionCandidate = *range.value();
     }
+
+    auto registryRes = dsp::ModuleRegistry::create_dsp_package_v1();
+    if (!registryRes) { publish_error(*registryRes.error()); return; }
+    auto chainCandidate = validate_mastering_chain(doc, *registryRes.value(), uuidFactory_);
+    if (!chainCandidate) { publish_error(*chainCandidate.error()); return; }
+
+    isCommittingProjectOpen_ = true;
+
     auto stopped = playback_->stop_and_clear();
-    if (!stopped) { publish_error(*stopped.error()); return; }
+    if (!stopped) {
+        isCommittingProjectOpen_ = false;
+        publish_error(*stopped.error());
+        return;
+    }
+
     source_->adopt_probed_source(std::move(*sourceCandidate.value()));
     if (goldCandidate) {
         auto accepted = gold_->adopt_probed_gold(std::move(*goldCandidate));
-        if (!accepted) { publish_error(*accepted.error()); return; }
-    } else if (gold_->has_gold()) gold_->clearGold();
+        if (!accepted) {
+            isCommittingProjectOpen_ = false;
+            publish_error(*accepted.error());
+            return;
+        }
+    } else if (gold_->has_gold()) {
+        gold_->clearGold();
+    }
+
     if (regionCandidate) {
         auto accepted = region_->set_region(*regionCandidate);
-        if (!accepted) { publish_error(*accepted.error()); return; }
+        if (!accepted) {
+            isCommittingProjectOpen_ = false;
+            publish_error(*accepted.error());
+            return;
+        }
     }
+
+    if (masteringChainState_ && chainCandidate.value()->chainState) {
+        *masteringChainState_ = std::move(*chainCandidate.value()->chainState);
+    }
+
+    if (gainViewModel_) {
+        gainViewModel_->refreshFromAuthority();
+    }
+    if (eqViewModel_) {
+        eqViewModel_->refreshFromAuthority();
+    }
+    if (previewController_) {
+        previewController_->request_preview();
+    }
+
+    isCommittingProjectOpen_ = false;
+
     const auto persistedProjectId = doc.projectId;
     const auto persistedSourceId = doc.sourceResourceId;
     const auto persistedReferenceId = doc.references.activeReferenceId;
@@ -441,7 +675,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     const auto persistedName = doc.displayName;
     const bool isDegraded = has_future_semantics(doc);
     opened_.emplace(std::move(*opened.value()));
-    sessionChainMaterialized_ = false;
+    sessionChainMaterialized_ = chainCandidate.value()->isMaterialized;
     projectId_ = persistedProjectId;
     sourceId_ = persistedSourceId;
     referenceId_ = persistedReferenceId;

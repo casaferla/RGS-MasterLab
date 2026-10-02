@@ -17,6 +17,9 @@ class GoldSelectionViewModel;
 class AuditionRegionViewModel;
 class PlaybackTransportViewModel;
 class MasteringChainState;
+class GainViewModel;
+class EqViewModel;
+class MasteringPreviewController;
 
 class ProjectSessionViewModel final : public QObject {
     Q_OBJECT
@@ -34,10 +37,14 @@ public:
                             AuditionRegionViewModel* region,
                             PlaybackTransportViewModel* playback,
                             MasteringChainState* masteringChainState = nullptr,
+                            GainViewModel* gainViewModel = nullptr,
+                            EqViewModel* eqViewModel = nullptr,
+                            MasteringPreviewController* previewController = nullptr,
                             UuidFactory uuidFactory = {},
                             QObject* parent = nullptr);
 
     [[nodiscard]] bool can_save_project() const noexcept;
+    [[nodiscard]] bool is_committing_project_open() const noexcept { return isCommittingProjectOpen_; }
     [[nodiscard]] QString error_message() const { return errorMessage_; }
     [[nodiscard]] bool degraded() const noexcept { return degraded_; }
     [[nodiscard]] QString status_text() const { return statusText_; }
@@ -66,7 +73,11 @@ private:
     AuditionRegionViewModel* region_;
     PlaybackTransportViewModel* playback_;
     MasteringChainState* masteringChainState_{nullptr};
+    GainViewModel* gainViewModel_{nullptr};
+    EqViewModel* eqViewModel_{nullptr};
+    MasteringPreviewController* previewController_{nullptr};
     UuidFactory uuidFactory_;
+    bool isCommittingProjectOpen_{false};
     std::optional<project::ProjectSnapshot> opened_;
     std::optional<core::Uuid> projectId_;
     std::optional<core::Uuid> sourceId_;

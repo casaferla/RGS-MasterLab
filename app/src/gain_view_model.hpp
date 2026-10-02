@@ -45,6 +45,7 @@ public:
     Q_INVOKABLE void setBypass(bool bypass);
     Q_INVOKABLE void resetToDefault();
     Q_INVOKABLE void resetForNewSource();
+    Q_INVOKABLE void refreshFromAuthority();
 
 signals:
     void changed();
