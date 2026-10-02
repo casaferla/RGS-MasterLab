@@ -281,13 +281,17 @@ struct MasteringChainCandidate final {
     auto eqInst = dsp::ModuleInstance::create(std::move(eqSpec));
     if (!eqInst) return core::Result<MasteringChainCandidate>::failure(*eqInst.error());
 
-    auto chainRes = dsp::ProcessingChain::restore(registry,
+    // ProcessingChain retains a non-owning pointer to the registry used at
+    // construction. Build it against the same shared registry that
+    // MasteringChainState will own so the pointer remains valid after this
+    // validation helper returns.
+    auto regPtr = std::make_shared<const dsp::ModuleRegistry>(registry);
+    auto chainRes = dsp::ProcessingChain::restore(*regPtr,
         {dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL},
         chain.revision,
         { *gainInst.value(), *eqInst.value() });
     if (!chainRes) return core::Result<MasteringChainCandidate>::failure(*chainRes.error());
 
-    auto regPtr = std::make_shared<const dsp::ModuleRegistry>(registry);
     auto stateRes = MasteringChainState::restore(std::move(regPtr),
         chainId,
         std::move(*chainRes.value()),
