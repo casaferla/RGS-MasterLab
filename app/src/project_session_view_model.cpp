@@ -646,8 +646,8 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         }
     }
 
-    if (masteringChainState_ && chainCandidate.value().chainState) {
-        *masteringChainState_ = std::move(*chainCandidate.value().chainState);
+    if (masteringChainState_ && chainCandidate.value()->chainState) {
+        *masteringChainState_ = std::move(*chainCandidate.value()->chainState);
     }
 
     if (gainViewModel_) {
@@ -671,7 +671,7 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     const auto persistedName = doc.displayName;
     const bool isDegraded = has_future_semantics(doc);
     opened_.emplace(std::move(*opened.value()));
-    sessionChainMaterialized_ = chainCandidate.value().isMaterialized;
+    sessionChainMaterialized_ = chainCandidate.value()->isMaterialized;
     projectId_ = persistedProjectId;
     sourceId_ = persistedSourceId;
     referenceId_ = persistedReferenceId;
