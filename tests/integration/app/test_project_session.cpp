@@ -125,8 +125,14 @@ struct Session final {
             auto count = core::FrameCount::create(source.frame_count());
             auto rate = core::SampleRate::create(source.sample_rate_hz());
             if (count && rate) region.source_committed(*count.value(), *rate.value());
-            (void)selector.source_committed(ref);
-            (void)selector.switch_to(app::AuditionTarget::PREPARED);
+            const auto prepared = selector.source_committed(ref);
+            if (prepared) {
+                (void)selector.switch_to(app::AuditionTarget::PREPARED);
+                if (!project.is_committing_project_open()) {
+                    gainViewModel->resetForNewSource();
+                    eqViewModel->resetForNewSource();
+                }
+            }
             gold.sourceChanged();
         });
     }
