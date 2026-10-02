@@ -24,11 +24,13 @@
 #include <QTest>
 #include <QUrl>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <filesystem>
 #include <vector>
+#include <utility>
 
 namespace rgsml::tests {
 namespace {
@@ -96,7 +98,7 @@ struct Session final {
     std::unique_ptr<app::EqViewModel> eqViewModel;
     app::ProjectSessionViewModel project;
 
-    Session()
+    explicit Session(app::ProjectSessionViewModel::UuidFactory uuidFactory = {})
         : observed(new FakePlaybackService()),
           transport(std::unique_ptr<core::IAudioPlaybackService>(observed)),
           source(), selector(&transport), gold(&selector), region(&transport),
@@ -112,7 +114,8 @@ struct Session final {
           gainViewModel(std::make_unique<app::GainViewModel>(masteringChainState.get(), previewController.get())),
           eqViewModel(std::make_unique<app::EqViewModel>(masteringChainState.get(), previewController.get())),
           project(&source, &gold, &region, &transport, masteringChainState.get(),
-                  gainViewModel.get(), eqViewModel.get(), previewController.get())
+                  gainViewModel.get(), eqViewModel.get(), previewController.get(),
+                  std::move(uuidFactory))
     {
         transport.set_pcm_prepare_handler([this](audio::AudioBufferView view, std::shared_ptr<const void>) {
             observed->state = core::PlaybackState::STOPPED;
@@ -604,11 +607,16 @@ void ProjectSessionTest::supported_b4_open_and_viewmodel_refresh()
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     const auto source = wav(dir, QStringLiteral("source.wav"), 0);
+    const auto gold = wav(dir, QStringLiteral("gold.wav"), 1);
 
     Session session;
     session.source.selectSource(QUrl::fromLocalFile(source));
+    session.gold.selectGold(QUrl::fromLocalFile(gold));
+    QVERIFY(session.gold.has_gold());
+    auto region = core::FrameRange::create(core::FrameIndex{7}, core::FrameIndex{19});
+    QVERIFY(region);
+    QVERIFY(session.region.set_region(*region.value()));
 
-    // Configure non-default Gain & EQ
     auto gainParams = dsp::GainParameters::create(4.5);
     QVERIFY(gainParams);
     QVERIFY(session.masteringChainState->set_gain_parameters(*gainParams.value()));
@@ -626,28 +634,92 @@ void ProjectSessionTest::supported_b4_open_and_viewmodel_refresh()
     QVERIFY(eqParams);
     QVERIFY(session.masteringChainState->set_parametric_eq_parameters(*eqParams.value()));
 
-    const auto path = dir.filePath(QStringLiteral("supported_b4.rgsml"));
-    session.project.saveProjectAs(QUrl::fromLocalFile(path));
+    const auto savedPath = dir.filePath(QStringLiteral("supported_b4_saved.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(savedPath));
     QCOMPARE(session.project.error_message(), QString());
+
+    auto saved = load_project(savedPath);
+    QVERIFY(saved);
+    auto doc = saved.value()->document();
+    QVERIFY(doc.pipeline.masteringChainId.has_value());
+    QCOMPARE(doc.chains.size(), std::size_t{1});
+    QCOMPARE(doc.chains[0].modules.size(), std::size_t{2});
+
+    constexpr std::uint64_t persistedRevision = 42U;
+    doc.chains[0].revision = persistedRevision;
+    doc.chains[0].modules[0].enabled = false;
+    doc.chains[0].modules[0].controllerSuspended = true;
+    doc.chains[0].modules[1].domainSuspended = true;
+
+    auto explicitSnapshot = project::ProjectSnapshot::create(doc);
+    QVERIFY(explicitSnapshot);
+    const auto path = dir.filePath(QStringLiteral("supported_b4_explicit.rgsml"));
+    QVERIFY(write_project(path, *explicitSnapshot.value()));
 
     Session target;
     target.project.openProject(QUrl::fromLocalFile(path));
     QCOMPARE(target.project.error_message(), QString());
     QVERIFY(!target.project.degraded());
 
-    // Verify exact identity restoration in MasteringChainState
-    QCOMPARE(target.masteringChainState->chain_id(), session.chainId);
-    QCOMPARE(target.masteringChainState->gain_instance_id(), session.gainId);
-    QCOMPARE(target.masteringChainState->eq_instance_id(), session.eqId);
-    QCOMPARE(target.masteringChainState->gain_parameters().gain_db(), 4.5);
+    QCOMPARE(target.source.source_resource()->reference().locator(),
+             session.source.source_resource()->reference().locator());
+    QVERIFY(target.gold.has_gold());
+    QVERIFY(target.region.region().has_value());
+    QCOMPARE(target.region.region()->begin().value(), std::int64_t{7});
+    QCOMPARE(target.region.region()->end().value(), std::int64_t{19});
+
+    QCOMPARE(target.masteringChainState->chain_id(), doc.chains[0].chainId);
+    QCOMPARE(target.masteringChainState->chain().revision(), persistedRevision);
+    QCOMPARE(target.masteringChainState->module_count(), std::size_t{2});
+    QCOMPARE(target.masteringChainState->gain_instance_id().uuid(),
+             doc.chains[0].modules[0].instanceId);
+    QCOMPARE(target.masteringChainState->eq_instance_id().uuid(),
+             doc.chains[0].modules[1].instanceId);
+
+    const auto instances = target.masteringChainState->instances();
+    QCOMPARE(instances[0].module_type_id(), std::string_view{"rgsml.dsp.gain"});
+    QCOMPARE(instances[1].module_type_id(), std::string_view{"rgsml.dsp.parametric-eq"});
+    QCOMPARE(instances[0].enabled(), doc.chains[0].modules[0].enabled);
+    QCOMPARE(instances[0].user_bypass(), doc.chains[0].modules[0].userBypass);
+    QCOMPARE(instances[0].controller_suspended(), doc.chains[0].modules[0].controllerSuspended);
+    QCOMPARE(instances[0].domain_suspended(), doc.chains[0].modules[0].domainSuspended);
+    QCOMPARE(instances[1].enabled(), doc.chains[0].modules[1].enabled);
+    QCOMPARE(instances[1].user_bypass(), doc.chains[0].modules[1].userBypass);
+    QCOMPARE(instances[1].controller_suspended(), doc.chains[0].modules[1].controllerSuspended);
+    QCOMPARE(instances[1].domain_suspended(), doc.chains[0].modules[1].domainSuspended);
+    QCOMPARE(instances[0].provenance(), dsp::ModuleProvenance::MANUAL);
+    QCOMPARE(instances[0].owner(), dsp::ModuleOwner::USER);
+    QCOMPARE(instances[0].link_state(), dsp::ModuleLinkState::UNLINKED);
+    QVERIFY(!instances[0].semantic_node_id().has_value());
+    QCOMPARE(instances[1].provenance(), dsp::ModuleProvenance::MANUAL);
+    QCOMPARE(instances[1].owner(), dsp::ModuleOwner::USER);
+    QCOMPARE(instances[1].link_state(), dsp::ModuleLinkState::UNLINKED);
+    QVERIFY(!instances[1].semantic_node_id().has_value());
+
+    auto gainDescriptor = target.masteringChainState->find_descriptor("rgsml.dsp.gain");
+    auto eqDescriptor = target.masteringChainState->find_descriptor("rgsml.dsp.parametric-eq");
+    QVERIFY(gainDescriptor && eqDescriptor);
+    QVERIFY(gainDescriptor.value()->get().algorithm_version().has_value());
+    QVERIFY(gainDescriptor.value()->get().parameter_schema_id().has_value());
+    QVERIFY(eqDescriptor.value()->get().algorithm_version().has_value());
+    QVERIFY(eqDescriptor.value()->get().parameter_schema_id().has_value());
+    QCOMPARE(*gainDescriptor.value()->get().algorithm_version(), std::string("1.0.0"));
+    QCOMPARE(*gainDescriptor.value()->get().parameter_schema_id(),
+             std::string("rgsml.dsp.gain.parameters/1.0.0"));
+    QCOMPARE(*eqDescriptor.value()->get().algorithm_version(), std::string("1.0.0"));
+    QCOMPARE(*eqDescriptor.value()->get().parameter_schema_id(),
+             std::string("rgsml.dsp.parametric-eq.parameters/1.0.0"));
+
+    QCOMPARE(target.masteringChainState->gain_parameters(), *gainParams.value());
     QCOMPARE(target.masteringChainState->parametric_eq_parameters(), *eqParams.value());
 
-    // Verify ViewModels reflect adopted state
     QCOMPARE(target.gainViewModel->gain_db(), 4.5);
     QVERIFY(target.gainViewModel->bypass());
     QCOMPARE(target.eqViewModel->band_count(), 2);
-    QCOMPARE(target.eqViewModel->selected_band_id(), QString::fromStdString(bandId1.value()->to_string()));
+    QCOMPARE(target.eqViewModel->selected_band_id(),
+             QString::fromStdString(bandId1.value()->to_string()));
     QVERIFY(!target.eqViewModel->bypass());
+    QCOMPARE(target.masteringChainState->parametric_eq_parameters(), *eqParams.value());
 }
 
 void ProjectSessionTest::open_save_as_identity_revision_preservation()
@@ -658,49 +730,94 @@ void ProjectSessionTest::open_save_as_identity_revision_preservation()
 
     Session session;
     session.source.selectSource(QUrl::fromLocalFile(source));
-    const auto path1 = dir.filePath(QStringLiteral("p1.rgsml"));
-    session.project.saveProjectAs(QUrl::fromLocalFile(path1));
+    auto gain = dsp::GainParameters::create(-4.25);
+    QVERIFY(gain);
+    QVERIFY(session.masteringChainState->set_gain_parameters(*gain.value()));
+    auto bandId = core::Uuid::parse("21000000-0000-0000-0000-000000000001");
+    QVERIFY(bandId);
+    auto band = dsp::EqBandParameters::create(*bandId.value(), true, dsp::EqFilterType::BELL,
+        dsp::EqRouting::MID, dsp::BellPayload{1250.0, 2.25, 1.1});
+    QVERIFY(band);
+    auto eq = dsp::ParametricEqParameters::create({*band.value()});
+    QVERIFY(eq);
+    QVERIFY(session.masteringChainState->set_parametric_eq_parameters(*eq.value()));
+
+    const auto authoredPath = dir.filePath(QStringLiteral("authored.rgsml"));
+    session.project.saveProjectAs(QUrl::fromLocalFile(authoredPath));
     QCOMPARE(session.project.error_message(), QString());
 
-    auto snap1 = load_project(path1);
-    QVERIFY(snap1);
-    const auto rev1 = snap1.value()->document().chains.front().revision;
+    auto authored = load_project(authoredPath);
+    QVERIFY(authored);
+    auto doc = authored.value()->document();
+    constexpr std::uint64_t persistedRevision = 77U;
+    doc.chains[0].revision = persistedRevision;
+    doc.chains[0].modules[0].enabled = false;
+    doc.chains[0].modules[0].controllerSuspended = true;
+    doc.chains[0].modules[1].domainSuspended = true;
+
+    auto explicitSnapshot = project::ProjectSnapshot::create(doc);
+    QVERIFY(explicitSnapshot);
+    const auto inputPath = dir.filePath(QStringLiteral("input.rgsml"));
+    QVERIFY(write_project(inputPath, *explicitSnapshot.value()));
 
     Session target;
-    target.project.openProject(QUrl::fromLocalFile(path1));
+    target.project.openProject(QUrl::fromLocalFile(inputPath));
     QCOMPARE(target.project.error_message(), QString());
 
-    const auto path2 = dir.filePath(QStringLiteral("p2.rgsml"));
-    target.project.saveProjectAs(QUrl::fromLocalFile(path2));
+    const auto outputPath = dir.filePath(QStringLiteral("output.rgsml"));
+    target.project.saveProjectAs(QUrl::fromLocalFile(outputPath));
     QCOMPARE(target.project.error_message(), QString());
 
-    auto snap2 = load_project(path2);
-    QVERIFY(snap2);
+    auto output = load_project(outputPath);
+    QVERIFY(output);
+    const auto& doc2 = output.value()->document();
 
-    const auto& doc1 = snap1.value()->document();
-    const auto& doc2 = snap2.value()->document();
+    QVERIFY(doc2.pipeline.masteringChainId == doc.pipeline.masteringChainId);
+    QCOMPARE(doc2.chains.size(), doc.chains.size());
+    const auto& c1 = doc.chains.front();
+    const auto& c2 = doc2.chains.front();
+    QCOMPARE(c2.chainId, c1.chainId);
+    QCOMPARE(c2.stage, c1.stage);
+    QCOMPARE(c2.segment, c1.segment);
+    QCOMPARE(c2.revision, persistedRevision);
+    QCOMPARE(c2.modules.size(), c1.modules.size());
 
-    QCOMPARE(*doc2.pipeline.masteringChainId, *doc1.pipeline.masteringChainId);
-    QCOMPARE(doc2.chains.front().chainId, doc1.chains.front().chainId);
-    QCOMPARE(doc2.chains.front().revision, rev1);
-    QCOMPARE(doc2.chains.front().modules[0].instanceId, doc1.chains.front().modules[0].instanceId);
-    QCOMPARE(doc2.chains.front().modules[1].instanceId, doc1.chains.front().modules[1].instanceId);
+    for (std::size_t i = 0; i < c1.modules.size(); ++i) {
+        const auto& m1 = c1.modules[i];
+        const auto& m2 = c2.modules[i];
+        QCOMPARE(m2.instanceId, m1.instanceId);
+        QCOMPARE(m2.typeId, m1.typeId);
+        QCOMPARE(m2.enabled, m1.enabled);
+        QCOMPARE(m2.userBypass, m1.userBypass);
+        QCOMPARE(m2.controllerSuspended, m1.controllerSuspended);
+        QCOMPARE(m2.domainSuspended, m1.domainSuspended);
+        QCOMPARE(m2.provenance, m1.provenance);
+        QCOMPARE(m2.owner, m1.owner);
+        QCOMPARE(m2.linkState, m1.linkState);
+        QVERIFY(m2.semanticNodeId == m1.semanticNodeId);
+        QVERIFY(m2.algorithmVersion == m1.algorithmVersion);
+        QVERIFY(m2.parameterSchemaId == m1.parameterSchemaId);
+        QCOMPARE(m2.parameters.canonical_utf8(), m1.parameters.canonical_utf8());
+    }
+
+    auto g1 = dsp::decode_gain_parameters_json(c1.modules[0].parameters.canonical_utf8());
+    auto g2 = dsp::decode_gain_parameters_json(c2.modules[0].parameters.canonical_utf8());
+    auto e1 = dsp::decode_parametric_eq_parameters_json(c1.modules[1].parameters.canonical_utf8());
+    auto e2 = dsp::decode_parametric_eq_parameters_json(c2.modules[1].parameters.canonical_utf8());
+    QVERIFY(g1 && g2 && e1 && e2);
+    QCOMPARE(*g2.value(), *g1.value());
+    QCOMPARE(*e2.value(), *e1.value());
 }
 
 void ProjectSessionTest::atomic_rejection()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    const auto source = wav(dir, QStringLiteral("source.wav"), 0);
+    const auto candidateSource = wav(dir, QStringLiteral("candidate.wav"), 0);
+    const auto liveSource = wav(dir, QStringLiteral("live.wav"), 1);
 
     Session session;
-    session.source.selectSource(QUrl::fromLocalFile(source));
-
-    // Set non-default live state
-    auto liveGain = dsp::GainParameters::create(-3.0);
-    QVERIFY(liveGain);
-    QVERIFY(session.masteringChainState->set_gain_parameters(*liveGain.value()));
-
+    session.source.selectSource(QUrl::fromLocalFile(candidateSource));
     const auto validPath = dir.filePath(QStringLiteral("valid.rgsml"));
     session.project.saveProjectAs(QUrl::fromLocalFile(validPath));
     QCOMPARE(session.project.error_message(), QString());
@@ -708,75 +825,109 @@ void ProjectSessionTest::atomic_rejection()
     auto baseSnap = load_project(validPath);
     QVERIFY(baseSnap);
 
+    session.source.selectSource(QUrl::fromLocalFile(liveSource));
+    auto liveGain = dsp::GainParameters::create(-3.0);
+    QVERIFY(liveGain);
+    QVERIFY(session.masteringChainState->set_gain_parameters(*liveGain.value()));
+    auto liveBandId = core::Uuid::parse("22000000-0000-0000-0000-000000000001");
+    QVERIFY(liveBandId);
+    auto liveBand = dsp::EqBandParameters::create(*liveBandId.value(), true,
+        dsp::EqFilterType::BELL, dsp::EqRouting::STEREO,
+        dsp::BellPayload{900.0, -1.5, 1.3});
+    QVERIFY(liveBand);
+    auto liveEq = dsp::ParametricEqParameters::create({*liveBand.value()});
+    QVERIFY(liveEq);
+    QVERIFY(session.masteringChainState->set_parametric_eq_parameters(*liveEq.value()));
+
+    const auto priorSource = session.source.source_resource()->reference().locator();
+    const auto priorChainId = session.masteringChainState->chain_id();
+
     const auto verify_live_session_unchanged = [&] {
-        QCOMPARE(session.masteringChainState->gain_parameters().gain_db(), -3.0);
+        QCOMPARE(session.source.source_resource()->reference().locator(), priorSource);
+        QCOMPARE(session.masteringChainState->chain_id(), priorChainId);
+        QCOMPARE(session.masteringChainState->gain_parameters(), *liveGain.value());
+        QCOMPARE(session.masteringChainState->parametric_eq_parameters(), *liveEq.value());
         QCOMPARE(session.gainViewModel->gain_db(), -3.0);
-        QCOMPARE(session.source.source_resource()->reference().locator(),
-                 session.source.source_resource()->reference().locator());
+        QVERIFY(!session.gold.has_gold());
+        QVERIFY(!session.region.region().has_value());
     };
 
-    // 1. Invalid Gain JSON
-    {
-        auto doc = baseSnap.value()->document();
-        doc.chains[0].modules[0].parameters = *project::OpaqueJsonValue::parse("{\"invalid\":true}").value();
-        auto badSnap = project::ProjectSnapshot::create(doc);
-        const auto badPath = dir.filePath(QStringLiteral("bad_gain_json.rgsml"));
+    const auto reject_document = [&](project::ProjectDocument doc, const QString& name) {
+        auto badSnap = project::ProjectSnapshot::create(std::move(doc));
+        QVERIFY(badSnap);
+        const auto badPath = dir.filePath(name);
         QVERIFY(write_project(badPath, *badSnap.value()));
-
         session.project.openProject(QUrl::fromLocalFile(badPath));
         QVERIFY(!session.project.error_message().isEmpty());
         verify_live_session_unchanged();
-    }
+    };
 
-    // 2. Wrong algorithmVersion
+    {
+        auto doc = baseSnap.value()->document();
+        doc.chains[0].modules[0].parameters =
+            *project::OpaqueJsonValue::parse("{\"invalid\":true}").value();
+        reject_document(std::move(doc), QStringLiteral("bad_gain_json.rgsml"));
+    }
+    {
+        auto doc = baseSnap.value()->document();
+        doc.chains[0].modules[1].parameters =
+            *project::OpaqueJsonValue::parse("{\"invalid\":true}").value();
+        reject_document(std::move(doc), QStringLiteral("bad_eq_json.rgsml"));
+    }
     {
         auto doc = baseSnap.value()->document();
         doc.chains[0].modules[0].algorithmVersion = "2.0.0";
-        auto badSnap = project::ProjectSnapshot::create(doc);
-        const auto badPath = dir.filePath(QStringLiteral("bad_version.rgsml"));
-        QVERIFY(write_project(badPath, *badSnap.value()));
-
-        session.project.openProject(QUrl::fromLocalFile(badPath));
-        QVERIFY(!session.project.error_message().isEmpty());
-        verify_live_session_unchanged();
+        reject_document(std::move(doc), QStringLiteral("bad_version.rgsml"));
     }
-
-    // 3. Wrong parameterSchemaId
     {
         auto doc = baseSnap.value()->document();
-        doc.chains[0].modules[1].parameterSchemaId = "rgsml.dsp.parametric-eq.parameters/2.0.0";
-        auto badSnap = project::ProjectSnapshot::create(doc);
-        const auto badPath = dir.filePath(QStringLiteral("bad_schema.rgsml"));
-        QVERIFY(write_project(badPath, *badSnap.value()));
-
-        session.project.openProject(QUrl::fromLocalFile(badPath));
-        QVERIFY(!session.project.error_message().isEmpty());
-        verify_live_session_unchanged();
+        doc.chains[0].modules[1].parameterSchemaId =
+            "rgsml.dsp.parametric-eq.parameters/2.0.0";
+        reject_document(std::move(doc), QStringLiteral("bad_schema.rgsml"));
     }
-
-    // 4. Malformed module order (EQ at 0, Gain at 1)
     {
         auto doc = baseSnap.value()->document();
         std::swap(doc.chains[0].modules[0], doc.chains[0].modules[1]);
-        auto badSnap = project::ProjectSnapshot::create(doc);
-        const auto badPath = dir.filePath(QStringLiteral("bad_order.rgsml"));
-        QVERIFY(write_project(badPath, *badSnap.value()));
-
-        session.project.openProject(QUrl::fromLocalFile(badPath));
-        QVERIFY(!session.project.error_message().isEmpty());
-        verify_live_session_unchanged();
+        reject_document(std::move(doc), QStringLiteral("bad_order.rgsml"));
     }
-
-    // 5. Incompatible provenance
+    {
+        auto doc = baseSnap.value()->document();
+        doc.chains[0].modules[1].typeId = "rgsml.dsp.future-eq";
+        reject_document(std::move(doc), QStringLiteral("unknown_active_module.rgsml"));
+    }
     {
         auto doc = baseSnap.value()->document();
         doc.chains[0].modules[0].provenance = "AUTOMATED";
-        auto badSnap = project::ProjectSnapshot::create(doc);
-        const auto badPath = dir.filePath(QStringLiteral("bad_provenance.rgsml"));
-        QVERIFY(write_project(badPath, *badSnap.value()));
+        reject_document(std::move(doc), QStringLiteral("bad_provenance.rgsml"));
+    }
+    {
+        auto doc = baseSnap.value()->document();
+        doc.chains[0].modules[0].owner = "SYSTEM";
+        reject_document(std::move(doc), QStringLiteral("bad_owner.rgsml"));
+    }
+    {
+        auto doc = baseSnap.value()->document();
+        doc.chains[0].modules[0].linkState = "LINKED";
+        reject_document(std::move(doc), QStringLiteral("bad_link.rgsml"));
+    }
+    {
+        auto doc = baseSnap.value()->document();
+        auto semantic = core::Uuid::parse("23000000-0000-0000-0000-000000000001");
+        QVERIFY(semantic);
+        doc.chains[0].modules[0].semanticNodeId = *semantic.value();
+        reject_document(std::move(doc), QStringLiteral("bad_semantic.rgsml"));
+    }
 
-        session.project.openProject(QUrl::fromLocalFile(badPath));
-        QVERIFY(!session.project.error_message().isEmpty());
+    // ProjectSnapshot enforces referential integrity before a malformed package
+    // can be produced through the supported writer. This is the authoritative
+    // pre-open rejection for a missing referenced mastering chain.
+    {
+        auto doc = baseSnap.value()->document();
+        auto missing = core::Uuid::parse("24000000-0000-0000-0000-000000000001");
+        QVERIFY(missing);
+        doc.pipeline.masteringChainId = *missing.value();
+        auto impossible = project::ProjectSnapshot::create(std::move(doc));
+        QVERIFY(!impossible);
         verify_live_session_unchanged();
     }
 }
@@ -787,13 +938,11 @@ void ProjectSessionTest::legacy_pre_b4_materialization_and_save_as()
     QVERIFY(dir.isValid());
     const auto source = wav(dir, QStringLiteral("source.wav"), 0);
 
-    Session session;
-    session.source.selectSource(QUrl::fromLocalFile(source));
-
-    // Save project, then strip mastering chain fields to create a valid pre-B4 project
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(source));
     const auto tempPath = dir.filePath(QStringLiteral("temp.rgsml"));
-    session.project.saveProjectAs(QUrl::fromLocalFile(tempPath));
-    QCOMPARE(session.project.error_message(), QString());
+    author.project.saveProjectAs(QUrl::fromLocalFile(tempPath));
+    QCOMPARE(author.project.error_message(), QString());
 
     auto snap = load_project(tempPath);
     QVERIFY(snap);
@@ -806,20 +955,36 @@ void ProjectSessionTest::legacy_pre_b4_materialization_and_save_as()
     const auto legacyPath = dir.filePath(QStringLiteral("legacy.rgsml"));
     QVERIFY(write_project(legacyPath, *legacySnap.value()));
 
-    // Open legacy pre-B4 project into target session
-    Session target;
-    const auto previousChainId = target.chainId;
+    const std::array<core::Uuid, 3> generated{
+        *core::Uuid::parse("25000000-0000-4000-8000-000000000001").value(),
+        *core::Uuid::parse("25000000-0000-4000-8000-000000000002").value(),
+        *core::Uuid::parse("25000000-0000-4000-8000-000000000003").value()
+    };
+    auto next = std::make_shared<std::size_t>(0);
+    Session target{[generated, next] {
+        Q_ASSERT(*next < generated.size());
+        return generated[(*next)++];
+    }};
+
+    const auto previousChainId = target.masteringChainState->chain_id();
+    const auto previousGainId = target.masteringChainState->gain_instance_id();
+    const auto previousEqId = target.masteringChainState->eq_instance_id();
+
     target.project.openProject(QUrl::fromLocalFile(legacyPath));
     QCOMPARE(target.project.error_message(), QString());
 
-    // Verify fresh IDs generated (not reusing previous project IDs)
+    QCOMPARE(target.masteringChainState->chain_id(), generated[0]);
+    QCOMPARE(target.masteringChainState->gain_instance_id().uuid(), generated[1]);
+    QCOMPARE(target.masteringChainState->eq_instance_id().uuid(), generated[2]);
     QVERIFY(target.masteringChainState->chain_id() != previousChainId);
+    QVERIFY(target.masteringChainState->gain_instance_id() != previousGainId);
+    QVERIFY(target.masteringChainState->eq_instance_id() != previousEqId);
 
-    // Verify canonical default state
     QCOMPARE(target.masteringChainState->gain_parameters().gain_db(), 0.0);
+    QVERIFY(!target.gainViewModel->bypass());
     QVERIFY(target.eqViewModel->is_default());
+    QVERIFY(!target.eqViewModel->bypass());
 
-    // Save As produces canonical B4 chain
     const auto savedLegacyPath = dir.filePath(QStringLiteral("saved_legacy.rgsml"));
     target.project.saveProjectAs(QUrl::fromLocalFile(savedLegacyPath));
     QCOMPARE(target.project.error_message(), QString());
@@ -828,18 +993,29 @@ void ProjectSessionTest::legacy_pre_b4_materialization_and_save_as()
     QVERIFY(resavedSnap);
     const auto& resavedDoc = resavedSnap.value()->document();
     QVERIFY(resavedDoc.pipeline.masteringChainId.has_value());
-    QCOMPARE(*resavedDoc.pipeline.masteringChainId, target.masteringChainState->chain_id());
+    QCOMPARE(*resavedDoc.pipeline.masteringChainId, generated[0]);
     QCOMPARE(resavedDoc.chains.size(), std::size_t{1});
+    QCOMPARE(resavedDoc.chains[0].chainId, generated[0]);
+    QCOMPARE(resavedDoc.chains[0].stage, std::string("MASTER"));
+    QCOMPARE(resavedDoc.chains[0].segment, std::string("MANUAL"));
     QCOMPARE(resavedDoc.chains[0].modules.size(), std::size_t{2});
+    QCOMPARE(resavedDoc.chains[0].modules[0].instanceId, generated[1]);
+    QCOMPARE(resavedDoc.chains[0].modules[0].typeId, std::string("rgsml.dsp.gain"));
+    QCOMPARE(resavedDoc.chains[0].modules[1].instanceId, generated[2]);
+    QCOMPARE(resavedDoc.chains[0].modules[1].typeId,
+             std::string("rgsml.dsp.parametric-eq"));
 
-    // Repeated Save As retains generated IDs
     const auto savedLegacyPath2 = dir.filePath(QStringLiteral("saved_legacy2.rgsml"));
     target.project.saveProjectAs(QUrl::fromLocalFile(savedLegacyPath2));
     QCOMPARE(target.project.error_message(), QString());
 
     auto resavedSnap2 = load_project(savedLegacyPath2);
     QVERIFY(resavedSnap2);
-    QCOMPARE(*resavedSnap2.value()->document().pipeline.masteringChainId, target.masteringChainState->chain_id());
+    const auto& second = resavedSnap2.value()->document();
+    QCOMPARE(*second.pipeline.masteringChainId, generated[0]);
+    QCOMPARE(second.chains[0].chainId, generated[0]);
+    QCOMPARE(second.chains[0].modules[0].instanceId, generated[1]);
+    QCOMPARE(second.chains[0].modules[1].instanceId, generated[2]);
 }
 
 void ProjectSessionTest::future_opaque_preservation_and_non_degraded_b4()
@@ -859,7 +1035,6 @@ void ProjectSessionTest::future_opaque_preservation_and_non_degraded_b4()
     QCOMPARE(targetNormal.project.error_message(), QString());
     QVERIFY(!targetNormal.project.degraded());
 
-    // Add safe future opaque extension
     auto snap = load_project(b4Path);
     QVERIFY(snap);
     auto doc = snap.value()->document();
@@ -874,9 +1049,17 @@ void ProjectSessionTest::future_opaque_preservation_and_non_degraded_b4()
     targetFuture.project.openProject(QUrl::fromLocalFile(futurePath));
     QCOMPARE(targetFuture.project.error_message(), QString());
     QVERIFY(targetFuture.project.degraded());
-
-    // Verify B4 mastering state is still adopted
     QCOMPARE(targetFuture.masteringChainState->chain_id(), session.chainId);
+
+    const auto preservedPath = dir.filePath(QStringLiteral("future_preserved.rgsml"));
+    targetFuture.project.saveProjectAs(QUrl::fromLocalFile(preservedPath));
+    QCOMPARE(targetFuture.project.error_message(), QString());
+    auto preserved = load_project(preservedPath);
+    QVERIFY(preserved);
+    QCOMPARE(preserved.value()->document().extensions.canonical_utf8(),
+             doc.extensions.canonical_utf8());
+    QVERIFY(preserved.value()->document().pipeline.masteringChainId.has_value());
+    QCOMPARE(*preserved.value()->document().pipeline.masteringChainId, session.chainId);
 }
 
 void ProjectSessionTest::source_reset_vs_project_open()
@@ -889,25 +1072,39 @@ void ProjectSessionTest::source_reset_vs_project_open()
     Session session;
     session.source.selectSource(QUrl::fromLocalFile(source1));
 
-    // Modify Gain
     QVERIFY(session.gainViewModel->setGainDb(5.0));
-    QCOMPARE(session.gainViewModel->gain_db(), 5.0);
+    auto bandId = core::Uuid::parse("26000000-0000-0000-0000-000000000001");
+    QVERIFY(bandId);
+    auto band = dsp::EqBandParameters::create(*bandId.value(), true,
+        dsp::EqFilterType::BELL, dsp::EqRouting::SIDE,
+        dsp::BellPayload{1400.0, -2.0, 1.4});
+    QVERIFY(band);
+    auto persistedEq = dsp::ParametricEqParameters::create({*band.value()});
+    QVERIFY(persistedEq);
+    QVERIFY(session.masteringChainState->set_parametric_eq_parameters(*persistedEq.value()));
+    session.eqViewModel->refreshFromAuthority();
 
-    // Save project with Gain = 5.0
     const auto projectPath = dir.filePath(QStringLiteral("project.rgsml"));
     session.project.saveProjectAs(QUrl::fromLocalFile(projectPath));
     QCOMPARE(session.project.error_message(), QString());
 
-    // 1. Ordinary Replace Source resets Gain to defaults (0.0 dB)
     session.source.selectSource(QUrl::fromLocalFile(source2));
     QCOMPARE(session.gainViewModel->gain_db(), 0.0);
+    QVERIFY(session.eqViewModel->is_default());
+    QVERIFY(!session.gainViewModel->bypass());
+    QVERIFY(!session.eqViewModel->bypass());
 
-    // 2. Open Project with persisted state ends with persisted values (5.0 dB), NOT defaults
     Session openedSession;
     openedSession.project.openProject(QUrl::fromLocalFile(projectPath));
     QCOMPARE(openedSession.project.error_message(), QString());
     QCOMPARE(openedSession.gainViewModel->gain_db(), 5.0);
+    QCOMPARE(openedSession.masteringChainState->parametric_eq_parameters(),
+             *persistedEq.value());
+    QCOMPARE(openedSession.eqViewModel->band_count(), 1);
+    QCOMPARE(openedSession.eqViewModel->selected_band_id(),
+             QString::fromStdString(bandId.value()->to_string()));
 }
+
 
 }  // namespace rgsml::tests
 
