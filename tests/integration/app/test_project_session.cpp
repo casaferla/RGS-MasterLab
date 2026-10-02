@@ -149,7 +149,7 @@ private slots:
     void clear_region_and_replace_source_save_as();
     void invalid_gold_and_hardlink_preflight_preserve_session();
     void region_bounds_and_degraded_opaque_preservation();
-    void externally_opened_processing_preserved_not_overwritten();
+    void externally_opened_invalid_processing_rejected_atomically();
     void mastering_chain_normal_save();
     void mastering_chain_repeated_save();
     void mastering_chain_source_replacement_regression();
@@ -356,11 +356,12 @@ void ProjectSessionTest::region_bounds_and_degraded_opaque_preservation()
              future.value()->canonical_utf8());
 }
 
-void ProjectSessionTest::externally_opened_processing_preserved_not_overwritten()
+void ProjectSessionTest::externally_opened_invalid_processing_rejected_atomically()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     const auto source = wav(dir, QStringLiteral("source.wav"), 0);
+    const auto live = wav(dir, QStringLiteral("live.wav"), 1);
 
     Session author;
     author.source.selectSource(QUrl::fromLocalFile(source));
@@ -372,17 +373,20 @@ void ProjectSessionTest::externally_opened_processing_preserved_not_overwritten(
     QVERIFY(original);
     auto doc = original.value()->document();
 
-    // Attach external chain ID & extension metadata
-    const auto externalChainId = *core::Uuid::parse("90000000-0000-4000-8000-000000000001").value();
+    // B4.5 contract: an active mastering chain with incompatible topology is
+    // rejected, not preserved as inactive/degraded processing.
+    const auto externalChainId = *core::Uuid::parse(
+        "90000000-0000-4000-8000-000000000001").value();
     doc.pipeline.masteringChainId = externalChainId;
     project::Chain extChain;
     extChain.chainId = externalChainId;
     extChain.stage = "MASTER";
     extChain.segment = "MANUAL";
     doc.chains.clear();
-    doc.chains.push_back(extChain);
+    doc.chains.push_back(extChain); // invalid supported-B4 topology: zero modules
 
-    auto future = project::OpaqueJsonValue::parse("{\"future\":{\"enabled\":true}}");
+    auto future = project::OpaqueJsonValue::parse(
+        "{\"future\":{\"enabled\":true}}");
     QVERIFY(future);
     doc.extensions = *future.value();
 
@@ -391,26 +395,22 @@ void ProjectSessionTest::externally_opened_processing_preserved_not_overwritten(
     const auto externalPath = dir.filePath(QStringLiteral("external.rgsml"));
     QVERIFY(write_project(externalPath, *externalProject.value()));
 
-    // Open external project into session with active MasteringChainState
     Session session;
+    session.source.selectSource(QUrl::fromLocalFile(live));
+    auto liveGain = dsp::GainParameters::create(-2.0);
+    QVERIFY(liveGain);
+    QVERIFY(session.masteringChainState->set_gain_parameters(*liveGain.value()));
+
+    const auto priorSource =
+        session.source.source_resource()->reference().locator();
+    const auto priorChainId = session.masteringChainState->chain_id();
+
     session.project.openProject(QUrl::fromLocalFile(externalPath));
-    QCOMPARE(session.project.error_message(), QString());
 
-    // Save As with unchanged Source must succeed and preserve external processing state
-    const auto savedPath = dir.filePath(QStringLiteral("saved_external.rgsml"));
-    session.project.saveProjectAs(QUrl::fromLocalFile(savedPath));
-    QCOMPARE(session.project.error_message(), QString());
-
-    auto reloaded = load_project(savedPath);
-    QVERIFY(reloaded);
-    const auto& reloadedDoc = reloaded.value()->document();
-
-    // Verify external masteringChainId and chains are exactly preserved, NOT replaced by live B4 chain
-    QVERIFY(reloadedDoc.pipeline.masteringChainId.has_value());
-    QCOMPARE(*reloadedDoc.pipeline.masteringChainId, externalChainId);
-    QCOMPARE(reloadedDoc.chains.size(), std::size_t{1});
-    QCOMPARE(reloadedDoc.chains[0].chainId, externalChainId);
-    QCOMPARE(reloadedDoc.extensions.canonical_utf8(), future.value()->canonical_utf8());
+    QVERIFY(!session.project.error_message().isEmpty());
+    QCOMPARE(session.source.source_resource()->reference().locator(), priorSource);
+    QCOMPARE(session.masteringChainState->chain_id(), priorChainId);
+    QCOMPARE(session.masteringChainState->gain_parameters().gain_db(), -2.0);
 }
 
 void ProjectSessionTest::mastering_chain_normal_save()
