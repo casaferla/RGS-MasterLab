@@ -28,6 +28,9 @@ private slots:
     void testLiveChangePolicy();
     void testSelectionSwitchingPreservesStateAndHistory();
     void testNewSourceResetAndRefreshSynchronization();
+    void testSelectionByStableModuleInstanceId();
+    void testSelectedIndexIsProjectionOfSelectedIdentity();
+    void testAdapterOrderMatchesMasteringChainState();
 };
 
 void DspModuleAdapterTest::testAdapterInventoryAndOrder()
@@ -343,6 +346,81 @@ void DspModuleAdapterTest::testNewSourceResetAndRefreshSynchronization()
 
     QCOMPARE(gainAdapter->configuration_state(), QStringLiteral("Default"));
     QCOMPARE(eqAdapter->configuration_state(), QStringLiteral("Default"));
+}
+
+void DspModuleAdapterTest::testSelectionByStableModuleInstanceId()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto chainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto gainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
+    const auto eqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+
+    auto chainState = std::move(*MasteringChainState::create_default(*registry.value(), chainUuid, gainId, eqId).value());
+    GainViewModel gainVM{&chainState, nullptr};
+    EqViewModel eqVM{&chainState, nullptr};
+    DspChainAdapterModel chainModel{&gainVM, &eqVM, &chainState};
+
+    const QString gainInstanceId = QString::fromStdString(gainId.to_string());
+    const QString eqInstanceId = QString::fromStdString(eqId.to_string());
+
+    // Selection defaults to gainInstanceId
+    QCOMPARE(chainModel.selected_instance_id(), gainInstanceId);
+    QCOMPARE(chainModel.active_module()->instance_id(), gainInstanceId);
+
+    // Select EQ by stable instance ID
+    chainModel.selectModuleByInstanceId(eqInstanceId);
+    QCOMPARE(chainModel.selected_instance_id(), eqInstanceId);
+    QCOMPARE(chainModel.active_module()->instance_id(), eqInstanceId);
+}
+
+void DspModuleAdapterTest::testSelectedIndexIsProjectionOfSelectedIdentity()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto chainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto gainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
+    const auto eqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+
+    auto chainState = std::move(*MasteringChainState::create_default(*registry.value(), chainUuid, gainId, eqId).value());
+    GainViewModel gainVM{&chainState, nullptr};
+    EqViewModel eqVM{&chainState, nullptr};
+    DspChainAdapterModel chainModel{&gainVM, &eqVM, &chainState};
+
+    const QString eqInstanceId = QString::fromStdString(eqId.to_string());
+
+    QCOMPARE(chainModel.selected_index(), 0);
+
+    chainModel.selectModuleByInstanceId(eqInstanceId);
+    QCOMPARE(chainModel.selected_index(), 1);
+}
+
+void DspModuleAdapterTest::testAdapterOrderMatchesMasteringChainState()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto chainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto gainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
+    const auto eqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+
+    auto chainState = std::move(*MasteringChainState::create_default(*registry.value(), chainUuid, gainId, eqId).value());
+    GainViewModel gainVM{&chainState, nullptr};
+    EqViewModel eqVM{&chainState, nullptr};
+    DspChainAdapterModel chainModel{&gainVM, &eqVM, &chainState};
+
+    const auto instances = chainState.instances();
+    const auto modules = chainModel.modules();
+
+    QCOMPARE(modules.size(), static_cast<qsizetype>(instances.size()));
+    for (std::size_t idx = 0; idx < instances.size(); ++idx) {
+        auto* adapter = qobject_cast<DspModuleAdapter*>(modules[static_cast<qsizetype>(idx)].value<QObject*>());
+        QVERIFY(adapter != nullptr);
+        QCOMPARE(adapter->instance_id(), QString::fromStdString(instances[idx].instance_id().to_string()));
+        QCOMPARE(adapter->type_id(), QString::fromStdString(std::string{instances[idx].module_type_id()}));
+    }
 }
 
 }  // namespace rgsml::app::tests

@@ -42,26 +42,18 @@ Rectangle {
             id: realChainSelector
             objectName: "dspChainSelector"
             adapterModel: root.adapterModel
-            selectedIndex: root.selectedModuleIndex
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
-            onSelectedIndexChanged: {
-                root.selectedModuleIndex = selectedIndex
-                if (root.adapterModel) {
-                    root.adapterModel.setSelectedIndex(selectedIndex)
-                }
-            }
         }
 
         DspEditorHost {
             id: realEditorHost
             objectName: "dspEditorHost"
             adapterModel: root.adapterModel
-            selectedModuleIndex: root.selectedModuleIndex
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
             spectrumViewModel: root.spectrumViewModel
-            activeChainRow: root.selectedModuleIndex === 0
+            activeChainRow: root.adapterModel && root.adapterModel.selectedIndex === 0
                 ? realChainSelector.inputGainRow
                 : realChainSelector.parametricEqRow
         }

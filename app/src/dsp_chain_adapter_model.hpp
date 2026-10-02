@@ -6,6 +6,7 @@
 #include "mastering_chain_state.hpp"
 
 #include <QObject>
+#include <QString>
 #include <QVariantList>
 
 #include <memory>
@@ -16,6 +17,7 @@ namespace rgsml::app {
 class DspChainAdapterModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList modules READ modules NOTIFY changed)
+    Q_PROPERTY(QString selectedInstanceId READ selected_instance_id WRITE selectModuleByInstanceId NOTIFY changed)
     Q_PROPERTY(int selectedIndex READ selected_index WRITE setSelectedIndex NOTIFY changed)
     Q_PROPERTY(DspModuleAdapter* selectedModule READ selected_module NOTIFY changed)
     Q_PROPERTY(DspModuleAdapter* activeModule READ active_module NOTIFY changed)
@@ -29,6 +31,7 @@ public:
     ~DspChainAdapterModel() override = default;
 
     [[nodiscard]] QVariantList modules() const;
+    [[nodiscard]] QString selected_instance_id() const;
     [[nodiscard]] int selected_index() const noexcept;
     [[nodiscard]] DspModuleAdapter* selected_module() const noexcept;
     [[nodiscard]] DspModuleAdapter* active_module() const noexcept;
@@ -43,12 +46,14 @@ signals:
     void changed();
 
 private:
+    void rebuild_adapters_from_authority();
+
     GainViewModel* gainViewModel_{nullptr};
     EqViewModel* eqViewModel_{nullptr};
     MasteringChainState* chainState_{nullptr};
 
     std::vector<std::unique_ptr<DspModuleAdapter>> moduleAdapters_;
-    int selectedIndex_{0};
+    QString selectedInstanceId_;
 };
 
 }  // namespace rgsml::app

@@ -342,7 +342,11 @@ ApplicationWindow {
                             text: "Input Gain"
                             enabled: true
                             onTriggered: {
-                                realDspWorkspace.selectedModuleIndex = 0
+                                if (typeof dspChainAdapterModel !== "undefined" && dspChainAdapterModel && dspChainAdapterModel.modules && dspChainAdapterModel.modules.length > 0) {
+                                    dspChainAdapterModel.selectModuleByInstanceId(dspChainAdapterModel.modules[0].instanceId)
+                                } else {
+                                    realDspWorkspace.selectedModuleIndex = 0
+                                }
                                 realDspWorkspace.editorHost.forceActiveFocus()
                             }
                         }
@@ -351,7 +355,11 @@ ApplicationWindow {
                             text: "Parametric EQ"
                             enabled: true
                             onTriggered: {
-                                realDspWorkspace.selectedModuleIndex = 1
+                                if (typeof dspChainAdapterModel !== "undefined" && dspChainAdapterModel && dspChainAdapterModel.modules && dspChainAdapterModel.modules.length > 1) {
+                                    dspChainAdapterModel.selectModuleByInstanceId(dspChainAdapterModel.modules[1].instanceId)
+                                } else {
+                                    realDspWorkspace.selectedModuleIndex = 1
+                                }
                                 realDspWorkspace.editorHost.forceActiveFocus()
                             }
                         }

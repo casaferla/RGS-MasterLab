@@ -17,9 +17,9 @@ Rectangle {
     property alias viewModel: root.eqViewModel
 
     readonly property var activeModule: adapterModel ? adapterModel.activeModule : null
-    readonly property var activeViewModel: activeModule ? (activeModule.gainViewModel ? activeModule.gainViewModel : activeModule.eqViewModel) : (selectedModuleIndex === 0 ? gainViewModel : eqViewModel)
-    readonly property string moduleTitle: activeModule ? activeModule.displayName : (selectedModuleIndex === 0 ? "Input Gain" : "Parametric EQ")
-    readonly property string moduleContext: activeModule ? activeModule.workspaceContextLabel : (selectedModuleIndex === 0 ? "Gain Staging / Manual Mastering" : "Manual Mastering")
+    readonly property var activeViewModel: activeModule ? (activeModule.gainViewModel ? activeModule.gainViewModel : activeModule.eqViewModel) : null
+    readonly property string moduleTitle: activeModule ? activeModule.displayName : ""
+    readonly property string moduleContext: activeModule ? activeModule.workspaceContextLabel : ""
 
     implicitWidth: 992
     implicitHeight: 612
@@ -58,7 +58,7 @@ Rectangle {
     // established editor behavior. Unhandled Escape still bubbles to Keys above.
     Shortcut {
         sequence: "Escape"
-        enabled: (activeModule ? activeModule.editorContentKey === "INPUT_GAIN" : root.selectedModuleIndex === 0) && activeChainRow !== null
+        enabled: (activeModule ? activeModule.editorContentKey === "INPUT_GAIN" : false) && activeChainRow !== null
         onActivated: {
             if (activeChainRow) {
                 activeChainRow.forceActiveFocus()
@@ -104,16 +104,16 @@ Rectangle {
                 Layout.preferredWidth: statusText.implicitWidth + 24
                 radius: 6
                 color: {
-                    if (!root.activeViewModel) return "#0F2236"
-                    const status = root.activeViewModel.previewStatus
+                    if (!root.activeModule) return "#0F2236"
+                    const status = root.activeModule.previewStatus
                     if (status === "RENDERING") return "#2A2814"
                     if (status === "READY") return "#1400D47A"
                     if (status === "ERROR") return "#14F27683"
                     return "#0F2236"
                 }
                 border.color: {
-                    if (!root.activeViewModel) return "#27465F"
-                    const status = root.activeViewModel.previewStatus
+                    if (!root.activeModule) return "#27465F"
+                    const status = root.activeModule.previewStatus
                     if (status === "RENDERING") return "#F2B632"
                     if (status === "READY") return "#00D47A"
                     if (status === "ERROR") return "#F27683"
@@ -126,14 +126,14 @@ Rectangle {
                     objectName: "dspHostStatusText"
                     anchors.centerIn: parent
                     text: {
-                        if (!root.activeViewModel) return "NO PREVIEW"
-                        const status = root.activeViewModel.previewStatus
+                        if (!root.activeModule) return "NO PREVIEW"
+                        const status = root.activeModule.previewStatus
                         if (status === "NO_PREPARED_REALIZATION" || status === "IDLE") return "NO PREVIEW"
                         return status
                     }
                     color: {
-                        if (!root.activeViewModel) return "#A1B5C9"
-                        const status = root.activeViewModel.previewStatus
+                        if (!root.activeModule) return "#A1B5C9"
+                        const status = root.activeModule.previewStatus
                         if (status === "RENDERING") return "#F2B632"
                         if (status === "READY") return "#00D47A"
                         if (status === "ERROR") return "#F27683"
@@ -154,16 +154,16 @@ Rectangle {
                     objectName: "eqUndoButton"
                     text: "Undo"
                     minimumControlWidth: 64
-                    visible: root.activeModule ? root.activeModule.historySupported : (root.selectedModuleIndex === 1)
-                    enabled: root.activeModule ? root.activeModule.canUndo : (root.eqViewModel ? root.eqViewModel.canUndo : false)
-                    onClicked: if (root.activeModule) root.activeModule.undo(); else if (root.eqViewModel) root.eqViewModel.undo()
+                    visible: root.activeModule ? root.activeModule.historySupported : false
+                    enabled: root.activeModule ? root.activeModule.canUndo : false
+                    onClicked: if (root.activeModule) root.activeModule.undo()
                     Accessible.name: "Undo edit"
                     ToolTip.text: "Undo last edit (Ctrl+Z)"
                     ToolTip.visible: hovered
                     Shortcut {
                         sequence: "StandardKey.Undo"
-                        enabled: root.activeModule ? (root.activeModule.historySupported && root.activeModule.canUndo) : (root.selectedModuleIndex === 1 && root.eqViewModel && root.eqViewModel.canUndo)
-                        onActivated: if (root.activeModule) root.activeModule.undo(); else if (root.eqViewModel) root.eqViewModel.undo()
+                        enabled: root.activeModule ? (root.activeModule.historySupported && root.activeModule.canUndo) : false
+                        onActivated: if (root.activeModule) root.activeModule.undo()
                     }
                 }
 
@@ -172,32 +172,32 @@ Rectangle {
                     objectName: "eqRedoButton"
                     text: "Redo"
                     minimumControlWidth: 64
-                    visible: root.activeModule ? root.activeModule.historySupported : (root.selectedModuleIndex === 1)
-                    enabled: root.activeModule ? root.activeModule.canRedo : (root.eqViewModel ? root.eqViewModel.canRedo : false)
-                    onClicked: if (root.activeModule) root.activeModule.redo(); else if (root.eqViewModel) root.eqViewModel.redo()
+                    visible: root.activeModule ? root.activeModule.historySupported : false
+                    enabled: root.activeModule ? root.activeModule.canRedo : false
+                    onClicked: if (root.activeModule) root.activeModule.redo()
                     Accessible.name: "Redo edit"
                     ToolTip.text: "Redo last edit (Ctrl+Y)"
                     ToolTip.visible: hovered
                     Shortcut {
                         sequence: "StandardKey.Redo"
-                        enabled: root.activeModule ? (root.activeModule.historySupported && root.activeModule.canRedo) : (root.selectedModuleIndex === 1 && root.eqViewModel && root.eqViewModel.canRedo)
-                        onActivated: if (root.activeModule) root.activeModule.redo(); else if (root.eqViewModel) root.eqViewModel.redo()
+                        enabled: root.activeModule ? (root.activeModule.historySupported && root.activeModule.canRedo) : false
+                        onActivated: if (root.activeModule) root.activeModule.redo()
                     }
                 }
 
                 Item {
                     Layout.preferredWidth: 8
-                    visible: root.activeModule ? root.activeModule.historySupported : (root.selectedModuleIndex === 1)
+                    visible: root.activeModule ? root.activeModule.historySupported : false
                 }
 
                 StudioButton {
                     id: abActiveButton
                     objectName: "abButtonActive"
-                    text: root.activeModule ? ("A: " + root.activeModule.displayName + " Active") : (root.selectedModuleIndex === 0 ? "A: Input Gain Active" : "A: Parametric EQ Active")
-                    selected: root.activeModule ? !root.activeModule.bypass : (root.activeViewModel ? !root.activeViewModel.bypass : true)
+                    text: root.activeModule ? ("A: " + root.activeModule.displayName + " Active") : "A: Active"
+                    selected: root.activeModule ? !root.activeModule.bypass : true
                     tone: "primary"
                     accentColor: "#00C8FF"
-                    onClicked: if (root.activeModule) root.activeModule.setBypass(false); else if (root.activeViewModel) root.activeViewModel.setBypass(false)
+                    onClicked: if (root.activeModule) root.activeModule.setBypass(false)
                     Accessible.name: text
                     ToolTip.text: "Activate module processing"
                     ToolTip.visible: hovered
@@ -207,10 +207,10 @@ Rectangle {
                     id: abBypassButton
                     objectName: "abButtonBypass"
                     text: "B: Bypass"
-                    selected: root.activeModule ? root.activeModule.bypass : (root.activeViewModel ? root.activeViewModel.bypass : false)
+                    selected: root.activeModule ? root.activeModule.bypass : false
                     tone: "gold"
                     accentColor: "#F2B632"
-                    onClicked: if (root.activeModule) root.activeModule.setBypass(true); else if (root.activeViewModel) root.activeViewModel.setBypass(true)
+                    onClicked: if (root.activeModule) root.activeModule.setBypass(true)
                     Accessible.name: "B: Bypass"
                     ToolTip.text: "Bypass module processing"
                     ToolTip.visible: hovered
@@ -222,19 +222,19 @@ Rectangle {
         InputGainEditor {
             id: inputGainEditor
             objectName: "inputGainEditor"
-            visible: root.activeModule ? (root.activeModule.editorContentKey === "INPUT_GAIN") : (root.selectedModuleIndex === 0)
+            visible: root.activeModule ? (root.activeModule.editorContentKey === "INPUT_GAIN") : false
             Layout.fillWidth: true
             Layout.fillHeight: true
-            viewModel: root.activeModule ? root.activeModule.gainViewModel : root.gainViewModel
+            viewModel: root.activeModule ? root.activeModule.gainViewModel : null
         }
 
         ParametricEqEditor {
             id: parametricEqEditor
             objectName: "parametricEqEditor"
-            visible: root.activeModule ? (root.activeModule.editorContentKey === "PARAMETRIC_EQ") : (root.selectedModuleIndex === 1)
+            visible: root.activeModule ? (root.activeModule.editorContentKey === "PARAMETRIC_EQ") : false
             Layout.fillWidth: true
             Layout.fillHeight: true
-            viewModel: root.activeModule ? root.activeModule.eqViewModel : root.eqViewModel
+            viewModel: root.activeModule ? root.activeModule.eqViewModel : null
             spectrumViewModel: root.spectrumViewModel
         }
     }

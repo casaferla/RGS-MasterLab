@@ -65,7 +65,7 @@ Rectangle {
 
             Repeater {
                 id: rowRepeater
-                model: root.adapterModel ? root.adapterModel.modules : 2
+                model: root.adapterModel ? root.adapterModel.modules : null
 
                 delegate: Rectangle {
                     id: rowItem
@@ -74,8 +74,8 @@ Rectangle {
                     Layout.preferredHeight: 52
                     radius: 4
 
-                    readonly property var moduleAdapter: root.adapterModel && root.adapterModel.modules ? root.adapterModel.modules[index] : null
-                    readonly property bool isSelected: root.selectedIndex === index
+                    readonly property var moduleAdapter: modelData
+                    readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === index)
                     readonly property bool isDefaultState: moduleAdapter ? (moduleAdapter.configurationState === "Default") : true
                     readonly property bool isBypassed: moduleAdapter ? moduleAdapter.bypass : false
                     readonly property bool hasError: moduleAdapter ? moduleAdapter.hasError : false
@@ -91,8 +91,8 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: {
-                            if (root.adapterModel) {
-                                root.adapterModel.setSelectedIndex(index)
+                            if (root.adapterModel && moduleAdapter) {
+                                root.adapterModel.selectModuleByInstanceId(moduleAdapter.instanceId)
                             } else {
                                 root.selectedIndex = index
                             }
@@ -102,31 +102,31 @@ Rectangle {
 
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
-                            if (root.adapterModel) {
-                                root.adapterModel.setSelectedIndex(index)
+                            if (root.adapterModel && moduleAdapter) {
+                                root.adapterModel.selectModuleByInstanceId(moduleAdapter.instanceId)
                             } else {
                                 root.selectedIndex = index
                             }
                             event.accepted = true
                         } else if (event.key === Qt.Key_Down) {
                             if (index + 1 < rowRepeater.count) {
-                                if (root.adapterModel) {
-                                    root.adapterModel.setSelectedIndex(index + 1)
+                                var nextItem = rowRepeater.itemAt(index + 1)
+                                if (nextItem && nextItem.moduleAdapter && root.adapterModel) {
+                                    root.adapterModel.selectModuleByInstanceId(nextItem.moduleAdapter.instanceId)
                                 } else {
                                     root.selectedIndex = index + 1
                                 }
-                                var nextItem = rowRepeater.itemAt(index + 1)
                                 if (nextItem) nextItem.forceActiveFocus()
                                 event.accepted = true
                             }
                         } else if (event.key === Qt.Key_Up) {
                             if (index > 0) {
-                                if (root.adapterModel) {
-                                    root.adapterModel.setSelectedIndex(index - 1)
+                                var prevItem = rowRepeater.itemAt(index - 1)
+                                if (prevItem && prevItem.moduleAdapter && root.adapterModel) {
+                                    root.adapterModel.selectModuleByInstanceId(prevItem.moduleAdapter.instanceId)
                                 } else {
                                     root.selectedIndex = index - 1
                                 }
-                                var prevItem = rowRepeater.itemAt(index - 1)
                                 if (prevItem) prevItem.forceActiveFocus()
                                 event.accepted = true
                             }
@@ -150,8 +150,8 @@ Rectangle {
                             border.width: 1
 
                             ToolTip.text: rowItem.isDefaultState
-                                ? (index === 0 ? "0.0 dB Default" : "Canonical Default / Flat")
-                                : (index === 0 ? "Manual Non-Default Gain" : "Manual Non-Default")
+                                ? (rowItem.moduleAdapter ? (rowItem.moduleAdapter.displayName + " Default") : "Default")
+                                : (rowItem.moduleAdapter ? ("Manual Non-Default " + rowItem.moduleAdapter.displayName) : "Manual Non-Default")
                             ToolTip.visible: ledMouse.containsMouse
 
                             MouseArea {
@@ -166,7 +166,7 @@ Rectangle {
                             spacing: 2
 
                             Text {
-                                text: rowItem.moduleAdapter ? rowItem.moduleAdapter.displayName : (index === 0 ? "Input Gain" : "Parametric EQ")
+                                text: rowItem.moduleAdapter ? rowItem.moduleAdapter.displayName : ""
                                 color: rowItem.isSelected ? "#F5F8FC" : "#C4D4E0"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 12
@@ -176,7 +176,7 @@ Rectangle {
 
                             Text {
                                 objectName: "dspChainStateText_" + index
-                                text: rowItem.moduleAdapter ? rowItem.moduleAdapter.stateText : (index === 0 ? "0.0 dB Default" : "Flat Default")
+                                text: rowItem.moduleAdapter ? rowItem.moduleAdapter.stateText : ""
                                 color: "#7A8E9E"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
