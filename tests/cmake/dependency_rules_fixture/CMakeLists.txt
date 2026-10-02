@@ -13,8 +13,17 @@ include("${RGSML_SOURCE_DIR}/cmake/RgsmlWarnings.cmake")
 include("${RGSML_SOURCE_DIR}/cmake/RgsmlDependencyRules.cmake")
 add_subdirectory("${RGSML_SOURCE_DIR}/core" rgsml_core_build)
 
-if(FIXTURE_CASE MATCHES "^project_")
+# Keep fixture dependency closure aligned with production CMake. Project uses both
+# vendor JSON and minizip; DSP now also has a PRIVATE dependency on rgsml_vendor_json,
+# and Render reaches DSP. Any fixture that instantiates those targets must materialize
+# the canonical third-party targets first.
+if(FIXTURE_CASE MATCHES "^(project_|dsp_|render_)"
+    OR FIXTURE_CASE STREQUAL "core_negative_dsp"
+    OR FIXTURE_CASE STREQUAL "audio_negative_dsp")
     add_subdirectory("${RGSML_SOURCE_DIR}/third_party" rgsml_vendor_build)
+endif()
+
+if(FIXTURE_CASE MATCHES "^project_")
     add_subdirectory("${RGSML_SOURCE_DIR}/project" rgsml_project_build)
 endif()
 
