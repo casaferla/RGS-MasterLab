@@ -172,12 +172,41 @@ namespace {
         && image.save(QDir{outputDirectory}.filePath(fileName), "PNG");
 }
 
+[[nodiscard]] bool check_item_contained_in_ancestor(
+    QQuickItem* childItem,
+    QQuickItem* ancestorItem,
+    double tolerance = 0.5)
+{
+    if (childItem == nullptr || ancestorItem == nullptr) {
+        return false;
+    }
+    const QPointF childTopLeft = childItem->mapToItem(ancestorItem, QPointF{0.0, 0.0});
+    const double right = childTopLeft.x() + childItem->width();
+    const double bottom = childTopLeft.y() + childItem->height();
+    return childTopLeft.x() >= -tolerance
+        && right <= ancestorItem->width() + tolerance
+        && childTopLeft.y() >= -tolerance
+        && bottom <= ancestorItem->height() + tolerance;
+}
+
 struct LayoutEvalMetrics {
     int width{0};
     int height{0};
     bool visible{false};
     bool adaptiveContextVisible{false};
+    bool compactBottomRightContained{false};
+    bool hostContainedInCompactBottomRight{false};
+    bool eqEditorContainedInHost{false};
+    bool gainEditorContainedInHost{false};
     bool eqInspectorContained{false};
+    bool eqHeaderControlsContained{false};
+    bool eqFilterButtonsContained{false};
+    bool eqRoutingButtonsContained{false};
+    bool eqNumericFieldsContained{false};
+    bool eqSlopeControlsContained{false};
+    bool gainControlsContained{false};
+    bool dspChainVisible{false};
+    bool manualEditVisible{false};
     double eqEditorHeight{0.0};
     double eqGraphHeight{0.0};
     double eqInspectorY{0.0};
@@ -253,13 +282,18 @@ struct LayoutEvalResult {
     auto* regionContent = obj->findChild<QObject*>(QStringLiteral("auditionRegionContent"));
     auto* adaptiveContext = obj->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace"));
     auto* eqEditor = obj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
+    auto* gainEditor = obj->findChild<QObject*>(QStringLiteral("inputGainEditor"));
     auto* eqGraph = obj->findChild<QObject*>(QStringLiteral("parametricEqGraph"));
     auto* eqInspector = obj->findChild<QObject*>(QStringLiteral("eqInspectorRegion"));
     auto* eqStatus = obj->findChild<QObject*>(QStringLiteral("eqStatusRegion"));
+    auto* compactBottomRight = obj->findChild<QObject*>(QStringLiteral("compactBottomRight"));
+    auto* chainSelector = obj->findChild<QObject*>(QStringLiteral("dspChainSelector"));
+    auto* manualEditText = obj->findChild<QObject*>(QStringLiteral("dspChainStateText_1"));
 
     if (!workspace || !host || !waveform || !source || !control || !region
-        || !controlContent || !regionContent
-        || !adaptiveContext || !eqEditor || !eqGraph || !eqInspector || !eqStatus) {
+        || !controlContent || !regionContent || !compactBottomRight
+        || !adaptiveContext || !eqEditor || !gainEditor || !eqGraph || !eqInspector || !eqStatus
+        || !chainSelector || !manualEditText) {
         return LayoutEvalResult{
             .valid = false,
             .errorMessage = QStringLiteral("One or more required Main child components not found in offscreen harness"),
@@ -272,56 +306,125 @@ struct LayoutEvalResult {
     metrics.height = qwin->property("height").toInt();
     metrics.visible = qwin->property("visible").toBool();
     metrics.adaptiveContextVisible = adaptiveContext->property("visible").toBool();
-    if (auto* editorItem = qobject_cast<QQuickItem*>(eqEditor);
-        editorItem != nullptr) {
-        metrics.eqEditorHeight = editorItem->height();
 
-        if (auto* graphItem = qobject_cast<QQuickItem*>(eqGraph);
-            graphItem != nullptr) {
+    auto* windowContentItem = qwin->contentItem();
+    auto* compactBottomRightItem = qobject_cast<QQuickItem*>(compactBottomRight);
+    auto* hostItem = qobject_cast<QQuickItem*>(host);
+    auto* eqEditorItem = qobject_cast<QQuickItem*>(eqEditor);
+    auto* gainEditorItem = qobject_cast<QQuickItem*>(gainEditor);
+    auto* chainSelectorItem = qobject_cast<QQuickItem*>(chainSelector);
+
+    metrics.compactBottomRightContained = check_item_contained_in_ancestor(compactBottomRightItem, windowContentItem);
+    metrics.hostContainedInCompactBottomRight = check_item_contained_in_ancestor(hostItem, compactBottomRightItem);
+    metrics.eqEditorContainedInHost = check_item_contained_in_ancestor(eqEditorItem, hostItem);
+    metrics.gainEditorContainedInHost = check_item_contained_in_ancestor(gainEditorItem, hostItem);
+    metrics.dspChainVisible = chainSelectorItem != nullptr && chainSelectorItem->isVisible();
+    metrics.manualEditVisible = manualEditText->property("visible").toBool();
+
+    if (eqEditorItem != nullptr && hostItem != nullptr) {
+        metrics.eqEditorHeight = eqEditorItem->height();
+
+        if (auto* graphItem = qobject_cast<QQuickItem*>(eqGraph); graphItem != nullptr) {
             metrics.eqGraphHeight = graphItem->height();
         }
 
-        if (auto* inspectorItem = qobject_cast<QQuickItem*>(eqInspector);
-            inspectorItem != nullptr) {
-            const QPointF inspectorTopLeft = inspectorItem->mapToItem(editorItem, QPointF{0.0, 0.0});
+        if (auto* inspectorItem = qobject_cast<QQuickItem*>(eqInspector); inspectorItem != nullptr) {
+            const QPointF inspectorTopLeft = inspectorItem->mapToItem(eqEditorItem, QPointF{0.0, 0.0});
             metrics.eqInspectorY = inspectorTopLeft.y();
             metrics.eqInspectorHeight = inspectorItem->height();
-            metrics.eqInspectorContained =
-                inspectorTopLeft.y() >= -0.5
-                && inspectorTopLeft.y() + inspectorItem->height() <= editorItem->height() + 0.5;
+            metrics.eqInspectorContained = check_item_contained_in_ancestor(inspectorItem, eqEditorItem);
         }
 
-        if (auto* statusItem = qobject_cast<QQuickItem*>(eqStatus);
-            statusItem != nullptr) {
-            const QPointF statusTopLeft = statusItem->mapToItem(editorItem, QPointF{0.0, 0.0});
+        if (auto* statusItem = qobject_cast<QQuickItem*>(eqStatus); statusItem != nullptr) {
+            const QPointF statusTopLeft = statusItem->mapToItem(eqEditorItem, QPointF{0.0, 0.0});
             metrics.eqStatusY = statusTopLeft.y();
             metrics.eqStatusHeight = statusItem->height();
         }
+
+        // Header / Action Controls
+        auto* abActive = host->findChild<QObject*>(QStringLiteral("abButtonActive"));
+        auto* abBypass = host->findChild<QObject*>(QStringLiteral("abButtonBypass"));
+        auto* undoBtn = host->findChild<QObject*>(QStringLiteral("eqUndoButton"));
+        auto* redoBtn = host->findChild<QObject*>(QStringLiteral("eqRedoButton"));
+        metrics.eqHeaderControlsContained =
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(abActive), hostItem) &&
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(abBypass), hostItem) &&
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(undoBtn), hostItem) &&
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(redoBtn), hostItem);
+
+        // Filter Buttons
+        bool filterButtonsOk = true;
+        for (const auto& token : {QStringLiteral("BELL"), QStringLiteral("NOTCH"), QStringLiteral("LOW_SHELF"),
+                                  QStringLiteral("HIGH_SHELF"), QStringLiteral("HIGH_PASS"), QStringLiteral("LOW_PASS")}) {
+            auto* filterBtn = find_child_by_name(eqEditor, QStringLiteral("filterButton_") + token);
+            if (!check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(filterBtn), eqEditorItem)) {
+                filterButtonsOk = false;
+                break;
+            }
+        }
+        metrics.eqFilterButtonsContained = filterButtonsOk;
+
+        // Routing Buttons & Mixed Routing Badge
+        bool routingButtonsOk = true;
+        for (const auto& token : {QStringLiteral("STEREO"), QStringLiteral("MID"), QStringLiteral("SIDE"),
+                                  QStringLiteral("LEFT"), QStringLiteral("RIGHT")}) {
+            auto* routingBtn = find_child_by_name(eqEditor, QStringLiteral("routingButton_") + token);
+            if (!check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(routingBtn), eqEditorItem)) {
+                routingButtonsOk = false;
+                break;
+            }
+        }
+        auto* mixedBadge = eqEditor->findChild<QObject*>(QStringLiteral("mixedRoutingBadge"));
+        if (mixedBadge && mixedBadge->property("visible").toBool()) {
+            if (!check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(mixedBadge), eqEditorItem)) {
+                routingButtonsOk = false;
+            }
+        }
+        metrics.eqRoutingButtonsContained = routingButtonsOk;
+
+        // Numeric Fields
+        auto* freqField = find_child_by_name(eqEditor, QStringLiteral("frequencyField"));
+        auto* gainField = find_child_by_name(eqEditor, QStringLiteral("gainField"));
+        auto* qField = find_child_by_name(eqEditor, QStringLiteral("qField"));
+        metrics.eqNumericFieldsContained =
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(freqField), eqEditorItem) &&
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(gainField), eqEditorItem) &&
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(qField), eqEditorItem);
+
+        // Slope Controls
+        auto* slopeGroup = find_child_by_name(eqEditor, QStringLiteral("slopeControls"));
+        metrics.eqSlopeControlsContained = check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(slopeGroup), eqEditorItem);
     }
+
+    if (gainEditorItem != nullptr && hostItem != nullptr) {
+        auto* resetGainBtn = gainEditor->findChild<QObject*>(QStringLiteral("resetGainButton"));
+        auto* gainDisplay = gainEditor->findChild<QObject*>(QStringLiteral("gainDbDisplay"));
+        auto* gainSld = gainEditor->findChild<QObject*>(QStringLiteral("gainSlider"));
+        auto* gainIn = gainEditor->findChild<QObject*>(QStringLiteral("gainDbInput"));
+        metrics.gainControlsContained =
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(resetGainBtn), gainEditorItem) &&
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(gainDisplay), gainEditorItem) &&
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(gainSld), gainEditorItem) &&
+            check_item_contained_in_ancestor(qobject_cast<QQuickItem*>(gainIn), gainEditorItem);
+    }
+
     metrics.sourceHeight = source->property("height").toDouble();
     metrics.waveformHeight = waveform->property("height").toDouble();
     metrics.controlHeight = control->property("height").toDouble();
     metrics.regionHeight = region->property("height").toDouble();
 
-    if (auto* controlItem = qobject_cast<QQuickItem*>(control);
-        controlItem != nullptr) {
-        if (auto* contentItem = qobject_cast<QQuickItem*>(controlContent);
-            contentItem != nullptr) {
+    if (auto* controlItem = qobject_cast<QQuickItem*>(control); controlItem != nullptr) {
+        if (auto* contentItem = qobject_cast<QQuickItem*>(controlContent); contentItem != nullptr) {
             metrics.controlContentLeft = contentItem->x();
-            metrics.controlContentRight =
-                controlItem->width() - (contentItem->x() + contentItem->width());
+            metrics.controlContentRight = controlItem->width() - (contentItem->x() + contentItem->width());
         }
     }
-    if (auto* regionItem = qobject_cast<QQuickItem*>(region);
-        regionItem != nullptr) {
-        if (auto* contentItem = qobject_cast<QQuickItem*>(regionContent);
-            contentItem != nullptr) {
+    if (auto* regionItem = qobject_cast<QQuickItem*>(region); regionItem != nullptr) {
+        if (auto* contentItem = qobject_cast<QQuickItem*>(regionContent); contentItem != nullptr) {
             metrics.regionContentLeft = contentItem->x();
-            metrics.regionContentRight =
-                regionItem->width() - (contentItem->x() + contentItem->width());
+            metrics.regionContentRight = regionItem->width() - (contentItem->x() + contentItem->width());
             metrics.regionContentTop = contentItem->y();
-            metrics.regionContentBottom =
-                regionItem->height() - (contentItem->y() + contentItem->height());
+            metrics.regionContentBottom = regionItem->height() - (contentItem->y() + contentItem->height());
         }
     }
 
@@ -1133,12 +1236,28 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QCOMPARE(metrics.regionContentBottom, 6.0);
     };
 
+    const auto verifyContainmentMetrics = [](const LayoutEvalMetrics& metrics, const char* sizeLabel) {
+        QVERIFY2(metrics.compactBottomRightContained, qPrintable(QString("compactBottomRight must be contained at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.hostContainedInCompactBottomRight, qPrintable(QString("dspEditorHost must be contained in compactBottomRight at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.eqEditorContainedInHost, qPrintable(QString("parametricEqEditor must be contained in dspEditorHost at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.gainEditorContainedInHost, qPrintable(QString("inputGainEditor must be contained in dspEditorHost at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.eqHeaderControlsContained, qPrintable(QString("EQ header/action controls must be contained at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.eqFilterButtonsContained, qPrintable(QString("Filter buttons must be contained at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.eqRoutingButtonsContained, qPrintable(QString("Routing buttons and mixed badge must be contained at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.eqNumericFieldsContained, qPrintable(QString("Numeric fields must be contained at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.eqSlopeControlsContained, qPrintable(QString("Slope controls must be contained at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.gainControlsContained, qPrintable(QString("Input Gain controls must be contained at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.dspChainVisible, qPrintable(QString("DSP Chain selector must be visible at %1").arg(sizeLabel)));
+        QVERIFY2(metrics.manualEditVisible, qPrintable(QString("Manual Edit state text must be visible at %1").arg(sizeLabel)));
+    };
+
     const auto res1440 = evaluate_layout_at_size(engine, 1440, 900);
     QVERIFY2(res1440.valid, qPrintable(res1440.errorMessage));
     QCOMPARE(res1440.metrics.visible, false);
     QCOMPARE(res1440.metrics.width, 1440);
     QCOMPARE(res1440.metrics.height, 900);
     verifyUpperPadding(res1440.metrics);
+    verifyContainmentMetrics(res1440.metrics, "1440x900");
     QVERIFY2(res1440.metrics.adaptiveContextVisible, "Adaptive Context must remain present at 1440x900");
     QVERIFY2(res1440.metrics.eqInspectorContained, "EQ inspector must be vertically contained at 1440x900");
     QVERIFY2(res1440.metrics.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
@@ -1147,9 +1266,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     const auto res1920Short = evaluate_layout_at_size(engine, 1920, 688);
     QVERIFY2(res1920Short.valid, qPrintable(res1920Short.errorMessage));
     verifyUpperPadding(res1920Short.metrics);
+    verifyContainmentMetrics(res1920Short.metrics, "1920x688");
     QVERIFY2(res1920Short.metrics.adaptiveContextVisible, "Adaptive Context must not disappear in a wide, short window");
     QVERIFY2(res1920Short.metrics.eqInspectorContained, "EQ inspector must remain vertically contained in a wide, short window");
     QVERIFY2(res1920Short.metrics.waveformHeight >= 135.0, "Waveform must remain recognizable in a wide, short window");
+
+    const auto res1280 = evaluate_layout_at_size(engine, 1280, 720);
+    QVERIFY2(res1280.valid, qPrintable(res1280.errorMessage));
+    verifyUpperPadding(res1280.metrics);
+    verifyContainmentMetrics(res1280.metrics, "1280x720");
 
     const auto res1184 = evaluate_layout_at_size(engine, 1184, 688);
     QVERIFY2(res1184.valid, qPrintable(res1184.errorMessage));
@@ -1157,6 +1282,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(res1184.metrics.width, 1184);
     QCOMPARE(res1184.metrics.height, 688);
     verifyUpperPadding(res1184.metrics);
+    verifyContainmentMetrics(res1184.metrics, "1184x688");
     QVERIFY2(res1184.metrics.adaptiveContextVisible, "Adaptive Context must remain visible at minimum composition");
     QVERIFY2(res1184.metrics.eqInspectorContained, "EQ inspector must be vertically contained at minimum composition");
     QVERIFY2(res1184.metrics.waveformHeight >= 135.0, "Waveform height must be >= 135 px at 1184x688");
@@ -1208,8 +1334,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // Minimum-size UI must preserve the same control scale and labels as the wide layout.
     QCOMPARE(addBandBtn->property("text").toString(), QStringLiteral("+ Add Band"));
     QCOMPARE(removeBandBtn->property("text").toString(), QStringLiteral("- Remove Band"));
-    QVERIFY(addBandBtn->property("width").toReal() >= 128.0);
-    QVERIFY(removeBandBtn->property("width").toReal() >= 128.0);
+    QVERIFY(addBandBtn->property("width").toReal() >= 110.0);
+    QVERIFY(removeBandBtn->property("width").toReal() >= 110.0);
 
     for (int bandIndex = 0; bandIndex < eqViewModel.band_count(); ++bandIndex) {
         auto* bandButton = find_child_by_name(eqEditor, QString("bandSelectorButton_%1").arg(bandIndex));

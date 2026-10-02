@@ -107,8 +107,8 @@ Rectangle {
             StudioButton {
                 objectName: "addBandButton"
                 text: "+ Add Band"
-                minimumControlWidth: 128
-                contentPadding: 16
+                minimumControlWidth: 110
+                contentPadding: 10
                 enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.addAvailable
                 onClicked: if (root.viewModel) root.viewModel.addBand()
                 Accessible.name: "Add Band"
@@ -119,8 +119,8 @@ Rectangle {
             StudioButton {
                 objectName: "removeBandButton"
                 text: "- Remove Band"
-                minimumControlWidth: 128
-                contentPadding: 16
+                minimumControlWidth: 110
+                contentPadding: 10
                 enabled: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.removeAvailable
                 onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
                 Accessible.name: "Remove Band"
@@ -305,12 +305,12 @@ Rectangle {
                             }
                         }
 
-                        // Mixed Routing Badge (164 x 28 lp)
+                        // Mixed Routing Badge (140 x 28 lp)
                         Rectangle {
                             objectName: "mixedRoutingBadge"
                             visible: root.viewModel !== null && root.viewModel !== undefined && root.viewModel.mixedRouting
                             Layout.preferredHeight: 28
-                            Layout.preferredWidth: 164
+                            Layout.preferredWidth: 140
                             radius: 8
                             color: "#336C4EA6"
                             border.color: "#B3A989F2"

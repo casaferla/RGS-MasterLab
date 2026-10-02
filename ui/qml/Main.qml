@@ -561,7 +561,7 @@ ApplicationWindow {
                 }
             }
 
-            // Compact Authored Bottom Split (43% Left Context Area / 57% Right DSP Editor Area)
+            // Compact Authored Bottom Split (~36% Left Context Area / ~64% Right DSP Editor Area)
             RowLayout {
                 id: compactBottomSplit
                 objectName: "compactBottomSplit"
@@ -571,11 +571,11 @@ ApplicationWindow {
                 Layout.rightMargin: 12
                 spacing: 8
 
-                // Left Context Area (~43% width)
+                // Left Context Area (~36% width, max 420 px width)
                 Rectangle {
                     id: compactBottomLeft
                     objectName: "compactBottomLeft"
-                    Layout.preferredWidth: (root.width - 32) * 0.43
+                    Layout.preferredWidth: Math.min((root.width - 32) * 0.36, 420)
                     Layout.fillHeight: true
                     color: "transparent"
 
