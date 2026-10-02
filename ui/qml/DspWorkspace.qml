@@ -53,9 +53,7 @@ Rectangle {
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
             spectrumViewModel: root.spectrumViewModel
-            activeChainRow: root.adapterModel && root.adapterModel.selectedIndex === 0
-                ? realChainSelector.inputGainRow
-                : realChainSelector.parametricEqRow
+            activeChainRow: realChainSelector.activeRow
         }
     }
 }

@@ -14,7 +14,16 @@ Rectangle {
     property var gainViewModel: null
     property var eqViewModel: null
 
-    // Explicit focus targets for the unified editor host.
+    // Generic active row lookup for host Escape/focus management
+    readonly property Item activeRow: {
+        var idx = root.adapterModel ? root.adapterModel.selectedIndex : root.selectedIndex
+        if (idx >= 0 && idx < rowRepeater.count) {
+            return rowRepeater.itemAt(idx)
+        }
+        return null
+    }
+
+    // Explicit focus targets retained for existing smoke assertions
     readonly property Item inputGainRow: rowRepeater.count > 0 ? rowRepeater.itemAt(0) : null
     readonly property Item parametricEqRow: rowRepeater.count > 1 ? rowRepeater.itemAt(1) : null
 

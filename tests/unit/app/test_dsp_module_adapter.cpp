@@ -31,6 +31,7 @@ private slots:
     void testSelectionByStableModuleInstanceId();
     void testSelectedIndexIsProjectionOfSelectedIdentity();
     void testAdapterOrderMatchesMasteringChainState();
+    void testProjectOpenRehydrationReconcilesSelectedInstanceId();
 };
 
 void DspModuleAdapterTest::testAdapterInventoryAndOrder()
@@ -421,6 +422,55 @@ void DspModuleAdapterTest::testAdapterOrderMatchesMasteringChainState()
         QCOMPARE(adapter->instance_id(), QString::fromStdString(instances[idx].instance_id().to_string()));
         QCOMPARE(adapter->type_id(), QString::fromStdString(std::string{instances[idx].module_type_id()}));
     }
+}
+
+void DspModuleAdapterTest::testProjectOpenRehydrationReconcilesSelectedInstanceId()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    // Initial pre-open chain IDs
+    const auto preChainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto preGainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
+    const auto preEqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto preGainId = *dsp::ModuleInstanceId::from_uuid(preGainUuid).value();
+    const auto preEqId = *dsp::ModuleInstanceId::from_uuid(preEqUuid).value();
+
+    auto chainStateRes = MasteringChainState::create_default(*registry.value(), preChainUuid, preGainId, preEqId);
+    QVERIFY(chainStateRes);
+    auto chainState = std::move(*chainStateRes.value());
+
+    GainViewModel gainVM{&chainState, nullptr};
+    EqViewModel eqVM{&chainState, nullptr};
+    DspChainAdapterModel chainModel{&gainVM, &eqVM, &chainState};
+
+    // Select EQ in initial chain
+    const QString preEqInstanceId = QString::fromStdString(preEqId.to_string());
+    chainModel.selectModuleByInstanceId(preEqInstanceId);
+    QCOMPARE(chainModel.selected_instance_id(), preEqInstanceId);
+    QCOMPARE(chainModel.selected_index(), 1);
+
+    // Rehydrate/replace chainState with new restored IDs (e.g. from Project Open)
+    const auto restoredChainUuid = *core::Uuid::parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").value();
+    const auto restoredGainUuid = *core::Uuid::parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").value();
+    const auto restoredEqUuid = *core::Uuid::parse("cccccccc-cccc-cccc-cccc-cccccccccccc").value();
+    const auto restoredGainId = *dsp::ModuleInstanceId::from_uuid(restoredGainUuid).value();
+    const auto restoredEqId = *dsp::ModuleInstanceId::from_uuid(restoredEqUuid).value();
+
+    auto restoredChainStateRes = MasteringChainState::create_default(*registry.value(), restoredChainUuid, restoredGainId, restoredEqId);
+    QVERIFY(restoredChainStateRes);
+    chainState = std::move(*restoredChainStateRes.value());
+
+    // Refresh model from authority after Project Open
+    chainModel.refreshFromAuthority();
+
+    const QString restoredEqInstanceId = QString::fromStdString(restoredEqId.to_string());
+
+    // Proves that selectedInstanceId_ reconciles to the restored EQ instance ID based on module type
+    QCOMPARE(chainModel.selected_instance_id(), restoredEqInstanceId);
+    QCOMPARE(chainModel.active_module()->instance_id(), restoredEqInstanceId);
+    QCOMPARE(chainModel.selected_index(), 1);
+    QCOMPARE(chainModel.active_module()->type_id(), QStringLiteral("rgsml.dsp.parametric-eq"));
 }
 
 }  // namespace rgsml::app::tests

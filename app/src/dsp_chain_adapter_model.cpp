@@ -45,9 +45,29 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         moduleAdapters_.push_back(std::move(eqAdapter));
     }
 
-    // Default selection to first module if valid and no selection currently set
-    if (selectedInstanceId_.isEmpty() && !moduleAdapters_.empty()) {
+    // Authoritative selection reconciliation following rehydration
+    bool selectionFound = false;
+    for (const auto& adapter : moduleAdapters_) {
+        if (adapter->instance_id() == selectedInstanceId_) {
+            selectionFound = true;
+            selectedTypeId_ = adapter->type_id();
+            break;
+        }
+    }
+
+    if (!selectionFound && !selectedTypeId_.isEmpty()) {
+        for (const auto& adapter : moduleAdapters_) {
+            if (adapter->type_id() == selectedTypeId_) {
+                selectedInstanceId_ = adapter->instance_id();
+                selectionFound = true;
+                break;
+            }
+        }
+    }
+
+    if (!selectionFound && !moduleAdapters_.empty()) {
         selectedInstanceId_ = moduleAdapters_.front()->instance_id();
+        selectedTypeId_ = moduleAdapters_.front()->type_id();
     }
 }
 
@@ -111,6 +131,7 @@ void DspChainAdapterModel::selectModuleByInstanceId(const QString& instanceId)
         if (adapter->instance_id() == instanceId) {
             if (selectedInstanceId_ != instanceId) {
                 selectedInstanceId_ = instanceId;
+                selectedTypeId_ = adapter->type_id();
                 emit changed();
             }
             return;

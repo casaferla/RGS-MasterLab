@@ -54,6 +54,7 @@ private:
 
     std::vector<std::unique_ptr<DspModuleAdapter>> moduleAdapters_;
     QString selectedInstanceId_;
+    QString selectedTypeId_;
 };
 
 }  // namespace rgsml::app
