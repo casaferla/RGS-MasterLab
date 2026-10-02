@@ -293,12 +293,17 @@ struct LayoutEvalResult {
     auto* compactBottomSplit = obj->findChild<QObject*>(QStringLiteral("compactBottomSplit"));
     auto* compactBottomRight = obj->findChild<QObject*>(QStringLiteral("compactBottomRight"));
     auto* chainSelector = obj->findChild<QObject*>(QStringLiteral("dspChainSelector"));
-    auto* manualEditText = obj->findChild<QObject*>(QStringLiteral("dspChainStateText_1"));
+    auto* parametricEqRow = chainSelector
+        ? qvariant_cast<QObject*>(chainSelector->property("parametricEqRow"))
+        : nullptr;
+    auto* manualEditText = parametricEqRow
+        ? parametricEqRow->findChild<QObject*>(QStringLiteral("dspChainStateText_1"))
+        : nullptr;
 
     if (!workspace || !host || !waveform || !source || !control || !region
         || !controlContent || !regionContent || !compactBottomSplit || !compactBottomRight
         || !adaptiveContext || !eqEditor || !gainEditor || !eqGraph || !eqInspector || !eqStatus
-        || !chainSelector || !manualEditText) {
+        || !chainSelector || !parametricEqRow || !manualEditText) {
         return LayoutEvalResult{
             .valid = false,
             .errorMessage = QStringLiteral("One or more required Main child components not found in offscreen harness"),
@@ -868,15 +873,32 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     // B4.3 Multi-Module Workspace Verification
     qInfo().noquote() << "M12C_SMOKE_PHASE=dsp-chain-rows-and-input-gain-editor";
-    auto* dspChainRow0 = root->findChild<QObject*>(QStringLiteral("dspChainRow_0"));
-    auto* dspChainConfigLed0 = root->findChild<QObject*>(QStringLiteral("dspChainConfigLed_0"));
-    auto* dspChainBypassBadge0 = root->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_0"));
-    auto* dspChainStateText0 = root->findChild<QObject*>(QStringLiteral("dspChainStateText_0"));
+    // Repeater delegates are visual children exposed explicitly by DspChainSelector;
+    // they are not guaranteed to participate in QObject::findChild() from the window root.
+    auto* dspChainRow0 = qvariant_cast<QObject*>(
+        dspChainSelectorObj->property("inputGainRow"));
+    auto* dspChainRow1 = qvariant_cast<QObject*>(
+        dspChainSelectorObj->property("parametricEqRow"));
 
-    auto* dspChainRow1 = root->findChild<QObject*>(QStringLiteral("dspChainRow_1"));
-    auto* dspChainConfigLed1 = root->findChild<QObject*>(QStringLiteral("dspChainConfigLed_1"));
-    auto* dspChainBypassBadge1 = root->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_1"));
-    auto* dspChainStateText1 = root->findChild<QObject*>(QStringLiteral("dspChainStateText_1"));
+    auto* dspChainConfigLed0 = dspChainRow0
+        ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainConfigLed_0"))
+        : nullptr;
+    auto* dspChainBypassBadge0 = dspChainRow0
+        ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_0"))
+        : nullptr;
+    auto* dspChainStateText0 = dspChainRow0
+        ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainStateText_0"))
+        : nullptr;
+
+    auto* dspChainConfigLed1 = dspChainRow1
+        ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainConfigLed_1"))
+        : nullptr;
+    auto* dspChainBypassBadge1 = dspChainRow1
+        ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_1"))
+        : nullptr;
+    auto* dspChainStateText1 = dspChainRow1
+        ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainStateText_1"))
+        : nullptr;
 
     QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr && dspChainStateText0 != nullptr, "Row 0 (Input Gain) components must exist");
     QVERIFY2(dspChainRow1 != nullptr && dspChainConfigLed1 != nullptr && dspChainStateText1 != nullptr, "Row 1 (Parametric EQ) components must exist");
