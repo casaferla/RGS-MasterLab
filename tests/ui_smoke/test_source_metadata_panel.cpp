@@ -484,10 +484,24 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(masteringChainStateRes);
     auto masteringChainState = std::move(*masteringChainStateRes.value());
 
-    app::GainViewModel gainViewModel{&masteringChainState, nullptr};
+    app::MasteringPreviewController previewController{
+        &masteringChainState,
+        [&auditionSelector] {
+            return auditionSelector.prepared_realization_snapshot();
+        },
+        [&auditionSelector](render::RenderResult result) {
+            const bool wasProcessed = auditionSelector.active_target() == app::AuditionTarget::PROCESSED;
+            auto status = auditionSelector.set_processed_realization(std::move(result));
+            if (status && wasProcessed) {
+                static_cast<void>(auditionSelector.switch_to(app::AuditionTarget::PROCESSED));
+            }
+            return status;
+        }
+    };
+    app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     app::EqViewModel eqViewModel{
         &masteringChainState,
-        nullptr
+        &previewController
     };
     app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &masteringChainState};
 
