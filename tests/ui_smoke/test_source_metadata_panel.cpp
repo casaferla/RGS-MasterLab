@@ -1451,6 +1451,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // Verify the alternate Input Gain editor on the same visible minimum-size host,
     // then restore Parametric EQ for the final evidence capture.
     QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 0));
+    // Visibility changes inside QQuickLayout are applied during the next polish/layout pass.
+    // Let the visible native window settle before measuring mapped geometry.
+    QTest::qWait(50);
     QCoreApplication::processEvents();
     auto* inputGainEditorNative = qobject_cast<QQuickItem*>(inputGainEditor);
     QVERIFY2(inputGainEditorNative != nullptr && inputGainEditorNative->isVisible(),
@@ -1464,6 +1467,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             "Input Gain control must stay inside Input Gain editor at minimum size");
     }
     QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 1));
+    QTest::qWait(50);
     QCoreApplication::processEvents();
     QVERIFY2(eqEditorNative->isVisible(), "Parametric EQ must be restored for minimum-size evidence");
 
