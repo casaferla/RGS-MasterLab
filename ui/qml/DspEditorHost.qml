@@ -163,7 +163,7 @@ Rectangle {
                     ToolTip.text: "Undo last edit (Ctrl+Z)"
                     ToolTip.visible: hovered
                     Shortcut {
-                        sequence: StandardKey.Undo
+                        sequences: [ StandardKey.Undo ]
                         enabled: root.activeModule ? (root.activeModule.historySupported && root.activeModule.canUndo) : false
                         onActivated: if (root.activeModule) root.activeModule.undo()
                     }
@@ -181,7 +181,7 @@ Rectangle {
                     ToolTip.text: "Redo last edit (Ctrl+Y)"
                     ToolTip.visible: hovered
                     Shortcut {
-                        sequence: StandardKey.Redo
+                        sequences: [ StandardKey.Redo ]
                         enabled: root.activeModule ? (root.activeModule.historySupported && root.activeModule.canRedo) : false
                         onActivated: if (root.activeModule) root.activeModule.redo()
                     }
