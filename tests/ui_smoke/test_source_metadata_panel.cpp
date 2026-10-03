@@ -1,11 +1,15 @@
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
+#include "dsp_chain_adapter_model.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "gold_selection_view_model.hpp"
 #include "live_spectrum_view_model.hpp"
+#include "mastering_chain_state.hpp"
+#include "mastering_preview_controller.hpp"
 #include "playback_transport_view_model.hpp"
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
+#include <rgsml/dsp/module_registry.hpp>
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "waveform_item.hpp"
@@ -289,12 +293,17 @@ struct LayoutEvalResult {
     auto* compactBottomSplit = obj->findChild<QObject*>(QStringLiteral("compactBottomSplit"));
     auto* compactBottomRight = obj->findChild<QObject*>(QStringLiteral("compactBottomRight"));
     auto* chainSelector = obj->findChild<QObject*>(QStringLiteral("dspChainSelector"));
-    auto* manualEditText = obj->findChild<QObject*>(QStringLiteral("dspChainStateText_1"));
+    auto* parametricEqRow = chainSelector
+        ? qvariant_cast<QObject*>(chainSelector->property("parametricEqRow"))
+        : nullptr;
+    auto* manualEditText = parametricEqRow
+        ? parametricEqRow->findChild<QObject*>(QStringLiteral("dspChainStateText_1"))
+        : nullptr;
 
     if (!workspace || !host || !waveform || !source || !control || !region
         || !controlContent || !regionContent || !compactBottomSplit || !compactBottomRight
         || !adaptiveContext || !eqEditor || !gainEditor || !eqGraph || !eqInspector || !eqStatus
-        || !chainSelector || !manualEditText) {
+        || !chainSelector || !parametricEqRow || !manualEditText) {
         return LayoutEvalResult{
             .valid = false,
             .errorMessage = QStringLiteral("One or more required Main child components not found in offscreen harness"),
@@ -464,8 +473,19 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     ui::WaveformPresentation waveformPresentation;
     app::AuditionRegionViewModel auditionRegion{&playbackTransport};
     app::AuditionSourceSelector auditionSelector{&playbackTransport};
-    app::GainViewModel gainViewModel;
-    app::EqViewModel eqViewModel{
+
+    auto moduleRegistry = dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto chainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto gainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
+    const auto eqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+    auto masteringChainStateRes = app::MasteringChainState::create_default(*moduleRegistry.value(), chainUuid, gainId, eqId);
+    QVERIFY(masteringChainStateRes);
+    auto masteringChainState = std::move(*masteringChainStateRes.value());
+
+    app::MasteringPreviewController previewController{
+        &masteringChainState,
         [&auditionSelector] {
             return auditionSelector.prepared_realization_snapshot();
         },
@@ -478,6 +498,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             return status;
         }
     };
+    app::GainViewModel gainViewModel{&masteringChainState, &previewController};
+    app::EqViewModel eqViewModel{
+        &masteringChainState,
+        &previewController
+    };
+    app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &masteringChainState};
+
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
     app::ProjectSessionViewModel projectSession{
         &model, &goldSelection, &auditionRegion, &playbackTransport};
@@ -494,7 +521,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             return core::Status::success();
         });
     model.set_source_committed_handler(
-        [&model, &auditionRegion, &auditionSelector, &goldSelection, &gainViewModel, &eqViewModel](
+        [&model, &auditionRegion, &auditionSelector, &goldSelection, &dspChainAdapterModel](
             const core::ResourceReference& source) {
             const auto frames = core::FrameCount::create(model.frame_count());
             const auto rate = core::SampleRate::create(model.sample_rate_hz());
@@ -502,19 +529,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             auditionRegion.source_committed(*frames.value(), *rate.value());
             QVERIFY(auditionSelector.source_committed(source));
             QVERIFY(auditionSelector.switch_to(app::AuditionTarget::PREPARED));
-            gainViewModel.resetForNewSource();
-            eqViewModel.resetForNewSource();
-            QCOMPARE(eqViewModel.band_count(), 1);
-            QCOMPARE(eqViewModel.selected_index(), 0);
-            QCOMPARE(eqViewModel.filter_label(), QStringLiteral("BELL"));
-            QCOMPARE(eqViewModel.routing_label(), QStringLiteral("STEREO"));
-            QCOMPARE(eqViewModel.frequency(), 1000.0);
-            QCOMPARE(eqViewModel.gain(), 0.0);
-            QCOMPARE(eqViewModel.q(), 0.707);
-            QVERIFY(!eqViewModel.bypass());
-            QVERIFY(eqViewModel.is_default());
-            QVERIFY(!eqViewModel.can_undo());
-            QVERIFY(!eqViewModel.can_redo());
+            dspChainAdapterModel.resetForNewSource();
             goldSelection.sourceChanged();
         });
     waveformPresentation.set_seek_handler(
@@ -559,6 +574,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("gainViewModel"), &gainViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("eqViewModel"), &eqViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("dspChainAdapterModel"), &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"), &liveSpectrumVM);
     engine.loadFromModule("Rgsml.Ui", "Main");
@@ -870,15 +887,32 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     // B4.3 Multi-Module Workspace Verification
     qInfo().noquote() << "M12C_SMOKE_PHASE=dsp-chain-rows-and-input-gain-editor";
-    auto* dspChainRow0 = root->findChild<QObject*>(QStringLiteral("dspChainRow_0"));
-    auto* dspChainConfigLed0 = root->findChild<QObject*>(QStringLiteral("dspChainConfigLed_0"));
-    auto* dspChainBypassBadge0 = root->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_0"));
-    auto* dspChainStateText0 = root->findChild<QObject*>(QStringLiteral("dspChainStateText_0"));
+    // Repeater delegates are visual children exposed explicitly by DspChainSelector;
+    // they are not guaranteed to participate in QObject::findChild() from the window root.
+    auto* dspChainRow0 = qvariant_cast<QObject*>(
+        dspChainSelectorObj->property("inputGainRow"));
+    auto* dspChainRow1 = qvariant_cast<QObject*>(
+        dspChainSelectorObj->property("parametricEqRow"));
 
-    auto* dspChainRow1 = root->findChild<QObject*>(QStringLiteral("dspChainRow_1"));
-    auto* dspChainConfigLed1 = root->findChild<QObject*>(QStringLiteral("dspChainConfigLed_1"));
-    auto* dspChainBypassBadge1 = root->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_1"));
-    auto* dspChainStateText1 = root->findChild<QObject*>(QStringLiteral("dspChainStateText_1"));
+    auto* dspChainConfigLed0 = dspChainRow0
+        ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainConfigLed_0"))
+        : nullptr;
+    auto* dspChainBypassBadge0 = dspChainRow0
+        ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_0"))
+        : nullptr;
+    auto* dspChainStateText0 = dspChainRow0
+        ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainStateText_0"))
+        : nullptr;
+
+    auto* dspChainConfigLed1 = dspChainRow1
+        ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainConfigLed_1"))
+        : nullptr;
+    auto* dspChainBypassBadge1 = dspChainRow1
+        ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_1"))
+        : nullptr;
+    auto* dspChainStateText1 = dspChainRow1
+        ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainStateText_1"))
+        : nullptr;
 
     QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr && dspChainStateText0 != nullptr, "Row 0 (Input Gain) components must exist");
     QVERIFY2(dspChainRow1 != nullptr && dspChainConfigLed1 != nullptr && dspChainStateText1 != nullptr, "Row 1 (Parametric EQ) components must exist");
@@ -911,12 +945,61 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("0.0 dB"));
     QCOMPARE(gainDbInput->property("text").toString(), QStringLiteral("0.0"));
 
+    auto* dspHostModuleTitle = dspEditorHostObj->findChild<QObject*>(QStringLiteral("dspHostModuleTitle"));
+    auto* dspHostWorkflowContext = dspEditorHostObj->findChild<QObject*>(QStringLiteral("dspHostWorkflowContext"));
+    auto* gainHostUndoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqUndoButton"));
+    auto* gainHostRedoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqRedoButton"));
+    auto* dspEditorHostItem = qobject_cast<QQuickItem*>(dspEditorHostObj);
+    auto* dspHostModuleTitleItem = qobject_cast<QQuickItem*>(dspHostModuleTitle);
+    auto* dspHostWorkflowContextItem = qobject_cast<QQuickItem*>(dspHostWorkflowContext);
+    auto* gainHostUndoItem = qobject_cast<QQuickItem*>(gainHostUndoBtn);
+    auto* gainHostRedoItem = qobject_cast<QQuickItem*>(gainHostRedoBtn);
+    QVERIFY(dspHostModuleTitle && dspHostWorkflowContext && gainHostUndoBtn && gainHostRedoBtn);
+    QVERIFY(dspEditorHostItem && dspHostModuleTitleItem && dspHostWorkflowContextItem && gainHostUndoItem && gainHostRedoItem);
+    QCOMPARE(dspHostModuleTitle->property("text").toString(), QStringLiteral("Input Gain"));
+    QCOMPARE(dspHostWorkflowContext->property("text").toString(), QStringLiteral("Mastering"));
+    QVERIFY(gainHostUndoBtn->property("visible").toBool());
+    QVERIFY(gainHostRedoBtn->property("visible").toBool());
+    QVERIFY(!gainHostUndoBtn->property("enabled").toBool());
+    QVERIFY(!gainHostRedoBtn->property("enabled").toBool());
+
+    const QPointF moduleTitlePosGain = dspHostModuleTitleItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0});
+    const QPointF workflowContextPosGain = dspHostWorkflowContextItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0});
+    const QPointF undoPosGain = gainHostUndoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0});
+    const QPointF redoPosGain = gainHostRedoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0});
+
+    const auto subtreeHasExactText = [](QObject* parent, const QString& expected) {
+        if (parent->property("text").toString() == expected) {
+            return true;
+        }
+        for (auto* child : parent->findChildren<QObject*>()) {
+            if (child->property("text").toString() == expected) {
+                return true;
+            }
+        }
+        return false;
+    };
+    QVERIFY(!subtreeHasExactText(dspEditorHostObj, QStringLiteral("Gain Staging / Manual Mastering")));
+    QVERIFY(!subtreeHasExactText(dspEditorHostObj, QStringLiteral("Manual Mastering")));
+    QVERIFY(!subtreeHasExactText(inputGainEditor, QStringLiteral("GAIN STAGING")));
+    QVERIFY(!subtreeHasExactText(inputGainEditor, QStringLiteral("Fixed First Mastering Stage")));
+
     // Modify Input Gain to +3.5 dB via ViewModel
     QVERIFY(gainViewModel.setGainDb(3.5));
     QCoreApplication::processEvents();
     QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("+3.5 dB"));
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("+3.5 dB Manual"));
     QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
+    QVERIFY(gainHostUndoBtn->property("enabled").toBool());
+
+    // Standard Undo/Redo shortcuts are scoped to the active Gain module.
+    dspEditorHostItem->forceActiveFocus();
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
+    QCoreApplication::processEvents();
+    QCOMPARE(gainViewModel.gain_db(), 0.0);
+    QTest::keyClick(window, Qt::Key_Y, Qt::ControlModifier);
+    QCoreApplication::processEvents();
+    QCOMPARE(gainViewModel.gain_db(), 3.5);
 
     // Valid gain bounds: -24.0 and +24.0 accepted
     QVERIFY(gainViewModel.setGainDb(-24.0));
@@ -989,6 +1072,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(gainViewModel.bypass(), gainBypassBeforeSwitch);
     QCOMPARE(eqViewModel.is_default(), eqDefaultBeforeSwitch);
 
+    QCOMPARE(dspHostModuleTitle->property("text").toString(), QStringLiteral("Parametric EQ"));
+    QCOMPARE(dspHostWorkflowContext->property("text").toString(), QStringLiteral("Mastering"));
+    QVERIFY(gainHostUndoBtn->property("visible").toBool());
+    QVERIFY(gainHostRedoBtn->property("visible").toBool());
+    QVERIFY(!gainHostUndoBtn->property("enabled").toBool());
+    QVERIFY(!gainHostRedoBtn->property("enabled").toBool());
+    QCOMPARE(dspHostModuleTitleItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), moduleTitlePosGain);
+    QCOMPARE(dspHostWorkflowContextItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), workflowContextPosGain);
+    QCOMPARE(gainHostUndoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), undoPosGain);
+    QCOMPARE(gainHostRedoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), redoPosGain);
+
     qInfo().noquote() << "M12C_SMOKE_PHASE=editor-lookup";
     auto* eqEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
     QVERIFY2(eqEditor != nullptr, "parametricEqEditor must exist inside dspEditorHost");
@@ -1026,6 +1120,19 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
     QVERIFY2(dspChainStateText1->property("visible").toBool(), "Manual Edit must be visible for a non-default EQ");
+    QVERIFY(gainHostUndoBtn->property("enabled").toBool());
+
+    // Standard Undo/Redo shortcuts are now scoped to the selected EQ module.
+    const double gainBeforeEqShortcut = gainViewModel.gain_db();
+    dspEditorHostItem->forceActiveFocus();
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.band_count(), 1);
+    QCOMPARE(gainViewModel.gain_db(), gainBeforeEqShortcut);
+    QTest::keyClick(window, Qt::Key_Y, Qt::ControlModifier);
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.band_count(), 2);
+    QCOMPARE(gainViewModel.gain_db(), gainBeforeEqShortcut);
 
     // Input Gain (row 0) remains dark/default and unchanged after EQ-only edit
     QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});

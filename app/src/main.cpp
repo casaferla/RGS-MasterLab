@@ -1,5 +1,6 @@
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
+#include "dsp_chain_adapter_model.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "gold_selection_view_model.hpp"
@@ -109,15 +110,16 @@ int main(int argc, char* argv[])
 
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
+    rgsml::app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &masteringChainState};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
     rgsml::app::ProjectSessionViewModel projectSession{
         &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport,
-        &masteringChainState, &gainViewModel, &eqViewModel, &previewController};
+        &masteringChainState, &gainViewModel, &eqViewModel, &dspChainAdapterModel, &previewController};
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
-         &auditionSelector, &goldSelection, &gainViewModel, &eqViewModel, &projectSession](
+         &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession](
             const rgsml::core::ResourceReference& source) {
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
@@ -132,8 +134,7 @@ int main(int argc, char* argv[])
                 static_cast<void>(auditionSelector.switch_to(
                     rgsml::app::AuditionTarget::PREPARED));
                 if (!projectSession.is_committing_project_open()) {
-                    gainViewModel.resetForNewSource();
-                    eqViewModel.resetForNewSource();
+                    dspChainAdapterModel.resetForNewSource();
                 }
             }
             goldSelection.sourceChanged();
@@ -190,6 +191,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("eqViewModel"),
         &eqViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("dspChainAdapterModel"),
+        &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"),
         &liveSpectrumViewModel);

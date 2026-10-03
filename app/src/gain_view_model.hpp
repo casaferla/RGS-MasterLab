@@ -9,6 +9,7 @@
 #include <QString>
 
 #include <memory>
+#include <vector>
 
 namespace rgsml::app {
 
@@ -17,6 +18,8 @@ class GainViewModel final : public QObject {
     Q_PROPERTY(double gainDb READ gain_db NOTIFY changed)
     Q_PROPERTY(QString gainDbText READ gain_db_text NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
+    Q_PROPERTY(bool canUndo READ can_undo NOTIFY changed)
+    Q_PROPERTY(bool canRedo READ can_redo NOTIFY changed)
     Q_PROPERTY(QString validationError READ validation_error NOTIFY changed)
     Q_PROPERTY(quint64 previewGeneration READ preview_generation NOTIFY changed)
     Q_PROPERTY(QString previewStatus READ preview_status NOTIFY changed)
@@ -35,6 +38,8 @@ public:
     [[nodiscard]] double gain_db() const noexcept;
     [[nodiscard]] QString gain_db_text() const;
     [[nodiscard]] bool bypass() const noexcept;
+    [[nodiscard]] bool can_undo() const noexcept;
+    [[nodiscard]] bool can_redo() const noexcept;
     [[nodiscard]] QString validation_error() const;
     [[nodiscard]] quint64 preview_generation() const noexcept;
     [[nodiscard]] QString preview_status() const;
@@ -43,6 +48,8 @@ public:
     Q_INVOKABLE bool setGainDb(double gainDb);
     Q_INVOKABLE bool setGainDbText(const QString& text);
     Q_INVOKABLE void setBypass(bool bypass);
+    Q_INVOKABLE void undo();
+    Q_INVOKABLE void redo();
     Q_INVOKABLE void resetToDefault();
     Q_INVOKABLE void resetForNewSource();
     Q_INVOKABLE void refreshFromAuthority();
@@ -53,6 +60,7 @@ signals:
 private:
     [[nodiscard]] MasteringChainState& active_chain_state() const noexcept;
     void request_preview();
+    void push_undo_snapshot(double previousGainDb);
 
     MasteringChainState* externalChainState_{nullptr};
     std::unique_ptr<MasteringChainState> ownedChainState_;
@@ -61,6 +69,9 @@ private:
 
     QString validationError_;
     QString draftGainDbText_;
+
+    std::vector<double> undoStack_;
+    std::vector<double> redoStack_;
 };
 
 }  // namespace rgsml::app

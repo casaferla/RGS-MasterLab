@@ -19,6 +19,7 @@ class PlaybackTransportViewModel;
 class MasteringChainState;
 class GainViewModel;
 class EqViewModel;
+class DspChainAdapterModel;
 class MasteringPreviewController;
 
 class ProjectSessionViewModel final : public QObject {
@@ -39,6 +40,18 @@ public:
                             MasteringChainState* masteringChainState = nullptr,
                             GainViewModel* gainViewModel = nullptr,
                             EqViewModel* eqViewModel = nullptr,
+                            MasteringPreviewController* previewController = nullptr,
+                            UuidFactory uuidFactory = {},
+                            QObject* parent = nullptr);
+
+    ProjectSessionViewModel(SourceSelectionViewModel* source,
+                            GoldSelectionViewModel* gold,
+                            AuditionRegionViewModel* region,
+                            PlaybackTransportViewModel* playback,
+                            MasteringChainState* masteringChainState,
+                            GainViewModel* gainViewModel,
+                            EqViewModel* eqViewModel,
+                            DspChainAdapterModel* adapterModel,
                             MasteringPreviewController* previewController = nullptr,
                             UuidFactory uuidFactory = {},
                             QObject* parent = nullptr);
@@ -75,6 +88,7 @@ private:
     MasteringChainState* masteringChainState_{nullptr};
     GainViewModel* gainViewModel_{nullptr};
     EqViewModel* eqViewModel_{nullptr};
+    DspChainAdapterModel* adapterModel_{nullptr};
     MasteringPreviewController* previewController_{nullptr};
     UuidFactory uuidFactory_;
     bool isCommittingProjectOpen_{false};

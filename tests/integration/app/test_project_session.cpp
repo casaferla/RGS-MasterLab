@@ -3,6 +3,7 @@
 #include "gold_selection_view_model.hpp"
 #include "audition_source_selector.hpp"
 #include "audition_region_view_model.hpp"
+#include "dsp_chain_adapter_model.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "mastering_chain_state.hpp"
@@ -96,6 +97,7 @@ struct Session final {
     std::unique_ptr<app::MasteringPreviewController> previewController;
     std::unique_ptr<app::GainViewModel> gainViewModel;
     std::unique_ptr<app::EqViewModel> eqViewModel;
+    std::unique_ptr<app::DspChainAdapterModel> adapterModel;
     app::ProjectSessionViewModel project;
 
     explicit Session(app::ProjectSessionViewModel::UuidFactory uuidFactory = {})
@@ -113,8 +115,10 @@ struct Session final {
           previewController(std::make_unique<app::MasteringPreviewController>(masteringChainState.get())),
           gainViewModel(std::make_unique<app::GainViewModel>(masteringChainState.get(), previewController.get())),
           eqViewModel(std::make_unique<app::EqViewModel>(masteringChainState.get(), previewController.get())),
+          adapterModel(std::make_unique<app::DspChainAdapterModel>(
+              gainViewModel.get(), eqViewModel.get(), masteringChainState.get())),
           project(&source, &gold, &region, &transport, masteringChainState.get(),
-                  gainViewModel.get(), eqViewModel.get(), previewController.get(),
+                  gainViewModel.get(), eqViewModel.get(), adapterModel.get(), previewController.get(),
                   std::move(uuidFactory))
     {
         transport.set_pcm_prepare_handler([this](audio::AudioBufferView view, std::shared_ptr<const void>) {
@@ -132,8 +136,7 @@ struct Session final {
             if (prepared) {
                 (void)selector.switch_to(app::AuditionTarget::PREPARED);
                 if (!project.is_committing_project_open()) {
-                    gainViewModel->resetForNewSource();
-                    eqViewModel->resetForNewSource();
+                    adapterModel->resetForNewSource();
                 }
             }
             gold.sourceChanged();
@@ -970,6 +973,14 @@ void ProjectSessionTest::legacy_pre_b4_materialization_and_save_as()
     const auto previousGainId = target.masteringChainState->gain_instance_id();
     const auto previousEqId = target.masteringChainState->eq_instance_id();
 
+    // Exercise the real ProjectSessionViewModel::openProject coordination path:
+    // preserve the conceptual EQ selection while the persisted project materializes
+    // a mastering chain with different ModuleInstanceId values.
+    target.adapterModel->selectModuleByInstanceId(
+        QString::fromStdString(previousEqId.to_string()));
+    const auto previousSelectedInstanceId = target.adapterModel->selected_instance_id();
+    QCOMPARE(target.adapterModel->selected_index(), 1);
+
     target.project.openProject(QUrl::fromLocalFile(legacyPath));
     QCOMPARE(target.project.error_message(), QString());
 
@@ -979,6 +990,16 @@ void ProjectSessionTest::legacy_pre_b4_materialization_and_save_as()
     QVERIFY(target.masteringChainState->chain_id() != previousChainId);
     QVERIFY(target.masteringChainState->gain_instance_id() != previousGainId);
     QVERIFY(target.masteringChainState->eq_instance_id() != previousEqId);
+
+    const auto restoredEqInstanceId =
+        QString::fromStdString(target.masteringChainState->eq_instance_id().to_string());
+    QVERIFY(target.adapterModel->selected_instance_id() != previousSelectedInstanceId);
+    QCOMPARE(target.adapterModel->selected_instance_id(), restoredEqInstanceId);
+    QVERIFY(target.adapterModel->active_module() != nullptr);
+    QCOMPARE(target.adapterModel->active_module()->instance_id(), restoredEqInstanceId);
+    QCOMPARE(target.adapterModel->selected_index(), 1);
+    QCOMPARE(target.adapterModel->active_module()->type_id(),
+             QStringLiteral("rgsml.dsp.parametric-eq"));
 
     QCOMPARE(target.masteringChainState->gain_parameters().gain_db(), 0.0);
     QVERIFY(!target.gainViewModel->bypass());
@@ -1073,6 +1094,7 @@ void ProjectSessionTest::source_reset_vs_project_open()
     session.source.selectSource(QUrl::fromLocalFile(source1));
 
     QVERIFY(session.gainViewModel->setGainDb(5.0));
+    QVERIFY(session.gainViewModel->can_undo());
     auto bandId = core::Uuid::parse("26000000-0000-0000-0000-000000000001");
     QVERIFY(bandId);
     auto band = dsp::EqBandParameters::create(*bandId.value(), true,
@@ -1090,6 +1112,8 @@ void ProjectSessionTest::source_reset_vs_project_open()
 
     session.source.selectSource(QUrl::fromLocalFile(source2));
     QCOMPARE(session.gainViewModel->gain_db(), 0.0);
+    QVERIFY(!session.gainViewModel->can_undo());
+    QVERIFY(!session.gainViewModel->can_redo());
     QVERIFY(session.eqViewModel->is_default());
     QVERIFY(!session.gainViewModel->bypass());
     QVERIFY(!session.eqViewModel->bypass());
@@ -1098,6 +1122,8 @@ void ProjectSessionTest::source_reset_vs_project_open()
     openedSession.project.openProject(QUrl::fromLocalFile(projectPath));
     QCOMPARE(openedSession.project.error_message(), QString());
     QCOMPARE(openedSession.gainViewModel->gain_db(), 5.0);
+    QVERIFY(!openedSession.gainViewModel->can_undo());
+    QVERIFY(!openedSession.gainViewModel->can_redo());
     QCOMPARE(openedSession.masteringChainState->parametric_eq_parameters(),
              *persistedEq.value());
     QCOMPARE(openedSession.eqViewModel->band_count(), 1);

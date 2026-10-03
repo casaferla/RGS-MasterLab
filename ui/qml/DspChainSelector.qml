@@ -9,13 +9,23 @@ Rectangle {
     implicitWidth: 180
     implicitHeight: 300
 
-    property int selectedIndex: 0
+    property var adapterModel: null
+    property int selectedIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
 
-    // Explicit focus targets for the unified editor host.
-    property alias inputGainRow: gainRow
-    property alias parametricEqRow: eqRow
+    // Generic active row lookup for host Escape/focus management
+    readonly property Item activeRow: {
+        var idx = root.adapterModel ? root.adapterModel.selectedIndex : root.selectedIndex
+        if (idx >= 0 && idx < rowRepeater.count) {
+            return rowRepeater.itemAt(idx)
+        }
+        return null
+    }
+
+    // Explicit focus targets retained for existing smoke assertions
+    readonly property Item inputGainRow: rowRepeater.count > 0 ? rowRepeater.itemAt(0) : null
+    readonly property Item parametricEqRow: rowRepeater.count > 1 ? rowRepeater.itemAt(1) : null
 
     color: "#0B1622"
     border.color: "#1E354A"
@@ -62,252 +72,157 @@ Rectangle {
             width: chainScrollView.availableWidth
             spacing: 4
 
-            // Row 0 — Input Gain
-            Rectangle {
-                id: gainRow
-                objectName: "dspChainRow_0"
-                Layout.fillWidth: true
-                Layout.preferredHeight: 52
-                radius: 4
+            Repeater {
+                id: rowRepeater
+                model: root.adapterModel ? root.adapterModel.modules : null
 
-                property bool isSelected: root.selectedIndex === 0
-                property bool isDefaultState: root.gainViewModel ? (root.gainViewModel.gainDb === 0.0) : true
-                property bool isBypassed: root.gainViewModel ? root.gainViewModel.bypass : false
-                property bool hasError: root.gainViewModel ? (root.gainViewModel.previewStatus === "ERROR") : false
+                delegate: Rectangle {
+                    id: rowItem
+                    objectName: "dspChainRow_" + index
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 52
+                    radius: 4
 
-                color: isSelected ? "#1A324A" : (gainRowMouse.containsMouse ? "#122538" : "#0D1D2B")
-                border.color: isSelected ? "#00C8FF" : "#1A324A"
-                border.width: isSelected ? 2 : 1
+                    readonly property var moduleAdapter: modelData
+                    readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === index)
+                    readonly property bool isDefaultState: moduleAdapter ? (moduleAdapter.configurationState === "Default") : true
+                    readonly property bool isBypassed: moduleAdapter ? moduleAdapter.bypass : false
+                    readonly property bool hasError: moduleAdapter ? moduleAdapter.hasError : false
 
-                activeFocusOnTab: true
+                    color: isSelected ? "#1A324A" : (rowMouse.containsMouse ? "#122538" : "#0D1D2B")
+                    border.color: isSelected ? "#00C8FF" : "#1A324A"
+                    border.width: isSelected ? 2 : 1
 
-                MouseArea {
-                    id: gainRowMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: {
-                        root.selectedIndex = 0
-                        gainRow.forceActiveFocus()
-                    }
-                }
+                    activeFocusOnTab: true
 
-                Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
-                        root.selectedIndex = 0
-                        event.accepted = true
-                    } else if (event.key === Qt.Key_Down) {
-                        root.selectedIndex = 1
-                        eqRow.forceActiveFocus()
-                        event.accepted = true
-                    }
-                }
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
-                    spacing: 6
-
-                    // Configuration Indicator LED
-                    Rectangle {
-                        objectName: "dspChainConfigLed_0"
-                        Layout.preferredWidth: 8
-                        Layout.preferredHeight: 8
-                        radius: 4
-                        color: gainRow.isDefaultState ? "#273A4D" : "#00D47A"
-                        border.color: gainRow.isDefaultState ? "#3A4D60" : "#00FF94"
-                        border.width: 1
-
-                        ToolTip.text: gainRow.isDefaultState ? "0.0 dB Default" : "Manual Non-Default Gain"
-                        ToolTip.visible: gainLedMouse.containsMouse
-
-                        MouseArea {
-                            id: gainLedMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        Text {
-                            text: "Input Gain"
-                            color: gainRow.isSelected ? "#F5F8FC" : "#C4D4E0"
-                            font.family: "Segoe UI"
-                            font.pixelSize: 12
-                            font.weight: Font.DemiBold
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            objectName: "dspChainStateText_0"
-                            text: {
-                                if (!root.gainViewModel) return "0.0 dB Default"
-                                if (gainRow.isDefaultState) return "0.0 dB Default"
-                                const val = root.gainViewModel.gainDb
-                                const prefix = val > 0 ? "+" : ""
-                                return prefix + root.gainViewModel.gainDbText + " dB Manual"
+                    MouseArea {
+                        id: rowMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            if (root.adapterModel && moduleAdapter) {
+                                root.adapterModel.selectModuleByInstanceId(moduleAdapter.instanceId)
+                            } else {
+                                root.selectedIndex = index
                             }
-                            color: "#7A8E9E"
-                            font.family: "Segoe UI"
-                            font.pixelSize: 9
-                            visible: true
+                            rowItem.forceActiveFocus()
                         }
                     }
 
-                    // Bypass Badge ("BYP")
-                    Rectangle {
-                        objectName: "dspChainBypassBadge_0"
-                        visible: gainRow.isBypassed
-                        Layout.preferredWidth: 28
-                        Layout.preferredHeight: 16
-                        radius: 3
-                        color: "#3A2A0D"
-                        border.color: "#F2B632"
-                        border.width: 1
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "BYP"
-                            color: "#F2B632"
-                            font.family: "Segoe UI"
-                            font.pixelSize: 8
-                            font.weight: Font.Bold
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
+                            if (root.adapterModel && moduleAdapter) {
+                                root.adapterModel.selectModuleByInstanceId(moduleAdapter.instanceId)
+                            } else {
+                                root.selectedIndex = index
+                            }
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Down) {
+                            if (index + 1 < rowRepeater.count) {
+                                var nextItem = rowRepeater.itemAt(index + 1)
+                                if (nextItem && nextItem.moduleAdapter && root.adapterModel) {
+                                    root.adapterModel.selectModuleByInstanceId(nextItem.moduleAdapter.instanceId)
+                                } else {
+                                    root.selectedIndex = index + 1
+                                }
+                                if (nextItem) nextItem.forceActiveFocus()
+                                event.accepted = true
+                            }
+                        } else if (event.key === Qt.Key_Up) {
+                            if (index > 0) {
+                                var prevItem = rowRepeater.itemAt(index - 1)
+                                if (prevItem && prevItem.moduleAdapter && root.adapterModel) {
+                                    root.adapterModel.selectModuleByInstanceId(prevItem.moduleAdapter.instanceId)
+                                } else {
+                                    root.selectedIndex = index - 1
+                                }
+                                if (prevItem) prevItem.forceActiveFocus()
+                                event.accepted = true
+                            }
                         }
                     }
 
-                    // Error Indicator
-                    Rectangle {
-                        objectName: "dspChainErrorBadge_0"
-                        visible: gainRow.hasError
-                        Layout.preferredWidth: 8
-                        Layout.preferredHeight: 8
-                        radius: 4
-                        color: "#F27683"
-                    }
-                }
-            }
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 6
 
-            // Row 1 — Parametric EQ
-            Rectangle {
-                id: eqRow
-                objectName: "dspChainRow_1"
-                Layout.fillWidth: true
-                Layout.preferredHeight: 52
-                radius: 4
+                        // Configuration Indicator LED
+                        Rectangle {
+                            objectName: "dspChainConfigLed_" + index
+                            Layout.preferredWidth: 8
+                            Layout.preferredHeight: 8
+                            radius: 4
+                            color: rowItem.isDefaultState ? "#273A4D" : "#00D47A"
+                            border.color: rowItem.isDefaultState ? "#3A4D60" : "#00FF94"
+                            border.width: 1
 
-                property bool isSelected: root.selectedIndex === 1
-                property bool isDefaultState: root.eqViewModel ? root.eqViewModel.isDefault : true
-                property bool isBypassed: root.eqViewModel ? root.eqViewModel.bypass : false
-                property bool hasError: root.eqViewModel ? (root.eqViewModel.previewStatus === "ERROR") : false
+                            ToolTip.text: rowItem.isDefaultState
+                                ? (rowItem.moduleAdapter ? (rowItem.moduleAdapter.displayName + " Default") : "Default")
+                                : (rowItem.moduleAdapter ? ("Manual Non-Default " + rowItem.moduleAdapter.displayName) : "Manual Non-Default")
+                            ToolTip.visible: ledMouse.containsMouse
 
-                color: isSelected ? "#1A324A" : (eqRowMouse.containsMouse ? "#122538" : "#0D1D2B")
-                border.color: isSelected ? "#00C8FF" : "#1A324A"
-                border.width: isSelected ? 2 : 1
-
-                activeFocusOnTab: true
-
-                MouseArea {
-                    id: eqRowMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: {
-                        root.selectedIndex = 1
-                        eqRow.forceActiveFocus()
-                    }
-                }
-
-                Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
-                        root.selectedIndex = 1
-                        event.accepted = true
-                    } else if (event.key === Qt.Key_Up) {
-                        root.selectedIndex = 0
-                        gainRow.forceActiveFocus()
-                        event.accepted = true
-                    }
-                }
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
-                    spacing: 6
-
-                    // Configuration Indicator LED
-                    Rectangle {
-                        objectName: "dspChainConfigLed_1"
-                        Layout.preferredWidth: 8
-                        Layout.preferredHeight: 8
-                        radius: 4
-                        color: eqRow.isDefaultState ? "#273A4D" : "#00D47A"
-                        border.color: eqRow.isDefaultState ? "#3A4D60" : "#00FF94"
-                        border.width: 1
-
-                        ToolTip.text: eqRow.isDefaultState ? "Canonical Default / Flat" : "Manual Non-Default"
-                        ToolTip.visible: eqLedMouse.containsMouse
-
-                        MouseArea {
-                            id: eqLedMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        Text {
-                            text: "Parametric EQ"
-                            color: eqRow.isSelected ? "#F5F8FC" : "#C4D4E0"
-                            font.family: "Segoe UI"
-                            font.pixelSize: 12
-                            font.weight: Font.DemiBold
-                            elide: Text.ElideRight
+                            MouseArea {
+                                id: ledMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                            }
                         }
 
-                        Text {
-                            objectName: "dspChainStateText_1"
-                            text: eqRow.isDefaultState ? "Flat Default" : "Manual Edit"
-                            color: "#7A8E9E"
-                            font.family: "Segoe UI"
-                            font.pixelSize: 9
-                            visible: true
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Text {
+                                text: rowItem.moduleAdapter ? rowItem.moduleAdapter.displayName : ""
+                                color: rowItem.isSelected ? "#F5F8FC" : "#C4D4E0"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                objectName: "dspChainStateText_" + index
+                                text: rowItem.moduleAdapter ? rowItem.moduleAdapter.stateText : ""
+                                color: "#7A8E9E"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 9
+                                visible: true
+                            }
                         }
-                    }
 
-                    // Bypass Badge ("BYP")
-                    Rectangle {
-                        objectName: "dspChainBypassBadge_1"
-                        visible: eqRow.isBypassed
-                        Layout.preferredWidth: 28
-                        Layout.preferredHeight: 16
-                        radius: 3
-                        color: "#3A2A0D"
-                        border.color: "#F2B632"
-                        border.width: 1
+                        // Bypass Badge ("BYP")
+                        Rectangle {
+                            objectName: "dspChainBypassBadge_" + index
+                            visible: rowItem.isBypassed
+                            Layout.preferredWidth: 28
+                            Layout.preferredHeight: 16
+                            radius: 3
+                            color: "#3A2A0D"
+                            border.color: "#F2B632"
+                            border.width: 1
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: "BYP"
-                            color: "#F2B632"
-                            font.family: "Segoe UI"
-                            font.pixelSize: 8
-                            font.weight: Font.Bold
+                            Text {
+                                anchors.centerIn: parent
+                                text: "BYP"
+                                color: "#F2B632"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 8
+                                font.weight: Font.Bold
+                            }
                         }
-                    }
 
-                    // Error Indicator
-                    Rectangle {
-                        objectName: "dspChainErrorBadge_1"
-                        visible: eqRow.hasError
-                        Layout.preferredWidth: 8
-                        Layout.preferredHeight: 8
-                        radius: 4
-                        color: "#F27683"
+                        // Error Indicator
+                        Rectangle {
+                            objectName: "dspChainErrorBadge_" + index
+                            visible: rowItem.hasError
+                            Layout.preferredWidth: 8
+                            Layout.preferredHeight: 8
+                            radius: 4
+                            color: "#F27683"
+                        }
                     }
                 }
             }

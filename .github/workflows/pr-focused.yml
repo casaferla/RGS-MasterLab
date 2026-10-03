@@ -54,6 +54,7 @@ jobs:
             rgsml_eq_view_model_tests \
             rgsml_gain_view_model_tests \
             rgsml_mastering_preview_controller_tests \
+            rgsml_dsp_module_adapter_tests \
             rgsml_render_preview_tests
 
       - name: Run Focused DSP Tests
@@ -98,6 +99,7 @@ jobs:
             rgsml_eq_view_model_tests `
             rgsml_gain_view_model_tests `
             rgsml_mastering_preview_controller_tests `
+            rgsml_dsp_module_adapter_tests `
             rgsml_render_preview_tests `
             rgsml_audition_source_selector_tests `
             rgsml_source_metadata_panel_smoke `

@@ -6,7 +6,8 @@ Rectangle {
     id: root
     objectName: "dspWorkspace"
 
-    property int selectedModuleIndex: 0
+    property var adapterModel: null
+    property int selectedModuleIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
     property var spectrumViewModel: null
@@ -16,6 +17,12 @@ Rectangle {
 
     property alias chainSelector: realChainSelector
     property alias editorHost: realEditorHost
+
+    onSelectedModuleIndexChanged: {
+        if (adapterModel && adapterModel.selectedIndex !== selectedModuleIndex) {
+            adapterModel.setSelectedIndex(selectedModuleIndex)
+        }
+    }
 
     color: "transparent"
 
@@ -34,22 +41,19 @@ Rectangle {
         DspChainSelector {
             id: realChainSelector
             objectName: "dspChainSelector"
-            selectedIndex: root.selectedModuleIndex
+            adapterModel: root.adapterModel
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
-            onSelectedIndexChanged: root.selectedModuleIndex = selectedIndex
         }
 
         DspEditorHost {
             id: realEditorHost
             objectName: "dspEditorHost"
-            selectedModuleIndex: root.selectedModuleIndex
+            adapterModel: root.adapterModel
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
             spectrumViewModel: root.spectrumViewModel
-            activeChainRow: root.selectedModuleIndex === 0
-                ? realChainSelector.inputGainRow
-                : realChainSelector.parametricEqRow
+            activeChainRow: realChainSelector.activeRow
         }
     }
 }

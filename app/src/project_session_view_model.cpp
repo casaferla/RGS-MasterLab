@@ -1,6 +1,7 @@
 #include "project_session_view_model.hpp"
 
 #include "audition_region_view_model.hpp"
+#include "dsp_chain_adapter_model.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "gold_selection_view_model.hpp"
@@ -315,10 +316,25 @@ ProjectSessionViewModel::ProjectSessionViewModel(
     EqViewModel* eqViewModel,
     MasteringPreviewController* previewController,
     UuidFactory uuidFactory, QObject* parent)
+    : ProjectSessionViewModel(source, gold, region, playback,
+                              masteringChainState, gainViewModel, eqViewModel,
+                              nullptr, previewController, std::move(uuidFactory), parent)
+{
+}
+
+ProjectSessionViewModel::ProjectSessionViewModel(
+    SourceSelectionViewModel* source, GoldSelectionViewModel* gold,
+    AuditionRegionViewModel* region, PlaybackTransportViewModel* playback,
+    MasteringChainState* masteringChainState,
+    GainViewModel* gainViewModel,
+    EqViewModel* eqViewModel,
+    DspChainAdapterModel* adapterModel,
+    MasteringPreviewController* previewController,
+    UuidFactory uuidFactory, QObject* parent)
     : QObject(parent), source_(source), gold_(gold), region_(region),
       playback_(playback), masteringChainState_(masteringChainState),
       gainViewModel_(gainViewModel), eqViewModel_(eqViewModel),
-      previewController_(previewController),
+      adapterModel_(adapterModel), previewController_(previewController),
       uuidFactory_(std::move(uuidFactory))
 {
     if (!uuidFactory_) {
@@ -654,11 +670,15 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
         *masteringChainState_ = std::move(*chainCandidate.value()->chainState);
     }
 
-    if (gainViewModel_) {
-        gainViewModel_->refreshFromAuthority();
-    }
-    if (eqViewModel_) {
-        eqViewModel_->refreshFromAuthority();
+    if (adapterModel_) {
+        adapterModel_->refreshFromAuthority();
+    } else {
+        if (gainViewModel_) {
+            gainViewModel_->refreshFromAuthority();
+        }
+        if (eqViewModel_) {
+            eqViewModel_->refreshFromAuthority();
+        }
     }
     if (previewController_) {
         previewController_->request_preview();
