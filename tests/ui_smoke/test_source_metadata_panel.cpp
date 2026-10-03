@@ -945,12 +945,61 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("0.0 dB"));
     QCOMPARE(gainDbInput->property("text").toString(), QStringLiteral("0.0"));
 
+    auto* dspHostModuleTitle = dspEditorHostObj->findChild<QObject*>(QStringLiteral("dspHostModuleTitle"));
+    auto* dspHostWorkflowContext = dspEditorHostObj->findChild<QObject*>(QStringLiteral("dspHostWorkflowContext"));
+    auto* gainHostUndoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqUndoButton"));
+    auto* gainHostRedoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqRedoButton"));
+    auto* dspEditorHostItem = qobject_cast<QQuickItem*>(dspEditorHostObj);
+    auto* dspHostModuleTitleItem = qobject_cast<QQuickItem*>(dspHostModuleTitle);
+    auto* dspHostWorkflowContextItem = qobject_cast<QQuickItem*>(dspHostWorkflowContext);
+    auto* gainHostUndoItem = qobject_cast<QQuickItem*>(gainHostUndoBtn);
+    auto* gainHostRedoItem = qobject_cast<QQuickItem*>(gainHostRedoBtn);
+    QVERIFY(dspHostModuleTitle && dspHostWorkflowContext && gainHostUndoBtn && gainHostRedoBtn);
+    QVERIFY(dspEditorHostItem && dspHostModuleTitleItem && dspHostWorkflowContextItem && gainHostUndoItem && gainHostRedoItem);
+    QCOMPARE(dspHostModuleTitle->property("text").toString(), QStringLiteral("Input Gain"));
+    QCOMPARE(dspHostWorkflowContext->property("text").toString(), QStringLiteral("Mastering"));
+    QVERIFY(gainHostUndoBtn->property("visible").toBool());
+    QVERIFY(gainHostRedoBtn->property("visible").toBool());
+    QVERIFY(!gainHostUndoBtn->property("enabled").toBool());
+    QVERIFY(!gainHostRedoBtn->property("enabled").toBool());
+
+    const QPointF moduleTitlePosGain = dspHostModuleTitleItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0});
+    const QPointF workflowContextPosGain = dspHostWorkflowContextItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0});
+    const QPointF undoPosGain = gainHostUndoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0});
+    const QPointF redoPosGain = gainHostRedoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0});
+
+    const auto subtreeHasExactText = [](QObject* parent, const QString& expected) {
+        if (parent->property("text").toString() == expected) {
+            return true;
+        }
+        for (auto* child : parent->findChildren<QObject*>()) {
+            if (child->property("text").toString() == expected) {
+                return true;
+            }
+        }
+        return false;
+    };
+    QVERIFY(!subtreeHasExactText(dspEditorHostObj, QStringLiteral("Gain Staging / Manual Mastering")));
+    QVERIFY(!subtreeHasExactText(dspEditorHostObj, QStringLiteral("Manual Mastering")));
+    QVERIFY(!subtreeHasExactText(inputGainEditor, QStringLiteral("GAIN STAGING")));
+    QVERIFY(!subtreeHasExactText(inputGainEditor, QStringLiteral("Fixed First Mastering Stage")));
+
     // Modify Input Gain to +3.5 dB via ViewModel
     QVERIFY(gainViewModel.setGainDb(3.5));
     QCoreApplication::processEvents();
     QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("+3.5 dB"));
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("+3.5 dB Manual"));
     QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
+    QVERIFY(gainHostUndoBtn->property("enabled").toBool());
+
+    // Standard Undo/Redo shortcuts are scoped to the active Gain module.
+    dspEditorHostItem->forceActiveFocus();
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
+    QCoreApplication::processEvents();
+    QCOMPARE(gainViewModel.gain_db(), 0.0);
+    QTest::keyClick(window, Qt::Key_Y, Qt::ControlModifier);
+    QCoreApplication::processEvents();
+    QCOMPARE(gainViewModel.gain_db(), 3.5);
 
     // Valid gain bounds: -24.0 and +24.0 accepted
     QVERIFY(gainViewModel.setGainDb(-24.0));
@@ -1023,6 +1072,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(gainViewModel.bypass(), gainBypassBeforeSwitch);
     QCOMPARE(eqViewModel.is_default(), eqDefaultBeforeSwitch);
 
+    QCOMPARE(dspHostModuleTitle->property("text").toString(), QStringLiteral("Parametric EQ"));
+    QCOMPARE(dspHostWorkflowContext->property("text").toString(), QStringLiteral("Mastering"));
+    QVERIFY(gainHostUndoBtn->property("visible").toBool());
+    QVERIFY(gainHostRedoBtn->property("visible").toBool());
+    QVERIFY(!gainHostUndoBtn->property("enabled").toBool());
+    QVERIFY(!gainHostRedoBtn->property("enabled").toBool());
+    QCOMPARE(dspHostModuleTitleItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), moduleTitlePosGain);
+    QCOMPARE(dspHostWorkflowContextItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), workflowContextPosGain);
+    QCOMPARE(gainHostUndoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), undoPosGain);
+    QCOMPARE(gainHostRedoItem->mapToItem(dspEditorHostItem, QPointF{0.0, 0.0}), redoPosGain);
+
     qInfo().noquote() << "M12C_SMOKE_PHASE=editor-lookup";
     auto* eqEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("parametricEqEditor"));
     QVERIFY2(eqEditor != nullptr, "parametricEqEditor must exist inside dspEditorHost");
@@ -1060,6 +1120,19 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
     QVERIFY2(dspChainStateText1->property("visible").toBool(), "Manual Edit must be visible for a non-default EQ");
+    QVERIFY(gainHostUndoBtn->property("enabled").toBool());
+
+    // Standard Undo/Redo shortcuts are now scoped to the selected EQ module.
+    const double gainBeforeEqShortcut = gainViewModel.gain_db();
+    dspEditorHostItem->forceActiveFocus();
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.band_count(), 1);
+    QCOMPARE(gainViewModel.gain_db(), gainBeforeEqShortcut);
+    QTest::keyClick(window, Qt::Key_Y, Qt::ControlModifier);
+    QCoreApplication::processEvents();
+    QCOMPARE(eqViewModel.band_count(), 2);
+    QCOMPARE(gainViewModel.gain_db(), gainBeforeEqShortcut);
 
     // Input Gain (row 0) remains dark/default and unchanged after EQ-only edit
     QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});

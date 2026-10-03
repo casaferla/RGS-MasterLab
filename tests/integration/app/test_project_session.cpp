@@ -1094,6 +1094,7 @@ void ProjectSessionTest::source_reset_vs_project_open()
     session.source.selectSource(QUrl::fromLocalFile(source1));
 
     QVERIFY(session.gainViewModel->setGainDb(5.0));
+    QVERIFY(session.gainViewModel->can_undo());
     auto bandId = core::Uuid::parse("26000000-0000-0000-0000-000000000001");
     QVERIFY(bandId);
     auto band = dsp::EqBandParameters::create(*bandId.value(), true,
@@ -1111,6 +1112,8 @@ void ProjectSessionTest::source_reset_vs_project_open()
 
     session.source.selectSource(QUrl::fromLocalFile(source2));
     QCOMPARE(session.gainViewModel->gain_db(), 0.0);
+    QVERIFY(!session.gainViewModel->can_undo());
+    QVERIFY(!session.gainViewModel->can_redo());
     QVERIFY(session.eqViewModel->is_default());
     QVERIFY(!session.gainViewModel->bypass());
     QVERIFY(!session.eqViewModel->bypass());
@@ -1119,6 +1122,8 @@ void ProjectSessionTest::source_reset_vs_project_open()
     openedSession.project.openProject(QUrl::fromLocalFile(projectPath));
     QCOMPARE(openedSession.project.error_message(), QString());
     QCOMPARE(openedSession.gainViewModel->gain_db(), 5.0);
+    QVERIFY(!openedSession.gainViewModel->can_undo());
+    QVERIFY(!openedSession.gainViewModel->can_redo());
     QCOMPARE(openedSession.masteringChainState->parametric_eq_parameters(),
              *persistedEq.value());
     QCOMPARE(openedSession.eqViewModel->band_count(), 1);

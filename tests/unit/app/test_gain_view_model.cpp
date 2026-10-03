@@ -280,38 +280,46 @@ void GainViewModelTest::testGainUndoRedoSequence()
     auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
     QVERIFY(state);
 
-    GainViewModel vm{state.value()};
+    MasteringPreviewController previewController{state.value()};
+    GainViewModel vm{state.value(), &previewController};
 
     QVERIFY(!vm.can_undo());
     QVERIFY(!vm.can_redo());
+    const quint64 gen0 = previewController.preview_generation();
 
-    // 0.0 -> +2.0 -> +4.0
+    // 0.0 -> +2.0 -> +4.0, exactly one preview request per committed edit.
     QVERIFY(vm.setGainDb(2.0));
+    QCOMPARE(previewController.preview_generation(), gen0 + 1U);
     QVERIFY(vm.can_undo());
     QVERIFY(!vm.can_redo());
 
     QVERIFY(vm.setGainDb(4.0));
+    QCOMPARE(previewController.preview_generation(), gen0 + 2U);
 
     // Undo -> +2.0
     vm.undo();
+    QCOMPARE(previewController.preview_generation(), gen0 + 3U);
     QCOMPARE(vm.gain_db(), 2.0);
     QVERIFY(vm.can_undo());
     QVERIFY(vm.can_redo());
 
     // Undo -> 0.0
     vm.undo();
+    QCOMPARE(previewController.preview_generation(), gen0 + 4U);
     QCOMPARE(vm.gain_db(), 0.0);
     QVERIFY(!vm.can_undo());
     QVERIFY(vm.can_redo());
 
     // Redo -> +2.0
     vm.redo();
+    QCOMPARE(previewController.preview_generation(), gen0 + 5U);
     QCOMPARE(vm.gain_db(), 2.0);
     QVERIFY(vm.can_undo());
     QVERIFY(vm.can_redo());
 
     // Redo -> +4.0
     vm.redo();
+    QCOMPARE(previewController.preview_generation(), gen0 + 6U);
     QCOMPARE(vm.gain_db(), 4.0);
     QVERIFY(vm.can_undo());
     QVERIFY(!vm.can_redo());

@@ -315,21 +315,28 @@ void DspModuleAdapterTest::testSelectionSwitchingPreservesStateAndHistory()
 
     gainVM.setGainDb(1.5);
     eqVM.addBand();
-    const quint64 genBeforeSwitch = eqVM.preview_generation();
+    const quint64 gainGenBeforeSwitch = gainVM.preview_generation();
+    const quint64 eqGenBeforeSwitch = eqVM.preview_generation();
+    QVERIFY(gainVM.can_undo());
+    QVERIFY(eqVM.can_undo());
 
     chainModel.setSelectedIndex(1);
     QCOMPARE(chainModel.selected_index(), 1);
     QCOMPARE(gainVM.gain_db(), 1.5);
     QCOMPARE(eqVM.band_count(), 2);
+    QVERIFY(gainVM.can_undo());
     QVERIFY(eqVM.can_undo());
-    QCOMPARE(eqVM.preview_generation(), genBeforeSwitch);
+    QCOMPARE(gainVM.preview_generation(), gainGenBeforeSwitch);
+    QCOMPARE(eqVM.preview_generation(), eqGenBeforeSwitch);
 
     chainModel.setSelectedIndex(0);
     QCOMPARE(chainModel.selected_index(), 0);
     QCOMPARE(gainVM.gain_db(), 1.5);
     QCOMPARE(eqVM.band_count(), 2);
+    QVERIFY(gainVM.can_undo());
     QVERIFY(eqVM.can_undo());
-    QCOMPARE(eqVM.preview_generation(), genBeforeSwitch);
+    QCOMPARE(gainVM.preview_generation(), gainGenBeforeSwitch);
+    QCOMPARE(eqVM.preview_generation(), eqGenBeforeSwitch);
 }
 
 void DspModuleAdapterTest::testNewSourceResetAndRefreshSynchronization()
@@ -512,13 +519,18 @@ void DspModuleAdapterTest::testIndependentModuleHistories()
     QVERIFY(gainAdapter->can_undo());
     QVERIFY(eqAdapter->can_undo());
 
-    // Undo on EQ affects EQ only
-    eqAdapter->undo();
+    // Select EQ: active-module Undo affects EQ only.
+    chainModel.selectModuleByInstanceId(QString::fromStdString(eqId.to_string()));
+    QCOMPARE(chainModel.active_module(), eqAdapter);
+    chainModel.active_module()->undo();
     QCOMPARE(eqVM.band_count(), 1);
     QCOMPARE(gainVM.gain_db(), 2.0);
+    QVERIFY(gainAdapter->can_undo());
 
-    // Undo on Gain affects Gain only
-    gainAdapter->undo();
+    // Select Gain: active-module Undo affects Gain only.
+    chainModel.selectModuleByInstanceId(QString::fromStdString(gainId.to_string()));
+    QCOMPARE(chainModel.active_module(), gainAdapter);
+    chainModel.active_module()->undo();
     QCOMPARE(gainVM.gain_db(), 0.0);
     QCOMPARE(eqVM.band_count(), 1);
 }
@@ -545,6 +557,16 @@ void DspModuleAdapterTest::testWorkflowContextLabel()
 
     QCOMPARE(gainAdapter->workspace_context_label(), QStringLiteral("Mastering"));
     QCOMPARE(eqAdapter->workspace_context_label(), QStringLiteral("Mastering"));
+
+    // Same DSP types can receive a different owning-chain/workspace context.
+    DspChainAdapterModel restorationContextModel{
+        &gainVM, &eqVM, &chainState, QStringLiteral("Restoration / Preparation")};
+    QCOMPARE(restorationContextModel.workflow_context(), QStringLiteral("Restoration / Preparation"));
+    const auto restorationModules = restorationContextModel.modules();
+    auto* restorationGain = qobject_cast<DspModuleAdapter*>(restorationModules[0].value<QObject*>());
+    auto* restorationEq = qobject_cast<DspModuleAdapter*>(restorationModules[1].value<QObject*>());
+    QCOMPARE(restorationGain->workspace_context_label(), QStringLiteral("Restoration / Preparation"));
+    QCOMPARE(restorationEq->workspace_context_label(), QStringLiteral("Restoration / Preparation"));
 }
 
 }  // namespace rgsml::app::tests

@@ -81,6 +81,7 @@ Rectangle {
             ColumnLayout {
                 spacing: 1
                 Text {
+                    objectName: "dspHostModuleTitle"
                     text: root.moduleTitle
                     color: "#F5F8FC"
                     font.family: "Segoe UI"
@@ -88,6 +89,7 @@ Rectangle {
                     font.weight: Font.DemiBold
                 }
                 Text {
+                    objectName: "dspHostWorkflowContext"
                     text: root.moduleContext
                     color: "#A1B5C9"
                     font.family: "Segoe UI"
