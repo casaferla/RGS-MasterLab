@@ -7,7 +7,9 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#ifdef _WIN32
 #include <Windows.h>
+#endif
 
 #include <string_view>
 
@@ -55,21 +57,23 @@ void WindowsResourceIdentityTest::exactHardlinkAndDistinctIdentityAreAuthoritati
     const auto sourcePath = write_file(directory, QStringLiteral("source.wav"), "source");
     const auto distinctPath = write_file(directory, QStringLiteral("gold.wav"), "gold");
     QVERIFY(!sourcePath.isEmpty() && !distinctPath.isEmpty());
+    const auto source = reference_for(sourcePath);
+    const auto distinct = reference_for(distinctPath);
+    auto exact = platform::windows::same_underlying_local_file(source, source);
+    auto other = platform::windows::same_underlying_local_file(source, distinct);
+    QVERIFY(exact && *exact.value());
+    QVERIFY(other && !*other.value());
+
+#ifdef _WIN32
     const auto hardlinkPath = directory.filePath(QStringLiteral("source-alias.wav"));
     QVERIFY(::CreateHardLinkW(
         reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(hardlinkPath).utf16()),
         reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(sourcePath).utf16()),
         nullptr));
-
-    const auto source = reference_for(sourcePath);
     const auto hardlink = reference_for(hardlinkPath);
-    const auto distinct = reference_for(distinctPath);
-    auto exact = platform::windows::same_underlying_local_file(source, source);
     auto alias = platform::windows::same_underlying_local_file(source, hardlink);
-    auto other = platform::windows::same_underlying_local_file(source, distinct);
-    QVERIFY(exact && *exact.value());
     QVERIFY(alias && *alias.value());
-    QVERIFY(other && !*other.value());
+#endif
     QCOMPARE(QFile{sourcePath}.size(), qint64{6});
     QCOMPARE(QFile{distinctPath}.size(), qint64{4});
 }

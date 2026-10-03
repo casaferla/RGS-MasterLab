@@ -15,10 +15,12 @@
 #include <QString>
 #include <QUuid>
 
+#ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -68,6 +70,7 @@ struct CandidateEvidence final {
     const QString& path,
     bool required)
 {
+#ifdef _WIN32
     const auto native = QDir::toNativeSeparators(path);
     const HANDLE handle = ::CreateFileW(
         reinterpret_cast<LPCWSTR>(native.utf16()),
@@ -109,6 +112,19 @@ struct CandidateEvidence final {
         | static_cast<std::uint64_t>(info.nFileIndexLow);
     return core::Result<std::optional<FileIdentity>>::success(FileIdentity{
         static_cast<std::uint64_t>(info.dwVolumeSerialNumber), file});
+#else
+    QFileInfo info{path};
+    if (!info.exists()) {
+        if (!required) {
+            return core::Result<std::optional<FileIdentity>>::success(std::nullopt);
+        }
+        return failure<std::optional<FileIdentity>>(
+            core::ErrorCode::ResourceNotFound,
+            "source_missing: source file does not exist.");
+    }
+    return core::Result<std::optional<FileIdentity>>::success(FileIdentity{
+        1U, static_cast<std::uint64_t>(info.size())});
+#endif
 }
 
 [[nodiscard]] core::Result<std::string> encoded_file_sha256(const QString& path)
