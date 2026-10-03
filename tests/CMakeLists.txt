@@ -739,6 +739,39 @@ set_tests_properties(rgsml_compressor_tests PROPERTIES
     LABELS "dsp;compressor"
 )
 
+qt_add_executable(rgsml_compressor_gate_g_tests
+    unit/dsp/test_compressor_gate_g.cpp
+)
+target_include_directories(rgsml_compressor_gate_g_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/oracles/compressor)
+target_link_libraries(rgsml_compressor_gate_g_tests
+    PRIVATE
+        rgsml_dsp
+        rgsml_render
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_compressor_gate_g_tests)
+add_test(NAME rgsml_compressor_gate_g_tests COMMAND rgsml_compressor_gate_g_tests)
+set_tests_properties(rgsml_compressor_gate_g_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;compressor;oracle;gate_g"
+)
+
+qt_add_executable(rgsml_compressor_no_alloc_tests
+    unit/dsp/test_compressor_no_alloc.cpp
+)
+target_link_libraries(rgsml_compressor_no_alloc_tests
+    PRIVATE
+        rgsml_dsp
+        rgsml_render
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_compressor_no_alloc_tests)
+add_test(NAME rgsml_compressor_no_alloc_tests COMMAND rgsml_compressor_no_alloc_tests)
+set_tests_properties(rgsml_compressor_no_alloc_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;compressor;no_alloc"
+)
+
 qt_add_executable(rgsml_parametric_eq_tests
     unit/dsp/test_parametric_eq.cpp
 )
