@@ -26,6 +26,7 @@ constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 struct PreparedModule final {
     std::unique_ptr<rgsml::dsp::IModule> instance;
     std::int64_t latency_frames{0};
+    std::int64_t look_ahead_frames{0};
     std::int64_t tail_frames{0};
 };
 
@@ -181,6 +182,7 @@ rgsml::core::Result<RenderResult> render_preview(
             // look_ahead_frames describes future-input dependency and must not
             // be added a second time to renderer latency compensation.
             const auto module_latency = required.algorithmic_latency_frames.value();
+            const auto module_look_ahead = required.look_ahead_frames.value();
             const auto module_tail = required.effective_tail_frames.value();
 
             const auto next_cum_res = rgsml::core::checked_add(cumulative_latency, module_latency);
@@ -197,6 +199,7 @@ rgsml::core::Result<RenderResult> render_preview(
             modules.push_back(PreparedModule{
                 std::move(*module.value()),
                 module_latency,
+                module_look_ahead,
                 module_tail});
 
             if (is_gain) {
@@ -300,7 +303,15 @@ rgsml::core::Result<RenderResult> render_preview(
             for (std::size_t m = 0; m < modules.size(); ++m) {
                 const auto in_count = stage_end - stage_start;
                 const auto tail = modules[m].tail_frames;
-                const bool has_tail = stream_eos_reached && tail > 0;
+                // Stage-1 finalize is the latency-bearing true-EOS drain seam.
+                // Preserve legacy zero-latency/zero-lookahead modules such as
+                // Parametric EQ, whose effective_tail_frames is a settling
+                // horizon rather than emitted programme tail.
+                const bool latency_bearing =
+                    modules[m].latency_frames > 0
+                    || modules[m].look_ahead_frames > 0;
+                const bool has_tail =
+                    stream_eos_reached && latency_bearing && tail > 0;
 
                 const auto out_count_res = rgsml::core::checked_add(
                     in_count, has_tail ? tail : 0);
