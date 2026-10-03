@@ -59,7 +59,7 @@ void StructuralIntegrationTest::deterministicPublicApiTrace()
         firstRegistry.value()->descriptors(),
         secondRegistry.value()->descriptors()));
     QCOMPARE(firstRegistry.value()->descriptors().size(), std::size_t{11});
-    QCOMPARE(firstRegistry.value()->factory_count(), std::size_t{2});
+    QCOMPARE(firstRegistry.value()->factory_count(), std::size_t{3});
 
     std::uint64_t firstRevision = 0;
     std::uint64_t secondRevision = 0;
@@ -80,7 +80,9 @@ void StructuralIntegrationTest::deterministicPublicApiTrace()
             descriptor.value()->get().type_id(),
             instance.module_type_id());
         auto module = firstRegistry.value()->create_module(instance.module_type_id());
-        if (instance.module_type_id() == "rgsml.dsp.gain" || instance.module_type_id() == "rgsml.dsp.parametric-eq") {
+        if (instance.module_type_id() == "rgsml.dsp.gain"
+            || instance.module_type_id() == "rgsml.dsp.parametric-eq"
+            || instance.module_type_id() == "rgsml.dsp.compressor") {
             QVERIFY(module.value() != nullptr);
         } else {
             QVERIFY(module.error() != nullptr);
