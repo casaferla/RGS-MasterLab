@@ -26,6 +26,7 @@ constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 struct PreparedModule final {
     std::unique_ptr<rgsml::dsp::IModule> instance;
     std::int64_t latency_frames{0};
+    std::int64_t tail_frames{0};
 };
 
 [[nodiscard]] rgsml::core::Error render_error(
@@ -176,13 +177,11 @@ rgsml::core::Result<RenderResult> render_preview(
                     "Render Preview accepts only streaming-causal modules without prepass."));
             }
 
-            const auto module_lat_res = rgsml::core::checked_add(
-                required.algorithmic_latency_frames.value(),
-                required.look_ahead_frames.value());
-            if (!module_lat_res) {
-                return rgsml::core::Result<RenderResult>::failure(*module_lat_res.error());
-            }
-            const auto module_latency = *module_lat_res.value();
+            // algorithmic_latency_frames is the canonical source-time delay.
+            // look_ahead_frames describes future-input dependency and must not
+            // be added a second time to renderer latency compensation.
+            const auto module_latency = required.algorithmic_latency_frames.value();
+            const auto module_tail = required.effective_tail_frames.value();
 
             const auto next_cum_res = rgsml::core::checked_add(cumulative_latency, module_latency);
             if (!next_cum_res) {
@@ -197,7 +196,8 @@ rgsml::core::Result<RenderResult> render_preview(
             (*module.value())->reset();
             modules.push_back(PreparedModule{
                 std::move(*module.value()),
-                module_latency});
+                module_latency,
+                module_tail});
 
             if (is_gain) {
                 const auto* gain_params = std::get_if<rgsml::dsp::GainParameters>(&binding->parameters);
@@ -300,10 +300,20 @@ rgsml::core::Result<RenderResult> render_preview(
             for (std::size_t m = 0; m < modules.size(); ++m) {
                 const auto in_count = stage_end - stage_start;
                 const auto latency = modules[m].latency_frames;
-                const bool will_finalize = stream_eos_reached;
-                const auto out_count = in_count + (will_finalize ? latency : 0);
+                const auto tail = modules[m].tail_frames;
+                const bool has_tail = stream_eos_reached && tail > 0;
 
-                const auto out_frame_count = *rgsml::core::FrameCount::create(out_count).value();
+                const auto out_count_res = rgsml::core::checked_add(
+                    in_count, has_tail ? tail : 0);
+                if (!out_count_res) {
+                    return rgsml::core::Result<RenderResult>::failure(*out_count_res.error());
+                }
+                const auto out_count = *out_count_res.value();
+                const auto out_frame_count_res = rgsml::core::FrameCount::create(out_count);
+                if (!out_frame_count_res) {
+                    return rgsml::core::Result<RenderResult>::failure(*out_frame_count_res.error());
+                }
+                const auto out_frame_count = *out_frame_count_res.value();
                 auto next_buffer = rgsml::audio::AudioBuffer::create(
                     source.format(),
                     source.timebase().frame_domain_id(),
@@ -333,7 +343,8 @@ rgsml::core::Result<RenderResult> render_preview(
                     }
 
                     const bool is_begins = (cursor == source_start);
-                    const bool is_ends = (cursor + chunk_size == stage_end && will_finalize && latency == 0);
+                    const bool is_ends =
+                        (cursor + chunk_size == stage_end && stream_eos_reached && !has_tail);
                     const rgsml::dsp::DspProcessContext context{
                         chunk_range,
                         is_begins,
@@ -347,9 +358,13 @@ rgsml::core::Result<RenderResult> render_preview(
                 }
 
                 // Step B: Finalize tail emission if at EOS
-                if (will_finalize && latency > 0) {
+                if (has_tail) {
                     std::int64_t fin_cursor = stage_end;
-                    const std::int64_t fin_end = stage_end + latency;
+                    const auto fin_end_res = rgsml::core::checked_add(stage_end, tail);
+                    if (!fin_end_res) {
+                        return rgsml::core::Result<RenderResult>::failure(*fin_end_res.error());
+                    }
+                    const std::int64_t fin_end = *fin_end_res.value();
                     while (fin_cursor < fin_end) {
                         const auto chunk_size = std::min(fin_end - fin_cursor, max_block_size);
                         const auto chunk_count = *rgsml::core::FrameCount::create(chunk_size).value();
@@ -382,11 +397,22 @@ rgsml::core::Result<RenderResult> render_preview(
                 }
 
                 current_buffer = std::move(next_buffer);
-                stage_end += (will_finalize ? latency : 0);
+                if (has_tail) {
+                    const auto stage_end_res = rgsml::core::checked_add(stage_end, tail);
+                    if (!stage_end_res) {
+                        return rgsml::core::Result<RenderResult>::failure(*stage_end_res.error());
+                    }
+                    stage_end = *stage_end_res.value();
+                }
             }
 
             // Slice target raw range [window_begin + total_latency, window_end + total_latency]
-            const auto target_raw_begin = window.begin().value() + total_latency_val;
+            const auto target_raw_begin_res = rgsml::core::checked_add(
+                window.begin().value(), total_latency_val);
+            if (!target_raw_begin_res) {
+                return rgsml::core::Result<RenderResult>::failure(*target_raw_begin_res.error());
+            }
+            const auto target_raw_begin = *target_raw_begin_res.value();
             const rgsml::core::FrameIndex slice_start{target_raw_begin};
             auto final_subview = current_buffer.value()->view().subview(
                 slice_start,
