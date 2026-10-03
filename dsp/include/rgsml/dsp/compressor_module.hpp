@@ -76,6 +76,14 @@ private:
     struct Impl;
     explicit CompressorModule(std::unique_ptr<Impl> impl) noexcept;
 
+    template <typename TraceSink>
+    rgsml::core::Result<std::vector<CompressorControlTraceFrame>>
+    run_process_kernel(
+        rgsml::audio::AudioBufferView input,
+        rgsml::audio::MutableAudioBufferView output,
+        const DspProcessContext& context,
+        TraceSink* trace_sink);
+
     std::unique_ptr<Impl> impl_;
 };
 

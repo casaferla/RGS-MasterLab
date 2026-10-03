@@ -44,6 +44,7 @@ private slots:
     void checkpointAndRestoreContinuation();
     void finalizeEosShortSourceCases();
     void sonicFingerprintAndCheckpointRejection();
+    void unifiedKernelBitIdentity();
 };
 
 void CompressorTest::parametersValidationAndBounds()
@@ -911,6 +912,36 @@ void CompressorTest::sonicFingerprintAndCheckpointRejection()
     QVERIFY(cp_st_max); QVERIFY(cp_st_mean);
 
     QVERIFY(cp_st_max.value()->sonic_fingerprint != cp_st_mean.value()->sonic_fingerprint);
+}
+
+void CompressorTest::unifiedKernelBitIdentity()
+{
+    // Prove that normal process() and diagnostic process_diagnostic_traces() produce bit-identical audio output!
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    const auto& desc = registry.value()->find_descriptor("rgsml.dsp.compressor").value()->get();
+
+    auto params = *CompressorParameters::create_default().value();
+
+    auto mod_normal = std::move(*CompressorModule::create(desc, params).value());
+    auto mod_diag = std::move(*CompressorModule::create(desc, params).value());
+
+    const DspProcessSpec spec{format(rgsml::audio::ChannelLayout::STEREO_LR, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
+    QVERIFY(mod_normal->prepare(spec));
+    QVERIFY(mod_diag->prepare(spec));
+
+    const std::array left{0.5, -0.25, 0.8, -0.9, 0.1};
+    const std::array right{-0.5, 0.25, -0.8, 0.9, -0.1};
+
+    auto in1 = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto out_normal = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto out_diag = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+
+    QVERIFY(mod_normal->process(in1.value()->view(), out_normal.value()->mutable_view(), DspProcessContext{frame_range(0, 5), true, false}));
+    auto diag_res = mod_diag->process_diagnostic_traces(in1.value()->view(), out_diag.value()->mutable_view(), DspProcessContext{frame_range(0, 5), true, false});
+    QVERIFY(diag_res);
+
+    // Audio output must be 100% bit-identical!
+    QCOMPARE(bits(out_normal.value()->view()), bits(out_diag.value()->view()));
 }
 
 }  // namespace

@@ -286,379 +286,167 @@ void CompressorModule::reset() noexcept
     }
 }
 
-rgsml::core::Status CompressorModule::process(
-    rgsml::audio::AudioBufferView input,
-    rgsml::audio::MutableAudioBufferView output,
-    const DspProcessContext& context)
-{
-    try {
-        if (!impl_->prepared_spec) {
-            return rgsml::core::Status::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidState,
-                "DSP_MODULE_NOT_PREPARED",
-                "Compressor must be prepared before processing."));
-        }
-        if (impl_->in_finalize || impl_->finalized) {
-            return rgsml::core::Status::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidState,
-                "INVALID_DSP_PROCESS_CONTEXT",
-                "Cannot call process after finalize."));
-        }
-
-        if (input.format() != impl_->prepared_spec->audio_format
-            || output.format() != impl_->prepared_spec->audio_format) {
-            return rgsml::core::Status::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidArgument,
-                "INVALID_DSP_PROCESS_CONTEXT",
-                "Process input/output audio format mismatch."));
-        }
-
-        if (input.timebase().frame_domain_id() != impl_->prepared_spec->frame_domain_id
-            || output.timebase().frame_domain_id() != impl_->prepared_spec->frame_domain_id) {
-            return rgsml::core::Status::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidArgument,
-                "INVALID_DSP_PROCESS_CONTEXT",
-                "Process frame domain mismatch."));
-        }
-
-        if (input.frame_count() != output.frame_count()) {
-            return rgsml::core::Status::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidArgument,
-                "INVALID_DSP_PROCESS_CONTEXT",
-                "Process input/output frame count mismatch."));
-        }
-
-        const auto range_len = context.output_frame_range.length();
-        if (!range_len || range_len.value()->value() != input.frame_count().value()) {
-            return rgsml::core::Status::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidArgument,
-                "INVALID_DSP_PROCESS_CONTEXT",
-                "Process output frame range length mismatch."));
-        }
-
-        if (input.frame_count().value() > impl_->prepared_spec->maximum_block_frames.value()) {
-            return rgsml::core::Status::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidArgument,
-                "INVALID_DSP_PROCESS_CONTEXT",
-                "Process frame count exceeds maximum_block_frames."));
-        }
-
-        if (!impl_->bound) {
-            if (!context.begins_stream) {
-                return rgsml::core::Status::failure(comp_error(
-                    rgsml::core::ErrorCode::InvalidArgument,
-                    "INVALID_DSP_PROCESS_CONTEXT",
-                    "First process call must represent begins_stream = true."));
-            }
-        } else {
-            if (context.begins_stream) {
-                return rgsml::core::Status::failure(comp_error(
-                    rgsml::core::ErrorCode::InvalidArgument,
-                    "INVALID_DSP_PROCESS_CONTEXT",
-                    "Repeated begins_stream after binding invalid."));
-            }
-            if (context.output_frame_range.begin() != *impl_->next_input_frame) {
-                return rgsml::core::Status::failure(comp_error(
-                    rgsml::core::ErrorCode::InvalidArgument,
-                    "INVALID_DSP_PROCESS_CONTEXT",
-                    "Process frame range must be contiguous."));
-            }
-        }
-
-        const auto channels = input.format().channel_count();
-        const auto frames = input.frame_count().value();
-        const bool is_mono = (channels == 1U);
-
-        // Pre-scan all samples for non-finite values before state mutation
-        for (std::size_t ch = 0; ch < channels; ++ch) {
-            const auto plane = *input.channel(ch).value();
-            for (const double sample : plane) {
-                if (!std::isfinite(sample)) {
-                    return rgsml::core::Status::failure(comp_error(
-                        rgsml::core::ErrorCode::InvalidAudioSample,
-                        "INVALID_AUDIO_SAMPLE",
-                        "Non-finite audio sample in process input."));
-                }
-            }
-        }
-
-        impl_->bound = true;
-
-        const double threshold = impl_->parameters.threshold_dbfs();
-        const double ratio = impl_->parameters.ratio();
-        const double knee = impl_->parameters.knee_db();
-        const double makeup_factor = std::pow(10.0, impl_->parameters.makeup_gain_db() / 20.0);
-        const double mix_m = impl_->parameters.mix_percent() / 100.0;
-        const double inv_ratio_sub_one = (1.0 / ratio) - 1.0;
-        const double one_sub_inv_ratio = 1.0 - (1.0 / ratio);
-
-        for (std::size_t i = 0; i < static_cast<std::size_t>(frames); ++i) {
-            // Step 1: Detect
-            double p0 = 0.0;
-            double p1 = 0.0;
-
-            if (impl_->parameters.detector_mode() == CompressorDetectorMode::PEAK) {
-                p0 = std::abs((*input.channel(0).value())[i]);
-                if (!is_mono) {
-                    p1 = std::abs((*input.channel(1).value())[i]);
-                }
-            } else { // RMS
-                const double x0 = (*input.channel(0).value())[i];
-                impl_->rms_states[0] = impl_->a_rms * impl_->rms_states[0] + (1.0 - impl_->a_rms) * (x0 * x0);
-                p0 = std::sqrt(std::max(impl_->rms_states[0], 1e-30));
-
-                if (!is_mono) {
-                    const double x1 = (*input.channel(1).value())[i];
-                    impl_->rms_states[1] = impl_->a_rms * impl_->rms_states[1] + (1.0 - impl_->a_rms) * (x1 * x1);
-                    p1 = std::sqrt(std::max(impl_->rms_states[1], 1e-30));
-                }
-            }
-
-            // Step 2: Stereo Link
-            double pl0 = p0;
-            double pl1 = p1;
-            if (!is_mono) {
-                switch (impl_->parameters.channel_link()) {
-                case CompressorChannelLink::LINKED_MAX: {
-                    const double mx = std::max(p0, p1);
-                    pl0 = mx;
-                    pl1 = mx;
-                    break;
-                }
-                case CompressorChannelLink::LINKED_MEAN: {
-                    const double mn = std::sqrt((p0 * p0 + p1 * p1) * 0.5);
-                    pl0 = mn;
-                    pl1 = mn;
-                    break;
-                }
-                case CompressorChannelLink::DUAL_MONO:
-                    pl0 = p0;
-                    pl1 = p1;
-                    break;
-                }
-            }
-
-            // Step 3: Compute target reduction dB
-            const auto compute_target_db = [&](double p) -> double {
-                if (p == 0.0 || ratio == 1.0) {
-                    return 0.0;
-                }
-                const double x_db = 20.0 * std::log10(p);
-                if (knee == 0.0) {
-                    if (x_db <= threshold) return 0.0;
-                    return (x_db - threshold) * one_sub_inv_ratio;
-                }
-                // Soft knee
-                const double diff = x_db - threshold;
-                if (2.0 * diff < -knee) return 0.0;
-                if (2.0 * std::abs(diff) <= knee) {
-                    const double term = diff + (knee * 0.5);
-                    const double y_db = x_db + (inv_ratio_sub_one * term * term) / (2.0 * knee);
-                    return x_db - y_db;
-                }
-                return diff * one_sub_inv_ratio;
-            };
-
-            const double targ0 = compute_target_db(pl0);
-            const double targ1 = is_mono ? 0.0 : compute_target_db(pl1);
-
-            // Step 4: Ballistics
-            const auto smooth_reduction = [&](double targ, std::size_t ch) -> double {
-                const double prev = impl_->smoothed_reduction_db[ch];
-                const double coeff = (targ > prev) ? impl_->a_attack : impl_->a_release;
-                const double curr = coeff * prev + (1.0 - coeff) * targ;
-                impl_->smoothed_reduction_db[ch] = curr;
-                return curr;
-            };
-
-            const double red0 = smooth_reduction(targ0, 0);
-            const double red1 = is_mono ? 0.0 : smooth_reduction(targ1, 1);
-
-            // Step 5: Delay + Mix + Makeup
-            for (std::size_t ch = 0; ch < channels; ++ch) {
-                const double in_sample = (*input.channel(ch).value())[i];
-                const double red = (ch == 0) ? red0 : red1;
-
-                double x_delayed = in_sample;
-                if (impl_->lookahead_frames > 0) {
-                    auto& buf = impl_->delay_buffers[ch];
-                    auto& cursor = impl_->delay_cursors[ch];
-                    x_delayed = buf[cursor];
-                    buf[cursor] = in_sample;
-                    cursor = (cursor + 1U) % static_cast<std::size_t>(impl_->lookahead_frames);
-                }
-
-                const double gain_lin = std::pow(10.0, -red / 20.0);
-                const double wet = x_delayed * gain_lin * makeup_factor;
-                const double out_sample = (1.0 - mix_m) * x_delayed + mix_m * wet;
-
-                (*output.channel(ch).value())[i] = out_sample;
-            }
-        }
-
-        impl_->next_input_frame = context.output_frame_range.end();
-        return rgsml::core::Status::success();
-    } catch (...) {
-        return rgsml::core::Status::failure(comp_error(
-            rgsml::core::ErrorCode::InvalidState,
-            "DSP_PROCESS_FAILURE",
-            "Compressor process contained an internal failure."));
-    }
-}
-
+template <typename TraceSink>
 rgsml::core::Result<std::vector<CompressorControlTraceFrame>>
-CompressorModule::process_diagnostic_traces(
+CompressorModule::run_process_kernel(
     rgsml::audio::AudioBufferView input,
     rgsml::audio::MutableAudioBufferView output,
-    const DspProcessContext& context)
+    const DspProcessContext& context,
+    TraceSink* trace_sink)
 {
+    constexpr bool kTracing = !std::is_same_v<TraceSink, std::nullptr_t>;
     std::vector<CompressorControlTraceFrame> traces;
-    try {
-        if (!impl_->prepared_spec) {
-            return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidState,
-                "DSP_MODULE_NOT_PREPARED",
-                "Compressor must be prepared before processing."));
-        }
-        if (impl_->in_finalize || impl_->finalized) {
-            return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidState,
-                "INVALID_DSP_PROCESS_CONTEXT",
-                "Cannot call process after finalize."));
-        }
 
-        if (input.format() != impl_->prepared_spec->audio_format
-            || output.format() != impl_->prepared_spec->audio_format) {
+    if (!impl_->prepared_spec) {
+        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+            rgsml::core::ErrorCode::InvalidState,
+            "DSP_MODULE_NOT_PREPARED",
+            "Compressor must be prepared before processing."));
+    }
+    if (impl_->in_finalize || impl_->finalized) {
+        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+            rgsml::core::ErrorCode::InvalidState,
+            "INVALID_DSP_PROCESS_CONTEXT",
+            "Cannot call process after finalize."));
+    }
+
+    if (input.format() != impl_->prepared_spec->audio_format
+        || output.format() != impl_->prepared_spec->audio_format) {
+        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+            rgsml::core::ErrorCode::InvalidArgument,
+            "INVALID_DSP_PROCESS_CONTEXT",
+            "Process input/output audio format mismatch."));
+    }
+
+    if (input.timebase().frame_domain_id() != impl_->prepared_spec->frame_domain_id
+        || output.timebase().frame_domain_id() != impl_->prepared_spec->frame_domain_id) {
+        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+            rgsml::core::ErrorCode::InvalidArgument,
+            "INVALID_DSP_PROCESS_CONTEXT",
+            "Process frame domain mismatch."));
+    }
+
+    if (input.frame_count() != output.frame_count()) {
+        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+            rgsml::core::ErrorCode::InvalidArgument,
+            "INVALID_DSP_PROCESS_CONTEXT",
+            "Process input/output frame count mismatch."));
+    }
+
+    const auto range_len = context.output_frame_range.length();
+    if (!range_len || range_len.value()->value() != input.frame_count().value()) {
+        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+            rgsml::core::ErrorCode::InvalidArgument,
+            "INVALID_DSP_PROCESS_CONTEXT",
+            "Process output frame range length mismatch."));
+    }
+
+    if (input.frame_count().value() > impl_->prepared_spec->maximum_block_frames.value()) {
+        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+            rgsml::core::ErrorCode::InvalidArgument,
+            "INVALID_DSP_PROCESS_CONTEXT",
+            "Process frame count exceeds maximum_block_frames."));
+    }
+
+    if (!impl_->bound) {
+        if (!context.begins_stream) {
             return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
                 rgsml::core::ErrorCode::InvalidArgument,
                 "INVALID_DSP_PROCESS_CONTEXT",
-                "Process input/output audio format mismatch."));
+                "First process call must represent begins_stream = true."));
         }
-
-        if (input.timebase().frame_domain_id() != impl_->prepared_spec->frame_domain_id
-            || output.timebase().frame_domain_id() != impl_->prepared_spec->frame_domain_id) {
+    } else {
+        if (context.begins_stream) {
             return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
                 rgsml::core::ErrorCode::InvalidArgument,
                 "INVALID_DSP_PROCESS_CONTEXT",
-                "Process frame domain mismatch."));
+                "Repeated begins_stream after binding invalid."));
         }
-
-        if (input.frame_count() != output.frame_count()) {
+        if (context.output_frame_range.begin() != *impl_->next_input_frame) {
             return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
                 rgsml::core::ErrorCode::InvalidArgument,
                 "INVALID_DSP_PROCESS_CONTEXT",
-                "Process input/output frame count mismatch."));
+                "Process frame range must be contiguous."));
         }
+    }
 
-        const auto range_len = context.output_frame_range.length();
-        if (!range_len || range_len.value()->value() != input.frame_count().value()) {
-            return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidArgument,
-                "INVALID_DSP_PROCESS_CONTEXT",
-                "Process output frame range length mismatch."));
-        }
+    const auto channels = input.format().channel_count();
+    const auto frames = input.frame_count().value();
+    const bool is_mono = (channels == 1U);
 
-        if (input.frame_count().value() > impl_->prepared_spec->maximum_block_frames.value()) {
-            return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
-                rgsml::core::ErrorCode::InvalidArgument,
-                "INVALID_DSP_PROCESS_CONTEXT",
-                "Process frame count exceeds maximum_block_frames."));
-        }
-
-        if (!impl_->bound) {
-            if (!context.begins_stream) {
+    // Pre-scan all samples for non-finite values before state mutation
+    for (std::size_t ch = 0; ch < channels; ++ch) {
+        const auto plane = *input.channel(ch).value();
+        for (const double sample : plane) {
+            if (!std::isfinite(sample)) {
                 return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
-                    rgsml::core::ErrorCode::InvalidArgument,
-                    "INVALID_DSP_PROCESS_CONTEXT",
-                    "First process call must represent begins_stream = true."));
-            }
-        } else {
-            if (context.begins_stream) {
-                return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
-                    rgsml::core::ErrorCode::InvalidArgument,
-                    "INVALID_DSP_PROCESS_CONTEXT",
-                    "Repeated begins_stream after binding invalid."));
-            }
-            if (context.output_frame_range.begin() != *impl_->next_input_frame) {
-                return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
-                    rgsml::core::ErrorCode::InvalidArgument,
-                    "INVALID_DSP_PROCESS_CONTEXT",
-                    "Process frame range must be contiguous."));
+                    rgsml::core::ErrorCode::InvalidAudioSample,
+                    "INVALID_AUDIO_SAMPLE",
+                    "Non-finite audio sample in process input."));
             }
         }
+    }
 
-        const auto channels = input.format().channel_count();
-        const auto frames = input.frame_count().value();
-        const bool is_mono = (channels == 1U);
-
-        // Pre-scan all samples for non-finite values before state mutation
-        for (std::size_t ch = 0; ch < channels; ++ch) {
-            const auto plane = *input.channel(ch).value();
-            for (const double sample : plane) {
-                if (!std::isfinite(sample)) {
-                    return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
-                        rgsml::core::ErrorCode::InvalidAudioSample,
-                        "INVALID_AUDIO_SAMPLE",
-                        "Non-finite audio sample in process input."));
-                }
-            }
-        }
-
-        impl_->bound = true;
+    impl_->bound = true;
+    if constexpr (kTracing) {
         traces.reserve(static_cast<std::size_t>(frames));
+    }
 
-        const double threshold = impl_->parameters.threshold_dbfs();
-        const double ratio = impl_->parameters.ratio();
-        const double knee = impl_->parameters.knee_db();
-        const double makeup_factor = std::pow(10.0, impl_->parameters.makeup_gain_db() / 20.0);
-        const double mix_m = impl_->parameters.mix_percent() / 100.0;
-        const double inv_ratio_sub_one = (1.0 / ratio) - 1.0;
-        const double one_sub_inv_ratio = 1.0 - (1.0 / ratio);
+    const double threshold = impl_->parameters.threshold_dbfs();
+    const double ratio = impl_->parameters.ratio();
+    const double knee = impl_->parameters.knee_db();
+    const double makeup_factor = std::pow(10.0, impl_->parameters.makeup_gain_db() / 20.0);
+    const double mix_m = impl_->parameters.mix_percent() / 100.0;
+    const double inv_ratio_sub_one = (1.0 / ratio) - 1.0;
+    const double one_sub_inv_ratio = 1.0 - (1.0 / ratio);
 
-        for (std::size_t i = 0; i < static_cast<std::size_t>(frames); ++i) {
-            CompressorControlTraceFrame tr;
+    for (std::size_t i = 0; i < static_cast<std::size_t>(frames); ++i) {
+        CompressorControlTraceFrame tr;
 
-            double p0 = 0.0;
-            double p1 = 0.0;
+        double p0 = 0.0;
+        double p1 = 0.0;
 
-            if (impl_->parameters.detector_mode() == CompressorDetectorMode::PEAK) {
-                p0 = std::abs((*input.channel(0).value())[i]);
-                if (!is_mono) p1 = std::abs((*input.channel(1).value())[i]);
-            } else {
-                const double x0 = (*input.channel(0).value())[i];
-                impl_->rms_states[0] = impl_->a_rms * impl_->rms_states[0] + (1.0 - impl_->a_rms) * (x0 * x0);
-                p0 = std::sqrt(std::max(impl_->rms_states[0], 1e-30));
+        if (impl_->parameters.detector_mode() == CompressorDetectorMode::PEAK) {
+            p0 = std::abs((*input.channel(0).value())[i]);
+            if (!is_mono) p1 = std::abs((*input.channel(1).value())[i]);
+        } else {
+            const double x0 = (*input.channel(0).value())[i];
+            impl_->rms_states[0] = impl_->a_rms * impl_->rms_states[0] + (1.0 - impl_->a_rms) * (x0 * x0);
+            p0 = std::sqrt(std::max(impl_->rms_states[0], 1e-30));
 
-                if (!is_mono) {
-                    const double x1 = (*input.channel(1).value())[i];
-                    impl_->rms_states[1] = impl_->a_rms * impl_->rms_states[1] + (1.0 - impl_->a_rms) * (x1 * x1);
-                    p1 = std::sqrt(std::max(impl_->rms_states[1], 1e-30));
-                }
+            if (!is_mono) {
+                const double x1 = (*input.channel(1).value())[i];
+                impl_->rms_states[1] = impl_->a_rms * impl_->rms_states[1] + (1.0 - impl_->a_rms) * (x1 * x1);
+                p1 = std::sqrt(std::max(impl_->rms_states[1], 1e-30));
             }
+        }
 
+        if constexpr (kTracing) {
             tr.detector_magnitude_ch0 = p0;
             tr.detector_magnitude_ch1 = p1;
+        }
 
-            double pl0 = p0;
-            double pl1 = p1;
-            if (!is_mono) {
-                switch (impl_->parameters.channel_link()) {
-                case CompressorChannelLink::LINKED_MAX: {
-                    const double mx = std::max(p0, p1);
-                    pl0 = mx; pl1 = mx;
-                    break;
-                }
-                case CompressorChannelLink::LINKED_MEAN: {
-                    const double mn = std::sqrt((p0 * p0 + p1 * p1) * 0.5);
-                    pl0 = mn; pl1 = mn;
-                    break;
-                }
-                case CompressorChannelLink::DUAL_MONO:
-                    pl0 = p0; pl1 = p1;
-                    break;
-                }
+        double pl0 = p0;
+        double pl1 = p1;
+        if (!is_mono) {
+            switch (impl_->parameters.channel_link()) {
+            case CompressorChannelLink::LINKED_MAX: {
+                const double mx = std::max(p0, p1);
+                pl0 = mx; pl1 = mx;
+                break;
             }
+            case CompressorChannelLink::LINKED_MEAN: {
+                const double mn = std::sqrt((p0 * p0 + p1 * p1) * 0.5);
+                pl0 = mn; pl1 = mn;
+                break;
+            }
+            case CompressorChannelLink::DUAL_MONO:
+                pl0 = p0; pl1 = p1;
+                break;
+            }
+        }
 
+        if constexpr (kTracing) {
             tr.linked_detector_ch0 = pl0;
             tr.linked_detector_ch1 = pl1;
 
@@ -677,73 +465,115 @@ CompressorModule::process_diagnostic_traces(
                 tr.level_db_ch1 = -std::numeric_limits<double>::infinity();
                 tr.level_db_valid_ch1 = false;
             }
+        }
 
-            const auto compute_target_db = [&](double p) -> double {
-                if (p == 0.0 || ratio == 1.0) return 0.0;
-                const double x_db = 20.0 * std::log10(p);
-                if (knee == 0.0) {
-                    if (x_db <= threshold) return 0.0;
-                    return (x_db - threshold) * one_sub_inv_ratio;
-                }
-                const double diff = x_db - threshold;
-                if (2.0 * diff < -knee) return 0.0;
-                if (2.0 * std::abs(diff) <= knee) {
-                    const double term = diff + (knee * 0.5);
-                    const double y_db = x_db + (inv_ratio_sub_one * term * term) / (2.0 * knee);
-                    return x_db - y_db;
-                }
-                return diff * one_sub_inv_ratio;
-            };
+        const auto compute_target_db = [&](double p) -> double {
+            if (p == 0.0 || ratio == 1.0) return 0.0;
+            const double x_db = 20.0 * std::log10(p);
+            if (knee == 0.0) {
+                if (x_db <= threshold) return 0.0;
+                return (x_db - threshold) * one_sub_inv_ratio;
+            }
+            const double diff = x_db - threshold;
+            if (2.0 * diff < -knee) return 0.0;
+            if (2.0 * std::abs(diff) <= knee) {
+                const double term = diff + (knee * 0.5);
+                const double y_db = x_db + (inv_ratio_sub_one * term * term) / (2.0 * knee);
+                return x_db - y_db;
+            }
+            return diff * one_sub_inv_ratio;
+        };
 
-            const double targ0 = compute_target_db(pl0);
-            const double targ1 = is_mono ? 0.0 : compute_target_db(pl1);
+        const double targ0 = compute_target_db(pl0);
+        const double targ1 = is_mono ? 0.0 : compute_target_db(pl1);
 
+        if constexpr (kTracing) {
             tr.target_reduction_db_ch0 = targ0;
             tr.target_reduction_db_ch1 = targ1;
+        }
 
-            const auto smooth_reduction = [&](double targ, std::size_t ch) -> double {
-                const double prev = impl_->smoothed_reduction_db[ch];
-                const double coeff = (targ > prev) ? impl_->a_attack : impl_->a_release;
-                const double curr = coeff * prev + (1.0 - coeff) * targ;
-                impl_->smoothed_reduction_db[ch] = curr;
-                return curr;
-            };
+        const auto smooth_reduction = [&](double targ, std::size_t ch) -> double {
+            const double prev = impl_->smoothed_reduction_db[ch];
+            const double coeff = (targ > prev) ? impl_->a_attack : impl_->a_release;
+            const double curr = coeff * prev + (1.0 - coeff) * targ;
+            impl_->smoothed_reduction_db[ch] = curr;
+            return curr;
+        };
 
-            const double red0 = smooth_reduction(targ0, 0);
-            const double red1 = is_mono ? 0.0 : smooth_reduction(targ1, 1);
+        const double red0 = smooth_reduction(targ0, 0);
+        const double red1 = is_mono ? 0.0 : smooth_reduction(targ1, 1);
 
+        if constexpr (kTracing) {
             tr.smoothed_reduction_db_ch0 = red0;
             tr.smoothed_reduction_db_ch1 = red1;
-
             tr.linear_gain_ch0 = std::pow(10.0, -red0 / 20.0);
             tr.linear_gain_ch1 = std::pow(10.0, -red1 / 20.0);
+        }
 
-            for (std::size_t ch = 0; ch < channels; ++ch) {
-                const double in_sample = (*input.channel(ch).value())[i];
-                const double red = (ch == 0) ? red0 : red1;
+        for (std::size_t ch = 0; ch < channels; ++ch) {
+            const double in_sample = (*input.channel(ch).value())[i];
+            const double red = (ch == 0) ? red0 : red1;
 
-                double x_delayed = in_sample;
-                if (impl_->lookahead_frames > 0) {
-                    auto& buf = impl_->delay_buffers[ch];
-                    auto& cursor = impl_->delay_cursors[ch];
-                    x_delayed = buf[cursor];
-                    buf[cursor] = in_sample;
-                    cursor = (cursor + 1U) % static_cast<std::size_t>(impl_->lookahead_frames);
-                }
+            double x_delayed = in_sample;
+            if (impl_->lookahead_frames > 0) {
+                auto& buf = impl_->delay_buffers[ch];
+                auto& cursor = impl_->delay_cursors[ch];
+                x_delayed = buf[cursor];
+                buf[cursor] = in_sample;
+                cursor = (cursor + 1U) % static_cast<std::size_t>(impl_->lookahead_frames);
+            }
 
-                const double gain_lin = std::pow(10.0, -red / 20.0);
-                const double wet = x_delayed * gain_lin * makeup_factor;
-                const double out_sample = (1.0 - mix_m) * x_delayed + mix_m * wet;
+            const double gain_lin = std::pow(10.0, -red / 20.0);
+            const double wet = x_delayed * gain_lin * makeup_factor;
+            const double out_sample = (1.0 - mix_m) * x_delayed + mix_m * wet;
 
-                (*output.channel(ch).value())[i] = out_sample;
+            (*output.channel(ch).value())[i] = out_sample;
+            if constexpr (kTracing) {
                 if (ch == 0) tr.output_sample_ch0 = out_sample;
                 else tr.output_sample_ch1 = out_sample;
             }
-
-            traces.push_back(tr);
         }
 
-        impl_->next_input_frame = context.output_frame_range.end();
+        if constexpr (kTracing) {
+            trace_sink->push_back(tr);
+        }
+    }
+
+    impl_->next_input_frame = context.output_frame_range.end();
+    return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::success(std::move(traces));
+}
+
+rgsml::core::Status CompressorModule::process(
+    rgsml::audio::AudioBufferView input,
+    rgsml::audio::MutableAudioBufferView output,
+    const DspProcessContext& context)
+{
+    try {
+        auto res = run_process_kernel<std::nullptr_t>(input, output, context, nullptr);
+        if (!res) {
+            return rgsml::core::Status::failure(*res.error());
+        }
+        return rgsml::core::Status::success();
+    } catch (...) {
+        return rgsml::core::Status::failure(comp_error(
+            rgsml::core::ErrorCode::InvalidState,
+            "DSP_PROCESS_FAILURE",
+            "Compressor process contained an internal failure."));
+    }
+}
+
+rgsml::core::Result<std::vector<CompressorControlTraceFrame>>
+CompressorModule::process_diagnostic_traces(
+    rgsml::audio::AudioBufferView input,
+    rgsml::audio::MutableAudioBufferView output,
+    const DspProcessContext& context)
+{
+    try {
+        std::vector<CompressorControlTraceFrame> traces;
+        auto res = run_process_kernel(input, output, context, &traces);
+        if (!res) {
+            return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(*res.error());
+        }
         return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::success(std::move(traces));
     } catch (...) {
         return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
