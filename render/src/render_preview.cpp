@@ -3,6 +3,7 @@
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/core/checked_integer.hpp>
 #include <rgsml/core/error.hpp>
+#include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/imodule.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -22,12 +23,11 @@ namespace {
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
+constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 
 struct PreparedModule final {
     std::unique_ptr<rgsml::dsp::IModule> instance;
     std::int64_t latency_frames{0};
-    std::int64_t look_ahead_frames{0};
-    std::int64_t tail_frames{0};
 };
 
 [[nodiscard]] rgsml::core::Error render_error(
@@ -106,10 +106,11 @@ rgsml::core::Result<RenderResult> render_preview(
 
             const bool is_gain = (instance.module_type_id() == kGainTypeId);
             const bool is_eq = (instance.module_type_id() == kEqTypeId);
-            const bool is_parameterized = is_gain || is_eq;
+            const bool is_compressor = (instance.module_type_id() == kCompressorTypeId);
+            const bool is_parameterized = is_gain || is_eq || is_compressor;
 
             if (!instance.active()) {
-                if (is_gain || is_eq) {
+                if (is_parameterized) {
                     const auto* binding = find_binding(request, instance.instance_id());
                     if (is_gain) {
                         const auto* gain_params = std::get_if<rgsml::dsp::GainParameters>(&binding->parameters);
@@ -120,7 +121,7 @@ rgsml::core::Result<RenderResult> render_preview(
                             std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.gain.parameters/1.0.0")},
                             ModuleExecutionDisposition::BYPASS_IDENTITY,
                             GainExecutionSignaturePayload{gain_params->gain_db()}});
-                    } else {
+                    } else if (is_eq) {
                         const auto* eq_params = std::get_if<rgsml::dsp::ParametricEqParameters>(&binding->parameters);
                         std::vector<EqBandSignaturePayload> enabled_bands;
                         for (const auto& band : eq_params->bands()) {
@@ -138,6 +139,29 @@ rgsml::core::Result<RenderResult> render_preview(
                             std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.parametric-eq.parameters/1.0.0")},
                             ModuleExecutionDisposition::BYPASS_IDENTITY,
                             ParametricEqExecutionSignaturePayload{std::move(enabled_bands)}});
+                    } else if (is_compressor) {
+                        const auto* comp_params = std::get_if<rgsml::dsp::CompressorParameters>(&binding->parameters);
+                        const bool is_mono = (source.format().channel_layout() == rgsml::audio::ChannelLayout::MONO_C);
+                        std::optional<rgsml::dsp::CompressorChannelLink> effective_link =
+                            is_mono ? std::nullopt : std::optional<rgsml::dsp::CompressorChannelLink>{comp_params->channel_link()};
+                        signatures.push_back(ModuleExecutionSignature{
+                            instance.instance_id(),
+                            std::string{kCompressorTypeId},
+                            std::string{descriptor.value()->get().algorithm_version().value_or("1.0.0")},
+                            std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.compressor.parameters/1.0.0")},
+                            ModuleExecutionDisposition::BYPASS_IDENTITY,
+                            CompressorExecutionSignaturePayload{
+                                comp_params->detector_mode(),
+                                effective_link,
+                                comp_params->threshold_dbfs(),
+                                comp_params->ratio(),
+                                comp_params->knee_db(),
+                                comp_params->attack_ms(),
+                                comp_params->release_ms(),
+                                comp_params->rms_time_constant_ms(),
+                                comp_params->look_ahead_ms(),
+                                comp_params->mix_percent(),
+                                comp_params->makeup_gain_db()}});
                     }
                 }
                 continue;
@@ -178,12 +202,13 @@ rgsml::core::Result<RenderResult> render_preview(
                     "Render Preview accepts only streaming-causal modules without prepass."));
             }
 
-            // algorithmic_latency_frames is the canonical source-time delay.
-            // look_ahead_frames describes future-input dependency and must not
-            // be added a second time to renderer latency compensation.
-            const auto module_latency = required.algorithmic_latency_frames.value();
-            const auto module_look_ahead = required.look_ahead_frames.value();
-            const auto module_tail = required.effective_tail_frames.value();
+            const auto module_lat_res = rgsml::core::checked_add(
+                required.algorithmic_latency_frames.value(),
+                required.look_ahead_frames.value());
+            if (!module_lat_res) {
+                return rgsml::core::Result<RenderResult>::failure(*module_lat_res.error());
+            }
+            const auto module_latency = *module_lat_res.value();
 
             const auto next_cum_res = rgsml::core::checked_add(cumulative_latency, module_latency);
             if (!next_cum_res) {
@@ -198,9 +223,7 @@ rgsml::core::Result<RenderResult> render_preview(
             (*module.value())->reset();
             modules.push_back(PreparedModule{
                 std::move(*module.value()),
-                module_latency,
-                module_look_ahead,
-                module_tail});
+                module_latency});
 
             if (is_gain) {
                 const auto* gain_params = std::get_if<rgsml::dsp::GainParameters>(&binding->parameters);
@@ -229,6 +252,29 @@ rgsml::core::Result<RenderResult> render_preview(
                     std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.parametric-eq.parameters/1.0.0")},
                     ModuleExecutionDisposition::PROCESSED,
                     ParametricEqExecutionSignaturePayload{std::move(enabled_bands)}});
+            } else if (is_compressor) {
+                const auto* comp_params = std::get_if<rgsml::dsp::CompressorParameters>(&binding->parameters);
+                const bool is_mono = (source.format().channel_layout() == rgsml::audio::ChannelLayout::MONO_C);
+                std::optional<rgsml::dsp::CompressorChannelLink> effective_link =
+                    is_mono ? std::nullopt : std::optional<rgsml::dsp::CompressorChannelLink>{comp_params->channel_link()};
+                signatures.push_back(ModuleExecutionSignature{
+                    instance.instance_id(),
+                    std::string{kCompressorTypeId},
+                    std::string{descriptor.value()->get().algorithm_version().value_or("1.0.0")},
+                    std::string{descriptor.value()->get().parameter_schema_id().value_or("rgsml.dsp.compressor.parameters/1.0.0")},
+                    ModuleExecutionDisposition::PROCESSED,
+                    CompressorExecutionSignaturePayload{
+                        comp_params->detector_mode(),
+                        effective_link,
+                        comp_params->threshold_dbfs(),
+                        comp_params->ratio(),
+                        comp_params->knee_db(),
+                        comp_params->attack_ms(),
+                        comp_params->release_ms(),
+                        comp_params->rms_time_constant_ms(),
+                        comp_params->look_ahead_ms(),
+                        comp_params->mix_percent(),
+                        comp_params->makeup_gain_db()}});
             }
         }
 
@@ -302,28 +348,11 @@ rgsml::core::Result<RenderResult> render_preview(
 
             for (std::size_t m = 0; m < modules.size(); ++m) {
                 const auto in_count = stage_end - stage_start;
-                const auto tail = modules[m].tail_frames;
-                // Stage-1 finalize is the latency-bearing true-EOS drain seam.
-                // Preserve legacy zero-latency/zero-lookahead modules such as
-                // Parametric EQ, whose effective_tail_frames is a settling
-                // horizon rather than emitted programme tail.
-                const bool latency_bearing =
-                    modules[m].latency_frames > 0
-                    || modules[m].look_ahead_frames > 0;
-                const bool has_tail =
-                    stream_eos_reached && latency_bearing && tail > 0;
+                const auto latency = modules[m].latency_frames;
+                const bool will_finalize = stream_eos_reached;
+                const auto out_count = in_count + (will_finalize ? latency : 0);
 
-                const auto out_count_res = rgsml::core::checked_add(
-                    in_count, has_tail ? tail : 0);
-                if (!out_count_res) {
-                    return rgsml::core::Result<RenderResult>::failure(*out_count_res.error());
-                }
-                const auto out_count = *out_count_res.value();
-                const auto out_frame_count_res = rgsml::core::FrameCount::create(out_count);
-                if (!out_frame_count_res) {
-                    return rgsml::core::Result<RenderResult>::failure(*out_frame_count_res.error());
-                }
-                const auto out_frame_count = *out_frame_count_res.value();
+                const auto out_frame_count = *rgsml::core::FrameCount::create(out_count).value();
                 auto next_buffer = rgsml::audio::AudioBuffer::create(
                     source.format(),
                     source.timebase().frame_domain_id(),
@@ -353,8 +382,7 @@ rgsml::core::Result<RenderResult> render_preview(
                     }
 
                     const bool is_begins = (cursor == source_start);
-                    const bool is_ends =
-                        (cursor + chunk_size == stage_end && stream_eos_reached && !has_tail);
+                    const bool is_ends = (cursor + chunk_size == stage_end && will_finalize && latency == 0);
                     const rgsml::dsp::DspProcessContext context{
                         chunk_range,
                         is_begins,
@@ -368,13 +396,9 @@ rgsml::core::Result<RenderResult> render_preview(
                 }
 
                 // Step B: Finalize tail emission if at EOS
-                if (has_tail) {
+                if (will_finalize && latency > 0) {
                     std::int64_t fin_cursor = stage_end;
-                    const auto fin_end_res = rgsml::core::checked_add(stage_end, tail);
-                    if (!fin_end_res) {
-                        return rgsml::core::Result<RenderResult>::failure(*fin_end_res.error());
-                    }
-                    const std::int64_t fin_end = *fin_end_res.value();
+                    const std::int64_t fin_end = stage_end + latency;
                     while (fin_cursor < fin_end) {
                         const auto chunk_size = std::min(fin_end - fin_cursor, max_block_size);
                         const auto chunk_count = *rgsml::core::FrameCount::create(chunk_size).value();
@@ -407,22 +431,11 @@ rgsml::core::Result<RenderResult> render_preview(
                 }
 
                 current_buffer = std::move(next_buffer);
-                if (has_tail) {
-                    const auto stage_end_res = rgsml::core::checked_add(stage_end, tail);
-                    if (!stage_end_res) {
-                        return rgsml::core::Result<RenderResult>::failure(*stage_end_res.error());
-                    }
-                    stage_end = *stage_end_res.value();
-                }
+                stage_end += (will_finalize ? latency : 0);
             }
 
             // Slice target raw range [window_begin + total_latency, window_end + total_latency]
-            const auto target_raw_begin_res = rgsml::core::checked_add(
-                window.begin().value(), total_latency_val);
-            if (!target_raw_begin_res) {
-                return rgsml::core::Result<RenderResult>::failure(*target_raw_begin_res.error());
-            }
-            const auto target_raw_begin = *target_raw_begin_res.value();
+            const auto target_raw_begin = window.begin().value() + total_latency_val;
             const rgsml::core::FrameIndex slice_start{target_raw_begin};
             auto final_subview = current_buffer.value()->view().subview(
                 slice_start,

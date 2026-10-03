@@ -1,5 +1,6 @@
 #pragma once
 
+#include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 
@@ -9,6 +10,7 @@ namespace rgsml::dsp {
 
 using ModuleParameterPayload = std::variant<
     GainParameters,
-    ParametricEqParameters>;
+    ParametricEqParameters,
+    CompressorParameters>;
 
 }  // namespace rgsml::dsp

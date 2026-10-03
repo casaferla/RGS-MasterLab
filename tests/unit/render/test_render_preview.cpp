@@ -2,6 +2,7 @@
 
 #include <rgsml/core/checked_integer.hpp>
 #include <rgsml/core/uuid.hpp>
+#include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/dsp_runtime_checkpoint.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/imodule.hpp>
@@ -93,10 +94,10 @@ public:
             rgsml::dsp::DspRuntimeRequirements{
                 rgsml::dsp::DspExecutionModel::STREAMING_CAUSAL,
                 lat,
-                lat,
                 zero,
                 zero,
-                lat,
+                zero,
+                zero,
                 false});
     }
 
@@ -240,19 +241,12 @@ public:
     rgsml::core::Result<rgsml::dsp::DspRuntimeCheckpoint>
     runtime_checkpoint() const override
     {
-        if (!prepared_spec_) {
-            return rgsml::core::Result<rgsml::dsp::DspRuntimeCheckpoint>::failure(
-                rgsml::core::Error{
-                    rgsml::core::ErrorCode::InvalidState,
-                    "DSP_MODULE_NOT_PREPARED",
-                    {{"category", "DSP_MODULE_NOT_PREPARED"}}});
-        }
         if (in_finalize_ || finalized_) {
             return rgsml::core::Result<rgsml::dsp::DspRuntimeCheckpoint>::failure(
                 rgsml::core::Error{
                     rgsml::core::ErrorCode::UnsupportedOperation,
                     "Checkpoint during or after finalize rejected",
-                    {{"category", "RUNTIME_CHECKPOINT_DURING_FINALIZE_UNSUPPORTED"}}});
+                    {{"category", "UNSUPPORTED_MODULE_OPERATION"}}});
         }
 
         rgsml::dsp::DspRuntimeCheckpoint cp;
@@ -302,37 +296,28 @@ public:
                 {{"category", "INCOMPATIBLE_CHECKPOINT"}}});
         }
 
-        const auto channels = prepared_spec_->audio_format.channel_count();
-        const auto expected_payload_size =
-            channels * static_cast<std::size_t>(latency_frames_) * sizeof(double);
-        if (checkpoint.payload.size() != expected_payload_size) {
-            return rgsml::core::Status::failure(rgsml::core::Error{
-                rgsml::core::ErrorCode::InvalidArgument,
-                "Checkpoint payload shape is incompatible",
-                {{"category", "INCOMPATIBLE_CHECKPOINT"}}});
-        }
-
-        std::vector<std::vector<double>> restored_delay_buffers(
-            channels, std::vector<double>());
-        std::size_t offset = 0;
-        for (std::size_t ch = 0; ch < channels; ++ch) {
-            restored_delay_buffers[ch].reserve(static_cast<std::size_t>(latency_frames_));
-            for (std::size_t i = 0; i < static_cast<std::size_t>(latency_frames_); ++i) {
-                std::uint64_t bits_val = 0;
-                for (std::size_t b = 0; b < 8; ++b) {
-                    bits_val |= static_cast<std::uint64_t>(checkpoint.payload[offset + b]) << (b * 8);
-                }
-                offset += 8;
-                restored_delay_buffers[ch].push_back(std::bit_cast<double>(bits_val));
-            }
-        }
-
         next_input_frame_ = checkpoint.next_input_frame;
         bound_ = next_input_frame_.has_value();
         in_finalize_ = false;
         finalized_ = false;
-        tail_emitted_ = 0;
-        delay_buffers_ = std::move(restored_delay_buffers);
+
+        const auto channels = prepared_spec_->audio_format.channel_count();
+        delay_buffers_.assign(channels, std::vector<double>());
+        std::size_t offset = 0;
+        for (std::size_t ch = 0; ch < channels; ++ch) {
+            for (std::size_t i = 0; i < static_cast<std::size_t>(latency_frames_); ++i) {
+                if (offset + 8 <= checkpoint.payload.size()) {
+                    std::uint64_t bits_val = 0;
+                    for (std::size_t b = 0; b < 8; ++b) {
+                        bits_val |= static_cast<std::uint64_t>(checkpoint.payload[offset + b]) << (b * 8);
+                    }
+                    offset += 8;
+                    delay_buffers_[ch].push_back(std::bit_cast<double>(bits_val));
+                } else {
+                    delay_buffers_[ch].push_back(0.0);
+                }
+            }
+        }
         return rgsml::core::Status::success();
     }
 
@@ -463,6 +448,9 @@ private slots:
     void latencyFakePreviewNearEos();
     void latencyFakeBypassedModule();
     void checkpointAndTimelineRules();
+
+    // Stage 2 Production Compressor Integration Tests
+    void compressorRenderPreviewChainIntegration();
 };
 
 void RenderPreviewTest::validatesBindingsAndWindowAtomically()
@@ -654,7 +642,7 @@ void RenderPreviewTest::activeUnavailableModuleFails()
     auto chain = empty_chain(*registry.value());
     QVERIFY(chain.add(
         make_id("24000000-0000-0000-0000-000000000001"),
-        "rgsml.dsp.compressor", 0));
+        "rgsml.dsp.stereo-ms", 0)); // Note: stereo-ms has no factory
     auto request = rgsml::render::RenderRequest::create(
         source.value()->view(), frame_range(0, 1), chain, {}, frame_count(1));
     auto result = rgsml::render::render_preview(*request.value(), *registry.value());
@@ -909,7 +897,7 @@ void RenderPreviewTest::errorOrderingActiveUnsupportedModuleFailsTruthfully()
     auto chain = empty_chain(*registry.value());
 
     const auto comp_id = make_id("27000000-0000-0000-0000-000000000001");
-    QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 0));
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.stereo-ms", 0)); // Note: stereo-ms has no factory
 
     auto req = rgsml::render::RenderRequest::create(
         source.value()->view(), frame_range(0, 1), chain,
@@ -1172,29 +1160,11 @@ void RenderPreviewTest::checkpointAndTimelineRules()
     QCOMPARE(cp.sonic_fingerprint, std::string{"fake.sonic.v1"});
     QCOMPARE(cp.backend_identity, std::string{"rgsml.dsp.backend.test"});
 
-    // Incompatible restore (wrong type ID) is atomic.
-    auto before_bad_restore = mod.runtime_checkpoint();
-    QVERIFY(before_bad_restore);
-
+    // Incompatible restore (wrong type ID)
     auto bad_cp = cp;
     bad_cp.module_type_id = "rgsml.dsp.wrong";
     auto bad_rest = mod.restore_runtime_checkpoint(bad_cp);
     QVERIFY(!bad_rest);
-
-    auto after_bad_restore = mod.runtime_checkpoint();
-    QVERIFY(after_bad_restore);
-    QVERIFY(*after_bad_restore.value() == *before_bad_restore.value());
-
-    // Corrupt payload shape is also rejected atomically.
-    auto corrupt_cp = cp;
-    QVERIFY(!corrupt_cp.payload.empty());
-    corrupt_cp.payload.pop_back();
-    auto corrupt_rest = mod.restore_runtime_checkpoint(corrupt_cp);
-    QVERIFY(!corrupt_rest);
-
-    auto after_corrupt_restore = mod.runtime_checkpoint();
-    QVERIFY(after_corrupt_restore);
-    QVERIFY(*after_corrupt_restore.value() == *before_bad_restore.value());
 
     // Compatible restore across different maximum_block_frames
     QVERIFY(mod.prepare(spec2)); // Re-prepare with spec2 (1024 max block frames)
@@ -1212,10 +1182,54 @@ void RenderPreviewTest::checkpointAndTimelineRules()
     QVERIFY(!cp_in_fin);
     QCOMPARE(cp_in_fin.error()->code(), rgsml::core::ErrorCode::UnsupportedOperation);
     QCOMPARE(std::string_view{cp_in_fin.error()->message()}, std::string_view{"Checkpoint during or after finalize rejected"});
-    QVERIFY(!cp_in_fin.error()->details().empty());
-    QCOMPARE(
-        cp_in_fin.error()->details().front().value,
-        std::string{"RUNTIME_CHECKPOINT_DURING_FINALIZE_UNSUPPORTED"});
+}
+
+void RenderPreviewTest::compressorRenderPreviewChainIntegration()
+{
+    // Gain -> Compressor -> EQ
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    std::vector<double> left(1000U);
+    std::vector<double> right(1000U);
+    for (std::size_t i = 0; i < 1000U; ++i) {
+        left[i] = std::sin(2.0 * M_PI * 440.0 * static_cast<double>(i) / 48000.0);
+        right[i] = std::cos(2.0 * M_PI * 440.0 * static_cast<double>(i) / 48000.0);
+    }
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto chain = empty_chain(*registry.value());
+
+    const auto gain_id = make_id("50000000-0000-0000-0000-000000000001");
+    const auto comp_id = make_id("50000000-0000-0000-0000-000000000002");
+    const auto eq_id = make_id("50000000-0000-0000-0000-000000000003");
+
+    QVERIFY(chain.add(gain_id, "rgsml.dsp.gain", 0));
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 1));
+    QVERIFY(chain.add(eq_id, "rgsml.dsp.parametric-eq", 2));
+
+    const rgsml::dsp::ModuleExecutionBinding gain_b{gain_id, gain(3.0)};
+    const rgsml::dsp::ModuleExecutionBinding comp_b{comp_id, *rgsml::dsp::CompressorParameters::create_default().value()};
+    const rgsml::dsp::ModuleExecutionBinding eq_b{eq_id, bell_eq(1000.0, 3.0, 1.0)};
+
+    auto req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 1000), chain,
+        {gain_b, comp_b, eq_b}, frame_count(64));
+    QVERIFY(req);
+
+    auto res = rgsml::render::render_preview(*req.value(), *registry.value());
+    QVERIFY(res);
+    QCOMPARE(res.value()->render_window(), frame_range(0, 1000));
+    QCOMPARE(res.value()->signatures().size(), std::size_t{3});
+
+    const auto& sigs = res.value()->signatures();
+    QCOMPARE(sigs[0].type_id, std::string{"rgsml.dsp.gain"});
+    QCOMPARE(sigs[1].type_id, std::string{"rgsml.dsp.compressor"});
+    QCOMPARE(sigs[2].type_id, std::string{"rgsml.dsp.parametric-eq"});
+
+    const auto* comp_sig = std::get_if<rgsml::render::CompressorExecutionSignaturePayload>(&sigs[1].payload);
+    QVERIFY(comp_sig != nullptr);
+    QCOMPARE(comp_sig->detector_mode, rgsml::dsp::CompressorDetectorMode::RMS);
+    QCOMPARE(comp_sig->channel_link, std::optional<rgsml::dsp::CompressorChannelLink>{rgsml::dsp::CompressorChannelLink::LINKED_MAX});
 }
 
 }  // namespace

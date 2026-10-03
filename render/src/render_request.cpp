@@ -1,6 +1,7 @@
 #include <rgsml/render/render_request.hpp>
 
 #include <rgsml/core/error.hpp>
+#include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 
@@ -13,6 +14,7 @@ namespace {
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
+constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 
 [[nodiscard]] rgsml::core::Error request_error(
     rgsml::core::ErrorCode code,
@@ -25,7 +27,7 @@ constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 
 [[nodiscard]] bool is_supported_parameterized_builtin(std::string_view type_id) noexcept
 {
-    return type_id == kGainTypeId || type_id == kEqTypeId;
+    return type_id == kGainTypeId || type_id == kEqTypeId || type_id == kCompressorTypeId;
 }
 
 }  // namespace
@@ -105,6 +107,13 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
                     rgsml::core::ErrorCode::InvalidArgument,
                     "MODULE_PARAMETER_PAYLOAD_MISMATCH",
                     "A Parametric EQ binding contained a non-Parametric EQ payload."));
+            }
+        } else if (type_id == kCompressorTypeId) {
+            if (!std::holds_alternative<rgsml::dsp::CompressorParameters>(binding.parameters)) {
+                return rgsml::core::Result<RenderRequest>::failure(request_error(
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "A Compressor binding contained a non-Compressor payload."));
             }
         }
     }
