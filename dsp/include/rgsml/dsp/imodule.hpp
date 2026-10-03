@@ -4,6 +4,7 @@
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/frame_time.hpp>
 #include <rgsml/core/result.hpp>
+#include <rgsml/dsp/dsp_runtime_checkpoint.hpp>
 
 #include <cstdint>
 
@@ -63,6 +64,17 @@ public:
         rgsml::audio::AudioBufferView input,
         rgsml::audio::MutableAudioBufferView output,
         const DspProcessContext& context) = 0;
+
+    [[nodiscard]] virtual rgsml::core::Result<DspRuntimeCheckpoint>
+    runtime_checkpoint() const;
+
+    [[nodiscard]] virtual rgsml::core::Status
+    restore_runtime_checkpoint(const DspRuntimeCheckpoint& checkpoint);
+
+    [[nodiscard]] virtual rgsml::core::Status
+    finalize(
+        rgsml::audio::MutableAudioBufferView output,
+        const DspProcessContext& context);
 
 protected:
     IModule() = default;

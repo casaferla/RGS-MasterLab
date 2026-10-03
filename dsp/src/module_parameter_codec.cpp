@@ -22,6 +22,7 @@ using rgsml::core::Result;
 
 constexpr auto kGainSchemaId = "rgsml.dsp.gain.parameters/1.0.0";
 constexpr auto kEqSchemaId = "rgsml.dsp.parametric-eq.parameters/1.0.0";
+constexpr auto kCompressorSchemaId = "rgsml.dsp.compressor.parameters/1.0.0";
 
 [[nodiscard]] Error codec_error(ErrorCode code, std::string category, std::string message)
 {
@@ -368,6 +369,114 @@ Result<ParametricEqParameters> decode_parametric_eq_parameters_json(std::string_
     return ParametricEqParameters::create(std::move(bands));
 }
 
+Result<std::string> encode_compressor_parameters_json(const CompressorParameters& params)
+{
+    json j;
+    j["detectorMode"] = (params.detector_mode() == CompressorDetectorMode::PEAK) ? "PEAK" : "RMS";
+    switch (params.channel_link()) {
+    case CompressorChannelLink::LINKED_MAX: j["channelLink"] = "LINKED_MAX"; break;
+    case CompressorChannelLink::LINKED_MEAN: j["channelLink"] = "LINKED_MEAN"; break;
+    case CompressorChannelLink::DUAL_MONO: j["channelLink"] = "DUAL_MONO"; break;
+    }
+    j["thresholdDbfs"] = (params.threshold_dbfs() == 0.0 ? 0.0 : params.threshold_dbfs());
+    j["ratio"] = params.ratio();
+    j["kneeDb"] = (params.knee_db() == 0.0 ? 0.0 : params.knee_db());
+    j["attackMs"] = params.attack_ms();
+    j["releaseMs"] = params.release_ms();
+    j["rmsTimeConstantMs"] = params.rms_time_constant_ms();
+    j["lookAheadMs"] = (params.look_ahead_ms() == 0.0 ? 0.0 : params.look_ahead_ms());
+    j["mixPercent"] = (params.mix_percent() == 0.0 ? 0.0 : params.mix_percent());
+    j["makeupGainDb"] = (params.makeup_gain_db() == 0.0 ? 0.0 : params.makeup_gain_db());
+    return Result<std::string>::success(j.dump());
+}
+
+Result<CompressorParameters> decode_compressor_parameters_json(std::string_view json_text)
+{
+    json j = json::parse(json_text, nullptr, false);
+    if (j.is_discarded()) {
+        return Result<CompressorParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_JSON_SYNTAX",
+            "Failed to parse Compressor parameters JSON text."));
+    }
+    if (!j.is_object()) {
+        return Result<CompressorParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_JSON_STRUCTURE",
+            "Compressor parameters JSON root must be an object."));
+    }
+    if (j.size() != 11U
+        || !j.contains("detectorMode")
+        || !j.contains("channelLink")
+        || !j.contains("thresholdDbfs")
+        || !j.contains("ratio")
+        || !j.contains("kneeDb")
+        || !j.contains("attackMs")
+        || !j.contains("releaseMs")
+        || !j.contains("rmsTimeConstantMs")
+        || !j.contains("lookAheadMs")
+        || !j.contains("mixPercent")
+        || !j.contains("makeupGainDb")) {
+        return Result<CompressorParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument,
+            "STRICT_SCHEMA_VIOLATION",
+            "Compressor parameters JSON object must contain exactly the 11 required keys."));
+    }
+
+    if (!j["detectorMode"].is_string() || !j["channelLink"].is_string()
+        || !j["thresholdDbfs"].is_number() || !j["ratio"].is_number()
+        || !j["kneeDb"].is_number() || !j["attackMs"].is_number()
+        || !j["releaseMs"].is_number() || !j["rmsTimeConstantMs"].is_number()
+        || !j["lookAheadMs"].is_number() || !j["mixPercent"].is_number()
+        || !j["makeupGainDb"].is_number()) {
+        return Result<CompressorParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_PARAMETER_TYPE",
+            "Compressor parameters contained an invalid field type."));
+    }
+
+    const auto det_str = j["detectorMode"].get<std::string_view>();
+    CompressorDetectorMode det_mode = CompressorDetectorMode::RMS;
+    if (det_str == "PEAK") {
+        det_mode = CompressorDetectorMode::PEAK;
+    } else if (det_str == "RMS") {
+        det_mode = CompressorDetectorMode::RMS;
+    } else {
+        return Result<CompressorParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_COMPRESSOR_PARAMETER",
+            "detectorMode string is unrecognized."));
+    }
+
+    const auto link_str = j["channelLink"].get<std::string_view>();
+    CompressorChannelLink channel_link = CompressorChannelLink::LINKED_MAX;
+    if (link_str == "LINKED_MAX") {
+        channel_link = CompressorChannelLink::LINKED_MAX;
+    } else if (link_str == "LINKED_MEAN") {
+        channel_link = CompressorChannelLink::LINKED_MEAN;
+    } else if (link_str == "DUAL_MONO") {
+        channel_link = CompressorChannelLink::DUAL_MONO;
+    } else {
+        return Result<CompressorParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_COMPRESSOR_PARAMETER",
+            "channelLink string is unrecognized."));
+    }
+
+    return CompressorParameters::create(
+        det_mode,
+        channel_link,
+        j["thresholdDbfs"].get<double>(),
+        j["ratio"].get<double>(),
+        j["kneeDb"].get<double>(),
+        j["attackMs"].get<double>(),
+        j["releaseMs"].get<double>(),
+        j["rmsTimeConstantMs"].get<double>(),
+        j["lookAheadMs"].get<double>(),
+        j["mixPercent"].get<double>(),
+        j["makeupGainDb"].get<double>());
+}
+
 Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& payload)
 {
     return std::visit(
@@ -377,6 +486,8 @@ Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& 
                 return encode_gain_parameters_json(params);
             } else if constexpr (std::is_same_v<T, ParametricEqParameters>) {
                 return encode_parametric_eq_parameters_json(params);
+            } else if constexpr (std::is_same_v<T, CompressorParameters>) {
+                return encode_compressor_parameters_json(params);
             }
         },
         payload);
@@ -399,6 +510,13 @@ Result<ModuleParameterPayload> decode_module_parameters_json(
             return Result<ModuleParameterPayload>::failure(*eq_res.error());
         }
         return Result<ModuleParameterPayload>::success(ModuleParameterPayload{std::move(*eq_res.value())});
+    }
+    if (schema_id == kCompressorSchemaId) {
+        auto comp_res = decode_compressor_parameters_json(json_text);
+        if (!comp_res) {
+            return Result<ModuleParameterPayload>::failure(*comp_res.error());
+        }
+        return Result<ModuleParameterPayload>::success(ModuleParameterPayload{std::move(*comp_res.value())});
     }
 
     return Result<ModuleParameterPayload>::failure(codec_error(

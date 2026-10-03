@@ -723,6 +723,22 @@ set_tests_properties(rgsml_gain_tests PROPERTIES
     LABELS "dsp;gain"
 )
 
+qt_add_executable(rgsml_compressor_tests
+    unit/dsp/test_compressor.cpp
+)
+target_link_libraries(rgsml_compressor_tests
+    PRIVATE
+        rgsml_dsp
+        rgsml_render
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_compressor_tests)
+add_test(NAME rgsml_compressor_tests COMMAND rgsml_compressor_tests)
+set_tests_properties(rgsml_compressor_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;compressor"
+)
+
 qt_add_executable(rgsml_parametric_eq_tests
     unit/dsp/test_parametric_eq.cpp
 )
