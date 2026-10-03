@@ -16,7 +16,7 @@ if(RGSML_QT_ROOT)
     list(PREPEND CMAKE_PREFIX_PATH "${RGSML_QT_ROOT_CMAKE}")
 endif()
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS
+find_package(Qt6 6.8 REQUIRED COMPONENTS
     Core
     Gui
     Multimedia
@@ -26,10 +26,10 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS
     QuickDialogs2
 )
 if(RGSML_BUILD_TESTS)
-    find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Test)
 endif()
 
-qt_standard_project_setup(REQUIRES 6.4)
+qt_standard_project_setup(REQUIRES 6.8)
 
 set(RGSML_TOOLCHAIN_MANIFEST
     "${CMAKE_BINARY_DIR}/generated/rgsml/ToolchainManifest.json"
