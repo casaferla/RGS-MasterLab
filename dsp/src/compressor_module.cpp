@@ -788,6 +788,13 @@ rgsml::core::Status CompressorModule::restore_runtime_checkpoint(
             "Compressor checkpoint metadata mismatch."));
     }
 
+    if (impl_->bound && checkpoint.next_input_frame != impl_->next_input_frame) {
+        return rgsml::core::Status::failure(comp_error(
+            rgsml::core::ErrorCode::InvalidArgument,
+            "INCOMPATIBLE_CHECKPOINT",
+            "Bound module cannot restore checkpoint with non-matching next_input_frame."));
+    }
+
     // Parse payload
     const auto read_u64 = [&checkpoint](std::size_t& offset) -> std::optional<std::uint64_t> {
         if (offset + 8 > checkpoint.payload.size()) return std::nullopt;

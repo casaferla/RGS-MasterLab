@@ -25,20 +25,6 @@ using namespace rgsml::dsp;
 using namespace render_support;
 using dsp_support::error_category;
 
-[[nodiscard]] std::int64_t round_ties_to_even(double x) noexcept
-{
-    const double floor_val = std::floor(x);
-    const double diff = x - floor_val;
-    if (diff < 0.5) {
-        return static_cast<std::int64_t>(floor_val);
-    }
-    if (diff > 0.5) {
-        return static_cast<std::int64_t>(floor_val + 1.0);
-    }
-    const std::int64_t int_floor = static_cast<std::int64_t>(floor_val);
-    return (int_floor % 2 == 0) ? int_floor : (int_floor + 1);
-}
-
 class CompressorTest final : public QObject {
     Q_OBJECT
 
@@ -76,27 +62,95 @@ void CompressorTest::parametersValidationAndBounds()
     QCOMPARE(def.value()->mix_percent(), 100.0);
     QCOMPARE(def.value()->makeup_gain_db(), 0.0);
 
-    // Inclusive bounds pass
-    QVERIFY(CompressorParameters::create(CompressorDetectorMode::PEAK, CompressorChannelLink::DUAL_MONO, -120.0, 1.0, 0.0, 0.1, 1.0, 1.0, 0.0, 0.0, -24.0));
-    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MEAN, 0.0, 20.0, 24.0, 500.0, 5000.0, 500.0, 20.0, 100.0, 24.0));
+    const double nan_v = std::numeric_limits<double>::quiet_NaN();
+    const double pos_inf = std::numeric_limits<double>::infinity();
+    const double neg_inf = -std::numeric_limits<double>::infinity();
 
-    // Outside bounds reject
+    // Systematic numeric parameter boundary testing
+    // thresholdDbfs [-120.0, 0.0]
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -120.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, 0.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -120.0001, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, 0.0001, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 0.999, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 20.001, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, -0.001, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 24.001, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 0.099, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 500.001, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 0.999, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 5000.001, 50.0, 5.0, 100.0, 0.0));
-
-    // NaN / Inf reject
-    const double nan_v = std::numeric_limits<double>::quiet_NaN();
-    const double inf_v = std::numeric_limits<double>::infinity();
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, nan_v, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, inf_v, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, pos_inf, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, neg_inf, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+
+    // ratio [1.0, 20.0]
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 1.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 20.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 0.9999, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 20.0001, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, nan_v, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, pos_inf, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, neg_inf, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+
+    // kneeDb [0.0, 24.0]
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 0.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 24.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, -0.0001, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 24.0001, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, nan_v, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, pos_inf, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, neg_inf, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+
+    // attackMs [0.1, 500.0]
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 0.1, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 500.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 0.0999, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 500.0001, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, nan_v, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, pos_inf, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, neg_inf, 200.0, 50.0, 5.0, 100.0, 0.0));
+
+    // releaseMs [1.0, 5000.0]
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 1.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 5000.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 0.9999, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 5000.0001, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, nan_v, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, pos_inf, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, neg_inf, 50.0, 5.0, 100.0, 0.0));
+
+    // rmsTimeConstantMs [1.0, 500.0]
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 1.0, 5.0, 100.0, 0.0));
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 500.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 0.9999, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 500.0001, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, nan_v, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, pos_inf, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, neg_inf, 5.0, 100.0, 0.0));
+
+    // lookAheadMs [0.0, 20.0]
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 0.0, 100.0, 0.0));
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 20.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, -0.0001, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 20.0001, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, nan_v, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, pos_inf, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, neg_inf, 100.0, 0.0));
+
+    // mixPercent [0.0, 100.0]
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 0.0, 0.0));
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, -0.0001, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0001, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, nan_v, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, pos_inf, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, neg_inf, 0.0));
+
+    // makeupGainDb [-24.0, 24.0]
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, -24.0));
+    QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 24.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, -24.0001));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 24.0001));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, nan_v));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, pos_inf));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, neg_inf));
+
+    // Enum validation
+    QVERIFY(!CompressorParameters::create(static_cast<CompressorDetectorMode>(99), CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, static_cast<CompressorChannelLink>(99), -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
 }
 
 void CompressorTest::codecJsonRoundtripAndStrictSchema()
@@ -235,15 +289,29 @@ void CompressorTest::hardAndSoftKneeCurve()
 
     const DspProcessSpec spec{format(rgsml::audio::ChannelLayout::MONO_C, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
 
-    // 1. Hard knee W = 0, threshold = -12 dB, ratio = 4.0, attack = 0.1 ms (near 0)
-    // Below threshold: x_db = -20 dBFS (sample = 0.1) -> target reduction = 0 dB
-    // At threshold: x_db = -12 dBFS (sample = 0.251188643150958) -> target reduction = 0 dB
-    // Above threshold: x_db = -6.0205999 dBFS (sample = 0.5) -> target reduction = (-6.0205999 - (-12)) * 0.75 = 4.48455 dB
+    // 1. Hard knee W = 0, threshold = -12.0 dBFS (0.251188643150958), ratio = 4.0, attack = 0.1 ms
+    // Below threshold: x_db = -20 dBFS (sample = 0.1) -> target reduction = 0 dB -> output = 0.1
+    // At threshold: x_db = -12 dBFS (sample = 0.251188643150958) -> target reduction = 0 dB -> output = 0.251188643150958
+    // Above threshold: x_db = -6.0205999 dBFS (sample = 0.5) -> target reduction = (-6.0205999 - (-12)) * 0.75 = 4.48455 dB -> compressed
     auto hard_params = *CompressorParameters::create(
         CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
         -12.0, 4.0, 0.0, 0.1, 1000.0, 50.0, 0.0, 100.0, 0.0).value();
     auto hard_mod = std::move(*CompressorModule::create(desc, hard_params).value());
     QVERIFY(hard_mod->prepare(spec));
+
+    const std::array hard_test_samples{
+        0.1,                 // -20 dBFS (below threshold)
+        0.251188643150958,   // -12 dBFS (at threshold)
+        0.5                  // -6.02 dBFS (above threshold)
+    };
+    auto in_hard = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, hard_test_samples);
+    auto out_hard = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, hard_test_samples);
+    QVERIFY(hard_mod->process(in_hard.value()->view(), out_hard.value()->mutable_view(), DspProcessContext{frame_range(0, 3), true, false}));
+
+    const auto hard_out = *out_hard.value()->view().channel(0).value();
+    QCOMPARE(hard_out[0], 0.1);                // Below threshold: exact dry
+    QCOMPARE(hard_out[1], 0.251188643150958);  // At threshold: exact dry
+    QVERIFY(hard_out[2] < 0.5);                // Above threshold: compressed
 
     // 2. Soft knee W = 10, threshold = -12 dB, ratio = 4.0
     // Knee region: [-17.0, -7.0] dBFS.
@@ -303,9 +371,9 @@ void CompressorTest::attackAndReleaseBallistics()
     auto registry = ModuleRegistry::create_dsp_package_v1();
     const auto& desc = registry.value()->find_descriptor("rgsml.dsp.compressor").value()->get();
 
-    // Attack = 10 ms, Release = 100 ms
-    // a_attack = exp(-1/(0.010 * 48000)) = exp(-1/480) = 0.99791883732
-    // a_release = exp(-1/(0.100 * 48000)) = exp(-1/4800) = 0.999791688...
+    // Attack = 10 ms, Release = 100 ms @ 48 kHz
+    // a_attack = exp(-1/(0.010 * 48000)) = exp(-1/480) = 0.9979188373204907
+    // a_release = exp(-1/(0.100 * 48000)) = exp(-1/4800) = 0.9997916880088812
     auto params = *CompressorParameters::create(
         CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
         -20.0, 4.0, 0.0, 10.0, 100.0, 50.0, 0.0, 100.0, 0.0).value();
@@ -314,28 +382,56 @@ void CompressorTest::attackAndReleaseBallistics()
     const DspProcessSpec spec{format(rgsml::audio::ChannelLayout::MONO_C, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
     QVERIFY(mod->prepare(spec));
 
-    // Attack phase: high amplitude sample 1.0 (0 dBFS, target reduction = 15 dB)
+    // Attack phase: high amplitude sample 1.0 (0 dBFS, target reduction = 15.0 dB)
     std::vector<double> high_samples(10U, 1.0);
     auto in_att = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, high_samples);
     auto out_att = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, high_samples);
     QVERIFY(mod->process(in_att.value()->view(), out_att.value()->mutable_view(), DspProcessContext{frame_range(0, 10), true, false}));
 
     const auto att_out = *out_att.value()->view().channel(0).value();
-    // Gain reduction should increase monotonically on each step during attack phase
-    for (std::size_t i = 1; i < att_out.size(); ++i) {
-        QVERIFY(att_out[i] < att_out[i - 1]);
-    }
 
-    // Release phase: zero amplitude samples (target reduction = 0 dB)
-    std::vector<double> zero_samples(10U, 0.0);
-    auto in_rel = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 10, zero_samples);
-    auto out_rel = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 10, zero_samples);
+    // Verify first attack recurrence value against exact formula:
+    // red_att_0 = (1 - a_attack) * 15.0 = 0.0312174401926392 dB
+    // expected out 0 = 1.0 * 10^(-0.0312174401926392 / 20) = 0.9964115160868846
+    const double a_att = std::exp(-1.0 / (0.01 * 48000.0));
+    const double exp_red0 = (1.0 - a_att) * 15.0;
+    const double exp_out0 = std::pow(10.0, -exp_red0 / 20.0);
+    QCOMPARE(att_out[0], exp_out0);
+
+    // Verify second attack recurrence value:
+    const double exp_red1 = a_att * exp_red0 + (1.0 - a_att) * 15.0;
+    const double exp_out1 = std::pow(10.0, -exp_red1 / 20.0);
+    QCOMPARE(att_out[1], exp_out1);
+
+    // Release phase: feed non-zero samples below threshold (sample = 0.1 = -20 dBFS)
+    // Target reduction = 0 dB < prev_reduction, so release ballistics a_release kicks in!
+    std::vector<double> thresh_samples(10U, 0.1);
+    auto in_rel = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 10, thresh_samples);
+    auto out_rel = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 10, thresh_samples);
     QVERIFY(mod->process(in_rel.value()->view(), out_rel.value()->mutable_view(), DspProcessContext{frame_range(10, 20), false, false}));
 
     const auto rel_out = *out_rel.value()->view().channel(0).value();
-    for (double sample : rel_out) {
-        QCOMPARE(sample, 0.0);
+
+    // Calculate last reduction after 10 attack steps:
+    double curr_red = 0.0;
+    for (std::size_t s = 0; s < 10; ++s) {
+        curr_red = a_att * curr_red + (1.0 - a_att) * 15.0;
     }
+
+    const double a_rel = std::exp(-1.0 / (0.100 * 48000.0));
+
+    // First release step:
+    const double exp_rel_red0 = a_rel * curr_red + (1.0 - a_rel) * 0.0;
+    const double exp_rel_out0 = 0.1 * std::pow(10.0, -exp_rel_red0 / 20.0);
+    QCOMPARE(rel_out[0], exp_rel_out0);
+
+    // Second release step:
+    const double exp_rel_red1 = a_rel * exp_rel_red0 + (1.0 - a_rel) * 0.0;
+    const double exp_rel_out1 = 0.1 * std::pow(10.0, -exp_rel_red1 / 20.0);
+    QCOMPARE(rel_out[1], exp_rel_out1);
+
+    // Release phase gain increases monotonically (out_rel[1] > out_rel[0])
+    QVERIFY(rel_out[1] > rel_out[0]);
 }
 
 void CompressorTest::channelLinkModesAndMonoInvariance()
@@ -409,28 +505,56 @@ void CompressorTest::channelLinkModesAndMonoInvariance()
 
 void CompressorTest::lookaheadAndTiesToEvenSampleRates()
 {
-    // Explicit round_ties_to_even tests
-    QCOMPARE(round_ties_to_even(0.5), std::int64_t{0});
-    QCOMPARE(round_ties_to_even(1.5), std::int64_t{2});
-    QCOMPARE(round_ties_to_even(2.5), std::int64_t{2});
-    QCOMPARE(round_ties_to_even(3.5), std::int64_t{4});
-
     auto registry = ModuleRegistry::create_dsp_package_v1();
     const auto& desc = registry.value()->find_descriptor("rgsml.dsp.compressor").value()->get();
 
-    for (const auto sr : {44100, 48000, 96000, 192000}) {
+    // 1. Qualify production lookAheadMs -> lookAheadFrames ties-to-even rounding through runtime_requirements at Fs = 1000 Hz
+    const DspProcessSpec spec1000{format(rgsml::audio::ChannelLayout::MONO_C, 1000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
+
+    const struct {
+        double look_ms;
+        std::int64_t expected_frames;
+    } tie_cases[] = {
+        {0.5, 0},
+        {1.5, 2},
+        {2.5, 2},
+        {3.5, 4}
+    };
+
+    for (const auto& tc : tie_cases) {
+        auto params = *CompressorParameters::create(
+            CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+            -12.0, 2.0, 6.0, 30.0, 200.0, 50.0, tc.look_ms, 100.0, 0.0).value();
+        auto mod = std::move(*CompressorModule::create(desc, params).value());
+        auto reqs = mod->runtime_requirements(spec1000);
+        QVERIFY(reqs);
+        QCOMPARE(reqs.value()->algorithmic_latency_frames.value(), tc.expected_frames);
+        QCOMPARE(reqs.value()->look_ahead_frames.value(), tc.expected_frames);
+    }
+
+    // 2. Sample rate conversion cases: 44.1 / 48 / 96 / 192 kHz with look_ahead_ms = 5.0
+    const struct {
+        std::int64_t sr;
+        std::int64_t expected_frames;
+    } sr_cases[] = {
+        {44100, 220}, // 220.5 -> 220
+        {48000, 240}, // 240.0 -> 240
+        {96000, 480}, // 480.0 -> 480
+        {192000, 960} // 960.0 -> 960
+    };
+
+    for (const auto& sc : sr_cases) {
         auto params = *CompressorParameters::create(
             CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
             -12.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0).value();
         auto mod = std::move(*CompressorModule::create(desc, params).value());
 
-        const DspProcessSpec spec{format(rgsml::audio::ChannelLayout::STEREO_LR, sr), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
+        const DspProcessSpec spec{format(rgsml::audio::ChannelLayout::STEREO_LR, sc.sr), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
         auto reqs = mod->runtime_requirements(spec);
         QVERIFY(reqs);
 
-        const std::int64_t expected_look_frames = round_ties_to_even(5.0 * static_cast<double>(sr) / 1000.0);
-        QCOMPARE(reqs.value()->algorithmic_latency_frames.value(), expected_look_frames);
-        QCOMPARE(reqs.value()->look_ahead_frames.value(), expected_look_frames);
+        QCOMPARE(reqs.value()->algorithmic_latency_frames.value(), sc.expected_frames);
+        QCOMPARE(reqs.value()->look_ahead_frames.value(), sc.expected_frames);
     }
 }
 
@@ -441,35 +565,52 @@ void CompressorTest::mixAndMakeupGain()
 
     const DspProcessSpec spec{format(rgsml::audio::ChannelLayout::MONO_C, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
 
-    // 1. mix = 0% is active delayed dry
-    auto zero_mix = *CompressorParameters::create(
+    // Matrix testing mixPercent (0, 50, 100) and makeupGainDb (-24, 0, +24)
+    // Threshold = 0.0 dBFS (0 dB gain reduction on 0.5 input sample)
+    const double dry = 0.5;
+    const std::array test_samples{dry};
+
+    const double mixes[] = {0.0, 50.0, 100.0};
+    const double makeups[] = {-24.0, 0.0, 24.0};
+
+    for (const double mix : mixes) {
+        for (const double makeup : makeups) {
+            auto params = *CompressorParameters::create(
+                CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+                0.0, 1.0, 0.0, 0.1, 10.0, 50.0, 0.0, mix, makeup).value();
+            auto mod = std::move(*CompressorModule::create(desc, params).value());
+            QVERIFY(mod->prepare(spec));
+
+            auto in_b = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, test_samples);
+            auto out_b = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, test_samples);
+            QVERIFY(mod->process(in_b.value()->view(), out_b.value()->mutable_view(), DspProcessContext{frame_range(0, 1), true, false}));
+
+            const double mk_factor = std::pow(10.0, makeup / 20.0);
+            const double wet = dry * 1.0 * mk_factor; // uncompressed wet * makeup
+            const double exp_out = (1.0 - mix / 100.0) * dry + (mix / 100.0) * wet;
+
+            const double actual_out = (*out_b.value()->view().channel(0).value())[0];
+            QCOMPARE(actual_out, exp_out);
+        }
+    }
+
+    // Prove mix = 0% is active delayed dry (not un-delayed bypass identity) when lookahead > 0
+    // lookahead = 5.0 ms @ 48 kHz = 240 frames
+    auto delay_mix_zero = *CompressorParameters::create(
         CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
-        -12.0, 4.0, 0.0, 5.0, 50.0, 50.0, 0.0, 0.0, 12.0).value();
-    auto mod_zero = std::move(*CompressorModule::create(desc, zero_mix).value());
-    QVERIFY(mod_zero->prepare(spec));
+        -12.0, 4.0, 0.0, 0.1, 10.0, 50.0, 5.0, 0.0, 12.0).value();
+    auto mod_del = std::move(*CompressorModule::create(desc, delay_mix_zero).value());
+    QVERIFY(mod_del->prepare(spec));
 
-    const std::array samples{0.2, 0.5, -0.7};
-    auto in_buf = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
-    auto out_zero = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
-    QVERIFY(mod_zero->process(in_buf.value()->view(), out_zero.value()->mutable_view(), DspProcessContext{frame_range(0, 3), true, true}));
+    std::vector<double> in_del_smp(241U, 0.0);
+    in_del_smp[0] = 0.5; // Impulse at frame 0
+    auto in_del = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, in_del_smp);
+    auto out_del = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, in_del_smp);
+    QVERIFY(mod_del->process(in_del.value()->view(), out_del.value()->mutable_view(), DspProcessContext{frame_range(0, 241), true, false}));
 
-    // Output is delayed dry (0.0 lookahead, so exact input samples)
-    QCOMPARE(bits(out_zero.value()->view()), bits(in_buf.value()->view()));
-
-    // 2. Makeup gain = +6.020599913279624 dB (factor 2.0), mix = 100%
-    auto makeup_params = *CompressorParameters::create(
-        CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
-        0.0, 1.0, 0.0, 0.1, 10.0, 50.0, 0.0, 100.0, 6.020599913279624).value();
-    auto mod_makeup = std::move(*CompressorModule::create(desc, makeup_params).value());
-    QVERIFY(mod_makeup->prepare(spec));
-
-    auto out_makeup = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
-    QVERIFY(mod_makeup->process(in_buf.value()->view(), out_makeup.value()->mutable_view(), DspProcessContext{frame_range(0, 3), true, true}));
-
-    const auto mk_out = *out_makeup.value()->view().channel(0).value();
-    QCOMPARE(mk_out[0], 0.4);
-    QCOMPARE(mk_out[1], 1.0);
-    QCOMPARE(mk_out[2], -1.4);
+    const auto del_out = *out_del.value()->view().channel(0).value();
+    QCOMPARE(del_out[0], 0.0);   // Frame 0 is zero due to lookahead delay
+    QCOMPARE(del_out[240], 0.5); // Frame 240 outputs the exact delayed dry impulse!
 }
 
 void CompressorTest::resetAndChunkInvariance()
@@ -578,7 +719,7 @@ void CompressorTest::checkpointAndRestoreContinuation()
     auto trailing_p = cp; trailing_p.payload.push_back(0xFF); // Trailing byte
     QVERIFY(!mod2->restore_runtime_checkpoint(trailing_p));
 
-    // Restore valid cp into mod2
+    // Restore valid cp into mod2 (unbound)
     QVERIFY(mod2->restore_runtime_checkpoint(cp));
 
     // Process second 50 samples in both
@@ -591,6 +732,21 @@ void CompressorTest::checkpointAndRestoreContinuation()
 
     // Bit-identical continuation
     QCOMPARE(bits(out1.value()->view()), bits(out2.value()->view()));
+
+    // Bound restore next_input_frame mismatch rejection test:
+    // Process 10 frames on mod2 -> mod2 next_input_frame is 100
+    auto extra_in = in_buf.value()->view().subview(rgsml::core::FrameIndex{0}, frame_count(10));
+    auto extra_out = out_buf.value()->mutable_view().subview(rgsml::core::FrameIndex{0}, frame_count(10));
+    QVERIFY(mod2->process(*extra_in.value(), *extra_out.value(), DspProcessContext{frame_range(100, 110), false, false}));
+
+    // mod2 is bound at next_input_frame = 110.
+    // cp has next_input_frame = 50 -> restoring cp (50) into mod2 (bound at 110) must be REJECTED!
+    auto mismatch_next = mod2->restore_runtime_checkpoint(cp);
+    QVERIFY(!mismatch_next);
+
+    // Unbound module (fresh prepare) accepts cp (50)
+    QVERIFY(mod2->prepare(spec2));
+    QVERIFY(mod2->restore_runtime_checkpoint(cp));
 }
 
 void CompressorTest::finalizeEosShortSourceCases()
@@ -598,8 +754,10 @@ void CompressorTest::finalizeEosShortSourceCases()
     auto registry = ModuleRegistry::create_dsp_package_v1();
     const auto& desc = registry.value()->find_descriptor("rgsml.dsp.compressor").value()->get();
 
-    // Lookahead 5.0 ms @ 48 kHz = 240 frames
-    auto params = *CompressorParameters::create_default().value();
+    // Lookahead L = 5.0 ms @ 48 kHz = 240 frames
+    auto params = *CompressorParameters::create(
+        CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+        0.0, 1.0, 0.0, 0.1, 10.0, 50.0, 5.0, 100.0, 0.0).value();
     auto mod = std::move(*CompressorModule::create(desc, params).value());
 
     const DspProcessSpec spec{format(rgsml::audio::ChannelLayout::MONO_C, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
@@ -627,20 +785,48 @@ void CompressorTest::finalizeEosShortSourceCases()
     QCOMPARE(cp_res.error()->code(), rgsml::core::ErrorCode::UnsupportedOperation);
     QCOMPARE(dsp_support::error_category(*cp_res.error()), std::string_view{"RUNTIME_CHECKPOINT_DURING_FINALIZE_UNSUPPORTED"});
 
-    // Re-prepare clean module for drain budget test
+    // 3. 0 < N < L (N = 100 < L = 240)
     QVERIFY(mod->prepare(spec));
-    std::vector<double> smp(100U, 0.5);
-    auto in_smp = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, smp);
-    auto out_smp = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, smp);
-    QVERIFY(mod->process(in_smp.value()->view(), out_smp.value()->mutable_view(), DspProcessContext{frame_range(0, 100), true, false}));
+    std::vector<double> smp100(100U, 0.5);
+    auto in100 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, smp100);
+    auto out100 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, smp100);
+    QVERIFY(mod->process(in100.value()->view(), out100.value()->mutable_view(), DspProcessContext{frame_range(0, 100), true, false}));
+    auto fin100 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 100, std::vector<double>(240U, 0.0));
+    QVERIFY(mod->finalize(fin100.value()->mutable_view(), DspProcessContext{frame_range(100, 340), false, true}));
 
-    // Requesting 241 frames (exceeding remaining drain of 240) rejected
+    // 4. N = L (N = 240 = L = 240)
+    QVERIFY(mod->prepare(spec));
+    std::vector<double> smp240(240U, 0.5);
+    auto in240 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, smp240);
+    auto out240 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, smp240);
+    QVERIFY(mod->process(in240.value()->view(), out240.value()->mutable_view(), DspProcessContext{frame_range(0, 240), true, false}));
+    auto fin240 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 240, std::vector<double>(240U, 0.0));
+    QVERIFY(mod->finalize(fin240.value()->mutable_view(), DspProcessContext{frame_range(240, 480), false, true}));
+
+    // 5. N > L (N = 500 > L = 240) + Last-sample impulse test
+    QVERIFY(mod->prepare(spec));
+    std::vector<double> smp500(500U, 0.0);
+    smp500[499] = 0.8; // Impulse on last sample before EOS
+    auto in500 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, smp500);
+    auto out500 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, smp500);
+    QVERIFY(mod->process(in500.value()->view(), out500.value()->mutable_view(), DspProcessContext{frame_range(0, 500), true, false}));
+
+    auto fin500 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 500, std::vector<double>(240U, 0.0));
+    QVERIFY(mod->finalize(fin500.value()->mutable_view(), DspProcessContext{frame_range(500, 740), false, true}));
+
+    const auto fin_plane = *fin500.value()->view().channel(0).value();
+    // Frame 239 of finalize (the 240th frame after frame 499) outputs the impulse 0.8!
+    QCOMPARE(fin_plane[239], 0.8);
+
+    // 6. Requesting 241 frames (exceeding remaining drain of 240) rejected
+    QVERIFY(mod->prepare(spec));
+    QVERIFY(mod->process(in100.value()->view(), out100.value()->mutable_view(), DspProcessContext{frame_range(0, 100), true, false}));
     auto over_drain = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 100, std::vector<double>(241U, 0.0));
     auto over_res = mod->finalize(over_drain.value()->mutable_view(), DspProcessContext{frame_range(100, 341), false, true});
     QVERIFY(!over_res);
     QCOMPARE(over_res.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
 
-    // Ragged/chunked finalize: 100 + 100 + 40 = 240
+    // 7. Ragged/chunked finalize: 100 + 100 + 40 = 240
     auto f1 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 100, std::vector<double>(100U, 0.0));
     auto f2 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 200, std::vector<double>(100U, 0.0));
     auto f3 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 300, std::vector<double>(40U, 0.0));

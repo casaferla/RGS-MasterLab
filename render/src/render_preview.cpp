@@ -444,7 +444,11 @@ rgsml::core::Result<RenderResult> render_preview(
             }
 
             // Slice target raw range [window_begin + total_latency, window_end + total_latency]
-            const auto target_raw_begin = window.begin().value() + total_latency_val;
+            const auto target_raw_begin_res = rgsml::core::checked_add(window.begin().value(), total_latency_val);
+            if (!target_raw_begin_res) {
+                return rgsml::core::Result<RenderResult>::failure(*target_raw_begin_res.error());
+            }
+            const auto target_raw_begin = *target_raw_begin_res.value();
             const rgsml::core::FrameIndex slice_start{target_raw_begin};
             auto final_subview = current_buffer.value()->view().subview(
                 slice_start,

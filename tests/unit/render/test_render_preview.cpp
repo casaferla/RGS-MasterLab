@@ -253,7 +253,7 @@ public:
                 rgsml::core::Error{
                     rgsml::core::ErrorCode::UnsupportedOperation,
                     "Checkpoint during or after finalize rejected",
-                    {{"category", "UNSUPPORTED_MODULE_OPERATION"}}});
+                    {{"category", "RUNTIME_CHECKPOINT_DURING_FINALIZE_UNSUPPORTED"}}});
         }
 
         rgsml::dsp::DspRuntimeCheckpoint cp;
@@ -300,6 +300,13 @@ public:
             return rgsml::core::Status::failure(rgsml::core::Error{
                 rgsml::core::ErrorCode::InvalidArgument,
                 "Incompatible checkpoint rejected",
+                {{"category", "INCOMPATIBLE_CHECKPOINT"}}});
+        }
+
+        if (bound_ && checkpoint.next_input_frame != next_input_frame_) {
+            return rgsml::core::Status::failure(rgsml::core::Error{
+                rgsml::core::ErrorCode::InvalidArgument,
+                "Bound module cannot restore checkpoint with non-matching next_input_frame",
                 {{"category", "INCOMPATIBLE_CHECKPOINT"}}});
         }
 
@@ -462,6 +469,10 @@ private slots:
 
     // Stage 2 Production Compressor Integration Tests
     void compressorRenderPreviewChainIntegration();
+    void twoActiveCompressorsInChain();
+    void bypassedCompressorIntegration();
+    void compressorNearEosPreview();
+    void monoCompressorExecutionSignature();
 };
 
 void RenderPreviewTest::validatesBindingsAndWindowAtomically()
@@ -1188,8 +1199,20 @@ void RenderPreviewTest::checkpointAndTimelineRules()
     auto corrupt_rest = mod.restore_runtime_checkpoint(corrupt_cp);
     QVERIFY(!corrupt_rest);
 
-    // Compatible restore across different maximum_block_frames
-    QVERIFY(mod.prepare(spec2)); // Re-prepare with spec2 (1024 max block frames)
+    // Bound module restore next_input_frame tests:
+    // Process another 5 frames on mod -> mod next_input_frame is 10
+    auto in_buf2 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 5, in_samples);
+    auto out_buf2 = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 5, zero_samples);
+    const rgsml::dsp::DspProcessContext good_context2{frame_range(5, 10), false, false};
+    QVERIFY(mod.process(in_buf2.value()->view(), out_buf2.value()->mutable_view(), good_context2));
+
+    // mod is now BOUND at next_input_frame = 10.
+    // cp has next_input_frame = 5 -> restoring cp into mod (bound at 10) must be REJECTED!
+    auto mismatch_next_rest = mod.restore_runtime_checkpoint(cp);
+    QVERIFY(!mismatch_next_rest);
+
+    // Unbound module (fresh prepare) accepts cp with next_input_frame = 5
+    QVERIFY(mod.prepare(spec2)); // Re-prepare with spec2 (unbound, 1024 max block frames)
     auto good_rest = mod.restore_runtime_checkpoint(cp);
     QVERIFY(good_rest);
 
@@ -1203,6 +1226,7 @@ void RenderPreviewTest::checkpointAndTimelineRules()
     auto cp_in_fin = mod.runtime_checkpoint();
     QVERIFY(!cp_in_fin);
     QCOMPARE(cp_in_fin.error()->code(), rgsml::core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(error_category(*cp_in_fin.error()), std::string_view{"RUNTIME_CHECKPOINT_DURING_FINALIZE_UNSUPPORTED"});
     QCOMPARE(std::string_view{cp_in_fin.error()->message()}, std::string_view{"Checkpoint during or after finalize rejected"});
 }
 
@@ -1252,6 +1276,146 @@ void RenderPreviewTest::compressorRenderPreviewChainIntegration()
     QVERIFY(comp_sig != nullptr);
     QCOMPARE(comp_sig->detector_mode, rgsml::dsp::CompressorDetectorMode::RMS);
     QCOMPARE(comp_sig->channel_link, std::optional<rgsml::dsp::CompressorChannelLink>{rgsml::dsp::CompressorChannelLink::LINKED_MAX});
+}
+
+void RenderPreviewTest::twoActiveCompressorsInChain()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    std::vector<double> left(500U, 0.5);
+    std::vector<double> right(500U, 0.5);
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto chain = empty_chain(*registry.value());
+
+    const auto comp1_id = make_id("51000000-0000-0000-0000-000000000001");
+    const auto comp2_id = make_id("51000000-0000-0000-0000-000000000002");
+
+    QVERIFY(chain.add(comp1_id, "rgsml.dsp.compressor", 0));
+    QVERIFY(chain.add(comp2_id, "rgsml.dsp.compressor", 1));
+
+    const rgsml::dsp::ModuleExecutionBinding comp1_b{comp1_id, *rgsml::dsp::CompressorParameters::create_default().value()};
+    const rgsml::dsp::ModuleExecutionBinding comp2_b{comp2_id, *rgsml::dsp::CompressorParameters::create_default().value()};
+
+    auto req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 500), chain,
+        {comp1_b, comp2_b}, frame_count(64));
+    QVERIFY(req);
+
+    auto res = rgsml::render::render_preview(*req.value(), *registry.value());
+    QVERIFY(res);
+    QCOMPARE(res.value()->render_window(), frame_range(0, 500));
+    QCOMPARE(res.value()->signatures().size(), std::size_t{2});
+
+    const auto& sigs = res.value()->signatures();
+    QCOMPARE(sigs[0].disposition, rgsml::render::ModuleExecutionDisposition::PROCESSED);
+    QCOMPARE(sigs[1].disposition, rgsml::render::ModuleExecutionDisposition::PROCESSED);
+}
+
+void RenderPreviewTest::bypassedCompressorIntegration()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    std::vector<double> left{0.1, -0.2, 0.3, -0.4, 0.5};
+    std::vector<double> right{-0.1, 0.2, -0.3, 0.4, -0.5};
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto chain = empty_chain(*registry.value());
+
+    const auto comp_id = make_id("52000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 0));
+    QVERIFY(chain.set_user_bypass(comp_id, true));
+
+    const rgsml::dsp::ModuleExecutionBinding comp_b{comp_id, *rgsml::dsp::CompressorParameters::create_default().value()};
+
+    auto req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 5), chain,
+        {comp_b}, frame_count(64));
+    QVERIFY(req);
+
+    auto res = rgsml::render::render_preview(*req.value(), *registry.value());
+    QVERIFY(res);
+    QCOMPARE(bits(res.value()->view()), bits(source.value()->view()));
+
+    const auto& sigs = res.value()->signatures();
+    QCOMPARE(sigs.size(), std::size_t{1});
+    QCOMPARE(sigs[0].disposition, rgsml::render::ModuleExecutionDisposition::BYPASS_IDENTITY);
+}
+
+void RenderPreviewTest::compressorNearEosPreview()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    std::vector<double> left(1000U, 0.2);
+    std::vector<double> right(1000U, -0.2);
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto chain = empty_chain(*registry.value());
+
+    const auto comp_id = make_id("53000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 0));
+
+    const rgsml::dsp::ModuleExecutionBinding comp_b{comp_id, *rgsml::dsp::CompressorParameters::create_default().value()};
+
+    // Full render
+    auto full_req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 1000), chain,
+        {comp_b}, frame_count(64));
+    QVERIFY(full_req);
+    auto full_res = rgsml::render::render_preview(*full_req.value(), *registry.value());
+    QVERIFY(full_res);
+
+    auto expected_sub = full_res.value()->view().subview(
+        rgsml::core::FrameIndex{900}, frame_count(100));
+    QVERIFY(expected_sub);
+
+    // Near-EOS preview [900, 1000]
+    auto near_eos_req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(900, 1000), chain,
+        {comp_b}, frame_count(32));
+    QVERIFY(near_eos_req);
+    auto near_eos_res = rgsml::render::render_preview(*near_eos_req.value(), *registry.value());
+    QVERIFY(near_eos_res);
+
+    QCOMPARE(near_eos_res.value()->view().frame_count().value(), std::int64_t{100});
+    QCOMPARE(bits(near_eos_res.value()->view()), bits(*expected_sub.value()));
+}
+
+void RenderPreviewTest::monoCompressorExecutionSignature()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    const std::array mono_samples{0.25, -0.5, 0.25};
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, mono_samples);
+    auto chain = empty_chain(*registry.value());
+
+    const auto comp_id = make_id("54000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 0));
+
+    for (const auto link_mode : {rgsml::dsp::CompressorChannelLink::LINKED_MAX, rgsml::dsp::CompressorChannelLink::LINKED_MEAN, rgsml::dsp::CompressorChannelLink::DUAL_MONO}) {
+        auto comp_params = *rgsml::dsp::CompressorParameters::create(
+            rgsml::dsp::CompressorDetectorMode::RMS, link_mode,
+            -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0).value();
+
+        const rgsml::dsp::ModuleExecutionBinding comp_b{comp_id, comp_params};
+
+        auto req = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 3), chain,
+            {comp_b}, frame_count(64));
+        QVERIFY(req);
+
+        auto res = rgsml::render::render_preview(*req.value(), *registry.value());
+        QVERIFY(res);
+
+        const auto& sigs = res.value()->signatures();
+        QCOMPARE(sigs.size(), std::size_t{1});
+
+        const auto* comp_sig = std::get_if<rgsml::render::CompressorExecutionSignaturePayload>(&sigs[0].payload);
+        QVERIFY(comp_sig != nullptr);
+        // Effective link MUST be std::nullopt for MONO_C layout!
+        QCOMPARE(comp_sig->channel_link, std::optional<rgsml::dsp::CompressorChannelLink>{std::nullopt});
+    }
 }
 
 }  // namespace
