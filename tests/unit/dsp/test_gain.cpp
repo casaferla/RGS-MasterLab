@@ -1,6 +1,8 @@
 #include "../render/render_test_support.hpp"
+#include "test_support.hpp"
 
 #include <rgsml/core/error.hpp>
+#include <rgsml/dsp/dsp_runtime_checkpoint.hpp>
 #include <rgsml/dsp/gain_module.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/module_registry.hpp>
@@ -46,6 +48,7 @@ private slots:
     void exactIdentityAndSignedZero();
     void scalarMonoStereoAndOutOfUnity();
     void rejectsNonFiniteAndOverlap();
+    void defaultUnsupportedOperations();
 };
 
 void GainTest::parameterValidationAndCanonicalZero()
@@ -210,6 +213,31 @@ void GainTest::rejectsNonFiniteAndOverlap()
         DspProcessContext{frame_range(0, 1), true, true});
     QVERIFY(!status);
     QCOMPARE(status.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
+}
+
+void GainTest::defaultUnsupportedOperations()
+{
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    auto module = gain_module(*registry.value(), 0.0);
+
+    auto cp_res = module->runtime_checkpoint();
+    QVERIFY(!cp_res);
+    QCOMPARE(cp_res.error()->code(), rgsml::core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(dsp_support::error_category(*cp_res.error()), std::string_view{"RUNTIME_CHECKPOINT_UNSUPPORTED"});
+
+    rgsml::dsp::DspRuntimeCheckpoint cp;
+    auto rest_res = module->restore_runtime_checkpoint(cp);
+    QVERIFY(!rest_res);
+    QCOMPARE(rest_res.error()->code(), rgsml::core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(dsp_support::error_category(*rest_res.error()), std::string_view{"RUNTIME_CHECKPOINT_UNSUPPORTED"});
+
+    const DspProcessContext context{frame_range(0, 5), true, true};
+    const std::array zero_samples{0.0, 0.0, 0.0, 0.0, 0.0};
+    auto out = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, zero_samples);
+    auto fin_res = module->finalize(out.value()->mutable_view(), context);
+    QVERIFY(!fin_res);
+    QCOMPARE(fin_res.error()->code(), rgsml::core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(dsp_support::error_category(*fin_res.error()), std::string_view{"DSP_FINALIZE_UNSUPPORTED"});
 }
 
 }  // namespace

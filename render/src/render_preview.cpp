@@ -1,6 +1,7 @@
 #include <rgsml/render/render_preview.hpp>
 
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/core/checked_integer.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/imodule.hpp>
@@ -21,6 +22,11 @@ namespace {
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
+
+struct PreparedModule final {
+    std::unique_ptr<rgsml::dsp::IModule> instance;
+    std::int64_t latency_frames{0};
+};
 
 [[nodiscard]] rgsml::core::Error render_error(
     rgsml::core::ErrorCode code,
@@ -50,7 +56,6 @@ constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
     rgsml::audio::MutableAudioBufferView output)
 {
     if (input.format() != output.format()
-        || input.absolute_range() != output.absolute_range()
         || input.frame_count() != output.frame_count()) {
         return rgsml::core::Status::failure(render_error(
             rgsml::core::ErrorCode::InvalidArgument,
@@ -79,7 +84,7 @@ rgsml::core::Result<RenderResult> render_preview(
             return rgsml::core::Result<RenderResult>::failure(*range_length.error());
         }
 
-        std::vector<std::unique_ptr<rgsml::dsp::IModule>> modules;
+        std::vector<PreparedModule> modules;
         std::vector<ModuleExecutionSignature> signatures;
         modules.reserve(request.chain_instances().size());
         signatures.reserve(request.bindings().size());
@@ -89,6 +94,8 @@ rgsml::core::Result<RenderResult> render_preview(
             source.timebase().frame_domain_id(),
             request.maximum_block_frames()};
 
+        std::int64_t cumulative_latency = 0;
+
         for (const auto& instance : request.chain_instances()) {
             const auto descriptor = registry.find_descriptor(instance.module_type_id());
             if (!descriptor) {
@@ -97,6 +104,7 @@ rgsml::core::Result<RenderResult> render_preview(
 
             const bool is_gain = (instance.module_type_id() == kGainTypeId);
             const bool is_eq = (instance.module_type_id() == kEqTypeId);
+            const bool is_parameterized = is_gain || is_eq;
 
             if (!instance.active()) {
                 if (is_gain || is_eq) {
@@ -141,15 +149,16 @@ rgsml::core::Result<RenderResult> render_preview(
             }
 
             const auto* binding = find_binding(request, instance.instance_id());
-            if (binding == nullptr) {
+            if (is_parameterized && binding == nullptr) {
                 return rgsml::core::Result<RenderResult>::failure(render_error(
                     rgsml::core::ErrorCode::UnsupportedOperation,
                     "MODULE_IMPLEMENTATION_UNAVAILABLE",
                     "An active chain node has no parameter binding."));
             }
 
-            auto module = registry.create_module(
-                instance.module_type_id(), binding->parameters);
+            auto module = (binding != nullptr)
+                ? registry.create_module(instance.module_type_id(), binding->parameters)
+                : registry.create_module(instance.module_type_id());
             if (!module) {
                 return rgsml::core::Result<RenderResult>::failure(*module.error());
             }
@@ -160,21 +169,35 @@ rgsml::core::Result<RenderResult> render_preview(
             }
             const auto& required = *requirements.value();
             if (required.execution_model != rgsml::dsp::DspExecutionModel::STREAMING_CAUSAL
-                || required.algorithmic_latency_frames.value() != 0
-                || required.look_ahead_frames.value() != 0
                 || required.requires_prepass) {
                 return rgsml::core::Result<RenderResult>::failure(render_error(
                     rgsml::core::ErrorCode::UnsupportedOperation,
                     "UNSUPPORTED_RENDER_REQUIREMENTS",
-                    "Render Preview accepts only streaming-causal modules with zero latency and zero lookahead."));
+                    "Render Preview accepts only streaming-causal modules without prepass."));
             }
+
+            const auto module_lat_res = rgsml::core::checked_add(
+                required.algorithmic_latency_frames.value(),
+                required.look_ahead_frames.value());
+            if (!module_lat_res) {
+                return rgsml::core::Result<RenderResult>::failure(*module_lat_res.error());
+            }
+            const auto module_latency = *module_lat_res.value();
+
+            const auto next_cum_res = rgsml::core::checked_add(cumulative_latency, module_latency);
+            if (!next_cum_res) {
+                return rgsml::core::Result<RenderResult>::failure(*next_cum_res.error());
+            }
+            cumulative_latency = *next_cum_res.value();
 
             auto prepared = (*module.value())->prepare(process_spec);
             if (!prepared) {
                 return rgsml::core::Result<RenderResult>::failure(*prepared.error());
             }
             (*module.value())->reset();
-            modules.push_back(std::move(*module.value()));
+            modules.push_back(PreparedModule{
+                std::move(*module.value()),
+                module_latency});
 
             if (is_gain) {
                 const auto* gain_params = std::get_if<rgsml::dsp::GainParameters>(&binding->parameters);
@@ -218,126 +241,166 @@ rgsml::core::Result<RenderResult> render_preview(
         const auto max_block_size = request.maximum_block_frames().value();
         const auto source_start = source.absolute_start_frame().value();
         const auto source_end = source.absolute_end_frame().value();
-        const auto window_begin = window.begin().value();
-        const auto window_end = window.end().value();
+        const auto total_latency_val = cumulative_latency;
 
-        // Phase 1: Causal Preroll [source_start, window_begin)
-        std::int64_t preroll_cursor = source_start;
-        while (preroll_cursor < window_begin) {
-            const auto remaining = window_begin - preroll_cursor;
-            const auto chunk_size = std::min(remaining, max_block_size);
-            const auto chunk_count = *rgsml::core::FrameCount::create(chunk_size).value();
-            const rgsml::core::FrameIndex chunk_start{preroll_cursor};
-            const rgsml::core::FrameIndex chunk_end{preroll_cursor + chunk_size};
-            const auto chunk_range = *rgsml::core::FrameRange::create(
-                chunk_start, chunk_end).value();
-
-            auto source_chunk = source.subview(chunk_start, chunk_count);
-            if (!source_chunk) {
-                return rgsml::core::Result<RenderResult>::failure(render_error(
-                    rgsml::core::ErrorCode::InvalidFrameRange,
-                    "INVALID_RENDER_CHUNK",
-                    "Render Preview could not materialize a validated preroll chunk range."));
-            }
-
-            if (!modules.empty()) {
-                auto first_block = rgsml::audio::AudioBuffer::create(
-                    source.format(),
-                    source.timebase().frame_domain_id(),
-                    chunk_start,
-                    chunk_count);
-                auto second_block = rgsml::audio::AudioBuffer::create(
-                    source.format(),
-                    source.timebase().frame_domain_id(),
-                    chunk_start,
-                    chunk_count);
-                if (!first_block || !second_block) {
-                    const auto* error = first_block ? second_block.error() : first_block.error();
-                    return rgsml::core::Result<RenderResult>::failure(*error);
-                }
-
-                auto current = *source_chunk.value();
-                for (std::size_t index = 0; index < modules.size(); ++index) {
-                    auto destination = (index % 2U == 0U)
-                        ? first_block.value()->mutable_view()
-                        : second_block.value()->mutable_view();
-                    const rgsml::dsp::DspProcessContext context{
-                        chunk_range,
-                        preroll_cursor == source_start,
-                        preroll_cursor + chunk_size == source_end};
-                    auto processed = modules[index]->process(current, destination, context);
-                    if (!processed) {
-                        return rgsml::core::Result<RenderResult>::failure(*processed.error());
-                    }
-                    current = destination.as_const();
-                }
-            }
-            preroll_cursor += chunk_size;
+        const auto target_raw_end_res = rgsml::core::checked_add(window.end().value(), total_latency_val);
+        if (!target_raw_end_res) {
+            return rgsml::core::Result<RenderResult>::failure(*target_raw_end_res.error());
         }
+        const auto target_raw_end = *target_raw_end_res.value();
+        const auto needed_source_end = std::min(source_end, target_raw_end);
+        const auto source_read_count = needed_source_end - source_start;
 
-        // Phase 2: Preview Window Render [window_begin, window_end)
-        std::int64_t window_cursor = window_begin;
-        while (window_cursor < window_end) {
-            const auto remaining = window_end - window_cursor;
-            const auto chunk_size = std::min(remaining, max_block_size);
-            const auto chunk_count = *rgsml::core::FrameCount::create(chunk_size).value();
-            const rgsml::core::FrameIndex chunk_start{window_cursor};
-            const rgsml::core::FrameIndex chunk_end{window_cursor + chunk_size};
-            const auto chunk_range = *rgsml::core::FrameRange::create(
-                chunk_start, chunk_end).value();
-
-            auto source_chunk = source.subview(chunk_start, chunk_count);
-            auto result_chunk = result_buffer.value()->mutable_view().subview(
-                chunk_start, chunk_count);
-            if (!source_chunk || !result_chunk) {
+        if (modules.empty()) {
+            auto source_chunk = source.subview(
+                window.begin(),
+                *range_length.value());
+            if (!source_chunk) {
                 return rgsml::core::Result<RenderResult>::failure(render_error(
                     rgsml::core::ErrorCode::InvalidFrameRange,
                     "INVALID_RENDER_CHUNK",
                     "Render Preview could not materialize a validated chunk range."));
             }
+            auto copied = copy_audio(*source_chunk.value(), result_buffer.value()->mutable_view());
+            if (!copied) {
+                return rgsml::core::Result<RenderResult>::failure(*copied.error());
+            }
+        } else {
+            // Stage 0 source initial buffer
+            const auto initial_count = *rgsml::core::FrameCount::create(source_read_count).value();
+            auto current_buffer = rgsml::audio::AudioBuffer::create(
+                source.format(),
+                source.timebase().frame_domain_id(),
+                source.absolute_start_frame(),
+                initial_count);
+            if (!current_buffer) {
+                return rgsml::core::Result<RenderResult>::failure(*current_buffer.error());
+            }
 
-            if (modules.empty()) {
-                auto copied = copy_audio(*source_chunk.value(), *result_chunk.value());
-                if (!copied) {
-                    return rgsml::core::Result<RenderResult>::failure(*copied.error());
+            if (source_read_count > 0) {
+                auto source_chunk = source.subview(
+                    source.absolute_start_frame(),
+                    initial_count);
+                if (!source_chunk) {
+                    return rgsml::core::Result<RenderResult>::failure(render_error(
+                        rgsml::core::ErrorCode::InvalidFrameRange,
+                        "INVALID_RENDER_CHUNK",
+                        "Render Preview could not materialize a validated source chunk."));
                 }
-            } else {
-                auto first_block = rgsml::audio::AudioBuffer::create(
-                    source.format(),
-                    source.timebase().frame_domain_id(),
-                    chunk_start,
-                    chunk_count);
-                auto second_block = rgsml::audio::AudioBuffer::create(
-                    source.format(),
-                    source.timebase().frame_domain_id(),
-                    chunk_start,
-                    chunk_count);
-                if (!first_block || !second_block) {
-                    const auto* error = first_block ? second_block.error() : first_block.error();
-                    return rgsml::core::Result<RenderResult>::failure(*error);
-                }
-
-                auto current = *source_chunk.value();
-                for (std::size_t index = 0; index < modules.size(); ++index) {
-                    auto destination = (index % 2U == 0U)
-                        ? first_block.value()->mutable_view()
-                        : second_block.value()->mutable_view();
-                    const rgsml::dsp::DspProcessContext context{
-                        chunk_range,
-                        window_cursor == source_start,
-                        window_cursor + chunk_size == source_end};
-                    auto processed = modules[index]->process(current, destination, context);
-                    if (!processed) {
-                        return rgsml::core::Result<RenderResult>::failure(*processed.error());
-                    }
-                    current = destination.as_const();
-                }
-                auto copied = copy_audio(current, *result_chunk.value());
+                auto copied = copy_audio(*source_chunk.value(), current_buffer.value()->mutable_view());
                 if (!copied) {
                     return rgsml::core::Result<RenderResult>::failure(*copied.error());
                 }
             }
-            window_cursor += chunk_size;
+
+            std::int64_t stage_start = source_start;
+            std::int64_t stage_end = needed_source_end;
+            bool stream_eos_reached = (needed_source_end == source_end);
+
+            for (std::size_t m = 0; m < modules.size(); ++m) {
+                const auto in_count = stage_end - stage_start;
+                const auto latency = modules[m].latency_frames;
+                const bool will_finalize = stream_eos_reached;
+                const auto out_count = in_count + (will_finalize ? latency : 0);
+
+                const auto out_frame_count = *rgsml::core::FrameCount::create(out_count).value();
+                auto next_buffer = rgsml::audio::AudioBuffer::create(
+                    source.format(),
+                    source.timebase().frame_domain_id(),
+                    rgsml::core::FrameIndex{stage_start},
+                    out_frame_count);
+                if (!next_buffer) {
+                    return rgsml::core::Result<RenderResult>::failure(*next_buffer.error());
+                }
+
+                // Step A: Process input frames
+                std::int64_t cursor = stage_start;
+                while (cursor < stage_end) {
+                    const auto chunk_size = std::min(stage_end - cursor, max_block_size);
+                    const auto chunk_count = *rgsml::core::FrameCount::create(chunk_size).value();
+                    const rgsml::core::FrameIndex chunk_start{cursor};
+                    const rgsml::core::FrameIndex chunk_end{cursor + chunk_size};
+                    const auto chunk_range = *rgsml::core::FrameRange::create(
+                        chunk_start, chunk_end).value();
+
+                    auto in_chunk = current_buffer.value()->view().subview(chunk_start, chunk_count);
+                    auto out_chunk = next_buffer.value()->mutable_view().subview(chunk_start, chunk_count);
+                    if (!in_chunk || !out_chunk) {
+                        return rgsml::core::Result<RenderResult>::failure(render_error(
+                            rgsml::core::ErrorCode::InvalidFrameRange,
+                            "INVALID_RENDER_CHUNK",
+                            "Render Preview could not materialize a validated process chunk range."));
+                    }
+
+                    const bool is_begins = (cursor == source_start);
+                    const bool is_ends = (cursor + chunk_size == stage_end && will_finalize && latency == 0);
+                    const rgsml::dsp::DspProcessContext context{
+                        chunk_range,
+                        is_begins,
+                        is_ends};
+
+                    auto processed = modules[m].instance->process(*in_chunk.value(), *out_chunk.value(), context);
+                    if (!processed) {
+                        return rgsml::core::Result<RenderResult>::failure(*processed.error());
+                    }
+                    cursor += chunk_size;
+                }
+
+                // Step B: Finalize tail emission if at EOS
+                if (will_finalize && latency > 0) {
+                    std::int64_t fin_cursor = stage_end;
+                    const std::int64_t fin_end = stage_end + latency;
+                    while (fin_cursor < fin_end) {
+                        const auto chunk_size = std::min(fin_end - fin_cursor, max_block_size);
+                        const auto chunk_count = *rgsml::core::FrameCount::create(chunk_size).value();
+                        const rgsml::core::FrameIndex chunk_start{fin_cursor};
+                        const rgsml::core::FrameIndex chunk_end{fin_cursor + chunk_size};
+                        const auto chunk_range = *rgsml::core::FrameRange::create(
+                            chunk_start, chunk_end).value();
+
+                        auto out_chunk = next_buffer.value()->mutable_view().subview(chunk_start, chunk_count);
+                        if (!out_chunk) {
+                            return rgsml::core::Result<RenderResult>::failure(render_error(
+                                rgsml::core::ErrorCode::InvalidFrameRange,
+                                "INVALID_RENDER_CHUNK",
+                                "Render Preview could not materialize a validated finalize chunk range."));
+                        }
+
+                        const bool is_begins = (fin_cursor == stage_end && cursor == stage_start);
+                        const bool is_ends = (fin_cursor + chunk_size == fin_end);
+                        const rgsml::dsp::DspProcessContext context{
+                            chunk_range,
+                            is_begins,
+                            is_ends};
+
+                        auto finalized = modules[m].instance->finalize(*out_chunk.value(), context);
+                        if (!finalized) {
+                            return rgsml::core::Result<RenderResult>::failure(*finalized.error());
+                        }
+                        fin_cursor += chunk_size;
+                    }
+                }
+
+                current_buffer = std::move(next_buffer);
+                stage_end += (will_finalize ? latency : 0);
+            }
+
+            // Slice target raw range [window_begin + total_latency, window_end + total_latency]
+            const auto target_raw_begin = window.begin().value() + total_latency_val;
+            const rgsml::core::FrameIndex slice_start{target_raw_begin};
+            auto final_subview = current_buffer.value()->view().subview(
+                slice_start,
+                *range_length.value());
+            if (!final_subview) {
+                return rgsml::core::Result<RenderResult>::failure(render_error(
+                    rgsml::core::ErrorCode::InvalidFrameRange,
+                    "INVALID_RENDER_WINDOW",
+                    "Render Preview could not slice the compensated output range."));
+            }
+            auto copied = copy_audio(*final_subview.value(), result_buffer.value()->mutable_view());
+            if (!copied) {
+                return rgsml::core::Result<RenderResult>::failure(*copied.error());
+            }
         }
 
         return rgsml::core::Result<RenderResult>::success(RenderResult{

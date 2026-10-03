@@ -1,4 +1,5 @@
 add_library(rgsml_dsp STATIC
+    src/imodule.cpp
     src/gain_parameters.cpp
     src/gain_module.cpp
     src/parametric_eq_parameters.cpp

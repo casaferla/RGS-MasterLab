@@ -1,7 +1,10 @@
 #include "render_test_support.hpp"
 
+#include <rgsml/core/checked_integer.hpp>
 #include <rgsml/core/uuid.hpp>
+#include <rgsml/dsp/dsp_runtime_checkpoint.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
+#include <rgsml/dsp/imodule.hpp>
 #include <rgsml/dsp/module_execution_binding.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
@@ -11,10 +14,15 @@
 
 #include <QtTest/QTest>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -55,6 +63,365 @@ using namespace render_support;
     return *eq_params.value();
 }
 
+class FakeLatencyModule final : public rgsml::dsp::IModule {
+public:
+    FakeLatencyModule(
+        rgsml::dsp::ModuleDescriptor descriptor,
+        std::int64_t latency_frames,
+        std::string sonic_fingerprint = "fake.sonic.v1",
+        std::string backend_identity = "rgsml.dsp.backend.test",
+        double gain_factor = 1.0)
+        : descriptor_(std::move(descriptor))
+        , latency_frames_(latency_frames)
+        , sonic_fingerprint_(std::move(sonic_fingerprint))
+        , backend_identity_(std::move(backend_identity))
+        , gain_factor_(gain_factor)
+    {
+    }
+
+    const rgsml::dsp::ModuleDescriptor& descriptor() const noexcept override
+    {
+        return descriptor_;
+    }
+
+    rgsml::core::Result<rgsml::dsp::DspRuntimeRequirements>
+    runtime_requirements(const rgsml::dsp::DspProcessSpec&) const override
+    {
+        const auto zero = *rgsml::core::FrameCount::create(0).value();
+        const auto lat = *rgsml::core::FrameCount::create(latency_frames_).value();
+        return rgsml::core::Result<rgsml::dsp::DspRuntimeRequirements>::success(
+            rgsml::dsp::DspRuntimeRequirements{
+                rgsml::dsp::DspExecutionModel::STREAMING_CAUSAL,
+                lat,
+                zero,
+                zero,
+                zero,
+                zero,
+                false});
+    }
+
+    rgsml::core::Status prepare(const rgsml::dsp::DspProcessSpec& spec) override
+    {
+        prepared_spec_ = spec;
+        reset();
+        return rgsml::core::Status::success();
+    }
+
+    void reset() noexcept override
+    {
+        bound_ = false;
+        next_input_frame_ = std::nullopt;
+        in_finalize_ = false;
+        finalized_ = false;
+        tail_emitted_ = 0;
+        if (prepared_spec_.has_value()) {
+            const auto channels = prepared_spec_->audio_format.channel_count();
+            delay_buffers_.assign(channels, std::vector<double>(static_cast<std::size_t>(latency_frames_), 0.0));
+        }
+    }
+
+    rgsml::core::Status process(
+        rgsml::audio::AudioBufferView input,
+        rgsml::audio::MutableAudioBufferView output,
+        const rgsml::dsp::DspProcessContext& context) override
+    {
+        if (!prepared_spec_) {
+            return rgsml::core::Status::failure(rgsml::core::Error{
+                rgsml::core::ErrorCode::InvalidState,
+                "DSP_MODULE_NOT_PREPARED",
+                {{"category", "DSP_MODULE_NOT_PREPARED"}}});
+        }
+        if (in_finalize_ || finalized_) {
+            return rgsml::core::Status::failure(rgsml::core::Error{
+                rgsml::core::ErrorCode::InvalidState,
+                "Process called after finalize",
+                {{"category", "INVALID_DSP_PROCESS_CONTEXT"}}});
+        }
+
+        if (!bound_) {
+            if (!context.begins_stream) {
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "First process call must have begins_stream = true",
+                    {{"category", "INVALID_DSP_PROCESS_CONTEXT"}}});
+            }
+            bound_ = true;
+            next_input_frame_ = context.output_frame_range.begin();
+        } else {
+            if (context.output_frame_range.begin() != *next_input_frame_) {
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "Process frame range must be contiguous",
+                    {{"category", "INVALID_DSP_PROCESS_CONTEXT"}}});
+            }
+        }
+
+        const auto channel_count = input.format().channel_count();
+        const auto frame_count = input.frame_count().value();
+
+        for (std::size_t ch = 0; ch < channel_count; ++ch) {
+            const auto in_plane = *input.channel(ch).value();
+            auto out_plane = *output.channel(ch).value();
+            auto& buffer = delay_buffers_[ch];
+
+            for (std::size_t i = 0; i < static_cast<std::size_t>(frame_count); ++i) {
+                double out_sample = 0.0;
+                if (latency_frames_ > 0) {
+                    out_sample = buffer.front();
+                    buffer.erase(buffer.begin());
+                    buffer.push_back(in_plane[i] * gain_factor_);
+                } else {
+                    out_sample = in_plane[i] * gain_factor_;
+                }
+                out_plane[i] = out_sample;
+            }
+        }
+
+        next_input_frame_ = context.output_frame_range.end();
+        return rgsml::core::Status::success();
+    }
+
+    rgsml::core::Status finalize(
+        rgsml::audio::MutableAudioBufferView output,
+        const rgsml::dsp::DspProcessContext& context) override
+    {
+        if (!prepared_spec_) {
+            return rgsml::core::Status::failure(rgsml::core::Error{
+                rgsml::core::ErrorCode::InvalidState,
+                "DSP_MODULE_NOT_PREPARED",
+                {{"category", "DSP_MODULE_NOT_PREPARED"}}});
+        }
+
+        if (!bound_) {
+            if (!context.begins_stream) {
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "First empty-stream finalize call must represent begins_stream = true",
+                    {{"category", "INVALID_DSP_PROCESS_CONTEXT"}}});
+            }
+            bound_ = true;
+            next_input_frame_ = context.output_frame_range.begin();
+        } else {
+            if (context.output_frame_range.begin() != *next_input_frame_) {
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "Finalize frame range must be contiguous",
+                    {{"category", "INVALID_DSP_PROCESS_CONTEXT"}}});
+            }
+        }
+
+        in_finalize_ = true;
+        const auto channel_count = output.format().channel_count();
+        const auto frame_count = output.frame_count().value();
+
+        for (std::size_t ch = 0; ch < channel_count; ++ch) {
+            auto out_plane = *output.channel(ch).value();
+            auto& buffer = delay_buffers_[ch];
+
+            for (std::size_t i = 0; i < static_cast<std::size_t>(frame_count); ++i) {
+                double out_sample = 0.0;
+                if (!buffer.empty()) {
+                    out_sample = buffer.front();
+                    buffer.erase(buffer.begin());
+                }
+                out_plane[i] = out_sample;
+            }
+        }
+
+        tail_emitted_ += frame_count;
+        if (tail_emitted_ >= latency_frames_) {
+            finalized_ = true;
+        }
+
+        next_input_frame_ = context.output_frame_range.end();
+        return rgsml::core::Status::success();
+    }
+
+    rgsml::core::Result<rgsml::dsp::DspRuntimeCheckpoint>
+    runtime_checkpoint() const override
+    {
+        if (in_finalize_ || finalized_) {
+            return rgsml::core::Result<rgsml::dsp::DspRuntimeCheckpoint>::failure(
+                rgsml::core::Error{
+                    rgsml::core::ErrorCode::UnsupportedOperation,
+                    "Checkpoint during or after finalize rejected",
+                    {{"category", "UNSUPPORTED_MODULE_OPERATION"}}});
+        }
+
+        rgsml::dsp::DspRuntimeCheckpoint cp;
+        cp.module_type_id = std::string(descriptor_.type_id());
+        cp.algorithm_version = std::string(descriptor_.algorithm_version().value_or("1.0.0"));
+        cp.parameter_schema_id = std::string(descriptor_.parameter_schema_id().value_or("rgsml.dsp.fake-latency.parameters/1.0.0"));
+        cp.sonic_fingerprint = sonic_fingerprint_;
+        if (prepared_spec_) {
+            cp.audio_format = prepared_spec_->audio_format;
+            cp.frame_domain_id = prepared_spec_->frame_domain_id;
+        }
+        cp.checkpoint_schema_version = "rgsml.dsp.test-checkpoint/1.0.0";
+        cp.next_input_frame = next_input_frame_;
+        cp.backend_identity = backend_identity_;
+
+        for (const auto& plane : delay_buffers_) {
+            for (const double sample : plane) {
+                const auto bits_val = std::bit_cast<std::uint64_t>(sample);
+                for (std::size_t b = 0; b < 8; ++b) {
+                    cp.payload.push_back(static_cast<std::uint8_t>((bits_val >> (b * 8)) & 0xFF));
+                }
+            }
+        }
+        return rgsml::core::Result<rgsml::dsp::DspRuntimeCheckpoint>::success(std::move(cp));
+    }
+
+    rgsml::core::Status restore_runtime_checkpoint(
+        const rgsml::dsp::DspRuntimeCheckpoint& checkpoint) override
+    {
+        if (!prepared_spec_) {
+            return rgsml::core::Status::failure(rgsml::core::Error{
+                rgsml::core::ErrorCode::InvalidState,
+                "DSP_MODULE_NOT_PREPARED",
+                {{"category", "DSP_MODULE_NOT_PREPARED"}}});
+        }
+        if (checkpoint.module_type_id != descriptor_.type_id()
+            || checkpoint.algorithm_version != descriptor_.algorithm_version().value_or("1.0.0")
+            || checkpoint.parameter_schema_id != descriptor_.parameter_schema_id().value_or("rgsml.dsp.fake-latency.parameters/1.0.0")
+            || checkpoint.sonic_fingerprint != sonic_fingerprint_
+            || checkpoint.audio_format != prepared_spec_->audio_format
+            || checkpoint.frame_domain_id != prepared_spec_->frame_domain_id
+            || checkpoint.checkpoint_schema_version != "rgsml.dsp.test-checkpoint/1.0.0"
+            || checkpoint.backend_identity != backend_identity_) {
+            return rgsml::core::Status::failure(rgsml::core::Error{
+                rgsml::core::ErrorCode::InvalidArgument,
+                "Incompatible checkpoint rejected",
+                {{"category", "INCOMPATIBLE_CHECKPOINT"}}});
+        }
+
+        next_input_frame_ = checkpoint.next_input_frame;
+        bound_ = next_input_frame_.has_value();
+        in_finalize_ = false;
+        finalized_ = false;
+
+        const auto channels = prepared_spec_->audio_format.channel_count();
+        delay_buffers_.assign(channels, std::vector<double>());
+        std::size_t offset = 0;
+        for (std::size_t ch = 0; ch < channels; ++ch) {
+            for (std::size_t i = 0; i < static_cast<std::size_t>(latency_frames_); ++i) {
+                if (offset + 8 <= checkpoint.payload.size()) {
+                    std::uint64_t bits_val = 0;
+                    for (std::size_t b = 0; b < 8; ++b) {
+                        bits_val |= static_cast<std::uint64_t>(checkpoint.payload[offset + b]) << (b * 8);
+                    }
+                    offset += 8;
+                    delay_buffers_[ch].push_back(std::bit_cast<double>(bits_val));
+                } else {
+                    delay_buffers_[ch].push_back(0.0);
+                }
+            }
+        }
+        return rgsml::core::Status::success();
+    }
+
+private:
+    rgsml::dsp::ModuleDescriptor descriptor_;
+    std::int64_t latency_frames_;
+    std::string sonic_fingerprint_;
+    std::string backend_identity_;
+    double gain_factor_;
+    std::optional<rgsml::dsp::DspProcessSpec> prepared_spec_;
+    bool bound_{false};
+    std::optional<rgsml::core::FrameIndex> next_input_frame_;
+    bool in_finalize_{false};
+    bool finalized_{false};
+    std::int64_t tail_emitted_{0};
+    std::vector<std::vector<double>> delay_buffers_;
+};
+
+class FakeModuleFactory final : public rgsml::dsp::IModuleFactory {
+public:
+    FakeModuleFactory(
+        rgsml::dsp::ModuleDescriptor descriptor,
+        std::int64_t latency_frames,
+        double gain_factor = 1.0)
+        : type_id_(std::string(descriptor.type_id()))
+        , descriptor_(std::move(descriptor))
+        , latency_frames_(latency_frames)
+        , gain_factor_(gain_factor)
+    {
+    }
+
+    std::string_view module_type_id() const noexcept override
+    {
+        return type_id_;
+    }
+
+    rgsml::core::Result<std::unique_ptr<rgsml::dsp::IModule>> create() const override
+    {
+        return rgsml::core::Result<std::unique_ptr<rgsml::dsp::IModule>>::success(
+            std::make_unique<FakeLatencyModule>(descriptor_, latency_frames_, "fake.sonic.v1", "rgsml.dsp.backend.test", gain_factor_));
+    }
+
+private:
+    std::string type_id_;
+    rgsml::dsp::ModuleDescriptor descriptor_;
+    std::int64_t latency_frames_;
+    double gain_factor_;
+};
+
+[[nodiscard]] rgsml::dsp::ModuleDescriptor make_fake_descriptor(
+    std::string_view type_id)
+{
+    const rgsml::dsp::ModuleDescriptorSpec spec{
+        std::string(type_id),
+        "Fake Latency Module",
+        {rgsml::dsp::ModuleCategory::DYNAMICS},
+        {rgsml::dsp::ProcessingStage::MASTER},
+        {rgsml::dsp::ChainSegment::MANUAL},
+        true,
+        true,
+        rgsml::dsp::PlacementClass::INLINE_CHAIN,
+        std::nullopt,
+        {},
+        {},
+        {},
+        {},
+        false,
+        false,
+        "1.0.0",
+        "rgsml.dsp.fake-latency.parameters/1.0.0"
+    };
+    auto res = rgsml::dsp::ModuleDescriptor::create(spec);
+    Q_ASSERT(res);
+    return *res.value();
+}
+
+[[nodiscard]] rgsml::dsp::ModuleRegistry create_test_registry_with_fakes(
+    std::int64_t latency_a = 10,
+    std::int64_t latency_b = 20,
+    double gain_a = 1.0,
+    double gain_b = 1.0)
+{
+    auto base_pkg = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    Q_ASSERT(base_pkg);
+
+    const auto& gain_d = base_pkg.value()->find_descriptor("rgsml.dsp.gain").value()->get();
+    const auto& eq_d = base_pkg.value()->find_descriptor("rgsml.dsp.parametric-eq").value()->get();
+
+    auto desc_a = make_fake_descriptor("rgsml.dsp.fake-latency-a");
+    auto desc_b = make_fake_descriptor("rgsml.dsp.fake-latency-b");
+
+    auto factory_a = std::make_shared<FakeModuleFactory>(desc_a, latency_a, gain_a);
+    auto factory_b = std::make_shared<FakeModuleFactory>(desc_b, latency_b, gain_b);
+
+    std::vector<rgsml::dsp::ModuleRegistration> regs;
+    regs.push_back(rgsml::dsp::ModuleRegistration{gain_d, std::make_shared<FakeModuleFactory>(gain_d, 0, 1.0)});
+    regs.push_back(rgsml::dsp::ModuleRegistration{eq_d, std::make_shared<FakeModuleFactory>(eq_d, 0, 1.0)});
+    regs.push_back(rgsml::dsp::ModuleRegistration{desc_a, factory_a});
+    regs.push_back(rgsml::dsp::ModuleRegistration{desc_b, factory_b});
+
+    auto reg_res = rgsml::dsp::ModuleRegistry::create(regs);
+    Q_ASSERT(reg_res);
+    return std::move(*reg_res.value());
+}
+
 class RenderPreviewTest final : public QObject {
     Q_OBJECT
 
@@ -72,6 +439,14 @@ private slots:
     void bindingOrderInvariance();
     void eqSignatureContent();
     void errorOrderingActiveUnsupportedModuleFailsTruthfully();
+
+    // Stage 1 Mandatory Latency & Checkpoint Tests
+    void latencyFakeSingleModuleCases();
+    void latencyFakeTwoActiveModules();
+    void latencyFakeChunkedFinalizeAndBlockSizes();
+    void latencyFakePreviewNearEos();
+    void latencyFakeBypassedModule();
+    void checkpointAndTimelineRules();
 };
 
 void RenderPreviewTest::validatesBindingsAndWindowAtomically()
@@ -292,7 +667,6 @@ void RenderPreviewTest::resultLifetimeIsIndependent()
 
 void RenderPreviewTest::parametricEqPreviewAndCausalPrerollEquivalence()
 {
-    // Generate state-revealing input signal
     std::vector<double> left(1000U);
     std::vector<double> right(1000U);
     for (std::size_t i = 0; i < 1000U; ++i) {
@@ -309,7 +683,6 @@ void RenderPreviewTest::parametricEqPreviewAndCausalPrerollEquivalence()
     const auto eq_params = bell_eq(1000.0, 6.0, 1.414);
     const rgsml::dsp::ModuleExecutionBinding binding{eq_id, eq_params};
 
-    // Full render from 0 to 1000
     auto full_req = rgsml::render::RenderRequest::create(
         source.value()->view(), frame_range(0, 1000), chain,
         {binding}, frame_count(64));
@@ -317,7 +690,6 @@ void RenderPreviewTest::parametricEqPreviewAndCausalPrerollEquivalence()
     auto full_res = rgsml::render::render_preview(*full_req.value(), *registry.value());
     QVERIFY(full_res);
 
-    // Mid-window render from 500 to 1000 (with causal preroll from 0 to 500) across block sizes 1, 7, 64, 257
     auto full_subview = full_res.value()->view().subview(
         rgsml::core::FrameIndex{500}, frame_count(500));
     QVERIFY(full_subview);
@@ -333,7 +705,6 @@ void RenderPreviewTest::parametricEqPreviewAndCausalPrerollEquivalence()
         QCOMPARE(bits(mid_res.value()->view()), expected_bits);
     }
 
-    // Qualification requirement 4: Verify Source bits are identical AFTER all renders
     QCOMPARE(bits(source.value()->view()), source_bits_before);
 }
 
@@ -353,7 +724,6 @@ void RenderPreviewTest::mixedGainAndEqOrderAndBypassIdentity()
     const auto gain_params = gain(6.0);
     const auto eq_params = bell_eq(1000.0, 3.0, 0.707);
 
-    // Bypass both EQ and Gain -> exact identity
     QVERIFY(chain.set_user_bypass(gain_id, true));
     QVERIFY(chain.set_user_bypass(eq_id, true));
 
@@ -371,7 +741,6 @@ void RenderPreviewTest::mixedGainAndEqOrderAndBypassIdentity()
 
 void RenderPreviewTest::activeMixedGainAndEqChainIntegration()
 {
-    // Qualification requirement 1: Active mixed Gain + EQ
     std::vector<double> left(100U);
     std::vector<double> right(100U);
     for (std::size_t i = 0; i < 100U; ++i) {
@@ -398,10 +767,8 @@ void RenderPreviewTest::activeMixedGainAndEqChainIntegration()
     auto res = rgsml::render::render_preview(*req.value(), *registry.value());
     QVERIFY(res);
 
-    // Verify non-identity output
     QVERIFY(bits(res.value()->view()) != bits(source.value()->view()));
 
-    // Verify signatures appear in ProcessingChain order with PROCESSED disposition
     const auto& sigs = res.value()->signatures();
     QCOMPARE(sigs.size(), std::size_t{2});
 
@@ -416,7 +783,6 @@ void RenderPreviewTest::activeMixedGainAndEqChainIntegration()
 
 void RenderPreviewTest::bindingOrderInvariance()
 {
-    // Qualification requirement 2: Binding collection order MUST NOT control execution
     std::vector<double> left(100U);
     std::vector<double> right(100U);
     for (std::size_t i = 0; i < 100U; ++i) {
@@ -435,7 +801,6 @@ void RenderPreviewTest::bindingOrderInvariance()
     const rgsml::dsp::ModuleExecutionBinding gain_binding{gain_id, gain(6.0)};
     const rgsml::dsp::ModuleExecutionBinding eq_binding{eq_id, bell_eq(1000.0, 6.0, 1.414)};
 
-    // Supply bindings in forward order (gain -> eq)
     auto req_forward = rgsml::render::RenderRequest::create(
         source.value()->view(), frame_range(0, 100), chain,
         {gain_binding, eq_binding}, frame_count(64));
@@ -443,7 +808,6 @@ void RenderPreviewTest::bindingOrderInvariance()
     auto res_forward = rgsml::render::render_preview(*req_forward.value(), *registry.value());
     QVERIFY(res_forward);
 
-    // Supply bindings in REVERSED order (eq -> gain)
     auto req_reversed = rgsml::render::RenderRequest::create(
         source.value()->view(), frame_range(0, 100), chain,
         {eq_binding, gain_binding}, frame_count(64));
@@ -451,10 +815,8 @@ void RenderPreviewTest::bindingOrderInvariance()
     auto res_reversed = rgsml::render::render_preview(*req_reversed.value(), *registry.value());
     QVERIFY(res_reversed);
 
-    // Output must match exactly
     QCOMPARE(bits(res_reversed.value()->view()), bits(res_forward.value()->view()));
 
-    // Execution signatures must still be in chain order (gain_id -> eq_id)
     const auto& sigs = res_reversed.value()->signatures();
     QCOMPARE(sigs.size(), std::size_t{2});
     QCOMPARE(sigs[0].instance_id, gain_id);
@@ -463,7 +825,6 @@ void RenderPreviewTest::bindingOrderInvariance()
 
 void RenderPreviewTest::eqSignatureContent()
 {
-    // Qualification requirement 3: EQ signature contains ONLY enabled bands
     const auto band_enabled_id = *rgsml::core::Uuid::parse("30000000-0000-0000-0000-000000000001").value();
     const auto band_disabled_id = *rgsml::core::Uuid::parse("30000000-0000-0000-0000-000000000002").value();
 
@@ -511,7 +872,6 @@ void RenderPreviewTest::eqSignatureContent()
     const auto* eq_payload = std::get_if<rgsml::render::ParametricEqExecutionSignaturePayload>(&sigs[0].payload);
     QVERIFY(eq_payload != nullptr);
 
-    // Verify only 1 enabled band appears and disabled band is absent
     QCOMPARE(eq_payload->enabled_bands.size(), std::size_t{1});
 
     const auto& band_sig = eq_payload->enabled_bands[0];
@@ -535,16 +895,289 @@ void RenderPreviewTest::errorOrderingActiveUnsupportedModuleFailsTruthfully()
     const auto comp_id = make_id("27000000-0000-0000-0000-000000000001");
     QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 0));
 
-    // Notice no binding is provided for compressor in RenderRequest
     auto req = rgsml::render::RenderRequest::create(
         source.value()->view(), frame_range(0, 1), chain,
         {}, frame_count(64));
-    QVERIFY(req); // Request creation succeeds because compressor is not a supported parameterized builtin
+    QVERIFY(req);
 
     auto res = rgsml::render::render_preview(*req.value(), *registry.value());
     QVERIFY(!res);
     QCOMPARE(res.error()->code(), rgsml::core::ErrorCode::UnsupportedOperation);
     QCOMPARE(std::string_view{res.error()->message()}, std::string_view{"An active chain node has no production implementation."});
+}
+
+void RenderPreviewTest::latencyFakeSingleModuleCases()
+{
+    const std::int64_t L = 10;
+    auto registry = create_test_registry_with_fakes(L, 20);
+
+    // Case 1: N = 0
+    {
+        auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, {});
+        auto chain = empty_chain(registry);
+        const auto id = make_id("40000000-0000-0000-0000-000000000001");
+        QVERIFY(chain.add(id, "rgsml.dsp.fake-latency-a", 0));
+
+        auto req = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 0), chain, {}, frame_count(64));
+        QVERIFY(req);
+        auto res = rgsml::render::render_preview(*req.value(), registry);
+        QVERIFY(res);
+        QCOMPARE(res.value()->render_window(), frame_range(0, 0));
+        QCOMPARE(res.value()->view().frame_count().value(), std::int64_t{0});
+    }
+
+    // Case 2: 0 < N < L (N = 4, L = 10)
+    {
+        const std::array samples{0.1, 0.2, 0.3, 0.4};
+        auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+        auto chain = empty_chain(registry);
+        const auto id = make_id("40000000-0000-0000-0000-000000000002");
+        QVERIFY(chain.add(id, "rgsml.dsp.fake-latency-a", 0));
+
+        auto req = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 4), chain, {}, frame_count(64));
+        QVERIFY(req);
+        auto res = rgsml::render::render_preview(*req.value(), registry);
+        QVERIFY(res);
+        QCOMPARE(res.value()->view().frame_count().value(), std::int64_t{4});
+        QCOMPARE(bits(res.value()->view()), bits(source.value()->view()));
+    }
+
+    // Case 3: N = L (N = 10, L = 10)
+    {
+        const std::array samples{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
+        auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+        auto chain = empty_chain(registry);
+        const auto id = make_id("40000000-0000-0000-0000-000000000003");
+        QVERIFY(chain.add(id, "rgsml.dsp.fake-latency-a", 0));
+
+        auto req = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 10), chain, {}, frame_count(64));
+        QVERIFY(req);
+        auto res = rgsml::render::render_preview(*req.value(), registry);
+        QVERIFY(res);
+        QCOMPARE(res.value()->view().frame_count().value(), std::int64_t{10});
+        QCOMPARE(bits(res.value()->view()), bits(source.value()->view()));
+    }
+
+    // Case 4: N > L (N = 25, L = 10)
+    {
+        std::vector<double> samples(25U);
+        for (std::size_t i = 0; i < samples.size(); ++i) {
+            samples[i] = static_cast<double>(i + 1) * 0.05;
+        }
+        auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+        auto chain = empty_chain(registry);
+        const auto id = make_id("40000000-0000-0000-0000-000000000004");
+        QVERIFY(chain.add(id, "rgsml.dsp.fake-latency-a", 0));
+
+        auto req = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 25), chain, {}, frame_count(64));
+        QVERIFY(req);
+        auto res = rgsml::render::render_preview(*req.value(), registry);
+        QVERIFY(res);
+        QCOMPARE(res.value()->view().frame_count().value(), std::int64_t{25});
+        QCOMPARE(bits(res.value()->view()), bits(source.value()->view()));
+    }
+}
+
+void RenderPreviewTest::latencyFakeTwoActiveModules()
+{
+    const std::int64_t L1 = 10;
+    const std::int64_t L2 = 15;
+    auto registry = create_test_registry_with_fakes(L1, L2, 2.0, 0.5);
+
+    std::vector<double> samples(50U);
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        samples[i] = static_cast<double>(i + 1) * 0.02;
+    }
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+    auto chain = empty_chain(registry);
+
+    const auto id1 = make_id("41000000-0000-0000-0000-000000000001");
+    const auto id2 = make_id("41000000-0000-0000-0000-000000000002");
+    QVERIFY(chain.add(id1, "rgsml.dsp.fake-latency-a", 0));
+    QVERIFY(chain.add(id2, "rgsml.dsp.fake-latency-b", 1));
+
+    auto req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 50), chain, {}, frame_count(64));
+    QVERIFY(req);
+    auto res = rgsml::render::render_preview(*req.value(), registry);
+    QVERIFY(res);
+    QCOMPARE(res.value()->view().frame_count().value(), std::int64_t{50});
+    QCOMPARE(bits(res.value()->view()), bits(source.value()->view()));
+}
+
+void RenderPreviewTest::latencyFakeChunkedFinalizeAndBlockSizes()
+{
+    const std::int64_t L = 30;
+    auto registry = create_test_registry_with_fakes(L, 10);
+
+    std::vector<double> samples(100U);
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        samples[i] = std::sin(2.0 * M_PI * 440.0 * static_cast<double>(i) / 48000.0);
+    }
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+    auto chain = empty_chain(registry);
+
+    const auto id = make_id("42000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(id, "rgsml.dsp.fake-latency-a", 0));
+
+    std::vector<std::uint64_t> reference;
+    for (const auto block : {7, 13, 31, 64, 256}) {
+        auto req = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 100), chain, {}, frame_count(block));
+        QVERIFY(req);
+        auto res = rgsml::render::render_preview(*req.value(), registry);
+        QVERIFY(res);
+        if (reference.empty()) {
+            reference = bits(res.value()->view());
+        } else {
+            QCOMPARE(bits(res.value()->view()), reference);
+        }
+    }
+}
+
+void RenderPreviewTest::latencyFakePreviewNearEos()
+{
+    const std::int64_t L1 = 30;
+    const std::int64_t L2 = 20;
+    auto registry = create_test_registry_with_fakes(L1, L2);
+
+    std::vector<double> samples(100U);
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        samples[i] = static_cast<double>(i + 1) * 0.01;
+    }
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+    auto chain = empty_chain(registry);
+
+    const auto id1 = make_id("43000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(id1, "rgsml.dsp.fake-latency-a", 0));
+
+    auto full_req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain, {}, frame_count(64));
+    QVERIFY(full_req);
+    auto full_res = rgsml::render::render_preview(*full_req.value(), registry);
+    QVERIFY(full_res);
+
+    auto expected_subview = full_res.value()->view().subview(
+        rgsml::core::FrameIndex{80}, frame_count(15));
+    QVERIFY(expected_subview);
+
+    auto near_eos_req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(80, 95), chain, {}, frame_count(7));
+    QVERIFY(near_eos_req);
+    auto near_eos_res = rgsml::render::render_preview(*near_eos_req.value(), registry);
+    QVERIFY(near_eos_res);
+    QCOMPARE(bits(near_eos_res.value()->view()), bits(*expected_subview.value()));
+
+    const auto id2 = make_id("43000000-0000-0000-0000-000000000002");
+    QVERIFY(chain.add(id2, "rgsml.dsp.fake-latency-b", 1));
+
+    auto full_two_req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain, {}, frame_count(64));
+    QVERIFY(full_two_req);
+    auto full_two_res = rgsml::render::render_preview(*full_two_req.value(), registry);
+    QVERIFY(full_two_res);
+
+    auto expected_two_subview = full_two_res.value()->view().subview(
+        rgsml::core::FrameIndex{70}, frame_count(20));
+    QVERIFY(expected_two_subview);
+
+    auto near_eos_two_req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(70, 90), chain, {}, frame_count(11));
+    QVERIFY(near_eos_two_req);
+    auto near_eos_two_res = rgsml::render::render_preview(*near_eos_two_req.value(), registry);
+    QVERIFY(near_eos_two_res);
+    QCOMPARE(bits(near_eos_two_res.value()->view()), bits(*expected_two_subview.value()));
+}
+
+void RenderPreviewTest::latencyFakeBypassedModule()
+{
+    const std::int64_t L = 20;
+    auto registry = create_test_registry_with_fakes(L, 0);
+
+    const std::array samples{0.5, -0.25, 1.25, -2.0};
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+    auto chain = empty_chain(registry);
+
+    const auto id = make_id("44000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(id, "rgsml.dsp.fake-latency-a", 0));
+    QVERIFY(chain.set_user_bypass(id, true));
+
+    auto req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 4), chain, {}, frame_count(64));
+    QVERIFY(req);
+
+    auto res = rgsml::render::render_preview(*req.value(), registry);
+    QVERIFY(res);
+    QCOMPARE(bits(res.value()->view()), bits(source.value()->view()));
+}
+
+void RenderPreviewTest::checkpointAndTimelineRules()
+{
+    const auto desc = make_fake_descriptor("rgsml.dsp.fake-latency-a");
+    FakeLatencyModule mod(desc, 10, "fake.sonic.v1", "rgsml.dsp.backend.test", 1.0);
+
+    const auto fmt = format(rgsml::audio::ChannelLayout::MONO_C);
+    const rgsml::dsp::DspProcessSpec spec1{fmt, rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, *rgsml::core::FrameCount::create(512).value()};
+    const rgsml::dsp::DspProcessSpec spec2{fmt, rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, *rgsml::core::FrameCount::create(1024).value()};
+
+    QVERIFY(mod.prepare(spec1));
+
+    // Timeline rule 1: unbound after prepare
+    const std::array in_samples{1.0, 2.0, 3.0, 4.0, 5.0};
+    const std::array zero_samples{0.0, 0.0, 0.0, 0.0, 0.0};
+    auto in_buf = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, in_samples);
+    auto out_buf = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, zero_samples);
+
+    // Process without begins_stream = true fails
+    const rgsml::dsp::DspProcessContext bad_context{frame_range(0, 5), false, false};
+    auto bad_proc = mod.process(in_buf.value()->view(), out_buf.value()->mutable_view(), bad_context);
+    QVERIFY(!bad_proc);
+
+    // Process with begins_stream = true binds stream
+    const rgsml::dsp::DspProcessContext good_context{frame_range(0, 5), true, false};
+    auto good_proc = mod.process(in_buf.value()->view(), out_buf.value()->mutable_view(), good_context);
+    QVERIFY(good_proc);
+
+    // Non-contiguous range fails
+    const rgsml::dsp::DspProcessContext gap_context{frame_range(10, 15), false, false};
+    auto gap_proc = mod.process(in_buf.value()->view(), out_buf.value()->mutable_view(), gap_context);
+    QVERIFY(!gap_proc);
+
+    // Runtime checkpoint creation
+    auto cp_res = mod.runtime_checkpoint();
+    QVERIFY(cp_res);
+    const auto& cp = *cp_res.value();
+    QCOMPARE(cp.module_type_id, std::string{"rgsml.dsp.fake-latency-a"});
+    QCOMPARE(cp.algorithm_version, std::string{"1.0.0"});
+    QCOMPARE(cp.sonic_fingerprint, std::string{"fake.sonic.v1"});
+    QCOMPARE(cp.backend_identity, std::string{"rgsml.dsp.backend.test"});
+
+    // Incompatible restore (wrong type ID)
+    auto bad_cp = cp;
+    bad_cp.module_type_id = "rgsml.dsp.wrong";
+    auto bad_rest = mod.restore_runtime_checkpoint(bad_cp);
+    QVERIFY(!bad_rest);
+
+    // Compatible restore across different maximum_block_frames
+    QVERIFY(mod.prepare(spec2)); // Re-prepare with spec2 (1024 max block frames)
+    auto good_rest = mod.restore_runtime_checkpoint(cp);
+    QVERIFY(good_rest);
+
+    // Checkpoint during/after finalize rejected
+    const rgsml::dsp::DspProcessContext fin_context{frame_range(5, 15), false, true};
+    const std::vector<double> ten_zeros(10U, 0.0);
+    auto fin_buf = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 5, ten_zeros);
+    auto fin_status = mod.finalize(fin_buf.value()->mutable_view(), fin_context);
+    QVERIFY(fin_status);
+
+    auto cp_in_fin = mod.runtime_checkpoint();
+    QVERIFY(!cp_in_fin);
+    QCOMPARE(cp_in_fin.error()->code(), rgsml::core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(std::string_view{cp_in_fin.error()->message()}, std::string_view{"Checkpoint during or after finalize rejected"});
 }
 
 }  // namespace
