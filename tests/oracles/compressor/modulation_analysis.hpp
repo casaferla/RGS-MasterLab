@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <vector>
 
 namespace rgsml::tests::oracle {
@@ -23,6 +24,8 @@ struct ModulationResult final {
     const std::size_t N = l_out.size();
     if (N == 0) return {};
 
+    const double pi = std::numbers::pi_v<double>;
+
     // Remove mean from l_in_delayed and l_out
     double mean_in = 0.0;
     double mean_out = 0.0;
@@ -39,7 +42,7 @@ struct ModulationResult final {
 
     for (std::size_t n = 0; n < N; ++n) {
         const double abs_n = static_cast<double>(start_frame_index + n);
-        const double phase = 2.0 * M_PI * f_m_hz * abs_n / sample_rate;
+        const double phase = 2.0 * pi * f_m_hz * abs_n / sample_rate;
         const double s = std::sin(phase);
         const double c = std::cos(phase);
 
@@ -65,13 +68,13 @@ struct ModulationResult final {
 
     double delta_rad = phase_out - phase_in;
     // Wrap to [-pi, pi]
-    while (delta_rad > M_PI) delta_rad -= 2.0 * M_PI;
-    while (delta_rad < -M_PI) delta_rad += 2.0 * M_PI;
+    while (delta_rad > pi) delta_rad -= 2.0 * pi;
+    while (delta_rad < -pi) delta_rad += 2.0 * pi;
 
     ModulationResult res;
     res.effective_compression_ratio = (Aout > 1e-12) ? (Ain / Aout) : 1.0;
     res.a_out_db_amplitude = Aout;
-    res.phase_lag_degrees = std::abs(delta_rad * 180.0 / M_PI);
+    res.phase_lag_degrees = delta_rad * 180.0 / pi;
 
     return res;
 }

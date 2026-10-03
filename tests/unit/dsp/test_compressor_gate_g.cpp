@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <iostream>
 #include <memory>
+#include <numbers>
 #include <vector>
 
 namespace rgsml::tests {
@@ -32,6 +33,8 @@ namespace {
 using namespace rgsml::dsp;
 using namespace render_support;
 using namespace rgsml::tests::oracle;
+
+constexpr double kPi = std::numbers::pi_v<double>;
 
 [[nodiscard]] ProcessingChain empty_test_chain(const ModuleRegistry& registry)
 {
@@ -99,8 +102,8 @@ void CompressorGateGTest::oracleControlTraceQualification()
 
     // 5. Asymmetric stereo
     for (std::size_t i = 0; i < N; ++i) {
-        left_fixtures[4][i] = 0.8 * std::sin(2.0 * M_PI * 440.0 * static_cast<double>(i) / 48000.0);
-        right_fixtures[4][i] = 0.2 * std::cos(2.0 * M_PI * 880.0 * static_cast<double>(i) / 48000.0);
+        left_fixtures[4][i] = 0.8 * std::sin(2.0 * kPi * 440.0 * static_cast<double>(i) / 48000.0);
+        right_fixtures[4][i] = 0.2 * std::cos(2.0 * kPi * 880.0 * static_cast<double>(i) / 48000.0);
     }
 
     for (std::size_t fix = 0; fix < 5; ++fix) {
@@ -171,7 +174,7 @@ void CompressorGateGTest::thdAndNonFundamentalQualification()
 
     std::vector<double> signalA(N_10s);
     for (std::size_t i = 0; i < N_10s; ++i) {
-        signalA[i] = amp_neg6 * std::sin(2.0 * M_PI * 1000.0 * static_cast<double>(i) / 48000.0);
+        signalA[i] = amp_neg6 * std::sin(2.0 * kPi * 1000.0 * static_cast<double>(i) / 48000.0);
     }
 
     // FIXTURE B: 48 kHz, 10s, 60 Hz sine -6 dBFS, PEAK, threshold -18 dBFS, ratio 4, knee 0, att 1, rel 50, rms 50, look 5
@@ -181,7 +184,7 @@ void CompressorGateGTest::thdAndNonFundamentalQualification()
 
     std::vector<double> signalB(N_10s);
     for (std::size_t i = 0; i < N_10s; ++i) {
-        signalB[i] = amp_neg6 * std::sin(2.0 * M_PI * 60.0 * static_cast<double>(i) / 48000.0);
+        signalB[i] = amp_neg6 * std::sin(2.0 * kPi * 60.0 * static_cast<double>(i) / 48000.0);
     }
 
     const struct {
@@ -259,10 +262,10 @@ void CompressorGateGTest::envelopeModulationQualification()
 
         for (std::size_t i = 0; i < N_12s; ++i) {
             const double t = static_cast<double>(i) / 48000.0;
-            const double l_in_db = -18.0 + 12.0 * std::sin(2.0 * M_PI * f_m * t);
+            const double l_in_db = -18.0 + 12.0 * std::sin(2.0 * kPi * f_m * t);
             l_in_delayed[i] = l_in_db;
             const double amp = std::pow(10.0, l_in_db / 20.0);
-            carrier[i] = amp * std::sin(2.0 * M_PI * 1000.0 * t);
+            carrier[i] = amp * std::sin(2.0 * kPi * 1000.0 * t);
         }
 
         // Run Production
@@ -342,14 +345,14 @@ void CompressorGateGTest::smoothDecoupledComparatorBlockerEvaluation()
             // Fast LF modulation
             for (std::size_t i = 0; i < N; ++i) {
                 const double t = static_cast<double>(i) / 48000.0;
-                const double amp = std::pow(10.0, (-18.0 + 12.0 * std::sin(2.0 * M_PI * 10.0 * t)) / 20.0);
-                input_signal[i] = amp * std::sin(2.0 * M_PI * 1000.0 * t);
+                const double amp = std::pow(10.0, (-18.0 + 12.0 * std::sin(2.0 * kPi * 10.0 * t)) / 20.0);
+                input_signal[i] = amp * std::sin(2.0 * kPi * 1000.0 * t);
             }
         } else {
             // Steep transient pulse train
             for (std::size_t i = 0; i < N; ++i) {
                 const double amp = ((i / 480) % 2 == 0) ? 1.0 : 0.05;
-                input_signal[i] = amp * std::sin(2.0 * M_PI * 1000.0 * static_cast<double>(i) / 48000.0);
+                input_signal[i] = amp * std::sin(2.0 * kPi * 1000.0 * static_cast<double>(i) / 48000.0);
             }
         }
 
@@ -397,7 +400,7 @@ void CompressorGateGTest::chunkPartitionInvarianceGateG()
     const std::size_t N_65k = 65536U;
     std::vector<double> signal(N_65k);
     for (std::size_t i = 0; i < N_65k; ++i) {
-        signal[i] = std::sin(2.0 * M_PI * 1000.0 * static_cast<double>(i) / 48000.0);
+        signal[i] = std::sin(2.0 * kPi * 1000.0 * static_cast<double>(i) / 48000.0);
     }
 
     // 1-block reference
@@ -453,7 +456,7 @@ void CompressorGateGTest::checkpointContinuationGateG()
     const std::size_t N = 1000U;
     std::vector<double> signal(N);
     for (std::size_t i = 0; i < N; ++i) {
-        signal[i] = std::sin(2.0 * M_PI * 440.0 * static_cast<double>(i) / 48000.0);
+        signal[i] = std::sin(2.0 * kPi * 440.0 * static_cast<double>(i) / 48000.0);
     }
 
     // Process first 240 frames
@@ -489,8 +492,8 @@ void CompressorGateGTest::eosRendererIntegrationGateG()
     std::vector<double> left(1000U);
     std::vector<double> right(1000U);
     for (std::size_t i = 0; i < 1000U; ++i) {
-        left[i] = std::sin(2.0 * M_PI * 440.0 * static_cast<double>(i) / 48000.0);
-        right[i] = std::cos(2.0 * M_PI * 440.0 * static_cast<double>(i) / 48000.0);
+        left[i] = std::sin(2.0 * kPi * 440.0 * static_cast<double>(i) / 48000.0);
+        right[i] = std::cos(2.0 * kPi * 440.0 * static_cast<double>(i) / 48000.0);
     }
     auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
     auto chain = empty_test_chain(*registry.value());

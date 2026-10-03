@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <numbers>
 #include <vector>
 
 namespace rgsml::tests::oracle {
@@ -23,6 +24,8 @@ struct ThdResult final {
     const std::size_t N = signal.size();
     if (N == 0) return {};
 
+    const double pi = std::numbers::pi_v<double>;
+
     // Exact 3x3 synchronous least-squares fit for DC, cos(w0*n), sin(w0*n)
     // Basis functions: f0 = 1, f1 = cos(w0*n), f2 = sin(w0*n)
     double M[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
@@ -31,7 +34,7 @@ struct ThdResult final {
     M[0][0] = static_cast<double>(N);
 
     for (std::size_t n = 0; n < N; ++n) {
-        const double phase = 2.0 * M_PI * f0_hz * static_cast<double>(n) / sample_rate;
+        const double phase = 2.0 * pi * f0_hz * static_cast<double>(n) / sample_rate;
         const double c = std::cos(phase);
         const double s = std::sin(phase);
         const double y = signal[n];
@@ -92,7 +95,7 @@ struct ThdResult final {
     double res_energy = 0.0;
 
     for (std::size_t n = 0; n < N; ++n) {
-        const double phase = 2.0 * M_PI * f0_hz * static_cast<double>(n) / sample_rate;
+        const double phase = 2.0 * pi * f0_hz * static_cast<double>(n) / sample_rate;
         const double fund_sample = dc + A_c * std::cos(phase) + A_s * std::sin(phase);
         const double res_sample = signal[n] - fund_sample;
 
@@ -123,7 +126,7 @@ struct ThdResult final {
         double hk_s = 0.0;
         const double fk = static_cast<double>(k) * f0_hz;
         for (std::size_t n = 0; n < N; ++n) {
-            const double phase = 2.0 * M_PI * fk * static_cast<double>(n) / sample_rate;
+            const double phase = 2.0 * pi * fk * static_cast<double>(n) / sample_rate;
             hk_c += signal[n] * std::cos(phase);
             hk_s += signal[n] * std::sin(phase);
         }
