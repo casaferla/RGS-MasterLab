@@ -32,6 +32,8 @@ private slots:
     void testSelectedIndexIsProjectionOfSelectedIdentity();
     void testAdapterOrderMatchesMasteringChainState();
     void testProjectOpenRehydrationReconcilesSelectedInstanceId();
+    void testIndependentModuleHistories();
+    void testWorkflowContextLabel();
 };
 
 void DspModuleAdapterTest::testAdapterInventoryAndOrder()
@@ -179,13 +181,25 @@ void DspModuleAdapterTest::testHistoryCapabilities()
     chainModel.setSelectedIndex(1);
     auto* eqAdapter = chainModel.active_module();
 
-    QVERIFY(!gainAdapter->history_supported());
+    QVERIFY(gainAdapter->history_supported());
     QVERIFY(!gainAdapter->can_undo());
     QVERIFY(!gainAdapter->can_redo());
 
     QVERIFY(eqAdapter->history_supported());
     QVERIFY(!eqAdapter->can_undo());
     QVERIFY(!eqAdapter->can_redo());
+
+    gainVM.setGainDb(3.0);
+    QVERIFY(gainAdapter->can_undo());
+    QVERIFY(!gainAdapter->can_redo());
+
+    gainAdapter->undo();
+    QCOMPARE(gainVM.gain_db(), 0.0);
+    QVERIFY(!gainAdapter->can_undo());
+    QVERIFY(gainAdapter->can_redo());
+
+    gainAdapter->redo();
+    QCOMPARE(gainVM.gain_db(), 3.0);
 
     eqVM.addBand();
     QVERIFY(eqAdapter->can_undo());
@@ -471,6 +485,66 @@ void DspModuleAdapterTest::testProjectOpenRehydrationReconcilesSelectedInstanceI
     QCOMPARE(chainModel.active_module()->instance_id(), restoredEqInstanceId);
     QCOMPARE(chainModel.selected_index(), 1);
     QCOMPARE(chainModel.active_module()->type_id(), QStringLiteral("rgsml.dsp.parametric-eq"));
+}
+
+void DspModuleAdapterTest::testIndependentModuleHistories()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto chainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto gainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
+    const auto eqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+
+    auto chainState = std::move(*MasteringChainState::create_default(*registry.value(), chainUuid, gainId, eqId).value());
+    GainViewModel gainVM{&chainState, nullptr};
+    EqViewModel eqVM{&chainState, nullptr};
+    DspChainAdapterModel chainModel{&gainVM, &eqVM, &chainState};
+
+    auto* gainAdapter = chainModel.active_module();
+    chainModel.selectModuleByInstanceId(QString::fromStdString(eqId.to_string()));
+    auto* eqAdapter = chainModel.active_module();
+
+    // Edit Gain then EQ
+    gainVM.setGainDb(2.0);
+    eqVM.addBand();
+
+    QVERIFY(gainAdapter->can_undo());
+    QVERIFY(eqAdapter->can_undo());
+
+    // Undo on EQ affects EQ only
+    eqAdapter->undo();
+    QCOMPARE(eqVM.band_count(), 1);
+    QCOMPARE(gainVM.gain_db(), 2.0);
+
+    // Undo on Gain affects Gain only
+    gainAdapter->undo();
+    QCOMPARE(gainVM.gain_db(), 0.0);
+    QCOMPARE(eqVM.band_count(), 1);
+}
+
+void DspModuleAdapterTest::testWorkflowContextLabel()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto chainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto gainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
+    const auto eqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+
+    auto chainState = std::move(*MasteringChainState::create_default(*registry.value(), chainUuid, gainId, eqId).value());
+    GainViewModel gainVM{&chainState, nullptr};
+    EqViewModel eqVM{&chainState, nullptr};
+    DspChainAdapterModel chainModel{&gainVM, &eqVM, &chainState, QStringLiteral("Mastering")};
+
+    QCOMPARE(chainModel.workflow_context(), QStringLiteral("Mastering"));
+
+    const auto modules = chainModel.modules();
+    auto* gainAdapter = qobject_cast<DspModuleAdapter*>(modules[0].value<QObject*>());
+    auto* eqAdapter = qobject_cast<DspModuleAdapter*>(modules[1].value<QObject*>());
+
+    QCOMPARE(gainAdapter->workspace_context_label(), QStringLiteral("Mastering"));
+    QCOMPARE(eqAdapter->workspace_context_label(), QStringLiteral("Mastering"));
 }
 
 }  // namespace rgsml::app::tests

@@ -14,10 +14,12 @@ DspModuleAdapter::DspModuleAdapter(QObject* parent)
 InputGainModuleAdapter::InputGainModuleAdapter(
     GainViewModel* gainViewModel,
     MasteringChainState* chainState,
+    QString workflowContext,
     QObject* parent)
     : DspModuleAdapter(parent)
     , gainViewModel_(gainViewModel)
     , chainState_(chainState)
+    , workflowContext_(std::move(workflowContext))
 {
     if (gainViewModel_ != nullptr) {
         connect(gainViewModel_, &GainViewModel::changed, this, &DspModuleAdapter::changed);
@@ -44,7 +46,7 @@ QString InputGainModuleAdapter::display_name() const
 
 QString InputGainModuleAdapter::workspace_context_label() const
 {
-    return QStringLiteral("Gain Staging / Manual Mastering");
+    return workflowContext_;
 }
 
 QString InputGainModuleAdapter::configuration_state() const
@@ -93,16 +95,22 @@ QString InputGainModuleAdapter::preview_error() const
 
 bool InputGainModuleAdapter::history_supported() const noexcept
 {
-    return false;
+    return true;
 }
 
 bool InputGainModuleAdapter::can_undo() const noexcept
 {
+    if (gainViewModel_ != nullptr) {
+        return gainViewModel_->can_undo();
+    }
     return false;
 }
 
 bool InputGainModuleAdapter::can_redo() const noexcept
 {
+    if (gainViewModel_ != nullptr) {
+        return gainViewModel_->can_redo();
+    }
     return false;
 }
 
@@ -161,12 +169,16 @@ void InputGainModuleAdapter::setBypass(bool bypass)
 
 void InputGainModuleAdapter::undo()
 {
-    // No history for Input Gain
+    if (gainViewModel_ != nullptr) {
+        gainViewModel_->undo();
+    }
 }
 
 void InputGainModuleAdapter::redo()
 {
-    // No history for Input Gain
+    if (gainViewModel_ != nullptr) {
+        gainViewModel_->redo();
+    }
 }
 
 void InputGainModuleAdapter::resetToDefault()
@@ -183,10 +195,12 @@ void InputGainModuleAdapter::resetToDefault()
 ParametricEqModuleAdapter::ParametricEqModuleAdapter(
     EqViewModel* eqViewModel,
     MasteringChainState* chainState,
+    QString workflowContext,
     QObject* parent)
     : DspModuleAdapter(parent)
     , eqViewModel_(eqViewModel)
     , chainState_(chainState)
+    , workflowContext_(std::move(workflowContext))
 {
     if (eqViewModel_ != nullptr) {
         connect(eqViewModel_, &EqViewModel::changed, this, &DspModuleAdapter::changed);
@@ -213,7 +227,7 @@ QString ParametricEqModuleAdapter::display_name() const
 
 QString ParametricEqModuleAdapter::workspace_context_label() const
 {
-    return QStringLiteral("Manual Mastering");
+    return workflowContext_;
 }
 
 QString ParametricEqModuleAdapter::configuration_state() const

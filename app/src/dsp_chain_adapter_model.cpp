@@ -8,11 +8,13 @@ DspChainAdapterModel::DspChainAdapterModel(
     GainViewModel* gainViewModel,
     EqViewModel* eqViewModel,
     MasteringChainState* chainState,
+    QString workflowContext,
     QObject* parent)
     : QObject(parent)
     , gainViewModel_(gainViewModel)
     , eqViewModel_(eqViewModel)
     , chainState_(chainState)
+    , workflowContext_(std::move(workflowContext))
 {
     rebuild_adapters_from_authority();
 }
@@ -25,22 +27,22 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         for (const auto& instance : chainState_->instances()) {
             const auto typeId = instance.module_type_id();
             if (typeId == "rgsml.dsp.gain") {
-                auto gainAdapter = std::make_unique<InputGainModuleAdapter>(gainViewModel_, chainState_);
+                auto gainAdapter = std::make_unique<InputGainModuleAdapter>(gainViewModel_, chainState_, workflowContext_);
                 connect(gainAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
                 moduleAdapters_.push_back(std::move(gainAdapter));
             } else if (typeId == "rgsml.dsp.parametric-eq") {
-                auto eqAdapter = std::make_unique<ParametricEqModuleAdapter>(eqViewModel_, chainState_);
+                auto eqAdapter = std::make_unique<ParametricEqModuleAdapter>(eqViewModel_, chainState_, workflowContext_);
                 connect(eqAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
                 moduleAdapters_.push_back(std::move(eqAdapter));
             }
         }
     } else {
         // Fallback default topology when no chainState provided
-        auto gainAdapter = std::make_unique<InputGainModuleAdapter>(gainViewModel_, chainState_);
+        auto gainAdapter = std::make_unique<InputGainModuleAdapter>(gainViewModel_, chainState_, workflowContext_);
         connect(gainAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
         moduleAdapters_.push_back(std::move(gainAdapter));
 
-        auto eqAdapter = std::make_unique<ParametricEqModuleAdapter>(eqViewModel_, chainState_);
+        auto eqAdapter = std::make_unique<ParametricEqModuleAdapter>(eqViewModel_, chainState_, workflowContext_);
         connect(eqAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
         moduleAdapters_.push_back(std::move(eqAdapter));
     }

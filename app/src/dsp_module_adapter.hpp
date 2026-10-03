@@ -75,6 +75,7 @@ public:
     InputGainModuleAdapter(
         GainViewModel* gainViewModel,
         MasteringChainState* chainState,
+        QString workflowContext = QStringLiteral("Mastering"),
         QObject* parent = nullptr);
     ~InputGainModuleAdapter() override = default;
 
@@ -107,6 +108,7 @@ public:
 private:
     GainViewModel* gainViewModel_{nullptr};
     MasteringChainState* chainState_{nullptr};
+    QString workflowContext_;
 };
 
 class ParametricEqModuleAdapter final : public DspModuleAdapter {
@@ -116,6 +118,7 @@ public:
     ParametricEqModuleAdapter(
         EqViewModel* eqViewModel,
         MasteringChainState* chainState,
+        QString workflowContext = QStringLiteral("Mastering"),
         QObject* parent = nullptr);
     ~ParametricEqModuleAdapter() override = default;
 
@@ -148,6 +151,7 @@ public:
 private:
     EqViewModel* eqViewModel_{nullptr};
     MasteringChainState* chainState_{nullptr};
+    QString workflowContext_;
 };
 
 }  // namespace rgsml::app

@@ -26,29 +26,10 @@ Item {
         anchors.margins: 20
         spacing: 16
 
-        // Header / Module Role Banner
+        // Header Action Bar
         RowLayout {
             Layout.fillWidth: true
             spacing: 12
-
-            ColumnLayout {
-                spacing: 2
-
-                Text {
-                    text: "GAIN STAGING"
-                    color: root.accent
-                    font.family: "Segoe UI"
-                    font.pixelSize: 10
-                    font.weight: Font.Bold
-                }
-
-                Text {
-                    text: "Fixed First Mastering Stage"
-                    color: root.textSecondary
-                    font.family: "Segoe UI"
-                    font.pixelSize: 12
-                }
-            }
 
             Item { Layout.fillWidth: true }
 

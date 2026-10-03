@@ -154,7 +154,7 @@ Rectangle {
                     objectName: "eqUndoButton"
                     text: "Undo"
                     minimumControlWidth: 64
-                    visible: root.activeModule ? root.activeModule.historySupported : false
+                    visible: true
                     enabled: root.activeModule ? root.activeModule.canUndo : false
                     onClicked: if (root.activeModule) root.activeModule.undo()
                     Accessible.name: "Undo edit"
@@ -172,7 +172,7 @@ Rectangle {
                     objectName: "eqRedoButton"
                     text: "Redo"
                     minimumControlWidth: 64
-                    visible: root.activeModule ? root.activeModule.historySupported : false
+                    visible: true
                     enabled: root.activeModule ? root.activeModule.canRedo : false
                     onClicked: if (root.activeModule) root.activeModule.redo()
                     Accessible.name: "Redo edit"
@@ -187,7 +187,7 @@ Rectangle {
 
                 Item {
                     Layout.preferredWidth: 8
-                    visible: root.activeModule ? root.activeModule.historySupported : false
+                    visible: true
                 }
 
                 StudioButton {

@@ -9,6 +9,10 @@
 
 namespace rgsml::app {
 
+namespace {
+constexpr std::size_t kMaxGainHistoryDepth = 50;
+}
+
 GainViewModel::GainViewModel(
     MasteringChainState* chainState,
     MasteringPreviewController* previewController,
@@ -63,6 +67,16 @@ bool GainViewModel::bypass() const noexcept
     return res ? *res.value() : false;
 }
 
+bool GainViewModel::can_undo() const noexcept
+{
+    return !undoStack_.empty();
+}
+
+bool GainViewModel::can_redo() const noexcept
+{
+    return !redoStack_.empty();
+}
+
 QString GainViewModel::validation_error() const
 {
     return validationError_;
@@ -101,6 +115,15 @@ QString GainViewModel::preview_error() const
     return {};
 }
 
+void GainViewModel::push_undo_snapshot(double previousGainDb)
+{
+    undoStack_.push_back(previousGainDb);
+    if (undoStack_.size() > kMaxGainHistoryDepth) {
+        undoStack_.erase(undoStack_.begin());
+    }
+    redoStack_.clear();
+}
+
 bool GainViewModel::setGainDb(double gainDb)
 {
     if (std::isnan(gainDb) || std::isinf(gainDb)) {
@@ -119,6 +142,16 @@ bool GainViewModel::setGainDb(double gainDb)
         emit changed();
         return false;
     }
+
+    const double currentGain = gain_db();
+    if (currentGain == params.value()->gain_db()) {
+        validationError_.clear();
+        draftGainDbText_.clear();
+        emit changed();
+        return true;
+    }
+
+    push_undo_snapshot(currentGain);
 
     validationError_.clear();
     draftGainDbText_.clear();
@@ -153,6 +186,52 @@ void GainViewModel::setBypass(bool bypass)
     request_preview();
 }
 
+void GainViewModel::undo()
+{
+    if (!can_undo()) {
+        return;
+    }
+
+    const double targetGain = undoStack_.back();
+    undoStack_.pop_back();
+    redoStack_.push_back(gain_db());
+
+    validationError_.clear();
+    draftGainDbText_.clear();
+
+    auto params = dsp::GainParameters::create(targetGain);
+    if (params) {
+        auto& state = active_chain_state();
+        static_cast<void>(state.set_gain_parameters(*params.value()));
+    }
+
+    emit changed();
+    request_preview();
+}
+
+void GainViewModel::redo()
+{
+    if (!can_redo()) {
+        return;
+    }
+
+    const double targetGain = redoStack_.back();
+    redoStack_.pop_back();
+    undoStack_.push_back(gain_db());
+
+    validationError_.clear();
+    draftGainDbText_.clear();
+
+    auto params = dsp::GainParameters::create(targetGain);
+    if (params) {
+        auto& state = active_chain_state();
+        static_cast<void>(state.set_gain_parameters(*params.value()));
+    }
+
+    emit changed();
+    request_preview();
+}
+
 void GainViewModel::resetToDefault()
 {
     setGainDb(0.0);
@@ -162,6 +241,8 @@ void GainViewModel::resetForNewSource()
 {
     validationError_.clear();
     draftGainDbText_.clear();
+    undoStack_.clear();
+    redoStack_.clear();
 
     auto& state = active_chain_state();
     auto defaultGain = dsp::GainParameters::create(0.0);
@@ -177,6 +258,8 @@ void GainViewModel::refreshFromAuthority()
 {
     validationError_.clear();
     draftGainDbText_.clear();
+    undoStack_.clear();
+    redoStack_.clear();
     emit changed();
 }
 
