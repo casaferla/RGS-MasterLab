@@ -299,7 +299,6 @@ rgsml::core::Result<RenderResult> render_preview(
 
             for (std::size_t m = 0; m < modules.size(); ++m) {
                 const auto in_count = stage_end - stage_start;
-                const auto latency = modules[m].latency_frames;
                 const auto tail = modules[m].tail_frames;
                 const bool has_tail = stream_eos_reached && tail > 0;
 
