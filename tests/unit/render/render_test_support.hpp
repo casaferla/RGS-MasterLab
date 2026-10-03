@@ -91,4 +91,14 @@ namespace rgsml::tests::render_support {
     return result;
 }
 
+[[nodiscard]] inline std::string_view error_category(const rgsml::core::Error& error)
+{
+    for (const auto& detail : error.details()) {
+        if (detail.key == "category") {
+            return detail.value;
+        }
+    }
+    return {};
+}
+
 }  // namespace rgsml::tests::render_support
