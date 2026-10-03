@@ -1183,7 +1183,7 @@ void RenderPreviewTest::checkpointAndTimelineRules()
 
     auto after_bad_restore = mod.runtime_checkpoint();
     QVERIFY(after_bad_restore);
-    QCOMPARE(*after_bad_restore.value(), *before_bad_restore.value());
+    QVERIFY(*after_bad_restore.value() == *before_bad_restore.value());
 
     // Corrupt payload shape is also rejected atomically.
     auto corrupt_cp = cp;
@@ -1194,7 +1194,7 @@ void RenderPreviewTest::checkpointAndTimelineRules()
 
     auto after_corrupt_restore = mod.runtime_checkpoint();
     QVERIFY(after_corrupt_restore);
-    QCOMPARE(*after_corrupt_restore.value(), *before_bad_restore.value());
+    QVERIFY(*after_corrupt_restore.value() == *before_bad_restore.value());
 
     // Compatible restore across different maximum_block_frames
     QVERIFY(mod.prepare(spec2)); // Re-prepare with spec2 (1024 max block frames)
