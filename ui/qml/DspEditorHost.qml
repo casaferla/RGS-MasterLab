@@ -196,6 +196,9 @@ Rectangle {
                     id: abActiveButton
                     objectName: "abButtonActive"
                     text: root.activeModule ? ("A: " + root.activeModule.displayName + " Active") : "A: Active"
+                    Layout.minimumWidth: 220
+                    Layout.preferredWidth: 220
+                    Layout.maximumWidth: 220
                     selected: root.activeModule ? !root.activeModule.bypass : true
                     tone: "primary"
                     accentColor: "#00C8FF"
