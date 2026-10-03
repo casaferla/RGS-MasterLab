@@ -63,6 +63,19 @@ namespace {
     return result;
 }
 
+[[nodiscard]] bool parse_chunks(const QString& text, std::vector<std::int64_t>& chunks)
+{
+    for (const auto& item : text.split(',', Qt::SkipEmptyParts)) {
+        bool ok = false;
+        const auto value = item.toLongLong(&ok);
+        if (!ok || value <= 0 || !rgsml::core::FrameCount::create(value)) {
+            return false;
+        }
+        chunks.push_back(value);
+    }
+    return !chunks.empty();
+}
+
 [[nodiscard]] rgsml::core::Result<rgsml::render::RenderResult> render_compressor(
     rgsml::audio::AudioBufferView source,
     const rgsml::dsp::ModuleRegistry& registry,
@@ -175,12 +188,28 @@ int main(int argc, char* argv[])
         QStringList{QStringLiteral("source")},
         QStringLiteral("Absolute local Source WAV path."),
         QStringLiteral("path")};
-    parser.addOptions({source_option});
+    const QCommandLineOption presets_option{
+        QStringList{QStringLiteral("presets")},
+        QStringLiteral("Comma-separated audition preset names (default,peak,rms_fast,dual_mono,mix50)."),
+        QStringLiteral("presets"),
+        QStringLiteral("default,peak,dual_mono")};
+    const QCommandLineOption chunks_option{
+        QStringList{QStringLiteral("chunks")},
+        QStringLiteral("Comma-separated maximum block sizes."),
+        QStringLiteral("frames"),
+        QStringLiteral("64,257")};
+    parser.addOptions({source_option, presets_option, chunks_option});
     parser.process(application);
     QTextStream output{stdout};
     if (!parser.isSet(source_option)) {
         output << "LISTENING_ERROR=SOURCE_REQUIRED\n";
         return 2;
+    }
+
+    std::vector<std::int64_t> chunks;
+    if (!parse_chunks(parser.value(chunks_option), chunks) || chunks.size() < 2U) {
+        output << "LISTENING_ERROR=INVALID_ARGUMENTS\n";
+        return 3;
     }
 
     const auto absolute_path = QFileInfo{parser.value(source_option)}.absoluteFilePath();
@@ -237,24 +266,60 @@ int main(int argc, char* argv[])
     output << "CHANNELS=" << source.value()->view().format().channel_count() << "\n";
     output << "NO_HIDDEN_NORMALIZATION=TRUE\n";
     output << "LEVEL_MATCH=DISABLED\n";
+    output << "CHUNK_PARTITION_BIT_IDENTITY=PENDING\n";
     output.flush();
 
-    const auto comp_params = *rgsml::dsp::CompressorParameters::create_default().value();
+    const auto preset_str = parser.value(presets_option);
+    const auto preset_list = preset_str.split(',', Qt::SkipEmptyParts);
 
-    auto reference_render = render_compressor(
-        source.value()->view(), *registry.value(), *chain.value(), id,
-        comp_params, 64);
-    if (!reference_render) {
-        output << "LISTENING_ERROR=RENDER_FAILED\n";
-        return 11;
+    for (const auto& pr_name : preset_list) {
+        rgsml::dsp::CompressorParameters comp_params = *rgsml::dsp::CompressorParameters::create_default().value();
+        if (pr_name == QStringLiteral("peak")) {
+            comp_params = *rgsml::dsp::CompressorParameters::create(
+                rgsml::dsp::CompressorDetectorMode::PEAK, rgsml::dsp::CompressorChannelLink::LINKED_MAX,
+                -18.0, 4.0, 0.0, 1.0, 50.0, 50.0, 5.0, 100.0, 0.0).value();
+        } else if (pr_name == QStringLiteral("rms_fast")) {
+            comp_params = *rgsml::dsp::CompressorParameters::create(
+                rgsml::dsp::CompressorDetectorMode::RMS, rgsml::dsp::CompressorChannelLink::LINKED_MAX,
+                -18.0, 4.0, 6.0, 10.0, 100.0, 20.0, 5.0, 100.0, 0.0).value();
+        } else if (pr_name == QStringLiteral("dual_mono")) {
+            comp_params = *rgsml::dsp::CompressorParameters::create(
+                rgsml::dsp::CompressorDetectorMode::RMS, rgsml::dsp::CompressorChannelLink::DUAL_MONO,
+                -18.0, 4.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0).value();
+        } else if (pr_name == QStringLiteral("mix50")) {
+            comp_params = *rgsml::dsp::CompressorParameters::create(
+                rgsml::dsp::CompressorDetectorMode::RMS, rgsml::dsp::CompressorChannelLink::LINKED_MAX,
+                -18.0, 4.0, 6.0, 30.0, 200.0, 50.0, 5.0, 50.0, 0.0).value();
+        }
+
+        auto reference_render = render_compressor(
+            source.value()->view(), *registry.value(), *chain.value(), id,
+            comp_params, chunks.front());
+        if (!reference_render) {
+            output << "LISTENING_ERROR=RENDER_FAILED\n";
+            return 11;
+        }
+
+        const auto reference_bits = sample_bits(reference_render.value()->view());
+        for (std::size_t index = 1; index < chunks.size(); ++index) {
+            auto candidate = render_compressor(
+                source.value()->view(), *registry.value(), *chain.value(), id,
+                comp_params, chunks[index]);
+            if (!candidate || sample_bits(candidate.value()->view()) != reference_bits) {
+                output << "LISTENING_ERROR=CHUNK_PARTITION_MISMATCH\n";
+                return 12;
+            }
+        }
+
+        output << "AUDITION_PRESET=" << pr_name << "\n";
+        output.flush();
+        if (!play_result(reference_render.value()->view(), output)) {
+            return 13;
+        }
+        QThread::msleep(750);
     }
 
-    output << "AUDITION_COMPRESSOR=DEFAULT\n";
-    output.flush();
-    if (!play_result(reference_render.value()->view(), output)) {
-        return 13;
-    }
-
+    output << "CHUNK_PARTITION_BIT_IDENTITY=PASS\n";
     output << "AUTOMATED_HARNESS_RESULT=PASS\n";
     output << "HUMAN_LISTENING_RESULT=REQUIRED\n";
     return 0;
