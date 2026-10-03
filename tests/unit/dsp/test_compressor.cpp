@@ -43,6 +43,7 @@ private slots:
     void resetAndChunkInvariance();
     void checkpointAndRestoreContinuation();
     void finalizeEosShortSourceCases();
+    void sonicFingerprintAndCheckpointRejection();
 };
 
 void CompressorTest::parametersValidationAndBounds()
@@ -834,6 +835,82 @@ void CompressorTest::finalizeEosShortSourceCases()
     QVERIFY(mod->finalize(f1.value()->mutable_view(), DspProcessContext{frame_range(100, 200), false, false}));
     QVERIFY(mod->finalize(f2.value()->mutable_view(), DspProcessContext{frame_range(200, 300), false, false}));
     QVERIFY(mod->finalize(f3.value()->mutable_view(), DspProcessContext{frame_range(300, 340), false, true}));
+}
+
+void CompressorTest::sonicFingerprintAndCheckpointRejection()
+{
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    const auto& desc = registry.value()->find_descriptor("rgsml.dsp.compressor").value()->get();
+
+    // 1. Two parameter sets differing only by a small double value (-24.0000001 vs -24.0000002)
+    auto paramsA = *CompressorParameters::create(
+        CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX,
+        -24.0000001, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0).value();
+    auto paramsB = *CompressorParameters::create(
+        CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX,
+        -24.0000002, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0).value();
+
+    auto modA = std::move(*CompressorModule::create(desc, paramsA).value());
+    auto modB = std::move(*CompressorModule::create(desc, paramsB).value());
+
+    const DspProcessSpec spec_st{format(rgsml::audio::ChannelLayout::STEREO_LR, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
+    QVERIFY(modA->prepare(spec_st));
+    QVERIFY(modB->prepare(spec_st));
+
+    auto cpA_res = modA->runtime_checkpoint();
+    auto cpB_res = modB->runtime_checkpoint();
+    QVERIFY(cpA_res);
+    QVERIFY(cpB_res);
+
+    // Fingerprints MUST be different!
+    QVERIFY(cpA_res.value()->sonic_fingerprint != cpB_res.value()->sonic_fingerprint);
+
+    // 2. Restoring checkpoint from modA into modB MUST be rejected!
+    auto restore_res = modB->restore_runtime_checkpoint(*cpA_res.value());
+    QVERIFY(!restore_res);
+    QCOMPARE(restore_res.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
+
+    // 3. MONO layout: LINKED_MAX, LINKED_MEAN, DUAL_MONO produce IDENTICAL fingerprints
+    const DspProcessSpec spec_mono{format(rgsml::audio::ChannelLayout::MONO_C, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
+
+    auto mono_max = *CompressorParameters::create(
+        CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX,
+        -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0).value();
+    auto mono_mean = *CompressorParameters::create(
+        CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MEAN,
+        -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0).value();
+    auto mono_dual = *CompressorParameters::create(
+        CompressorDetectorMode::RMS, CompressorChannelLink::DUAL_MONO,
+        -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0).value();
+
+    auto mod_mono_max = std::move(*CompressorModule::create(desc, mono_max).value());
+    auto mod_mono_mean = std::move(*CompressorModule::create(desc, mono_mean).value());
+    auto mod_mono_dual = std::move(*CompressorModule::create(desc, mono_dual).value());
+
+    QVERIFY(mod_mono_max->prepare(spec_mono));
+    QVERIFY(mod_mono_mean->prepare(spec_mono));
+    QVERIFY(mod_mono_dual->prepare(spec_mono));
+
+    auto cp_mono_max = mod_mono_max->runtime_checkpoint();
+    auto cp_mono_mean = mod_mono_mean->runtime_checkpoint();
+    auto cp_mono_dual = mod_mono_dual->runtime_checkpoint();
+    QVERIFY(cp_mono_max); QVERIFY(cp_mono_mean); QVERIFY(cp_mono_dual);
+
+    QCOMPARE(cp_mono_max.value()->sonic_fingerprint, cp_mono_mean.value()->sonic_fingerprint);
+    QCOMPARE(cp_mono_max.value()->sonic_fingerprint, cp_mono_dual.value()->sonic_fingerprint);
+
+    // 4. STEREO layout: LINKED_MAX vs LINKED_MEAN produce DIFFERENT fingerprints
+    auto mod_st_max = std::move(*CompressorModule::create(desc, mono_max).value());
+    auto mod_st_mean = std::move(*CompressorModule::create(desc, mono_mean).value());
+
+    QVERIFY(mod_st_max->prepare(spec_st));
+    QVERIFY(mod_st_mean->prepare(spec_st));
+
+    auto cp_st_max = mod_st_max->runtime_checkpoint();
+    auto cp_st_mean = mod_st_mean->runtime_checkpoint();
+    QVERIFY(cp_st_max); QVERIFY(cp_st_mean);
+
+    QVERIFY(cp_st_max.value()->sonic_fingerprint != cp_st_mean.value()->sonic_fingerprint);
 }
 
 }  // namespace

@@ -66,6 +66,21 @@ constexpr auto kCompressorParameterSchema = "rgsml.dsp.compressor.parameters/1.0
     return rgsml::core::Status::success();
 }
 
+[[nodiscard]] std::string encode_double_hex(double val) noexcept
+{
+    if (val == 0.0) {
+        val = 0.0;
+    }
+    const auto bits = std::bit_cast<std::uint64_t>(val);
+    constexpr char hex_digits[] = "0123456789abcdef";
+    std::string out(16, '0');
+    for (std::size_t i = 0; i < 16; ++i) {
+        const auto shift = (15 - i) * 4;
+        out[i] = hex_digits[(bits >> shift) & 0x0F];
+    }
+    return out;
+}
+
 [[nodiscard]] std::string compute_sonic_fingerprint(
     const CompressorParameters& params,
     bool is_mono)
@@ -82,15 +97,15 @@ constexpr auto kCompressorParameterSchema = "rgsml.dsp.compressor.parameters/1.0
         case CompressorChannelLink::DUAL_MONO: fp += "DUAL_MONO"; break;
         }
     }
-    fp += ";thresh=" + std::to_string(params.threshold_dbfs());
-    fp += ";rat=" + std::to_string(params.ratio());
-    fp += ";knee=" + std::to_string(params.knee_db());
-    fp += ";att=" + std::to_string(params.attack_ms());
-    fp += ";rel=" + std::to_string(params.release_ms());
-    fp += ";rms=" + std::to_string(params.rms_time_constant_ms());
-    fp += ";look=" + std::to_string(params.look_ahead_ms());
-    fp += ";mix=" + std::to_string(params.mix_percent());
-    fp += ";make=" + std::to_string(params.makeup_gain_db());
+    fp += ";thresh=" + encode_double_hex(params.threshold_dbfs());
+    fp += ";rat=" + encode_double_hex(params.ratio());
+    fp += ";knee=" + encode_double_hex(params.knee_db());
+    fp += ";att=" + encode_double_hex(params.attack_ms());
+    fp += ";rel=" + encode_double_hex(params.release_ms());
+    fp += ";rms=" + encode_double_hex(params.rms_time_constant_ms());
+    fp += ";look=" + encode_double_hex(params.look_ahead_ms());
+    fp += ";mix=" + encode_double_hex(params.mix_percent());
+    fp += ";make=" + encode_double_hex(params.makeup_gain_db());
     return fp;
 }
 
