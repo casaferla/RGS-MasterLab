@@ -1017,6 +1017,21 @@ if(WIN32)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
     rgsml_apply_project_warnings(rgsml_gain_listening_gate)
+
+    qt_add_executable(rgsml_compressor_listening_gate
+        manual/compressor_preview/compressor_listening_gate.cpp
+    )
+    target_link_libraries(rgsml_compressor_listening_gate
+        PRIVATE
+            rgsml_render
+            rgsml_platform
+            Qt6::Core
+            Qt6::Multimedia
+    )
+    set_target_properties(rgsml_compressor_listening_gate PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+    rgsml_apply_project_warnings(rgsml_compressor_listening_gate)
 endif()
 
 foreach(dependency_case
