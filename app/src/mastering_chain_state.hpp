@@ -2,6 +2,7 @@
 
 #include <rgsml/core/result.hpp>
 #include <rgsml/core/uuid.hpp>
+#include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/module_execution_binding.hpp>
 #include <rgsml/dsp/module_instance.hpp>
@@ -23,7 +24,27 @@ public:
         const dsp::ModuleRegistry& registry,
         rgsml::core::Uuid chain_id,
         dsp::ModuleInstanceId gain_id,
+        dsp::ModuleInstanceId eq_id,
+        dsp::ModuleInstanceId compressor_id);
+
+    [[nodiscard]] static rgsml::core::Result<MasteringChainState> create_default(
+        const dsp::ModuleRegistry& registry,
+        rgsml::core::Uuid chain_id,
+        dsp::ModuleInstanceId gain_id,
         dsp::ModuleInstanceId eq_id);
+
+    [[nodiscard]] static rgsml::core::Result<MasteringChainState> create(
+        const dsp::ModuleRegistry& registry,
+        rgsml::core::Uuid chain_id,
+        dsp::ModuleInstanceId gain_id,
+        dsp::GainParameters gain_params,
+        bool gain_bypassed,
+        dsp::ModuleInstanceId eq_id,
+        dsp::ParametricEqParameters eq_params,
+        bool eq_bypassed,
+        dsp::ModuleInstanceId compressor_id,
+        dsp::CompressorParameters compressor_params,
+        bool compressor_bypassed);
 
     [[nodiscard]] static rgsml::core::Result<MasteringChainState> create(
         const dsp::ModuleRegistry& registry,
@@ -42,6 +63,17 @@ public:
         dsp::ModuleInstanceId gain_id,
         dsp::GainParameters gain_params,
         dsp::ModuleInstanceId eq_id,
+        dsp::ParametricEqParameters eq_params,
+        dsp::ModuleInstanceId compressor_id,
+        dsp::CompressorParameters compressor_params);
+
+    [[nodiscard]] static rgsml::core::Result<MasteringChainState> restore(
+        std::shared_ptr<const dsp::ModuleRegistry> registry,
+        rgsml::core::Uuid chain_id,
+        dsp::ProcessingChain chain,
+        dsp::ModuleInstanceId gain_id,
+        dsp::GainParameters gain_params,
+        dsp::ModuleInstanceId eq_id,
         dsp::ParametricEqParameters eq_params);
 
     [[nodiscard]] const rgsml::core::Uuid& chain_id() const noexcept;
@@ -51,9 +83,11 @@ public:
 
     [[nodiscard]] const dsp::ModuleInstanceId& gain_instance_id() const noexcept;
     [[nodiscard]] const dsp::ModuleInstanceId& eq_instance_id() const noexcept;
+    [[nodiscard]] const dsp::ModuleInstanceId& compressor_instance_id() const noexcept;
 
     [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const dsp::ModuleInstance>> gain_instance() const;
     [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const dsp::ModuleInstance>> eq_instance() const;
+    [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const dsp::ModuleInstance>> compressor_instance() const;
     [[nodiscard]] rgsml::core::Result<std::reference_wrapper<const dsp::ModuleDescriptor>> find_descriptor(std::string_view type_id) const;
 
     [[nodiscard]] const dsp::GainParameters& gain_parameters() const noexcept;
@@ -61,6 +95,9 @@ public:
 
     [[nodiscard]] const dsp::ParametricEqParameters& parametric_eq_parameters() const noexcept;
     [[nodiscard]] rgsml::core::Status set_parametric_eq_parameters(const dsp::ParametricEqParameters& params);
+
+    [[nodiscard]] const dsp::CompressorParameters& compressor_parameters() const noexcept;
+    [[nodiscard]] rgsml::core::Status set_compressor_parameters(const dsp::CompressorParameters& params);
 
     [[nodiscard]] rgsml::core::Result<bool> is_bypassed(const dsp::ModuleInstanceId& instance_id) const;
     [[nodiscard]] rgsml::core::Status set_user_bypass(const dsp::ModuleInstanceId& instance_id, bool bypassed);
@@ -77,7 +114,9 @@ private:
         dsp::ModuleInstanceId gain_id,
         dsp::GainParameters gain_params,
         dsp::ModuleInstanceId eq_id,
-        dsp::ParametricEqParameters eq_params) noexcept;
+        dsp::ParametricEqParameters eq_params,
+        dsp::ModuleInstanceId compressor_id,
+        dsp::CompressorParameters compressor_params) noexcept;
 
     std::shared_ptr<const dsp::ModuleRegistry> registry_;
     rgsml::core::Uuid chain_id_;
@@ -86,6 +125,8 @@ private:
     dsp::GainParameters gain_params_;
     dsp::ModuleInstanceId eq_id_;
     dsp::ParametricEqParameters eq_params_;
+    dsp::ModuleInstanceId compressor_id_;
+    dsp::CompressorParameters compressor_params_;
 };
 
 }  // namespace rgsml::app
