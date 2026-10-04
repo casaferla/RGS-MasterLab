@@ -263,10 +263,15 @@ void CompressorGateGTest::thdAndNonFundamentalQualification()
             QVERIFY(non_fund_diff <= 0.05);
         } else {
             double max_sample_err = 0.0;
+            double sum_sq_err = 0.0;
             for (std::size_t i = 0; i < prod_win.size(); ++i) {
-                max_sample_err = std::max(max_sample_err, std::abs(prod_win[i] - oracle_win[i]));
+                const double err = std::abs(prod_win[i] - oracle_win[i]);
+                max_sample_err = std::max(max_sample_err, err);
+                sum_sq_err += err * err;
             }
+            const double rms_err = std::sqrt(sum_sq_err / static_cast<double>(prod_win.size()));
             QVERIFY(max_sample_err <= 2e-9);
+            QVERIFY(rms_err <= 5e-10);
         }
 
         if (prod_thd.thd_ratio_db > -140.0 && oracle_thd.thd_ratio_db > -140.0) {
@@ -274,10 +279,15 @@ void CompressorGateGTest::thdAndNonFundamentalQualification()
             QVERIFY(thd_diff <= 0.05);
         } else {
             double max_sample_err = 0.0;
+            double sum_sq_err = 0.0;
             for (std::size_t i = 0; i < prod_win.size(); ++i) {
-                max_sample_err = std::max(max_sample_err, std::abs(prod_win[i] - oracle_win[i]));
+                const double err = std::abs(prod_win[i] - oracle_win[i]);
+                max_sample_err = std::max(max_sample_err, err);
+                sum_sq_err += err * err;
             }
+            const double rms_err = std::sqrt(sum_sq_err / static_cast<double>(prod_win.size()));
             QVERIFY(max_sample_err <= 2e-9);
+            QVERIFY(rms_err <= 5e-10);
         }
     }
 }
@@ -386,19 +396,15 @@ void CompressorGateGTest::smoothDecoupledComparatorBlockerEvaluation()
     for (std::size_t stress = 0; stress < 2; ++stress) {
         const std::size_t N = 48000U; // 1s
         std::vector<double> input_signal(N);
-        double input_db_delta = 0.0;
-
         if (stress == 0) {
-            // Fast LF modulation (10 Hz between -30 dBFS and -6 dBFS, delta = 24 dB)
-            input_db_delta = 24.0;
+            // Fast LF modulation (10 Hz between -30 dBFS and -6 dBFS)
             for (std::size_t i = 0; i < N; ++i) {
                 const double t = static_cast<double>(i) / 48000.0;
                 const double amp = std::pow(10.0, (-18.0 + 12.0 * std::sin(2.0 * kPi * 10.0 * t)) / 20.0);
                 input_signal[i] = amp * std::sin(2.0 * kPi * 1000.0 * t);
             }
         } else {
-            // Steep transient pulse train (0 dBFS vs -26.02 dBFS, delta = 26.02 dB)
-            input_db_delta = 26.020599913279625;
+            // Steep transient pulse train
             for (std::size_t i = 0; i < N; ++i) {
                 const double amp = ((i / 480) % 2 == 0) ? 1.0 : 0.05;
                 input_signal[i] = amp * std::sin(2.0 * kPi * 1000.0 * static_cast<double>(i) / 48000.0);
@@ -442,37 +448,56 @@ void CompressorGateGTest::smoothDecoupledComparatorBlockerEvaluation()
             comp_out_buf[i] = x_del * g_comp * makeup_factor;
         }
 
+        // Derive L_in_delayed and envelope L_out for control/envelope-domain modulation fitting
+        std::vector<double> l_in_delayed(N);
+        std::vector<double> l_out_prod(N);
+        std::vector<double> l_out_comp(N);
+
+        for (std::size_t i = 0; i < N; ++i) {
+            double in_db = 0.0;
+            if (i >= delay_frames) {
+                if (stress == 0) {
+                    const double t_del = static_cast<double>(i - delay_frames) / 48000.0;
+                    in_db = -18.0 + 12.0 * std::sin(2.0 * kPi * 10.0 * t_del);
+                } else {
+                    const double amp = (((i - delay_frames) / 480) % 2 == 0) ? 1.0 : 0.05;
+                    in_db = 20.0 * std::log10(amp);
+                }
+            } else {
+                in_db = -18.0;
+            }
+            l_in_delayed[i] = in_db;
+            l_out_prod[i] = in_db - prod_traces[i].smoothed_reduction_db_ch0;
+            l_out_comp[i] = in_db - comp_red[i];
+        }
+
         // Metrics calculation over steady-state (N/2 to N)
         const std::size_t steady_start = N / 2;
         const std::size_t steady_count = N - steady_start;
         double sum_prod_red = 0.0;
         double sum_comp_red = 0.0;
-        double max_prod_out = 1e-12;
-        double min_prod_out = 1.0;
-        double max_comp_out = 1e-12;
-        double min_comp_out = 1.0;
 
         for (std::size_t i = steady_start; i < N; ++i) {
             sum_prod_red += prod_traces[i].smoothed_reduction_db_ch0;
             sum_comp_red += comp_red[i];
-
-            const double abs_p = std::abs(prod_out_buf[i]);
-            const double abs_c = std::abs(comp_out_buf[i]);
-            if (abs_p > max_prod_out) max_prod_out = abs_p;
-            if (abs_p > 1e-4 && abs_p < min_prod_out) min_prod_out = abs_p;
-            if (abs_c > max_comp_out) max_comp_out = abs_c;
-            if (abs_c > 1e-4 && abs_c < min_comp_out) min_comp_out = abs_c;
         }
 
         const double avg_prod_red = sum_prod_red / static_cast<double>(steady_count);
         const double avg_comp_red = sum_comp_red / static_cast<double>(steady_count);
         const double mean_gr_difference_db = std::abs(avg_prod_red - avg_comp_red);
 
-        const double prod_out_delta_db = 20.0 * std::log10(max_prod_out / min_prod_out);
-        const double comp_out_delta_db = 20.0 * std::log10(max_comp_out / min_comp_out);
-        const double eff_ratio_prod = input_db_delta / std::max(0.1, prod_out_delta_db);
-        const double eff_ratio_comp = input_db_delta / std::max(0.1, comp_out_delta_db);
-        const double effective_ratio_difference_percent = std::abs(eff_ratio_prod - eff_ratio_comp) / eff_ratio_prod * 100.0;
+        // Control/envelope-domain synchronous fitting for EffectiveCompressionRatio A_in / A_out
+        const double f_mod_hz = (stress == 0) ? 10.0 : 50.0;
+        const std::vector<double> win_l_in(l_in_delayed.begin() + steady_start, l_in_delayed.end());
+        const std::vector<double> win_l_prod(l_out_prod.begin() + steady_start, l_out_prod.end());
+        const std::vector<double> win_l_comp(l_out_comp.begin() + steady_start, l_out_comp.end());
+
+        const auto prod_mod_res = analyze_envelope_modulation(win_l_in, win_l_prod, 48000.0, f_mod_hz, steady_start);
+        const auto comp_mod_res = analyze_envelope_modulation(win_l_in, win_l_comp, 48000.0, f_mod_hz, steady_start);
+
+        const double eff_ratio_prod = prod_mod_res.effective_compression_ratio;
+        const double eff_ratio_comp = comp_mod_res.effective_compression_ratio;
+        const double effective_ratio_difference_percent = std::abs(eff_ratio_prod - eff_ratio_comp) / std::max(1e-6, eff_ratio_prod) * 100.0;
 
         const auto prod_thd = analyze_thd_and_non_fundamental(prod_out_buf, 48000.0, 1000.0);
         const auto comp_thd = analyze_thd_and_non_fundamental(comp_out_buf, 48000.0, 1000.0);
@@ -482,6 +507,8 @@ void CompressorGateGTest::smoothDecoupledComparatorBlockerEvaluation()
         std::cout << "Stress case " << stress << ": prod_artifact_db=" << prod_thd.non_fundamental_ratio_db
                   << " comp_artifact_db=" << comp_thd.non_fundamental_ratio_db
                   << " artifact_improvement_db=" << artifact_improvement_db
+                  << " prod_avg_gr_db=" << avg_prod_red
+                  << " comp_avg_gr_db=" << avg_comp_red
                   << " mean_gr_diff_db=" << mean_gr_difference_db
                   << " eff_ratio_prod=" << eff_ratio_prod
                   << " eff_ratio_comp=" << eff_ratio_comp
@@ -669,6 +696,16 @@ void CompressorGateGTest::checkpointContinuationGateG()
             QVERIFY(!res);
             QCOMPARE(res.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
 
+            bool found_category = false;
+            for (const auto& detail : res.error()->details()) {
+                if (detail.key == "category") {
+                    QCOMPARE(detail.value, std::string("INCOMPATIBLE_CHECKPOINT"));
+                    found_category = true;
+                    break;
+                }
+            }
+            QVERIFY(found_category);
+
             // Verify atomic state preservation: process next 100 frames on both mod_target and mod_ref
             auto in_next = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 100, std::span<const double>(signal.data() + 100, 100));
             auto out_target = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 100, std::span<const double>(signal.data() + 100, 100));
@@ -742,38 +779,133 @@ void CompressorGateGTest::eosRendererIntegrationGateG()
     QCOMPARE(res.value()->render_window(), frame_range(0, 1000));
     QCOMPARE(res.value()->signatures().size(), std::size_t{4});
 
+    // Explicit Sample Alignment & Identity Proof for Renderer Configurations:
+    // A. 1 Neutral Compressor (ratio=1, makeup=0, lookahead=5ms)
+    {
+        auto chain_a = empty_test_chain(*registry.value());
+        QVERIFY(chain_a.add(comp1_id, "rgsml.dsp.compressor", 0));
+        auto comp_neutral = *CompressorParameters::create(
+            CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+            -12.0, 1.0, 0.0, 10.0, 100.0, 50.0, 5.0, 100.0, 0.0).value();
+
+        auto req_a = render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 1000), chain_a,
+            {ModuleExecutionBinding{comp1_id, comp_neutral}}, frame_count(64));
+        QVERIFY(req_a);
+        auto res_a = render::render_preview(*req_a.value(), *registry.value());
+        QVERIFY(res_a);
+
+        // Rendered audio after latency compensation must be bit-identical to source
+        QCOMPARE(bits(res_a.value()->buffer().view()), bits(source.value()->view()));
+    }
+
+    // B. Gain(0 dB) -> Neutral Compressor -> Flat EQ
+    {
+        auto chain_b = empty_test_chain(*registry.value());
+        QVERIFY(chain_b.add(gain_id, "rgsml.dsp.gain", 0));
+        QVERIFY(chain_b.add(comp1_id, "rgsml.dsp.compressor", 1));
+        QVERIFY(chain_b.add(eq_id, "rgsml.dsp.parametric-eq", 2));
+
+        auto comp_neutral = *CompressorParameters::create(
+            CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+            -12.0, 1.0, 0.0, 10.0, 100.0, 50.0, 5.0, 100.0, 0.0).value();
+        auto gain_flat = *GainParameters::create(0.0).value();
+        auto eq_flat = *ParametricEqParameters::create_legacy_default().value();
+
+        auto req_b = render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 1000), chain_b,
+            {ModuleExecutionBinding{gain_id, gain_flat}, ModuleExecutionBinding{comp1_id, comp_neutral}, ModuleExecutionBinding{eq_id, eq_flat}}, frame_count(64));
+        QVERIFY(req_b);
+        auto res_b = render::render_preview(*req_b.value(), *registry.value());
+        QVERIFY(res_b);
+
+        QCOMPARE(bits(res_b.value()->buffer().view()), bits(source.value()->view()));
+    }
+
+    // C. Two Active Neutral Compressors with DIFFERENT lookahead values (5 ms and 15 ms)
+    {
+        auto chain_c = empty_test_chain(*registry.value());
+        QVERIFY(chain_c.add(comp1_id, "rgsml.dsp.compressor", 0));
+        QVERIFY(chain_c.add(comp2_id, "rgsml.dsp.compressor", 1));
+
+        auto comp1_neutral = *CompressorParameters::create(
+            CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+            -12.0, 1.0, 0.0, 10.0, 100.0, 50.0, 5.0, 100.0, 0.0).value();
+        auto comp2_neutral = *CompressorParameters::create(
+            CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX,
+            -18.0, 1.0, 6.0, 30.0, 200.0, 50.0, 15.0, 100.0, 0.0).value();
+
+        auto req_c = render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 1000), chain_c,
+            {ModuleExecutionBinding{comp1_id, comp1_neutral}, ModuleExecutionBinding{comp2_id, comp2_neutral}}, frame_count(64));
+        QVERIFY(req_c);
+        auto res_c = render::render_preview(*req_c.value(), *registry.value());
+        QVERIFY(res_c);
+
+        QCOMPARE(bits(res_c.value()->buffer().view()), bits(source.value()->view()));
+    }
+
     // Materialize AP §24.9 EOS & Ragged Finalize Matrix
     const auto desc = registry.value()->find_descriptor("rgsml.dsp.compressor").value()->get();
     const DspProcessSpec spec_l{format(rgsml::audio::ChannelLayout::MONO_C, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(1024)};
 
-    // Parameters with 5 ms lookahead @ 48 kHz -> L = 240 frames
-    auto comp_l_params = *CompressorParameters::create(
+    // Neutral Compressor: ratio=1, makeup=0, 5 ms lookahead @ 48 kHz -> L = 240 frames
+    auto neutral_comp_params = *CompressorParameters::create(
         CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
-        -12.0, 4.0, 0.0, 10.0, 100.0, 50.0, 5.0, 100.0, 0.0).value();
+        -12.0, 1.0, 0.0, 10.0, 100.0, 50.0, 5.0, 100.0, 0.0).value();
 
     const std::size_t L = 240U;
     const std::size_t chunk_cases[] = {L - 1, L, L + 1, 3 * L + 7};
 
     for (const std::size_t N_real : chunk_cases) {
-        auto mod = std::move(*CompressorModule::create(desc, comp_l_params).value());
+        auto mod = std::move(*CompressorModule::create(desc, neutral_comp_params).value());
         QVERIFY(mod->prepare(spec_l));
 
-        std::vector<double> real_sig(N_real, 0.5);
-        real_sig.back() = 1.0; // Last-sample impulse
+        std::vector<double> real_sig(N_real);
+        for (std::size_t i = 0; i < N_real; ++i) {
+            real_sig[i] = std::sin(2.0 * kPi * 440.0 * static_cast<double>(i) / 48000.0) + 0.1 * static_cast<double>(i);
+        }
 
-        auto in_buf = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, real_sig);
-        auto out_buf = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, real_sig);
+        std::vector<double> concat_raw_output;
+        concat_raw_output.reserve(N_real + L);
 
-        // Process real signal in 1 or more ragged chunks
-        QVERIFY(mod->process(in_buf.value()->view(), out_buf.value()->mutable_view(), DspProcessContext{frame_range(0, N_real), true, false}));
+        // Process real signal in genuinely RAGGED multiple process() chunks
+        std::size_t cursor = 0;
+        const std::size_t rag_sizes[] = {17, 3, 100, 7, 250, 19, 500};
+        std::size_t rag_idx = 0;
 
-        // Finalize: requested finalize cannot exceed L total drain steps
+        while (cursor < N_real) {
+            const std::size_t rag = rag_sizes[rag_idx % 7];
+            const std::size_t chunk_sz = std::min(N_real - cursor, rag);
+            const bool is_beg = (cursor == 0);
+
+            auto in_chunk = make_buffer(rgsml::audio::ChannelLayout::MONO_C, cursor, std::span<const double>(real_sig.data() + cursor, chunk_sz));
+            auto out_chunk = make_buffer(rgsml::audio::ChannelLayout::MONO_C, cursor, std::vector<double>(chunk_sz, 0.0));
+
+            QVERIFY(mod->process(in_chunk.value()->view(), out_chunk.value()->mutable_view(), DspProcessContext{frame_range(cursor, cursor + chunk_sz), is_beg, false}));
+
+            const auto p_span = *out_chunk.value()->view().channel(0).value();
+            concat_raw_output.insert(concat_raw_output.end(), p_span.begin(), p_span.end());
+
+            cursor += chunk_sz;
+            rag_idx++;
+        }
+
+        // Finalize: requested finalize exactly L total drain steps
         auto fin_out = make_buffer(rgsml::audio::ChannelLayout::MONO_C, N_real, std::vector<double>(L, 0.0));
         QVERIFY(mod->finalize(fin_out.value()->mutable_view(), DspProcessContext{frame_range(N_real, N_real + L), false, true}));
 
-        // Confirm impulse appears in drain exactly L frames after input index (N_real - 1 + L)
         const auto fin_span = *fin_out.value()->view().channel(0).value();
-        QVERIFY(fin_span[L - 1] > 0.0);
+        concat_raw_output.insert(concat_raw_output.end(), fin_span.begin(), fin_span.end());
+
+        // Discard initial L latency positions and verify exactly N_real programme frames match original input
+        QCOMPARE(concat_raw_output.size(), N_real + L);
+        std::vector<double> recovered_programme(concat_raw_output.begin() + L, concat_raw_output.end());
+        QCOMPARE(recovered_programme.size(), N_real);
+
+        for (std::size_t i = 0; i < N_real; ++i) {
+            QCOMPARE(std::bit_cast<std::uint64_t>(recovered_programme[i]), std::bit_cast<std::uint64_t>(real_sig[i]));
+        }
     }
 
     // Lookahead = 0 ms -> zero finalize tail
@@ -833,8 +965,20 @@ void CompressorGateGTest::ap24FullMatrixQualification()
         QCOMPARE(reqs_e.value()->algorithmic_latency_frames.value(), tp.expected_frames);
         QCOMPARE(reqs_e.value()->look_ahead_frames.value(), tp.expected_frames);
 
-        QVERIFY(reqs_b.value()->algorithmic_latency_frames.value() <= tp.expected_frames);
-        QVERIFY(reqs_a.value()->algorithmic_latency_frames.value() >= tp.expected_frames);
+        // Exact std::nextafter expected integer frame assertions:
+        if (tp.ms == 0.0625) { // 0.5 frame tie
+            QCOMPARE(reqs_b.value()->algorithmic_latency_frames.value(), std::int64_t{0});
+            QCOMPARE(reqs_a.value()->algorithmic_latency_frames.value(), std::int64_t{1});
+        } else if (tp.ms == 0.1875) { // 1.5 frame tie
+            QCOMPARE(reqs_b.value()->algorithmic_latency_frames.value(), std::int64_t{1});
+            QCOMPARE(reqs_a.value()->algorithmic_latency_frames.value(), std::int64_t{2});
+        } else if (tp.ms == 0.3125) { // 2.5 frame tie
+            QCOMPARE(reqs_b.value()->algorithmic_latency_frames.value(), std::int64_t{2});
+            QCOMPARE(reqs_a.value()->algorithmic_latency_frames.value(), std::int64_t{3});
+        } else if (tp.ms == 0.4375) { // 3.5 frame tie
+            QCOMPARE(reqs_b.value()->algorithmic_latency_frames.value(), std::int64_t{3});
+            QCOMPARE(reqs_a.value()->algorithmic_latency_frames.value(), std::int64_t{4});
+        }
     }
 
     // 2. Core sample rates: 44.1, 48, 96, 192 kHz vs Independent Oracle audio comparison
@@ -869,6 +1013,56 @@ void CompressorGateGTest::ap24FullMatrixQualification()
             QCOMPARE(p_out_span.size(), oracle_traces.size());
             for (std::size_t i = 0; i < N; ++i) {
                 QCOMPARE(p_out_span[i], oracle_traces[i].output_sample_ch0);
+            }
+        }
+    }
+
+    // 3. Static Curve Numeric Oracle Matrix: Ratios {1, 2, 4, 20}, Knees {0, 6, 24 dB}
+    for (const double r : {1.0, 2.0, 4.0, 20.0}) {
+        for (const double k : {0.0, 6.0, 24.0}) {
+            auto curve_params = *CompressorParameters::create(
+                CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+                -12.0, r, k, 0.1, 10.0, 50.0, 0.0, 100.0, 0.0).value();
+
+            IndependentCompressorOracle oracle(curve_params, 48000.0, 1U);
+            auto mod = std::move(*CompressorModule::create(desc, curve_params).value());
+            const DspProcessSpec spec{format(rgsml::audio::ChannelLayout::MONO_C, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(512)};
+            QVERIFY(mod->prepare(spec));
+
+            // Test levels: 0.0 (silence), below threshold (-20 dB), at threshold (-12 dB), inside knee (-12 dB),
+            // lower knee edge (-12 - k/2), upper knee edge (-12 + k/2), above knee (0 dBFS),
+            // nextafter around hard threshold, and nextafter around soft knee edges.
+            const double thresh_db = -12.0;
+            const double half_k = k * 0.5;
+
+            std::vector<double> levels_db = {
+                -140.0, -20.0, thresh_db, thresh_db - half_k, thresh_db + half_k, 0.0,
+                std::nextafter(thresh_db, -200.0), std::nextafter(thresh_db, 0.0)
+            };
+            if (k > 0.0) {
+                levels_db.push_back(std::nextafter(thresh_db - half_k, -200.0));
+                levels_db.push_back(std::nextafter(thresh_db - half_k, 0.0));
+                levels_db.push_back(std::nextafter(thresh_db + half_k, -200.0));
+                levels_db.push_back(std::nextafter(thresh_db + half_k, 0.0));
+            }
+
+            std::vector<double> sig(levels_db.size());
+            for (std::size_t i = 0; i < levels_db.size(); ++i) {
+                sig[i] = (levels_db[i] <= -120.0) ? 0.0 : std::pow(10.0, levels_db[i] / 20.0);
+            }
+
+            auto in_b = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, sig);
+            auto out_b = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, std::vector<double>(sig.size(), 0.0));
+            QVERIFY(mod->process(in_b.value()->view(), out_b.value()->mutable_view(), DspProcessContext{frame_range(0, static_cast<std::int64_t>(sig.size())), true, false}));
+
+            const auto oracle_traces = oracle.process({sig});
+            const auto prod_span = *out_b.value()->view().channel(0).value();
+
+            // Check PEAK digital silence target reduction is exactly 0.0 dB
+            QCOMPARE(oracle_traces[0].target_reduction_db_ch0, 0.0);
+
+            for (std::size_t i = 0; i < sig.size(); ++i) {
+                QCOMPARE(prod_span[i], oracle_traces[i].output_sample_ch0);
             }
         }
     }
