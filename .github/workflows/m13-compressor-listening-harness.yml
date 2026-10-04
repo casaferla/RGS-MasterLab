@@ -1,0 +1,137 @@
+name: M13 Compressor Listening Harness Package
+
+on:
+  push:
+    branches:
+      - ops/m13-compressor-listening-harness-15670f2f
+    paths:
+      - .github/workflows/m13-compressor-listening-harness.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-listening-harness:
+    name: Package qualified M13 Compressor listening harness
+    runs-on: windows-2022
+    env:
+      RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
+      RGSML_QUALIFIED_BASE_SHA: 15670f2faf937d17b439d8311b7118b200c035f2
+
+    steps:
+      - name: Checkout temporary packaging branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify packaging-only delta from qualified FQ #39 candidate
+        shell: pwsh
+        run: |
+          $base = $env:RGSML_QUALIFIED_BASE_SHA
+          git cat-file -e "$base^{commit}"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Qualified base SHA is not present in checkout."
+            exit 1
+          }
+
+          git merge-base --is-ancestor $base HEAD
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Temporary packaging HEAD is not descended from the qualified base SHA."
+            exit 1
+          }
+
+          $changed = @(git diff --name-only $base HEAD)
+          Write-Host "Changed files from qualified base:"
+          $changed | ForEach-Object { Write-Host "  $_" }
+
+          $expected = ".github/workflows/m13-compressor-listening-harness.yml"
+          if ($changed.Count -ne 1 -or $changed[0] -ne $expected) {
+            Write-Error "PACKAGING_SCOPE_VIOLATION: expected exactly one workflow-only delta."
+            exit 1
+          }
+
+          "QUALIFIED_BASE_SHA=$base" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Qt 6.8.3 via aqtinstall
+        shell: pwsh
+        run: |
+          pip install aqtinstall
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+
+      - name: Configure Windows MSVC
+        shell: pwsh
+        run: |
+          cmake --preset windows-msvc
+
+      - name: Build Release listening harness only
+        shell: pwsh
+        run: |
+          cmake --build build/windows-msvc --config Release --target rgsml_compressor_listening_gate
+          $exe = "$env:GITHUB_WORKSPACE\build\windows-msvc\tests\Release\rgsml_compressor_listening_gate.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "LISTENING_HARNESS_EXE_NOT_FOUND"
+            exit 1
+          }
+
+      - name: Package listening harness with Qt runtime
+        shell: pwsh
+        run: |
+          $package = "$env:GITHUB_WORKSPACE\build\m13-compressor-listening-harness"
+          New-Item -ItemType Directory -Force -Path $package | Out-Null
+
+          $sourceExe = "$env:GITHUB_WORKSPACE\build\windows-msvc\tests\Release\rgsml_compressor_listening_gate.exe"
+          $packageExe = "$package\rgsml_compressor_listening_gate.exe"
+          Copy-Item $sourceExe $packageExe
+
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          & "$env:RGSML_QT_ROOT\bin\windeployqt.exe" --release --no-translations $packageExe
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          @"
+          RGS MasterLab — L1-M13 Compressor Listening Harness
+          PACKAGING_ONLY = YES
+          QUALIFIED_BASE_SHA = $env:QUALIFIED_BASE_SHA
+          SOURCE_FQ = Windows Full Qualification #39
+          SOURCE_FQ_RUN_ID = 37206025860
+          QUALIFIED_STAGED_ARTIFACT_ID = 11305473228
+          NOTE = This package rebuilds the already-qualified listening-harness source from the exact FQ #39 candidate. It does not modify PR #26 or the qualified production candidate.
+          "@ | Set-Content -Path "$package\PROVENANCE.txt" -Encoding utf8
+
+          @"
+          Usage:
+            rgsml_compressor_listening_gate.exe --source "C:\absolute\path\to\source.wav"
+
+          Optional:
+            --presets default,peak,rms_fast,dual_mono,mix50
+            --chunks 64,257
+
+          Frozen listening materials:
+            transient-rich percussion
+            LF/bass
+            full mix
+            asymmetric stereo
+
+          The harness performs chunk-partition bit-identity checks before playback.
+          No hidden normalization. Level Match disabled.
+          "@ | Set-Content -Path "$package\README-LISTENING.txt" -Encoding utf8
+
+          & $packageExe --help | Out-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "PACKAGED_HARNESS_HELP_SMOKE_FAILED"
+            exit $LASTEXITCODE
+          }
+
+      - name: Upload standalone listening harness artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M13-Compressor-Listening-Harness-15670f2faf937d17b439d8311b7118b200c035f2
+          path: build/m13-compressor-listening-harness/**
+          retention-days: 7
