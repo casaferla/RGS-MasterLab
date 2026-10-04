@@ -55,13 +55,13 @@ namespace rgsml::tests::render_support {
 }
 
 [[nodiscard]] inline rgsml::core::Result<rgsml::audio::AudioBuffer> make_buffer(
-    rgsml::audio::ChannelLayout layout,
+    rgsml::audio::AudioFormat audio_fmt,
     std::int64_t absolute_start,
     std::span<const double> channel_zero,
     std::span<const double> channel_one = {})
 {
     auto buffer = rgsml::audio::AudioBuffer::create(
-        format(layout),
+        audio_fmt,
         rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
         rgsml::core::FrameIndex{absolute_start},
         frame_count(static_cast<std::int64_t>(channel_zero.size())));
@@ -70,12 +70,21 @@ namespace rgsml::tests::render_support {
     }
     auto first = buffer.value()->mutable_view().channel(0);
     std::copy(channel_zero.begin(), channel_zero.end(), first.value()->begin());
-    if (layout == rgsml::audio::ChannelLayout::STEREO_LR) {
+    if (audio_fmt.channel_layout() == rgsml::audio::ChannelLayout::STEREO_LR) {
         Q_ASSERT(channel_one.size() == channel_zero.size());
         auto second = buffer.value()->mutable_view().channel(1);
         std::copy(channel_one.begin(), channel_one.end(), second.value()->begin());
     }
     return buffer;
+}
+
+[[nodiscard]] inline rgsml::core::Result<rgsml::audio::AudioBuffer> make_buffer(
+    rgsml::audio::ChannelLayout layout,
+    std::int64_t absolute_start,
+    std::span<const double> channel_zero,
+    std::span<const double> channel_one = {})
+{
+    return make_buffer(format(layout), absolute_start, channel_zero, channel_one);
 }
 
 [[nodiscard]] inline std::vector<std::uint64_t> bits(

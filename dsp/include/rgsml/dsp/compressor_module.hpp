@@ -11,6 +11,12 @@ namespace rgsml::dsp {
 
 class ModuleDescriptor;
 
+/**
+ * @brief Internal diagnostic trace frame for Compressor test qualification.
+ *
+ * This struct is an internal/test-only qualification surface used to inspect sample-by-sample
+ * detector, link, target reduction, smoothed reduction, and gain stages without duplicating DSP logic.
+ */
 struct CompressorControlTraceFrame final {
     double detector_magnitude_ch0{0.0};
     double detector_magnitude_ch1{0.0};
@@ -66,6 +72,12 @@ public:
         rgsml::audio::MutableAudioBufferView output,
         const DspProcessContext& context) override;
 
+    /**
+     * @brief Executes the single production processing kernel while capturing internal control traces.
+     *
+     * This method is an internal/test-only diagnostic entry point sharing the exact unified
+     * zero-allocation processing kernel with process().
+     */
     [[nodiscard]] rgsml::core::Result<std::vector<CompressorControlTraceFrame>>
     process_diagnostic_traces(
         rgsml::audio::AudioBufferView input,
