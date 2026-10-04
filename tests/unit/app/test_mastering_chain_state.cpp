@@ -2,6 +2,7 @@
 
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/uuid.hpp>
+#include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
@@ -48,14 +49,15 @@ void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
     const auto chain_id = test_uuid("10000000-0000-4000-8000-000000000001");
     const auto gain_id = test_instance_id("10000000-0000-4000-8000-000000000010");
     const auto eq_id = test_instance_id("10000000-0000-4000-8000-000000000020");
+    const auto comp_id = test_instance_id("10000000-0000-4000-8000-000000000030");
 
-    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
+    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id, comp_id);
     QVERIFY(state);
 
     QCOMPARE(state.value()->chain_id(), chain_id);
-    QCOMPARE(state.value()->module_count(), std::size_t{2});
+    QCOMPARE(state.value()->module_count(), std::size_t{3});
     const auto instances = state.value()->instances();
-    QCOMPARE(instances.size(), std::size_t{2});
+    QCOMPARE(instances.size(), std::size_t{3});
 
     // Index 0: Input Gain
     QCOMPARE(instances[0].module_type_id(), std::string_view("rgsml.dsp.gain"));
@@ -64,6 +66,15 @@ void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
     // Index 1: Parametric EQ
     QCOMPARE(instances[1].module_type_id(), std::string_view("rgsml.dsp.parametric-eq"));
     QCOMPARE(instances[1].instance_id(), eq_id);
+
+    // Index 2: Compressor
+    QCOMPARE(instances[2].module_type_id(), std::string_view("rgsml.dsp.compressor"));
+    QCOMPARE(instances[2].instance_id(), comp_id);
+
+    // Verify newly materialized Compressor is initially user-bypassed
+    auto comp_bypass = state.value()->is_bypassed(comp_id);
+    QVERIFY(comp_bypass);
+    QVERIFY(*comp_bypass.value());
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
@@ -74,13 +85,15 @@ void MasteringChainStateTest::stableInstanceIdsDuringEdits()
     const auto chain_id = test_uuid("a0000000-0000-4000-8000-000000000001");
     const auto custom_gain_id = test_instance_id("a1111111-1111-4111-8111-111111111111");
     const auto custom_eq_id = test_instance_id("a2222222-2222-4222-8222-222222222222");
+    const auto custom_comp_id = test_instance_id("a3333333-3333-4333-8333-333333333333");
 
     auto state = MasteringChainState::create_default(
-        *registry.value(), chain_id, custom_gain_id, custom_eq_id);
+        *registry.value(), chain_id, custom_gain_id, custom_eq_id, custom_comp_id);
     QVERIFY(state);
 
     QCOMPARE(state.value()->gain_instance_id(), custom_gain_id);
     QCOMPARE(state.value()->eq_instance_id(), custom_eq_id);
+    QCOMPARE(state.value()->compressor_instance_id(), custom_comp_id);
 
     // Edit Gain parameters
     auto new_gain = GainParameters::create(-6.0);
@@ -92,9 +105,15 @@ void MasteringChainStateTest::stableInstanceIdsDuringEdits()
     QVERIFY(new_eq);
     QVERIFY(state.value()->set_parametric_eq_parameters(*new_eq.value()));
 
+    // Edit Compressor parameters
+    auto new_comp = CompressorParameters::create(CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX, -18.0, 3.0);
+    QVERIFY(new_comp);
+    QVERIFY(state.value()->set_compressor_parameters(*new_comp.value()));
+
     // Verify IDs remain stable and non-nil
     QCOMPARE(state.value()->gain_instance_id(), custom_gain_id);
     QCOMPARE(state.value()->eq_instance_id(), custom_eq_id);
+    QCOMPARE(state.value()->compressor_instance_id(), custom_comp_id);
 }
 
 void MasteringChainStateTest::rejectionOfNilOrDuplicateIdentities()
@@ -105,9 +124,10 @@ void MasteringChainStateTest::rejectionOfNilOrDuplicateIdentities()
     const auto valid_chain = test_uuid("b0000000-0000-4000-8000-000000000001");
     const auto valid_gain = test_instance_id("b1111111-1111-4111-8111-111111111111");
     const auto valid_eq = test_instance_id("b2222222-2222-4222-8222-222222222222");
+    const auto valid_comp = test_instance_id("b3333333-3333-4333-8333-333333333333");
 
     // Nil chain ID rejected
-    QVERIFY(!MasteringChainState::create_default(*registry.value(), Uuid{}, valid_gain, valid_eq));
+    QVERIFY(!MasteringChainState::create_default(*registry.value(), Uuid{}, valid_gain, valid_eq, valid_comp));
 
     // Constructing StrongId with nil UUID is rejected
     auto nil_strong_id = ModuleInstanceId::from_uuid(Uuid{});
@@ -115,7 +135,7 @@ void MasteringChainStateTest::rejectionOfNilOrDuplicateIdentities()
     QCOMPARE(nil_strong_id.error()->code(), rgsml::core::ErrorCode::InvalidUuid);
 
     // Duplicate instance IDs rejected
-    auto rejected_dup = MasteringChainState::create_default(*registry.value(), valid_chain, valid_gain, valid_gain);
+    auto rejected_dup = MasteringChainState::create_default(*registry.value(), valid_chain, valid_gain, valid_gain, valid_comp);
     QVERIFY(!rejected_dup);
     QCOMPARE(rejected_dup.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
 }
@@ -128,8 +148,9 @@ void MasteringChainStateTest::gainAndEqParameterUpdates()
     const auto chain_id = test_uuid("c0000000-0000-4000-8000-000000000001");
     const auto gain_id = test_instance_id("c1111111-1111-4111-8111-111111111111");
     const auto eq_id = test_instance_id("c2222222-2222-4222-8222-222222222222");
+    const auto comp_id = test_instance_id("c3333333-3333-4333-8333-333333333333");
 
-    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
+    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id, comp_id);
     QVERIFY(state);
 
     QCOMPARE(state.value()->gain_parameters().gain_db(), 0.0);
@@ -149,6 +170,11 @@ void MasteringChainStateTest::gainAndEqParameterUpdates()
 
     QVERIFY(state.value()->set_parametric_eq_parameters(*custom_eq.value()));
     QCOMPARE(state.value()->parametric_eq_parameters(), *custom_eq.value());
+
+    auto updated_comp = CompressorParameters::create(CompressorDetectorMode::PEAK, CompressorChannelLink::DUAL_MONO, -12.0, 4.0);
+    QVERIFY(updated_comp);
+    QVERIFY(state.value()->set_compressor_parameters(*updated_comp.value()));
+    QCOMPARE(state.value()->compressor_parameters(), *updated_comp.value());
 }
 
 void MasteringChainStateTest::bypassAndActiveState()
@@ -159,29 +185,34 @@ void MasteringChainStateTest::bypassAndActiveState()
     const auto chain_id = test_uuid("d0000000-0000-4000-8000-000000000001");
     const auto gain_id = test_instance_id("d1111111-1111-4111-8111-111111111111");
     const auto eq_id = test_instance_id("d2222222-2222-4222-8222-222222222222");
+    const auto comp_id = test_instance_id("d3333333-3333-4333-8333-333333333333");
 
-    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
+    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id, comp_id);
     QVERIFY(state);
 
-    // Initial state: not bypassed
+    // Initial state: Gain & EQ not bypassed, Compressor user-bypassed
     auto bypass_res = state.value()->is_bypassed(gain_id);
     QVERIFY(bypass_res);
     QVERIFY(!*bypass_res.value());
+
+    bypass_res = state.value()->is_bypassed(comp_id);
+    QVERIFY(bypass_res);
+    QVERIFY(*bypass_res.value());
 
     auto gain_inst = state.value()->gain_instance();
     QVERIFY(gain_inst);
     QVERIFY((*gain_inst.value()).get().active());
 
-    // Toggle bypass on
-    QVERIFY(state.value()->set_user_bypass(gain_id, true));
+    // Toggle Compressor bypass off
+    QVERIFY(state.value()->set_user_bypass(comp_id, false));
 
-    bypass_res = state.value()->is_bypassed(gain_id);
+    bypass_res = state.value()->is_bypassed(comp_id);
     QVERIFY(bypass_res);
-    QVERIFY(*bypass_res.value());
+    QVERIFY(!*bypass_res.value());
 
-    gain_inst = state.value()->gain_instance();
-    QVERIFY(gain_inst);
-    QVERIFY(!(*gain_inst.value()).get().active());
+    auto comp_inst = state.value()->compressor_instance();
+    QVERIFY(comp_inst);
+    QVERIFY((*comp_inst.value()).get().active());
 }
 
 void MasteringChainStateTest::executionBindingsGeneration()
@@ -192,8 +223,9 @@ void MasteringChainStateTest::executionBindingsGeneration()
     const auto chain_id = test_uuid("e0000000-0000-4000-8000-000000000001");
     const auto gain_id = test_instance_id("e1111111-1111-4111-8111-111111111111");
     const auto eq_id = test_instance_id("e2222222-2222-4222-8222-222222222222");
+    const auto comp_id = test_instance_id("e3333333-3333-4333-8333-333333333333");
 
-    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
+    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id, comp_id);
     QVERIFY(state);
 
     auto gain_params = GainParameters::create(-3.0);
@@ -201,7 +233,7 @@ void MasteringChainStateTest::executionBindingsGeneration()
     QVERIFY(state.value()->set_gain_parameters(*gain_params.value()));
 
     const auto bindings = state.value()->execution_bindings();
-    QCOMPARE(bindings.size(), std::size_t{2});
+    QCOMPARE(bindings.size(), std::size_t{3});
 
     // Binding 0: Gain
     QCOMPARE(bindings[0].instance_id, gain_id);
@@ -212,6 +244,11 @@ void MasteringChainStateTest::executionBindingsGeneration()
     QCOMPARE(bindings[1].instance_id, eq_id);
     QVERIFY(std::holds_alternative<ParametricEqParameters>(bindings[1].parameters));
     QCOMPARE(std::get<ParametricEqParameters>(bindings[1].parameters), state.value()->parametric_eq_parameters());
+
+    // Binding 2: Compressor
+    QCOMPARE(bindings[2].instance_id, comp_id);
+    QVERIFY(std::holds_alternative<CompressorParameters>(bindings[2].parameters));
+    QCOMPARE(std::get<CompressorParameters>(bindings[2].parameters), state.value()->compressor_parameters());
 }
 
 }  // namespace

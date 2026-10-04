@@ -140,10 +140,12 @@ struct MasteringChainCandidate final {
         const auto chainUuid = uuidFactory();
         const auto gainUuid = uuidFactory();
         const auto eqUuid = uuidFactory();
+        const auto compUuid = uuidFactory();
         const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
         const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+        const auto compId = *dsp::ModuleInstanceId::from_uuid(compUuid).value();
 
-        auto defaultState = MasteringChainState::create_default(registry, chainUuid, gainId, eqId);
+        auto defaultState = MasteringChainState::create_default(registry, chainUuid, gainId, eqId, compId);
         if (!defaultState) {
             return core::Result<MasteringChainCandidate>::failure(*defaultState.error());
         }
@@ -176,10 +178,10 @@ struct MasteringChainCandidate final {
             {{"stage", chain.stage}, {"segment", chain.segment}}});
     }
 
-    if (chain.modules.size() != 2U) {
+    if (chain.modules.size() != 2U && chain.modules.size() != 3U) {
         return core::Result<MasteringChainCandidate>::failure(core::Error{
             core::ErrorCode::InvalidArgument,
-            "Supported B4 mastering chain must contain exactly 2 modules",
+            "Supported mastering chain must contain 2 or 3 modules",
             {{"moduleCount", std::to_string(chain.modules.size())}}});
     }
 
@@ -189,14 +191,14 @@ struct MasteringChainCandidate final {
     if (m0.typeId != "rgsml.dsp.gain") {
         return core::Result<MasteringChainCandidate>::failure(core::Error{
             core::ErrorCode::InvalidArgument,
-            "Module 0 of supported B4 mastering chain must be rgsml.dsp.gain",
+            "Module 0 of supported mastering chain must be rgsml.dsp.gain",
             {{"typeId", m0.typeId}}});
     }
 
     if (m1.typeId != "rgsml.dsp.parametric-eq") {
         return core::Result<MasteringChainCandidate>::failure(core::Error{
             core::ErrorCode::InvalidArgument,
-            "Module 1 of supported B4 mastering chain must be rgsml.dsp.parametric-eq",
+            "Module 1 of supported mastering chain must be rgsml.dsp.parametric-eq",
             {{"typeId", m1.typeId}}});
     }
 
@@ -282,15 +284,62 @@ struct MasteringChainCandidate final {
     auto eqInst = dsp::ModuleInstance::create(std::move(eqSpec));
     if (!eqInst) return core::Result<MasteringChainCandidate>::failure(*eqInst.error());
 
-    // ProcessingChain retains a non-owning pointer to the registry used at
-    // construction. Build it against the same shared registry that
-    // MasteringChainState will own so the pointer remains valid after this
-    // validation helper returns.
+    core::Uuid compUuid;
+    dsp::CompressorParameters decodedComp = *dsp::CompressorParameters::create_default().value();
+    bool compUserBypass = true;
+    bool compEnabled = true;
+    bool compCtrlSuspended = false;
+    bool compDomainSuspended = false;
+
+    if (chain.modules.size() == 2U) {
+        // Legacy 2-module load: create one Compressor instance, exact defaults, user bypass = true
+        compUuid = uuidFactory();
+    } else {
+        // 3-module load: validate and restore Module 2 (Compressor)
+        const auto& m2 = chain.modules[2];
+        if (m2.typeId != "rgsml.dsp.compressor") {
+            return core::Result<MasteringChainCandidate>::failure(core::Error{
+                core::ErrorCode::InvalidArgument,
+                "Module 2 of 3-module mastering chain must be rgsml.dsp.compressor",
+                {{"typeId", m2.typeId}}});
+        }
+        auto v2 = validate_module_metadata(m2, "rgsml.dsp.compressor");
+        if (!v2) return core::Result<MasteringChainCandidate>::failure(*v2.error());
+
+        auto decodedCompRes = dsp::decode_compressor_parameters_json(m2.parameters.canonical_utf8());
+        if (!decodedCompRes) return core::Result<MasteringChainCandidate>::failure(*decodedCompRes.error());
+
+        compUuid = m2.instanceId;
+        decodedComp = *decodedCompRes.value();
+        compUserBypass = m2.userBypass;
+        compEnabled = m2.enabled;
+        compCtrlSuspended = m2.controllerSuspended;
+        compDomainSuspended = m2.domainSuspended;
+    }
+
+    const auto compInstanceId = *dsp::ModuleInstanceId::from_uuid(compUuid).value();
+
+    dsp::ModuleInstanceSpec compSpec{
+        .instance_id = compInstanceId,
+        .module_type_id = "rgsml.dsp.compressor",
+        .enabled = compEnabled,
+        .user_bypass = compUserBypass,
+        .controller_suspended = compCtrlSuspended,
+        .domain_suspended = compDomainSuspended,
+        .provenance = dsp::ModuleProvenance::MANUAL,
+        .owner = dsp::ModuleOwner::USER,
+        .link_state = dsp::ModuleLinkState::UNLINKED,
+        .semantic_node_id = std::nullopt,
+        .parameter_state = dsp::ModuleParameterState{}
+    };
+    auto compInst = dsp::ModuleInstance::create(std::move(compSpec));
+    if (!compInst) return core::Result<MasteringChainCandidate>::failure(*compInst.error());
+
     auto regPtr = std::make_shared<const dsp::ModuleRegistry>(registry);
     auto chainRes = dsp::ProcessingChain::restore(*regPtr,
         {dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL},
         chain.revision,
-        { *gainInst.value(), *eqInst.value() });
+        { *gainInst.value(), *eqInst.value(), *compInst.value() });
     if (!chainRes) return core::Result<MasteringChainCandidate>::failure(*chainRes.error());
 
     auto stateRes = MasteringChainState::restore(std::move(regPtr),
@@ -299,7 +348,9 @@ struct MasteringChainCandidate final {
         gainInstanceId,
         *decodedGain.value(),
         eqInstanceId,
-        *decodedEq.value());
+        *decodedEq.value(),
+        compInstanceId,
+        decodedComp);
     if (!stateRes) return core::Result<MasteringChainCandidate>::failure(*stateRes.error());
 
     return core::Result<MasteringChainCandidate>::success(
@@ -571,6 +622,14 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
             dsp::encode_parametric_eq_parameters_json(masteringChainState_->parametric_eq_parameters()));
         if (!m1) return core::Result<project::ProjectSnapshot>::failure(*m1.error());
         masteringChain.modules.push_back(std::move(*m1.value()));
+
+        // Module 2: Compressor
+        auto m2 = serialize_module("rgsml.dsp.compressor",
+            "rgsml.dsp.compressor.parameters/1.0.0",
+            masteringChainState_->compressor_instance(),
+            dsp::encode_compressor_parameters_json(masteringChainState_->compressor_parameters()));
+        if (!m2) return core::Result<project::ProjectSnapshot>::failure(*m2.error());
+        masteringChain.modules.push_back(std::move(*m2.value()));
 
         auto chainIt = std::find_if(doc.chains.begin(), doc.chains.end(),
             [chainId](const project::Chain& c) { return c.chainId == chainId; });

@@ -139,6 +139,16 @@ EqViewModel* InputGainModuleAdapter::eq_view_model() const noexcept
     return nullptr;
 }
 
+CompressorViewModel* InputGainModuleAdapter::compressor_view_model() const noexcept
+{
+    return nullptr;
+}
+
+QString InputGainModuleAdapter::family_accent() const
+{
+    return QStringLiteral("#6F9FB3");
+}
+
 QString InputGainModuleAdapter::state_text() const
 {
     if (gainViewModel_ == nullptr) {
@@ -320,6 +330,16 @@ EqViewModel* ParametricEqModuleAdapter::eq_view_model() const noexcept
     return eqViewModel_;
 }
 
+CompressorViewModel* ParametricEqModuleAdapter::compressor_view_model() const noexcept
+{
+    return nullptr;
+}
+
+QString ParametricEqModuleAdapter::family_accent() const
+{
+    return QStringLiteral("#4E86C6");
+}
+
 QString ParametricEqModuleAdapter::state_text() const
 {
     if (eqViewModel_ == nullptr) {
@@ -363,6 +383,210 @@ void ParametricEqModuleAdapter::resetToDefault()
 {
     if (eqViewModel_ != nullptr) {
         eqViewModel_->resetToFlat();
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Compressor Module Adapter
+// -----------------------------------------------------------------------------
+
+CompressorModuleAdapter::CompressorModuleAdapter(
+    CompressorViewModel* compressorViewModel,
+    MasteringChainState* chainState,
+    QString workflowContext,
+    QObject* parent)
+    : DspModuleAdapter(parent)
+    , compressorViewModel_(compressorViewModel)
+    , chainState_(chainState)
+    , workflowContext_(std::move(workflowContext))
+{
+    if (compressorViewModel_ != nullptr) {
+        connect(compressorViewModel_, &CompressorViewModel::changed, this, &DspModuleAdapter::changed);
+    }
+}
+
+QString CompressorModuleAdapter::instance_id() const
+{
+    if (chainState_ != nullptr) {
+        return QString::fromStdString(chainState_->compressor_instance_id().to_string());
+    }
+    return {};
+}
+
+QString CompressorModuleAdapter::type_id() const
+{
+    return QStringLiteral("rgsml.dsp.compressor");
+}
+
+QString CompressorModuleAdapter::display_name() const
+{
+    return QStringLiteral("Compressor");
+}
+
+QString CompressorModuleAdapter::workspace_context_label() const
+{
+    return workflowContext_;
+}
+
+QString CompressorModuleAdapter::configuration_state() const
+{
+    if (compressorViewModel_ == nullptr) {
+        return QStringLiteral("Default");
+    }
+    return (compressorViewModel_->threshold_dbfs() == -24.0
+            && compressorViewModel_->ratio() == 2.0
+            && compressorViewModel_->knee_db() == 6.0
+            && compressorViewModel_->attack_ms() == 30.0
+            && compressorViewModel_->release_ms() == 200.0
+            && compressorViewModel_->rms_time_constant_ms() == 50.0
+            && compressorViewModel_->look_ahead_ms() == 5.0
+            && compressorViewModel_->mix_percent() == 100.0
+            && compressorViewModel_->makeup_gain_db() == 0.0)
+        ? QStringLiteral("Default")
+        : QStringLiteral("Manual");
+}
+
+bool CompressorModuleAdapter::bypass_supported() const noexcept
+{
+    return true;
+}
+
+bool CompressorModuleAdapter::bypass() const noexcept
+{
+    if (compressorViewModel_ != nullptr) {
+        return compressorViewModel_->bypass();
+    }
+    return false;
+}
+
+bool CompressorModuleAdapter::preview_supported() const noexcept
+{
+    return true;
+}
+
+QString CompressorModuleAdapter::preview_status() const
+{
+    if (compressorViewModel_ != nullptr) {
+        return compressorViewModel_->preview_status();
+    }
+    return QStringLiteral("IDLE");
+}
+
+QString CompressorModuleAdapter::preview_error() const
+{
+    if (compressorViewModel_ != nullptr) {
+        return compressorViewModel_->preview_error();
+    }
+    return {};
+}
+
+bool CompressorModuleAdapter::history_supported() const noexcept
+{
+    return true;
+}
+
+bool CompressorModuleAdapter::can_undo() const noexcept
+{
+    if (compressorViewModel_ != nullptr) {
+        return compressorViewModel_->can_undo();
+    }
+    return false;
+}
+
+bool CompressorModuleAdapter::can_redo() const noexcept
+{
+    if (compressorViewModel_ != nullptr) {
+        return compressorViewModel_->can_redo();
+    }
+    return false;
+}
+
+bool CompressorModuleAdapter::reset_supported() const noexcept
+{
+    return true;
+}
+
+QString CompressorModuleAdapter::editor_content_key() const
+{
+    return QStringLiteral("COMPRESSOR");
+}
+
+QString CompressorModuleAdapter::live_change_policy() const
+{
+    return QStringLiteral("PREPARED_REALIZATION_HOT_SWAP");
+}
+
+GainViewModel* CompressorModuleAdapter::gain_view_model() const noexcept
+{
+    return nullptr;
+}
+
+EqViewModel* CompressorModuleAdapter::eq_view_model() const noexcept
+{
+    return nullptr;
+}
+
+CompressorViewModel* CompressorModuleAdapter::compressor_view_model() const noexcept
+{
+    return compressorViewModel_;
+}
+
+QString CompressorModuleAdapter::family_accent() const
+{
+    return QStringLiteral("#C4774A");
+}
+
+QString CompressorModuleAdapter::state_text() const
+{
+    if (compressorViewModel_ == nullptr) {
+        return QStringLiteral("Default");
+    }
+    return (compressorViewModel_->threshold_dbfs() == -24.0
+            && compressorViewModel_->ratio() == 2.0
+            && compressorViewModel_->knee_db() == 6.0
+            && compressorViewModel_->attack_ms() == 30.0
+            && compressorViewModel_->release_ms() == 200.0
+            && compressorViewModel_->rms_time_constant_ms() == 50.0
+            && compressorViewModel_->look_ahead_ms() == 5.0
+            && compressorViewModel_->mix_percent() == 100.0
+            && compressorViewModel_->makeup_gain_db() == 0.0)
+        ? QStringLiteral("Default")
+        : QStringLiteral("Manual Edit");
+}
+
+bool CompressorModuleAdapter::has_error() const noexcept
+{
+    if (compressorViewModel_ != nullptr) {
+        return compressorViewModel_->preview_status() == QStringLiteral("ERROR");
+    }
+    return false;
+}
+
+void CompressorModuleAdapter::setBypass(bool bypass)
+{
+    if (compressorViewModel_ != nullptr) {
+        compressorViewModel_->setBypass(bypass);
+    }
+}
+
+void CompressorModuleAdapter::undo()
+{
+    if (compressorViewModel_ != nullptr) {
+        compressorViewModel_->undo();
+    }
+}
+
+void CompressorModuleAdapter::redo()
+{
+    if (compressorViewModel_ != nullptr) {
+        compressorViewModel_->redo();
+    }
+}
+
+void CompressorModuleAdapter::resetToDefault()
+{
+    if (compressorViewModel_ != nullptr) {
+        compressorViewModel_->resetToDefault();
     }
 }
 

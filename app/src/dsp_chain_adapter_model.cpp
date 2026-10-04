@@ -7,12 +7,14 @@ namespace rgsml::app {
 DspChainAdapterModel::DspChainAdapterModel(
     GainViewModel* gainViewModel,
     EqViewModel* eqViewModel,
+    CompressorViewModel* compressorViewModel,
     MasteringChainState* chainState,
     QString workflowContext,
     QObject* parent)
     : QObject(parent)
     , gainViewModel_(gainViewModel)
     , eqViewModel_(eqViewModel)
+    , compressorViewModel_(compressorViewModel)
     , chainState_(chainState)
     , workflowContext_(std::move(workflowContext))
 {
@@ -34,6 +36,10 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
                 auto eqAdapter = std::make_unique<ParametricEqModuleAdapter>(eqViewModel_, chainState_, workflowContext_);
                 connect(eqAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
                 moduleAdapters_.push_back(std::move(eqAdapter));
+            } else if (typeId == "rgsml.dsp.compressor") {
+                auto compAdapter = std::make_unique<CompressorModuleAdapter>(compressorViewModel_, chainState_, workflowContext_);
+                connect(compAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
+                moduleAdapters_.push_back(std::move(compAdapter));
             }
         }
     } else {
@@ -45,6 +51,10 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         auto eqAdapter = std::make_unique<ParametricEqModuleAdapter>(eqViewModel_, chainState_, workflowContext_);
         connect(eqAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
         moduleAdapters_.push_back(std::move(eqAdapter));
+
+        auto compAdapter = std::make_unique<CompressorModuleAdapter>(compressorViewModel_, chainState_, workflowContext_);
+        connect(compAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
+        moduleAdapters_.push_back(std::move(compAdapter));
     }
 
     // Authoritative selection reconciliation following rehydration
@@ -149,6 +159,9 @@ void DspChainAdapterModel::refreshFromAuthority()
     if (eqViewModel_ != nullptr) {
         eqViewModel_->refreshFromAuthority();
     }
+    if (compressorViewModel_ != nullptr) {
+        compressorViewModel_->refreshFromAuthority();
+    }
     rebuild_adapters_from_authority();
     emit changed();
 }
@@ -160,6 +173,9 @@ void DspChainAdapterModel::resetForNewSource()
     }
     if (eqViewModel_ != nullptr) {
         eqViewModel_->resetForNewSource();
+    }
+    if (compressorViewModel_ != nullptr) {
+        compressorViewModel_->resetForNewSource();
     }
     emit changed();
 }

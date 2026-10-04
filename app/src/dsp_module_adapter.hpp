@@ -1,7 +1,8 @@
 #pragma once
 
-#include "gain_view_model.hpp"
+#include "compressor_view_model.hpp"
 #include "eq_view_model.hpp"
+#include "gain_view_model.hpp"
 #include "mastering_chain_state.hpp"
 
 #include <QObject>
@@ -31,6 +32,8 @@ class DspModuleAdapter : public QObject {
     Q_PROPERTY(QString liveChangePolicy READ live_change_policy NOTIFY changed)
     Q_PROPERTY(GainViewModel* gainViewModel READ gain_view_model NOTIFY changed)
     Q_PROPERTY(EqViewModel* eqViewModel READ eq_view_model NOTIFY changed)
+    Q_PROPERTY(CompressorViewModel* compressorViewModel READ compressor_view_model NOTIFY changed)
+    Q_PROPERTY(QString familyAccent READ family_accent NOTIFY changed)
     Q_PROPERTY(QString stateText READ state_text NOTIFY changed)
     Q_PROPERTY(bool hasError READ has_error NOTIFY changed)
 
@@ -56,6 +59,8 @@ public:
     [[nodiscard]] virtual QString live_change_policy() const = 0;
     [[nodiscard]] virtual GainViewModel* gain_view_model() const noexcept = 0;
     [[nodiscard]] virtual EqViewModel* eq_view_model() const noexcept = 0;
+    [[nodiscard]] virtual CompressorViewModel* compressor_view_model() const noexcept = 0;
+    [[nodiscard]] virtual QString family_accent() const = 0;
     [[nodiscard]] virtual QString state_text() const = 0;
     [[nodiscard]] virtual bool has_error() const noexcept = 0;
 
@@ -97,6 +102,8 @@ public:
     [[nodiscard]] QString live_change_policy() const override;
     [[nodiscard]] GainViewModel* gain_view_model() const noexcept override;
     [[nodiscard]] EqViewModel* eq_view_model() const noexcept override;
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override;
+    [[nodiscard]] QString family_accent() const override;
     [[nodiscard]] QString state_text() const override;
     [[nodiscard]] bool has_error() const noexcept override;
 
@@ -140,6 +147,8 @@ public:
     [[nodiscard]] QString live_change_policy() const override;
     [[nodiscard]] GainViewModel* gain_view_model() const noexcept override;
     [[nodiscard]] EqViewModel* eq_view_model() const noexcept override;
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override;
+    [[nodiscard]] QString family_accent() const override;
     [[nodiscard]] QString state_text() const override;
     [[nodiscard]] bool has_error() const noexcept override;
 
@@ -150,6 +159,51 @@ public:
 
 private:
     EqViewModel* eqViewModel_{nullptr};
+    MasteringChainState* chainState_{nullptr};
+    QString workflowContext_;
+};
+
+class CompressorModuleAdapter final : public DspModuleAdapter {
+    Q_OBJECT
+
+public:
+    CompressorModuleAdapter(
+        CompressorViewModel* compressorViewModel,
+        MasteringChainState* chainState,
+        QString workflowContext = QStringLiteral("Mastering"),
+        QObject* parent = nullptr);
+    ~CompressorModuleAdapter() override = default;
+
+    [[nodiscard]] QString instance_id() const override;
+    [[nodiscard]] QString type_id() const override;
+    [[nodiscard]] QString display_name() const override;
+    [[nodiscard]] QString workspace_context_label() const override;
+    [[nodiscard]] QString configuration_state() const override;
+    [[nodiscard]] bool bypass_supported() const noexcept override;
+    [[nodiscard]] bool bypass() const noexcept override;
+    [[nodiscard]] bool preview_supported() const noexcept override;
+    [[nodiscard]] QString preview_status() const override;
+    [[nodiscard]] QString preview_error() const override;
+    [[nodiscard]] bool history_supported() const noexcept override;
+    [[nodiscard]] bool can_undo() const noexcept override;
+    [[nodiscard]] bool can_redo() const noexcept override;
+    [[nodiscard]] bool reset_supported() const noexcept override;
+    [[nodiscard]] QString editor_content_key() const override;
+    [[nodiscard]] QString live_change_policy() const override;
+    [[nodiscard]] GainViewModel* gain_view_model() const noexcept override;
+    [[nodiscard]] EqViewModel* eq_view_model() const noexcept override;
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override;
+    [[nodiscard]] QString family_accent() const override;
+    [[nodiscard]] QString state_text() const override;
+    [[nodiscard]] bool has_error() const noexcept override;
+
+    void setBypass(bool bypass) override;
+    void undo() override;
+    void redo() override;
+    void resetToDefault() override;
+
+private:
+    CompressorViewModel* compressorViewModel_{nullptr};
     MasteringChainState* chainState_{nullptr};
     QString workflowContext_;
 };
