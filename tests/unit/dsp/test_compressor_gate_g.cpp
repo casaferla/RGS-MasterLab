@@ -157,11 +157,16 @@ void CompressorGateGTest::oracleControlTraceQualification()
     // Mono channel link invariance test: LINKED_MAX, LINKED_MEAN, DUAL_MONO on MONO_C audio layout
     const DspProcessSpec spec_mono{format(rgsml::audio::ChannelLayout::MONO_C, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(4096)};
     std::vector<std::uint64_t> mono_ref_bits;
+    std::vector<rgsml::dsp::CompressorControlTraceFrame> ref_mono_traces;
+    std::string ref_mono_fingerprint;
 
     for (const auto link_mode : {CompressorChannelLink::LINKED_MAX, CompressorChannelLink::LINKED_MEAN, CompressorChannelLink::DUAL_MONO}) {
         auto mono_params = *CompressorParameters::create(
             CompressorDetectorMode::RMS, link_mode,
             -18.0, 4.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0).value();
+
+        // Verify stored parameters preserve actual serialized channelLink
+        QCOMPARE(mono_params.channel_link(), link_mode);
 
         auto mono_mod = std::move(*CompressorModule::create(desc, mono_params).value());
         QVERIFY(mono_mod->prepare(spec_mono));
@@ -172,11 +177,40 @@ void CompressorGateGTest::oracleControlTraceQualification()
         auto trace_res = mono_mod->process_diagnostic_traces(
             in_m.value()->view(), out_m.value()->mutable_view(), DspProcessContext{frame_range(0, 4096), true, false});
         QVERIFY(trace_res);
+        const auto& traces = *trace_res.value();
+
+        auto cp_res = mono_mod->runtime_checkpoint();
+        QVERIFY(cp_res);
+        const std::string current_fingerprint = cp_res.value()->sonic_fingerprint;
 
         if (mono_ref_bits.empty()) {
             mono_ref_bits = bits(out_m.value()->view());
+            ref_mono_traces = traces;
+            ref_mono_fingerprint = current_fingerprint;
         } else {
+            // Audio bit-identical
             QCOMPARE(bits(out_m.value()->view()), mono_ref_bits);
+
+            // Effective sonic fingerprint/signature identical
+            QCOMPARE(current_fingerprint, ref_mono_fingerprint);
+
+            // Sample-by-sample control trace equality across all fields
+            QCOMPARE(traces.size(), ref_mono_traces.size());
+            for (std::size_t i = 0; i < traces.size(); ++i) {
+                const auto& tr = traces[i];
+                const auto& rtr = ref_mono_traces[i];
+
+                QCOMPARE(std::bit_cast<std::uint64_t>(tr.detector_magnitude_ch0), std::bit_cast<std::uint64_t>(rtr.detector_magnitude_ch0));
+                QCOMPARE(std::bit_cast<std::uint64_t>(tr.linked_detector_ch0), std::bit_cast<std::uint64_t>(rtr.linked_detector_ch0));
+                QCOMPARE(tr.level_db_valid_ch0, rtr.level_db_valid_ch0);
+                if (tr.level_db_valid_ch0) {
+                    QCOMPARE(std::bit_cast<std::uint64_t>(tr.level_db_ch0), std::bit_cast<std::uint64_t>(rtr.level_db_ch0));
+                }
+                QCOMPARE(std::bit_cast<std::uint64_t>(tr.target_reduction_db_ch0), std::bit_cast<std::uint64_t>(rtr.target_reduction_db_ch0));
+                QCOMPARE(std::bit_cast<std::uint64_t>(tr.smoothed_reduction_db_ch0), std::bit_cast<std::uint64_t>(rtr.smoothed_reduction_db_ch0));
+                QCOMPARE(std::bit_cast<std::uint64_t>(tr.linear_gain_ch0), std::bit_cast<std::uint64_t>(rtr.linear_gain_ch0));
+                QCOMPARE(std::bit_cast<std::uint64_t>(tr.output_sample_ch0), std::bit_cast<std::uint64_t>(rtr.output_sample_ch0));
+            }
         }
     }
 }
@@ -1064,6 +1098,75 @@ void CompressorGateGTest::ap24FullMatrixQualification()
             for (std::size_t i = 0; i < sig.size(); ++i) {
                 QCOMPARE(prod_span[i], oracle_traces[i].output_sample_ch0);
             }
+        }
+    }
+
+    // 4. AP §24.6 Aligned Dry/Wet Matrix (Lookahead L = 240 frames @ 48 kHz, ratio = 1, makeup = 0)
+    // Sources: MONO and ASYMMETRIC STEREO
+    const std::size_t N_dw = 1000U;
+    std::vector<double> mono_src(N_dw);
+    std::vector<double> st_left_src(N_dw);
+    std::vector<double> st_right_src(N_dw);
+
+    for (std::size_t i = 0; i < N_dw; ++i) {
+        const double t = static_cast<double>(i) / 48000.0;
+        mono_src[i] = std::sin(2.0 * kPi * 440.0 * t);
+        st_left_src[i] = 0.8 * std::sin(2.0 * kPi * 440.0 * t);
+        st_right_src[i] = 0.3 * std::cos(2.0 * kPi * 880.0 * t);
+    }
+
+    for (const auto is_mono_case : {true, false}) {
+        const auto layout = is_mono_case ? rgsml::audio::ChannelLayout::MONO_C : rgsml::audio::ChannelLayout::STEREO_LR;
+        const auto spec = DspProcessSpec{format(layout, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(1024)};
+
+        for (const double mix : {0.0, 50.0, 100.0}) {
+            auto drywet_params = *CompressorParameters::create(
+                CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+                -12.0, 1.0, 0.0, 10.0, 100.0, 50.0, 5.0, mix, 0.0).value();
+
+            auto mod = std::move(*CompressorModule::create(desc, drywet_params).value());
+            QVERIFY(mod->prepare(spec));
+
+            auto in_b = is_mono_case
+                ? make_buffer(layout, 0, mono_src)
+                : make_buffer(layout, 0, st_left_src, st_right_src);
+            auto out_b = is_mono_case
+                ? make_buffer(layout, 0, std::vector<double>(N_dw, 0.0))
+                : make_buffer(layout, 0, std::vector<double>(N_dw, 0.0), std::vector<double>(N_dw, 0.0));
+
+            QVERIFY(mod->process(in_b.value()->view(), out_b.value()->mutable_view(), DspProcessContext{frame_range(0, N_dw), true, false}));
+
+            // Raw module output verification (delayed dry path: lookahead = 240 frames)
+            const double mix_m = mix / 100.0;
+            const std::size_t ch_cnt = is_mono_case ? 1U : 2U;
+
+            for (std::size_t ch = 0; ch < ch_cnt; ++ch) {
+                const auto out_span = *out_b.value()->view().channel(ch).value();
+                const auto& ref_src = (ch == 0) ? (is_mono_case ? mono_src : st_left_src) : st_right_src;
+
+                for (std::size_t i = 0; i < N_dw; ++i) {
+                    const double x_del = (i >= 240U) ? ref_src[i - 240U] : 0.0;
+                    const double wet = x_del * 1.0; // ratio=1, makeup=0 -> gain=1
+                    const double exp_sample = (1.0 - mix_m) * x_del + mix_m * wet;
+
+                    QCOMPARE(std::bit_cast<std::uint64_t>(out_span[i]), std::bit_cast<std::uint64_t>(exp_sample));
+                }
+            }
+
+            // Canonical Renderer latency-compensated verification
+            auto chain_dw = empty_test_chain(*registry.value());
+            const auto comp_dw_id = make_id("80000000-0000-0000-0000-000000000001");
+            QVERIFY(chain_dw.add(comp_dw_id, "rgsml.dsp.compressor", 0));
+
+            auto req_dw = render::RenderRequest::create(
+                in_b.value()->view(), frame_range(0, static_cast<std::int64_t>(N_dw)), chain_dw,
+                {ModuleExecutionBinding{comp_dw_id, drywet_params}}, frame_count(1024));
+            QVERIFY(req_dw);
+
+            auto res_dw = render::render_preview(*req_dw.value(), *registry.value());
+            QVERIFY(res_dw);
+
+            QCOMPARE(bits(res_dw.value()->buffer().view()), bits(in_b.value()->view()));
         }
     }
 }

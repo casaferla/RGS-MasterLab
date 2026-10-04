@@ -72,8 +72,8 @@ void CompressorTest::parametersValidationAndBounds()
     // thresholdDbfs [-120.0, 0.0]
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -120.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, 0.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -120.0001, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, 0.0001, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, std::nextafter(-120.0, neg_inf), 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, std::nextafter(0.0, pos_inf), 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, nan_v, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, pos_inf, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, neg_inf, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
@@ -81,8 +81,8 @@ void CompressorTest::parametersValidationAndBounds()
     // ratio [1.0, 20.0]
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 1.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 20.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 0.9999, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 20.0001, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, std::nextafter(1.0, -pos_inf), 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, std::nextafter(20.0, pos_inf), 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, nan_v, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, pos_inf, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, neg_inf, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
@@ -90,8 +90,8 @@ void CompressorTest::parametersValidationAndBounds()
     // kneeDb [0.0, 24.0]
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 0.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 24.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, -0.0001, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 24.0001, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, std::nextafter(0.0, -pos_inf), 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, std::nextafter(24.0, pos_inf), 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, nan_v, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, pos_inf, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, neg_inf, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
@@ -99,8 +99,8 @@ void CompressorTest::parametersValidationAndBounds()
     // attackMs [0.1, 500.0]
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 0.1, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 500.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 0.0999, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 500.0001, 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, std::nextafter(0.1, -pos_inf), 200.0, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, std::nextafter(500.0, pos_inf), 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, nan_v, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, pos_inf, 200.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, neg_inf, 200.0, 50.0, 5.0, 100.0, 0.0));
@@ -108,8 +108,8 @@ void CompressorTest::parametersValidationAndBounds()
     // releaseMs [1.0, 5000.0]
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 1.0, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 5000.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 0.9999, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 5000.0001, 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, std::nextafter(1.0, -pos_inf), 50.0, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, std::nextafter(5000.0, pos_inf), 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, nan_v, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, pos_inf, 50.0, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, neg_inf, 50.0, 5.0, 100.0, 0.0));
@@ -117,8 +117,8 @@ void CompressorTest::parametersValidationAndBounds()
     // rmsTimeConstantMs [1.0, 500.0]
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 1.0, 5.0, 100.0, 0.0));
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 500.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 0.9999, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 500.0001, 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, std::nextafter(1.0, -pos_inf), 5.0, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, std::nextafter(500.0, pos_inf), 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, nan_v, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, pos_inf, 5.0, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, neg_inf, 5.0, 100.0, 0.0));
@@ -126,8 +126,8 @@ void CompressorTest::parametersValidationAndBounds()
     // lookAheadMs [0.0, 20.0]
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 0.0, 100.0, 0.0));
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 20.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, -0.0001, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 20.0001, 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, std::nextafter(0.0, -pos_inf), 100.0, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, std::nextafter(20.0, pos_inf), 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, nan_v, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, pos_inf, 100.0, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, neg_inf, 100.0, 0.0));
@@ -135,8 +135,8 @@ void CompressorTest::parametersValidationAndBounds()
     // mixPercent [0.0, 100.0]
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 0.0, 0.0));
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, -0.0001, 0.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0001, 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, std::nextafter(0.0, -pos_inf), 0.0));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, std::nextafter(100.0, pos_inf), 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, nan_v, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, pos_inf, 0.0));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, neg_inf, 0.0));
@@ -144,8 +144,8 @@ void CompressorTest::parametersValidationAndBounds()
     // makeupGainDb [-24.0, 24.0]
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, -24.0));
     QVERIFY(CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 24.0));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, -24.0001));
-    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, 24.0001));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, std::nextafter(-24.0, -pos_inf)));
+    QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, std::nextafter(24.0, pos_inf)));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, nan_v));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, pos_inf));
     QVERIFY(!CompressorParameters::create(CompressorDetectorMode::RMS, CompressorChannelLink::LINKED_MAX, -24.0, 2.0, 6.0, 30.0, 200.0, 50.0, 5.0, 100.0, neg_inf));
