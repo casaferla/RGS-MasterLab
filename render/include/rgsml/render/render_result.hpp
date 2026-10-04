@@ -5,10 +5,12 @@
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/frame_time.hpp>
 #include <rgsml/core/result.hpp>
+#include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/module_instance.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -53,9 +55,28 @@ struct ParametricEqExecutionSignaturePayload final {
         const ParametricEqExecutionSignaturePayload&) = default;
 };
 
+struct CompressorExecutionSignaturePayload final {
+    rgsml::dsp::CompressorDetectorMode detector_mode;
+    std::optional<rgsml::dsp::CompressorChannelLink> channel_link;
+    double threshold_dbfs;
+    double ratio;
+    double knee_db;
+    double attack_ms;
+    double release_ms;
+    double rms_time_constant_ms;
+    double look_ahead_ms;
+    double mix_percent;
+    double makeup_gain_db;
+
+    friend bool operator==(
+        const CompressorExecutionSignaturePayload&,
+        const CompressorExecutionSignaturePayload&) = default;
+};
+
 using ModuleExecutionSignaturePayload = std::variant<
     GainExecutionSignaturePayload,
-    ParametricEqExecutionSignaturePayload>;
+    ParametricEqExecutionSignaturePayload,
+    CompressorExecutionSignaturePayload>;
 
 struct ModuleExecutionSignature final {
     rgsml::dsp::ModuleInstanceId instance_id;

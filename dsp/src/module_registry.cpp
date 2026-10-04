@@ -1,6 +1,8 @@
 #include <rgsml/dsp/module_registry.hpp>
 
 #include <rgsml/core/error.hpp>
+#include <rgsml/dsp/compressor_module.hpp>
+#include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_module.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_module.hpp>
@@ -23,6 +25,7 @@ using rgsml::core::Result;
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
+constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 
 class GainFactory final : public IModuleFactory {
 public:
@@ -73,6 +76,36 @@ public:
             return Result<std::unique_ptr<IModule>>::failure(*parameters.error());
         }
         auto module = ParametricEqModule::create(descriptor_, *parameters.value());
+        if (!module) {
+            return Result<std::unique_ptr<IModule>>::failure(*module.error());
+        }
+        std::unique_ptr<IModule> result = std::move(*module.value());
+        return Result<std::unique_ptr<IModule>>::success(std::move(result));
+    }
+
+private:
+    ModuleDescriptor descriptor_;
+};
+
+class CompressorFactory final : public IModuleFactory {
+public:
+    explicit CompressorFactory(ModuleDescriptor descriptor)
+        : descriptor_(std::move(descriptor))
+    {
+    }
+
+    [[nodiscard]] std::string_view module_type_id() const noexcept override
+    {
+        return descriptor_.type_id();
+    }
+
+    [[nodiscard]] Result<std::unique_ptr<IModule>> create() const override
+    {
+        auto parameters = CompressorParameters::create_default();
+        if (!parameters) {
+            return Result<std::unique_ptr<IModule>>::failure(*parameters.error());
+        }
+        auto module = CompressorModule::create(descriptor_, *parameters.value());
         if (!module) {
             return Result<std::unique_ptr<IModule>>::failure(*module.error());
         }
@@ -208,7 +241,12 @@ private:
         {MANUAL, DNA_LINKED, REF_LINKED},
         true,
         INLINE_CHAIN,
-        std::nullopt));
+        std::nullopt,
+        {},
+        false,
+        false,
+        "1.0.0",
+        "rgsml.dsp.compressor.parameters/1.0.0"));
     specs.push_back(make_spec(
         "rgsml.dsp.stereo-ms",
         {SPATIAL},
@@ -407,6 +445,8 @@ Result<ModuleRegistry> ModuleRegistry::create_dsp_package_v1()
             factory = std::make_shared<GainFactory>(canonical_descriptor);
         } else if (canonical_descriptor.type_id() == kEqTypeId) {
             factory = std::make_shared<ParametricEqFactory>(canonical_descriptor);
+        } else if (canonical_descriptor.type_id() == kCompressorTypeId) {
+            factory = std::make_shared<CompressorFactory>(canonical_descriptor);
         }
         registrations.push_back(ModuleRegistration{
             std::move(canonical_descriptor),
@@ -575,10 +615,34 @@ ModuleRegistry::create_module(
             return Result<std::unique_ptr<IModule>>::success(std::move(result));
         }
 
-        return Result<std::unique_ptr<IModule>>::failure(registry_error(
-            ErrorCode::InvalidArgument,
-            "MODULE_PARAMETER_PAYLOAD_MISMATCH",
-            "The specified module type is not parameterized or unsupported."));
+        if (type_id == kCompressorTypeId) {
+            const auto* comp_params = std::get_if<CompressorParameters>(&payload);
+            if (comp_params == nullptr) {
+                return Result<std::unique_ptr<IModule>>::failure(registry_error(
+                    ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "Compressor module requires CompressorParameters payload."));
+            }
+            auto module = CompressorModule::create(iterator->descriptor, *comp_params);
+            if (!module) {
+                return Result<std::unique_ptr<IModule>>::failure(*module.error());
+            }
+            std::unique_ptr<IModule> result = std::move(*module.value());
+            return Result<std::unique_ptr<IModule>>::success(std::move(result));
+        }
+
+        // Delegate to registered factory for test/custom module types
+        auto module = iterator->factory->create();
+        if (!module) {
+            return Result<std::unique_ptr<IModule>>::failure(*module.error());
+        }
+        if (!*module.value() || (*module.value())->descriptor().type_id() != type_id) {
+            return Result<std::unique_ptr<IModule>>::failure(registry_error(
+                ErrorCode::InvalidState,
+                "MODULE_IMPLEMENTATION_UNAVAILABLE",
+                "Factory produced a module with a mismatched descriptor."));
+        }
+        return module;
     } catch (...) {
         return Result<std::unique_ptr<IModule>>::failure(registry_error(
             ErrorCode::InvalidState,
