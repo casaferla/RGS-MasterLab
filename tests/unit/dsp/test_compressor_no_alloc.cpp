@@ -10,17 +10,18 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <vector>
 
 namespace {
-std::atomic<std::size_t> g_alloc_count{0};
-bool g_monitor_allocations{false};
+thread_local std::atomic<std::size_t> t_alloc_count{0};
+thread_local bool t_monitor_allocations{false};
 }
 
 void* operator new(std::size_t size) {
-    if (g_monitor_allocations) {
-        g_alloc_count.fetch_add(1, std::memory_order_relaxed);
+    if (t_monitor_allocations) {
+        t_alloc_count.fetch_add(1, std::memory_order_relaxed);
     }
     void* ptr = std::malloc(size);
     if (!ptr) throw std::bad_alloc();
@@ -67,35 +68,57 @@ void CompressorNoAllocTest::zeroAllocationsDuringSteadyStateProcessAndFinalize()
 
     QVERIFY(mod->process(in_buf.value()->view(), out_buf.value()->mutable_view(), DspProcessContext{frame_range(0, 512), true, false}));
 
-    // Pre-allocate buffer views for process and finalize before monitoring
+    // Pre-allocate buffer views, frame ranges, and context objects for all 100 process calls and finalize
     auto in_b = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 512, left, right);
     auto out_b = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 512, left, right);
+    const auto in_view = in_b.value()->view();
+    const auto out_view = out_b.value()->mutable_view();
+
+    std::vector<rgsml::dsp::DspProcessContext> process_contexts;
+    process_contexts.reserve(100);
+    for (std::size_t i = 1; i <= 100; ++i) {
+        const std::int64_t start_f = static_cast<std::int64_t>(i * 512);
+        process_contexts.push_back(DspProcessContext{frame_range(start_f, start_f + 512), false, false});
+    }
 
     std::vector<double> zero240(240U, 0.0);
     auto fin_out = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 101 * 512, zero240, zero240);
-
-    // Start allocation monitoring
-    g_alloc_count.store(0);
-    g_monitor_allocations = true;
-
-    // Execute 100 steady-state process calls
-    for (std::size_t i = 1; i <= 100; ++i) {
-        const std::int64_t start_f = static_cast<std::int64_t>(i * 512);
-        const rgsml::dsp::DspProcessContext context{frame_range(start_f, start_f + 512), false, false};
-        auto status = mod->process(in_b.value()->view(), out_b.value()->mutable_view(), context);
-        QVERIFY(status);
-    }
-
-    // Execute finalize call
+    const auto fin_out_view = fin_out.value()->mutable_view();
     const std::int64_t fin_start = 101 * 512;
     const rgsml::dsp::DspProcessContext fin_context{frame_range(fin_start, fin_start + 240), false, true};
-    auto fin_status = mod->finalize(fin_out.value()->mutable_view(), fin_context);
+
+    // Execute 100 steady-state process calls with exact isolated allocation monitoring
+    for (std::size_t i = 0; i < 100; ++i) {
+        t_monitor_allocations = false;
+        t_alloc_count.store(0, std::memory_order_relaxed);
+
+        t_monitor_allocations = true;
+        const auto status = mod->process(in_view, out_view, process_contexts[i]);
+        t_monitor_allocations = false;
+
+        const std::size_t alloc_delta = t_alloc_count.load(std::memory_order_relaxed);
+        if (alloc_delta > 0) {
+            std::cout << "[NO_ALLOC_FAILURE] PROCESS call_index=" << (i + 1)
+                      << " alloc_count=" << alloc_delta << "\n";
+        }
+        QVERIFY(status);
+        QCOMPARE(alloc_delta, std::size_t{0});
+    }
+
+    // Execute finalize call with exact isolated allocation monitoring
+    t_monitor_allocations = false;
+    t_alloc_count.store(0, std::memory_order_relaxed);
+
+    t_monitor_allocations = true;
+    const auto fin_status = mod->finalize(fin_out_view, fin_context);
+    t_monitor_allocations = false;
+
+    const std::size_t fin_alloc_delta = t_alloc_count.load(std::memory_order_relaxed);
+    if (fin_alloc_delta > 0) {
+        std::cout << "[NO_ALLOC_FAILURE] FINALIZE alloc_count=" << fin_alloc_delta << "\n";
+    }
     QVERIFY(fin_status);
-
-    g_monitor_allocations = false;
-
-    // Verify ZERO heap allocations occurred inside process/finalize!
-    QCOMPARE(g_alloc_count.load(), std::size_t{0});
+    QCOMPARE(fin_alloc_delta, std::size_t{0});
 }
 
 }  // namespace
