@@ -287,7 +287,7 @@ void CompressorModule::reset() noexcept
 }
 
 template <typename TraceSink>
-rgsml::core::Result<std::vector<CompressorControlTraceFrame>>
+rgsml::core::Status
 CompressorModule::run_process_kernel(
     rgsml::audio::AudioBufferView input,
     rgsml::audio::MutableAudioBufferView output,
@@ -295,16 +295,15 @@ CompressorModule::run_process_kernel(
     TraceSink* trace_sink)
 {
     constexpr bool kTracing = !std::is_same_v<TraceSink, std::nullptr_t>;
-    std::vector<CompressorControlTraceFrame> traces;
 
     if (!impl_->prepared_spec) {
-        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+        return rgsml::core::Status::failure(comp_error(
             rgsml::core::ErrorCode::InvalidState,
             "DSP_MODULE_NOT_PREPARED",
             "Compressor must be prepared before processing."));
     }
     if (impl_->in_finalize || impl_->finalized) {
-        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+        return rgsml::core::Status::failure(comp_error(
             rgsml::core::ErrorCode::InvalidState,
             "INVALID_DSP_PROCESS_CONTEXT",
             "Cannot call process after finalize."));
@@ -312,7 +311,7 @@ CompressorModule::run_process_kernel(
 
     if (input.format() != impl_->prepared_spec->audio_format
         || output.format() != impl_->prepared_spec->audio_format) {
-        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+        return rgsml::core::Status::failure(comp_error(
             rgsml::core::ErrorCode::InvalidArgument,
             "INVALID_DSP_PROCESS_CONTEXT",
             "Process input/output audio format mismatch."));
@@ -320,14 +319,14 @@ CompressorModule::run_process_kernel(
 
     if (input.timebase().frame_domain_id() != impl_->prepared_spec->frame_domain_id
         || output.timebase().frame_domain_id() != impl_->prepared_spec->frame_domain_id) {
-        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+        return rgsml::core::Status::failure(comp_error(
             rgsml::core::ErrorCode::InvalidArgument,
             "INVALID_DSP_PROCESS_CONTEXT",
             "Process frame domain mismatch."));
     }
 
     if (input.frame_count() != output.frame_count()) {
-        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+        return rgsml::core::Status::failure(comp_error(
             rgsml::core::ErrorCode::InvalidArgument,
             "INVALID_DSP_PROCESS_CONTEXT",
             "Process input/output frame count mismatch."));
@@ -335,14 +334,14 @@ CompressorModule::run_process_kernel(
 
     const auto range_len = context.output_frame_range.length();
     if (!range_len || range_len.value()->value() != input.frame_count().value()) {
-        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+        return rgsml::core::Status::failure(comp_error(
             rgsml::core::ErrorCode::InvalidArgument,
             "INVALID_DSP_PROCESS_CONTEXT",
             "Process output frame range length mismatch."));
     }
 
     if (input.frame_count().value() > impl_->prepared_spec->maximum_block_frames.value()) {
-        return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+        return rgsml::core::Status::failure(comp_error(
             rgsml::core::ErrorCode::InvalidArgument,
             "INVALID_DSP_PROCESS_CONTEXT",
             "Process frame count exceeds maximum_block_frames."));
@@ -350,20 +349,20 @@ CompressorModule::run_process_kernel(
 
     if (!impl_->bound) {
         if (!context.begins_stream) {
-            return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+            return rgsml::core::Status::failure(comp_error(
                 rgsml::core::ErrorCode::InvalidArgument,
                 "INVALID_DSP_PROCESS_CONTEXT",
                 "First process call must represent begins_stream = true."));
         }
     } else {
         if (context.begins_stream) {
-            return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+            return rgsml::core::Status::failure(comp_error(
                 rgsml::core::ErrorCode::InvalidArgument,
                 "INVALID_DSP_PROCESS_CONTEXT",
                 "Repeated begins_stream after binding invalid."));
         }
         if (context.output_frame_range.begin() != *impl_->next_input_frame) {
-            return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+            return rgsml::core::Status::failure(comp_error(
                 rgsml::core::ErrorCode::InvalidArgument,
                 "INVALID_DSP_PROCESS_CONTEXT",
                 "Process frame range must be contiguous."));
@@ -379,7 +378,7 @@ CompressorModule::run_process_kernel(
         const auto plane = *input.channel(ch).value();
         for (const double sample : plane) {
             if (!std::isfinite(sample)) {
-                return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(comp_error(
+                return rgsml::core::Status::failure(comp_error(
                     rgsml::core::ErrorCode::InvalidAudioSample,
                     "INVALID_AUDIO_SAMPLE",
                     "Non-finite audio sample in process input."));
@@ -388,9 +387,6 @@ CompressorModule::run_process_kernel(
     }
 
     impl_->bound = true;
-    if constexpr (kTracing) {
-        traces.reserve(static_cast<std::size_t>(frames));
-    }
 
     const double threshold = impl_->parameters.threshold_dbfs();
     const double ratio = impl_->parameters.ratio();
@@ -540,7 +536,7 @@ CompressorModule::run_process_kernel(
     }
 
     impl_->next_input_frame = context.output_frame_range.end();
-    return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::success(std::move(traces));
+    return rgsml::core::Status::success();
 }
 
 rgsml::core::Status CompressorModule::process(
@@ -549,11 +545,7 @@ rgsml::core::Status CompressorModule::process(
     const DspProcessContext& context)
 {
     try {
-        auto res = run_process_kernel<std::nullptr_t>(input, output, context, nullptr);
-        if (!res) {
-            return rgsml::core::Status::failure(*res.error());
-        }
-        return rgsml::core::Status::success();
+        return run_process_kernel<std::nullptr_t>(input, output, context, nullptr);
     } catch (...) {
         return rgsml::core::Status::failure(comp_error(
             rgsml::core::ErrorCode::InvalidState,
@@ -570,9 +562,10 @@ CompressorModule::process_diagnostic_traces(
 {
     try {
         std::vector<CompressorControlTraceFrame> traces;
-        auto res = run_process_kernel(input, output, context, &traces);
-        if (!res) {
-            return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(*res.error());
+        traces.reserve(static_cast<std::size_t>(input.frame_count().value()));
+        auto status = run_process_kernel(input, output, context, &traces);
+        if (!status) {
+            return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::failure(*status.error());
         }
         return rgsml::core::Result<std::vector<CompressorControlTraceFrame>>::success(std::move(traces));
     } catch (...) {

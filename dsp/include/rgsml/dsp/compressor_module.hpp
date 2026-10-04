@@ -89,7 +89,7 @@ private:
     explicit CompressorModule(std::unique_ptr<Impl> impl) noexcept;
 
     template <typename TraceSink>
-    rgsml::core::Result<std::vector<CompressorControlTraceFrame>>
+    rgsml::core::Status
     run_process_kernel(
         rgsml::audio::AudioBufferView input,
         rgsml::audio::MutableAudioBufferView output,
