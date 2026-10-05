@@ -452,9 +452,20 @@ void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
     vm.setCurveHandleDraft(QStringLiteral("knee"), -24.0, -24.0);
     QCOMPARE(vm.draft_knee_db(), 12.0); // 2 * |-18 - (-24)| = 12 dB
 
-    // Drag Make-up handle
-    vm.setCurveHandleDraft(QStringLiteral("makeup"), -54.0, -50.0);
-    QCOMPARE(vm.draft_makeup_gain_db(), 4.0); // Shifted by +4 dB
+    // Drag Make-up handle using the truthful C++ anchor and move only Y by +4 dB
+    const auto makeupHandles = vm.transfer_curve_handles();
+    QVariantMap makeupMap;
+    for (const auto& h : makeupHandles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("makeup")) {
+            makeupMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY(!makeupMap.isEmpty());
+    vm.setCurveHandleDraft(QStringLiteral("makeup"),
+                           makeupMap[QStringLiteral("inputDbfs")].toDouble(),
+                           makeupMap[QStringLiteral("outputDbfs")].toDouble() + 4.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), 4.0);
 
     // Cancel restores committed authority
     vm.cancelDraft();
