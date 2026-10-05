@@ -550,7 +550,7 @@ void ProjectSessionTest::mastering_chain_normal_save()
 
     auto decodedComp = dsp::decode_compressor_parameters_json(m2.parameters.canonical_utf8());
     QVERIFY(decodedComp);
-    QVERIFY(*decodedComp.value() == dsp::CompressorParameters::create_default().value());
+    QVERIFY(*decodedComp.value() == *dsp::CompressorParameters::create_default().value());
 }
 
 void ProjectSessionTest::mastering_chain_repeated_save()
