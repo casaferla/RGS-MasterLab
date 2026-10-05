@@ -1095,8 +1095,9 @@ void ProjectSessionTest::legacy_two_module_gain_eq_migration()
 
     const auto sourceUtf8 = source.toUtf8().toStdString();
     const auto sourceName = QFileInfo{source}.fileName().toUtf8().toStdString();
-    doc.resources.push_back({sourceId, "AUDIO", {
-        {platform::windows::WindowsResourceReader::provider_id(), sourceUtf8, sourceName}
+    const auto providerId = std::string(platform::windows::WindowsResourceReader::provider_id());
+    doc.resources.push_back(project::Resource{sourceId, "AUDIO", {
+        project::LocatorHint{providerId, sourceUtf8, sourceName}
     }, std::nullopt});
 
     doc.pipeline.masteringChainId = chainId;
@@ -1193,7 +1194,6 @@ void ProjectSessionTest::legacy_two_module_gain_eq_migration()
     QCOMPARE(resavedDoc.chains[0].modules[1].instanceId, eqId);
     QCOMPARE(resavedDoc.chains[0].modules[2].instanceId, compUuid);
     QVERIFY(resavedDoc.chains[0].modules[2].userBypass);
-}
 }
 
 void ProjectSessionTest::future_opaque_preservation_and_non_degraded_b4()
