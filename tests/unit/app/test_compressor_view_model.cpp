@@ -444,7 +444,7 @@ void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
 
     // Feed truthful Ratio handle coordinates back through setCurveHandleDraft
     vm.setCurveHandleDraft(QStringLiteral("ratio"), ratioMap[QStringLiteral("inputDbfs")].toDouble(), ratioMap[QStringLiteral("outputDbfs")].toDouble());
-    QCOMPARE(vm.draft_ratio(), 2.0); // Ratio remains 2.0!
+    QVERIFY(std::abs(vm.draft_ratio() - 2.0) < 1e-8); // Bisection round-trip precision
     QCOMPARE(vm.ratio(), 2.0); // Uncommitted!
     QCOMPARE(vm.preview_generation(), gen0); // No preview during handle drag!
 
