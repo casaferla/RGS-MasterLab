@@ -680,6 +680,7 @@ Item {
                                     viewModel: root.viewModel
                                     compact: true
                                     Layout.preferredWidth: root.compactNumericFieldWidth
+                                    positionFillOrigin: 0.0
                                     accentColor: "#FF6B6B"
                                     semanticAccent: true
                                     accessibleName: "Make-up Gain continuous adjustment slider"

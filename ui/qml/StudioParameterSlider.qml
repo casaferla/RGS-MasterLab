@@ -13,6 +13,8 @@ Item {
     property bool enabled: true
     property color accentColor: "#00C8FF"
     property bool semanticAccent: false
+    property real positionFillOrigin: from
+    property color positionFillColor: Qt.alpha("#C4774A", 0.38)
     property string fieldName: ""
     property var viewModel: null
 
@@ -119,6 +121,16 @@ Item {
             border.color: "#1E354A"
             border.width: 1
 
+            Rectangle {
+                readonly property real originPosition: control.valueToPosition(control.positionFillOrigin)
+                readonly property real currentPosition: internalSlider.visualPosition
+                x: Math.min(originPosition, currentPosition) * parent.width
+                y: 0
+                width: Math.abs(currentPosition - originPosition) * parent.width
+                height: parent.height
+                radius: parent.radius
+                color: control.positionFillColor
+            }
         }
 
         handle: Rectangle {
