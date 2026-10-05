@@ -419,7 +419,9 @@ Item {
                                     fieldName: "thresholdDbfs"
                                     viewModel: root.viewModel
                                     compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accentColor: "#2ED3FF"
+                                    semanticAccent: true
                                     accessibleName: "Threshold continuous adjustment slider"
                                 }
                             }
@@ -450,7 +452,9 @@ Item {
                                     fieldName: "ratio"
                                     viewModel: root.viewModel
                                     compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accentColor: "#2FD98F"
+                                    semanticAccent: true
                                     accessibleName: "Ratio continuous adjustment slider"
                                 }
                             }
@@ -481,7 +485,9 @@ Item {
                                     fieldName: "kneeDb"
                                     viewModel: root.viewModel
                                     compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accentColor: "#FFD84A"
+                                    semanticAccent: true
                                     accessibleName: "Knee continuous adjustment slider"
                                 }
                             }
@@ -513,6 +519,7 @@ Item {
                                     fieldName: "attackMs"
                                     viewModel: root.viewModel
                                     compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accessibleName: "Attack continuous adjustment slider"
                                 }
                             }
@@ -544,6 +551,7 @@ Item {
                                     fieldName: "releaseMs"
                                     viewModel: root.viewModel
                                     compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accessibleName: "Release continuous adjustment slider"
                                 }
                             }
@@ -577,6 +585,7 @@ Item {
                                     fieldName: "rmsTimeConstantMs"
                                     viewModel: root.viewModel
                                     compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     enabled: root.viewModel ? root.viewModel.rmsTimeEffective : true
                                     accessibleName: "RMS Time Constant continuous adjustment slider"
                                 }
@@ -608,6 +617,7 @@ Item {
                                     fieldName: "lookAheadMs"
                                     viewModel: root.viewModel
                                     compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accessibleName: "Lookahead continuous adjustment slider"
                                 }
                             }
@@ -638,6 +648,7 @@ Item {
                                     fieldName: "mixPercent"
                                     viewModel: root.viewModel
                                     compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accessibleName: "Mix continuous adjustment slider"
                                 }
                             }
@@ -668,7 +679,9 @@ Item {
                                     fieldName: "makeupGainDb"
                                     viewModel: root.viewModel
                                     compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accentColor: "#FF6B6B"
+                                    semanticAccent: true
                                     accessibleName: "Make-up Gain continuous adjustment slider"
                                 }
                             }
