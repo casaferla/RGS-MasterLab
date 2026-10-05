@@ -5,6 +5,7 @@ qt_add_qml_module(rgsml_ui
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/Rgsml/Ui"
     QML_FILES
         qml/AuditionSourceSelector.qml
+        qml/CompressorEditor.qml
         qml/DspChainSelector.qml
         qml/DspEditorHost.qml
         qml/DspWorkspace.qml

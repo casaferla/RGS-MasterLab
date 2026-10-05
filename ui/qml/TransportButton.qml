@@ -33,13 +33,13 @@ Button {
     background: Item {
         Rectangle {
             anchors.centerIn: parent
-            width: parent.width + control.focusHaloExtra
+            width: parent.width + control.focusHaloExtra + (control.primary ? 4 : 2)
             height: width
             radius: width / 2
             color: "transparent"
-            border.width: control.activeFocus ? (control.primary ? 2 : 1) : 0
+            border.width: control.activeFocus ? 2 : 0
             border.color: control.accentColor
-            opacity: control.activeFocus ? 0.72 : 0.0
+            opacity: control.activeFocus ? 0.85 : 0.0
         }
         Rectangle {
             anchors.centerIn: parent

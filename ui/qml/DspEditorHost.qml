@@ -10,6 +10,7 @@ Rectangle {
     property int selectedModuleIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
+    property var compressorViewModel: null
     property var spectrumViewModel: null
     property Item activeChainRow: null
 
@@ -17,7 +18,7 @@ Rectangle {
     property alias viewModel: root.eqViewModel
 
     readonly property var activeModule: adapterModel ? adapterModel.activeModule : null
-    readonly property var activeViewModel: activeModule ? (activeModule.gainViewModel ? activeModule.gainViewModel : activeModule.eqViewModel) : null
+    readonly property var activeViewModel: activeModule ? (activeModule.gainViewModel ? activeModule.gainViewModel : (activeModule.eqViewModel ? activeModule.eqViewModel : activeModule.compressorViewModel)) : null
     readonly property string moduleTitle: activeModule ? activeModule.displayName : ""
     readonly property string moduleContext: activeModule ? activeModule.workspaceContextLabel : ""
 
@@ -35,14 +36,14 @@ Rectangle {
         GradientStop { position: 1.0; color: "#0C1A2A" }
     }
 
-    // Top highlight
+    // Top highlight using generic familyAccent
     Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 1
-        height: 1
-        color: "#262A6C9F"
+        height: 2
+        color: root.activeModule ? root.activeModule.familyAccent : "#262A6C9F"
     }
 
     Keys.onPressed: function(event) {
@@ -195,13 +196,13 @@ Rectangle {
                 StudioButton {
                     id: abActiveButton
                     objectName: "abButtonActive"
-                    text: root.activeModule ? ("A: " + root.activeModule.displayName + " Active") : "A: Active"
-                    Layout.minimumWidth: 220
-                    Layout.preferredWidth: 220
-                    Layout.maximumWidth: 220
+                    text: "Active"
+                    Layout.minimumWidth: 100
+                    Layout.preferredWidth: 100
+                    Layout.maximumWidth: 100
                     selected: root.activeModule ? !root.activeModule.bypass : true
                     tone: "primary"
-                    accentColor: "#00C8FF"
+                    accentColor: root.activeModule ? root.activeModule.familyAccent : "#00C8FF"
                     onClicked: if (root.activeModule) root.activeModule.setBypass(false)
                     Accessible.name: text
                     ToolTip.text: "Activate module processing"
@@ -211,12 +212,12 @@ Rectangle {
                 StudioButton {
                     id: abBypassButton
                     objectName: "abButtonBypass"
-                    text: "B: Bypass"
+                    text: "Bypass"
                     selected: root.activeModule ? root.activeModule.bypass : false
                     tone: "gold"
                     accentColor: "#F2B632"
                     onClicked: if (root.activeModule) root.activeModule.setBypass(true)
-                    Accessible.name: "B: Bypass"
+                    Accessible.name: "Bypass"
                     ToolTip.text: "Bypass module processing"
                     ToolTip.visible: hovered
                 }
@@ -241,6 +242,15 @@ Rectangle {
             Layout.fillHeight: true
             viewModel: root.activeModule ? root.activeModule.eqViewModel : null
             spectrumViewModel: root.spectrumViewModel
+        }
+
+        CompressorEditor {
+            id: compressorEditor
+            objectName: "compressorEditor"
+            visible: root.activeModule ? (root.activeModule.editorContentKey === "COMPRESSOR") : false
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            viewModel: root.activeModule ? root.activeModule.compressorViewModel : null
         }
     }
 }

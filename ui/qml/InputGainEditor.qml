@@ -85,6 +85,8 @@ Item {
                         font.family: "Consolas"
                         font.pixelSize: 36
                         font.weight: Font.Bold
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.preferredWidth: 240
                         Layout.alignment: Qt.AlignHCenter
                     }
                 }

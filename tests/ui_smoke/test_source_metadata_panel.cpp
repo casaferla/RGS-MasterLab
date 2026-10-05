@@ -1,5 +1,6 @@
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
+#include "compressor_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
@@ -478,9 +479,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     const auto chainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
     const auto gainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
     const auto eqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto compUuid = *core::Uuid::parse("44444444-4444-4444-4444-444444444444").value();
     const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
     const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
-    auto masteringChainStateRes = app::MasteringChainState::create_default(*moduleRegistry.value(), chainUuid, gainId, eqId);
+    const auto compId = *dsp::ModuleInstanceId::from_uuid(compUuid).value();
+    auto masteringChainStateRes = app::MasteringChainState::create_default(*moduleRegistry.value(), chainUuid, gainId, eqId, compId);
     QVERIFY(masteringChainStateRes);
     auto masteringChainState = std::move(*masteringChainStateRes.value());
 
@@ -503,7 +506,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         &masteringChainState,
         &previewController
     };
-    app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &masteringChainState};
+    app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
+    app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
 
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
     app::ProjectSessionViewModel projectSession{
@@ -574,6 +578,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("gainViewModel"), &gainViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("eqViewModel"), &eqViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("compressorViewModel"), &compressorViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"), &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
@@ -917,8 +923,34 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr && dspChainStateText0 != nullptr, "Row 0 (Input Gain) components must exist");
     QVERIFY2(dspChainRow1 != nullptr && dspChainConfigLed1 != nullptr && dspChainStateText1 != nullptr, "Row 1 (Parametric EQ) components must exist");
 
+    // Verify Compressor Editor components
+    auto* compressorEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("compressorEditor"));
+    QVERIFY2(compressorEditor != nullptr, "compressorEditor must exist in dspEditorHost");
+
     // Default selected module index is 0 (Input Gain)
     QCOMPARE(dspWorkspaceObj->property("selectedModuleIndex").toInt(), 0);
+
+    // Switch to Compressor Editor (Index 2)
+    QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 2));
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    QVERIFY2(compressorEditor->property("visible").toBool(), "compressorEditor must be visible at selectedModuleIndex = 2");
+    QCOMPARE(dspHostModuleTitle->property("text").toString(), QStringLiteral("Compressor"));
+
+    auto* abActiveBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("abButtonActive"));
+    auto* abBypassBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("abButtonBypass"));
+    QVERIFY2(abActiveBtn && abBypassBtn, "Active and Bypass buttons must exist");
+    QCOMPARE(abActiveBtn->property("text").toString(), QStringLiteral("Active"));
+    QCOMPARE(abBypassBtn->property("text").toString(), QStringLiteral("Bypass"));
+
+    auto* compressorCurveCanvas = compressorEditor->findChild<QObject*>(QStringLiteral("compressorCurveCanvas"));
+    QVERIFY2(compressorCurveCanvas != nullptr, "compressorCurveCanvas must exist in compressorEditor");
+    QCOMPARE(compressorViewModel.transfer_curve_points().size(), 101);
+
+    // Restore selected module index to 0 (Input Gain) for remaining Gain/EQ smoke steps
+    QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 0));
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
 
     // Initial Gain state text & LED
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
