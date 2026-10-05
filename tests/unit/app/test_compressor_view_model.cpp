@@ -415,10 +415,11 @@ void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
     const std::array expectedIds{QStringLiteral("threshold"), QStringLiteral("ratio"), QStringLiteral("knee"), QStringLiteral("makeup")};
     const std::array expectedColors{QStringLiteral("#2ED3FF"), QStringLiteral("#2FD98F"), QStringLiteral("#FFD84A"), QStringLiteral("#FF6B6B")};
 
-    for (std::size_t i = 0; i < handles.size(); ++i) {
+    for (qsizetype i = 0; i < handles.size(); ++i) {
         const auto map = handles[i].toMap();
-        QCOMPARE(map[QStringLiteral("id")].toString(), expectedIds[i]);
-        QCOMPARE(map[QStringLiteral("color")].toString(), expectedColors[i]);
+        const auto expectedIndex = static_cast<std::size_t>(i);
+        QCOMPARE(map[QStringLiteral("id")].toString(), expectedIds[expectedIndex]);
+        QCOMPARE(map[QStringLiteral("color")].toString(), expectedColors[expectedIndex]);
         QVERIFY(std::isfinite(map[QStringLiteral("inputDbfs")].toDouble()));
         QVERIFY(std::isfinite(map[QStringLiteral("outputDbfs")].toDouble()));
     }
