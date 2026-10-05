@@ -416,10 +416,11 @@ void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
     const std::array expectedIds{QStringLiteral("threshold"), QStringLiteral("ratio"), QStringLiteral("knee"), QStringLiteral("makeup")};
     const std::array expectedColors{QStringLiteral("#2ED3FF"), QStringLiteral("#2FD98F"), QStringLiteral("#FFD84A"), QStringLiteral("#FF6B6B")};
 
-    for (std::size_t i = 0; i < handles.size(); ++i) {
+    for (qsizetype i = 0; i < handles.size(); ++i) {
         const auto map = handles[i].toMap();
-        QCOMPARE(map[QStringLiteral("id")].toString(), expectedIds[i]);
-        QCOMPARE(map[QStringLiteral("color")].toString(), expectedColors[i]);
+        const auto expectedIndex = static_cast<std::size_t>(i);
+        QCOMPARE(map[QStringLiteral("id")].toString(), expectedIds[expectedIndex]);
+        QCOMPARE(map[QStringLiteral("color")].toString(), expectedColors[expectedIndex]);
         QVERIFY(std::isfinite(map[QStringLiteral("inputDbfs")].toDouble()));
         QVERIFY(std::isfinite(map[QStringLiteral("outputDbfs")].toDouble()));
     }
@@ -475,9 +476,11 @@ void CompressorViewModelTest::softKneeRatioHandleSolver()
 {
     CompressorViewModel vm;
 
-    // High threshold = -6.0 dBFS, wide knee = 12.0 dB, expected target ratio = 4.0
-    vm.setThresholdDbfs(-6.0);
-    vm.setKneeDb(12.0);
+    // High threshold = -2.0 dBFS, wide knee = 24.0 dB. The C++ Ratio anchor
+    // is capped at +6 dBFS, placing it 8 dB above threshold and therefore
+    // inside the +/-12 dB soft-knee region. Expected target ratio = 4.0.
+    vm.setThresholdDbfs(-2.0);
+    vm.setKneeDb(24.0);
     vm.setRatio(4.0);
     vm.setMakeupGainDb(0.0);
 
