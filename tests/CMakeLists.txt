@@ -64,6 +64,8 @@ qt_add_executable(rgsml_project_session_tests
     ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
@@ -375,6 +377,8 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
@@ -1248,10 +1252,41 @@ qt_add_executable(rgsml_dsp_module_adapter_tests
     ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/eq_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
+)
+
+qt_add_executable(rgsml_compressor_view_model_tests
+    unit/app/test_compressor_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
+)
+target_include_directories(rgsml_compressor_view_model_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_compressor_view_model_tests
+    PRIVATE
+        rgsml_render
+        rgsml_dsp
+        rgsml_audio
+        rgsml_core
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_compressor_view_model_tests)
+add_test(NAME rgsml_compressor_view_model_tests COMMAND rgsml_compressor_view_model_tests)
+set_tests_properties(rgsml_compressor_view_model_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;compressor;view_model;render"
 )
 target_include_directories(rgsml_dsp_module_adapter_tests
     PRIVATE

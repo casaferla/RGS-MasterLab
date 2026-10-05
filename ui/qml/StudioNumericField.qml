@@ -10,10 +10,16 @@ Item {
     property string rawText: ""
     property var viewModel: null
     property bool compact: false
+    // Per-instance compact width seam. Default preserves the shared EQ contract;
+    // dense editors may opt into a narrower field without module-name branching.
+    property int compactFieldWidth: 120
+    // Desktop interaction guidance. Android/touch presentation may replace or
+    // suppress mouse-specific wording without changing parameter semantics.
+    property string interactionHint: ""
 
     readonly property bool isInvalid: viewModel !== null && viewModel !== undefined && viewModel.validationField === fieldName
 
-    readonly property int fieldWidth: compact ? 120 : 164
+    readonly property int fieldWidth: compact ? compactFieldWidth : 164
     implicitWidth: fieldWidth + (unitText.length > 0 ? unitTextLabel.implicitWidth + (compact ? 6 : 8) : 0)
     implicitHeight: compact ? 40 : 50
 
@@ -61,6 +67,14 @@ Item {
                     onClicked: input.forceActiveFocus()
                 }
 
+                HoverHandler {
+                    id: fieldHover
+                }
+
+                ToolTip.text: control.interactionHint
+                ToolTip.visible: control.interactionHint.length > 0 && fieldHover.hovered
+                ToolTip.delay: 550
+
                 TextInput {
                     id: input
                     objectName: control.fieldName + "Input"
@@ -81,7 +95,9 @@ Item {
 
                     onTextEdited: {
                         if (control.viewModel) {
-                            if (control.fieldName === "frequency") {
+                            if (typeof control.viewModel.setDraftFieldText === "function") {
+                                control.viewModel.setDraftFieldText(control.fieldName, input.text)
+                            } else if (control.fieldName === "frequency") {
                                 control.viewModel.setDraftFrequencyText(input.text)
                             } else if (control.fieldName === "gain") {
                                 control.viewModel.setDraftGainText(input.text)
@@ -110,7 +126,9 @@ Item {
                     }
 
                     Accessible.name: control.labelText + " numeric input field"
-                    Accessible.description: control.isInvalid ? (control.viewModel ? control.viewModel.validationMessage : "") : ""
+                    Accessible.description: control.isInvalid
+                        ? (control.viewModel ? control.viewModel.validationMessage : "")
+                        : control.interactionHint
                 }
             }
 

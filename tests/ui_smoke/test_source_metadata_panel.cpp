@@ -1,5 +1,6 @@
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
+#include "compressor_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
@@ -478,9 +479,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     const auto chainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
     const auto gainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
     const auto eqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto compUuid = *core::Uuid::parse("44444444-4444-4444-4444-444444444444").value();
     const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
     const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
-    auto masteringChainStateRes = app::MasteringChainState::create_default(*moduleRegistry.value(), chainUuid, gainId, eqId);
+    const auto compId = *dsp::ModuleInstanceId::from_uuid(compUuid).value();
+    auto masteringChainStateRes = app::MasteringChainState::create_default(*moduleRegistry.value(), chainUuid, gainId, eqId, compId);
     QVERIFY(masteringChainStateRes);
     auto masteringChainState = std::move(*masteringChainStateRes.value());
 
@@ -503,7 +506,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         &masteringChainState,
         &previewController
     };
-    app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &masteringChainState};
+    app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
+    app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
 
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
     app::ProjectSessionViewModel projectSession{
@@ -574,6 +578,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("gainViewModel"), &gainViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("eqViewModel"), &eqViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("compressorViewModel"), &compressorViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"), &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
@@ -917,8 +923,152 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr && dspChainStateText0 != nullptr, "Row 0 (Input Gain) components must exist");
     QVERIFY2(dspChainRow1 != nullptr && dspChainConfigLed1 != nullptr && dspChainStateText1 != nullptr, "Row 1 (Parametric EQ) components must exist");
 
+    // Verify Compressor Editor components
+    auto* compressorEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("compressorEditor"));
+    auto* dspHostModuleTitle = dspEditorHostObj->findChild<QObject*>(QStringLiteral("dspHostModuleTitle"));
+    QVERIFY2(compressorEditor != nullptr, "compressorEditor must exist in dspEditorHost");
+    QVERIFY2(dspHostModuleTitle != nullptr, "dspHostModuleTitle must exist in dspEditorHost");
+
     // Default selected module index is 0 (Input Gain)
     QCOMPARE(dspWorkspaceObj->property("selectedModuleIndex").toInt(), 0);
+
+    // Switch to Compressor Editor (Index 2)
+    QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 2));
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    QVERIFY2(compressorEditor->property("visible").toBool(), "compressorEditor must be visible at selectedModuleIndex = 2");
+    QCOMPARE(dspHostModuleTitle->property("text").toString(), QStringLiteral("Compressor"));
+
+    auto* abActiveBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("abButtonActive"));
+    auto* abBypassBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("abButtonBypass"));
+    QVERIFY2(abActiveBtn && abBypassBtn, "Active and Bypass buttons must exist");
+    QCOMPARE(abActiveBtn->property("text").toString(), QStringLiteral("Active"));
+    QCOMPARE(abBypassBtn->property("text").toString(), QStringLiteral("Bypass"));
+    QCOMPARE(abActiveBtn->property("accentColor").value<QColor>(), QColor{QStringLiteral("#00C8FF")}); // Standard focus cyan!
+
+    auto* compressorCurveCanvas = compressorEditor->findChild<QObject*>(QStringLiteral("compressorCurveCanvas"));
+    QVERIFY2(compressorCurveCanvas != nullptr, "compressorCurveCanvas must exist in compressorEditor");
+    QCOMPARE(compressorViewModel.transfer_curve_points().size(), 101);
+
+    // Interactive Numeric Draft & Commit Verification
+    auto* thresholdInput = find_child_by_name(compressorEditor, QStringLiteral("thresholdDbfsInput"));
+    QVERIFY2(thresholdInput != nullptr, "thresholdDbfsInput control must exist");
+    auto* thresholdInputItem = qobject_cast<QQuickItem*>(thresholdInput);
+    QVERIFY2(thresholdInputItem != nullptr, "thresholdDbfsInput must be a QQuickItem");
+
+    window->requestActivate();
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    thresholdInputItem->forceActiveFocus(Qt::TabFocusReason);
+    QVERIFY2(thresholdInputItem->hasActiveFocus(), "thresholdDbfsInput must receive active focus");
+
+    QMetaObject::invokeMethod(thresholdInput, "selectAll");
+    for (const char c : std::string_view{"-18.0"}) {
+        QTest::keyClick(window, c);
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.threshold_text(), QStringLiteral("-18.0"));
+    QCOMPARE(compressorViewModel.threshold_dbfs(), -24.0); // Not committed yet!
+
+    QTest::keyClick(window, Qt::Key_Return);
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.threshold_dbfs(), -18.0); // Committed on Return!
+
+    // Invalid draft stays draft, blocks commit, and reverts on Escape
+    QMetaObject::invokeMethod(thresholdInput, "selectAll");
+    for (const char c : std::string_view{"99999"}) {
+        QTest::keyClick(window, c);
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.validation_field(), QStringLiteral("thresholdDbfs"));
+    QCOMPARE(compressorViewModel.threshold_dbfs(), -18.0); // Committed value unchanged
+
+    QTest::keyClick(window, Qt::Key_Escape);
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.threshold_text(), QStringLiteral("-18.0"));
+    QVERIFY(compressorViewModel.validation_field().isEmpty());
+
+    // Applicability: PEAK mode disables RMS time without destroying stored value
+    auto* peakBtn = find_child_by_name(compressorEditor, QStringLiteral("detectorPeakButton"));
+    auto* rmsBtn = find_child_by_name(compressorEditor, QStringLiteral("detectorRmsButton"));
+    QVERIFY2(peakBtn && rmsBtn, "Detector mode buttons must exist");
+    QCOMPARE(rmsBtn->property("emphasizeSelectedText").toBool(), false);
+    QCOMPARE(peakBtn->property("emphasizeSelectedText").toBool(), false);
+    const qreal rmsWidthBefore = rmsBtn->property("width").toReal();
+    const qreal peakWidthBefore = peakBtn->property("width").toReal();
+    const qreal peakXBefore = qobject_cast<QQuickItem*>(peakBtn)->x();
+
+    // Focus-out valid commit verification
+    thresholdInputItem->forceActiveFocus(Qt::TabFocusReason);
+    QMetaObject::invokeMethod(thresholdInput, "selectAll");
+    for (const char c : std::string_view{"-12.0"}) {
+        QTest::keyClick(window, c);
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.threshold_text(), QStringLiteral("-12.0"));
+    QCOMPARE(compressorViewModel.threshold_dbfs(), -18.0); // Still previous committed value
+
+    auto* peakBtnItem = qobject_cast<QQuickItem*>(peakBtn);
+    QVERIFY(peakBtnItem);
+    peakBtnItem->forceActiveFocus(Qt::TabFocusReason); // Focus-out!
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.threshold_dbfs(), -12.0); // Committed on focus-out!
+    QVERIFY(compressorViewModel.validation_field().isEmpty());
+
+    QVERIFY(QMetaObject::invokeMethod(peakBtn, "clicked"));
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.detector_mode(), QStringLiteral("PEAK"));
+    QVERIFY(qAbs(rmsBtn->property("width").toReal() - rmsWidthBefore) <= 0.5);
+    QVERIFY(qAbs(peakBtn->property("width").toReal() - peakWidthBefore) <= 0.5);
+    QVERIFY(qAbs(qobject_cast<QQuickItem*>(peakBtn)->x() - peakXBefore) <= 0.5);
+    QVERIFY(!compressorViewModel.rms_time_effective());
+    QCOMPARE(compressorViewModel.rms_time_constant_ms(), 50.0); // Preserved!
+
+    QVERIFY(QMetaObject::invokeMethod(rmsBtn, "clicked"));
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.detector_mode(), QStringLiteral("RMS"));
+    QVERIFY(compressorViewModel.rms_time_effective());
+
+    // Stereo Link controls verification
+    auto* linkMaxBtn = find_child_by_name(compressorEditor, QStringLiteral("linkMaxButton"));
+    auto* linkMeanBtn = find_child_by_name(compressorEditor, QStringLiteral("linkMeanButton"));
+    auto* linkDualMonoBtn = find_child_by_name(compressorEditor, QStringLiteral("linkDualMonoButton"));
+    QVERIFY2(linkMaxBtn && linkMeanBtn && linkDualMonoBtn, "Stereo Link buttons must exist");
+    QCOMPARE(linkMaxBtn->property("emphasizeSelectedText").toBool(), false);
+    QCOMPARE(linkMeanBtn->property("emphasizeSelectedText").toBool(), false);
+    QCOMPARE(linkDualMonoBtn->property("emphasizeSelectedText").toBool(), false);
+    const qreal linkMaxWidthBefore = linkMaxBtn->property("width").toReal();
+    const qreal linkMeanWidthBefore = linkMeanBtn->property("width").toReal();
+    const qreal linkDualWidthBefore = linkDualMonoBtn->property("width").toReal();
+    const qreal linkMeanXBefore = qobject_cast<QQuickItem*>(linkMeanBtn)->x();
+    const qreal linkDualXBefore = qobject_cast<QQuickItem*>(linkDualMonoBtn)->x();
+
+    if (compressorViewModel.channel_link_effective()) {
+        QVERIFY(QMetaObject::invokeMethod(linkMeanBtn, "clicked"));
+        QCoreApplication::processEvents();
+        QCOMPARE(compressorViewModel.channel_link(), QStringLiteral("LINKED_MEAN"));
+        QVERIFY(qAbs(linkMaxBtn->property("width").toReal() - linkMaxWidthBefore) <= 0.5);
+        QVERIFY(qAbs(linkMeanBtn->property("width").toReal() - linkMeanWidthBefore) <= 0.5);
+        QVERIFY(qAbs(linkDualMonoBtn->property("width").toReal() - linkDualWidthBefore) <= 0.5);
+        QVERIFY(qAbs(qobject_cast<QQuickItem*>(linkMeanBtn)->x() - linkMeanXBefore) <= 0.5);
+        QVERIFY(qAbs(qobject_cast<QQuickItem*>(linkDualMonoBtn)->x() - linkDualXBefore) <= 0.5);
+
+        QVERIFY(QMetaObject::invokeMethod(linkDualMonoBtn, "clicked"));
+        QCoreApplication::processEvents();
+        QCOMPARE(compressorViewModel.channel_link(), QStringLiteral("DUAL_MONO"));
+
+        QVERIFY(QMetaObject::invokeMethod(linkMaxBtn, "clicked"));
+        QCoreApplication::processEvents();
+        QCOMPARE(compressorViewModel.channel_link(), QStringLiteral("LINKED_MAX"));
+    }
+
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("m14_compressor_editor_1184x688.png"), QSize{1184, 688}));
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("m14_compressor_editor_1440x900.png"), QSize{1440, 900}));
+
+    // Restore selected module index to 0 (Input Gain) for remaining Gain/EQ smoke steps
+    QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 0));
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
 
     // Initial Gain state text & LED
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
@@ -944,8 +1094,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(gainDbDisplay && gainDbInput && gainSlider && resetGainButton && gainValidationError, "Input Gain editor controls must exist");
     QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("0.0 dB"));
     QCOMPARE(gainDbInput->property("text").toString(), QStringLiteral("0.0"));
+    QVERIFY(gainDbInput->property("interactionHint").toString().contains(QStringLiteral("slider")));
+    auto* gainParameterLabel = inputGainEditor->findChild<QObject*>(QStringLiteral("gainParameterLabel"));
+    QVERIFY2(gainParameterLabel != nullptr, "Input Gain parameter label must exist");
+    QCOMPARE(gainParameterLabel->property("text").toString(), QStringLiteral("GAIN"));
 
-    auto* dspHostModuleTitle = dspEditorHostObj->findChild<QObject*>(QStringLiteral("dspHostModuleTitle"));
     auto* dspHostWorkflowContext = dspEditorHostObj->findChild<QObject*>(QStringLiteral("dspHostWorkflowContext"));
     auto* gainHostUndoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqUndoButton"));
     auto* gainHostRedoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqRedoButton"));
@@ -1221,8 +1374,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(eqViewModel.validation_field().isEmpty(), "Validation field must be empty after Escape key cancel");
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=ab-and-byp-semantics";
-    auto* abBypassBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("abButtonBypass"));
-    auto* abActiveBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("abButtonActive"));
     auto* undoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqUndoButton"));
     auto* redoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqRedoButton"));
     auto* resetFlatBtn = eqEditor->findChild<QObject*>(QStringLiteral("eqResetFlatButton"));
@@ -1527,6 +1678,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(filterLowPassPos.x() + filterLowPassItem->width() <= eqEditorItemForAlignment->width() - 8.0,
         "Low Pass button must stay clear of the inspector right border at minimum size");
 
+    auto* eqFilterLabel = find_child_by_name(eqEditor, QStringLiteral("eqFilterLabel"));
+    auto* eqRoutingLabel = find_child_by_name(eqEditor, QStringLiteral("eqRoutingLabel"));
+    auto* eqSlopeLabel = find_child_by_name(eqEditor, QStringLiteral("eqSlopeLabel"));
+    QVERIFY2(eqFilterLabel && eqRoutingLabel && eqSlopeLabel, "EQ section labels must exist");
+    QCOMPARE(eqFilterLabel->property("text").toString(), QStringLiteral("FILTER"));
+    QCOMPARE(eqRoutingLabel->property("text").toString(), QStringLiteral("ROUTING"));
+    QCOMPARE(eqSlopeLabel->property("text").toString(), QStringLiteral("SLOPE"));
+    QVERIFY(frequencyFieldObj->property("interactionHint").toString().contains(QStringLiteral("left/right")));
+    QVERIFY(gainFieldObj->property("interactionHint").toString().contains(QStringLiteral("up/down")));
+    QVERIFY(qFieldObj->property("interactionHint").toString().contains(QStringLiteral("Mouse wheel")));
+
     for (auto* numericField : {frequencyFieldObj, gainFieldObj, qFieldObj}) {
         QVERIFY2(numericField != nullptr, "Numeric field must exist at minimum size");
         QCOMPARE(numericField->property("compact").toBool(), false);
@@ -1554,6 +1716,53 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     }
     QVERIFY2(QMetaObject::invokeMethod(filterBell, "clicked"), "Bell must be restorable after minimum-size slope check");
     QCoreApplication::processEvents();
+
+    // Verify Compressor editor containment at minimum size
+    QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 2));
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    auto* compressorEditorNative = qobject_cast<QQuickItem*>(compressorEditor);
+    QVERIFY2(compressorEditorNative != nullptr && compressorEditorNative->isVisible(),
+        "Compressor editor must be visible when selected at minimum size");
+    QVERIFY2(check_item_contained_in_ancestor(compressorEditorNative, dspEditorHostNative),
+        "Compressor editor must stay inside dspEditorHost at minimum size");
+    auto* curveWellNative = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, QStringLiteral("compressorCurveWell")));
+    auto* controlsPanelNative = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, QStringLiteral("compressorControlsPanel")));
+    if (curveWellNative) {
+        QVERIFY2(check_item_contained_in_ancestor(curveWellNative, compressorEditorNative),
+            "Compressor curve well must stay inside Compressor editor at minimum size");
+    }
+    QVERIFY2(controlsPanelNative != nullptr,
+        "Compressor controls panel must exist at minimum size");
+    QVERIFY2(check_item_contained_in_ancestor(controlsPanelNative, compressorEditorNative),
+        "Compressor controls panel must stay inside Compressor editor at minimum size");
+
+    // Check the actual authored children, not just their clipping parent. This guards
+    // the 1184x688 stable-topology contract: no hidden overflow may pass as containment.
+    for (const auto& name : {
+             QStringLiteral("compressorThresholdField"),
+             QStringLiteral("compressorRatioField"),
+             QStringLiteral("compressorKneeField"),
+             QStringLiteral("compressorAttackField"),
+             QStringLiteral("compressorReleaseField"),
+             QStringLiteral("compressorRmsTimeField"),
+             QStringLiteral("compressorLookAheadField"),
+             QStringLiteral("compressorMixField"),
+             QStringLiteral("compressorMakeupField")}) {
+        auto* fieldItem = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, name));
+        QVERIFY2(fieldItem != nullptr, qPrintable(name + QStringLiteral(" must exist")));
+        QVERIFY2(!fieldItem->property("interactionHint").toString().isEmpty(),
+            qPrintable(name + QStringLiteral(" must expose an interaction tooltip hint")));
+        QVERIFY2(check_item_contained_in_ancestor(fieldItem, controlsPanelNative),
+            qPrintable(name + QStringLiteral(" must stay inside Compressor controls at minimum size")));
+    }
+
+    for (auto* button : {rmsBtn, peakBtn, linkMaxBtn, linkMeanBtn, linkDualMonoBtn}) {
+        auto* buttonItem = qobject_cast<QQuickItem*>(button);
+        QVERIFY2(buttonItem != nullptr, "Compressor selector button must be a QQuickItem");
+        QVERIFY2(check_item_contained_in_ancestor(buttonItem, controlsPanelNative),
+            "Detector/Stereo Link buttons must stay inside Compressor controls at minimum size");
+    }
 
     // Verify the alternate Input Gain editor on the same visible minimum-size host,
     // then restore Parametric EQ for the final evidence capture.

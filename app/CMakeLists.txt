@@ -1,6 +1,8 @@
 qt_add_executable(rgsml_app
     src/audition_source_selector.cpp
     src/audition_source_selector.hpp
+    src/compressor_view_model.cpp
+    src/compressor_view_model.hpp
     src/dsp_module_adapter.cpp
     src/dsp_module_adapter.hpp
     src/dsp_chain_adapter_model.cpp

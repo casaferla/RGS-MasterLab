@@ -93,10 +93,12 @@ struct Session final {
     core::Uuid chainId;
     dsp::ModuleInstanceId gainId;
     dsp::ModuleInstanceId eqId;
+    dsp::ModuleInstanceId compId;
     std::unique_ptr<app::MasteringChainState> masteringChainState;
     std::unique_ptr<app::MasteringPreviewController> previewController;
     std::unique_ptr<app::GainViewModel> gainViewModel;
     std::unique_ptr<app::EqViewModel> eqViewModel;
+    std::unique_ptr<app::CompressorViewModel> compViewModel;
     std::unique_ptr<app::DspChainAdapterModel> adapterModel;
     app::ProjectSessionViewModel project;
 
@@ -107,16 +109,18 @@ struct Session final {
           chainId(*core::Uuid::parse("10000000-0000-4000-8000-000000000001").value()),
           gainId(*dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000010").value()).value()),
           eqId(*dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000020").value()).value()),
+          compId(*dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("10000000-0000-4000-8000-000000000030").value()).value()),
           masteringChainState([this] {
               auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
-              auto state = app::MasteringChainState::create_default(*registry.value(), chainId, gainId, eqId);
+              auto state = app::MasteringChainState::create_default(*registry.value(), chainId, gainId, eqId, compId);
               return std::make_unique<app::MasteringChainState>(std::move(*state.value()));
           }()),
           previewController(std::make_unique<app::MasteringPreviewController>(masteringChainState.get())),
           gainViewModel(std::make_unique<app::GainViewModel>(masteringChainState.get(), previewController.get())),
           eqViewModel(std::make_unique<app::EqViewModel>(masteringChainState.get(), previewController.get())),
+          compViewModel(std::make_unique<app::CompressorViewModel>(masteringChainState.get(), previewController.get())),
           adapterModel(std::make_unique<app::DspChainAdapterModel>(
-              gainViewModel.get(), eqViewModel.get(), masteringChainState.get())),
+              gainViewModel.get(), eqViewModel.get(), compViewModel.get(), masteringChainState.get())),
           project(&source, &gold, &region, &transport, masteringChainState.get(),
                   gainViewModel.get(), eqViewModel.get(), adapterModel.get(), previewController.get(),
                   std::move(uuidFactory))
@@ -163,6 +167,7 @@ private slots:
     void open_save_as_identity_revision_preservation();
     void atomic_rejection();
     void legacy_pre_b4_materialization_and_save_as();
+    void legacy_two_module_gain_eq_migration();
     void future_opaque_preservation_and_non_degraded_b4();
     void source_reset_vs_project_open();
 };
@@ -467,7 +472,7 @@ void ProjectSessionTest::mastering_chain_normal_save()
     QCOMPARE(chain.stage, std::string("MASTER"));
     QCOMPARE(chain.segment, std::string("MANUAL"));
     QCOMPARE(chain.revision, session.masteringChainState->chain().revision());
-    QCOMPARE(chain.modules.size(), std::size_t{2});
+    QCOMPARE(chain.modules.size(), std::size_t{3});
 
     // Verify Module 0: Input Gain
     auto gainInstance = session.masteringChainState->gain_instance();
@@ -521,6 +526,31 @@ void ProjectSessionTest::mastering_chain_normal_save()
     QCOMPARE(decodedEq.value()->bands().size(), std::size_t{2});
     QCOMPARE(decodedEq.value()->bands()[0].band_id(), *bandId1.value());
     QCOMPARE(decodedEq.value()->bands()[1].band_id(), *bandId2.value());
+
+    // Verify Module 2: Compressor
+    auto compInstance = session.masteringChainState->compressor_instance();
+    QVERIFY(compInstance);
+    const auto& compAuthority = compInstance.value()->get();
+    const auto& m2 = chain.modules[2];
+    QCOMPARE(m2.instanceId, session.compId.uuid());
+    QCOMPARE(m2.typeId, std::string("rgsml.dsp.compressor"));
+    QCOMPARE(m2.enabled, compAuthority.enabled());
+    QCOMPARE(m2.userBypass, compAuthority.user_bypass());
+    QCOMPARE(m2.controllerSuspended, compAuthority.controller_suspended());
+    QCOMPARE(m2.domainSuspended, compAuthority.domain_suspended());
+    QVERIFY(m2.userBypass); // Compressor initially user-bypassed
+    QCOMPARE(m2.provenance, std::string("MANUAL"));
+    QCOMPARE(m2.owner, std::string("USER"));
+    QCOMPARE(m2.linkState, std::string("UNLINKED"));
+    QVERIFY(m2.semanticNodeId == compAuthority.semantic_node_id());
+    QVERIFY(m2.algorithmVersion.has_value());
+    QCOMPARE(*m2.algorithmVersion, std::string("1.0.0"));
+    QVERIFY(m2.parameterSchemaId.has_value());
+    QCOMPARE(*m2.parameterSchemaId, std::string("rgsml.dsp.compressor.parameters/1.0.0"));
+
+    auto decodedComp = dsp::decode_compressor_parameters_json(m2.parameters.canonical_utf8());
+    QVERIFY(decodedComp);
+    QVERIFY(*decodedComp.value() == *dsp::CompressorParameters::create_default().value());
 }
 
 void ProjectSessionTest::mastering_chain_repeated_save()
@@ -646,7 +676,7 @@ void ProjectSessionTest::supported_b4_open_and_viewmodel_refresh()
     auto doc = saved.value()->document();
     QVERIFY(doc.pipeline.masteringChainId.has_value());
     QCOMPARE(doc.chains.size(), std::size_t{1});
-    QCOMPARE(doc.chains[0].modules.size(), std::size_t{2});
+    QCOMPARE(doc.chains[0].modules.size(), std::size_t{3});
 
     constexpr std::uint64_t persistedRevision = 42U;
     doc.chains[0].revision = persistedRevision;
@@ -673,15 +703,18 @@ void ProjectSessionTest::supported_b4_open_and_viewmodel_refresh()
 
     QCOMPARE(target.masteringChainState->chain_id(), doc.chains[0].chainId);
     QCOMPARE(target.masteringChainState->chain().revision(), persistedRevision);
-    QCOMPARE(target.masteringChainState->module_count(), std::size_t{2});
+    QCOMPARE(target.masteringChainState->module_count(), std::size_t{3});
     QCOMPARE(target.masteringChainState->gain_instance_id().uuid(),
              doc.chains[0].modules[0].instanceId);
     QCOMPARE(target.masteringChainState->eq_instance_id().uuid(),
              doc.chains[0].modules[1].instanceId);
+    QCOMPARE(target.masteringChainState->compressor_instance_id().uuid(),
+             doc.chains[0].modules[2].instanceId);
 
     const auto instances = target.masteringChainState->instances();
     QCOMPARE(instances[0].module_type_id(), std::string_view{"rgsml.dsp.gain"});
     QCOMPARE(instances[1].module_type_id(), std::string_view{"rgsml.dsp.parametric-eq"});
+    QCOMPARE(instances[2].module_type_id(), std::string_view{"rgsml.dsp.compressor"});
     QCOMPARE(instances[0].enabled(), doc.chains[0].modules[0].enabled);
     QCOMPARE(instances[0].user_bypass(), doc.chains[0].modules[0].userBypass);
     QCOMPARE(instances[0].controller_suspended(), doc.chains[0].modules[0].controllerSuspended);
@@ -690,6 +723,10 @@ void ProjectSessionTest::supported_b4_open_and_viewmodel_refresh()
     QCOMPARE(instances[1].user_bypass(), doc.chains[0].modules[1].userBypass);
     QCOMPARE(instances[1].controller_suspended(), doc.chains[0].modules[1].controllerSuspended);
     QCOMPARE(instances[1].domain_suspended(), doc.chains[0].modules[1].domainSuspended);
+    QCOMPARE(instances[2].enabled(), doc.chains[0].modules[2].enabled);
+    QCOMPARE(instances[2].user_bypass(), doc.chains[0].modules[2].userBypass);
+    QCOMPARE(instances[2].controller_suspended(), doc.chains[0].modules[2].controllerSuspended);
+    QCOMPARE(instances[2].domain_suspended(), doc.chains[0].modules[2].domainSuspended);
     QCOMPARE(instances[0].provenance(), dsp::ModuleProvenance::MANUAL);
     QCOMPARE(instances[0].owner(), dsp::ModuleOwner::USER);
     QCOMPARE(instances[0].link_state(), dsp::ModuleLinkState::UNLINKED);
@@ -698,23 +735,37 @@ void ProjectSessionTest::supported_b4_open_and_viewmodel_refresh()
     QCOMPARE(instances[1].owner(), dsp::ModuleOwner::USER);
     QCOMPARE(instances[1].link_state(), dsp::ModuleLinkState::UNLINKED);
     QVERIFY(!instances[1].semantic_node_id().has_value());
+    QCOMPARE(instances[2].provenance(), dsp::ModuleProvenance::MANUAL);
+    QCOMPARE(instances[2].owner(), dsp::ModuleOwner::USER);
+    QCOMPARE(instances[2].link_state(), dsp::ModuleLinkState::UNLINKED);
+    QVERIFY(!instances[2].semantic_node_id().has_value());
 
     auto gainDescriptor = target.masteringChainState->find_descriptor("rgsml.dsp.gain");
     auto eqDescriptor = target.masteringChainState->find_descriptor("rgsml.dsp.parametric-eq");
-    QVERIFY(gainDescriptor && eqDescriptor);
+    auto compDescriptor = target.masteringChainState->find_descriptor("rgsml.dsp.compressor");
+    QVERIFY(gainDescriptor && eqDescriptor && compDescriptor);
     QVERIFY(gainDescriptor.value()->get().algorithm_version().has_value());
     QVERIFY(gainDescriptor.value()->get().parameter_schema_id().has_value());
     QVERIFY(eqDescriptor.value()->get().algorithm_version().has_value());
     QVERIFY(eqDescriptor.value()->get().parameter_schema_id().has_value());
+    QVERIFY(compDescriptor.value()->get().algorithm_version().has_value());
+    QVERIFY(compDescriptor.value()->get().parameter_schema_id().has_value());
     QCOMPARE(*gainDescriptor.value()->get().algorithm_version(), std::string("1.0.0"));
     QCOMPARE(*gainDescriptor.value()->get().parameter_schema_id(),
              std::string("rgsml.dsp.gain.parameters/1.0.0"));
     QCOMPARE(*eqDescriptor.value()->get().algorithm_version(), std::string("1.0.0"));
     QCOMPARE(*eqDescriptor.value()->get().parameter_schema_id(),
              std::string("rgsml.dsp.parametric-eq.parameters/1.0.0"));
+    QCOMPARE(*compDescriptor.value()->get().algorithm_version(), std::string("1.0.0"));
+    QCOMPARE(*compDescriptor.value()->get().parameter_schema_id(),
+             std::string("rgsml.dsp.compressor.parameters/1.0.0"));
 
     QCOMPARE(target.masteringChainState->gain_parameters(), *gainParams.value());
     QCOMPARE(target.masteringChainState->parametric_eq_parameters(), *eqParams.value());
+    auto persistedComp = dsp::decode_compressor_parameters_json(
+        doc.chains[0].modules[2].parameters.canonical_utf8());
+    QVERIFY(persistedComp);
+    QVERIFY(target.masteringChainState->compressor_parameters() == *persistedComp.value());
 
     QCOMPARE(target.gainViewModel->gain_db(), 4.5);
     QVERIFY(target.gainViewModel->bypass());
@@ -958,10 +1009,11 @@ void ProjectSessionTest::legacy_pre_b4_materialization_and_save_as()
     const auto legacyPath = dir.filePath(QStringLiteral("legacy.rgsml"));
     QVERIFY(write_project(legacyPath, *legacySnap.value()));
 
-    const std::array<core::Uuid, 3> generated{
+    const std::array<core::Uuid, 4> generated{
         *core::Uuid::parse("25000000-0000-4000-8000-000000000001").value(),
         *core::Uuid::parse("25000000-0000-4000-8000-000000000002").value(),
-        *core::Uuid::parse("25000000-0000-4000-8000-000000000003").value()
+        *core::Uuid::parse("25000000-0000-4000-8000-000000000003").value(),
+        *core::Uuid::parse("25000000-0000-4000-8000-000000000004").value()
     };
     auto next = std::make_shared<std::size_t>(0);
     Session target{[generated, next] {
@@ -987,6 +1039,7 @@ void ProjectSessionTest::legacy_pre_b4_materialization_and_save_as()
     QCOMPARE(target.masteringChainState->chain_id(), generated[0]);
     QCOMPARE(target.masteringChainState->gain_instance_id().uuid(), generated[1]);
     QCOMPARE(target.masteringChainState->eq_instance_id().uuid(), generated[2]);
+    QCOMPARE(target.masteringChainState->compressor_instance_id().uuid(), generated[3]);
     QVERIFY(target.masteringChainState->chain_id() != previousChainId);
     QVERIFY(target.masteringChainState->gain_instance_id() != previousGainId);
     QVERIFY(target.masteringChainState->eq_instance_id() != previousEqId);
@@ -1019,12 +1072,15 @@ void ProjectSessionTest::legacy_pre_b4_materialization_and_save_as()
     QCOMPARE(resavedDoc.chains[0].chainId, generated[0]);
     QCOMPARE(resavedDoc.chains[0].stage, std::string("MASTER"));
     QCOMPARE(resavedDoc.chains[0].segment, std::string("MANUAL"));
-    QCOMPARE(resavedDoc.chains[0].modules.size(), std::size_t{2});
+    QCOMPARE(resavedDoc.chains[0].modules.size(), std::size_t{3});
     QCOMPARE(resavedDoc.chains[0].modules[0].instanceId, generated[1]);
     QCOMPARE(resavedDoc.chains[0].modules[0].typeId, std::string("rgsml.dsp.gain"));
     QCOMPARE(resavedDoc.chains[0].modules[1].instanceId, generated[2]);
     QCOMPARE(resavedDoc.chains[0].modules[1].typeId,
              std::string("rgsml.dsp.parametric-eq"));
+    QCOMPARE(resavedDoc.chains[0].modules[2].instanceId, generated[3]);
+    QCOMPARE(resavedDoc.chains[0].modules[2].typeId,
+             std::string("rgsml.dsp.compressor"));
 
     const auto savedLegacyPath2 = dir.filePath(QStringLiteral("saved_legacy2.rgsml"));
     target.project.saveProjectAs(QUrl::fromLocalFile(savedLegacyPath2));
@@ -1037,6 +1093,128 @@ void ProjectSessionTest::legacy_pre_b4_materialization_and_save_as()
     QCOMPARE(second.chains[0].chainId, generated[0]);
     QCOMPARE(second.chains[0].modules[0].instanceId, generated[1]);
     QCOMPARE(second.chains[0].modules[1].instanceId, generated[2]);
+    QCOMPARE(second.chains[0].modules[2].instanceId, generated[3]);
+}
+
+void ProjectSessionTest::legacy_two_module_gain_eq_migration()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto source = wav(dir, QStringLiteral("source.wav"), 0);
+
+    // Build a 2-module Gain + EQ project document manually
+    const auto chainId = *core::Uuid::parse("30000000-0000-4000-8000-000000000001").value();
+    const auto gainId = *core::Uuid::parse("30000000-0000-4000-8000-000000000010").value();
+    const auto eqId = *core::Uuid::parse("30000000-0000-4000-8000-000000000020").value();
+    const auto sourceId = *core::Uuid::parse("30000000-0000-4000-8000-000000000090").value();
+    const auto projectId = *core::Uuid::parse("30000000-0000-4000-8000-000000000000").value();
+
+    project::ProjectDocument doc;
+    doc.projectId = projectId;
+    doc.displayName = "legacy_two_module";
+    doc.sourceResourceId = sourceId;
+
+    const auto sourceUtf8 = source.toUtf8().toStdString();
+    const auto sourceName = QFileInfo{source}.fileName().toUtf8().toStdString();
+    const auto providerId = std::string(platform::windows::WindowsResourceReader::provider_id());
+    doc.resources.push_back(project::Resource{sourceId, "AUDIO", {
+        project::LocatorHint{providerId, sourceUtf8, sourceName}
+    }, std::nullopt});
+
+    doc.pipeline.masteringChainId = chainId;
+    project::Chain chain;
+    chain.chainId = chainId;
+    chain.stage = "MASTER";
+    chain.segment = "MANUAL";
+    chain.revision = 1U;
+
+    auto gainParams = dsp::GainParameters::create(-3.5);
+    QVERIFY(gainParams);
+    auto gainJson = dsp::encode_gain_parameters_json(*gainParams.value());
+    QVERIFY(gainJson);
+
+    project::Module m0;
+    m0.instanceId = gainId;
+    m0.typeId = "rgsml.dsp.gain";
+    m0.enabled = true;
+    m0.userBypass = false;
+    m0.provenance = "MANUAL";
+    m0.owner = "USER";
+    m0.linkState = "UNLINKED";
+    m0.algorithmVersion = "1.0.0";
+    m0.parameterSchemaId = "rgsml.dsp.gain.parameters/1.0.0";
+    m0.parameters = *project::OpaqueJsonValue::parse(*gainJson.value()).value();
+    chain.modules.push_back(m0);
+
+    auto bandId = *core::Uuid::parse("30000000-0000-0000-0000-000000000001").value();
+    auto band = dsp::EqBandParameters::create(bandId, true, dsp::EqFilterType::BELL, dsp::EqRouting::STEREO, dsp::BellPayload{1000.0, 2.0, 1.0});
+    QVERIFY(band);
+    auto eqParams = dsp::ParametricEqParameters::create({*band.value()});
+    QVERIFY(eqParams);
+    auto eqJson = dsp::encode_parametric_eq_parameters_json(*eqParams.value());
+    QVERIFY(eqJson);
+
+    project::Module m1;
+    m1.instanceId = eqId;
+    m1.typeId = "rgsml.dsp.parametric-eq";
+    m1.enabled = true;
+    m1.userBypass = true; // EQ bypassed in legacy doc
+    m1.provenance = "MANUAL";
+    m1.owner = "USER";
+    m1.linkState = "UNLINKED";
+    m1.algorithmVersion = "1.0.0";
+    m1.parameterSchemaId = "rgsml.dsp.parametric-eq.parameters/1.0.0";
+    m1.parameters = *project::OpaqueJsonValue::parse(*eqJson.value()).value();
+    chain.modules.push_back(m1);
+
+    doc.chains.push_back(chain);
+
+    auto legacySnap = project::ProjectSnapshot::create(doc);
+    QVERIFY(legacySnap);
+    const auto legacyPath = dir.filePath(QStringLiteral("legacy_2mod.rgsml"));
+    QVERIFY(write_project(legacyPath, *legacySnap.value()));
+
+    const auto compUuid = *core::Uuid::parse("30000000-0000-4000-8000-000000000030").value();
+    Session target{[compUuid] { return compUuid; }};
+
+    target.project.openProject(QUrl::fromLocalFile(legacyPath));
+    QCOMPARE(target.project.error_message(), QString());
+
+    // Verify Gain & EQ instance IDs and parameters preserved
+    QCOMPARE(target.masteringChainState->gain_instance_id().uuid(), gainId);
+    QCOMPARE(target.masteringChainState->eq_instance_id().uuid(), eqId);
+    QCOMPARE(target.masteringChainState->gain_parameters().gain_db(), -3.5);
+    QCOMPARE(target.masteringChainState->parametric_eq_parameters(), *eqParams.value());
+
+    auto gainBypass = target.masteringChainState->is_bypassed(target.masteringChainState->gain_instance_id());
+    QVERIFY(gainBypass);
+    QVERIFY(!*gainBypass.value());
+
+    auto eqBypass = target.masteringChainState->is_bypassed(target.masteringChainState->eq_instance_id());
+    QVERIFY(eqBypass);
+    QVERIFY(*eqBypass.value());
+
+    // Verify Compressor instance created with default parameters & user bypass = true
+    QCOMPARE(target.masteringChainState->compressor_instance_id().uuid(), compUuid);
+    QVERIFY(target.masteringChainState->compressor_parameters() == *dsp::CompressorParameters::create_default().value());
+
+    auto compBypass = target.masteringChainState->is_bypassed(target.masteringChainState->compressor_instance_id());
+    QVERIFY(compBypass);
+    QVERIFY(*compBypass.value()); // Must be user-bypassed!
+
+    // Save As and verify 3-module roundtrip
+    const auto resavedPath = dir.filePath(QStringLiteral("migrated_3mod.rgsml"));
+    target.project.saveProjectAs(QUrl::fromLocalFile(resavedPath));
+    QCOMPARE(target.project.error_message(), QString());
+
+    auto resavedSnap = load_project(resavedPath);
+    QVERIFY(resavedSnap);
+    const auto& resavedDoc = resavedSnap.value()->document();
+    QCOMPARE(resavedDoc.chains[0].modules.size(), std::size_t{3});
+    QCOMPARE(resavedDoc.chains[0].modules[0].instanceId, gainId);
+    QCOMPARE(resavedDoc.chains[0].modules[1].instanceId, eqId);
+    QCOMPARE(resavedDoc.chains[0].modules[2].instanceId, compUuid);
+    QVERIFY(resavedDoc.chains[0].modules[2].userBypass);
 }
 
 void ProjectSessionTest::future_opaque_preservation_and_non_degraded_b4()

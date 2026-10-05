@@ -497,9 +497,10 @@ void EqViewModelTest::testRealProductionPathActiveAndBypass()
 
     QCOMPARE(vm.preview_status(), QStringLiteral("READY"));
     QVERIFY(publishedResult != nullptr);
-    QCOMPARE(publishedResult->signatures().size(), std::size_t{2});
+    QCOMPARE(publishedResult->signatures().size(), std::size_t{3});
     QCOMPARE(publishedResult->signatures()[0].type_id, std::string("rgsml.dsp.gain"));
     QCOMPARE(publishedResult->signatures()[1].type_id, std::string("rgsml.dsp.parametric-eq"));
+    QCOMPARE(publishedResult->signatures()[2].type_id, std::string("rgsml.dsp.compressor"));
     QCOMPARE(publishedResult->signatures()[1].disposition, render::ModuleExecutionDisposition::PROCESSED);
 
     // Bypass case

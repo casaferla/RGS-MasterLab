@@ -96,7 +96,7 @@ void MasteringPreviewControllerTest::testFullChainBindingsAndOrder()
     QVERIFY(publishedResult != nullptr);
 
     const auto& sigs = publishedResult->signatures();
-    QCOMPARE(sigs.size(), std::size_t{2});
+    QCOMPARE(sigs.size(), std::size_t{3});
 
     // Binding 0: Input Gain
     QCOMPARE(sigs[0].instance_id, gain_id);
@@ -105,6 +105,9 @@ void MasteringPreviewControllerTest::testFullChainBindingsAndOrder()
     // Binding 1: Parametric EQ
     QCOMPARE(sigs[1].instance_id, eq_id);
     QCOMPARE(sigs[1].type_id, std::string("rgsml.dsp.parametric-eq"));
+
+    // Binding 2: Compressor
+    QCOMPARE(sigs[2].type_id, std::string("rgsml.dsp.compressor"));
 }
 
 void MasteringPreviewControllerTest::testNumericEvidenceFullChainGainAndEq()

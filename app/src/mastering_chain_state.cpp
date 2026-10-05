@@ -2,6 +2,8 @@
 
 #include <rgsml/core/error.hpp>
 
+#include <QUuid>
+
 #include <utility>
 
 namespace rgsml::app {
@@ -16,6 +18,7 @@ using namespace rgsml::dsp;
 
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
+constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 
 [[nodiscard]] Error chain_state_error(ErrorCode code, std::string category, std::string message)
 {
@@ -30,6 +33,18 @@ Result<MasteringChainState> MasteringChainState::create_default(
     ModuleInstanceId gain_id,
     ModuleInstanceId eq_id)
 {
+    const auto comp_uuid = *Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toLower().toStdString()).value();
+    const auto comp_id = *ModuleInstanceId::from_uuid(comp_uuid).value();
+    return create_default(registry, chain_id, gain_id, eq_id, comp_id);
+}
+
+Result<MasteringChainState> MasteringChainState::create_default(
+    const ModuleRegistry& registry,
+    Uuid chain_id,
+    ModuleInstanceId gain_id,
+    ModuleInstanceId eq_id,
+    ModuleInstanceId compressor_id)
+{
     auto default_gain = GainParameters::create(0.0);
     if (!default_gain) {
         return Result<MasteringChainState>::failure(*default_gain.error());
@@ -37,6 +52,10 @@ Result<MasteringChainState> MasteringChainState::create_default(
     auto default_eq = ParametricEqParameters::create_legacy_default();
     if (!default_eq) {
         return Result<MasteringChainState>::failure(*default_eq.error());
+    }
+    auto default_comp = CompressorParameters::create_default();
+    if (!default_comp) {
+        return Result<MasteringChainState>::failure(*default_comp.error());
     }
 
     return create(
@@ -47,7 +66,10 @@ Result<MasteringChainState> MasteringChainState::create_default(
         false,
         eq_id,
         *default_eq.value(),
-        false);
+        false,
+        compressor_id,
+        *default_comp.value(),
+        true);
 }
 
 Result<MasteringChainState> MasteringChainState::create(
@@ -59,6 +81,36 @@ Result<MasteringChainState> MasteringChainState::create(
     ModuleInstanceId eq_id,
     ParametricEqParameters eq_params,
     bool eq_bypassed)
+{
+    const auto comp_uuid = *Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toLower().toStdString()).value();
+    const auto comp_id = *ModuleInstanceId::from_uuid(comp_uuid).value();
+    const auto comp_params = *CompressorParameters::create_default().value();
+    return create(
+        registry,
+        chain_id,
+        gain_id,
+        std::move(gain_params),
+        gain_bypassed,
+        eq_id,
+        std::move(eq_params),
+        eq_bypassed,
+        comp_id,
+        comp_params,
+        true);
+}
+
+Result<MasteringChainState> MasteringChainState::create(
+    const ModuleRegistry& registry,
+    Uuid chain_id,
+    ModuleInstanceId gain_id,
+    GainParameters gain_params,
+    bool gain_bypassed,
+    ModuleInstanceId eq_id,
+    ParametricEqParameters eq_params,
+    bool eq_bypassed,
+    ModuleInstanceId compressor_id,
+    CompressorParameters compressor_params,
+    bool compressor_bypassed)
 {
     if (chain_id.is_nil()) {
         return Result<MasteringChainState>::failure(chain_state_error(
@@ -78,11 +130,17 @@ Result<MasteringChainState> MasteringChainState::create(
             "INVALID_MODULE_INSTANCE_ID",
             "MasteringChainState requires an explicit non-nil eq_instance_id."));
     }
-    if (gain_id == eq_id) {
+    if (compressor_id.uuid().is_nil()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_MODULE_INSTANCE_ID",
+            "MasteringChainState requires an explicit non-nil compressor_instance_id."));
+    }
+    if (gain_id == eq_id || gain_id == compressor_id || eq_id == compressor_id) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument,
             "DUPLICATE_MODULE_INSTANCE_ID",
-            "Gain and Parametric EQ module instance IDs must be unique."));
+            "Gain, Parametric EQ, and Compressor module instance IDs must be unique."));
     }
 
     auto reg_ptr = std::make_shared<const ModuleRegistry>(registry);
@@ -117,6 +175,17 @@ Result<MasteringChainState> MasteringChainState::create(
         }
     }
 
+    auto comp_add_status = chain.add(compressor_id, kCompressorTypeId, 2U);
+    if (!comp_add_status) {
+        return Result<MasteringChainState>::failure(*comp_add_status.error());
+    }
+    if (compressor_bypassed) {
+        auto bypass_status = chain.set_user_bypass(compressor_id, true);
+        if (!bypass_status) {
+            return Result<MasteringChainState>::failure(*bypass_status.error());
+        }
+    }
+
     return Result<MasteringChainState>::success(MasteringChainState{
         std::move(reg_ptr),
         chain_id,
@@ -124,7 +193,9 @@ Result<MasteringChainState> MasteringChainState::create(
         gain_id,
         std::move(gain_params),
         eq_id,
-        std::move(eq_params)});
+        std::move(eq_params),
+        compressor_id,
+        std::move(compressor_params)});
 }
 
 Result<MasteringChainState> MasteringChainState::restore(
@@ -135,6 +206,32 @@ Result<MasteringChainState> MasteringChainState::restore(
     GainParameters gain_params,
     ModuleInstanceId eq_id,
     ParametricEqParameters eq_params)
+{
+    const auto comp_uuid = *Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toLower().toStdString()).value();
+    const auto comp_id = *ModuleInstanceId::from_uuid(comp_uuid).value();
+    const auto comp_params = *CompressorParameters::create_default().value();
+    return restore(
+        std::move(registry),
+        chain_id,
+        std::move(chain),
+        gain_id,
+        std::move(gain_params),
+        eq_id,
+        std::move(eq_params),
+        comp_id,
+        comp_params);
+}
+
+Result<MasteringChainState> MasteringChainState::restore(
+    std::shared_ptr<const ModuleRegistry> registry,
+    Uuid chain_id,
+    ProcessingChain chain,
+    ModuleInstanceId gain_id,
+    GainParameters gain_params,
+    ModuleInstanceId eq_id,
+    ParametricEqParameters eq_params,
+    ModuleInstanceId compressor_id,
+    CompressorParameters compressor_params)
 {
     if (!registry) {
         return Result<MasteringChainState>::failure(chain_state_error(
@@ -160,11 +257,17 @@ Result<MasteringChainState> MasteringChainState::restore(
             "INVALID_MODULE_INSTANCE_ID",
             "MasteringChainState requires an explicit non-nil eq_instance_id."));
     }
-    if (gain_id == eq_id) {
+    if (compressor_id.uuid().is_nil()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_MODULE_INSTANCE_ID",
+            "MasteringChainState requires an explicit non-nil compressor_instance_id."));
+    }
+    if (gain_id == eq_id || gain_id == compressor_id || eq_id == compressor_id) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument,
             "DUPLICATE_MODULE_INSTANCE_ID",
-            "Gain and Parametric EQ module instance IDs must be unique."));
+            "Gain, Parametric EQ, and Compressor module instance IDs must be unique."));
     }
     if (chain.context().stage != ProcessingStage::MASTER || chain.context().segment != ChainSegment::MANUAL) {
         return Result<MasteringChainState>::failure(chain_state_error(
@@ -172,11 +275,11 @@ Result<MasteringChainState> MasteringChainState::restore(
             "INVALID_CHAIN_CONTEXT",
             "MasteringChainState requires a MASTER/MANUAL processing chain context."));
     }
-    if (chain.instances().size() != 2U) {
+    if (chain.instances().size() != 3U) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument,
             "INVALID_MODULE_COUNT",
-            "MasteringChainState requires exactly 2 module instances."));
+            "MasteringChainState requires exactly 3 module instances."));
     }
     if (chain.instances()[0].instance_id() != gain_id || chain.instances()[0].module_type_id() != kGainTypeId) {
         return Result<MasteringChainState>::failure(chain_state_error(
@@ -190,6 +293,12 @@ Result<MasteringChainState> MasteringChainState::restore(
             "INVALID_EQ_MODULE",
             "Module 1 must be Parametric EQ with matching instance_id."));
     }
+    if (chain.instances()[2].instance_id() != compressor_id || chain.instances()[2].module_type_id() != kCompressorTypeId) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument,
+            "INVALID_COMPRESSOR_MODULE",
+            "Module 2 must be Compressor with matching instance_id."));
+    }
 
     return Result<MasteringChainState>::success(MasteringChainState{
         std::move(registry),
@@ -198,7 +307,9 @@ Result<MasteringChainState> MasteringChainState::restore(
         gain_id,
         std::move(gain_params),
         eq_id,
-        std::move(eq_params)});
+        std::move(eq_params),
+        compressor_id,
+        std::move(compressor_params)});
 }
 
 MasteringChainState::MasteringChainState(
@@ -208,7 +319,9 @@ MasteringChainState::MasteringChainState(
     ModuleInstanceId gain_id,
     GainParameters gain_params,
     ModuleInstanceId eq_id,
-    ParametricEqParameters eq_params) noexcept
+    ParametricEqParameters eq_params,
+    ModuleInstanceId compressor_id,
+    CompressorParameters compressor_params) noexcept
     : registry_(std::move(registry))
     , chain_id_(chain_id)
     , chain_(std::move(chain))
@@ -216,6 +329,8 @@ MasteringChainState::MasteringChainState(
     , gain_params_(std::move(gain_params))
     , eq_id_(eq_id)
     , eq_params_(std::move(eq_params))
+    , compressor_id_(compressor_id)
+    , compressor_params_(std::move(compressor_params))
 {
 }
 
@@ -226,6 +341,7 @@ std::size_t MasteringChainState::module_count() const noexcept { return chain_.i
 
 const ModuleInstanceId& MasteringChainState::gain_instance_id() const noexcept { return gain_id_; }
 const ModuleInstanceId& MasteringChainState::eq_instance_id() const noexcept { return eq_id_; }
+const ModuleInstanceId& MasteringChainState::compressor_instance_id() const noexcept { return compressor_id_; }
 
 Result<std::reference_wrapper<const ModuleInstance>> MasteringChainState::gain_instance() const
 {
@@ -235,6 +351,11 @@ Result<std::reference_wrapper<const ModuleInstance>> MasteringChainState::gain_i
 Result<std::reference_wrapper<const ModuleInstance>> MasteringChainState::eq_instance() const
 {
     return chain_.find_instance(eq_id_);
+}
+
+Result<std::reference_wrapper<const ModuleInstance>> MasteringChainState::compressor_instance() const
+{
+    return chain_.find_instance(compressor_id_);
 }
 
 Result<std::reference_wrapper<const ModuleDescriptor>> MasteringChainState::find_descriptor(std::string_view type_id) const
@@ -262,6 +383,14 @@ Status MasteringChainState::set_parametric_eq_parameters(const ParametricEqParam
     return Status::success();
 }
 
+const CompressorParameters& MasteringChainState::compressor_parameters() const noexcept { return compressor_params_; }
+
+Status MasteringChainState::set_compressor_parameters(const CompressorParameters& params)
+{
+    compressor_params_ = params;
+    return Status::success();
+}
+
 Result<bool> MasteringChainState::is_bypassed(const ModuleInstanceId& instance_id) const
 {
     auto inst_res = chain_.find_instance(instance_id);
@@ -280,7 +409,8 @@ std::vector<ModuleExecutionBinding> MasteringChainState::execution_bindings() co
 {
     return std::vector<ModuleExecutionBinding>{
         ModuleExecutionBinding{gain_id_, gain_params_},
-        ModuleExecutionBinding{eq_id_, eq_params_}};
+        ModuleExecutionBinding{eq_id_, eq_params_},
+        ModuleExecutionBinding{compressor_id_, compressor_params_}};
 }
 
 }  // namespace rgsml::app

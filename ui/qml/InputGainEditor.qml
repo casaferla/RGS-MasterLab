@@ -85,6 +85,8 @@ Item {
                         font.family: "Consolas"
                         font.pixelSize: 36
                         font.weight: Font.Bold
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.preferredWidth: 240
                         Layout.alignment: Qt.AlignHCenter
                     }
                 }
@@ -210,7 +212,8 @@ Item {
                     spacing: 12
 
                     Text {
-                        text: "Direct Entry:"
+                        objectName: "gainParameterLabel"
+                        text: "GAIN"
                         color: root.textSecondary
                         font.family: "Segoe UI"
                         font.pixelSize: 12
@@ -240,12 +243,21 @@ Item {
 
                             text: root.currentGainText
                             font.family: "Consolas"
-                            font.pixelSize: 14
+                            font.pixelSize: 16
                             color: root.hasError ? root.error : root.textPrimary
                             selectByMouse: true
                             selectionColor: "#4000C8FF"
                             selectedTextColor: root.textPrimary
                             activeFocusOnTab: true
+                            property string interactionHint: "Drag the slider above to adjust\nEnter to apply • Esc to cancel"
+
+                            HoverHandler {
+                                id: gainInputHover
+                            }
+
+                            ToolTip.text: gainInput.interactionHint
+                            ToolTip.visible: gainInputHover.hovered
+                            ToolTip.delay: 550
 
                             // Treat typed text as a local draft. Committing on
                             // every keystroke would both reformat partial input
@@ -269,6 +281,7 @@ Item {
                             }
 
                             Accessible.name: "Input Gain numeric text input field"
+                            Accessible.description: gainInput.interactionHint
                         }
                     }
 

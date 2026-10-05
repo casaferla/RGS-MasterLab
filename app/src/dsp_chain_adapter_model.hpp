@@ -1,8 +1,9 @@
 #pragma once
 
+#include "compressor_view_model.hpp"
 #include "dsp_module_adapter.hpp"
-#include "gain_view_model.hpp"
 #include "eq_view_model.hpp"
+#include "gain_view_model.hpp"
 #include "mastering_chain_state.hpp"
 
 #include <QObject>
@@ -27,9 +28,18 @@ public:
     explicit DspChainAdapterModel(
         GainViewModel* gainViewModel = nullptr,
         EqViewModel* eqViewModel = nullptr,
+        CompressorViewModel* compressorViewModel = nullptr,
         MasteringChainState* chainState = nullptr,
         QString workflowContext = QStringLiteral("Mastering"),
         QObject* parent = nullptr);
+
+    explicit DspChainAdapterModel(
+        GainViewModel* gainViewModel,
+        EqViewModel* eqViewModel,
+        MasteringChainState* chainState,
+        QString workflowContext = QStringLiteral("Mastering"),
+        QObject* parent = nullptr)
+        : DspChainAdapterModel(gainViewModel, eqViewModel, nullptr, chainState, std::move(workflowContext), parent) {}
     ~DspChainAdapterModel() override = default;
 
     [[nodiscard]] QVariantList modules() const;
@@ -53,6 +63,7 @@ private:
 
     GainViewModel* gainViewModel_{nullptr};
     EqViewModel* eqViewModel_{nullptr};
+    CompressorViewModel* compressorViewModel_{nullptr};
     MasteringChainState* chainState_{nullptr};
     QString workflowContext_;
 

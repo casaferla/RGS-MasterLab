@@ -91,7 +91,7 @@ Rectangle {
 
                     color: isSelected ? "#1A324A" : (rowMouse.containsMouse ? "#122538" : "#0D1D2B")
                     border.color: isSelected ? "#00C8FF" : "#1A324A"
-                    border.width: isSelected ? 2 : 1
+                    border.width: 1
 
                     activeFocusOnTab: true
 
@@ -142,9 +142,20 @@ Rectangle {
                         }
                     }
 
+                    // Generic Family Accent Strip (Left edge secondary identity)
+                    Rectangle {
+                        id: accentStrip
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 3
+                        radius: 1
+                        color: rowItem.moduleAdapter ? rowItem.moduleAdapter.familyAccent : "#00C8FF"
+                    }
+
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 8
+                        anchors.leftMargin: 10
                         anchors.rightMargin: 8
                         spacing: 6
 
@@ -193,24 +204,28 @@ Rectangle {
                             }
                         }
 
-                        // Bypass Badge ("BYP")
-                        Rectangle {
-                            objectName: "dspChainBypassBadge_" + index
-                            visible: rowItem.isBypassed
+                        // Bypass Badge ("BYP") fixed width container to prevent title shift (UI-MINOR-03)
+                        Item {
                             Layout.preferredWidth: 28
                             Layout.preferredHeight: 16
-                            radius: 3
-                            color: "#3A2A0D"
-                            border.color: "#F2B632"
-                            border.width: 1
 
-                            Text {
-                                anchors.centerIn: parent
-                                text: "BYP"
-                                color: "#F2B632"
-                                font.family: "Segoe UI"
-                                font.pixelSize: 8
-                                font.weight: Font.Bold
+                            Rectangle {
+                                objectName: "dspChainBypassBadge_" + index
+                                visible: rowItem.isBypassed
+                                anchors.fill: parent
+                                radius: 3
+                                color: "#3A2A0D"
+                                border.color: "#F2B632"
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "BYP"
+                                    color: "#F2B632"
+                                    font.family: "Segoe UI"
+                                    font.pixelSize: 8
+                                    font.weight: Font.Bold
+                                }
                             }
                         }
 

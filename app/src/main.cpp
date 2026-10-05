@@ -1,5 +1,6 @@
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
+#include "compressor_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
@@ -92,10 +93,12 @@ int main(int argc, char* argv[])
     const auto chainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto gainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto eqUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+    const auto compUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto gainInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(gainUuid).value();
     const auto eqInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+    const auto compInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(compUuid).value();
     auto masteringChainStateRes = rgsml::app::MasteringChainState::create_default(
-        *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId);
+        *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId, compInstanceId);
     auto masteringChainState = std::move(*masteringChainStateRes.value());
 
     rgsml::app::MasteringPreviewController previewController{
@@ -110,7 +113,8 @@ int main(int argc, char* argv[])
 
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
-    rgsml::app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &masteringChainState};
+    rgsml::app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
+    rgsml::app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
@@ -191,6 +195,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("eqViewModel"),
         &eqViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("compressorViewModel"),
+        &compressorViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"),
         &dspChainAdapterModel);

@@ -44,34 +44,47 @@ void DspModuleAdapterTest::testAdapterInventoryAndOrder()
     const auto chainUuid = *core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
     const auto gainUuid = *core::Uuid::parse("22222222-2222-2222-2222-222222222222").value();
     const auto eqUuid = *core::Uuid::parse("33333333-3333-3333-3333-333333333333").value();
+    const auto compUuid = *core::Uuid::parse("44444444-4444-4444-4444-444444444444").value();
     const auto gainId = *dsp::ModuleInstanceId::from_uuid(gainUuid).value();
     const auto eqId = *dsp::ModuleInstanceId::from_uuid(eqUuid).value();
+    const auto compId = *dsp::ModuleInstanceId::from_uuid(compUuid).value();
 
-    auto chainStateRes = MasteringChainState::create_default(*registry.value(), chainUuid, gainId, eqId);
+    auto chainStateRes = MasteringChainState::create_default(*registry.value(), chainUuid, gainId, eqId, compId);
     QVERIFY(chainStateRes);
     auto chainState = std::move(*chainStateRes.value());
 
     GainViewModel gainVM{&chainState, nullptr};
     EqViewModel eqVM{&chainState, nullptr};
+    CompressorViewModel compVM{&chainState, nullptr};
 
-    DspChainAdapterModel chainModel{&gainVM, &eqVM, &chainState};
+    DspChainAdapterModel chainModel{&gainVM, &eqVM, &compVM, &chainState};
 
     const auto modules = chainModel.modules();
-    QCOMPARE(modules.size(), 2);
+    QCOMPARE(modules.size(), 3);
 
     auto* gainAdapter = qobject_cast<DspModuleAdapter*>(modules[0].value<QObject*>());
     auto* eqAdapter = qobject_cast<DspModuleAdapter*>(modules[1].value<QObject*>());
+    auto* compAdapter = qobject_cast<DspModuleAdapter*>(modules[2].value<QObject*>());
 
     QVERIFY(gainAdapter != nullptr);
     QVERIFY(eqAdapter != nullptr);
+    QVERIFY(compAdapter != nullptr);
 
     QCOMPARE(gainAdapter->type_id(), QStringLiteral("rgsml.dsp.gain"));
     QCOMPARE(gainAdapter->display_name(), QStringLiteral("Input Gain"));
     QCOMPARE(gainAdapter->editor_content_key(), QStringLiteral("INPUT_GAIN"));
+    QCOMPARE(gainAdapter->family_accent(), QStringLiteral("#6F9FB3"));
 
     QCOMPARE(eqAdapter->type_id(), QStringLiteral("rgsml.dsp.parametric-eq"));
     QCOMPARE(eqAdapter->display_name(), QStringLiteral("Parametric EQ"));
     QCOMPARE(eqAdapter->editor_content_key(), QStringLiteral("PARAMETRIC_EQ"));
+    QCOMPARE(eqAdapter->family_accent(), QStringLiteral("#4E86C6"));
+
+    QCOMPARE(compAdapter->type_id(), QStringLiteral("rgsml.dsp.compressor"));
+    QCOMPARE(compAdapter->display_name(), QStringLiteral("Compressor"));
+    QCOMPARE(compAdapter->editor_content_key(), QStringLiteral("COMPRESSOR"));
+    QCOMPARE(compAdapter->family_accent(), QStringLiteral("#C4774A"));
+    QCOMPARE(compAdapter->live_change_policy(), QStringLiteral("PREPARED_REALIZATION_HOT_SWAP"));
 }
 
 void DspModuleAdapterTest::testStableInstanceIds()
