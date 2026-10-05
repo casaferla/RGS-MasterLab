@@ -1757,6 +1757,26 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             qPrintable(name + QStringLiteral(" must stay inside Compressor controls at minimum size")));
     }
 
+    for (const auto& name : {
+             QStringLiteral("compressorThresholdSlider"),
+             QStringLiteral("compressorRatioSlider"),
+             QStringLiteral("compressorKneeSlider"),
+             QStringLiteral("compressorAttackSlider"),
+             QStringLiteral("compressorReleaseSlider"),
+             QStringLiteral("compressorRmsTimeSlider"),
+             QStringLiteral("compressorLookAheadSlider"),
+             QStringLiteral("compressorMixSlider"),
+             QStringLiteral("compressorMakeupSlider")}) {
+        auto* sliderItem = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, name));
+        QVERIFY2(sliderItem != nullptr, qPrintable(name + QStringLiteral(" must exist")));
+        QVERIFY2(check_item_contained_in_ancestor(sliderItem, controlsPanelNative),
+            qPrintable(name + QStringLiteral(" must stay inside Compressor controls at minimum size")));
+    }
+
+    QCOMPARE(compressorViewModel.transfer_curve_handles().size(), 4);
+    auto* thresholdFieldCheck = find_child_by_name(compressorEditor, QStringLiteral("compressorThresholdField"));
+    QVERIFY(thresholdFieldCheck && thresholdFieldCheck->property("interactionHint").toString().contains(QStringLiteral("curve point")));
+
     for (auto* button : {rmsBtn, peakBtn, linkMaxBtn, linkMeanBtn, linkDualMonoBtn}) {
         auto* buttonItem = qobject_cast<QQuickItem*>(button);
         QVERIFY2(buttonItem != nullptr, "Compressor selector button must be a QQuickItem");

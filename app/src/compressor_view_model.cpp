@@ -313,6 +313,82 @@ QVariantList CompressorViewModel::transfer_curve_points() const
     return list;
 }
 
+QVariantList CompressorViewModel::transfer_curve_handles() const
+{
+    QVariantList list;
+    list.reserve(4);
+
+    // 1. Threshold handle (#2ED3FF, horizontal drag)
+    {
+        const double x = draftThresholdDbfs_;
+        const double gr = compute_gain_reduction_db(x, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double y = x - gr + draftMakeupGainDb_;
+
+        QVariantMap map;
+        map.insert(QStringLiteral("id"), QStringLiteral("threshold"));
+        map.insert(QStringLiteral("color"), QStringLiteral("#2ED3FF"));
+        map.insert(QStringLiteral("dragDirection"), QStringLiteral("horizontal"));
+        map.insert(QStringLiteral("inputDbfs"), x);
+        map.insert(QStringLiteral("outputDbfs"), y);
+        map.insert(QStringLiteral("label"), QStringLiteral("Threshold"));
+        list.append(map);
+    }
+
+    // 2. Ratio handle (#2FD98F, vertical drag)
+    {
+        double x = draftThresholdDbfs_ + 12.0;
+        if (x > 6.0) x = 6.0;
+        if (x < draftThresholdDbfs_) x = draftThresholdDbfs_;
+        const double gr = compute_gain_reduction_db(x, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double y = x - gr + draftMakeupGainDb_;
+
+        QVariantMap map;
+        map.insert(QStringLiteral("id"), QStringLiteral("ratio"));
+        map.insert(QStringLiteral("color"), QStringLiteral("#2FD98F"));
+        map.insert(QStringLiteral("dragDirection"), QStringLiteral("vertical"));
+        map.insert(QStringLiteral("inputDbfs"), x);
+        map.insert(QStringLiteral("outputDbfs"), y);
+        map.insert(QStringLiteral("label"), QStringLiteral("Ratio"));
+        list.append(map);
+    }
+
+    // 3. Knee handle (#FFD84A, horizontal drag)
+    {
+        const double x = draftThresholdDbfs_ + (draftKneeDb_ * 0.5);
+        const double gr = compute_gain_reduction_db(x, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double y = x - gr + draftMakeupGainDb_;
+
+        QVariantMap map;
+        map.insert(QStringLiteral("id"), QStringLiteral("knee"));
+        map.insert(QStringLiteral("color"), QStringLiteral("#FFD84A"));
+        map.insert(QStringLiteral("dragDirection"), QStringLiteral("horizontal"));
+        map.insert(QStringLiteral("inputDbfs"), x);
+        map.insert(QStringLiteral("outputDbfs"), y);
+        map.insert(QStringLiteral("label"), QStringLiteral("Knee"));
+        list.append(map);
+    }
+
+    // 4. Make-up handle (#FF6B6B, vertical drag)
+    {
+        double x = -48.0;
+        if (x > draftThresholdDbfs_ - 6.0) x = draftThresholdDbfs_ - 6.0;
+        if (x < -60.0) x = -60.0;
+        const double gr = compute_gain_reduction_db(x, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double y = x - gr + draftMakeupGainDb_;
+
+        QVariantMap map;
+        map.insert(QStringLiteral("id"), QStringLiteral("makeup"));
+        map.insert(QStringLiteral("color"), QStringLiteral("#FF6B6B"));
+        map.insert(QStringLiteral("dragDirection"), QStringLiteral("vertical"));
+        map.insert(QStringLiteral("inputDbfs"), x);
+        map.insert(QStringLiteral("outputDbfs"), y);
+        map.insert(QStringLiteral("label"), QStringLiteral("Make-up"));
+        list.append(map);
+    }
+
+    return list;
+}
+
 void CompressorViewModel::commit_candidate_or_set_validation(
     dsp::CompressorDetectorMode detectorMode,
     dsp::CompressorChannelLink channelLink,
@@ -656,6 +732,94 @@ void CompressorViewModel::setDraftFieldText(const QString& fieldName, const QStr
     }
 
     emit changed();
+}
+
+void CompressorViewModel::setDraftFieldValue(const QString& fieldName, double value)
+{
+    if (fieldName == QStringLiteral("thresholdDbfs") || fieldName == QStringLiteral("threshold")) {
+        draftThresholdDbfs_ = value;
+        draftThresholdText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("ratio")) {
+        draftRatio_ = value;
+        draftRatioText_ = QString::number(value, 'f', 2);
+    } else if (fieldName == QStringLiteral("kneeDb") || fieldName == QStringLiteral("knee")) {
+        draftKneeDb_ = value;
+        draftKneeText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("attackMs") || fieldName == QStringLiteral("attack")) {
+        draftAttackMs_ = value;
+        draftAttackText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("releaseMs") || fieldName == QStringLiteral("release")) {
+        draftReleaseMs_ = value;
+        draftReleaseText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("rmsTimeConstantMs") || fieldName == QStringLiteral("rmsTime")) {
+        draftRmsTimeConstantMs_ = value;
+        draftRmsTimeConstantText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("lookAheadMs") || fieldName == QStringLiteral("lookAhead")) {
+        draftLookAheadMs_ = value;
+        draftLookAheadText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("mixPercent") || fieldName == QStringLiteral("mix")) {
+        draftMixPercent_ = value;
+        draftMixPercentText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("makeupGainDb") || fieldName == QStringLiteral("makeup")) {
+        draftMakeupGainDb_ = value;
+        draftMakeupGainText_ = QString::number(value, 'f', 1);
+    }
+
+    auto candidate = dsp::CompressorParameters::create(
+        draftDetectorMode_,
+        draftChannelLink_,
+        draftThresholdDbfs_,
+        draftRatio_,
+        draftKneeDb_,
+        draftAttackMs_,
+        draftReleaseMs_,
+        draftRmsTimeConstantMs_,
+        draftLookAheadMs_,
+        draftMixPercent_,
+        draftMakeupGainDb_);
+
+    if (!candidate) {
+        validationField_ = fieldName;
+        validationMessage_ = QString::fromStdString(candidate.error()->message());
+    } else {
+        validationField_.clear();
+        validationMessage_.clear();
+    }
+
+    emit changed();
+}
+
+void CompressorViewModel::setCurveHandleDraft(const QString& handleId, double inputDbfs, double outputDbfs)
+{
+    if (handleId == QStringLiteral("threshold")) {
+        setDraftFieldValue(QStringLiteral("thresholdDbfs"), inputDbfs);
+    } else if (handleId == QStringLiteral("ratio")) {
+        double evalX = draftThresholdDbfs_ + 12.0;
+        if (evalX > 6.0) evalX = 6.0;
+        const double deltaX = evalX - draftThresholdDbfs_;
+        if (deltaX <= 1e-6) return;
+
+        const double targetGr = evalX + draftMakeupGainDb_ - outputDbfs;
+        const double factor = targetGr / deltaX;
+        double newRatio = 1.0;
+        if (factor < 1.0 - 1e-6) {
+            newRatio = 1.0 / (1.0 - factor);
+        } else {
+            newRatio = 20.0;
+        }
+        setDraftFieldValue(QStringLiteral("ratio"), newRatio);
+    } else if (handleId == QStringLiteral("knee")) {
+        const double deltaX = std::abs(inputDbfs - draftThresholdDbfs_);
+        const double newKnee = 2.0 * deltaX;
+        setDraftFieldValue(QStringLiteral("kneeDb"), newKnee);
+    } else if (handleId == QStringLiteral("makeup")) {
+        double evalX = -48.0;
+        if (evalX > draftThresholdDbfs_ - 6.0) evalX = draftThresholdDbfs_ - 6.0;
+        if (evalX < -60.0) evalX = -60.0;
+        const double gr = compute_gain_reduction_db(evalX, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double newMakeup = outputDbfs - evalX + gr;
+        setDraftFieldValue(QStringLiteral("makeupGainDb"), newMakeup);
+    }
 }
 
 bool CompressorViewModel::commitDraft()

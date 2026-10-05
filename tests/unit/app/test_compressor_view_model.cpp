@@ -32,6 +32,8 @@ private slots:
     void staticTransferCurveOraclePoints();
     void resetToDefaultState();
     void textDraftContractAndCommitCancel();
+    void sliderDraftAndCommitCycle();
+    void interactiveCurveHandlesAndCancel();
 };
 
 void CompressorViewModelTest::initialDefaults()
@@ -366,6 +368,94 @@ void CompressorViewModelTest::textDraftContractAndCommitCancel()
     QCOMPARE(vm.threshold_text(), QStringLiteral("-18.5"));
     QVERIFY(vm.validation_field().isEmpty());
     QCOMPARE(vm.threshold_dbfs(), -18.5);
+}
+
+void CompressorViewModelTest::sliderDraftAndCommitCycle()
+{
+    CompressorViewModel vm;
+    const auto gen0 = vm.preview_generation();
+
+    // 1. setDraftFieldValue changes draft only, no preview, no undo
+    vm.setDraftFieldValue(QStringLiteral("thresholdDbfs"), -18.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -18.0);
+    QCOMPARE(vm.threshold_text(), QStringLiteral("-18.0"));
+    QCOMPARE(vm.threshold_dbfs(), -24.0); // Committed state unchanged!
+    QCOMPARE(vm.preview_generation(), gen0); // No preview requested!
+    QVERIFY(!vm.can_undo()); // No undo pushed during drag!
+
+    // 2. Continuous drag updates draft repeatedly
+    vm.setDraftFieldValue(QStringLiteral("thresholdDbfs"), -12.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -12.0);
+    QCOMPARE(vm.threshold_text(), QStringLiteral("-12.0"));
+    QCOMPARE(vm.threshold_dbfs(), -24.0);
+    QCOMPARE(vm.preview_generation(), gen0);
+    QVERIFY(!vm.can_undo());
+
+    // 3. Commit on release updates authority and previews once
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.threshold_dbfs(), -12.0); // Committed!
+    QVERIFY(vm.preview_generation() > gen0); // Preview requested once!
+    QVERIFY(vm.can_undo()); // Exactly one undo entry pushed!
+
+    // 4. Unchanged commit creates no additional preview
+    const auto gen1 = vm.preview_generation();
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), gen1);
+}
+
+void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
+{
+    CompressorViewModel vm;
+    const auto gen0 = vm.preview_generation();
+
+    const auto handles = vm.transfer_curve_handles();
+    QCOMPARE(handles.size(), 4);
+
+    // Verify handle IDs, colors, and finite coordinates
+    const std::array expectedIds{QStringLiteral("threshold"), QStringLiteral("ratio"), QStringLiteral("knee"), QStringLiteral("makeup")};
+    const std::array expectedColors{QStringLiteral("#2ED3FF"), QStringLiteral("#2FD98F"), QStringLiteral("#FFD84A"), QStringLiteral("#FF6B6B")};
+
+    for (std::size_t i = 0; i < handles.size(); ++i) {
+        const auto map = handles[i].toMap();
+        QCOMPARE(map[QStringLiteral("id")].toString(), expectedIds[i]);
+        QCOMPARE(map[QStringLiteral("color")].toString(), expectedColors[i]);
+        QVERIFY(std::isfinite(map[QStringLiteral("inputDbfs")].toDouble()));
+        QVERIFY(std::isfinite(map[QStringLiteral("outputDbfs")].toDouble()));
+    }
+
+    // Drag Threshold handle
+    vm.setCurveHandleDraft(QStringLiteral("threshold"), -18.0, -18.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -18.0);
+    QCOMPARE(vm.threshold_dbfs(), -24.0); // Uncommitted!
+    QCOMPARE(vm.preview_generation(), gen0); // No preview during handle drag!
+
+    // Drag Ratio handle
+    vm.setCurveHandleDraft(QStringLiteral("ratio"), -12.0, -18.0);
+    QCOMPARE(vm.draft_ratio(), 2.0); // Updated draft ratio
+    QCOMPARE(vm.ratio(), 2.0); // Uncommitted!
+
+    // Drag Knee handle
+    vm.setCurveHandleDraft(QStringLiteral("knee"), -18.0, -18.0);
+    QCOMPARE(vm.draft_knee_db(), 0.0); // 2 * |-18 - (-18)| = 0 dB
+
+    // Drag Make-up handle
+    vm.setCurveHandleDraft(QStringLiteral("makeup"), -54.0, -50.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), 4.0); // Shifted by +4 dB
+
+    // Cancel restores committed authority
+    vm.cancelDraft();
+    QCOMPARE(vm.draft_threshold_dbfs(), -24.0);
+    QCOMPARE(vm.draft_ratio(), 2.0);
+    QCOMPARE(vm.draft_knee_db(), 6.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), 0.0);
+    QCOMPARE(vm.preview_generation(), gen0);
+
+    // Re-apply threshold handle drag and commit once
+    vm.setCurveHandleDraft(QStringLiteral("threshold"), -15.0, -15.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -15.0);
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.threshold_dbfs(), -15.0); // Committed!
+    QVERIFY(vm.preview_generation() > gen0); // Single preview requested!
 }
 
 }  // namespace

@@ -99,7 +99,7 @@ Item {
                         }
                     }
 
-                    // Canvas Graph
+                    // Canvas Graph with Interactive Handles
                     Canvas {
                         id: curveCanvas
                         objectName: "compressorCurveCanvas"
@@ -107,8 +107,10 @@ Item {
                         Layout.fillHeight: true
 
                         property var pointsList: root.viewModel ? root.viewModel.transferCurvePoints : []
+                        property var handlesList: root.viewModel ? root.viewModel.transferCurveHandles : []
 
                         onPointsListChanged: requestPaint()
+                        onHandlesListChanged: requestPaint()
                         onWidthChanged: requestPaint()
                         onHeightChanged: requestPaint()
 
@@ -157,7 +159,7 @@ Item {
                             ctx.stroke()
                             ctx.setLineDash([])
 
-                            // Transfer Curve
+                            // Dynamics Copper Transfer Curve
                             if (pointsList && pointsList.length > 0) {
                                 ctx.strokeStyle = "#C4774A"
                                 ctx.lineWidth = 2
@@ -175,6 +177,87 @@ Item {
                                     }
                                 }
                                 ctx.stroke()
+                            }
+
+                            // C++ Transfer Curve Handles
+                            if (handlesList && handlesList.length > 0) {
+                                for (var h = 0; h < handlesList.length; ++h) {
+                                    var handle = handlesList[h]
+                                    var hx = mapX(handle.inputDbfs)
+                                    var hy = mapY(handle.outputDbfs)
+
+                                    ctx.fillStyle = handle.color
+                                    ctx.strokeStyle = "#FFFFFF"
+                                    ctx.lineWidth = 1.5
+
+                                    ctx.beginPath()
+                                    ctx.arc(hx, hy, 5, 0, 2 * Math.PI)
+                                    ctx.fill()
+                                    ctx.stroke()
+                                }
+                            }
+                        }
+
+                        MouseArea {
+                            id: curveMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+
+                            property string activeHandleId: ""
+
+                            function mapXToDbfs(px) {
+                                const minDbfs = -60.0
+                                const maxDbfs = 6.0
+                                return minDbfs + (px / curveCanvas.width) * (maxDbfs - minDbfs)
+                            }
+
+                            function mapYToDbfs(py) {
+                                const minDbfs = -60.0
+                                const maxDbfs = 6.0
+                                return minDbfs + ((curveCanvas.height - py) / curveCanvas.height) * (maxDbfs - minDbfs)
+                            }
+
+                            onPressed: (mouse) => {
+                                activeHandleId = ""
+                                if (!root.viewModel) return
+
+                                var handles = root.viewModel.transferCurveHandles
+                                if (!handles || handles.length === 0) return
+
+                                const minDbfs = -60.0
+                                const maxDbfs = 6.0
+                                const dbRange = maxDbfs - minDbfs
+
+                                var bestId = ""
+                                var bestDist = 20.0
+
+                                for (var i = 0; i < handles.length; ++i) {
+                                    var h = handles[i]
+                                    var hx = (h.inputDbfs - minDbfs) / dbRange * curveCanvas.width
+                                    var hy = curveCanvas.height - ((h.outputDbfs - minDbfs) / dbRange * curveCanvas.height)
+                                    var dist = Math.hypot(mouse.x - hx, mouse.y - hy)
+                                    if (dist < bestDist) {
+                                        bestDist = dist
+                                        bestId = h.id
+                                    }
+                                }
+
+                                activeHandleId = bestId
+                            }
+
+                            onPositionChanged: (mouse) => {
+                                if (pressed && activeHandleId !== "" && root.viewModel) {
+                                    var inDbfs = mapXToDbfs(mouse.x)
+                                    var outDbfs = mapYToDbfs(mouse.y)
+                                    root.viewModel.setCurveHandleDraft(activeHandleId, inDbfs, outDbfs)
+                                }
+                            }
+
+                            onReleased: {
+                                if (activeHandleId !== "" && root.viewModel) {
+                                    root.viewModel.commitDraft()
+                                    activeHandleId = ""
+                                }
                             }
                         }
                     }
@@ -303,7 +386,7 @@ Item {
                             color: "#1A2C3D"
                         }
 
-                        // Grid of Numeric Controls
+                        // Grid of Numeric Controls & Sliders
                         GridLayout {
                             Layout.fillWidth: true
                             columns: 3
@@ -311,131 +394,283 @@ Item {
                             rowSpacing: 12
 
                             // 1. Threshold
-                            StudioNumericField {
-                                id: thresholdField
-                                objectName: "compressorThresholdField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "thresholdDbfs"
-                                labelText: "THRESHOLD"
-                                unitText: "dBFS"
-                                rawText: root.viewModel ? root.viewModel.thresholdText : "-24.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 4
+
+                                StudioNumericField {
+                                    id: thresholdField
+                                    objectName: "compressorThresholdField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "thresholdDbfs"
+                                    labelText: "THRESHOLD"
+                                    unitText: "dBFS"
+                                    rawText: root.viewModel ? root.viewModel.thresholdText : "-24.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag cyan curve point left/right or use the slider.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorThresholdSlider"
+                                    from: -120.0
+                                    to: 0.0
+                                    stepSize: 0.1
+                                    value: root.viewModel ? root.viewModel.draftThresholdDbfs : -24.0
+                                    fieldName: "thresholdDbfs"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    accentColor: "#2ED3FF"
+                                    accessibleName: "Threshold continuous adjustment slider"
+                                }
                             }
 
                             // 2. Ratio
-                            StudioNumericField {
-                                id: ratioField
-                                objectName: "compressorRatioField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "ratio"
-                                labelText: "RATIO"
-                                unitText: ": 1"
-                                rawText: root.viewModel ? root.viewModel.ratioText : "2.00"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 4
+
+                                StudioNumericField {
+                                    id: ratioField
+                                    objectName: "compressorRatioField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "ratio"
+                                    labelText: "RATIO"
+                                    unitText: ": 1"
+                                    rawText: root.viewModel ? root.viewModel.ratioText : "2.00"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag emerald curve point up/down or use the slider.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorRatioSlider"
+                                    from: 1.0
+                                    to: 20.0
+                                    stepSize: 0.05
+                                    value: root.viewModel ? root.viewModel.draftRatio : 2.0
+                                    fieldName: "ratio"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    accentColor: "#2FD98F"
+                                    accessibleName: "Ratio continuous adjustment slider"
+                                }
                             }
 
                             // 3. Knee
-                            StudioNumericField {
-                                id: kneeField
-                                objectName: "compressorKneeField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "kneeDb"
-                                labelText: "KNEE"
-                                unitText: "dB"
-                                rawText: root.viewModel ? root.viewModel.kneeText : "6.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 4
+
+                                StudioNumericField {
+                                    id: kneeField
+                                    objectName: "compressorKneeField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "kneeDb"
+                                    labelText: "KNEE"
+                                    unitText: "dB"
+                                    rawText: root.viewModel ? root.viewModel.kneeText : "6.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag yellow curve point left/right or use the slider.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorKneeSlider"
+                                    from: 0.0
+                                    to: 24.0
+                                    stepSize: 0.1
+                                    value: root.viewModel ? root.viewModel.draftKneeDb : 6.0
+                                    fieldName: "kneeDb"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    accentColor: "#FFD84A"
+                                    accessibleName: "Knee continuous adjustment slider"
+                                }
                             }
 
                             // 4. Attack
-                            StudioNumericField {
-                                id: attackField
-                                objectName: "compressorAttackField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "attackMs"
-                                labelText: "ATTACK"
-                                unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.attackText : "30.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 4
+
+                                StudioNumericField {
+                                    id: attackField
+                                    objectName: "compressorAttackField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "attackMs"
+                                    labelText: "ATTACK"
+                                    unitText: "ms"
+                                    rawText: root.viewModel ? root.viewModel.attackText : "30.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag the slider to adjust.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorAttackSlider"
+                                    from: 0.1
+                                    to: 500.0
+                                    stepSize: 0.1
+                                    logarithmic: true
+                                    value: root.viewModel ? root.viewModel.draftAttackMs : 30.0
+                                    fieldName: "attackMs"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    accessibleName: "Attack continuous adjustment slider"
+                                }
                             }
 
                             // 5. Release
-                            StudioNumericField {
-                                id: releaseField
-                                objectName: "compressorReleaseField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "releaseMs"
-                                labelText: "RELEASE"
-                                unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.releaseText : "200.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 4
+
+                                StudioNumericField {
+                                    id: releaseField
+                                    objectName: "compressorReleaseField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "releaseMs"
+                                    labelText: "RELEASE"
+                                    unitText: "ms"
+                                    rawText: root.viewModel ? root.viewModel.releaseText : "200.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag the slider to adjust.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorReleaseSlider"
+                                    from: 1.0
+                                    to: 5000.0
+                                    stepSize: 1.0
+                                    logarithmic: true
+                                    value: root.viewModel ? root.viewModel.draftReleaseMs : 200.0
+                                    fieldName: "releaseMs"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    accessibleName: "Release continuous adjustment slider"
+                                }
                             }
 
                             // 6. RMS Time Constant (Applicability bound)
-                            StudioNumericField {
-                                id: rmsTimeField
-                                objectName: "compressorRmsTimeField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "rmsTimeConstantMs"
-                                labelText: root.viewModel && root.viewModel.rmsTimeEffective ? "RMS TIME" : "RMS TIME (PEAK)"
-                                unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.rmsTimeConstantText : "50.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 4
                                 opacity: root.viewModel ? (root.viewModel.rmsTimeEffective ? 1.0 : 0.4) : 1.0
-                                enabled: root.viewModel ? root.viewModel.rmsTimeEffective : true
+
+                                StudioNumericField {
+                                    id: rmsTimeField
+                                    objectName: "compressorRmsTimeField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "rmsTimeConstantMs"
+                                    labelText: root.viewModel && root.viewModel.rmsTimeEffective ? "RMS TIME" : "RMS TIME (PEAK)"
+                                    unitText: "ms"
+                                    rawText: root.viewModel ? root.viewModel.rmsTimeConstantText : "50.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag the slider to adjust.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                    enabled: root.viewModel ? root.viewModel.rmsTimeEffective : true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorRmsTimeSlider"
+                                    from: 1.0
+                                    to: 500.0
+                                    stepSize: 0.1
+                                    logarithmic: true
+                                    value: root.viewModel ? root.viewModel.draftRmsTimeConstantMs : 50.0
+                                    fieldName: "rmsTimeConstantMs"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    enabled: root.viewModel ? root.viewModel.rmsTimeEffective : true
+                                    accessibleName: "RMS Time Constant continuous adjustment slider"
+                                }
                             }
 
                             // 7. Lookahead
-                            StudioNumericField {
-                                id: lookAheadField
-                                objectName: "compressorLookAheadField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "lookAheadMs"
-                                labelText: "LOOKAHEAD"
-                                unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.lookAheadText : "5.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 4
+
+                                StudioNumericField {
+                                    id: lookAheadField
+                                    objectName: "compressorLookAheadField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "lookAheadMs"
+                                    labelText: "LOOKAHEAD"
+                                    unitText: "ms"
+                                    rawText: root.viewModel ? root.viewModel.lookAheadText : "5.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag the slider to adjust.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorLookAheadSlider"
+                                    from: 0.0
+                                    to: 20.0
+                                    stepSize: 0.1
+                                    value: root.viewModel ? root.viewModel.draftLookAheadMs : 5.0
+                                    fieldName: "lookAheadMs"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    accessibleName: "Lookahead continuous adjustment slider"
+                                }
                             }
 
                             // 8. Mix
-                            StudioNumericField {
-                                id: mixField
-                                objectName: "compressorMixField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "mixPercent"
-                                labelText: "MIX"
-                                unitText: "%"
-                                rawText: root.viewModel ? root.viewModel.mixPercentText : "100.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 4
+
+                                StudioNumericField {
+                                    id: mixField
+                                    objectName: "compressorMixField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "mixPercent"
+                                    labelText: "MIX"
+                                    unitText: "%"
+                                    rawText: root.viewModel ? root.viewModel.mixPercentText : "100.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag the slider to adjust.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorMixSlider"
+                                    from: 0.0
+                                    to: 100.0
+                                    stepSize: 0.5
+                                    value: root.viewModel ? root.viewModel.draftMixPercent : 100.0
+                                    fieldName: "mixPercent"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    accessibleName: "Mix continuous adjustment slider"
+                                }
                             }
 
                             // 9. Make-up Gain
-                            StudioNumericField {
-                                id: makeupField
-                                objectName: "compressorMakeupField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "makeupGainDb"
-                                labelText: "MAKE-UP"
-                                unitText: "dB"
-                                rawText: root.viewModel ? root.viewModel.makeupGainText : "0.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 4
+
+                                StudioNumericField {
+                                    id: makeupField
+                                    objectName: "compressorMakeupField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "makeupGainDb"
+                                    labelText: "MAKE-UP"
+                                    unitText: "dB"
+                                    rawText: root.viewModel ? root.viewModel.makeupGainText : "0.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag coral curve point up/down or use the slider.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorMakeupSlider"
+                                    from: -24.0
+                                    to: 24.0
+                                    stepSize: 0.1
+                                    value: root.viewModel ? root.viewModel.draftMakeupGainDb : 0.0
+                                    fieldName: "makeupGainDb"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    accentColor: "#FF6B6B"
+                                    accessibleName: "Make-up Gain continuous adjustment slider"
+                                }
                             }
                         }
 
