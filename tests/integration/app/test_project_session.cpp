@@ -550,7 +550,7 @@ void ProjectSessionTest::mastering_chain_normal_save()
 
     auto decodedComp = dsp::decode_compressor_parameters_json(m2.parameters.canonical_utf8());
     QVERIFY(decodedComp);
-    QCOMPARE(*decodedComp.value(), dsp::CompressorParameters::create_default().value());
+    QVERIFY(*decodedComp.value() == dsp::CompressorParameters::create_default().value());
 }
 
 void ProjectSessionTest::mastering_chain_repeated_save()
@@ -1175,7 +1175,7 @@ void ProjectSessionTest::legacy_two_module_gain_eq_migration()
 
     // Verify Compressor instance created with default parameters & user bypass = true
     QCOMPARE(target.masteringChainState->compressor_instance_id().uuid(), compUuid);
-    QCOMPARE(target.masteringChainState->compressor_parameters(), *dsp::CompressorParameters::create_default().value());
+    QVERIFY(target.masteringChainState->compressor_parameters() == *dsp::CompressorParameters::create_default().value());
 
     auto compBypass = target.masteringChainState->is_bypassed(target.masteringChainState->compressor_instance_id());
     QVERIFY(compBypass);
