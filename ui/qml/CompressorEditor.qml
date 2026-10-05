@@ -220,6 +220,7 @@ Item {
                                     spacing: 2
                                     StudioButton {
                                         objectName: "detectorRmsButton"
+                                        emphasizeSelectedText: false
                                         text: "RMS"
                                         selected: root.viewModel ? (root.viewModel.detectorMode === "RMS") : true
                                         minimumControlWidth: 56
@@ -228,6 +229,7 @@ Item {
                                     }
                                     StudioButton {
                                         objectName: "detectorPeakButton"
+                                        emphasizeSelectedText: false
                                         text: "PEAK"
                                         selected: root.viewModel ? (root.viewModel.detectorMode === "PEAK") : false
                                         minimumControlWidth: 56
@@ -265,6 +267,7 @@ Item {
                                     spacing: 2
                                     StudioButton {
                                         objectName: "linkMaxButton"
+                                        emphasizeSelectedText: false
                                         text: "LINKED MAX"
                                         selected: root.viewModel ? (root.viewModel.channelLink === "LINKED_MAX") : true
                                         minimumControlWidth: 72
@@ -273,6 +276,7 @@ Item {
                                     }
                                     StudioButton {
                                         objectName: "linkMeanButton"
+                                        emphasizeSelectedText: false
                                         text: "LINKED MEAN"
                                         selected: root.viewModel ? (root.viewModel.channelLink === "LINKED_MEAN") : false
                                         minimumControlWidth: 72
@@ -281,6 +285,7 @@ Item {
                                     }
                                     StudioButton {
                                         objectName: "linkDualMonoButton"
+                                        emphasizeSelectedText: false
                                         text: "DUAL MONO"
                                         selected: root.viewModel ? (root.viewModel.channelLink === "DUAL_MONO") : false
                                         minimumControlWidth: 72
@@ -315,6 +320,7 @@ Item {
                                 unitText: "dBFS"
                                 rawText: root.viewModel ? root.viewModel.thresholdText : "-24.0"
                                 viewModel: root.viewModel
+                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
                                 compact: true
                             }
 
@@ -328,6 +334,7 @@ Item {
                                 unitText: ": 1"
                                 rawText: root.viewModel ? root.viewModel.ratioText : "2.00"
                                 viewModel: root.viewModel
+                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
                                 compact: true
                             }
 
@@ -341,6 +348,7 @@ Item {
                                 unitText: "dB"
                                 rawText: root.viewModel ? root.viewModel.kneeText : "6.0"
                                 viewModel: root.viewModel
+                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
                                 compact: true
                             }
 
@@ -354,6 +362,7 @@ Item {
                                 unitText: "ms"
                                 rawText: root.viewModel ? root.viewModel.attackText : "30.0"
                                 viewModel: root.viewModel
+                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
                                 compact: true
                             }
 
@@ -367,6 +376,7 @@ Item {
                                 unitText: "ms"
                                 rawText: root.viewModel ? root.viewModel.releaseText : "200.0"
                                 viewModel: root.viewModel
+                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
                                 compact: true
                             }
 
@@ -380,6 +390,7 @@ Item {
                                 unitText: "ms"
                                 rawText: root.viewModel ? root.viewModel.rmsTimeConstantText : "50.0"
                                 viewModel: root.viewModel
+                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
                                 compact: true
                                 opacity: root.viewModel ? (root.viewModel.rmsTimeEffective ? 1.0 : 0.4) : 1.0
                                 enabled: root.viewModel ? root.viewModel.rmsTimeEffective : true
@@ -395,6 +406,7 @@ Item {
                                 unitText: "ms"
                                 rawText: root.viewModel ? root.viewModel.lookAheadText : "5.0"
                                 viewModel: root.viewModel
+                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
                                 compact: true
                             }
 
@@ -408,6 +420,7 @@ Item {
                                 unitText: "%"
                                 rawText: root.viewModel ? root.viewModel.mixPercentText : "100.0"
                                 viewModel: root.viewModel
+                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
                                 compact: true
                             }
 
@@ -421,6 +434,7 @@ Item {
                                 unitText: "dB"
                                 rawText: root.viewModel ? root.viewModel.makeupGainText : "0.0"
                                 viewModel: root.viewModel
+                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
                                 compact: true
                             }
                         }

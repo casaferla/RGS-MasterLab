@@ -13,6 +13,9 @@ Item {
     // Per-instance compact width seam. Default preserves the shared EQ contract;
     // dense editors may opt into a narrower field without module-name branching.
     property int compactFieldWidth: 120
+    // Desktop interaction guidance. Android/touch presentation may replace or
+    // suppress mouse-specific wording without changing parameter semantics.
+    property string interactionHint: ""
 
     readonly property bool isInvalid: viewModel !== null && viewModel !== undefined && viewModel.validationField === fieldName
 
@@ -63,6 +66,14 @@ Item {
                     hoverEnabled: true
                     onClicked: input.forceActiveFocus()
                 }
+
+                HoverHandler {
+                    id: fieldHover
+                }
+
+                ToolTip.text: control.interactionHint
+                ToolTip.visible: control.interactionHint.length > 0 && fieldHover.hovered
+                ToolTip.delay: 550
 
                 TextInput {
                     id: input
@@ -115,7 +126,9 @@ Item {
                     }
 
                     Accessible.name: control.labelText + " numeric input field"
-                    Accessible.description: control.isInvalid ? (control.viewModel ? control.viewModel.validationMessage : "") : ""
+                    Accessible.description: control.isInvalid
+                        ? (control.viewModel ? control.viewModel.validationMessage : "")
+                        : control.interactionHint
                 }
             }
 

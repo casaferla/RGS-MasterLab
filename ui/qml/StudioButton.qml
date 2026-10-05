@@ -10,6 +10,9 @@ Button {
     property color accentColor: tone === "gold" ? "#F2B632" : "#00C8FF"
     property int minimumControlWidth: 80
     property int contentPadding: 16
+    // Selector groups may keep text metrics completely stable across state changes.
+    // Selected state remains visible through border/fill/accent styling.
+    property bool emphasizeSelectedText: true
 
     implicitWidth: Math.max(minimumControlWidth, contentRow.implicitWidth + contentPadding * 2)
     implicitHeight: 32
@@ -40,7 +43,8 @@ Button {
                 text: control.text
                 font.family: "Segoe UI"
                 font.pixelSize: 12
-                font.weight: control.selected || control.tone === "primary"
+                font.weight: control.emphasizeSelectedText
+                    && (control.selected || control.tone === "primary")
                     ? Font.DemiBold : Font.Normal
                 color: !control.enabled ? "#6E7E8D"
                      : control.tone === "primary" ? "#F4F9FC"

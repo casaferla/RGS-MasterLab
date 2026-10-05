@@ -992,6 +992,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* peakBtn = find_child_by_name(compressorEditor, QStringLiteral("detectorPeakButton"));
     auto* rmsBtn = find_child_by_name(compressorEditor, QStringLiteral("detectorRmsButton"));
     QVERIFY2(peakBtn && rmsBtn, "Detector mode buttons must exist");
+    QCOMPARE(rmsBtn->property("emphasizeSelectedText").toBool(), false);
+    QCOMPARE(peakBtn->property("emphasizeSelectedText").toBool(), false);
+    const qreal rmsWidthBefore = rmsBtn->property("width").toReal();
+    const qreal peakWidthBefore = peakBtn->property("width").toReal();
+    const qreal peakXBefore = qobject_cast<QQuickItem*>(peakBtn)->x();
 
     // Focus-out valid commit verification
     thresholdInputItem->forceActiveFocus(Qt::TabFocusReason);
@@ -1013,6 +1018,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(QMetaObject::invokeMethod(peakBtn, "clicked"));
     QCoreApplication::processEvents();
     QCOMPARE(compressorViewModel.detector_mode(), QStringLiteral("PEAK"));
+    QVERIFY(qAbs(rmsBtn->property("width").toReal() - rmsWidthBefore) <= 0.5);
+    QVERIFY(qAbs(peakBtn->property("width").toReal() - peakWidthBefore) <= 0.5);
+    QVERIFY(qAbs(qobject_cast<QQuickItem*>(peakBtn)->x() - peakXBefore) <= 0.5);
     QVERIFY(!compressorViewModel.rms_time_effective());
     QCOMPARE(compressorViewModel.rms_time_constant_ms(), 50.0); // Preserved!
 
@@ -1026,11 +1034,24 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* linkMeanBtn = find_child_by_name(compressorEditor, QStringLiteral("linkMeanButton"));
     auto* linkDualMonoBtn = find_child_by_name(compressorEditor, QStringLiteral("linkDualMonoButton"));
     QVERIFY2(linkMaxBtn && linkMeanBtn && linkDualMonoBtn, "Stereo Link buttons must exist");
+    QCOMPARE(linkMaxBtn->property("emphasizeSelectedText").toBool(), false);
+    QCOMPARE(linkMeanBtn->property("emphasizeSelectedText").toBool(), false);
+    QCOMPARE(linkDualMonoBtn->property("emphasizeSelectedText").toBool(), false);
+    const qreal linkMaxWidthBefore = linkMaxBtn->property("width").toReal();
+    const qreal linkMeanWidthBefore = linkMeanBtn->property("width").toReal();
+    const qreal linkDualWidthBefore = linkDualMonoBtn->property("width").toReal();
+    const qreal linkMeanXBefore = qobject_cast<QQuickItem*>(linkMeanBtn)->x();
+    const qreal linkDualXBefore = qobject_cast<QQuickItem*>(linkDualMonoBtn)->x();
 
     if (compressorViewModel.channel_link_effective()) {
         QVERIFY(QMetaObject::invokeMethod(linkMeanBtn, "clicked"));
         QCoreApplication::processEvents();
         QCOMPARE(compressorViewModel.channel_link(), QStringLiteral("LINKED_MEAN"));
+        QVERIFY(qAbs(linkMaxBtn->property("width").toReal() - linkMaxWidthBefore) <= 0.5);
+        QVERIFY(qAbs(linkMeanBtn->property("width").toReal() - linkMeanWidthBefore) <= 0.5);
+        QVERIFY(qAbs(linkDualMonoBtn->property("width").toReal() - linkDualWidthBefore) <= 0.5);
+        QVERIFY(qAbs(qobject_cast<QQuickItem*>(linkMeanBtn)->x() - linkMeanXBefore) <= 0.5);
+        QVERIFY(qAbs(qobject_cast<QQuickItem*>(linkDualMonoBtn)->x() - linkDualXBefore) <= 0.5);
 
         QVERIFY(QMetaObject::invokeMethod(linkDualMonoBtn, "clicked"));
         QCoreApplication::processEvents();
@@ -1073,6 +1094,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(gainDbDisplay && gainDbInput && gainSlider && resetGainButton && gainValidationError, "Input Gain editor controls must exist");
     QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("0.0 dB"));
     QCOMPARE(gainDbInput->property("text").toString(), QStringLiteral("0.0"));
+    QVERIFY(gainDbInput->property("interactionHint").toString().contains(QStringLiteral("slider")));
+    auto* gainParameterLabel = inputGainEditor->findChild<QObject*>(QStringLiteral("gainParameterLabel"));
+    QVERIFY2(gainParameterLabel != nullptr, "Input Gain parameter label must exist");
+    QCOMPARE(gainParameterLabel->property("text").toString(), QStringLiteral("GAIN"));
 
     auto* dspHostWorkflowContext = dspEditorHostObj->findChild<QObject*>(QStringLiteral("dspHostWorkflowContext"));
     auto* gainHostUndoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqUndoButton"));
@@ -1653,6 +1678,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(filterLowPassPos.x() + filterLowPassItem->width() <= eqEditorItemForAlignment->width() - 8.0,
         "Low Pass button must stay clear of the inspector right border at minimum size");
 
+    auto* eqFilterLabel = find_child_by_name(eqEditor, QStringLiteral("eqFilterLabel"));
+    auto* eqRoutingLabel = find_child_by_name(eqEditor, QStringLiteral("eqRoutingLabel"));
+    auto* eqSlopeLabel = find_child_by_name(eqEditor, QStringLiteral("eqSlopeLabel"));
+    QVERIFY2(eqFilterLabel && eqRoutingLabel && eqSlopeLabel, "EQ section labels must exist");
+    QCOMPARE(eqFilterLabel->property("text").toString(), QStringLiteral("FILTER"));
+    QCOMPARE(eqRoutingLabel->property("text").toString(), QStringLiteral("ROUTING"));
+    QCOMPARE(eqSlopeLabel->property("text").toString(), QStringLiteral("SLOPE"));
+    QVERIFY(frequencyFieldObj->property("interactionHint").toString().contains(QStringLiteral("left/right")));
+    QVERIFY(gainFieldObj->property("interactionHint").toString().contains(QStringLiteral("up/down")));
+    QVERIFY(qFieldObj->property("interactionHint").toString().contains(QStringLiteral("Mouse wheel")));
+
     for (auto* numericField : {frequencyFieldObj, gainFieldObj, qFieldObj}) {
         QVERIFY2(numericField != nullptr, "Numeric field must exist at minimum size");
         QCOMPARE(numericField->property("compact").toBool(), false);
@@ -1715,6 +1751,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
              QStringLiteral("compressorMakeupField")}) {
         auto* fieldItem = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, name));
         QVERIFY2(fieldItem != nullptr, qPrintable(name + QStringLiteral(" must exist")));
+        QVERIFY2(!fieldItem->property("interactionHint").toString().isEmpty(),
+            qPrintable(name + QStringLiteral(" must expose an interaction tooltip hint")));
         QVERIFY2(check_item_contained_in_ancestor(fieldItem, controlsPanelNative),
             qPrintable(name + QStringLiteral(" must stay inside Compressor controls at minimum size")));
     }

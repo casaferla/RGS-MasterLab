@@ -224,7 +224,8 @@ Rectangle {
                         spacing: 8
 
                         Text {
-                            text: "FILTER:"
+                            objectName: "eqFilterLabel"
+                            text: "FILTER"
                             color: "#A1B5C9"
                             font.family: "Segoe UI"
                             font.pixelSize: 12
@@ -270,7 +271,8 @@ Rectangle {
                         spacing: 8
 
                         Text {
-                            text: "ROUTING:"
+                            objectName: "eqRoutingLabel"
+                            text: "ROUTING"
                             color: "#A1B5C9"
                             font.family: "Segoe UI"
                             font.pixelSize: 12
@@ -347,6 +349,7 @@ Rectangle {
                             fieldName: "frequency"
                             rawText: root.viewModel ? root.viewModel.frequencyText : "1000"
                             viewModel: root.viewModel
+                            interactionHint: "Drag the EQ point left/right to adjust\nEnter to apply • Esc to cancel"
                         }
 
                         StudioNumericField {
@@ -358,6 +361,7 @@ Rectangle {
                             fieldName: "gain"
                             rawText: root.viewModel ? root.viewModel.gainText : "0"
                             viewModel: root.viewModel
+                            interactionHint: "Drag the EQ point up/down to adjust\nEnter to apply • Esc to cancel"
                         }
 
                         StudioNumericField {
@@ -369,6 +373,7 @@ Rectangle {
                             fieldName: "q"
                             rawText: root.viewModel ? root.viewModel.qText : "0.707"
                             viewModel: root.viewModel
+                            interactionHint: "Mouse wheel over the EQ point to adjust\nShift + wheel for fine adjustment"
                         }
 
                         StudioNumericField {
@@ -380,6 +385,7 @@ Rectangle {
                             fieldName: "shelfSlope"
                             rawText: root.viewModel ? root.viewModel.shelfSlopeText : "1"
                             viewModel: root.viewModel
+                            interactionHint: "Mouse wheel over the EQ point to adjust\nShift + wheel for fine adjustment"
                         }
 
                         // HP/LP Slope DB/OCT: one fixed visual scale at every width.
@@ -390,7 +396,8 @@ Rectangle {
                             spacing: 8
 
                             Text {
-                                text: "SLOPE:"
+                                objectName: "eqSlopeLabel"
+                                text: "SLOPE"
                                 color: "#A1B5C9"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 12
