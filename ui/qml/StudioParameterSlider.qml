@@ -22,7 +22,7 @@ Item {
     signal commitRequested(real finalVal)
 
     implicitWidth: compact ? 120 : 160
-    implicitHeight: compact ? 18 : 24
+    implicitHeight: compact ? 14 : 24
 
     // Value <-> normalized position [0, 1] mapping
     function valueToPosition(val) {
@@ -111,8 +111,8 @@ Item {
             x: internalSlider.leftPadding
             y: internalSlider.topPadding + internalSlider.availableHeight / 2 - height / 2
             width: internalSlider.availableWidth
-            height: control.compact ? 6 : 8
-            radius: control.compact ? 3 : 4
+            height: control.compact ? 4 : 8
+            radius: control.compact ? 2 : 4
             color: "#08121C"
             border.color: "#1E354A"
             border.width: 1
@@ -131,8 +131,8 @@ Item {
         handle: Rectangle {
             x: internalSlider.leftPadding + internalSlider.visualPosition * (internalSlider.availableWidth - width)
             y: internalSlider.topPadding + internalSlider.availableHeight / 2 - height / 2
-            width: control.compact ? 14 : 18
-            height: control.compact ? 14 : 18
+            width: control.compact ? 12 : 18
+            height: control.compact ? 12 : 18
             radius: width / 2
             color: internalSlider.enabled ? "#E6EEF0" : "#586773"
             border.color: internalSlider.activeFocus ? "#00C8FF" : "#1E354A"

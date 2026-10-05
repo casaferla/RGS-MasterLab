@@ -34,6 +34,7 @@ private slots:
     void textDraftContractAndCommitCancel();
     void sliderDraftAndCommitCycle();
     void interactiveCurveHandlesAndCancel();
+    void softKneeRatioHandleSolver();
 };
 
 void CompressorViewModelTest::initialDefaults()
@@ -415,11 +416,10 @@ void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
     const std::array expectedIds{QStringLiteral("threshold"), QStringLiteral("ratio"), QStringLiteral("knee"), QStringLiteral("makeup")};
     const std::array expectedColors{QStringLiteral("#2ED3FF"), QStringLiteral("#2FD98F"), QStringLiteral("#FFD84A"), QStringLiteral("#FF6B6B")};
 
-    for (qsizetype i = 0; i < handles.size(); ++i) {
+    for (std::size_t i = 0; i < handles.size(); ++i) {
         const auto map = handles[i].toMap();
-        const auto expectedIndex = static_cast<std::size_t>(i);
-        QCOMPARE(map[QStringLiteral("id")].toString(), expectedIds[expectedIndex]);
-        QCOMPARE(map[QStringLiteral("color")].toString(), expectedColors[expectedIndex]);
+        QCOMPARE(map[QStringLiteral("id")].toString(), expectedIds[i]);
+        QCOMPARE(map[QStringLiteral("color")].toString(), expectedColors[i]);
         QVERIFY(std::isfinite(map[QStringLiteral("inputDbfs")].toDouble()));
         QVERIFY(std::isfinite(map[QStringLiteral("outputDbfs")].toDouble()));
     }
@@ -430,14 +430,26 @@ void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
     QCOMPARE(vm.threshold_dbfs(), -24.0); // Uncommitted!
     QCOMPARE(vm.preview_generation(), gen0); // No preview during handle drag!
 
-    // Drag Ratio handle
-    vm.setCurveHandleDraft(QStringLiteral("ratio"), -12.0, -18.0);
-    QCOMPARE(vm.draft_ratio(), 2.0); // Updated draft ratio
-    QCOMPARE(vm.ratio(), 2.0); // Uncommitted!
+    // Obtain current Ratio handle metadata after Threshold move
+    const auto updatedHandles = vm.transfer_curve_handles();
+    QVariantMap ratioMap;
+    for (const auto& h : updatedHandles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("ratio")) {
+            ratioMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY(!ratioMap.isEmpty());
 
-    // Drag Knee handle
-    vm.setCurveHandleDraft(QStringLiteral("knee"), -18.0, -18.0);
-    QCOMPARE(vm.draft_knee_db(), 0.0); // 2 * |-18 - (-18)| = 0 dB
+    // Feed truthful Ratio handle coordinates back through setCurveHandleDraft
+    vm.setCurveHandleDraft(QStringLiteral("ratio"), ratioMap[QStringLiteral("inputDbfs")].toDouble(), ratioMap[QStringLiteral("outputDbfs")].toDouble());
+    QCOMPARE(vm.draft_ratio(), 2.0); // Ratio remains 2.0!
+    QCOMPARE(vm.ratio(), 2.0); // Uncommitted!
+    QCOMPARE(vm.preview_generation(), gen0); // No preview during handle drag!
+
+    // Drag Knee handle (lower knee boundary at threshold - knee/2 = -18 - 3 = -21)
+    vm.setCurveHandleDraft(QStringLiteral("knee"), -24.0, -24.0);
+    QCOMPARE(vm.draft_knee_db(), 12.0); // 2 * |-18 - (-24)| = 12 dB
 
     // Drag Make-up handle
     vm.setCurveHandleDraft(QStringLiteral("makeup"), -54.0, -50.0);
@@ -457,6 +469,38 @@ void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
     QVERIFY(vm.commitDraft());
     QCOMPARE(vm.threshold_dbfs(), -15.0); // Committed!
     QVERIFY(vm.preview_generation() > gen0); // Single preview requested!
+}
+
+void CompressorViewModelTest::softKneeRatioHandleSolver()
+{
+    CompressorViewModel vm;
+
+    // High threshold = -6.0 dBFS, wide knee = 12.0 dB, expected target ratio = 4.0
+    vm.setThresholdDbfs(-6.0);
+    vm.setKneeDb(12.0);
+    vm.setRatio(4.0);
+    vm.setMakeupGainDb(0.0);
+
+    // Get C++ generated handle coordinates for ratio = 4.0 in soft knee
+    const auto handles = vm.transfer_curve_handles();
+    QVariantMap ratioMap;
+    for (const auto& h : handles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("ratio")) {
+            ratioMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY(!ratioMap.isEmpty());
+
+    // Reset draft ratio to 2.0
+    vm.setDraftFieldValue(QStringLiteral("ratio"), 2.0);
+    QCOMPARE(vm.draft_ratio(), 2.0);
+
+    // Feed the soft-knee target coordinate back through setCurveHandleDraft
+    vm.setCurveHandleDraft(QStringLiteral("ratio"), ratioMap[QStringLiteral("inputDbfs")].toDouble(), ratioMap[QStringLiteral("outputDbfs")].toDouble());
+
+    // Verify solver reconstructs Ratio 4.0 within tolerance 0.01
+    QVERIFY(std::abs(vm.draft_ratio() - 4.0) < 0.01);
 }
 
 }  // namespace

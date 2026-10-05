@@ -27,8 +27,8 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 10
+        anchors.margins: 8
+        spacing: 6
 
         // Header Action Bar
         RowLayout {
@@ -63,7 +63,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 12
+            spacing: 10
 
             // Left Side: Static Transfer Curve Display Well
             Rectangle {
@@ -78,8 +78,8 @@ Item {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 6
+                    anchors.margins: 8
+                    spacing: 4
 
                     RowLayout {
                         Layout.fillWidth: true
@@ -277,12 +277,12 @@ Item {
 
                 ScrollView {
                     anchors.fill: parent
-                    anchors.margins: 8
+                    anchors.margins: 6
                     clip: true
 
                     ColumnLayout {
                         width: parent.width
-                        spacing: 12
+                        spacing: 8
 
                         // Detector & Stereo Link Selector Strip
                         RowLayout {
@@ -291,7 +291,7 @@ Item {
 
                             // Detector Mode Group
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
                                 Text {
                                     text: "DETECTOR MODE"
                                     color: root.textSecondary
@@ -307,7 +307,7 @@ Item {
                                         text: "RMS"
                                         selected: root.viewModel ? (root.viewModel.detectorMode === "RMS") : true
                                         minimumControlWidth: 56
-                                        contentPadding: 8
+                                        contentPadding: 6
                                         onClicked: if (root.viewModel) root.viewModel.setDetectorMode("RMS")
                                     }
                                     StudioButton {
@@ -316,7 +316,7 @@ Item {
                                         text: "PEAK"
                                         selected: root.viewModel ? (root.viewModel.detectorMode === "PEAK") : false
                                         minimumControlWidth: 56
-                                        contentPadding: 8
+                                        contentPadding: 6
                                         onClicked: if (root.viewModel) root.viewModel.setDetectorMode("PEAK")
                                     }
                                 }
@@ -326,7 +326,7 @@ Item {
                             ColumnLayout {
                                 opacity: root.viewModel ? (root.viewModel.channelLinkEffective ? 1.0 : 0.4) : 1.0
                                 enabled: root.viewModel ? root.viewModel.channelLinkEffective : true
-                                spacing: 4
+                                spacing: 2
 
                                 RowLayout {
                                     spacing: 4
@@ -391,11 +391,11 @@ Item {
                             Layout.fillWidth: true
                             columns: 3
                             columnSpacing: 8
-                            rowSpacing: 12
+                            rowSpacing: 6
 
                             // 1. Threshold
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
 
                                 StudioNumericField {
                                     id: thresholdField
@@ -426,7 +426,7 @@ Item {
 
                             // 2. Ratio
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
 
                                 StudioNumericField {
                                     id: ratioField
@@ -457,7 +457,7 @@ Item {
 
                             // 3. Knee
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
 
                                 StudioNumericField {
                                     id: kneeField
@@ -488,7 +488,7 @@ Item {
 
                             // 4. Attack
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
 
                                 StudioNumericField {
                                     id: attackField
@@ -519,7 +519,7 @@ Item {
 
                             // 5. Release
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
 
                                 StudioNumericField {
                                     id: releaseField
@@ -550,7 +550,7 @@ Item {
 
                             // 6. RMS Time Constant (Applicability bound)
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
                                 opacity: root.viewModel ? (root.viewModel.rmsTimeEffective ? 1.0 : 0.4) : 1.0
 
                                 StudioNumericField {
@@ -584,7 +584,7 @@ Item {
 
                             // 7. Lookahead
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
 
                                 StudioNumericField {
                                     id: lookAheadField
@@ -614,7 +614,7 @@ Item {
 
                             // 8. Mix
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
 
                                 StudioNumericField {
                                     id: mixField
@@ -644,7 +644,7 @@ Item {
 
                             // 9. Make-up Gain
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
 
                                 StudioNumericField {
                                     id: makeupField

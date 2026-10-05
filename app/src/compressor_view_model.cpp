@@ -352,9 +352,9 @@ QVariantList CompressorViewModel::transfer_curve_handles() const
         list.append(map);
     }
 
-    // 3. Knee handle (#FFD84A, horizontal drag)
+    // 3. Knee handle (#FFD84A, horizontal drag at lower knee boundary)
     {
-        const double x = draftThresholdDbfs_ + (draftKneeDb_ * 0.5);
+        const double x = draftThresholdDbfs_ - (draftKneeDb_ * 0.5);
         const double gr = compute_gain_reduction_db(x, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
         const double y = x - gr + draftMakeupGainDb_;
 
@@ -796,16 +796,30 @@ void CompressorViewModel::setCurveHandleDraft(const QString& handleId, double in
     } else if (handleId == QStringLiteral("ratio")) {
         double evalX = draftThresholdDbfs_ + 12.0;
         if (evalX > 6.0) evalX = 6.0;
-        const double deltaX = evalX - draftThresholdDbfs_;
-        if (deltaX <= 1e-6) return;
+        if (evalX < draftThresholdDbfs_) evalX = draftThresholdDbfs_;
 
         const double targetGr = evalX + draftMakeupGainDb_ - outputDbfs;
-        const double factor = targetGr / deltaX;
+        const double maxGr = compute_gain_reduction_db(evalX, draftThresholdDbfs_, 20.0, draftKneeDb_);
+
         double newRatio = 1.0;
-        if (factor < 1.0 - 1e-6) {
-            newRatio = 1.0 / (1.0 - factor);
-        } else {
+        if (targetGr <= 0.0) {
+            newRatio = 1.0;
+        } else if (targetGr >= maxGr) {
             newRatio = 20.0;
+        } else {
+            // Deterministic bisection solver over ratio in [1.0, 20.0]
+            double lowR = 1.0;
+            double highR = 20.0;
+            for (int iter = 0; iter < 30; ++iter) {
+                const double midR = 0.5 * (lowR + highR);
+                const double grMid = compute_gain_reduction_db(evalX, draftThresholdDbfs_, midR, draftKneeDb_);
+                if (grMid < targetGr) {
+                    lowR = midR;
+                } else {
+                    highR = midR;
+                }
+            }
+            newRatio = 0.5 * (lowR + highR);
         }
         setDraftFieldValue(QStringLiteral("ratio"), newRatio);
     } else if (handleId == QStringLiteral("knee")) {
