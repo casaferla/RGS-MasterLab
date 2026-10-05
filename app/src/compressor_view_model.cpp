@@ -106,18 +106,7 @@ CompressorViewModel::CompressorViewModel(
 
     connect(&active_preview_controller(), &MasteringPreviewController::changed, this, &CompressorViewModel::changed);
 
-    const auto& params = active_chain_state().compressor_parameters();
-    draftDetectorMode_ = params.detector_mode();
-    draftChannelLink_ = params.channel_link();
-    draftThresholdDbfs_ = params.threshold_dbfs();
-    draftRatio_ = params.ratio();
-    draftKneeDb_ = params.knee_db();
-    draftAttackMs_ = params.attack_ms();
-    draftReleaseMs_ = params.release_ms();
-    draftRmsTimeConstantMs_ = params.rms_time_constant_ms();
-    draftLookAheadMs_ = params.look_ahead_ms();
-    draftMixPercent_ = params.mix_percent();
-    draftMakeupGainDb_ = params.makeup_gain_db();
+    refreshFromAuthority();
 }
 
 MasteringChainState& CompressorViewModel::active_chain_state() const noexcept
@@ -159,47 +148,92 @@ QString CompressorViewModel::channel_link() const
 
 double CompressorViewModel::threshold_dbfs() const noexcept
 {
-    return draftThresholdDbfs_;
+    return active_chain_state().compressor_parameters().threshold_dbfs();
 }
 
 double CompressorViewModel::ratio() const noexcept
 {
-    return draftRatio_;
+    return active_chain_state().compressor_parameters().ratio();
 }
 
 double CompressorViewModel::knee_db() const noexcept
 {
-    return draftKneeDb_;
+    return active_chain_state().compressor_parameters().knee_db();
 }
 
 double CompressorViewModel::attack_ms() const noexcept
 {
-    return draftAttackMs_;
+    return active_chain_state().compressor_parameters().attack_ms();
 }
 
 double CompressorViewModel::release_ms() const noexcept
 {
-    return draftReleaseMs_;
+    return active_chain_state().compressor_parameters().release_ms();
 }
 
 double CompressorViewModel::rms_time_constant_ms() const noexcept
 {
-    return draftRmsTimeConstantMs_;
+    return active_chain_state().compressor_parameters().rms_time_constant_ms();
 }
 
 double CompressorViewModel::look_ahead_ms() const noexcept
 {
-    return draftLookAheadMs_;
+    return active_chain_state().compressor_parameters().look_ahead_ms();
 }
 
 double CompressorViewModel::mix_percent() const noexcept
 {
-    return draftMixPercent_;
+    return active_chain_state().compressor_parameters().mix_percent();
 }
 
 double CompressorViewModel::makeup_gain_db() const noexcept
 {
-    return draftMakeupGainDb_;
+    return active_chain_state().compressor_parameters().makeup_gain_db();
+}
+
+QString CompressorViewModel::threshold_text() const
+{
+    return draftThresholdText_;
+}
+
+QString CompressorViewModel::ratio_text() const
+{
+    return draftRatioText_;
+}
+
+QString CompressorViewModel::knee_text() const
+{
+    return draftKneeText_;
+}
+
+QString CompressorViewModel::attack_text() const
+{
+    return draftAttackText_;
+}
+
+QString CompressorViewModel::release_text() const
+{
+    return draftReleaseText_;
+}
+
+QString CompressorViewModel::rms_time_constant_text() const
+{
+    return draftRmsTimeConstantText_;
+}
+
+QString CompressorViewModel::look_ahead_text() const
+{
+    return draftLookAheadText_;
+}
+
+QString CompressorViewModel::mix_percent_text() const
+{
+    return draftMixPercentText_;
+}
+
+QString CompressorViewModel::makeup_gain_text() const
+{
+    return draftMakeupGainText_;
 }
 
 bool CompressorViewModel::bypass() const noexcept
@@ -297,14 +331,23 @@ void CompressorViewModel::commit_candidate_or_set_validation(
     draftDetectorMode_ = detectorMode;
     draftChannelLink_ = channelLink;
     draftThresholdDbfs_ = thresholdDbfs;
+    draftThresholdText_ = QString::number(thresholdDbfs, 'f', 1);
     draftRatio_ = ratio;
+    draftRatioText_ = QString::number(ratio, 'f', 2);
     draftKneeDb_ = kneeDb;
+    draftKneeText_ = QString::number(kneeDb, 'f', 1);
     draftAttackMs_ = attackMs;
+    draftAttackText_ = QString::number(attackMs, 'f', 1);
     draftReleaseMs_ = releaseMs;
+    draftReleaseText_ = QString::number(releaseMs, 'f', 1);
     draftRmsTimeConstantMs_ = rmsTimeConstantMs;
+    draftRmsTimeConstantText_ = QString::number(rmsTimeConstantMs, 'f', 1);
     draftLookAheadMs_ = lookAheadMs;
+    draftLookAheadText_ = QString::number(lookAheadMs, 'f', 1);
     draftMixPercent_ = mixPercent;
+    draftMixPercentText_ = QString::number(mixPercent, 'f', 1);
     draftMakeupGainDb_ = makeupGainDb;
+    draftMakeupGainText_ = QString::number(makeupGainDb, 'f', 1);
 
     auto candidate = dsp::CompressorParameters::create(
         detectorMode,
@@ -543,6 +586,140 @@ void CompressorViewModel::setMakeupGainDb(double val)
         QStringLiteral("makeupGainDb"));
 }
 
+void CompressorViewModel::setDraftFieldText(const QString& fieldName, const QString& text)
+{
+    if (fieldName == QStringLiteral("thresholdDbfs") || fieldName == QStringLiteral("threshold")) {
+        draftThresholdText_ = text;
+    } else if (fieldName == QStringLiteral("ratio")) {
+        draftRatioText_ = text;
+    } else if (fieldName == QStringLiteral("kneeDb") || fieldName == QStringLiteral("knee")) {
+        draftKneeText_ = text;
+    } else if (fieldName == QStringLiteral("attackMs") || fieldName == QStringLiteral("attack")) {
+        draftAttackText_ = text;
+    } else if (fieldName == QStringLiteral("releaseMs") || fieldName == QStringLiteral("release")) {
+        draftReleaseText_ = text;
+    } else if (fieldName == QStringLiteral("rmsTimeConstantMs") || fieldName == QStringLiteral("rmsTime")) {
+        draftRmsTimeConstantText_ = text;
+    } else if (fieldName == QStringLiteral("lookAheadMs") || fieldName == QStringLiteral("lookAhead")) {
+        draftLookAheadText_ = text;
+    } else if (fieldName == QStringLiteral("mixPercent") || fieldName == QStringLiteral("mix")) {
+        draftMixPercentText_ = text;
+    } else if (fieldName == QStringLiteral("makeupGainDb") || fieldName == QStringLiteral("makeup")) {
+        draftMakeupGainText_ = text;
+    }
+
+    bool tOk = false, rOk = false, kOk = false, aOk = false, relOk = false, rmsOk = false, laOk = false, mOk = false, mkOk = false;
+    const double tVal = draftThresholdText_.toDouble(&tOk);
+    const double rVal = draftRatioText_.toDouble(&rOk);
+    const double kVal = draftKneeText_.toDouble(&kOk);
+    const double aVal = draftAttackText_.toDouble(&aOk);
+    const double relVal = draftReleaseText_.toDouble(&relOk);
+    const double rmsVal = draftRmsTimeConstantText_.toDouble(&rmsOk);
+    const double laVal = draftLookAheadText_.toDouble(&laOk);
+    const double mVal = draftMixPercentText_.toDouble(&mOk);
+    const double mkVal = draftMakeupGainText_.toDouble(&mkOk);
+
+    if (tOk) draftThresholdDbfs_ = tVal;
+    if (rOk) draftRatio_ = rVal;
+    if (kOk) draftKneeDb_ = kVal;
+    if (aOk) draftAttackMs_ = aVal;
+    if (relOk) draftReleaseMs_ = relVal;
+    if (rmsOk) draftRmsTimeConstantMs_ = rmsVal;
+    if (laOk) draftLookAheadMs_ = laVal;
+    if (mOk) draftMixPercent_ = mVal;
+    if (mkOk) draftMakeupGainDb_ = mkVal;
+
+    auto candidate = dsp::CompressorParameters::create(
+        draftDetectorMode_,
+        draftChannelLink_,
+        draftThresholdDbfs_,
+        draftRatio_,
+        draftKneeDb_,
+        draftAttackMs_,
+        draftReleaseMs_,
+        draftRmsTimeConstantMs_,
+        draftLookAheadMs_,
+        draftMixPercent_,
+        draftMakeupGainDb_);
+
+    const bool allParsed = tOk && rOk && kOk && aOk && relOk && rmsOk && laOk && mOk && mkOk;
+
+    if (!candidate) {
+        validationField_ = fieldName;
+        validationMessage_ = QString::fromStdString(candidate.error()->message());
+    } else if (!allParsed) {
+        validationField_ = fieldName;
+        validationMessage_ = QStringLiteral("Incomplete or invalid numeric text.");
+    } else {
+        validationField_.clear();
+        validationMessage_.clear();
+    }
+
+    emit changed();
+}
+
+bool CompressorViewModel::commitDraft()
+{
+    bool tOk = false, rOk = false, kOk = false, aOk = false, relOk = false, rmsOk = false, laOk = false, mOk = false, mkOk = false;
+    const double tVal = draftThresholdText_.toDouble(&tOk);
+    const double rVal = draftRatioText_.toDouble(&rOk);
+    const double kVal = draftKneeText_.toDouble(&kOk);
+    const double aVal = draftAttackText_.toDouble(&aOk);
+    const double relVal = draftReleaseText_.toDouble(&relOk);
+    const double rmsVal = draftRmsTimeConstantText_.toDouble(&rmsOk);
+    const double laVal = draftLookAheadText_.toDouble(&laOk);
+    const double mVal = draftMixPercentText_.toDouble(&mOk);
+    const double mkVal = draftMakeupGainText_.toDouble(&mkOk);
+
+    if (!tOk || !rOk || !kOk || !aOk || !relOk || !rmsOk || !laOk || !mOk || !mkOk) {
+        validationField_ = QStringLiteral("draftText");
+        validationMessage_ = QStringLiteral("Cannot commit invalid or incomplete numeric draft.");
+        emit changed();
+        return false;
+    }
+
+    auto candidate = dsp::CompressorParameters::create(
+        draftDetectorMode_,
+        draftChannelLink_,
+        tVal,
+        rVal,
+        kVal,
+        aVal,
+        relVal,
+        rmsVal,
+        laVal,
+        mVal,
+        mkVal);
+
+    if (!candidate) {
+        validationField_ = QStringLiteral("candidate");
+        validationMessage_ = QString::fromStdString(candidate.error()->message());
+        emit changed();
+        return false;
+    }
+
+    validationField_.clear();
+    validationMessage_.clear();
+
+    const auto& currentCommitted = active_chain_state().compressor_parameters();
+    if (*candidate.value() != currentCommitted) {
+        const auto preSnapshot = capture_current_snapshot();
+        push_undo_snapshot(preSnapshot);
+        static_cast<void>(active_chain_state().set_compressor_parameters(*candidate.value()));
+        refreshFromAuthority();
+        request_preview();
+    } else {
+        refreshFromAuthority();
+    }
+
+    return true;
+}
+
+void CompressorViewModel::cancelDraft()
+{
+    refreshFromAuthority();
+}
+
 void CompressorViewModel::setBypass(bool bypassed)
 {
     if (bypass() == bypassed) {
@@ -634,6 +811,16 @@ void CompressorViewModel::refreshFromAuthority()
     draftLookAheadMs_ = params.look_ahead_ms();
     draftMixPercent_ = params.mix_percent();
     draftMakeupGainDb_ = params.makeup_gain_db();
+
+    draftThresholdText_ = QString::number(params.threshold_dbfs(), 'f', 1);
+    draftRatioText_ = QString::number(params.ratio(), 'f', 2);
+    draftKneeText_ = QString::number(params.knee_db(), 'f', 1);
+    draftAttackText_ = QString::number(params.attack_ms(), 'f', 1);
+    draftReleaseText_ = QString::number(params.release_ms(), 'f', 1);
+    draftRmsTimeConstantText_ = QString::number(params.rms_time_constant_ms(), 'f', 1);
+    draftLookAheadText_ = QString::number(params.look_ahead_ms(), 'f', 1);
+    draftMixPercentText_ = QString::number(params.mix_percent(), 'f', 1);
+    draftMakeupGainText_ = QString::number(params.makeup_gain_db(), 'f', 1);
 
     validationField_.clear();
     validationMessage_.clear();

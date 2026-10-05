@@ -31,6 +31,7 @@ private slots:
     void monoStereoApplicabilityPreservesStoredValue();
     void staticTransferCurveOraclePoints();
     void resetToDefaultState();
+    void textDraftContractAndCommitCancel();
 };
 
 void CompressorViewModelTest::initialDefaults()
@@ -88,7 +89,8 @@ void CompressorViewModelTest::invalidDraftRejectionNoClampNoPreview()
     // Validation field set, draft retains input without clamping, preview NOT requested
     QCOMPARE(vm.validation_field(), QStringLiteral("ratio"));
     QVERIFY(!vm.validation_message().isEmpty());
-    QCOMPARE(vm.ratio(), 0.5); // Draft reflects input
+    QCOMPARE(vm.ratio_text(), QStringLiteral("0.50")); // Draft text reflects input
+    QCOMPARE(vm.ratio(), 2.0); // Committed state unchanged
     QCOMPARE(vm.preview_generation(), validGen); // No new preview request!
 }
 
@@ -321,6 +323,48 @@ void CompressorViewModelTest::resetToDefaultState()
     QCOMPARE(vm.threshold_dbfs(), -24.0);
     QCOMPARE(vm.ratio(), 2.0);
     QVERIFY(vm.bypass()); // Reset to default sets user bypass = true
+}
+
+void CompressorViewModelTest::textDraftContractAndCommitCancel()
+{
+    CompressorViewModel vm;
+    QCOMPARE(vm.threshold_text(), QStringLiteral("-24.0"));
+    const auto gen0 = vm.preview_generation();
+
+    // 1. Text draft update does NOT commit or trigger preview
+    vm.setDraftFieldText(QStringLiteral("thresholdDbfs"), QStringLiteral("-18.5"));
+    QCOMPARE(vm.threshold_text(), QStringLiteral("-18.5"));
+    QVERIFY(vm.validation_field().isEmpty());
+    QCOMPARE(vm.threshold_dbfs(), -24.0); // Uncommitted!
+    QCOMPARE(vm.preview_generation(), gen0);
+    QVERIFY(!vm.can_undo());
+
+    // 2. Valid commitDraft() updates committed state and requests preview
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.threshold_dbfs(), -18.5);
+    QVERIFY(vm.preview_generation() > gen0);
+    QVERIFY(vm.can_undo());
+
+    // 3. Unchanged commitDraft() produces no extra undo or preview
+    const auto gen1 = vm.preview_generation();
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), gen1);
+
+    // 4. Incomplete text draft sets validation and blocks commit
+    vm.setDraftFieldText(QStringLiteral("thresholdDbfs"), QStringLiteral("-"));
+    QCOMPARE(vm.threshold_text(), QStringLiteral("-"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("thresholdDbfs"));
+    QVERIFY(!vm.validation_message().isEmpty());
+    QCOMPARE(vm.threshold_dbfs(), -18.5); // Still committed value
+
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.threshold_dbfs(), -18.5);
+
+    // 5. cancelDraft() restores committed text and clears validation
+    vm.cancelDraft();
+    QCOMPARE(vm.threshold_text(), QStringLiteral("-18.5"));
+    QVERIFY(vm.validation_field().isEmpty());
+    QCOMPARE(vm.threshold_dbfs(), -18.5);
 }
 
 }  // namespace

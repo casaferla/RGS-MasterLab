@@ -944,10 +944,67 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(abActiveBtn && abBypassBtn, "Active and Bypass buttons must exist");
     QCOMPARE(abActiveBtn->property("text").toString(), QStringLiteral("Active"));
     QCOMPARE(abBypassBtn->property("text").toString(), QStringLiteral("Bypass"));
+    QCOMPARE(abActiveBtn->property("accentColor").value<QColor>(), QColor{QStringLiteral("#00C8FF")}); // Standard focus cyan!
 
     auto* compressorCurveCanvas = compressorEditor->findChild<QObject*>(QStringLiteral("compressorCurveCanvas"));
     QVERIFY2(compressorCurveCanvas != nullptr, "compressorCurveCanvas must exist in compressorEditor");
     QCOMPARE(compressorViewModel.transfer_curve_points().size(), 101);
+
+    // Interactive Numeric Draft & Commit Verification
+    auto* thresholdInput = find_child_by_name(compressorEditor, QStringLiteral("thresholdDbfsInput"));
+    QVERIFY2(thresholdInput != nullptr, "thresholdDbfsInput control must exist");
+    auto* thresholdInputItem = qobject_cast<QQuickItem*>(thresholdInput);
+    QVERIFY2(thresholdInputItem != nullptr, "thresholdDbfsInput must be a QQuickItem");
+
+    window->requestActivate();
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    thresholdInputItem->forceActiveFocus(Qt::TabFocusReason);
+    QVERIFY2(thresholdInputItem->hasActiveFocus(), "thresholdDbfsInput must receive active focus");
+
+    QMetaObject::invokeMethod(thresholdInput, "selectAll");
+    for (const char c : std::string_view{"-18.0"}) {
+        QTest::keyClick(window, c);
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.threshold_text(), QStringLiteral("-18.0"));
+    QCOMPARE(compressorViewModel.threshold_dbfs(), -24.0); // Not committed yet!
+
+    QTest::keyClick(window, Qt::Key_Return);
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.threshold_dbfs(), -18.0); // Committed on Return!
+
+    // Invalid draft stays draft, blocks commit, and reverts on Escape
+    QMetaObject::invokeMethod(thresholdInput, "selectAll");
+    for (const char c : std::string_view{"99999"}) {
+        QTest::keyClick(window, c);
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.validation_field(), QStringLiteral("thresholdDbfs"));
+    QCOMPARE(compressorViewModel.threshold_dbfs(), -18.0); // Committed value unchanged
+
+    QTest::keyClick(window, Qt::Key_Escape);
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.threshold_text(), QStringLiteral("-18.0"));
+    QVERIFY(compressorViewModel.validation_field().isEmpty());
+
+    // Applicability: PEAK mode disables RMS time without destroying stored value
+    auto* peakBtn = find_child_by_name(compressorEditor, QStringLiteral("detectorPeakButton"));
+    auto* rmsBtn = find_child_by_name(compressorEditor, QStringLiteral("detectorRmsButton"));
+    QVERIFY2(peakBtn && rmsBtn, "Detector mode buttons must exist");
+
+    QVERIFY(QMetaObject::invokeMethod(peakBtn, "clicked"));
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.detector_mode(), QStringLiteral("PEAK"));
+    QVERIFY(!compressorViewModel.rms_time_effective());
+    QCOMPARE(compressorViewModel.rms_time_constant_ms(), 50.0); // Preserved!
+
+    QVERIFY(QMetaObject::invokeMethod(rmsBtn, "clicked"));
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.detector_mode(), QStringLiteral("RMS"));
+    QVERIFY(compressorViewModel.rms_time_effective());
+
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("m14_compressor_editor_1184x688.png"), QSize{1184, 688}));
 
     // Restore selected module index to 0 (Input Gain) for remaining Gain/EQ smoke steps
     QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 0));

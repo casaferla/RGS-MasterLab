@@ -27,6 +27,16 @@ class CompressorViewModel final : public QObject {
     Q_PROPERTY(double lookAheadMs READ look_ahead_ms NOTIFY changed)
     Q_PROPERTY(double mixPercent READ mix_percent NOTIFY changed)
     Q_PROPERTY(double makeupGainDb READ makeup_gain_db NOTIFY changed)
+
+    Q_PROPERTY(QString thresholdText READ threshold_text NOTIFY changed)
+    Q_PROPERTY(QString ratioText READ ratio_text NOTIFY changed)
+    Q_PROPERTY(QString kneeText READ knee_text NOTIFY changed)
+    Q_PROPERTY(QString attackText READ attack_text NOTIFY changed)
+    Q_PROPERTY(QString releaseText READ release_text NOTIFY changed)
+    Q_PROPERTY(QString rmsTimeConstantText READ rms_time_constant_text NOTIFY changed)
+    Q_PROPERTY(QString lookAheadText READ look_ahead_text NOTIFY changed)
+    Q_PROPERTY(QString mixPercentText READ mix_percent_text NOTIFY changed)
+    Q_PROPERTY(QString makeupGainText READ makeup_gain_text NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass WRITE setBypass NOTIFY changed)
     Q_PROPERTY(bool canUndo READ can_undo NOTIFY changed)
     Q_PROPERTY(bool canRedo READ can_redo NOTIFY changed)
@@ -70,6 +80,16 @@ public:
     [[nodiscard]] double mix_percent() const noexcept;
     [[nodiscard]] double makeup_gain_db() const noexcept;
 
+    [[nodiscard]] QString threshold_text() const;
+    [[nodiscard]] QString ratio_text() const;
+    [[nodiscard]] QString knee_text() const;
+    [[nodiscard]] QString attack_text() const;
+    [[nodiscard]] QString release_text() const;
+    [[nodiscard]] QString rms_time_constant_text() const;
+    [[nodiscard]] QString look_ahead_text() const;
+    [[nodiscard]] QString mix_percent_text() const;
+    [[nodiscard]] QString makeup_gain_text() const;
+
     [[nodiscard]] bool bypass() const noexcept;
     [[nodiscard]] bool can_undo() const noexcept;
     [[nodiscard]] bool can_redo() const noexcept;
@@ -93,6 +113,10 @@ public:
     Q_INVOKABLE void setLookAheadMs(double val);
     Q_INVOKABLE void setMixPercent(double val);
     Q_INVOKABLE void setMakeupGainDb(double val);
+
+    Q_INVOKABLE void setDraftFieldText(const QString& fieldName, const QString& text);
+    Q_INVOKABLE bool commitDraft();
+    Q_INVOKABLE void cancelDraft();
 
     Q_INVOKABLE void setBypass(bool bypass);
     Q_INVOKABLE void undo();
@@ -136,7 +160,7 @@ private:
     QString validationField_;
     QString validationMessage_;
 
-    // Draft parameters when validation fails
+    // Draft parameters when editing
     dsp::CompressorDetectorMode draftDetectorMode_{dsp::CompressorDetectorMode::RMS};
     dsp::CompressorChannelLink draftChannelLink_{dsp::CompressorChannelLink::LINKED_MAX};
     double draftThresholdDbfs_{-24.0};
@@ -148,6 +172,16 @@ private:
     double draftLookAheadMs_{5.0};
     double draftMixPercent_{100.0};
     double draftMakeupGainDb_{0.0};
+
+    QString draftThresholdText_{QStringLiteral("-24.0")};
+    QString draftRatioText_{QStringLiteral("2.00")};
+    QString draftKneeText_{QStringLiteral("6.0")};
+    QString draftAttackText_{QStringLiteral("30.0")};
+    QString draftReleaseText_{QStringLiteral("200.0")};
+    QString draftRmsTimeConstantText_{QStringLiteral("50.0")};
+    QString draftLookAheadText_{QStringLiteral("5.0")};
+    QString draftMixPercentText_{QStringLiteral("100.0")};
+    QString draftMakeupGainText_{QStringLiteral("0.0")};
 
     std::vector<CompressorStateSnapshot> undoStack_;
     std::vector<CompressorStateSnapshot> redoStack_;

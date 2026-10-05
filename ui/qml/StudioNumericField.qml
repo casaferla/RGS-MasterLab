@@ -81,7 +81,9 @@ Item {
 
                     onTextEdited: {
                         if (control.viewModel) {
-                            if (control.fieldName === "frequency") {
+                            if (typeof control.viewModel.setDraftFieldText === "function") {
+                                control.viewModel.setDraftFieldText(control.fieldName, input.text)
+                            } else if (control.fieldName === "frequency") {
                                 control.viewModel.setDraftFrequencyText(input.text)
                             } else if (control.fieldName === "gain") {
                                 control.viewModel.setDraftGainText(input.text)

@@ -303,17 +303,9 @@ Item {
                                 fieldName: "thresholdDbfs"
                                 labelText: "THRESHOLD"
                                 unitText: "dBFS"
-                                rawText: root.viewModel ? root.viewModel.thresholdDbfs.toFixed(1) : "-24.0"
+                                rawText: root.viewModel ? root.viewModel.thresholdText : "-24.0"
                                 viewModel: root.viewModel
                                 compact: true
-
-                                // Local draft handling
-                                function commitFieldText(valText) {
-                                    var num = parseFloat(valText)
-                                    if (!isNaN(num) && root.viewModel) {
-                                        root.viewModel.setThresholdDbfs(num)
-                                    }
-                                }
                             }
 
                             // 2. Ratio
@@ -322,16 +314,9 @@ Item {
                                 fieldName: "ratio"
                                 labelText: "RATIO"
                                 unitText: ": 1"
-                                rawText: root.viewModel ? root.viewModel.ratio.toFixed(2) : "2.00"
+                                rawText: root.viewModel ? root.viewModel.ratioText : "2.00"
                                 viewModel: root.viewModel
                                 compact: true
-
-                                function commitFieldText(valText) {
-                                    var num = parseFloat(valText)
-                                    if (!isNaN(num) && root.viewModel) {
-                                        root.viewModel.setRatio(num)
-                                    }
-                                }
                             }
 
                             // 3. Knee
@@ -340,16 +325,9 @@ Item {
                                 fieldName: "kneeDb"
                                 labelText: "KNEE"
                                 unitText: "dB"
-                                rawText: root.viewModel ? root.viewModel.kneeDb.toFixed(1) : "6.0"
+                                rawText: root.viewModel ? root.viewModel.kneeText : "6.0"
                                 viewModel: root.viewModel
                                 compact: true
-
-                                function commitFieldText(valText) {
-                                    var num = parseFloat(valText)
-                                    if (!isNaN(num) && root.viewModel) {
-                                        root.viewModel.setKneeDb(num)
-                                    }
-                                }
                             }
 
                             // 4. Attack
@@ -358,16 +336,9 @@ Item {
                                 fieldName: "attackMs"
                                 labelText: "ATTACK"
                                 unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.attackMs.toFixed(1) : "30.0"
+                                rawText: root.viewModel ? root.viewModel.attackText : "30.0"
                                 viewModel: root.viewModel
                                 compact: true
-
-                                function commitFieldText(valText) {
-                                    var num = parseFloat(valText)
-                                    if (!isNaN(num) && root.viewModel) {
-                                        root.viewModel.setAttackMs(num)
-                                    }
-                                }
                             }
 
                             // 5. Release
@@ -376,16 +347,9 @@ Item {
                                 fieldName: "releaseMs"
                                 labelText: "RELEASE"
                                 unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.releaseMs.toFixed(1) : "200.0"
+                                rawText: root.viewModel ? root.viewModel.releaseText : "200.0"
                                 viewModel: root.viewModel
                                 compact: true
-
-                                function commitFieldText(valText) {
-                                    var num = parseFloat(valText)
-                                    if (!isNaN(num) && root.viewModel) {
-                                        root.viewModel.setReleaseMs(num)
-                                    }
-                                }
                             }
 
                             // 6. RMS Time Constant (Applicability bound)
@@ -394,18 +358,11 @@ Item {
                                 fieldName: "rmsTimeConstantMs"
                                 labelText: root.viewModel && root.viewModel.rmsTimeEffective ? "RMS TIME" : "RMS TIME (PEAK)"
                                 unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.rmsTimeConstantMs.toFixed(1) : "50.0"
+                                rawText: root.viewModel ? root.viewModel.rmsTimeConstantText : "50.0"
                                 viewModel: root.viewModel
                                 compact: true
                                 opacity: root.viewModel ? (root.viewModel.rmsTimeEffective ? 1.0 : 0.4) : 1.0
                                 enabled: root.viewModel ? root.viewModel.rmsTimeEffective : true
-
-                                function commitFieldText(valText) {
-                                    var num = parseFloat(valText)
-                                    if (!isNaN(num) && root.viewModel) {
-                                        root.viewModel.setRmsTimeConstantMs(num)
-                                    }
-                                }
                             }
 
                             // 7. Lookahead
@@ -414,16 +371,9 @@ Item {
                                 fieldName: "lookAheadMs"
                                 labelText: "LOOKAHEAD"
                                 unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.lookAheadMs.toFixed(1) : "5.0"
+                                rawText: root.viewModel ? root.viewModel.lookAheadText : "5.0"
                                 viewModel: root.viewModel
                                 compact: true
-
-                                function commitFieldText(valText) {
-                                    var num = parseFloat(valText)
-                                    if (!isNaN(num) && root.viewModel) {
-                                        root.viewModel.setLookAheadMs(num)
-                                    }
-                                }
                             }
 
                             // 8. Mix
@@ -432,16 +382,9 @@ Item {
                                 fieldName: "mixPercent"
                                 labelText: "MIX"
                                 unitText: "%"
-                                rawText: root.viewModel ? root.viewModel.mixPercent.toFixed(1) : "100.0"
+                                rawText: root.viewModel ? root.viewModel.mixPercentText : "100.0"
                                 viewModel: root.viewModel
                                 compact: true
-
-                                function commitFieldText(valText) {
-                                    var num = parseFloat(valText)
-                                    if (!isNaN(num) && root.viewModel) {
-                                        root.viewModel.setMixPercent(num)
-                                    }
-                                }
                             }
 
                             // 9. Make-up Gain
@@ -450,16 +393,9 @@ Item {
                                 fieldName: "makeupGainDb"
                                 labelText: "MAKE-UP"
                                 unitText: "dB"
-                                rawText: root.viewModel ? root.viewModel.makeupGainDb.toFixed(1) : "0.0"
+                                rawText: root.viewModel ? root.viewModel.makeupGainText : "0.0"
                                 viewModel: root.viewModel
                                 compact: true
-
-                                function commitFieldText(valText) {
-                                    var num = parseFloat(valText)
-                                    if (!isNaN(num) && root.viewModel) {
-                                        root.viewModel.setMakeupGainDb(num)
-                                    }
-                                }
                             }
                         }
 

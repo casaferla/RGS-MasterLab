@@ -202,7 +202,7 @@ Rectangle {
                     Layout.maximumWidth: 100
                     selected: root.activeModule ? !root.activeModule.bypass : true
                     tone: "primary"
-                    accentColor: root.activeModule ? root.activeModule.familyAccent : "#00C8FF"
+                    accentColor: "#00C8FF"
                     onClicked: if (root.activeModule) root.activeModule.setBypass(false)
                     Accessible.name: text
                     ToolTip.text: "Activate module processing"
