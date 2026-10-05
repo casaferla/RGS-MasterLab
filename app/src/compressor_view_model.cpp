@@ -672,7 +672,15 @@ bool CompressorViewModel::commitDraft()
     const double mkVal = draftMakeupGainText_.toDouble(&mkOk);
 
     if (!tOk || !rOk || !kOk || !aOk || !relOk || !rmsOk || !laOk || !mOk || !mkOk) {
-        validationField_ = QStringLiteral("draftText");
+        if (!tOk) validationField_ = QStringLiteral("thresholdDbfs");
+        else if (!rOk) validationField_ = QStringLiteral("ratio");
+        else if (!kOk) validationField_ = QStringLiteral("kneeDb");
+        else if (!aOk) validationField_ = QStringLiteral("attackMs");
+        else if (!relOk) validationField_ = QStringLiteral("releaseMs");
+        else if (!rmsOk) validationField_ = QStringLiteral("rmsTimeConstantMs");
+        else if (!laOk) validationField_ = QStringLiteral("lookAheadMs");
+        else if (!mOk) validationField_ = QStringLiteral("mixPercent");
+        else if (!mkOk) validationField_ = QStringLiteral("makeupGainDb");
         validationMessage_ = QStringLiteral("Cannot commit invalid or incomplete numeric draft.");
         emit changed();
         return false;
@@ -692,7 +700,9 @@ bool CompressorViewModel::commitDraft()
         mkVal);
 
     if (!candidate) {
-        validationField_ = QStringLiteral("candidate");
+        if (validationField_.isEmpty()) {
+            validationField_ = QStringLiteral("thresholdDbfs");
+        }
         validationMessage_ = QString::fromStdString(candidate.error()->message());
         emit changed();
         return false;

@@ -993,6 +993,23 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* rmsBtn = find_child_by_name(compressorEditor, QStringLiteral("detectorRmsButton"));
     QVERIFY2(peakBtn && rmsBtn, "Detector mode buttons must exist");
 
+    // Focus-out valid commit verification
+    thresholdInputItem->forceActiveFocus(Qt::TabFocusReason);
+    QMetaObject::invokeMethod(thresholdInput, "selectAll");
+    for (const char c : std::string_view{"-12.0"}) {
+        QTest::keyClick(window, c);
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.threshold_text(), QStringLiteral("-12.0"));
+    QCOMPARE(compressorViewModel.threshold_dbfs(), -18.0); // Still previous committed value
+
+    auto* peakBtnItem = qobject_cast<QQuickItem*>(peakBtn);
+    QVERIFY(peakBtnItem);
+    peakBtnItem->forceActiveFocus(Qt::TabFocusReason); // Focus-out!
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.threshold_dbfs(), -12.0); // Committed on focus-out!
+    QVERIFY(compressorViewModel.validation_field().isEmpty());
+
     QVERIFY(QMetaObject::invokeMethod(peakBtn, "clicked"));
     QCoreApplication::processEvents();
     QCOMPARE(compressorViewModel.detector_mode(), QStringLiteral("PEAK"));
@@ -1004,7 +1021,28 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(compressorViewModel.detector_mode(), QStringLiteral("RMS"));
     QVERIFY(compressorViewModel.rms_time_effective());
 
+    // Stereo Link controls verification
+    auto* linkMaxBtn = find_child_by_name(compressorEditor, QStringLiteral("linkMaxButton"));
+    auto* linkMeanBtn = find_child_by_name(compressorEditor, QStringLiteral("linkMeanButton"));
+    auto* linkDualMonoBtn = find_child_by_name(compressorEditor, QStringLiteral("linkDualMonoButton"));
+    QVERIFY2(linkMaxBtn && linkMeanBtn && linkDualMonoBtn, "Stereo Link buttons must exist");
+
+    if (compressorViewModel.channel_link_effective()) {
+        QVERIFY(QMetaObject::invokeMethod(linkMeanBtn, "clicked"));
+        QCoreApplication::processEvents();
+        QCOMPARE(compressorViewModel.channel_link(), QStringLiteral("LINKED_MEAN"));
+
+        QVERIFY(QMetaObject::invokeMethod(linkDualMonoBtn, "clicked"));
+        QCoreApplication::processEvents();
+        QCOMPARE(compressorViewModel.channel_link(), QStringLiteral("DUAL_MONO"));
+
+        QVERIFY(QMetaObject::invokeMethod(linkMaxBtn, "clicked"));
+        QCoreApplication::processEvents();
+        QCOMPARE(compressorViewModel.channel_link(), QStringLiteral("LINKED_MAX"));
+    }
+
     QVERIFY(capture_visual_evidence(window, QStringLiteral("m14_compressor_editor_1184x688.png"), QSize{1184, 688}));
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("m14_compressor_editor_1440x900.png"), QSize{1440, 900}));
 
     // Restore selected module index to 0 (Input Gain) for remaining Gain/EQ smoke steps
     QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 0));
@@ -1642,6 +1680,26 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     }
     QVERIFY2(QMetaObject::invokeMethod(filterBell, "clicked"), "Bell must be restorable after minimum-size slope check");
     QCoreApplication::processEvents();
+
+    // Verify Compressor editor containment at minimum size
+    QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 2));
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    auto* compressorEditorNative = qobject_cast<QQuickItem*>(compressorEditor);
+    QVERIFY2(compressorEditorNative != nullptr && compressorEditorNative->isVisible(),
+        "Compressor editor must be visible when selected at minimum size");
+    QVERIFY2(check_item_contained_in_ancestor(compressorEditorNative, dspEditorHostNative),
+        "Compressor editor must stay inside dspEditorHost at minimum size");
+    auto* curveWellNative = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, QStringLiteral("compressorCurveWell")));
+    auto* controlsPanelNative = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, QStringLiteral("compressorControlsPanel")));
+    if (curveWellNative) {
+        QVERIFY2(check_item_contained_in_ancestor(curveWellNative, compressorEditorNative),
+            "Compressor curve well must stay inside Compressor editor at minimum size");
+    }
+    if (controlsPanelNative) {
+        QVERIFY2(check_item_contained_in_ancestor(controlsPanelNative, compressorEditorNative),
+            "Compressor controls panel must stay inside Compressor editor at minimum size");
+    }
 
     // Verify the alternate Input Gain editor on the same visible minimum-size host,
     // then restore Parametric EQ for the final evidence capture.

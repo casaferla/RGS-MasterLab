@@ -358,6 +358,7 @@ void CompressorViewModelTest::textDraftContractAndCommitCancel()
     QCOMPARE(vm.threshold_dbfs(), -18.5); // Still committed value
 
     QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.validation_field(), QStringLiteral("thresholdDbfs"));
     QCOMPARE(vm.threshold_dbfs(), -18.5);
 
     // 5. cancelDraft() restores committed text and clears validation
