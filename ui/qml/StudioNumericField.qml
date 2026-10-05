@@ -10,10 +10,13 @@ Item {
     property string rawText: ""
     property var viewModel: null
     property bool compact: false
+    // Per-instance compact width seam. Default preserves the shared EQ contract;
+    // dense editors may opt into a narrower field without module-name branching.
+    property int compactFieldWidth: 120
 
     readonly property bool isInvalid: viewModel !== null && viewModel !== undefined && viewModel.validationField === fieldName
 
-    readonly property int fieldWidth: compact ? 120 : 164
+    readonly property int fieldWidth: compact ? compactFieldWidth : 164
     implicitWidth: fieldWidth + (unitText.length > 0 ? unitTextLabel.implicitWidth + (compact ? 6 : 8) : 0)
     implicitHeight: compact ? 40 : 50
 

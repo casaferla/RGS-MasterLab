@@ -1696,9 +1696,34 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY2(check_item_contained_in_ancestor(curveWellNative, compressorEditorNative),
             "Compressor curve well must stay inside Compressor editor at minimum size");
     }
-    if (controlsPanelNative) {
-        QVERIFY2(check_item_contained_in_ancestor(controlsPanelNative, compressorEditorNative),
-            "Compressor controls panel must stay inside Compressor editor at minimum size");
+    QVERIFY2(controlsPanelNative != nullptr,
+        "Compressor controls panel must exist at minimum size");
+    QVERIFY2(check_item_contained_in_ancestor(controlsPanelNative, compressorEditorNative),
+        "Compressor controls panel must stay inside Compressor editor at minimum size");
+
+    // Check the actual authored children, not just their clipping parent. This guards
+    // the 1184x688 stable-topology contract: no hidden overflow may pass as containment.
+    for (const auto& name : {
+             QStringLiteral("compressorThresholdField"),
+             QStringLiteral("compressorRatioField"),
+             QStringLiteral("compressorKneeField"),
+             QStringLiteral("compressorAttackField"),
+             QStringLiteral("compressorReleaseField"),
+             QStringLiteral("compressorRmsTimeField"),
+             QStringLiteral("compressorLookAheadField"),
+             QStringLiteral("compressorMixField"),
+             QStringLiteral("compressorMakeupField")}) {
+        auto* fieldItem = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, name));
+        QVERIFY2(fieldItem != nullptr, qPrintable(name + QStringLiteral(" must exist")));
+        QVERIFY2(check_item_contained_in_ancestor(fieldItem, controlsPanelNative),
+            qPrintable(name + QStringLiteral(" must stay inside Compressor controls at minimum size")));
+    }
+
+    for (auto* button : {rmsBtn, peakBtn, linkMaxBtn, linkMeanBtn, linkDualMonoBtn}) {
+        auto* buttonItem = qobject_cast<QQuickItem*>(button);
+        QVERIFY2(buttonItem != nullptr, "Compressor selector button must be a QQuickItem");
+        QVERIFY2(check_item_contained_in_ancestor(buttonItem, controlsPanelNative),
+            "Detector/Stereo Link buttons must stay inside Compressor controls at minimum size");
     }
 
     // Verify the alternate Input Gain editor on the same visible minimum-size host,

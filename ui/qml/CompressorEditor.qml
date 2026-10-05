@@ -17,6 +17,9 @@ Item {
     readonly property color borderDark: "#1E354A"
     readonly property color panelBg: "#0B1824"
     readonly property color wellBg: "#060D14"
+    // Authored from the 1184x688 minimum composition upward. Keep the
+    // 3-column topology stable; reclaim width from padding, gaps and controls.
+    readonly property int compactNumericFieldWidth: 92
 
     readonly property string validationField: root.viewModel ? root.viewModel.validationField : ""
     readonly property string validationErrorText: root.viewModel ? root.viewModel.validationMessage : ""
@@ -191,7 +194,7 @@ Item {
 
                 ScrollView {
                     anchors.fill: parent
-                    anchors.margins: 12
+                    anchors.margins: 8
                     clip: true
 
                     ColumnLayout {
@@ -201,7 +204,7 @@ Item {
                         // Detector & Stereo Link Selector Strip
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 16
+                            spacing: 8
 
                             // Detector Mode Group
                             ColumnLayout {
@@ -219,14 +222,16 @@ Item {
                                         objectName: "detectorRmsButton"
                                         text: "RMS"
                                         selected: root.viewModel ? (root.viewModel.detectorMode === "RMS") : true
-                                        minimumControlWidth: 64
+                                        minimumControlWidth: 56
+                                        contentPadding: 8
                                         onClicked: if (root.viewModel) root.viewModel.setDetectorMode("RMS")
                                     }
                                     StudioButton {
                                         objectName: "detectorPeakButton"
                                         text: "PEAK"
                                         selected: root.viewModel ? (root.viewModel.detectorMode === "PEAK") : false
-                                        minimumControlWidth: 64
+                                        minimumControlWidth: 56
+                                        contentPadding: 8
                                         onClicked: if (root.viewModel) root.viewModel.setDetectorMode("PEAK")
                                     }
                                 }
@@ -262,21 +267,24 @@ Item {
                                         objectName: "linkMaxButton"
                                         text: "LINKED MAX"
                                         selected: root.viewModel ? (root.viewModel.channelLink === "LINKED_MAX") : true
-                                        minimumControlWidth: 90
+                                        minimumControlWidth: 72
+                                        contentPadding: 6
                                         onClicked: if (root.viewModel) root.viewModel.setChannelLink("LINKED_MAX")
                                     }
                                     StudioButton {
                                         objectName: "linkMeanButton"
                                         text: "LINKED MEAN"
                                         selected: root.viewModel ? (root.viewModel.channelLink === "LINKED_MEAN") : false
-                                        minimumControlWidth: 90
+                                        minimumControlWidth: 72
+                                        contentPadding: 6
                                         onClicked: if (root.viewModel) root.viewModel.setChannelLink("LINKED_MEAN")
                                     }
                                     StudioButton {
                                         objectName: "linkDualMonoButton"
                                         text: "DUAL MONO"
                                         selected: root.viewModel ? (root.viewModel.channelLink === "DUAL_MONO") : false
-                                        minimumControlWidth: 80
+                                        minimumControlWidth: 72
+                                        contentPadding: 6
                                         onClicked: if (root.viewModel) root.viewModel.setChannelLink("DUAL_MONO")
                                     }
                                 }
@@ -294,12 +302,14 @@ Item {
                         GridLayout {
                             Layout.fillWidth: true
                             columns: 3
-                            columnSpacing: 16
+                            columnSpacing: 8
                             rowSpacing: 12
 
                             // 1. Threshold
                             StudioNumericField {
                                 id: thresholdField
+                                objectName: "compressorThresholdField"
+                                compactFieldWidth: root.compactNumericFieldWidth
                                 fieldName: "thresholdDbfs"
                                 labelText: "THRESHOLD"
                                 unitText: "dBFS"
@@ -311,6 +321,8 @@ Item {
                             // 2. Ratio
                             StudioNumericField {
                                 id: ratioField
+                                objectName: "compressorRatioField"
+                                compactFieldWidth: root.compactNumericFieldWidth
                                 fieldName: "ratio"
                                 labelText: "RATIO"
                                 unitText: ": 1"
@@ -322,6 +334,8 @@ Item {
                             // 3. Knee
                             StudioNumericField {
                                 id: kneeField
+                                objectName: "compressorKneeField"
+                                compactFieldWidth: root.compactNumericFieldWidth
                                 fieldName: "kneeDb"
                                 labelText: "KNEE"
                                 unitText: "dB"
@@ -333,6 +347,8 @@ Item {
                             // 4. Attack
                             StudioNumericField {
                                 id: attackField
+                                objectName: "compressorAttackField"
+                                compactFieldWidth: root.compactNumericFieldWidth
                                 fieldName: "attackMs"
                                 labelText: "ATTACK"
                                 unitText: "ms"
@@ -344,6 +360,8 @@ Item {
                             // 5. Release
                             StudioNumericField {
                                 id: releaseField
+                                objectName: "compressorReleaseField"
+                                compactFieldWidth: root.compactNumericFieldWidth
                                 fieldName: "releaseMs"
                                 labelText: "RELEASE"
                                 unitText: "ms"
@@ -355,6 +373,8 @@ Item {
                             // 6. RMS Time Constant (Applicability bound)
                             StudioNumericField {
                                 id: rmsTimeField
+                                objectName: "compressorRmsTimeField"
+                                compactFieldWidth: root.compactNumericFieldWidth
                                 fieldName: "rmsTimeConstantMs"
                                 labelText: root.viewModel && root.viewModel.rmsTimeEffective ? "RMS TIME" : "RMS TIME (PEAK)"
                                 unitText: "ms"
@@ -368,6 +388,8 @@ Item {
                             // 7. Lookahead
                             StudioNumericField {
                                 id: lookAheadField
+                                objectName: "compressorLookAheadField"
+                                compactFieldWidth: root.compactNumericFieldWidth
                                 fieldName: "lookAheadMs"
                                 labelText: "LOOKAHEAD"
                                 unitText: "ms"
@@ -379,6 +401,8 @@ Item {
                             // 8. Mix
                             StudioNumericField {
                                 id: mixField
+                                objectName: "compressorMixField"
+                                compactFieldWidth: root.compactNumericFieldWidth
                                 fieldName: "mixPercent"
                                 labelText: "MIX"
                                 unitText: "%"
@@ -390,6 +414,8 @@ Item {
                             // 9. Make-up Gain
                             StudioNumericField {
                                 id: makeupField
+                                objectName: "compressorMakeupField"
+                                compactFieldWidth: root.compactNumericFieldWidth
                                 fieldName: "makeupGainDb"
                                 labelText: "MAKE-UP"
                                 unitText: "dB"
