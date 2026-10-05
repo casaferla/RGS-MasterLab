@@ -676,7 +676,7 @@ void ProjectSessionTest::supported_b4_open_and_viewmodel_refresh()
     auto doc = saved.value()->document();
     QVERIFY(doc.pipeline.masteringChainId.has_value());
     QCOMPARE(doc.chains.size(), std::size_t{1});
-    QCOMPARE(doc.chains[0].modules.size(), std::size_t{2});
+    QCOMPARE(doc.chains[0].modules.size(), std::size_t{3});
 
     constexpr std::uint64_t persistedRevision = 42U;
     doc.chains[0].revision = persistedRevision;
@@ -703,15 +703,18 @@ void ProjectSessionTest::supported_b4_open_and_viewmodel_refresh()
 
     QCOMPARE(target.masteringChainState->chain_id(), doc.chains[0].chainId);
     QCOMPARE(target.masteringChainState->chain().revision(), persistedRevision);
-    QCOMPARE(target.masteringChainState->module_count(), std::size_t{2});
+    QCOMPARE(target.masteringChainState->module_count(), std::size_t{3});
     QCOMPARE(target.masteringChainState->gain_instance_id().uuid(),
              doc.chains[0].modules[0].instanceId);
     QCOMPARE(target.masteringChainState->eq_instance_id().uuid(),
              doc.chains[0].modules[1].instanceId);
+    QCOMPARE(target.masteringChainState->compressor_instance_id().uuid(),
+             doc.chains[0].modules[2].instanceId);
 
     const auto instances = target.masteringChainState->instances();
     QCOMPARE(instances[0].module_type_id(), std::string_view{"rgsml.dsp.gain"});
     QCOMPARE(instances[1].module_type_id(), std::string_view{"rgsml.dsp.parametric-eq"});
+    QCOMPARE(instances[2].module_type_id(), std::string_view{"rgsml.dsp.compressor"});
     QCOMPARE(instances[0].enabled(), doc.chains[0].modules[0].enabled);
     QCOMPARE(instances[0].user_bypass(), doc.chains[0].modules[0].userBypass);
     QCOMPARE(instances[0].controller_suspended(), doc.chains[0].modules[0].controllerSuspended);
@@ -720,6 +723,10 @@ void ProjectSessionTest::supported_b4_open_and_viewmodel_refresh()
     QCOMPARE(instances[1].user_bypass(), doc.chains[0].modules[1].userBypass);
     QCOMPARE(instances[1].controller_suspended(), doc.chains[0].modules[1].controllerSuspended);
     QCOMPARE(instances[1].domain_suspended(), doc.chains[0].modules[1].domainSuspended);
+    QCOMPARE(instances[2].enabled(), doc.chains[0].modules[2].enabled);
+    QCOMPARE(instances[2].user_bypass(), doc.chains[0].modules[2].userBypass);
+    QCOMPARE(instances[2].controller_suspended(), doc.chains[0].modules[2].controllerSuspended);
+    QCOMPARE(instances[2].domain_suspended(), doc.chains[0].modules[2].domainSuspended);
     QCOMPARE(instances[0].provenance(), dsp::ModuleProvenance::MANUAL);
     QCOMPARE(instances[0].owner(), dsp::ModuleOwner::USER);
     QCOMPARE(instances[0].link_state(), dsp::ModuleLinkState::UNLINKED);
@@ -728,23 +735,37 @@ void ProjectSessionTest::supported_b4_open_and_viewmodel_refresh()
     QCOMPARE(instances[1].owner(), dsp::ModuleOwner::USER);
     QCOMPARE(instances[1].link_state(), dsp::ModuleLinkState::UNLINKED);
     QVERIFY(!instances[1].semantic_node_id().has_value());
+    QCOMPARE(instances[2].provenance(), dsp::ModuleProvenance::MANUAL);
+    QCOMPARE(instances[2].owner(), dsp::ModuleOwner::USER);
+    QCOMPARE(instances[2].link_state(), dsp::ModuleLinkState::UNLINKED);
+    QVERIFY(!instances[2].semantic_node_id().has_value());
 
     auto gainDescriptor = target.masteringChainState->find_descriptor("rgsml.dsp.gain");
     auto eqDescriptor = target.masteringChainState->find_descriptor("rgsml.dsp.parametric-eq");
-    QVERIFY(gainDescriptor && eqDescriptor);
+    auto compDescriptor = target.masteringChainState->find_descriptor("rgsml.dsp.compressor");
+    QVERIFY(gainDescriptor && eqDescriptor && compDescriptor);
     QVERIFY(gainDescriptor.value()->get().algorithm_version().has_value());
     QVERIFY(gainDescriptor.value()->get().parameter_schema_id().has_value());
     QVERIFY(eqDescriptor.value()->get().algorithm_version().has_value());
     QVERIFY(eqDescriptor.value()->get().parameter_schema_id().has_value());
+    QVERIFY(compDescriptor.value()->get().algorithm_version().has_value());
+    QVERIFY(compDescriptor.value()->get().parameter_schema_id().has_value());
     QCOMPARE(*gainDescriptor.value()->get().algorithm_version(), std::string("1.0.0"));
     QCOMPARE(*gainDescriptor.value()->get().parameter_schema_id(),
              std::string("rgsml.dsp.gain.parameters/1.0.0"));
     QCOMPARE(*eqDescriptor.value()->get().algorithm_version(), std::string("1.0.0"));
     QCOMPARE(*eqDescriptor.value()->get().parameter_schema_id(),
              std::string("rgsml.dsp.parametric-eq.parameters/1.0.0"));
+    QCOMPARE(*compDescriptor.value()->get().algorithm_version(), std::string("1.0.0"));
+    QCOMPARE(*compDescriptor.value()->get().parameter_schema_id(),
+             std::string("rgsml.dsp.compressor.parameters/1.0.0"));
 
     QCOMPARE(target.masteringChainState->gain_parameters(), *gainParams.value());
     QCOMPARE(target.masteringChainState->parametric_eq_parameters(), *eqParams.value());
+    auto persistedComp = dsp::decode_compressor_parameters_json(
+        doc.chains[0].modules[2].parameters.canonical_utf8());
+    QVERIFY(persistedComp);
+    QVERIFY(target.masteringChainState->compressor_parameters() == *persistedComp.value());
 
     QCOMPARE(target.gainViewModel->gain_db(), 4.5);
     QVERIFY(target.gainViewModel->bypass());
