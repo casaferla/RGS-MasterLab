@@ -97,7 +97,10 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
     }
     const std::size_t num_buckets = static_cast<std::size_t>(end_bucket - start_bucket + 1);
 
-    // Memory budget check against max_memory_bytes
+    // Enforce lower-only test seam capped at absolute 128 MiB hard limit
+    constexpr std::size_t kAbsoluteMaxMemoryBytes = 128U * 1024U * 1024U;
+    const std::size_t effective_max_bytes = std::min(max_memory_bytes, kAbsoluteMaxMemoryBytes);
+
     const std::size_t size_per_bucket = sizeof(CompressorTelemetryBucket) + sizeof(double) + sizeof(std::uint32_t);
     if (num_buckets > std::numeric_limits<std::size_t>::max() / (num_lanes_ * size_per_bucket)) {
         telemetry_failed_ = true;
@@ -105,7 +108,7 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
     }
     const std::size_t estimated_bytes = num_lanes_ * num_buckets * size_per_bucket;
 
-    if (estimated_bytes > max_memory_bytes) {
+    if (estimated_bytes > effective_max_bytes) {
         telemetry_failed_ = true;
         return;
     }

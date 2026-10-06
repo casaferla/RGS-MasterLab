@@ -138,6 +138,12 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
     }
 
     try {
+        std::optional<std::size_t> effective_telemetry_bytes;
+        if (max_telemetry_bytes.has_value()) {
+            constexpr std::size_t kAbsoluteMaxMemoryBytes = 128U * 1024U * 1024U;
+            effective_telemetry_bytes = std::min(*max_telemetry_bytes, kAbsoluteMaxMemoryBytes);
+        }
+
         return rgsml::core::Result<RenderRequest>::success(RenderRequest{
             source,
             render_window,
@@ -147,7 +153,7 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
                 chain.instances().begin(), chain.instances().end()},
             std::move(bindings),
             maximum_block_frames,
-            max_telemetry_bytes});
+            effective_telemetry_bytes});
     } catch (...) {
         return rgsml::core::Result<RenderRequest>::failure(request_error(
             rgsml::core::ErrorCode::IoFailure,
