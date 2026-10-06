@@ -1012,13 +1012,23 @@ void CompressorTest::telemetryOraclesAndInvariance()
 
     // Test C: Release ballistics after 9600 updates @ 48 kHz (Release = 200 ms)
     // Starting from 9 dB, target = 0 dB
-    std::vector<double> inC_smp(9600U, 0.0);
-    auto inC = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 1440, inC_smp);
-    auto outC = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 1440, inC_smp);
+    auto paramsC = *CompressorParameters::create(
+        CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+        -24.0, 4.0, 0.0, 0.1, 200.0, 50.0, 0.0, 100.0, 0.0).value();
+    auto modC = std::move(*CompressorModule::create(desc, paramsC).value());
+    QVERIFY(modC->prepare(spec48k));
+
+    TestTelemetrySink sinkC_steady;
+    modC->set_telemetry_sink(&sinkC_steady);
+    QVERIFY(modC->process(inA.value()->view(), outA.value()->mutable_view(), DspProcessContext{frame_range(0, 5000), true, false}));
 
     TestTelemetrySink sinkC;
-    modA->set_telemetry_sink(&sinkC);
-    QVERIFY(modA->process(inC.value()->view(), outC.value()->mutable_view(), DspProcessContext{frame_range(5000, 14600), false, false}));
+    modC->set_telemetry_sink(&sinkC);
+
+    std::vector<double> inC_smp(9600U, 0.0);
+    auto inC = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 5000, inC_smp);
+    auto outC = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 5000, inC_smp);
+    QVERIFY(modC->process(inC.value()->view(), outC.value()->mutable_view(), DspProcessContext{frame_range(5000, 14600), false, false}));
 
     const double releaseGR = sinkC.frames.back().applied_reduction_db_ch0;
     QVERIFY(std::abs(releaseGR - 3.310914970543439) < 1e-4);
