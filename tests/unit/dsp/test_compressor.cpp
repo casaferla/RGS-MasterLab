@@ -6,6 +6,7 @@
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/render/compressor_telemetry_collector.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_result.hpp>
 

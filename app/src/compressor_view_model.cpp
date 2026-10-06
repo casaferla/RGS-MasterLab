@@ -80,6 +80,36 @@ namespace {
     return diff * one_sub_inv_ratio;
 }
 
+[[nodiscard]] QString user_facing_field_label(const QString& fieldName)
+{
+    if (fieldName == QStringLiteral("thresholdDbfs") || fieldName == QStringLiteral("threshold")) return QStringLiteral("THRESHOLD");
+    if (fieldName == QStringLiteral("ratio")) return QStringLiteral("RATIO");
+    if (fieldName == QStringLiteral("kneeDb") || fieldName == QStringLiteral("knee")) return QStringLiteral("KNEE");
+    if (fieldName == QStringLiteral("attackMs") || fieldName == QStringLiteral("attack")) return QStringLiteral("ATTACK");
+    if (fieldName == QStringLiteral("releaseMs") || fieldName == QStringLiteral("release")) return QStringLiteral("RELEASE");
+    if (fieldName == QStringLiteral("rmsTimeConstantMs") || fieldName == QStringLiteral("rmsTime")) return QStringLiteral("RMS TIME");
+    if (fieldName == QStringLiteral("lookAheadMs") || fieldName == QStringLiteral("lookAhead")) return QStringLiteral("LOOKAHEAD");
+    if (fieldName == QStringLiteral("mixPercent") || fieldName == QStringLiteral("mix")) return QStringLiteral("MIX");
+    if (fieldName == QStringLiteral("makeupGainDb") || fieldName == QStringLiteral("makeup")) return QStringLiteral("MAKE-UP");
+    if (fieldName == QStringLiteral("detectorMode")) return QStringLiteral("DETECTOR MODE");
+    if (fieldName == QStringLiteral("channelLink")) return QStringLiteral("STEREO LINK");
+    return fieldName;
+}
+
+[[nodiscard]] QString canonical_range_message(const QString& fieldName)
+{
+    if (fieldName == QStringLiteral("thresholdDbfs") || fieldName == QStringLiteral("threshold")) return QStringLiteral("Threshold must be between -120.0 and 0.0 dBFS.");
+    if (fieldName == QStringLiteral("ratio")) return QStringLiteral("Ratio must be between 1.00 and 20.00.");
+    if (fieldName == QStringLiteral("kneeDb") || fieldName == QStringLiteral("knee")) return QStringLiteral("Knee must be between 0.0 and 24.0 dB.");
+    if (fieldName == QStringLiteral("attackMs") || fieldName == QStringLiteral("attack")) return QStringLiteral("Attack must be between 0.1 and 500.0 ms.");
+    if (fieldName == QStringLiteral("releaseMs") || fieldName == QStringLiteral("release")) return QStringLiteral("Release must be between 1.0 and 5000.0 ms.");
+    if (fieldName == QStringLiteral("rmsTimeConstantMs") || fieldName == QStringLiteral("rmsTime")) return QStringLiteral("RMS Time must be between 1.0 and 500.0 ms.");
+    if (fieldName == QStringLiteral("lookAheadMs") || fieldName == QStringLiteral("lookAhead")) return QStringLiteral("Lookahead must be between 0.0 and 20.0 ms.");
+    if (fieldName == QStringLiteral("mixPercent") || fieldName == QStringLiteral("mix")) return QStringLiteral("Mix must be between 0.0 and 100.0 %.");
+    if (fieldName == QStringLiteral("makeupGainDb") || fieldName == QStringLiteral("makeup")) return QStringLiteral("Make-up Gain must be between -24.0 and +24.0 dB.");
+    return QStringLiteral("Value out of legal range.");
+}
+
 }  // namespace
 
 CompressorViewModel::CompressorViewModel(
@@ -496,12 +526,6 @@ void CompressorViewModel::update_telemetry_observation(
         return;
     }
 
-    if (bypass()) {
-        liveGrState_ = QStringLiteral("BYPASS");
-        emit changed();
-        return;
-    }
-
     if (is_transition) {
         liveGrState_ = QStringLiteral("TRANSITION");
         emit changed();
@@ -510,6 +534,12 @@ void CompressorViewModel::update_telemetry_observation(
 
     if (sidecar == nullptr || !sidecar->valid || sidecar->status != render::CompressorTelemetryStatus::OK) {
         liveGrState_ = QStringLiteral("UNAVAILABLE");
+        emit changed();
+        return;
+    }
+
+    if (bypass()) {
+        liveGrState_ = QStringLiteral("BYPASS");
         emit changed();
         return;
     }
@@ -544,11 +574,13 @@ void CompressorViewModel::update_telemetry_observation(
     const auto& bucketsL = lanes[0].buckets;
     while (consumedBucketIndexL_ < bucketsL.size() && bucketsL[consumedBucketIndexL_].end_frame <= current_frame) {
         const auto& b = bucketsL[consumedBucketIndexL_];
-        historyL_.push_back(b);
-        if (historyL_.size() > 1000U) {
-            historyL_.erase(historyL_.begin());
+        if (b.valid) {
+            historyL_.push_back(b);
+            if (historyL_.size() > 1000U) {
+                historyL_.erase(historyL_.begin());
+            }
+            liveGrDb_ = b.end_reduction_db;
         }
-        liveGrDb_ = b.end_reduction_db;
         consumedBucketIndexL_++;
     }
 
@@ -556,11 +588,13 @@ void CompressorViewModel::update_telemetry_observation(
         const auto& bucketsR = lanes[1].buckets;
         while (consumedBucketIndexR_ < bucketsR.size() && bucketsR[consumedBucketIndexR_].end_frame <= current_frame) {
             const auto& b = bucketsR[consumedBucketIndexR_];
-            historyR_.push_back(b);
-            if (historyR_.size() > 1000U) {
-                historyR_.erase(historyR_.begin());
+            if (b.valid) {
+                historyR_.push_back(b);
+                if (historyR_.size() > 1000U) {
+                    historyR_.erase(historyR_.begin());
+                }
+                liveGrDbR_ = b.end_reduction_db;
             }
-            liveGrDbR_ = b.end_reduction_db;
             consumedBucketIndexR_++;
         }
     }
@@ -618,9 +652,8 @@ void CompressorViewModel::commit_candidate_or_set_validation(
         makeupGainDb);
 
     if (!candidate) {
-        // Validation failed: record validation field and message, do NOT update committed state, do NOT trigger preview
-        validationField_ = fieldName;
-        validationMessage_ = QString::fromStdString(candidate.error()->message());
+        validationField_ = user_facing_field_label(fieldName);
+        validationMessage_ = canonical_range_message(fieldName);
         emit changed();
         return;
     }
@@ -899,12 +932,12 @@ void CompressorViewModel::setDraftFieldText(const QString& fieldName, const QStr
 
     const bool allParsed = tOk && rOk && kOk && aOk && relOk && rmsOk && laOk && mOk && mkOk;
 
-    if (!candidate) {
-        validationField_ = fieldName;
-        validationMessage_ = QString::fromStdString(candidate.error()->message());
-    } else if (!allParsed) {
-        validationField_ = fieldName;
-        validationMessage_ = QStringLiteral("Incomplete or invalid numeric text.");
+    if (!allParsed) {
+        validationField_ = user_facing_field_label(fieldName);
+        validationMessage_ = QStringLiteral("Invalid numeric text format.");
+    } else if (!candidate) {
+        validationField_ = user_facing_field_label(fieldName);
+        validationMessage_ = canonical_range_message(fieldName);
     } else {
         validationField_.clear();
         validationMessage_.clear();
@@ -958,8 +991,8 @@ void CompressorViewModel::setDraftFieldValue(const QString& fieldName, double va
         draftMakeupGainDb_);
 
     if (!candidate) {
-        validationField_ = fieldName;
-        validationMessage_ = QString::fromStdString(candidate.error()->message());
+        validationField_ = user_facing_field_label(fieldName);
+        validationMessage_ = canonical_range_message(fieldName);
     } else {
         validationField_.clear();
         validationMessage_.clear();

@@ -982,7 +982,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QTest::keyClick(window, c);
     }
     QCoreApplication::processEvents();
-    QCOMPARE(compressorViewModel.validation_field(), QStringLiteral("thresholdDbfs"));
+    QCOMPARE(compressorViewModel.validation_field(), QStringLiteral("THRESHOLD"));
     QCOMPARE(compressorViewModel.threshold_dbfs(), -18.0); // Committed value unchanged
 
     QTest::keyClick(window, Qt::Key_Escape);

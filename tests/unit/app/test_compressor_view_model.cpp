@@ -91,7 +91,7 @@ void CompressorViewModelTest::invalidDraftRejectionNoClampNoPreview()
     vm.setRatio(0.5);
 
     // Validation field set, draft retains input without clamping, preview NOT requested
-    QCOMPARE(vm.validation_field(), QStringLiteral("ratio"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("RATIO"));
     QVERIFY(!vm.validation_message().isEmpty());
     QCOMPARE(vm.ratio_text(), QStringLiteral("0.50")); // Draft text reflects input
     QCOMPARE(vm.ratio(), 2.0); // Committed state unchanged
@@ -107,11 +107,11 @@ void CompressorViewModelTest::nanAndInfRejection()
     const double infVal = std::numeric_limits<double>::infinity();
 
     vm.setThresholdDbfs(nanVal);
-    QCOMPARE(vm.validation_field(), QStringLiteral("thresholdDbfs"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("THRESHOLD"));
     QCOMPARE(vm.preview_generation(), validGen);
 
     vm.setRatio(infVal);
-    QCOMPARE(vm.validation_field(), QStringLiteral("ratio"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("RATIO"));
     QCOMPARE(vm.preview_generation(), validGen);
 }
 
@@ -177,7 +177,7 @@ void CompressorViewModelTest::boundsRejections()
 
     // Out of bounds RMS time constant above max 500.0 ms
     vm.setRmsTimeConstantMs(std::nextafter(500.0, 501.0));
-    QCOMPARE(vm.validation_field(), QStringLiteral("rmsTimeConstantMs"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("RMS TIME"));
     QCOMPARE(vm.preview_generation(), validGen);
 
     // Out of bounds look ahead below min 0.0 ms
