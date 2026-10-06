@@ -132,14 +132,6 @@ Item {
 
                         function computePlotYMinDbfs() {
                             var minValue = -60.0
-                            if (pointsList) {
-                                for (var i = 0; i < pointsList.length; ++i) {
-                                    var pt = pointsList[i]
-                                    if (pt.inputDbfs >= plotXMinDbfs && pt.inputDbfs <= plotXMaxDbfs) {
-                                        minValue = Math.min(minValue, pt.outputDbfs)
-                                    }
-                                }
-                            }
                             if (handlesList) {
                                 for (var h = 0; h < handlesList.length; ++h) {
                                     minValue = Math.min(minValue, handlesList[h].outputDbfs)
@@ -150,14 +142,6 @@ Item {
 
                         function computePlotYMaxDbfs() {
                             var maxValue = 6.0
-                            if (pointsList) {
-                                for (var i = 0; i < pointsList.length; ++i) {
-                                    var pt = pointsList[i]
-                                    if (pt.inputDbfs >= plotXMinDbfs && pt.inputDbfs <= plotXMaxDbfs) {
-                                        maxValue = Math.max(maxValue, pt.outputDbfs)
-                                    }
-                                }
-                            }
                             if (handlesList) {
                                 for (var h = 0; h < handlesList.length; ++h) {
                                     maxValue = Math.max(maxValue, handlesList[h].outputDbfs)
