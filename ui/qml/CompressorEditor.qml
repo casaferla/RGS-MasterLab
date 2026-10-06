@@ -92,7 +92,7 @@ Item {
                         }
                         Item { Layout.fillWidth: true }
                         Text {
-                            text: curveCanvas.rangeLabel
+                            text: "In: -60..+6 dBFS"
                             color: root.textMuted
                             font.family: "Segoe UI"
                             font.pixelSize: 9
@@ -109,76 +109,6 @@ Item {
                         property var pointsList: root.viewModel ? root.viewModel.transferCurvePoints : []
                         property var handlesList: root.viewModel ? root.viewModel.transferCurveHandles : []
 
-                        function snapLowerDb(value) {
-                            return Math.floor((value - 0.001) / 6.0) * 6.0
-                        }
-
-                        function snapUpperDb(value) {
-                            return Math.ceil((value + 0.001) / 6.0) * 6.0
-                        }
-
-                        function computePlotXMinDbfs() {
-                            var minValue = -60.0
-                            if (handlesList) {
-                                for (var i = 0; i < handlesList.length; ++i) {
-                                    minValue = Math.min(minValue, handlesList[i].inputDbfs)
-                                }
-                            }
-                            return minValue < -60.0 ? snapLowerDb(minValue) : -60.0
-                        }
-
-                        readonly property real plotXMinDbfs: computePlotXMinDbfs()
-                        readonly property real plotXMaxDbfs: 6.0
-
-                        function computePlotYMinDbfs() {
-                            var minValue = -60.0
-                            if (pointsList) {
-                                for (var i = 0; i < pointsList.length; ++i) {
-                                    var pt = pointsList[i]
-                                    if (pt.inputDbfs >= plotXMinDbfs && pt.inputDbfs <= plotXMaxDbfs) {
-                                        minValue = Math.min(minValue, pt.outputDbfs)
-                                    }
-                                }
-                            }
-                            if (handlesList) {
-                                for (var h = 0; h < handlesList.length; ++h) {
-                                    minValue = Math.min(minValue, handlesList[h].outputDbfs)
-                                }
-                            }
-                            return minValue < -60.0 ? snapLowerDb(minValue) : -60.0
-                        }
-
-                        function computePlotYMaxDbfs() {
-                            var maxValue = 6.0
-                            if (pointsList) {
-                                for (var i = 0; i < pointsList.length; ++i) {
-                                    var pt = pointsList[i]
-                                    if (pt.inputDbfs >= plotXMinDbfs && pt.inputDbfs <= plotXMaxDbfs) {
-                                        maxValue = Math.max(maxValue, pt.outputDbfs)
-                                    }
-                                }
-                            }
-                            if (handlesList) {
-                                for (var h = 0; h < handlesList.length; ++h) {
-                                    maxValue = Math.max(maxValue, handlesList[h].outputDbfs)
-                                }
-                            }
-                            return maxValue > 6.0 ? snapUpperDb(maxValue) : 6.0
-                        }
-
-                        readonly property real plotYMinDbfs: computePlotYMinDbfs()
-                        readonly property real plotYMaxDbfs: computePlotYMaxDbfs()
-                        readonly property string rangeLabel: {
-                            const xMin = plotXMinDbfs.toFixed(0)
-                            const xMax = (plotXMaxDbfs >= 0 ? "+" : "") + plotXMaxDbfs.toFixed(0)
-                            const yMin = plotYMinDbfs.toFixed(0)
-                            const yMax = (plotYMaxDbfs >= 0 ? "+" : "") + plotYMaxDbfs.toFixed(0)
-                            if (plotXMinDbfs === plotYMinDbfs && plotXMaxDbfs === plotYMaxDbfs) {
-                                return "X/Y: " + xMin + ".." + xMax + " dBFS"
-                            }
-                            return "X " + xMin + ".." + xMax + " · Y " + yMin + ".." + yMax + " dBFS"
-                        }
-
                         onPointsListChanged: requestPaint()
                         onHandlesListChanged: requestPaint()
                         onWidthChanged: requestPaint()
@@ -188,53 +118,46 @@ Item {
                             var ctx = getContext("2d")
                             ctx.clearRect(0, 0, width, height)
 
-                            const minXDbfs = plotXMinDbfs
-                            const maxXDbfs = plotXMaxDbfs
-                            const minYDbfs = plotYMinDbfs
-                            const maxYDbfs = plotYMaxDbfs
-                            const xRange = maxXDbfs - minXDbfs
-                            const yRange = maxYDbfs - minYDbfs
+                            const minDbfs = -60.0
+                            const maxDbfs = 6.0
+                            const dbRange = maxDbfs - minDbfs
 
                             function mapX(db) {
-                                return (db - minXDbfs) / xRange * width
+                                return (db - minDbfs) / dbRange * width
                             }
                             function mapY(db) {
-                                return height - ((db - minYDbfs) / yRange * height)
+                                return height - ((db - minDbfs) / dbRange * height)
                             }
 
                             // Grid Lines
                             ctx.lineWidth = 1
                             ctx.strokeStyle = "#122536"
-                            const gridStepDb = 12.0
-                            const firstXGrid = Math.ceil(minXDbfs / gridStepDb) * gridStepDb
-                            for (var xDb = firstXGrid; xDb <= maxXDbfs; xDb += gridStepDb) {
-                                var gx = mapX(xDb)
+                            const gridSteps = [-48, -36, -24, -12, 0]
+                            for (var i = 0; i < gridSteps.length; ++i) {
+                                var gx = mapX(gridSteps[i])
+                                var gy = mapY(gridSteps[i])
+
+                                // Vertical line
                                 ctx.beginPath()
                                 ctx.moveTo(gx, 0)
                                 ctx.lineTo(gx, height)
                                 ctx.stroke()
-                            }
-                            const firstYGrid = Math.ceil(minYDbfs / gridStepDb) * gridStepDb
-                            for (var yDb = firstYGrid; yDb <= maxYDbfs; yDb += gridStepDb) {
-                                var gy = mapY(yDb)
+
+                                // Horizontal line
                                 ctx.beginPath()
                                 ctx.moveTo(0, gy)
                                 ctx.lineTo(width, gy)
                                 ctx.stroke()
                             }
 
-                            // 1:1 reference line over the physically represented common range.
-                            const referenceMin = Math.max(minXDbfs, minYDbfs, -120.0)
-                            const referenceMax = Math.min(maxXDbfs, maxYDbfs, 6.0)
-                            if (referenceMin <= referenceMax) {
-                                ctx.strokeStyle = "#1E3A52"
-                                ctx.setLineDash([3, 3])
-                                ctx.beginPath()
-                                ctx.moveTo(mapX(referenceMin), mapY(referenceMin))
-                                ctx.lineTo(mapX(referenceMax), mapY(referenceMax))
-                                ctx.stroke()
-                                ctx.setLineDash([])
-                            }
+                            // 1:1 45-degree Reference Line
+                            ctx.strokeStyle = "#1E3A52"
+                            ctx.setLineDash([3, 3])
+                            ctx.beginPath()
+                            ctx.moveTo(mapX(-60), mapY(-60))
+                            ctx.lineTo(mapX(6), mapY(6))
+                            ctx.stroke()
+                            ctx.setLineDash([])
 
                             // Dynamics Copper Transfer Curve
                             if (pointsList && pointsList.length > 0) {
@@ -283,15 +206,15 @@ Item {
                             property string activeHandleId: ""
 
                             function mapXToDbfs(px) {
-                                return curveCanvas.plotXMinDbfs
-                                    + (px / curveCanvas.width)
-                                        * (curveCanvas.plotXMaxDbfs - curveCanvas.plotXMinDbfs)
+                                const minDbfs = -60.0
+                                const maxDbfs = 6.0
+                                return minDbfs + (px / curveCanvas.width) * (maxDbfs - minDbfs)
                             }
 
                             function mapYToDbfs(py) {
-                                return curveCanvas.plotYMinDbfs
-                                    + ((curveCanvas.height - py) / curveCanvas.height)
-                                        * (curveCanvas.plotYMaxDbfs - curveCanvas.plotYMinDbfs)
+                                const minDbfs = -60.0
+                                const maxDbfs = 6.0
+                                return minDbfs + ((curveCanvas.height - py) / curveCanvas.height) * (maxDbfs - minDbfs)
                             }
 
                             onPressed: (mouse) => {
@@ -301,20 +224,17 @@ Item {
                                 var handles = root.viewModel.transferCurveHandles
                                 if (!handles || handles.length === 0) return
 
-                                const minXDbfs = curveCanvas.plotXMinDbfs
-                                const maxXDbfs = curveCanvas.plotXMaxDbfs
-                                const minYDbfs = curveCanvas.plotYMinDbfs
-                                const maxYDbfs = curveCanvas.plotYMaxDbfs
-                                const xRange = maxXDbfs - minXDbfs
-                                const yRange = maxYDbfs - minYDbfs
+                                const minDbfs = -60.0
+                                const maxDbfs = 6.0
+                                const dbRange = maxDbfs - minDbfs
 
                                 var bestId = ""
                                 var bestDist = 20.0
 
                                 for (var i = 0; i < handles.length; ++i) {
                                     var h = handles[i]
-                                    var hx = (h.inputDbfs - minXDbfs) / xRange * curveCanvas.width
-                                    var hy = curveCanvas.height - ((h.outputDbfs - minYDbfs) / yRange * curveCanvas.height)
+                                    var hx = (h.inputDbfs - minDbfs) / dbRange * curveCanvas.width
+                                    var hy = curveCanvas.height - ((h.outputDbfs - minDbfs) / dbRange * curveCanvas.height)
                                     var dist = Math.hypot(mouse.x - hx, mouse.y - hy)
                                     if (dist < bestDist) {
                                         bestDist = dist
@@ -337,6 +257,141 @@ Item {
                                 if (activeHandleId !== "" && root.viewModel) {
                                     root.viewModel.commitDraft()
                                     activeHandleId = ""
+                                }
+                            }
+                        }
+                    }
+
+                    // Divider
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: "#1A2C3D"
+                    }
+
+                    // Compact Live Gain Reduction Area
+                    ColumnLayout {
+                        id: liveGrWell
+                        objectName: "compressorLiveGrWell"
+                        Layout.fillWidth: true
+                        spacing: 4
+
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            Text {
+                                objectName: "compressorLiveGrStateText"
+                                text: root.viewModel ? root.viewModel.liveGrState : "NOT AUDITIONED"
+                                color: root.viewModel && root.viewModel.liveGrState.startsWith("ACTIVE") ? root.copperAccent : root.textMuted
+                                font.family: "Segoe UI"
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            Text {
+                                objectName: "compressorLiveGrValueText"
+                                text: root.viewModel ? root.viewModel.liveGrDbText : "0.0 dB"
+                                color: root.copperAccent
+                                font.family: "Consolas"
+                                font.pixelSize: 12
+                                font.weight: Font.Bold
+                            }
+
+                            Text {
+                                objectName: "compressorLiveGrValueTextR"
+                                text: root.viewModel && root.viewModel.isDualMonoTelemetry ? (" / R: " + root.viewModel.liveGrDbTextR) : ""
+                                color: root.copperAccent
+                                font.family: "Consolas"
+                                font.pixelSize: 12
+                                font.weight: Font.Bold
+                                visible: root.viewModel ? root.viewModel.isDualMonoTelemetry : false
+                            }
+                        }
+
+                        // Live GR History Trace Canvas
+                        Canvas {
+                            id: liveGrCanvas
+                            objectName: "compressorLiveGrCanvas"
+                            Layout.fillWidth: true
+                            implicitHeight: 50
+
+                            property var historyL: root.viewModel ? root.viewModel.liveGrHistoryL : []
+                            property var historyR: root.viewModel ? root.viewModel.liveGrHistoryR : []
+
+                            onHistoryLChanged: requestPaint()
+                            onHistoryRChanged: requestPaint()
+                            onWidthChanged: requestPaint()
+                            onHeightChanged: requestPaint()
+
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+
+                                if (!historyL || historyL.length === 0) return
+
+                                // Find max peak for auto-scaling
+                                var maxDb = 24.0
+                                for (var i = 0; i < historyL.length; ++i) {
+                                    if (historyL[i].peakDb > maxDb) maxDb = historyL[i].peakDb
+                                }
+                                if (historyR && historyR.length > 0) {
+                                    for (var j = 0; j < historyR.length; ++j) {
+                                        if (historyR[j].peakDb > maxDb) maxDb = historyR[j].peakDb
+                                    }
+                                }
+                                maxDb = Math.ceil(maxDb / 6.0) * 6.0
+
+                                function mapY(db) {
+                                    return (db / maxDb) * height
+                                }
+
+                                const numPoints = historyL.length
+                                const dx = width / Math.max(1, numPoints - 1)
+
+                                // Draw L mean line trace
+                                ctx.strokeStyle = "#C4774A"
+                                ctx.lineWidth = 1.5
+                                ctx.beginPath()
+                                for (var p = 0; p < numPoints; ++p) {
+                                    var x = p * dx
+                                    var yMean = mapY(historyL[p].meanDb)
+                                    if (p === 0) ctx.moveTo(x, yMean)
+                                    else ctx.lineTo(x, yMean)
+                                }
+                                ctx.stroke()
+
+                                // Draw L peak whiskers
+                                ctx.fillStyle = "#E6EEF0"
+                                for (var k = 0; k < numPoints; ++k) {
+                                    if (historyL[k].peakDb > historyL[k].meanDb + 0.1) {
+                                        var px = k * dx
+                                        var pyPeak = mapY(historyL[k].peakDb)
+                                        var pyMean = mapY(historyL[k].meanDb)
+                                        ctx.beginPath()
+                                        ctx.moveTo(px, pyMean)
+                                        ctx.lineTo(px, pyPeak)
+                                        ctx.stroke()
+
+                                        ctx.beginPath()
+                                        ctx.arc(px, pyPeak, 1.5, 0, 2 * Math.PI)
+                                        ctx.fill()
+                                    }
+                                }
+
+                                // Draw R mean line trace if dual mono
+                                if (historyR && historyR.length === numPoints) {
+                                    ctx.strokeStyle = "#2FD98F"
+                                    ctx.lineWidth = 1.5
+                                    ctx.beginPath()
+                                    for (var pr = 0; pr < numPoints; ++pr) {
+                                        var xr = pr * dx
+                                        var yrMean = mapY(historyR[pr].meanDb)
+                                        if (pr === 0) ctx.moveTo(xr, yrMean)
+                                        else ctx.lineTo(xr, yrMean)
+                                    }
+                                    ctx.stroke()
                                 }
                             }
                         }
@@ -499,9 +554,7 @@ Item {
                                     fieldName: "thresholdDbfs"
                                     viewModel: root.viewModel
                                     compact: true
-                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accentColor: "#2ED3FF"
-                                    semanticAccent: true
                                     accessibleName: "Threshold continuous adjustment slider"
                                 }
                             }
@@ -532,9 +585,7 @@ Item {
                                     fieldName: "ratio"
                                     viewModel: root.viewModel
                                     compact: true
-                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accentColor: "#2FD98F"
-                                    semanticAccent: true
                                     accessibleName: "Ratio continuous adjustment slider"
                                 }
                             }
@@ -565,9 +616,7 @@ Item {
                                     fieldName: "kneeDb"
                                     viewModel: root.viewModel
                                     compact: true
-                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accentColor: "#FFD84A"
-                                    semanticAccent: true
                                     accessibleName: "Knee continuous adjustment slider"
                                 }
                             }
@@ -599,7 +648,6 @@ Item {
                                     fieldName: "attackMs"
                                     viewModel: root.viewModel
                                     compact: true
-                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accessibleName: "Attack continuous adjustment slider"
                                 }
                             }
@@ -631,7 +679,6 @@ Item {
                                     fieldName: "releaseMs"
                                     viewModel: root.viewModel
                                     compact: true
-                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accessibleName: "Release continuous adjustment slider"
                                 }
                             }
@@ -665,7 +712,6 @@ Item {
                                     fieldName: "rmsTimeConstantMs"
                                     viewModel: root.viewModel
                                     compact: true
-                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     enabled: root.viewModel ? root.viewModel.rmsTimeEffective : true
                                     accessibleName: "RMS Time Constant continuous adjustment slider"
                                 }
@@ -697,7 +743,6 @@ Item {
                                     fieldName: "lookAheadMs"
                                     viewModel: root.viewModel
                                     compact: true
-                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accessibleName: "Lookahead continuous adjustment slider"
                                 }
                             }
@@ -728,7 +773,6 @@ Item {
                                     fieldName: "mixPercent"
                                     viewModel: root.viewModel
                                     compact: true
-                                    Layout.preferredWidth: root.compactNumericFieldWidth
                                     accessibleName: "Mix continuous adjustment slider"
                                 }
                             }
@@ -759,10 +803,7 @@ Item {
                                     fieldName: "makeupGainDb"
                                     viewModel: root.viewModel
                                     compact: true
-                                    Layout.preferredWidth: root.compactNumericFieldWidth
-                                    positionFillOrigin: 0.0
                                     accentColor: "#FF6B6B"
-                                    semanticAccent: true
                                     accessibleName: "Make-up Gain continuous adjustment slider"
                                 }
                             }

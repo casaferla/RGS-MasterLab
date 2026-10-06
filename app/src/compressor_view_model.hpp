@@ -60,7 +60,18 @@ class CompressorViewModel final : public QObject {
     Q_PROPERTY(double draftMixPercent READ draft_mix_percent NOTIFY changed)
     Q_PROPERTY(double draftMakeupGainDb READ draft_makeup_gain_db NOTIFY changed)
 
+    Q_PROPERTY(QString liveGrState READ live_gr_state NOTIFY changed)
+    Q_PROPERTY(double liveGrDb READ live_gr_db NOTIFY changed)
+    Q_PROPERTY(double liveGrDbR READ live_gr_db_r NOTIFY changed)
+    Q_PROPERTY(QString liveGrDbText READ live_gr_db_text NOTIFY changed)
+    Q_PROPERTY(QString liveGrDbTextR READ live_gr_db_text_r NOTIFY changed)
+    Q_PROPERTY(bool isDualMonoTelemetry READ is_dual_mono_telemetry NOTIFY changed)
+    Q_PROPERTY(QVariantList liveGrHistoryL READ live_gr_history_l NOTIFY changed)
+    Q_PROPERTY(QVariantList liveGrHistoryR READ live_gr_history_r NOTIFY changed)
+
 public:
+    class AuditionSourceSelector;
+    class PlaybackTransportViewModel;
     struct CompressorStateSnapshot final {
         dsp::CompressorParameters parameters;
         bool bypass{false};
@@ -124,6 +135,26 @@ public:
     [[nodiscard]] double draft_mix_percent() const noexcept { return draftMixPercent_; }
     [[nodiscard]] double draft_makeup_gain_db() const noexcept { return draftMakeupGainDb_; }
 
+    [[nodiscard]] QString live_gr_state() const;
+    [[nodiscard]] double live_gr_db() const noexcept { return liveGrDb_; }
+    [[nodiscard]] double live_gr_db_r() const noexcept { return liveGrDbR_; }
+    [[nodiscard]] QString live_gr_db_text() const;
+    [[nodiscard]] QString live_gr_db_text_r() const;
+    [[nodiscard]] bool is_dual_mono_telemetry() const noexcept { return isDualMonoTelemetry_; }
+    [[nodiscard]] QVariantList live_gr_history_l() const;
+    [[nodiscard]] QVariantList live_gr_history_r() const;
+
+    void set_audition_selector(QObject* selector) noexcept;
+    void set_playback_transport(QObject* transport) noexcept;
+
+    void update_telemetry_observation(
+        std::int64_t current_frame,
+        bool is_playing,
+        bool is_paused,
+        bool is_transition,
+        bool is_processed_audition,
+        const render::CompressorTelemetrySidecar* sidecar);
+
     Q_INVOKABLE void setDetectorMode(const QString& mode);
     Q_INVOKABLE void setChannelLink(const QString& link);
     Q_INVOKABLE void setThresholdDbfs(double val);
@@ -151,6 +182,9 @@ public:
 
 signals:
     void changed();
+
+private slots:
+    void poll_telemetry();
 
 private:
     [[nodiscard]] MasteringChainState& active_chain_state() const noexcept;
@@ -209,6 +243,21 @@ private:
 
     std::vector<CompressorStateSnapshot> undoStack_;
     std::vector<CompressorStateSnapshot> redoStack_;
+
+    QString liveGrState_{QStringLiteral("NOT AUDITIONED")};
+    double liveGrDb_{0.0};
+    double liveGrDbR_{0.0};
+    bool isDualMonoTelemetry_{false};
+    std::size_t consumedBucketIndexL_{0};
+    std::size_t consumedBucketIndexR_{0};
+    std::uint64_t activeSidecarRevision_{0};
+
+    std::vector<render::CompressorTelemetryBucket> historyL_;
+    std::vector<render::CompressorTelemetryBucket> historyR_;
+
+    QObject* auditionSelector_{nullptr};
+    QObject* playbackTransport_{nullptr};
+    QTimer telemetryTimer_;
 };
 
 }  // namespace rgsml::app

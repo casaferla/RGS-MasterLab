@@ -12,9 +12,6 @@ Item {
     property bool compact: false
     property bool enabled: true
     property color accentColor: "#00C8FF"
-    property bool semanticAccent: false
-    property real positionFillOrigin: from
-    property color positionFillColor: Qt.alpha("#C4774A", 0.38)
     property string fieldName: ""
     property var viewModel: null
 
@@ -60,7 +57,6 @@ Item {
         stepSize: 0.001
         enabled: control.enabled
         activeFocusOnTab: true
-        padding: 0
 
         value: control.valueToPosition(control.value)
 
@@ -121,15 +117,14 @@ Item {
             border.color: "#1E354A"
             border.width: 1
 
+            // Subdued subtle track fill showing current level
             Rectangle {
-                readonly property real originPosition: control.valueToPosition(control.positionFillOrigin)
-                readonly property real currentPosition: internalSlider.visualPosition
-                x: Math.min(originPosition, currentPosition) * parent.width
+                x: 0
                 y: 0
-                width: Math.abs(currentPosition - originPosition) * parent.width
+                width: internalSlider.visualPosition * parent.width
                 height: parent.height
                 radius: parent.radius
-                color: control.positionFillColor
+                color: Qt.alpha(control.accentColor, 0.25)
             }
         }
 
@@ -140,10 +135,8 @@ Item {
             height: control.compact ? 12 : 18
             radius: width / 2
             color: internalSlider.enabled ? "#E6EEF0" : "#586773"
-            border.color: control.semanticAccent
-                ? control.accentColor
-                : (internalSlider.activeFocus ? "#00C8FF" : "#1E354A")
-            border.width: internalSlider.activeFocus ? 2 : (control.semanticAccent ? 1.5 : 1)
+            border.color: internalSlider.activeFocus ? "#00C8FF" : "#1E354A"
+            border.width: internalSlider.activeFocus ? 2 : 1
         }
 
         Accessible.name: control.accessibleName.length > 0 ? control.accessibleName : (control.fieldName + " slider")

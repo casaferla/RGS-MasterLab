@@ -116,6 +116,8 @@ struct CompressorModule::Impl final {
     CompressorParameters parameters{*CompressorParameters::create_default().value()};
     std::optional<DspProcessSpec> prepared_spec;
 
+    ICompressorTelemetrySink* telemetry_sink{nullptr};
+
     std::int64_t lookahead_frames{0};
     double a_rms{0.0};
     double a_attack{0.0};
@@ -191,6 +193,16 @@ const CompressorParameters& CompressorModule::parameters() const noexcept
 const ModuleDescriptor& CompressorModule::descriptor() const noexcept
 {
     return *impl_->descriptor;
+}
+
+void CompressorModule::set_telemetry_sink(ICompressorTelemetrySink* sink) noexcept
+{
+    impl_->telemetry_sink = sink;
+}
+
+ICompressorTelemetrySink* CompressorModule::telemetry_sink() const noexcept
+{
+    return impl_->telemetry_sink;
 }
 
 rgsml::core::Result<DspRuntimeRequirements> CompressorModule::runtime_requirements(
@@ -498,12 +510,26 @@ CompressorModule::run_process_kernel(
 
         const double red0 = smooth_reduction(targ0, 0);
         const double red1 = is_mono ? 0.0 : smooth_reduction(targ1, 1);
+        const double gain0 = std::pow(10.0, -red0 / 20.0);
+        const double gain1 = is_mono ? 1.0 : std::pow(10.0, -red1 / 20.0);
+
+        if (impl_->telemetry_sink != nullptr) {
+            const std::int64_t frame_index = context.output_frame_range.begin().value() + static_cast<std::int64_t>(i);
+            impl_->telemetry_sink->push_frame_telemetry(
+                frame_index,
+                CompressorFrameTelemetry{
+                    .applied_reduction_db_ch0 = red0,
+                    .applied_reduction_db_ch1 = red1,
+                    .linear_gain_ch0 = gain0,
+                    .linear_gain_ch1 = gain1,
+                });
+        }
 
         if constexpr (kTracing) {
             tr.smoothed_reduction_db_ch0 = red0;
             tr.smoothed_reduction_db_ch1 = red1;
-            tr.linear_gain_ch0 = std::pow(10.0, -red0 / 20.0);
-            tr.linear_gain_ch1 = std::pow(10.0, -red1 / 20.0);
+            tr.linear_gain_ch0 = gain0;
+            tr.linear_gain_ch1 = gain1;
         }
 
         for (std::size_t ch = 0; ch < channels; ++ch) {
@@ -744,6 +770,20 @@ rgsml::core::Status CompressorModule::finalize(
 
             const double red0 = smooth_reduction(targ0, 0);
             const double red1 = is_mono ? 0.0 : smooth_reduction(targ1, 1);
+            const double gain0 = std::pow(10.0, -red0 / 20.0);
+            const double gain1 = is_mono ? 1.0 : std::pow(10.0, -red1 / 20.0);
+
+            if (impl_->telemetry_sink != nullptr) {
+                const std::int64_t frame_index = context.output_frame_range.begin().value() + static_cast<std::int64_t>(i);
+                impl_->telemetry_sink->push_frame_telemetry(
+                    frame_index,
+                    CompressorFrameTelemetry{
+                        .applied_reduction_db_ch0 = red0,
+                        .applied_reduction_db_ch1 = red1,
+                        .linear_gain_ch0 = gain0,
+                        .linear_gain_ch1 = gain1,
+                    });
+            }
 
             for (std::size_t ch = 0; ch < channels; ++ch) {
                 const double red = (ch == 0) ? red0 : red1;
