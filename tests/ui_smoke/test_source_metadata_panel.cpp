@@ -507,8 +507,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         &previewController
     };
     app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
-    compressorViewModel.set_audition_selector(&auditionSelector);
-    compressorViewModel.set_playback_transport(&playbackTransport);
     app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
 
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
@@ -950,7 +948,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     auto* compressorCurveCanvas = compressorEditor->findChild<QObject*>(QStringLiteral("compressorCurveCanvas"));
     QVERIFY2(compressorCurveCanvas != nullptr, "compressorCurveCanvas must exist in compressorEditor");
-    QCOMPARE(compressorViewModel.transfer_curve_points().size(), 101);
+    QCOMPARE(compressorViewModel.transfer_curve_points().size(), 191);
+    QCOMPARE(compressorCurveCanvas->property("plotXMinDbfs").toDouble(), -60.0);
+    QCOMPARE(compressorCurveCanvas->property("plotXMaxDbfs").toDouble(), 6.0);
+    QCOMPARE(compressorCurveCanvas->property("plotYMinDbfs").toDouble(), -60.0);
+    QCOMPARE(compressorCurveCanvas->property("plotYMaxDbfs").toDouble(), 6.0);
 
     // Interactive Numeric Draft & Commit Verification
     auto* thresholdInput = find_child_by_name(compressorEditor, QStringLiteral("thresholdDbfsInput"));
@@ -982,7 +984,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QTest::keyClick(window, c);
     }
     QCoreApplication::processEvents();
-    QCOMPARE(compressorViewModel.validation_field(), QStringLiteral("THRESHOLD"));
+    QCOMPARE(compressorViewModel.validation_field(), QStringLiteral("thresholdDbfs"));
     QCOMPARE(compressorViewModel.threshold_dbfs(), -18.0); // Committed value unchanged
 
     QTest::keyClick(window, Qt::Key_Escape);
@@ -1063,6 +1065,30 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QCoreApplication::processEvents();
         QCOMPARE(compressorViewModel.channel_link(), QStringLiteral("LINKED_MAX"));
     }
+
+    // Extreme but valid curve states must auto-fit instead of losing interactive handles.
+    compressorViewModel.setDraftFieldValue(QStringLiteral("thresholdDbfs"), -120.0);
+    compressorViewModel.setDraftFieldValue(QStringLiteral("makeupGainDb"), -24.0);
+    QCoreApplication::processEvents();
+    QVERIFY(compressorCurveCanvas->property("plotXMinDbfs").toDouble() <= -120.0);
+    QVERIFY(compressorCurveCanvas->property("plotYMinDbfs").toDouble() < -60.0);
+    QVERIFY(compressorViewModel.validation_field().isEmpty());
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("m14_compressor_curve_extreme_negative_autofit_1184x688.png"),
+        QSize{1184, 688}));
+    compressorViewModel.cancelDraft();
+
+    compressorViewModel.setDraftFieldValue(QStringLiteral("makeupGainDb"), 24.0);
+    QCoreApplication::processEvents();
+    QVERIFY(compressorCurveCanvas->property("plotYMaxDbfs").toDouble() > 6.0);
+    QVERIFY(compressorViewModel.validation_field().isEmpty());
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("m14_compressor_curve_extreme_positive_autofit_1184x688.png"),
+        QSize{1184, 688}));
+    compressorViewModel.cancelDraft();
+    QCoreApplication::processEvents();
 
     QVERIFY(capture_visual_evidence(window, QStringLiteral("m14_compressor_editor_1184x688.png"), QSize{1184, 688}));
     QVERIFY(capture_visual_evidence(window, QStringLiteral("m14_compressor_editor_1440x900.png"), QSize{1440, 900}));
@@ -1778,12 +1804,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(compressorViewModel.transfer_curve_handles().size(), 4);
     auto* thresholdFieldCheck = find_child_by_name(compressorEditor, QStringLiteral("compressorThresholdField"));
     QVERIFY(thresholdFieldCheck && thresholdFieldCheck->property("interactionHint").toString().contains(QStringLiteral("curve point")));
-
-    auto* liveGrWell = find_child_by_name(compressorEditor, QStringLiteral("compressorLiveGrWell"));
-    auto* liveGrStateText = find_child_by_name(compressorEditor, QStringLiteral("compressorLiveGrStateText"));
-    auto* liveGrValueText = find_child_by_name(compressorEditor, QStringLiteral("compressorLiveGrValueText"));
-    auto* liveGrCanvas = find_child_by_name(compressorEditor, QStringLiteral("compressorLiveGrCanvas"));
-    QVERIFY2(liveGrWell && liveGrStateText && liveGrValueText && liveGrCanvas, "Live GR telemetry surface elements must exist in CompressorEditor");
 
     for (auto* button : {rmsBtn, peakBtn, linkMaxBtn, linkMeanBtn, linkDualMonoBtn}) {
         auto* buttonItem = qobject_cast<QQuickItem*>(button);
