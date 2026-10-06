@@ -507,6 +507,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         &previewController
     };
     app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
+    compressorViewModel.set_audition_selector(&auditionSelector);
+    compressorViewModel.set_playback_transport(&playbackTransport);
     app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
 
     app::GoldSelectionViewModel goldSelection{&auditionSelector};

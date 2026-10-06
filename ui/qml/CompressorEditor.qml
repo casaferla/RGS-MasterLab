@@ -92,7 +92,7 @@ Item {
                         }
                         Item { Layout.fillWidth: true }
                         Text {
-                            text: "In: -60..+6 dBFS"
+                            text: "In: -120..+6 dBFS"
                             color: root.textMuted
                             font.family: "Segoe UI"
                             font.pixelSize: 9
@@ -109,6 +109,9 @@ Item {
                         property var pointsList: root.viewModel ? root.viewModel.transferCurvePoints : []
                         property var handlesList: root.viewModel ? root.viewModel.transferCurveHandles : []
 
+                        property real viewMinDbfs: -60.0
+                        property real viewMaxDbfs: 6.0
+
                         onPointsListChanged: requestPaint()
                         onHandlesListChanged: requestPaint()
                         onWidthChanged: requestPaint()
@@ -118,8 +121,23 @@ Item {
                             var ctx = getContext("2d")
                             ctx.clearRect(0, 0, width, height)
 
-                            const minDbfs = -60.0
-                            const maxDbfs = 6.0
+                            var minDbfs = -60.0
+                            var maxDbfs = 6.0
+
+                            // Dynamic Viewport Auto-fit for extreme parameter states
+                            if (handlesList && handlesList.length > 0) {
+                                for (var h = 0; h < handlesList.length; ++h) {
+                                    if (handlesList[h].inputDbfs < minDbfs) minDbfs = handlesList[h].inputDbfs
+                                    if (handlesList[h].outputDbfs < minDbfs) minDbfs = handlesList[h].outputDbfs
+                                    if (handlesList[h].outputDbfs > maxDbfs) maxDbfs = handlesList[h].outputDbfs
+                                }
+                            }
+                            minDbfs = Math.floor(minDbfs / 12.0) * 12.0
+                            maxDbfs = Math.ceil(maxDbfs / 6.0) * 6.0
+
+                            viewMinDbfs = minDbfs
+                            viewMaxDbfs = maxDbfs
+
                             const dbRange = maxDbfs - minDbfs
 
                             function mapX(db) {
@@ -132,30 +150,30 @@ Item {
                             // Grid Lines
                             ctx.lineWidth = 1
                             ctx.strokeStyle = "#122536"
-                            const gridSteps = [-48, -36, -24, -12, 0]
+                            const gridSteps = [-108, -96, -84, -72, -60, -48, -36, -24, -12, 0]
                             for (var i = 0; i < gridSteps.length; ++i) {
-                                var gx = mapX(gridSteps[i])
-                                var gy = mapY(gridSteps[i])
+                                if (gridSteps[i] >= minDbfs && gridSteps[i] <= maxDbfs) {
+                                    var gx = mapX(gridSteps[i])
+                                    var gy = mapY(gridSteps[i])
 
-                                // Vertical line
-                                ctx.beginPath()
-                                ctx.moveTo(gx, 0)
-                                ctx.lineTo(gx, height)
-                                ctx.stroke()
+                                    ctx.beginPath()
+                                    ctx.moveTo(gx, 0)
+                                    ctx.lineTo(gx, height)
+                                    ctx.stroke()
 
-                                // Horizontal line
-                                ctx.beginPath()
-                                ctx.moveTo(0, gy)
-                                ctx.lineTo(width, gy)
-                                ctx.stroke()
+                                    ctx.beginPath()
+                                    ctx.moveTo(0, gy)
+                                    ctx.lineTo(width, gy)
+                                    ctx.stroke()
+                                }
                             }
 
                             // 1:1 45-degree Reference Line
                             ctx.strokeStyle = "#1E3A52"
                             ctx.setLineDash([3, 3])
                             ctx.beginPath()
-                            ctx.moveTo(mapX(-60), mapY(-60))
-                            ctx.lineTo(mapX(6), mapY(6))
+                            ctx.moveTo(mapX(minDbfs), mapY(minDbfs))
+                            ctx.lineTo(mapX(maxDbfs), mapY(maxDbfs))
                             ctx.stroke()
                             ctx.setLineDash([])
 
@@ -165,15 +183,19 @@ Item {
                                 ctx.lineWidth = 2
                                 ctx.beginPath()
 
+                                var started = false
                                 for (var p = 0; p < pointsList.length; ++p) {
                                     var pt = pointsList[p]
-                                    var px = mapX(pt.inputDbfs)
-                                    var py = mapY(pt.outputDbfs)
+                                    if (pt.inputDbfs >= minDbfs) {
+                                        var px = mapX(pt.inputDbfs)
+                                        var py = mapY(pt.outputDbfs)
 
-                                    if (p === 0) {
-                                        ctx.moveTo(px, py)
-                                    } else {
-                                        ctx.lineTo(px, py)
+                                        if (!started) {
+                                            ctx.moveTo(px, py)
+                                            started = true
+                                        } else {
+                                            ctx.lineTo(px, py)
+                                        }
                                     }
                                 }
                                 ctx.stroke()
@@ -181,8 +203,8 @@ Item {
 
                             // C++ Transfer Curve Handles
                             if (handlesList && handlesList.length > 0) {
-                                for (var h = 0; h < handlesList.length; ++h) {
-                                    var handle = handlesList[h]
+                                for (var handleIdx = 0; handleIdx < handlesList.length; ++handleIdx) {
+                                    var handle = handlesList[handleIdx]
                                     var hx = mapX(handle.inputDbfs)
                                     var hy = mapY(handle.outputDbfs)
 
@@ -206,14 +228,14 @@ Item {
                             property string activeHandleId: ""
 
                             function mapXToDbfs(px) {
-                                const minDbfs = -60.0
-                                const maxDbfs = 6.0
+                                const minDbfs = curveCanvas.viewMinDbfs
+                                const maxDbfs = curveCanvas.viewMaxDbfs
                                 return minDbfs + (px / curveCanvas.width) * (maxDbfs - minDbfs)
                             }
 
                             function mapYToDbfs(py) {
-                                const minDbfs = -60.0
-                                const maxDbfs = 6.0
+                                const minDbfs = curveCanvas.viewMinDbfs
+                                const maxDbfs = curveCanvas.viewMaxDbfs
                                 return minDbfs + ((curveCanvas.height - py) / curveCanvas.height) * (maxDbfs - minDbfs)
                             }
 
@@ -224,8 +246,8 @@ Item {
                                 var handles = root.viewModel.transferCurveHandles
                                 if (!handles || handles.length === 0) return
 
-                                const minDbfs = -60.0
-                                const maxDbfs = 6.0
+                                const minDbfs = curveCanvas.viewMinDbfs
+                                const maxDbfs = curveCanvas.viewMaxDbfs
                                 const dbRange = maxDbfs - minDbfs
 
                                 var bestId = ""
@@ -249,6 +271,16 @@ Item {
                                 if (pressed && activeHandleId !== "" && root.viewModel) {
                                     var inDbfs = mapXToDbfs(mouse.x)
                                     var outDbfs = mapYToDbfs(mouse.y)
+
+                                    // Apply legal drag clamps
+                                    if (activeHandleId === "threshold") {
+                                        inDbfs = Math.max(-120.0, Math.min(0.0, inDbfs))
+                                    } else if (activeHandleId === "knee") {
+                                        // Knee is derived from distance to threshold in C++
+                                    } else if (activeHandleId === "makeup") {
+                                        outDbfs = Math.max(-24.0, Math.min(24.0, outDbfs))
+                                    }
+
                                     root.viewModel.setCurveHandleDraft(activeHandleId, inDbfs, outDbfs)
                                 }
                             }
@@ -292,11 +324,12 @@ Item {
 
                             Text {
                                 objectName: "compressorLiveGrValueText"
-                                text: root.viewModel ? root.viewModel.liveGrDbText : "0.0 dB"
+                                text: root.viewModel ? root.viewModel.liveGrDbText : "-- dB"
                                 color: root.copperAccent
                                 font.family: "Consolas"
                                 font.pixelSize: 12
                                 font.weight: Font.Bold
+                                visible: root.viewModel ? (root.viewModel.liveGrState.startsWith("ACTIVE")) : false
                             }
 
                             Text {
@@ -306,7 +339,7 @@ Item {
                                 font.family: "Consolas"
                                 font.pixelSize: 12
                                 font.weight: Font.Bold
-                                visible: root.viewModel ? root.viewModel.isDualMonoTelemetry : false
+                                visible: root.viewModel ? (root.viewModel.isDualMonoTelemetry && root.viewModel.liveGrState.startsWith("ACTIVE")) : false
                             }
                         }
 
@@ -331,7 +364,6 @@ Item {
 
                                 if (!historyL || historyL.length === 0) return
 
-                                // Find max peak for auto-scaling
                                 var maxDb = 24.0
                                 for (var i = 0; i < historyL.length; ++i) {
                                     if (historyL[i].peakDb > maxDb) maxDb = historyL[i].peakDb
@@ -804,6 +836,8 @@ Item {
                                     viewModel: root.viewModel
                                     compact: true
                                     accentColor: "#FF6B6B"
+                                    fillFromOrigin: true
+                                    positionFillOrigin: 0.0
                                     accessibleName: "Make-up Gain continuous adjustment slider"
                                 }
                             }

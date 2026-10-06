@@ -508,14 +508,17 @@ void CompressorViewModelTest::telemetryStateMachineAndPlaybackBinding()
 {
     CompressorViewModel vm;
 
-    render::CompressorTelemetrySidecar sidecar;
+    const auto dummyUuid = *rgsml::core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto dummyInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(dummyUuid).value();
+
+    render::CompressorTelemetrySidecar sidecar{dummyInstanceId};
     sidecar.valid = true;
     sidecar.status = render::CompressorTelemetryStatus::OK;
     sidecar.sample_rate_hz = 48000;
     sidecar.chain_revision = 1;
 
     render::CompressorTelemetryLane lane;
-    render::CompressorTelemetryBucket b;
+    render::CompressorTelemetryBucket b{dummyInstanceId};
     b.begin_frame = 0;
     b.end_frame = 240;
     b.end_reduction_db = 6.0;

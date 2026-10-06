@@ -63,18 +63,18 @@ public:
         counts_.resize(num_lanes_, std::vector<std::uint32_t>(num_buckets, 0U));
 
         for (std::size_t lane = 0; lane < num_lanes_; ++lane) {
-            lanes_[lane].buckets.resize(num_buckets);
+            lanes_[lane].buckets.reserve(num_buckets);
             for (std::size_t b = 0; b < num_buckets; ++b) {
                 const std::int64_t b_idx = start_bucket + static_cast<std::int64_t>(b);
                 const std::int64_t b_start = (b_idx * sample_rate_hz_) / 200;
                 const std::int64_t b_end = ((b_idx + 1) * sample_rate_hz_) / 200;
 
-                auto& bucket = lanes_[lane].buckets[b];
+                CompressorTelemetryBucket bucket{instance_id_};
                 bucket.begin_frame = b_start;
                 bucket.end_frame = b_end;
                 bucket.frame_count = static_cast<std::uint32_t>(b_end - b_start);
-                bucket.module_instance_id = instance_id_;
                 bucket.valid = true;
+                lanes_[lane].buckets.push_back(bucket);
             }
         }
     }
@@ -135,12 +135,11 @@ public:
 
     [[nodiscard]] CompressorTelemetrySidecar build_sidecar()
     {
-        CompressorTelemetrySidecar sidecar;
+        CompressorTelemetrySidecar sidecar{instance_id_};
         sidecar.valid = !has_invalid_sample_;
         sidecar.status = has_invalid_sample_ ? CompressorTelemetryStatus::UNAVAILABLE : CompressorTelemetryStatus::OK;
         sidecar.channel_layout = channel_layout_;
         sidecar.sample_rate_hz = sample_rate_hz_;
-        sidecar.module_instance_id = instance_id_;
         sidecar.chain_revision = chain_revision_;
 
         for (std::size_t lane = 0; lane < num_lanes_; ++lane) {
@@ -163,7 +162,7 @@ private:
     std::uint32_t sample_rate_hz_{44100};
     rgsml::audio::ChannelLayout channel_layout_{rgsml::audio::ChannelLayout::STEREO_LR};
     rgsml::dsp::CompressorChannelLink channel_link_{rgsml::dsp::CompressorChannelLink::LINKED_MAX};
-    rgsml::dsp::ModuleInstanceId instance_id_{};
+    rgsml::dsp::ModuleInstanceId instance_id_;
     std::uint64_t chain_revision_{0};
     std::size_t num_lanes_{1};
     bool has_invalid_sample_{false};
@@ -370,7 +369,7 @@ rgsml::core::Result<RenderResult> render_preview(
             modules.push_back(PreparedModule{
                 std::move(*module.value()),
                 instance.instance_id(),
-                instance.module_type_id(),
+                std::string{instance.module_type_id()},
                 required.algorithmic_latency_frames.value(),
                 required.look_ahead_frames.value(),
                 required.effective_tail_frames.value()});
@@ -450,6 +449,8 @@ rgsml::core::Result<RenderResult> render_preview(
         const auto needed_source_end = std::min(source_end, target_raw_end);
         const auto source_read_count = needed_source_end - source_start;
 
+        std::optional<CompressorTelemetrySidecar> compressor_sidecar;
+
         if (modules.empty()) {
             auto source_chunk = source.subview(
                 window.begin(),
@@ -495,9 +496,22 @@ rgsml::core::Result<RenderResult> render_preview(
             std::int64_t stage_start = source_start;
             std::int64_t stage_end = needed_source_end;
             bool stream_eos_reached = (needed_source_end == source_end);
-            std::optional<CompressorTelemetrySidecar> compressor_sidecar;
 
             for (std::size_t m = 0; m < modules.size(); ++m) {
+                const auto in_count = stage_end - stage_start;
+                const bool is_latency_or_lookahead_bearing =
+                    (modules[m].algorithmic_latency_frames > 0 || modules[m].look_ahead_frames > 0);
+                const bool will_finalize =
+                    stream_eos_reached && is_latency_or_lookahead_bearing && (modules[m].effective_tail_frames > 0);
+                const auto drain_length = will_finalize ? modules[m].effective_tail_frames : 0;
+
+                const auto out_count_res = rgsml::core::checked_add(in_count, drain_length);
+                if (!out_count_res) {
+                    return rgsml::core::Result<RenderResult>::failure(*out_count_res.error());
+                }
+
+                const auto out_frame_count = *rgsml::core::FrameCount::create(*out_count_res.value()).value();
+
                 std::unique_ptr<CompressorTelemetryCollector> collector;
                 auto* comp_mod = dynamic_cast<rgsml::dsp::CompressorModule*>(modules[m].instance.get());
                 if (comp_mod != nullptr) {
@@ -517,19 +531,7 @@ rgsml::core::Result<RenderResult> render_preview(
                         }
                     }
                 }
-                const auto in_count = stage_end - stage_start;
-                const bool is_latency_or_lookahead_bearing =
-                    (modules[m].algorithmic_latency_frames > 0 || modules[m].look_ahead_frames > 0);
-                const bool will_finalize =
-                    stream_eos_reached && is_latency_or_lookahead_bearing && (modules[m].effective_tail_frames > 0);
-                const auto drain_length = will_finalize ? modules[m].effective_tail_frames : 0;
 
-                const auto out_count_res = rgsml::core::checked_add(in_count, drain_length);
-                if (!out_count_res) {
-                    return rgsml::core::Result<RenderResult>::failure(*out_count_res.error());
-                }
-
-                const auto out_frame_count = *rgsml::core::FrameCount::create(*out_count_res.value()).value();
                 auto next_buffer = rgsml::audio::AudioBuffer::create(
                     source.format(),
                     source.timebase().frame_domain_id(),

@@ -12,6 +12,10 @@ Item {
     property bool compact: false
     property bool enabled: true
     property color accentColor: "#00C8FF"
+    property color semanticAccent: accentColor
+    property bool fillFromOrigin: false
+    property real positionFillOrigin: 0.0
+    property color positionFillColor: Qt.alpha(semanticAccent, 0.25)
     property string fieldName: ""
     property var viewModel: null
 
@@ -119,12 +123,14 @@ Item {
 
             // Subdued subtle track fill showing current level
             Rectangle {
-                x: 0
+                property real originPos: control.fillFromOrigin ? control.valueToPosition(control.positionFillOrigin) : 0.0
+                property real currentPos: internalSlider.visualPosition
+                x: Math.min(originPos, currentPos) * parent.width
                 y: 0
-                width: internalSlider.visualPosition * parent.width
+                width: Math.abs(currentPos - originPos) * parent.width
                 height: parent.height
                 radius: parent.radius
-                color: Qt.alpha(control.accentColor, 0.25)
+                color: control.positionFillColor
             }
         }
 

@@ -34,7 +34,10 @@ struct CompressorTelemetryBucket final {
     std::int64_t end_frame{0};
     std::uint32_t frame_count{0};
     bool valid{true};
-    rgsml::dsp::ModuleInstanceId module_instance_id{};
+    rgsml::dsp::ModuleInstanceId module_instance_id;
+
+    explicit CompressorTelemetryBucket(rgsml::dsp::ModuleInstanceId id) noexcept
+        : module_instance_id(id) {}
 
     friend bool operator==(
         const CompressorTelemetryBucket&,
@@ -61,9 +64,12 @@ struct CompressorTelemetrySidecar final {
     CompressorTelemetryStatus status{CompressorTelemetryStatus::OK};
     rgsml::audio::ChannelLayout channel_layout{rgsml::audio::ChannelLayout::STEREO_LR};
     std::uint32_t sample_rate_hz{44100};
-    rgsml::dsp::ModuleInstanceId module_instance_id{};
+    rgsml::dsp::ModuleInstanceId module_instance_id;
     std::uint64_t chain_revision{0};
     std::vector<CompressorTelemetryLane> channel_lanes;
+
+    explicit CompressorTelemetrySidecar(rgsml::dsp::ModuleInstanceId id) noexcept
+        : module_instance_id(id) {}
 
     friend bool operator==(
         const CompressorTelemetrySidecar&,

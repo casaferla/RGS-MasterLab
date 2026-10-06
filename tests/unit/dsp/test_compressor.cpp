@@ -1042,8 +1042,10 @@ void CompressorTest::telemetryOraclesAndInvariance()
     // Test D: Bucket impulse (240 frames @ 48 kHz = 5 ms bucket)
     // One frame = 12 dB GR, all others = 0 dB
     // Expect: peak = 12 dB, mean = 12 / 240 = 0.05 dB, attenuatedFrameCount = 1, peak offset retained.
+    const auto dummyUuid = *rgsml::core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto dummyInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(dummyUuid).value();
     rgsml::render::CompressorTelemetryCollector impulseCollector{
-        0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, *rgsml::dsp::ModuleInstanceId::create().value(), 1
+        0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
     };
 
     impulseCollector.push_frame_telemetry(0, CompressorFrameTelemetry{12.0, 12.0, std::pow(10.0, -12.0/20.0), std::pow(10.0, -12.0/20.0)});

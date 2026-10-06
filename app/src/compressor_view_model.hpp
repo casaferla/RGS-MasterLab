@@ -251,6 +251,7 @@ private:
     std::size_t consumedBucketIndexL_{0};
     std::size_t consumedBucketIndexR_{0};
     std::uint64_t activeSidecarRevision_{0};
+    std::int64_t lastObservedFrame_{-1};
 
     std::vector<render::CompressorTelemetryBucket> historyL_;
     std::vector<render::CompressorTelemetryBucket> historyR_;

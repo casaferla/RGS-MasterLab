@@ -129,20 +129,26 @@ void CompressorViewModel::poll_telemetry()
     auto* audition = qobject_cast<AuditionSourceSelector*>(auditionSelector_);
     auto* transport = qobject_cast<PlaybackTransportViewModel*>(playbackTransport_);
 
-    const bool is_processed = audition ? (audition->active_target() == AuditionTarget::PROCESSED) : true;
+    if (!audition) {
+        liveGrState_ = QStringLiteral("UNAVAILABLE");
+        emit changed();
+        return;
+    }
+
+    const bool is_processed = (audition->active_target() == AuditionTarget::PROCESSED);
     const bool is_playing = transport ? transport->is_playing() : false;
     const bool is_paused = transport ? transport->is_paused() : false;
     const std::int64_t current_frame = transport ? transport->position_frames() : 0;
 
     const render::CompressorTelemetrySidecar* sidecar{nullptr};
-    if (audition) {
-        const auto snapshot = audition->processed_realization_snapshot();
-        if (snapshot && snapshot->compressor_telemetry_sidecar().has_value()) {
-            sidecar = &(*snapshot->compressor_telemetry_sidecar());
-        }
+    const auto snapshot = audition->processed_realization_snapshot();
+    if (snapshot && snapshot->compressor_telemetry_sidecar().has_value()) {
+        sidecar = &(*snapshot->compressor_telemetry_sidecar());
     }
 
-    update_telemetry_observation(current_frame, is_playing, is_paused, false, is_processed, sidecar);
+    const bool is_transition = sidecar && (sidecar->chain_revision != active_chain_state().chain_revision());
+
+    update_telemetry_observation(current_frame, is_playing, is_paused, is_transition, is_processed, sidecar);
 }
 
 MasteringChainState& CompressorViewModel::active_chain_state() const noexcept
@@ -328,7 +334,7 @@ QVariantList CompressorViewModel::transfer_curve_points() const
 {
     QVariantList list;
     constexpr int kPoints = 101;
-    constexpr double kMinDbfs = -60.0;
+    constexpr double kMinDbfs = -120.0;
     constexpr double kMaxDbfs = 6.0;
     constexpr double kStep = (kMaxDbfs - kMinDbfs) / (kPoints - 1);
 
@@ -518,13 +524,14 @@ void CompressorViewModel::update_telemetry_observation(
         liveGrState_ = QStringLiteral("ACTIVE WET");
     }
 
-    if (sidecar->chain_revision != activeSidecarRevision_) {
+    if (current_frame < lastObservedFrame_ || sidecar->chain_revision != activeSidecarRevision_) {
         activeSidecarRevision_ = sidecar->chain_revision;
         consumedBucketIndexL_ = 0;
         consumedBucketIndexR_ = 0;
         historyL_.clear();
         historyR_.clear();
     }
+    lastObservedFrame_ = current_frame;
 
     const auto& lanes = sidecar->channel_lanes;
     if (lanes.empty()) {
