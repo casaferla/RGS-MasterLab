@@ -19,6 +19,7 @@ qt_add_qml_module(rgsml_ui
         qml/StudioIcon.qml
         qml/StudioIconButton.qml
         qml/StudioNumericField.qml
+        qml/StudioParameterSlider.qml
         qml/StudioSegmentButton.qml
         qml/StudioToggle.qml
         qml/TransportButton.qml
