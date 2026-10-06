@@ -473,6 +473,7 @@ private slots:
     void bypassedCompressorIntegration();
     void compressorNearEosPreview();
     void monoCompressorExecutionSignature();
+    void compressorTelemetryMemoryLimitFailClosed();
 };
 
 void RenderPreviewTest::validatesBindingsAndWindowAtomically()
@@ -1379,6 +1380,43 @@ void RenderPreviewTest::compressorNearEosPreview()
 
     QCOMPARE(near_eos_res.value()->view().frame_count().value(), std::int64_t{100});
     QCOMPARE(bits(near_eos_res.value()->view()), bits(*expected_sub.value()));
+}
+
+void RenderPreviewTest::compressorTelemetryMemoryLimitFailClosed()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    std::vector<double> mono_samples(100U, 0.25);
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, mono_samples);
+    auto chain = empty_chain(*registry.value());
+
+    const auto comp_id = make_id("55000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 0));
+
+    const rgsml::dsp::ModuleExecutionBinding comp_b{comp_id, *rgsml::dsp::CompressorParameters::create_default().value()};
+
+    auto req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {comp_b}, frame_count(64));
+    QVERIFY(req);
+
+    // Huge collector exceeding 128 MiB budget
+    const auto dummyUuid = *rgsml::core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto dummyInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(dummyUuid).value();
+    rgsml::render::CompressorTelemetryCollector hugeCollector{
+        0, 1000000000, 48000, rgsml::audio::ChannelLayout::STEREO_LR, rgsml::dsp::CompressorChannelLink::DUAL_MONO, dummyInstanceId, 1
+    };
+
+    // Render preview succeeds unchanged
+    auto res = rgsml::render::render_preview(*req.value(), *registry.value());
+    QVERIFY(res);
+    QCOMPARE(res.value()->render_window(), frame_range(0, 100));
+
+    // Sidecar for huge collector is UNAVAILABLE
+    auto hugeSidecar = hugeCollector.build_sidecar();
+    QVERIFY(!hugeSidecar.valid);
+    QCOMPARE(hugeSidecar.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
 }
 
 void RenderPreviewTest::monoCompressorExecutionSignature()

@@ -6,6 +6,41 @@
 
 namespace rgsml::render {
 
+namespace {
+
+[[nodiscard]] inline bool safe_add_int64(std::int64_t a, std::int64_t b, std::int64_t& result) noexcept {
+    if ((b > 0 && a > std::numeric_limits<std::int64_t>::max() - b) ||
+        (b < 0 && a < std::numeric_limits<std::int64_t>::min() - b)) {
+        return false;
+    }
+    result = a + b;
+    return true;
+}
+
+[[nodiscard]] inline bool safe_mul_int64(std::int64_t a, std::int64_t b, std::int64_t& result) noexcept {
+    if (a == 0 || b == 0) {
+        result = 0;
+        return true;
+    }
+    if (a > 0) {
+        if (b > 0) {
+            if (a > std::numeric_limits<std::int64_t>::max() / b) return false;
+        } else {
+            if (b < std::numeric_limits<std::int64_t>::min() / a) return false;
+        }
+    } else {
+        if (b > 0) {
+            if (a < std::numeric_limits<std::int64_t>::min() / b) return false;
+        } else {
+            if (a != 0 && b < std::numeric_limits<std::int64_t>::max() / a) return false;
+        }
+    }
+    result = a * b;
+    return true;
+}
+
+}  // namespace
+
 CompressorTelemetryCollector::CompressorTelemetryCollector(
     std::int64_t start_frame,
     std::int64_t total_frames,
@@ -33,9 +68,28 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
         return;
     }
 
-    const std::int64_t end_frame = start_frame_ + total_frames_;
-    const std::int64_t start_bucket = (start_frame_ * 200 + 199) / static_cast<std::int64_t>(sample_rate_hz_);
-    const std::int64_t end_bucket = ((end_frame - 1) * 200 + 199) / static_cast<std::int64_t>(sample_rate_hz_);
+    std::int64_t end_frame = 0;
+    if (!safe_add_int64(start_frame_, total_frames_, end_frame)) {
+        telemetry_failed_ = true;
+        return;
+    }
+
+    std::int64_t start_mul = 0, start_add = 0;
+    if (!safe_mul_int64(start_frame_, 200, start_mul) || !safe_add_int64(start_mul, 199, start_add)) {
+        telemetry_failed_ = true;
+        return;
+    }
+    const std::int64_t start_bucket = start_add / static_cast<std::int64_t>(sample_rate_hz_);
+
+    std::int64_t end_minus_1 = 0, end_mul = 0, end_add = 0;
+    if (!safe_add_int64(end_frame, -1, end_minus_1) ||
+        !safe_mul_int64(end_minus_1, 200, end_mul) ||
+        !safe_add_int64(end_mul, 199, end_add)) {
+        telemetry_failed_ = true;
+        return;
+    }
+    const std::int64_t end_bucket = end_add / static_cast<std::int64_t>(sample_rate_hz_);
+
     if (end_bucket < start_bucket) {
         telemetry_failed_ = true;
         return;
@@ -45,6 +99,10 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
     // Memory budget check: 128 MiB = 134,217,728 bytes
     constexpr std::size_t kMaxMemoryBytes = 128U * 1024U * 1024U;
     const std::size_t size_per_bucket = sizeof(CompressorTelemetryBucket) + sizeof(double) + sizeof(std::uint32_t);
+    if (num_buckets > std::numeric_limits<std::size_t>::max() / (num_lanes_ * size_per_bucket)) {
+        telemetry_failed_ = true;
+        return;
+    }
     const std::size_t estimated_bytes = num_lanes_ * num_buckets * size_per_bucket;
 
     if (estimated_bytes > kMaxMemoryBytes) {
@@ -61,8 +119,15 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
             lanes_[lane].buckets.reserve(num_buckets);
             for (std::size_t b = 0; b < num_buckets; ++b) {
                 const std::int64_t b_idx = start_bucket + static_cast<std::int64_t>(b);
-                const std::int64_t canonical_b_start = (b_idx * static_cast<std::int64_t>(sample_rate_hz_)) / 200;
-                const std::int64_t canonical_b_end = ((b_idx + 1) * static_cast<std::int64_t>(sample_rate_hz_)) / 200;
+                std::int64_t b_mul = 0, b_plus_1 = 0, b_plus_1_mul = 0;
+                if (!safe_mul_int64(b_idx, static_cast<std::int64_t>(sample_rate_hz_), b_mul) ||
+                    !safe_add_int64(b_idx, 1, b_plus_1) ||
+                    !safe_mul_int64(b_plus_1, static_cast<std::int64_t>(sample_rate_hz_), b_plus_1_mul)) {
+                    telemetry_failed_ = true;
+                    return;
+                }
+                const std::int64_t canonical_b_start = b_mul / 200;
+                const std::int64_t canonical_b_end = b_plus_1_mul / 200;
 
                 const std::int64_t b_start = std::max(canonical_b_start, start_frame_);
                 const std::int64_t b_end = std::min(canonical_b_end, end_frame);
@@ -99,8 +164,17 @@ void CompressorTelemetryCollector::push_frame_telemetry(
     expected_next_frame_++;
     pushed_frame_count_++;
 
-    const std::int64_t b_idx = (absolute_frame * 200 + 199) / static_cast<std::int64_t>(sample_rate_hz_);
-    const std::int64_t start_bucket = (start_frame_ * 200 + 199) / static_cast<std::int64_t>(sample_rate_hz_);
+    std::int64_t f_mul = 0, f_add = 0, s_mul = 0, s_add = 0;
+    if (!safe_mul_int64(absolute_frame, 200, f_mul) ||
+        !safe_add_int64(f_mul, 199, f_add) ||
+        !safe_mul_int64(start_frame_, 200, s_mul) ||
+        !safe_add_int64(s_mul, 199, s_add)) {
+        telemetry_failed_ = true;
+        return;
+    }
+
+    const std::int64_t b_idx = f_add / static_cast<std::int64_t>(sample_rate_hz_);
+    const std::int64_t start_bucket = s_add / static_cast<std::int64_t>(sample_rate_hz_);
     const std::int64_t rel_b = b_idx - start_bucket;
 
     if (rel_b < 0 || rel_b >= static_cast<std::int64_t>(lanes_[0].buckets.size())) {
@@ -110,16 +184,16 @@ void CompressorTelemetryCollector::push_frame_telemetry(
 
     const auto b_u = static_cast<std::size_t>(rel_b);
 
-        auto& target_bucket = lanes_[0].buckets[b_u];
-        if (absolute_frame < target_bucket.begin_frame || absolute_frame >= target_bucket.end_frame) {
-            telemetry_failed_ = true;
-            return;
-        }
+    auto& target_bucket = lanes_[0].buckets[b_u];
+    if (absolute_frame < target_bucket.begin_frame || absolute_frame >= target_bucket.end_frame) {
+        telemetry_failed_ = true;
+        return;
+    }
 
     // Verify L/R equivalence for LINKED stereo layout
     if (num_lanes_ == 1 && channel_layout_ == rgsml::audio::ChannelLayout::STEREO_LR) {
-        if (std::abs(frame.applied_reduction_db_ch0 - frame.applied_reduction_db_ch1) > 1e-4 ||
-            std::abs(frame.linear_gain_ch0 - frame.linear_gain_ch1) > 1e-4) {
+        if (frame.applied_reduction_db_ch0 != frame.applied_reduction_db_ch1 ||
+            frame.linear_gain_ch0 != frame.linear_gain_ch1) {
             telemetry_failed_ = true;
             return;
         }
@@ -138,9 +212,9 @@ void CompressorTelemetryCollector::push_frame_telemetry(
             return;
         }
 
-        // Consistency check: gain_lin vs 10^(-red_db / 20)
+        // Precision consistency check: gain_lin vs 10^(-red_db / 20)
         const double expected_gain = std::pow(10.0, -red_db / 20.0);
-        if (std::abs(gain_lin - expected_gain) > 1e-4) {
+        if (std::abs(gain_lin - expected_gain) > 1e-6) {
             bucket.valid = false;
             telemetry_failed_ = true;
             return;
