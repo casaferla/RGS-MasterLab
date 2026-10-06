@@ -10,6 +10,7 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
+#include <rgsml/render/compressor_telemetry_collector.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
 
@@ -1396,27 +1397,32 @@ void RenderPreviewTest::compressorTelemetryMemoryLimitFailClosed()
 
     const rgsml::dsp::ModuleExecutionBinding comp_b{comp_id, *rgsml::dsp::CompressorParameters::create_default().value()};
 
-    auto req = rgsml::render::RenderRequest::create(
+    // Baseline request without telemetry memory restriction
+    auto req_baseline = rgsml::render::RenderRequest::create(
         source.value()->view(), frame_range(0, 100), chain,
         {comp_b}, frame_count(64));
-    QVERIFY(req);
+    QVERIFY(req_baseline);
+    auto res_baseline = rgsml::render::render_preview(*req_baseline.value(), *registry.value());
+    QVERIFY(res_baseline);
+    QVERIFY(res_baseline.value()->compressor_telemetry_sidecar().has_value());
+    QVERIFY(res_baseline.value()->compressor_telemetry_sidecar()->valid);
 
-    // Huge collector exceeding 128 MiB budget
-    const auto dummyUuid = *rgsml::core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
-    const auto dummyInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(dummyUuid).value();
-    rgsml::render::CompressorTelemetryCollector hugeCollector{
-        0, 1000000000, 48000, rgsml::audio::ChannelLayout::STEREO_LR, rgsml::dsp::CompressorChannelLink::DUAL_MONO, dummyInstanceId, 1
-    };
+    // Render request with tight 100 byte telemetry budget seam
+    auto req_restricted = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {comp_b}, frame_count(64), std::size_t{100});
+    QVERIFY(req_restricted);
 
-    // Render preview succeeds unchanged
-    auto res = rgsml::render::render_preview(*req.value(), *registry.value());
-    QVERIFY(res);
-    QCOMPARE(res.value()->render_window(), frame_range(0, 100));
+    // Render preview succeeds unchanged and returns bit-identical audio!
+    auto res_restricted = rgsml::render::render_preview(*req_restricted.value(), *registry.value());
+    QVERIFY(res_restricted);
+    QCOMPARE(bits(res_restricted.value()->view()), bits(res_baseline.value()->view()));
 
-    // Sidecar for huge collector is UNAVAILABLE
-    auto hugeSidecar = hugeCollector.build_sidecar();
-    QVERIFY(!hugeSidecar.valid);
-    QCOMPARE(hugeSidecar.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+    // Sidecar is present but marked UNAVAILABLE due to telemetry memory budget fail-closed
+    QVERIFY(res_restricted.value()->compressor_telemetry_sidecar().has_value());
+    const auto& sidecar = *res_restricted.value()->compressor_telemetry_sidecar();
+    QVERIFY(!sidecar.valid);
+    QCOMPARE(sidecar.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
 }
 
 void RenderPreviewTest::monoCompressorExecutionSignature()

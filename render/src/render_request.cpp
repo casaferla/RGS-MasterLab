@@ -37,7 +37,8 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
     rgsml::core::FrameRange render_window,
     const rgsml::dsp::ProcessingChain& chain,
     std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
-    rgsml::core::FrameCount maximum_block_frames)
+    rgsml::core::FrameCount maximum_block_frames,
+    std::optional<std::size_t> max_telemetry_bytes)
 {
     if (source.timebase().frame_domain_id()
         != rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE) {
@@ -145,7 +146,8 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
             std::vector<rgsml::dsp::ModuleInstance>{
                 chain.instances().begin(), chain.instances().end()},
             std::move(bindings),
-            maximum_block_frames});
+            maximum_block_frames,
+            max_telemetry_bytes});
     } catch (...) {
         return rgsml::core::Result<RenderRequest>::failure(request_error(
             rgsml::core::ErrorCode::IoFailure,
@@ -161,7 +163,8 @@ RenderRequest::RenderRequest(
     std::uint64_t chain_revision,
     std::vector<rgsml::dsp::ModuleInstance> chain_instances,
     std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
-    rgsml::core::FrameCount maximum_block_frames) noexcept
+    rgsml::core::FrameCount maximum_block_frames,
+    std::optional<std::size_t> max_telemetry_bytes) noexcept
     : source_(source)
     , render_window_(render_window)
     , chain_context_(chain_context)
@@ -169,6 +172,7 @@ RenderRequest::RenderRequest(
     , chain_instances_(std::move(chain_instances))
     , bindings_(std::move(bindings))
     , maximum_block_frames_(maximum_block_frames)
+    , max_telemetry_bytes_(max_telemetry_bytes)
 {
 }
 
@@ -192,5 +196,9 @@ rgsml::core::FrameCount RenderRequest::maximum_block_frames() const noexcept
     return maximum_block_frames_;
 }
 RenderMode RenderRequest::mode() const noexcept { return RenderMode::PREVIEW; }
+std::optional<std::size_t> RenderRequest::max_telemetry_bytes() const noexcept
+{
+    return max_telemetry_bytes_;
+}
 
 }  // namespace rgsml::render

@@ -8,6 +8,7 @@
 #include <rgsml/dsp/processing_chain.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -24,7 +25,8 @@ public:
         rgsml::core::FrameRange render_window,
         const rgsml::dsp::ProcessingChain& chain,
         std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
-        rgsml::core::FrameCount maximum_block_frames);
+        rgsml::core::FrameCount maximum_block_frames,
+        std::optional<std::size_t> max_telemetry_bytes = std::nullopt);
 
     [[nodiscard]] rgsml::audio::AudioBufferView source() const noexcept;
     [[nodiscard]] rgsml::core::FrameRange render_window() const noexcept;
@@ -36,6 +38,7 @@ public:
     bindings() const noexcept;
     [[nodiscard]] rgsml::core::FrameCount maximum_block_frames() const noexcept;
     [[nodiscard]] RenderMode mode() const noexcept;
+    [[nodiscard]] std::optional<std::size_t> max_telemetry_bytes() const noexcept;
 
 private:
     RenderRequest(
@@ -45,7 +48,8 @@ private:
         std::uint64_t chain_revision,
         std::vector<rgsml::dsp::ModuleInstance> chain_instances,
         std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
-        rgsml::core::FrameCount maximum_block_frames) noexcept;
+        rgsml::core::FrameCount maximum_block_frames,
+        std::optional<std::size_t> max_telemetry_bytes) noexcept;
 
     rgsml::audio::AudioBufferView source_;
     rgsml::core::FrameRange render_window_;
@@ -54,6 +58,7 @@ private:
     std::vector<rgsml::dsp::ModuleInstance> chain_instances_;
     std::vector<rgsml::dsp::ModuleExecutionBinding> bindings_;
     rgsml::core::FrameCount maximum_block_frames_;
+    std::optional<std::size_t> max_telemetry_bytes_;
 };
 
 }  // namespace rgsml::render

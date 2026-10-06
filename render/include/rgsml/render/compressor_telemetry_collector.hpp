@@ -21,7 +21,8 @@ public:
         rgsml::audio::ChannelLayout channel_layout,
         rgsml::dsp::CompressorChannelLink channel_link,
         rgsml::dsp::ModuleInstanceId instance_id,
-        std::uint64_t chain_revision);
+        std::uint64_t chain_revision,
+        std::size_t max_memory_bytes = 128U * 1024U * 1024U);
 
     ~CompressorTelemetryCollector() override = default;
 

@@ -48,7 +48,8 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
     rgsml::audio::ChannelLayout channel_layout,
     rgsml::dsp::CompressorChannelLink channel_link,
     rgsml::dsp::ModuleInstanceId instance_id,
-    std::uint64_t chain_revision)
+    std::uint64_t chain_revision,
+    std::size_t max_memory_bytes)
     : start_frame_(start_frame)
     , total_frames_(total_frames)
     , sample_rate_hz_(sample_rate_hz)
@@ -96,8 +97,7 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
     }
     const std::size_t num_buckets = static_cast<std::size_t>(end_bucket - start_bucket + 1);
 
-    // Memory budget check: 128 MiB = 134,217,728 bytes
-    constexpr std::size_t kMaxMemoryBytes = 128U * 1024U * 1024U;
+    // Memory budget check against max_memory_bytes
     const std::size_t size_per_bucket = sizeof(CompressorTelemetryBucket) + sizeof(double) + sizeof(std::uint32_t);
     if (num_buckets > std::numeric_limits<std::size_t>::max() / (num_lanes_ * size_per_bucket)) {
         telemetry_failed_ = true;
@@ -105,7 +105,7 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
     }
     const std::size_t estimated_bytes = num_lanes_ * num_buckets * size_per_bucket;
 
-    if (estimated_bytes > kMaxMemoryBytes) {
+    if (estimated_bytes > max_memory_bytes) {
         telemetry_failed_ = true;
         return;
     }
@@ -212,9 +212,11 @@ void CompressorTelemetryCollector::push_frame_telemetry(
             return;
         }
 
-        // Precision consistency check: gain_lin vs 10^(-red_db / 20)
+        // ULP-scale double-precision consistency check: gain_lin vs 10^(-red_db / 20)
         const double expected_gain = std::pow(10.0, -red_db / 20.0);
-        if (std::abs(gain_lin - expected_gain) > 1e-6) {
+        const double diff = std::abs(gain_lin - expected_gain);
+        const double tol = 128.0 * std::numeric_limits<double>::epsilon() * std::max(1.0, expected_gain);
+        if (diff > tol) {
             bucket.valid = false;
             telemetry_failed_ = true;
             return;
