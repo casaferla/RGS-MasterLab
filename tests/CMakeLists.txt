@@ -1258,14 +1258,6 @@ qt_add_executable(rgsml_dsp_module_adapter_tests
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
-    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
-    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
-    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
-    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.hpp
-    ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
-    ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.hpp
-    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
-    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
 )
 
 qt_add_executable(rgsml_compressor_view_model_tests
@@ -1276,14 +1268,6 @@ qt_add_executable(rgsml_compressor_view_model_tests
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
-    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
-    ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
-    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
-    ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.hpp
-    ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
-    ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.hpp
-    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
-    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
 )
 target_include_directories(rgsml_compressor_view_model_tests
     PRIVATE
@@ -1293,7 +1277,6 @@ target_link_libraries(rgsml_compressor_view_model_tests
     PRIVATE
         rgsml_render
         rgsml_dsp
-        rgsml_platform
         rgsml_audio
         rgsml_core
         Qt6::Core
@@ -1313,7 +1296,6 @@ target_link_libraries(rgsml_dsp_module_adapter_tests
     PRIVATE
         rgsml_render
         rgsml_dsp
-        rgsml_platform
         rgsml_audio
         rgsml_core
         Qt6::Core
