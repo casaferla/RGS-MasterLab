@@ -40,7 +40,10 @@ private:
     rgsml::dsp::ModuleInstanceId instance_id_;
     std::uint64_t chain_revision_{0};
     std::size_t num_lanes_{1};
-    bool has_invalid_sample_{false};
+
+    std::int64_t expected_next_frame_{0};
+    std::int64_t pushed_frame_count_{0};
+    bool telemetry_failed_{false};
 
     std::vector<CompressorTelemetryLane> lanes_;
     std::vector<std::vector<double>> sums_;

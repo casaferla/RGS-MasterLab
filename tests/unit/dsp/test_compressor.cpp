@@ -1075,6 +1075,190 @@ void CompressorTest::telemetryOraclesAndInvariance()
     QCOMPARE(bucketD.attenuated_frame_count, 1U);
     QCOMPARE(bucketD.peak_offset_frames, 0U);
 
+    // Test E: 44.1 kHz cadence verification (alternating 220 / 221 frame buckets)
+    {
+        rgsml::render::CompressorTelemetryCollector collector44k{
+            0, 882, 44100, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        for (std::int64_t f = 0; f < 882; ++f) {
+            collector44k.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        }
+        auto sidecar44k = collector44k.build_sidecar();
+        QVERIFY(sidecar44k.valid);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets.size(), 4U);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[0].frame_count, 220U);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[0].begin_frame, 0);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[0].end_frame, 220);
+
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[1].frame_count, 221U);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[1].begin_frame, 220);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[1].end_frame, 441);
+
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[2].frame_count, 220U);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[2].begin_frame, 441);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[2].end_frame, 661);
+
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[3].frame_count, 221U);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[3].begin_frame, 661);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[3].end_frame, 882);
+
+        // Verify exact observation accumulation per bucket (e.g. 220 frames in B0, 221 in B1, etc.)
+        rgsml::render::CompressorTelemetryCollector impulse44k{
+            0, 882, 44100, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        // Place impulse exactly at frame 220 (first frame of Bucket 1)
+        const double g12_44k = std::pow(10.0, -12.0 / 20.0);
+        for (std::int64_t f = 0; f < 882; ++f) {
+            if (f == 220) {
+                impulse44k.push_frame_telemetry(f, CompressorFrameTelemetry{12.0, 12.0, g12_44k, g12_44k});
+            } else {
+                impulse44k.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+            }
+        }
+        auto sidecarImp44k = impulse44k.build_sidecar();
+        QVERIFY(sidecarImp44k.valid);
+        QCOMPARE(sidecarImp44k.channel_lanes[0].buckets[0].peak_reduction_db, 0.0);
+        QCOMPARE(sidecarImp44k.channel_lanes[0].buckets[1].peak_reduction_db, 12.0);
+        QCOMPARE(sidecarImp44k.channel_lanes[0].buckets[1].peak_offset_frames, 0U); // 220 - 220 = 0 offset in Bucket 1!
+    }
+
+    // Test F: Partial edge buckets (first and last partial intervals)
+    {
+        // First partial bucket: start at frame 10, total 200 frames @ 48 kHz
+        rgsml::render::CompressorTelemetryCollector partialFirst{
+            10, 200, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        const double g12 = std::pow(10.0, -12.0 / 20.0);
+        partialFirst.push_frame_telemetry(10, CompressorFrameTelemetry{12.0, 12.0, g12, g12});
+        for (std::int64_t f = 11; f < 210; ++f) {
+            partialFirst.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        }
+        auto sidecarFirst = partialFirst.build_sidecar();
+        QVERIFY(sidecarFirst.valid);
+        QCOMPARE(sidecarFirst.channel_lanes[0].buckets.size(), 1U);
+        const auto& bFirst = sidecarFirst.channel_lanes[0].buckets[0];
+        QCOMPARE(bFirst.begin_frame, 10);
+        QCOMPARE(bFirst.end_frame, 210);
+        QCOMPARE(bFirst.frame_count, 200U);
+        QCOMPARE(bFirst.peak_offset_frames, 0U); // 10 - 10 = 0 offset relative to bucket.begin_frame
+
+        // Last partial bucket: start at 0, total 250 frames @ 48 kHz -> bucket 0 [0, 240), bucket 1 [240, 250)
+        rgsml::render::CompressorTelemetryCollector partialLast{
+            0, 250, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        for (std::int64_t f = 0; f < 250; ++f) {
+            partialLast.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        }
+        auto sidecarLast = partialLast.build_sidecar();
+        QVERIFY(sidecarLast.valid);
+        QCOMPARE(sidecarLast.channel_lanes[0].buckets.size(), 2U);
+        QCOMPARE(sidecarLast.channel_lanes[0].buckets[0].frame_count, 240U);
+        QCOMPARE(sidecarLast.channel_lanes[0].buckets[1].frame_count, 10U);
+        QCOMPARE(sidecarLast.channel_lanes[0].buckets[1].begin_frame, 240);
+        QCOMPARE(sidecarLast.channel_lanes[0].buckets[1].end_frame, 250);
+    }
+
+    // Test G: Malformed frame coverage (duplicate, gap, incomplete) -> fail closed
+    {
+        // Duplicate frame
+        rgsml::render::CompressorTelemetryCollector dupCollector{
+            0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        dupCollector.push_frame_telemetry(0, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        dupCollector.push_frame_telemetry(0, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        auto sidecarDup = dupCollector.build_sidecar();
+        QVERIFY(!sidecarDup.valid);
+        QCOMPARE(sidecarDup.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+        // Gap/skipped frame
+        rgsml::render::CompressorTelemetryCollector gapCollector{
+            0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        gapCollector.push_frame_telemetry(0, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        gapCollector.push_frame_telemetry(2, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        auto sidecarGap = gapCollector.build_sidecar();
+        QVERIFY(!sidecarGap.valid);
+        QCOMPARE(sidecarGap.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+        // Incomplete coverage
+        rgsml::render::CompressorTelemetryCollector incCollector{
+            0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        for (std::int64_t f = 0; f < 200; ++f) {
+            incCollector.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        }
+        auto sidecarInc = incCollector.build_sidecar();
+        QVERIFY(!sidecarInc.valid);
+        QCOMPARE(sidecarInc.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+    }
+
+    // Test H: Observation validity & contradiction checks -> fail closed
+    {
+        // Contradiction: 6 dB reduction but gain = 1.0
+        rgsml::render::CompressorTelemetryCollector contraCollector{
+            0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        contraCollector.push_frame_telemetry(0, CompressorFrameTelemetry{6.0, 6.0, 1.0, 1.0});
+        auto sidecarContra = contraCollector.build_sidecar();
+        QVERIFY(!sidecarContra.valid);
+        QCOMPARE(sidecarContra.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+        // Invalid negative reduction
+        rgsml::render::CompressorTelemetryCollector negCollector{
+            0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        negCollector.push_frame_telemetry(0, CompressorFrameTelemetry{-1.0, -1.0, 1.0, 1.0});
+        auto sidecarNeg = negCollector.build_sidecar();
+        QVERIFY(!sidecarNeg.valid);
+
+        // Invalid linear gain > 1.0
+        rgsml::render::CompressorTelemetryCollector overGainCollector{
+            0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        overGainCollector.push_frame_telemetry(0, CompressorFrameTelemetry{0.0, 0.0, 1.5, 1.5});
+        auto sidecarOver = overGainCollector.build_sidecar();
+        QVERIFY(!sidecarOver.valid);
+    }
+
+    // Test I: Linked mode L/R divergence vs DUAL_MONO 2-lane accounting
+    {
+        // LINKED_MAX with divergent channels -> UNAVAILABLE
+        rgsml::render::CompressorTelemetryCollector divCollector{
+            0, 240, 48000, rgsml::audio::ChannelLayout::STEREO_LR, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        const double g6 = std::pow(10.0, -6.0 / 20.0);
+        for (std::int64_t f = 0; f < 240; ++f) {
+            divCollector.push_frame_telemetry(f, CompressorFrameTelemetry{6.0, 0.0, g6, 1.0});
+        }
+        auto sidecarDiv = divCollector.build_sidecar();
+        QVERIFY(!sidecarDiv.valid);
+        QCOMPARE(sidecarDiv.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+        // DUAL_MONO with different L/R channels -> 2 independent valid lanes
+        rgsml::render::CompressorTelemetryCollector dualCollector{
+            0, 240, 48000, rgsml::audio::ChannelLayout::STEREO_LR, CompressorChannelLink::DUAL_MONO, dummyInstanceId, 1
+        };
+        const double g3 = std::pow(10.0, -3.0 / 20.0);
+        for (std::int64_t f = 0; f < 240; ++f) {
+            dualCollector.push_frame_telemetry(f, CompressorFrameTelemetry{6.0, 3.0, g6, g3});
+        }
+        auto sidecarDual = dualCollector.build_sidecar();
+        QVERIFY(sidecarDual.valid);
+        QCOMPARE(sidecarDual.channel_lanes.size(), 2U);
+        QCOMPARE(sidecarDual.channel_lanes[0].buckets[0].peak_reduction_db, 6.0);
+        QCOMPARE(sidecarDual.channel_lanes[1].buckets[0].peak_reduction_db, 3.0);
+    }
+
+    // Test J: Memory hard-limit (>128 MiB) fail-closed behavior
+    {
+        rgsml::render::CompressorTelemetryCollector hugeCollector{
+            0, 1000000000, 48000, rgsml::audio::ChannelLayout::STEREO_LR, CompressorChannelLink::DUAL_MONO, dummyInstanceId, 1
+        };
+        auto sidecarHuge = hugeCollector.build_sidecar();
+        QVERIFY(!sidecarHuge.valid);
+        QCOMPARE(sidecarHuge.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+    }
+
     // Block-partition invariance: test process partitions 1, 7, 31, 64, 127, 256, 511, 1024, 4096
     const std::array partitions{1, 7, 31, 64, 127, 256, 511, 1024, 4096};
     std::vector<double> longInput(4096U, 0.5);

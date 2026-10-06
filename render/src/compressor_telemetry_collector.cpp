@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace rgsml::render {
 
@@ -20,38 +21,65 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
     , channel_link_(channel_link)
     , instance_id_(instance_id)
     , chain_revision_(chain_revision)
+    , expected_next_frame_(start_frame)
+    , pushed_frame_count_(0)
 {
     const bool is_mono = (channel_layout_ == rgsml::audio::ChannelLayout::MONO_C);
     const bool is_dual_mono = (!is_mono && channel_link_ == rgsml::dsp::CompressorChannelLink::DUAL_MONO);
     num_lanes_ = is_dual_mono ? 2U : 1U;
 
     if (total_frames_ <= 0 || sample_rate_hz_ == 0) {
+        telemetry_failed_ = true;
         return;
     }
 
     const std::int64_t end_frame = start_frame_ + total_frames_;
-    const std::int64_t start_bucket = (start_frame_ * 200) / sample_rate_hz_;
-    const std::int64_t end_bucket = ((end_frame - 1) * 200) / sample_rate_hz_;
-    const std::size_t num_buckets = static_cast<std::size_t>(std::max<std::int64_t>(1, end_bucket - start_bucket + 1));
+    const std::int64_t start_bucket = (start_frame_ * 200 + 199) / static_cast<std::int64_t>(sample_rate_hz_);
+    const std::int64_t end_bucket = ((end_frame - 1) * 200 + 199) / static_cast<std::int64_t>(sample_rate_hz_);
+    if (end_bucket < start_bucket) {
+        telemetry_failed_ = true;
+        return;
+    }
+    const std::size_t num_buckets = static_cast<std::size_t>(end_bucket - start_bucket + 1);
 
-    lanes_.resize(num_lanes_);
-    sums_.resize(num_lanes_, std::vector<double>(num_buckets, 0.0));
-    counts_.resize(num_lanes_, std::vector<std::uint32_t>(num_buckets, 0U));
+    // Memory budget check: 128 MiB = 134,217,728 bytes
+    constexpr std::size_t kMaxMemoryBytes = 128U * 1024U * 1024U;
+    const std::size_t size_per_bucket = sizeof(CompressorTelemetryBucket) + sizeof(double) + sizeof(std::uint32_t);
+    const std::size_t estimated_bytes = num_lanes_ * num_buckets * size_per_bucket;
 
-    for (std::size_t lane = 0; lane < num_lanes_; ++lane) {
-        lanes_[lane].buckets.reserve(num_buckets);
-        for (std::size_t b = 0; b < num_buckets; ++b) {
-            const std::int64_t b_idx = start_bucket + static_cast<std::int64_t>(b);
-            const std::int64_t b_start = (b_idx * sample_rate_hz_) / 200;
-            const std::int64_t b_end = ((b_idx + 1) * sample_rate_hz_) / 200;
+    if (estimated_bytes > kMaxMemoryBytes) {
+        telemetry_failed_ = true;
+        return;
+    }
 
-            CompressorTelemetryBucket bucket{instance_id_};
-            bucket.begin_frame = b_start;
-            bucket.end_frame = b_end;
-            bucket.frame_count = static_cast<std::uint32_t>(b_end - b_start);
-            bucket.valid = true;
-            lanes_[lane].buckets.push_back(bucket);
+    try {
+        lanes_.resize(num_lanes_);
+        sums_.resize(num_lanes_, std::vector<double>(num_buckets, 0.0));
+        counts_.resize(num_lanes_, std::vector<std::uint32_t>(num_buckets, 0U));
+
+        for (std::size_t lane = 0; lane < num_lanes_; ++lane) {
+            lanes_[lane].buckets.reserve(num_buckets);
+            for (std::size_t b = 0; b < num_buckets; ++b) {
+                const std::int64_t b_idx = start_bucket + static_cast<std::int64_t>(b);
+                const std::int64_t canonical_b_start = (b_idx * static_cast<std::int64_t>(sample_rate_hz_)) / 200;
+                const std::int64_t canonical_b_end = ((b_idx + 1) * static_cast<std::int64_t>(sample_rate_hz_)) / 200;
+
+                const std::int64_t b_start = std::max(canonical_b_start, start_frame_);
+                const std::int64_t b_end = std::min(canonical_b_end, end_frame);
+
+                CompressorTelemetryBucket bucket{instance_id_};
+                bucket.begin_frame = b_start;
+                bucket.end_frame = b_end;
+                bucket.frame_count = static_cast<std::uint32_t>(std::max<std::int64_t>(0, b_end - b_start));
+                bucket.valid = true;
+                lanes_[lane].buckets.push_back(bucket);
+            }
         }
+    } catch (...) {
+        telemetry_failed_ = true;
+        lanes_.clear();
+        sums_.clear();
+        counts_.clear();
     }
 }
 
@@ -59,21 +87,41 @@ void CompressorTelemetryCollector::push_frame_telemetry(
     std::int64_t absolute_frame,
     const rgsml::dsp::CompressorFrameTelemetry& frame) noexcept
 {
-    if (sample_rate_hz_ == 0 || lanes_.empty() || lanes_[0].buckets.empty()) return;
-    const std::int64_t b_idx = (absolute_frame * 200) / sample_rate_hz_;
-    const std::int64_t start_bucket = (start_frame_ * 200) / sample_rate_hz_;
+    if (telemetry_failed_) {
+        return;
+    }
+
+    // Strict contiguity and coverage checks:
+    if (absolute_frame != expected_next_frame_) {
+        telemetry_failed_ = true;
+        return;
+    }
+    expected_next_frame_++;
+    pushed_frame_count_++;
+
+    const std::int64_t b_idx = (absolute_frame * 200 + 199) / static_cast<std::int64_t>(sample_rate_hz_);
+    const std::int64_t start_bucket = (start_frame_ * 200 + 199) / static_cast<std::int64_t>(sample_rate_hz_);
     const std::int64_t rel_b = b_idx - start_bucket;
 
     if (rel_b < 0 || rel_b >= static_cast<std::int64_t>(lanes_[0].buckets.size())) {
+        telemetry_failed_ = true;
         return;
     }
 
     const auto b_u = static_cast<std::size_t>(rel_b);
 
-    // Verify L/R applied gain equality for linked stereo realizations
+        auto& target_bucket = lanes_[0].buckets[b_u];
+        if (absolute_frame < target_bucket.begin_frame || absolute_frame >= target_bucket.end_frame) {
+            telemetry_failed_ = true;
+            return;
+        }
+
+    // Verify L/R equivalence for LINKED stereo layout
     if (num_lanes_ == 1 && channel_layout_ == rgsml::audio::ChannelLayout::STEREO_LR) {
-        if (std::abs(frame.applied_reduction_db_ch0 - frame.applied_reduction_db_ch1) > 1e-5) {
-            has_invalid_sample_ = true;
+        if (std::abs(frame.applied_reduction_db_ch0 - frame.applied_reduction_db_ch1) > 1e-4 ||
+            std::abs(frame.linear_gain_ch0 - frame.linear_gain_ch1) > 1e-4) {
+            telemetry_failed_ = true;
+            return;
         }
     }
 
@@ -83,10 +131,31 @@ void CompressorTelemetryCollector::push_frame_telemetry(
 
         auto& bucket = lanes_[lane].buckets[b_u];
 
-        if (!std::isfinite(red_db) || red_db < 0.0 || !std::isfinite(gain_lin)) {
+        // Domain validation
+        if (!std::isfinite(red_db) || red_db < 0.0 || !std::isfinite(gain_lin) || gain_lin <= 0.0 || gain_lin > 1.0) {
             bucket.valid = false;
-            has_invalid_sample_ = true;
-            continue;
+            telemetry_failed_ = true;
+            return;
+        }
+
+        // Consistency check: gain_lin vs 10^(-red_db / 20)
+        const double expected_gain = std::pow(10.0, -red_db / 20.0);
+        if (std::abs(gain_lin - expected_gain) > 1e-4) {
+            bucket.valid = false;
+            telemetry_failed_ = true;
+            return;
+        }
+
+        // Contradiction checks
+        if (red_db == 0.0 && gain_lin < 1.0) {
+            bucket.valid = false;
+            telemetry_failed_ = true;
+            return;
+        }
+        if (red_db > 0.0 && gain_lin == 1.0) {
+            bucket.valid = false;
+            telemetry_failed_ = true;
+            return;
         }
 
         const auto offset = static_cast<std::uint32_t>(absolute_frame - bucket.begin_frame);
@@ -103,7 +172,8 @@ void CompressorTelemetryCollector::push_frame_telemetry(
         counts_[lane][b_u]++;
         bucket.end_reduction_db = red_db;
 
-        if (red_db > 1e-6 || gain_lin < 1.0 - 1e-6) {
+        // Activity: linear_gain < 1.0 strictly!
+        if (gain_lin < 1.0) {
             bucket.attenuated_frame_count++;
         }
     }
@@ -112,8 +182,25 @@ void CompressorTelemetryCollector::push_frame_telemetry(
 CompressorTelemetrySidecar CompressorTelemetryCollector::build_sidecar()
 {
     CompressorTelemetrySidecar sidecar{instance_id_};
-    sidecar.valid = !has_invalid_sample_;
-    sidecar.status = has_invalid_sample_ ? CompressorTelemetryStatus::UNAVAILABLE : CompressorTelemetryStatus::OK;
+
+    if (telemetry_failed_ || pushed_frame_count_ != total_frames_) {
+        sidecar.valid = false;
+        sidecar.status = CompressorTelemetryStatus::UNAVAILABLE;
+        sidecar.channel_layout = channel_layout_;
+        sidecar.sample_rate_hz = sample_rate_hz_;
+        sidecar.chain_revision = chain_revision_;
+
+        for (auto& lane : lanes_) {
+            for (auto& bucket : lane.buckets) {
+                bucket.valid = false;
+            }
+        }
+        sidecar.channel_lanes = std::move(lanes_);
+        return sidecar;
+    }
+
+    sidecar.valid = true;
+    sidecar.status = CompressorTelemetryStatus::OK;
     sidecar.channel_layout = channel_layout_;
     sidecar.sample_rate_hz = sample_rate_hz_;
     sidecar.chain_revision = chain_revision_;
