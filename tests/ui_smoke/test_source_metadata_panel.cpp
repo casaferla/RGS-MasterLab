@@ -507,6 +507,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         &previewController
     };
     app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
+    compressorViewModel.set_audition_selector(&auditionSelector);
+    compressorViewModel.set_playback_transport(&playbackTransport);
     app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
 
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
@@ -980,7 +982,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QTest::keyClick(window, c);
     }
     QCoreApplication::processEvents();
-    QCOMPARE(compressorViewModel.validation_field(), QStringLiteral("thresholdDbfs"));
+    QCOMPARE(compressorViewModel.validation_field(), QStringLiteral("THRESHOLD"));
     QCOMPARE(compressorViewModel.threshold_dbfs(), -18.0); // Committed value unchanged
 
     QTest::keyClick(window, Qt::Key_Escape);
@@ -1756,6 +1758,32 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY2(check_item_contained_in_ancestor(fieldItem, controlsPanelNative),
             qPrintable(name + QStringLiteral(" must stay inside Compressor controls at minimum size")));
     }
+
+    for (const auto& name : {
+             QStringLiteral("compressorThresholdSlider"),
+             QStringLiteral("compressorRatioSlider"),
+             QStringLiteral("compressorKneeSlider"),
+             QStringLiteral("compressorAttackSlider"),
+             QStringLiteral("compressorReleaseSlider"),
+             QStringLiteral("compressorRmsTimeSlider"),
+             QStringLiteral("compressorLookAheadSlider"),
+             QStringLiteral("compressorMixSlider"),
+             QStringLiteral("compressorMakeupSlider")}) {
+        auto* sliderItem = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, name));
+        QVERIFY2(sliderItem != nullptr, qPrintable(name + QStringLiteral(" must exist")));
+        QVERIFY2(check_item_contained_in_ancestor(sliderItem, controlsPanelNative),
+            qPrintable(name + QStringLiteral(" must stay inside Compressor controls at minimum size")));
+    }
+
+    QCOMPARE(compressorViewModel.transfer_curve_handles().size(), 4);
+    auto* thresholdFieldCheck = find_child_by_name(compressorEditor, QStringLiteral("compressorThresholdField"));
+    QVERIFY(thresholdFieldCheck && thresholdFieldCheck->property("interactionHint").toString().contains(QStringLiteral("curve point")));
+
+    auto* liveGrWell = find_child_by_name(compressorEditor, QStringLiteral("compressorLiveGrWell"));
+    auto* liveGrStateText = find_child_by_name(compressorEditor, QStringLiteral("compressorLiveGrStateText"));
+    auto* liveGrValueText = find_child_by_name(compressorEditor, QStringLiteral("compressorLiveGrValueText"));
+    auto* liveGrCanvas = find_child_by_name(compressorEditor, QStringLiteral("compressorLiveGrCanvas"));
+    QVERIFY2(liveGrWell && liveGrStateText && liveGrValueText && liveGrCanvas, "Live GR telemetry surface elements must exist in CompressorEditor");
 
     for (auto* button : {rmsBtn, peakBtn, linkMaxBtn, linkMeanBtn, linkDualMonoBtn}) {
         auto* buttonItem = qobject_cast<QQuickItem*>(button);
