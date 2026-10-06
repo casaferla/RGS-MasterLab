@@ -950,7 +950,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     auto* compressorCurveCanvas = compressorEditor->findChild<QObject*>(QStringLiteral("compressorCurveCanvas"));
     QVERIFY2(compressorCurveCanvas != nullptr, "compressorCurveCanvas must exist in compressorEditor");
-    QCOMPARE(compressorViewModel.transfer_curve_points().size(), 101);
+    QCOMPARE(compressorViewModel.transfer_curve_points().size(), 191);
 
     // Interactive Numeric Draft & Commit Verification
     auto* thresholdInput = find_child_by_name(compressorEditor, QStringLiteral("thresholdDbfsInput"));
