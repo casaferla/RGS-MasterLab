@@ -544,6 +544,12 @@ void CompressorViewModelTest::userFacingValidationMessages()
         vm.validation_message(),
         QStringLiteral("MAKE-UP must be within -24.0 to +24.0 dB"));
 
+    // Keep the two validation-message scenarios independent. The invalid
+    // Make-up draft must not remain active while testing a Threshold parse error.
+    vm.cancelDraft();
+    QVERIFY(vm.validation_field().isEmpty());
+    QVERIFY(vm.validation_message().isEmpty());
+
     vm.setDraftFieldText(QStringLiteral("thresholdDbfs"), QStringLiteral("-"));
     QCOMPARE(vm.validation_field(), QStringLiteral("thresholdDbfs"));
     QCOMPARE(
