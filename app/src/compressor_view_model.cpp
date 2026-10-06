@@ -330,15 +330,17 @@ bool CompressorViewModel::channel_link_effective() const noexcept
     return !is_mono_prepared();
 }
 
-QVariantList CompressorViewModel::transfer_curve_points() const
+void CompressorViewModel::update_cached_curve() const
 {
-    QVariantList list;
+    cachedTransferCurvePoints_.clear();
+    cachedTransferCurveHandles_.clear();
+
     constexpr int kPoints = 191;
     constexpr double kMinDbfs = -120.0;
     constexpr double kMaxDbfs = 6.0;
     constexpr double kStep = (kMaxDbfs - kMinDbfs) / (kPoints - 1);
 
-    list.reserve(kPoints);
+    cachedTransferCurvePoints_.reserve(kPoints);
     for (int i = 0; i < kPoints; ++i) {
         const double inDbfs = kMinDbfs + i * kStep;
         const double gr = compute_gain_reduction_db(inDbfs, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
@@ -350,15 +352,10 @@ QVariantList CompressorViewModel::transfer_curve_points() const
         map.insert(QStringLiteral("gainReductionDb"), gr);
         map.insert(QStringLiteral("x"), inDbfs);
         map.insert(QStringLiteral("y"), outDbfs);
-        list.append(map);
+        cachedTransferCurvePoints_.append(map);
     }
-    return list;
-}
 
-QVariantList CompressorViewModel::transfer_curve_handles() const
-{
-    QVariantList list;
-    list.reserve(4);
+    cachedTransferCurveHandles_.reserve(4);
 
     // 1. Threshold handle (#2ED3FF, horizontal drag)
     {
@@ -373,7 +370,7 @@ QVariantList CompressorViewModel::transfer_curve_handles() const
         map.insert(QStringLiteral("inputDbfs"), x);
         map.insert(QStringLiteral("outputDbfs"), y);
         map.insert(QStringLiteral("label"), QStringLiteral("Threshold"));
-        list.append(map);
+        cachedTransferCurveHandles_.append(map);
     }
 
     // 2. Ratio handle (#2FD98F, vertical drag)
@@ -391,7 +388,7 @@ QVariantList CompressorViewModel::transfer_curve_handles() const
         map.insert(QStringLiteral("inputDbfs"), x);
         map.insert(QStringLiteral("outputDbfs"), y);
         map.insert(QStringLiteral("label"), QStringLiteral("Ratio"));
-        list.append(map);
+        cachedTransferCurveHandles_.append(map);
     }
 
     // 3. Knee handle (#FFD84A, horizontal drag at lower knee boundary)
@@ -407,7 +404,7 @@ QVariantList CompressorViewModel::transfer_curve_handles() const
         map.insert(QStringLiteral("inputDbfs"), x);
         map.insert(QStringLiteral("outputDbfs"), y);
         map.insert(QStringLiteral("label"), QStringLiteral("Knee"));
-        list.append(map);
+        cachedTransferCurveHandles_.append(map);
     }
 
     // 4. Make-up handle (#FF6B6B, vertical drag)
@@ -425,10 +422,79 @@ QVariantList CompressorViewModel::transfer_curve_handles() const
         map.insert(QStringLiteral("inputDbfs"), x);
         map.insert(QStringLiteral("outputDbfs"), y);
         map.insert(QStringLiteral("label"), QStringLiteral("Make-up"));
-        list.append(map);
+        cachedTransferCurveHandles_.append(map);
     }
 
-    return list;
+    // Compute plot X/Y extrema
+    double minX = -60.0;
+    for (const auto& h : cachedTransferCurveHandles_) {
+        const double inX = h.toMap()[QStringLiteral("inputDbfs")].toDouble();
+        if (inX < minX) minX = inX;
+    }
+    cachedPlotXMinDbfs_ = (minX < -60.0) ? std::floor((minX - 0.001) / 6.0) * 6.0 : -60.0;
+
+    double minY = -60.0;
+    double maxY = 6.0;
+
+    for (const auto& pt : cachedTransferCurvePoints_) {
+        const auto map = pt.toMap();
+        const double inX = map[QStringLiteral("inputDbfs")].toDouble();
+        const double outY = map[QStringLiteral("outputDbfs")].toDouble();
+        if (inX >= cachedPlotXMinDbfs_ && inX <= 6.0) {
+            if (outY < minY) minY = outY;
+            if (outY > maxY) maxY = outY;
+        }
+    }
+    for (const auto& h : cachedTransferCurveHandles_) {
+        const double outY = h.toMap()[QStringLiteral("outputDbfs")].toDouble();
+        if (outY < minY) minY = outY;
+        if (outY > maxY) maxY = outY;
+    }
+
+    cachedPlotYMinDbfs_ = (minY < -60.0) ? std::floor((minY - 0.001) / 6.0) * 6.0 : -60.0;
+    cachedPlotYMaxDbfs_ = (maxY > 6.0) ? std::ceil((maxY + 0.001) / 6.0) * 6.0 : 6.0;
+
+    curveCacheValid_ = true;
+}
+
+QVariantList CompressorViewModel::transfer_curve_points() const
+{
+    if (!curveCacheValid_) {
+        update_cached_curve();
+    }
+    return cachedTransferCurvePoints_;
+}
+
+QVariantList CompressorViewModel::transfer_curve_handles() const
+{
+    if (!curveCacheValid_) {
+        update_cached_curve();
+    }
+    return cachedTransferCurveHandles_;
+}
+
+double CompressorViewModel::plot_x_min_dbfs() const
+{
+    if (!curveCacheValid_) {
+        update_cached_curve();
+    }
+    return cachedPlotXMinDbfs_;
+}
+
+double CompressorViewModel::plot_y_min_dbfs() const
+{
+    if (!curveCacheValid_) {
+        update_cached_curve();
+    }
+    return cachedPlotYMinDbfs_;
+}
+
+double CompressorViewModel::plot_y_max_dbfs() const
+{
+    if (!curveCacheValid_) {
+        update_cached_curve();
+    }
+    return cachedPlotYMaxDbfs_;
 }
 
 void CompressorViewModel::commit_candidate_or_set_validation(
@@ -445,6 +511,8 @@ void CompressorViewModel::commit_candidate_or_set_validation(
     double makeupGainDb,
     const QString& fieldName)
 {
+    curveCacheValid_ = false;
+
     // Update draft fields for UI representation
     draftDetectorMode_ = detectorMode;
     draftChannelLink_ = channelLink;
@@ -706,6 +774,8 @@ void CompressorViewModel::setMakeupGainDb(double val)
 
 void CompressorViewModel::setDraftFieldText(const QString& fieldName, const QString& text)
 {
+    curveCacheValid_ = false;
+
     if (fieldName == QStringLiteral("thresholdDbfs") || fieldName == QStringLiteral("threshold")) {
         draftThresholdText_ = text;
     } else if (fieldName == QStringLiteral("ratio")) {
@@ -781,12 +851,19 @@ void CompressorViewModel::setDraftFieldValue(const QString& fieldName, double va
     if (fieldName == QStringLiteral("thresholdDbfs") || fieldName == QStringLiteral("threshold")) {
         draftThresholdDbfs_ = value;
         draftThresholdText_ = QString::number(value, 'f', 1);
+        curveCacheValid_ = false;
     } else if (fieldName == QStringLiteral("ratio")) {
         draftRatio_ = value;
         draftRatioText_ = QString::number(value, 'f', 2);
+        curveCacheValid_ = false;
     } else if (fieldName == QStringLiteral("kneeDb") || fieldName == QStringLiteral("knee")) {
         draftKneeDb_ = value;
         draftKneeText_ = QString::number(value, 'f', 1);
+        curveCacheValid_ = false;
+    } else if (fieldName == QStringLiteral("makeupGainDb") || fieldName == QStringLiteral("makeup")) {
+        draftMakeupGainDb_ = value;
+        draftMakeupGainText_ = QString::number(value, 'f', 1);
+        curveCacheValid_ = false;
     } else if (fieldName == QStringLiteral("attackMs") || fieldName == QStringLiteral("attack")) {
         draftAttackMs_ = value;
         draftAttackText_ = QString::number(value, 'f', 1);
@@ -802,9 +879,6 @@ void CompressorViewModel::setDraftFieldValue(const QString& fieldName, double va
     } else if (fieldName == QStringLiteral("mixPercent") || fieldName == QStringLiteral("mix")) {
         draftMixPercent_ = value;
         draftMixPercentText_ = QString::number(value, 'f', 1);
-    } else if (fieldName == QStringLiteral("makeupGainDb") || fieldName == QStringLiteral("makeup")) {
-        draftMakeupGainDb_ = value;
-        draftMakeupGainText_ = QString::number(value, 'f', 1);
     }
 
     auto candidate = dsp::CompressorParameters::create(
@@ -1036,6 +1110,7 @@ void CompressorViewModel::resetForNewSource()
 
 void CompressorViewModel::refreshFromAuthority()
 {
+    curveCacheValid_ = false;
     const auto& params = active_chain_state().compressor_parameters();
     draftDetectorMode_ = params.detector_mode();
     draftChannelLink_ = params.channel_link();

@@ -141,7 +141,7 @@ Item {
             height: control.compact ? 12 : 18
             radius: width / 2
             color: internalSlider.enabled ? "#E6EEF0" : "#586773"
-            border.color: internalSlider.activeFocus ? "#00C8FF" : control.semanticAccent
+            border.color: control.semanticAccent
             border.width: internalSlider.activeFocus ? 2 : 1.5
         }
 

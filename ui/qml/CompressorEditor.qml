@@ -109,49 +109,10 @@ Item {
                         property var pointsList: root.viewModel ? root.viewModel.transferCurvePoints : []
                         property var handlesList: root.viewModel ? root.viewModel.transferCurveHandles : []
 
-                        function snapLowerDb(value) {
-                            return Math.floor((value - 0.001) / 6.0) * 6.0
-                        }
-
-                        function snapUpperDb(value) {
-                            return Math.ceil((value + 0.001) / 6.0) * 6.0
-                        }
-
-                        function computePlotXMinDbfs() {
-                            var minValue = -60.0
-                            if (handlesList) {
-                                for (var i = 0; i < handlesList.length; ++i) {
-                                    minValue = Math.min(minValue, handlesList[i].inputDbfs)
-                                }
-                            }
-                            return minValue < -60.0 ? snapLowerDb(minValue) : -60.0
-                        }
-
-                        readonly property real plotXMinDbfs: computePlotXMinDbfs()
+                        readonly property real plotXMinDbfs: root.viewModel ? root.viewModel.plotXMinDbfs : -60.0
                         readonly property real plotXMaxDbfs: 6.0
-
-                        function computePlotYMinDbfs() {
-                            var minValue = -60.0
-                            if (handlesList) {
-                                for (var h = 0; h < handlesList.length; ++h) {
-                                    minValue = Math.min(minValue, handlesList[h].outputDbfs)
-                                }
-                            }
-                            return minValue < -60.0 ? snapLowerDb(minValue) : -60.0
-                        }
-
-                        function computePlotYMaxDbfs() {
-                            var maxValue = 6.0
-                            if (handlesList) {
-                                for (var h = 0; h < handlesList.length; ++h) {
-                                    maxValue = Math.max(maxValue, handlesList[h].outputDbfs)
-                                }
-                            }
-                            return maxValue > 6.0 ? snapUpperDb(maxValue) : 6.0
-                        }
-
-                        readonly property real plotYMinDbfs: computePlotYMinDbfs()
-                        readonly property real plotYMaxDbfs: computePlotYMaxDbfs()
+                        readonly property real plotYMinDbfs: root.viewModel ? root.viewModel.plotYMinDbfs : -60.0
+                        readonly property real plotYMaxDbfs: root.viewModel ? root.viewModel.plotYMaxDbfs : 6.0
                         readonly property string rangeLabel: {
                             const xMin = plotXMinDbfs.toFixed(0)
                             const xMax = (plotXMaxDbfs >= 0 ? "+" : "") + plotXMaxDbfs.toFixed(0)
@@ -744,6 +705,7 @@ Item {
                                     viewModel: root.viewModel
                                     compact: true
                                     Layout.preferredWidth: root.compactNumericFieldWidth
+                                    fillFromOrigin: true
                                     positionFillOrigin: 0.0
                                     accentColor: "#FF6B6B"
                                     semanticAccent: "#FF6B6B"

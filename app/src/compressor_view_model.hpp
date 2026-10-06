@@ -49,6 +49,9 @@ class CompressorViewModel final : public QObject {
     Q_PROPERTY(bool channelLinkEffective READ channel_link_effective NOTIFY changed)
     Q_PROPERTY(QVariantList transferCurvePoints READ transfer_curve_points NOTIFY changed)
     Q_PROPERTY(QVariantList transferCurveHandles READ transfer_curve_handles NOTIFY changed)
+    Q_PROPERTY(double plotXMinDbfs READ plot_x_min_dbfs NOTIFY changed)
+    Q_PROPERTY(double plotYMinDbfs READ plot_y_min_dbfs NOTIFY changed)
+    Q_PROPERTY(double plotYMaxDbfs READ plot_y_max_dbfs NOTIFY changed)
 
     Q_PROPERTY(double draftThresholdDbfs READ draft_threshold_dbfs NOTIFY changed)
     Q_PROPERTY(double draftRatio READ draft_ratio NOTIFY changed)
@@ -113,6 +116,9 @@ public:
     [[nodiscard]] bool channel_link_effective() const noexcept;
     [[nodiscard]] QVariantList transfer_curve_points() const;
     [[nodiscard]] QVariantList transfer_curve_handles() const;
+    [[nodiscard]] double plot_x_min_dbfs() const;
+    [[nodiscard]] double plot_y_min_dbfs() const;
+    [[nodiscard]] double plot_y_max_dbfs() const;
 
     [[nodiscard]] double draft_threshold_dbfs() const noexcept { return draftThresholdDbfs_; }
     [[nodiscard]] double draft_ratio() const noexcept { return draftRatio_; }
@@ -209,6 +215,15 @@ private:
 
     std::vector<CompressorStateSnapshot> undoStack_;
     std::vector<CompressorStateSnapshot> redoStack_;
+
+    void update_cached_curve() const;
+
+    mutable bool curveCacheValid_{false};
+    mutable QVariantList cachedTransferCurvePoints_;
+    mutable QVariantList cachedTransferCurveHandles_;
+    mutable double cachedPlotXMinDbfs_{-60.0};
+    mutable double cachedPlotYMinDbfs_{-60.0};
+    mutable double cachedPlotYMaxDbfs_{6.0};
 };
 
 }  // namespace rgsml::app

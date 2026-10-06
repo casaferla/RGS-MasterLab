@@ -755,8 +755,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(continuousZoom->property("width").toInt(), 160);
     QCOMPARE(stop->property("width").toInt(), 44);
     QCOMPARE(stop->property("height").toInt(), 44);
-    QCOMPARE(playPause->property("width").toInt(), 68);
-    QCOMPARE(playPause->property("height").toInt(), 68);
+    QCOMPARE(playPause->property("width").toInt(), 56);
+    QCOMPARE(playPause->property("height").toInt(), 56);
+    const int focusEnvelope = playPause->property("width").toInt() + playPause->property("focusHaloExtra").toInt();
+    QVERIFY2(focusEnvelope <= 68, "Play/Pause complete external focus envelope must be <= 68 logical px");
     QCOMPARE(transportTimeModule->property("width").toInt(), 246);
     QCOMPARE(transportTimeModule->property("height").toInt(), 56);
     QVERIFY(fitRegion && loopRegion && clearRegion);
