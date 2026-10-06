@@ -1,4 +1,6 @@
 #include "compressor_view_model.hpp"
+#include "audition_source_selector.hpp"
+#include "playback_transport_view_model.hpp"
 
 #include <rgsml/dsp/module_registry.hpp>
 
@@ -78,6 +80,36 @@ namespace {
     return diff * one_sub_inv_ratio;
 }
 
+[[nodiscard]] QString user_facing_field_label(const QString& fieldName)
+{
+    if (fieldName == QStringLiteral("thresholdDbfs") || fieldName == QStringLiteral("threshold")) return QStringLiteral("THRESHOLD");
+    if (fieldName == QStringLiteral("ratio")) return QStringLiteral("RATIO");
+    if (fieldName == QStringLiteral("kneeDb") || fieldName == QStringLiteral("knee")) return QStringLiteral("KNEE");
+    if (fieldName == QStringLiteral("attackMs") || fieldName == QStringLiteral("attack")) return QStringLiteral("ATTACK");
+    if (fieldName == QStringLiteral("releaseMs") || fieldName == QStringLiteral("release")) return QStringLiteral("RELEASE");
+    if (fieldName == QStringLiteral("rmsTimeConstantMs") || fieldName == QStringLiteral("rmsTime")) return QStringLiteral("RMS TIME");
+    if (fieldName == QStringLiteral("lookAheadMs") || fieldName == QStringLiteral("lookAhead")) return QStringLiteral("LOOKAHEAD");
+    if (fieldName == QStringLiteral("mixPercent") || fieldName == QStringLiteral("mix")) return QStringLiteral("MIX");
+    if (fieldName == QStringLiteral("makeupGainDb") || fieldName == QStringLiteral("makeup")) return QStringLiteral("MAKE-UP");
+    if (fieldName == QStringLiteral("detectorMode")) return QStringLiteral("DETECTOR MODE");
+    if (fieldName == QStringLiteral("channelLink")) return QStringLiteral("STEREO LINK");
+    return fieldName.toUpper();
+}
+
+[[nodiscard]] QString canonical_range_message(const QString& fieldName)
+{
+    if (fieldName == QStringLiteral("thresholdDbfs") || fieldName == QStringLiteral("threshold")) return QStringLiteral("Threshold must be between -120.0 and 0.0 dBFS.");
+    if (fieldName == QStringLiteral("ratio")) return QStringLiteral("Ratio must be between 1.00 and 20.00.");
+    if (fieldName == QStringLiteral("kneeDb") || fieldName == QStringLiteral("knee")) return QStringLiteral("Knee must be between 0.0 and 24.0 dB.");
+    if (fieldName == QStringLiteral("attackMs") || fieldName == QStringLiteral("attack")) return QStringLiteral("Attack must be between 0.1 and 500.0 ms.");
+    if (fieldName == QStringLiteral("releaseMs") || fieldName == QStringLiteral("release")) return QStringLiteral("Release must be between 1.0 and 5000.0 ms.");
+    if (fieldName == QStringLiteral("rmsTimeConstantMs") || fieldName == QStringLiteral("rmsTime")) return QStringLiteral("RMS Time must be between 1.0 and 500.0 ms.");
+    if (fieldName == QStringLiteral("lookAheadMs") || fieldName == QStringLiteral("lookAhead")) return QStringLiteral("Lookahead must be between 0.0 and 20.0 ms.");
+    if (fieldName == QStringLiteral("mixPercent") || fieldName == QStringLiteral("mix")) return QStringLiteral("Mix must be between 0.0 and 100.0 %.");
+    if (fieldName == QStringLiteral("makeupGainDb") || fieldName == QStringLiteral("makeup")) return QStringLiteral("Make-up Gain must be between -24.0 and +24.0 dB.");
+    return QStringLiteral("Value out of legal range.");
+}
+
 }  // namespace
 
 CompressorViewModel::CompressorViewModel(
@@ -106,7 +138,83 @@ CompressorViewModel::CompressorViewModel(
 
     connect(&active_preview_controller(), &MasteringPreviewController::changed, this, &CompressorViewModel::changed);
 
+    connect(&telemetryTimer_, &QTimer::timeout, this, &CompressorViewModel::poll_telemetry);
+    telemetryTimer_.start(33);
+
     refreshFromAuthority();
+}
+
+void CompressorViewModel::set_audition_selector(QObject* selector) noexcept
+{
+    auditionSelector_ = selector;
+}
+
+void CompressorViewModel::set_playback_transport(QObject* transport) noexcept
+{
+    playbackTransport_ = transport;
+}
+
+void CompressorViewModel::poll_telemetry()
+{
+    if (!auditionSelector_) {
+        liveGrState_ = QStringLiteral("UNAVAILABLE");
+        emit changed();
+        return;
+    }
+
+    const QString targetStr = auditionSelector_->property("activeTarget").toString();
+    const bool is_processed = (targetStr == QStringLiteral("PROCESSED"));
+    if (!is_processed) {
+        liveGrState_ = QStringLiteral("NOT AUDITIONED");
+        emit changed();
+        return;
+    }
+
+    bool is_playing = false;
+    bool is_paused = false;
+    std::int64_t current_frame = 0;
+    if (playbackTransport_) {
+        is_playing = playbackTransport_->property("isPlaying").toBool();
+        is_paused = playbackTransport_->property("isPaused").toBool();
+        current_frame = static_cast<std::int64_t>(playbackTransport_->property("positionFrames").toLongLong());
+    }
+
+    const render::CompressorTelemetrySidecar* sidecar{nullptr};
+    const auto snapshotVar = auditionSelector_->property("processedRealizationSnapshot");
+    std::shared_ptr<const render::RenderResult> snapshot;
+    if (snapshotVar.isValid() && snapshotVar.canConvert<std::shared_ptr<const render::RenderResult>>()) {
+        snapshot = snapshotVar.value<std::shared_ptr<const render::RenderResult>>();
+    }
+
+    if (snapshot && snapshot->compressor_telemetry_sidecar().has_value()) {
+        sidecar = &(*snapshot->compressor_telemetry_sidecar());
+    }
+
+    bool is_audible_bypassed = false;
+    bool is_audible_dry_only = false;
+    if (snapshot != nullptr) {
+        for (const auto& sig : snapshot->signatures()) {
+            if (sig.type_id == "rgsml.dsp.compressor") {
+                if (sig.disposition == render::ModuleExecutionDisposition::BYPASS_IDENTITY) {
+                    is_audible_bypassed = true;
+                } else if (const auto* compPayload = std::get_if<render::CompressorExecutionSignaturePayload>(&sig.payload)) {
+                    if (compPayload->mix_percent == 0.0) {
+                        is_audible_dry_only = true;
+                    }
+                }
+            }
+        }
+    }
+
+    update_telemetry_observation(
+        current_frame,
+        is_playing,
+        is_paused,
+        false,
+        is_processed,
+        is_audible_bypassed,
+        is_audible_dry_only,
+        sidecar);
 }
 
 MasteringChainState& CompressorViewModel::active_chain_state() const noexcept
@@ -291,8 +399,8 @@ bool CompressorViewModel::channel_link_effective() const noexcept
 QVariantList CompressorViewModel::transfer_curve_points() const
 {
     QVariantList list;
-    constexpr int kPoints = 101;
-    constexpr double kMinDbfs = -60.0;
+    constexpr int kPoints = 191;
+    constexpr double kMinDbfs = -120.0;
     constexpr double kMaxDbfs = 6.0;
     constexpr double kStep = (kMaxDbfs - kMinDbfs) / (kPoints - 1);
 
@@ -311,6 +419,225 @@ QVariantList CompressorViewModel::transfer_curve_points() const
         list.append(map);
     }
     return list;
+}
+
+QVariantList CompressorViewModel::transfer_curve_handles() const
+{
+    QVariantList list;
+    list.reserve(4);
+
+    // 1. Threshold handle (#2ED3FF, horizontal drag)
+    {
+        const double x = draftThresholdDbfs_;
+        const double gr = compute_gain_reduction_db(x, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double y = x - gr + draftMakeupGainDb_;
+
+        QVariantMap map;
+        map.insert(QStringLiteral("id"), QStringLiteral("threshold"));
+        map.insert(QStringLiteral("color"), QStringLiteral("#2ED3FF"));
+        map.insert(QStringLiteral("dragDirection"), QStringLiteral("horizontal"));
+        map.insert(QStringLiteral("inputDbfs"), x);
+        map.insert(QStringLiteral("outputDbfs"), y);
+        map.insert(QStringLiteral("label"), QStringLiteral("Threshold"));
+        list.append(map);
+    }
+
+    // 2. Ratio handle (#2FD98F, vertical drag)
+    {
+        double x = draftThresholdDbfs_ + 12.0;
+        if (x > 6.0) x = 6.0;
+        if (x < draftThresholdDbfs_) x = draftThresholdDbfs_;
+        const double gr = compute_gain_reduction_db(x, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double y = x - gr + draftMakeupGainDb_;
+
+        QVariantMap map;
+        map.insert(QStringLiteral("id"), QStringLiteral("ratio"));
+        map.insert(QStringLiteral("color"), QStringLiteral("#2FD98F"));
+        map.insert(QStringLiteral("dragDirection"), QStringLiteral("vertical"));
+        map.insert(QStringLiteral("inputDbfs"), x);
+        map.insert(QStringLiteral("outputDbfs"), y);
+        map.insert(QStringLiteral("label"), QStringLiteral("Ratio"));
+        list.append(map);
+    }
+
+    // 3. Knee handle (#FFD84A, horizontal drag at lower knee boundary)
+    {
+        const double x = draftThresholdDbfs_ - (draftKneeDb_ * 0.5);
+        const double gr = compute_gain_reduction_db(x, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double y = x - gr + draftMakeupGainDb_;
+
+        QVariantMap map;
+        map.insert(QStringLiteral("id"), QStringLiteral("knee"));
+        map.insert(QStringLiteral("color"), QStringLiteral("#FFD84A"));
+        map.insert(QStringLiteral("dragDirection"), QStringLiteral("horizontal"));
+        map.insert(QStringLiteral("inputDbfs"), x);
+        map.insert(QStringLiteral("outputDbfs"), y);
+        map.insert(QStringLiteral("label"), QStringLiteral("Knee"));
+        list.append(map);
+    }
+
+    // 4. Make-up handle (#FF6B6B, vertical drag)
+    {
+        double x = -48.0;
+        if (x > draftThresholdDbfs_ - 6.0) x = draftThresholdDbfs_ - 6.0;
+        if (x < -60.0) x = -60.0;
+        const double gr = compute_gain_reduction_db(x, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double y = x - gr + draftMakeupGainDb_;
+
+        QVariantMap map;
+        map.insert(QStringLiteral("id"), QStringLiteral("makeup"));
+        map.insert(QStringLiteral("color"), QStringLiteral("#FF6B6B"));
+        map.insert(QStringLiteral("dragDirection"), QStringLiteral("vertical"));
+        map.insert(QStringLiteral("inputDbfs"), x);
+        map.insert(QStringLiteral("outputDbfs"), y);
+        map.insert(QStringLiteral("label"), QStringLiteral("Make-up"));
+        list.append(map);
+    }
+
+    return list;
+}
+
+QString CompressorViewModel::live_gr_state() const
+{
+    return liveGrState_;
+}
+
+QString CompressorViewModel::live_gr_db_text() const
+{
+    return QString::number(liveGrDb_, 'f', 1) + QStringLiteral(" dB");
+}
+
+QString CompressorViewModel::live_gr_db_text_r() const
+{
+    return QString::number(liveGrDbR_, 'f', 1) + QStringLiteral(" dB");
+}
+
+QVariantList CompressorViewModel::live_gr_history_l() const
+{
+    QVariantList list;
+    list.reserve(static_cast<qsizetype>(historyL_.size()));
+    for (const auto& b : historyL_) {
+        QVariantMap map;
+        map.insert(QStringLiteral("meanDb"), b.mean_reduction_db);
+        map.insert(QStringLiteral("peakDb"), b.peak_reduction_db);
+        map.insert(QStringLiteral("endDb"), b.end_reduction_db);
+        map.insert(QStringLiteral("peakOffset"), b.peak_offset_frames);
+        map.insert(QStringLiteral("attenuatedCount"), b.attenuated_frame_count);
+        map.insert(QStringLiteral("beginFrame"), static_cast<qlonglong>(b.begin_frame));
+        map.insert(QStringLiteral("endFrame"), static_cast<qlonglong>(b.end_frame));
+        list.append(map);
+    }
+    return list;
+}
+
+QVariantList CompressorViewModel::live_gr_history_r() const
+{
+    QVariantList list;
+    list.reserve(static_cast<qsizetype>(historyR_.size()));
+    for (const auto& b : historyR_) {
+        QVariantMap map;
+        map.insert(QStringLiteral("meanDb"), b.mean_reduction_db);
+        map.insert(QStringLiteral("peakDb"), b.peak_reduction_db);
+        map.insert(QStringLiteral("endDb"), b.end_reduction_db);
+        map.insert(QStringLiteral("peakOffset"), b.peak_offset_frames);
+        map.insert(QStringLiteral("attenuatedCount"), b.attenuated_frame_count);
+        map.insert(QStringLiteral("beginFrame"), static_cast<qlonglong>(b.begin_frame));
+        map.insert(QStringLiteral("endFrame"), static_cast<qlonglong>(b.end_frame));
+        list.append(map);
+    }
+    return list;
+}
+
+void CompressorViewModel::update_telemetry_observation(
+    std::int64_t current_frame,
+    bool is_playing,
+    bool is_paused,
+    bool is_transition,
+    bool is_processed_audition,
+    bool is_audible_bypassed,
+    bool is_audible_dry_only,
+    const render::CompressorTelemetrySidecar* sidecar)
+{
+    if (!is_processed_audition) {
+        liveGrState_ = QStringLiteral("NOT AUDITIONED");
+        emit changed();
+        return;
+    }
+
+    if (is_transition) {
+        liveGrState_ = QStringLiteral("TRANSITION");
+        emit changed();
+        return;
+    }
+
+    if (sidecar == nullptr || !sidecar->valid || sidecar->status != render::CompressorTelemetryStatus::OK) {
+        liveGrState_ = QStringLiteral("UNAVAILABLE");
+        emit changed();
+        return;
+    }
+
+    if (is_audible_bypassed) {
+        liveGrState_ = QStringLiteral("BYPASS");
+        emit changed();
+        return;
+    }
+
+    if (is_paused) {
+        liveGrState_ = QStringLiteral("PAUSED");
+    } else if (!is_playing) {
+        liveGrState_ = QStringLiteral("STOPPED / END");
+    } else if (is_audible_dry_only) {
+        liveGrState_ = QStringLiteral("ACTIVE DRY ONLY");
+    } else {
+        liveGrState_ = QStringLiteral("ACTIVE WET");
+    }
+
+    if (current_frame < lastObservedFrame_ || sidecar->chain_revision != activeSidecarRevision_) {
+        activeSidecarRevision_ = sidecar->chain_revision;
+        consumedBucketIndexL_ = 0;
+        consumedBucketIndexR_ = 0;
+        historyL_.clear();
+        historyR_.clear();
+    }
+    lastObservedFrame_ = current_frame;
+
+    const auto& lanes = sidecar->channel_lanes;
+    if (lanes.empty()) {
+        emit changed();
+        return;
+    }
+
+    isDualMonoTelemetry_ = (lanes.size() == 2);
+
+    const auto& bucketsL = lanes[0].buckets;
+    while (consumedBucketIndexL_ < bucketsL.size() && bucketsL[consumedBucketIndexL_].end_frame <= current_frame) {
+        const auto& b = bucketsL[consumedBucketIndexL_];
+        if (b.valid) {
+            historyL_.push_back(b);
+            if (historyL_.size() > 1000U) {
+                historyL_.erase(historyL_.begin());
+            }
+            liveGrDb_ = b.end_reduction_db;
+        }
+        consumedBucketIndexL_++;
+    }
+
+    if (isDualMonoTelemetry_ && lanes.size() > 1) {
+        const auto& bucketsR = lanes[1].buckets;
+        while (consumedBucketIndexR_ < bucketsR.size() && bucketsR[consumedBucketIndexR_].end_frame <= current_frame) {
+            const auto& b = bucketsR[consumedBucketIndexR_];
+            if (b.valid) {
+                historyR_.push_back(b);
+                if (historyR_.size() > 1000U) {
+                    historyR_.erase(historyR_.begin());
+                }
+                liveGrDbR_ = b.end_reduction_db;
+            }
+            consumedBucketIndexR_++;
+        }
+    }
+
+    emit changed();
 }
 
 void CompressorViewModel::commit_candidate_or_set_validation(
@@ -363,9 +690,8 @@ void CompressorViewModel::commit_candidate_or_set_validation(
         makeupGainDb);
 
     if (!candidate) {
-        // Validation failed: record validation field and message, do NOT update committed state, do NOT trigger preview
-        validationField_ = fieldName;
-        validationMessage_ = QString::fromStdString(candidate.error()->message());
+        validationField_ = user_facing_field_label(fieldName);
+        validationMessage_ = canonical_range_message(fieldName);
         emit changed();
         return;
     }
@@ -644,18 +970,120 @@ void CompressorViewModel::setDraftFieldText(const QString& fieldName, const QStr
 
     const bool allParsed = tOk && rOk && kOk && aOk && relOk && rmsOk && laOk && mOk && mkOk;
 
-    if (!candidate) {
-        validationField_ = fieldName;
-        validationMessage_ = QString::fromStdString(candidate.error()->message());
-    } else if (!allParsed) {
-        validationField_ = fieldName;
-        validationMessage_ = QStringLiteral("Incomplete or invalid numeric text.");
+    if (!allParsed) {
+        validationField_ = user_facing_field_label(fieldName);
+        validationMessage_ = QStringLiteral("Invalid numeric text format.");
+    } else if (!candidate) {
+        validationField_ = user_facing_field_label(fieldName);
+        validationMessage_ = canonical_range_message(fieldName);
     } else {
         validationField_.clear();
         validationMessage_.clear();
     }
 
     emit changed();
+}
+
+void CompressorViewModel::setDraftFieldValue(const QString& fieldName, double value)
+{
+    if (fieldName == QStringLiteral("thresholdDbfs") || fieldName == QStringLiteral("threshold")) {
+        draftThresholdDbfs_ = value;
+        draftThresholdText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("ratio")) {
+        draftRatio_ = value;
+        draftRatioText_ = QString::number(value, 'f', 2);
+    } else if (fieldName == QStringLiteral("kneeDb") || fieldName == QStringLiteral("knee")) {
+        draftKneeDb_ = value;
+        draftKneeText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("attackMs") || fieldName == QStringLiteral("attack")) {
+        draftAttackMs_ = value;
+        draftAttackText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("releaseMs") || fieldName == QStringLiteral("release")) {
+        draftReleaseMs_ = value;
+        draftReleaseText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("rmsTimeConstantMs") || fieldName == QStringLiteral("rmsTime")) {
+        draftRmsTimeConstantMs_ = value;
+        draftRmsTimeConstantText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("lookAheadMs") || fieldName == QStringLiteral("lookAhead")) {
+        draftLookAheadMs_ = value;
+        draftLookAheadText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("mixPercent") || fieldName == QStringLiteral("mix")) {
+        draftMixPercent_ = value;
+        draftMixPercentText_ = QString::number(value, 'f', 1);
+    } else if (fieldName == QStringLiteral("makeupGainDb") || fieldName == QStringLiteral("makeup")) {
+        draftMakeupGainDb_ = value;
+        draftMakeupGainText_ = QString::number(value, 'f', 1);
+    }
+
+    auto candidate = dsp::CompressorParameters::create(
+        draftDetectorMode_,
+        draftChannelLink_,
+        draftThresholdDbfs_,
+        draftRatio_,
+        draftKneeDb_,
+        draftAttackMs_,
+        draftReleaseMs_,
+        draftRmsTimeConstantMs_,
+        draftLookAheadMs_,
+        draftMixPercent_,
+        draftMakeupGainDb_);
+
+    if (!candidate) {
+        validationField_ = user_facing_field_label(fieldName);
+        validationMessage_ = canonical_range_message(fieldName);
+    } else {
+        validationField_.clear();
+        validationMessage_.clear();
+    }
+
+    emit changed();
+}
+
+void CompressorViewModel::setCurveHandleDraft(const QString& handleId, double inputDbfs, double outputDbfs)
+{
+    if (handleId == QStringLiteral("threshold")) {
+        setDraftFieldValue(QStringLiteral("thresholdDbfs"), inputDbfs);
+    } else if (handleId == QStringLiteral("ratio")) {
+        double evalX = draftThresholdDbfs_ + 12.0;
+        if (evalX > 6.0) evalX = 6.0;
+        if (evalX < draftThresholdDbfs_) evalX = draftThresholdDbfs_;
+
+        const double targetGr = evalX + draftMakeupGainDb_ - outputDbfs;
+        const double maxGr = compute_gain_reduction_db(evalX, draftThresholdDbfs_, 20.0, draftKneeDb_);
+
+        double newRatio = 1.0;
+        if (targetGr <= 0.0) {
+            newRatio = 1.0;
+        } else if (targetGr >= maxGr) {
+            newRatio = 20.0;
+        } else {
+            // Deterministic bisection solver over ratio in [1.0, 20.0]
+            double lowR = 1.0;
+            double highR = 20.0;
+            for (int iter = 0; iter < 30; ++iter) {
+                const double midR = 0.5 * (lowR + highR);
+                const double grMid = compute_gain_reduction_db(evalX, draftThresholdDbfs_, midR, draftKneeDb_);
+                if (grMid < targetGr) {
+                    lowR = midR;
+                } else {
+                    highR = midR;
+                }
+            }
+            newRatio = 0.5 * (lowR + highR);
+        }
+        setDraftFieldValue(QStringLiteral("ratio"), newRatio);
+    } else if (handleId == QStringLiteral("knee")) {
+        const double deltaX = std::abs(inputDbfs - draftThresholdDbfs_);
+        const double newKnee = 2.0 * deltaX;
+        setDraftFieldValue(QStringLiteral("kneeDb"), newKnee);
+    } else if (handleId == QStringLiteral("makeup")) {
+        double evalX = -48.0;
+        if (evalX > draftThresholdDbfs_ - 6.0) evalX = draftThresholdDbfs_ - 6.0;
+        if (evalX < -60.0) evalX = -60.0;
+        const double gr = compute_gain_reduction_db(evalX, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double newMakeup = outputDbfs - evalX + gr;
+        setDraftFieldValue(QStringLiteral("makeupGainDb"), newMakeup);
+    }
 }
 
 bool CompressorViewModel::commitDraft()
@@ -672,15 +1100,15 @@ bool CompressorViewModel::commitDraft()
     const double mkVal = draftMakeupGainText_.toDouble(&mkOk);
 
     if (!tOk || !rOk || !kOk || !aOk || !relOk || !rmsOk || !laOk || !mOk || !mkOk) {
-        if (!tOk) validationField_ = QStringLiteral("thresholdDbfs");
-        else if (!rOk) validationField_ = QStringLiteral("ratio");
-        else if (!kOk) validationField_ = QStringLiteral("kneeDb");
-        else if (!aOk) validationField_ = QStringLiteral("attackMs");
-        else if (!relOk) validationField_ = QStringLiteral("releaseMs");
-        else if (!rmsOk) validationField_ = QStringLiteral("rmsTimeConstantMs");
-        else if (!laOk) validationField_ = QStringLiteral("lookAheadMs");
-        else if (!mOk) validationField_ = QStringLiteral("mixPercent");
-        else if (!mkOk) validationField_ = QStringLiteral("makeupGainDb");
+        if (!tOk) validationField_ = user_facing_field_label(QStringLiteral("thresholdDbfs"));
+        else if (!rOk) validationField_ = user_facing_field_label(QStringLiteral("ratio"));
+        else if (!kOk) validationField_ = user_facing_field_label(QStringLiteral("kneeDb"));
+        else if (!aOk) validationField_ = user_facing_field_label(QStringLiteral("attackMs"));
+        else if (!relOk) validationField_ = user_facing_field_label(QStringLiteral("releaseMs"));
+        else if (!rmsOk) validationField_ = user_facing_field_label(QStringLiteral("rmsTimeConstantMs"));
+        else if (!laOk) validationField_ = user_facing_field_label(QStringLiteral("lookAheadMs"));
+        else if (!mOk) validationField_ = user_facing_field_label(QStringLiteral("mixPercent"));
+        else if (!mkOk) validationField_ = user_facing_field_label(QStringLiteral("makeupGainDb"));
         validationMessage_ = QStringLiteral("Cannot commit invalid or incomplete numeric draft.");
         emit changed();
         return false;
@@ -701,7 +1129,9 @@ bool CompressorViewModel::commitDraft()
 
     if (!candidate) {
         if (validationField_.isEmpty()) {
-            validationField_ = QStringLiteral("thresholdDbfs");
+            validationField_ = user_facing_field_label(QStringLiteral("thresholdDbfs"));
+        } else {
+            validationField_ = user_facing_field_label(validationField_);
         }
         validationMessage_ = QString::fromStdString(candidate.error()->message());
         emit changed();
