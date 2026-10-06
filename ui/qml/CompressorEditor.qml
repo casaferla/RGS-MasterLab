@@ -92,7 +92,7 @@ Item {
                         }
                         Item { Layout.fillWidth: true }
                         Text {
-                            text: "In: -60..+6 dBFS"
+                            text: curveCanvas.rangeLabel
                             color: root.textMuted
                             font.family: "Segoe UI"
                             font.pixelSize: 9
@@ -109,6 +109,76 @@ Item {
                         property var pointsList: root.viewModel ? root.viewModel.transferCurvePoints : []
                         property var handlesList: root.viewModel ? root.viewModel.transferCurveHandles : []
 
+                        function snapLowerDb(value) {
+                            return Math.floor((value - 0.001) / 6.0) * 6.0
+                        }
+
+                        function snapUpperDb(value) {
+                            return Math.ceil((value + 0.001) / 6.0) * 6.0
+                        }
+
+                        function computePlotXMinDbfs() {
+                            var minValue = -60.0
+                            if (handlesList) {
+                                for (var i = 0; i < handlesList.length; ++i) {
+                                    minValue = Math.min(minValue, handlesList[i].inputDbfs)
+                                }
+                            }
+                            return minValue < -60.0 ? snapLowerDb(minValue) : -60.0
+                        }
+
+                        readonly property real plotXMinDbfs: computePlotXMinDbfs()
+                        readonly property real plotXMaxDbfs: 6.0
+
+                        function computePlotYMinDbfs() {
+                            var minValue = -60.0
+                            if (pointsList) {
+                                for (var i = 0; i < pointsList.length; ++i) {
+                                    var pt = pointsList[i]
+                                    if (pt.inputDbfs >= plotXMinDbfs && pt.inputDbfs <= plotXMaxDbfs) {
+                                        minValue = Math.min(minValue, pt.outputDbfs)
+                                    }
+                                }
+                            }
+                            if (handlesList) {
+                                for (var h = 0; h < handlesList.length; ++h) {
+                                    minValue = Math.min(minValue, handlesList[h].outputDbfs)
+                                }
+                            }
+                            return minValue < -60.0 ? snapLowerDb(minValue) : -60.0
+                        }
+
+                        function computePlotYMaxDbfs() {
+                            var maxValue = 6.0
+                            if (pointsList) {
+                                for (var i = 0; i < pointsList.length; ++i) {
+                                    var pt = pointsList[i]
+                                    if (pt.inputDbfs >= plotXMinDbfs && pt.inputDbfs <= plotXMaxDbfs) {
+                                        maxValue = Math.max(maxValue, pt.outputDbfs)
+                                    }
+                                }
+                            }
+                            if (handlesList) {
+                                for (var h = 0; h < handlesList.length; ++h) {
+                                    maxValue = Math.max(maxValue, handlesList[h].outputDbfs)
+                                }
+                            }
+                            return maxValue > 6.0 ? snapUpperDb(maxValue) : 6.0
+                        }
+
+                        readonly property real plotYMinDbfs: computePlotYMinDbfs()
+                        readonly property real plotYMaxDbfs: computePlotYMaxDbfs()
+                        readonly property string rangeLabel: {
+                            const xMin = plotXMinDbfs.toFixed(0)
+                            const xMax = (plotXMaxDbfs >= 0 ? "+" : "") + plotXMaxDbfs.toFixed(0)
+                            const yMin = plotYMinDbfs.toFixed(0)
+                            const yMax = (plotYMaxDbfs >= 0 ? "+" : "") + plotYMaxDbfs.toFixed(0)
+                            if (plotXMinDbfs === plotYMinDbfs && plotXMaxDbfs === plotYMaxDbfs) {
+                                return "X/Y: " + xMin + ".." + xMax + " dBFS"
+                            }
+                            return "X " + xMin + ".." + xMax + " · Y " + yMin + ".." + yMax + " dBFS"
+                        }
+
                         onPointsListChanged: requestPaint()
                         onHandlesListChanged: requestPaint()
                         onWidthChanged: requestPaint()
@@ -118,46 +188,53 @@ Item {
                             var ctx = getContext("2d")
                             ctx.clearRect(0, 0, width, height)
 
-                            const minDbfs = -60.0
-                            const maxDbfs = 6.0
-                            const dbRange = maxDbfs - minDbfs
+                            const minXDbfs = plotXMinDbfs
+                            const maxXDbfs = plotXMaxDbfs
+                            const minYDbfs = plotYMinDbfs
+                            const maxYDbfs = plotYMaxDbfs
+                            const xRange = maxXDbfs - minXDbfs
+                            const yRange = maxYDbfs - minYDbfs
 
                             function mapX(db) {
-                                return (db - minDbfs) / dbRange * width
+                                return (db - minXDbfs) / xRange * width
                             }
                             function mapY(db) {
-                                return height - ((db - minDbfs) / dbRange * height)
+                                return height - ((db - minYDbfs) / yRange * height)
                             }
 
                             // Grid Lines
                             ctx.lineWidth = 1
                             ctx.strokeStyle = "#122536"
-                            const gridSteps = [-48, -36, -24, -12, 0]
-                            for (var i = 0; i < gridSteps.length; ++i) {
-                                var gx = mapX(gridSteps[i])
-                                var gy = mapY(gridSteps[i])
-
-                                // Vertical line
+                            const gridStepDb = 12.0
+                            const firstXGrid = Math.ceil(minXDbfs / gridStepDb) * gridStepDb
+                            for (var xDb = firstXGrid; xDb <= maxXDbfs; xDb += gridStepDb) {
+                                var gx = mapX(xDb)
                                 ctx.beginPath()
                                 ctx.moveTo(gx, 0)
                                 ctx.lineTo(gx, height)
                                 ctx.stroke()
-
-                                // Horizontal line
+                            }
+                            const firstYGrid = Math.ceil(minYDbfs / gridStepDb) * gridStepDb
+                            for (var yDb = firstYGrid; yDb <= maxYDbfs; yDb += gridStepDb) {
+                                var gy = mapY(yDb)
                                 ctx.beginPath()
                                 ctx.moveTo(0, gy)
                                 ctx.lineTo(width, gy)
                                 ctx.stroke()
                             }
 
-                            // 1:1 45-degree Reference Line
-                            ctx.strokeStyle = "#1E3A52"
-                            ctx.setLineDash([3, 3])
-                            ctx.beginPath()
-                            ctx.moveTo(mapX(-60), mapY(-60))
-                            ctx.lineTo(mapX(6), mapY(6))
-                            ctx.stroke()
-                            ctx.setLineDash([])
+                            // 1:1 reference line over the physically represented common range.
+                            const referenceMin = Math.max(minXDbfs, minYDbfs, -120.0)
+                            const referenceMax = Math.min(maxXDbfs, maxYDbfs, 6.0)
+                            if (referenceMin <= referenceMax) {
+                                ctx.strokeStyle = "#1E3A52"
+                                ctx.setLineDash([3, 3])
+                                ctx.beginPath()
+                                ctx.moveTo(mapX(referenceMin), mapY(referenceMin))
+                                ctx.lineTo(mapX(referenceMax), mapY(referenceMax))
+                                ctx.stroke()
+                                ctx.setLineDash([])
+                            }
 
                             // Dynamics Copper Transfer Curve
                             if (pointsList && pointsList.length > 0) {
@@ -206,15 +283,15 @@ Item {
                             property string activeHandleId: ""
 
                             function mapXToDbfs(px) {
-                                const minDbfs = -60.0
-                                const maxDbfs = 6.0
-                                return minDbfs + (px / curveCanvas.width) * (maxDbfs - minDbfs)
+                                return curveCanvas.plotXMinDbfs
+                                    + (px / curveCanvas.width)
+                                        * (curveCanvas.plotXMaxDbfs - curveCanvas.plotXMinDbfs)
                             }
 
                             function mapYToDbfs(py) {
-                                const minDbfs = -60.0
-                                const maxDbfs = 6.0
-                                return minDbfs + ((curveCanvas.height - py) / curveCanvas.height) * (maxDbfs - minDbfs)
+                                return curveCanvas.plotYMinDbfs
+                                    + ((curveCanvas.height - py) / curveCanvas.height)
+                                        * (curveCanvas.plotYMaxDbfs - curveCanvas.plotYMinDbfs)
                             }
 
                             onPressed: (mouse) => {
@@ -224,17 +301,20 @@ Item {
                                 var handles = root.viewModel.transferCurveHandles
                                 if (!handles || handles.length === 0) return
 
-                                const minDbfs = -60.0
-                                const maxDbfs = 6.0
-                                const dbRange = maxDbfs - minDbfs
+                                const minXDbfs = curveCanvas.plotXMinDbfs
+                                const maxXDbfs = curveCanvas.plotXMaxDbfs
+                                const minYDbfs = curveCanvas.plotYMinDbfs
+                                const maxYDbfs = curveCanvas.plotYMaxDbfs
+                                const xRange = maxXDbfs - minXDbfs
+                                const yRange = maxYDbfs - minYDbfs
 
                                 var bestId = ""
                                 var bestDist = 20.0
 
                                 for (var i = 0; i < handles.length; ++i) {
                                     var h = handles[i]
-                                    var hx = (h.inputDbfs - minDbfs) / dbRange * curveCanvas.width
-                                    var hy = curveCanvas.height - ((h.outputDbfs - minDbfs) / dbRange * curveCanvas.height)
+                                    var hx = (h.inputDbfs - minXDbfs) / xRange * curveCanvas.width
+                                    var hy = curveCanvas.height - ((h.outputDbfs - minYDbfs) / yRange * curveCanvas.height)
                                     var dist = Math.hypot(mouse.x - hx, mouse.y - hy)
                                     if (dist < bestDist) {
                                         bestDist = dist

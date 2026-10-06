@@ -78,6 +78,48 @@ namespace {
     return diff * one_sub_inv_ratio;
 }
 
+[[nodiscard]] QString user_validation_message(const QString& fieldName, bool parseFailure = false)
+{
+    QString label;
+    QString range;
+
+    if (fieldName == QStringLiteral("thresholdDbfs") || fieldName == QStringLiteral("threshold")) {
+        label = QStringLiteral("THRESHOLD");
+        range = QStringLiteral("-120.0 to 0.0 dBFS");
+    } else if (fieldName == QStringLiteral("ratio")) {
+        label = QStringLiteral("RATIO");
+        range = QStringLiteral("1.00:1 to 20.00:1");
+    } else if (fieldName == QStringLiteral("kneeDb") || fieldName == QStringLiteral("knee")) {
+        label = QStringLiteral("KNEE");
+        range = QStringLiteral("0.0 to 24.0 dB");
+    } else if (fieldName == QStringLiteral("attackMs") || fieldName == QStringLiteral("attack")) {
+        label = QStringLiteral("ATTACK");
+        range = QStringLiteral("0.1 to 500.0 ms");
+    } else if (fieldName == QStringLiteral("releaseMs") || fieldName == QStringLiteral("release")) {
+        label = QStringLiteral("RELEASE");
+        range = QStringLiteral("1.0 to 5000.0 ms");
+    } else if (fieldName == QStringLiteral("rmsTimeConstantMs") || fieldName == QStringLiteral("rmsTime")) {
+        label = QStringLiteral("RMS TIME");
+        range = QStringLiteral("1.0 to 500.0 ms");
+    } else if (fieldName == QStringLiteral("lookAheadMs") || fieldName == QStringLiteral("lookAhead")) {
+        label = QStringLiteral("LOOKAHEAD");
+        range = QStringLiteral("0.0 to 20.0 ms");
+    } else if (fieldName == QStringLiteral("mixPercent") || fieldName == QStringLiteral("mix")) {
+        label = QStringLiteral("MIX");
+        range = QStringLiteral("0.0% to 100.0%");
+    } else if (fieldName == QStringLiteral("makeupGainDb") || fieldName == QStringLiteral("makeup")) {
+        label = QStringLiteral("MAKE-UP");
+        range = QStringLiteral("-24.0 to +24.0 dB");
+    } else {
+        return QStringLiteral("Invalid Compressor parameter");
+    }
+
+    if (parseFailure) {
+        return label + QStringLiteral(" must be a number");
+    }
+    return label + QStringLiteral(" must be within ") + range;
+}
+
 }  // namespace
 
 CompressorViewModel::CompressorViewModel(
@@ -291,8 +333,8 @@ bool CompressorViewModel::channel_link_effective() const noexcept
 QVariantList CompressorViewModel::transfer_curve_points() const
 {
     QVariantList list;
-    constexpr int kPoints = 101;
-    constexpr double kMinDbfs = -60.0;
+    constexpr int kPoints = 191;
+    constexpr double kMinDbfs = -120.0;
     constexpr double kMaxDbfs = 6.0;
     constexpr double kStep = (kMaxDbfs - kMinDbfs) / (kPoints - 1);
 
@@ -441,7 +483,7 @@ void CompressorViewModel::commit_candidate_or_set_validation(
     if (!candidate) {
         // Validation failed: record validation field and message, do NOT update committed state, do NOT trigger preview
         validationField_ = fieldName;
-        validationMessage_ = QString::fromStdString(candidate.error()->message());
+        validationMessage_ = user_validation_message(fieldName);
         emit changed();
         return;
     }
@@ -722,10 +764,10 @@ void CompressorViewModel::setDraftFieldText(const QString& fieldName, const QStr
 
     if (!candidate) {
         validationField_ = fieldName;
-        validationMessage_ = QString::fromStdString(candidate.error()->message());
+        validationMessage_ = user_validation_message(fieldName);
     } else if (!allParsed) {
         validationField_ = fieldName;
-        validationMessage_ = QStringLiteral("Incomplete or invalid numeric text.");
+        validationMessage_ = user_validation_message(fieldName, true);
     } else {
         validationField_.clear();
         validationMessage_.clear();
@@ -780,7 +822,7 @@ void CompressorViewModel::setDraftFieldValue(const QString& fieldName, double va
 
     if (!candidate) {
         validationField_ = fieldName;
-        validationMessage_ = QString::fromStdString(candidate.error()->message());
+        validationMessage_ = user_validation_message(fieldName);
     } else {
         validationField_.clear();
         validationMessage_.clear();
@@ -792,7 +834,9 @@ void CompressorViewModel::setDraftFieldValue(const QString& fieldName, double va
 void CompressorViewModel::setCurveHandleDraft(const QString& handleId, double inputDbfs, double outputDbfs)
 {
     if (handleId == QStringLiteral("threshold")) {
-        setDraftFieldValue(QStringLiteral("thresholdDbfs"), inputDbfs);
+        setDraftFieldValue(
+            QStringLiteral("thresholdDbfs"),
+            std::clamp(inputDbfs, -120.0, 0.0));
     } else if (handleId == QStringLiteral("ratio")) {
         double evalX = draftThresholdDbfs_ + 12.0;
         if (evalX > 6.0) evalX = 6.0;
@@ -823,15 +867,20 @@ void CompressorViewModel::setCurveHandleDraft(const QString& handleId, double in
         }
         setDraftFieldValue(QStringLiteral("ratio"), newRatio);
     } else if (handleId == QStringLiteral("knee")) {
-        const double deltaX = std::abs(inputDbfs - draftThresholdDbfs_);
-        const double newKnee = 2.0 * deltaX;
+        const double newKnee = std::clamp(
+            2.0 * (draftThresholdDbfs_ - inputDbfs),
+            0.0,
+            24.0);
         setDraftFieldValue(QStringLiteral("kneeDb"), newKnee);
     } else if (handleId == QStringLiteral("makeup")) {
         double evalX = -48.0;
         if (evalX > draftThresholdDbfs_ - 6.0) evalX = draftThresholdDbfs_ - 6.0;
         if (evalX < -60.0) evalX = -60.0;
         const double gr = compute_gain_reduction_db(evalX, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
-        const double newMakeup = outputDbfs - evalX + gr;
+        const double newMakeup = std::clamp(
+            outputDbfs - evalX + gr,
+            -24.0,
+            24.0);
         setDraftFieldValue(QStringLiteral("makeupGainDb"), newMakeup);
     }
 }
@@ -859,7 +908,7 @@ bool CompressorViewModel::commitDraft()
         else if (!laOk) validationField_ = QStringLiteral("lookAheadMs");
         else if (!mOk) validationField_ = QStringLiteral("mixPercent");
         else if (!mkOk) validationField_ = QStringLiteral("makeupGainDb");
-        validationMessage_ = QStringLiteral("Cannot commit invalid or incomplete numeric draft.");
+        validationMessage_ = user_validation_message(validationField_, true);
         emit changed();
         return false;
     }
@@ -881,7 +930,7 @@ bool CompressorViewModel::commitDraft()
         if (validationField_.isEmpty()) {
             validationField_ = QStringLiteral("thresholdDbfs");
         }
-        validationMessage_ = QString::fromStdString(candidate.error()->message());
+        validationMessage_ = user_validation_message(validationField_);
         emit changed();
         return false;
     }

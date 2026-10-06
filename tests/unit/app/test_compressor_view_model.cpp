@@ -35,6 +35,8 @@ private slots:
     void sliderDraftAndCommitCycle();
     void interactiveCurveHandlesAndCancel();
     void softKneeRatioHandleSolver();
+    void curveHandleDragClampsToAuthority();
+    void userFacingValidationMessages();
 };
 
 void CompressorViewModelTest::initialDefaults()
@@ -481,6 +483,76 @@ void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
     QVERIFY(vm.commitDraft());
     QCOMPARE(vm.threshold_dbfs(), -15.0); // Committed!
     QVERIFY(vm.preview_generation() > gen0); // Single preview requested!
+}
+
+void CompressorViewModelTest::curveHandleDragClampsToAuthority()
+{
+    CompressorViewModel vm;
+    const auto gen0 = vm.preview_generation();
+
+    vm.setCurveHandleDraft(QStringLiteral("threshold"), -500.0, -500.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -120.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    vm.setCurveHandleDraft(QStringLiteral("threshold"), 50.0, 50.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), 0.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    vm.setDraftFieldValue(QStringLiteral("thresholdDbfs"), -18.0);
+    vm.setCurveHandleDraft(QStringLiteral("knee"), 100.0, 0.0);
+    QCOMPARE(vm.draft_knee_db(), 0.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    vm.setCurveHandleDraft(QStringLiteral("knee"), -100.0, 0.0);
+    QCOMPARE(vm.draft_knee_db(), 24.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    auto handles = vm.transfer_curve_handles();
+    QVariantMap makeupMap;
+    for (const auto& h : handles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("makeup")) {
+            makeupMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY(!makeupMap.isEmpty());
+
+    vm.setCurveHandleDraft(
+        QStringLiteral("makeup"),
+        makeupMap[QStringLiteral("inputDbfs")].toDouble(),
+        500.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), 24.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    vm.setCurveHandleDraft(
+        QStringLiteral("makeup"),
+        makeupMap[QStringLiteral("inputDbfs")].toDouble(),
+        -500.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), -24.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    QCOMPARE(vm.preview_generation(), gen0);
+}
+
+void CompressorViewModelTest::userFacingValidationMessages()
+{
+    CompressorViewModel vm;
+
+    vm.setDraftFieldText(QStringLiteral("makeupGainDb"), QStringLiteral("-58.4"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("makeupGainDb"));
+    QCOMPARE(
+        vm.validation_message(),
+        QStringLiteral("MAKE-UP must be within -24.0 to +24.0 dB"));
+
+    vm.setDraftFieldText(QStringLiteral("thresholdDbfs"), QStringLiteral("-"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("thresholdDbfs"));
+    QCOMPARE(
+        vm.validation_message(),
+        QStringLiteral("THRESHOLD must be a number"));
+
+    vm.cancelDraft();
+    QVERIFY(vm.validation_field().isEmpty());
+    QVERIFY(vm.validation_message().isEmpty());
 }
 
 void CompressorViewModelTest::softKneeRatioHandleSolver()
