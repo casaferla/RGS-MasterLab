@@ -6,6 +6,9 @@
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/render/compressor_telemetry_collector.hpp>
+#include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/render_result.hpp>
 
 #include <QtTest/QTest>
 
@@ -45,6 +48,7 @@ private slots:
     void finalizeEosShortSourceCases();
     void sonicFingerprintAndCheckpointRejection();
     void unifiedKernelBitIdentity();
+    void telemetryOraclesAndInvariance();
 };
 
 void CompressorTest::parametersValidationAndBounds()
@@ -942,6 +946,153 @@ void CompressorTest::unifiedKernelBitIdentity()
 
     // Audio output must be 100% bit-identical!
     QCOMPARE(bits(out_normal.value()->view()), bits(out_diag.value()->view()));
+}
+
+namespace {
+class TestTelemetrySink final : public ICompressorTelemetrySink {
+public:
+    void push_frame_telemetry(std::int64_t absolute_frame, const CompressorFrameTelemetry& frame) noexcept override {
+        frames.push_back(frame);
+        frame_indices.push_back(absolute_frame);
+    }
+    std::vector<CompressorFrameTelemetry> frames;
+    std::vector<std::int64_t> frame_indices;
+};
+}  // namespace
+
+void CompressorTest::telemetryOraclesAndInvariance()
+{
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    const auto& desc = registry.value()->find_descriptor("rgsml.dsp.compressor").value()->get();
+
+    // Test A: Applied-GR Oracle (9 dB target)
+    // PEAK, Threshold = -24 dBFS, Ratio = 4:1, Knee = 0 dB
+    // Input sample = 0.251188643150958 (-12 dBFS)
+    // target GR = (-12 - (-24)) * (1 - 1/4) = 12 * 0.75 = 9.0 dB
+    auto paramsA = *CompressorParameters::create(
+        CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+        -24.0, 4.0, 0.0, 0.1, 1000.0, 50.0, 0.0, 100.0, 0.0).value();
+    auto modA = std::move(*CompressorModule::create(desc, paramsA).value());
+
+    const DspProcessSpec spec48k{format(rgsml::audio::ChannelLayout::MONO_C, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(10000)};
+    QVERIFY(modA->prepare(spec48k));
+
+    TestTelemetrySink sinkA;
+    modA->set_telemetry_sink(&sinkA);
+
+    // Feed 5000 frames of -12 dBFS input so reduction reaches steady 9 dB
+    std::vector<double> inA_smp(5000U, 0.251188643150958);
+    auto inA = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inA_smp);
+    auto outA = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inA_smp);
+    QVERIFY(modA->process(inA.value()->view(), outA.value()->mutable_view(), DspProcessContext{frame_range(0, 5000), true, false}));
+
+    QVERIFY(!sinkA.frames.empty());
+    const double steadyGR = sinkA.frames.back().applied_reduction_db_ch0;
+    QVERIFY(std::abs(steadyGR - 9.0) < 1e-4);
+
+    // Test B: Attack ballistics after 1440 updates @ 48 kHz (Attack = 30 ms)
+    // Starting from 0 dB, target = 9.0 dB
+    auto paramsB = *CompressorParameters::create(
+        CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+        -24.0, 4.0, 0.0, 30.0, 1000.0, 50.0, 0.0, 100.0, 0.0).value();
+    auto modB = std::move(*CompressorModule::create(desc, paramsB).value());
+    QVERIFY(modB->prepare(spec48k));
+
+    TestTelemetrySink sinkB;
+    modB->set_telemetry_sink(&sinkB);
+
+    std::vector<double> inB_smp(1440U, 0.251188643150958);
+    auto inB = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inB_smp);
+    auto outB = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inB_smp);
+    QVERIFY(modB->process(inB.value()->view(), outB.value()->mutable_view(), DspProcessContext{frame_range(0, 1440), true, false}));
+
+    QCOMPARE(sinkB.frames.size(), 1440U);
+    const double attackGR = sinkB.frames.back().applied_reduction_db_ch0;
+    QVERIFY(std::abs(attackGR - 5.689085029456885) < 1e-4);
+
+    // Test C: Release ballistics after 9600 updates @ 48 kHz (Release = 200 ms)
+    // Starting from 9 dB, target = 0 dB
+    std::vector<double> inC_smp(9600U, 0.0);
+    auto inC = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 1440, inC_smp);
+    auto outC = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 1440, inC_smp);
+
+    TestTelemetrySink sinkC;
+    modA->set_telemetry_sink(&sinkC);
+    QVERIFY(modA->process(inC.value()->view(), outC.value()->mutable_view(), DspProcessContext{frame_range(5000, 14600), false, false}));
+
+    const double releaseGR = sinkC.frames.back().applied_reduction_db_ch0;
+    QVERIFY(std::abs(releaseGR - 3.310914970543439) < 1e-4);
+
+    // Test Telemetry ON vs OFF bit-identical audio output
+    auto mod_off = std::move(*CompressorModule::create(desc, paramsA).value());
+    auto mod_on = std::move(*CompressorModule::create(desc, paramsA).value());
+    QVERIFY(mod_off->prepare(spec48k));
+    QVERIFY(mod_on->prepare(spec48k));
+
+    TestTelemetrySink dummySink;
+    mod_on->set_telemetry_sink(&dummySink);
+
+    auto out_off = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inA_smp);
+    auto out_on = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inA_smp);
+
+    QVERIFY(mod_off->process(inA.value()->view(), out_off.value()->mutable_view(), DspProcessContext{frame_range(0, 5000), true, false}));
+    QVERIFY(mod_on->process(inA.value()->view(), out_on.value()->mutable_view(), DspProcessContext{frame_range(0, 5000), true, false}));
+
+    QCOMPARE(bits(out_off.value()->view()), bits(out_on.value()->view()));
+
+    // Test D: Bucket impulse (240 frames @ 48 kHz = 5 ms bucket)
+    // One frame = 12 dB GR, all others = 0 dB
+    // Expect: peak = 12 dB, mean = 12 / 240 = 0.05 dB, attenuatedFrameCount = 1, peak offset retained.
+    const auto dummyUuid = *rgsml::core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto dummyInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(dummyUuid).value();
+    rgsml::render::CompressorTelemetryCollector impulseCollector{
+        0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+    };
+
+    impulseCollector.push_frame_telemetry(0, CompressorFrameTelemetry{12.0, 12.0, std::pow(10.0, -12.0/20.0), std::pow(10.0, -12.0/20.0)});
+    for (std::int64_t f = 1; f < 240; ++f) {
+        impulseCollector.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+    }
+
+    auto sidecarD = impulseCollector.build_sidecar();
+    QVERIFY(sidecarD.valid);
+    QCOMPARE(sidecarD.channel_lanes.size(), 1U);
+    QCOMPARE(sidecarD.channel_lanes[0].buckets.size(), 1U);
+
+    const auto& bucketD = sidecarD.channel_lanes[0].buckets[0];
+    QCOMPARE(bucketD.peak_reduction_db, 12.0);
+    QCOMPARE(bucketD.mean_reduction_db, 0.05); // 12.0 / 240 = 0.05 dB
+    QCOMPARE(bucketD.attenuated_frame_count, 1U);
+    QCOMPARE(bucketD.peak_offset_frames, 0U);
+
+    // Block-partition invariance: test process partitions 1, 7, 31, 64, 127, 256, 511, 1024, 4096
+    const std::array partitions{1, 7, 31, 64, 127, 256, 511, 1024, 4096};
+    std::vector<double> longInput(4096U, 0.5);
+
+    auto mod_mono_ref = std::move(*CompressorModule::create(desc, paramsA).value());
+    QVERIFY(mod_mono_ref->prepare(spec48k));
+
+    auto in_long = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, longInput);
+    auto out_mono_ref = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, longInput);
+    QVERIFY(mod_mono_ref->process(in_long.value()->view(), out_mono_ref.value()->mutable_view(), DspProcessContext{frame_range(0, 4096), true, false}));
+    const auto ref_bits_partition = bits(out_mono_ref.value()->view());
+
+    for (const int p_size : partitions) {
+        auto mod_p = std::move(*CompressorModule::create(desc, paramsA).value());
+        QVERIFY(mod_p->prepare(spec48k));
+
+        auto out_p = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, longInput);
+        int cursor = 0;
+        while (cursor < 4096) {
+            const int current_p = std::min(p_size, 4096 - cursor);
+            auto in_p_sub = in_long.value()->view().subview(rgsml::core::FrameIndex{cursor}, frame_count(current_p));
+            auto out_p_sub = out_p.value()->mutable_view().subview(rgsml::core::FrameIndex{cursor}, frame_count(current_p));
+            QVERIFY(mod_p->process(*in_p_sub.value(), *out_p_sub.value(), DspProcessContext{frame_range(cursor, cursor + current_p), cursor == 0, false}));
+            cursor += current_p;
+        }
+
+        QCOMPARE(bits(out_p.value()->view()), ref_bits_partition);
+    }
 }
 
 }  // namespace

@@ -1,8 +1,10 @@
 #include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/compressor_telemetry_collector.hpp>
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/core/checked_integer.hpp>
 #include <rgsml/core/error.hpp>
+#include <rgsml/dsp/compressor_module.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/imodule.hpp>
@@ -14,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,6 +30,8 @@ constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 
 struct PreparedModule final {
     std::unique_ptr<rgsml::dsp::IModule> instance;
+    rgsml::dsp::ModuleInstanceId instance_id;
+    std::string type_id;
     std::int64_t algorithmic_latency_frames{0};
     std::int64_t look_ahead_frames{0};
     std::int64_t effective_tail_frames{0};
@@ -219,6 +224,8 @@ rgsml::core::Result<RenderResult> render_preview(
             (*module.value())->reset();
             modules.push_back(PreparedModule{
                 std::move(*module.value()),
+                instance.instance_id(),
+                std::string{instance.module_type_id()},
                 required.algorithmic_latency_frames.value(),
                 required.look_ahead_frames.value(),
                 required.effective_tail_frames.value()});
@@ -298,6 +305,8 @@ rgsml::core::Result<RenderResult> render_preview(
         const auto needed_source_end = std::min(source_end, target_raw_end);
         const auto source_read_count = needed_source_end - source_start;
 
+        std::optional<CompressorTelemetrySidecar> compressor_sidecar;
+
         if (modules.empty()) {
             auto source_chunk = source.subview(
                 window.begin(),
@@ -358,6 +367,28 @@ rgsml::core::Result<RenderResult> render_preview(
                 }
 
                 const auto out_frame_count = *rgsml::core::FrameCount::create(*out_count_res.value()).value();
+
+                std::unique_ptr<CompressorTelemetryCollector> collector;
+                auto* comp_mod = dynamic_cast<rgsml::dsp::CompressorModule*>(modules[m].instance.get());
+                if (comp_mod != nullptr) {
+                    const auto* binding = find_binding(request, modules[m].instance_id);
+                    if (binding != nullptr) {
+                        if (const auto* comp_params = std::get_if<rgsml::dsp::CompressorParameters>(&binding->parameters)) {
+                            const std::int64_t total_mod_frames = out_frame_count.value();
+                            const auto sample_rate_val = static_cast<std::uint32_t>(source.format().sample_rate().value());
+                            collector = std::make_unique<CompressorTelemetryCollector>(
+                                stage_start,
+                                total_mod_frames,
+                                sample_rate_val,
+                                source.format().channel_layout(),
+                                comp_params->channel_link(),
+                                modules[m].instance_id,
+                                request.chain_revision());
+                            comp_mod->set_telemetry_sink(collector.get());
+                        }
+                    }
+                }
+
                 auto next_buffer = rgsml::audio::AudioBuffer::create(
                     source.format(),
                     source.timebase().frame_domain_id(),
@@ -439,6 +470,11 @@ rgsml::core::Result<RenderResult> render_preview(
                     }
                 }
 
+                if (comp_mod != nullptr && collector != nullptr) {
+                    comp_mod->set_telemetry_sink(nullptr);
+                    compressor_sidecar = collector->build_sidecar();
+                }
+
                 current_buffer = std::move(next_buffer);
                 stage_end = *rgsml::core::checked_add(stage_end, drain_length).value();
             }
@@ -470,7 +506,8 @@ rgsml::core::Result<RenderResult> render_preview(
             window,
             source.timebase().frame_domain_id(),
             request.chain_revision(),
-            std::move(signatures)});
+            std::move(signatures),
+            std::move(compressor_sidecar)});
     } catch (...) {
         return rgsml::core::Result<RenderResult>::failure(render_error(
             rgsml::core::ErrorCode::InvalidState,

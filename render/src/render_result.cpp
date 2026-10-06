@@ -9,12 +9,14 @@ RenderResult::RenderResult(
     rgsml::core::FrameRange render_window,
     rgsml::audio::FrameDomainId frame_domain_id,
     std::uint64_t chain_revision,
-    std::vector<ModuleExecutionSignature> signatures) noexcept
+    std::vector<ModuleExecutionSignature> signatures,
+    std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar) noexcept
     : buffer_(std::move(buffer))
     , render_window_(render_window)
     , frame_domain_id_(frame_domain_id)
     , chain_revision_(chain_revision)
     , signatures_(std::move(signatures))
+    , compressor_telemetry_sidecar_(std::move(compressor_telemetry_sidecar))
 {
 }
 
@@ -46,6 +48,12 @@ std::uint64_t RenderResult::chain_revision() const noexcept
 const std::vector<ModuleExecutionSignature>& RenderResult::signatures() const noexcept
 {
     return signatures_;
+}
+
+const std::optional<CompressorTelemetrySidecar>&
+RenderResult::compressor_telemetry_sidecar() const noexcept
+{
+    return compressor_telemetry_sidecar_;
 }
 
 }  // namespace rgsml::render

@@ -32,6 +32,10 @@ private slots:
     void staticTransferCurveOraclePoints();
     void resetToDefaultState();
     void textDraftContractAndCommitCancel();
+    void sliderDraftAndCommitCycle();
+    void interactiveCurveHandlesAndCancel();
+    void softKneeRatioHandleSolver();
+    void telemetryStateMachineAndPlaybackBinding();
 };
 
 void CompressorViewModelTest::initialDefaults()
@@ -87,7 +91,7 @@ void CompressorViewModelTest::invalidDraftRejectionNoClampNoPreview()
     vm.setRatio(0.5);
 
     // Validation field set, draft retains input without clamping, preview NOT requested
-    QCOMPARE(vm.validation_field(), QStringLiteral("ratio"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("RATIO"));
     QVERIFY(!vm.validation_message().isEmpty());
     QCOMPARE(vm.ratio_text(), QStringLiteral("0.50")); // Draft text reflects input
     QCOMPARE(vm.ratio(), 2.0); // Committed state unchanged
@@ -103,11 +107,11 @@ void CompressorViewModelTest::nanAndInfRejection()
     const double infVal = std::numeric_limits<double>::infinity();
 
     vm.setThresholdDbfs(nanVal);
-    QCOMPARE(vm.validation_field(), QStringLiteral("thresholdDbfs"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("THRESHOLD"));
     QCOMPARE(vm.preview_generation(), validGen);
 
     vm.setRatio(infVal);
-    QCOMPARE(vm.validation_field(), QStringLiteral("ratio"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("RATIO"));
     QCOMPARE(vm.preview_generation(), validGen);
 }
 
@@ -173,7 +177,7 @@ void CompressorViewModelTest::boundsRejections()
 
     // Out of bounds RMS time constant above max 500.0 ms
     vm.setRmsTimeConstantMs(std::nextafter(500.0, 501.0));
-    QCOMPARE(vm.validation_field(), QStringLiteral("rmsTimeConstantMs"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("RMS TIME"));
     QCOMPARE(vm.preview_generation(), validGen);
 
     // Out of bounds look ahead below min 0.0 ms
@@ -366,6 +370,199 @@ void CompressorViewModelTest::textDraftContractAndCommitCancel()
     QCOMPARE(vm.threshold_text(), QStringLiteral("-18.5"));
     QVERIFY(vm.validation_field().isEmpty());
     QCOMPARE(vm.threshold_dbfs(), -18.5);
+}
+
+void CompressorViewModelTest::sliderDraftAndCommitCycle()
+{
+    CompressorViewModel vm;
+    const auto gen0 = vm.preview_generation();
+
+    // 1. setDraftFieldValue changes draft only, no preview, no undo
+    vm.setDraftFieldValue(QStringLiteral("thresholdDbfs"), -18.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -18.0);
+    QCOMPARE(vm.threshold_text(), QStringLiteral("-18.0"));
+    QCOMPARE(vm.threshold_dbfs(), -24.0); // Committed state unchanged!
+    QCOMPARE(vm.preview_generation(), gen0); // No preview requested!
+    QVERIFY(!vm.can_undo()); // No undo pushed during drag!
+
+    // 2. Continuous drag updates draft repeatedly
+    vm.setDraftFieldValue(QStringLiteral("thresholdDbfs"), -12.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -12.0);
+    QCOMPARE(vm.threshold_text(), QStringLiteral("-12.0"));
+    QCOMPARE(vm.threshold_dbfs(), -24.0);
+    QCOMPARE(vm.preview_generation(), gen0);
+    QVERIFY(!vm.can_undo());
+
+    // 3. Commit on release updates authority and previews once
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.threshold_dbfs(), -12.0); // Committed!
+    QVERIFY(vm.preview_generation() > gen0); // Preview requested once!
+    QVERIFY(vm.can_undo()); // Exactly one undo entry pushed!
+
+    // 4. Unchanged commit creates no additional preview
+    const auto gen1 = vm.preview_generation();
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), gen1);
+}
+
+void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
+{
+    CompressorViewModel vm;
+    const auto gen0 = vm.preview_generation();
+
+    const auto handles = vm.transfer_curve_handles();
+    QCOMPARE(handles.size(), 4);
+
+    // Verify handle IDs, colors, and finite coordinates
+    const std::array expectedIds{QStringLiteral("threshold"), QStringLiteral("ratio"), QStringLiteral("knee"), QStringLiteral("makeup")};
+    const std::array expectedColors{QStringLiteral("#2ED3FF"), QStringLiteral("#2FD98F"), QStringLiteral("#FFD84A"), QStringLiteral("#FF6B6B")};
+
+    for (std::size_t i = 0; i < handles.size(); ++i) {
+        const auto map = handles[i].toMap();
+        QCOMPARE(map[QStringLiteral("id")].toString(), expectedIds[i]);
+        QCOMPARE(map[QStringLiteral("color")].toString(), expectedColors[i]);
+        QVERIFY(std::isfinite(map[QStringLiteral("inputDbfs")].toDouble()));
+        QVERIFY(std::isfinite(map[QStringLiteral("outputDbfs")].toDouble()));
+    }
+
+    // Drag Threshold handle
+    vm.setCurveHandleDraft(QStringLiteral("threshold"), -18.0, -18.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -18.0);
+    QCOMPARE(vm.threshold_dbfs(), -24.0); // Uncommitted!
+    QCOMPARE(vm.preview_generation(), gen0); // No preview during handle drag!
+
+    // Obtain current Ratio handle metadata after Threshold move
+    const auto updatedHandles = vm.transfer_curve_handles();
+    QVariantMap ratioMap;
+    for (const auto& h : updatedHandles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("ratio")) {
+            ratioMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY(!ratioMap.isEmpty());
+
+    // Feed truthful Ratio handle coordinates back through setCurveHandleDraft
+    vm.setCurveHandleDraft(QStringLiteral("ratio"), ratioMap[QStringLiteral("inputDbfs")].toDouble(), ratioMap[QStringLiteral("outputDbfs")].toDouble());
+    QCOMPARE(vm.draft_ratio(), 2.0); // Ratio remains 2.0!
+    QCOMPARE(vm.ratio(), 2.0); // Uncommitted!
+    QCOMPARE(vm.preview_generation(), gen0); // No preview during handle drag!
+
+    // Drag Knee handle (lower knee boundary at threshold - knee/2 = -18 - 3 = -21)
+    vm.setCurveHandleDraft(QStringLiteral("knee"), -24.0, -24.0);
+    QCOMPARE(vm.draft_knee_db(), 12.0); // 2 * |-18 - (-24)| = 12 dB
+
+    // Drag Make-up handle
+    vm.setCurveHandleDraft(QStringLiteral("makeup"), -54.0, -50.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), 4.0); // Shifted by +4 dB
+
+    // Cancel restores committed authority
+    vm.cancelDraft();
+    QCOMPARE(vm.draft_threshold_dbfs(), -24.0);
+    QCOMPARE(vm.draft_ratio(), 2.0);
+    QCOMPARE(vm.draft_knee_db(), 6.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), 0.0);
+    QCOMPARE(vm.preview_generation(), gen0);
+
+    // Re-apply threshold handle drag and commit once
+    vm.setCurveHandleDraft(QStringLiteral("threshold"), -15.0, -15.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -15.0);
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.threshold_dbfs(), -15.0); // Committed!
+    QVERIFY(vm.preview_generation() > gen0); // Single preview requested!
+}
+
+void CompressorViewModelTest::softKneeRatioHandleSolver()
+{
+    CompressorViewModel vm;
+
+    // High threshold = -6.0 dBFS, wide knee = 12.0 dB, expected target ratio = 4.0
+    vm.setThresholdDbfs(-6.0);
+    vm.setKneeDb(12.0);
+    vm.setRatio(4.0);
+    vm.setMakeupGainDb(0.0);
+
+    // Get C++ generated handle coordinates for ratio = 4.0 in soft knee
+    const auto handles = vm.transfer_curve_handles();
+    QVariantMap ratioMap;
+    for (const auto& h : handles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("ratio")) {
+            ratioMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY(!ratioMap.isEmpty());
+
+    // Reset draft ratio to 2.0
+    vm.setDraftFieldValue(QStringLiteral("ratio"), 2.0);
+    QCOMPARE(vm.draft_ratio(), 2.0);
+
+    // Feed the soft-knee target coordinate back through setCurveHandleDraft
+    vm.setCurveHandleDraft(QStringLiteral("ratio"), ratioMap[QStringLiteral("inputDbfs")].toDouble(), ratioMap[QStringLiteral("outputDbfs")].toDouble());
+
+    // Verify solver reconstructs Ratio 4.0 within tolerance 0.01
+    QVERIFY(std::abs(vm.draft_ratio() - 4.0) < 0.01);
+}
+
+void CompressorViewModelTest::telemetryStateMachineAndPlaybackBinding()
+{
+    CompressorViewModel vm;
+
+    const auto dummyUuid = *rgsml::core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto dummyInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(dummyUuid).value();
+
+    render::CompressorTelemetrySidecar sidecar{dummyInstanceId};
+    sidecar.valid = true;
+    sidecar.status = render::CompressorTelemetryStatus::OK;
+    sidecar.sample_rate_hz = 48000;
+    sidecar.chain_revision = 1;
+
+    render::CompressorTelemetryLane lane;
+    render::CompressorTelemetryBucket b{dummyInstanceId};
+    b.begin_frame = 0;
+    b.end_frame = 240;
+    b.end_reduction_db = 6.0;
+    b.mean_reduction_db = 5.5;
+    b.peak_reduction_db = 8.0;
+    b.frame_count = 240;
+    b.attenuated_frame_count = 240;
+    lane.buckets.push_back(b);
+    sidecar.channel_lanes.push_back(lane);
+
+    // 1. PREPARED/GOLD audition target -> NOT AUDITIONED
+    vm.update_telemetry_observation(240, true, false, false, false, false, false, &sidecar);
+    QCOMPARE(vm.live_gr_state(), QStringLiteral("NOT AUDITIONED"));
+
+    // 2. BYPASS -> BYPASS
+    vm.update_telemetry_observation(240, true, false, false, true, true, false, &sidecar);
+    QCOMPARE(vm.live_gr_state(), QStringLiteral("BYPASS"));
+
+    // 3. TRANSITION during crossfade
+    vm.update_telemetry_observation(240, true, false, true, true, false, false, &sidecar);
+    QCOMPARE(vm.live_gr_state(), QStringLiteral("TRANSITION"));
+
+    // 4. Null or invalid sidecar -> UNAVAILABLE
+    vm.update_telemetry_observation(240, true, false, false, true, false, false, nullptr);
+    QCOMPARE(vm.live_gr_state(), QStringLiteral("UNAVAILABLE"));
+
+    // 5. PAUSED -> PAUSED
+    vm.update_telemetry_observation(240, false, true, false, true, false, false, &sidecar);
+    QCOMPARE(vm.live_gr_state(), QStringLiteral("PAUSED"));
+
+    // 6. STOPPED -> STOPPED / END
+    vm.update_telemetry_observation(240, false, false, false, true, false, false, &sidecar);
+    QCOMPARE(vm.live_gr_state(), QStringLiteral("STOPPED / END"));
+
+    // 7. ACTIVE WET -> ACTIVE WET, consumes bucket
+    vm.update_telemetry_observation(240, true, false, false, true, false, false, &sidecar);
+    QCOMPARE(vm.live_gr_state(), QStringLiteral("ACTIVE WET"));
+    QCOMPARE(vm.live_gr_db(), 6.0);
+    QCOMPARE(vm.live_gr_db_text(), QStringLiteral("6.0 dB"));
+    QCOMPARE(vm.live_gr_history_l().size(), 1);
+
+    // 8. ACTIVE DRY ONLY when mix = 0%
+    vm.update_telemetry_observation(240, true, false, false, true, false, true, &sidecar);
+    QCOMPARE(vm.live_gr_state(), QStringLiteral("ACTIVE DRY ONLY"));
 }
 
 }  // namespace
