@@ -530,41 +530,38 @@ void CompressorViewModelTest::telemetryStateMachineAndPlaybackBinding()
     sidecar.channel_lanes.push_back(lane);
 
     // 1. PREPARED/GOLD audition target -> NOT AUDITIONED
-    vm.update_telemetry_observation(240, true, false, false, false, &sidecar);
+    vm.update_telemetry_observation(240, true, false, false, false, false, false, &sidecar);
     QCOMPARE(vm.live_gr_state(), QStringLiteral("NOT AUDITIONED"));
 
     // 2. BYPASS -> BYPASS
-    vm.setBypass(true);
-    vm.update_telemetry_observation(240, true, false, false, true, &sidecar);
+    vm.update_telemetry_observation(240, true, false, false, true, true, false, &sidecar);
     QCOMPARE(vm.live_gr_state(), QStringLiteral("BYPASS"));
-    vm.setBypass(false);
 
     // 3. TRANSITION during crossfade
-    vm.update_telemetry_observation(240, true, false, true, true, &sidecar);
+    vm.update_telemetry_observation(240, true, false, true, true, false, false, &sidecar);
     QCOMPARE(vm.live_gr_state(), QStringLiteral("TRANSITION"));
 
     // 4. Null or invalid sidecar -> UNAVAILABLE
-    vm.update_telemetry_observation(240, true, false, false, true, nullptr);
+    vm.update_telemetry_observation(240, true, false, false, true, false, false, nullptr);
     QCOMPARE(vm.live_gr_state(), QStringLiteral("UNAVAILABLE"));
 
     // 5. PAUSED -> PAUSED
-    vm.update_telemetry_observation(240, false, true, false, true, &sidecar);
+    vm.update_telemetry_observation(240, false, true, false, true, false, false, &sidecar);
     QCOMPARE(vm.live_gr_state(), QStringLiteral("PAUSED"));
 
     // 6. STOPPED -> STOPPED / END
-    vm.update_telemetry_observation(240, false, false, false, true, &sidecar);
+    vm.update_telemetry_observation(240, false, false, false, true, false, false, &sidecar);
     QCOMPARE(vm.live_gr_state(), QStringLiteral("STOPPED / END"));
 
     // 7. ACTIVE WET -> ACTIVE WET, consumes bucket
-    vm.update_telemetry_observation(240, true, false, false, true, &sidecar);
+    vm.update_telemetry_observation(240, true, false, false, true, false, false, &sidecar);
     QCOMPARE(vm.live_gr_state(), QStringLiteral("ACTIVE WET"));
     QCOMPARE(vm.live_gr_db(), 6.0);
     QCOMPARE(vm.live_gr_db_text(), QStringLiteral("6.0 dB"));
     QCOMPARE(vm.live_gr_history_l().size(), 1);
 
     // 8. ACTIVE DRY ONLY when mix = 0%
-    vm.setMixPercent(0.0);
-    vm.update_telemetry_observation(240, true, false, false, true, &sidecar);
+    vm.update_telemetry_observation(240, true, false, false, true, false, true, &sidecar);
     QCOMPARE(vm.live_gr_state(), QStringLiteral("ACTIVE DRY ONLY"));
 }
 

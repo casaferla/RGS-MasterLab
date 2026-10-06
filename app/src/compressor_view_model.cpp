@@ -176,9 +176,31 @@ void CompressorViewModel::poll_telemetry()
         sidecar = &(*snapshot->compressor_telemetry_sidecar());
     }
 
-    const bool is_transition = sidecar && (sidecar->chain_revision != active_chain_state().chain_revision());
+    bool is_audible_bypassed = false;
+    bool is_audible_dry_only = false;
+    if (snapshot != nullptr) {
+        for (const auto& sig : snapshot->signatures()) {
+            if (sig.type_id == "rgsml.dsp.compressor") {
+                if (sig.disposition == render::ModuleExecutionDisposition::BYPASS_IDENTITY) {
+                    is_audible_bypassed = true;
+                } else if (const auto* compPayload = std::get_if<render::CompressorExecutionSignaturePayload>(&sig.payload)) {
+                    if (compPayload->mix_percent == 0.0) {
+                        is_audible_dry_only = true;
+                    }
+                }
+            }
+        }
+    }
 
-    update_telemetry_observation(current_frame, is_playing, is_paused, is_transition, is_processed, sidecar);
+    update_telemetry_observation(
+        current_frame,
+        is_playing,
+        is_paused,
+        false,
+        is_processed,
+        is_audible_bypassed,
+        is_audible_dry_only,
+        sidecar);
 }
 
 MasteringChainState& CompressorViewModel::active_chain_state() const noexcept
@@ -518,6 +540,8 @@ void CompressorViewModel::update_telemetry_observation(
     bool is_paused,
     bool is_transition,
     bool is_processed_audition,
+    bool is_audible_bypassed,
+    bool is_audible_dry_only,
     const render::CompressorTelemetrySidecar* sidecar)
 {
     if (!is_processed_audition) {
@@ -538,7 +562,7 @@ void CompressorViewModel::update_telemetry_observation(
         return;
     }
 
-    if (bypass()) {
+    if (is_audible_bypassed) {
         liveGrState_ = QStringLiteral("BYPASS");
         emit changed();
         return;
@@ -548,7 +572,7 @@ void CompressorViewModel::update_telemetry_observation(
         liveGrState_ = QStringLiteral("PAUSED");
     } else if (!is_playing) {
         liveGrState_ = QStringLiteral("STOPPED / END");
-    } else if (draftMixPercent_ == 0.0) {
+    } else if (is_audible_dry_only) {
         liveGrState_ = QStringLiteral("ACTIVE DRY ONLY");
     } else {
         liveGrState_ = QStringLiteral("ACTIVE WET");

@@ -534,7 +534,7 @@ CompressorModule::run_process_kernel(
 
         for (std::size_t ch = 0; ch < channels; ++ch) {
             const double in_sample = (*input.channel(ch).value())[i];
-            const double red = (ch == 0) ? red0 : red1;
+            const double gain_lin = (ch == 0) ? gain0 : gain1;
 
             double x_delayed = in_sample;
             if (impl_->lookahead_frames > 0) {
@@ -545,7 +545,6 @@ CompressorModule::run_process_kernel(
                 cursor = (cursor + 1U) % static_cast<std::size_t>(impl_->lookahead_frames);
             }
 
-            const double gain_lin = std::pow(10.0, -red / 20.0);
             const double wet = x_delayed * gain_lin * makeup_factor;
             const double out_sample = (1.0 - mix_m) * x_delayed + mix_m * wet;
 
@@ -786,7 +785,7 @@ rgsml::core::Status CompressorModule::finalize(
             }
 
             for (std::size_t ch = 0; ch < channels; ++ch) {
-                const double red = (ch == 0) ? red0 : red1;
+                const double gain_lin = (ch == 0) ? gain0 : gain1;
 
                 double x_delayed = 0.0;
                 if (impl_->lookahead_frames > 0) {
@@ -797,7 +796,6 @@ rgsml::core::Status CompressorModule::finalize(
                     cursor = (cursor + 1U) % static_cast<std::size_t>(impl_->lookahead_frames);
                 }
 
-                const double gain_lin = std::pow(10.0, -red / 20.0);
                 const double wet = x_delayed * gain_lin * makeup_factor;
                 const double out_sample = (1.0 - mix_m) * x_delayed + mix_m * wet;
 

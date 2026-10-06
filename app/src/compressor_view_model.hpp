@@ -7,12 +7,16 @@
 
 #include <QObject>
 #include <QString>
+#include <QTimer>
 #include <QVariantList>
 
 #include <memory>
 #include <vector>
 
 namespace rgsml::app {
+
+class AuditionSourceSelector;
+class PlaybackTransportViewModel;
 
 class CompressorViewModel final : public QObject {
     Q_OBJECT
@@ -70,8 +74,6 @@ class CompressorViewModel final : public QObject {
     Q_PROPERTY(QVariantList liveGrHistoryR READ live_gr_history_r NOTIFY changed)
 
 public:
-    class AuditionSourceSelector;
-    class PlaybackTransportViewModel;
     struct CompressorStateSnapshot final {
         dsp::CompressorParameters parameters;
         bool bypass{false};
@@ -153,6 +155,8 @@ public:
         bool is_paused,
         bool is_transition,
         bool is_processed_audition,
+        bool is_audible_bypassed,
+        bool is_audible_dry_only,
         const render::CompressorTelemetrySidecar* sidecar);
 
     Q_INVOKABLE void setDetectorMode(const QString& mode);
