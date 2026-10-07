@@ -1092,6 +1092,179 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::optional{oldRealizationId});
     }
 
+    // Test 2C: pausing during an already-pending handoff freezes the
+    // audible OLD/TRANSITION phase; resume continues the same progression.
+    {
+        PlaybackEngine pendingPause;
+        auto pendingOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedPending = pendingOutput.get();
+        QVERIFY(pendingPause.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(pendingOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1,
+            oldRealizationId));
+        QVERIFY(pendingPause.play());
+        QVERIFY(pendingPause.handoff_pcm(
+            newBuf.view(), lifetime2, newRealizationId));
+
+        observedPending->set_processed_frames(500);
+        QVERIFY(pendingPause.pause());
+        const auto pausedOld =
+            pendingPause.snapshot().value()->audibleRealization;
+        QCOMPARE(pausedOld.phase, core::AudibleHandoffPhase::OLD);
+        QCOMPARE(
+            pausedOld.realizationId,
+            std::optional{oldRealizationId});
+        QCOMPARE(
+            pendingPause.snapshot().value()->audibleRealization,
+            pausedOld);
+
+        QVERIFY(pendingPause.play());
+        observedPending->set_processed_frames(
+            static_cast<std::int64_t>(handoffBoundaryFrames + 100U));
+        QVERIFY(pendingPause.pause());
+        const auto pausedTransition =
+            pendingPause.snapshot().value()->audibleRealization;
+        QCOMPARE(
+            pausedTransition.phase,
+            core::AudibleHandoffPhase::TRANSITION);
+        QVERIFY(!pausedTransition.realizationId.has_value());
+        QCOMPARE(
+            pendingPause.snapshot().value()->audibleRealization,
+            pausedTransition);
+
+        QVERIFY(pendingPause.play());
+        observedPending->set_processed_frames(
+            static_cast<std::int64_t>(
+                handoffBoundaryFrames + xfadeFrames48k));
+        const auto resumedNew =
+            pendingPause.snapshot().value()->audibleRealization;
+        QCOMPARE(resumedNew.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            resumedNew.realizationId,
+            std::optional{newRealizationId});
+    }
+
+    // Test 2D: seeking while a handoff is pending discards the old queued
+    // chronology. Playback restarts from the accepted new realization.
+    {
+        PlaybackEngine pendingSeek;
+        auto seekOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedSeek = seekOutput.get();
+        QVERIFY(pendingSeek.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(seekOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1,
+            oldRealizationId));
+        QVERIFY(pendingSeek.play());
+        QVERIFY(pendingSeek.handoff_pcm(
+            newBuf.view(), lifetime2, newRealizationId));
+        QCOMPARE(
+            pendingSeek.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::OLD);
+
+        const auto historyBeforeSeek = observedSeek->history().size();
+        QVERIFY(pendingSeek.seek(core::FrameIndex{1500}));
+        QCOMPARE(
+            pendingSeek.snapshot().value()->state,
+            core::PlaybackState::PLAYING);
+        const auto afterSeek =
+            pendingSeek.snapshot().value()->audibleRealization;
+        QCOMPARE(afterSeek.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            afterSeek.realizationId,
+            std::optional{newRealizationId});
+        QVERIFY(observedSeek->history().size() > historyBeforeSeek);
+        QCOMPARE(
+            read_i16(observedSeek->history(), historyBeforeSeek),
+            static_cast<std::int16_t>(0));
+    }
+
+    // Test 2E: zero- and short-crossfade boundaries have deterministic
+    // identity semantics: zero skips TRANSITION, short remains TRANSITION
+    // for exactly the bounded output-frame interval.
+    const auto verifyShortCrossfadeIdentity = [&](
+        std::int64_t loopEndFrame,
+        std::int64_t expectedTransitionFrames) {
+        PlaybackEngine shortEngine;
+        auto shortOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedShort = shortOutput.get();
+        QVERIFY(shortEngine.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(shortOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1,
+            oldRealizationId));
+        auto shortLoop = core::FrameRange::create(
+            core::FrameIndex{0},
+            core::FrameIndex{loopEndFrame});
+        QVERIFY(shortLoop);
+        QVERIFY(shortEngine.set_loop(*shortLoop.value()));
+        QVERIFY(shortEngine.play());
+        QVERIFY(shortEngine.handoff_pcm(
+            newBuf.view(), lifetime2, newRealizationId));
+
+        observedShort->set_processed_frames(
+            static_cast<std::int64_t>(handoffBoundaryFrames - 1U));
+        const auto beforeShort =
+            shortEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(beforeShort.phase, core::AudibleHandoffPhase::OLD);
+        QCOMPARE(
+            beforeShort.realizationId,
+            std::optional{oldRealizationId});
+
+        observedShort->set_processed_frames(
+            static_cast<std::int64_t>(handoffBoundaryFrames));
+        const auto atShortBoundary =
+            shortEngine.snapshot().value()->audibleRealization;
+        if (expectedTransitionFrames == 0) {
+            QCOMPARE(
+                atShortBoundary.phase,
+                core::AudibleHandoffPhase::NEW);
+            QCOMPARE(
+                atShortBoundary.realizationId,
+                std::optional{newRealizationId});
+            return;
+        }
+
+        QCOMPARE(
+            atShortBoundary.phase,
+            core::AudibleHandoffPhase::TRANSITION);
+        QVERIFY(!atShortBoundary.realizationId.has_value());
+
+        observedShort->set_processed_frames(
+            static_cast<std::int64_t>(
+                handoffBoundaryFrames
+                + static_cast<std::size_t>(expectedTransitionFrames - 1)));
+        QCOMPARE(
+            shortEngine.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::TRANSITION);
+
+        observedShort->set_processed_frames(
+            static_cast<std::int64_t>(
+                handoffBoundaryFrames
+                + static_cast<std::size_t>(expectedTransitionFrames)));
+        const auto afterShort =
+            shortEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(afterShort.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            afterShort.realizationId,
+            std::optional{newRealizationId});
+    };
+
+    verifyShortCrossfadeIdentity(
+        static_cast<std::int64_t>(handoffBoundaryFrames), 0);
+    verifyShortCrossfadeIdentity(
+        static_cast<std::int64_t>(handoffBoundaryFrames + 6U), 6);
+
     // Test 3: STOPPED replacement remains STOPPED without auto-start.
     QVERIFY(engine.stop());
     QCOMPARE(
@@ -1210,19 +1383,43 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::move(srcOutput),
             DeviceSampleFormat::PCM_S16,
             std::move(*srcAdapter.value()),
-            lifetime1));
+            lifetime1,
+            oldRealizationId));
         QVERIFY(srcEngine.play());
         QCOMPARE(
             srcEngine.snapshot().value()->state,
             core::PlaybackState::PLAYING);
         const int stopCallsBeforeSrcHandoff = observedSrc->stopCalls;
-        QVERIFY(srcEngine.handoff_pcm(srcNew.view(), lifetime2));
+        QVERIFY(srcEngine.handoff_pcm(
+            srcNew.view(), lifetime2, newRealizationId));
         QCOMPARE(
             srcEngine.snapshot().value()->state,
             core::PlaybackState::PLAYING);
         QCOMPARE(
             observedSrc->stopCalls,
             stopCallsBeforeSrcHandoff);
+
+        const auto srcBeforeBoundary =
+            srcEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(srcBeforeBoundary.phase, core::AudibleHandoffPhase::OLD);
+        QCOMPARE(
+            srcBeforeBoundary.realizationId,
+            std::optional{oldRealizationId});
+        observedSrc->set_processed_frames(
+            static_cast<std::int64_t>(handoffBoundaryFrames));
+        QCOMPARE(
+            srcEngine.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::TRANSITION);
+        observedSrc->set_processed_frames(
+            static_cast<std::int64_t>(
+                handoffBoundaryFrames + expectedXfadeFrames));
+        const auto srcAfterBoundary =
+            srcEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(srcAfterBoundary.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            srcAfterBoundary.realizationId,
+            std::optional{newRealizationId});
+        observedSrc->set_processed_frames(0);
 
         const auto requiredBytes =
             (handoffBoundaryFrames + expectedXfadeFrames + 1U)
@@ -1313,7 +1510,8 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::move(loopOutput),
             DeviceSampleFormat::PCM_S16,
             std::nullopt,
-            lifetime1));
+            lifetime1,
+            oldRealizationId));
         auto loopRange = core::FrameRange::create(
             core::FrameIndex{0},
             core::FrameIndex{loopEndFrame});
@@ -1322,7 +1520,30 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         QVERIFY(loopEngine.play());
 
         const int stopCallsBeforeLoopHandoff = observedLoop->stopCalls;
-        QVERIFY(loopEngine.handoff_pcm(loopNew.view(), lifetime2));
+        QVERIFY(loopEngine.handoff_pcm(
+            loopNew.view(), lifetime2, newRealizationId));
+        const auto loopBeforeBoundary =
+            loopEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(loopBeforeBoundary.phase, core::AudibleHandoffPhase::OLD);
+        QCOMPARE(
+            loopBeforeBoundary.realizationId,
+            std::optional{oldRealizationId});
+        observedLoop->set_processed_frames(
+            static_cast<std::int64_t>(handoffBoundaryFrames));
+        QCOMPARE(
+            loopEngine.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::TRANSITION);
+        observedLoop->set_processed_frames(
+            static_cast<std::int64_t>(
+                handoffBoundaryFrames + xfadeFrames48k));
+        const auto loopAfterBoundary =
+            loopEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(loopAfterBoundary.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            loopAfterBoundary.realizationId,
+            std::optional{newRealizationId});
+        observedLoop->set_processed_frames(0);
+
         auto loopSnapshot = loopEngine.snapshot();
         QVERIFY(loopSnapshot);
         QCOMPARE(
@@ -1397,6 +1618,12 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         QCOMPARE(
             loopEngine.snapshot().value()->state,
             core::PlaybackState::PLAYING);
+        const auto loopPostTraversal =
+            loopEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(loopPostTraversal.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            loopPostTraversal.realizationId,
+            std::optional{newRealizationId});
     }
 
     // Test 8: if all remaining old audio is already committed through natural
