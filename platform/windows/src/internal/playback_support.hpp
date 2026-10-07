@@ -99,10 +99,12 @@ public:
         DeviceSampleFormat sampleFormat,
         std::optional<audio::PlaybackSampleRateAdapter> rateAdapter =
             std::nullopt,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status clear();
     [[nodiscard]] core::Status play();
     [[nodiscard]] core::Status pause();

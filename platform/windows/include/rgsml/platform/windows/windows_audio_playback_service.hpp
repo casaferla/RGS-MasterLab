@@ -30,10 +30,12 @@ public:
     [[nodiscard]] core::Status prepare_pcm(audio::AudioBufferView source);
     [[nodiscard]] core::Status prepare_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime);
+        std::shared_ptr<const void> lifetime,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status clear() override;
     [[nodiscard]] core::Status play() override;
     [[nodiscard]] core::Status pause() override;

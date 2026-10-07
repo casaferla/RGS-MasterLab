@@ -359,8 +359,10 @@ core::Status PlaybackEngine::install_candidate(
 
 core::Status PlaybackEngine::handoff_pcm(
     audio::AudioBufferView source,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
+    static_cast<void>(realizationId);
     if (!has_source() || !output_ || !duration_ || !outputDuration_ || !sampleFormat_) {
         return status_failure(
             core::ErrorCode::InvalidState,
@@ -606,8 +608,10 @@ core::Status PlaybackEngine::install_pcm_candidate(
     std::unique_ptr<IPlaybackOutput> output,
     DeviceSampleFormat sampleFormat,
     std::optional<audio::PlaybackSampleRateAdapter> rateAdapter,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
+    static_cast<void>(realizationId);
     if (!output
         || source.timebase().frame_domain_id()
             != audio::FrameDomainId::SOURCE_PROCESSING_RATE
