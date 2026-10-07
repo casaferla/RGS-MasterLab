@@ -37,6 +37,7 @@
 #include <QWindow>
 
 #include <memory>
+#include <optional>
 
 namespace rgsml::tests {
 namespace {
@@ -516,7 +517,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     spectrumAnalyzer.start();
     app::LiveSpectrumViewModel liveSpectrumVM{&spectrumAnalyzer};
     playbackTransport.set_pcm_prepare_handler(
-        [observedPlayback](audio::AudioBufferView view, std::shared_ptr<const void>) {
+        [observedPlayback](
+            audio::AudioBufferView view,
+            std::shared_ptr<const void>,
+            std::optional<core::RealizationId>) {
             observedPlayback->state = core::PlaybackState::STOPPED;
             observedPlayback->position = view.absolute_start_frame();
             observedPlayback->duration = *core::FrameCount::create(
