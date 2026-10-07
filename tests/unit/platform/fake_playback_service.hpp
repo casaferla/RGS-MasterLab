@@ -21,6 +21,7 @@ public:
         position = core::FrameIndex{0};
         duration = *core::FrameCount::create(preparedDurationFrames).value();
         loop.reset();
+        audibleRealization = {};
         return core::Status::success();
     }
 
@@ -31,6 +32,7 @@ public:
         position = core::FrameIndex{0};
         duration.reset();
         loop.reset();
+        audibleRealization = {};
         return core::Status::success();
     }
 
@@ -93,7 +95,8 @@ public:
                 "Injected playback snapshot failure."});
         }
         return core::Result<core::PlaybackSnapshot>::success(
-            core::PlaybackSnapshot{state, position, duration, loop});
+            core::PlaybackSnapshot{
+                state, position, duration, loop, audibleRealization});
     }
 
     bool failPrepare{false};
@@ -108,6 +111,7 @@ public:
     core::FrameIndex position{0};
     std::optional<core::FrameCount> duration;
     std::optional<core::FrameRange> loop;
+    core::AudibleRealizationState audibleRealization;
 
 private:
     [[nodiscard]] static core::Status invalid_state()

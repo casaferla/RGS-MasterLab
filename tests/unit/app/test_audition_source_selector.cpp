@@ -57,21 +57,35 @@ void install_pcm_handler(
     FakePlaybackService* service)
 {
     transport.set_pcm_prepare_handler(
-        [service](audio::AudioBufferView view, std::shared_ptr<const void>) {
+        [service](
+            audio::AudioBufferView view,
+            std::shared_ptr<const void>,
+            std::optional<core::RealizationId> realizationId) {
             service->state = core::PlaybackState::STOPPED;
             service->position = view.absolute_start_frame();
             service->duration = *core::FrameCount::create(
                 view.absolute_end_frame().value()).value();
             service->loop.reset();
+            service->audibleRealization = realizationId
+                ? core::AudibleRealizationState{
+                    core::AudibleHandoffPhase::NEW, realizationId}
+                : core::AudibleRealizationState{};
             return core::Status::success();
         });
     transport.set_pcm_handoff_handler(
-        [service](audio::AudioBufferView view, std::shared_ptr<const void>) {
+        [service](
+            audio::AudioBufferView view,
+            std::shared_ptr<const void>,
+            std::optional<core::RealizationId> realizationId) {
             service->duration = *core::FrameCount::create(
                 view.absolute_end_frame().value()).value();
             if (service->position == view.absolute_end_frame()) {
                 service->position = view.absolute_start_frame();
             }
+            service->audibleRealization = realizationId
+                ? core::AudibleRealizationState{
+                    core::AudibleHandoffPhase::NEW, realizationId}
+                : core::AudibleRealizationState{};
             return core::Status::success();
         });
 }
@@ -124,6 +138,7 @@ private slots:
     void eofCueIsCanonicalizedToRangeBegin();
     void loopRegionIntentPreservedAcrossAuditionRebinds();
     void seamlessProcessedHandoffPreservesStateAndTargetRaces();
+    void processedRealizationIdentityIsMonotonicAndFailureAtomic();
 };
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
@@ -450,6 +465,60 @@ void AuditionSourceSelectorTest::seamlessProcessedHandoffPreservesStateAndTarget
     QCOMPARE(observed->position.value(), std::int64_t{80});
     QVERIFY(selector.processed_available());
     QCOMPARE(selector.processed_realization_snapshot()->render_window().end().value(), std::int64_t{200});
+}
+
+void AuditionSourceSelectorTest::processedRealizationIdentityIsMonotonicAndFailureAtomic()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 200)));
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(
+        observed->audibleRealization.phase,
+        core::AudibleHandoffPhase::UNAVAILABLE);
+    QVERIFY(!observed->audibleRealization.realizationId.has_value());
+
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    const auto firstId = observed->audibleRealization.realizationId;
+    QVERIFY(firstId.has_value());
+    QCOMPARE(
+        observed->audibleRealization.phase,
+        core::AudibleHandoffPhase::NEW);
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    const auto secondId = observed->audibleRealization.realizationId;
+    QVERIFY(secondId.has_value());
+    QVERIFY(secondId->value > firstId->value);
+
+    // A handoff-layer failure must not publish or consume the candidate ID.
+    transport.set_pcm_handoff_handler(
+        [](audio::AudioBufferView,
+           std::shared_ptr<const void>,
+           std::optional<core::RealizationId>) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "Injected PCM handoff failure."});
+        });
+    QVERIFY(!selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(observed->audibleRealization.realizationId, secondId);
+    install_pcm_handler(transport, observed);
+
+    // A pre-handoff validation failure is likewise identity-neutral.
+    observed->position = core::FrameIndex{150};
+    QVERIFY(!selector.set_processed_realization(realization(0, 100)));
+    QCOMPARE(observed->audibleRealization.realizationId, secondId);
+
+    observed->position = core::FrameIndex{50};
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    const auto thirdId = observed->audibleRealization.realizationId;
+    QVERIFY(thirdId.has_value());
+    QCOMPARE(thirdId->value, secondId->value + 1U);
 }
 
 void AuditionSourceSelectorTest::loopRegionIntentPreservedAcrossAuditionRebinds()
