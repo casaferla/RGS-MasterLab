@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <filesystem>
 #include <vector>
 #include <utility>
@@ -125,7 +126,11 @@ struct Session final {
                   gainViewModel.get(), eqViewModel.get(), adapterModel.get(), previewController.get(),
                   std::move(uuidFactory))
     {
-        transport.set_pcm_prepare_handler([this](audio::AudioBufferView view, std::shared_ptr<const void>) {
+        transport.set_pcm_prepare_handler(
+            [this](
+                audio::AudioBufferView view,
+                std::shared_ptr<const void>,
+                std::optional<core::RealizationId>) {
             observed->state = core::PlaybackState::STOPPED;
             observed->position = view.absolute_start_frame();
             observed->duration = *core::FrameCount::create(

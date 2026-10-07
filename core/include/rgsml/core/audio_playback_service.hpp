@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/realization_identity.hpp>
 #include <rgsml/core/resource_reference.hpp>
 #include <rgsml/core/result.hpp>
 
@@ -20,6 +21,7 @@ struct PlaybackSnapshot final {
     FrameIndex position;
     std::optional<FrameCount> duration;
     std::optional<FrameRange> loop;
+    AudibleRealizationState audibleRealization;
 
     [[nodiscard]] bool operator==(const PlaybackSnapshot&) const = default;
 };

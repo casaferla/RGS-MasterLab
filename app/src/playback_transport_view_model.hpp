@@ -31,9 +31,13 @@ class PlaybackTransportViewModel final : public QObject {
 
 public:
     using PcmPrepareHandler = std::function<core::Status(
-        audio::AudioBufferView, std::shared_ptr<const void>)>;
+        audio::AudioBufferView,
+        std::shared_ptr<const void>,
+        std::optional<core::RealizationId>)>;
     using PcmHandoffHandler = std::function<core::Status(
-        audio::AudioBufferView, std::shared_ptr<const void>)>;
+        audio::AudioBufferView,
+        std::shared_ptr<const void>,
+        std::optional<core::RealizationId>)>;
 
     explicit PlaybackTransportViewModel(
         std::unique_ptr<core::IAudioPlaybackService> service,
@@ -62,10 +66,12 @@ public:
         qint64 sampleRateHz);
     [[nodiscard]] core::Status prepare_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status stop_and_clear();
     [[nodiscard]] core::Status seek_target_frame(core::FrameIndex position);
     void set_source_derived_active(bool active) noexcept;

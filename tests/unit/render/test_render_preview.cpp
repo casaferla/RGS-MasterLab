@@ -10,6 +10,7 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
+#include <rgsml/render/compressor_telemetry_collector.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
 
@@ -473,6 +474,7 @@ private slots:
     void bypassedCompressorIntegration();
     void compressorNearEosPreview();
     void monoCompressorExecutionSignature();
+    void compressorTelemetryMemoryLimitFailClosed();
 };
 
 void RenderPreviewTest::validatesBindingsAndWindowAtomically()
@@ -1379,6 +1381,67 @@ void RenderPreviewTest::compressorNearEosPreview()
 
     QCOMPARE(near_eos_res.value()->view().frame_count().value(), std::int64_t{100});
     QCOMPARE(bits(near_eos_res.value()->view()), bits(*expected_sub.value()));
+}
+
+void RenderPreviewTest::compressorTelemetryMemoryLimitFailClosed()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    std::vector<double> mono_samples(100U, 0.25);
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, mono_samples);
+    auto chain = empty_chain(*registry.value());
+
+    const auto comp_id = make_id("55000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 0));
+
+    const rgsml::dsp::ModuleExecutionBinding comp_b{comp_id, *rgsml::dsp::CompressorParameters::create_default().value()};
+
+    // Baseline request without telemetry memory restriction
+    auto req_baseline = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {comp_b}, frame_count(64));
+    QVERIFY(req_baseline);
+    auto res_baseline = rgsml::render::render_preview(*req_baseline.value(), *registry.value());
+    QVERIFY(res_baseline);
+    QVERIFY(res_baseline.value()->compressor_telemetry_sidecar().has_value());
+    QVERIFY(res_baseline.value()->compressor_telemetry_sidecar()->valid);
+
+    // Render request with tight 100 byte telemetry budget seam
+    auto req_restricted = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {comp_b}, frame_count(64), std::size_t{100});
+    QVERIFY(req_restricted);
+
+    // Render preview succeeds unchanged and returns bit-identical audio!
+    auto res_restricted = rgsml::render::render_preview(*req_restricted.value(), *registry.value());
+    QVERIFY(res_restricted);
+    QCOMPARE(bits(res_restricted.value()->view()), bits(res_baseline.value()->view()));
+
+    // Sidecar is present but marked UNAVAILABLE due to telemetry memory budget fail-closed
+    QVERIFY(res_restricted.value()->compressor_telemetry_sidecar().has_value());
+    const auto& sidecar = *res_restricted.value()->compressor_telemetry_sidecar();
+    QVERIFY(!sidecar.valid);
+    QCOMPARE(sidecar.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+    // Render request attempting to supply budget > 128 MiB (e.g. 1 GB)
+    constexpr std::size_t kOneGigabyte = 1000U * 1024U * 1024U;
+    auto req_overbudget = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {comp_b}, frame_count(64), kOneGigabyte);
+    QVERIFY(req_overbudget);
+    // RenderRequest clamps max_telemetry_bytes to 128 MiB
+    QCOMPARE(req_overbudget.value()->max_telemetry_bytes().value_or(0), 128U * 1024U * 1024U);
+
+    // Direct collector test with 1 GB passed: allocation requiring 150 MiB still fails closed at 128 MiB
+    const auto dummyUuid = *rgsml::core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto dummyInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(dummyUuid).value();
+    rgsml::render::CompressorTelemetryCollector hugeCol{
+        0, 1000000000, 48000, rgsml::audio::ChannelLayout::STEREO_LR, rgsml::dsp::CompressorChannelLink::DUAL_MONO, dummyInstanceId, 1, kOneGigabyte
+    };
+    auto hugeSc = hugeCol.build_sidecar();
+    QVERIFY(!hugeSc.valid);
+    QCOMPARE(hugeSc.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
 }
 
 void RenderPreviewTest::monoCompressorExecutionSignature()

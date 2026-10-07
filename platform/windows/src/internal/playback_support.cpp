@@ -353,13 +353,16 @@ core::Status PlaybackEngine::install_candidate(
     loop_.reset();
     loopTraversalEligible_ = false;
     runtimeError_.reset();
+    activeRealizationId_.reset();
+    pendingHandoff_.reset();
     reset_queue_state(0);
     return core::Status::success();
 }
 
 core::Status PlaybackEngine::handoff_pcm(
     audio::AudioBufferView source,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
     if (!has_source() || !output_ || !duration_ || !outputDuration_ || !sampleFormat_) {
         return status_failure(
@@ -390,13 +393,15 @@ core::Status PlaybackEngine::handoff_pcm(
 
     const auto newBegin = source.absolute_start_frame();
     const auto newEnd = source.absolute_end_frame();
+    const auto previousRealizationId = activeRealizationId_;
     if (state_ == core::PlaybackState::PLAYING) {
         update_position();
     }
 
-    if (position_ == newEnd) {
-        position_ = newBegin;
-    } else if (position_ < newBegin || position_ > newEnd) {
+    auto candidatePosition = position_;
+    if (candidatePosition == newEnd) {
+        candidatePosition = newBegin;
+    } else if (candidatePosition < newBegin || candidatePosition > newEnd) {
         return status_failure(
             core::ErrorCode::OutOfRange,
             "Current playback cue is outside candidate handoff realization range.");
@@ -415,19 +420,32 @@ core::Status PlaybackEngine::handoff_pcm(
         return core::Status::failure(*newDuration.error());
     }
 
+    std::unique_ptr<IPlaybackSource> newSource;
+    try {
+        newSource = std::make_unique<PcmPlaybackSource>(source, std::move(lifetime));
+    } catch (const std::bad_alloc&) {
+        return status_failure(
+            core::ErrorCode::IoFailure,
+            "Unable to allocate PCM playback source during handoff.");
+    }
+
     if (state_ != core::PlaybackState::PLAYING) {
-        try {
-            source_ = std::make_unique<PcmPlaybackSource>(source, std::move(lifetime));
-        } catch (const std::bad_alloc&) {
-            return status_failure(
-                core::ErrorCode::IoFailure,
-                "Unable to allocate PCM playback source during handoff.");
+        if (state_ == core::PlaybackState::PAUSED) {
+            auto stopped = output_->stop();
+            if (!stopped) {
+                return stopped;
+            }
+            output_->clear_queue();
         }
+        source_ = std::move(newSource);
         sourceBegin_ = newBegin;
         duration_ = *newDuration.value();
         outputDuration_ = rateAdapter_
             ? rateAdapter_->output_frame_count()
             : source.frame_count();
+        position_ = candidatePosition;
+        activeRealizationId_ = realizationId;
+        pendingHandoff_.reset();
         reset_queue_state(position_.value());
         return core::Status::success();
     }
@@ -437,15 +455,6 @@ core::Status PlaybackEngine::handoff_pcm(
     const std::int64_t handoffSourceFrameValue = output_to_source_frame(scheduledHandoffOutputFrame);
     core::FrameIndex handoffSourceFrame{handoffSourceFrameValue};
     std::int64_t handoffOutputFrame = scheduledHandoffOutputFrame;
-
-    std::unique_ptr<IPlaybackSource> newSource;
-    try {
-        newSource = std::make_unique<PcmPlaybackSource>(source, lifetime);
-    } catch (const std::bad_alloc&) {
-        return status_failure(
-            core::ErrorCode::IoFailure,
-            "Unable to allocate new PCM playback source for crossfade.");
-    }
 
     if (handoffSourceFrame == newEnd) {
         if (loop_ && loopTraversalEligible_) {
@@ -460,11 +469,19 @@ core::Status PlaybackEngine::handoff_pcm(
             source_ = std::move(newSource);
             sourceBegin_ = newBegin;
             duration_ = *newDuration.value();
+            position_ = candidatePosition;
             outputDuration_ = rateAdapter_
                 ? rateAdapter_->output_frame_count()
                 : source.frame_count();
             scheduledOutputFrame_ = outputDuration_->value();
             eofScheduled_ = true;
+            activeRealizationId_ = realizationId;
+            pendingHandoff_ = PendingHandoff{
+                previousRealizationId,
+                realizationId,
+                0,
+                0,
+                true};
             return core::Status::success();
         }
     } else if (handoffSourceFrame < newBegin || handoffSourceFrame > newEnd) {
@@ -481,6 +498,32 @@ core::Status PlaybackEngine::handoff_pcm(
     const std::int64_t boundary = output_boundary();
     const std::int64_t xfadeOutputFrames = std::max<std::int64_t>(
         0, std::min(xfadeOutputFramesRequested, boundary - handoffOutputFrame));
+
+    const auto currentProcessedFrame = std::max<std::int64_t>(
+        0, output_->processed_frames());
+    const auto currentOutputFrame = current_output_frame();
+    std::int64_t framesUntilHandoff = 0;
+    if (loop_ && loopTraversalEligible_
+        && handoffOutputFrame < currentOutputFrame) {
+        const auto loopBeginOutput =
+            source_to_output_frame(loop_->begin().value());
+        framesUntilHandoff = std::max<std::int64_t>(
+            0,
+            (boundary - currentOutputFrame)
+                + (handoffOutputFrame - loopBeginOutput));
+    } else {
+        framesUntilHandoff = std::max<std::int64_t>(
+            0, handoffOutputFrame - currentOutputFrame);
+    }
+    const auto maxFrame = std::numeric_limits<std::int64_t>::max();
+    const auto handoffProcessedFrame =
+        framesUntilHandoff > maxFrame - currentProcessedFrame
+        ? maxFrame
+        : currentProcessedFrame + framesUntilHandoff;
+    const auto handoffEndProcessedFrame =
+        xfadeOutputFrames > maxFrame - handoffProcessedFrame
+        ? maxFrame
+        : handoffProcessedFrame + xfadeOutputFrames;
 
     if (xfadeOutputFrames > 0) {
         auto xfadeCount = core::FrameCount::create(xfadeOutputFrames);
@@ -584,12 +627,18 @@ core::Status PlaybackEngine::handoff_pcm(
         scheduledOutputFrame_ = handoffOutputFrame;
     }
 
+    auto previousSource = std::move(source_);
+    const auto previousSourceBegin = sourceBegin_;
+    const auto previousDuration = duration_;
+    const auto previousOutputDuration = outputDuration_;
+
     source_ = std::move(newSource);
     sourceBegin_ = newBegin;
     duration_ = *newDuration.value();
     outputDuration_ = rateAdapter_
         ? rateAdapter_->output_frame_count()
         : source.frame_count();
+    position_ = candidatePosition;
 
     if (!loop_ && scheduledOutputFrame_ == outputDuration_->value()) {
         eofScheduled_ = true;
@@ -598,7 +647,33 @@ core::Status PlaybackEngine::handoff_pcm(
         scheduledOutputFrame_ = source_to_output_frame(loop_->begin().value());
     }
 
-    return prefill();
+    // Publish the candidate identity before any newly prepared bytes can reach
+    // the output queue. If prefill fails after the commit point, fail closed:
+    // stop/clear the backend and restore the previously accepted source/ID.
+    activeRealizationId_ = realizationId;
+    pendingHandoff_ = PendingHandoff{
+        previousRealizationId,
+        realizationId,
+        handoffProcessedFrame,
+        handoffEndProcessedFrame,
+        false};
+
+    auto filled = prefill();
+    if (!filled) {
+        static_cast<void>(output_->stop());
+        output_->clear_queue();
+        source_ = std::move(previousSource);
+        sourceBegin_ = previousSourceBegin;
+        duration_ = previousDuration;
+        outputDuration_ = previousOutputDuration;
+        activeRealizationId_ = previousRealizationId;
+        pendingHandoff_.reset();
+        state_ = core::PlaybackState::STOPPED;
+        runtimeError_.reset();
+        reset_queue_state(position_.value());
+        return filled;
+    }
+    return core::Status::success();
 }
 
 core::Status PlaybackEngine::install_pcm_candidate(
@@ -606,7 +681,8 @@ core::Status PlaybackEngine::install_pcm_candidate(
     std::unique_ptr<IPlaybackOutput> output,
     DeviceSampleFormat sampleFormat,
     std::optional<audio::PlaybackSampleRateAdapter> rateAdapter,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
     if (!output
         || source.timebase().frame_domain_id()
@@ -660,6 +736,8 @@ core::Status PlaybackEngine::install_pcm_candidate(
     loop_.reset();
     loopTraversalEligible_ = false;
     runtimeError_.reset();
+    activeRealizationId_ = realizationId;
+    pendingHandoff_.reset();
     reset_queue_state(sourceBegin_.value());
     return core::Status::success();
 }
@@ -690,6 +768,8 @@ core::Status PlaybackEngine::clear()
     state_ = core::PlaybackState::NO_SOURCE;
     position_ = core::FrameIndex{0};
     sourceBegin_ = core::FrameIndex{0};
+    activeRealizationId_.reset();
+    pendingHandoff_.reset();
     reset_queue_state(0);
     return core::Status::success();
 }
@@ -746,6 +826,7 @@ core::Status PlaybackEngine::play()
     }
     playbackStartOutputFrame_ = source_to_output_frame(position_.value());
     state_ = core::PlaybackState::PLAYING;
+    pendingHandoff_.reset();
     return core::Status::success();
 }
 
@@ -781,6 +862,7 @@ core::Status PlaybackEngine::stop()
     position_ = sourceBegin_;
     loopTraversalEligible_ = loop_.has_value();
     runtimeError_.reset();
+    pendingHandoff_.reset();
     reset_queue_state(sourceBegin_.value());
     return core::Status::success();
 }
@@ -808,6 +890,7 @@ core::Status PlaybackEngine::seek(core::FrameIndex position)
     loopTraversalEligible_ = loop_
         && position.value() < loop_->end().value();
     runtimeError_.reset();
+    pendingHandoff_.reset();
     reset_queue_state(position.value());
     if (previousState == core::PlaybackState::PLAYING) {
         state_ = core::PlaybackState::STOPPED;
@@ -867,6 +950,9 @@ core::Status PlaybackEngine::set_loop(std::optional<core::FrameRange> loop)
     loop_ = loop;
     loopTraversalEligible_ = loop_
         && position_.value() < loop_->end().value();
+    if (wasPlaying || wasPaused) {
+        pendingHandoff_.reset();
+    }
     if (!wasPlaying && !wasPaused) {
         return core::Status::success();
     }
@@ -885,7 +971,7 @@ core::Result<core::PlaybackSnapshot> PlaybackEngine::snapshot() const
         return core::Result<core::PlaybackSnapshot>::failure(*runtimeError_);
     }
     return core::Result<core::PlaybackSnapshot>::success(core::PlaybackSnapshot{
-        state_, position_, duration_, loop_});
+        state_, position_, duration_, loop_, audible_realization_state()});
 }
 
 void PlaybackEngine::tick()
@@ -1054,31 +1140,8 @@ void PlaybackEngine::update_position() noexcept
     if (!output_ || !duration_ || state_ == core::PlaybackState::NO_SOURCE) {
         return;
     }
-    const auto totalProcessed = std::max<std::int64_t>(0, output_->processed_frames());
-    const auto relativeProcessed = std::max<std::int64_t>(0, totalProcessed - processedFrameBaseline_);
-    std::int64_t candidateOutput = playbackStartOutputFrame_;
-    if (relativeProcessed <= std::numeric_limits<std::int64_t>::max() - candidateOutput) {
-        candidateOutput += relativeProcessed;
-    } else {
-        candidateOutput = outputDuration_->value();
-    }
-    if (loop_ && loopTraversalEligible_) {
-        const auto loopBeginOutput =
-            source_to_output_frame(loop_->begin().value());
-        const auto loopEndOutput =
-            source_to_output_frame(loop_->end().value());
-        if (relativeProcessed > 0 && candidateOutput >= loopEndOutput) {
-            const auto loopLength = loopEndOutput - loopBeginOutput;
-            if (loopLength > 0) {
-                candidateOutput = loopBeginOutput
-                    + ((candidateOutput - loopEndOutput) % loopLength);
-            }
-        }
-    } else {
-        candidateOutput = std::min(candidateOutput, outputDuration_->value());
-    }
     position_ = core::FrameIndex{std::max<std::int64_t>(
-        sourceBegin_.value(), output_to_source_frame(candidateOutput))};
+        sourceBegin_.value(), output_to_source_frame(current_output_frame()))};
 }
 
 void PlaybackEngine::record_runtime_error(core::Error error) noexcept
@@ -1090,6 +1153,7 @@ void PlaybackEngine::record_runtime_error(core::Error error) noexcept
     state_ = core::PlaybackState::STOPPED;
     pendingBytes_.clear();
     pendingOffset_ = 0U;
+    pendingHandoff_.reset();
     runtimeError_ = std::move(error);
 }
 
@@ -1137,6 +1201,83 @@ std::int64_t PlaybackEngine::output_boundary() const noexcept
     return loop_ && loopTraversalEligible_
         ? source_to_output_frame(loop_->end().value())
         : outputDuration_->value();
+}
+
+std::int64_t PlaybackEngine::current_output_frame() const noexcept
+{
+    if (!output_ || !outputDuration_) {
+        return 0;
+    }
+    const auto totalProcessed = std::max<std::int64_t>(
+        0, output_->processed_frames());
+    const auto relativeProcessed = std::max<std::int64_t>(
+        0, totalProcessed - processedFrameBaseline_);
+    std::int64_t candidateOutput = playbackStartOutputFrame_;
+    if (relativeProcessed
+        <= std::numeric_limits<std::int64_t>::max() - candidateOutput) {
+        candidateOutput += relativeProcessed;
+    } else {
+        candidateOutput = outputDuration_->value();
+    }
+    if (loop_ && loopTraversalEligible_) {
+        const auto loopBeginOutput =
+            source_to_output_frame(loop_->begin().value());
+        const auto loopEndOutput =
+            source_to_output_frame(loop_->end().value());
+        if (relativeProcessed > 0 && candidateOutput >= loopEndOutput) {
+            const auto loopLength = loopEndOutput - loopBeginOutput;
+            if (loopLength > 0) {
+                candidateOutput = loopBeginOutput
+                    + ((candidateOutput - loopEndOutput) % loopLength);
+            }
+        }
+    } else {
+        candidateOutput = std::min(candidateOutput, outputDuration_->value());
+    }
+    return candidateOutput;
+}
+
+core::AudibleRealizationState PlaybackEngine::audible_realization_state() const noexcept
+{
+    const auto unavailable = [] {
+        return core::AudibleRealizationState{
+            core::AudibleHandoffPhase::UNAVAILABLE, std::nullopt};
+    };
+    const auto exclusive = [](std::optional<core::RealizationId> id,
+                              core::AudibleHandoffPhase phase) {
+        return id
+            ? core::AudibleRealizationState{phase, id}
+            : core::AudibleRealizationState{
+                core::AudibleHandoffPhase::UNAVAILABLE, std::nullopt};
+    };
+
+    if (!pendingHandoff_) {
+        return exclusive(
+            activeRealizationId_, core::AudibleHandoffPhase::NEW);
+    }
+    if (pendingHandoff_->awaitingReplay) {
+        return exclusive(
+            pendingHandoff_->oldRealizationId,
+            core::AudibleHandoffPhase::OLD);
+    }
+    if (!output_) {
+        return unavailable();
+    }
+
+    const auto processedFrame = std::max<std::int64_t>(
+        0, output_->processed_frames());
+    if (processedFrame < pendingHandoff_->startProcessedFrame) {
+        return exclusive(
+            pendingHandoff_->oldRealizationId,
+            core::AudibleHandoffPhase::OLD);
+    }
+    if (processedFrame < pendingHandoff_->endProcessedFrame) {
+        return core::AudibleRealizationState{
+            core::AudibleHandoffPhase::TRANSITION, std::nullopt};
+    }
+    return exclusive(
+        pendingHandoff_->newRealizationId,
+        core::AudibleHandoffPhase::NEW);
 }
 
 bool PlaybackEngine::has_source() const noexcept
