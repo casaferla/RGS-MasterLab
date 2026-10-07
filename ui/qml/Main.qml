@@ -1042,7 +1042,7 @@ ApplicationWindow {
                     id: statusBuildProvenanceLabel
                     objectName: "statusBuildProvenanceLabel"
                     text: typeof buildProvenance !== "undefined" ? buildProvenance : "DEV"
-                    color: root.textMuted
+                    color: root.textSecondary
                     font.family: "Segoe UI"
                     font.pixelSize: 10
                     Layout.alignment: Qt.AlignVCenter
