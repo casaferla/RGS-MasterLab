@@ -398,9 +398,10 @@ core::Status PlaybackEngine::handoff_pcm(
         update_position();
     }
 
-    if (position_ == newEnd) {
-        position_ = newBegin;
-    } else if (position_ < newBegin || position_ > newEnd) {
+    auto candidatePosition = position_;
+    if (candidatePosition == newEnd) {
+        candidatePosition = newBegin;
+    } else if (candidatePosition < newBegin || candidatePosition > newEnd) {
         return status_failure(
             core::ErrorCode::OutOfRange,
             "Current playback cue is outside candidate handoff realization range.");
@@ -419,19 +420,30 @@ core::Status PlaybackEngine::handoff_pcm(
         return core::Status::failure(*newDuration.error());
     }
 
+    std::unique_ptr<IPlaybackSource> newSource;
+    try {
+        newSource = std::make_unique<PcmPlaybackSource>(source, std::move(lifetime));
+    } catch (const std::bad_alloc&) {
+        return status_failure(
+            core::ErrorCode::IoFailure,
+            "Unable to allocate PCM playback source during handoff.");
+    }
+
     if (state_ != core::PlaybackState::PLAYING) {
-        try {
-            source_ = std::make_unique<PcmPlaybackSource>(source, std::move(lifetime));
-        } catch (const std::bad_alloc&) {
-            return status_failure(
-                core::ErrorCode::IoFailure,
-                "Unable to allocate PCM playback source during handoff.");
+        if (state_ == core::PlaybackState::PAUSED) {
+            auto stopped = output_->stop();
+            if (!stopped) {
+                return stopped;
+            }
+            output_->clear_queue();
         }
+        source_ = std::move(newSource);
         sourceBegin_ = newBegin;
         duration_ = *newDuration.value();
         outputDuration_ = rateAdapter_
             ? rateAdapter_->output_frame_count()
             : source.frame_count();
+        position_ = candidatePosition;
         activeRealizationId_ = realizationId;
         pendingHandoff_.reset();
         reset_queue_state(position_.value());
@@ -443,15 +455,6 @@ core::Status PlaybackEngine::handoff_pcm(
     const std::int64_t handoffSourceFrameValue = output_to_source_frame(scheduledHandoffOutputFrame);
     core::FrameIndex handoffSourceFrame{handoffSourceFrameValue};
     std::int64_t handoffOutputFrame = scheduledHandoffOutputFrame;
-
-    std::unique_ptr<IPlaybackSource> newSource;
-    try {
-        newSource = std::make_unique<PcmPlaybackSource>(source, lifetime);
-    } catch (const std::bad_alloc&) {
-        return status_failure(
-            core::ErrorCode::IoFailure,
-            "Unable to allocate new PCM playback source for crossfade.");
-    }
 
     if (handoffSourceFrame == newEnd) {
         if (loop_ && loopTraversalEligible_) {
@@ -466,6 +469,7 @@ core::Status PlaybackEngine::handoff_pcm(
             source_ = std::move(newSource);
             sourceBegin_ = newBegin;
             duration_ = *newDuration.value();
+            position_ = candidatePosition;
             outputDuration_ = rateAdapter_
                 ? rateAdapter_->output_frame_count()
                 : source.frame_count();
@@ -623,12 +627,18 @@ core::Status PlaybackEngine::handoff_pcm(
         scheduledOutputFrame_ = handoffOutputFrame;
     }
 
+    auto previousSource = std::move(source_);
+    const auto previousSourceBegin = sourceBegin_;
+    const auto previousDuration = duration_;
+    const auto previousOutputDuration = outputDuration_;
+
     source_ = std::move(newSource);
     sourceBegin_ = newBegin;
     duration_ = *newDuration.value();
     outputDuration_ = rateAdapter_
         ? rateAdapter_->output_frame_count()
         : source.frame_count();
+    position_ = candidatePosition;
 
     if (!loop_ && scheduledOutputFrame_ == outputDuration_->value()) {
         eofScheduled_ = true;
@@ -637,10 +647,9 @@ core::Status PlaybackEngine::handoff_pcm(
         scheduledOutputFrame_ = source_to_output_frame(loop_->begin().value());
     }
 
-    auto filled = prefill();
-    if (!filled) {
-        return filled;
-    }
+    // Publish the candidate identity before any newly prepared bytes can reach
+    // the output queue. If prefill fails after the commit point, fail closed:
+    // stop/clear the backend and restore the previously accepted source/ID.
     activeRealizationId_ = realizationId;
     pendingHandoff_ = PendingHandoff{
         previousRealizationId,
@@ -648,6 +657,22 @@ core::Status PlaybackEngine::handoff_pcm(
         handoffProcessedFrame,
         handoffEndProcessedFrame,
         false};
+
+    auto filled = prefill();
+    if (!filled) {
+        static_cast<void>(output_->stop());
+        output_->clear_queue();
+        source_ = std::move(previousSource);
+        sourceBegin_ = previousSourceBegin;
+        duration_ = previousDuration;
+        outputDuration_ = previousOutputDuration;
+        activeRealizationId_ = previousRealizationId;
+        pendingHandoff_.reset();
+        state_ = core::PlaybackState::STOPPED;
+        runtimeError_.reset();
+        reset_queue_state(position_.value());
+        return filled;
+    }
     return core::Status::success();
 }
 
