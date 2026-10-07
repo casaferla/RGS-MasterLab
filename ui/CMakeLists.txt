@@ -23,6 +23,8 @@ qt_add_qml_module(rgsml_ui
         qml/StudioSegmentButton.qml
         qml/StudioToggle.qml
         qml/TransportButton.qml
+    RESOURCES
+        resources/app_icon_canonical.jpg
     SOURCES
         src/internal/waveform_geometry.cpp
         src/internal/waveform_geometry.hpp

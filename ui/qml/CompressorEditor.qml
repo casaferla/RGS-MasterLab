@@ -70,6 +70,7 @@ Item {
                 id: curveWell
                 objectName: "compressorCurveWell"
                 Layout.preferredWidth: 280
+                Layout.fillWidth: true
                 Layout.fillHeight: true
                 radius: 6
                 color: root.wellBg
@@ -293,7 +294,8 @@ Item {
             Rectangle {
                 id: controlsPanel
                 objectName: "compressorControlsPanel"
-                Layout.fillWidth: true
+                Layout.preferredWidth: 340
+                Layout.fillWidth: false
                 Layout.fillHeight: true
                 radius: 6
                 color: root.panelBg

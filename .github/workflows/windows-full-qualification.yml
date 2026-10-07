@@ -28,7 +28,10 @@ jobs:
 
       - name: Configure Windows MSVC
         run: |
-          cmake --preset windows-msvc
+          cmake --preset windows-msvc `
+            -DRGSML_PROVENANCE_TYPE=FQ `
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }}
 
       - name: Clean-build Debug
         run: |
@@ -92,7 +95,10 @@ jobs:
         run: |
           cmake -B build/windows-msvc-tests-off -G "Visual Studio 17 2022" -A x64 `
             -DRGSML_BUILD_TESTS=OFF `
-            -DRGSML_WARNINGS_AS_ERRORS=ON
+            -DRGSML_WARNINGS_AS_ERRORS=ON `
+            -DRGSML_PROVENANCE_TYPE=FQ `
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }}
 
       - name: Build Release (Tests OFF)
         run: |
@@ -109,6 +115,6 @@ jobs:
       - name: Upload Staged Release Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RGS-MasterLab-Windows-Staged-Release-${{ github.sha }}
+          name: RGS-MasterLab-Windows-FQ-${{ github.run_number }}-${{ github.sha }}
           path: build/windows-msvc/stage/CI/Release/**
           retention-days: 7

@@ -37,7 +37,11 @@ jobs:
           cmake -B build-linux -G Ninja \
             -DCMAKE_PREFIX_PATH="${{ github.workspace }}/6.8.3/gcc_64" \
             -DRGSML_BUILD_TESTS=ON \
-            -DRGSML_WARNINGS_AS_ERRORS=ON
+            -DRGSML_WARNINGS_AS_ERRORS=ON \
+            -DRGSML_PROVENANCE_TYPE=PR \
+            -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} \
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} \
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }}
 
       - name: Build Focused DSP Targets
         run: |
@@ -87,7 +91,11 @@ jobs:
 
       - name: Configure CMake (Windows MSVC)
         run: |
-          cmake --preset windows-msvc
+          cmake --preset windows-msvc `
+            -DRGSML_PROVENANCE_TYPE=PR `
+            -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} `
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }}
 
       - name: Build Focused DSP Targets (Release)
         run: |

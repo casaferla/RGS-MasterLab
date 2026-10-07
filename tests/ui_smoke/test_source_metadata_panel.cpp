@@ -584,6 +584,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("dspChainAdapterModel"), &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"), &liveSpectrumVM);
+#ifdef RGSML_BUILD_PROVENANCE
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("buildProvenance"), QStringLiteral(RGSML_BUILD_PROVENANCE));
+#endif
     engine.loadFromModule("Rgsml.Ui", "Main");
     QCOMPARE(engine.rootObjects().size(), 1);
 
@@ -595,16 +599,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* header = root->findChild<QObject*>(QStringLiteral("applicationHeader"));
     QVERIFY(header);
     QCOMPARE(header->property("height").toInt(), 48);
+    auto* headerAppIcon = root->findChild<QObject*>(QStringLiteral("headerAppIcon"));
+    QVERIFY2(headerAppIcon != nullptr, "headerAppIcon must exist in applicationHeader");
+    QCOMPARE(headerAppIcon->property("width").toInt(), 40);
+    QCOMPARE(headerAppIcon->property("height").toInt(), 40);
     auto* desktopMenu = root->findChild<QObject*>(QStringLiteral("desktopMenuBar"));
     QVERIFY(desktopMenu);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("controlStripElasticCenter")));
     auto* statusBar = root->findChild<QObject*>(QStringLiteral("statusBar"));
     auto* statusIndicator = root->findChild<QObject*>(QStringLiteral("statusReadyIndicator"));
-    QVERIFY(statusBar && statusIndicator);
+    auto* statusBuildProvenanceLabel = root->findChild<QObject*>(QStringLiteral("statusBuildProvenanceLabel"));
+    QVERIFY(statusBar && statusIndicator && statusBuildProvenanceLabel);
     QCOMPARE(statusBar->property("height").toInt(), 24);
     QCOMPARE(statusIndicator->property("width").toInt(), 8);
     QCOMPARE(statusIndicator->property("height").toInt(), 8);
     QCOMPARE(statusIndicator->property("color").value<QColor>(), QColor{QStringLiteral("#00E6E6")});
+    QVERIFY2(!statusBuildProvenanceLabel->property("text").toString().isEmpty(), "statusBuildProvenanceLabel text must be non-empty");
 
     // Verify Docked DSP Architecture components exist
     auto* dspWorkspaceObj = root->findChild<QObject*>(QStringLiteral("dspWorkspace"));
@@ -1766,6 +1776,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         "Compressor controls panel must exist at minimum size");
     QVERIFY2(check_item_contained_in_ancestor(controlsPanelNative, compressorEditorNative),
         "Compressor controls panel must stay inside Compressor editor at minimum size");
+
+    // Compressor horizontal elasticity assertions
+    const double curveWellWidth1184 = curveWellNative ? curveWellNative->width() : 0.0;
+    const double controlsPanelWidth1184 = controlsPanelNative ? controlsPanelNative->width() : 0.0;
+    QVERIFY2(curveWellWidth1184 >= 280.0, "curveWell width must be >= 280 px at 1184x688");
+    QVERIFY2(controlsPanelWidth1184 >= 320.0, "controlsPanel width must be >= 320 px at 1184x688");
 
     // Check the actual authored children, not just their clipping parent. This guards
     // the 1184x688 stable-topology contract: no hidden overflow may pass as containment.
