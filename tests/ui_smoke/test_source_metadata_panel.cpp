@@ -1803,6 +1803,33 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             qPrintable(name + QStringLiteral(" must stay inside Compressor controls at minimum size")));
     }
 
+    // Graph-linked semantic slider optics & track fill decoupling assertions
+    auto* thresholdSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorThresholdSlider"));
+    auto* ratioSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorRatioSlider"));
+    auto* kneeSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorKneeSlider"));
+    auto* makeupSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorMakeupSlider"));
+    QVERIFY2(thresholdSlider && ratioSlider && kneeSlider && makeupSlider, "Compressor graph-linked sliders must exist");
+
+    QCOMPARE(thresholdSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#2ED3FF")});
+    QCOMPARE(ratioSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#2FD98F")});
+    QCOMPARE(kneeSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#FFD84A")});
+    QCOMPARE(makeupSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#FF6B6B")});
+
+    const QColor copperFill = thresholdSlider->property("positionFillColor").value<QColor>();
+    QCOMPARE(ratioSlider->property("positionFillColor").value<QColor>(), copperFill);
+    QCOMPARE(kneeSlider->property("positionFillColor").value<QColor>(), copperFill);
+    QCOMPARE(makeupSlider->property("positionFillColor").value<QColor>(), copperFill);
+
+    QVERIFY2(copperFill != thresholdSlider->property("semanticAccent").value<QColor>(),
+        "Local semanticAccent and track fill must be decoupled");
+    QCOMPARE(copperFill.red(), 196);
+    QCOMPARE(copperFill.green(), 119);
+    QCOMPARE(copperFill.blue(), 74);
+    QVERIFY2(qAbs(copperFill.alphaF() - 0.38) <= 0.01, "Track fill alpha must correspond to FQ #43 0.38");
+
+    QVERIFY2(makeupSlider->property("fillFromOrigin").toBool(), "Make-up slider fillFromOrigin must be true");
+    QCOMPARE(makeupSlider->property("positionFillOrigin").toDouble(), 0.0);
+
     QCOMPARE(compressorViewModel.transfer_curve_handles().size(), 4);
     auto* thresholdFieldCheck = find_child_by_name(compressorEditor, QStringLiteral("compressorThresholdField"));
     QVERIFY(thresholdFieldCheck && thresholdFieldCheck->property("interactionHint").toString().contains(QStringLiteral("curve point")));

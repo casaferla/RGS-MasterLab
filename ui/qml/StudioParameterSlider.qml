@@ -15,7 +15,7 @@ Item {
     property color semanticAccent: accentColor
     property bool fillFromOrigin: false
     property real positionFillOrigin: 0.0
-    property color positionFillColor: Qt.alpha(semanticAccent, 0.25)
+    property color positionFillColor: Qt.alpha("#C4774A", 0.38)
     property string fieldName: ""
     property var viewModel: null
 
