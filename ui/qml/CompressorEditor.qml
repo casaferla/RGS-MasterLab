@@ -20,6 +20,10 @@ Item {
     // Authored from the 1184x688 minimum composition upward. Keep the
     // 3-column topology stable; reclaim width from padding, gaps and controls.
     readonly property int compactNumericFieldWidth: 92
+    // Bound the controls panel to the authored content rather than a guessed
+    // fixed width. The graph owns any additional horizontal space.
+    readonly property real authoredControlsPanelWidth: Math.ceil(
+        Math.max(detectorLinkStrip.implicitWidth, parameterGrid.implicitWidth) + 12)
 
     readonly property string validationField: root.viewModel ? root.viewModel.validationField : ""
     readonly property string validationErrorText: root.viewModel ? root.viewModel.validationMessage : ""
@@ -294,7 +298,8 @@ Item {
             Rectangle {
                 id: controlsPanel
                 objectName: "compressorControlsPanel"
-                Layout.preferredWidth: 340
+                Layout.minimumWidth: root.authoredControlsPanelWidth
+                Layout.preferredWidth: root.authoredControlsPanelWidth
                 Layout.fillWidth: false
                 Layout.fillHeight: true
                 radius: 6
@@ -313,6 +318,7 @@ Item {
 
                         // Detector & Stereo Link Selector Strip
                         RowLayout {
+                            id: detectorLinkStrip
                             Layout.fillWidth: true
                             spacing: 8
 
@@ -415,6 +421,7 @@ Item {
 
                         // Grid of Numeric Controls & Sliders
                         GridLayout {
+                            id: parameterGrid
                             Layout.fillWidth: true
                             columns: 3
                             columnSpacing: 8
