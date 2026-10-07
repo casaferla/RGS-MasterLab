@@ -117,6 +117,14 @@ public:
     void tick();
 
 private:
+    struct PendingHandoff final {
+        std::optional<core::RealizationId> oldRealizationId;
+        std::optional<core::RealizationId> newRealizationId;
+        std::int64_t startProcessedFrame{0};
+        std::int64_t endProcessedFrame{0};
+        bool awaitingReplay{false};
+    };
+
     [[nodiscard]] core::Status prefill();
     [[nodiscard]] core::Status pump_once();
     [[nodiscard]] std::int64_t source_to_output_frame(
@@ -124,6 +132,8 @@ private:
     [[nodiscard]] std::int64_t output_to_source_frame(
         std::int64_t outputFrame) const noexcept;
     [[nodiscard]] std::int64_t output_boundary() const noexcept;
+    [[nodiscard]] std::int64_t current_output_frame() const noexcept;
+    [[nodiscard]] core::AudibleRealizationState audible_realization_state() const noexcept;
     [[nodiscard]] bool has_source() const noexcept;
     [[nodiscard]] const audio::AudioFormat& source_format() const noexcept;
     [[nodiscard]] core::Result<core::FrameCount> read_source_frames(
@@ -151,6 +161,8 @@ private:
     bool eofScheduled_{false};
     std::optional<core::Error> runtimeError_;
     std::int64_t processedFrameBaseline_{0};
+    std::optional<core::RealizationId> activeRealizationId_;
+    std::optional<PendingHandoff> pendingHandoff_;
 };
 
 }  // namespace rgsml::platform::windows::internal

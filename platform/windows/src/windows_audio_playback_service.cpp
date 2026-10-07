@@ -525,6 +525,7 @@ public:
         }
         preparedSource_ = source;
         preparedPcm_.reset();
+        preparedPcmRealizationId_.reset();
         return core::Status::success();
     }
 
@@ -557,6 +558,7 @@ public:
         }
         preparedSource_.reset();
         preparedPcm_ = source;
+        preparedPcmRealizationId_ = realizationId;
         return core::Status::success();
     }
 
@@ -572,6 +574,7 @@ public:
         }
         preparedSource_.reset();
         preparedPcm_ = source;
+        preparedPcmRealizationId_ = realizationId;
         return core::Status::success();
     }
 
@@ -581,6 +584,7 @@ public:
         if (cleared) {
             preparedSource_.reset();
             preparedPcm_.reset();
+            preparedPcmRealizationId_.reset();
         }
         return cleared;
     }
@@ -597,9 +601,10 @@ public:
             const auto preservedLoop = snapshot.value()->loop;
             const auto source = preparedSource_;
             const auto pcm = preparedPcm_;
+            const auto pcmRealizationId = preparedPcmRealizationId_;
             auto reprepared = source
                 ? prepare(*source)
-                : prepare_pcm(*pcm);
+                : prepare_pcm(*pcm, nullptr, pcmRealizationId);
             if (!reprepared) {
                 return reprepared;
             }
@@ -663,6 +668,7 @@ private:
     QTimer* timer_{nullptr};
     std::optional<core::ResourceReference> preparedSource_;
     std::optional<audio::AudioBufferView> preparedPcm_;
+    std::optional<core::RealizationId> preparedPcmRealizationId_;
 };
 
 }  // namespace
