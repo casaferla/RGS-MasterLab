@@ -447,6 +447,7 @@ Item {
                                     Layout.preferredWidth: root.compactNumericFieldWidth
                                     accentColor: "#2ED3FF"
                                     semanticAccent: "#2ED3FF"
+                                    hasSemanticAccent: true
                                     accessibleName: "Threshold continuous adjustment slider"
                                 }
                             }
@@ -480,6 +481,7 @@ Item {
                                     Layout.preferredWidth: root.compactNumericFieldWidth
                                     accentColor: "#2FD98F"
                                     semanticAccent: "#2FD98F"
+                                    hasSemanticAccent: true
                                     accessibleName: "Ratio continuous adjustment slider"
                                 }
                             }
@@ -513,6 +515,7 @@ Item {
                                     Layout.preferredWidth: root.compactNumericFieldWidth
                                     accentColor: "#FFD84A"
                                     semanticAccent: "#FFD84A"
+                                    hasSemanticAccent: true
                                     accessibleName: "Knee continuous adjustment slider"
                                 }
                             }
@@ -709,6 +712,7 @@ Item {
                                     positionFillOrigin: 0.0
                                     accentColor: "#FF6B6B"
                                     semanticAccent: "#FF6B6B"
+                                    hasSemanticAccent: true
                                     accessibleName: "Make-up Gain continuous adjustment slider"
                                 }
                             }

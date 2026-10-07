@@ -1810,15 +1810,35 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* makeupSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorMakeupSlider"));
     QVERIFY2(thresholdSlider && ratioSlider && kneeSlider && makeupSlider, "Compressor graph-linked sliders must exist");
 
+    QVERIFY2(thresholdSlider->property("hasSemanticAccent").toBool(), "Threshold slider must have hasSemanticAccent = true");
+    QVERIFY2(ratioSlider->property("hasSemanticAccent").toBool(), "Ratio slider must have hasSemanticAccent = true");
+    QVERIFY2(kneeSlider->property("hasSemanticAccent").toBool(), "Knee slider must have hasSemanticAccent = true");
+    QVERIFY2(makeupSlider->property("hasSemanticAccent").toBool(), "Make-up slider must have hasSemanticAccent = true");
+
     QCOMPARE(thresholdSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#2ED3FF")});
     QCOMPARE(ratioSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#2FD98F")});
     QCOMPARE(kneeSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#FFD84A")});
     QCOMPARE(makeupSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#FF6B6B")});
 
+    // Non-graph sliders must NOT have persistent semantic halos
+    auto* attackSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorAttackSlider"));
+    auto* releaseSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorReleaseSlider"));
+    auto* rmsTimeSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorRmsTimeSlider"));
+    auto* lookAheadSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorLookAheadSlider"));
+    auto* mixSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorMixSlider"));
+    QVERIFY2(attackSlider && releaseSlider && rmsTimeSlider && lookAheadSlider && mixSlider, "Compressor non-graph sliders must exist");
+
+    QVERIFY2(!attackSlider->property("hasSemanticAccent").toBool(), "Attack slider must have hasSemanticAccent = false");
+    QVERIFY2(!releaseSlider->property("hasSemanticAccent").toBool(), "Release slider must have hasSemanticAccent = false");
+    QVERIFY2(!rmsTimeSlider->property("hasSemanticAccent").toBool(), "RMS Time slider must have hasSemanticAccent = false");
+    QVERIFY2(!lookAheadSlider->property("hasSemanticAccent").toBool(), "Lookahead slider must have hasSemanticAccent = false");
+    QVERIFY2(!mixSlider->property("hasSemanticAccent").toBool(), "Mix slider must have hasSemanticAccent = false");
+
     const QColor copperFill = thresholdSlider->property("positionFillColor").value<QColor>();
     QCOMPARE(ratioSlider->property("positionFillColor").value<QColor>(), copperFill);
     QCOMPARE(kneeSlider->property("positionFillColor").value<QColor>(), copperFill);
     QCOMPARE(makeupSlider->property("positionFillColor").value<QColor>(), copperFill);
+    QCOMPARE(attackSlider->property("positionFillColor").value<QColor>(), copperFill);
 
     QVERIFY2(copperFill != thresholdSlider->property("semanticAccent").value<QColor>(),
         "Local semanticAccent and track fill must be decoupled");

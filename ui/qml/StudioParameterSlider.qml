@@ -13,6 +13,7 @@ Item {
     property bool enabled: true
     property color accentColor: "#00C8FF"
     property color semanticAccent: accentColor
+    property bool hasSemanticAccent: false
     property bool fillFromOrigin: false
     property real positionFillOrigin: 0.0
     property color positionFillColor: Qt.alpha("#C4774A", 0.38)
@@ -141,8 +142,8 @@ Item {
             height: control.compact ? 12 : 18
             radius: width / 2
             color: internalSlider.enabled ? "#E6EEF0" : "#586773"
-            border.color: control.semanticAccent
-            border.width: internalSlider.activeFocus ? 2 : 1.5
+            border.color: control.hasSemanticAccent ? control.semanticAccent : (internalSlider.activeFocus ? "#00C8FF" : "#1E354A")
+            border.width: control.hasSemanticAccent ? (internalSlider.activeFocus ? 2 : 1.5) : (internalSlider.activeFocus ? 2 : 1)
         }
 
         Accessible.name: control.accessibleName.length > 0 ? control.accessibleName : (control.fieldName + " slider")
