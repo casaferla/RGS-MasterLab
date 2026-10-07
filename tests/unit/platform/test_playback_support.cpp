@@ -184,6 +184,12 @@ public:
         state_ = OutputState::ERROR;
     }
 
+    void clear_injected_error() noexcept
+    {
+        injectedError_.reset();
+        state_ = OutputState::STOPPED;
+    }
+
     const std::vector<std::byte>& history() const noexcept
     {
         return history_;
@@ -980,6 +986,111 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         engine.snapshot().value()->state,
         core::PlaybackState::PAUSED);
     QCOMPARE(engine.snapshot().value()->position, pausedPos);
+
+    // Test 2A: a PAUSED replacement must discard queued old audio before
+    // the new realization is published. Resume/replay must therefore begin
+    // with new-only audio, never old queued material under a NEW identity.
+    {
+        PlaybackEngine pausedReplacement;
+        auto pausedOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedPaused = pausedOutput.get();
+        QVERIFY(pausedReplacement.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(pausedOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1,
+            oldRealizationId));
+        QVERIFY(pausedReplacement.play());
+        QVERIFY(observedPaused->queued_bytes() > 0U);
+        QVERIFY(pausedReplacement.pause());
+
+        const auto historyBeforeReplacement =
+            observedPaused->history().size();
+        QVERIFY(pausedReplacement.handoff_pcm(
+            newBuf.view(), lifetime2, newRealizationId));
+        QCOMPARE(
+            pausedReplacement.snapshot().value()->state,
+            core::PlaybackState::PAUSED);
+        QCOMPARE(observedPaused->queued_bytes(), std::size_t{0});
+        const auto pausedReplacementIdentity =
+            pausedReplacement.snapshot().value()->audibleRealization;
+        QCOMPARE(
+            pausedReplacementIdentity.phase,
+            core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            pausedReplacementIdentity.realizationId,
+            std::optional{newRealizationId});
+
+        QVERIFY(pausedReplacement.play());
+        QVERIFY(observedPaused->history().size() > historyBeforeReplacement);
+        QCOMPARE(
+            read_i16(
+                observedPaused->history(),
+                historyBeforeReplacement),
+            static_cast<std::int16_t>(0));
+        const auto resumedIdentity =
+            pausedReplacement.snapshot().value()->audibleRealization;
+        QCOMPARE(resumedIdentity.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            resumedIdentity.realizationId,
+            std::optional{newRealizationId});
+    }
+
+    // Test 2B: a late output enqueue failure during PLAYING handoff must fail
+    // closed. No candidate identity or candidate audio may survive the failed
+    // handoff; replay resumes from the previously accepted realization.
+    {
+        PlaybackEngine atomicFailure;
+        auto atomicOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedAtomic = atomicOutput.get();
+        QVERIFY(atomicFailure.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(atomicOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1,
+            oldRealizationId));
+        QVERIFY(atomicFailure.play());
+
+        observedAtomic->consume_all();
+        observedAtomic->inject_error(core::Error{
+            core::ErrorCode::IoFailure,
+            "Injected late handoff enqueue failure."});
+
+        QVERIFY(!atomicFailure.handoff_pcm(
+            newBuf.view(), lifetime2, newRealizationId));
+        const auto failedSnapshot = atomicFailure.snapshot();
+        QVERIFY(failedSnapshot);
+        QCOMPARE(
+            failedSnapshot.value()->state,
+            core::PlaybackState::STOPPED);
+        QCOMPARE(
+            failedSnapshot.value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            failedSnapshot.value()->audibleRealization.realizationId,
+            std::optional{oldRealizationId});
+        QCOMPARE(observedAtomic->queued_bytes(), std::size_t{0});
+
+        observedAtomic->clear_injected_error();
+        const auto historyBeforeReplay = observedAtomic->history().size();
+        QVERIFY(atomicFailure.play());
+        QVERIFY(observedAtomic->history().size() > historyBeforeReplay);
+        QCOMPARE(
+            read_i16(
+                observedAtomic->history(),
+                historyBeforeReplay),
+            static_cast<std::int16_t>(32767));
+        const auto replayIdentity =
+            atomicFailure.snapshot().value()->audibleRealization;
+        QCOMPARE(replayIdentity.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            replayIdentity.realizationId,
+            std::optional{oldRealizationId});
+    }
 
     // Test 3: STOPPED replacement remains STOPPED without auto-start.
     QVERIFY(engine.stop());
