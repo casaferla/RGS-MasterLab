@@ -295,8 +295,8 @@ Item {
 
                 }
                 // Integrated Live GR ribbon: observational overlay inside
-                // the SAME transfer-curve well. It does not consume transfer
-                // curve layout height.
+                // the SAME transfer-curve well. It is non-blocking (`enabled: false`)
+                // so pointer events pass directly to transfer-curve handles.
                 Item {
                     id: grRibbonSection
                     objectName: "compressorGrRibbonSection"
@@ -309,7 +309,8 @@ Item {
                     height: root.viewModel
                         && root.viewModel.telemetryNumLanes > 1
                         ? 76 : 68
-                    z: 5
+                    z: 1
+                    enabled: false
 
                     Rectangle {
                         anchors.fill: parent
@@ -666,15 +667,7 @@ Item {
                                 ctx.restore()
                             }
                         }
-                    
-                    }
 
-                    // v1 is observational only. Do not let pointer editing
-                    // leak through the ribbon into transfer-curve handles.
-                    MouseArea {
-                        anchors.fill: parent
-                        acceptedButtons: Qt.AllButtons
-                        cursorShape: Qt.ArrowCursor
                     }
                 }
 
