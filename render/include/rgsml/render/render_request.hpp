@@ -2,6 +2,7 @@
 
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/realization_identity.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/module_execution_binding.hpp>
 #include <rgsml/dsp/module_instance.hpp>
@@ -26,7 +27,8 @@ public:
         const rgsml::dsp::ProcessingChain& chain,
         std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
         rgsml::core::FrameCount maximum_block_frames,
-        std::optional<std::size_t> max_telemetry_bytes = std::nullopt);
+        std::optional<std::size_t> max_telemetry_bytes = std::nullopt,
+        std::optional<rgsml::core::RealizationId> realization_id = std::nullopt);
 
     [[nodiscard]] rgsml::audio::AudioBufferView source() const noexcept;
     [[nodiscard]] rgsml::core::FrameRange render_window() const noexcept;
@@ -39,6 +41,7 @@ public:
     [[nodiscard]] rgsml::core::FrameCount maximum_block_frames() const noexcept;
     [[nodiscard]] RenderMode mode() const noexcept;
     [[nodiscard]] std::optional<std::size_t> max_telemetry_bytes() const noexcept;
+    [[nodiscard]] std::optional<rgsml::core::RealizationId> realization_id() const noexcept;
 
 private:
     RenderRequest(
@@ -49,7 +52,8 @@ private:
         std::vector<rgsml::dsp::ModuleInstance> chain_instances,
         std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
         rgsml::core::FrameCount maximum_block_frames,
-        std::optional<std::size_t> max_telemetry_bytes) noexcept;
+        std::optional<std::size_t> max_telemetry_bytes,
+        std::optional<rgsml::core::RealizationId> realization_id) noexcept;
 
     rgsml::audio::AudioBufferView source_;
     rgsml::core::FrameRange render_window_;
@@ -59,6 +63,7 @@ private:
     std::vector<rgsml::dsp::ModuleExecutionBinding> bindings_;
     rgsml::core::FrameCount maximum_block_frames_;
     std::optional<std::size_t> max_telemetry_bytes_;
+    std::optional<rgsml::core::RealizationId> realization_id_;
 };
 
 }  // namespace rgsml::render

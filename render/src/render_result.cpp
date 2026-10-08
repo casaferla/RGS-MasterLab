@@ -1,5 +1,7 @@
 #include <rgsml/render/render_result.hpp>
 
+#include <rgsml/core/error.hpp>
+
 #include <utility>
 
 namespace rgsml::render {
@@ -54,6 +56,43 @@ const std::optional<CompressorTelemetrySidecar>&
 RenderResult::compressor_telemetry_sidecar() const noexcept
 {
     return compressor_telemetry_sidecar_;
+}
+
+rgsml::core::Status RenderResult::bind_compressor_telemetry_realization_id(
+    rgsml::core::RealizationId realization_id) noexcept
+{
+    if (!compressor_telemetry_sidecar_) {
+        return rgsml::core::Status::success();
+    }
+
+    const auto conflicts = [realization_id](
+        const std::optional<rgsml::core::RealizationId>& candidate) noexcept {
+        return candidate.has_value() && *candidate != realization_id;
+    };
+
+    auto& sidecar = *compressor_telemetry_sidecar_;
+    if (conflicts(sidecar.realization_id)) {
+        return rgsml::core::Status::failure(rgsml::core::Error{
+            rgsml::core::ErrorCode::InvalidState,
+            "Compressor telemetry sidecar realization identity conflicts with the accepted Processed realization."});
+    }
+    for (const auto& lane : sidecar.channel_lanes) {
+        for (const auto& bucket : lane.buckets) {
+            if (conflicts(bucket.realization_id)) {
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidState,
+                    "Compressor telemetry bucket realization identity conflicts with the accepted Processed realization."});
+            }
+        }
+    }
+
+    sidecar.realization_id = realization_id;
+    for (auto& lane : sidecar.channel_lanes) {
+        for (auto& bucket : lane.buckets) {
+            bucket.realization_id = realization_id;
+        }
+    }
+    return rgsml::core::Status::success();
 }
 
 }  // namespace rgsml::render

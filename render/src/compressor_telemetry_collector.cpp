@@ -49,7 +49,8 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
     rgsml::dsp::CompressorChannelLink channel_link,
     rgsml::dsp::ModuleInstanceId instance_id,
     std::uint64_t chain_revision,
-    std::size_t max_memory_bytes)
+    std::size_t max_memory_bytes,
+    std::optional<rgsml::core::RealizationId> realization_id)
     : start_frame_(start_frame)
     , total_frames_(total_frames)
     , sample_rate_hz_(sample_rate_hz)
@@ -57,6 +58,7 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
     , channel_link_(channel_link)
     , instance_id_(instance_id)
     , chain_revision_(chain_revision)
+    , realization_id_(realization_id)
     , expected_next_frame_(start_frame)
     , pushed_frame_count_(0)
 {
@@ -135,7 +137,7 @@ CompressorTelemetryCollector::CompressorTelemetryCollector(
                 const std::int64_t b_start = std::max(canonical_b_start, start_frame_);
                 const std::int64_t b_end = std::min(canonical_b_end, end_frame);
 
-                CompressorTelemetryBucket bucket{instance_id_};
+                CompressorTelemetryBucket bucket{instance_id_, realization_id_};
                 bucket.begin_frame = b_start;
                 bucket.end_frame = b_end;
                 bucket.frame_count = static_cast<std::uint32_t>(std::max<std::int64_t>(0, b_end - b_start));
@@ -260,7 +262,7 @@ void CompressorTelemetryCollector::push_frame_telemetry(
 
 CompressorTelemetrySidecar CompressorTelemetryCollector::build_sidecar()
 {
-    CompressorTelemetrySidecar sidecar{instance_id_};
+    CompressorTelemetrySidecar sidecar{instance_id_, realization_id_};
 
     if (telemetry_failed_ || pushed_frame_count_ != total_frames_) {
         sidecar.valid = false;

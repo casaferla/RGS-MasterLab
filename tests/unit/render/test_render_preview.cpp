@@ -11,6 +11,7 @@
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/render/compressor_telemetry_collector.hpp>
+#include <rgsml/render/compressor_telemetry_history.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
 
@@ -475,6 +476,9 @@ private slots:
     void compressorNearEosPreview();
     void monoCompressorExecutionSignature();
     void compressorTelemetryMemoryLimitFailClosed();
+
+    // Stage 3B1 Telemetry Seam & Bounded History Tests
+    void telemetryHistorySeamAndRealizationIdentity();
 };
 
 void RenderPreviewTest::validatesBindingsAndWindowAtomically()
@@ -1442,6 +1446,145 @@ void RenderPreviewTest::compressorTelemetryMemoryLimitFailClosed()
     auto hugeSc = hugeCol.build_sidecar();
     QVERIFY(!hugeSc.valid);
     QCOMPARE(hugeSc.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+}
+
+void RenderPreviewTest::telemetryHistorySeamAndRealizationIdentity()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    std::vector<double> mono_samples(1000U, 0.5);
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, mono_samples);
+    auto chain = empty_chain(*registry.value());
+
+    const auto comp_id = make_id("60000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 0));
+
+    const rgsml::dsp::ModuleExecutionBinding comp_b{comp_id, *rgsml::dsp::CompressorParameters::create_default().value()};
+    const rgsml::core::RealizationId testRealizationId{42};
+
+    // Unbound render telemetry is not eligible for audible history until the
+    // accepted Processed realization identity is attached.
+    auto req_unbound = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 1000), chain,
+        {comp_b}, frame_count(64));
+    QVERIFY(req_unbound);
+    auto res_unbound =
+        rgsml::render::render_preview(*req_unbound.value(), *registry.value());
+    QVERIFY(res_unbound);
+    QVERIFY(res_unbound.value()->compressor_telemetry_sidecar().has_value());
+    QVERIFY(!res_unbound.value()->compressor_telemetry_sidecar()->realization_id.has_value());
+
+    rgsml::render::CompressorTelemetryHistory unbound_history;
+    unbound_history.push_sidecar(
+        *res_unbound.value()->compressor_telemetry_sidecar());
+    QVERIFY(!unbound_history.valid());
+    QCOMPARE(
+        unbound_history.status(),
+        rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+    QVERIFY(
+        res_unbound.value()->bind_compressor_telemetry_realization_id(
+            testRealizationId));
+    QCOMPARE(
+        res_unbound.value()->compressor_telemetry_sidecar()->realization_id,
+        std::optional{testRealizationId});
+    for (const auto& lane :
+         res_unbound.value()->compressor_telemetry_sidecar()->channel_lanes) {
+        for (const auto& bucket : lane.buckets) {
+            QCOMPARE(
+                bucket.realization_id,
+                std::optional{testRealizationId});
+        }
+    }
+
+    // 1. Render preview carrying explicit realization identity
+    auto req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 1000), chain,
+        {comp_b}, frame_count(64), std::nullopt, testRealizationId);
+    QVERIFY(req);
+    QCOMPARE(req.value()->realization_id(), std::optional{testRealizationId});
+
+    auto res = rgsml::render::render_preview(*req.value(), *registry.value());
+    QVERIFY(res);
+    QVERIFY(res.value()->compressor_telemetry_sidecar().has_value());
+
+    const auto& sidecar = *res.value()->compressor_telemetry_sidecar();
+    QVERIFY(sidecar.valid);
+    QCOMPARE(sidecar.realization_id, std::optional{testRealizationId});
+    QVERIFY(!res.value()->bind_compressor_telemetry_realization_id(
+        rgsml::core::RealizationId{99}));
+    QCOMPARE(
+        res.value()->compressor_telemetry_sidecar()->realization_id,
+        std::optional{testRealizationId});
+    QVERIFY(!sidecar.channel_lanes.empty());
+    QVERIFY(!sidecar.channel_lanes[0].buckets.empty());
+
+    // Verify every bucket carries the realization_id
+    for (const auto& bucket : sidecar.channel_lanes[0].buckets) {
+        QCOMPARE(bucket.realization_id, std::optional{testRealizationId});
+        QVERIFY(bucket.frame_count > 0);
+        QVERIFY(bucket.valid);
+    }
+
+    // 2. Test CompressorTelemetryHistory buffer append and FIFO retention
+    rgsml::render::CompressorTelemetryHistory history{10U}; // Max 10 buckets per lane
+    QCOMPARE(history.max_buckets_per_lane(), std::size_t{10});
+
+    history.push_sidecar(sidecar);
+    QVERIFY(history.valid());
+    QCOMPARE(history.realization_id(), std::optional{testRealizationId});
+    QCOMPARE(history.chain_revision(), sidecar.chain_revision);
+    QCOMPARE(history.module_instance_id(), std::optional{comp_id});
+
+    const auto bucket_cnt_initial = sidecar.channel_lanes[0].buckets.size();
+    const auto expected_in_history = std::min(bucket_cnt_initial, std::size_t{10});
+    QCOMPARE(history.bucket_count(0), expected_in_history);
+
+    // 3. Test realization identity change -> clears old history for new realization
+    const rgsml::core::RealizationId newRealizationId{99};
+    auto req_new_real = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 240), chain,
+        {comp_b}, frame_count(64), std::nullopt, newRealizationId);
+    QVERIFY(req_new_real);
+    auto res_new_real = rgsml::render::render_preview(*req_new_real.value(), *registry.value());
+    QVERIFY(res_new_real);
+
+    history.push_sidecar(*res_new_real.value()->compressor_telemetry_sidecar());
+    QVERIFY(history.valid());
+    QCOMPARE(history.realization_id(), std::optional{newRealizationId});
+    // Buckets now belong exclusively to newRealizationId
+    for (const auto& bucket : history.lane_buckets(0)) {
+        QCOMPARE(bucket.realization_id, std::optional{newRealizationId});
+    }
+
+    // 4. Test UNAVAILABLE sidecar handling -> history marks status UNAVAILABLE without manufacturing zeros
+    rgsml::render::CompressorTelemetrySidecar unavail_sidecar{comp_id, newRealizationId};
+    unavail_sidecar.valid = false;
+    unavail_sidecar.status = rgsml::render::CompressorTelemetryStatus::UNAVAILABLE;
+
+    history.push_sidecar(unavail_sidecar);
+    QVERIFY(!history.valid());
+    QCOMPARE(history.status(), rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+    // 5. Test 5-second default history capacity (1000 buckets)
+    rgsml::render::CompressorTelemetryHistory default_history; // Default 1000 buckets (~5s @ 200 Hz)
+    QCOMPARE(default_history.max_buckets_per_lane(), std::size_t{1000});
+
+    // Push 1200 buckets
+    for (std::uint64_t i = 0; i < 1200; ++i) {
+        rgsml::render::CompressorTelemetryBucket b{comp_id, testRealizationId};
+        b.begin_frame = static_cast<std::int64_t>(i * 240);
+        b.end_frame = static_cast<std::int64_t>((i + 1) * 240);
+        b.frame_count = 240U;
+        b.valid = true;
+        default_history.push_bucket(0, b);
+    }
+    QVERIFY(default_history.valid());
+    QCOMPARE(default_history.bucket_count(0), std::size_t{1000});
+    // Oldest 200 buckets dropped: first bucket in history is frame 200 * 240 = 48000
+    QCOMPARE(default_history.lane_buckets(0).front().begin_frame, std::int64_t{48000});
+    QCOMPARE(default_history.lane_buckets(0).back().begin_frame, std::int64_t{1199 * 240});
 }
 
 void RenderPreviewTest::monoCompressorExecutionSignature()

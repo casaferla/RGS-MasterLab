@@ -8,6 +8,7 @@
 #include "../platform/fake_playback_service.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
@@ -49,6 +50,50 @@ namespace {
         *chain.value(), {}, *core::FrameCount::create(7).value());
     auto result = render::render_preview(*request.value(), *registry.value());
     Q_ASSERT(result);
+    return std::move(*result.value());
+}
+
+[[nodiscard]] render::RenderResult compressor_realization(
+    std::int64_t begin, std::int64_t frames)
+{
+    auto rate = core::SampleRate::create(48'000);
+    auto format = audio::AudioFormat::create(
+        *rate.value(), audio::ChannelLayout::STEREO_LR);
+    auto count = core::FrameCount::create(frames);
+    auto buffer = audio::AudioBuffer::create(
+        *format.value(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{begin}, *count.value());
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    auto chain = dsp::ProcessingChain::create(
+        *registry.value(),
+        dsp::ProcessingChainContext{
+            dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL});
+
+    const auto uuid =
+        core::Uuid::parse("61000000-0000-0000-0000-000000000001");
+    Q_ASSERT(uuid);
+    const auto compressorId =
+        dsp::ModuleInstanceId::from_uuid(*uuid.value());
+    Q_ASSERT(compressorId);
+    Q_ASSERT(chain.value()->add(
+        *compressorId.value(), "rgsml.dsp.compressor", 0));
+
+    const auto parameters = dsp::CompressorParameters::create_default();
+    Q_ASSERT(parameters);
+    auto request = render::RenderRequest::create(
+        buffer.value()->view(), buffer.value()->view().absolute_range(),
+        *chain.value(),
+        {dsp::ModuleExecutionBinding{
+            *compressorId.value(), *parameters.value()}},
+        *core::FrameCount::create(64).value());
+    Q_ASSERT(request);
+    auto result = render::render_preview(
+        *request.value(), *registry.value());
+    Q_ASSERT(result);
+    Q_ASSERT(result.value()->compressor_telemetry_sidecar().has_value());
+    Q_ASSERT(
+        !result.value()->compressor_telemetry_sidecar()
+             ->realization_id.has_value());
     return std::move(*result.value());
 }
 
@@ -139,6 +184,7 @@ private slots:
     void loopRegionIntentPreservedAcrossAuditionRebinds();
     void seamlessProcessedHandoffPreservesStateAndTargetRaces();
     void processedRealizationIdentityIsMonotonicAndFailureAtomic();
+    void processedTelemetryBindsAcceptedRealizationIdentity();
 };
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
@@ -519,6 +565,52 @@ void AuditionSourceSelectorTest::processedRealizationIdentityIsMonotonicAndFailu
     const auto thirdId = observed->audibleRealization.realizationId;
     QVERIFY(thirdId.has_value());
     QCOMPARE(thirdId->value, secondId->value + 1U);
+}
+
+void AuditionSourceSelectorTest::processedTelemetryBindsAcceptedRealizationIdentity()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 200)));
+    QVERIFY(selector.set_processed_realization(
+        compressor_realization(0, 200)));
+
+    auto first = selector.processed_realization_snapshot();
+    QVERIFY(first);
+    QVERIFY(first->compressor_telemetry_sidecar().has_value());
+    const auto firstId =
+        first->compressor_telemetry_sidecar()->realization_id;
+    QVERIFY(firstId.has_value());
+    for (const auto& lane :
+         first->compressor_telemetry_sidecar()->channel_lanes) {
+        for (const auto& bucket : lane.buckets) {
+            QCOMPARE(bucket.realization_id, firstId);
+        }
+    }
+
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(observed->audibleRealization.realizationId, firstId);
+
+    QVERIFY(selector.set_processed_realization(
+        compressor_realization(0, 200)));
+    auto second = selector.processed_realization_snapshot();
+    QVERIFY(second);
+    QVERIFY(second->compressor_telemetry_sidecar().has_value());
+    const auto secondId =
+        second->compressor_telemetry_sidecar()->realization_id;
+    QVERIFY(secondId.has_value());
+    QVERIFY(secondId->value > firstId->value);
+    QCOMPARE(observed->audibleRealization.realizationId, secondId);
+    for (const auto& lane :
+         second->compressor_telemetry_sidecar()->channel_lanes) {
+        for (const auto& bucket : lane.buckets) {
+            QCOMPARE(bucket.realization_id, secondId);
+        }
+    }
 }
 
 void AuditionSourceSelectorTest::loopRegionIntentPreservedAcrossAuditionRebinds()

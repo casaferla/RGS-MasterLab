@@ -384,7 +384,8 @@ rgsml::core::Result<RenderResult> render_preview(
                                 comp_params->channel_link(),
                                 modules[m].instance_id,
                                 request.chain_revision(),
-                                request.max_telemetry_bytes().value_or(128U * 1024U * 1024U));
+                                request.max_telemetry_bytes().value_or(128U * 1024U * 1024U),
+                                request.realization_id());
                             comp_mod->set_telemetry_sink(collector.get());
                         }
                     }

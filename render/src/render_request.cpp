@@ -38,7 +38,8 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
     const rgsml::dsp::ProcessingChain& chain,
     std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
     rgsml::core::FrameCount maximum_block_frames,
-    std::optional<std::size_t> max_telemetry_bytes)
+    std::optional<std::size_t> max_telemetry_bytes,
+    std::optional<rgsml::core::RealizationId> realization_id)
 {
     if (source.timebase().frame_domain_id()
         != rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE) {
@@ -153,7 +154,8 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
                 chain.instances().begin(), chain.instances().end()},
             std::move(bindings),
             maximum_block_frames,
-            effective_telemetry_bytes});
+            effective_telemetry_bytes,
+            realization_id});
     } catch (...) {
         return rgsml::core::Result<RenderRequest>::failure(request_error(
             rgsml::core::ErrorCode::IoFailure,
@@ -170,7 +172,8 @@ RenderRequest::RenderRequest(
     std::vector<rgsml::dsp::ModuleInstance> chain_instances,
     std::vector<rgsml::dsp::ModuleExecutionBinding> bindings,
     rgsml::core::FrameCount maximum_block_frames,
-    std::optional<std::size_t> max_telemetry_bytes) noexcept
+    std::optional<std::size_t> max_telemetry_bytes,
+    std::optional<rgsml::core::RealizationId> realization_id) noexcept
     : source_(source)
     , render_window_(render_window)
     , chain_context_(chain_context)
@@ -179,6 +182,7 @@ RenderRequest::RenderRequest(
     , bindings_(std::move(bindings))
     , maximum_block_frames_(maximum_block_frames)
     , max_telemetry_bytes_(max_telemetry_bytes)
+    , realization_id_(realization_id)
 {
 }
 
@@ -205,6 +209,10 @@ RenderMode RenderRequest::mode() const noexcept { return RenderMode::PREVIEW; }
 std::optional<std::size_t> RenderRequest::max_telemetry_bytes() const noexcept
 {
     return max_telemetry_bytes_;
+}
+std::optional<rgsml::core::RealizationId> RenderRequest::realization_id() const noexcept
+{
+    return realization_id_;
 }
 
 }  // namespace rgsml::render

@@ -22,7 +22,8 @@ public:
         rgsml::dsp::CompressorChannelLink channel_link,
         rgsml::dsp::ModuleInstanceId instance_id,
         std::uint64_t chain_revision,
-        std::size_t max_memory_bytes = 128U * 1024U * 1024U);
+        std::size_t max_memory_bytes = 128U * 1024U * 1024U,
+        std::optional<rgsml::core::RealizationId> realization_id = std::nullopt);
 
     ~CompressorTelemetryCollector() override = default;
 
@@ -40,6 +41,7 @@ private:
     rgsml::dsp::CompressorChannelLink channel_link_{rgsml::dsp::CompressorChannelLink::LINKED_MAX};
     rgsml::dsp::ModuleInstanceId instance_id_;
     std::uint64_t chain_revision_{0};
+    std::optional<rgsml::core::RealizationId> realization_id_{std::nullopt};
     std::size_t num_lanes_{1};
 
     std::int64_t expected_next_frame_{0};

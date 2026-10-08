@@ -193,6 +193,12 @@ core::Status AuditionSourceSelector::set_processed_realization(
 
     const core::RealizationId candidateRealizationId{
         nextProcessedRealizationIdValue_};
+    auto identityBound =
+        realization.bind_compressor_telemetry_realization_id(
+            candidateRealizationId);
+    if (!identityBound) {
+        return identityBound;
+    }
     auto candidate = std::make_shared<const render::RenderResult>(
         std::move(realization));
 

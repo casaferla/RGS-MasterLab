@@ -1,5 +1,6 @@
 add_library(rgsml_render STATIC
     src/compressor_telemetry_collector.cpp
+    src/compressor_telemetry_history.cpp
     src/render_preview.cpp
     src/render_request.cpp
     src/render_result.cpp

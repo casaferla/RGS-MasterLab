@@ -4,6 +4,7 @@
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/realization_identity.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/module_instance.hpp>
@@ -35,9 +36,12 @@ struct CompressorTelemetryBucket final {
     std::uint32_t frame_count{0};
     bool valid{true};
     rgsml::dsp::ModuleInstanceId module_instance_id;
+    std::optional<rgsml::core::RealizationId> realization_id{std::nullopt};
 
-    explicit CompressorTelemetryBucket(rgsml::dsp::ModuleInstanceId id) noexcept
-        : module_instance_id(id) {}
+    explicit CompressorTelemetryBucket(
+        rgsml::dsp::ModuleInstanceId id,
+        std::optional<rgsml::core::RealizationId> real_id = std::nullopt) noexcept
+        : module_instance_id(id), realization_id(real_id) {}
 
     friend bool operator==(
         const CompressorTelemetryBucket&,
@@ -66,10 +70,13 @@ struct CompressorTelemetrySidecar final {
     std::uint32_t sample_rate_hz{44100};
     rgsml::dsp::ModuleInstanceId module_instance_id;
     std::uint64_t chain_revision{0};
+    std::optional<rgsml::core::RealizationId> realization_id{std::nullopt};
     std::vector<CompressorTelemetryLane> channel_lanes;
 
-    explicit CompressorTelemetrySidecar(rgsml::dsp::ModuleInstanceId id) noexcept
-        : module_instance_id(id) {}
+    explicit CompressorTelemetrySidecar(
+        rgsml::dsp::ModuleInstanceId id,
+        std::optional<rgsml::core::RealizationId> real_id = std::nullopt) noexcept
+        : module_instance_id(id), realization_id(real_id) {}
 
     friend bool operator==(
         const CompressorTelemetrySidecar&,
@@ -160,6 +167,8 @@ public:
     signatures() const noexcept;
     [[nodiscard]] const std::optional<CompressorTelemetrySidecar>&
     compressor_telemetry_sidecar() const noexcept;
+    [[nodiscard]] rgsml::core::Status bind_compressor_telemetry_realization_id(
+        rgsml::core::RealizationId realization_id) noexcept;
 
 private:
     friend rgsml::core::Result<RenderResult> render_preview(
