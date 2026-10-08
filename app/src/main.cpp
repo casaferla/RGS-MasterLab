@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 
 namespace {
 
@@ -69,14 +70,18 @@ int main(int argc, char* argv[])
     playbackTransport.set_pcm_prepare_handler(
         [windowsPlayback](
             rgsml::audio::AudioBufferView source,
-            std::shared_ptr<const void> lifetime) {
-            return windowsPlayback->prepare_pcm(source, std::move(lifetime));
+            std::shared_ptr<const void> lifetime,
+            std::optional<rgsml::core::RealizationId> realizationId) {
+            return windowsPlayback->prepare_pcm(
+                source, std::move(lifetime), realizationId);
         });
     playbackTransport.set_pcm_handoff_handler(
         [windowsPlayback](
             rgsml::audio::AudioBufferView source,
-            std::shared_ptr<const void> lifetime) {
-            return windowsPlayback->handoff_pcm(source, std::move(lifetime));
+            std::shared_ptr<const void> lifetime,
+            std::optional<rgsml::core::RealizationId> realizationId) {
+            return windowsPlayback->handoff_pcm(
+                source, std::move(lifetime), realizationId);
         });
     rgsml::ui::WaveformPresentation waveformPresentation;
     rgsml::app::AuditionRegionViewModel auditionRegion{&playbackTransport};
@@ -204,6 +209,11 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"),
         &liveSpectrumViewModel);
+#ifdef RGSML_BUILD_PROVENANCE
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("buildProvenance"),
+        QStringLiteral(RGSML_BUILD_PROVENANCE));
+#endif
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

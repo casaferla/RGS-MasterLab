@@ -274,6 +274,7 @@ void MasteringPreviewControllerTest::testStaleJobRejection()
 
     QCOMPARE(controller.preview_status(), QStringLiteral("READY"));
     QCOMPARE(controller.stale_results_discarded(), 1U);
+    QCOMPARE(publishedGenerations.size(), std::size_t{1});
 }
 
 void MasteringPreviewControllerTest::testRenderFailurePreservesLastGoodAudio()

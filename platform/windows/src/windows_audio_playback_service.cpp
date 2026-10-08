@@ -525,12 +525,14 @@ public:
         }
         preparedSource_ = source;
         preparedPcm_.reset();
+        preparedPcmRealizationId_.reset();
         return core::Status::success();
     }
 
     [[nodiscard]] core::Status prepare_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
         auto output = make_output_candidate(
             source.format(), source.frame_count());
@@ -545,7 +547,8 @@ public:
             std::move(output.value()->output),
             output.value()->sampleFormat,
             std::move(output.value()->rateAdapter),
-            std::move(lifetime));
+            std::move(lifetime),
+            realizationId);
         if (!installed) {
             return installed;
         }
@@ -555,19 +558,23 @@ public:
         }
         preparedSource_.reset();
         preparedPcm_ = source;
+        preparedPcmRealizationId_ = realizationId;
         return core::Status::success();
     }
 
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
-        auto handedOff = engine_.handoff_pcm(source, lifetime);
+        auto handedOff = engine_.handoff_pcm(
+            source, lifetime, realizationId);
         if (!handedOff) {
             return handedOff;
         }
         preparedSource_.reset();
         preparedPcm_ = source;
+        preparedPcmRealizationId_ = realizationId;
         return core::Status::success();
     }
 
@@ -577,6 +584,7 @@ public:
         if (cleared) {
             preparedSource_.reset();
             preparedPcm_.reset();
+            preparedPcmRealizationId_.reset();
         }
         return cleared;
     }
@@ -593,9 +601,10 @@ public:
             const auto preservedLoop = snapshot.value()->loop;
             const auto source = preparedSource_;
             const auto pcm = preparedPcm_;
+            const auto pcmRealizationId = preparedPcmRealizationId_;
             auto reprepared = source
                 ? prepare(*source)
-                : prepare_pcm(*pcm);
+                : prepare_pcm(*pcm, nullptr, pcmRealizationId);
             if (!reprepared) {
                 return reprepared;
             }
@@ -659,6 +668,7 @@ private:
     QTimer* timer_{nullptr};
     std::optional<core::ResourceReference> preparedSource_;
     std::optional<audio::AudioBufferView> preparedPcm_;
+    std::optional<core::RealizationId> preparedPcmRealizationId_;
 };
 
 }  // namespace
@@ -704,20 +714,28 @@ public:
 
     [[nodiscard]] core::Status prepare_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
-        return invoke_status([source, lifetime = std::move(lifetime)](PlaybackWorker& worker) mutable {
-            return worker.prepare_pcm(source, std::move(lifetime));
-        });
+        return invoke_status(
+            [source, lifetime = std::move(lifetime), realizationId](
+                PlaybackWorker& worker) mutable {
+                return worker.prepare_pcm(
+                    source, std::move(lifetime), realizationId);
+            });
     }
 
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
-        return invoke_status([source, lifetime = std::move(lifetime)](PlaybackWorker& worker) mutable {
-            return worker.handoff_pcm(source, std::move(lifetime));
-        });
+        return invoke_status(
+            [source, lifetime = std::move(lifetime), realizationId](
+                PlaybackWorker& worker) mutable {
+                return worker.handoff_pcm(
+                    source, std::move(lifetime), realizationId);
+            });
     }
 
     [[nodiscard]] core::Status clear()
@@ -843,21 +861,25 @@ core::Status WindowsAudioPlaybackService::prepare(
 core::Status WindowsAudioPlaybackService::prepare_pcm(
     audio::AudioBufferView source)
 {
-    return impl_->prepare_pcm(source, nullptr);
+    return impl_->prepare_pcm(source, nullptr, std::nullopt);
 }
 
 core::Status WindowsAudioPlaybackService::prepare_pcm(
     audio::AudioBufferView source,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
-    return impl_->prepare_pcm(source, std::move(lifetime));
+    return impl_->prepare_pcm(
+        source, std::move(lifetime), realizationId);
 }
 
 core::Status WindowsAudioPlaybackService::handoff_pcm(
     audio::AudioBufferView source,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
-    return impl_->handoff_pcm(source, std::move(lifetime));
+    return impl_->handoff_pcm(
+        source, std::move(lifetime), realizationId);
 }
 
 core::Status WindowsAudioPlaybackService::clear()
