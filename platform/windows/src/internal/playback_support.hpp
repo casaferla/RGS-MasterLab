@@ -122,6 +122,7 @@ private:
         std::optional<core::RealizationId> newRealizationId;
         std::int64_t startProcessedFrame{0};
         std::int64_t endProcessedFrame{0};
+        std::optional<std::int64_t> newNumericStartSourceFrame{std::nullopt};
         bool awaitingReplay{false};
     };
 
@@ -133,7 +134,9 @@ private:
         std::int64_t outputFrame) const noexcept;
     [[nodiscard]] std::int64_t output_boundary() const noexcept;
     [[nodiscard]] std::int64_t current_output_frame() const noexcept;
+    [[nodiscard]] std::uint64_t current_loop_wrap_count() const noexcept;
     [[nodiscard]] core::AudibleRealizationState audible_realization_state() const noexcept;
+    [[nodiscard]] core::Status play_internal(bool isNewTraversal);
     [[nodiscard]] bool has_source() const noexcept;
     [[nodiscard]] const audio::AudioFormat& source_format() const noexcept;
     [[nodiscard]] core::Result<core::FrameCount> read_source_frames(
@@ -163,6 +166,9 @@ private:
     std::int64_t processedFrameBaseline_{0};
     std::optional<core::RealizationId> activeRealizationId_;
     std::optional<PendingHandoff> pendingHandoff_;
+    std::uint64_t traversalSerial_{0};
+    std::uint64_t seekSerial_{0};
+    std::uint64_t baseLoopWrapCount_{0};
 };
 
 }  // namespace rgsml::platform::windows::internal

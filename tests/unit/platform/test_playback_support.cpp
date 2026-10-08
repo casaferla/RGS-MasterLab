@@ -250,6 +250,7 @@ private slots:
     void loopCommandIsPositionNeutralAcrossStates();
     void partialWritesNaturalEofAndRuntimeError();
     void seamlessPcmHandoffCrossfadeAndStateMatrix();
+    void controlPlaneTraversalSeekAndLoopSerials();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -1208,12 +1209,15 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             core::FrameIndex{loopEndFrame});
         QVERIFY(shortLoop);
         QVERIFY(shortEngine.set_loop(*shortLoop.value()));
+        constexpr std::int64_t deviceProcessedBaseline = 5000;
+        observedShort->set_processed_frames(deviceProcessedBaseline);
         QVERIFY(shortEngine.play());
         QVERIFY(shortEngine.handoff_pcm(
             newBuf.view(), lifetime2, newRealizationId));
 
         observedShort->set_processed_frames(
-            static_cast<std::int64_t>(handoffBoundaryFrames - 1U));
+            deviceProcessedBaseline
+            + static_cast<std::int64_t>(handoffBoundaryFrames - 1U));
         const auto beforeShort =
             shortEngine.snapshot().value()->audibleRealization;
         QCOMPARE(beforeShort.phase, core::AudibleHandoffPhase::OLD);
@@ -1222,7 +1226,8 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::optional{oldRealizationId});
 
         observedShort->set_processed_frames(
-            static_cast<std::int64_t>(handoffBoundaryFrames));
+            deviceProcessedBaseline
+            + static_cast<std::int64_t>(handoffBoundaryFrames));
         const auto atShortBoundary =
             shortEngine.snapshot().value()->audibleRealization;
         if (expectedTransitionFrames == 0) {
@@ -1232,6 +1237,9 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             QCOMPARE(
                 atShortBoundary.realizationId,
                 std::optional{newRealizationId});
+            QCOMPARE(
+                atShortBoundary.handoffEndFrame,
+                std::optional<std::int64_t>{0});
             return;
         }
 
@@ -1241,7 +1249,8 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         QVERIFY(!atShortBoundary.realizationId.has_value());
 
         observedShort->set_processed_frames(
-            static_cast<std::int64_t>(
+            deviceProcessedBaseline
+            + static_cast<std::int64_t>(
                 handoffBoundaryFrames
                 + static_cast<std::size_t>(expectedTransitionFrames - 1)));
         QCOMPARE(
@@ -1249,7 +1258,8 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             core::AudibleHandoffPhase::TRANSITION);
 
         observedShort->set_processed_frames(
-            static_cast<std::int64_t>(
+            deviceProcessedBaseline
+            + static_cast<std::int64_t>(
                 handoffBoundaryFrames
                 + static_cast<std::size_t>(expectedTransitionFrames)));
         const auto afterShort =
@@ -1258,6 +1268,9 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         QCOMPARE(
             afterShort.realizationId,
             std::optional{newRealizationId});
+        QCOMPARE(
+            afterShort.handoffEndFrame,
+            std::optional<std::int64_t>{0});
     };
 
     verifyShortCrossfadeIdentity(
@@ -1764,6 +1777,86 @@ void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()
     QVERIFY(!failed);
     QCOMPARE(failed.error()->code(), core::ErrorCode::IoFailure);
     QVERIFY(engine.clear());
+}
+
+void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
+{
+    PlaybackEngine engine;
+    auto initialSnap = engine.snapshot();
+    QVERIFY(initialSnap);
+    QCOMPARE(initialSnap.value()->traversalSerial, std::uint64_t{0});
+    QCOMPARE(initialSnap.value()->seekSerial, std::uint64_t{0});
+    QCOMPARE(initialSnap.value()->loopWrapCount, std::uint64_t{0});
+
+    const auto codes = indexed_stereo_codes(400);
+    auto output = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+    auto* observedOutput = output.get();
+
+    QVERIFY(engine.install_candidate(
+        open_pcm16_stereo(codes),
+        std::move(output),
+        DeviceSampleFormat::PCM_S16));
+
+    // Prepare / install alone MUST NOT start traversal or change seek/loop serials
+    auto preparedSnap = engine.snapshot();
+    QVERIFY(preparedSnap);
+    QCOMPARE(preparedSnap.value()->traversalSerial, std::uint64_t{0});
+    QCOMPARE(preparedSnap.value()->seekSerial, std::uint64_t{0});
+    QCOMPARE(preparedSnap.value()->loopWrapCount, std::uint64_t{0});
+
+    // 1st PLAY starts first traversal (traversalSerial = 1)
+    QVERIFY(engine.play());
+    auto play1Snap = engine.snapshot();
+    QVERIFY(play1Snap);
+    QCOMPARE(play1Snap.value()->traversalSerial, std::uint64_t{1});
+    QCOMPARE(play1Snap.value()->seekSerial, std::uint64_t{0});
+
+    // PAUSE -> RESUME MUST NOT increment traversalSerial
+    QVERIFY(engine.pause());
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{1});
+    QVERIFY(engine.play());
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{1});
+
+    // STOP -> PLAY establishes a new traversal (traversalSerial = 2)
+    QVERIFY(engine.stop());
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{1});
+    QVERIFY(engine.play());
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{2});
+
+    // Active realization handoff MUST NOT increment traversalSerial
+    const auto buf2 = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 400);
+    const core::RealizationId rid2{99};
+    QVERIFY(engine.handoff_pcm(buf2.view(), nullptr, rid2));
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{2});
+
+    // Successful SEEK increments seekSerial exactly once without falsely creating a traversal event
+    QVERIFY(engine.seek(core::FrameIndex{100}));
+    auto seekSnap = engine.snapshot();
+    QVERIFY(seekSnap);
+    QCOMPARE(seekSnap.value()->seekSerial, std::uint64_t{1});
+    QCOMPARE(seekSnap.value()->traversalSerial, std::uint64_t{2});
+
+    // Failed SEEK changes no serial
+    QVERIFY(!engine.seek(core::FrameIndex{-50}));
+    auto failSeekSnap = engine.snapshot();
+    QCOMPARE(failSeekSnap.value()->seekSerial, std::uint64_t{1});
+    QCOMPARE(failSeekSnap.value()->traversalSerial, std::uint64_t{2});
+
+    // set_loop internal restart does NOT falsely create a new traversal
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{50}, core::FrameIndex{150}).value();
+    QVERIFY(engine.set_loop(loop));
+    auto loopSnap = engine.snapshot();
+    QCOMPARE(loopSnap.value()->traversalSerial, std::uint64_t{2});
+    QCOMPARE(loopSnap.value()->seekSerial, std::uint64_t{1});
+
+    // loopWrapCount changes only when actual processed output crosses a loop boundary
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
+
+    // Simulate hardware processed frames crossing loop boundary (length 100 frames)
+    observedOutput->set_processed_frames(200);
+    auto wrapSnap = engine.snapshot();
+    QCOMPARE(wrapSnap.value()->loopWrapCount, std::uint64_t{2});
 }
 
 }  // namespace rgsml::tests

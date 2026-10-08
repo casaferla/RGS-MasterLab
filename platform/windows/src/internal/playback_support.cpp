@@ -355,6 +355,7 @@ core::Status PlaybackEngine::install_candidate(
     runtimeError_.reset();
     activeRealizationId_.reset();
     pendingHandoff_.reset();
+    baseLoopWrapCount_ = 0;
     reset_queue_state(0);
     return core::Status::success();
 }
@@ -481,6 +482,7 @@ core::Status PlaybackEngine::handoff_pcm(
                 realizationId,
                 0,
                 0,
+                std::nullopt,
                 true};
             return core::Status::success();
         }
@@ -647,6 +649,13 @@ core::Status PlaybackEngine::handoff_pcm(
         scheduledOutputFrame_ = source_to_output_frame(loop_->begin().value());
     }
 
+    // The first pure-NEW numeric Source frame must be derived from the
+    // already-resolved output cursor, not from the device's absolute processed
+    // frame counter. scheduledOutputFrame_ already includes the crossfade and,
+    // when it lands on loop.end, has been wrapped to loop.begin above.
+    const auto newNumericStartSourceFrame =
+        output_to_source_frame(scheduledOutputFrame_);
+
     // Publish the candidate identity before any newly prepared bytes can reach
     // the output queue. If prefill fails after the commit point, fail closed:
     // stop/clear the backend and restore the previously accepted source/ID.
@@ -656,6 +665,7 @@ core::Status PlaybackEngine::handoff_pcm(
         realizationId,
         handoffProcessedFrame,
         handoffEndProcessedFrame,
+        newNumericStartSourceFrame,
         false};
 
     auto filled = prefill();
@@ -776,6 +786,20 @@ core::Status PlaybackEngine::clear()
 
 core::Status PlaybackEngine::play()
 {
+    if (state_ == core::PlaybackState::PAUSED
+        && output_ && output_->state() == OutputState::SUSPENDED) {
+        auto resumed = output_->resume();
+        if (!resumed) {
+            return resumed;
+        }
+        state_ = core::PlaybackState::PLAYING;
+        return core::Status::success();
+    }
+    return play_internal(true);
+}
+
+core::Status PlaybackEngine::play_internal(bool isNewTraversal)
+{
     if (!has_source() || !output_ || !duration_ || !outputDuration_ || !sampleFormat_) {
         return status_failure(
             core::ErrorCode::InvalidState,
@@ -784,16 +808,7 @@ core::Status PlaybackEngine::play()
     if (runtimeError_) {
         return core::Status::failure(*runtimeError_);
     }
-    if (state_ == core::PlaybackState::PLAYING) {
-        return core::Status::success();
-    }
-    if (state_ == core::PlaybackState::PAUSED
-        && output_->state() == OutputState::SUSPENDED) {
-        auto resumed = output_->resume();
-        if (!resumed) {
-            return resumed;
-        }
-        state_ = core::PlaybackState::PLAYING;
+    if (state_ == core::PlaybackState::PLAYING && !isNewTraversal) {
         return core::Status::success();
     }
 
@@ -827,6 +842,10 @@ core::Status PlaybackEngine::play()
     playbackStartOutputFrame_ = source_to_output_frame(position_.value());
     state_ = core::PlaybackState::PLAYING;
     pendingHandoff_.reset();
+    if (isNewTraversal) {
+        baseLoopWrapCount_ = 0;
+        ++traversalSerial_;
+    }
     return core::Status::success();
 }
 
@@ -891,13 +910,15 @@ core::Status PlaybackEngine::seek(core::FrameIndex position)
         && position.value() < loop_->end().value();
     runtimeError_.reset();
     pendingHandoff_.reset();
+    baseLoopWrapCount_ = 0;
     reset_queue_state(position.value());
     if (previousState == core::PlaybackState::PLAYING) {
         state_ = core::PlaybackState::STOPPED;
         if (position.value() == duration_->value()) {
+            ++seekSerial_;
             return core::Status::success();
         }
-        auto restarted = play();
+        auto restarted = play_internal(false);
         if (!restarted) {
             state_ = core::PlaybackState::STOPPED;
             position_ = position;
@@ -906,6 +927,7 @@ core::Status PlaybackEngine::seek(core::FrameIndex position)
     } else {
         state_ = previousState;
     }
+    ++seekSerial_;
     return core::Status::success();
 }
 
@@ -962,7 +984,25 @@ core::Status PlaybackEngine::set_loop(std::optional<core::FrameRange> loop)
         return core::Status::success();
     }
     state_ = core::PlaybackState::STOPPED;
-    return play();
+    return play_internal(false);
+}
+
+std::uint64_t PlaybackEngine::current_loop_wrap_count() const noexcept
+{
+    if (!output_ || !outputDuration_ || !loop_ || !loopTraversalEligible_) {
+        return baseLoopWrapCount_;
+    }
+    const auto totalProcessed = std::max<std::int64_t>(0, output_->processed_frames());
+    const auto relativeProcessed = std::max<std::int64_t>(0, totalProcessed - processedFrameBaseline_);
+    const auto loopBeginOutput = source_to_output_frame(loop_->begin().value());
+    const auto loopEndOutput = source_to_output_frame(loop_->end().value());
+    const auto loopLength = loopEndOutput - loopBeginOutput;
+    std::int64_t candidateOutput = playbackStartOutputFrame_ + relativeProcessed;
+    if (relativeProcessed > 0 && candidateOutput >= loopEndOutput && loopLength > 0) {
+        const auto wraps = static_cast<std::uint64_t>((candidateOutput - loopBeginOutput) / loopLength);
+        return baseLoopWrapCount_ + wraps;
+    }
+    return baseLoopWrapCount_;
 }
 
 core::Result<core::PlaybackSnapshot> PlaybackEngine::snapshot() const
@@ -971,7 +1011,8 @@ core::Result<core::PlaybackSnapshot> PlaybackEngine::snapshot() const
         return core::Result<core::PlaybackSnapshot>::failure(*runtimeError_);
     }
     return core::Result<core::PlaybackSnapshot>::success(core::PlaybackSnapshot{
-        state_, position_, duration_, loop_, audible_realization_state()});
+        state_, position_, duration_, loop_, audible_realization_state(),
+        traversalSerial_, seekSerial_, current_loop_wrap_count()});
 }
 
 void PlaybackEngine::tick()
@@ -1241,14 +1282,15 @@ core::AudibleRealizationState PlaybackEngine::audible_realization_state() const 
 {
     const auto unavailable = [] {
         return core::AudibleRealizationState{
-            core::AudibleHandoffPhase::UNAVAILABLE, std::nullopt};
+            core::AudibleHandoffPhase::UNAVAILABLE, std::nullopt, std::nullopt};
     };
     const auto exclusive = [](std::optional<core::RealizationId> id,
-                              core::AudibleHandoffPhase phase) {
+                              core::AudibleHandoffPhase phase,
+                              std::optional<std::int64_t> endFrame = std::nullopt) {
         return id
-            ? core::AudibleRealizationState{phase, id}
+            ? core::AudibleRealizationState{phase, id, endFrame}
             : core::AudibleRealizationState{
-                core::AudibleHandoffPhase::UNAVAILABLE, std::nullopt};
+                core::AudibleHandoffPhase::UNAVAILABLE, std::nullopt, std::nullopt};
     };
 
     if (!pendingHandoff_) {
@@ -1273,11 +1315,16 @@ core::AudibleRealizationState PlaybackEngine::audible_realization_state() const 
     }
     if (processedFrame < pendingHandoff_->endProcessedFrame) {
         return core::AudibleRealizationState{
-            core::AudibleHandoffPhase::TRANSITION, std::nullopt};
+            core::AudibleHandoffPhase::TRANSITION, std::nullopt, std::nullopt};
+    }
+
+    if (!pendingHandoff_->newNumericStartSourceFrame.has_value()) {
+        return unavailable();
     }
     return exclusive(
         pendingHandoff_->newRealizationId,
-        core::AudibleHandoffPhase::NEW);
+        core::AudibleHandoffPhase::NEW,
+        pendingHandoff_->newNumericStartSourceFrame);
 }
 
 bool PlaybackEngine::has_source() const noexcept

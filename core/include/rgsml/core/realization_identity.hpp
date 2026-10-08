@@ -21,7 +21,8 @@ enum class AudibleHandoffPhase {
 
 struct AudibleRealizationState final {
     AudibleHandoffPhase phase{AudibleHandoffPhase::UNAVAILABLE};
-    std::optional<RealizationId> realizationId;
+    std::optional<RealizationId> realizationId{std::nullopt};
+    std::optional<std::int64_t> handoffEndFrame{std::nullopt};
 
     [[nodiscard]] bool operator==(const AudibleRealizationState&) const = default;
 };

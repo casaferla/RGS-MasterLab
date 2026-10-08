@@ -96,7 +96,8 @@ public:
         }
         return core::Result<core::PlaybackSnapshot>::success(
             core::PlaybackSnapshot{
-                state, position, duration, loop, audibleRealization});
+                state, position, duration, loop, audibleRealization,
+                traversalSerial, seekSerial, loopWrapCount});
     }
 
     bool failPrepare{false};
@@ -112,6 +113,9 @@ public:
     std::optional<core::FrameCount> duration;
     std::optional<core::FrameRange> loop;
     core::AudibleRealizationState audibleRealization;
+    std::uint64_t traversalSerial{0};
+    std::uint64_t seekSerial{0};
+    std::uint64_t loopWrapCount{0};
 
 private:
     [[nodiscard]] static core::Status invalid_state()
