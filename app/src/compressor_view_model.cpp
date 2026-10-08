@@ -244,17 +244,21 @@ void CompressorViewModel::update_telemetry()
     const std::size_t numLanes = std::max<std::size_t>(1U, hist.num_lanes());
 
     double maxPeakGr = 0.0;
+    bool hasPeakGr = false;
     for (std::size_t l = 0; l < hist.num_lanes(); ++l) {
         const auto& buckets = hist.lane_buckets(l);
         for (const auto& b : buckets) {
             if (b.valid) {
+                hasPeakGr = true;
                 maxPeakGr = std::max(maxPeakGr, b.peak_reduction_db);
             }
         }
     }
 
+    // Canonical default is 0-6 dB. Drop to 0-3 only when observed
+    // truthful history proves that the smaller ladder rung is sufficient.
     double scaleMax = 6.0;
-    if (maxPeakGr <= 3.0) {
+    if (hasPeakGr && maxPeakGr <= 3.0) {
         scaleMax = 3.0;
     } else if (maxPeakGr <= 6.0) {
         scaleMax = 6.0;
@@ -276,6 +280,12 @@ void CompressorViewModel::update_telemetry()
             bMap.insert(QStringLiteral("peakDb"), b.peak_reduction_db);
             bMap.insert(QStringLiteral("beginFrame"), static_cast<qlonglong>(b.begin_frame));
             bMap.insert(QStringLiteral("endFrame"), static_cast<qlonglong>(b.end_frame));
+            bMap.insert(QStringLiteral("frameCount"), static_cast<qulonglong>(b.frame_count));
+            bMap.insert(
+                QStringLiteral("realizationId"),
+                b.realization_id.has_value()
+                    ? QString::number(b.realization_id->value)
+                    : QString{});
             bMap.insert(QStringLiteral("valid"), b.valid);
             bucketList.append(bMap);
         }

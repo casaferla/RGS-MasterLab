@@ -1842,6 +1842,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     // Feed deterministic Stage 3B2 sidecar telemetry through the SAME
     // production provider -> resolver -> CompressorViewModel presentation path.
+    // The visible Audition Target is switched to PROCESSED as well: visual
+    // evidence must never show PREPARED/GOLD while claiming ACTIVE WET.
+    QTRY_VERIFY_WITH_TIMEOUT(
+        auditionSelector.processed_available(), 5000);
+    QVERIFY(auditionSelector.switch_to(
+        app::AuditionTarget::PROCESSED));
+    QCoreApplication::processEvents();
+
     const auto teleRealizationId = core::RealizationId{101};
     const auto teleCompId = *dsp::ModuleInstanceId::from_uuid(
         *core::Uuid::parse(
@@ -1851,24 +1859,29 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     smokeSidecar.valid = true;
     smokeSidecar.status = render::CompressorTelemetryStatus::OK;
     smokeSidecar.channel_layout = audio::ChannelLayout::STEREO_LR;
-    smokeSidecar.sample_rate_hz = 44100;
+    smokeSidecar.sample_rate_hz = 48000;
     smokeSidecar.chain_revision = 1;
 
     render::CompressorTelemetryLane smokeLane0;
-    for (int bIdx = 0; bIdx < 60; ++bIdx) {
+    constexpr int kSmokeBucketFrames = 240; // 5 ms at 48 kHz.
+    constexpr int kSmokeBucketCount = 780;  // 3.9 s of visible history.
+    for (int bIdx = 0; bIdx < kSmokeBucketCount; ++bIdx) {
         render::CompressorTelemetryBucket b{
             smokeSidecar.module_instance_id,
             smokeSidecar.realization_id};
-        b.begin_frame = bIdx * 221;
-        b.end_frame = (bIdx + 1) * 221;
-        b.frame_count = 221;
-        b.peak_offset_frames = 110;
-        b.attenuated_frame_count = 221;
-        const double phase = bIdx * 0.15;
-        b.mean_reduction_db = 2.0 + 1.5 * std::sin(phase);
+        b.begin_frame = bIdx * kSmokeBucketFrames;
+        b.end_frame = (bIdx + 1) * kSmokeBucketFrames;
+        b.frame_count = kSmokeBucketFrames;
+        b.peak_offset_frames = kSmokeBucketFrames / 2;
+        b.attenuated_frame_count = kSmokeBucketFrames;
+        const double phase = bIdx * 0.055;
+        b.mean_reduction_db =
+            2.0 + 1.35 * std::sin(phase)
+                + 0.35 * std::sin(phase * 0.23);
         b.end_reduction_db = b.mean_reduction_db;
         b.peak_reduction_db =
-            b.mean_reduction_db + 1.8 + 0.5 * std::cos(phase * 0.8);
+            b.mean_reduction_db
+                + 1.15 + 0.35 * std::cos(phase * 0.61);
         b.valid = true;
         smokeLane0.buckets.push_back(b);
     }
@@ -1880,7 +1893,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
                 smokeSidecar);
 
     observedPlayback->state = core::PlaybackState::PLAYING;
-    observedPlayback->position = core::FrameIndex{12000};
+    observedPlayback->position =
+        core::FrameIndex{
+            kSmokeBucketCount * kSmokeBucketFrames};
     observedPlayback->duration =
         *core::FrameCount::create(192000).value();
     observedPlayback->audibleRealization.phase =
@@ -1888,6 +1903,21 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     observedPlayback->audibleRealization.realizationId =
         teleRealizationId;
     observedPlayback->audibleRealization.handoffEndFrame = 0;
+
+    auto targetProvider = [&auditionSelector] {
+        const auto target = auditionSelector.active_target();
+        if (!target.has_value())
+            return render::AuditionTarget::PREPARED;
+        switch (*target) {
+        case app::AuditionTarget::PREPARED:
+            return render::AuditionTarget::PREPARED;
+        case app::AuditionTarget::PROCESSED:
+            return render::AuditionTarget::PROCESSED;
+        case app::AuditionTarget::GOLD:
+            return render::AuditionTarget::GOLD;
+        }
+        return render::AuditionTarget::PREPARED;
+    };
 
     auto installTelemetryProviders = [&] {
         compressorViewModel.setTelemetryProviders(
@@ -1897,13 +1927,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             [&playbackTransport]() {
                 return playbackTransport.playback_snapshot();
             },
-            [] {
-                return render::AuditionTarget::PROCESSED;
-            });
+            targetProvider);
     };
     installTelemetryProviders();
+    QTest::qWait(50);
     QCoreApplication::processEvents();
 
+    QCOMPARE(
+        auditionSelector.active_target(),
+        std::optional<app::AuditionTarget>{
+            app::AuditionTarget::PROCESSED});
     QCOMPARE(
         compressorViewModel.telemetry_status(),
         QStringLiteral("ACTIVE WET"));
@@ -1913,20 +1946,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         grStateLabelObj->property("text").toString(),
         QStringLiteral("ACTIVE WET"));
 
-    // Capture Mandatory Visual Evidence Artifact
+    // Capture Mandatory Visual Evidence Artifact.
     QVERIFY(capture_visual_evidence(
         window,
         QStringLiteral("compressor_gr_ribbon_1184x688.png"),
         QSize{1184, 688}));
 
-    // Test DUAL_MONO 2-lane telemetry evidence capture.
+    // Test DUAL_MONO 2-lane truthful presentation.
     const auto dualRealizationId = core::RealizationId{102};
     render::CompressorTelemetrySidecar dualSidecar{
         teleCompId, dualRealizationId};
     dualSidecar.valid = true;
     dualSidecar.status = render::CompressorTelemetryStatus::OK;
     dualSidecar.channel_layout = audio::ChannelLayout::STEREO_LR;
-    dualSidecar.sample_rate_hz = 44100;
+    dualSidecar.sample_rate_hz = 48000;
     dualSidecar.chain_revision = 1;
 
     auto dualLane0 = smokeLane0;
@@ -1937,11 +1970,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     for (std::size_t i = 0; i < dualLane1.buckets.size(); ++i) {
         auto& bucket = dualLane1.buckets[i];
         bucket.mean_reduction_db =
-            std::max(0.0, bucket.mean_reduction_db - 0.7);
+            std::max(
+                0.0,
+                bucket.mean_reduction_db
+                    - 0.55 + 0.18 * std::sin(i * 0.09));
         bucket.end_reduction_db = bucket.mean_reduction_db;
         bucket.peak_reduction_db =
-            std::max(bucket.mean_reduction_db,
-                     bucket.peak_reduction_db - 0.4);
+            std::max(
+                bucket.mean_reduction_db,
+                bucket.peak_reduction_db - 0.35);
     }
     dualSidecar.channel_lanes.push_back(std::move(dualLane0));
     dualSidecar.channel_lanes.push_back(std::move(dualLane1));
@@ -1955,16 +1992,75 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     compressorViewModel.setChannelLink(QStringLiteral("DUAL_MONO"));
     installTelemetryProviders();
+    QTest::qWait(50);
     QCoreApplication::processEvents();
 
     QCOMPARE(compressorViewModel.telemetry_num_lanes(), 2);
+    const auto liveHistory =
+        compressorViewModel.telemetry_history_lanes();
+    QVERIFY(!liveHistory.isEmpty());
     QVERIFY(capture_visual_evidence(
         window,
         QStringLiteral(
             "compressor_gr_ribbon_dual_mono_1184x688.png"),
         QSize{1184, 688}));
 
+    // Presentation seam must freeze, not fabricate, outside active wet
+    // audition. Stage 3B2 owns the canonical state transitions.
+    observedPlayback->state = core::PlaybackState::PAUSED;
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    QCOMPARE(
+        compressorViewModel.telemetry_status(),
+        QStringLiteral("PAUSED"));
+    QCOMPARE(
+        compressorViewModel.telemetry_history_lanes(),
+        liveHistory);
+
+    observedPlayback->state = core::PlaybackState::PLAYING;
+    QVERIFY(auditionSelector.switch_to(
+        app::AuditionTarget::PREPARED));
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    QCOMPARE(
+        compressorViewModel.telemetry_status(),
+        QStringLiteral("NOT AUDITIONED"));
+    QCOMPARE(
+        compressorViewModel.telemetry_history_lanes(),
+        liveHistory);
+
+    QVERIFY(auditionSelector.switch_to(
+        app::AuditionTarget::PROCESSED));
+    observedPlayback->state = core::PlaybackState::PLAYING;
+    observedPlayback->position =
+        core::FrameIndex{
+            kSmokeBucketCount * kSmokeBucketFrames};
+    observedPlayback->audibleRealization.phase =
+        core::AudibleHandoffPhase::NEW;
+    observedPlayback->audibleRealization.realizationId =
+        dualRealizationId;
+    observedPlayback->audibleRealization.handoffEndFrame = 0;
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+
+    QVERIFY(masteringChainState.set_user_bypass(
+        masteringChainState.compressor_instance_id(), true));
+    compressorViewModel.refreshFromAuthority();
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+    QCOMPARE(
+        compressorViewModel.telemetry_status(),
+        QStringLiteral("BYPASS"));
+    QCOMPARE(
+        compressorViewModel.telemetry_history_lanes(),
+        liveHistory);
+
+    QVERIFY(masteringChainState.set_user_bypass(
+        masteringChainState.compressor_instance_id(), false));
+    compressorViewModel.refreshFromAuthority();
     compressorViewModel.setChannelLink(QStringLiteral("LINKED_MAX"));
+    QVERIFY(auditionSelector.switch_to(
+        app::AuditionTarget::PREPARED));
 
     // Compressor horizontal elasticity assertions
     const double curveWellWidth1184 = curveWellNative ? curveWellNative->width() : 0.0;

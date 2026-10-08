@@ -292,13 +292,42 @@ Item {
                         }
                     }
 
-                    // Integrated Live GR Ribbon Overlay Section
-                    ColumnLayout {
-                        id: grRibbonSection
-                        objectName: "compressorGrRibbonSection"
-                        Layout.fillWidth: true
-                        spacing: 2
 
+                }
+                // Integrated Live GR ribbon: observational overlay inside
+                // the SAME transfer-curve well. It does not consume transfer
+                // curve layout height.
+                Item {
+                    id: grRibbonSection
+                    objectName: "compressorGrRibbonSection"
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    anchors.bottomMargin: 8
+                    height: root.viewModel
+                        && root.viewModel.telemetryNumLanes > 1
+                        ? 76 : 68
+                    z: 5
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "#060D14"
+                        opacity: 0.82
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        height: 1
+                        color: root.borderDark
+                    }
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 2
                         RowLayout {
                             Layout.fillWidth: true
                             Text {
@@ -336,7 +365,8 @@ Item {
                             readonly property var historyLanes: root.viewModel ? root.viewModel.telemetryHistoryLanes : []
                             readonly property string liveState: root.viewModel ? root.viewModel.telemetryStatus : "UNAVAILABLE"
 
-                            implicitHeight: numLanes > 1 ? 72 : 54
+                            Layout.fillHeight: true
+                            Layout.minimumHeight: 0
 
                             onHistoryLanesChanged: requestPaint()
                             onScaleMaxDbChanged: requestPaint()
@@ -351,123 +381,303 @@ Item {
                                 const isUnavailable = (liveState === "UNAVAILABLE")
                                 const isTransition = (liveState === "TRANSITION")
                                 const isBypassed = (liveState === "BYPASS")
+                                const scaleGutter = 38
+                                const plotWidth = Math.max(1, width - scaleGutter)
 
                                 ctx.save()
-
                                 if (isBypassed) {
                                     ctx.globalAlpha = 0.4
                                 }
 
-                                const activeLanes = (historyLanes && historyLanes.length > 0) ? Math.min(numLanes, historyLanes.length) : 1
+                                const activeLanes =
+                                    (historyLanes && historyLanes.length > 0)
+                                        ? Math.min(numLanes, historyLanes.length)
+                                        : 1
                                 const laneGap = 4
-                                const laneHeight = (height - (activeLanes - 1) * laneGap) / activeLanes
+                                const laneHeight =
+                                    (height - (activeLanes - 1) * laneGap)
+                                        / activeLanes
+                                const maxSlots = 1000.0
+                                const stepX = plotWidth / maxSlots
+
+                                function drawSegment(segment, laneZeroY) {
+                                    if (!segment || segment.length < 2)
+                                        return
+
+                                    ctx.fillStyle = "rgba(123, 97, 255, 0.25)"
+                                    ctx.beginPath()
+                                    ctx.moveTo(segment[0].x, laneZeroY)
+                                    for (var s = 0; s < segment.length; ++s)
+                                        ctx.lineTo(segment[s].x, segment[s].meanY)
+                                    ctx.lineTo(
+                                        segment[segment.length - 1].x,
+                                        laneZeroY)
+                                    ctx.closePath()
+                                    ctx.fill()
+
+                                    ctx.fillStyle = "rgba(160, 136, 255, 0.45)"
+                                    ctx.beginPath()
+                                    ctx.moveTo(
+                                        segment[0].x,
+                                        segment[0].meanY)
+                                    for (var p = 0; p < segment.length; ++p)
+                                        ctx.lineTo(
+                                            segment[p].x,
+                                            segment[p].peakY)
+                                    for (var m = segment.length - 1;
+                                         m >= 0; --m)
+                                        ctx.lineTo(
+                                            segment[m].x,
+                                            segment[m].meanY)
+                                    ctx.closePath()
+                                    ctx.fill()
+
+                                    ctx.strokeStyle = "#A088FF"
+                                    ctx.lineWidth = 1.2
+                                    ctx.beginPath()
+                                    for (var c = 0; c < segment.length; ++c) {
+                                        if (c === 0)
+                                            ctx.moveTo(
+                                                segment[c].x,
+                                                segment[c].meanY)
+                                        else
+                                            ctx.lineTo(
+                                                segment[c].x,
+                                                segment[c].meanY)
+                                    }
+                                    ctx.stroke()
+
+                                    ctx.strokeStyle = "#8A70FF"
+                                    ctx.lineWidth = 1.0
+                                    ctx.beginPath()
+                                    for (var k = 0; k < segment.length; ++k) {
+                                        if (k === 0)
+                                            ctx.moveTo(
+                                                segment[k].x,
+                                                segment[k].peakY)
+                                        else
+                                            ctx.lineTo(
+                                                segment[k].x,
+                                                segment[k].peakY)
+                                    }
+                                    ctx.stroke()
+                                }
 
                                 for (var l = 0; l < activeLanes; ++l) {
-                                    var laneTopY = l * (laneHeight + laneGap)
-                                    var laneZeroY = laneTopY + 1
+                                    const laneTopY =
+                                        l * (laneHeight + laneGap)
+                                    const laneZeroY = laneTopY + 1
 
                                     ctx.strokeStyle = "#1E354A"
                                     ctx.lineWidth = 1
                                     ctx.beginPath()
                                     ctx.moveTo(0, laneZeroY)
-                                    ctx.lineTo(width, laneZeroY)
+                                    ctx.lineTo(plotWidth, laneZeroY)
                                     ctx.stroke()
 
-                                    if (isUnavailable || !historyLanes || l >= historyLanes.length) {
-                                        continue
+                                    var laneData =
+                                        historyLanes && l < historyLanes.length
+                                            ? historyLanes[l]
+                                            : null
+                                    var buckets =
+                                        laneData ? laneData.buckets : []
+
+                                    if (!isUnavailable && buckets
+                                            && buckets.length > 0) {
+                                        var rawPoints = []
+                                        var slot = 0
+                                        var previous = null
+
+                                        for (var i = 0;
+                                             i < buckets.length; ++i) {
+                                            const b = buckets[i]
+                                            var gapSlots = 0
+                                            var loopBefore = false
+                                            if (previous !== null) {
+                                                const nominalFrames =
+                                                    Math.max(
+                                                        1,
+                                                        b.frameCount || 0,
+                                                        previous.frameCount || 0)
+                                                const frameGap =
+                                                    b.beginFrame
+                                                        - previous.endFrame
+                                                const realizationChanged =
+                                                    (b.realizationId
+                                                        !== previous.realizationId)
+
+                                                if (frameGap > 0) {
+                                                    gapSlots = Math.max(
+                                                        1,
+                                                        Math.min(
+                                                            12,
+                                                            Math.ceil(
+                                                                frameGap
+                                                                    / nominalFrames)))
+                                                } else if (frameGap < 0) {
+                                                    // Loop wrap: retain history but
+                                                    // never draw a connecting line.
+                                                    gapSlots = 2
+                                                    loopBefore = true
+                                                } else if (realizationChanged) {
+                                                    // OLD -> NEW must remain visibly
+                                                    // discontinuous even if source
+                                                    // frame domains meet exactly.
+                                                    gapSlots = 2
+                                                }
+                                            }
+
+                                            slot += gapSlots
+                                            rawPoints.push({
+                                                slot: slot,
+                                                meanDb:
+                                                    b.valid ? b.meanDb : 0.0,
+                                                peakDb:
+                                                    b.valid ? b.peakDb : 0.0,
+                                                valid: b.valid,
+                                                breakBefore: gapSlots > 0,
+                                                loopBefore: loopBefore
+                                            })
+                                            slot += 1
+                                            previous = b
+                                        }
+
+                                        const startX =
+                                            plotWidth - slot * stepX
+                                        var segments = []
+                                        var segment = []
+                                        var markers = []
+
+                                        for (var r = 0;
+                                             r < rawPoints.length; ++r) {
+                                            const rp = rawPoints[r]
+                                            const x =
+                                                startX + rp.slot * stepX
+                                            const meanY =
+                                                laneZeroY
+                                                    + (Math.max(
+                                                        0,
+                                                        Math.min(
+                                                            scaleMaxDb,
+                                                            rp.meanDb))
+                                                        / scaleMaxDb)
+                                                        * (laneHeight - 2)
+                                            const peakY =
+                                                laneZeroY
+                                                    + (Math.max(
+                                                        0,
+                                                        Math.min(
+                                                            scaleMaxDb,
+                                                            rp.peakDb))
+                                                        / scaleMaxDb)
+                                                        * (laneHeight - 2)
+
+                                            if (rp.breakBefore
+                                                    && segment.length > 0) {
+                                                segments.push(segment)
+                                                segment = []
+                                                markers.push({
+                                                    x: x - stepX,
+                                                    loop: rp.loopBefore
+                                                })
+                                            }
+                                            segment.push({
+                                                x: x,
+                                                meanY: meanY,
+                                                peakY: peakY
+                                            })
+                                        }
+                                        if (segment.length > 0)
+                                            segments.push(segment)
+
+                                        for (var sg = 0;
+                                             sg < segments.length; ++sg)
+                                            drawSegment(
+                                                segments[sg],
+                                                laneZeroY)
+
+                                        for (var mk = 0;
+                                             mk < markers.length; ++mk) {
+                                            ctx.strokeStyle =
+                                                markers[mk].loop
+                                                    ? "#586773"
+                                                    : "#7B61FF"
+                                            ctx.lineWidth = 1
+                                            ctx.setLineDash([2, 2])
+                                            ctx.beginPath()
+                                            ctx.moveTo(
+                                                markers[mk].x,
+                                                laneTopY)
+                                            ctx.lineTo(
+                                                markers[mk].x,
+                                                laneTopY + laneHeight)
+                                            ctx.stroke()
+                                            ctx.setLineDash([])
+                                        }
                                     }
 
-                                    var laneData = historyLanes[l]
-                                    var buckets = laneData ? laneData.buckets : []
-                                    if (!buckets || buckets.length === 0) continue
-
-                                    const maxBuckets = 1000.0
-                                    const stepX = width / maxBuckets
-                                    const availCount = buckets.length
-                                    const startX = width - (availCount * stepX)
-
-                                    var points = []
-                                    for (var i = 0; i < availCount; ++i) {
-                                        var b = buckets[i]
-                                        var bx = startX + i * stepX
-                                        var meanGr = b.valid ? b.meanDb : 0.0
-                                        var peakGr = b.valid ? b.peakDb : 0.0
-
-                                        var meanY = laneZeroY + (meanGr / scaleMaxDb) * (laneHeight - 2)
-                                        var peakY = laneZeroY + (peakGr / scaleMaxDb) * (laneHeight - 2)
-
-                                        points.push({ x: bx, meanY: meanY, peakY: peakY, valid: b.valid })
+                                    if (activeLanes > 1) {
+                                        ctx.fillStyle = "#A1B5C9"
+                                        ctx.font = "8px 'Segoe UI'"
+                                        ctx.fillText(
+                                            l === 0 ? "L" : "R",
+                                            4,
+                                            laneTopY + 9)
                                     }
 
-                                    if (points.length >= 2) {
-                                        ctx.fillStyle = "rgba(123, 97, 255, 0.25)"
-                                        ctx.beginPath()
-                                        ctx.moveTo(points[0].x, laneZeroY)
-                                        for (var p = 0; p < points.length; ++p) {
-                                            ctx.lineTo(points[p].x, points[p].meanY)
-                                        }
-                                        ctx.lineTo(points[points.length - 1].x, laneZeroY)
-                                        ctx.closePath()
-                                        ctx.fill()
-
-                                        ctx.fillStyle = "rgba(160, 136, 255, 0.45)"
-                                        ctx.beginPath()
-                                        ctx.moveTo(points[0].x, points[0].meanY)
-                                        for (var p = 0; p < points.length; ++p) {
-                                            ctx.lineTo(points[p].x, points[p].peakY)
-                                        }
-                                        for (var p = points.length - 1; p >= 0; --p) {
-                                            ctx.lineTo(points[p].x, points[p].meanY)
-                                        }
-                                        ctx.closePath()
-                                        ctx.fill()
-
-                                        ctx.strokeStyle = "#A088FF"
-                                        ctx.lineWidth = 1.2
-                                        ctx.beginPath()
-                                        for (var p = 0; p < points.length; ++p) {
-                                            if (p === 0) ctx.moveTo(points[p].x, points[p].meanY)
-                                            else ctx.lineTo(points[p].x, points[p].meanY)
-                                        }
-                                        ctx.stroke()
-
-                                        ctx.strokeStyle = "#8A70FF"
-                                        ctx.lineWidth = 1.0
-                                        ctx.beginPath()
-                                        for (var p = 0; p < points.length; ++p) {
-                                            if (p === 0) ctx.moveTo(points[p].x, points[p].peakY)
-                                            else ctx.lineTo(points[p].x, points[p].peakY)
-                                        }
-                                        ctx.stroke()
-
-                                        if (activeLanes > 1) {
-                                            ctx.fillStyle = "#A1B5C9"
-                                            ctx.font = "9px 'Segoe UI'"
-                                            ctx.fillText(l === 0 ? "L" : "R", 4, laneTopY + 11)
-                                        }
-                                    }
+                                    // Sparse truthful GR scale: 0, midpoint,
+                                    // max. Default therefore reads 0 / 3 / 6.
+                                    ctx.fillStyle = "#586773"
+                                    ctx.font = "7px 'Segoe UI'"
+                                    const sx = plotWidth + 3
+                                    ctx.fillText(
+                                        "0",
+                                        sx,
+                                        laneTopY + 7)
+                                    const midpoint = scaleMaxDb * 0.5
+                                    ctx.fillText(
+                                        midpoint.toFixed(
+                                            midpoint < 2 ? 1 : 0),
+                                        sx,
+                                        laneTopY
+                                            + laneHeight * 0.5 + 2)
+                                    const maxLabel =
+                                        l === activeLanes - 1
+                                            ? scaleMaxDb.toFixed(0)
+                                                + " dB GR"
+                                            : scaleMaxDb.toFixed(0)
+                                    ctx.fillText(
+                                        maxLabel,
+                                        sx,
+                                        laneTopY + laneHeight - 2)
                                 }
 
                                 if (isTransition) {
                                     ctx.strokeStyle = "#7B61FF"
+                                    ctx.lineWidth = 1
                                     ctx.setLineDash([2, 2])
                                     ctx.beginPath()
-                                    ctx.moveTo(width - 2, 0)
-                                    ctx.lineTo(width - 2, height)
+                                    ctx.moveTo(plotWidth - 2, 0)
+                                    ctx.lineTo(plotWidth - 2, height)
                                     ctx.stroke()
                                     ctx.setLineDash([])
                                 }
 
-                                ctx.fillStyle = "#586773"
-                                ctx.font = "8px 'Segoe UI'"
-                                ctx.fillText("0 dB", width - 24, 10)
-                                ctx.fillText("-" + scaleMaxDb.toFixed(0) + " dB GR", width - 42, height - 3)
-
                                 ctx.restore()
                             }
                         }
+                    
+                    }
+
+                    // v1 is observational only. Do not let pointer editing
+                    // leak through the ribbon into transfer-curve handles.
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.AllButtons
+                        cursorShape: Qt.ArrowCursor
                     }
                 }
+
             }
 
             // Right Side: Control Panels
