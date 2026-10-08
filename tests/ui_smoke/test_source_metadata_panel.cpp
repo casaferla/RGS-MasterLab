@@ -1990,7 +1990,33 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         dualRealizationId;
     observedPlayback->audibleRealization.handoffEndFrame = 0;
 
-    compressorViewModel.setChannelLink(QStringLiteral("DUAL_MONO"));
+    const auto setEvidenceChannelLink =
+        [&masteringChainState, &compressorViewModel](
+            dsp::CompressorChannelLink link) {
+            const auto& current =
+                masteringChainState.compressor_parameters();
+            auto updated = dsp::CompressorParameters::create(
+                current.detector_mode(),
+                link,
+                current.threshold_dbfs(),
+                current.ratio(),
+                current.knee_db(),
+                current.attack_ms(),
+                current.release_ms(),
+                current.rms_time_constant_ms(),
+                current.look_ahead_ms(),
+                current.mix_percent(),
+                current.makeup_gain_db());
+            QVERIFY(updated);
+            QVERIFY(masteringChainState.set_compressor_parameters(
+                *updated.value()));
+            compressorViewModel.refreshFromAuthority();
+        };
+
+    setEvidenceChannelLink(dsp::CompressorChannelLink::DUAL_MONO);
+    QCOMPARE(
+        compressorViewModel.channel_link(),
+        QStringLiteral("DUAL_MONO"));
     installTelemetryProviders();
     QTest::qWait(50);
     QCoreApplication::processEvents();
@@ -2058,7 +2084,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(masteringChainState.set_user_bypass(
         masteringChainState.compressor_instance_id(), false));
     compressorViewModel.refreshFromAuthority();
-    compressorViewModel.setChannelLink(QStringLiteral("LINKED_MAX"));
+    setEvidenceChannelLink(
+        dsp::CompressorChannelLink::LINKED_MAX);
     QVERIFY(auditionSelector.switch_to(
         app::AuditionTarget::PREPARED));
 
