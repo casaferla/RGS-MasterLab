@@ -75,8 +75,9 @@ namespace {
     const auto compressorId =
         dsp::ModuleInstanceId::from_uuid(*uuid.value());
     Q_ASSERT(compressorId);
-    Q_ASSERT(chain.value()->add(
-        *compressorId.value(), "rgsml.dsp.compressor", 0));
+    const auto addCompressor = chain.value()->add(
+        *compressorId.value(), "rgsml.dsp.compressor", 0);
+    Q_ASSERT(addCompressor);
 
     const auto parameters = dsp::CompressorParameters::create_default();
     Q_ASSERT(parameters);
