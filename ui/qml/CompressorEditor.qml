@@ -110,6 +110,10 @@ Item {
                         objectName: "compressorCurveCanvas"
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        // Editing surface wins over the observational GR overlay.
+                        // Handles and their MouseArea must remain visually and
+                        // interactively above telemetry whenever regions overlap.
+                        z: 2
 
                         property var pointsList: root.viewModel ? root.viewModel.transferCurvePoints : []
                         property var handlesList: root.viewModel ? root.viewModel.transferCurveHandles : []
