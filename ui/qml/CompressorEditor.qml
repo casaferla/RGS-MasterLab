@@ -110,10 +110,6 @@ Item {
                         objectName: "compressorCurveCanvas"
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        // Editing surface wins over the observational GR overlay.
-                        // Handles and their MouseArea must remain visually and
-                        // interactively above telemetry whenever regions overlap.
-                        z: 2
 
                         property var pointsList: root.viewModel ? root.viewModel.transferCurvePoints : []
                         property var handlesList: root.viewModel ? root.viewModel.transferCurveHandles : []
@@ -297,41 +293,13 @@ Item {
                     }
 
 
-                }
-                // Integrated Live GR ribbon: observational overlay inside
-                // the SAME transfer-curve well. It is non-blocking (`enabled: false`)
-                // so pointer events pass directly to transfer-curve handles.
-                Item {
-                    id: grRibbonSection
-                    objectName: "compressorGrRibbonSection"
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
-                    anchors.bottomMargin: 8
-                    height: root.viewModel
-                        && root.viewModel.telemetryNumLanes > 1
-                        ? 76 : 68
-                    z: 1
-                    enabled: false
-
-                    Rectangle {
-                        anchors.fill: parent
-                        color: "#060D14"
-                        opacity: 0.82
-                    }
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        height: 1
-                        color: root.borderDark
-                    }
-
+                    // Integrated Live GR history: dedicated observational band
+                    // below the editable transfer curve, inside the SAME
+                    // compressorCurveWell. Editing and observation do not overlap.
                     ColumnLayout {
-                        anchors.fill: parent
+                        id: grRibbonSection
+                        objectName: "compressorGrRibbonSection"
+                        Layout.fillWidth: true
                         spacing: 2
                         RowLayout {
                             Layout.fillWidth: true
@@ -370,8 +338,7 @@ Item {
                             readonly property var historyLanes: root.viewModel ? root.viewModel.telemetryHistoryLanes : []
                             readonly property string liveState: root.viewModel ? root.viewModel.telemetryStatus : "UNAVAILABLE"
 
-                            Layout.fillHeight: true
-                            Layout.minimumHeight: 0
+                            implicitHeight: numLanes > 1 ? 72 : 54
 
                             onHistoryLanesChanged: requestPaint()
                             onScaleMaxDbChanged: requestPaint()
@@ -672,8 +639,10 @@ Item {
                             }
                         }
 
-                    }
+                                        }
+
                 }
+
 
             }
 

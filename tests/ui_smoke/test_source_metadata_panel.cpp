@@ -1832,8 +1832,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         "Live GR Ribbon section must be contained inside compressorCurveWell");
     QVERIFY2(curveCanvasNative->height() > grRibbonCanvasNative->height(),
         "Static transfer curve must remain visually dominant over Live GR ribbon");
-    QVERIFY2(curveCanvasNative->z() > grRibbonSectionNative->z(),
-        "Transfer-curve editing surface and handles must render above the Live GR ribbon");
+    const QPointF curveBottomInWell = curveCanvasNative->mapToItem(
+        curveWellNative, QPointF{0.0, curveCanvasNative->height()});
+    const QPointF ribbonTopInWell = grRibbonSectionNative->mapToItem(
+        curveWellNative, QPointF{0.0, 0.0});
+    QVERIFY2(curveBottomInWell.y() <= ribbonTopInWell.y() + 0.5,
+        "Transfer-curve editing surface and GR history band must not overlap");
 
     // Qualify ACTIVE WET from an explicit non-bypassed Compressor state.
     // Set authority directly to avoid scheduling an unrelated asynchronous preview.
@@ -2223,7 +2227,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(50);
     QCoreApplication::processEvents();
 
-    // Test MAKE-UP handle direct pointer manipulation over the Live GR Ribbon overlay region
+    // Test MAKE-UP handle direct pointer manipulation in the separated editing surface
     compressorViewModel.setMakeupGainDb(-18.0);
     QCoreApplication::processEvents();
     QCOMPARE(compressorViewModel.makeup_gain_db(), -18.0);
@@ -2270,7 +2274,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
 
     QVERIFY2(compressorViewModel.makeup_gain_db() > -18.0,
-        "Pointer drag over MAKE-UP handle must modify makeupGainDb without being consumed by Live GR ribbon");
+        "Pointer drag over MAKE-UP handle must modify makeupGainDb in the separated transfer-curve surface");
 
     compressorViewModel.setMakeupGainDb(0.0);
     QCoreApplication::processEvents();
