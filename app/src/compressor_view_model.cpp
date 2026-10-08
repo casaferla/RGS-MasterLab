@@ -1,5 +1,8 @@
 #include "compressor_view_model.hpp"
 
+#include "audition_source_selector.hpp"
+#include "playback_transport_view_model.hpp"
+
 #include <rgsml/dsp/module_registry.hpp>
 
 #include <QUuid>
@@ -148,7 +151,174 @@ CompressorViewModel::CompressorViewModel(
 
     connect(&active_preview_controller(), &MasteringPreviewController::changed, this, &CompressorViewModel::changed);
 
+    connect(&telemetryTimer_, &QTimer::timeout, this, &CompressorViewModel::update_telemetry);
+    telemetryTimer_.setInterval(33);
+    telemetryTimer_.start();
+
     refreshFromAuthority();
+}
+
+void CompressorViewModel::setPlaybackTransport(PlaybackTransportViewModel* playback) noexcept
+{
+    playbackTransport_ = playback;
+    update_telemetry();
+}
+
+void CompressorViewModel::setAuditionSourceSelector(AuditionSourceSelector* auditionSelector) noexcept
+{
+    auditionSelector_ = auditionSelector;
+    update_telemetry();
+}
+
+QString CompressorViewModel::telemetry_status() const
+{
+    return cachedTelemetryStatus_;
+}
+
+int CompressorViewModel::telemetry_num_lanes() const noexcept
+{
+    return cachedTelemetryNumLanes_;
+}
+
+QVariantList CompressorViewModel::telemetry_history_lanes() const
+{
+    return cachedTelemetryHistoryLanes_;
+}
+
+double CompressorViewModel::telemetry_gr_scale_max_db() const noexcept
+{
+    return cachedTelemetryGrScaleMaxDb_;
+}
+
+bool CompressorViewModel::telemetry_valid() const noexcept
+{
+    return cachedTelemetryValid_;
+}
+
+void CompressorViewModel::update_telemetry()
+{
+    if (auditionSelector_ != nullptr) {
+        const auto processedSnap = auditionSelector_->processed_realization_snapshot();
+        if (processedSnap != nullptr) {
+            const auto& sidecarOpt = processedSnap->compressor_telemetry_sidecar();
+            if (sidecarOpt.has_value() && sidecarOpt->valid) {
+                resolver_.register_sidecar(*sidecarOpt, bypass(), mix_percent());
+            }
+        }
+    }
+
+    if (playbackTransport_ != nullptr) {
+        const auto snapResult = playbackTransport_->playback_snapshot();
+        if (snapResult) {
+            const auto& snap = *snapResult.value();
+            render::AuditionTarget renderTarget = render::AuditionTarget::PREPARED;
+            if (auditionSelector_ != nullptr) {
+                const auto targetOpt = auditionSelector_->active_target();
+                if (targetOpt.has_value()) {
+                    switch (*targetOpt) {
+                    case AuditionTarget::PREPARED:
+                        renderTarget = render::AuditionTarget::PREPARED;
+                        break;
+                    case AuditionTarget::PROCESSED:
+                        renderTarget = render::AuditionTarget::PROCESSED;
+                        break;
+                    case AuditionTarget::GOLD:
+                        renderTarget = render::AuditionTarget::GOLD;
+                        break;
+                    }
+                }
+            }
+            render::ResolverUpdateContext context{snap, renderTarget};
+            resolver_.update(context);
+        }
+    }
+
+    QString statusStr = QStringLiteral("UNAVAILABLE");
+    switch (resolver_.status()) {
+    case render::AudibleTelemetryStatus::ACTIVE_WET:
+        statusStr = QStringLiteral("ACTIVE WET");
+        break;
+    case render::AudibleTelemetryStatus::ACTIVE_DRY_ONLY:
+        statusStr = QStringLiteral("ACTIVE DRY ONLY");
+        break;
+    case render::AudibleTelemetryStatus::BYPASS:
+        statusStr = QStringLiteral("BYPASS");
+        break;
+    case render::AudibleTelemetryStatus::NOT_AUDITIONED:
+        statusStr = QStringLiteral("NOT AUDITIONED");
+        break;
+    case render::AudibleTelemetryStatus::TRANSITION:
+        statusStr = QStringLiteral("TRANSITION");
+        break;
+    case render::AudibleTelemetryStatus::PAUSED:
+        statusStr = QStringLiteral("PAUSED");
+        break;
+    case render::AudibleTelemetryStatus::STOPPED:
+        statusStr = QStringLiteral("STOPPED / END");
+        break;
+    case render::AudibleTelemetryStatus::UNAVAILABLE:
+        statusStr = QStringLiteral("UNAVAILABLE");
+        break;
+    }
+
+    const auto& hist = resolver_.history();
+    const std::size_t numLanes = std::max<std::size_t>(1U, hist.num_lanes());
+
+    double maxPeakGr = 0.0;
+    for (std::size_t l = 0; l < hist.num_lanes(); ++l) {
+        const auto& buckets = hist.lane_buckets(l);
+        for (const auto& b : buckets) {
+            if (b.valid) {
+                maxPeakGr = std::max(maxPeakGr, b.peak_reduction_db);
+            }
+        }
+    }
+
+    double scaleMax = 6.0;
+    if (maxPeakGr <= 3.0) {
+        scaleMax = 3.0;
+    } else if (maxPeakGr <= 6.0) {
+        scaleMax = 6.0;
+    } else if (maxPeakGr <= 12.0) {
+        scaleMax = 12.0;
+    } else {
+        scaleMax = 24.0;
+    }
+
+    QVariantList historyLanes;
+    historyLanes.reserve(static_cast<qsizetype>(numLanes));
+    for (std::size_t l = 0; l < numLanes; ++l) {
+        const auto& buckets = hist.lane_buckets(l);
+        QVariantList bucketList;
+        bucketList.reserve(static_cast<qsizetype>(buckets.size()));
+        for (const auto& b : buckets) {
+            QVariantMap bMap;
+            bMap.insert(QStringLiteral("meanDb"), b.mean_reduction_db);
+            bMap.insert(QStringLiteral("peakDb"), b.peak_reduction_db);
+            bMap.insert(QStringLiteral("beginFrame"), static_cast<qlonglong>(b.begin_frame));
+            bMap.insert(QStringLiteral("endFrame"), static_cast<qlonglong>(b.end_frame));
+            bMap.insert(QStringLiteral("valid"), b.valid);
+            bucketList.append(bMap);
+        }
+        QVariantMap laneMap;
+        laneMap.insert(QStringLiteral("buckets"), bucketList);
+        historyLanes.append(laneMap);
+    }
+
+    const bool valid = resolver_.valid();
+
+    if (cachedTelemetryStatus_ != statusStr ||
+        cachedTelemetryNumLanes_ != static_cast<int>(numLanes) ||
+        cachedTelemetryGrScaleMaxDb_ != scaleMax ||
+        cachedTelemetryValid_ != valid ||
+        cachedTelemetryHistoryLanes_ != historyLanes) {
+        cachedTelemetryStatus_ = statusStr;
+        cachedTelemetryNumLanes_ = static_cast<int>(numLanes);
+        cachedTelemetryGrScaleMaxDb_ = scaleMax;
+        cachedTelemetryValid_ = valid;
+        cachedTelemetryHistoryLanes_ = std::move(historyLanes);
+        emit telemetryChanged();
+    }
 }
 
 MasteringChainState& CompressorViewModel::active_chain_state() const noexcept

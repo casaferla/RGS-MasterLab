@@ -119,6 +119,8 @@ int main(int argc, char* argv[])
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
     rgsml::app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
+    compressorViewModel.setPlaybackTransport(&playbackTransport);
+    compressorViewModel.setAuditionSourceSelector(&auditionSelector);
     rgsml::app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
 
     rgsml::app::GoldSelectionViewModel goldSelection{

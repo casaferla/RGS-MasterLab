@@ -508,6 +508,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         &previewController
     };
     app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
+    compressorViewModel.setPlaybackTransport(&playbackTransport);
+    compressorViewModel.setAuditionSourceSelector(&auditionSelector);
     app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
 
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
@@ -1780,6 +1782,112 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         "Compressor controls panel must exist at minimum size");
     QVERIFY2(check_item_contained_in_ancestor(controlsPanelNative, compressorEditorNative),
         "Compressor controls panel must stay inside Compressor editor at minimum size");
+
+    // Verify Live GR Ribbon UI Smoke Assertions inside curveWell
+    auto* grRibbonSectionObj = find_child_by_name(compressorEditor, QStringLiteral("compressorGrRibbonSection"));
+    auto* grRibbonCanvasObj = find_child_by_name(compressorEditor, QStringLiteral("compressorGrRibbonCanvas"));
+    auto* grStateLabelObj = find_child_by_name(compressorEditor, QStringLiteral("compressorGrStateLabel"));
+    QVERIFY2(grRibbonSectionObj != nullptr, "compressorGrRibbonSection must exist");
+    QVERIFY2(grRibbonCanvasObj != nullptr, "compressorGrRibbonCanvas must exist");
+    QVERIFY2(grStateLabelObj != nullptr, "compressorGrStateLabel must exist");
+
+    auto* grRibbonSectionNative = qobject_cast<QQuickItem*>(grRibbonSectionObj);
+    auto* grRibbonCanvasNative = qobject_cast<QQuickItem*>(grRibbonCanvasObj);
+    auto* curveCanvasNative = qobject_cast<QQuickItem*>(compressorCurveCanvas);
+    QVERIFY2(grRibbonSectionNative && grRibbonCanvasNative && curveCanvasNative && curveWellNative,
+        "Curve well elements must be QQuickItems");
+    QVERIFY2(check_item_contained_in_ancestor(grRibbonSectionNative, curveWellNative),
+        "Live GR Ribbon section must be contained inside compressorCurveWell");
+    QVERIFY2(curveCanvasNative->height() > grRibbonCanvasNative->height(),
+        "Static transfer curve must remain visually dominant over Live GR ribbon");
+
+    // Feed deterministic Stage 3B2 sidecar telemetry through production resolver & ViewModel
+    const auto teleRealizationId = core::RealizationId{101};
+    const auto teleCompId = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("44444444-4444-4444-4444-444444444444").value()).value();
+    render::CompressorTelemetrySidecar smokeSidecar{teleCompId, teleRealizationId};
+    smokeSidecar.valid = true;
+    smokeSidecar.status = render::CompressorTelemetryStatus::OK;
+    smokeSidecar.channel_layout = audio::ChannelLayout::STEREO_LR;
+    smokeSidecar.sample_rate_hz = 44100;
+    smokeSidecar.chain_revision = 1;
+
+    render::CompressorTelemetryLane smokeLane0;
+    for (int bIdx = 0; bIdx < 60; ++bIdx) {
+        render::CompressorTelemetryBucket b{smokeSidecar.module_instance_id, smokeSidecar.realization_id};
+        b.begin_frame = bIdx * 221;
+        b.end_frame = (bIdx + 1) * 221;
+        const double phase = bIdx * 0.15;
+        b.mean_reduction_db = 2.0 + 1.5 * std::sin(phase);
+        b.peak_reduction_db = b.mean_reduction_db + 1.8 + 0.5 * std::cos(phase * 0.8);
+        b.valid = true;
+        smokeLane0.buckets.push_back(b);
+    }
+    smokeSidecar.channel_lanes.push_back(smokeLane0);
+
+    render::RenderResult smokeResult{
+        *audio::AudioBuffer::create(
+            audio::AudioFormat{audio::SampleFormat::FLOAT32, 44100, audio::ChannelLayout::STEREO_LR},
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},
+            *core::FrameCount::create(192000).value()).value(),
+        core::FrameRange{core::FrameIndex{0}, *core::FrameCount::create(192000).value()},
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        1,
+        {},
+        smokeSidecar
+    };
+
+    QVERIFY(auditionSelector.set_processed_realization(std::move(smokeResult)));
+    QVERIFY(auditionSelector.switch_to(app::AuditionTarget::PROCESSED));
+
+    observedPlayback->state = core::PlaybackState::PLAYING;
+    observedPlayback->position = core::FrameIndex{12000};
+    observedPlayback->duration = *core::FrameCount::create(192000).value();
+    observedPlayback->audibleRealization.phase = core::AudibleHandoffPhase::NEW;
+    observedPlayback->audibleRealization.realizationId = teleRealizationId;
+
+    compressorViewModel.setPlaybackTransport(&playbackTransport);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(compressorViewModel.telemetry_status(), QStringLiteral("ACTIVE WET"));
+    QCOMPARE(grStateLabelObj->property("text").toString(), QStringLiteral("ACTIVE WET"));
+
+    // Capture Mandatory Visual Evidence Artifact
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("compressor_gr_ribbon_1184x688.png"), QSize{1184, 688}));
+
+    // Test DUAL_MONO 2-lane telemetry evidence capture
+    render::CompressorTelemetrySidecar dualSidecar{teleCompId, core::RealizationId{102}};
+    dualSidecar.valid = true;
+    dualSidecar.status = render::CompressorTelemetryStatus::OK;
+    dualSidecar.channel_layout = audio::ChannelLayout::STEREO_LR;
+    dualSidecar.sample_rate_hz = 44100;
+    dualSidecar.chain_revision = 1;
+    dualSidecar.channel_lanes.push_back(smokeLane0);
+    dualSidecar.channel_lanes.push_back(smokeLane0); // 2 lanes for DUAL_MONO
+
+    render::RenderResult dualResult{
+        *audio::AudioBuffer::create(
+            audio::AudioFormat{audio::SampleFormat::FLOAT32, 44100, audio::ChannelLayout::STEREO_LR},
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},
+            *core::FrameCount::create(192000).value()).value(),
+        core::FrameRange{core::FrameIndex{0}, *core::FrameCount::create(192000).value()},
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        1,
+        {},
+        dualSidecar
+    };
+
+    QVERIFY(auditionSelector.set_processed_realization(std::move(dualResult)));
+    observedPlayback->audibleRealization.realizationId = core::RealizationId{102};
+    compressorViewModel.setChannelLink(QStringLiteral("DUAL_MONO"));
+    compressorViewModel.setPlaybackTransport(&playbackTransport);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(compressorViewModel.telemetry_num_lanes(), 2);
+    QVERIFY(capture_visual_evidence(window, QStringLiteral("compressor_gr_ribbon_dual_mono_1184x688.png"), QSize{1184, 688}));
+
+    compressorViewModel.setChannelLink(QStringLiteral("LINKED_MAX"));
 
     // Compressor horizontal elasticity assertions
     const double curveWellWidth1184 = curveWellNative ? curveWellNative->width() : 0.0;

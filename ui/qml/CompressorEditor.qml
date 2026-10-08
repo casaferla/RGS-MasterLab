@@ -291,6 +291,182 @@ Item {
                             }
                         }
                     }
+
+                    // Integrated Live GR Ribbon Overlay Section
+                    ColumnLayout {
+                        id: grRibbonSection
+                        objectName: "compressorGrRibbonSection"
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "GR HISTORY"
+                                color: root.textSecondary
+                                font.family: "Segoe UI"
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                id: grStateText
+                                objectName: "compressorGrStateLabel"
+                                text: root.viewModel ? root.viewModel.telemetryStatus : "UNAVAILABLE"
+                                color: {
+                                    const st = text
+                                    if (st === "ACTIVE WET" || st === "ACTIVE DRY ONLY") return "#A088FF"
+                                    if (st === "PAUSED" || st === "STOPPED / END" || st === "BYPASS") return "#A1B5C9"
+                                    if (st === "TRANSITION" || st === "NOT AUDITIONED") return "#7B61FF"
+                                    return root.textMuted
+                                }
+                                font.family: "Segoe UI"
+                                font.pixelSize: 9
+                                font.weight: Font.Bold
+                            }
+                        }
+
+                        Canvas {
+                            id: grRibbonCanvas
+                            objectName: "compressorGrRibbonCanvas"
+                            Layout.fillWidth: true
+
+                            readonly property int numLanes: root.viewModel ? root.viewModel.telemetryNumLanes : 1
+                            readonly property real scaleMaxDb: root.viewModel ? root.viewModel.telemetryGrScaleMaxDb : 6.0
+                            readonly property var historyLanes: root.viewModel ? root.viewModel.telemetryHistoryLanes : []
+                            readonly property string liveState: root.viewModel ? root.viewModel.telemetryStatus : "UNAVAILABLE"
+
+                            implicitHeight: numLanes > 1 ? 72 : 54
+
+                            onHistoryLanesChanged: requestPaint()
+                            onScaleMaxDbChanged: requestPaint()
+                            onLiveStateChanged: requestPaint()
+                            onWidthChanged: requestPaint()
+                            onHeightChanged: requestPaint()
+
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+
+                                const isUnavailable = (liveState === "UNAVAILABLE")
+                                const isTransition = (liveState === "TRANSITION")
+                                const isBypassed = (liveState === "BYPASS")
+
+                                ctx.save()
+
+                                if (isBypassed) {
+                                    ctx.globalAlpha = 0.4
+                                }
+
+                                const activeLanes = (historyLanes && historyLanes.length > 0) ? Math.min(numLanes, historyLanes.length) : 1
+                                const laneGap = 4
+                                const laneHeight = (height - (activeLanes - 1) * laneGap) / activeLanes
+
+                                for (var l = 0; l < activeLanes; ++l) {
+                                    var laneTopY = l * (laneHeight + laneGap)
+                                    var laneZeroY = laneTopY + 1
+
+                                    ctx.strokeStyle = "#1E354A"
+                                    ctx.lineWidth = 1
+                                    ctx.beginPath()
+                                    ctx.moveTo(0, laneZeroY)
+                                    ctx.lineTo(width, laneZeroY)
+                                    ctx.stroke()
+
+                                    if (isUnavailable || !historyLanes || l >= historyLanes.length) {
+                                        continue
+                                    }
+
+                                    var laneData = historyLanes[l]
+                                    var buckets = laneData ? laneData.buckets : []
+                                    if (!buckets || buckets.length === 0) continue
+
+                                    const maxBuckets = 1000.0
+                                    const stepX = width / maxBuckets
+                                    const availCount = buckets.length
+                                    const startX = width - (availCount * stepX)
+
+                                    var points = []
+                                    for (var i = 0; i < availCount; ++i) {
+                                        var b = buckets[i]
+                                        var bx = startX + i * stepX
+                                        var meanGr = b.valid ? b.meanDb : 0.0
+                                        var peakGr = b.valid ? b.peakDb : 0.0
+
+                                        var meanY = laneZeroY + (meanGr / scaleMaxDb) * (laneHeight - 2)
+                                        var peakY = laneZeroY + (peakGr / scaleMaxDb) * (laneHeight - 2)
+
+                                        points.push({ x: bx, meanY: meanY, peakY: peakY, valid: b.valid })
+                                    }
+
+                                    if (points.length >= 2) {
+                                        ctx.fillStyle = "rgba(123, 97, 255, 0.25)"
+                                        ctx.beginPath()
+                                        ctx.moveTo(points[0].x, laneZeroY)
+                                        for (var p = 0; p < points.length; ++p) {
+                                            ctx.lineTo(points[p].x, points[p].meanY)
+                                        }
+                                        ctx.lineTo(points[points.length - 1].x, laneZeroY)
+                                        ctx.closePath()
+                                        ctx.fill()
+
+                                        ctx.fillStyle = "rgba(160, 136, 255, 0.45)"
+                                        ctx.beginPath()
+                                        ctx.moveTo(points[0].x, points[0].meanY)
+                                        for (var p = 0; p < points.length; ++p) {
+                                            ctx.lineTo(points[p].x, points[p].peakY)
+                                        }
+                                        for (var p = points.length - 1; p >= 0; --p) {
+                                            ctx.lineTo(points[p].x, points[p].meanY)
+                                        }
+                                        ctx.closePath()
+                                        ctx.fill()
+
+                                        ctx.strokeStyle = "#A088FF"
+                                        ctx.lineWidth = 1.2
+                                        ctx.beginPath()
+                                        for (var p = 0; p < points.length; ++p) {
+                                            if (p === 0) ctx.moveTo(points[p].x, points[p].meanY)
+                                            else ctx.lineTo(points[p].x, points[p].meanY)
+                                        }
+                                        ctx.stroke()
+
+                                        ctx.strokeStyle = "#8A70FF"
+                                        ctx.lineWidth = 1.0
+                                        ctx.beginPath()
+                                        for (var p = 0; p < points.length; ++p) {
+                                            if (p === 0) ctx.moveTo(points[p].x, points[p].peakY)
+                                            else ctx.lineTo(points[p].x, points[p].peakY)
+                                        }
+                                        ctx.stroke()
+
+                                        if (activeLanes > 1) {
+                                            ctx.fillStyle = "#A1B5C9"
+                                            ctx.font = "9px 'Segoe UI'"
+                                            ctx.fillText(l === 0 ? "L" : "R", 4, laneTopY + 11)
+                                        }
+                                    }
+                                }
+
+                                if (isTransition) {
+                                    ctx.strokeStyle = "#7B61FF"
+                                    ctx.setLineDash([2, 2])
+                                    ctx.beginPath()
+                                    ctx.moveTo(width - 2, 0)
+                                    ctx.lineTo(width - 2, height)
+                                    ctx.stroke()
+                                    ctx.setLineDash([])
+                                }
+
+                                ctx.fillStyle = "#586773"
+                                ctx.font = "8px 'Segoe UI'"
+                                ctx.fillText("0 dB", width - 24, 10)
+                                ctx.fillText("-" + scaleMaxDb.toFixed(0) + " dB GR", width - 42, height - 3)
+
+                                ctx.restore()
+                            }
+                        }
+                    }
                 }
             }
 

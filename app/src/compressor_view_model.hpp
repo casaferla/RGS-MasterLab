@@ -4,15 +4,20 @@
 #include "mastering_preview_controller.hpp"
 
 #include <rgsml/dsp/compressor_parameters.hpp>
+#include <rgsml/render/audible_compressor_telemetry_resolver.hpp>
 
 #include <QObject>
 #include <QString>
+#include <QTimer>
 #include <QVariantList>
 
 #include <memory>
 #include <vector>
 
 namespace rgsml::app {
+
+class PlaybackTransportViewModel;
+class AuditionSourceSelector;
 
 class CompressorViewModel final : public QObject {
     Q_OBJECT
@@ -62,6 +67,12 @@ class CompressorViewModel final : public QObject {
     Q_PROPERTY(double draftLookAheadMs READ draft_look_ahead_ms NOTIFY changed)
     Q_PROPERTY(double draftMixPercent READ draft_mix_percent NOTIFY changed)
     Q_PROPERTY(double draftMakeupGainDb READ draft_makeup_gain_db NOTIFY changed)
+
+    Q_PROPERTY(QString telemetryStatus READ telemetry_status NOTIFY telemetryChanged)
+    Q_PROPERTY(int telemetryNumLanes READ telemetry_num_lanes NOTIFY telemetryChanged)
+    Q_PROPERTY(QVariantList telemetryHistoryLanes READ telemetry_history_lanes NOTIFY telemetryChanged)
+    Q_PROPERTY(double telemetryGrScaleMaxDb READ telemetry_gr_scale_max_db NOTIFY telemetryChanged)
+    Q_PROPERTY(bool telemetryValid READ telemetry_valid NOTIFY telemetryChanged)
 
 public:
     struct CompressorStateSnapshot final {
@@ -130,6 +141,15 @@ public:
     [[nodiscard]] double draft_mix_percent() const noexcept { return draftMixPercent_; }
     [[nodiscard]] double draft_makeup_gain_db() const noexcept { return draftMakeupGainDb_; }
 
+    void setPlaybackTransport(PlaybackTransportViewModel* playback) noexcept;
+    void setAuditionSourceSelector(AuditionSourceSelector* auditionSelector) noexcept;
+
+    [[nodiscard]] QString telemetry_status() const;
+    [[nodiscard]] int telemetry_num_lanes() const noexcept;
+    [[nodiscard]] QVariantList telemetry_history_lanes() const;
+    [[nodiscard]] double telemetry_gr_scale_max_db() const noexcept;
+    [[nodiscard]] bool telemetry_valid() const noexcept;
+
     Q_INVOKABLE void setDetectorMode(const QString& mode);
     Q_INVOKABLE void setChannelLink(const QString& link);
     Q_INVOKABLE void setThresholdDbfs(double val);
@@ -157,8 +177,11 @@ public:
 
 signals:
     void changed();
+    void telemetryChanged();
 
 private:
+    void update_telemetry();
+
     [[nodiscard]] MasteringChainState& active_chain_state() const noexcept;
     [[nodiscard]] MasteringPreviewController& active_preview_controller() const noexcept;
     [[nodiscard]] bool is_mono_prepared() const noexcept;
@@ -224,6 +247,18 @@ private:
     mutable double cachedPlotXMinDbfs_{-60.0};
     mutable double cachedPlotYMinDbfs_{-60.0};
     mutable double cachedPlotYMaxDbfs_{6.0};
+
+    PlaybackTransportViewModel* playbackTransport_{nullptr};
+    AuditionSourceSelector* auditionSelector_{nullptr};
+    render::AudibleCompressorTelemetryResolver resolver_;
+    QTimer telemetryTimer_;
+
+    mutable bool telemetryCacheValid_{false};
+    mutable QString cachedTelemetryStatus_{QStringLiteral("UNAVAILABLE")};
+    mutable int cachedTelemetryNumLanes_{1};
+    mutable QVariantList cachedTelemetryHistoryLanes_;
+    mutable double cachedTelemetryGrScaleMaxDb_{6.0};
+    mutable bool cachedTelemetryValid_{false};
 };
 
 }  // namespace rgsml::app
