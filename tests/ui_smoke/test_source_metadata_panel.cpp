@@ -1832,58 +1832,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         "Live GR Ribbon section must be contained inside compressorCurveWell");
     QVERIFY2(curveCanvasNative->height() > grRibbonCanvasNative->height(),
         "Static transfer curve must remain visually dominant over Live GR ribbon");
-
-    // Test MAKE-UP handle direct pointer manipulation over the Live GR Ribbon overlay region
-    compressorViewModel.setMakeupGainDb(-18.0);
-    QCoreApplication::processEvents();
-    QCOMPARE(compressorViewModel.makeup_gain_db(), -18.0);
-
-    const auto handles = compressorViewModel.transfer_curve_handles();
-    QVariantMap makeupHandleMap;
-    for (const auto& h : handles) {
-        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("makeup")) {
-            makeupHandleMap = h.toMap();
-            break;
-        }
-    }
-    QVERIFY2(!makeupHandleMap.isEmpty(), "MAKE-UP handle metadata must exist");
-    const double makeupInDbfs = makeupHandleMap[QStringLiteral("inputDbfs")].toDouble();
-    const double makeupOutDbfs = makeupHandleMap[QStringLiteral("outputDbfs")].toDouble();
-
-    const double minX = compressorCurveCanvas->property("plotXMinDbfs").toDouble();
-    const double maxX = compressorCurveCanvas->property("plotXMaxDbfs").toDouble();
-    const double minY = compressorCurveCanvas->property("plotYMinDbfs").toDouble();
-    const double maxY = compressorCurveCanvas->property("plotYMaxDbfs").toDouble();
-
-    const double hx = (makeupInDbfs - minX) / (maxX - minX) * curveCanvasNative->width();
-    const double hy = curveCanvasNative->height() - ((makeupOutDbfs - minY) / (maxY - minY) * curveCanvasNative->height());
-
-    const QPointF handleScenePos = curveCanvasNative->mapToScene(QPointF{hx, hy});
-
-    window->requestActivate();
-    QTest::qWait(20);
-    QCoreApplication::processEvents();
-
-    const QPoint pressPoint = handleScenePos.toPoint();
-    const QPoint dragPoint = pressPoint + QPoint(0, -30);
-
-    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, pressPoint);
-    QTest::qWait(20);
-    QCoreApplication::processEvents();
-
-    QTest::mouseMove(window, dragPoint);
-    QTest::qWait(20);
-    QCoreApplication::processEvents();
-
-    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, dragPoint);
-    QTest::qWait(20);
-    QCoreApplication::processEvents();
-
-    QVERIFY2(compressorViewModel.makeup_gain_db() > -18.0,
-        "Pointer drag over MAKE-UP handle must modify makeupGainDb without being consumed by Live GR ribbon");
-
-    compressorViewModel.setMakeupGainDb(0.0);
-    QCoreApplication::processEvents();
+    QVERIFY2(curveCanvasNative->z() > grRibbonSectionNative->z(),
+        "Transfer-curve editing surface and handles must render above the Live GR ribbon");
 
     // Qualify ACTIVE WET from an explicit non-bypassed Compressor state.
     // Set authority directly to avoid scheduling an unrelated asynchronous preview.
@@ -2265,6 +2215,66 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(eqEditorNative->isVisible(), "Parametric EQ must be restored for minimum-size evidence");
 
     QVERIFY(capture_visual_evidence(window, QStringLiteral("gui01_1184x688_prepared.png"), QSize{compactW, compactH}));
+
+    // Interaction qualification intentionally runs AFTER all visual evidence.
+    // A real handle drag requests a new preview by design; keeping it last
+    // prevents that expected side effect from contaminating evidence PNGs.
+    QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 2));
+    QTest::qWait(50);
+    QCoreApplication::processEvents();
+
+    // Test MAKE-UP handle direct pointer manipulation over the Live GR Ribbon overlay region
+    compressorViewModel.setMakeupGainDb(-18.0);
+    QCoreApplication::processEvents();
+    QCOMPARE(compressorViewModel.makeup_gain_db(), -18.0);
+
+    const auto handles = compressorViewModel.transfer_curve_handles();
+    QVariantMap makeupHandleMap;
+    for (const auto& h : handles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("makeup")) {
+            makeupHandleMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY2(!makeupHandleMap.isEmpty(), "MAKE-UP handle metadata must exist");
+    const double makeupInDbfs = makeupHandleMap[QStringLiteral("inputDbfs")].toDouble();
+    const double makeupOutDbfs = makeupHandleMap[QStringLiteral("outputDbfs")].toDouble();
+
+    const double minX = compressorCurveCanvas->property("plotXMinDbfs").toDouble();
+    const double maxX = compressorCurveCanvas->property("plotXMaxDbfs").toDouble();
+    const double minY = compressorCurveCanvas->property("plotYMinDbfs").toDouble();
+    const double maxY = compressorCurveCanvas->property("plotYMaxDbfs").toDouble();
+
+    const double hx = (makeupInDbfs - minX) / (maxX - minX) * curveCanvasNative->width();
+    const double hy = curveCanvasNative->height() - ((makeupOutDbfs - minY) / (maxY - minY) * curveCanvasNative->height());
+
+    const QPointF handleScenePos = curveCanvasNative->mapToScene(QPointF{hx, hy});
+
+    window->requestActivate();
+    QTest::qWait(20);
+    QCoreApplication::processEvents();
+
+    const QPoint pressPoint = handleScenePos.toPoint();
+    const QPoint dragPoint = pressPoint + QPoint(0, -30);
+
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, pressPoint);
+    QTest::qWait(20);
+    QCoreApplication::processEvents();
+
+    QTest::mouseMove(window, dragPoint);
+    QTest::qWait(20);
+    QCoreApplication::processEvents();
+
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, dragPoint);
+    QTest::qWait(20);
+    QCoreApplication::processEvents();
+
+    QVERIFY2(compressorViewModel.makeup_gain_db() > -18.0,
+        "Pointer drag over MAKE-UP handle must modify makeupGainDb without being consumed by Live GR ribbon");
+
+    compressorViewModel.setMakeupGainDb(0.0);
+    QCoreApplication::processEvents();
+
 
     window->close();
     QCoreApplication::processEvents();
