@@ -48,6 +48,20 @@ class CompressorViewModel final : public QObject {
     Q_PROPERTY(bool rmsTimeEffective READ rms_time_effective NOTIFY changed)
     Q_PROPERTY(bool channelLinkEffective READ channel_link_effective NOTIFY changed)
     Q_PROPERTY(QVariantList transferCurvePoints READ transfer_curve_points NOTIFY changed)
+    Q_PROPERTY(QVariantList transferCurveHandles READ transfer_curve_handles NOTIFY changed)
+    Q_PROPERTY(double plotXMinDbfs READ plot_x_min_dbfs NOTIFY changed)
+    Q_PROPERTY(double plotYMinDbfs READ plot_y_min_dbfs NOTIFY changed)
+    Q_PROPERTY(double plotYMaxDbfs READ plot_y_max_dbfs NOTIFY changed)
+
+    Q_PROPERTY(double draftThresholdDbfs READ draft_threshold_dbfs NOTIFY changed)
+    Q_PROPERTY(double draftRatio READ draft_ratio NOTIFY changed)
+    Q_PROPERTY(double draftKneeDb READ draft_knee_db NOTIFY changed)
+    Q_PROPERTY(double draftAttackMs READ draft_attack_ms NOTIFY changed)
+    Q_PROPERTY(double draftReleaseMs READ draft_release_ms NOTIFY changed)
+    Q_PROPERTY(double draftRmsTimeConstantMs READ draft_rms_time_constant_ms NOTIFY changed)
+    Q_PROPERTY(double draftLookAheadMs READ draft_look_ahead_ms NOTIFY changed)
+    Q_PROPERTY(double draftMixPercent READ draft_mix_percent NOTIFY changed)
+    Q_PROPERTY(double draftMakeupGainDb READ draft_makeup_gain_db NOTIFY changed)
 
 public:
     struct CompressorStateSnapshot final {
@@ -101,6 +115,20 @@ public:
     [[nodiscard]] bool rms_time_effective() const noexcept;
     [[nodiscard]] bool channel_link_effective() const noexcept;
     [[nodiscard]] QVariantList transfer_curve_points() const;
+    [[nodiscard]] QVariantList transfer_curve_handles() const;
+    [[nodiscard]] double plot_x_min_dbfs() const;
+    [[nodiscard]] double plot_y_min_dbfs() const;
+    [[nodiscard]] double plot_y_max_dbfs() const;
+
+    [[nodiscard]] double draft_threshold_dbfs() const noexcept { return draftThresholdDbfs_; }
+    [[nodiscard]] double draft_ratio() const noexcept { return draftRatio_; }
+    [[nodiscard]] double draft_knee_db() const noexcept { return draftKneeDb_; }
+    [[nodiscard]] double draft_attack_ms() const noexcept { return draftAttackMs_; }
+    [[nodiscard]] double draft_release_ms() const noexcept { return draftReleaseMs_; }
+    [[nodiscard]] double draft_rms_time_constant_ms() const noexcept { return draftRmsTimeConstantMs_; }
+    [[nodiscard]] double draft_look_ahead_ms() const noexcept { return draftLookAheadMs_; }
+    [[nodiscard]] double draft_mix_percent() const noexcept { return draftMixPercent_; }
+    [[nodiscard]] double draft_makeup_gain_db() const noexcept { return draftMakeupGainDb_; }
 
     Q_INVOKABLE void setDetectorMode(const QString& mode);
     Q_INVOKABLE void setChannelLink(const QString& link);
@@ -115,6 +143,8 @@ public:
     Q_INVOKABLE void setMakeupGainDb(double val);
 
     Q_INVOKABLE void setDraftFieldText(const QString& fieldName, const QString& text);
+    Q_INVOKABLE void setDraftFieldValue(const QString& fieldName, double value);
+    Q_INVOKABLE void setCurveHandleDraft(const QString& handleId, double inputDbfs, double outputDbfs);
     Q_INVOKABLE bool commitDraft();
     Q_INVOKABLE void cancelDraft();
 
@@ -185,6 +215,15 @@ private:
 
     std::vector<CompressorStateSnapshot> undoStack_;
     std::vector<CompressorStateSnapshot> redoStack_;
+
+    void update_cached_curve() const;
+
+    mutable bool curveCacheValid_{false};
+    mutable QVariantList cachedTransferCurvePoints_;
+    mutable QVariantList cachedTransferCurveHandles_;
+    mutable double cachedPlotXMinDbfs_{-60.0};
+    mutable double cachedPlotYMinDbfs_{-60.0};
+    mutable double cachedPlotYMaxDbfs_{6.0};
 };
 
 }  // namespace rgsml::app

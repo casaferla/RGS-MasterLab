@@ -282,9 +282,15 @@ ApplicationWindow {
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
                 spacing: 12
-                Rectangle {
-                    Layout.preferredWidth: 40; Layout.preferredHeight: 40; radius: 4; color: "#8B111B"; border.color: "#C8CDD3"
-                    Text { anchors.centerIn: parent; text: "RGS"; color: "#F3F5F7"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold }
+                Image {
+                    id: headerAppIcon
+                    objectName: "headerAppIcon"
+                    Layout.preferredWidth: 40
+                    Layout.preferredHeight: 40
+                    source: "qrc:/qt/qml/Rgsml/Ui/resources/app_icon_canonical.jpg"
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
                 }
                 Column {
                     Layout.alignment: Qt.AlignVCenter; spacing: 0
@@ -1032,6 +1038,15 @@ ApplicationWindow {
                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
                 Rectangle { objectName: "statusReadyIndicator"; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: root.hasError ? root.error : "#00E6E6" }
                 Label { objectName: "statusBarMessage"; Layout.fillWidth: true; text: root.statusText; color: root.textSecondary; font.pixelSize: 10; elide: Text.ElideRight }
+                Text {
+                    id: statusBuildProvenanceLabel
+                    objectName: "statusBuildProvenanceLabel"
+                    text: typeof buildProvenance !== "undefined" ? buildProvenance : "DEV"
+                    color: root.textSecondary
+                    font.family: "Segoe UI"
+                    font.pixelSize: 10
+                    Layout.alignment: Qt.AlignVCenter
+                }
             }
         }
     }

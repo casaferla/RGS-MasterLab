@@ -8,6 +8,7 @@
 #include "../platform/fake_playback_service.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
@@ -52,26 +53,85 @@ namespace {
     return std::move(*result.value());
 }
 
+[[nodiscard]] render::RenderResult compressor_realization(
+    std::int64_t begin, std::int64_t frames)
+{
+    auto rate = core::SampleRate::create(48'000);
+    auto format = audio::AudioFormat::create(
+        *rate.value(), audio::ChannelLayout::STEREO_LR);
+    auto count = core::FrameCount::create(frames);
+    auto buffer = audio::AudioBuffer::create(
+        *format.value(), audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{begin}, *count.value());
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    auto chain = dsp::ProcessingChain::create(
+        *registry.value(),
+        dsp::ProcessingChainContext{
+            dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL});
+
+    const auto uuid =
+        core::Uuid::parse("61000000-0000-0000-0000-000000000001");
+    Q_ASSERT(uuid);
+    const auto compressorId =
+        dsp::ModuleInstanceId::from_uuid(*uuid.value());
+    Q_ASSERT(compressorId);
+    const auto addCompressor = chain.value()->add(
+        *compressorId.value(), "rgsml.dsp.compressor", 0);
+    Q_ASSERT(addCompressor);
+
+    const auto parameters = dsp::CompressorParameters::create_default();
+    Q_ASSERT(parameters);
+    auto request = render::RenderRequest::create(
+        buffer.value()->view(), buffer.value()->view().absolute_range(),
+        *chain.value(),
+        {dsp::ModuleExecutionBinding{
+            *compressorId.value(), *parameters.value()}},
+        *core::FrameCount::create(64).value());
+    Q_ASSERT(request);
+    auto result = render::render_preview(
+        *request.value(), *registry.value());
+    Q_ASSERT(result);
+    Q_ASSERT(result.value()->compressor_telemetry_sidecar().has_value());
+    Q_ASSERT(
+        !result.value()->compressor_telemetry_sidecar()
+             ->realization_id.has_value());
+    return std::move(*result.value());
+}
+
 void install_pcm_handler(
     app::PlaybackTransportViewModel& transport,
     FakePlaybackService* service)
 {
     transport.set_pcm_prepare_handler(
-        [service](audio::AudioBufferView view, std::shared_ptr<const void>) {
+        [service](
+            audio::AudioBufferView view,
+            std::shared_ptr<const void>,
+            std::optional<core::RealizationId> realizationId) {
             service->state = core::PlaybackState::STOPPED;
             service->position = view.absolute_start_frame();
             service->duration = *core::FrameCount::create(
                 view.absolute_end_frame().value()).value();
             service->loop.reset();
+            service->audibleRealization = realizationId
+                ? core::AudibleRealizationState{
+                    core::AudibleHandoffPhase::NEW, realizationId}
+                : core::AudibleRealizationState{};
             return core::Status::success();
         });
     transport.set_pcm_handoff_handler(
-        [service](audio::AudioBufferView view, std::shared_ptr<const void>) {
+        [service](
+            audio::AudioBufferView view,
+            std::shared_ptr<const void>,
+            std::optional<core::RealizationId> realizationId) {
             service->duration = *core::FrameCount::create(
                 view.absolute_end_frame().value()).value();
             if (service->position == view.absolute_end_frame()) {
                 service->position = view.absolute_start_frame();
             }
+            service->audibleRealization = realizationId
+                ? core::AudibleRealizationState{
+                    core::AudibleHandoffPhase::NEW, realizationId}
+                : core::AudibleRealizationState{};
             return core::Status::success();
         });
 }
@@ -124,6 +184,8 @@ private slots:
     void eofCueIsCanonicalizedToRangeBegin();
     void loopRegionIntentPreservedAcrossAuditionRebinds();
     void seamlessProcessedHandoffPreservesStateAndTargetRaces();
+    void processedRealizationIdentityIsMonotonicAndFailureAtomic();
+    void processedTelemetryBindsAcceptedRealizationIdentity();
 };
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
@@ -450,6 +512,106 @@ void AuditionSourceSelectorTest::seamlessProcessedHandoffPreservesStateAndTarget
     QCOMPARE(observed->position.value(), std::int64_t{80});
     QVERIFY(selector.processed_available());
     QCOMPARE(selector.processed_realization_snapshot()->render_window().end().value(), std::int64_t{200});
+}
+
+void AuditionSourceSelectorTest::processedRealizationIdentityIsMonotonicAndFailureAtomic()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 200)));
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(
+        observed->audibleRealization.phase,
+        core::AudibleHandoffPhase::UNAVAILABLE);
+    QVERIFY(!observed->audibleRealization.realizationId.has_value());
+
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    const auto firstId = observed->audibleRealization.realizationId;
+    QVERIFY(firstId.has_value());
+    QCOMPARE(
+        observed->audibleRealization.phase,
+        core::AudibleHandoffPhase::NEW);
+
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    const auto secondId = observed->audibleRealization.realizationId;
+    QVERIFY(secondId.has_value());
+    QVERIFY(secondId->value > firstId->value);
+
+    // A handoff-layer failure must not publish or consume the candidate ID.
+    transport.set_pcm_handoff_handler(
+        [](audio::AudioBufferView,
+           std::shared_ptr<const void>,
+           std::optional<core::RealizationId>) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "Injected PCM handoff failure."});
+        });
+    QVERIFY(!selector.set_processed_realization(realization(0, 200)));
+    QCOMPARE(observed->audibleRealization.realizationId, secondId);
+    install_pcm_handler(transport, observed);
+
+    // A pre-handoff validation failure is likewise identity-neutral.
+    observed->position = core::FrameIndex{150};
+    QVERIFY(!selector.set_processed_realization(realization(0, 100)));
+    QCOMPARE(observed->audibleRealization.realizationId, secondId);
+
+    observed->position = core::FrameIndex{50};
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    const auto thirdId = observed->audibleRealization.realizationId;
+    QVERIFY(thirdId.has_value());
+    QCOMPARE(thirdId->value, secondId->value + 1U);
+}
+
+void AuditionSourceSelectorTest::processedTelemetryBindsAcceptedRealizationIdentity()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* observed = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, observed);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(selector.set_prepared_realization(realization(0, 200)));
+    QVERIFY(selector.set_processed_realization(
+        compressor_realization(0, 200)));
+
+    auto first = selector.processed_realization_snapshot();
+    QVERIFY(first);
+    QVERIFY(first->compressor_telemetry_sidecar().has_value());
+    const auto firstId =
+        first->compressor_telemetry_sidecar()->realization_id;
+    QVERIFY(firstId.has_value());
+    for (const auto& lane :
+         first->compressor_telemetry_sidecar()->channel_lanes) {
+        for (const auto& bucket : lane.buckets) {
+            QCOMPARE(bucket.realization_id, firstId);
+        }
+    }
+
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(observed->audibleRealization.realizationId, firstId);
+
+    QVERIFY(selector.set_processed_realization(
+        compressor_realization(0, 200)));
+    auto second = selector.processed_realization_snapshot();
+    QVERIFY(second);
+    QVERIFY(second->compressor_telemetry_sidecar().has_value());
+    const auto secondId =
+        second->compressor_telemetry_sidecar()->realization_id;
+    QVERIFY(secondId.has_value());
+    QVERIFY(secondId->value > firstId->value);
+    QCOMPARE(observed->audibleRealization.realizationId, secondId);
+    for (const auto& lane :
+         second->compressor_telemetry_sidecar()->channel_lanes) {
+        for (const auto& bucket : lane.buckets) {
+            QCOMPARE(bucket.realization_id, secondId);
+        }
+    }
 }
 
 void AuditionSourceSelectorTest::loopRegionIntentPreservedAcrossAuditionRebinds()

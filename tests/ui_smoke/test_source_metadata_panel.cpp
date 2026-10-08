@@ -37,6 +37,7 @@
 #include <QWindow>
 
 #include <memory>
+#include <optional>
 
 namespace rgsml::tests {
 namespace {
@@ -516,7 +517,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     spectrumAnalyzer.start();
     app::LiveSpectrumViewModel liveSpectrumVM{&spectrumAnalyzer};
     playbackTransport.set_pcm_prepare_handler(
-        [observedPlayback](audio::AudioBufferView view, std::shared_ptr<const void>) {
+        [observedPlayback](
+            audio::AudioBufferView view,
+            std::shared_ptr<const void>,
+            std::optional<core::RealizationId>) {
             observedPlayback->state = core::PlaybackState::STOPPED;
             observedPlayback->position = view.absolute_start_frame();
             observedPlayback->duration = *core::FrameCount::create(
@@ -584,6 +588,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("dspChainAdapterModel"), &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"), &liveSpectrumVM);
+#ifdef RGSML_BUILD_PROVENANCE
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("buildProvenance"), QStringLiteral(RGSML_BUILD_PROVENANCE));
+#endif
     engine.loadFromModule("Rgsml.Ui", "Main");
     QCOMPARE(engine.rootObjects().size(), 1);
 
@@ -595,16 +603,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* header = root->findChild<QObject*>(QStringLiteral("applicationHeader"));
     QVERIFY(header);
     QCOMPARE(header->property("height").toInt(), 48);
+    auto* headerAppIcon = root->findChild<QObject*>(QStringLiteral("headerAppIcon"));
+    QVERIFY2(headerAppIcon != nullptr, "headerAppIcon must exist in applicationHeader");
+    QCOMPARE(headerAppIcon->property("width").toInt(), 40);
+    QCOMPARE(headerAppIcon->property("height").toInt(), 40);
     auto* desktopMenu = root->findChild<QObject*>(QStringLiteral("desktopMenuBar"));
     QVERIFY(desktopMenu);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("controlStripElasticCenter")));
     auto* statusBar = root->findChild<QObject*>(QStringLiteral("statusBar"));
     auto* statusIndicator = root->findChild<QObject*>(QStringLiteral("statusReadyIndicator"));
-    QVERIFY(statusBar && statusIndicator);
+    auto* statusBuildProvenanceLabel = root->findChild<QObject*>(QStringLiteral("statusBuildProvenanceLabel"));
+    QVERIFY(statusBar && statusIndicator && statusBuildProvenanceLabel);
     QCOMPARE(statusBar->property("height").toInt(), 24);
     QCOMPARE(statusIndicator->property("width").toInt(), 8);
     QCOMPARE(statusIndicator->property("height").toInt(), 8);
     QCOMPARE(statusIndicator->property("color").value<QColor>(), QColor{QStringLiteral("#00E6E6")});
+    QVERIFY2(!statusBuildProvenanceLabel->property("text").toString().isEmpty(), "statusBuildProvenanceLabel text must be non-empty");
 
     // Verify Docked DSP Architecture components exist
     auto* dspWorkspaceObj = root->findChild<QObject*>(QStringLiteral("dspWorkspace"));
@@ -755,8 +769,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(continuousZoom->property("width").toInt(), 160);
     QCOMPARE(stop->property("width").toInt(), 44);
     QCOMPARE(stop->property("height").toInt(), 44);
-    QCOMPARE(playPause->property("width").toInt(), 68);
-    QCOMPARE(playPause->property("height").toInt(), 68);
+    QCOMPARE(playPause->property("width").toInt(), 56);
+    QCOMPARE(playPause->property("height").toInt(), 56);
+    const int focusEnvelope = playPause->property("width").toInt() + playPause->property("focusHaloExtra").toInt();
+    QVERIFY2(focusEnvelope <= 68, "Play/Pause complete external focus envelope must be <= 68 logical px");
     QCOMPARE(transportTimeModule->property("width").toInt(), 246);
     QCOMPARE(transportTimeModule->property("height").toInt(), 56);
     QVERIFY(fitRegion && loopRegion && clearRegion);
@@ -948,7 +964,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     auto* compressorCurveCanvas = compressorEditor->findChild<QObject*>(QStringLiteral("compressorCurveCanvas"));
     QVERIFY2(compressorCurveCanvas != nullptr, "compressorCurveCanvas must exist in compressorEditor");
-    QCOMPARE(compressorViewModel.transfer_curve_points().size(), 101);
+    QCOMPARE(compressorViewModel.transfer_curve_points().size(), 191);
+    QCOMPARE(compressorCurveCanvas->property("plotXMinDbfs").toDouble(), -60.0);
+    QCOMPARE(compressorCurveCanvas->property("plotXMaxDbfs").toDouble(), 6.0);
+    QCOMPARE(compressorCurveCanvas->property("plotYMinDbfs").toDouble(), -60.0);
+    QCOMPARE(compressorCurveCanvas->property("plotYMaxDbfs").toDouble(), 6.0);
 
     // Interactive Numeric Draft & Commit Verification
     auto* thresholdInput = find_child_by_name(compressorEditor, QStringLiteral("thresholdDbfsInput"));
@@ -1061,6 +1081,30 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QCoreApplication::processEvents();
         QCOMPARE(compressorViewModel.channel_link(), QStringLiteral("LINKED_MAX"));
     }
+
+    // Extreme but valid curve states must auto-fit instead of losing interactive handles.
+    compressorViewModel.setDraftFieldValue(QStringLiteral("thresholdDbfs"), -120.0);
+    compressorViewModel.setDraftFieldValue(QStringLiteral("makeupGainDb"), -24.0);
+    QCoreApplication::processEvents();
+    QVERIFY(compressorCurveCanvas->property("plotXMinDbfs").toDouble() <= -120.0);
+    QVERIFY(compressorCurveCanvas->property("plotYMinDbfs").toDouble() < -60.0);
+    QVERIFY(compressorViewModel.validation_field().isEmpty());
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("m14_compressor_curve_extreme_negative_autofit_1184x688.png"),
+        QSize{1184, 688}));
+    compressorViewModel.cancelDraft();
+
+    compressorViewModel.setDraftFieldValue(QStringLiteral("makeupGainDb"), 24.0);
+    QCoreApplication::processEvents();
+    QVERIFY(compressorCurveCanvas->property("plotYMaxDbfs").toDouble() > 6.0);
+    QVERIFY(compressorViewModel.validation_field().isEmpty());
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("m14_compressor_curve_extreme_positive_autofit_1184x688.png"),
+        QSize{1184, 688}));
+    compressorViewModel.cancelDraft();
+    QCoreApplication::processEvents();
 
     QVERIFY(capture_visual_evidence(window, QStringLiteral("m14_compressor_editor_1184x688.png"), QSize{1184, 688}));
     QVERIFY(capture_visual_evidence(window, QStringLiteral("m14_compressor_editor_1440x900.png"), QSize{1440, 900}));
@@ -1737,6 +1781,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(check_item_contained_in_ancestor(controlsPanelNative, compressorEditorNative),
         "Compressor controls panel must stay inside Compressor editor at minimum size");
 
+    // Compressor horizontal elasticity assertions
+    const double curveWellWidth1184 = curveWellNative ? curveWellNative->width() : 0.0;
+    const double controlsPanelWidth1184 = controlsPanelNative ? controlsPanelNative->width() : 0.0;
+    QVERIFY2(curveWellWidth1184 >= 280.0, "curveWell width must be >= 280 px at 1184x688");
+    QVERIFY2(controlsPanelWidth1184 >= 320.0, "controlsPanel width must be >= 320 px at 1184x688");
+
     // Check the actual authored children, not just their clipping parent. This guards
     // the 1184x688 stable-topology contract: no hidden overflow may pass as containment.
     for (const auto& name : {
@@ -1756,6 +1806,73 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY2(check_item_contained_in_ancestor(fieldItem, controlsPanelNative),
             qPrintable(name + QStringLiteral(" must stay inside Compressor controls at minimum size")));
     }
+
+    for (const auto& name : {
+             QStringLiteral("compressorThresholdSlider"),
+             QStringLiteral("compressorRatioSlider"),
+             QStringLiteral("compressorKneeSlider"),
+             QStringLiteral("compressorAttackSlider"),
+             QStringLiteral("compressorReleaseSlider"),
+             QStringLiteral("compressorRmsTimeSlider"),
+             QStringLiteral("compressorLookAheadSlider"),
+             QStringLiteral("compressorMixSlider"),
+             QStringLiteral("compressorMakeupSlider")}) {
+        auto* sliderItem = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, name));
+        QVERIFY2(sliderItem != nullptr, qPrintable(name + QStringLiteral(" must exist")));
+        QVERIFY2(check_item_contained_in_ancestor(sliderItem, controlsPanelNative),
+            qPrintable(name + QStringLiteral(" must stay inside Compressor controls at minimum size")));
+    }
+
+    // Graph-linked semantic slider optics & track fill decoupling assertions
+    auto* thresholdSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorThresholdSlider"));
+    auto* ratioSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorRatioSlider"));
+    auto* kneeSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorKneeSlider"));
+    auto* makeupSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorMakeupSlider"));
+    QVERIFY2(thresholdSlider && ratioSlider && kneeSlider && makeupSlider, "Compressor graph-linked sliders must exist");
+
+    QVERIFY2(thresholdSlider->property("hasSemanticAccent").toBool(), "Threshold slider must have hasSemanticAccent = true");
+    QVERIFY2(ratioSlider->property("hasSemanticAccent").toBool(), "Ratio slider must have hasSemanticAccent = true");
+    QVERIFY2(kneeSlider->property("hasSemanticAccent").toBool(), "Knee slider must have hasSemanticAccent = true");
+    QVERIFY2(makeupSlider->property("hasSemanticAccent").toBool(), "Make-up slider must have hasSemanticAccent = true");
+
+    QCOMPARE(thresholdSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#2ED3FF")});
+    QCOMPARE(ratioSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#2FD98F")});
+    QCOMPARE(kneeSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#FFD84A")});
+    QCOMPARE(makeupSlider->property("semanticAccent").value<QColor>(), QColor{QStringLiteral("#FF6B6B")});
+
+    // Non-graph sliders must NOT have persistent semantic halos
+    auto* attackSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorAttackSlider"));
+    auto* releaseSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorReleaseSlider"));
+    auto* rmsTimeSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorRmsTimeSlider"));
+    auto* lookAheadSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorLookAheadSlider"));
+    auto* mixSlider = find_child_by_name(compressorEditor, QStringLiteral("compressorMixSlider"));
+    QVERIFY2(attackSlider && releaseSlider && rmsTimeSlider && lookAheadSlider && mixSlider, "Compressor non-graph sliders must exist");
+
+    QVERIFY2(!attackSlider->property("hasSemanticAccent").toBool(), "Attack slider must have hasSemanticAccent = false");
+    QVERIFY2(!releaseSlider->property("hasSemanticAccent").toBool(), "Release slider must have hasSemanticAccent = false");
+    QVERIFY2(!rmsTimeSlider->property("hasSemanticAccent").toBool(), "RMS Time slider must have hasSemanticAccent = false");
+    QVERIFY2(!lookAheadSlider->property("hasSemanticAccent").toBool(), "Lookahead slider must have hasSemanticAccent = false");
+    QVERIFY2(!mixSlider->property("hasSemanticAccent").toBool(), "Mix slider must have hasSemanticAccent = false");
+
+    const QColor copperFill = thresholdSlider->property("positionFillColor").value<QColor>();
+    QCOMPARE(ratioSlider->property("positionFillColor").value<QColor>(), copperFill);
+    QCOMPARE(kneeSlider->property("positionFillColor").value<QColor>(), copperFill);
+    QCOMPARE(makeupSlider->property("positionFillColor").value<QColor>(), copperFill);
+    QCOMPARE(attackSlider->property("positionFillColor").value<QColor>(), copperFill);
+
+    QVERIFY2(copperFill != thresholdSlider->property("semanticAccent").value<QColor>(),
+        "Local semanticAccent and track fill must be decoupled");
+    QCOMPARE(copperFill.red(), 196);
+    QCOMPARE(copperFill.green(), 119);
+    QCOMPARE(copperFill.blue(), 74);
+    QVERIFY2(qAbs(copperFill.alphaF() - 0.38) <= 0.01, "Track fill alpha must correspond to FQ #43 0.38");
+
+    QVERIFY2(makeupSlider->property("fillFromOrigin").toBool(), "Make-up slider fillFromOrigin must be true");
+    QCOMPARE(makeupSlider->property("positionFillOrigin").toDouble(), 0.0);
+
+    QCOMPARE(compressorViewModel.transfer_curve_handles().size(), 4);
+    auto* thresholdFieldCheck = find_child_by_name(compressorEditor, QStringLiteral("compressorThresholdField"));
+    QVERIFY(thresholdFieldCheck && thresholdFieldCheck->property("interactionHint").toString().contains(QStringLiteral("curve point")));
 
     for (auto* button : {rmsBtn, peakBtn, linkMaxBtn, linkMeanBtn, linkDualMonoBtn}) {
         auto* buttonItem = qobject_cast<QQuickItem*>(button);

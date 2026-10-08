@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/realization_identity.hpp>
 #include <rgsml/core/resource_reference.hpp>
 #include <rgsml/core/result.hpp>
 
@@ -16,10 +17,14 @@ enum class PlaybackState {
 };
 
 struct PlaybackSnapshot final {
-    PlaybackState state;
-    FrameIndex position;
+    PlaybackState state{PlaybackState::NO_SOURCE};
+    FrameIndex position{0};
     std::optional<FrameCount> duration;
     std::optional<FrameRange> loop;
+    AudibleRealizationState audibleRealization;
+    std::uint64_t traversalSerial{0};
+    std::uint64_t seekSerial{0};
+    std::uint64_t loopWrapCount{0};
 
     [[nodiscard]] bool operator==(const PlaybackSnapshot&) const = default;
 };

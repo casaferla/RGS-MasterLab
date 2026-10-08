@@ -10,6 +10,9 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
+#include <rgsml/render/audible_compressor_telemetry_resolver.hpp>
+#include <rgsml/render/compressor_telemetry_collector.hpp>
+#include <rgsml/render/compressor_telemetry_history.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
 
@@ -473,6 +476,13 @@ private slots:
     void bypassedCompressorIntegration();
     void compressorNearEosPreview();
     void monoCompressorExecutionSignature();
+    void compressorTelemetryMemoryLimitFailClosed();
+
+    // Stage 3B1 Telemetry Seam & Bounded History Tests
+    void telemetryHistorySeamAndRealizationIdentity();
+
+    // Stage 3B2 Audible Telemetry Resolver Contract Tests
+    void audibleCompressorTelemetryResolverContract();
 };
 
 void RenderPreviewTest::validatesBindingsAndWindowAtomically()
@@ -1379,6 +1389,501 @@ void RenderPreviewTest::compressorNearEosPreview()
 
     QCOMPARE(near_eos_res.value()->view().frame_count().value(), std::int64_t{100});
     QCOMPARE(bits(near_eos_res.value()->view()), bits(*expected_sub.value()));
+}
+
+void RenderPreviewTest::compressorTelemetryMemoryLimitFailClosed()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    std::vector<double> mono_samples(100U, 0.25);
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, mono_samples);
+    auto chain = empty_chain(*registry.value());
+
+    const auto comp_id = make_id("55000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 0));
+
+    const rgsml::dsp::ModuleExecutionBinding comp_b{comp_id, *rgsml::dsp::CompressorParameters::create_default().value()};
+
+    // Baseline request without telemetry memory restriction
+    auto req_baseline = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {comp_b}, frame_count(64));
+    QVERIFY(req_baseline);
+    auto res_baseline = rgsml::render::render_preview(*req_baseline.value(), *registry.value());
+    QVERIFY(res_baseline);
+    QVERIFY(res_baseline.value()->compressor_telemetry_sidecar().has_value());
+    QVERIFY(res_baseline.value()->compressor_telemetry_sidecar()->valid);
+
+    // Render request with tight 100 byte telemetry budget seam
+    auto req_restricted = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {comp_b}, frame_count(64), std::size_t{100});
+    QVERIFY(req_restricted);
+
+    // Render preview succeeds unchanged and returns bit-identical audio!
+    auto res_restricted = rgsml::render::render_preview(*req_restricted.value(), *registry.value());
+    QVERIFY(res_restricted);
+    QCOMPARE(bits(res_restricted.value()->view()), bits(res_baseline.value()->view()));
+
+    // Sidecar is present but marked UNAVAILABLE due to telemetry memory budget fail-closed
+    QVERIFY(res_restricted.value()->compressor_telemetry_sidecar().has_value());
+    const auto& sidecar = *res_restricted.value()->compressor_telemetry_sidecar();
+    QVERIFY(!sidecar.valid);
+    QCOMPARE(sidecar.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+    // Render request attempting to supply budget > 128 MiB (e.g. 1 GB)
+    constexpr std::size_t kOneGigabyte = 1000U * 1024U * 1024U;
+    auto req_overbudget = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 100), chain,
+        {comp_b}, frame_count(64), kOneGigabyte);
+    QVERIFY(req_overbudget);
+    // RenderRequest clamps max_telemetry_bytes to 128 MiB
+    QCOMPARE(req_overbudget.value()->max_telemetry_bytes().value_or(0), 128U * 1024U * 1024U);
+
+    // Direct collector test with 1 GB passed: allocation requiring 150 MiB still fails closed at 128 MiB
+    const auto dummyUuid = *rgsml::core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto dummyInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(dummyUuid).value();
+    rgsml::render::CompressorTelemetryCollector hugeCol{
+        0, 1000000000, 48000, rgsml::audio::ChannelLayout::STEREO_LR, rgsml::dsp::CompressorChannelLink::DUAL_MONO, dummyInstanceId, 1, kOneGigabyte
+    };
+    auto hugeSc = hugeCol.build_sidecar();
+    QVERIFY(!hugeSc.valid);
+    QCOMPARE(hugeSc.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+}
+
+void RenderPreviewTest::telemetryHistorySeamAndRealizationIdentity()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+
+    std::vector<double> mono_samples(1000U, 0.5);
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, mono_samples);
+    auto chain = empty_chain(*registry.value());
+
+    const auto comp_id = make_id("60000000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.compressor", 0));
+
+    const rgsml::dsp::ModuleExecutionBinding comp_b{comp_id, *rgsml::dsp::CompressorParameters::create_default().value()};
+    const rgsml::core::RealizationId testRealizationId{42};
+
+    // Unbound render telemetry is not eligible for audible history until the
+    // accepted Processed realization identity is attached.
+    auto req_unbound = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 1000), chain,
+        {comp_b}, frame_count(64));
+    QVERIFY(req_unbound);
+    auto res_unbound =
+        rgsml::render::render_preview(*req_unbound.value(), *registry.value());
+    QVERIFY(res_unbound);
+    QVERIFY(res_unbound.value()->compressor_telemetry_sidecar().has_value());
+    QVERIFY(!res_unbound.value()->compressor_telemetry_sidecar()->realization_id.has_value());
+
+    rgsml::render::CompressorTelemetryHistory unbound_history;
+    unbound_history.push_sidecar(
+        *res_unbound.value()->compressor_telemetry_sidecar());
+    QVERIFY(!unbound_history.valid());
+    QCOMPARE(
+        unbound_history.status(),
+        rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+    QVERIFY(
+        res_unbound.value()->bind_compressor_telemetry_realization_id(
+            testRealizationId));
+    QCOMPARE(
+        res_unbound.value()->compressor_telemetry_sidecar()->realization_id,
+        std::optional{testRealizationId});
+    for (const auto& lane :
+         res_unbound.value()->compressor_telemetry_sidecar()->channel_lanes) {
+        for (const auto& bucket : lane.buckets) {
+            QCOMPARE(
+                bucket.realization_id,
+                std::optional{testRealizationId});
+        }
+    }
+
+    // 1. Render preview carrying explicit realization identity
+    auto req = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 1000), chain,
+        {comp_b}, frame_count(64), std::nullopt, testRealizationId);
+    QVERIFY(req);
+    QCOMPARE(req.value()->realization_id(), std::optional{testRealizationId});
+
+    auto res = rgsml::render::render_preview(*req.value(), *registry.value());
+    QVERIFY(res);
+    QVERIFY(res.value()->compressor_telemetry_sidecar().has_value());
+
+    const auto& sidecar = *res.value()->compressor_telemetry_sidecar();
+    QVERIFY(sidecar.valid);
+    QCOMPARE(sidecar.realization_id, std::optional{testRealizationId});
+    QVERIFY(!res.value()->bind_compressor_telemetry_realization_id(
+        rgsml::core::RealizationId{99}));
+    QCOMPARE(
+        res.value()->compressor_telemetry_sidecar()->realization_id,
+        std::optional{testRealizationId});
+    QVERIFY(!sidecar.channel_lanes.empty());
+    QVERIFY(!sidecar.channel_lanes[0].buckets.empty());
+
+    // Verify every bucket carries the realization_id
+    for (const auto& bucket : sidecar.channel_lanes[0].buckets) {
+        QCOMPARE(bucket.realization_id, std::optional{testRealizationId});
+        QVERIFY(bucket.frame_count > 0);
+        QVERIFY(bucket.valid);
+    }
+
+    // 2. Test CompressorTelemetryHistory buffer append and FIFO retention
+    rgsml::render::CompressorTelemetryHistory history{10U}; // Max 10 buckets per lane
+    QCOMPARE(history.max_buckets_per_lane(), std::size_t{10});
+
+    history.push_sidecar(sidecar);
+    QVERIFY(history.valid());
+    QCOMPARE(history.realization_id(), std::optional{testRealizationId});
+    QCOMPARE(history.chain_revision(), sidecar.chain_revision);
+    QCOMPARE(history.module_instance_id(), std::optional{comp_id});
+
+    const auto bucket_cnt_initial = sidecar.channel_lanes[0].buckets.size();
+    const auto expected_in_history = std::min(bucket_cnt_initial, std::size_t{10});
+    QCOMPARE(history.bucket_count(0), expected_in_history);
+
+    // 3. Test realization identity change -> clears old history for new realization
+    const rgsml::core::RealizationId newRealizationId{99};
+    auto req_new_real = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 240), chain,
+        {comp_b}, frame_count(64), std::nullopt, newRealizationId);
+    QVERIFY(req_new_real);
+    auto res_new_real = rgsml::render::render_preview(*req_new_real.value(), *registry.value());
+    QVERIFY(res_new_real);
+
+    history.push_sidecar(*res_new_real.value()->compressor_telemetry_sidecar());
+    QVERIFY(history.valid());
+    QCOMPARE(history.realization_id(), std::optional{newRealizationId});
+    // Buckets now belong exclusively to newRealizationId
+    for (const auto& bucket : history.lane_buckets(0)) {
+        QCOMPARE(bucket.realization_id, std::optional{newRealizationId});
+    }
+
+    // 4. Test UNAVAILABLE sidecar handling -> history marks status UNAVAILABLE without manufacturing zeros
+    rgsml::render::CompressorTelemetrySidecar unavail_sidecar{comp_id, newRealizationId};
+    unavail_sidecar.valid = false;
+    unavail_sidecar.status = rgsml::render::CompressorTelemetryStatus::UNAVAILABLE;
+
+    history.push_sidecar(unavail_sidecar);
+    QVERIFY(!history.valid());
+    QCOMPARE(history.status(), rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+    // 5. Test 5-second default history capacity (1000 buckets)
+    rgsml::render::CompressorTelemetryHistory default_history; // Default 1000 buckets (~5s @ 200 Hz)
+    QCOMPARE(default_history.max_buckets_per_lane(), std::size_t{1000});
+
+    // Push 1200 buckets
+    for (std::uint64_t i = 0; i < 1200; ++i) {
+        rgsml::render::CompressorTelemetryBucket b{comp_id, testRealizationId};
+        b.begin_frame = static_cast<std::int64_t>(i * 240);
+        b.end_frame = static_cast<std::int64_t>((i + 1) * 240);
+        b.frame_count = 240U;
+        b.valid = true;
+        default_history.push_bucket(0, b);
+    }
+    QVERIFY(default_history.valid());
+    QCOMPARE(default_history.bucket_count(0), std::size_t{1000});
+    // Oldest 200 buckets dropped: first bucket in history is frame 200 * 240 = 48000
+    QCOMPARE(default_history.lane_buckets(0).front().begin_frame, std::int64_t{48000});
+    QCOMPARE(default_history.lane_buckets(0).back().begin_frame, std::int64_t{1199 * 240});
+}
+
+void RenderPreviewTest::audibleCompressorTelemetryResolverContract()
+{
+    const auto dummyUuid = *rgsml::core::Uuid::parse("70000000-0000-0000-0000-000000000001").value();
+    const auto compInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(dummyUuid).value();
+    const rgsml::core::RealizationId ridOld{100};
+    const rgsml::core::RealizationId ridNew{200};
+
+    // Build sidecar OLD (10 buckets of 240 frames each)
+    rgsml::render::CompressorTelemetrySidecar sidecarOld{compInstanceId, ridOld};
+    sidecarOld.valid = true;
+    sidecarOld.status = rgsml::render::CompressorTelemetryStatus::OK;
+    sidecarOld.channel_lanes.resize(1);
+    for (std::uint64_t i = 0; i < 10; ++i) {
+        rgsml::render::CompressorTelemetryBucket b{compInstanceId, ridOld};
+        b.begin_frame = static_cast<std::int64_t>(i * 240);
+        b.end_frame = static_cast<std::int64_t>((i + 1) * 240);
+        b.frame_count = 240;
+        b.peak_reduction_db = -3.0 - static_cast<double>(i);
+        b.valid = true;
+        sidecarOld.channel_lanes[0].buckets.push_back(b);
+    }
+
+    // Build sidecar NEW (10 buckets of 240 frames each)
+    rgsml::render::CompressorTelemetrySidecar sidecarNew{compInstanceId, ridNew};
+    sidecarNew.valid = true;
+    sidecarNew.status = rgsml::render::CompressorTelemetryStatus::OK;
+    sidecarNew.channel_lanes.resize(1);
+    for (std::uint64_t i = 0; i < 10; ++i) {
+        rgsml::render::CompressorTelemetryBucket b{compInstanceId, ridNew};
+        b.begin_frame = static_cast<std::int64_t>(i * 240);
+        b.end_frame = static_cast<std::int64_t>((i + 1) * 240);
+        b.frame_count = 240;
+        b.peak_reduction_db = -6.0 - static_cast<double>(i);
+        b.valid = true;
+        sidecarNew.channel_lanes[0].buckets.push_back(b);
+    }
+
+    rgsml::render::AudibleCompressorTelemetryResolver resolver;
+
+    // 1. OLD telemetry advances while OLD audio is audible.
+    resolver.register_sidecar(sidecarOld);
+    rgsml::render::ResolverUpdateContext ctx;
+    ctx.audition_target = rgsml::render::AuditionTarget::PROCESSED;
+    ctx.playback_snapshot.state = rgsml::core::PlaybackState::PLAYING;
+    ctx.playback_snapshot.traversalSerial = 1;
+    ctx.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::OLD, ridOld};
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{0}; // Start traversal at frame 0
+
+    resolver.update(ctx); // Traversal 1 initialized at frame 0
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{480}; // Position advances 0 -> 480 (buckets #0 [0..240] & #1 [240..480] crossed)
+    resolver.update(ctx);
+
+    QVERIFY(resolver.valid());
+    QCOMPARE(resolver.status(), rgsml::render::AudibleTelemetryStatus::ACTIVE_WET);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{2});
+    QCOMPARE(resolver.history().lane_buckets(0).front().realization_id, std::optional{ridOld});
+
+    // 2. NEW telemetry does NOT advance merely because new render is ready/accepted.
+    resolver.register_sidecar(sidecarNew); // NEW sidecar registered, but phase is still OLD!
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{720}; // Position advances 480 -> 720 in OLD phase (bucket #2 [480..720] crossed)
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{3});
+    QCOMPARE(resolver.history().lane_buckets(0).back().realization_id, std::optional{ridOld}); // Must STILL be OLD!
+
+    // 3. TRANSITION produces no numeric GR history.
+    ctx.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::TRANSITION, std::nullopt};
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{960}; // Position advances 720 -> 960 in TRANSITION
+    resolver.update(ctx);
+    QCOMPARE(resolver.status(), rgsml::render::AudibleTelemetryStatus::TRANSITION);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{3}); // Unchanged!
+
+    // 4. NEW telemetry advances only after Stage 3A NEW boundary.
+    ctx.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW, ridNew, 960}; // Handoff end boundary at frame 960
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{960}; // Position at handoff end boundary
+    resolver.update(ctx);
+    QCOMPARE(resolver.active_realization_id(), std::optional{ridNew});
+
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{1200}; // Position advances 960 -> 1200 -> bucket #4 (960..1200) completes!
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().lane_buckets(0).back().realization_id, std::optional{ridNew});
+
+    // 5. Multi-bucket poll consumes all eligible buckets exactly once.
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{1920}; // Position moved across buckets #5 (1200..1440), #6 (1440..1680), #7 (1680..1920)
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{7}); // 3 OLD buckets + 4 NEW buckets preserved in history!
+
+    // 6. Repeated polling without output progression produces no duplicate buckets.
+    resolver.update(ctx);
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{7});
+
+    // 7. PAUSE freezes history/cursor exactly.
+    ctx.playback_snapshot.state = rgsml::core::PlaybackState::PAUSED;
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{2160};
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{7}); // Frozen on PAUSE!
+
+    // 8. RESUME continues correctly without loss or duplication.
+    ctx.playback_snapshot.state = rgsml::core::PlaybackState::PLAYING;
+    resolver.update(ctx); // Position is 2160 -> now consumes bucket #8 (1920..2160)
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{8});
+
+    // 9. STOP / EOS preserves history without advancing it.
+    ctx.playback_snapshot.state = rgsml::core::PlaybackState::STOPPED;
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{2400};
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{8}); // Preserved!
+
+    // 10. REPLAY establishes correct new traversal chronology using explicit traversalSerial.
+    ctx.playback_snapshot.state = rgsml::core::PlaybackState::PLAYING;
+    ctx.playback_snapshot.traversalSerial = 2; // New traversal epoch starting at frame 0!
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{0};
+    ctx.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW, ridNew, std::nullopt};
+    resolver.update(ctx); // Traversal 2 initialized at frame 0
+
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{240}; // Position advances to frame 240
+    resolver.update(ctx);
+    QCOMPARE(resolver.traversal_serial(), std::uint64_t{2});
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{1}); // History cleared for new traversal, 1 bucket consumed
+
+    // 11. SEEK clears abandoned recent listening history and DOES NOT append bucket before seek target.
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{480};
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{2});
+
+    ctx.playback_snapshot.seekSerial = 1; // Explicit seek to frame 240!
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{240};
+    resolver.update(ctx);
+    QCOMPARE(resolver.seek_serial(), std::uint64_t{1});
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{0}); // Bucket 0..240 before seek target is NOT appended!
+
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{480}; // Position advances to frame 480 -> bucket 240..480 completes!
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{1}); // First fully eligible bucket after seek consumed!
+
+    // 12. LOOP wrap is represented truthfully using explicit loopWrapCount.
+    ctx.playback_snapshot.loopWrapCount = 1; // Explicit loop wrap to frame 240!
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{240};
+    resolver.update(ctx);
+    QCOMPARE(resolver.loop_wrap_count(), std::uint64_t{1});
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{1}); // History preserved, loop pass starting
+
+    ctx.playback_snapshot.position = rgsml::core::FrameIndex{480}; // Loop pass advances to frame 480 -> loop bucket 240..480 completes!
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{2}); // 1st pass bucket + 2nd pass bucket = 2 buckets in 5s history!
+
+    // 13. PREPARED target does not advance PROCESSED GR history.
+    rgsml::render::ResolverUpdateContext ctxPrep = ctx;
+    ctxPrep.audition_target = rgsml::render::AuditionTarget::PREPARED;
+    resolver.update(ctxPrep);
+    QCOMPARE(resolver.status(), rgsml::render::AudibleTelemetryStatus::NOT_AUDITIONED);
+
+    // 14. GOLD target does not advance PROCESSED GR history.
+    rgsml::render::ResolverUpdateContext ctxGold = ctx;
+    ctxGold.audition_target = rgsml::render::AuditionTarget::GOLD;
+    resolver.update(ctxGold);
+    QCOMPARE(resolver.status(), rgsml::render::AudibleTelemetryStatus::NOT_AUDITIONED);
+
+    // 15. BYPASS does not generate fake zero-GR history.
+    const rgsml::core::RealizationId ridBypass{300};
+    rgsml::render::CompressorTelemetrySidecar sidecarBypass{compInstanceId, ridBypass};
+    sidecarBypass.valid = true;
+    sidecarBypass.status = rgsml::render::CompressorTelemetryStatus::BYPASS;
+    resolver.register_sidecar(sidecarBypass, true); // Bypass = true
+
+    rgsml::render::ResolverUpdateContext ctxBypass = ctx;
+    ctxBypass.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW, ridBypass};
+    const auto bucketsBeforeBypass = resolver.history().bucket_count(0);
+    resolver.update(ctxBypass);
+    QCOMPARE(resolver.status(), rgsml::render::AudibleTelemetryStatus::BYPASS);
+    QCOMPARE(resolver.history().bucket_count(0), bucketsBeforeBypass); // No fake 0 dB buckets!
+
+    // 16. Mix = 0% preserves internal wet GR while exposing ACTIVE DRY ONLY disposition.
+    const rgsml::core::RealizationId ridDry{400};
+    rgsml::render::CompressorTelemetrySidecar sidecarDry{compInstanceId, ridDry};
+    sidecarDry.valid = true;
+    sidecarDry.status = rgsml::render::CompressorTelemetryStatus::OK;
+    sidecarDry.channel_lanes.resize(1);
+    rgsml::render::CompressorTelemetryBucket bDry{compInstanceId, ridDry};
+    bDry.begin_frame = 0; bDry.end_frame = 240; bDry.frame_count = 240; bDry.valid = true;
+    sidecarDry.channel_lanes[0].buckets.push_back(bDry);
+
+    resolver.register_sidecar(sidecarDry, false, 0.0); // mix_percent = 0.0
+
+    rgsml::render::ResolverUpdateContext ctxDry = ctx;
+    ctxDry.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW, ridDry};
+    ctxDry.playback_snapshot.position = rgsml::core::FrameIndex{240};
+    resolver.update(ctxDry);
+    QVERIFY(resolver.is_dry_only());
+    QCOMPARE(resolver.status(), rgsml::render::AudibleTelemetryStatus::ACTIVE_DRY_ONLY);
+
+    // 17. Stale or mismatched RealizationId fails closed to UNAVAILABLE.
+    rgsml::render::ResolverUpdateContext ctxStale = ctx;
+    ctxStale.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW, rgsml::core::RealizationId{9999}};
+    resolver.update(ctxStale);
+    QVERIFY(!resolver.valid());
+    QCOMPARE(resolver.status(), rgsml::render::AudibleTelemetryStatus::UNAVAILABLE);
+
+    // 18. Missing/unbound telemetry fails closed to UNAVAILABLE.
+    const rgsml::core::RealizationId ridUnbound{500};
+    rgsml::render::CompressorTelemetrySidecar sidecarUnbound{compInstanceId, std::nullopt}; // Unbound!
+    sidecarUnbound.valid = false;
+    sidecarUnbound.status = rgsml::render::CompressorTelemetryStatus::UNAVAILABLE;
+    resolver.register_sidecar(sidecarUnbound);
+
+    rgsml::render::ResolverUpdateContext ctxUnbound = ctx;
+    ctxUnbound.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW, ridUnbound};
+    resolver.update(ctxUnbound);
+    QVERIFY(!resolver.valid());
+    QCOMPARE(resolver.status(), rgsml::render::AudibleTelemetryStatus::UNAVAILABLE);
+
+    // 19. OLD sidecar is retained only while needed for handoff and released afterward.
+    rgsml::render::AudibleCompressorTelemetryResolver pruneResolver;
+    pruneResolver.register_sidecar(sidecarOld);
+    pruneResolver.register_sidecar(sidecarNew);
+    QCOMPARE(pruneResolver.registered_sidecar_count(), std::size_t{2});
+
+    rgsml::render::ResolverUpdateContext ctxHandoff = ctx;
+    ctxHandoff.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::OLD, ridOld};
+    pruneResolver.update(ctxHandoff);
+    QCOMPARE(pruneResolver.registered_sidecar_count(), std::size_t{2});
+
+    ctxHandoff.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW, ridNew};
+    pruneResolver.update(ctxHandoff);
+    QCOMPARE(pruneResolver.registered_sidecar_count(), std::size_t{1}); // Only ridNew retained!
+
+    // 20. LINKED/common and DUAL_MONO histories preserve Stage 3B1 lane semantics.
+    const rgsml::core::RealizationId ridDualMono{600};
+    rgsml::render::CompressorTelemetrySidecar sidecarDualMono{compInstanceId, ridDualMono};
+    sidecarDualMono.valid = true;
+    sidecarDualMono.status = rgsml::render::CompressorTelemetryStatus::OK;
+    sidecarDualMono.channel_lanes.resize(2); // 2 DUAL_MONO lanes!
+    rgsml::render::CompressorTelemetryBucket bCh0{compInstanceId, ridDualMono};
+    bCh0.begin_frame = 0; bCh0.end_frame = 240; bCh0.frame_count = 240; bCh0.valid = true;
+    rgsml::render::CompressorTelemetryBucket bCh1{compInstanceId, ridDualMono};
+    bCh1.begin_frame = 0; bCh1.end_frame = 240; bCh1.frame_count = 240; bCh1.valid = true;
+    sidecarDualMono.channel_lanes[0].buckets.push_back(bCh0);
+    sidecarDualMono.channel_lanes[1].buckets.push_back(bCh1);
+
+    rgsml::render::AudibleCompressorTelemetryResolver dualResolver;
+    dualResolver.register_sidecar(sidecarDualMono);
+
+    rgsml::render::ResolverUpdateContext ctxDual = ctx;
+    ctxDual.playback_snapshot.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW, ridDualMono};
+    ctxDual.playback_snapshot.position = rgsml::core::FrameIndex{0};
+    dualResolver.update(ctxDual);
+
+    ctxDual.playback_snapshot.position = rgsml::core::FrameIndex{240};
+    dualResolver.update(ctxDual);
+
+    QCOMPARE(dualResolver.history().num_lanes(), std::size_t{2});
+    QCOMPARE(dualResolver.history().bucket_count(0), std::size_t{1});
+    QCOMPARE(dualResolver.history().bucket_count(1), std::size_t{1});
+
+    // 21. AudibleTelemetryHistory fail-closed on invalid bucket or memory limit
+    rgsml::render::AudibleTelemetryHistory failHistory{1000U, 100U}; // Very small 100 byte limit
+    rgsml::render::CompressorTelemetryBucket invalidBucket{compInstanceId, ridOld};
+    invalidBucket.valid = false;
+    failHistory.push_bucket(0, invalidBucket);
+    QVERIFY(!failHistory.valid());
+    QCOMPARE(failHistory.status(), rgsml::render::AudibleTelemetryStatus::UNAVAILABLE);
+
+    // A valid bucket that exceeds the resolver's audible-history budget must
+    // fail closed in the SAME update, not one polling cycle later.
+    rgsml::render::AudibleCompressorTelemetryResolver budgetResolver{1000U, 1U};
+    budgetResolver.register_sidecar(sidecarOld);
+    rgsml::render::ResolverUpdateContext budgetCtx;
+    budgetCtx.audition_target = rgsml::render::AuditionTarget::PROCESSED;
+    budgetCtx.playback_snapshot.state = rgsml::core::PlaybackState::PLAYING;
+    budgetCtx.playback_snapshot.traversalSerial = 1;
+    budgetCtx.playback_snapshot.audibleRealization =
+        rgsml::core::AudibleRealizationState{
+            rgsml::core::AudibleHandoffPhase::NEW, ridOld, std::nullopt};
+    budgetCtx.playback_snapshot.position = rgsml::core::FrameIndex{0};
+    budgetResolver.update(budgetCtx);
+    budgetCtx.playback_snapshot.position = rgsml::core::FrameIndex{240};
+    budgetResolver.update(budgetCtx);
+    QVERIFY(!budgetResolver.history().valid());
+    QVERIFY(!budgetResolver.valid());
+    QCOMPARE(
+        budgetResolver.status(),
+        rgsml::render::AudibleTelemetryStatus::UNAVAILABLE);
 }
 
 void RenderPreviewTest::monoCompressorExecutionSignature()

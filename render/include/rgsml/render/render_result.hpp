@@ -4,6 +4,7 @@
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/realization_identity.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/module_instance.hpp>
@@ -23,6 +24,64 @@ namespace rgsml::render {
 
 class RenderRequest;
 class RenderResult;
+
+struct CompressorTelemetryBucket final {
+    double end_reduction_db{0.0};
+    double mean_reduction_db{0.0};
+    double peak_reduction_db{0.0};
+    std::uint32_t peak_offset_frames{0};
+    std::uint32_t attenuated_frame_count{0};
+    std::int64_t begin_frame{0};
+    std::int64_t end_frame{0};
+    std::uint32_t frame_count{0};
+    bool valid{true};
+    rgsml::dsp::ModuleInstanceId module_instance_id;
+    std::optional<rgsml::core::RealizationId> realization_id{std::nullopt};
+
+    explicit CompressorTelemetryBucket(
+        rgsml::dsp::ModuleInstanceId id,
+        std::optional<rgsml::core::RealizationId> real_id = std::nullopt) noexcept
+        : module_instance_id(id), realization_id(real_id) {}
+
+    friend bool operator==(
+        const CompressorTelemetryBucket&,
+        const CompressorTelemetryBucket&) = default;
+};
+
+struct CompressorTelemetryLane final {
+    std::vector<CompressorTelemetryBucket> buckets;
+
+    friend bool operator==(
+        const CompressorTelemetryLane&,
+        const CompressorTelemetryLane&) = default;
+};
+
+enum class CompressorTelemetryStatus : std::uint8_t {
+    OK,
+    BYPASS,
+    NOT_AUDITIONED,
+    UNAVAILABLE,
+};
+
+struct CompressorTelemetrySidecar final {
+    bool valid{true};
+    CompressorTelemetryStatus status{CompressorTelemetryStatus::OK};
+    rgsml::audio::ChannelLayout channel_layout{rgsml::audio::ChannelLayout::STEREO_LR};
+    std::uint32_t sample_rate_hz{44100};
+    rgsml::dsp::ModuleInstanceId module_instance_id;
+    std::uint64_t chain_revision{0};
+    std::optional<rgsml::core::RealizationId> realization_id{std::nullopt};
+    std::vector<CompressorTelemetryLane> channel_lanes;
+
+    explicit CompressorTelemetrySidecar(
+        rgsml::dsp::ModuleInstanceId id,
+        std::optional<rgsml::core::RealizationId> real_id = std::nullopt) noexcept
+        : module_instance_id(id), realization_id(real_id) {}
+
+    friend bool operator==(
+        const CompressorTelemetrySidecar&,
+        const CompressorTelemetrySidecar&) = default;
+};
 
 enum class ModuleExecutionDisposition : std::uint8_t {
     PROCESSED,
@@ -106,6 +165,10 @@ public:
     [[nodiscard]] std::uint64_t chain_revision() const noexcept;
     [[nodiscard]] const std::vector<ModuleExecutionSignature>&
     signatures() const noexcept;
+    [[nodiscard]] const std::optional<CompressorTelemetrySidecar>&
+    compressor_telemetry_sidecar() const noexcept;
+    [[nodiscard]] rgsml::core::Status bind_compressor_telemetry_realization_id(
+        rgsml::core::RealizationId realization_id) noexcept;
 
 private:
     friend rgsml::core::Result<RenderResult> render_preview(
@@ -117,13 +180,15 @@ private:
         rgsml::core::FrameRange render_window,
         rgsml::audio::FrameDomainId frame_domain_id,
         std::uint64_t chain_revision,
-        std::vector<ModuleExecutionSignature> signatures) noexcept;
+        std::vector<ModuleExecutionSignature> signatures,
+        std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar = std::nullopt) noexcept;
 
     rgsml::audio::AudioBuffer buffer_;
     rgsml::core::FrameRange render_window_;
     rgsml::audio::FrameDomainId frame_domain_id_;
     std::uint64_t chain_revision_;
     std::vector<ModuleExecutionSignature> signatures_;
+    std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar_;
 };
 
 }  // namespace rgsml::render

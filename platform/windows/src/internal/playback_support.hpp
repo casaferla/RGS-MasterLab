@@ -99,10 +99,12 @@ public:
         DeviceSampleFormat sampleFormat,
         std::optional<audio::PlaybackSampleRateAdapter> rateAdapter =
             std::nullopt,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status clear();
     [[nodiscard]] core::Status play();
     [[nodiscard]] core::Status pause();
@@ -115,6 +117,15 @@ public:
     void tick();
 
 private:
+    struct PendingHandoff final {
+        std::optional<core::RealizationId> oldRealizationId;
+        std::optional<core::RealizationId> newRealizationId;
+        std::int64_t startProcessedFrame{0};
+        std::int64_t endProcessedFrame{0};
+        std::optional<std::int64_t> newNumericStartSourceFrame{std::nullopt};
+        bool awaitingReplay{false};
+    };
+
     [[nodiscard]] core::Status prefill();
     [[nodiscard]] core::Status pump_once();
     [[nodiscard]] std::int64_t source_to_output_frame(
@@ -122,6 +133,10 @@ private:
     [[nodiscard]] std::int64_t output_to_source_frame(
         std::int64_t outputFrame) const noexcept;
     [[nodiscard]] std::int64_t output_boundary() const noexcept;
+    [[nodiscard]] std::int64_t current_output_frame() const noexcept;
+    [[nodiscard]] std::uint64_t current_loop_wrap_count() const noexcept;
+    [[nodiscard]] core::AudibleRealizationState audible_realization_state() const noexcept;
+    [[nodiscard]] core::Status play_internal(bool isNewTraversal);
     [[nodiscard]] bool has_source() const noexcept;
     [[nodiscard]] const audio::AudioFormat& source_format() const noexcept;
     [[nodiscard]] core::Result<core::FrameCount> read_source_frames(
@@ -149,6 +164,11 @@ private:
     bool eofScheduled_{false};
     std::optional<core::Error> runtimeError_;
     std::int64_t processedFrameBaseline_{0};
+    std::optional<core::RealizationId> activeRealizationId_;
+    std::optional<PendingHandoff> pendingHandoff_;
+    std::uint64_t traversalSerial_{0};
+    std::uint64_t seekSerial_{0};
+    std::uint64_t baseLoopWrapCount_{0};
 };
 
 }  // namespace rgsml::platform::windows::internal
