@@ -1801,10 +1801,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(curveCanvasNative->height() > grRibbonCanvasNative->height(),
         "Static transfer curve must remain visually dominant over Live GR ribbon");
 
-    // Feed deterministic Stage 3B2 sidecar telemetry through production resolver & ViewModel
+    // Feed deterministic Stage 3B2 sidecar telemetry through the SAME
+    // production provider -> resolver -> CompressorViewModel presentation path.
     const auto teleRealizationId = core::RealizationId{101};
-    const auto teleCompId = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse("44444444-4444-4444-4444-444444444444").value()).value();
-    render::CompressorTelemetrySidecar smokeSidecar{teleCompId, teleRealizationId};
+    const auto teleCompId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse(
+            "44444444-4444-4444-4444-444444444444").value()).value();
+    render::CompressorTelemetrySidecar smokeSidecar{
+        teleCompId, teleRealizationId};
     smokeSidecar.valid = true;
     smokeSidecar.status = render::CompressorTelemetryStatus::OK;
     smokeSidecar.channel_layout = audio::ChannelLayout::STEREO_LR;
@@ -1813,79 +1817,113 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     render::CompressorTelemetryLane smokeLane0;
     for (int bIdx = 0; bIdx < 60; ++bIdx) {
-        render::CompressorTelemetryBucket b{smokeSidecar.module_instance_id, smokeSidecar.realization_id};
+        render::CompressorTelemetryBucket b{
+            smokeSidecar.module_instance_id,
+            smokeSidecar.realization_id};
         b.begin_frame = bIdx * 221;
         b.end_frame = (bIdx + 1) * 221;
+        b.frame_count = 221;
+        b.peak_offset_frames = 110;
+        b.attenuated_frame_count = 221;
         const double phase = bIdx * 0.15;
         b.mean_reduction_db = 2.0 + 1.5 * std::sin(phase);
-        b.peak_reduction_db = b.mean_reduction_db + 1.8 + 0.5 * std::cos(phase * 0.8);
+        b.end_reduction_db = b.mean_reduction_db;
+        b.peak_reduction_db =
+            b.mean_reduction_db + 1.8 + 0.5 * std::cos(phase * 0.8);
         b.valid = true;
         smokeLane0.buckets.push_back(b);
     }
     smokeSidecar.channel_lanes.push_back(smokeLane0);
 
-    render::RenderResult smokeResult{
-        *audio::AudioBuffer::create(
-            audio::AudioFormat{audio::SampleFormat::FLOAT32, 44100, audio::ChannelLayout::STEREO_LR},
-            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-            core::FrameIndex{0},
-            *core::FrameCount::create(192000).value()).value(),
-        core::FrameRange{core::FrameIndex{0}, *core::FrameCount::create(192000).value()},
-        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        1,
-        {},
-        smokeSidecar
-    };
-
-    QVERIFY(auditionSelector.set_processed_realization(std::move(smokeResult)));
-    QVERIFY(auditionSelector.switch_to(app::AuditionTarget::PROCESSED));
+    std::shared_ptr<const render::CompressorTelemetrySidecar>
+        activeTelemetrySidecar =
+            std::make_shared<render::CompressorTelemetrySidecar>(
+                smokeSidecar);
 
     observedPlayback->state = core::PlaybackState::PLAYING;
     observedPlayback->position = core::FrameIndex{12000};
-    observedPlayback->duration = *core::FrameCount::create(192000).value();
-    observedPlayback->audibleRealization.phase = core::AudibleHandoffPhase::NEW;
-    observedPlayback->audibleRealization.realizationId = teleRealizationId;
+    observedPlayback->duration =
+        *core::FrameCount::create(192000).value();
+    observedPlayback->audibleRealization.phase =
+        core::AudibleHandoffPhase::NEW;
+    observedPlayback->audibleRealization.realizationId =
+        teleRealizationId;
+    observedPlayback->audibleRealization.handoffEndFrame = 0;
 
-    compressorViewModel.setPlaybackTransport(&playbackTransport);
+    auto installTelemetryProviders = [&] {
+        compressorViewModel.setTelemetryProviders(
+            [&activeTelemetrySidecar]() {
+                return activeTelemetrySidecar;
+            },
+            [&playbackTransport]() {
+                return playbackTransport.playback_snapshot();
+            },
+            [] {
+                return render::AuditionTarget::PROCESSED;
+            });
+    };
+    installTelemetryProviders();
     QCoreApplication::processEvents();
 
-    QCOMPARE(compressorViewModel.telemetry_status(), QStringLiteral("ACTIVE WET"));
-    QCOMPARE(grStateLabelObj->property("text").toString(), QStringLiteral("ACTIVE WET"));
+    QCOMPARE(
+        compressorViewModel.telemetry_status(),
+        QStringLiteral("ACTIVE WET"));
+    QVERIFY(compressorViewModel.telemetry_valid());
+    QVERIFY(!compressorViewModel.telemetry_history_lanes().isEmpty());
+    QCOMPARE(
+        grStateLabelObj->property("text").toString(),
+        QStringLiteral("ACTIVE WET"));
 
     // Capture Mandatory Visual Evidence Artifact
-    QVERIFY(capture_visual_evidence(window, QStringLiteral("compressor_gr_ribbon_1184x688.png"), QSize{1184, 688}));
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral("compressor_gr_ribbon_1184x688.png"),
+        QSize{1184, 688}));
 
-    // Test DUAL_MONO 2-lane telemetry evidence capture
-    render::CompressorTelemetrySidecar dualSidecar{teleCompId, core::RealizationId{102}};
+    // Test DUAL_MONO 2-lane telemetry evidence capture.
+    const auto dualRealizationId = core::RealizationId{102};
+    render::CompressorTelemetrySidecar dualSidecar{
+        teleCompId, dualRealizationId};
     dualSidecar.valid = true;
     dualSidecar.status = render::CompressorTelemetryStatus::OK;
     dualSidecar.channel_layout = audio::ChannelLayout::STEREO_LR;
     dualSidecar.sample_rate_hz = 44100;
     dualSidecar.chain_revision = 1;
-    dualSidecar.channel_lanes.push_back(smokeLane0);
-    dualSidecar.channel_lanes.push_back(smokeLane0); // 2 lanes for DUAL_MONO
 
-    render::RenderResult dualResult{
-        *audio::AudioBuffer::create(
-            audio::AudioFormat{audio::SampleFormat::FLOAT32, 44100, audio::ChannelLayout::STEREO_LR},
-            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-            core::FrameIndex{0},
-            *core::FrameCount::create(192000).value()).value(),
-        core::FrameRange{core::FrameIndex{0}, *core::FrameCount::create(192000).value()},
-        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        1,
-        {},
-        dualSidecar
-    };
+    auto dualLane0 = smokeLane0;
+    for (auto& bucket : dualLane0.buckets) {
+        bucket.realization_id = dualRealizationId;
+    }
+    auto dualLane1 = dualLane0;
+    for (std::size_t i = 0; i < dualLane1.buckets.size(); ++i) {
+        auto& bucket = dualLane1.buckets[i];
+        bucket.mean_reduction_db =
+            std::max(0.0, bucket.mean_reduction_db - 0.7);
+        bucket.end_reduction_db = bucket.mean_reduction_db;
+        bucket.peak_reduction_db =
+            std::max(bucket.mean_reduction_db,
+                     bucket.peak_reduction_db - 0.4);
+    }
+    dualSidecar.channel_lanes.push_back(std::move(dualLane0));
+    dualSidecar.channel_lanes.push_back(std::move(dualLane1));
 
-    QVERIFY(auditionSelector.set_processed_realization(std::move(dualResult)));
-    observedPlayback->audibleRealization.realizationId = core::RealizationId{102};
+    activeTelemetrySidecar =
+        std::make_shared<render::CompressorTelemetrySidecar>(
+            std::move(dualSidecar));
+    observedPlayback->audibleRealization.realizationId =
+        dualRealizationId;
+    observedPlayback->audibleRealization.handoffEndFrame = 0;
+
     compressorViewModel.setChannelLink(QStringLiteral("DUAL_MONO"));
-    compressorViewModel.setPlaybackTransport(&playbackTransport);
+    installTelemetryProviders();
     QCoreApplication::processEvents();
 
     QCOMPARE(compressorViewModel.telemetry_num_lanes(), 2);
-    QVERIFY(capture_visual_evidence(window, QStringLiteral("compressor_gr_ribbon_dual_mono_1184x688.png"), QSize{1184, 688}));
+    QVERIFY(capture_visual_evidence(
+        window,
+        QStringLiteral(
+            "compressor_gr_ribbon_dual_mono_1184x688.png"),
+        QSize{1184, 688}));
 
     compressorViewModel.setChannelLink(QStringLiteral("LINKED_MAX"));
 

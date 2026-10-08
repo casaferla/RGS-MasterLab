@@ -119,8 +119,40 @@ int main(int argc, char* argv[])
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
     rgsml::app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
-    compressorViewModel.setPlaybackTransport(&playbackTransport);
-    compressorViewModel.setAuditionSourceSelector(&auditionSelector);
+    compressorViewModel.setTelemetryProviders(
+        [&auditionSelector]()
+            -> std::shared_ptr<const rgsml::render::CompressorTelemetrySidecar> {
+            const auto processed =
+                auditionSelector.processed_realization_snapshot();
+            if (processed == nullptr) {
+                return {};
+            }
+            const auto& sidecar =
+                processed->compressor_telemetry_sidecar();
+            if (!sidecar.has_value() || !sidecar->valid) {
+                return {};
+            }
+            return std::shared_ptr<const rgsml::render::CompressorTelemetrySidecar>(
+                processed, &*sidecar);
+        },
+        [&playbackTransport]() {
+            return playbackTransport.playback_snapshot();
+        },
+        [&auditionSelector]() {
+            const auto target = auditionSelector.active_target();
+            if (!target.has_value()) {
+                return rgsml::render::AuditionTarget::PREPARED;
+            }
+            switch (*target) {
+            case rgsml::app::AuditionTarget::PREPARED:
+                return rgsml::render::AuditionTarget::PREPARED;
+            case rgsml::app::AuditionTarget::PROCESSED:
+                return rgsml::render::AuditionTarget::PROCESSED;
+            case rgsml::app::AuditionTarget::GOLD:
+                return rgsml::render::AuditionTarget::GOLD;
+            }
+            return rgsml::render::AuditionTarget::PREPARED;
+        });
     rgsml::app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
 
     rgsml::app::GoldSelectionViewModel goldSelection{

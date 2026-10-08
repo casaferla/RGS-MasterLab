@@ -11,13 +11,12 @@
 #include <QTimer>
 #include <QVariantList>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
 namespace rgsml::app {
 
-class PlaybackTransportViewModel;
-class AuditionSourceSelector;
 
 class CompressorViewModel final : public QObject {
     Q_OBJECT
@@ -141,8 +140,17 @@ public:
     [[nodiscard]] double draft_mix_percent() const noexcept { return draftMixPercent_; }
     [[nodiscard]] double draft_makeup_gain_db() const noexcept { return draftMakeupGainDb_; }
 
-    void setPlaybackTransport(PlaybackTransportViewModel* playback) noexcept;
-    void setAuditionSourceSelector(AuditionSourceSelector* auditionSelector) noexcept;
+    using TelemetrySidecarProvider =
+        std::function<std::shared_ptr<const render::CompressorTelemetrySidecar>()>;
+    using PlaybackSnapshotProvider =
+        std::function<core::Result<core::PlaybackSnapshot>()>;
+    using AuditionTargetProvider =
+        std::function<render::AuditionTarget()>;
+
+    void setTelemetryProviders(
+        TelemetrySidecarProvider sidecarProvider,
+        PlaybackSnapshotProvider playbackProvider,
+        AuditionTargetProvider auditionTargetProvider);
 
     [[nodiscard]] QString telemetry_status() const;
     [[nodiscard]] int telemetry_num_lanes() const noexcept;
@@ -248,8 +256,9 @@ private:
     mutable double cachedPlotYMinDbfs_{-60.0};
     mutable double cachedPlotYMaxDbfs_{6.0};
 
-    PlaybackTransportViewModel* playbackTransport_{nullptr};
-    AuditionSourceSelector* auditionSelector_{nullptr};
+    TelemetrySidecarProvider telemetrySidecarProvider_;
+    PlaybackSnapshotProvider playbackSnapshotProvider_;
+    AuditionTargetProvider auditionTargetProvider_;
     render::AudibleCompressorTelemetryResolver resolver_;
     QTimer telemetryTimer_;
 

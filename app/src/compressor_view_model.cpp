@@ -1,8 +1,5 @@
 #include "compressor_view_model.hpp"
 
-#include "audition_source_selector.hpp"
-#include "playback_transport_view_model.hpp"
-
 #include <rgsml/dsp/module_registry.hpp>
 
 #include <QUuid>
@@ -158,15 +155,14 @@ CompressorViewModel::CompressorViewModel(
     refreshFromAuthority();
 }
 
-void CompressorViewModel::setPlaybackTransport(PlaybackTransportViewModel* playback) noexcept
+void CompressorViewModel::setTelemetryProviders(
+    TelemetrySidecarProvider sidecarProvider,
+    PlaybackSnapshotProvider playbackProvider,
+    AuditionTargetProvider auditionTargetProvider)
 {
-    playbackTransport_ = playback;
-    update_telemetry();
-}
-
-void CompressorViewModel::setAuditionSourceSelector(AuditionSourceSelector* auditionSelector) noexcept
-{
-    auditionSelector_ = auditionSelector;
+    telemetrySidecarProvider_ = std::move(sidecarProvider);
+    playbackSnapshotProvider_ = std::move(playbackProvider);
+    auditionTargetProvider_ = std::move(auditionTargetProvider);
     update_telemetry();
 }
 
@@ -197,38 +193,21 @@ bool CompressorViewModel::telemetry_valid() const noexcept
 
 void CompressorViewModel::update_telemetry()
 {
-    if (auditionSelector_ != nullptr) {
-        const auto processedSnap = auditionSelector_->processed_realization_snapshot();
-        if (processedSnap != nullptr) {
-            const auto& sidecarOpt = processedSnap->compressor_telemetry_sidecar();
-            if (sidecarOpt.has_value() && sidecarOpt->valid) {
-                resolver_.register_sidecar(*sidecarOpt, bypass(), mix_percent());
-            }
+    if (telemetrySidecarProvider_) {
+        const auto sidecar = telemetrySidecarProvider_();
+        if (sidecar != nullptr && sidecar->valid) {
+            resolver_.register_sidecar(*sidecar, bypass(), mix_percent());
         }
     }
 
-    if (playbackTransport_ != nullptr) {
-        const auto snapResult = playbackTransport_->playback_snapshot();
+    if (playbackSnapshotProvider_) {
+        const auto snapResult = playbackSnapshotProvider_();
         if (snapResult) {
-            const auto& snap = *snapResult.value();
-            render::AuditionTarget renderTarget = render::AuditionTarget::PREPARED;
-            if (auditionSelector_ != nullptr) {
-                const auto targetOpt = auditionSelector_->active_target();
-                if (targetOpt.has_value()) {
-                    switch (*targetOpt) {
-                    case AuditionTarget::PREPARED:
-                        renderTarget = render::AuditionTarget::PREPARED;
-                        break;
-                    case AuditionTarget::PROCESSED:
-                        renderTarget = render::AuditionTarget::PROCESSED;
-                        break;
-                    case AuditionTarget::GOLD:
-                        renderTarget = render::AuditionTarget::GOLD;
-                        break;
-                    }
-                }
-            }
-            render::ResolverUpdateContext context{snap, renderTarget};
+            const auto renderTarget = auditionTargetProvider_
+                ? auditionTargetProvider_()
+                : render::AuditionTarget::PREPARED;
+            render::ResolverUpdateContext context{
+                *snapResult.value(), renderTarget};
             resolver_.update(context);
         }
     }
