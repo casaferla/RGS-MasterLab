@@ -1833,6 +1833,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(curveCanvasNative->height() > grRibbonCanvasNative->height(),
         "Static transfer curve must remain visually dominant over Live GR ribbon");
 
+    // Qualify ACTIVE WET from an explicit non-bypassed Compressor state.
+    // Set authority directly to avoid scheduling an unrelated asynchronous preview.
+    QVERIFY(masteringChainState.set_user_bypass(
+        masteringChainState.compressor_instance_id(), false));
+    compressorViewModel.refreshFromAuthority();
+    QVERIFY(!compressorViewModel.bypass());
+
     // Feed deterministic Stage 3B2 sidecar telemetry through the SAME
     // production provider -> resolver -> CompressorViewModel presentation path.
     const auto teleRealizationId = core::RealizationId{101};
