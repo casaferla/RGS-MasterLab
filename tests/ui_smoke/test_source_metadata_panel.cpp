@@ -508,8 +508,40 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         &previewController
     };
     app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
-    compressorViewModel.setPlaybackTransport(&playbackTransport);
-    compressorViewModel.setAuditionSourceSelector(&auditionSelector);
+    compressorViewModel.setTelemetryProviders(
+        [&auditionSelector]()
+            -> std::shared_ptr<const render::CompressorTelemetrySidecar> {
+            const auto processed =
+                auditionSelector.processed_realization_snapshot();
+            if (processed == nullptr) {
+                return {};
+            }
+            const auto& sidecar =
+                processed->compressor_telemetry_sidecar();
+            if (!sidecar.has_value() || !sidecar->valid) {
+                return {};
+            }
+            return std::shared_ptr<const render::CompressorTelemetrySidecar>(
+                processed, &*sidecar);
+        },
+        [&playbackTransport]() {
+            return playbackTransport.playback_snapshot();
+        },
+        [&auditionSelector]() {
+            const auto target = auditionSelector.active_target();
+            if (!target.has_value()) {
+                return render::AuditionTarget::PREPARED;
+            }
+            switch (*target) {
+            case app::AuditionTarget::PREPARED:
+                return render::AuditionTarget::PREPARED;
+            case app::AuditionTarget::PROCESSED:
+                return render::AuditionTarget::PROCESSED;
+            case app::AuditionTarget::GOLD:
+                return render::AuditionTarget::GOLD;
+            }
+            return render::AuditionTarget::PREPARED;
+        });
     app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
 
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
