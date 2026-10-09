@@ -498,26 +498,40 @@ core::Status PlaybackEngine::handoff_pcm(
     const auto xfadeOutputFramesRequested = static_cast<std::int64_t>(
         std::floor(0.015 * outputRateHz + 0.5));
     const std::int64_t boundary = output_boundary();
-    const std::int64_t xfadeOutputFrames = std::max<std::int64_t>(
-        0, std::min(xfadeOutputFramesRequested, boundary - handoffOutputFrame));
+    // A loop's numeric scheduling cursor wraps when the final block is
+    // encoded, while OLD frames can still be queued or pending. At the
+    // prefilled loop boundary there are no old frames left to crossfade.
+    const bool atPrefilledLoopBoundary =
+        loop_ && loopTraversalEligible_
+        && handoffOutputFrame
+            == source_to_output_frame(loop_->begin().value())
+        && (output_->queued_bytes() > 0U || !pendingBytes_.empty());
+    const std::int64_t xfadeOutputFrames = atPrefilledLoopBoundary
+        ? 0
+        : std::max<std::int64_t>(
+            0, std::min(xfadeOutputFramesRequested, boundary - handoffOutputFrame));
 
+    // Audible handoff time must follow the actual output backlog rather
+    // than the already-wrapped loop-relative scheduling cursor. Count both
+    // backend-queued bytes and not-yet-enqueued bytes of the old source.
     const auto currentProcessedFrame = std::max<std::int64_t>(
         0, output_->processed_frames());
-    const auto currentOutputFrame = current_output_frame();
-    std::int64_t framesUntilHandoff = 0;
-    if (loop_ && loopTraversalEligible_
-        && handoffOutputFrame < currentOutputFrame) {
-        const auto loopBeginOutput =
-            source_to_output_frame(loop_->begin().value());
-        framesUntilHandoff = std::max<std::int64_t>(
-            0,
-            (boundary - currentOutputFrame)
-                + (handoffOutputFrame - loopBeginOutput));
-    } else {
-        framesUntilHandoff = std::max<std::int64_t>(
-            0, handoffOutputFrame - currentOutputFrame);
+    const auto queuedBytes = output_->queued_bytes();
+    const auto pendingBytes = pendingBytes_.size() - pendingOffset_;
+    if (queuedBytes > std::numeric_limits<std::size_t>::max() - pendingBytes) {
+        return status_failure(
+            core::ErrorCode::OutOfRange,
+            "PCM handoff backlog size overflow.");
     }
+    const auto bytesPerFrame =
+        source.format().channel_count() * bytes_per_sample(*sampleFormat_);
+    const auto backlogBytes = queuedBytes + pendingBytes;
+    const auto backlogFrames = backlogBytes / bytesPerFrame
+        + (backlogBytes % bytesPerFrame != 0U ? 1U : 0U);
     const auto maxFrame = std::numeric_limits<std::int64_t>::max();
+    const auto framesUntilHandoff = static_cast<std::int64_t>(
+        std::min<std::size_t>(
+            backlogFrames, static_cast<std::size_t>(maxFrame)));
     const auto handoffProcessedFrame =
         framesUntilHandoff > maxFrame - currentProcessedFrame
         ? maxFrame
