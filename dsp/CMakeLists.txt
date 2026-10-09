@@ -10,6 +10,7 @@ add_library(rgsml_dsp STATIC
     src/stereo_ms_parameters.cpp
     src/stereo_ms_module.cpp
     src/stereo_ms_crossover.cpp
+    src/stereo_ms_crossover_runtime.cpp
     src/internal/parametric_eq_coefficients.cpp
     src/module_descriptor.cpp
     src/module_registry.cpp
