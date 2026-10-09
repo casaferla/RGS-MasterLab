@@ -7,6 +7,7 @@ add_library(rgsml_dsp STATIC
     src/parametric_eq_response.cpp
     src/compressor_parameters.cpp
     src/compressor_module.cpp
+    src/stereo_ms_parameters.cpp
     src/internal/parametric_eq_coefficients.cpp
     src/module_descriptor.cpp
     src/module_registry.cpp
