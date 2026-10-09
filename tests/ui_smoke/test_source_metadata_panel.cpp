@@ -866,6 +866,23 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqMenuItem->property("text").toString(), QStringLiteral("Parametric EQ"));
     QVERIFY(eqMenuItem->property("enabled").toBool());
 
+    // FIX-UI-002: Verify View entries are generated from the live editor
+    // adapter list and include Compressor without a hard-coded menu slot.
+    auto* compressorMenuItem = root->findChild<QObject*>(
+        QStringLiteral("menuViewCompressor"));
+    auto* viewEditorInstantiator = root->findChild<QObject*>(
+        QStringLiteral("viewEditorInstantiator"));
+    auto* viewMenu = root->findChild<QObject*>(
+        QStringLiteral("desktopViewMenu"));
+    QVERIFY2(compressorMenuItem && viewEditorInstantiator && viewMenu,
+        "Dynamic View menu must expose the available Compressor editor");
+    QCOMPARE(compressorMenuItem->property("text").toString(),
+        QStringLiteral("Compressor"));
+    QVERIFY(compressorMenuItem->property("enabled").toBool());
+    QCOMPARE(viewEditorInstantiator->property("count").toInt(),
+        static_cast<int>(dspChainAdapterModel.modules().size()));
+    QCOMPARE(viewEditorInstantiator->property("count").toInt(), 3);
+
     auto* openProjectItem = root->findChild<QObject*>(
         QStringLiteral("menuOpenProject"));
     auto* saveProjectItem = root->findChild<QObject*>(
@@ -877,6 +894,24 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("projectOpenFileDialog")));
     QVERIFY(root->findChild<QObject*>(
         QStringLiteral("projectSaveFileDialog")));
+    QTest::keyClick(window, Qt::Key_Escape);
+    QCoreApplication::processEvents();
+
+    auto* viewMenuLabel = root->findChild<QObject*>(
+        QStringLiteral("desktopMenuBarLabel_View"));
+    QVERIFY(viewMenuLabel && viewMenuLabel->parent());
+    auto* viewBarItem = qobject_cast<QQuickItem*>(viewMenuLabel->parent());
+    QVERIFY(viewBarItem);
+    const QPointF viewMenuCenter = viewBarItem->mapToScene(
+        QPointF{viewBarItem->width() / 2.0, viewBarItem->height() / 2.0});
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+        viewMenuCenter.toPoint());
+    QTest::qWait(120);
+    QVERIFY2(viewMenu->property("visible").toBool(),
+        "View menu must show dynamically populated editors");
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("minor_fix_002_view_menu_editors_1184x688.png"),
+        QSize{1184, 688}));
     QTest::keyClick(window, Qt::Key_Escape);
     QCoreApplication::processEvents();
 
@@ -978,6 +1013,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* dspHostModuleTitle = dspEditorHostObj->findChild<QObject*>(QStringLiteral("dspHostModuleTitle"));
     QVERIFY2(compressorEditor != nullptr, "compressorEditor must exist in dspEditorHost");
     QVERIFY2(dspHostModuleTitle != nullptr, "dspHostModuleTitle must exist in dspEditorHost");
+
+    // FIX-UI-002: generated item dispatch targets the live instance ID.
+    QVERIFY(QMetaObject::invokeMethod(compressorMenuItem, "triggered"));
+    QCoreApplication::processEvents();
+    QCOMPARE(dspChainAdapterModel.selected_index(), 2);
+    QVERIFY(QMetaObject::invokeMethod(gainMenuItem, "triggered"));
+    QCoreApplication::processEvents();
+    QCOMPARE(dspChainAdapterModel.selected_index(), 0);
 
     // Default selected module index is 0 (Input Gain)
     QCOMPARE(dspWorkspaceObj->property("selectedModuleIndex").toInt(), 0);
