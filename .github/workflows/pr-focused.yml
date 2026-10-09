@@ -60,6 +60,7 @@ jobs:
             rgsml_stereo_ms_independent_math_tests \
             rgsml_stereo_ms_long_resume_tests \
             rgsml_stereo_ms_gate_g_spatial_evidence_tests \
+            rgsml_stereo_ms_no_alloc_tests \
             rgsml_gain_golden_tests \
             rgsml_compressor_tests \
             rgsml_compressor_gate_g_tests \
@@ -77,7 +78,7 @@ jobs:
 
       - name: Run Focused DSP Tests
         run: |
-          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|toolchain_manifest_)" --output-on-failure
+          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|toolchain_manifest_)" --output-on-failure
 
   windows-focused-dsp:
     name: Windows Focused DSP
@@ -123,6 +124,7 @@ jobs:
             rgsml_stereo_ms_independent_math_tests `
             rgsml_stereo_ms_long_resume_tests `
             rgsml_stereo_ms_gate_g_spatial_evidence_tests `
+            rgsml_stereo_ms_no_alloc_tests `
             rgsml_gain_golden_tests `
             rgsml_compressor_tests `
             rgsml_compressor_gate_g_tests `
@@ -164,7 +166,7 @@ jobs:
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
         run: |
-          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|toolchain_manifest_)" --output-on-failure --verbose
+          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|toolchain_manifest_)" --output-on-failure --verbose
 
       - name: Upload Visual Evidence Artifact
         if: always()
