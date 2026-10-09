@@ -1921,6 +1921,13 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
 
 }  // namespace rgsml::tests
 
-QTEST_APPLESS_MAIN(rgsml::tests::PlaybackSupportTest)
+int main(int argc, char** argv)
+{
+    rgsml::tests::PlaybackSupportTest testObject;
+    const int result = QTest::qExec(&testObject, argc, argv);
+    std::fprintf(stderr, "DBG_QEXEC_RESULT: %d\\n", result);
+    std::fflush(stderr);
+    return result;
+}
 
 #include "test_playback_support.moc"
