@@ -712,6 +712,22 @@ foreach(dsp_test IN ITEMS
     )
 endforeach()
 
+qt_add_executable(rgsml_stereo_ms_parameters_tests
+    unit/dsp/test_stereo_ms_parameters.cpp
+)
+target_link_libraries(rgsml_stereo_ms_parameters_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_parameters_tests)
+add_test(NAME rgsml_stereo_ms_parameters_tests
+    COMMAND rgsml_stereo_ms_parameters_tests)
+set_tests_properties(rgsml_stereo_ms_parameters_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;parameters"
+)
+
 qt_add_executable(rgsml_gain_tests
     unit/dsp/test_gain.cpp
 )
