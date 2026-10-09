@@ -3,6 +3,7 @@
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/dsp/module_descriptor.hpp>
+#include <rgsml/dsp/stereo_ms_crossover_runtime.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace rgsml::dsp {
 namespace {
@@ -105,6 +107,12 @@ struct StereoMsModule::Impl final {
     double mid_gain;
     double side_gain;
     std::optional<DspProcessSpec> prepared_spec;
+    std::optional<StereoMsCrossoverRuntime> crossover;
+    std::vector<double> scratch_left;
+    std::vector<double> scratch_right;
+    std::optional<rgsml::core::FrameIndex> next_frame;
+    bool stream_bound{false};
+    bool stream_ended{false};
 };
 
 rgsml::core::Result<std::unique_ptr<StereoMsModule>> StereoMsModule::create(
@@ -132,7 +140,8 @@ rgsml::core::Result<std::unique_ptr<StereoMsModule>> StereoMsModule::create(
                          "Broadband coefficients must be finite positive gains."));
         }
         auto impl = std::make_unique<Impl>(
-            Impl{&descriptor, parameters, mid_gain, side_gain, std::nullopt});
+            Impl{&descriptor, parameters, mid_gain, side_gain, std::nullopt,
+                 std::nullopt, {}, {}, std::nullopt, false, false});
         return rgsml::core::Result<std::unique_ptr<StereoMsModule>>::success(
             std::unique_ptr<StereoMsModule>{new StereoMsModule{std::move(impl)}});
     } catch (...) {
@@ -168,36 +177,82 @@ StereoMsModule::runtime_requirements(const DspProcessSpec& spec) const
         return rgsml::core::Result<DspRuntimeRequirements>::failure(
             *valid.error());
     }
+    auto settling = *rgsml::core::FrameCount::create(0).value();
     if (!spatial_broadband_only(impl_->parameters,
                                 spec.audio_format.channel_layout())) {
-        return rgsml::core::Result<DspRuntimeRequirements>::failure(
-            ms_error(rgsml::core::ErrorCode::UnsupportedOperation,
-                     "STEREO_MS_ACTIVE_CROSSOVER_NOT_IMPLEMENTED",
-                     "LR12/LR24 cannot run until the frozen crossover kernel is qualified."));
+        const auto d = design_stereo_ms_crossover(
+            impl_->parameters.mono_bass_mode(),
+            impl_->parameters.mono_bass_cutoff_hz(),
+            static_cast<double>(spec.audio_format.sample_rate().value()));
+        if (!d) {
+            return rgsml::core::Result<DspRuntimeRequirements>::failure(*d.error());
+        }
+        const auto count = rgsml::core::FrameCount::create(d.value()->settling_frames);
+        if (!count) {
+            return rgsml::core::Result<DspRuntimeRequirements>::failure(*count.error());
+        }
+        settling = *count.value();
     }
-
     const auto zero = *rgsml::core::FrameCount::create(0).value();
     return rgsml::core::Result<DspRuntimeRequirements>::success(
         DspRuntimeRequirements{
             DspExecutionModel::STREAMING_CAUSAL,
-            zero, zero, zero, zero, zero, false});
+            zero, zero, settling, settling, settling, false});
 }
 
 rgsml::core::Status StereoMsModule::prepare(const DspProcessSpec& spec)
 {
-    // An unsuccessful re-prepare must never retain the old playable state.
+    // Fail closed on re-prepare: an old prepared DSP realization never leaks
+    // through an unsuccessful new specification or memory allocation.
     impl_->prepared_spec.reset();
+    impl_->crossover.reset();
+    impl_->scratch_left.clear();
+    impl_->scratch_right.clear();
+    impl_->next_frame.reset();
+    impl_->stream_bound = false;
+    impl_->stream_ended = false;
+
     const auto req = runtime_requirements(spec);
     if (!req) {
         return rgsml::core::Status::failure(*req.error());
     }
-    impl_->prepared_spec = spec;
-    return rgsml::core::Status::success();
+    try {
+        if (!spatial_broadband_only(impl_->parameters,
+                                    spec.audio_format.channel_layout())) {
+            const auto d = design_stereo_ms_crossover(
+                impl_->parameters.mono_bass_mode(),
+                impl_->parameters.mono_bass_cutoff_hz(),
+                static_cast<double>(spec.audio_format.sample_rate().value()));
+            if (!d) {
+                return rgsml::core::Status::failure(*d.error());
+            }
+            impl_->crossover.emplace(*d.value());
+            const auto maximum = static_cast<std::size_t>(
+                spec.maximum_block_frames.value());
+            impl_->scratch_left.assign(maximum, 0.0);
+            impl_->scratch_right.assign(maximum, 0.0);
+        }
+        impl_->prepared_spec = spec;
+        return rgsml::core::Status::success();
+    } catch (...) {
+        impl_->crossover.reset();
+        impl_->scratch_left.clear();
+        impl_->scratch_right.clear();
+        return rgsml::core::Status::failure(ms_error(
+            rgsml::core::ErrorCode::InvalidState,
+            "DSP_PREPARE_FAILURE",
+            "Stereo/M-S could not allocate its bounded crossover scratch."));
+    }
 }
 
 void StereoMsModule::reset() noexcept
 {
-    // A3 has no crossover history. Future active LR sections own their state.
+    if (impl_->crossover) {
+        impl_->crossover->reset();
+    }
+    impl_->next_frame.reset();
+    impl_->stream_bound = false;
+    impl_->stream_ended = false;
 }
 
 rgsml::core::Status StereoMsModule::process(
