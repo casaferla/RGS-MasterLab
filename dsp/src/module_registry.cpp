@@ -254,7 +254,12 @@ private:
         {MANUAL, DNA_LINKED, REF_LINKED},
         true,
         INLINE_CHAIN,
-        std::nullopt));
+        std::nullopt,
+        {},
+        false,
+        false,
+        "1.0.0",
+        "rgsml.dsp.stereo-ms.parameters/1.0.0"));
     specs.push_back(make_spec(
         "rgsml.dsp.true-peak-limiter",
         {DYNAMICS, OUTPUT},
