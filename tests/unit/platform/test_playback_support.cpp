@@ -1209,9 +1209,11 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             core::FrameIndex{loopEndFrame});
         QVERIFY(shortLoop);
         QVERIFY(shortEngine.set_loop(*shortLoop.value()));
-        constexpr std::int64_t deviceProcessedBaseline = 5000;
-        observedShort->set_processed_frames(deviceProcessedBaseline);
         QVERIFY(shortEngine.play());
+        // FakeOutput::start() resets the backend processed-frame counter.
+        // Capture the actual post-start epoch for the audible boundary.
+        const auto deviceProcessedBaseline =
+            observedShort->processed_frames();
         QVERIFY(shortEngine.handoff_pcm(
             newBuf.view(), lifetime2, newRealizationId));
 

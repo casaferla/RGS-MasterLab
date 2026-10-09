@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
+import QtQml.Models
 
 ApplicationWindow {
     id: root
@@ -338,36 +339,47 @@ ApplicationWindow {
                         StudioMenuItem { text: "Preferences"; enabled: false }
                     }
                     Menu {
+                        id: desktopViewMenu
                         objectName: "desktopViewMenu"
                         popupType: Popup.Item
                         width: 230
                         title: "&View"
                         background: Rectangle { color: root.surface; border.color: root.border }
-                        StudioMenuItem {
-                            objectName: "menuViewInputGain"
-                            text: "Input Gain"
-                            enabled: true
-                            onTriggered: {
-                                if (typeof dspChainAdapterModel !== "undefined" && dspChainAdapterModel && dspChainAdapterModel.modules && dspChainAdapterModel.modules.length > 0) {
-                                    dspChainAdapterModel.selectModuleByInstanceId(dspChainAdapterModel.modules[0].instanceId)
-                                } else {
-                                    realDspWorkspace.selectedModuleIndex = 0
+                        // FIX-UI-002: use the same live module-adapter list as
+                        // the DSP chain/editor host. No positional DSP menu list.
+                        Instantiator {
+                            id: viewEditorInstantiator
+                            objectName: "viewEditorInstantiator"
+                            model: typeof dspChainAdapterModel !== "undefined"
+                                && dspChainAdapterModel
+                                ? dspChainAdapterModel.modules : []
+                            delegate: StudioMenuItem {
+                                readonly property var editorAdapter: modelData
+                                readonly property string editorKey: editorAdapter
+                                    ? editorAdapter.editorContentKey : ""
+                                // Keep the historical smoke object names without
+                                // hard-coding a menu entry for each DSP type.
+                                objectName: "menuView" + editorKey.toLowerCase()
+                                    .split("_").map(function(part) {
+                                        return part.charAt(0).toUpperCase()
+                                            + part.slice(1)
+                                    }).join("")
+                                text: editorAdapter ? editorAdapter.displayName : ""
+                                enabled: editorAdapter !== null
+                                    && editorAdapter !== undefined
+                                    && editorKey.length > 0
+                                onTriggered: {
+                                    if (enabled && editorAdapter && dspChainAdapterModel) {
+                                        dspChainAdapterModel.selectModuleByInstanceId(
+                                            editorAdapter.instanceId)
+                                        realDspWorkspace.editorHost.forceActiveFocus()
+                                    }
                                 }
-                                realDspWorkspace.editorHost.forceActiveFocus()
                             }
-                        }
-                        StudioMenuItem {
-                            objectName: "menuViewParametricEq"
-                            text: "Parametric EQ"
-                            enabled: true
-                            onTriggered: {
-                                if (typeof dspChainAdapterModel !== "undefined" && dspChainAdapterModel && dspChainAdapterModel.modules && dspChainAdapterModel.modules.length > 1) {
-                                    dspChainAdapterModel.selectModuleByInstanceId(dspChainAdapterModel.modules[1].instanceId)
-                                } else {
-                                    realDspWorkspace.selectedModuleIndex = 1
-                                }
-                                realDspWorkspace.editorHost.forceActiveFocus()
-                            }
+                            onObjectAdded: (index, object) =>
+                                desktopViewMenu.insertItem(index, object)
+                            onObjectRemoved: (index, object) =>
+                                desktopViewMenu.removeItem(object)
                         }
                         MenuSeparator { }
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: sourceWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }

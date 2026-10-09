@@ -291,7 +291,359 @@ Item {
                             }
                         }
                     }
+
+
+                    // Integrated Live GR history: dedicated observational band
+                    // below the editable transfer curve, inside the SAME
+                    // compressorCurveWell. Editing and observation do not overlap.
+                    ColumnLayout {
+                        id: grRibbonSection
+                        objectName: "compressorGrRibbonSection"
+                        Layout.fillWidth: true
+                        spacing: 2
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "GR HISTORY"
+                                color: root.textSecondary
+                                font.family: "Segoe UI"
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                id: grStateText
+                                objectName: "compressorGrStateLabel"
+                                text: root.viewModel ? root.viewModel.telemetryStatus : "UNAVAILABLE"
+                                color: {
+                                    const st = text
+                                    if (st === "ACTIVE WET" || st === "ACTIVE DRY ONLY") return "#A088FF"
+                                    if (st === "PAUSED" || st === "STOPPED / END" || st === "BYPASS") return "#A1B5C9"
+                                    if (st === "TRANSITION" || st === "NOT AUDITIONED") return "#7B61FF"
+                                    return root.textMuted
+                                }
+                                font.family: "Segoe UI"
+                                font.pixelSize: 9
+                                font.weight: Font.Bold
+                            }
+                        }
+
+                        Canvas {
+                            id: grRibbonCanvas
+                            objectName: "compressorGrRibbonCanvas"
+                            Layout.fillWidth: true
+
+                            readonly property int numLanes: root.viewModel ? root.viewModel.telemetryNumLanes : 1
+                            readonly property real scaleMaxDb: root.viewModel ? root.viewModel.telemetryGrScaleMaxDb : 6.0
+                            readonly property var historyLanes: root.viewModel ? root.viewModel.telemetryHistoryLanes : []
+                            readonly property string liveState: root.viewModel ? root.viewModel.telemetryStatus : "UNAVAILABLE"
+
+                            implicitHeight: numLanes > 1 ? 72 : 54
+
+                            onHistoryLanesChanged: requestPaint()
+                            onScaleMaxDbChanged: requestPaint()
+                            onLiveStateChanged: requestPaint()
+                            onWidthChanged: requestPaint()
+                            onHeightChanged: requestPaint()
+
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+
+                                const isUnavailable = (liveState === "UNAVAILABLE")
+                                const isTransition = (liveState === "TRANSITION")
+                                const isBypassed = (liveState === "BYPASS")
+                                const scaleGutter = 38
+                                const plotWidth = Math.max(1, width - scaleGutter)
+
+                                ctx.save()
+                                if (isBypassed) {
+                                    ctx.globalAlpha = 0.4
+                                }
+
+                                const activeLanes =
+                                    (historyLanes && historyLanes.length > 0)
+                                        ? Math.min(numLanes, historyLanes.length)
+                                        : 1
+                                const laneGap = 4
+                                const laneHeight =
+                                    (height - (activeLanes - 1) * laneGap)
+                                        / activeLanes
+                                const maxSlots = 1000.0
+                                const stepX = plotWidth / maxSlots
+
+                                function drawSegment(segment, laneZeroY) {
+                                    if (!segment || segment.length < 2)
+                                        return
+
+                                    ctx.fillStyle = "rgba(123, 97, 255, 0.25)"
+                                    ctx.beginPath()
+                                    ctx.moveTo(segment[0].x, laneZeroY)
+                                    for (var s = 0; s < segment.length; ++s)
+                                        ctx.lineTo(segment[s].x, segment[s].meanY)
+                                    ctx.lineTo(
+                                        segment[segment.length - 1].x,
+                                        laneZeroY)
+                                    ctx.closePath()
+                                    ctx.fill()
+
+                                    ctx.fillStyle = "rgba(160, 136, 255, 0.45)"
+                                    ctx.beginPath()
+                                    ctx.moveTo(
+                                        segment[0].x,
+                                        segment[0].meanY)
+                                    for (var p = 0; p < segment.length; ++p)
+                                        ctx.lineTo(
+                                            segment[p].x,
+                                            segment[p].peakY)
+                                    for (var m = segment.length - 1;
+                                         m >= 0; --m)
+                                        ctx.lineTo(
+                                            segment[m].x,
+                                            segment[m].meanY)
+                                    ctx.closePath()
+                                    ctx.fill()
+
+                                    ctx.strokeStyle = "#A088FF"
+                                    ctx.lineWidth = 1.2
+                                    ctx.beginPath()
+                                    for (var c = 0; c < segment.length; ++c) {
+                                        if (c === 0)
+                                            ctx.moveTo(
+                                                segment[c].x,
+                                                segment[c].meanY)
+                                        else
+                                            ctx.lineTo(
+                                                segment[c].x,
+                                                segment[c].meanY)
+                                    }
+                                    ctx.stroke()
+
+                                    ctx.strokeStyle = "#8A70FF"
+                                    ctx.lineWidth = 1.0
+                                    ctx.beginPath()
+                                    for (var k = 0; k < segment.length; ++k) {
+                                        if (k === 0)
+                                            ctx.moveTo(
+                                                segment[k].x,
+                                                segment[k].peakY)
+                                        else
+                                            ctx.lineTo(
+                                                segment[k].x,
+                                                segment[k].peakY)
+                                    }
+                                    ctx.stroke()
+                                }
+
+                                for (var l = 0; l < activeLanes; ++l) {
+                                    const laneTopY =
+                                        l * (laneHeight + laneGap)
+                                    const laneZeroY = laneTopY + 1
+
+                                    ctx.strokeStyle = "#1E354A"
+                                    ctx.lineWidth = 1
+                                    ctx.beginPath()
+                                    ctx.moveTo(0, laneZeroY)
+                                    ctx.lineTo(plotWidth, laneZeroY)
+                                    ctx.stroke()
+
+                                    var laneData =
+                                        historyLanes && l < historyLanes.length
+                                            ? historyLanes[l]
+                                            : null
+                                    var buckets =
+                                        laneData ? laneData.buckets : []
+
+                                    if (!isUnavailable && buckets
+                                            && buckets.length > 0) {
+                                        var rawPoints = []
+                                        var slot = 0
+                                        var previous = null
+
+                                        for (var i = 0;
+                                             i < buckets.length; ++i) {
+                                            const b = buckets[i]
+                                            var gapSlots = 0
+                                            var loopBefore = false
+                                            if (previous !== null) {
+                                                const nominalFrames =
+                                                    Math.max(
+                                                        1,
+                                                        b.frameCount || 0,
+                                                        previous.frameCount || 0)
+                                                const frameGap =
+                                                    b.beginFrame
+                                                        - previous.endFrame
+                                                const realizationChanged =
+                                                    (b.realizationId
+                                                        !== previous.realizationId)
+
+                                                if (frameGap > 0) {
+                                                    gapSlots = Math.max(
+                                                        1,
+                                                        Math.min(
+                                                            12,
+                                                            Math.ceil(
+                                                                frameGap
+                                                                    / nominalFrames)))
+                                                } else if (frameGap < 0) {
+                                                    // Loop wrap: retain history but
+                                                    // never draw a connecting line.
+                                                    gapSlots = 2
+                                                    loopBefore = true
+                                                } else if (realizationChanged) {
+                                                    // OLD -> NEW must remain visibly
+                                                    // discontinuous even if source
+                                                    // frame domains meet exactly.
+                                                    gapSlots = 2
+                                                }
+                                            }
+
+                                            slot += gapSlots
+                                            rawPoints.push({
+                                                slot: slot,
+                                                meanDb:
+                                                    b.valid ? b.meanDb : 0.0,
+                                                peakDb:
+                                                    b.valid ? b.peakDb : 0.0,
+                                                valid: b.valid,
+                                                breakBefore: gapSlots > 0,
+                                                loopBefore: loopBefore
+                                            })
+                                            slot += 1
+                                            previous = b
+                                        }
+
+                                        const startX =
+                                            plotWidth - slot * stepX
+                                        var segments = []
+                                        var segment = []
+                                        var markers = []
+
+                                        for (var r = 0;
+                                             r < rawPoints.length; ++r) {
+                                            const rp = rawPoints[r]
+                                            const x =
+                                                startX + rp.slot * stepX
+                                            const meanY =
+                                                laneZeroY
+                                                    + (Math.max(
+                                                        0,
+                                                        Math.min(
+                                                            scaleMaxDb,
+                                                            rp.meanDb))
+                                                        / scaleMaxDb)
+                                                        * (laneHeight - 2)
+                                            const peakY =
+                                                laneZeroY
+                                                    + (Math.max(
+                                                        0,
+                                                        Math.min(
+                                                            scaleMaxDb,
+                                                            rp.peakDb))
+                                                        / scaleMaxDb)
+                                                        * (laneHeight - 2)
+
+                                            if (rp.breakBefore
+                                                    && segment.length > 0) {
+                                                segments.push(segment)
+                                                segment = []
+                                                markers.push({
+                                                    x: x - stepX,
+                                                    loop: rp.loopBefore
+                                                })
+                                            }
+                                            segment.push({
+                                                x: x,
+                                                meanY: meanY,
+                                                peakY: peakY
+                                            })
+                                        }
+                                        if (segment.length > 0)
+                                            segments.push(segment)
+
+                                        for (var sg = 0;
+                                             sg < segments.length; ++sg)
+                                            drawSegment(
+                                                segments[sg],
+                                                laneZeroY)
+
+                                        for (var mk = 0;
+                                             mk < markers.length; ++mk) {
+                                            ctx.strokeStyle =
+                                                markers[mk].loop
+                                                    ? "#586773"
+                                                    : "#7B61FF"
+                                            ctx.lineWidth = 1
+                                            ctx.setLineDash([2, 2])
+                                            ctx.beginPath()
+                                            ctx.moveTo(
+                                                markers[mk].x,
+                                                laneTopY)
+                                            ctx.lineTo(
+                                                markers[mk].x,
+                                                laneTopY + laneHeight)
+                                            ctx.stroke()
+                                            ctx.setLineDash([])
+                                        }
+                                    }
+
+                                    if (activeLanes > 1) {
+                                        ctx.fillStyle = "#A1B5C9"
+                                        ctx.font = "8px 'Segoe UI'"
+                                        ctx.fillText(
+                                            l === 0 ? "L" : "R",
+                                            4,
+                                            laneTopY + 9)
+                                    }
+
+                                    // Sparse truthful GR scale: 0, midpoint,
+                                    // max. Default therefore reads 0 / 3 / 6.
+                                    ctx.fillStyle = "#586773"
+                                    ctx.font = "7px 'Segoe UI'"
+                                    const sx = plotWidth + 3
+                                    ctx.fillText(
+                                        "0",
+                                        sx,
+                                        laneTopY + 7)
+                                    const midpoint = scaleMaxDb * 0.5
+                                    ctx.fillText(
+                                        midpoint.toFixed(
+                                            midpoint < 2 ? 1 : 0),
+                                        sx,
+                                        laneTopY
+                                            + laneHeight * 0.5 + 2)
+                                    const maxLabel =
+                                        l === activeLanes - 1
+                                            ? scaleMaxDb.toFixed(0)
+                                                + " dB GR"
+                                            : scaleMaxDb.toFixed(0)
+                                    ctx.fillText(
+                                        maxLabel,
+                                        sx,
+                                        laneTopY + laneHeight - 2)
+                                }
+
+                                if (isTransition) {
+                                    ctx.strokeStyle = "#7B61FF"
+                                    ctx.lineWidth = 1
+                                    ctx.setLineDash([2, 2])
+                                    ctx.beginPath()
+                                    ctx.moveTo(plotWidth - 2, 0)
+                                    ctx.lineTo(plotWidth - 2, height)
+                                    ctx.stroke()
+                                    ctx.setLineDash([])
+                                }
+
+                                ctx.restore()
+                            }
+                        }
+
+                                        }
+
                 }
+
+
             }
 
             // Right Side: Control Panels

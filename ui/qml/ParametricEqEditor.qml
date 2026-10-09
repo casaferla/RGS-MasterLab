@@ -73,6 +73,10 @@ Rectangle {
                 tone: root.viewModel && root.viewModel.showCombinedResponse ? "primary" : "secondary"
                 accentColor: "#A989F2"
                 minimumControlWidth: 72
+                // FIX-UI-001: reserve identical geometry for OFF/ON text metrics.
+                Layout.minimumWidth: 92
+                Layout.preferredWidth: 92
+                Layout.maximumWidth: 92
                 enabled: root.viewModel !== null && root.viewModel !== undefined
                 onClicked: {
                     if (root.viewModel) {
@@ -91,6 +95,10 @@ Rectangle {
                 tone: root.spectrumViewModel && root.spectrumViewModel.spectrumEnabled ? "primary" : "secondary"
                 accentColor: "#3A7BD5"
                 minimumControlWidth: 80
+                // FIX-UI-001: reserve identical geometry for OFF/ON text metrics.
+                Layout.minimumWidth: 100
+                Layout.preferredWidth: 100
+                Layout.maximumWidth: 100
                 enabled: root.spectrumViewModel !== null && root.spectrumViewModel !== undefined
                 onClicked: {
                     if (root.spectrumViewModel) {
