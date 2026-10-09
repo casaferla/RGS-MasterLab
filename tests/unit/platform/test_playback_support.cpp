@@ -860,6 +860,7 @@ void PlaybackSupportTest::stateMachineAndBoundedPump()
 
 void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
 {
+    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:start";
     // Test 1: PLAYING replacement uses the deterministic future queued boundary,
     // not the stale/current cue, then emits a 15 ms complementary linear crossfade.
     constexpr std::int64_t totalFrames = 5000;
@@ -988,6 +989,7 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         core::PlaybackState::PAUSED);
     QCOMPARE(engine.snapshot().value()->position, pausedPos);
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:before-2A";
     // Test 2A: a PAUSED replacement must discard queued old audio before
     // the new realization is published. Resume/replay must therefore begin
     // with new-only audio, never old queued material under a NEW identity.
@@ -1093,6 +1095,7 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::optional{oldRealizationId});
     }
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:before-2C";
     // Test 2C: pausing during an already-pending handoff freezes the
     // audible OLD/TRANSITION phase; resume continues the same progression.
     {
@@ -1149,6 +1152,7 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::optional{newRealizationId});
     }
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:before-2D";
     // Test 2D: seeking while a handoff is pending discards the old queued
     // chronology. Playback restarts from the accepted new realization.
     {
@@ -1187,6 +1191,7 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             static_cast<std::int16_t>(0));
     }
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:before-2E";
     // Test 2E: zero- and short-crossfade boundaries have deterministic
     // identity semantics: zero skips TRANSITION, short remains TRANSITION
     // for exactly the bounded output-frame interval.
@@ -1273,8 +1278,10 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::optional<std::int64_t>{0});
     };
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:2E-zero";
     verifyShortCrossfadeIdentity(
         static_cast<std::int64_t>(handoffBoundaryFrames), 0);
+    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:2E-short";
     verifyShortCrossfadeIdentity(
         static_cast<std::int64_t>(handoffBoundaryFrames + 6U), 6);
 
@@ -1473,7 +1480,9 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             static_cast<std::int16_t>(0));
     };
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:src-441-480";
     verifySrcCrossfade(44'100U, 48'000U, 720U);
+    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:src-480-441";
     verifySrcCrossfade(48'000U, 44'100U, 662U);
 
     // Identity-less PCM remains explicitly unavailable.
@@ -1781,6 +1790,7 @@ void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()
 
 void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
 {
+    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:start";
     PlaybackEngine engine;
     auto initialSnap = engine.snapshot();
     QVERIFY(initialSnap);
@@ -1804,6 +1814,7 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     QCOMPARE(preparedSnap.value()->seekSerial, std::uint64_t{0});
     QCOMPARE(preparedSnap.value()->loopWrapCount, std::uint64_t{0});
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:before-play1";
     // 1st PLAY starts first traversal (traversalSerial = 1)
     QVERIFY(engine.play());
     auto play1Snap = engine.snapshot();
@@ -1823,12 +1834,14 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     QVERIFY(engine.play());
     QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{2});
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:before-handoff";
     // Active realization handoff MUST NOT increment traversalSerial
     const auto buf2 = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 400);
     const core::RealizationId rid2{99};
     QVERIFY(engine.handoff_pcm(buf2.view(), nullptr, rid2));
     QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{2});
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:before-seek";
     // Successful SEEK increments seekSerial exactly once without falsely creating a traversal event
     QVERIFY(engine.seek(core::FrameIndex{100}));
     auto seekSnap = engine.snapshot();
@@ -1842,6 +1855,7 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     QCOMPARE(failSeekSnap.value()->seekSerial, std::uint64_t{1});
     QCOMPARE(failSeekSnap.value()->traversalSerial, std::uint64_t{2});
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:before-loop";
     // set_loop internal restart does NOT falsely create a new traversal
     const auto loop = *core::FrameRange::create(
         core::FrameIndex{50}, core::FrameIndex{150}).value();
@@ -1853,6 +1867,7 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     // loopWrapCount changes only when actual processed output crosses a loop boundary
     QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
 
+    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:before-wrap";
     // Simulate hardware processed frames crossing loop boundary (length 100 frames)
     observedOutput->set_processed_frames(200);
     auto wrapSnap = engine.snapshot();
