@@ -12,7 +12,6 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -256,8 +255,6 @@ private slots:
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: formatSelectionIsDeterministic\\n");
-    std::fflush(stderr);
     auto rate = core::SampleRate::create(48000);
     QVERIFY(rate);
     auto format = audio::AudioFormat::create(
@@ -295,14 +292,10 @@ void PlaybackSupportTest::formatSelectionIsDeterministic()
         *format.value(), false, false, false, false);
     QVERIFY(!unsupported);
     QCOMPARE(unsupported.error()->code(), core::ErrorCode::UnsupportedOperation);
-    std::fprintf(stderr, "DBG_SLOT_EXIT: formatSelectionIsDeterministic\\n");
-    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::adaptedTimelineUsesAbsoluteRateMapping()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: adaptedTimelineUsesAbsoluteRateMapping\\n");
-    std::fflush(stderr);
     std::vector<std::int64_t> codes;
     codes.reserve(441U * 2U);
     for (std::int64_t frame = 0; frame < 441; ++frame) {
@@ -341,14 +334,10 @@ void PlaybackSupportTest::adaptedTimelineUsesAbsoluteRateMapping()
     QVERIFY(engine.seek(core::FrameIndex{220}));
     QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{220});
     QVERIFY(engine.stop());
-    std::fprintf(stderr, "DBG_SLOT_EXIT: adaptedTimelineUsesAbsoluteRateMapping\\n");
-    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::explicitSeekLoopStateMatrix()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: explicitSeekLoopStateMatrix\\n");
-    std::fflush(stderr);
     constexpr std::int64_t duration = 400;
     const auto loop = *core::FrameRange::create(
         core::FrameIndex{100}, core::FrameIndex{200}).value();
@@ -422,14 +411,10 @@ void PlaybackSupportTest::explicitSeekLoopStateMatrix()
             }
         }
     }
-    std::fprintf(stderr, "DBG_SLOT_EXIT: explicitSeekLoopStateMatrix\\n");
-    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::explicitSeekLoopTraversalEofAndSrcIdentity()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: explicitSeekLoopTraversalEofAndSrcIdentity\\n");
-    std::fflush(stderr);
     const auto smallLoop = *core::FrameRange::create(
         core::FrameIndex{4}, core::FrameIndex{8}).value();
     const auto codes = indexed_stereo_codes(16);
@@ -604,14 +589,10 @@ void PlaybackSupportTest::explicitSeekLoopTraversalEofAndSrcIdentity()
     };
     verifyAdapted(44'100U, 48'000U);
     verifyAdapted(48'000U, 44'100U);
-    std::fprintf(stderr, "DBG_SLOT_EXIT: explicitSeekLoopTraversalEofAndSrcIdentity\\n");
-    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: loopCommandIsPositionNeutralAcrossStates\\n");
-    std::fflush(stderr);
     constexpr std::int64_t duration = 400;
     const auto loop = *core::FrameRange::create(
         core::FrameIndex{100}, core::FrameIndex{200}).value();
@@ -682,14 +663,10 @@ void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
             QVERIFY(!engine.snapshot().value()->loop);
         }
     }
-    std::fprintf(stderr, "DBG_SLOT_EXIT: loopCommandIsPositionNeutralAcrossStates\\n");
-    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::floatAndPcm16GoldenConversion()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: floatAndPcm16GoldenConversion\\n");
-    std::fflush(stderr);
     auto floatBuffer = make_buffer(
         48000, audio::ChannelLayout::STEREO_LR, 3);
     auto mutableFloat = floatBuffer.mutable_view();
@@ -764,14 +741,10 @@ void PlaybackSupportTest::floatAndPcm16GoldenConversion()
             std::bit_cast<std::int16_t>(read_u16(*pcmBytes.value(), index * 2U)),
             expectedPcm[index]);
     }
-    std::fprintf(stderr, "DBG_SLOT_EXIT: floatAndPcm16GoldenConversion\\n");
-    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::conversionFailuresAndChunkInvariance()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: conversionFailuresAndChunkInvariance\\n");
-    std::fflush(stderr);
     auto buffer = make_buffer(44100, audio::ChannelLayout::MONO_C, 3);
     auto plane = buffer.mutable_view().channel(0);
     QVERIFY(plane);
@@ -816,14 +789,10 @@ void PlaybackSupportTest::conversionFailuresAndChunkInvariance()
         buffer.view(), DeviceSampleFormat::IEEE_F32);
     QVERIFY(!floatOverflow);
     QCOMPARE(floatOverflow.error()->code(), core::ErrorCode::InvalidAudioSample);
-    std::fprintf(stderr, "DBG_SLOT_EXIT: conversionFailuresAndChunkInvariance\\n");
-    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::stateMachineAndBoundedPump()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: stateMachineAndBoundedPump\\n");
-    std::fflush(stderr);
     PlaybackEngine engine;
     auto initial = engine.snapshot();
     QVERIFY(initial);
@@ -887,15 +856,10 @@ void PlaybackSupportTest::stateMachineAndBoundedPump()
     QVERIFY(!engine.snapshot().value()->loop);
     QVERIFY(engine.clear());
     QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::NO_SOURCE);
-    std::fprintf(stderr, "DBG_SLOT_EXIT: stateMachineAndBoundedPump\\n");
-    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: seamlessPcmHandoffCrossfadeAndStateMatrix\\n");
-    std::fflush(stderr);
-    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:start";
     // Test 1: PLAYING replacement uses the deterministic future queued boundary,
     // not the stale/current cue, then emits a 15 ms complementary linear crossfade.
     constexpr std::int64_t totalFrames = 5000;
@@ -1024,7 +988,6 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         core::PlaybackState::PAUSED);
     QCOMPARE(engine.snapshot().value()->position, pausedPos);
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:before-2A";
     // Test 2A: a PAUSED replacement must discard queued old audio before
     // the new realization is published. Resume/replay must therefore begin
     // with new-only audio, never old queued material under a NEW identity.
@@ -1130,7 +1093,6 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::optional{oldRealizationId});
     }
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:before-2C";
     // Test 2C: pausing during an already-pending handoff freezes the
     // audible OLD/TRANSITION phase; resume continues the same progression.
     {
@@ -1187,7 +1149,6 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::optional{newRealizationId});
     }
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:before-2D";
     // Test 2D: seeking while a handoff is pending discards the old queued
     // chronology. Playback restarts from the accepted new realization.
     {
@@ -1226,18 +1187,12 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             static_cast<std::int16_t>(0));
     }
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:before-2E";
     // Test 2E: zero- and short-crossfade boundaries have deterministic
     // identity semantics: zero skips TRANSITION, short remains TRANSITION
     // for exactly the bounded output-frame interval.
     const auto verifyShortCrossfadeIdentity = [&](
         std::int64_t loopEndFrame,
         std::int64_t expectedTransitionFrames) {
-        std::fprintf(stderr,
-            "DBG_LAMBDA_ENTER: short-crossfade loopEnd=%lld transition=%lld\\n",
-            static_cast<long long>(loopEndFrame),
-            static_cast<long long>(expectedTransitionFrames));
-        std::fflush(stderr);
         PlaybackEngine shortEngine;
         auto shortOutput = std::make_unique<FakeOutput>(
             queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
@@ -1249,35 +1204,24 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::nullopt,
             lifetime1,
             oldRealizationId));
-        std::fprintf(stderr, "DBG_SHORT_STEP: installed\\n"); std::fflush(stderr);
         auto shortLoop = core::FrameRange::create(
             core::FrameIndex{0},
             core::FrameIndex{loopEndFrame});
         QVERIFY(shortLoop);
-        std::fprintf(stderr, "DBG_SHORT_STEP: loop-created\\n"); std::fflush(stderr);
         QVERIFY(shortEngine.set_loop(*shortLoop.value()));
-        std::fprintf(stderr, "DBG_SHORT_STEP: loop-set\\n"); std::fflush(stderr);
-        constexpr std::int64_t deviceProcessedBaseline = 5000;
-        observedShort->set_processed_frames(deviceProcessedBaseline);
         QVERIFY(shortEngine.play());
-        std::fprintf(stderr, "DBG_SHORT_STEP: played\\n"); std::fflush(stderr);
+        // FakeOutput::start() resets the backend processed-frame counter.
+        // Capture the actual post-start epoch for the audible boundary.
+        const auto deviceProcessedBaseline =
+            observedShort->processed_frames();
         QVERIFY(shortEngine.handoff_pcm(
             newBuf.view(), lifetime2, newRealizationId));
-        std::fprintf(stderr, "DBG_SHORT_STEP: handoff-accepted\\n"); std::fflush(stderr);
 
         observedShort->set_processed_frames(
             deviceProcessedBaseline
             + static_cast<std::int64_t>(handoffBoundaryFrames - 1U));
         const auto beforeShort =
             shortEngine.snapshot().value()->audibleRealization;
-        std::fprintf(stderr,
-            "DBG_SHORT_VALUE: before phase=%d rid=%lld hasRid=%d end=%lld hasEnd=%d\\n",
-            static_cast<int>(beforeShort.phase),
-            static_cast<long long>(beforeShort.realizationId.value_or(core::RealizationId{}).value),
-            beforeShort.realizationId.has_value() ? 1 : 0,
-            static_cast<long long>(beforeShort.handoffEndFrame.value_or(-999)),
-            beforeShort.handoffEndFrame.has_value() ? 1 : 0);
-        std::fflush(stderr);
         QCOMPARE(beforeShort.phase, core::AudibleHandoffPhase::OLD);
         QCOMPARE(
             beforeShort.realizationId,
@@ -1288,14 +1232,6 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             + static_cast<std::int64_t>(handoffBoundaryFrames));
         const auto atShortBoundary =
             shortEngine.snapshot().value()->audibleRealization;
-        std::fprintf(stderr,
-            "DBG_SHORT_VALUE: at phase=%d rid=%lld hasRid=%d end=%lld hasEnd=%d\\n",
-            static_cast<int>(atShortBoundary.phase),
-            static_cast<long long>(atShortBoundary.realizationId.value_or(core::RealizationId{}).value),
-            atShortBoundary.realizationId.has_value() ? 1 : 0,
-            static_cast<long long>(atShortBoundary.handoffEndFrame.value_or(-999)),
-            atShortBoundary.handoffEndFrame.has_value() ? 1 : 0);
-        std::fflush(stderr);
         if (expectedTransitionFrames == 0) {
             QCOMPARE(
                 atShortBoundary.phase,
@@ -1306,11 +1242,6 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             QCOMPARE(
                 atShortBoundary.handoffEndFrame,
                 std::optional<std::int64_t>{0});
-            std::fprintf(stderr,
-                "DBG_LAMBDA_EXIT: short-crossfade loopEnd=%lld transition=%lld\\n",
-                static_cast<long long>(loopEndFrame),
-                static_cast<long long>(expectedTransitionFrames));
-            std::fflush(stderr);
             return;
         }
 
@@ -1335,14 +1266,6 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
                 + static_cast<std::size_t>(expectedTransitionFrames)));
         const auto afterShort =
             shortEngine.snapshot().value()->audibleRealization;
-        std::fprintf(stderr,
-            "DBG_SHORT_VALUE: after phase=%d rid=%lld hasRid=%d end=%lld hasEnd=%d\\n",
-            static_cast<int>(afterShort.phase),
-            static_cast<long long>(afterShort.realizationId.value_or(core::RealizationId{}).value),
-            afterShort.realizationId.has_value() ? 1 : 0,
-            static_cast<long long>(afterShort.handoffEndFrame.value_or(-999)),
-            afterShort.handoffEndFrame.has_value() ? 1 : 0);
-        std::fflush(stderr);
         QCOMPARE(afterShort.phase, core::AudibleHandoffPhase::NEW);
         QCOMPARE(
             afterShort.realizationId,
@@ -1350,17 +1273,10 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         QCOMPARE(
             afterShort.handoffEndFrame,
             std::optional<std::int64_t>{0});
-        std::fprintf(stderr,
-            "DBG_LAMBDA_EXIT: short-crossfade loopEnd=%lld transition=%lld\\n",
-            static_cast<long long>(loopEndFrame),
-            static_cast<long long>(expectedTransitionFrames));
-        std::fflush(stderr);
     };
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:2E-zero";
     verifyShortCrossfadeIdentity(
         static_cast<std::int64_t>(handoffBoundaryFrames), 0);
-    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:2E-short";
     verifyShortCrossfadeIdentity(
         static_cast<std::int64_t>(handoffBoundaryFrames + 6U), 6);
 
@@ -1440,10 +1356,6 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         std::uint32_t inputRateValue,
         std::uint32_t outputRateValue,
         std::size_t expectedXfadeFrames) {
-        std::fprintf(stderr,
-            "DBG_LAMBDA_ENTER: src-crossfade input=%u output=%u xfade=%zu\\n",
-            inputRateValue, outputRateValue, expectedXfadeFrames);
-        std::fflush(stderr);
         auto srcInputRate = core::SampleRate::create(inputRateValue);
         auto srcOutputRate = core::SampleRate::create(outputRateValue);
         QVERIFY(srcInputRate && srcOutputRate);
@@ -1561,15 +1473,9 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
                 (handoffBoundaryFrames + expectedXfadeFrames)
                     * bytesPerFrame),
             static_cast<std::int16_t>(0));
-        std::fprintf(stderr,
-            "DBG_LAMBDA_EXIT: src-crossfade input=%u output=%u xfade=%zu\\n",
-            inputRateValue, outputRateValue, expectedXfadeFrames);
-        std::fflush(stderr);
     };
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:src-441-480";
     verifySrcCrossfade(44'100U, 48'000U, 720U);
-    qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:src-480-441";
     verifySrcCrossfade(48'000U, 44'100U, 662U);
 
     // Identity-less PCM remains explicitly unavailable.
@@ -1822,14 +1728,10 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             read_i16(observedQueued->history(), initialHistorySize),
             static_cast<std::int16_t>(-32768));
     }
-    std::fprintf(stderr, "DBG_SLOT_EXIT: seamlessPcmHandoffCrossfadeAndStateMatrix\\n");
-    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: partialWritesNaturalEofAndRuntimeError\\n");
-    std::fflush(stderr);
     const std::vector<std::int64_t> codes{
         -32768, 32767,
         -16384, 16384,
@@ -1877,15 +1779,10 @@ void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()
     QVERIFY(!failed);
     QCOMPARE(failed.error()->code(), core::ErrorCode::IoFailure);
     QVERIFY(engine.clear());
-    std::fprintf(stderr, "DBG_SLOT_EXIT: partialWritesNaturalEofAndRuntimeError\\n");
-    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
 {
-    std::fprintf(stderr, "DBG_SLOT_ENTER: controlPlaneTraversalSeekAndLoopSerials\\n");
-    std::fflush(stderr);
-    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:start";
     PlaybackEngine engine;
     auto initialSnap = engine.snapshot();
     QVERIFY(initialSnap);
@@ -1909,7 +1806,6 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     QCOMPARE(preparedSnap.value()->seekSerial, std::uint64_t{0});
     QCOMPARE(preparedSnap.value()->loopWrapCount, std::uint64_t{0});
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:before-play1";
     // 1st PLAY starts first traversal (traversalSerial = 1)
     QVERIFY(engine.play());
     auto play1Snap = engine.snapshot();
@@ -1929,14 +1825,12 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     QVERIFY(engine.play());
     QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{2});
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:before-handoff";
     // Active realization handoff MUST NOT increment traversalSerial
     const auto buf2 = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 400);
     const core::RealizationId rid2{99};
     QVERIFY(engine.handoff_pcm(buf2.view(), nullptr, rid2));
     QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{2});
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:before-seek";
     // Successful SEEK increments seekSerial exactly once without falsely creating a traversal event
     QVERIFY(engine.seek(core::FrameIndex{100}));
     auto seekSnap = engine.snapshot();
@@ -1950,7 +1844,6 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     QCOMPARE(failSeekSnap.value()->seekSerial, std::uint64_t{1});
     QCOMPARE(failSeekSnap.value()->traversalSerial, std::uint64_t{2});
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:before-loop";
     // set_loop internal restart does NOT falsely create a new traversal
     const auto loop = *core::FrameRange::create(
         core::FrameIndex{50}, core::FrameIndex{150}).value();
@@ -1962,24 +1855,14 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     // loopWrapCount changes only when actual processed output crosses a loop boundary
     QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
 
-    qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:before-wrap";
     // Simulate hardware processed frames crossing loop boundary (length 100 frames)
     observedOutput->set_processed_frames(200);
     auto wrapSnap = engine.snapshot();
     QCOMPARE(wrapSnap.value()->loopWrapCount, std::uint64_t{2});
-    std::fprintf(stderr, "DBG_SLOT_EXIT: controlPlaneTraversalSeekAndLoopSerials\\n");
-    std::fflush(stderr);
 }
 
 }  // namespace rgsml::tests
 
-int main(int argc, char** argv)
-{
-    rgsml::tests::PlaybackSupportTest testObject;
-    const int result = QTest::qExec(&testObject, argc, argv);
-    std::fprintf(stderr, "DBG_QEXEC_RESULT: %d\\n", result);
-    std::fflush(stderr);
-    return result;
-}
+QTEST_APPLESS_MAIN(rgsml::tests::PlaybackSupportTest)
 
 #include "test_playback_support.moc"
