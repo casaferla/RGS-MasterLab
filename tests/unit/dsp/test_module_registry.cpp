@@ -137,6 +137,24 @@ void ModuleRegistryTest::emptyLookupAndUnavailableCatalog()
                 std::string_view{"MODULE_IMPLEMENTATION_UNAVAILABLE"});
         }
     }
+    // The M15 schema is real, but an implementation is not fabricated.
+    const auto stereo_desc = catalog.value()->find_descriptor("rgsml.dsp.stereo-ms");
+    QVERIFY(stereo_desc);
+    QCOMPARE(stereo_desc.value()->get().algorithm_version(),
+             std::optional<std::string_view>{"1.0.0"});
+    QCOMPARE(stereo_desc.value()->get().parameter_schema_id(),
+             std::optional<std::string_view>{
+                 "rgsml.dsp.stereo-ms.parameters/1.0.0"});
+    QVERIFY(!catalog.value()->has_factory("rgsml.dsp.stereo-ms"));
+    const auto stereo_defaults = StereoMsParameters::create_default();
+    QVERIFY(stereo_defaults);
+    const ModuleParameterPayload stereo_payload{*stereo_defaults.value()};
+    const auto stereo_unavailable = catalog.value()->create_module(
+        "rgsml.dsp.stereo-ms", stereo_payload);
+    QVERIFY(!stereo_unavailable);
+    QCOMPARE(error_category(*stereo_unavailable.error()),
+             std::string_view{"MODULE_IMPLEMENTATION_UNAVAILABLE"});
+
     auto unknown = catalog.value()->create_module("rgsml.dsp.unknown");
     QVERIFY(unknown.error() != nullptr);
     QCOMPARE(error_category(*unknown.error()), std::string_view{"MODULE_TYPE_NOT_FOUND"});
