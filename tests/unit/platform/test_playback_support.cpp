@@ -1249,22 +1249,35 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::nullopt,
             lifetime1,
             oldRealizationId));
+        std::fprintf(stderr, "DBG_SHORT_STEP: installed\\n"); std::fflush(stderr);
         auto shortLoop = core::FrameRange::create(
             core::FrameIndex{0},
             core::FrameIndex{loopEndFrame});
         QVERIFY(shortLoop);
+        std::fprintf(stderr, "DBG_SHORT_STEP: loop-created\\n"); std::fflush(stderr);
         QVERIFY(shortEngine.set_loop(*shortLoop.value()));
+        std::fprintf(stderr, "DBG_SHORT_STEP: loop-set\\n"); std::fflush(stderr);
         constexpr std::int64_t deviceProcessedBaseline = 5000;
         observedShort->set_processed_frames(deviceProcessedBaseline);
         QVERIFY(shortEngine.play());
+        std::fprintf(stderr, "DBG_SHORT_STEP: played\\n"); std::fflush(stderr);
         QVERIFY(shortEngine.handoff_pcm(
             newBuf.view(), lifetime2, newRealizationId));
+        std::fprintf(stderr, "DBG_SHORT_STEP: handoff-accepted\\n"); std::fflush(stderr);
 
         observedShort->set_processed_frames(
             deviceProcessedBaseline
             + static_cast<std::int64_t>(handoffBoundaryFrames - 1U));
         const auto beforeShort =
             shortEngine.snapshot().value()->audibleRealization;
+        std::fprintf(stderr,
+            "DBG_SHORT_VALUE: before phase=%d rid=%lld hasRid=%d end=%lld hasEnd=%d\\n",
+            static_cast<int>(beforeShort.phase),
+            static_cast<long long>(beforeShort.realizationId.value_or(core::RealizationId{}).value),
+            beforeShort.realizationId.has_value() ? 1 : 0,
+            static_cast<long long>(beforeShort.handoffEndFrame.value_or(-999)),
+            beforeShort.handoffEndFrame.has_value() ? 1 : 0);
+        std::fflush(stderr);
         QCOMPARE(beforeShort.phase, core::AudibleHandoffPhase::OLD);
         QCOMPARE(
             beforeShort.realizationId,
@@ -1275,6 +1288,14 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             + static_cast<std::int64_t>(handoffBoundaryFrames));
         const auto atShortBoundary =
             shortEngine.snapshot().value()->audibleRealization;
+        std::fprintf(stderr,
+            "DBG_SHORT_VALUE: at phase=%d rid=%lld hasRid=%d end=%lld hasEnd=%d\\n",
+            static_cast<int>(atShortBoundary.phase),
+            static_cast<long long>(atShortBoundary.realizationId.value_or(core::RealizationId{}).value),
+            atShortBoundary.realizationId.has_value() ? 1 : 0,
+            static_cast<long long>(atShortBoundary.handoffEndFrame.value_or(-999)),
+            atShortBoundary.handoffEndFrame.has_value() ? 1 : 0);
+        std::fflush(stderr);
         if (expectedTransitionFrames == 0) {
             QCOMPARE(
                 atShortBoundary.phase,
@@ -1314,6 +1335,14 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
                 + static_cast<std::size_t>(expectedTransitionFrames)));
         const auto afterShort =
             shortEngine.snapshot().value()->audibleRealization;
+        std::fprintf(stderr,
+            "DBG_SHORT_VALUE: after phase=%d rid=%lld hasRid=%d end=%lld hasEnd=%d\\n",
+            static_cast<int>(afterShort.phase),
+            static_cast<long long>(afterShort.realizationId.value_or(core::RealizationId{}).value),
+            afterShort.realizationId.has_value() ? 1 : 0,
+            static_cast<long long>(afterShort.handoffEndFrame.value_or(-999)),
+            afterShort.handoffEndFrame.has_value() ? 1 : 0);
+        std::fflush(stderr);
         QCOMPARE(afterShort.phase, core::AudibleHandoffPhase::NEW);
         QCOMPARE(
             afterShort.realizationId,
