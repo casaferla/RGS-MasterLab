@@ -92,7 +92,7 @@ void StereoMsWidthTest::frozenCommonGainSlicesAndRangeTruthfulness()
         auto same = stereo_ms_edit_width_preserving_common_gain(
             *p.value(),x.current_width_percent);
         QVERIFY(same);
-        QCOMPARE(*same.value(),*p.value());
+        QVERIFY(*same.value() == *p.value());
     }
     auto c9 = StereoMsParameters::create(9.0,9.0);
     QVERIFY(c9);
