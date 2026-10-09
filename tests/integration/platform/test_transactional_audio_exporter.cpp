@@ -18,10 +18,12 @@
 #include <QTemporaryDir>
 #include <QtTest/QTest>
 
+#ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -349,6 +351,7 @@ void TransactionalAudioExporterTest::sourceAndDestinationCollisionProtection()
     QVERIFY(existingResult.error()->message().find("destination_exists") != std::string::npos);
     QCOMPARE(file_bytes(existingPath), existingBefore);
 
+#ifdef _WIN32
     const auto hardlinkPath = directory.filePath(QStringLiteral("source-alias.wav"));
     const auto sourceNative = QDir::toNativeSeparators(copiedSource);
     const auto hardlinkNative = QDir::toNativeSeparators(hardlinkPath);
@@ -360,6 +363,7 @@ void TransactionalAudioExporterTest::sourceAndDestinationCollisionProtection()
     QCOMPARE(hardlinkResult.error()->code(), core::ErrorCode::InvalidState);
     QVERIFY(hardlinkResult.error()->message().find("source_collision") != std::string::npos);
     QCOMPARE(file_bytes(copiedSource), sourceBefore);
+#endif
 }
 
 void TransactionalAudioExporterTest::injectedFailureStagesCleanUp()
