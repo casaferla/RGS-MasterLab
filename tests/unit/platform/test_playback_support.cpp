@@ -1233,6 +1233,11 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
     const auto verifyShortCrossfadeIdentity = [&](
         std::int64_t loopEndFrame,
         std::int64_t expectedTransitionFrames) {
+        std::fprintf(stderr,
+            "DBG_LAMBDA_ENTER: short-crossfade loopEnd=%lld transition=%lld\\n",
+            static_cast<long long>(loopEndFrame),
+            static_cast<long long>(expectedTransitionFrames));
+        std::fflush(stderr);
         PlaybackEngine shortEngine;
         auto shortOutput = std::make_unique<FakeOutput>(
             queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
@@ -1280,6 +1285,11 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             QCOMPARE(
                 atShortBoundary.handoffEndFrame,
                 std::optional<std::int64_t>{0});
+            std::fprintf(stderr,
+                "DBG_LAMBDA_EXIT: short-crossfade loopEnd=%lld transition=%lld\\n",
+                static_cast<long long>(loopEndFrame),
+                static_cast<long long>(expectedTransitionFrames));
+            std::fflush(stderr);
             return;
         }
 
@@ -1311,6 +1321,11 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         QCOMPARE(
             afterShort.handoffEndFrame,
             std::optional<std::int64_t>{0});
+        std::fprintf(stderr,
+            "DBG_LAMBDA_EXIT: short-crossfade loopEnd=%lld transition=%lld\\n",
+            static_cast<long long>(loopEndFrame),
+            static_cast<long long>(expectedTransitionFrames));
+        std::fflush(stderr);
     };
 
     qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:2E-zero";
@@ -1396,6 +1411,10 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         std::uint32_t inputRateValue,
         std::uint32_t outputRateValue,
         std::size_t expectedXfadeFrames) {
+        std::fprintf(stderr,
+            "DBG_LAMBDA_ENTER: src-crossfade input=%u output=%u xfade=%zu\\n",
+            inputRateValue, outputRateValue, expectedXfadeFrames);
+        std::fflush(stderr);
         auto srcInputRate = core::SampleRate::create(inputRateValue);
         auto srcOutputRate = core::SampleRate::create(outputRateValue);
         QVERIFY(srcInputRate && srcOutputRate);
@@ -1513,6 +1532,10 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
                 (handoffBoundaryFrames + expectedXfadeFrames)
                     * bytesPerFrame),
             static_cast<std::int16_t>(0));
+        std::fprintf(stderr,
+            "DBG_LAMBDA_EXIT: src-crossfade input=%u output=%u xfade=%zu\\n",
+            inputRateValue, outputRateValue, expectedXfadeFrames);
+        std::fflush(stderr);
     };
 
     qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:src-441-480";
