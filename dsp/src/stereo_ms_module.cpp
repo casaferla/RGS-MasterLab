@@ -281,6 +281,19 @@ rgsml::core::Status StereoMsModule::process(
             "Stereo/M-S input/output or frame range mismatch."));
     }
 
+    // Stream binding is transactional and contiguous, as for the Compressor.
+    // Reject invalid calls before any output store or recursive state mutation.
+    if (impl_->stream_ended
+        || (!impl_->stream_bound && !context.begins_stream)
+        || (impl_->stream_bound && (context.begins_stream
+            || !impl_->next_frame
+            || context.output_frame_range.begin() != *impl_->next_frame))) {
+        return rgsml::core::Status::failure(ms_error(
+            rgsml::core::ErrorCode::InvalidArgument,
+            "INVALID_DSP_PROCESS_CONTEXT",
+            "Stereo/M-S requires a contiguous stream and one begin/end."));
+    }
+
     const auto channels = input.format().channel_count();
     for (std::size_t i = 0; i < channels; ++i) {
         const auto in = *input.channel(i).value();
@@ -307,10 +320,49 @@ rgsml::core::Status StereoMsModule::process(
     if (input.format().channel_layout() == rgsml::audio::ChannelLayout::MONO_C) {
         // Strict bit identity: no floating-point spatial arithmetic.
         std::copy(in0.begin(), in0.end(), out0.begin());
+        impl_->next_frame = context.output_frame_range.end();
+        impl_->stream_bound = true;
+        impl_->stream_ended = context.ends_stream;
         return rgsml::core::Status::success();
     }
     const auto in1 = *input.channel(1).value();
     auto out1 = *output.channel(1).value();
+
+    if (impl_->crossover) {
+        // A tentative copy contains ALL four Mid/Side x Low/High recursive
+        // histories. No mutation of the live realization is allowed until
+        // the complete frame block has produced only finite output/states.
+        auto candidate = *impl_->crossover;
+        const double beta = impl_->parameters.low_band_width_percent() / 100.0;
+        for (std::size_t frame = 0; frame < in0.size(); ++frame) {
+            const double mid = (in0[frame] + in1[frame])
+                * kOrthonormalScale * impl_->mid_gain;
+            const double side = (in0[frame] - in1[frame])
+                * kOrthonormalScale * impl_->side_gain;
+            const auto filtered = candidate.process(mid, side, beta);
+            const double left = (filtered.mid + filtered.side) * kOrthonormalScale;
+            const double right = (filtered.mid - filtered.side) * kOrthonormalScale;
+            if (!std::isfinite(left) || !std::isfinite(right)
+                || !candidate.finite()) {
+                return rgsml::core::Status::failure(ms_error(
+                    rgsml::core::ErrorCode::InvalidAudioSample,
+                    "NONFINITE_OUTPUT_SAMPLE",
+                    "Stereo/M-S recursive crossover rejected nonfinite output or state."));
+            }
+            impl_->scratch_left[frame] = left;
+            impl_->scratch_right[frame] = right;
+        }
+
+        // Commit output, recursive state and frame cursor as one successful
+        // operation. The preallocated scratch allows allocation-free process.
+        std::copy_n(impl_->scratch_left.begin(), in0.size(), out0.begin());
+        std::copy_n(impl_->scratch_right.begin(), in0.size(), out1.begin());
+        *impl_->crossover = candidate;
+        impl_->next_frame = context.output_frame_range.end();
+        impl_->stream_bound = true;
+        impl_->stream_ended = context.ends_stream;
+        return rgsml::core::Status::success();
+    }
 
     // Fail before the first output store if any derived stereo sample is
     // non-finite. The second pass is allocation-free and stateless.
@@ -332,6 +384,9 @@ rgsml::core::Status StereoMsModule::process(
         out0[frame] = sample.left;
         out1[frame] = sample.right;
     }
+    impl_->next_frame = context.output_frame_range.end();
+    impl_->stream_bound = true;
+    impl_->stream_ended = context.ends_stream;
     return rgsml::core::Status::success();
 }
 
