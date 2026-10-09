@@ -3,6 +3,7 @@
 #include <rgsml/dsp/stereo_ms_crossover.hpp>
 
 #include <array>
+#include <span>
 
 namespace rgsml::dsp {
 
@@ -27,6 +28,15 @@ public:
         double mid, double side, double beta) noexcept;
 
     [[nodiscard]] bool finite() const noexcept;
+
+    // Four branches (Mid Low, Mid High, Side Low, Side High), two sections
+    // per branch, (z1,z2) in chronological TDF-II state order. Exactly
+    // sixteen binary64 words; coefficients are derived, never serialized.
+    static constexpr std::size_t kCheckpointStateWords = 16;
+    [[nodiscard]] std::array<double, kCheckpointStateWords>
+    snapshot_state() const noexcept;
+    [[nodiscard]] bool restore_state(
+        const std::array<double, kCheckpointStateWords>& words) noexcept;
 
 private:
     struct SectionDelay final {
