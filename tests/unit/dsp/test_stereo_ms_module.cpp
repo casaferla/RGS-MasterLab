@@ -42,7 +42,7 @@ private slots:
     void monoBitExactAcrossNonEffectiveSettings();
     void stereoBroadbandAndNoHiddenCompensation();
     void sideMuteDominatesAllStoredSideFields();
-    void activeCrossoversFailClosedWithoutAllpassSubstitution();
+    void activeCrossoversProduceFrozenSettlingWithoutAllpassSubstitution();
     void rejectsInvalidContextAndNonFiniteInput();
 };
 
@@ -190,36 +190,62 @@ void StereoMsModuleTest::sideMuteDominatesAllStoredSideFields()
     QVERIFY(l[3] == 0.0);
 }
 
-void StereoMsModuleTest::activeCrossoversFailClosedWithoutAllpassSubstitution()
+void StereoMsModuleTest::activeCrossoversProduceFrozenSettlingWithoutAllpassSubstitution()
 {
     auto reg = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(reg);
+    const DspProcessSpec stereo{
+        format(rgsml::audio::ChannelLayout::STEREO_LR),
+        rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        frame_count(4)};
     for (auto mode : {MonoBassMode::LR12, MonoBassMode::LR24}) {
         auto p = StereoMsParameters::create(
             0.0, 0.0, false, mode, 120.0, 100.0);
         QVERIFY(p);
         auto mod = make_module(*reg.value(), *p.value());
-        const DspProcessSpec spec{
-            format(rgsml::audio::ChannelLayout::STEREO_LR),
-            rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-            frame_count(4)};
-        auto req = mod->runtime_requirements(spec);
-        QVERIFY(!req);
-        QCOMPARE(error_category(*req.error()),
-                 std::string_view{"STEREO_MS_ACTIVE_CROSSOVER_NOT_IMPLEMENTED"});
-        auto prepared = mod->prepare(spec);
-        QVERIFY(!prepared);
-        QCOMPARE(error_category(*prepared.error()),
-                 std::string_view{"STEREO_MS_ACTIVE_CROSSOVER_NOT_IMPLEMENTED"});
+        auto req = mod->runtime_requirements(stereo);
+        QVERIFY(req);
+        const auto frozen = mode == MonoBassMode::LR12 ? 1760 : 2488;
+        QCOMPARE(req.value()->pre_context_frames.value(), frozen);
+        QCOMPARE(req.value()->post_context_frames.value(), frozen);
+        QCOMPARE(req.value()->effective_tail_frames.value(), frozen);
+        QCOMPARE(req.value()->algorithmic_latency_frames.value(), std::int64_t{0});
+        QVERIFY(mod->prepare(stereo));
+
+        // Mid-only impulse must carry the LR all-pass phase, even with
+        // lowBandWidthPercent=100; a fabricated identity bypass is invalid.
+        const std::array left{1.0, 0.0, 0.0, 0.0};
+        auto input = make_buffer(
+            rgsml::audio::ChannelLayout::STEREO_LR, 0, left, left);
+        auto output = make_buffer(
+            rgsml::audio::ChannelLayout::STEREO_LR, 0, left, left);
+        QVERIFY(input);
+        QVERIFY(output);
+        QVERIFY(mod->process(input.value()->view(), output.value()->mutable_view(),
+            DspProcessContext{frame_range(0, 4), true, true}));
+        const auto rendered = *output.value()->view().channel(0).value();
+        const auto right = *output.value()->view().channel(1).value();
+        QVERIFY(std::abs(rendered[0] - 1.0) > 1e-3);
+        for (std::size_t i = 0; i < left.size(); ++i) {
+            QVERIFY(std::isfinite(rendered[i]));
+            QCOMPARE(rendered[i], right[i]);
+        }
+
+        // Side-muted Stereo ignores crossover mode/cutoff and its settling.
+        auto muted = StereoMsParameters::create(
+            0.0, 12.0, true, mode, 300.0, 0.0);
+        QVERIFY(muted);
+        auto muted_module = make_module(*reg.value(), *muted.value());
+        auto muted_req = muted_module->runtime_requirements(stereo);
+        QVERIFY(muted_req);
+        QCOMPARE(muted_req.value()->effective_tail_frames.value(), std::int64_t{0});
     }
-    // A failed re-prepare may not leave an earlier OFF state armed.
+
+    // A failed re-prepare must disarm a previously playable realization.
     auto off = StereoMsParameters::create_default();
+    QVERIFY(off);
     auto mod = make_module(*reg.value(), *off.value());
-    const DspProcessSpec good{
-        format(rgsml::audio::ChannelLayout::STEREO_LR),
-        rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        frame_count(4)};
-    QVERIFY(mod->prepare(good));
+    QVERIFY(mod->prepare(stereo));
     const DspProcessSpec bad{
         format(rgsml::audio::ChannelLayout::STEREO_LR),
         rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
@@ -233,7 +259,8 @@ void StereoMsModuleTest::activeCrossoversFailClosedWithoutAllpassSubstitution()
     auto status = mod->process(in.value()->view(), out.value()->mutable_view(),
                                DspProcessContext{frame_range(0, 4), true, true});
     QVERIFY(!status);
-    QCOMPARE(error_category(*status.error()), std::string_view{"DSP_MODULE_NOT_PREPARED"});
+    QCOMPARE(error_category(*status.error()),
+             std::string_view{"DSP_MODULE_NOT_PREPARED"});
 }
 
 void StereoMsModuleTest::rejectsInvalidContextAndNonFiniteInput()
