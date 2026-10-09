@@ -295,6 +295,8 @@ void PlaybackSupportTest::formatSelectionIsDeterministic()
         *format.value(), false, false, false, false);
     QVERIFY(!unsupported);
     QCOMPARE(unsupported.error()->code(), core::ErrorCode::UnsupportedOperation);
+    std::fprintf(stderr, "DBG_SLOT_EXIT: formatSelectionIsDeterministic\\n");
+    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::adaptedTimelineUsesAbsoluteRateMapping()
@@ -339,6 +341,8 @@ void PlaybackSupportTest::adaptedTimelineUsesAbsoluteRateMapping()
     QVERIFY(engine.seek(core::FrameIndex{220}));
     QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{220});
     QVERIFY(engine.stop());
+    std::fprintf(stderr, "DBG_SLOT_EXIT: adaptedTimelineUsesAbsoluteRateMapping\\n");
+    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::explicitSeekLoopStateMatrix()
@@ -418,6 +422,8 @@ void PlaybackSupportTest::explicitSeekLoopStateMatrix()
             }
         }
     }
+    std::fprintf(stderr, "DBG_SLOT_EXIT: explicitSeekLoopStateMatrix\\n");
+    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::explicitSeekLoopTraversalEofAndSrcIdentity()
@@ -598,6 +604,8 @@ void PlaybackSupportTest::explicitSeekLoopTraversalEofAndSrcIdentity()
     };
     verifyAdapted(44'100U, 48'000U);
     verifyAdapted(48'000U, 44'100U);
+    std::fprintf(stderr, "DBG_SLOT_EXIT: explicitSeekLoopTraversalEofAndSrcIdentity\\n");
+    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
@@ -674,6 +682,8 @@ void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
             QVERIFY(!engine.snapshot().value()->loop);
         }
     }
+    std::fprintf(stderr, "DBG_SLOT_EXIT: loopCommandIsPositionNeutralAcrossStates\\n");
+    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::floatAndPcm16GoldenConversion()
@@ -754,6 +764,8 @@ void PlaybackSupportTest::floatAndPcm16GoldenConversion()
             std::bit_cast<std::int16_t>(read_u16(*pcmBytes.value(), index * 2U)),
             expectedPcm[index]);
     }
+    std::fprintf(stderr, "DBG_SLOT_EXIT: floatAndPcm16GoldenConversion\\n");
+    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::conversionFailuresAndChunkInvariance()
@@ -804,6 +816,8 @@ void PlaybackSupportTest::conversionFailuresAndChunkInvariance()
         buffer.view(), DeviceSampleFormat::IEEE_F32);
     QVERIFY(!floatOverflow);
     QCOMPARE(floatOverflow.error()->code(), core::ErrorCode::InvalidAudioSample);
+    std::fprintf(stderr, "DBG_SLOT_EXIT: conversionFailuresAndChunkInvariance\\n");
+    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::stateMachineAndBoundedPump()
@@ -873,6 +887,8 @@ void PlaybackSupportTest::stateMachineAndBoundedPump()
     QVERIFY(!engine.snapshot().value()->loop);
     QVERIFY(engine.clear());
     QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::NO_SOURCE);
+    std::fprintf(stderr, "DBG_SLOT_EXIT: stateMachineAndBoundedPump\\n");
+    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
@@ -1754,6 +1770,8 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             read_i16(observedQueued->history(), initialHistorySize),
             static_cast<std::int16_t>(-32768));
     }
+    std::fprintf(stderr, "DBG_SLOT_EXIT: seamlessPcmHandoffCrossfadeAndStateMatrix\\n");
+    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()
@@ -1807,6 +1825,8 @@ void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()
     QVERIFY(!failed);
     QCOMPARE(failed.error()->code(), core::ErrorCode::IoFailure);
     QVERIFY(engine.clear());
+    std::fprintf(stderr, "DBG_SLOT_EXIT: partialWritesNaturalEofAndRuntimeError\\n");
+    std::fflush(stderr);
 }
 
 void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
@@ -1895,6 +1915,8 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     observedOutput->set_processed_frames(200);
     auto wrapSnap = engine.snapshot();
     QCOMPARE(wrapSnap.value()->loopWrapCount, std::uint64_t{2});
+    std::fprintf(stderr, "DBG_SLOT_EXIT: controlPlaneTraversalSeekAndLoopSerials\\n");
+    std::fflush(stderr);
 }
 
 }  // namespace rgsml::tests
