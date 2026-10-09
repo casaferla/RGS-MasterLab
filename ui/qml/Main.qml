@@ -339,6 +339,7 @@ ApplicationWindow {
                         StudioMenuItem { text: "Preferences"; enabled: false }
                     }
                     Menu {
+                        id: desktopViewMenu
                         objectName: "desktopViewMenu"
                         popupType: Popup.Item
                         width: 230
