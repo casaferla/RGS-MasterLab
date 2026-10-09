@@ -12,6 +12,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -255,6 +256,8 @@ private slots:
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: formatSelectionIsDeterministic\\n");
+    std::fflush(stderr);
     auto rate = core::SampleRate::create(48000);
     QVERIFY(rate);
     auto format = audio::AudioFormat::create(
@@ -296,6 +299,8 @@ void PlaybackSupportTest::formatSelectionIsDeterministic()
 
 void PlaybackSupportTest::adaptedTimelineUsesAbsoluteRateMapping()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: adaptedTimelineUsesAbsoluteRateMapping\\n");
+    std::fflush(stderr);
     std::vector<std::int64_t> codes;
     codes.reserve(441U * 2U);
     for (std::int64_t frame = 0; frame < 441; ++frame) {
@@ -338,6 +343,8 @@ void PlaybackSupportTest::adaptedTimelineUsesAbsoluteRateMapping()
 
 void PlaybackSupportTest::explicitSeekLoopStateMatrix()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: explicitSeekLoopStateMatrix\\n");
+    std::fflush(stderr);
     constexpr std::int64_t duration = 400;
     const auto loop = *core::FrameRange::create(
         core::FrameIndex{100}, core::FrameIndex{200}).value();
@@ -415,6 +422,8 @@ void PlaybackSupportTest::explicitSeekLoopStateMatrix()
 
 void PlaybackSupportTest::explicitSeekLoopTraversalEofAndSrcIdentity()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: explicitSeekLoopTraversalEofAndSrcIdentity\\n");
+    std::fflush(stderr);
     const auto smallLoop = *core::FrameRange::create(
         core::FrameIndex{4}, core::FrameIndex{8}).value();
     const auto codes = indexed_stereo_codes(16);
@@ -593,6 +602,8 @@ void PlaybackSupportTest::explicitSeekLoopTraversalEofAndSrcIdentity()
 
 void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: loopCommandIsPositionNeutralAcrossStates\\n");
+    std::fflush(stderr);
     constexpr std::int64_t duration = 400;
     const auto loop = *core::FrameRange::create(
         core::FrameIndex{100}, core::FrameIndex{200}).value();
@@ -667,6 +678,8 @@ void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
 
 void PlaybackSupportTest::floatAndPcm16GoldenConversion()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: floatAndPcm16GoldenConversion\\n");
+    std::fflush(stderr);
     auto floatBuffer = make_buffer(
         48000, audio::ChannelLayout::STEREO_LR, 3);
     auto mutableFloat = floatBuffer.mutable_view();
@@ -745,6 +758,8 @@ void PlaybackSupportTest::floatAndPcm16GoldenConversion()
 
 void PlaybackSupportTest::conversionFailuresAndChunkInvariance()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: conversionFailuresAndChunkInvariance\\n");
+    std::fflush(stderr);
     auto buffer = make_buffer(44100, audio::ChannelLayout::MONO_C, 3);
     auto plane = buffer.mutable_view().channel(0);
     QVERIFY(plane);
@@ -793,6 +808,8 @@ void PlaybackSupportTest::conversionFailuresAndChunkInvariance()
 
 void PlaybackSupportTest::stateMachineAndBoundedPump()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: stateMachineAndBoundedPump\\n");
+    std::fflush(stderr);
     PlaybackEngine engine;
     auto initial = engine.snapshot();
     QVERIFY(initial);
@@ -860,6 +877,8 @@ void PlaybackSupportTest::stateMachineAndBoundedPump()
 
 void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: seamlessPcmHandoffCrossfadeAndStateMatrix\\n");
+    std::fflush(stderr);
     qInfo() << "DBG_PLAYBACK_SUPPORT: seamless:start";
     // Test 1: PLAYING replacement uses the deterministic future queued boundary,
     // not the stale/current cue, then emits a 15 ms complementary linear crossfade.
@@ -1739,6 +1758,8 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
 
 void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: partialWritesNaturalEofAndRuntimeError\\n");
+    std::fflush(stderr);
     const std::vector<std::int64_t> codes{
         -32768, 32767,
         -16384, 16384,
@@ -1790,6 +1811,8 @@ void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()
 
 void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
 {
+    std::fprintf(stderr, "DBG_SLOT_ENTER: controlPlaneTraversalSeekAndLoopSerials\\n");
+    std::fflush(stderr);
     qInfo() << "DBG_PLAYBACK_SUPPORT: control-plane:start";
     PlaybackEngine engine;
     auto initialSnap = engine.snapshot();
