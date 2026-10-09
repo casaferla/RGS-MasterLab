@@ -33,6 +33,12 @@ public:
         rgsml::audio::MutableAudioBufferView output,
         const DspProcessContext& context) override;
 
+    [[nodiscard]] rgsml::core::Result<DspRuntimeCheckpoint>
+    runtime_checkpoint() const override;
+
+    [[nodiscard]] rgsml::core::Status
+    restore_runtime_checkpoint(const DspRuntimeCheckpoint& checkpoint) override;
+
 private:
     struct Impl;
     explicit StereoMsModule(std::unique_ptr<Impl> impl) noexcept;
