@@ -2196,11 +2196,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(masteringChainState.set_user_bypass(
         masteringChainState.compressor_instance_id(), true));
     compressorViewModel.refreshFromAuthority();
-    QTest::qWait(50);
-    QCoreApplication::processEvents();
-    QCOMPARE(
+    // Authoritative bypass is immediate; the presentation telemetry is
+    // refreshed by a 33 ms Qt timer. A fixed 50 ms sleep can miss a tick on
+    // loaded Windows CI runners. Fail within a bounded deadline if the
+    // resolver truly does not converge; do not weaken the BYPASS assertion.
+    QVERIFY(compressorViewModel.bypass());
+    QTRY_COMPARE_WITH_TIMEOUT(
         compressorViewModel.telemetry_status(),
-        QStringLiteral("BYPASS"));
+        QStringLiteral("BYPASS"),
+        1000);
     QCOMPARE(
         compressorViewModel.telemetry_history_lanes(),
         liveHistory);
