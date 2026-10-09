@@ -1258,12 +1258,44 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!subtreeHasExactText(inputGainEditor, QStringLiteral("GAIN STAGING")));
     QVERIFY(!subtreeHasExactText(inputGainEditor, QStringLiteral("Fixed First Mastering Stage")));
 
+    // FIX-UI-003: assert invariant chain-title/subtitle/LED geometry
+    // between Input Gain Default and a representative Manual value.
+    window->resize(QSize{1184, 688});
+    QTest::qWait(150);
+    auto* chainRowItem0 = qobject_cast<QQuickItem*>(dspChainRow0);
+    auto* chainTitleItem0 = qobject_cast<QQuickItem*>(
+        dspChainRow0->findChild<QObject*>(
+            QStringLiteral("dspChainModuleTitle_0")));
+    auto* chainStateItem0 = qobject_cast<QQuickItem*>(dspChainStateText0);
+    auto* chainLedItem0 = qobject_cast<QQuickItem*>(dspChainConfigLed0);
+    QVERIFY(chainRowItem0 && chainTitleItem0 && chainStateItem0 && chainLedItem0);
+    const QPointF chainTitleDefault = chainTitleItem0->mapToItem(
+        chainRowItem0, QPointF{0.0, 0.0});
+    const QPointF chainStateDefault = chainStateItem0->mapToItem(
+        chainRowItem0, QPointF{0.0, 0.0});
+    const QPointF chainLedDefault = chainLedItem0->mapToItem(
+        chainRowItem0, QPointF{0.0, 0.0});
+    QCOMPARE(chainTitleItem0->property("text").toString(),
+        QStringLiteral("Input Gain"));
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("minor_fix_003_gain_default_1184x688.png"),
+        QSize{1184, 688}));
+
     // Modify Input Gain to +3.5 dB via ViewModel
     QVERIFY(gainViewModel.setGainDb(3.5));
     QCoreApplication::processEvents();
     QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("+3.5 dB"));
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("+3.5 dB Manual"));
     QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
+    QCOMPARE(chainTitleItem0->mapToItem(
+        chainRowItem0, QPointF{0.0, 0.0}).x(), chainTitleDefault.x());
+    QCOMPARE(chainStateItem0->mapToItem(
+        chainRowItem0, QPointF{0.0, 0.0}).x(), chainStateDefault.x());
+    QCOMPARE(chainLedItem0->mapToItem(
+        chainRowItem0, QPointF{0.0, 0.0}).x(), chainLedDefault.x());
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("minor_fix_003_gain_manual_1184x688.png"),
+        QSize{1184, 688}));
     QVERIFY(gainHostUndoBtn->property("enabled").toBool());
 
     // Standard Undo/Redo shortcuts are scoped to the active Gain module.
