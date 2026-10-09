@@ -872,9 +872,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("menuViewCompressor"));
     auto* viewEditorInstantiator = root->findChild<QObject*>(
         QStringLiteral("viewEditorInstantiator"));
-    auto* viewMenu = root->findChild<QObject*>(
+    auto* cleanupViewMenu = root->findChild<QObject*>(
         QStringLiteral("desktopViewMenu"));
-    QVERIFY2(compressorMenuItem && viewEditorInstantiator && viewMenu,
+    QVERIFY2(compressorMenuItem && viewEditorInstantiator && cleanupViewMenu,
         "Dynamic View menu must expose the available Compressor editor");
     QCOMPARE(compressorMenuItem->property("text").toString(),
         QStringLiteral("Compressor"));
@@ -883,7 +883,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         static_cast<int>(dspChainAdapterModel.modules().size()));
     QCOMPARE(viewEditorInstantiator->property("count").toInt(), 3);
     // Four waveform actions and one separator follow the generated editors.
-    QCOMPARE(viewMenu->property("count").toInt(),
+    QCOMPARE(cleanupViewMenu->property("count").toInt(),
         viewEditorInstantiator->property("count").toInt() + 5);
 
     auto* openProjectItem = root->findChild<QObject*>(
@@ -900,17 +900,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::keyClick(window, Qt::Key_Escape);
     QCoreApplication::processEvents();
 
-    auto* viewMenuLabel = root->findChild<QObject*>(
+    auto* cleanupViewMenuLabel = root->findChild<QObject*>(
         QStringLiteral("desktopMenuBarLabel_View"));
-    QVERIFY(viewMenuLabel && viewMenuLabel->parent());
-    auto* viewBarItem = qobject_cast<QQuickItem*>(viewMenuLabel->parent());
+    QVERIFY(cleanupViewMenuLabel && cleanupViewMenuLabel->parent());
+    auto* viewBarItem = qobject_cast<QQuickItem*>(cleanupViewMenuLabel->parent());
     QVERIFY(viewBarItem);
-    const QPointF viewMenuCenter = viewBarItem->mapToScene(
+    const QPointF cleanupViewMenuCenter = viewBarItem->mapToScene(
         QPointF{viewBarItem->width() / 2.0, viewBarItem->height() / 2.0});
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-        viewMenuCenter.toPoint());
+        cleanupViewMenuCenter.toPoint());
     QTest::qWait(120);
-    QVERIFY2(viewMenu->property("visible").toBool(),
+    QVERIFY2(cleanupViewMenu->property("visible").toBool(),
         "View menu must show dynamically populated editors");
     QVERIFY(capture_visual_evidence(window,
         QStringLiteral("minor_fix_002_view_menu_editors_1184x688.png"),
