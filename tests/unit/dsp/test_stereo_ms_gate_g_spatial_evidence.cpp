@@ -118,7 +118,7 @@ void StereoMsGateGSpatialEvidenceTest::sideMuteCorrelationAndAntiPhaseFoldDown()
     const auto layout = rgsml::audio::ChannelLayout::STEREO_LR;
     const DspProcessSpec spec{
         format(layout), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        frame_count(count)};
+        frame_count(static_cast<std::int64_t>(count))};
     auto input = make_buffer(layout, 0, left, right);
     QVERIFY(input);
 
@@ -130,7 +130,7 @@ void StereoMsGateGSpatialEvidenceTest::sideMuteCorrelationAndAntiPhaseFoldDown()
     auto output = make_buffer(layout, 0, left, right);
     QVERIFY(output);
     QVERIFY(muted->process(input.value()->view(), output.value()->mutable_view(),
-        DspProcessContext{frame_range(0, count), true, true}));
+        DspProcessContext{frame_range(0, static_cast<std::int64_t>(count)), true, true}));
     const auto a = *output.value()->view().channel(0).value();
     const auto b = *output.value()->view().channel(1).value();
     for (std::size_t i = 0; i < count; ++i) {
@@ -141,7 +141,7 @@ void StereoMsGateGSpatialEvidenceTest::sideMuteCorrelationAndAntiPhaseFoldDown()
     // For a non-zero centered source, exact Side mute must create L=R
     // and correlation +1; an anti-phase unmuted OFF path remains -1.
     for (std::size_t n = 0; n < count; ++n) {
-        right[n] = left[n] * 0.15 + 0.05 * std::cos(0.17 * n);
+        right[n] = left[n] * 0.15 + 0.05 * std::cos(0.17 * static_cast<double>(n));
     }
     auto input2 = make_buffer(layout, 0, left, right);
     auto output2 = make_buffer(layout, 0, left, right);
@@ -149,7 +149,7 @@ void StereoMsGateGSpatialEvidenceTest::sideMuteCorrelationAndAntiPhaseFoldDown()
     QVERIFY(output2);
     muted->reset();
     QVERIFY(muted->process(input2.value()->view(), output2.value()->mutable_view(),
-        DspProcessContext{frame_range(0, count), true, true}));
+        DspProcessContext{frame_range(0, static_cast<std::int64_t>(count)), true, true}));
     const auto l2 = *output2.value()->view().channel(0).value();
     const auto r2 = *output2.value()->view().channel(1).value();
     QVERIFY(std::abs(correlation(l2, r2) - 1.0) < 1e-13);
@@ -165,7 +165,7 @@ void StereoMsGateGSpatialEvidenceTest::sideMuteCorrelationAndAntiPhaseFoldDown()
     QVERIFY(source3);
     QVERIFY(out3);
     QVERIFY(unmuted->process(source3.value()->view(), out3.value()->mutable_view(),
-        DspProcessContext{frame_range(0, count), true, true}));
+        DspProcessContext{frame_range(0, static_cast<std::int64_t>(count)), true, true}));
     const auto l3 = *out3.value()->view().channel(0).value();
     const auto r3 = *out3.value()->view().channel(1).value();
     QVERIFY(std::abs(correlation(l3, r3) + 1.0) < 1e-13);
@@ -192,7 +192,7 @@ void StereoMsGateGSpatialEvidenceTest::intersamplePeakRiskHasNoHiddenLimiter()
     const auto layout = rgsml::audio::ChannelLayout::STEREO_LR;
     const DspProcessSpec spec{
         format(layout), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        frame_count(count)};
+        frame_count(static_cast<std::int64_t>(count))};
     auto params = StereoMsParameters::create(
         0.0, 12.0, false, MonoBassMode::OFF, 120.0, 100.0);
     QVERIFY(params);
@@ -203,7 +203,7 @@ void StereoMsGateGSpatialEvidenceTest::intersamplePeakRiskHasNoHiddenLimiter()
     QVERIFY(in);
     QVERIFY(out);
     QVERIFY(instance->process(in.value()->view(), out.value()->mutable_view(),
-        DspProcessContext{frame_range(0, count), true, true}));
+        DspProcessContext{frame_range(0, static_cast<std::int64_t>(count)), true, true}));
     const auto processed = *out.value()->view().channel(0).value();
     const double original_sample_peak = sample_peak(left);
     const double output_sample_peak = sample_peak(processed);
