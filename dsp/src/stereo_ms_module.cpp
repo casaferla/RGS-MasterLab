@@ -6,6 +6,8 @@
 #include <rgsml/dsp/stereo_ms_crossover_runtime.hpp>
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -97,6 +99,45 @@ struct StereoFrame final {
     return {
         (boosted_mid + boosted_side) * kOrthonormalScale,
         (boosted_mid - boosted_side) * kOrthonormalScale};
+}
+
+constexpr auto kCheckpointSchema = "rgsml.dsp.stereo-ms.checkpoint/1.0.0";
+constexpr auto kBackendIdentity = "rgsml.dsp.backend.default.v1";
+
+// Semantic fingerprint includes ONLY fields with audible influence in the
+// prepared layout. Persisted parameter JSON separately retains all six.
+void append_double_bits(std::string& target, double value)
+{
+    constexpr char digits[] = "0123456789abcdef";
+    const auto word = std::bit_cast<std::uint64_t>(value);
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        target.push_back(digits[(word >> shift) & 0x0fU]);
+    }
+}
+
+[[nodiscard]] std::string sonic_fingerprint(
+    const StereoMsParameters& p, rgsml::audio::ChannelLayout layout)
+{
+    std::string out = "rgsml.dsp.stereo-ms|1.0.0|rgsml.dsp.stereo-ms.parameters/1.0.0";
+    if (layout == rgsml::audio::ChannelLayout::MONO_C) {
+        return out + "|MONO_C";
+    }
+    out += "|STEREO_LR|M:";
+    append_double_bits(out, p.mid_gain_db());
+    if (p.side_muted()) {
+        return out + "|SIDE_MUTED";
+    }
+    out += "|SIDE_UNMUTED|S:";
+    append_double_bits(out, p.side_gain_db());
+    if (p.mono_bass_mode() == MonoBassMode::OFF) {
+        return out + "|MB_OFF";
+    }
+    out += p.mono_bass_mode() == MonoBassMode::LR12 ? "|MB_LR12" : "|MB_LR24";
+    out += "|CUTOFF:";
+    append_double_bits(out, p.mono_bass_cutoff_hz());
+    out += "|LOW_WIDTH:";
+    append_double_bits(out, p.low_band_width_percent());
+    return out;
 }
 
 }  // namespace
@@ -387,6 +428,144 @@ rgsml::core::Status StereoMsModule::process(
     impl_->next_frame = context.output_frame_range.end();
     impl_->stream_bound = true;
     impl_->stream_ended = context.ends_stream;
+    return rgsml::core::Status::success();
+}
+
+
+rgsml::core::Result<DspRuntimeCheckpoint>
+StereoMsModule::runtime_checkpoint() const
+{
+    if (!impl_->prepared_spec) {
+        return rgsml::core::Result<DspRuntimeCheckpoint>::failure(ms_error(
+            rgsml::core::ErrorCode::InvalidState,
+            "DSP_MODULE_NOT_PREPARED",
+            "Stereo/M-S must be prepared before checkpoint creation."));
+    }
+    if (impl_->stream_ended) {
+        return rgsml::core::Result<DspRuntimeCheckpoint>::failure(ms_error(
+            rgsml::core::ErrorCode::UnsupportedOperation,
+            "RUNTIME_CHECKPOINT_AFTER_STREAM_END_UNSUPPORTED",
+            "Stereo/M-S checkpoints belong to a live stream, not an ended stream."));
+    }
+
+    try {
+        DspRuntimeCheckpoint cp;
+        cp.module_type_id = kTypeId;
+        cp.algorithm_version = kAlgorithm;
+        cp.parameter_schema_id = kSchema;
+        cp.sonic_fingerprint = sonic_fingerprint(
+            impl_->parameters, impl_->prepared_spec->audio_format.channel_layout());
+        cp.audio_format = impl_->prepared_spec->audio_format;
+        cp.frame_domain_id = impl_->prepared_spec->frame_domain_id;
+        cp.checkpoint_schema_version = kCheckpointSchema;
+        cp.next_input_frame = impl_->next_frame;
+        cp.backend_identity = kBackendIdentity;
+
+        // Active filters contain 4 branches x 2 sections x 2 TDF-II states.
+        // Canonical fixed-length little-endian IEEE-754 binary64 encoding.
+        // OFF/Side mute/mono contains NO crossover payload.
+        if (impl_->crossover) {
+            const auto words = impl_->crossover->snapshot_state();
+            cp.payload.reserve(words.size() * sizeof(double));
+            for (double value : words) {
+                if (!std::isfinite(value)) {
+                    return rgsml::core::Result<DspRuntimeCheckpoint>::failure(ms_error(
+                        rgsml::core::ErrorCode::InvalidState,
+                        "INVALID_CROSSOVER_RUNTIME_STATE",
+                        "Checkpoint cannot contain nonfinite recursive state."));
+                }
+                const auto bits = std::bit_cast<std::uint64_t>(value);
+                for (std::size_t byte = 0; byte < 8; ++byte) {
+                    cp.payload.push_back(static_cast<std::uint8_t>(
+                        (bits >> (byte * 8)) & 0xffU));
+                }
+            }
+        }
+
+        return rgsml::core::Result<DspRuntimeCheckpoint>::success(std::move(cp));
+    } catch (...) {
+        return rgsml::core::Result<DspRuntimeCheckpoint>::failure(ms_error(
+            rgsml::core::ErrorCode::InvalidState,
+            "CHECKPOINT_CREATION_FAILURE",
+            "Stereo/M-S checkpoint serialization failed."));
+    }
+}
+
+rgsml::core::Status StereoMsModule::restore_runtime_checkpoint(
+    const DspRuntimeCheckpoint& cp)
+{
+    if (!impl_->prepared_spec) {
+        return rgsml::core::Status::failure(ms_error(
+            rgsml::core::ErrorCode::InvalidState,
+            "DSP_MODULE_NOT_PREPARED",
+            "Stereo/M-S must be prepared before checkpoint restoration."));
+    }
+    if (impl_->stream_ended || (impl_->stream_bound
+        && cp.next_input_frame != impl_->next_frame)) {
+        return rgsml::core::Status::failure(ms_error(
+            rgsml::core::ErrorCode::InvalidArgument,
+            "INCOMPATIBLE_CHECKPOINT",
+            "Bound stream position or ended stream rejects checkpoint."));
+    }
+
+    const auto& spec = *impl_->prepared_spec;
+    if (cp.module_type_id != kTypeId
+        || cp.algorithm_version != kAlgorithm
+        || cp.parameter_schema_id != kSchema
+        || cp.sonic_fingerprint != sonic_fingerprint(
+            impl_->parameters, spec.audio_format.channel_layout())
+        || cp.audio_format != spec.audio_format
+        || cp.frame_domain_id != spec.frame_domain_id
+        || cp.checkpoint_schema_version != kCheckpointSchema
+        || cp.backend_identity != kBackendIdentity
+        || cp.payload.size() !=
+            (impl_->crossover
+                ? StereoMsCrossoverRuntime::kCheckpointStateWords * sizeof(double)
+                : 0U)) {
+        return rgsml::core::Status::failure(ms_error(
+            rgsml::core::ErrorCode::InvalidArgument,
+            "INCOMPATIBLE_CHECKPOINT",
+            "Stereo/M-S checkpoint identity, effective parameters or shape mismatch."));
+    }
+
+    // Validate and decode ALL bytes into temporary state before committing
+    // any stream cursor or live recursive history.
+    std::optional<StereoMsCrossoverRuntime> candidate = impl_->crossover;
+    if (candidate) {
+        std::array<double, StereoMsCrossoverRuntime::kCheckpointStateWords> words{};
+        for (std::size_t i = 0; i < words.size(); ++i) {
+            std::uint64_t bits = 0;
+            for (std::size_t byte = 0; byte < 8; ++byte) {
+                bits |= static_cast<std::uint64_t>(cp.payload[i * 8 + byte])
+                    << (byte * 8);
+            }
+            words[i] = std::bit_cast<double>(bits);
+        }
+        if (!candidate->restore_state(words)) {
+            return rgsml::core::Status::failure(ms_error(
+                rgsml::core::ErrorCode::InvalidArgument,
+                "INCOMPATIBLE_CHECKPOINT",
+                "Stereo/M-S checkpoint contains nonfinite recursive state."));
+        }
+        if (!cp.next_input_frame) {
+            // An unbound checkpoint can only describe a freshly reset filter.
+            for (const double v : words) {
+                if (v != 0.0) {
+                    return rgsml::core::Status::failure(ms_error(
+                        rgsml::core::ErrorCode::InvalidArgument,
+                        "INCOMPATIBLE_CHECKPOINT",
+                        "Unbound checkpoint may not contain processed filter history."));
+                }
+            }
+        }
+    }
+
+    if (candidate) {
+        *impl_->crossover = *candidate;
+    }
+    impl_->next_frame = cp.next_input_frame;
+    impl_->stream_bound = cp.next_input_frame.has_value();
+    impl_->stream_ended = false;
     return rgsml::core::Status::success();
 }
 
