@@ -348,6 +348,7 @@ ApplicationWindow {
                         // the DSP chain/editor host. No positional DSP menu list.
                         Instantiator {
                             id: viewEditorInstantiator
+                            objectName: "viewEditorInstantiator"
                             model: typeof dspChainAdapterModel !== "undefined"
                                 && dspChainAdapterModel
                                 ? dspChainAdapterModel.modules : []
