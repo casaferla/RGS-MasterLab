@@ -744,6 +744,22 @@ set_tests_properties(rgsml_stereo_ms_crossover_tests PROPERTIES
     LABELS "dsp;stereo_ms;lr12;lr24;coefficients"
 )
 
+qt_add_executable(rgsml_stereo_ms_no_alloc_tests
+    unit/dsp/test_stereo_ms_no_alloc.cpp
+)
+target_link_libraries(rgsml_stereo_ms_no_alloc_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_no_alloc_tests)
+add_test(NAME rgsml_stereo_ms_no_alloc_tests
+    COMMAND rgsml_stereo_ms_no_alloc_tests)
+set_tests_properties(rgsml_stereo_ms_no_alloc_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;gate_g;no_alloc"
+)
+
 qt_add_executable(rgsml_stereo_ms_gate_g_spatial_evidence_tests
     unit/dsp/test_stereo_ms_gate_g_spatial_evidence.cpp
 )
