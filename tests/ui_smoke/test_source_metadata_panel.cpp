@@ -882,6 +882,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(viewEditorInstantiator->property("count").toInt(),
         static_cast<int>(dspChainAdapterModel.modules().size()));
     QCOMPARE(viewEditorInstantiator->property("count").toInt(), 3);
+    // Four waveform actions and one separator follow the generated editors.
+    QCOMPARE(viewMenu->property("count").toInt(),
+        viewEditorInstantiator->property("count").toInt() + 5);
 
     auto* openProjectItem = root->findChild<QObject*>(
         QStringLiteral("menuOpenProject"));
