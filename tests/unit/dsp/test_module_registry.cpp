@@ -5,12 +5,15 @@
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_parameters.hpp>
 
 #include <QtTest/QTest>
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
