@@ -143,8 +143,13 @@ void StereoMsModuleStreamingTest::rejectedBlocksPreserveOutputAndFilterState()
         const auto check_failed = [&](double invalid_value,
                                       std::string_view expected_category) {
             std::array<double, 4> bad_left = good_left;
+            std::array<double, 4> bad_right = good_right;
             bad_left[2] = invalid_value;
-            auto bad_input = make_buffer(layout, 4, bad_left, good_right);
+            if (std::isfinite(invalid_value)) {
+                // max + max deterministically overflows before the crossover.
+                bad_right[2] = invalid_value;
+            }
+            auto bad_input = make_buffer(layout, 4, bad_left, bad_right);
             auto bad_output = make_buffer(layout, 4, good_left, good_right);
             QVERIFY(bad_input);
             QVERIFY(bad_output);
