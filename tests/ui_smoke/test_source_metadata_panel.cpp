@@ -900,6 +900,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::keyClick(window, Qt::Key_Escape);
     QCoreApplication::processEvents();
 
+    // Establish the minimum supported geometry before opening the
+    // menu so that resizing for a screenshot cannot dismiss the popup.
+    window->resize(QSize{1184, 688});
+    QTest::qWait(150);
     auto* cleanupViewMenuLabel = root->findChild<QObject*>(
         QStringLiteral("desktopMenuBarLabel_View"));
     QVERIFY(cleanupViewMenuLabel && cleanupViewMenuLabel->parent());
