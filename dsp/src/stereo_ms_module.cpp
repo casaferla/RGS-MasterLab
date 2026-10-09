@@ -104,6 +104,19 @@ struct StereoFrame final {
 constexpr auto kCheckpointSchema = "rgsml.dsp.stereo-ms.checkpoint/1.0.0";
 constexpr auto kBackendIdentity = "rgsml.dsp.backend.default.v1";
 
+// Bounded accidental-corruption detection (FNV-1a, not authentication).
+// The footer covers the exact 16-word little-endian state payload.
+[[nodiscard]] std::uint64_t state_payload_checksum(
+    std::span<const std::uint8_t> data) noexcept
+{
+    std::uint64_t checksum = UINT64_C(14695981039346656037);
+    for (const auto value : data) {
+        checksum ^= value;
+        checksum *= UINT64_C(1099511628211);
+    }
+    return checksum;
+}
+
 // Semantic fingerprint includes ONLY fields with audible influence in the
 // prepared layout. Persisted parameter JSON separately retains all six.
 void append_double_bits(std::string& target, double value)
@@ -466,7 +479,7 @@ StereoMsModule::runtime_checkpoint() const
         // OFF/Side mute/mono contains NO crossover payload.
         if (impl_->crossover) {
             const auto words = impl_->crossover->snapshot_state();
-            cp.payload.reserve(words.size() * sizeof(double));
+            cp.payload.reserve((words.size() + 1U) * sizeof(double));
             for (double value : words) {
                 if (!std::isfinite(value)) {
                     return rgsml::core::Result<DspRuntimeCheckpoint>::failure(ms_error(
@@ -479,6 +492,11 @@ StereoMsModule::runtime_checkpoint() const
                     cp.payload.push_back(static_cast<std::uint8_t>(
                         (bits >> (byte * 8)) & 0xffU));
                 }
+            }
+            const auto checksum = state_payload_checksum(cp.payload);
+            for (std::size_t byte = 0; byte < 8; ++byte) {
+                cp.payload.push_back(static_cast<std::uint8_t>(
+                    (checksum >> (byte * 8)) & 0xffU));
             }
         }
 
@@ -520,7 +538,7 @@ rgsml::core::Status StereoMsModule::restore_runtime_checkpoint(
         || cp.backend_identity != kBackendIdentity
         || cp.payload.size() !=
             (impl_->crossover
-                ? StereoMsCrossoverRuntime::kCheckpointStateWords * sizeof(double)
+                ? (StereoMsCrossoverRuntime::kCheckpointStateWords + 1U) * sizeof(double)
                 : 0U)) {
         return rgsml::core::Status::failure(ms_error(
             rgsml::core::ErrorCode::InvalidArgument,
@@ -532,6 +550,21 @@ rgsml::core::Status StereoMsModule::restore_runtime_checkpoint(
     // any stream cursor or live recursive history.
     std::optional<StereoMsCrossoverRuntime> candidate = impl_->crossover;
     if (candidate) {
+        const std::size_t state_bytes =
+            StereoMsCrossoverRuntime::kCheckpointStateWords * sizeof(double);
+        std::uint64_t stored_checksum = 0;
+        for (std::size_t byte = 0; byte < 8; ++byte) {
+            stored_checksum |= static_cast<std::uint64_t>(
+                cp.payload[state_bytes + byte]) << (byte * 8);
+        }
+        if (state_payload_checksum(
+                std::span<const std::uint8_t>{cp.payload.data(), state_bytes})
+            != stored_checksum) {
+            return rgsml::core::Status::failure(ms_error(
+                rgsml::core::ErrorCode::InvalidArgument,
+                "INCOMPATIBLE_CHECKPOINT",
+                "Stereo/M-S checkpoint payload failed checksum validation."));
+        }
         std::array<double, StereoMsCrossoverRuntime::kCheckpointStateWords> words{};
         for (std::size_t i = 0; i < words.size(); ++i) {
             std::uint64_t bits = 0;
