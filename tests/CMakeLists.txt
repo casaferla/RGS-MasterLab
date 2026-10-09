@@ -712,6 +712,22 @@ foreach(dsp_test IN ITEMS
     )
 endforeach()
 
+qt_add_executable(rgsml_stereo_ms_crossover_tests
+    unit/dsp/test_stereo_ms_crossover.cpp
+)
+target_link_libraries(rgsml_stereo_ms_crossover_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_crossover_tests)
+add_test(NAME rgsml_stereo_ms_crossover_tests
+    COMMAND rgsml_stereo_ms_crossover_tests)
+set_tests_properties(rgsml_stereo_ms_crossover_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;lr12;lr24;coefficients"
+)
+
 qt_add_executable(rgsml_stereo_ms_module_tests
     unit/dsp/test_stereo_ms_module.cpp
 )
