@@ -71,4 +71,50 @@ bool StereoMsCrossoverRuntime::finite() const noexcept
         && cascade_finite(side_low_) && cascade_finite(side_high_);
 }
 
+
+std::array<double, StereoMsCrossoverRuntime::kCheckpointStateWords>
+StereoMsCrossoverRuntime::snapshot_state() const noexcept
+{
+    std::array<double, kCheckpointStateWords> words{};
+    std::size_t i = 0;
+    const auto append = [&words, &i](const Cascade& c) noexcept {
+        for (const auto& s : c) {
+            words[i++] = s.z1;
+            words[i++] = s.z2;
+        }
+    };
+    append(mid_low_);
+    append(mid_high_);
+    append(side_low_);
+    append(side_high_);
+    return words;
+}
+
+bool StereoMsCrossoverRuntime::restore_state(
+    const std::array<double, kCheckpointStateWords>& words) noexcept
+{
+    if (!std::all_of(words.begin(), words.end(), [](double value) noexcept {
+            return std::isfinite(value);
+        })) {
+        return false;
+    }
+
+    // Stage a complete snapshot in a local copy and publish only after
+    // validating every word. Invalid state leaves all prior delays intact.
+    auto candidate = *this;
+    std::size_t i = 0;
+    const auto restore_cascade = [&words, &i](Cascade& c) noexcept {
+        for (auto& s : c) {
+            s.z1 = words[i++];
+            s.z2 = words[i++];
+        }
+    };
+    restore_cascade(candidate.mid_low_);
+    restore_cascade(candidate.mid_high_);
+    restore_cascade(candidate.side_low_);
+    restore_cascade(candidate.side_high_);
+    *this = candidate;
+    return true;
+}
+
 }  // namespace rgsml::dsp
