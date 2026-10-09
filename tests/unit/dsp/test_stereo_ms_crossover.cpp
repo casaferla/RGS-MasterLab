@@ -50,6 +50,7 @@ private slots:
     void poleDerivedSettlingReferenceVectors();
     void cutoffAndModeFailClosed();
     void independentSectionAndEndpointOracles();
+    void signedAllpassImpulseOrigins();
 };
 
 void StereoMsCrossoverTest::frozenCoefficientsAt48k120()
@@ -142,6 +143,39 @@ void StereoMsCrossoverTest::poleDerivedSettlingReferenceVectors()
         QCOMPARE(b.value()->settling_frames, row.lr24);
         QVERIFY(a.value()->maximum_pole_magnitude > 0.0);
         QVERIFY(b.value()->maximum_pole_magnitude < 1.0);
+    }
+}
+
+// Independent signed impulse checks for the all-pass branch sum.
+// These are NOT substituted for the actual two-section production realization.
+void StereoMsCrossoverTest::signedAllpassImpulseOrigins()
+{
+    for (double fc : {40.0, 120.0, 300.0}) {
+        const double fs = 48000.0;
+        const double k = std::tan(std::numbers::pi_v<double> * fc / fs);
+        auto a = design_stereo_ms_crossover(MonoBassMode::LR12, fc, fs);
+        auto b = design_stereo_ms_crossover(MonoBassMode::LR24, fc, fs);
+        QVERIFY(a);
+        QVERIFY(b);
+
+        const double r = (1.0 - k) / (1.0 + k);
+        const auto l = a.value()->low_section;
+        const auto h = a.value()->high_section;
+        const double first12 = l.b0 * l.b0 - h.b0 * h.b0;
+        const double second12 =
+            2.0 * l.b0 * (l.b1 - l.a1 * l.b0)
+            - 2.0 * h.b0 * (h.b1 - h.a1 * h.b0);
+        QVERIFY(std::abs(first12 + r) < 5e-13);
+        QVERIFY(std::abs(second12 - (1.0 - r * r)) < 5e-13);
+
+        const auto l2 = b.value()->low_section;
+        const auto h2 = b.value()->high_section;
+        const double first24 = l2.b0 * l2.b0 + h2.b0 * h2.b0;
+        const double second24 =
+            2.0 * l2.b0 * (l2.b1 - l2.a1 * l2.b0)
+            + 2.0 * h2.b0 * (h2.b1 - h2.a1 * h2.b0);
+        QVERIFY(std::abs(first24 - l2.a2) < 5e-13);
+        QVERIFY(std::abs(second24 - l2.a1 * (1.0 - l2.a2)) < 5e-13);
     }
 }
 
