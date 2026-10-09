@@ -1543,6 +1543,30 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(spectrumCanvasObj != nullptr, "spectrumCanvas must exist inside ParametricEqGraph");
     QVERIFY2(spectrumCanvasObj->property("visible").toBool(), "spectrumCanvas must be visible when SPECTRUM is ON");
 
+    // FIX-UI-001: compare positions and sizes at identical window geometry
+    // across ON -> OFF -> ON, including unaffected sibling controls.
+    auto* eqToolbar = qobject_cast<QQuickItem*>(
+        find_child_by_name(eqEditor, QStringLiteral("eqTopToolbarRegion")));
+    auto* resetItem = qobject_cast<QQuickItem*>(resetFlatBtn);
+    auto* overallItem = qobject_cast<QQuickItem*>(overallToggleBtn);
+    auto* spectrumItem = qobject_cast<QQuickItem*>(spectrumToggleBtn);
+    auto* addItem = qobject_cast<QQuickItem*>(
+        eqEditor->findChild<QObject*>(QStringLiteral("addBandButton")));
+    QVERIFY(eqToolbar && resetItem && overallItem && spectrumItem && addItem);
+    window->resize(QSize{1184, 688});
+    QTest::qWait(150);
+    const auto toolbarGeometry = [eqToolbar](QQuickItem* item) {
+        const auto pos = item->mapToItem(eqToolbar, QPointF{0.0, 0.0});
+        return QRectF{pos, QSizeF{item->width(), item->height()}};
+    };
+    const QRectF resetOn = toolbarGeometry(resetItem);
+    const QRectF overallOn = toolbarGeometry(overallItem);
+    const QRectF spectrumOn = toolbarGeometry(spectrumItem);
+    const QRectF addOn = toolbarGeometry(addItem);
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("minor_fix_001_eq_spectrum_on_1184x688.png"),
+        QSize{1184, 688}));
+
     const bool undoStateBeforeToggle = eqViewModel.can_undo();
     const quint64 previewGenBeforeToggle = eqViewModel.preview_generation();
 
@@ -1550,6 +1574,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY2(!liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle click must set spectrumEnabled to false");
     QVERIFY2(!spectrumCanvasObj->property("visible").toBool(), "spectrumCanvas must be hidden when SPECTRUM is OFF");
+    QCOMPARE(toolbarGeometry(resetItem), resetOn);
+    QCOMPARE(toolbarGeometry(overallItem), overallOn);
+    QCOMPARE(toolbarGeometry(spectrumItem), spectrumOn);
+    QCOMPARE(toolbarGeometry(addItem), addOn);
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("minor_fix_001_eq_spectrum_off_1184x688.png"),
+        QSize{1184, 688}));
     QCOMPARE(eqViewModel.can_undo(), undoStateBeforeToggle);
     QCOMPARE(eqViewModel.preview_generation(), previewGenBeforeToggle);
 
@@ -1557,6 +1588,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY2(liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle click must restore spectrumEnabled to true");
     QVERIFY2(spectrumCanvasObj->property("visible").toBool(), "spectrumCanvas must be restored visible when SPECTRUM is ON");
+
+    QCOMPARE(toolbarGeometry(resetItem), resetOn);
+    QCOMPARE(toolbarGeometry(overallItem), overallOn);
+    QCOMPARE(toolbarGeometry(spectrumItem), spectrumOn);
+    QCOMPARE(toolbarGeometry(addItem), addOn);
 
     // Click Bypass -> BYP badge becomes visible on EQ DSP chain row, while config LED remains unchanged
     QVERIFY2(QMetaObject::invokeMethod(abBypassBtn, "clicked"), "Clicking abButtonBypass must succeed");
