@@ -14,6 +14,7 @@
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
+#include "stereo_ms_view_model.hpp"
 
 #include "waveform_presentation.hpp"
 
@@ -153,7 +154,32 @@ int main(int argc, char* argv[])
             }
             return rgsml::render::AuditionTarget::PREPARED;
         });
-    rgsml::app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
+    // B4c2c: bind M/S observation to PUBLISHED render identity and the
+    // independent audible playback clock. Creating the observer does not
+    // opt a Stereo/M-S DSP node into legacy three-module projects.
+    rgsml::app::StereoMsViewModel stereoMsViewModel{
+        &masteringChainState, &previewController};
+    stereoMsViewModel.setTelemetryProviders(
+        [&auditionSelector]() -> rgsml::app::StereoMsViewModel::AcceptedRenderEvidence {
+            return {
+                auditionSelector.processed_realization_snapshot(),
+                auditionSelector.processed_realization_id()};
+        },
+        [&playbackTransport]() {
+            return playbackTransport.playback_snapshot();
+        },
+        [&auditionSelector]() {
+            const auto target = auditionSelector.active_target();
+            return target.has_value() &&
+                   *target == rgsml::app::AuditionTarget::PROCESSED;
+        });
+    // The adapter registers Stereo/M-S only if the current chain already
+    // contains that opt-in module. Do not alter create_default() or the
+    // accepted module order merely to make the telemetry visible.
+    rgsml::app::DspChainAdapterModel dspChainAdapterModel{
+        &gainViewModel, &eqViewModel, &compressorViewModel,
+        &masteringChainState, QStringLiteral("Mastering"),
+        nullptr, &stereoMsViewModel};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
@@ -237,6 +263,11 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("compressorViewModel"),
         &compressorViewModel);
+    // Read-only telemetry properties are ready for B4c3 QML; no fake
+    // visual points or default DSP activation are introduced here.
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("stereoMsViewModel"),
+        &stereoMsViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"),
         &dspChainAdapterModel);

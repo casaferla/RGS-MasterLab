@@ -121,6 +121,12 @@ AuditionSourceSelector::processed_realization_snapshot() const noexcept
     return processed_;
 }
 
+std::optional<core::RealizationId>
+AuditionSourceSelector::processed_realization_id() const noexcept
+{
+    return processedRealizationId_;
+}
+
 void AuditionSourceSelector::set_source_loop_provider(SourceLoopProvider provider)
 {
     sourceLoopProvider_ = std::move(provider);

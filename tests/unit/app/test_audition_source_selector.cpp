@@ -576,7 +576,10 @@ void AuditionSourceSelectorTest::processedTelemetryBindsAcceptedRealizationIdent
     install_pcm_handler(transport, observed);
     app::AuditionSourceSelector selector{&transport};
 
+    // The published Processed identity is absent until publication.
+    QVERIFY(!selector.processed_realization_id().has_value());
     QVERIFY(selector.set_prepared_realization(realization(0, 200)));
+    QVERIFY(!selector.processed_realization_id().has_value());
     QVERIFY(selector.set_processed_realization(
         compressor_realization(0, 200)));
 
@@ -586,6 +589,7 @@ void AuditionSourceSelectorTest::processedTelemetryBindsAcceptedRealizationIdent
     const auto firstId =
         first->compressor_telemetry_sidecar()->realization_id;
     QVERIFY(firstId.has_value());
+    QCOMPARE(selector.processed_realization_id(), firstId);
     for (const auto& lane :
          first->compressor_telemetry_sidecar()->channel_lanes) {
         for (const auto& bucket : lane.buckets) {
@@ -604,6 +608,7 @@ void AuditionSourceSelectorTest::processedTelemetryBindsAcceptedRealizationIdent
     const auto secondId =
         second->compressor_telemetry_sidecar()->realization_id;
     QVERIFY(secondId.has_value());
+    QCOMPARE(selector.processed_realization_id(), secondId);
     QVERIFY(secondId->value > firstId->value);
     QCOMPARE(observed->audibleRealization.realizationId, secondId);
     for (const auto& lane :

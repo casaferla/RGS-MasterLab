@@ -54,6 +54,10 @@ public:
     [[nodiscard]] core::FrameIndex gold_cue() const noexcept;
     [[nodiscard]] std::shared_ptr<const render::RenderResult> prepared_realization_snapshot() const noexcept;
     [[nodiscard]] std::shared_ptr<const render::RenderResult> processed_realization_snapshot() const noexcept;
+    // Identity of the last ACCEPTED, published Processed RenderResult.
+    // Not necessarily audible; PlaybackSnapshot is the independent authority.
+    [[nodiscard]] std::optional<core::RealizationId>
+    processed_realization_id() const noexcept;
 
     void set_source_loop_provider(SourceLoopProvider provider);
     [[nodiscard]] core::Status source_committed(
