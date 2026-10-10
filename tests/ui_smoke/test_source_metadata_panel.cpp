@@ -644,6 +644,10 @@ Window {
     auto* title = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsGoniometerTitle"));
     auto* telemetryStatus = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsTelemetryStatus"));
     auto* axes = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsStaticAxes"));
+    auto* midAxis = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsMidAxis"));
+    auto* sideAxis = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsSideAxis"));
+    auto* midLabel = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsMidAxisLabel"));
+    auto* sideLabel = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsSideAxisLabel"));
     auto* cloud = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsGoniometerCloud"));
     auto* corrReadout = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCorrelationReadout"));
     auto* sideLowReadout = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsSideLowReadout"));
@@ -661,6 +665,7 @@ Window {
     auto* telemetry = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsTelemetryPlaceholder"));
     QVERIFY2(editor && curve && widthHandle && cutoffHandle && lowHandle
              && dynamicWell && title && telemetryStatus && axes && cloud
+             && midAxis && sideAxis && midLabel && sideLabel
              && corrReadout && sideLowReadout && widthSlider && cutoffSlider
              && lowSlider && widthField && cutoffField && lowField && telemetry,
              "M15 complete active/dynamic editor must load");
@@ -673,6 +678,10 @@ Window {
              "Real post-M15 Grid20 density must illuminate the cloud");
     QVERIFY2(cloud->property("occupiedCells").toInt() > 0,
              "No synthetic or exclusively silent density is accepted");
+    QCOMPARE(cloud->property("renderStyle").toString(),
+             QStringLiteral("SOFT_RADIAL_DENSITY"));
+    QCOMPARE(midLabel->property("text").toString(), QStringLiteral("M"));
+    QCOMPARE(sideLabel->property("text").toString(), QStringLiteral("S"));
     QCOMPARE(telemetryStatus->property("text").toString(),
              QStringLiteral("ACTIVE · POST M/S OUTPUT"));
 
@@ -690,6 +699,22 @@ Window {
         const auto side = axes->property("width").toDouble();
         QVERIFY(side > 50);
         QVERIFY(std::abs(side - axes->property("height").toDouble()) <= 0.5);
+        // Orthogonal strokes stop equally short at both ends; neither
+        // letter is printed over its stroke. Diagonals remain unchanged.
+        const double inset = axes->property("orthogonalInsetPx").toDouble();
+        const double vStart = midAxis->property("y").toDouble();
+        const double vEnd = vStart + midAxis->property("height").toDouble();
+        const double hStart = sideAxis->property("x").toDouble();
+        const double hEnd = hStart + sideAxis->property("width").toDouble();
+        QVERIFY2(inset >= 20.0, "Labels require deliberate axis clearance");
+        QVERIFY(std::abs(vStart - inset) <= 0.5);
+        QVERIFY(std::abs((side - vEnd) - inset) <= 0.5);
+        QVERIFY(std::abs(hStart - inset) <= 0.5);
+        QVERIFY(std::abs((side - hEnd) - inset) <= 0.5);
+        QVERIFY2(vStart > midLabel->property("height").toDouble() + 3.0,
+                 "Vertical M line must end before the M label");
+        QVERIFY2(side - hEnd > sideLabel->property("width").toDouble() + 3.0,
+                 "Horizontal S line must end before the S label");
         const double bandTop = title->property("y").toDouble()
             + title->property("height").toDouble() + 8.0;
         const double bandBottom = telemetryStatus->property("y").toDouble() - 8.0;

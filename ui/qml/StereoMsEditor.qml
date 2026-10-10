@@ -114,6 +114,9 @@ Item {
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: dynamicWell.axesBandTop + Math.max(0,
                         (dynamicWell.axesBandBottom - dynamicWell.axesBandTop - height) / 2)
+                    // Symmetric clearance between the M/S letters and the
+                    // two orthogonal axes. Diagonals retain their full reach.
+                    readonly property real orthogonalInsetPx: 22
 
                     // B4c3a: only previously completed, actually heard
                     // Grid20 buckets from the accepted post-M15 stage.
@@ -124,6 +127,7 @@ Item {
                         id: cloud
                         objectName: "stereoMsGoniometerCloud"
                         anchors.fill: parent
+                        readonly property string renderStyle: "SOFT_RADIAL_DENSITY"
                         readonly property var heardBuckets: root.viewModel
                             ? root.viewModel.telemetryDensityBuckets : []
                         readonly property bool telemetryLive: root.viewModel
@@ -163,11 +167,13 @@ Item {
                             const ctx = getContext("2d")
                             ctx.clearRect(0, 0, width, height)
                             if (!cloud.visible || !cloud.heardBuckets) return
-                            // Fixed count-to-intensity curve. There is NO
-                            // frame-local AGC, cosmetic random particles,
-                            // synthetic stereo analysis or persistence timer.
+                            // Each dot is a measured Grid33 cell with a soft
+                            // Sea Green radial falloff (material density,
+                            // not a new interpolated audio point).
+                            // Fixed, monotone count-to-opacity law: no AGC,
+                            // synthetic particles or persistence animation.
                             const side = Math.min(width, height) / 33
-                            const dot = Math.max(1.2, Math.min(3.5, side * 0.77))
+                            const haloRadius = side * 0.68
                             for (let i = 0; i < 1089; ++i) {
                                 let count = 0
                                 for (let j = 0; j < cloud.heardBuckets.length; ++j) {
@@ -184,11 +190,26 @@ Item {
                                 const binY = Math.floor(i / 33)
                                 const x = (binX + 0.5) * side
                                 const y = (32 - binY + 0.5) * side
-                                const alpha = Math.min(0.84,
-                                    0.14 + 0.115 * Math.log(1 + count))
-                                ctx.fillStyle = Qt.rgba(74 / 255, 154 / 255,
-                                    136 / 255, alpha)
-                                ctx.fillRect(x - dot / 2, y - dot / 2, dot, dot)
+                                const density = Math.log(1 + count)
+                                const coreAlpha = Math.min(0.94,
+                                    0.22 + 0.105 * density)
+                                const shoulderAlpha = Math.min(0.60,
+                                    0.13 + 0.078 * density)
+                                const haloAlpha = Math.min(0.22,
+                                    0.024 + 0.034 * density)
+                                const pigment = ctx.createRadialGradient(
+                                    x, y, 0, x, y, haloRadius)
+                                pigment.addColorStop(0,
+                                    "rgba(137,217,193," + coreAlpha + ")")
+                                pigment.addColorStop(0.24,
+                                    "rgba(74,154,136," + shoulderAlpha + ")")
+                                pigment.addColorStop(0.63,
+                                    "rgba(74,154,136," + haloAlpha + ")")
+                                pigment.addColorStop(1,
+                                    "rgba(74,154,136,0)")
+                                ctx.fillStyle = pigment
+                                ctx.fillRect(x - haloRadius, y - haloRadius,
+                                    2 * haloRadius, 2 * haloRadius)
                             }
                         }
                         Connections {
@@ -201,14 +222,16 @@ Item {
                         Component.onCompleted: requestPaint()
                     }
                     Rectangle {
+                        objectName: "stereoMsMidAxis"
                         anchors.centerIn: parent
                         width: 1
-                        height: parent.height
+                        height: Math.max(0, parent.height - 2 * axes.orthogonalInsetPx)
                         color: "#5F4A9A88"
                     }
                     Rectangle {
+                        objectName: "stereoMsSideAxis"
                         anchors.centerIn: parent
-                        width: parent.width
+                        width: Math.max(0, parent.width - 2 * axes.orthogonalInsetPx)
                         height: 1
                         color: "#5F4A9A88"
                     }
@@ -227,6 +250,7 @@ Item {
                         rotation: -45
                     }
                     Text {
+                        objectName: "stereoMsMidAxisLabel"
                         anchors.top: parent.top
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: "M"
@@ -235,6 +259,7 @@ Item {
                         font.pixelSize: 10
                     }
                     Text {
+                        objectName: "stereoMsSideAxisLabel"
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         text: "S"
