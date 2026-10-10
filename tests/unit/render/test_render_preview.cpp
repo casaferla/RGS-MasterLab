@@ -461,6 +461,7 @@ private slots:
     void stereoMsOffAndSideMuteUseTypedNonDefaults();
     void stereoMsCrossoverPartitionAndPreroll();
     void stereoMsMixedChainPreservesCompressorTelemetry();
+    void stereoMsStageOutputCaptureBoundedAndProvenanced();
     void activeUnavailableModuleFails();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
@@ -1015,6 +1016,15 @@ void RenderPreviewTest::stereoMsMixedChainPreservesCompressorTelemetry()
     }
     QVERIFY(full.value()->compressor_telemetry_sidecar().has_value());
     QVERIFY(full.value()->compressor_telemetry_sidecar()->valid);
+    QCOMPARE(full.value()->stereo_ms_stage_output_sidecars().size(), std::size_t{1});
+    const auto& stage = full.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(stage.module_instance_id, ms_id);
+    QCOMPARE(stage.chain_revision, full.value()->chain_revision());
+    QCOMPARE(stage.status, rgsml::render::StereoMsStageCaptureStatus::COMPLETE);
+    QCOMPARE(stage.requested_begin_frame, std::int64_t{0});
+    QCOMPARE(stage.requested_end_frame, std::int64_t{1024});
+    QCOMPARE(stage.captured_begin_frame, std::int64_t{0});
+    QCOMPARE(stage.output_lr_frames.size(), std::size_t{1024});
 
     // Independent Render Preview cascade: Gain -> EQ -> M/S, then Compressor.
     // Comparison proves the mixed-chain processing order, not just signature order.
@@ -1031,6 +1041,15 @@ void RenderPreviewTest::stereoMsMixedChainPreservesCompressorTelemetry()
     QVERIFY(upstream);
     const auto upstream_left = *upstream.value()->view().channel(0).value();
     const auto upstream_right = *upstream.value()->view().channel(1).value();
+    // This is the M/S STAGE output, even when downstream Compressor changes
+    // the final sound. The two real PCM channel values must be bit-identical
+    // to an independently rendered Gain -> EQ -> Stereo/M-S chain.
+    for (std::size_t i = 0; i < stage.output_lr_frames.size(); ++i) {
+        QCOMPARE(std::bit_cast<std::uint64_t>(stage.output_lr_frames[i][0]),
+                 std::bit_cast<std::uint64_t>(upstream_left[i]));
+        QCOMPARE(std::bit_cast<std::uint64_t>(stage.output_lr_frames[i][1]),
+                 std::bit_cast<std::uint64_t>(upstream_right[i]));
+    }
     auto intermediate = make_buffer(
         rgsml::audio::ChannelLayout::STEREO_LR, 0, upstream_left, upstream_right);
     QVERIFY(intermediate);
@@ -1048,6 +1067,134 @@ void RenderPreviewTest::stereoMsMixedChainPreservesCompressorTelemetry()
     QCOMPARE(full.value()->compressor_telemetry_sidecar()->status,
              standalone.value()->compressor_telemetry_sidecar()->status);
     QCOMPARE(bits(source.value()->view()), before);
+}
+
+
+void RenderPreviewTest::stereoMsStageOutputCaptureBoundedAndProvenanced()
+{
+    using rgsml::render::StereoMsStageCaptureStatus;
+    constexpr std::size_t kFrames = 6000;
+    std::vector<double> left(kFrames), right(kFrames);
+    for (std::size_t i = 0; i < kFrames; ++i) {
+        left[i] = 0.25 * std::sin(0.01 * static_cast<double>(i));
+        right[i] = 0.125 * std::cos(0.03 * static_cast<double>(i));
+    }
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(source && registry);
+    auto chain = empty_chain(*registry.value());
+    const auto id = make_id("24400000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
+    const auto p = rgsml::dsp::StereoMsParameters::create(
+        0.0, 6.0, false, rgsml::dsp::MonoBassMode::OFF, 120.0, 100.0);
+    QVERIFY(p);
+    const auto unchanged = bits(source.value()->view());
+    const rgsml::dsp::ModuleExecutionBinding binding{id, *p.value()};
+
+    const auto fullRequest = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 6000), chain,
+        {binding}, frame_count(17));
+    QVERIFY(fullRequest);
+    auto full = rgsml::render::render_preview(*fullRequest.value(), *registry.value());
+    QVERIFY(full);
+    QCOMPARE(full.value()->stereo_ms_stage_output_sidecars().size(), std::size_t{1});
+    const auto& stage = full.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(stage.status, StereoMsStageCaptureStatus::PARTIAL);
+    QCOMPARE(stage.output_lr_frames.size(), std::size_t{4096});
+    QCOMPARE(stage.requested_begin_frame, std::int64_t{0});
+    QCOMPARE(stage.requested_end_frame, std::int64_t{6000});
+    QCOMPARE(stage.captured_begin_frame, std::int64_t{0});
+    QCOMPARE(stage.module_instance_id, id);
+    QCOMPARE(stage.channel_layout, rgsml::audio::ChannelLayout::STEREO_LR);
+    QCOMPARE(stage.frame_domain_id, rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE);
+    QCOMPARE(stage.chain_revision, full.value()->chain_revision());
+    QVERIFY(!stage.realization_id);
+    const auto fullLeft = *full.value()->view().channel(0).value();
+    const auto fullRight = *full.value()->view().channel(1).value();
+    for (std::size_t i : {std::size_t{0}, std::size_t{5}, std::size_t{4095}}) {
+        QCOMPARE(std::bit_cast<std::uint64_t>(stage.output_lr_frames[i][0]),
+                 std::bit_cast<std::uint64_t>(fullLeft[i]));
+        QCOMPARE(std::bit_cast<std::uint64_t>(stage.output_lr_frames[i][1]),
+                 std::bit_cast<std::uint64_t>(fullRight[i]));
+    }
+
+    // The excerpt must begin at the requested PLAYBACK support rather than
+    // the preroll beginning (render() processes the source from frame zero).
+    auto windowRequest = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(600, 2000), chain,
+        {binding}, frame_count(31));
+    QVERIFY(windowRequest);
+    auto windowResult = rgsml::render::render_preview(
+        *windowRequest.value(), *registry.value());
+    QVERIFY(windowResult);
+    const auto& supported = windowResult.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(supported.status, StereoMsStageCaptureStatus::COMPLETE);
+    QCOMPARE(supported.requested_begin_frame, std::int64_t{600});
+    QCOMPARE(supported.requested_end_frame, std::int64_t{2000});
+    QCOMPARE(supported.captured_begin_frame, std::int64_t{600});
+    QCOMPARE(supported.output_lr_frames.size(), std::size_t{1400});
+    QCOMPARE(std::bit_cast<std::uint64_t>(supported.output_lr_frames[0][0]),
+             std::bit_cast<std::uint64_t>(fullLeft[600]));
+
+    // Explicit small/zero budgets must not impact the audible PCM or
+    // misrepresent truncated/unavailable telemetry as complete.
+    auto oneFrameRequest = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(600, 2000), chain,
+        {binding}, frame_count(17), std::size_t{16});
+    auto noFramesRequest = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(600, 2000), chain,
+        {binding}, frame_count(17), std::size_t{0});
+    QVERIFY(oneFrameRequest && noFramesRequest);
+    auto one = rgsml::render::render_preview(
+        *oneFrameRequest.value(), *registry.value());
+    auto none = rgsml::render::render_preview(
+        *noFramesRequest.value(), *registry.value());
+    QVERIFY(one && none);
+    QCOMPARE(bits(one.value()->view()), bits(windowResult.value()->view()));
+    QCOMPARE(bits(none.value()->view()), bits(windowResult.value()->view()));
+    const auto& partial = one.value()->stereo_ms_stage_output_sidecars().front();
+    const auto& absent = none.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(partial.status, StereoMsStageCaptureStatus::PARTIAL);
+    QCOMPARE(partial.output_lr_frames.size(), std::size_t{1});
+    QCOMPARE(absent.status, StereoMsStageCaptureStatus::UNAVAILABLE);
+    QVERIFY(absent.output_lr_frames.empty());
+
+    // Binding to accepted Processed identity succeeds once and cannot be
+    // overridden by a competing realization without mutating prior evidence.
+    const rgsml::core::RealizationId acceptedId{71};
+    const rgsml::core::RealizationId rejectedId{72};
+    QVERIFY(windowResult.value()->bind_stereo_ms_stage_output_realization_id(acceptedId));
+    QCOMPARE(windowResult.value()->stereo_ms_stage_output_sidecars().front().realization_id,
+             std::optional{acceptedId});
+    QVERIFY(!windowResult.value()->bind_stereo_ms_stage_output_realization_id(rejectedId));
+    QCOMPARE(windowResult.value()->stereo_ms_stage_output_sidecars().front().realization_id,
+             std::optional{acceptedId});
+
+    // The source remains immutable, and bypass must not expose a stale stage
+    // capture when the Stereo/M-S process was not executed.
+    QCOMPARE(bits(source.value()->view()), unchanged);
+    QVERIFY(chain.set_user_bypass(id, true));
+    auto bypassRequest = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 6000), chain,
+        {binding}, frame_count(257));
+    QVERIFY(bypassRequest);
+    auto bypassResult = rgsml::render::render_preview(
+        *bypassRequest.value(), *registry.value());
+    QVERIFY(bypassResult);
+    QVERIFY(bypassResult.value()->stereo_ms_stage_output_sidecars().empty());
+
+    QVERIFY(chain.set_user_bypass(id, false));
+    const std::array<double, 2> monoSamples{0.25, -0.25};
+    auto mono = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, monoSamples);
+    QVERIFY(mono);
+    auto monoRequest = rgsml::render::RenderRequest::create(
+        mono.value()->view(), frame_range(0, 2), chain,
+        {binding}, frame_count(1));
+    QVERIFY(monoRequest);
+    auto monoResult = rgsml::render::render_preview(
+        *monoRequest.value(), *registry.value());
+    QVERIFY(monoResult);
+    QVERIFY(monoResult.value()->stereo_ms_stage_output_sidecars().empty());
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()

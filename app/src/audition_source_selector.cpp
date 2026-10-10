@@ -199,6 +199,14 @@ core::Status AuditionSourceSelector::set_processed_realization(
     if (!identityBound) {
         return identityBound;
     }
+    // Bind stage-capture provenance to the SAME candidate before publishing
+    // the Processed realization or handing PCM off to playback.
+    auto msIdentityBound =
+        realization.bind_stereo_ms_stage_output_realization_id(
+            candidateRealizationId);
+    if (!msIdentityBound) {
+        return msIdentityBound;
+    }
     auto candidate = std::make_shared<const render::RenderResult>(
         std::move(realization));
 

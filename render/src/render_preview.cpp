@@ -13,6 +13,7 @@
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -349,6 +350,7 @@ rgsml::core::Result<RenderResult> render_preview(
         const auto source_read_count = needed_source_end - source_start;
 
         std::optional<CompressorTelemetrySidecar> compressor_sidecar;
+        std::vector<StereoMsStageOutputSidecar> stereo_ms_stage_captures;
 
         if (modules.empty()) {
             auto source_chunk = source.subview(
@@ -395,8 +397,12 @@ rgsml::core::Result<RenderResult> render_preview(
             std::int64_t stage_start = source_start;
             std::int64_t stage_end = needed_source_end;
             bool stream_eos_reached = (needed_source_end == source_end);
+            std::int64_t stage_accumulated_latency = 0;
 
             for (std::size_t m = 0; m < modules.size(); ++m) {
+                // This module's stage samples live in the accumulated
+                // latency domain, not necessarily the final playback domain.
+                stage_accumulated_latency += modules[m].algorithmic_latency_frames;
                 const auto in_count = stage_end - stage_start;
                 const bool is_latency_or_lookahead_bearing =
                     (modules[m].algorithmic_latency_frames > 0 || modules[m].look_ahead_frames > 0);
@@ -520,6 +526,87 @@ rgsml::core::Result<RenderResult> render_preview(
                     compressor_sidecar = collector->build_sidecar();
                 }
 
+                if (modules[m].type_id == kStereoMsTypeId
+                    && source.format().channel_layout()
+                        == rgsml::audio::ChannelLayout::STEREO_LR) {
+                    StereoMsStageOutputSidecar capture{modules[m].instance_id};
+                    capture.chain_revision = request.chain_revision();
+                    capture.realization_id = request.realization_id();
+                    capture.channel_layout = source.format().channel_layout();
+                    capture.sample_rate_hz =
+                        static_cast<std::uint32_t>(source.format().sample_rate().value());
+                    capture.frame_domain_id = source.timebase().frame_domain_id();
+
+                    const auto requested_start = rgsml::core::checked_add(
+                        window.begin().value(), stage_accumulated_latency);
+                    const auto requested_end = rgsml::core::checked_add(
+                        window.end().value(), stage_accumulated_latency);
+                    if (requested_start && requested_end) {
+                        capture.requested_begin_frame = *requested_start.value();
+                        capture.requested_end_frame = *requested_end.value();
+                        capture.captured_begin_frame = capture.requested_begin_frame;
+
+                        // Limit this exact PCM excerpt to 64 KiB; 400 ms
+                        // correlation and live density are separate B4b/B4c
+                        // streaming measurements, NEVER inferred from a
+                        // truncated prefix as if it were full evidence.
+                        constexpr std::size_t kMaxCaptureBytes = 64U * 1024U;
+                        constexpr std::size_t kMaxCaptureFrames = 4096U;
+                        const auto cap_bytes = std::min(
+                            kMaxCaptureBytes,
+                            request.max_telemetry_bytes().value_or(kMaxCaptureBytes));
+                        const auto available = next_buffer.value()->view();
+                        const auto capture_start = capture.requested_begin_frame;
+                        const auto capture_end = capture.requested_end_frame;
+                        const auto first = available.absolute_start_frame().value();
+                        const auto last = available.absolute_end_frame().value();
+                        if (capture_start >= first && capture_start < last
+                            && capture_end > capture_start) {
+                            const auto remaining = static_cast<std::size_t>(
+                                std::min(capture_end, last) - capture_start);
+                            const auto take = std::min({
+                                remaining,
+                                kMaxCaptureFrames,
+                                cap_bytes / sizeof(std::array<double, 2>)});
+                            if (take > 0) {
+                                try {
+                                    const auto left = *available.channel(0).value();
+                                    const auto right = *available.channel(1).value();
+                                    const auto offset = static_cast<std::size_t>(
+                                        capture_start - first);
+                                    capture.output_lr_frames.reserve(take);
+                                    bool finite = true;
+                                    for (std::size_t i = 0; i < take; ++i) {
+                                        const double l = left[offset + i];
+                                        const double r = right[offset + i];
+                                        if (!std::isfinite(l) || !std::isfinite(r)) {
+                                            finite = false;
+                                            break;
+                                        }
+                                        capture.output_lr_frames.push_back({l, r});
+                                    }
+                                    if (finite) {
+                                        const bool complete =
+                                            capture_start == capture.requested_begin_frame
+                                            && take == static_cast<std::size_t>(
+                                                capture_end - capture_start);
+                                        capture.status = complete
+                                            ? StereoMsStageCaptureStatus::COMPLETE
+                                            : StereoMsStageCaptureStatus::PARTIAL;
+                                    } else {
+                                        capture.output_lr_frames.clear();
+                                    }
+                                } catch (...) {
+                                    // Telemetry allocation failures must NOT
+                                    // turn successful audible PCM into a failure.
+                                    capture.output_lr_frames.clear();
+                                }
+                            }
+                        }
+                    }
+                    stereo_ms_stage_captures.push_back(std::move(capture));
+                }
+
                 current_buffer = std::move(next_buffer);
                 stage_end = *rgsml::core::checked_add(stage_end, drain_length).value();
             }
@@ -552,7 +639,8 @@ rgsml::core::Result<RenderResult> render_preview(
             source.timebase().frame_domain_id(),
             request.chain_revision(),
             std::move(signatures),
-            std::move(compressor_sidecar)});
+            std::move(compressor_sidecar),
+            std::move(stereo_ms_stage_captures)});
     } catch (...) {
         return rgsml::core::Result<RenderResult>::failure(render_error(
             rgsml::core::ErrorCode::InvalidState,

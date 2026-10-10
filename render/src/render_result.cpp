@@ -12,13 +12,15 @@ RenderResult::RenderResult(
     rgsml::audio::FrameDomainId frame_domain_id,
     std::uint64_t chain_revision,
     std::vector<ModuleExecutionSignature> signatures,
-    std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar) noexcept
+    std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar,
+    std::vector<StereoMsStageOutputSidecar> stereo_ms_stage_output_sidecars) noexcept
     : buffer_(std::move(buffer))
     , render_window_(render_window)
     , frame_domain_id_(frame_domain_id)
     , chain_revision_(chain_revision)
     , signatures_(std::move(signatures))
     , compressor_telemetry_sidecar_(std::move(compressor_telemetry_sidecar))
+    , stereo_ms_stage_output_sidecars_(std::move(stereo_ms_stage_output_sidecars))
 {
 }
 
@@ -56,6 +58,30 @@ const std::optional<CompressorTelemetrySidecar>&
 RenderResult::compressor_telemetry_sidecar() const noexcept
 {
     return compressor_telemetry_sidecar_;
+}
+
+const std::vector<StereoMsStageOutputSidecar>&
+RenderResult::stereo_ms_stage_output_sidecars() const noexcept
+{
+    return stereo_ms_stage_output_sidecars_;
+}
+
+rgsml::core::Status RenderResult::bind_stereo_ms_stage_output_realization_id(
+    rgsml::core::RealizationId realization_id) noexcept
+{
+    // Validate ALL carriers before binding any: late conflicts cannot
+    // partially mutate the identity of an unpublished RenderResult.
+    for (const auto& sidecar : stereo_ms_stage_output_sidecars_) {
+        if (sidecar.realization_id && *sidecar.realization_id != realization_id) {
+            return rgsml::core::Status::failure(rgsml::core::Error{
+                rgsml::core::ErrorCode::InvalidState,
+                "Stereo/M-S stage capture realization identity conflicts with the accepted Processed realization."});
+        }
+    }
+    for (auto& sidecar : stereo_ms_stage_output_sidecars_) {
+        sidecar.realization_id = realization_id;
+    }
+    return rgsml::core::Status::success();
 }
 
 rgsml::core::Status RenderResult::bind_compressor_telemetry_realization_id(

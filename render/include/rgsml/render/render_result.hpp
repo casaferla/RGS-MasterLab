@@ -11,6 +11,7 @@
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -82,6 +83,33 @@ struct CompressorTelemetrySidecar final {
     friend bool operator==(
         const CompressorTelemetrySidecar&,
         const CompressorTelemetrySidecar&) = default;
+};
+
+// B4a is a bounded, exact PCM excerpt from the output of the named M/S
+// stage, BEFORE later DSP nodes. A partial excerpt is never full-window
+// correlation/density evidence, and is not yet proof of current audition.
+enum class StereoMsStageCaptureStatus : std::uint8_t {
+    COMPLETE,
+    PARTIAL,
+    UNAVAILABLE,
+};
+
+struct StereoMsStageOutputSidecar final {
+    rgsml::dsp::ModuleInstanceId module_instance_id;
+    std::uint64_t chain_revision{0};
+    std::optional<rgsml::core::RealizationId> realization_id{std::nullopt};
+    rgsml::audio::ChannelLayout channel_layout{rgsml::audio::ChannelLayout::STEREO_LR};
+    std::uint32_t sample_rate_hz{0};
+    rgsml::audio::FrameDomainId frame_domain_id{rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE};
+    StereoMsStageCaptureStatus status{StereoMsStageCaptureStatus::UNAVAILABLE};
+    std::int64_t requested_begin_frame{0};
+    std::int64_t requested_end_frame{0};
+    std::int64_t captured_begin_frame{0};
+    std::vector<std::array<double, 2>> output_lr_frames;
+
+    explicit StereoMsStageOutputSidecar(
+        rgsml::dsp::ModuleInstanceId instance_id) noexcept
+        : module_instance_id(instance_id) {}
 };
 
 enum class ModuleExecutionDisposition : std::uint8_t {
@@ -185,6 +213,10 @@ public:
     signatures() const noexcept;
     [[nodiscard]] const std::optional<CompressorTelemetrySidecar>&
     compressor_telemetry_sidecar() const noexcept;
+    [[nodiscard]] const std::vector<StereoMsStageOutputSidecar>&
+    stereo_ms_stage_output_sidecars() const noexcept;
+    [[nodiscard]] rgsml::core::Status bind_stereo_ms_stage_output_realization_id(
+        rgsml::core::RealizationId realization_id) noexcept;
     [[nodiscard]] rgsml::core::Status bind_compressor_telemetry_realization_id(
         rgsml::core::RealizationId realization_id) noexcept;
 
@@ -199,7 +231,8 @@ private:
         rgsml::audio::FrameDomainId frame_domain_id,
         std::uint64_t chain_revision,
         std::vector<ModuleExecutionSignature> signatures,
-        std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar = std::nullopt) noexcept;
+        std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar = std::nullopt,
+        std::vector<StereoMsStageOutputSidecar> stereo_ms_stage_output_sidecars = {}) noexcept;
 
     rgsml::audio::AudioBuffer buffer_;
     rgsml::core::FrameRange render_window_;
@@ -207,6 +240,7 @@ private:
     std::uint64_t chain_revision_;
     std::vector<ModuleExecutionSignature> signatures_;
     std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar_;
+    std::vector<StereoMsStageOutputSidecar> stereo_ms_stage_output_sidecars_;
 };
 
 }  // namespace rgsml::render
