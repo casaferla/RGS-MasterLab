@@ -128,8 +128,15 @@ Item {
                             ? root.viewModel.telemetryDensityBuckets : []
                         readonly property bool telemetryLive: root.viewModel
                             && root.viewModel.telemetryActive
+                        readonly property bool telemetryPaused: root.viewModel
+                            && root.viewModel.telemetryStatus === "PAUSED"
+                        // PAUSED retains the last completed heard bucket set,
+                        // but it is NOT live. STOP/BYPASS/TRANSITION/other
+                        // audition targets cannot display this frozen cloud.
+                        readonly property bool displayHistory: telemetryLive
+                            || telemetryPaused
                         readonly property int occupiedCells: {
-                            if (!telemetryLive || !heardBuckets || heardBuckets.length === 0)
+                            if (!displayHistory || !heardBuckets || heardBuckets.length === 0)
                                 return 0
                             let occupied = 0
                             for (let i = 0; i < 1089; ++i) {
@@ -149,7 +156,8 @@ Item {
                             }
                             return occupied
                         }
-                        visible: telemetryLive && occupiedCells > 0
+                        visible: displayHistory && occupiedCells > 0
+                        opacity: telemetryPaused ? 0.42 : 1.0
                         renderTarget: Canvas.Image
                         onPaint: {
                             const ctx = getContext("2d")
@@ -235,8 +243,9 @@ Item {
                         font.pixelSize: 10
                     }
                     // The cloud is observational only; no drag handlers.
-                    // Missing audio, bypass, inactive audition and transition
-                    // never synthesize density on the M/S surface.
+                    // PAUSED holds the last real cloud dimmed, not moving.
+                    // Missing audio, STOPPED, bypass, non-Processed audition
+                    // and transition never synthesize density on the surface.
                 }
 
                 Text {

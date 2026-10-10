@@ -568,6 +568,7 @@ void SourceMetadataPanelSmokeTest::stereoMsOptInVisualEvidence()
     audible.traversalSerial = 1;
     audible.audibleRealization.phase = core::AudibleHandoffPhase::NEW;
     audible.audibleRealization.realizationId = auditedId;
+    bool auditionProcessed = true;
     stereo.setTelemetryProviders(
         [accepted, auditedId]() -> app::StereoMsViewModel::AcceptedRenderEvidence {
             return {accepted, auditedId};
@@ -575,7 +576,7 @@ void SourceMetadataPanelSmokeTest::stereoMsOptInVisualEvidence()
         [&audible]() {
             return core::Result<core::PlaybackSnapshot>::success(audible);
         },
-        [] { return true; });
+        [&auditionProcessed] { return auditionProcessed; });
     QCOMPARE(stereo.telemetry_status(), QStringLiteral("ACTIVE"));
     QVERIFY(stereo.telemetry_density_buckets().isEmpty());
     audible.position = core::FrameIndex{kFrames};
@@ -756,6 +757,69 @@ Window {
                      "Failed to write exact-size Qt offscreen screenshot");
         }
     }
+
+    // Frozen audible history: a pause must neither clear nor animate the
+    // completed post-M15 Grid20 cloud. The rendered cloud is dimmed while
+    // its underlying occupancy and metrics remain unchanged.
+    const auto heardAtPause = stereo.telemetry_density_buckets();
+    QVERIFY(!heardAtPause.isEmpty());
+    audible.state = core::PlaybackState::PAUSED;
+    stereo.refreshTelemetry();
+    QCOMPARE(stereo.telemetry_status(), QStringLiteral("PAUSED"));
+    QVERIFY(!stereo.telemetry_active());
+    QCOMPARE(stereo.telemetry_density_buckets(), heardAtPause);
+    QCoreApplication::processEvents();
+    QVERIFY(cloud->property("visible").toBool());
+    QCOMPARE(cloud->property("opacity").toDouble(), 0.42);
+    QVERIFY(cloud->property("occupiedCells").toInt() > 0);
+    QCOMPARE(telemetryStatus->property("text").toString(),
+             QStringLiteral("PAUSED"));
+
+    // Take an offscreen authored-size frozen-state evidence, not a
+    // desktop-dependent screenshot that could be clipped by virtual pixels.
+    captureSurface->setWidth(1184);
+    captureSurface->setHeight(688);
+    window->resize(QSize{1184, 688});
+    QCoreApplication::processEvents();
+    const auto captureState = [&](const QString& fileName) {
+        const auto grabbed = captureSurface->grabToImage();
+        if (!grabbed) return false;
+        QSignalSpy spy{grabbed.data(), &QQuickItemGrabResult::ready};
+        if (spy.empty() && !spy.wait(15000)) return false;
+        const QImage image = grabbed->image();
+        if (image.isNull() || image.size() != QSize{1184, 688})
+            return false;
+        const QString dir = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        return dir.isEmpty() || (QDir{}.mkpath(dir)
+             && image.save(QDir{dir}.filePath(fileName), "PNG"));
+    };
+    QVERIFY2(captureState(QStringLiteral(
+                "m15_stereo_ms_exact_item_1184x688_paused.png")),
+             "PAUSED real-cloud evidence must be captured");
+
+    // STOP must make historical data non-live and invisible without
+    // silently presenting old buckets as a currently heard cloud.
+    audible.state = core::PlaybackState::STOPPED;
+    stereo.refreshTelemetry();
+    QCOMPARE(stereo.telemetry_status(), QStringLiteral("STOPPED / END"));
+    QCoreApplication::processEvents();
+    QVERIFY(!cloud->property("visible").toBool());
+    QCOMPARE(cloud->property("occupiedCells").toInt(), 0);
+
+    // PREPARED / GOLD selections always suppress M15, even if a
+    // previously Processed realization remains cached and available.
+    auditionProcessed = false;
+    stereo.refreshTelemetry();
+    QCOMPARE(stereo.telemetry_status(), QStringLiteral("NOT AUDITIONED"));
+    QVERIFY(stereo.telemetry_density_buckets().isEmpty());
+    QVERIFY(stereo.telemetry_correlation().isEmpty());
+    QVERIFY(stereo.telemetry_side_low().isEmpty());
+    QCoreApplication::processEvents();
+    QVERIFY(!cloud->property("visible").toBool());
+    QCOMPARE(cloud->property("occupiedCells").toInt(), 0);
+    QVERIFY2(captureState(QStringLiteral(
+                "m15_stereo_ms_exact_item_1184x688_not_auditioned.png")),
+             "NOT AUDITIONED must not display a phantom M/S cloud");
 
     // Mono and bypass must NEVER display stale active response points.
     stereo.setSignalFormat(48000.0, 1);
