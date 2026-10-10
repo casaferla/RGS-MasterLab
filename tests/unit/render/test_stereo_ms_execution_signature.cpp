@@ -50,12 +50,12 @@ void StereoMsExecutionSignatureTest::exactActiveSixFieldsAndIdentity()
     const auto* p=std::get_if<StereoMsExecutionSignaturePayload>(
         &signature.value()->payload);
     QVERIFY(p != nullptr);
-    QCOMPARE(p->mid_gain_db,std::optional<double>{-3.0});
-    QCOMPARE(p->side_gain_db,std::optional<double>{8.0});
-    QCOMPARE(p->side_muted,std::optional<bool>{false});
-    QCOMPARE(p->mono_bass_mode,std::optional<MonoBassMode>{MonoBassMode::LR24});
-    QCOMPARE(p->mono_bass_cutoff_hz,std::optional<double>{300.0});
-    QCOMPARE(p->low_band_width_percent,std::optional<double>{25.0});
+    QVERIFY(p->mid_gain_db == std::optional<double>{-3.0});
+    QVERIFY(p->side_gain_db == std::optional<double>{8.0});
+    QVERIFY(p->side_muted == std::optional<bool>{false});
+    QVERIFY(p->mono_bass_mode == std::optional<MonoBassMode>{MonoBassMode::LR24});
+    QVERIFY(p->mono_bass_cutoff_hz == std::optional<double>{300.0});
+    QVERIFY(p->low_band_width_percent == std::optional<double>{25.0});
 }
 
 void StereoMsExecutionSignatureTest::monoExcludesAllSonicFields()
@@ -77,7 +77,7 @@ void StereoMsExecutionSignatureTest::monoExcludesAllSonicFields()
         rgsml::audio::ChannelLayout::MONO_C,false);
     QVERIFY(sa);
     QVERIFY(sb);
-    QCOMPARE(*sa.value(),*sb.value());
+    QVERIFY(*sa.value() == *sb.value());
     const auto* p=std::get_if<StereoMsExecutionSignaturePayload>(
         &sa.value()->payload);
     QVERIFY(p != nullptr);
@@ -105,12 +105,12 @@ void StereoMsExecutionSignatureTest::sideMuteDominatesStoredGainAndCrossover()
         rgsml::audio::ChannelLayout::STEREO_LR,false);
     QVERIFY(sa);
     QVERIFY(sb);
-    QCOMPARE(*sa.value(),*sb.value());
+    QVERIFY(*sa.value() == *sb.value());
     const auto* p=std::get_if<StereoMsExecutionSignaturePayload>(
         &sa.value()->payload);
     QVERIFY(p);
-    QCOMPARE(p->mid_gain_db,std::optional<double>{-3.0});
-    QCOMPARE(p->side_muted,std::optional<bool>{true});
+    QVERIFY(p->mid_gain_db == std::optional<double>{-3.0});
+    QVERIFY(p->side_muted == std::optional<bool>{true});
     QVERIFY(!p->side_gain_db && !p->mono_bass_mode
             && !p->mono_bass_cutoff_hz && !p->low_band_width_percent);
 }
@@ -134,11 +134,11 @@ void StereoMsExecutionSignatureTest::offExcludesInactiveCutoffAndLowWidth()
         rgsml::audio::ChannelLayout::STEREO_LR,false);
     QVERIFY(sa);
     QVERIFY(sb);
-    QCOMPARE(*sa.value(),*sb.value());
+    QVERIFY(*sa.value() == *sb.value());
     const auto* p=std::get_if<StereoMsExecutionSignaturePayload>(
         &sa.value()->payload);
     QVERIFY(p);
-    QCOMPARE(p->mono_bass_mode,std::optional<MonoBassMode>{MonoBassMode::OFF});
+    QVERIFY(p->mono_bass_mode == std::optional<MonoBassMode>{MonoBassMode::OFF});
     QVERIFY(!p->mono_bass_cutoff_hz && !p->low_band_width_percent);
 }
 
@@ -161,7 +161,7 @@ void StereoMsExecutionSignatureTest::bypassHasIdentityWithoutEffectiveSonicField
         rgsml::audio::ChannelLayout::STEREO_LR,true);
     QVERIFY(sa);
     QVERIFY(sb);
-    QCOMPARE(*sa.value(),*sb.value());
+    QVERIFY(*sa.value() == *sb.value());
     QCOMPARE(sa.value()->disposition,ModuleExecutionDisposition::BYPASS_IDENTITY);
     const auto* p=std::get_if<StereoMsExecutionSignaturePayload>(
         &sa.value()->payload);
