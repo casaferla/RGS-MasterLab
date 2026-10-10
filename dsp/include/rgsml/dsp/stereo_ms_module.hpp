@@ -7,9 +7,10 @@
 
 namespace rgsml::dsp {
 
-// M15-A3 isolated broadband/identity kernel. No ModuleRegistry factory is
-// installed yet. Active LR12/LR24 on unmuted stereo fail closed until A4
-// implements and qualifies their frozen all-pass topology and state.
+// M15 Stereo/M-S + Mono Bass: frozen broadband, LR12/LR24 and streamed
+// recursive checkpoint DSP. Registered in ModuleRegistry by the separate
+// M15-B1 candidate. Visual editor and live stage telemetry are independent
+// later product integrations, not properties of this DSP implementation.
 class StereoMsModule final : public IModule {
 public:
     [[nodiscard]] static rgsml::core::Result<std::unique_ptr<StereoMsModule>>
