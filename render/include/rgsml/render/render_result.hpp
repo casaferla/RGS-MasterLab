@@ -9,6 +9,7 @@
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/module_instance.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_parameters.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -132,10 +133,27 @@ struct CompressorExecutionSignaturePayload final {
         const CompressorExecutionSignaturePayload&) = default;
 };
 
+// Only audio-effective Stereo/M-S parameters participate in sonic
+// execution identity. Non-effective fields must be absent (nullopt), not
+// zeroed: mono input excludes all spatial fields; Side mute dominates
+// Side gain and Mono Bass; OFF excludes crossover controls.
+struct StereoMsExecutionSignaturePayload final {
+    std::optional<double> mid_gain_db;
+    std::optional<double> side_gain_db;
+    std::optional<bool> side_muted;
+    std::optional<rgsml::dsp::MonoBassMode> mono_bass_mode;
+    std::optional<double> mono_bass_cutoff_hz;
+    std::optional<double> low_band_width_percent;
+
+    friend bool operator==(const StereoMsExecutionSignaturePayload&,
+                           const StereoMsExecutionSignaturePayload&) = default;
+};
+
 using ModuleExecutionSignaturePayload = std::variant<
     GainExecutionSignaturePayload,
     ParametricEqExecutionSignaturePayload,
-    CompressorExecutionSignaturePayload>;
+    CompressorExecutionSignaturePayload,
+    StereoMsExecutionSignaturePayload>;
 
 struct ModuleExecutionSignature final {
     rgsml::dsp::ModuleInstanceId instance_id;
