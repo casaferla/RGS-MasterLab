@@ -1166,6 +1166,22 @@ set_tests_properties(rgsml_stereo_ms_signature_tests PROPERTIES
     LABELS "dsp;stereo_ms;render;semantic_signature"
 )
 
+qt_add_executable(rgsml_stereo_ms_audible_resolver_tests
+    unit/render/test_audible_stereo_ms_telemetry_resolver.cpp
+)
+target_link_libraries(rgsml_stereo_ms_audible_resolver_tests
+    PRIVATE
+        rgsml_render
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_audible_resolver_tests)
+add_test(NAME rgsml_stereo_ms_audible_resolver_tests
+    COMMAND rgsml_stereo_ms_audible_resolver_tests)
+set_tests_properties(rgsml_stereo_ms_audible_resolver_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;render;audible_telemetry"
+)
+
 qt_add_executable(rgsml_render_preview_tests
     unit/render/test_render_preview.cpp
 )

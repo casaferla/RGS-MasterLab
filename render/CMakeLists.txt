@@ -1,5 +1,6 @@
 add_library(rgsml_render STATIC
     src/audible_compressor_telemetry_resolver.cpp
+    src/audible_stereo_ms_telemetry_resolver.cpp
     src/compressor_telemetry_collector.cpp
     src/compressor_telemetry_history.cpp
     src/render_preview.cpp
