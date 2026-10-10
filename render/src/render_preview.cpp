@@ -27,6 +27,7 @@ namespace {
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
+constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 
 struct PreparedModule final {
     std::unique_ptr<rgsml::dsp::IModule> instance;
@@ -109,6 +110,19 @@ rgsml::core::Result<RenderResult> render_preview(
             const auto descriptor = registry.find_descriptor(instance.module_type_id());
             if (!descriptor) {
                 return rgsml::core::Result<RenderResult>::failure(*descriptor.error());
+            }
+
+            // M15-B1 registers a DSP factory but does not yet integrate
+            // Stereo/M-S into RenderRequest typed parameter bindings or
+            // exact semantic execution signatures. A generic default-factory
+            // fallback here would silently render the WRONG user parameters
+            // and omit its execution signature. Reject all M15 chain nodes,
+            // including bypassed nodes, until the qualified B2 handoff.
+            if (instance.module_type_id() == kStereoMsTypeId) {
+                return rgsml::core::Result<RenderResult>::failure(render_error(
+                    rgsml::core::ErrorCode::UnsupportedOperation,
+                    "STEREO_MS_RENDER_BINDING_NOT_READY",
+                    "Stereo/M-S render binding and signature integration is not yet qualified."));
             }
 
             const bool is_gain = (instance.module_type_id() == kGainTypeId);
