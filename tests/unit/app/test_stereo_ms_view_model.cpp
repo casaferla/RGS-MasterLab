@@ -1,0 +1,182 @@
+#include "stereo_ms_view_model.hpp"
+
+#include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/dsp/stereo_ms_width.hpp>
+
+#include <QtTest/QTest>
+
+#include <cmath>
+#include <limits>
+
+namespace rgsml::tests {
+namespace {
+
+using namespace rgsml::app;
+
+[[nodiscard]] rgsml::dsp::ModuleInstanceId id(const char* uuid)
+{
+    return *rgsml::dsp::ModuleInstanceId::from_uuid(
+        *rgsml::core::Uuid::parse(uuid).value()).value();
+}
+
+class StereoMsViewModelTest final : public QObject {
+    Q_OBJECT
+private slots:
+    void optInOnlyAndExactWidthMacro();
+    void draftsAreTransactionalAndCommitOnce();
+    void modesMuteAndBypassPreserveStoredValues();
+};
+
+void StereoMsViewModelTest::optInOnlyAndExactWidthMacro()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *rgsml::core::Uuid::parse(
+        "51000000-0000-4000-8000-000000000001").value();
+    const auto gainId = id("51000000-0000-4000-8000-000000000010");
+    const auto eqId = id("51000000-0000-4000-8000-000000000020");
+    const auto compId = id("51000000-0000-4000-8000-000000000030");
+    const auto msId = id("51000000-0000-4000-8000-000000000040");
+    auto legacy = MasteringChainState::create_default(
+        *registry.value(), chainId, gainId, eqId, compId);
+    QVERIFY(legacy);
+    StereoMsViewModel absent(legacy.value());
+    QVERIFY(!absent.available());
+    QVERIFY(!absent.setDraftWidthPercent(80.0));
+    QVERIFY(!absent.commitDraft());
+    QCOMPARE(legacy.value()->module_count(), std::size_t{3});
+
+    auto initial = rgsml::dsp::StereoMsParameters::create(
+        -3.0, 8.0, false, rgsml::dsp::MonoBassMode::LR12, 140.0, 50.0);
+    QVERIFY(initial);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId, gainId, eqId, compId,
+        msId, *initial.value(), false);
+    QVERIFY(state);
+    MasteringPreviewController controller(state.value());
+    StereoMsViewModel vm(state.value(), &controller);
+    QVERIFY(vm.available());
+    const double originalCommon = 0.5 * (vm.mid_gain_db() + vm.side_gain_db());
+    const auto before = state.value()->stereo_ms_parameters();
+    QVERIFY(before);
+    QVERIFY(vm.setDraftWidthPercent(0.0));
+    QVERIFY(vm.side_muted());
+    QCOMPARE(vm.draft_width_percent(), 0.0);
+    QCOMPARE(controller.preview_generation(), std::uint64_t{0});
+    QCOMPARE(state.value()->stereo_ms_parameters(), before);
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{1});
+    QVERIFY(state.value()->stereo_ms_parameters()->side_muted());
+    QCOMPARE(state.value()->stereo_ms_parameters()->side_gain_db(),
+             before->side_gain_db());
+
+    QVERIFY(vm.setDraftWidthPercent(100.0));
+    QVERIFY(!vm.side_muted());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{1});
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{2});
+    const auto& committed = *state.value()->stereo_ms_parameters();
+    QVERIFY(std::abs((committed.mid_gain_db() + committed.side_gain_db()) / 2.0
+                     - originalCommon) < 1e-12);
+    QVERIFY(std::abs(dsp::stereo_ms_width_coordinates(committed).current_width_percent
+                     - 100.0) < 1e-10);
+}
+
+void StereoMsViewModelTest::draftsAreTransactionalAndCommitOnce()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *rgsml::core::Uuid::parse(
+        "52000000-0000-4000-8000-000000000001").value();
+    const auto gainId = id("52000000-0000-4000-8000-000000000010");
+    const auto eqId = id("52000000-0000-4000-8000-000000000020");
+    const auto compId = id("52000000-0000-4000-8000-000000000030");
+    const auto msId = id("52000000-0000-4000-8000-000000000040");
+    auto defaults = rgsml::dsp::StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId, gainId, eqId, compId,
+        msId, *defaults.value(), false);
+    QVERIFY(state);
+    MasteringPreviewController controller(state.value());
+    StereoMsViewModel vm(state.value(), &controller);
+    QVERIFY(vm.setDraftMidGainDb(-3.0));
+    QVERIFY(vm.setDraftSideGainDb(8.0));
+    QVERIFY(vm.setDraftMonoBassCutoffHz(200.0));
+    QVERIFY(vm.setDraftLowBandWidthPercent(25.0));
+    QVERIFY(vm.setDraftMonoBassMode(QStringLiteral("LR24")));
+    QCOMPARE(controller.preview_generation(), std::uint64_t{0});
+    QCOMPARE(*state.value()->stereo_ms_parameters(), *defaults.value());
+    const double oldSide = vm.side_gain_db();
+    QVERIFY(!vm.setDraftSideGainDb(std::numeric_limits<double>::infinity()));
+    QCOMPARE(vm.side_gain_db(), oldSide);
+    QVERIFY(!vm.validation_message().isEmpty());
+    QVERIFY(!vm.setDraftWidthPercent(9999.0));
+    QVERIFY(!vm.validation_message().isEmpty());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{0});
+    // Cancel invalid input, then restage the valid values and commit once.
+    vm.cancelDraft();
+    QCOMPARE(vm.validation_message(), QString{});
+    QCOMPARE(*state.value()->stereo_ms_parameters(), *defaults.value());
+    QVERIFY(vm.setDraftMidGainDb(-3.0));
+    QVERIFY(vm.setDraftSideGainDb(8.0));
+    QVERIFY(vm.setDraftMonoBassMode(QStringLiteral("LR24")));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{1});
+    QCOMPARE(state.value()->stereo_ms_parameters()->mid_gain_db(), -3.0);
+    QCOMPARE(state.value()->stereo_ms_parameters()->side_gain_db(), 8.0);
+    QCOMPARE(state.value()->stereo_ms_parameters()->mono_bass_mode(),
+             rgsml::dsp::MonoBassMode::LR24);
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{1});
+}
+
+void StereoMsViewModelTest::modesMuteAndBypassPreserveStoredValues()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *rgsml::core::Uuid::parse(
+        "53000000-0000-4000-8000-000000000001").value();
+    const auto gainId = id("53000000-0000-4000-8000-000000000010");
+    const auto eqId = id("53000000-0000-4000-8000-000000000020");
+    const auto compId = id("53000000-0000-4000-8000-000000000030");
+    const auto msId = id("53000000-0000-4000-8000-000000000040");
+    auto initial = rgsml::dsp::StereoMsParameters::create(
+        -3.0, 8.0, false, rgsml::dsp::MonoBassMode::LR24, 190.0, 25.0);
+    QVERIFY(initial);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId, gainId, eqId, compId,
+        msId, *initial.value(), false);
+    QVERIFY(state);
+    MasteringPreviewController controller(state.value());
+    StereoMsViewModel vm(state.value(), &controller);
+    QVERIFY(vm.mono_bass_controls_effective());
+    QVERIFY(vm.setDraftMonoBassMode(QStringLiteral("OFF")));
+    QVERIFY(!vm.mono_bass_controls_effective());
+    QCOMPARE(vm.mono_bass_cutoff_hz(), 190.0);
+    QCOMPARE(vm.low_band_width_percent(), 25.0);
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{1});
+    QVERIFY(vm.setDraftMonoBassMode(QStringLiteral("LR24")));
+    QVERIFY(vm.setDraftSideMuted(true));
+    QVERIFY(!vm.mono_bass_controls_effective());
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{2});
+    QCOMPARE(state.value()->stereo_ms_parameters()->mono_bass_cutoff_hz(), 190.0);
+    QCOMPARE(state.value()->stereo_ms_parameters()->low_band_width_percent(), 25.0);
+    vm.setBypass(true);
+    QVERIFY(vm.bypass());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{3});
+    vm.setBypass(true);
+    QCOMPARE(controller.preview_generation(), std::uint64_t{3});
+    vm.resetForNewSource();
+    QCOMPARE(state.value()->stereo_ms_parameters()->side_muted(), false);
+    QVERIFY(vm.bypass());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{3});
+}
+
+}  // namespace
+}  // namespace rgsml::tests
+
+QTEST_APPLESS_MAIN(rgsml::tests::StereoMsViewModelTest)
+#include "test_stereo_ms_view_model.moc"

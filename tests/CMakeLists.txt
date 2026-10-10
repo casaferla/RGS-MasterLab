@@ -1104,6 +1104,35 @@ set_tests_properties(rgsml_mastering_preview_controller_tests PROPERTIES
     LABELS "app;mastering_chain;render"
 )
 
+qt_add_executable(rgsml_stereo_ms_view_model_tests
+    unit/app/test_stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
+)
+target_include_directories(rgsml_stereo_ms_view_model_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_stereo_ms_view_model_tests
+    PRIVATE
+        rgsml_render
+        rgsml_dsp
+        rgsml_audio
+        rgsml_core
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_view_model_tests)
+add_test(NAME rgsml_stereo_ms_view_model_tests COMMAND rgsml_stereo_ms_view_model_tests)
+set_tests_properties(rgsml_stereo_ms_view_model_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;stereo_ms;editor_draft"
+)
+
 qt_add_executable(rgsml_stereo_ms_signature_tests
     unit/render/test_stereo_ms_execution_signature.cpp
 )
