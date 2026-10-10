@@ -25,6 +25,7 @@
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
+#include <QImage>
 #include <QLibraryInfo>
 #include <QRegularExpressionValidator>
 #include <QQmlApplicationEngine>
@@ -32,6 +33,7 @@
 #include <QQmlEngine>
 #include <QQmlContext>
 #include <QQuickItem>
+#include <QQuickItemGrabResult>
 #include <QQuickWindow>
 #include <QQuickStyle>
 #include <QSignalSpy>
@@ -532,11 +534,19 @@ Window {
     height: 688
     color: "#06121F"
     visible: false
-    DspEditorHost {
-        objectName: "m15StereoMsVisualHost"
-        anchors.fill: parent
-        anchors.margins: 18
-        adapterModel: m15VisualAdapterModel
+    // This item is larger than the Windows CI virtual monitor. Capturing
+    // its own scenegraph offscreen preserves authored logical resolution.
+    Rectangle {
+        objectName: "m15StereoMsExactCaptureSurface"
+        width: 1184
+        height: 688
+        color: "#06121F"
+        DspEditorHost {
+            objectName: "m15StereoMsVisualHost"
+            anchors.fill: parent
+            anchors.margins: 18
+            adapterModel: m15VisualAdapterModel
+        }
     }
 }
 )qml";
@@ -550,6 +560,10 @@ Window {
 
     window->show();
     QTest::qWait(150);
+    auto* captureSurface = qobject_cast<QQuickItem*>(
+        find_child_by_name(componentRoot.data(),
+                           QStringLiteral("m15StereoMsExactCaptureSurface")));
+    QVERIFY2(captureSurface != nullptr, "Must find exact-size offscreen capture surface");
     auto* editor = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsEditor"));
     auto* curve = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsResponseCurve"));
     auto* widthHandle = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthHandle"));
@@ -572,17 +586,50 @@ Window {
 
     // The M/S axes must remain square at compact and taller window sizes.
     for (const auto size : {QSize{1184, 688}, QSize{1440, 900}}) {
+        // The native window may be clamped by Hyper-V (1044-px desktop).
+        // The item's OWN dimensions, not a scaled output target, determine
+        // the scene layout and image size for this offscreen grab.
+        captureSurface->setWidth(size.width());
+        captureSurface->setHeight(size.height());
         window->resize(size);
         QTest::qWait(120);
+        QCoreApplication::processEvents();
+        QCOMPARE(captureSurface->size(), QSizeF{size});
         const auto side = axes->property("width").toDouble();
         QVERIFY(side > 50);
         QVERIFY(std::abs(side - axes->property("height").toDouble()) <= 0.5);
         QVERIFY(qobject_cast<QQuickItem*>(editor)->height() > 250);
+        auto* dynamicItem = qobject_cast<QQuickItem*>(dynamicWell);
+        auto* editorItem = qobject_cast<QQuickItem*>(editor);
+        QVERIFY(check_item_contained_in_ancestor(editorItem, captureSurface));
+        QVERIFY(check_item_contained_in_ancestor(dynamicItem, editorItem));
+
+        // Keep the original native-window screenshot for comparison; its
+        // actual resolution may be clamped and is intentionally NOT asserted.
         QVERIFY(capture_visual_evidence(
             window,
             QStringLiteral("m15_stereo_ms_%1x%2_lr24_width140.png")
                 .arg(size.width()).arg(size.height()),
             size));
+
+        // Qt renders the QQuickItem subtree into a distinct full-size
+        // offscreen scenegraph texture, independently of desktop geometry.
+        const auto imageResult = captureSurface->grabToImage();
+        QVERIFY2(imageResult, "Qt offscreen scenegraph grab failed");
+        QSignalSpy readySpy{imageResult.data(), &QQuickItemGrabResult::ready};
+        QTRY_VERIFY_WITH_TIMEOUT(readySpy.size() > 0, 15000);
+        const QImage image = imageResult->image();
+        QVERIFY2(!image.isNull(), "Offscreen rendering yielded an empty image");
+        QCOMPARE(image.size(), size);
+        const QString evidenceDirectory = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if (!evidenceDirectory.isEmpty()) {
+            QVERIFY(QDir{}.mkpath(evidenceDirectory));
+            const QString fileName =
+                QStringLiteral("m15_stereo_ms_exact_item_%1x%2_lr24_width140.png")
+                    .arg(size.width()).arg(size.height());
+            QVERIFY2(image.save(QDir{evidenceDirectory}.filePath(fileName), "PNG"),
+                     "Failed to write exact-size Qt offscreen screenshot");
+        }
     }
 
     // Mono and bypass must NEVER display stale active response points.
