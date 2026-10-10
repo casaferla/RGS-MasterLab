@@ -198,7 +198,8 @@ rgsml::core::Result<std::unique_ptr<StereoMsModule>> StereoMsModule::create(
         }
         auto impl = std::make_unique<Impl>(
             Impl{&descriptor, parameters, mid_gain, side_gain, std::nullopt,
-                 std::nullopt, {}, {}, std::nullopt, false, false});
+                 std::nullopt, {}, {}, {}, {}, nullptr,
+                 std::nullopt, false, false});
         return rgsml::core::Result<std::unique_ptr<StereoMsModule>>::success(
             std::unique_ptr<StereoMsModule>{new StereoMsModule{std::move(impl)}});
     } catch (...) {
