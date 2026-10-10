@@ -47,7 +47,10 @@ void AudibleStereoMsTelemetryResolver::register_sidecar(
     std::shared_ptr<const StereoMsStageOutputSidecar> sidecar)
 {
     if (sidecar && sidecar->realization_id) {
-        insert(*sidecar->realization_id, Entry{std::move(sidecar), false});
+        // Read the ID before moving its owning shared_ptr. Argument
+        // evaluation order is not a lifetime guarantee.
+        const auto id = *sidecar->realization_id;
+        insert(id, Entry{std::move(sidecar), false});
     }
 }
 
@@ -134,13 +137,21 @@ void AudibleStereoMsTelemetryResolver::update(
         return;
     }
     if (active_realization_id_ != audible.realizationId) {
+        // Preserve a newly established traversal/seek/loop anchor. An
+        // actual NEW handoff boundary takes precedence. Ordinary identity
+        // switches without a new epoch must start at the current cursor.
+        const auto epoch_anchor = new_epoch ? eligible_begin_ : std::nullopt;
         clear_observation();
         active_realization_id_ = audible.realizationId;
+        if (audible.phase == AudibleHandoffPhase::NEW &&
+            audible.handoffEndFrame) {
+            eligible_begin_ = *audible.handoffEndFrame;
+        } else {
+            eligible_begin_ = epoch_anchor.has_value()
+                ? epoch_anchor : std::optional<std::int64_t>{cursor};
+        }
         // A changed audible identity means a boundary, even if a short fade
         // occurred entirely between two GUI polls.
-        eligible_begin_ = audible.phase == AudibleHandoffPhase::NEW &&
-            audible.handoffEndFrame
-            ? audible.handoffEndFrame : std::optional<std::int64_t>{cursor};
         gap_detected_ = true;
     }
 

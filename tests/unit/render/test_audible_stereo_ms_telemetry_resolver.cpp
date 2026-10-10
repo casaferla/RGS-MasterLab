@@ -135,8 +135,10 @@ void StereoMsAudibleResolverTest::pauseSeekLoopAndNonProcessedClear()
     QCOMPARE(r.density_history().size(), std::size_t{1});
     QCOMPARE(r.density_history().front().begin_frame, std::int64_t{400});
 
-    s.loop = rgsml::core::FrameRange{
-        rgsml::core::FrameIndex{200}, rgsml::core::FrameIndex{800}};
+    auto loop_range = rgsml::core::FrameRange::create(
+        rgsml::core::FrameIndex{200}, rgsml::core::FrameIndex{800});
+    QVERIFY(loop_range);
+    s.loop = *loop_range.value();
     s.loopWrapCount = 1;
     s.position = rgsml::core::FrameIndex{450};
     r.update(s, true);
