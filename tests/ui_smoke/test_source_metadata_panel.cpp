@@ -570,13 +570,15 @@ Window {
     auto* cutoffHandle = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCutoffHandle"));
     auto* lowHandle = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthHandle"));
     auto* dynamicWell = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsDynamicWell"));
+    auto* title = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsGoniometerTitle"));
+    auto* telemetryStatus = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsTelemetryStatus"));
     auto* axes = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsStaticAxes"));
     auto* widthSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthSlider"));
     auto* cutoffSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCutoffSlider"));
     auto* lowSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthSlider"));
     auto* telemetry = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsTelemetryPlaceholder"));
     QVERIFY2(editor && curve && widthHandle && cutoffHandle && lowHandle
-             && dynamicWell && axes && widthSlider && cutoffSlider
+             && dynamicWell && title && telemetryStatus && axes && widthSlider && cutoffSlider
              && lowSlider && telemetry, "M15 complete active/dynamic editor must load");
     QVERIFY(editor->property("visible").toBool());
     QVERIFY(curve->property("visible").toBool());
@@ -598,6 +600,16 @@ Window {
         const auto side = axes->property("width").toDouble();
         QVERIFY(side > 50);
         QVERIFY(std::abs(side - axes->property("height").toDouble()) <= 0.5);
+        const double bandTop = title->property("y").toDouble()
+            + title->property("height").toDouble() + 8.0;
+        const double bandBottom = telemetryStatus->property("y").toDouble() - 8.0;
+        const double axesTop = axes->property("y").toDouble();
+        const double axesBottom = axesTop + axes->property("height").toDouble();
+        QVERIFY2(axesTop >= bandTop - 1.0, "Goniometer must clear its fixed header");
+        QVERIFY2(axesBottom <= bandBottom + 1.0, "Goniometer must clear footer telemetry");
+        QVERIFY2(std::abs((axesTop - bandTop) - (bandBottom - axesBottom)) <= 1.0,
+                 "Goniometer must be vertically centered between header and footer");
+        QCOMPARE(title->property("y").toDouble(), 8.0);
         QVERIFY(qobject_cast<QQuickItem*>(editor)->height() > 250);
         auto* dynamicItem = qobject_cast<QQuickItem*>(dynamicWell);
         auto* editorItem = qobject_cast<QQuickItem*>(editor);
@@ -642,6 +654,69 @@ Window {
     QCoreApplication::processEvents();
     QVERIFY(!curve->property("visible").toBool());
     stereo.setBypass(false);
+
+    // Exercise Compressor through the SAME native DspEditorHost at exact
+    // scenegraph dimensions; no second fake QML surface or product change.
+    model.setSelectedIndex(2);
+    QCoreApplication::processEvents();
+    auto* controlsPanel = find_child_by_name(
+        componentRoot.data(), QStringLiteral("compressorControlsPanel"));
+    auto* controlsViewport = find_child_by_name(
+        componentRoot.data(), QStringLiteral("compressorControlsViewport"));
+    auto* controlsContent = find_child_by_name(
+        componentRoot.data(), QStringLiteral("compressorControlsContent"));
+    auto* compressorEditor = find_child_by_name(
+        componentRoot.data(), QStringLiteral("compressorEditor"));
+    QVERIFY2(controlsPanel && controlsViewport && controlsContent && compressorEditor,
+             "Compressor responsive controls must load in the shared host");
+    QVERIFY(compressorEditor->property("visible").toBool());
+    double compactStackY = 0.0;
+    for (const QSize size : {QSize{1184, 688}, QSize{1440, 900}}) {
+        captureSurface->setWidth(size.width());
+        captureSurface->setHeight(size.height());
+        window->resize(size);
+        QTest::qWait(130);
+        QCoreApplication::processEvents();
+        QCOMPARE(captureSurface->size(), QSizeF{size});
+        const double viewportHeight =
+            controlsViewport->property("availableHeight").toDouble();
+        const double contentHeight =
+            controlsContent->property("implicitHeight").toDouble();
+        const double contentY = controlsContent->property("y").toDouble();
+        const double surplus = viewportHeight - contentHeight;
+        QVERIFY(contentHeight > 100.0);
+        QVERIFY(viewportHeight > 100.0);
+        QVERIFY(std::abs(contentY - std::max(0.0, surplus / 2.0)) <= 1.0);
+        if (surplus <= 0.0) {
+            QVERIFY(std::abs(contentY) <= 1.0);
+        } else {
+            QVERIFY(std::abs(contentY - (viewportHeight
+                        - (contentY + contentHeight))) <= 1.0);
+        }
+        if (size.width() == 1184) compactStackY = contentY;
+        else QVERIFY(contentY >= compactStackY - 1.0);
+        QVERIFY(check_item_contained_in_ancestor(
+            qobject_cast<QQuickItem*>(compressorEditor), captureSurface));
+        QVERIFY(check_item_contained_in_ancestor(
+            qobject_cast<QQuickItem*>(controlsPanel),
+            qobject_cast<QQuickItem*>(compressorEditor)));
+
+        const auto result = captureSurface->grabToImage();
+        QVERIFY2(result, "Compressor Qt scenegraph capture failed");
+        QSignalSpy readySpy{result.data(), &QQuickItemGrabResult::ready};
+        QTRY_VERIFY_WITH_TIMEOUT(readySpy.size() > 0, 15000);
+        const QImage image = result->image();
+        QVERIFY(!image.isNull());
+        QCOMPARE(image.size(), size);
+        const QString evidenceDirectory =
+            qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if (!evidenceDirectory.isEmpty()) {
+            QVERIFY(QDir{}.mkpath(evidenceDirectory));
+            QVERIFY(image.save(QDir{evidenceDirectory}.filePath(
+                QStringLiteral("m15_compressor_centered_exact_%1x%2.png")
+                    .arg(size.width()).arg(size.height())), "PNG"));
+        }
+    }
     window->close();
     QCoreApplication::processEvents();
 }

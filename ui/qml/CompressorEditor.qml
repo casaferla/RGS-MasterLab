@@ -660,13 +660,20 @@ Item {
                 border.width: 1
 
                 ScrollView {
+                    id: controlsViewport
+                    objectName: "compressorControlsViewport"
                     anchors.fill: parent
                     anchors.margins: 6
                     clip: true
 
                     ColumnLayout {
+                        id: controlsContent
+                        objectName: "compressorControlsContent"
                         width: parent.width
                         spacing: 8
+                        // Center only when all controls fit. A zero offset at
+                        // constrained heights retains the canonical scroll path.
+                        y: Math.max(0, (controlsViewport.availableHeight - implicitHeight) / 2)
 
                         // Detector & Stereo Link Selector Strip
                         RowLayout {

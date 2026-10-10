@@ -87,7 +87,15 @@ Item {
                 border.width: 1
                 border.color: "#1A3E55"
 
+                // The observational square lives in the middle band; text
+                // above and telemetry/status below keep fixed edge positions.
+                readonly property real axesBandTop: goniometerTitle.y
+                    + goniometerTitle.height + 8
+                readonly property real axesBandBottom: telemetryStatus.y - 8
+
                 Text {
+                    id: goniometerTitle
+                    objectName: "stereoMsGoniometerTitle"
                     x: 12
                     y: 8
                     text: "OUTPUT M/S GONIOMETER"
@@ -100,10 +108,12 @@ Item {
                 Item {
                     id: axes
                     objectName: "stereoMsStaticAxes"
-                    width: Math.max(0, Math.min(parent.width - 30, parent.height - 114))
+                    width: Math.max(0, Math.min(parent.width - 30,
+                        dynamicWell.axesBandBottom - dynamicWell.axesBandTop))
                     height: width
                     anchors.horizontalCenter: parent.horizontalCenter
-                    y: 28
+                    y: dynamicWell.axesBandTop + Math.max(0,
+                        (dynamicWell.axesBandBottom - dynamicWell.axesBandTop - height) / 2)
 
                     Rectangle {
                         anchors.centerIn: parent
@@ -152,6 +162,8 @@ Item {
                 }
 
                 Text {
+                    id: telemetryStatus
+                    objectName: "stereoMsTelemetryStatus"
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.bottom: telemetryRow.top
                     anchors.bottomMargin: 9
