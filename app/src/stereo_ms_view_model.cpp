@@ -3,6 +3,7 @@
 #include <utility>
 #include <cmath>
 #include <QVariantMap>
+#include <algorithm>
 
 namespace rgsml::app {
 
@@ -30,6 +31,9 @@ StereoMsViewModel::StereoMsViewModel(
         connect(previewController_, &MasteringPreviewController::changed,
                 this, &StereoMsViewModel::changed);
     }
+    connect(&telemetryTimer_, &QTimer::timeout,
+            this, &StereoMsViewModel::refreshTelemetry);
+    telemetryTimer_.setInterval(33);
 }
 
 const dsp::StereoMsParameters* StereoMsViewModel::committed() const noexcept
@@ -401,6 +405,151 @@ void StereoMsViewModel::resetForNewSource()
     }
     clear_error();
     emit changed();
+}
+
+
+void StereoMsViewModel::setTelemetryProviders(
+    AcceptedRenderProvider acceptedRender,
+    PlaybackSnapshotProvider playback,
+    AuditionProcessedProvider auditionProcessed)
+{
+    telemetryTimer_.stop();
+    telemetryResolver_.reset();
+    acceptedRenderProvider_ = std::move(acceptedRender);
+    playbackSnapshotProvider_ = std::move(playback);
+    auditionProcessedProvider_ = std::move(auditionProcessed);
+    refreshTelemetry();
+    if (acceptedRenderProvider_ && playbackSnapshotProvider_ &&
+        auditionProcessedProvider_) {
+        telemetryTimer_.start();
+    }
+}
+
+void StereoMsViewModel::refreshTelemetry()
+{
+    if (!acceptedRenderProvider_ || !playbackSnapshotProvider_ ||
+        !auditionProcessedProvider_) {
+        telemetryResolver_.reset();
+    } else {
+        const auto accepted = acceptedRenderProvider_();
+        if (accepted.result && accepted.realization_id && chainState_ &&
+            chainState_->stereo_ms_instance_id()) {
+            const auto module_id = *chainState_->stereo_ms_instance_id();
+            // Disposition comes from the immutable accepted render, NEVER
+            // from an editor draft or the current chain bypass control.
+            const auto& sigs = accepted.result->signatures();
+            const auto sig = std::find_if(sigs.begin(), sigs.end(),
+                [&module_id](const render::ModuleExecutionSignature& s) {
+                    return s.instance_id == module_id &&
+                        s.type_id == "rgsml.dsp.stereo-ms";
+                });
+            if (sig != sigs.end()) {
+                if (sig->disposition ==
+                    render::ModuleExecutionDisposition::BYPASS_IDENTITY) {
+                    telemetryResolver_.register_bypass(*accepted.realization_id);
+                } else if (sig->disposition ==
+                           render::ModuleExecutionDisposition::PROCESSED) {
+                    const auto& stages =
+                        accepted.result->stereo_ms_stage_output_sidecars();
+                    const auto hit = std::find_if(stages.begin(), stages.end(),
+                        [&module_id, &accepted](const render::StereoMsStageOutputSidecar& s) {
+                            return s.module_instance_id == module_id &&
+                                s.realization_id == accepted.realization_id &&
+                                s.chain_revision == accepted.result->chain_revision();
+                        });
+                    if (hit != stages.end()) {
+                        // Aliasing ownership holds immutable stage evidence
+                        // alive after the Processed candidate is superseded.
+                        telemetryResolver_.register_sidecar(
+                            std::shared_ptr<const render::StereoMsStageOutputSidecar>(
+                                accepted.result, &*hit));
+                    }
+                }
+            }
+        }
+        const auto snapshot = playbackSnapshotProvider_();
+        if (snapshot) {
+            telemetryResolver_.update(*snapshot.value(),
+                auditionProcessedProvider_());
+        } else {
+            // Unknown audible clock => no ongoing sample attribution.
+            telemetryResolver_.reset();
+        }
+    }
+
+    QString status = QStringLiteral("UNAVAILABLE");
+    using S = render::StereoMsAudibleStatus;
+    switch (telemetryResolver_.status()) {
+    case S::UNAVAILABLE: break;
+    case S::NOT_AUDITIONED: status = QStringLiteral("NOT AUDITIONED"); break;
+    case S::STOPPED: status = QStringLiteral("STOPPED / END"); break;
+    case S::PAUSED: status = QStringLiteral("PAUSED"); break;
+    case S::TRANSITION: status = QStringLiteral("TRANSITION"); break;
+    case S::BYPASS: status = QStringLiteral("BYPASS"); break;
+    case S::ACTIVE: status = QStringLiteral("ACTIVE"); break;
+    }
+
+    const bool active = telemetryResolver_.status() == S::ACTIVE;
+    const bool gap = telemetryResolver_.gap_detected();
+    const auto id = telemetryResolver_.active_realization_id();
+    const QString realizationId = id
+        ? QString::number(id->value) : QString{};
+
+    QVariantList buckets;
+    const auto& history = telemetryResolver_.density_history();
+    buckets.reserve(static_cast<qsizetype>(history.size()));
+    for (const auto& b : history) {
+        QVariantMap item;
+        item.insert(QStringLiteral("beginFrame"), static_cast<qlonglong>(b.begin_frame));
+        item.insert(QStringLiteral("endFrame"), static_cast<qlonglong>(b.end_frame));
+        item.insert(QStringLiteral("frameCount"), static_cast<qulonglong>(b.frame_count));
+        item.insert(QStringLiteral("validFrameCount"), static_cast<qulonglong>(b.valid_frame_count));
+        item.insert(QStringLiteral("zeroVectorCount"), static_cast<qulonglong>(b.zero_vector_count));
+        item.insert(QStringLiteral("overflowCount"), static_cast<qulonglong>(b.overflow_count));
+        QVariantList occupancy;
+        occupancy.reserve(static_cast<qsizetype>(b.occupancy.size()));
+        for (const auto n : b.occupancy) occupancy.append(static_cast<qulonglong>(n));
+        item.insert(QStringLiteral("occupancy"), occupancy);
+        buckets.append(item);
+    }
+
+    QVariantMap correlation;
+    if (const auto& window = telemetryResolver_.correlation()) {
+        correlation.insert(QStringLiteral("beginFrame"),
+                           static_cast<qlonglong>(window->begin_frame));
+        correlation.insert(QStringLiteral("endFrame"),
+                           static_cast<qlonglong>(window->end_frame));
+        // Undefined AC is represented by null, NEVER a fabricated 0.
+        correlation.insert(QStringLiteral("valid"),
+            window->validity == render::StereoMsCorrelationWindowValidity::VALID &&
+            window->rho.has_value());
+        if (window->validity == render::StereoMsCorrelationWindowValidity::VALID &&
+            window->rho.has_value()) {
+            correlation.insert(QStringLiteral("value"), *window->rho);
+        }
+    }
+    QVariantMap sideLow;
+    if (const auto& window = telemetryResolver_.side_low()) {
+        sideLow.insert(QStringLiteral("beginFrame"),
+                       static_cast<qlonglong>(window->begin_frame));
+        sideLow.insert(QStringLiteral("endFrame"),
+                       static_cast<qlonglong>(window->end_frame));
+        sideLow.insert(QStringLiteral("before"), window->rms_before);
+        sideLow.insert(QStringLiteral("after"), window->rms_after);
+    }
+    if (telemetryStatus_ != status || telemetryActive_ != active ||
+        telemetryGap_ != gap || telemetryRealizationId_ != realizationId ||
+        telemetryDensityBuckets_ != buckets ||
+        telemetryCorrelation_ != correlation || telemetrySideLow_ != sideLow) {
+        telemetryStatus_ = std::move(status);
+        telemetryActive_ = active;
+        telemetryGap_ = gap;
+        telemetryRealizationId_ = realizationId;
+        telemetryDensityBuckets_ = std::move(buckets);
+        telemetryCorrelation_ = std::move(correlation);
+        telemetrySideLow_ = std::move(sideLow);
+        emit telemetryChanged();
+    }
 }
 
 void StereoMsViewModel::request_preview()

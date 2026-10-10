@@ -2,11 +2,16 @@
 
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/stereo_ms_width.hpp>
+#include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/render_request.hpp>
+#include "../render/render_test_support.hpp"
 
 #include <QtTest/QTest>
 
 #include <cmath>
 #include <limits>
+#include <memory>
+#include <vector>
 
 namespace rgsml::tests {
 namespace {
@@ -27,6 +32,7 @@ private slots:
     void modesMuteAndBypassPreserveStoredValues();
     void responsePointsRespectDraftAndActualSignalFormat();
     void canonicalControlsStageAndInvalidEntryBlocksCommit();
+    void audibleTelemetryBindsAcceptedRenderAndRealPlayback();
 };
 
 
@@ -100,6 +106,103 @@ void StereoMsViewModelTest::responsePointsRespectDraftAndActualSignalFormat()
     QVERIFY(vm.width_response_points().isEmpty());
 }
 
+
+
+void StereoMsViewModelTest::audibleTelemetryBindsAcceptedRenderAndRealPlayback()
+{
+    using namespace rgsml::tests::render_support;
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *core::Uuid::parse(
+        "56000000-0000-4000-8000-000000000001").value();
+    const auto gain = id("56000000-0000-4000-8000-000000000010");
+    const auto eq = id("56000000-0000-4000-8000-000000000020");
+    const auto comp = id("56000000-0000-4000-8000-000000000030");
+    const auto ms = id("56000000-0000-4000-8000-000000000040");
+    const auto defaults = dsp::StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId, gain, eq, comp, ms, *defaults.value(), false);
+    QVERIFY(state);
+    StereoMsViewModel vm(state.value());
+
+    // Materialize actual post-M15 render evidence, not a hand-built UI point.
+    auto dspChain = dsp::ProcessingChain::create(
+        *registry.value(),
+        {dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL});
+    QVERIFY(dspChain);
+    QVERIFY(dspChain.value()->add(ms, "rgsml.dsp.stereo-ms", 0));
+    std::vector<double> left(4800, 0.25), right(4800, -0.125);
+    auto input = make_buffer(audio::ChannelLayout::STEREO_LR, 0, left, right);
+    QVERIFY(input);
+    auto req = render::RenderRequest::create(
+        input.value()->view(), frame_range(0, 4800),
+        *dspChain.value(), {dsp::ModuleExecutionBinding{ms, *defaults.value()}},
+        frame_count(127));
+    QVERIFY(req);
+    auto rendered = render::render_preview(*req.value(), *registry.value());
+    QVERIFY(rendered);
+    const core::RealizationId oldId{72};
+    QVERIFY(rendered.value()->bind_stereo_ms_stage_output_realization_id(oldId));
+    auto acceptedOld = std::make_shared<const render::RenderResult>(
+        std::move(*rendered.value()));
+    QVERIFY(acceptedOld->stereo_ms_stage_output_sidecars().size() == 1);
+    QCOMPARE(acceptedOld->signatures().size(), std::size_t{1});
+
+    StereoMsViewModel::AcceptedRenderEvidence accepted{acceptedOld, oldId};
+    core::PlaybackSnapshot snapshot;
+    snapshot.state = core::PlaybackState::PLAYING;
+    snapshot.position = core::FrameIndex{0};
+    snapshot.traversalSerial = 1;
+    snapshot.audibleRealization.phase = core::AudibleHandoffPhase::NEW;
+    snapshot.audibleRealization.realizationId = oldId;
+    bool processed = true;
+    vm.setTelemetryProviders([&] { return accepted; },
+        [&] { return core::Result<core::PlaybackSnapshot>::success(snapshot); },
+        [&] { return processed; });
+    QCOMPARE(vm.telemetry_status(), QStringLiteral("ACTIVE"));
+    QVERIFY(vm.telemetry_active());
+    QVERIFY(vm.telemetry_density_buckets().empty());
+
+    // Real Grid20 50ms bucket is 2400 frames; the cursor admits only
+    // completed heard intervals.
+    snapshot.position = core::FrameIndex{2500};
+    vm.refreshTelemetry();
+    QCOMPARE(vm.telemetry_density_buckets().size(), 1);
+    const auto first = vm.telemetry_density_buckets().front().toMap();
+    QCOMPARE(first.value(QStringLiteral("beginFrame")).toLongLong(), qlonglong{0});
+    QCOMPARE(first.value(QStringLiteral("endFrame")).toLongLong(), qlonglong{2400});
+    QCOMPARE(first.value(QStringLiteral("occupancy")).toList().size(), 1089);
+    QCOMPARE(vm.telemetry_realization_id(), QStringLiteral("72"));
+    QVERIFY(vm.telemetry_correlation().isEmpty()); // 400ms not yet heard.
+
+    // A newer accepted preview with no known sidecar cannot steal the OLD
+    // audible history while playback still reports the prior realization.
+    accepted = {};
+    vm.refreshTelemetry();
+    QCOMPARE(vm.telemetry_status(), QStringLiteral("ACTIVE"));
+    QCOMPARE(vm.telemetry_realization_id(), QStringLiteral("72"));
+    QCOMPARE(vm.telemetry_density_buckets().size(), 1);
+
+    snapshot.audibleRealization.phase = core::AudibleHandoffPhase::TRANSITION;
+    vm.refreshTelemetry();
+    QCOMPARE(vm.telemetry_status(), QStringLiteral("TRANSITION"));
+    QVERIFY(!vm.telemetry_active());
+    QVERIFY(vm.telemetry_density_buckets().empty());
+    QVERIFY(vm.telemetry_correlation().isEmpty());
+
+    snapshot.audibleRealization.phase = core::AudibleHandoffPhase::NEW;
+    snapshot.audibleRealization.realizationId = core::RealizationId{73};
+    snapshot.position = core::FrameIndex{3000};
+    vm.refreshTelemetry();
+    QCOMPARE(vm.telemetry_status(), QStringLiteral("UNAVAILABLE"));
+    QVERIFY(vm.telemetry_density_buckets().empty());
+
+    processed = false;
+    vm.refreshTelemetry();
+    QCOMPARE(vm.telemetry_status(), QStringLiteral("NOT AUDITIONED"));
+    QVERIFY(vm.telemetry_density_buckets().empty());
+}
 
 void StereoMsViewModelTest::canonicalControlsStageAndInvalidEntryBlocksCommit()
 {

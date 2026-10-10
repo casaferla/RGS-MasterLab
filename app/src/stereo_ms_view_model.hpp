@@ -5,12 +5,18 @@
 
 #include <rgsml/dsp/stereo_ms_width.hpp>
 #include <rgsml/dsp/stereo_ms_width_response.hpp>
+#include <rgsml/render/audible_stereo_ms_telemetry_resolver.hpp>
+
+#include <QTimer>
 
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include <optional>
+#include <functional>
+#include <memory>
 
 namespace rgsml::app {
 
@@ -37,6 +43,13 @@ class StereoMsViewModel final : public QObject {
     Q_PROPERTY(QString previewError READ preview_error NOTIFY changed)
     Q_PROPERTY(QVariantList widthResponsePoints READ width_response_points NOTIFY changed)
     Q_PROPERTY(QString widthResponseStatus READ width_response_status NOTIFY changed)
+    Q_PROPERTY(QString telemetryStatus READ telemetry_status NOTIFY telemetryChanged)
+    Q_PROPERTY(bool telemetryActive READ telemetry_active NOTIFY telemetryChanged)
+    Q_PROPERTY(bool telemetryGap READ telemetry_gap NOTIFY telemetryChanged)
+    Q_PROPERTY(QString telemetryRealizationId READ telemetry_realization_id NOTIFY telemetryChanged)
+    Q_PROPERTY(QVariantList telemetryDensityBuckets READ telemetry_density_buckets NOTIFY telemetryChanged)
+    Q_PROPERTY(QVariantMap telemetryCorrelation READ telemetry_correlation NOTIFY telemetryChanged)
+    Q_PROPERTY(QVariantMap telemetrySideLow READ telemetry_side_low NOTIFY telemetryChanged)
 
 public:
     explicit StereoMsViewModel(
@@ -62,6 +75,32 @@ public:
     [[nodiscard]] QString preview_error() const;
     [[nodiscard]] QVariantList width_response_points() const;
     [[nodiscard]] QString width_response_status() const;
+
+    struct AcceptedRenderEvidence final {
+        std::shared_ptr<const render::RenderResult> result;
+        std::optional<core::RealizationId> realization_id;
+    };
+    using AcceptedRenderProvider = std::function<AcceptedRenderEvidence()>;
+    using PlaybackSnapshotProvider =
+        std::function<core::Result<core::PlaybackSnapshot>()>;
+    using AuditionProcessedProvider = std::function<bool()>;
+
+    // Only accepted/published render identity plus audible PlaybackSnapshot
+    // may generate observational M/S telemetry. A UI draft never can.
+    void setTelemetryProviders(
+        AcceptedRenderProvider acceptedRender,
+        PlaybackSnapshotProvider playback,
+        AuditionProcessedProvider auditionProcessed);
+    [[nodiscard]] QString telemetry_status() const { return telemetryStatus_; }
+    [[nodiscard]] bool telemetry_active() const noexcept { return telemetryActive_; }
+    [[nodiscard]] bool telemetry_gap() const noexcept { return telemetryGap_; }
+    [[nodiscard]] QString telemetry_realization_id() const { return telemetryRealizationId_; }
+    [[nodiscard]] QVariantList telemetry_density_buckets() const { return telemetryDensityBuckets_; }
+    [[nodiscard]] QVariantMap telemetry_correlation() const { return telemetryCorrelation_; }
+    [[nodiscard]] QVariantMap telemetry_side_low() const { return telemetrySideLow_; }
+    // Explicit poll seam for deterministic tests; the production timer polls
+    // nominally at 30Hz. No future buckets are projected between polls.
+    Q_INVOKABLE void refreshTelemetry();
 
     // All draft edits are validated by the canonical DSP constructors/helper;
     // invalid attempts cannot corrupt either the draft or chain state.
@@ -90,6 +129,7 @@ public:
 
 signals:
     void changed();
+    void telemetryChanged();
 
 private:
     [[nodiscard]] const dsp::StereoMsParameters* committed() const noexcept;
@@ -108,6 +148,18 @@ private:
     QString validationMessage_;
     double effectiveSampleRateHz_{0.0};
     int sourceChannelCount_{0};
+    AcceptedRenderProvider acceptedRenderProvider_;
+    PlaybackSnapshotProvider playbackSnapshotProvider_;
+    AuditionProcessedProvider auditionProcessedProvider_;
+    render::AudibleStereoMsTelemetryResolver telemetryResolver_;
+    QTimer telemetryTimer_;
+    QString telemetryStatus_{QStringLiteral("UNAVAILABLE")};
+    QString telemetryRealizationId_;
+    bool telemetryActive_{false};
+    bool telemetryGap_{false};
+    QVariantList telemetryDensityBuckets_;
+    QVariantMap telemetryCorrelation_;
+    QVariantMap telemetrySideLow_;
 };
 
 }  // namespace rgsml::app
