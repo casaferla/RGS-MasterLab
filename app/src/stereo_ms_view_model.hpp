@@ -70,6 +70,10 @@ public:
     // realization, never guessed from its filename or a nominal global rate.
     // An absent/mono format produces no fabricated stereo response.
     Q_INVOKABLE void setSignalFormat(double effectiveSampleRateHz, int channelCount);
+    // Bridge used by canonical StudioParameterSlider/StudioNumericField.
+    // The typed setters remain the sole DSP validation/commit authority.
+    Q_INVOKABLE bool setDraftFieldValue(const QString& field, double value);
+    Q_INVOKABLE bool setDraftFieldText(const QString& field, const QString& text);
     Q_INVOKABLE bool setDraftWidthPercent(double value);
     Q_INVOKABLE bool setDraftMidGainDb(double value);
     Q_INVOKABLE bool setDraftSideGainDb(double value);

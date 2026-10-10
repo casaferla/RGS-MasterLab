@@ -26,6 +26,7 @@ private slots:
     void draftsAreTransactionalAndCommitOnce();
     void modesMuteAndBypassPreserveStoredValues();
     void responsePointsRespectDraftAndActualSignalFormat();
+    void canonicalControlsStageAndInvalidEntryBlocksCommit();
 };
 
 
@@ -97,6 +98,45 @@ void StereoMsViewModelTest::responsePointsRespectDraftAndActualSignalFormat()
     vm.resetForNewSource();
     QCOMPARE(vm.width_response_status(), QStringLiteral("SOURCE_UNAVAILABLE"));
     QVERIFY(vm.width_response_points().isEmpty());
+}
+
+
+void StereoMsViewModelTest::canonicalControlsStageAndInvalidEntryBlocksCommit()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *rgsml::core::Uuid::parse(
+        "55000000-0000-4000-8000-000000000001").value();
+    const auto gain = id("55000000-0000-4000-8000-000000000010");
+    const auto eq = id("55000000-0000-4000-8000-000000000020");
+    const auto comp = id("55000000-0000-4000-8000-000000000030");
+    const auto stereo = id("55000000-0000-4000-8000-000000000040");
+    const auto defaults = dsp::StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId, gain, eq, comp, stereo, *defaults.value(), false);
+    QVERIFY(state);
+    MasteringPreviewController ctrl(state.value());
+    StereoMsViewModel vm(state.value(), &ctrl);
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("monoBassCutoffHz"), 150.0));
+    QVERIFY(vm.setDraftFieldText(QStringLiteral("lowBandWidthPercent"),
+                                 QStringLiteral("35.5")));
+    QVERIFY(!vm.setDraftFieldText(QStringLiteral("sideGainDb"), QStringLiteral("-")));
+    QCOMPARE(vm.validation_field(), QStringLiteral("sideGainDb"));
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(ctrl.preview_generation(), std::uint64_t{0});
+    QCOMPARE(*state.value()->stereo_ms_parameters(), *defaults.value());
+    QVERIFY(vm.setDraftFieldText(QStringLiteral("sideGainDb"), QStringLiteral("3.0")));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(ctrl.preview_generation(), std::uint64_t{1});
+    QCOMPARE(state.value()->stereo_ms_parameters()->mono_bass_cutoff_hz(), 150.0);
+    QCOMPARE(state.value()->stereo_ms_parameters()->low_band_width_percent(), 35.5);
+    QCOMPARE(state.value()->stereo_ms_parameters()->side_gain_db(), 3.0);
+    QVERIFY(!vm.setDraftFieldValue(QStringLiteral("wrong"), 3.0));
+    QVERIFY(!vm.validation_message().isEmpty());
+    QVERIFY(!vm.commitDraft());
+    vm.cancelDraft();
+    QCOMPARE(vm.validation_message(), QString{});
 }
 
 void StereoMsViewModelTest::optInOnlyAndExactWidthMacro()

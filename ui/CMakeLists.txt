@@ -15,6 +15,8 @@ qt_add_qml_module(rgsml_ui
         qml/ParametricEqEditorWindow.qml
         qml/ParametricEqGraph.qml
         qml/SegmentedTimeEditor.qml
+        qml/StereoMsEditor.qml
+        qml/StereoMsResponseGraph.qml
         qml/StudioButton.qml
         qml/StudioIcon.qml
         qml/StudioIconButton.qml

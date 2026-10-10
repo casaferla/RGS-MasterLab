@@ -218,6 +218,28 @@ bool StereoMsViewModel::stage(
     return true;
 }
 
+bool StereoMsViewModel::setDraftFieldValue(const QString& field, double value)
+{
+    if (field == QStringLiteral("widthPercent")) return setDraftWidthPercent(value);
+    if (field == QStringLiteral("midGainDb")) return setDraftMidGainDb(value);
+    if (field == QStringLiteral("sideGainDb")) return setDraftSideGainDb(value);
+    if (field == QStringLiteral("monoBassCutoffHz")) return setDraftMonoBassCutoffHz(value);
+    if (field == QStringLiteral("lowBandWidthPercent")) return setDraftLowBandWidthPercent(value);
+    set_error(field, QStringLiteral("Unsupported Stereo/M-S parameter field."));
+    return false;
+}
+
+bool StereoMsViewModel::setDraftFieldText(const QString& field, const QString& text)
+{
+    bool converted = false;
+    const double value = text.trimmed().toDouble(&converted);
+    if (!converted || !std::isfinite(value)) {
+        set_error(field, QStringLiteral("Enter a finite numeric value."));
+        return false;
+    }
+    return setDraftFieldValue(field, value);
+}
+
 bool StereoMsViewModel::setDraftMidGainDb(double value)
 {
     const auto* p = editing();
@@ -294,9 +316,12 @@ bool StereoMsViewModel::setDraftWidthPercent(double value)
 
 bool StereoMsViewModel::commitDraft()
 {
+    // A partially typed invalid field must never commit a previously valid
+    // staged graph/slider value merely because the field lost focus.
+    if (!validationMessage_.isEmpty()) return false;
     if (!available() || !draft_) {
         // With no draft, nothing was committed and no preview should occur.
-        return available() && validationMessage_.isEmpty();
+        return available();
     }
     if (*draft_ == *committed()) {
         draft_.reset();
