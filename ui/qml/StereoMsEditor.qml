@@ -217,116 +217,70 @@ Item {
                     Layout.fillWidth: true
                     spacing: 14
 
-                    ColumnLayout {
+                    // Canonical field+slider pair owns exact numeric-box alignment;
+                    // unit suffix and surplus column width never extend the track.
+                    StudioNumericSliderPair {
+                        objectName: "stereoMsWidthControl"
                         Layout.fillWidth: true
-                        spacing: 2
-                        StudioNumericField {
-                            id: widthNumericField
-                            objectName: "stereoMsWidthField"
-                            compact: true
-                            compactFieldWidth: 86
-                            labelText: "WIDTH"
-                            unitText: "%"
-                            fieldName: "widthPercent"
-                            rawText: root.viewModel ? root.viewModel.draftWidthPercent.toFixed(1) : "100.0"
-                            viewModel: root.viewModel
-                            interactionHint: "Drag the cyan handle vertically, or use slider. Enter to apply."
-                        }
-                        StudioParameterSlider {
-                            objectName: "stereoMsWidthSlider"
-                            // Match the NUMERIC BOX only, not its unit suffix or
-                            // the freely expanding column (Compressor precedent).
-                            Layout.fillWidth: false
-                            Layout.alignment: Qt.AlignLeft
-                            Layout.minimumWidth: widthNumericField.fieldWidth
-                            Layout.preferredWidth: widthNumericField.fieldWidth
-                            Layout.maximumWidth: widthNumericField.fieldWidth
-                            compact: true
-                            from: 0
-                            to: 200
-                            stepSize: 0.5
-                            value: root.viewModel ? root.viewModel.draftWidthPercent : 100
-                            viewModel: root.viewModel
-                            fieldName: "widthPercent"
-                            positionFillColor: root.sliderFill
-                            hasSemanticAccent: true
-                            semanticAccent: root.widthHue
-                            accessibleName: "Broadband stereo width"
-                        }
+                        fieldObjectName: "stereoMsWidthField"
+                        sliderObjectName: "stereoMsWidthSlider"
+                        compactFieldWidth: 86
+                        labelText: "WIDTH"
+                        unitText: "%"
+                        fieldName: "widthPercent"
+                        rawText: root.viewModel ? root.viewModel.draftWidthPercent.toFixed(1) : "100.0"
+                        viewModel: root.viewModel
+                        interactionHint: "Drag the cyan handle vertically, or use slider. Enter to apply."
+                        from: 0
+                        to: 200
+                        stepSize: 0.5
+                        value: root.viewModel ? root.viewModel.draftWidthPercent : 100
+                        positionFillColor: root.sliderFill
+                        hasSemanticAccent: true
+                        semanticAccent: root.widthHue
+                        sliderAccessibleName: "Broadband stereo width"
                     }
 
-                    ColumnLayout {
+                    StudioNumericSliderPair {
+                        objectName: "stereoMsCutoffControl"
                         Layout.fillWidth: true
-                        spacing: 2
-                        StudioNumericField {
-                            id: cutoffNumericField
-                            objectName: "stereoMsCutoffField"
-                            compact: true
-                            compactFieldWidth: 86
-                            labelText: "MONO BASS CUTOFF"
-                            unitText: "Hz"
-                            fieldName: "monoBassCutoffHz"
-                            rawText: root.viewModel ? root.viewModel.monoBassCutoffHz.toFixed(1) : "120.0"
-                            viewModel: root.viewModel
-                        }
-                        StudioParameterSlider {
-                            objectName: "stereoMsCutoffSlider"
-                            // Match the NUMERIC BOX only, not its unit suffix or
-                            // the freely expanding column (Compressor precedent).
-                            Layout.fillWidth: false
-                            Layout.alignment: Qt.AlignLeft
-                            Layout.minimumWidth: cutoffNumericField.fieldWidth
-                            Layout.preferredWidth: cutoffNumericField.fieldWidth
-                            Layout.maximumWidth: cutoffNumericField.fieldWidth
-                            compact: true
-                            from: 40
-                            to: 300
-                            stepSize: 1
-                            value: root.viewModel ? root.viewModel.monoBassCutoffHz : 120
-                            viewModel: root.viewModel
-                            fieldName: "monoBassCutoffHz"
-                            positionFillColor: root.sliderFill
-                            hasSemanticAccent: true
-                            semanticAccent: root.cutoffHue
-                            accessibleName: "Mono Bass cutoff frequency"
-                        }
+                        fieldObjectName: "stereoMsCutoffField"
+                        sliderObjectName: "stereoMsCutoffSlider"
+                        compactFieldWidth: 86
+                        labelText: "MONO BASS CUTOFF"
+                        unitText: "Hz"
+                        fieldName: "monoBassCutoffHz"
+                        rawText: root.viewModel ? root.viewModel.monoBassCutoffHz.toFixed(1) : "120.0"
+                        viewModel: root.viewModel
+                        from: 40
+                        to: 300
+                        stepSize: 1
+                        value: root.viewModel ? root.viewModel.monoBassCutoffHz : 120
+                        positionFillColor: root.sliderFill
+                        hasSemanticAccent: true
+                        semanticAccent: root.cutoffHue
+                        sliderAccessibleName: "Mono Bass cutoff frequency"
                     }
 
-                    ColumnLayout {
+                    StudioNumericSliderPair {
+                        objectName: "stereoMsLowWidthControl"
                         Layout.fillWidth: true
-                        spacing: 2
-                        StudioNumericField {
-                            id: lowWidthNumericField
-                            objectName: "stereoMsLowWidthField"
-                            compact: true
-                            compactFieldWidth: 86
-                            labelText: "LOW WIDTH"
-                            unitText: "%"
-                            fieldName: "lowBandWidthPercent"
-                            rawText: root.viewModel ? root.viewModel.lowBandWidthPercent.toFixed(1) : "100.0"
-                            viewModel: root.viewModel
-                        }
-                        StudioParameterSlider {
-                            objectName: "stereoMsLowWidthSlider"
-                            // Match the NUMERIC BOX only, not its unit suffix or
-                            // the freely expanding column (Compressor precedent).
-                            Layout.fillWidth: false
-                            Layout.alignment: Qt.AlignLeft
-                            Layout.minimumWidth: lowWidthNumericField.fieldWidth
-                            Layout.preferredWidth: lowWidthNumericField.fieldWidth
-                            Layout.maximumWidth: lowWidthNumericField.fieldWidth
-                            compact: true
-                            from: 0
-                            to: 100
-                            stepSize: 1
-                            value: root.viewModel ? root.viewModel.lowBandWidthPercent : 100
-                            viewModel: root.viewModel
-                            fieldName: "lowBandWidthPercent"
-                            positionFillColor: root.sliderFill
-                            hasSemanticAccent: true
-                            semanticAccent: root.lowHue
-                            accessibleName: "Low-frequency Side width"
-                        }
+                        fieldObjectName: "stereoMsLowWidthField"
+                        sliderObjectName: "stereoMsLowWidthSlider"
+                        compactFieldWidth: 86
+                        labelText: "LOW WIDTH"
+                        unitText: "%"
+                        fieldName: "lowBandWidthPercent"
+                        rawText: root.viewModel ? root.viewModel.lowBandWidthPercent.toFixed(1) : "100.0"
+                        viewModel: root.viewModel
+                        from: 0
+                        to: 100
+                        stepSize: 1
+                        value: root.viewModel ? root.viewModel.lowBandWidthPercent : 100
+                        positionFillColor: root.sliderFill
+                        hasSemanticAccent: true
+                        semanticAccent: root.lowHue
+                        sliderAccessibleName: "Low-frequency Side width"
                     }
                 }
 
