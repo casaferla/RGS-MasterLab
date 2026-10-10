@@ -80,8 +80,7 @@ jobs:
             rgsml_mastering_chain_state_tests \
             rgsml_mastering_preview_controller_tests \
             rgsml_dsp_module_adapter_tests \
-            rgsml_render_preview_tests \
-            rgsml_app
+            rgsml_render_preview_tests
 
       - name: Run Focused DSP Tests
         run: |
