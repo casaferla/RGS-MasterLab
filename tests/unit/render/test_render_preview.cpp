@@ -464,6 +464,7 @@ private slots:
     void stereoMsStageOutputCaptureBoundedAndProvenanced();
     void stereoMsLocalCorrelationCanonicalGrid100();
     void stereoMsSideLowRealBranchRmsGrid100();
+    void stereoMsOutputDensityRealOccupancyGrid20();
     void activeUnavailableModuleFails();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
@@ -1533,6 +1534,139 @@ void RenderPreviewTest::stereoMsSideLowRealBranchRmsGrid100()
         QCOMPARE(w.end_frame - w.begin_frame, std::int64_t{17642});
         QVERIFY(w.rms_before > 0.0);
         QVERIFY(std::abs(w.rms_after - 0.5 * w.rms_before) < 1e-14);
+    }
+}
+
+
+void RenderPreviewTest::stereoMsOutputDensityRealOccupancyGrid20()
+{
+    using rgsml::render::StereoMsDensityBucket;
+    using rgsml::render::StereoMsDensityStatus;
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain = empty_chain(*registry.value());
+    const auto id = make_id("24700000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
+    auto neutral = rgsml::dsp::StereoMsParameters::create_default();
+    QVERIFY(neutral);
+    const rgsml::dsp::ModuleExecutionBinding binding{id, *neutral.value()};
+
+    // Entirely real, unweighted occupancy. Last frame of bucket 0 tests
+    // witness retention; first and last frames of bucket 1 test boundaries.
+    constexpr std::size_t kFrames = 6000;
+    std::vector<double> left(kFrames, 0.0), right(kFrames, 0.0);
+    left[2399] = 0.5;
+    right[2399] = -0.5;
+    left[2400] = right[2400] = 0.5;
+    left[4799] = 4.0; // a real finite graphical + channel overrange
+    auto input = make_buffer(
+        rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    QVERIFY(input);
+    const auto original = bits(input.value()->view());
+    auto make = [&](std::size_t max_frames, std::optional<std::size_t> bytes =
+                      std::nullopt) {
+        auto req = rgsml::render::RenderRequest::create(
+            input.value()->view(), frame_range(0, 6000), chain,
+            {binding}, frame_count(max_frames), bytes);
+        return rgsml::render::render_preview(*req.value(), *registry.value());
+    };
+    auto result = make(31U);
+    auto alternate = make(4096U);
+    QVERIFY(result && alternate);
+    QCOMPARE(bits(result.value()->view()), bits(alternate.value()->view()));
+    QCOMPARE(result.value()->stereo_ms_stage_output_sidecars().size(),
+             std::size_t{1});
+    const auto& stage = result.value()->stereo_ms_stage_output_sidecars().front();
+    const auto& alt = alternate.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(stage.density_status, StereoMsDensityStatus::COMPLETE);
+    QCOMPARE(stage.density_buckets.size(), std::size_t{2});
+    QCOMPARE(alt.density_status, StereoMsDensityStatus::COMPLETE);
+    QCOMPARE(alt.density_buckets.size(), stage.density_buckets.size());
+    for (std::size_t j = 0; j < stage.density_buckets.size(); ++j) {
+        const auto& b = stage.density_buckets[j];
+        const auto& a = alt.density_buckets[j];
+        QCOMPARE(b.begin_frame, static_cast<std::int64_t>(j) * 2400);
+        QCOMPARE(b.end_frame, static_cast<std::int64_t>(j + 1U) * 2400);
+        QCOMPARE(b.frame_count, std::uint32_t{2400});
+        QCOMPARE(b.valid_frame_count, std::uint32_t{2400});
+        QCOMPARE(b.invalid_count, std::uint32_t{0});
+        QCOMPARE(b.frame_count, a.frame_count);
+        QVERIFY(b.occupancy == a.occupancy);
+        std::uint64_t occupancy = 0;
+        for (auto count : b.occupancy) occupancy += count;
+        QCOMPARE(occupancy + b.overflow_count,
+                 static_cast<std::uint64_t>(b.valid_frame_count));
+        QCOMPARE(b.occupancy[16U * 33U + 16U],
+                 j == 0 ? std::uint32_t{2399} : std::uint32_t{2398});
+        QCOMPARE(b.zero_vector_count,
+                 j == 0 ? std::uint32_t{2399} : std::uint32_t{2398});
+    }
+    const auto& first = stage.density_buckets[0];
+    const auto& second = stage.density_buckets[1];
+    QCOMPARE(first.overflow_count, std::uint32_t{0});
+    QCOMPARE(second.overflow_count, std::uint32_t{1});
+    QCOMPARE(second.channel_overrange_count, std::uint32_t{1});
+    QVERIFY(first.witnesses[5].valid);
+    QCOMPARE(first.witnesses[5].absolute_frame, std::int64_t{2399});
+    QVERIFY(first.witnesses[4].valid);
+    QCOMPARE(first.witnesses[4].absolute_frame, std::int64_t{2399});
+    QVERIFY(second.witnesses[4].valid);
+    QCOMPARE(second.witnesses[4].absolute_frame, std::int64_t{4799});
+
+    // Tiny and zero budgets must not change even one emitted audio bit.
+    const std::size_t one_bucket_budget =
+        64U * 1024U + sizeof(StereoMsDensityBucket);
+    auto limited = make(127U, one_bucket_budget);
+    auto disabled = make(127U, std::size_t{0});
+    QVERIFY(limited && disabled);
+    QCOMPARE(bits(limited.value()->view()), bits(result.value()->view()));
+    QCOMPARE(bits(disabled.value()->view()), bits(result.value()->view()));
+    const auto& one = limited.value()->stereo_ms_stage_output_sidecars().front();
+    const auto& absent = disabled.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(one.density_status, StereoMsDensityStatus::PARTIAL);
+    QCOMPARE(one.density_buckets.size(), std::size_t{1});
+    QCOMPARE(absent.density_status, StereoMsDensityStatus::UNAVAILABLE);
+    QVERIFY(absent.density_buckets.empty());
+    QCOMPARE(bits(input.value()->view()), original);
+
+    // Selected-region starts cannot borrow a partly-unheard bucket:
+    // only the whole bucket [2400,4800) belongs to this request.
+    auto regionReq = rgsml::render::RenderRequest::create(
+        input.value()->view(), frame_range(2400, 6000), chain,
+        {binding}, frame_count(31));
+    QVERIFY(regionReq);
+    auto region = rgsml::render::render_preview(
+        *regionReq.value(), *registry.value());
+    QVERIFY(region);
+    const auto& selected = region.value()->stereo_ms_stage_output_sidecars()
+        .front();
+    QCOMPARE(selected.density_status, StereoMsDensityStatus::COMPLETE);
+    QCOMPARE(selected.density_buckets.size(), std::size_t{1});
+    QCOMPARE(selected.density_buckets[0].begin_frame, std::int64_t{2400});
+    QCOMPARE(selected.density_buckets[0].end_frame, std::int64_t{4800});
+
+    // The 50ms clock uses fresh ties-to-even rounding for each boundary,
+    // not a repeated 2205-frame hop at the awkward 44,105Hz sample rate.
+    constexpr std::size_t kOddFrames = 12'000;
+    std::vector<double> odd_l(kOddFrames, 0.125), odd_r(kOddFrames, 0.125);
+    auto oddInput = make_buffer(
+        format(rgsml::audio::ChannelLayout::STEREO_LR, 44'105),
+        0, odd_l, odd_r);
+    QVERIFY(oddInput);
+    auto oddReq = rgsml::render::RenderRequest::create(
+        oddInput.value()->view(), frame_range(0, 12'000), chain,
+        {binding}, frame_count(59));
+    QVERIFY(oddReq);
+    auto odd = rgsml::render::render_preview(*oddReq.value(), *registry.value());
+    QVERIFY(odd);
+    const auto& buckets = odd.value()->stereo_ms_stage_output_sidecars()
+        .front().density_buckets;
+    QVERIFY(buckets.size() >= std::size_t{5});
+    const std::array<std::int64_t, 5> expected{
+        0, 2205, 4410, 6616, 8821};
+    for (std::size_t j = 0; j < expected.size(); ++j) {
+        QCOMPARE(buckets[j].begin_frame, expected[j]);
+        QCOMPARE(buckets[j].invalid_count, std::uint32_t{0});
     }
 }
 

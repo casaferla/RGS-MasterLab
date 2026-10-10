@@ -156,6 +156,175 @@ struct PreparedModule final {
     return result;
 }
 
+// Canonical Grid20 starts are anchored to the source's frame-zero domain.
+// Round ties to even directly for each index; never sum rounded hops.
+[[nodiscard]] std::optional<std::int64_t> density_grid_offset(
+    std::uint64_t index, std::uint64_t fs) noexcept
+{
+    if (fs == 0 || index > std::numeric_limits<std::uint64_t>::max() / fs) {
+        return std::nullopt;
+    }
+    const auto numerator = index * fs;
+    auto rounded = numerator / 20U;
+    const auto rem = numerator % 20U;
+    if (rem > 10U || (rem == 10U && (rounded % 2U) == 1U)) {
+        ++rounded;
+    }
+    if (rounded > static_cast<std::uint64_t>(
+                      std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    return static_cast<std::int64_t>(rounded);
+}
+
+void collect_stage_density(
+    StereoMsStageOutputSidecar& capture,
+    rgsml::audio::AudioBufferView output,
+    std::int64_t source_origin,
+    std::size_t max_telemetry_bytes)
+{
+    const auto fs = static_cast<std::uint64_t>(capture.sample_rate_hz);
+    const auto requested_begin = capture.requested_begin_frame;
+    const auto requested_end = capture.requested_end_frame;
+    if (fs == 0 || source_origin > requested_begin
+        || requested_begin >= requested_end || !output.channel(0)
+        || !output.channel(1)) {
+        return;
+    }
+    const auto first = output.absolute_start_frame().value();
+    const auto last = output.absolute_end_frame().value();
+    if (requested_begin < first || requested_end > last) {
+        return; // no fabricated padding/partial prehistory
+    }
+    constexpr std::size_t kMaxDensityBytes = 32U * 1024U * 1024U;
+    const auto used = capture.output_lr_frames.size() * sizeof(std::array<double, 2>)
+        + capture.correlation_windows.size() * sizeof(StereoMsCorrelationWindow)
+        + capture.side_low_windows.size() * sizeof(StereoMsSideLowWindow);
+    const auto left_budget = max_telemetry_bytes > used
+        ? max_telemetry_bytes - used : std::size_t{0};
+    const auto capacity = std::min(kMaxDensityBytes, left_budget)
+        / sizeof(StereoMsDensityBucket);
+    if (capacity == 0) return;
+
+    const auto left = *output.channel(0).value();
+    const auto right = *output.channel(1).value();
+    const auto delta = static_cast<std::uint64_t>(requested_begin - source_origin);
+    const auto seconds = delta / fs;
+    if (seconds > std::numeric_limits<std::uint64_t>::max() / 20U) return;
+    auto j = seconds * 20U;
+    // Conservative count estimate without multiplying huge absolute frame
+    // ranges by 20 (which could overflow the timeline integer type).
+    const auto support = static_cast<std::uint64_t>(
+        requested_end - requested_begin);
+    const auto whole_seconds = support / fs;
+    const auto whole_buckets = whole_seconds >
+        (std::numeric_limits<std::uint64_t>::max() - 24U) / 20U
+        ? std::numeric_limits<std::uint64_t>::max()
+        : whole_seconds * 20U + 24U;
+    const auto nominal_count = static_cast<std::size_t>(
+        std::min<std::uint64_t>(whole_buckets, capacity));
+    capture.density_buckets.reserve(nominal_count);
+    const double a = std::sqrt(2.0);
+    const double inv_root2 = 1.0 / std::sqrt(2.0);
+    bool omitted = false;
+    while (true) {
+        const auto off0 = density_grid_offset(j, fs);
+        if (!off0 || j == std::numeric_limits<std::uint64_t>::max()) break;
+        const auto off1 = density_grid_offset(j + 1U, fs);
+        if (!off1) break;
+        const auto start = rgsml::core::checked_add(source_origin, *off0);
+        const auto stop = rgsml::core::checked_add(source_origin, *off1);
+        if (!start || !stop) break;
+        const auto begin = *start.value();
+        const auto end = *stop.value();
+        if (begin >= requested_end || end > requested_end) break;
+        if (begin >= requested_begin && begin >= first && end <= last
+            && begin < end) {
+            if (capture.density_buckets.size() >= capacity) {
+                omitted = true;
+                break;
+            }
+            StereoMsDensityBucket bucket;
+            bucket.begin_frame = begin;
+            bucket.end_frame = end;
+            const auto offset = static_cast<std::size_t>(begin - first);
+            const auto count = static_cast<std::size_t>(end - begin);
+            bucket.frame_count = static_cast<std::uint32_t>(count);
+            double min_side = std::numeric_limits<double>::infinity();
+            double max_side = -std::numeric_limits<double>::infinity();
+            double min_mid = std::numeric_limits<double>::infinity();
+            double max_mid = -std::numeric_limits<double>::infinity();
+            double max_radius = -1.0;
+            bool invalid = false;
+            for (std::size_t k = 0; k < count; ++k) {
+                const double l = left[offset + k];
+                const double r = right[offset + k];
+                const double side = (l - r) * inv_root2;
+                const double mid = (l + r) * inv_root2;
+                if (!std::isfinite(l) || !std::isfinite(r)
+                    || !std::isfinite(side) || !std::isfinite(mid)) {
+                    ++bucket.invalid_count;
+                    invalid = true;
+                    break;
+                }
+                ++bucket.valid_frame_count;
+                if (std::abs(l) > 1.0 || std::abs(r) > 1.0) {
+                    ++bucket.channel_overrange_count;
+                }
+                const auto absolute_frame = begin + static_cast<std::int64_t>(k);
+                auto witness = [&](std::size_t slot) {
+                    bucket.witnesses[slot] = {absolute_frame, side, mid, true};
+                };
+                if (side != 0.0 || mid != 0.0) {
+                    if (side < min_side) { min_side = side; witness(0); }
+                    if (side > max_side) { max_side = side; witness(1); }
+                    if (mid < min_mid) { min_mid = mid; witness(2); }
+                    if (mid > max_mid) { max_mid = mid; witness(3); }
+                    const auto radius = std::hypot(side, mid);
+                    if (!std::isfinite(radius)) {
+                        ++bucket.invalid_count;
+                        invalid = true;
+                        break;
+                    }
+                    if (radius > max_radius) { max_radius = radius; witness(4); }
+                    if (!bucket.witnesses[5].valid &&
+                        ((l < 0.0 && r > 0.0) || (l > 0.0 && r < 0.0))) {
+                        witness(5);
+                    }
+                }
+                if (std::abs(side) > a || std::abs(mid) > a) {
+                    ++bucket.overflow_count;
+                    continue;
+                }
+                const double sx = std::floor(16.0 * side / a + 16.5);
+                const double my = std::floor(16.0 * mid / a + 16.5);
+                if (sx < 0.0 || sx > 32.0 || my < 0.0 || my > 32.0) {
+                    ++bucket.invalid_count;
+                    invalid = true;
+                    break;
+                }
+                const auto x = static_cast<std::size_t>(sx);
+                const auto y = static_cast<std::size_t>(my);
+                ++bucket.occupancy[y * StereoMsDensityBucket::kGridSide + x];
+                if (l == 0.0 && r == 0.0) ++bucket.zero_vector_count;
+            }
+            // A nonfinite sample or inconsistent quantizer fails closed
+            // for this observation, without modifying the successful PCM.
+            if (invalid) {
+                capture.density_buckets.clear();
+                capture.density_status = StereoMsDensityStatus::UNAVAILABLE;
+                return;
+            }
+            capture.density_buckets.push_back(std::move(bucket));
+        }
+        ++j;
+    }
+    if (!capture.density_buckets.empty()) {
+        capture.density_status = omitted
+            ? StereoMsDensityStatus::PARTIAL : StereoMsDensityStatus::COMPLETE;
+    }
+}
+
 void collect_stage_correlation(
     StereoMsStageOutputSidecar& capture,
     rgsml::audio::AudioBufferView output,
@@ -963,6 +1132,23 @@ rgsml::core::Result<RenderResult> render_preview(
                     } catch (...) {
                         capture.correlation_windows.clear();
                         capture.correlation_status = StereoMsCorrelationStatus::UNAVAILABLE;
+                    }
+                    // B4c1 density is a separate complete Grid20 observation.
+                    // It uses the FULL real post-M15 stage buffer, never the
+                    // bounded B4a excerpt or any QML-generated points.
+                    try {
+                        const auto density_origin = rgsml::core::checked_add(
+                            source_start, stage_accumulated_latency);
+                        if (density_origin) {
+                            collect_stage_density(
+                                capture, next_buffer.value()->view(),
+                                *density_origin.value(),
+                                request.max_telemetry_bytes().value_or(
+                                    128U * 1024U * 1024U));
+                        }
+                    } catch (...) {
+                        capture.density_buckets.clear();
+                        capture.density_status = StereoMsDensityStatus::UNAVAILABLE;
                     }
                     stereo_ms_stage_captures.push_back(std::move(capture));
                 }

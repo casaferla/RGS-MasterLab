@@ -127,6 +127,44 @@ struct StereoMsSideLowWindow final {
     double rms_after{0.0};
 };
 
+// M15 B4c1: real post-stage M/S sample OCCUPANCY. Each bin is a count
+// of actual frames (not RMS/energy). Witnesses preserve one-frame extrema.
+enum class StereoMsDensityStatus : std::uint8_t {
+    COMPLETE,
+    PARTIAL,
+    UNAVAILABLE,
+};
+enum class StereoMsDensityWitnessKind : std::uint8_t {
+    MIN_SIDE = 0,
+    MAX_SIDE = 1,
+    MIN_MID = 2,
+    MAX_MID = 3,
+    MAX_RADIUS = 4,
+    FIRST_OPPOSITE_POLARITY = 5,
+};
+
+struct StereoMsDensityWitness final {
+    std::int64_t absolute_frame{0};
+    double side{0.0};
+    double mid{0.0};
+    bool valid{false};
+};
+
+struct StereoMsDensityBucket final {
+    static constexpr std::size_t kGridSide = 33U;
+    static constexpr std::size_t kBinCount = kGridSide * kGridSide;
+    std::int64_t begin_frame{0};
+    std::int64_t end_frame{0};
+    std::uint32_t frame_count{0};
+    std::uint32_t valid_frame_count{0};
+    std::uint32_t overflow_count{0};
+    std::uint32_t zero_vector_count{0};
+    std::uint32_t invalid_count{0};
+    std::uint32_t channel_overrange_count{0};
+    std::array<std::uint32_t, kBinCount> occupancy{};
+    std::array<StereoMsDensityWitness, 6U> witnesses{};
+};
+
 struct StereoMsStageOutputSidecar final {
     rgsml::dsp::ModuleInstanceId module_instance_id;
     std::uint64_t chain_revision{0};
@@ -143,6 +181,8 @@ struct StereoMsStageOutputSidecar final {
     std::vector<StereoMsCorrelationWindow> correlation_windows;
     StereoMsSideLowStatus side_low_status{StereoMsSideLowStatus::UNAVAILABLE};
     std::vector<StereoMsSideLowWindow> side_low_windows;
+    StereoMsDensityStatus density_status{StereoMsDensityStatus::UNAVAILABLE};
+    std::vector<StereoMsDensityBucket> density_buckets;
 
     explicit StereoMsStageOutputSidecar(
         rgsml::dsp::ModuleInstanceId instance_id) noexcept
