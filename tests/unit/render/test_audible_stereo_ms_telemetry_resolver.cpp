@@ -64,6 +64,7 @@ class StereoMsAudibleResolverTest final : public QObject {
     Q_OBJECT
 private slots:
     void oldReadyTransitionNewNeverMixes();
+    void completedHandoffMarkerNeverOverridesLoopEpoch();
     void pauseSeekLoopAndNonProcessedClear();
     void boundedStallGapAndMetricWindow();
     void bypassMissingOrInvalidFailClosed();
@@ -102,6 +103,54 @@ void StereoMsAudibleResolverTest::oldReadyTransitionNewNeverMixes()
     QCOMPARE(r.density_history().front().begin_frame, std::int64_t{800});
     QVERIFY(r.gap_detected());
     QVERIFY(!r.correlation().has_value()); // 400ms never fully audible yet.
+}
+
+
+void StereoMsAudibleResolverTest::completedHandoffMarkerNeverOverridesLoopEpoch()
+{
+    // A completed PlaybackEngine handoff marker can persist after wrapping.
+    // Markers on either side of loop.begin must never replace the fresh
+    // traversal anchor, and no pre-loop frame may enter the new cloud.
+    const auto range = rgsml::core::FrameRange::create(
+        rgsml::core::FrameIndex{200}, rgsml::core::FrameIndex{1200});
+    QVERIFY(range);
+    for (const std::int64_t stale_end : {100LL, 750LL}) {
+        AudibleStereoMsTelemetryResolver r;
+        const RealizationId id{41};
+        r.register_sidecar(stage(id, 1600));
+
+        auto s = playback(0, id);
+        r.update(s, true);
+        s.audibleRealization.handoffEndFrame = stale_end;
+        s.position = rgsml::core::FrameIndex{1100};
+        r.update(s, true);
+        QCOMPARE(r.status(), StereoMsAudibleStatus::ACTIVE);
+
+        // Transition to the next playback traversal at loop.begin=200.
+        // Both values remain set exactly as delivered by the backend.
+        s.loop = *range.value();
+        s.loopWrapCount = 1;
+        s.position = rgsml::core::FrameIndex{450};
+        r.update(s, true);
+        QCOMPARE(r.status(), StereoMsAudibleStatus::ACTIVE);
+        QCOMPARE(r.active_realization_id()->value, id.value);
+        QCOMPARE(r.density_history().size(), std::size_t{2});
+        QCOMPARE(r.density_history().front().begin_frame, std::int64_t{200});
+        QCOMPARE(r.density_history().front().end_frame, std::int64_t{300});
+        QCOMPARE(r.density_history().back().begin_frame, std::int64_t{300});
+        QCOMPARE(r.density_history().back().end_frame, std::int64_t{400});
+
+        // A repeated GUI poll must not replay buckets. Chronological
+        // progress after the wrap is allowed within the SAME traversal.
+        r.update(s, true);
+        QCOMPARE(r.density_history().size(), std::size_t{2});
+        s.position = rgsml::core::FrameIndex{650};
+        r.update(s, true);
+        QCOMPARE(r.density_history().size(), std::size_t{4});
+        QCOMPARE(r.density_history().front().begin_frame, std::int64_t{200});
+        QCOMPARE(r.density_history().back().end_frame, std::int64_t{600});
+        QVERIFY(!r.correlation().has_value()); // No full 400ms Grid100.
+    }
 }
 
 void StereoMsAudibleResolverTest::pauseSeekLoopAndNonProcessedClear()

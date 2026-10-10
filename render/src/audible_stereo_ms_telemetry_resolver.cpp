@@ -137,18 +137,20 @@ void AudibleStereoMsTelemetryResolver::update(
         return;
     }
     if (active_realization_id_ != audible.realizationId) {
-        // Preserve a newly established traversal/seek/loop anchor. An
-        // actual NEW handoff boundary takes precedence. Ordinary identity
-        // switches without a new epoch must start at the current cursor.
+        // A new traversal/seek/loop epoch supersedes an earlier handoff
+        // marker. PlaybackEngine can retain handoffEndFrame after a loop:
+        // reusing it would leak pre-wrap or suppress already-heard buckets.
+        // Only in a continuous epoch is the real NEW boundary authoritative.
         const auto epoch_anchor = new_epoch ? eligible_begin_ : std::nullopt;
         clear_observation();
         active_realization_id_ = audible.realizationId;
-        if (audible.phase == AudibleHandoffPhase::NEW &&
-            audible.handoffEndFrame) {
+        if (epoch_anchor.has_value()) {
+            eligible_begin_ = epoch_anchor;
+        } else if (audible.phase == AudibleHandoffPhase::NEW &&
+                   audible.handoffEndFrame) {
             eligible_begin_ = *audible.handoffEndFrame;
         } else {
-            eligible_begin_ = epoch_anchor.has_value()
-                ? epoch_anchor : std::optional<std::int64_t>{cursor};
+            eligible_begin_ = cursor;
         }
         // A changed audible identity means a boundary, even if a short fade
         // occurred entirely between two GUI polls.
