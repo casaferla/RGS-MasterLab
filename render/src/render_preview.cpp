@@ -126,9 +126,28 @@ struct PreparedModule final {
         || !std::isfinite(denominator)) {
         return result;
     }
-    const auto value = covariance / denominator;
+    long double value = covariance / denominator;
+    if (std::isfinite(value) && (value < -1.0L || value > 1.0L)) {
+        // At the exact +/-1 endpoints sqrt(E_L)*sqrt(E_R) can round
+        // below |C| on either toolchain. Re-evaluate using the equivalent
+        // nonnegative squared-distance identity, not a numeric clamp:
+        // rho = sign(C) * (1 - sum((L' - sign(C)*sqrt(E_L/E_R)*R')^2)/(2*E_L)).
+        const long double sign = covariance < 0.0L ? -1.0L : 1.0L;
+        const long double scale = std::sqrt(energy_l / energy_r);
+        long double squared_distance = 0.0L;
+        if (std::isfinite(scale)) {
+            for (std::size_t i = 0; i < n; ++i) {
+                const auto l = static_cast<long double>(left[i]) - mean_left;
+                const auto r = static_cast<long double>(right[i]) - mean_right;
+                const auto difference = l - sign * scale * r;
+                squared_distance += difference * difference;
+            }
+            value = sign * (1.0L - squared_distance / (2.0L * energy_l));
+        }
+    }
     if (!std::isfinite(value) || value < -1.0L || value > 1.0L) {
-        // Do not clamp invalid rho into a plausible-looking valid value.
+        // Bad arithmetic remains invalid; never silently clamp a
+        // genuinely out-of-range result to a plausible correlation.
         return result;
     }
     result.validity = StereoMsCorrelationWindowValidity::VALID;

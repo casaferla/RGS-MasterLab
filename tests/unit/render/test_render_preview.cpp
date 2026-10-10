@@ -1245,6 +1245,36 @@ void RenderPreviewTest::stereoMsLocalCorrelationCanonicalGrid100()
     }
     QCOMPARE(bits(input.value()->view()), source_bits);
 
+    // Regression beyond bit-identical channels: affine positive/negative
+    // proportional stereo must retain the mathematical +/-1 endpoints,
+    // even when the sqrt(E_L)*sqrt(E_R) product rounds slightly down.
+    for (const double scale : {2.0, -2.0}) {
+        std::vector<double> scaled_right(n48);
+        for (std::size_t i = 0; i < n48; ++i) {
+            scaled_right[i] = scale * left[i];
+        }
+        auto scaled_source = make_buffer(
+            format(rgsml::audio::ChannelLayout::STEREO_LR),
+            0, left, scaled_right);
+        QVERIFY(scaled_source);
+        auto scaled_req = rgsml::render::RenderRequest::create(
+            scaled_source.value()->view(), frame_range(0, 60'000), chain,
+            {binding}, frame_count(31));
+        QVERIFY(scaled_req);
+        auto scaled_result = rgsml::render::render_preview(
+            *scaled_req.value(), *registry.value());
+        QVERIFY(scaled_result);
+        const auto& scaled_windows =
+            scaled_result.value()->stereo_ms_stage_output_sidecars().front()
+                .correlation_windows;
+        QCOMPARE(scaled_windows.size(), std::size_t{9});
+        for (const auto& w : scaled_windows) {
+            QCOMPARE(w.validity, StereoMsCorrelationWindowValidity::VALID);
+            QVERIFY(w.rho.has_value());
+            QVERIFY(std::abs(*w.rho - (scale > 0 ? 1.0 : -1.0)) < 1e-12);
+        }
+    }
+
     // A tight shared telemetry budget leaves exactly one complete 400-ms
     // correlation window, truthfully reports PARTIAL and never changes PCM.
     const std::size_t one_window_budget =
