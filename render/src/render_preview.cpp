@@ -1,5 +1,6 @@
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/compressor_telemetry_collector.hpp>
+#include <rgsml/render/stereo_ms_execution_signature.hpp>
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/core/checked_integer.hpp>
@@ -112,28 +113,40 @@ rgsml::core::Result<RenderResult> render_preview(
                 return rgsml::core::Result<RenderResult>::failure(*descriptor.error());
             }
 
-            // M15-B1 registers a DSP factory but does not yet integrate
-            // Stereo/M-S into RenderRequest typed parameter bindings or
-            // exact semantic execution signatures. A generic default-factory
-            // fallback here would silently render the WRONG user parameters
-            // and omit its execution signature. Reject all M15 chain nodes,
-            // including bypassed nodes, until the qualified B2 handoff.
-            if (instance.module_type_id() == kStereoMsTypeId) {
-                return rgsml::core::Result<RenderResult>::failure(render_error(
-                    rgsml::core::ErrorCode::UnsupportedOperation,
-                    "STEREO_MS_RENDER_BINDING_NOT_READY",
-                    "Stereo/M-S render binding and signature integration is not yet qualified."));
-            }
-
+            // M15-B2c: Stereo/M-S uses only its exact immutable typed binding.
+            // Never call the generic default factory for this module.
             const bool is_gain = (instance.module_type_id() == kGainTypeId);
             const bool is_eq = (instance.module_type_id() == kEqTypeId);
             const bool is_compressor = (instance.module_type_id() == kCompressorTypeId);
-            const bool is_parameterized = is_gain || is_eq || is_compressor;
+            const bool is_stereo_ms = (instance.module_type_id() == kStereoMsTypeId);
+            const bool is_parameterized = is_gain || is_eq || is_compressor || is_stereo_ms;
 
             if (!instance.active()) {
                 if (is_parameterized) {
                     const auto* binding = find_binding(request, instance.instance_id());
-                    if (is_gain) {
+                    if (binding == nullptr) {
+                        return rgsml::core::Result<RenderResult>::failure(render_error(
+                            rgsml::core::ErrorCode::InvalidArgument,
+                            "MISSING_PARAMETER_BINDING",
+                            "A bypassed parameterized module has no immutable binding."));
+                    }
+                    if (is_stereo_ms) {
+                        const auto* parameters = std::get_if<rgsml::dsp::StereoMsParameters>(
+                            &binding->parameters);
+                        if (parameters == nullptr) {
+                            return rgsml::core::Result<RenderResult>::failure(render_error(
+                                rgsml::core::ErrorCode::InvalidArgument,
+                                "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                                "Stereo/M-S requires a typed StereoMsParameters binding."));
+                        }
+                        auto signature = make_stereo_ms_execution_signature(
+                            descriptor.value()->get(), instance.instance_id(),
+                            *parameters, source.format().channel_layout(), true);
+                        if (!signature) {
+                            return rgsml::core::Result<RenderResult>::failure(*signature.error());
+                        }
+                        signatures.push_back(std::move(*signature.value()));
+                    } else if (is_gain) {
                         const auto* gain_params = std::get_if<rgsml::dsp::GainParameters>(&binding->parameters);
                         signatures.push_back(ModuleExecutionSignature{
                             instance.instance_id(),
@@ -244,7 +257,23 @@ rgsml::core::Result<RenderResult> render_preview(
                 required.look_ahead_frames.value(),
                 required.effective_tail_frames.value()});
 
-            if (is_gain) {
+            if (is_stereo_ms) {
+                const auto* parameters = std::get_if<rgsml::dsp::StereoMsParameters>(
+                    &binding->parameters);
+                if (parameters == nullptr) {
+                    return rgsml::core::Result<RenderResult>::failure(render_error(
+                        rgsml::core::ErrorCode::InvalidArgument,
+                        "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                        "Stereo/M-S requires a typed StereoMsParameters binding."));
+                }
+                auto signature = make_stereo_ms_execution_signature(
+                    descriptor.value()->get(), instance.instance_id(),
+                    *parameters, source.format().channel_layout(), false);
+                if (!signature) {
+                    return rgsml::core::Result<RenderResult>::failure(*signature.error());
+                }
+                signatures.push_back(std::move(*signature.value()));
+            } else if (is_gain) {
                 const auto* gain_params = std::get_if<rgsml::dsp::GainParameters>(&binding->parameters);
                 signatures.push_back(ModuleExecutionSignature{
                     instance.instance_id(),

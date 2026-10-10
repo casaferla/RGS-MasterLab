@@ -26,9 +26,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace rgsml::tests {
@@ -455,7 +457,10 @@ private slots:
     void multipleGainsUseFrozenSnapshotOrder();
     void requiredListeningPartitionsMatchForAllGains();
     void stereoMsTypedBindingsRejectMissingWrongAndDuplicate();
-    void stereoMsRequiresQualifiedRenderBindingEvenWithFactory();
+    void stereoMsBypassAndMonoProduceExactIdentity();
+    void stereoMsOffAndSideMuteUseTypedNonDefaults();
+    void stereoMsCrossoverPartitionAndPreroll();
+    void stereoMsMixedChainPreservesCompressorTelemetry();
     void activeUnavailableModuleFails();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
@@ -720,50 +725,329 @@ void RenderPreviewTest::stereoMsTypedBindingsRejectMissingWrongAndDuplicate()
         QVERIFY(valid.value()->bindings().front().parameters
                 == binding.parameters);
 
-        // B2a validates data ownership only. B2b/B2c must still implement
-        // execution signatures before Render Preview is allowed to run M15.
+        // The valid typed mono binding must now render bit-exact identity,
+        // not fall back to generic Stereo/M-S defaults.
         auto rendered = rgsml::render::render_preview(
             *valid.value(), *registry.value());
-        QVERIFY(!rendered);
-        QCOMPARE(rendered.error()->code(),
-                 rgsml::core::ErrorCode::UnsupportedOperation);
+        QVERIFY(rendered);
+        QCOMPARE(bits(rendered.value()->view()), bits(source.value()->view()));
+        QCOMPARE(rendered.value()->signatures().size(), std::size_t{1});
+        const auto* signature = std::get_if<rgsml::render::StereoMsExecutionSignaturePayload>(
+            &rendered.value()->signatures().front().payload);
+        QVERIFY(signature != nullptr);
+        QVERIFY(!signature->mid_gain_db && !signature->side_gain_db
+                && !signature->side_muted && !signature->mono_bass_mode
+                && !signature->mono_bass_cutoff_hz && !signature->low_band_width_percent);
     }
 }
 
-void RenderPreviewTest::stereoMsRequiresQualifiedRenderBindingEvenWithFactory()
+void RenderPreviewTest::stereoMsBypassAndMonoProduceExactIdentity()
 {
-    // B1 makes the DSP factory available; it MUST NOT cause Render Preview
-    // to create a silent default configuration without typed bindings,
-    // semantic execution signatures, or the separately qualified B2 seam.
-    const std::array samples{0.25};
-    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+    using rgsml::dsp::MonoBassMode;
+    using rgsml::render::ModuleExecutionDisposition;
+    using rgsml::render::StereoMsExecutionSignaturePayload;
+
+    const std::array mono_samples{0.0, -0.0, 0.25, -0.5,
+                                  std::bit_cast<double>(UINT64_C(1))};
+    const std::array left{0.5, -0.0, -0.75, 0.125, 0.25};
+    const std::array right{-0.25, 0.0, 0.5, -0.125, -0.5};
+    auto mono = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 31, mono_samples);
+    auto stereo = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 31, left, right);
     auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
-    QVERIFY(registry);
+    QVERIFY(mono && stereo && registry);
     QVERIFY(registry.value()->has_factory("rgsml.dsp.stereo-ms"));
     auto chain = empty_chain(*registry.value());
     const auto id = make_id("24000000-0000-0000-0000-000000000002");
     QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
-    auto params = rgsml::dsp::StereoMsParameters::create(
-        -3.0, 8.0, false, rgsml::dsp::MonoBassMode::LR12, 120.0, 25.0);
-    QVERIFY(params);
+    auto parameters = rgsml::dsp::StereoMsParameters::create(
+        -3.0, 8.0, false, MonoBassMode::LR12, 120.0, 25.0);
+    QVERIFY(parameters);
 
+    // Even non-neutral stored fields are non-effective for canonical mono.
     for (const bool bypass : {false, true}) {
-        if (bypass) {
-            QVERIFY(chain.set_user_bypass(id, true));
-        }
-        auto req = rgsml::render::RenderRequest::create(
-            source.value()->view(), frame_range(0, 1), chain,
-            {{id, *params.value()}}, frame_count(1));
-        QVERIFY(req);
-        auto result = rgsml::render::render_preview(
-            *req.value(), *registry.value());
-        QVERIFY(!result);
-        QCOMPARE(result.error()->code(),
-                 rgsml::core::ErrorCode::UnsupportedOperation);
-        QCOMPARE(std::string_view{result.error()->message()},
-                 std::string_view{
-                     "Stereo/M-S render binding and signature integration is not yet qualified."});
+        QVERIFY(chain.set_user_bypass(id, bypass));
+        auto request = rgsml::render::RenderRequest::create(
+            mono.value()->view(), frame_range(31, 36), chain,
+            {{id, *parameters.value()}}, frame_count(1));
+        QVERIFY(request);
+        auto result = rgsml::render::render_preview(*request.value(), *registry.value());
+        QVERIFY(result);
+        QCOMPARE(bits(result.value()->view()), bits(mono.value()->view()));
+        const auto& signatures = result.value()->signatures();
+        QCOMPARE(signatures.size(), std::size_t{1});
+        QCOMPARE(signatures.front().instance_id, id);
+        QCOMPARE(signatures.front().disposition,
+                 bypass ? ModuleExecutionDisposition::BYPASS_IDENTITY
+                        : ModuleExecutionDisposition::PROCESSED);
+        const auto* payload = std::get_if<StereoMsExecutionSignaturePayload>(
+            &signatures.front().payload);
+        QVERIFY(payload != nullptr);
+        QVERIFY(!payload->mid_gain_db && !payload->side_gain_db
+                && !payload->side_muted && !payload->mono_bass_mode
+                && !payload->mono_bass_cutoff_hz && !payload->low_band_width_percent);
     }
+
+    // Stereo bypass must also preserve exact bits, with a semantic identity.
+    auto request = rgsml::render::RenderRequest::create(
+        stereo.value()->view(), frame_range(31, 36), chain,
+        {{id, *parameters.value()}}, frame_count(7));
+    QVERIFY(request);
+    auto result = rgsml::render::render_preview(*request.value(), *registry.value());
+    QVERIFY(result);
+    QCOMPARE(bits(result.value()->view()), bits(stereo.value()->view()));
+    QCOMPARE(result.value()->signatures().front().disposition,
+             ModuleExecutionDisposition::BYPASS_IDENTITY);
+    QVERIFY(!result.value()->compressor_telemetry_sidecar().has_value());
+}
+
+void RenderPreviewTest::stereoMsOffAndSideMuteUseTypedNonDefaults()
+{
+    using rgsml::dsp::MonoBassMode;
+    using rgsml::render::ModuleExecutionDisposition;
+    using rgsml::render::StereoMsExecutionSignaturePayload;
+    const std::array left{0.75, 0.5, -0.25, 0.125, -0.875, 0.0};
+    const std::array right{-0.25, 0.25, 0.5, -0.5, 0.125, 0.0};
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(source && registry);
+    const auto source_bits = bits(source.value()->view());
+    auto chain = empty_chain(*registry.value());
+    const auto id = make_id("24100000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
+
+    auto off = rgsml::dsp::StereoMsParameters::create(
+        -3.0, 8.0, false, MonoBassMode::OFF, 260.0, 25.0);
+    QVERIFY(off);
+    auto off_request = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 6), chain,
+        {{id, *off.value()}}, frame_count(1));
+    QVERIFY(off_request);
+    auto off_render = rgsml::render::render_preview(
+        *off_request.value(), *registry.value());
+    QVERIFY(off_render);
+    const auto* off_signature = std::get_if<StereoMsExecutionSignaturePayload>(
+        &off_render.value()->signatures().front().payload);
+    QVERIFY(off_signature != nullptr);
+    QCOMPARE(off_render.value()->signatures().front().disposition,
+             ModuleExecutionDisposition::PROCESSED);
+    QVERIFY(off_signature->mid_gain_db == std::optional<double>{-3.0});
+    QVERIFY(off_signature->side_gain_db == std::optional<double>{8.0});
+    QVERIFY(off_signature->side_muted == std::optional<bool>{false});
+    QVERIFY(off_signature->mono_bass_mode == std::optional{MonoBassMode::OFF});
+    QVERIFY(!off_signature->mono_bass_cutoff_hz && !off_signature->low_band_width_percent);
+
+    // Independent analytic oracle: the non-default M/S gains really reach DSP.
+    constexpr double basis = 0x1.6a09e667f3bcdp-1;
+    const double mid_gain = std::pow(10.0, -3.0 / 20.0);
+    const double side_gain = std::pow(10.0, 8.0 / 20.0);
+    const auto actual_left = *off_render.value()->view().channel(0).value();
+    const auto actual_right = *off_render.value()->view().channel(1).value();
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        const double mid = (left[i] + right[i]) * basis * mid_gain;
+        const double side = (left[i] - right[i]) * basis * side_gain;
+        QVERIFY(std::abs(actual_left[i] - (mid + side) * basis) < 1e-12);
+        QVERIFY(std::abs(actual_right[i] - (mid - side) * basis) < 1e-12);
+    }
+    auto defaults = rgsml::dsp::StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    auto default_request = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 6), chain,
+        {{id, *defaults.value()}}, frame_count(64));
+    QVERIFY(default_request);
+    auto default_render = rgsml::render::render_preview(
+        *default_request.value(), *registry.value());
+    QVERIFY(default_render);
+    QVERIFY(bits(default_render.value()->view()) != bits(off_render.value()->view()));
+
+    auto muted_lr = rgsml::dsp::StereoMsParameters::create(
+        -3.0, -24.0, true, MonoBassMode::LR24, 190.0, 0.0);
+    auto muted_off = rgsml::dsp::StereoMsParameters::create(
+        -3.0, 8.0, true, MonoBassMode::OFF, 260.0, 100.0);
+    QVERIFY(muted_lr && muted_off);
+    auto lr_request = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 6), chain,
+        {{id, *muted_lr.value()}}, frame_count(7));
+    auto mute_request = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 6), chain,
+        {{id, *muted_off.value()}}, frame_count(64));
+    QVERIFY(lr_request && mute_request);
+    auto lr_render = rgsml::render::render_preview(
+        *lr_request.value(), *registry.value());
+    auto mute_render = rgsml::render::render_preview(
+        *mute_request.value(), *registry.value());
+    QVERIFY(lr_render && mute_render);
+    QCOMPARE(bits(lr_render.value()->view()), bits(mute_render.value()->view()));
+    const auto output_left = *lr_render.value()->view().channel(0).value();
+    const auto output_right = *lr_render.value()->view().channel(1).value();
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        QCOMPARE(std::bit_cast<std::uint64_t>(output_left[i]),
+                 std::bit_cast<std::uint64_t>(output_right[i]));
+    }
+    const auto* muted_signature = std::get_if<StereoMsExecutionSignaturePayload>(
+        &lr_render.value()->signatures().front().payload);
+    QVERIFY(muted_signature != nullptr);
+    QVERIFY(muted_signature->mid_gain_db == std::optional<double>{-3.0});
+    QVERIFY(muted_signature->side_muted == std::optional<bool>{true});
+    QVERIFY(!muted_signature->side_gain_db && !muted_signature->mono_bass_mode
+            && !muted_signature->mono_bass_cutoff_hz
+            && !muted_signature->low_band_width_percent);
+    QCOMPARE(bits(source.value()->view()), source_bits);
+}
+
+void RenderPreviewTest::stereoMsCrossoverPartitionAndPreroll()
+{
+    using rgsml::dsp::MonoBassMode;
+    using rgsml::render::StereoMsExecutionSignaturePayload;
+    std::vector<double> left(2048U), right(2048U);
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        left[i] = 0.4 * std::sin(2.0 * M_PI * 91.0 * static_cast<double>(i) / 48000.0)
+                + 0.2 * std::cos(2.0 * M_PI * 1600.0 * static_cast<double>(i) / 48000.0);
+        right[i] = 0.25 * std::cos(2.0 * M_PI * 173.0 * static_cast<double>(i) / 48000.0)
+                 - 0.1 * std::sin(2.0 * M_PI * 2800.0 * static_cast<double>(i) / 48000.0);
+    }
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(source && registry);
+    const auto source_bits = bits(source.value()->view());
+    auto chain = empty_chain(*registry.value());
+    const auto id = make_id("24200000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
+    std::vector<std::uint64_t> off_bits, lr12_bits, lr24_bits;
+
+    for (const auto mode : {MonoBassMode::OFF, MonoBassMode::LR12,
+                            MonoBassMode::LR24}) {
+        auto parameters = rgsml::dsp::StereoMsParameters::create(
+            -3.0, 8.0, false, mode, 160.0, 25.0);
+        QVERIFY(parameters);
+        auto reference_request = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 2048), chain,
+            {{id, *parameters.value()}}, frame_count(64));
+        QVERIFY(reference_request);
+        auto reference_render = rgsml::render::render_preview(
+            *reference_request.value(), *registry.value());
+        QVERIFY(reference_render);
+        const auto reference = bits(reference_render.value()->view());
+        if (mode == MonoBassMode::OFF) off_bits = reference;
+        else if (mode == MonoBassMode::LR12) lr12_bits = reference;
+        else lr24_bits = reference;
+
+        const auto* signature = std::get_if<StereoMsExecutionSignaturePayload>(
+            &reference_render.value()->signatures().front().payload);
+        QVERIFY(signature != nullptr);
+        QCOMPARE(signature->mono_bass_mode, std::optional{mode});
+        QCOMPARE(signature->mono_bass_cutoff_hz.has_value(), mode != MonoBassMode::OFF);
+        QCOMPARE(signature->low_band_width_percent.has_value(), mode != MonoBassMode::OFF);
+
+        for (const auto block : {1, 7, 257}) {
+            auto request = rgsml::render::RenderRequest::create(
+                source.value()->view(), frame_range(0, 2048), chain,
+                {{id, *parameters.value()}}, frame_count(block));
+            QVERIFY(request);
+            auto rendered = rgsml::render::render_preview(
+                *request.value(), *registry.value());
+            QVERIFY(rendered);
+            QCOMPARE(bits(rendered.value()->view()), reference);
+        }
+        auto mid_request = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(600, 2000), chain,
+            {{id, *parameters.value()}}, frame_count(31));
+        QVERIFY(mid_request);
+        auto mid_render = rgsml::render::render_preview(
+            *mid_request.value(), *registry.value());
+        QVERIFY(mid_render);
+        auto expected_mid = reference_render.value()->view().subview(
+            rgsml::core::FrameIndex{600}, frame_count(1400));
+        QVERIFY(expected_mid);
+        QCOMPARE(bits(mid_render.value()->view()), bits(*expected_mid.value()));
+    }
+    QVERIFY(off_bits != lr12_bits);
+    QVERIFY(off_bits != lr24_bits);
+    QVERIFY(lr12_bits != lr24_bits);
+    QCOMPARE(bits(source.value()->view()), source_bits);
+}
+
+void RenderPreviewTest::stereoMsMixedChainPreservesCompressorTelemetry()
+{
+    using rgsml::dsp::MonoBassMode;
+    using rgsml::render::ModuleExecutionDisposition;
+    std::vector<double> left(1024U), right(1024U);
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        left[i] = 0.35 * std::sin(2.0 * M_PI * 170.0 * static_cast<double>(i) / 48000.0);
+        right[i] = 0.2 * std::cos(2.0 * M_PI * 270.0 * static_cast<double>(i) / 48000.0);
+    }
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(source && registry);
+    const auto before = bits(source.value()->view());
+    const auto gain_id = make_id("24300000-0000-0000-0000-000000000001");
+    const auto eq_id   = make_id("24300000-0000-0000-0000-000000000002");
+    const auto ms_id   = make_id("24300000-0000-0000-0000-000000000003");
+    const auto comp_id = make_id("24300000-0000-0000-0000-000000000004");
+    auto ms = rgsml::dsp::StereoMsParameters::create(
+        -3.0, 8.0, false, MonoBassMode::LR12, 150.0, 40.0);
+    auto comp = rgsml::dsp::CompressorParameters::create_default();
+    QVERIFY(ms && comp);
+    const rgsml::dsp::ModuleExecutionBinding b_gain{gain_id, gain(6.0)};
+    const rgsml::dsp::ModuleExecutionBinding b_eq{eq_id, bell_eq(1200.0, 4.0, 0.9)};
+    const rgsml::dsp::ModuleExecutionBinding b_ms{ms_id, *ms.value()};
+    const rgsml::dsp::ModuleExecutionBinding b_comp{comp_id, *comp.value()};
+
+    auto complete_chain = empty_chain(*registry.value());
+    QVERIFY(complete_chain.add(gain_id, "rgsml.dsp.gain", 0));
+    QVERIFY(complete_chain.add(eq_id, "rgsml.dsp.parametric-eq", 1));
+    QVERIFY(complete_chain.add(ms_id, "rgsml.dsp.stereo-ms", 2));
+    QVERIFY(complete_chain.add(comp_id, "rgsml.dsp.compressor", 3));
+    auto full_request = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 1024), complete_chain,
+        {b_comp, b_ms, b_eq, b_gain}, frame_count(64));
+    QVERIFY(full_request);
+    auto full = rgsml::render::render_preview(
+        *full_request.value(), *registry.value());
+    QVERIFY(full);
+    const auto& signatures = full.value()->signatures();
+    QCOMPARE(signatures.size(), std::size_t{4});
+    QCOMPARE(signatures[0].instance_id, gain_id);
+    QCOMPARE(signatures[1].instance_id, eq_id);
+    QCOMPARE(signatures[2].instance_id, ms_id);
+    QCOMPARE(signatures[3].instance_id, comp_id);
+    for (const auto& signature : signatures) {
+        QCOMPARE(signature.disposition, ModuleExecutionDisposition::PROCESSED);
+    }
+    QVERIFY(full.value()->compressor_telemetry_sidecar().has_value());
+    QVERIFY(full.value()->compressor_telemetry_sidecar()->valid);
+
+    // Independent Render Preview cascade: Gain -> EQ -> M/S, then Compressor.
+    // Comparison proves the mixed-chain processing order, not just signature order.
+    auto upstream_chain = empty_chain(*registry.value());
+    QVERIFY(upstream_chain.add(gain_id, "rgsml.dsp.gain", 0));
+    QVERIFY(upstream_chain.add(eq_id, "rgsml.dsp.parametric-eq", 1));
+    QVERIFY(upstream_chain.add(ms_id, "rgsml.dsp.stereo-ms", 2));
+    auto upstream_request = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 1024), upstream_chain,
+        {b_ms, b_gain, b_eq}, frame_count(257));
+    QVERIFY(upstream_request);
+    auto upstream = rgsml::render::render_preview(
+        *upstream_request.value(), *registry.value());
+    QVERIFY(upstream);
+    const auto upstream_left = *upstream.value()->view().channel(0).value();
+    const auto upstream_right = *upstream.value()->view().channel(1).value();
+    auto intermediate = make_buffer(
+        rgsml::audio::ChannelLayout::STEREO_LR, 0, upstream_left, upstream_right);
+    QVERIFY(intermediate);
+    auto compressor_chain = empty_chain(*registry.value());
+    QVERIFY(compressor_chain.add(comp_id, "rgsml.dsp.compressor", 0));
+    auto compressor_request = rgsml::render::RenderRequest::create(
+        intermediate.value()->view(), frame_range(0, 1024), compressor_chain,
+        {b_comp}, frame_count(7));
+    QVERIFY(compressor_request);
+    auto standalone = rgsml::render::render_preview(
+        *compressor_request.value(), *registry.value());
+    QVERIFY(standalone);
+    QCOMPARE(bits(full.value()->view()), bits(standalone.value()->view()));
+    QVERIFY(standalone.value()->compressor_telemetry_sidecar().has_value());
+    QCOMPARE(full.value()->compressor_telemetry_sidecar()->status,
+             standalone.value()->compressor_telemetry_sidecar()->status);
+    QCOMPARE(bits(source.value()->view()), before);
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()
