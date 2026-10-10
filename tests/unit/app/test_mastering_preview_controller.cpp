@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -57,6 +58,7 @@ class MasteringPreviewControllerTest final : public QObject {
 
 private slots:
     void testFullChainBindingsAndOrder();
+    void testStereoMsOptInProductPreview();
     void testNumericEvidenceFullChainGainAndEq();
     void testFourDispositionPermutations();
     void testStaleJobRejection();
@@ -108,6 +110,85 @@ void MasteringPreviewControllerTest::testFullChainBindingsAndOrder()
 
     // Binding 2: Compressor
     QCOMPARE(sigs[2].type_id, std::string("rgsml.dsp.compressor"));
+}
+
+void MasteringPreviewControllerTest::testStereoMsOptInProductPreview()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chain_id = *core::Uuid::parse(
+        "11000000-0000-4000-8000-000000000001").value();
+    const auto gain_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "11000000-0000-4000-8000-000000000010").value()).value();
+    const auto eq_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "11000000-0000-4000-8000-000000000020").value()).value();
+    const auto comp_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "11000000-0000-4000-8000-000000000030").value()).value();
+    const auto ms_id = *dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "11000000-0000-4000-8000-000000000040").value()).value();
+    auto ms = dsp::StereoMsParameters::create(
+        -6.0, 8.0, false, dsp::MonoBassMode::OFF, 240.0, 25.0);
+    QVERIFY(ms);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chain_id, gain_id, eq_id, comp_id,
+        ms_id, *ms.value(), false);
+    QVERIFY(state);
+    auto prepared = make_unit_prepared_result(
+        *core::SampleRate::create(48000).value(), 0.25);
+    const auto original = *prepared->view().channel(0).value();
+    const std::vector<double> before{original.begin(), original.end()};
+    std::shared_ptr<render::RenderResult> published;
+    MasteringPreviewController controller{
+        state.value(), [prepared] { return prepared; },
+        [&published](render::RenderResult result) {
+            published = std::make_shared<render::RenderResult>(std::move(result));
+            return core::Status::success();
+        }
+    };
+    controller.request_preview();
+    for (int i = 0; i < 100 && controller.preview_status() == QStringLiteral("RENDERING"); ++i) {
+        QTest::qWait(10);
+    }
+    QCOMPARE(controller.preview_status(), QStringLiteral("READY"));
+    QVERIFY(published);
+    QCOMPARE(published->signatures().size(), std::size_t{4});
+    QCOMPARE(published->signatures()[3].instance_id, ms_id);
+    QCOMPARE(published->signatures()[3].disposition,
+             render::ModuleExecutionDisposition::PROCESSED);
+    const auto* signature = std::get_if<render::StereoMsExecutionSignaturePayload>(
+        &published->signatures()[3].payload);
+    QVERIFY(signature != nullptr);
+    QCOMPARE(signature->mid_gain_db, std::optional<double>{-6.0});
+    QCOMPARE(signature->side_gain_db, std::optional<double>{8.0});
+    QVERIFY(!signature->mono_bass_cutoff_hz);
+    const auto left = *published->view().channel(0).value();
+    const auto right = *published->view().channel(1).value();
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        QVERIFY(std::abs(left[i] - 0.25 * std::pow(10.0, -6.0 / 20.0)) < 1e-12);
+        QVERIFY(std::abs(right[i] - left[i]) < 1e-12);
+    }
+    const auto source_after = *prepared->view().channel(0).value();
+    for (std::size_t i = 0; i < before.size(); ++i) {
+        QCOMPARE(source_after[i], before[i]);
+    }
+
+    QVERIFY(state.value()->set_user_bypass(ms_id, true));
+    controller.request_preview();
+    for (int i = 0; i < 100 && controller.preview_status() == QStringLiteral("RENDERING"); ++i) {
+        QTest::qWait(10);
+    }
+    QCOMPARE(controller.preview_status(), QStringLiteral("READY"));
+    QVERIFY(published);
+    QCOMPARE(published->signatures()[3].disposition,
+             render::ModuleExecutionDisposition::BYPASS_IDENTITY);
+    const auto* bypass_signature = std::get_if<render::StereoMsExecutionSignaturePayload>(
+        &published->signatures()[3].payload);
+    QVERIFY(bypass_signature != nullptr);
+    QVERIFY(!bypass_signature->mid_gain_db && !bypass_signature->side_gain_db);
+    const auto bypass_left = *published->view().channel(0).value();
+    for (const auto sample : bypass_left) {
+        QVERIFY(std::abs(sample - 0.25) < 1e-12);
+    }
 }
 
 void MasteringPreviewControllerTest::testNumericEvidenceFullChainGainAndEq()

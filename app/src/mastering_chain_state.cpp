@@ -19,6 +19,7 @@ using namespace rgsml::dsp;
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
+constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 
 [[nodiscard]] Error chain_state_error(ErrorCode code, std::string category, std::string message)
 {
@@ -70,6 +71,45 @@ Result<MasteringChainState> MasteringChainState::create_default(
         compressor_id,
         *default_comp.value(),
         true);
+}
+
+Result<MasteringChainState> MasteringChainState::create_with_stereo_ms(
+    const ModuleRegistry& registry,
+    Uuid chain_id,
+    ModuleInstanceId gain_id,
+    ModuleInstanceId eq_id,
+    ModuleInstanceId compressor_id,
+    ModuleInstanceId stereo_ms_id,
+    StereoMsParameters stereo_ms_params,
+    bool stereo_ms_bypassed)
+{
+    if (stereo_ms_id.uuid().is_nil()
+        || stereo_ms_id == gain_id
+        || stereo_ms_id == eq_id
+        || stereo_ms_id == compressor_id) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument, "DUPLICATE_MODULE_INSTANCE_ID",
+            "Stereo/M-S requires a distinct non-nil module instance ID."));
+    }
+    auto candidate = create_default(registry, chain_id, gain_id, eq_id, compressor_id);
+    if (!candidate) {
+        return candidate;
+    }
+    auto& state = *candidate.value();
+    auto status = state.chain_.add(
+        stereo_ms_id, kStereoMsTypeId, state.chain_.instances().size());
+    if (!status) {
+        return Result<MasteringChainState>::failure(*status.error());
+    }
+    if (stereo_ms_bypassed) {
+        status = state.chain_.set_user_bypass(stereo_ms_id, true);
+        if (!status) {
+            return Result<MasteringChainState>::failure(*status.error());
+        }
+    }
+    state.stereo_ms_id_ = stereo_ms_id;
+    state.stereo_ms_params_ = std::move(stereo_ms_params);
+    return candidate;
 }
 
 Result<MasteringChainState> MasteringChainState::create(
@@ -342,6 +382,7 @@ std::size_t MasteringChainState::module_count() const noexcept { return chain_.i
 const ModuleInstanceId& MasteringChainState::gain_instance_id() const noexcept { return gain_id_; }
 const ModuleInstanceId& MasteringChainState::eq_instance_id() const noexcept { return eq_id_; }
 const ModuleInstanceId& MasteringChainState::compressor_instance_id() const noexcept { return compressor_id_; }
+const std::optional<ModuleInstanceId>& MasteringChainState::stereo_ms_instance_id() const noexcept { return stereo_ms_id_; }
 
 Result<std::reference_wrapper<const ModuleInstance>> MasteringChainState::gain_instance() const
 {
@@ -356,6 +397,16 @@ Result<std::reference_wrapper<const ModuleInstance>> MasteringChainState::eq_ins
 Result<std::reference_wrapper<const ModuleInstance>> MasteringChainState::compressor_instance() const
 {
     return chain_.find_instance(compressor_id_);
+}
+
+Result<std::reference_wrapper<const ModuleInstance>> MasteringChainState::stereo_ms_instance() const
+{
+    if (!stereo_ms_id_) {
+        return Result<std::reference_wrapper<const ModuleInstance>>::failure(
+            chain_state_error(ErrorCode::InvalidState, "STEREO_MS_NOT_PRESENT",
+                              "Stereo/M-S is not in this product chain."));
+    }
+    return chain_.find_instance(*stereo_ms_id_);
 }
 
 Result<std::reference_wrapper<const ModuleDescriptor>> MasteringChainState::find_descriptor(std::string_view type_id) const
@@ -391,6 +442,21 @@ Status MasteringChainState::set_compressor_parameters(const CompressorParameters
     return Status::success();
 }
 
+const std::optional<StereoMsParameters>& MasteringChainState::stereo_ms_parameters() const noexcept
+{
+    return stereo_ms_params_;
+}
+
+Status MasteringChainState::set_stereo_ms_parameters(const StereoMsParameters& params)
+{
+    if (!stereo_ms_id_ || !stereo_ms_params_) {
+        return Status::failure(chain_state_error(ErrorCode::InvalidState,
+            "STEREO_MS_NOT_PRESENT", "Cannot edit absent Stereo/M-S module."));
+    }
+    stereo_ms_params_ = params;
+    return Status::success();
+}
+
 Result<bool> MasteringChainState::is_bypassed(const ModuleInstanceId& instance_id) const
 {
     auto inst_res = chain_.find_instance(instance_id);
@@ -407,10 +473,14 @@ Status MasteringChainState::set_user_bypass(const ModuleInstanceId& instance_id,
 
 std::vector<ModuleExecutionBinding> MasteringChainState::execution_bindings() const
 {
-    return std::vector<ModuleExecutionBinding>{
+    std::vector<ModuleExecutionBinding> bindings{
         ModuleExecutionBinding{gain_id_, gain_params_},
         ModuleExecutionBinding{eq_id_, eq_params_},
         ModuleExecutionBinding{compressor_id_, compressor_params_}};
+    if (stereo_ms_id_ && stereo_ms_params_) {
+        bindings.emplace_back(*stereo_ms_id_, *stereo_ms_params_);
+    }
+    return bindings;
 }
 
 }  // namespace rgsml::app
