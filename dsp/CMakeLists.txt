@@ -9,6 +9,7 @@ add_library(rgsml_dsp STATIC
     src/compressor_module.cpp
     src/stereo_ms_parameters.cpp
     src/stereo_ms_width.cpp
+    src/stereo_ms_width_response.cpp
     src/stereo_ms_module.cpp
     src/stereo_ms_crossover.cpp
     src/stereo_ms_crossover_runtime.cpp
