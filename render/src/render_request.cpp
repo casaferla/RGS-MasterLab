@@ -4,6 +4,7 @@
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_parameters.hpp>
 
 #include <algorithm>
 #include <string>
@@ -15,6 +16,7 @@ namespace {
 constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
+constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
 
 [[nodiscard]] rgsml::core::Error request_error(
     rgsml::core::ErrorCode code,
@@ -27,7 +29,8 @@ constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 
 [[nodiscard]] bool is_supported_parameterized_builtin(std::string_view type_id) noexcept
 {
-    return type_id == kGainTypeId || type_id == kEqTypeId || type_id == kCompressorTypeId;
+    return type_id == kGainTypeId || type_id == kEqTypeId
+        || type_id == kCompressorTypeId || type_id == kStereoMsTypeId;
 }
 
 }  // namespace
@@ -116,6 +119,13 @@ rgsml::core::Result<RenderRequest> RenderRequest::create(
                     rgsml::core::ErrorCode::InvalidArgument,
                     "MODULE_PARAMETER_PAYLOAD_MISMATCH",
                     "A Compressor binding contained a non-Compressor payload."));
+            }
+        } else if (type_id == kStereoMsTypeId) {
+            if (!std::holds_alternative<rgsml::dsp::StereoMsParameters>(binding.parameters)) {
+                return rgsml::core::Result<RenderRequest>::failure(request_error(
+                    rgsml::core::ErrorCode::InvalidArgument,
+                    "MODULE_PARAMETER_PAYLOAD_MISMATCH",
+                    "A Stereo/M-S binding contained a non-StereoMsParameters payload."));
             }
         }
     }
