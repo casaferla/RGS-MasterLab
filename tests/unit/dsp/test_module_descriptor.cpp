@@ -197,7 +197,7 @@ void ModuleDescriptorTest::catalogMatchesFrozenMatrix()
     auto registry = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry.value() != nullptr);
     QCOMPARE(registry.value()->descriptors().size(), std::size_t{11});
-    QCOMPARE(registry.value()->factory_count(), std::size_t{3});
+    QCOMPARE(registry.value()->factory_count(), std::size_t{4});
 
     struct Expected final {
         const char* id;
