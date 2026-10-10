@@ -4,6 +4,7 @@
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "mastering_chain_state.hpp"
+#include "stereo_ms_view_model.hpp"
 
 #include <QObject>
 #include <QString>
@@ -33,6 +34,7 @@ class DspModuleAdapter : public QObject {
     Q_PROPERTY(GainViewModel* gainViewModel READ gain_view_model NOTIFY changed)
     Q_PROPERTY(EqViewModel* eqViewModel READ eq_view_model NOTIFY changed)
     Q_PROPERTY(CompressorViewModel* compressorViewModel READ compressor_view_model NOTIFY changed)
+    Q_PROPERTY(StereoMsViewModel* stereoMsViewModel READ stereo_ms_view_model NOTIFY changed)
     Q_PROPERTY(QString familyAccent READ family_accent NOTIFY changed)
     Q_PROPERTY(QString stateText READ state_text NOTIFY changed)
     Q_PROPERTY(bool hasError READ has_error NOTIFY changed)
@@ -60,6 +62,8 @@ public:
     [[nodiscard]] virtual GainViewModel* gain_view_model() const noexcept = 0;
     [[nodiscard]] virtual EqViewModel* eq_view_model() const noexcept = 0;
     [[nodiscard]] virtual CompressorViewModel* compressor_view_model() const noexcept = 0;
+    // Optional extension: prior adapters continue returning null.
+    [[nodiscard]] virtual StereoMsViewModel* stereo_ms_view_model() const noexcept { return nullptr; }
     [[nodiscard]] virtual QString family_accent() const = 0;
     [[nodiscard]] virtual QString state_text() const = 0;
     [[nodiscard]] virtual bool has_error() const noexcept = 0;
@@ -206,6 +210,46 @@ private:
     CompressorViewModel* compressorViewModel_{nullptr};
     MasteringChainState* chainState_{nullptr};
     QString workflowContext_;
+};
+
+// An M15 adapter never creates a module: it mirrors only an opt-in chain
+// instance. Undo/redo is not advertised until a real history exists.
+class StereoMsModuleAdapter final : public DspModuleAdapter {
+    Q_OBJECT
+public:
+    StereoMsModuleAdapter(StereoMsViewModel* vm, MasteringChainState* state,
+                          QString context = QStringLiteral("Mastering"), QObject* parent = nullptr);
+    [[nodiscard]] QString instance_id() const override;
+    [[nodiscard]] QString type_id() const override;
+    [[nodiscard]] QString display_name() const override;
+    [[nodiscard]] QString workspace_context_label() const override;
+    [[nodiscard]] QString configuration_state() const override;
+    [[nodiscard]] bool bypass_supported() const noexcept override;
+    [[nodiscard]] bool bypass() const noexcept override;
+    [[nodiscard]] bool preview_supported() const noexcept override;
+    [[nodiscard]] QString preview_status() const override;
+    [[nodiscard]] QString preview_error() const override;
+    [[nodiscard]] bool history_supported() const noexcept override;
+    [[nodiscard]] bool can_undo() const noexcept override;
+    [[nodiscard]] bool can_redo() const noexcept override;
+    [[nodiscard]] bool reset_supported() const noexcept override;
+    [[nodiscard]] QString editor_content_key() const override;
+    [[nodiscard]] QString live_change_policy() const override;
+    [[nodiscard]] GainViewModel* gain_view_model() const noexcept override;
+    [[nodiscard]] EqViewModel* eq_view_model() const noexcept override;
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override;
+    [[nodiscard]] StereoMsViewModel* stereo_ms_view_model() const noexcept override;
+    [[nodiscard]] QString family_accent() const override;
+    [[nodiscard]] QString state_text() const override;
+    [[nodiscard]] bool has_error() const noexcept override;
+    void setBypass(bool bypass) override;
+    void undo() override;
+    void redo() override;
+    void resetToDefault() override;
+private:
+    StereoMsViewModel* vm_{nullptr};
+    MasteringChainState* state_{nullptr};
+    QString context_;
 };
 
 }  // namespace rgsml::app

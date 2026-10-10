@@ -32,6 +32,7 @@ class StereoMsViewModel final : public QObject {
     Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
     Q_PROPERTY(quint64 previewGeneration READ preview_generation NOTIFY changed)
     Q_PROPERTY(QString previewStatus READ preview_status NOTIFY changed)
+    Q_PROPERTY(QString previewError READ preview_error NOTIFY changed)
 
 public:
     explicit StereoMsViewModel(
@@ -54,6 +55,7 @@ public:
     [[nodiscard]] QString validation_message() const;
     [[nodiscard]] quint64 preview_generation() const noexcept;
     [[nodiscard]] QString preview_status() const;
+    [[nodiscard]] QString preview_error() const;
 
     // All draft edits are validated by the canonical DSP constructors/helper;
     // invalid attempts cannot corrupt either the draft or chain state.
@@ -67,6 +69,7 @@ public:
     Q_INVOKABLE bool setDraftLowBandWidthPercent(double value);
     Q_INVOKABLE bool commitDraft();
     Q_INVOKABLE void cancelDraft();
+    Q_INVOKABLE void resetToDefault();
     Q_INVOKABLE void setBypass(bool bypass);
     Q_INVOKABLE void refreshFromAuthority();
     Q_INVOKABLE void resetForNewSource();

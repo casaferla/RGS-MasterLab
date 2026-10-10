@@ -10,11 +10,13 @@ DspChainAdapterModel::DspChainAdapterModel(
     CompressorViewModel* compressorViewModel,
     MasteringChainState* chainState,
     QString workflowContext,
-    QObject* parent)
+    QObject* parent,
+    StereoMsViewModel* stereoMsViewModel)
     : QObject(parent)
     , gainViewModel_(gainViewModel)
     , eqViewModel_(eqViewModel)
     , compressorViewModel_(compressorViewModel)
+    , stereoMsViewModel_(stereoMsViewModel)
     , chainState_(chainState)
     , workflowContext_(std::move(workflowContext))
 {
@@ -40,6 +42,13 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
                 auto compAdapter = std::make_unique<CompressorModuleAdapter>(compressorViewModel_, chainState_, workflowContext_);
                 connect(compAdapter.get(), &DspModuleAdapter::changed, this, &DspChainAdapterModel::changed);
                 moduleAdapters_.push_back(std::move(compAdapter));
+            } else if (typeId == "rgsml.dsp.stereo-ms" && stereoMsViewModel_ != nullptr) {
+                // Authority-driven enumeration: never promote a 3-node project.
+                auto adapter = std::make_unique<StereoMsModuleAdapter>(
+                    stereoMsViewModel_, chainState_, workflowContext_);
+                connect(adapter.get(), &DspModuleAdapter::changed,
+                        this, &DspChainAdapterModel::changed);
+                moduleAdapters_.push_back(std::move(adapter));
             }
         }
     } else {
@@ -162,6 +171,9 @@ void DspChainAdapterModel::refreshFromAuthority()
     if (compressorViewModel_ != nullptr) {
         compressorViewModel_->refreshFromAuthority();
     }
+    if (stereoMsViewModel_ != nullptr) {
+        stereoMsViewModel_->refreshFromAuthority();
+    }
     rebuild_adapters_from_authority();
     emit changed();
 }
@@ -176,6 +188,9 @@ void DspChainAdapterModel::resetForNewSource()
     }
     if (compressorViewModel_ != nullptr) {
         compressorViewModel_->resetForNewSource();
+    }
+    if (stereoMsViewModel_ != nullptr) {
+        stereoMsViewModel_->resetForNewSource();
     }
     emit changed();
 }

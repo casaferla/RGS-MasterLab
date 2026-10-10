@@ -124,6 +124,11 @@ QString StereoMsViewModel::preview_status() const
     return previewController_ ? previewController_->preview_status() : QStringLiteral("IDLE");
 }
 
+QString StereoMsViewModel::preview_error() const
+{
+    return previewController_ ? previewController_->preview_error() : QString{};
+}
+
 void StereoMsViewModel::set_error(const QString& field, const QString& message)
 {
     validationField_ = field;
@@ -264,6 +269,16 @@ void StereoMsViewModel::cancelDraft()
     draft_.reset();
     clear_error();
     emit changed();
+}
+
+void StereoMsViewModel::resetToDefault()
+{
+    if (!available()) return;
+    const auto defaults = dsp::StereoMsParameters::create_default();
+    if (!defaults) return;
+    draft_ = *defaults.value();
+    // Reset changes parameters only; it never implicitly toggles bypass.
+    static_cast<void>(commitDraft());
 }
 
 void StereoMsViewModel::setBypass(bool desired)
