@@ -115,6 +115,83 @@ Item {
                     y: dynamicWell.axesBandTop + Math.max(0,
                         (dynamicWell.axesBandBottom - dynamicWell.axesBandTop - height) / 2)
 
+                    // B4c3a: only previously completed, actually heard
+                    // Grid20 buckets from the accepted post-M15 stage.
+                    // Grid33 is the frozen DSP quantizer: x=Side, y=Mid.
+                    // The identical pixel scale on X/Y preserves geometry;
+                    // all-zero PCM is intentionally non-luminous.
+                    Canvas {
+                        id: cloud
+                        objectName: "stereoMsGoniometerCloud"
+                        anchors.fill: parent
+                        readonly property var heardBuckets: root.viewModel
+                            ? root.viewModel.telemetryDensityBuckets : []
+                        readonly property bool telemetryLive: root.viewModel
+                            && root.viewModel.telemetryActive
+                        readonly property int occupiedCells: {
+                            if (!telemetryLive || !heardBuckets || heardBuckets.length === 0)
+                                return 0
+                            let occupied = 0
+                            for (let i = 0; i < 1089; ++i) {
+                                let count = 0
+                                for (let j = 0; j < heardBuckets.length; ++j) {
+                                    const bucket = heardBuckets[j]
+                                    if (!bucket || !bucket.occupancy
+                                            || bucket.occupancy.length !== 1089)
+                                        continue
+                                    let contribution = Number(bucket.occupancy[i])
+                                    if (i === 544)
+                                        contribution = Math.max(0, contribution
+                                            - Number(bucket.zeroVectorCount))
+                                    count += Math.max(0, contribution)
+                                }
+                                if (count > 0) ++occupied
+                            }
+                            return occupied
+                        }
+                        visible: telemetryLive && occupiedCells > 0
+                        renderTarget: Canvas.Image
+                        onPaint: {
+                            const ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
+                            if (!cloud.visible || !cloud.heardBuckets) return
+                            // Fixed count-to-intensity curve. There is NO
+                            // frame-local AGC, cosmetic random particles,
+                            // synthetic stereo analysis or persistence timer.
+                            const side = Math.min(width, height) / 33
+                            const dot = Math.max(1.2, Math.min(3.5, side * 0.77))
+                            for (let i = 0; i < 1089; ++i) {
+                                let count = 0
+                                for (let j = 0; j < cloud.heardBuckets.length; ++j) {
+                                    const b = cloud.heardBuckets[j]
+                                    if (!b || !b.occupancy || b.occupancy.length !== 1089)
+                                        continue
+                                    let n = Number(b.occupancy[i])
+                                    if (i === 544)
+                                        n = Math.max(0, n - Number(b.zeroVectorCount))
+                                    count += Math.max(0, n)
+                                }
+                                if (count <= 0) continue
+                                const binX = i % 33
+                                const binY = Math.floor(i / 33)
+                                const x = (binX + 0.5) * side
+                                const y = (32 - binY + 0.5) * side
+                                const alpha = Math.min(0.84,
+                                    0.14 + 0.115 * Math.log(1 + count))
+                                ctx.fillStyle = Qt.rgba(74 / 255, 154 / 255,
+                                    136 / 255, alpha)
+                                ctx.fillRect(x - dot / 2, y - dot / 2, dot, dot)
+                            }
+                        }
+                        Connections {
+                            target: root.viewModel
+                            function onTelemetryChanged() { cloud.requestPaint() }
+                        }
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+                        onVisibleChanged: requestPaint()
+                        Component.onCompleted: requestPaint()
+                    }
                     Rectangle {
                         anchors.centerIn: parent
                         width: 1
@@ -157,8 +234,9 @@ Item {
                         font.family: "Consolas"
                         font.pixelSize: 10
                     }
-                    // NO synthetic cloud or independent particle animation.
-                    // Output-stage realization-bound telemetry is not yet wired.
+                    // The cloud is observational only; no drag handlers.
+                    // Missing audio, bypass, inactive audition and transition
+                    // never synthesize density on the M/S surface.
                 }
 
                 Text {
@@ -167,7 +245,12 @@ Item {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.bottom: telemetryRow.top
                     anchors.bottomMargin: 9
-                    text: "REAL-TIME TELEMETRY UNAVAILABLE"
+                    text: root.viewModel
+                        ? (root.viewModel.telemetryStatus === "ACTIVE"
+                            ? (cloud.occupiedCells > 0
+                                ? "ACTIVE · POST M/S OUTPUT" : "ACTIVE · NO DENSITY")
+                            : root.viewModel.telemetryStatus)
+                        : "REAL-TIME TELEMETRY UNAVAILABLE"
                     color: "#9EB6B9"
                     font.family: "Segoe UI"
                     font.pixelSize: 10
@@ -182,14 +265,25 @@ Item {
                     anchors.margins: 10
                     spacing: 10
                     Text {
-                        text: "CORR  --"
+                        objectName: "stereoMsCorrelationReadout"
+                        readonly property var metric: root.viewModel
+                            ? root.viewModel.telemetryCorrelation : ({})
+                        text: metric.valid === true && metric.value !== undefined
+                            ? "CORR  " + Number(metric.value).toFixed(2)
+                            : "CORR  --"
                         color: "#A1B5C9"
                         font.family: "Consolas"
                         font.pixelSize: 10
                     }
                     Item { Layout.fillWidth: true }
                     Text {
-                        text: "SIDE LOW  -- / --"
+                        objectName: "stereoMsSideLowReadout"
+                        readonly property var metric: root.viewModel
+                            ? root.viewModel.telemetrySideLow : ({})
+                        text: metric.before !== undefined && metric.after !== undefined
+                            ? "SIDE LOW  " + Number(metric.before).toPrecision(3)
+                                + " / " + Number(metric.after).toPrecision(3)
+                            : "SIDE LOW  -- / --"
                         color: "#A1B5C9"
                         font.family: "Consolas"
                         font.pixelSize: 10

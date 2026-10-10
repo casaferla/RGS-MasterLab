@@ -11,6 +11,9 @@
 #include "playback_transport_view_model.hpp"
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/render_request.hpp>
+#include "../unit/render/render_test_support.hpp"
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "stereo_ms_view_model.hpp"
@@ -514,6 +517,72 @@ void SourceMetadataPanelSmokeTest::stereoMsOptInVisualEvidence()
     QCOMPARE(stereo.width_response_status(), QStringLiteral("READY"));
     QCOMPARE(stereo.width_response_points().size(), qsizetype{129});
 
+    // Real DSP/output-stage M/S data drive this visual fixture. No QML
+    // fabricated points and no silent frame may illuminate the origin.
+    auto dspChain = dsp::ProcessingChain::create(
+        *registry.value(),
+        {dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL});
+    QVERIFY(dspChain);
+    QVERIFY(dspChain.value()->add(stereoId, "rgsml.dsp.stereo-ms", 0));
+    constexpr std::int64_t kFrames = 24'000;
+    constexpr double kTwoPi = 6.2831853071795864769;
+    std::vector<double> left(static_cast<std::size_t>(kFrames));
+    std::vector<double> right(static_cast<std::size_t>(kFrames));
+    for (std::int64_t f = 0; f < kFrames; ++f) {
+        const double time = static_cast<double>(f) / 48'000.0;
+        left[static_cast<std::size_t>(f)] =
+            0.46 * std::sin(kTwoPi * 840.0 * time)
+            + 0.13 * std::sin(kTwoPi * 110.0 * time);
+        right[static_cast<std::size_t>(f)] =
+            0.38 * std::sin(kTwoPi * 840.0 * (time - 31.0 / 48'000.0))
+            + 0.18 * std::sin(kTwoPi * 250.0 * time);
+    }
+    using namespace render_support;
+    auto input = make_buffer(audio::ChannelLayout::STEREO_LR, 0, left, right);
+    QVERIFY(input);
+    auto request = render::RenderRequest::create(
+        input.value()->view(), frame_range(0, kFrames),
+        *dspChain.value(),
+        {dsp::ModuleExecutionBinding{stereoId, *state.stereo_ms_parameters()}},
+        frame_count(127));
+    QVERIFY(request);
+    auto renderResult = render::render_preview(*request.value(), *registry.value());
+    QVERIFY(renderResult);
+    const core::RealizationId auditedId{902};
+    QVERIFY(renderResult.value()->bind_stereo_ms_stage_output_realization_id(auditedId));
+    const auto& stages = renderResult.value()->stereo_ms_stage_output_sidecars();
+    QCOMPARE(stages.size(), std::size_t{1});
+    QVERIFY(!stages.front().density_buckets.empty());
+    std::uint64_t visibleSamples = 0;
+    for (const auto& b : stages.front().density_buckets) {
+        for (const auto n : b.occupancy) visibleSamples += n;
+        visibleSamples -= b.zero_vector_count;
+    }
+    QVERIFY(visibleSamples > 0U);
+
+    auto accepted = std::make_shared<const render::RenderResult>(
+        std::move(*renderResult.value()));
+    core::PlaybackSnapshot audible;
+    audible.state = core::PlaybackState::PLAYING;
+    audible.position = core::FrameIndex{0};
+    audible.traversalSerial = 1;
+    audible.audibleRealization.phase = core::AudibleHandoffPhase::NEW;
+    audible.audibleRealization.realizationId = auditedId;
+    stereo.setTelemetryProviders(
+        [accepted, auditedId]() -> app::StereoMsViewModel::AcceptedRenderEvidence {
+            return {accepted, auditedId};
+        },
+        [&audible]() {
+            return core::Result<core::PlaybackSnapshot>::success(audible);
+        },
+        [] { return true; });
+    QCOMPARE(stereo.telemetry_status(), QStringLiteral("ACTIVE"));
+    QVERIFY(stereo.telemetry_density_buckets().isEmpty());
+    audible.position = core::FrameIndex{kFrames};
+    stereo.refreshTelemetry();
+    QCOMPARE(stereo.telemetry_status(), QStringLiteral("ACTIVE"));
+    QVERIFY(!stereo.telemetry_density_buckets().isEmpty());
+
     app::DspChainAdapterModel model{
         &gain, &eq, &compressor, &state,
         QStringLiteral("Mastering"), nullptr, &stereo};
@@ -574,6 +643,9 @@ Window {
     auto* title = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsGoniometerTitle"));
     auto* telemetryStatus = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsTelemetryStatus"));
     auto* axes = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsStaticAxes"));
+    auto* cloud = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsGoniometerCloud"));
+    auto* corrReadout = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCorrelationReadout"));
+    auto* sideLowReadout = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsSideLowReadout"));
     auto* widthControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthControl"));
     auto* cutoffControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCutoffControl"));
     auto* lowControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthControl"));
@@ -587,7 +659,8 @@ Window {
     auto* lowField = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthField"));
     auto* telemetry = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsTelemetryPlaceholder"));
     QVERIFY2(editor && curve && widthHandle && cutoffHandle && lowHandle
-             && dynamicWell && title && telemetryStatus && axes && widthSlider && cutoffSlider
+             && dynamicWell && title && telemetryStatus && axes && cloud
+             && corrReadout && sideLowReadout && widthSlider && cutoffSlider
              && lowSlider && widthField && cutoffField && lowField && telemetry,
              "M15 complete active/dynamic editor must load");
     QVERIFY(editor->property("visible").toBool());
@@ -595,6 +668,12 @@ Window {
     QVERIFY(widthHandle->property("visible").toBool());
     QVERIFY(cutoffHandle->property("visible").toBool());
     QVERIFY(lowHandle->property("visible").toBool());
+    QVERIFY2(cloud->property("visible").toBool(),
+             "Real post-M15 Grid20 density must illuminate the cloud");
+    QVERIFY2(cloud->property("occupiedCells").toInt() > 0,
+             "No synthetic or exclusively silent density is accepted");
+    QCOMPARE(telemetryStatus->property("text").toString(),
+             QStringLiteral("ACTIVE · POST M/S OUTPUT"));
 
     // The M/S axes must remain square at compact and taller window sizes.
     for (const auto size : {QSize{1184, 688}, QSize{1440, 900}}) {
