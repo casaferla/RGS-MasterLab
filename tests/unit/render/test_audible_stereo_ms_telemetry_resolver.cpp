@@ -149,7 +149,13 @@ void StereoMsAudibleResolverTest::completedHandoffMarkerNeverOverridesLoopEpoch(
         QCOMPARE(r.density_history().size(), std::size_t{4});
         QCOMPARE(r.density_history().front().begin_frame, std::int64_t{200});
         QCOMPARE(r.density_history().back().end_frame, std::int64_t{600});
-        QVERIFY(!r.correlation().has_value()); // No full 400ms Grid100.
+        // First 400ms Grid100 window fully heard since loop.begin=200.
+        QVERIFY(r.correlation().has_value());
+        QCOMPARE(r.correlation()->begin_frame, std::int64_t{200});
+        QCOMPARE(r.correlation()->end_frame, std::int64_t{600});
+        QVERIFY(r.side_low().has_value());
+        QCOMPARE(r.side_low()->begin_frame, std::int64_t{200});
+        QCOMPARE(r.side_low()->end_frame, std::int64_t{600});
     }
 }
 
