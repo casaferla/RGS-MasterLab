@@ -453,6 +453,7 @@ private slots:
     void activeGainIsChunkInvariantAndSourceImmutable();
     void multipleGainsUseFrozenSnapshotOrder();
     void requiredListeningPartitionsMatchForAllGains();
+    void stereoMsRequiresQualifiedRenderBindingEvenWithFactory();
     void activeUnavailableModuleFails();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
@@ -663,6 +664,39 @@ void RenderPreviewTest::requiredListeningPartitionsMatchForAllGains()
                 QCOMPARE(bits(result.value()->view()), reference);
             }
         }
+    }
+}
+
+void RenderPreviewTest::stereoMsRequiresQualifiedRenderBindingEvenWithFactory()
+{
+    // B1 makes the DSP factory available; it MUST NOT cause Render Preview
+    // to create a silent default configuration without typed bindings,
+    // semantic execution signatures, or the separately qualified B2 seam.
+    const std::array samples{0.25};
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    QVERIFY(registry.value()->has_factory("rgsml.dsp.stereo-ms"));
+    auto chain = empty_chain(*registry.value());
+    const auto id = make_id("24000000-0000-0000-0000-000000000002");
+    QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
+
+    for (const bool bypass : {false, true}) {
+        if (bypass) {
+            QVERIFY(chain.set_user_bypass(id, true));
+        }
+        auto req = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 1), chain, {},
+            frame_count(1));
+        QVERIFY(req);
+        auto result = rgsml::render::render_preview(
+            *req.value(), *registry.value());
+        QVERIFY(!result);
+        QCOMPARE(result.error()->code(),
+                 rgsml::core::ErrorCode::UnsupportedOperation);
+        QCOMPARE(std::string_view{result.error()->message()},
+                 std::string_view{
+                     "Stereo/M-S render binding and signature integration is not yet qualified."});
     }
 }
 
