@@ -463,6 +463,7 @@ private slots:
     void stereoMsMixedChainPreservesCompressorTelemetry();
     void stereoMsStageOutputCaptureBoundedAndProvenanced();
     void stereoMsLocalCorrelationCanonicalGrid100();
+    void stereoMsSideLowRealBranchRmsGrid100();
     void activeUnavailableModuleFails();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
@@ -1369,6 +1370,170 @@ void RenderPreviewTest::stereoMsLocalCorrelationCanonicalGrid100()
     const auto& shortCorr = tooShort.value()->stereo_ms_stage_output_sidecars().front();
     QCOMPARE(shortCorr.correlation_status, StereoMsCorrelationStatus::UNAVAILABLE);
     QVERIFY(shortCorr.correlation_windows.empty());
+}
+
+
+void RenderPreviewTest::stereoMsSideLowRealBranchRmsGrid100()
+{
+    using rgsml::dsp::MonoBassMode;
+    using rgsml::render::StereoMsSideLowStatus;
+
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain = empty_chain(*registry.value());
+    const auto id = make_id("24600000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
+    constexpr std::size_t n = 60'000;
+    std::vector<double> left(n), right(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double t = static_cast<double>(i) / 48'000.0;
+        left[i] = 0.4 * std::sin(2.0 * M_PI * 95.0 * t);
+        right[i] = 0.25 * std::sin(2.0 * M_PI * 215.0 * t);
+    }
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR,
+                              0, left, right);
+    QVERIFY(source);
+    const auto original = bits(source.value()->view());
+
+    for (const auto mode : {MonoBassMode::LR12, MonoBassMode::LR24}) {
+        std::vector<double> reference_pre;
+        for (const double low_width : {0.0, 50.0, 100.0}) {
+            auto params = rgsml::dsp::StereoMsParameters::create(
+                0.0, 0.0, false, mode, 150.0, low_width);
+            QVERIFY(params);
+            const rgsml::dsp::ModuleExecutionBinding binding{id, *params.value()};
+            auto request = rgsml::render::RenderRequest::create(
+                source.value()->view(), frame_range(0, 60'000),
+                chain, {binding}, frame_count(31));
+            auto other_partition = rgsml::render::RenderRequest::create(
+                source.value()->view(), frame_range(0, 60'000),
+                chain, {binding}, frame_count(4096));
+            QVERIFY(request && other_partition);
+            auto result = rgsml::render::render_preview(
+                *request.value(), *registry.value());
+            auto partitioned = rgsml::render::render_preview(
+                *other_partition.value(), *registry.value());
+            QVERIFY(result && partitioned);
+            QCOMPARE(bits(result.value()->view()), bits(partitioned.value()->view()));
+            const auto& stage =
+                result.value()->stereo_ms_stage_output_sidecars().front();
+            const auto& alternate =
+                partitioned.value()->stereo_ms_stage_output_sidecars().front();
+            QCOMPARE(stage.side_low_status, StereoMsSideLowStatus::COMPLETE);
+            QCOMPARE(stage.side_low_windows.size(), std::size_t{9});
+            QCOMPARE(alternate.side_low_status, StereoMsSideLowStatus::COMPLETE);
+            QCOMPARE(alternate.side_low_windows.size(), stage.side_low_windows.size());
+            if (low_width == 0.0) reference_pre.clear();
+            for (std::size_t j = 0; j < stage.side_low_windows.size(); ++j) {
+                const auto& w = stage.side_low_windows[j];
+                const auto& a = alternate.side_low_windows[j];
+                QCOMPARE(w.begin_frame, static_cast<std::int64_t>(j) * 4800);
+                QCOMPARE(w.end_frame - w.begin_frame, std::int64_t{19200});
+                QVERIFY(std::isfinite(w.rms_before) && w.rms_before > 0.0);
+                QVERIFY(std::isfinite(w.rms_after) && w.rms_after >= 0.0);
+                QVERIFY(std::abs(w.rms_before - a.rms_before) < 1e-14);
+                QVERIFY(std::abs(w.rms_after - a.rms_after) < 1e-14);
+                if (low_width == 0.0) {
+                    QCOMPARE(w.rms_after, 0.0);
+                    reference_pre.push_back(w.rms_before);
+                } else {
+                    QVERIFY(std::abs(w.rms_before - reference_pre[j]) < 1e-14);
+                    QVERIFY(std::abs(w.rms_after -
+                        (low_width / 100.0) * w.rms_before) < 1e-14);
+                }
+            }
+            // With telemetry entirely disabled, the DSP PCM must be bitwise
+            // identical, not merely level-equivalent.
+            auto disabled_request = rgsml::render::RenderRequest::create(
+                source.value()->view(), frame_range(0, 60'000),
+                chain, {binding}, frame_count(257), std::size_t{0});
+            QVERIFY(disabled_request);
+            auto disabled = rgsml::render::render_preview(
+                *disabled_request.value(), *registry.value());
+            QVERIFY(disabled);
+            QCOMPARE(bits(disabled.value()->view()), bits(result.value()->view()));
+            const auto& no_reading =
+                disabled.value()->stereo_ms_stage_output_sidecars().front();
+            QCOMPARE(no_reading.side_low_status, StereoMsSideLowStatus::UNAVAILABLE);
+            QVERIFY(no_reading.side_low_windows.empty());
+        }
+    }
+    QCOMPARE(bits(source.value()->view()), original);
+
+    // Side Low requires the REAL active crossover: OFF and Side Mute
+    // never masquerade as a valid zero-energy branch measurement.
+    for (const bool side_muted : {false, true}) {
+        auto off = rgsml::dsp::StereoMsParameters::create(
+            0.0, 0.0, side_muted,
+            side_muted ? MonoBassMode::LR24 : MonoBassMode::OFF,
+            150.0, 50.0);
+        QVERIFY(off);
+        auto request = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 60'000), chain,
+            {{id, *off.value()}}, frame_count(257));
+        QVERIFY(request);
+        auto result = rgsml::render::render_preview(
+            *request.value(), *registry.value());
+        QVERIFY(result);
+        const auto& observation =
+            result.value()->stereo_ms_stage_output_sidecars().front();
+        QCOMPARE(observation.side_low_status, StereoMsSideLowStatus::UNAVAILABLE);
+        QVERIFY(observation.side_low_windows.empty());
+    }
+
+    // Partial series must be labeled PARTIAL under a constrained budget,
+    // and never alter even one PCM bit.
+    auto lr24 = rgsml::dsp::StereoMsParameters::create(
+        0.0, 0.0, false, MonoBassMode::LR24, 150.0, 50.0);
+    QVERIFY(lr24);
+    const rgsml::dsp::ModuleExecutionBinding binding{id, *lr24.value()};
+    constexpr std::size_t kRingBytes = 19'200 * sizeof(std::array<double, 2>);
+    const std::size_t budget = 128U * 1024U + kRingBytes
+                              + sizeof(rgsml::render::StereoMsSideLowWindow);
+    auto tight_request = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(0, 60'000), chain,
+        {binding}, frame_count(4096), budget);
+    QVERIFY(tight_request);
+    auto tight = rgsml::render::render_preview(
+        *tight_request.value(), *registry.value());
+    QVERIFY(tight);
+    const auto& budgeted = tight.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(budgeted.side_low_status, StereoMsSideLowStatus::PARTIAL);
+    QCOMPARE(budgeted.side_low_windows.size(), std::size_t{1});
+    QCOMPARE(budgeted.side_low_windows.front().begin_frame, std::int64_t{0});
+
+    // The Side Low RMS grid is the SAME direct-rounded Grid100 as local
+    // correlation, not a fixed-hop shortcut at 44,105 Hz.
+    constexpr std::size_t odd_count = 50'000;
+    std::vector<double> odd_left(odd_count), odd_right(odd_count);
+    for (std::size_t i = 0; i < odd_count; ++i) {
+        const double seconds = static_cast<double>(i) / 44'105.0;
+        odd_left[i] = 0.3 * std::sin(2.0 * M_PI * 115.0 * seconds);
+        odd_right[i] = 0.15 * std::cos(2.0 * M_PI * 169.0 * seconds);
+    }
+    auto odd_source = make_buffer(
+        format(rgsml::audio::ChannelLayout::STEREO_LR, 44'105),
+        0, odd_left, odd_right);
+    QVERIFY(odd_source);
+    auto odd_req = rgsml::render::RenderRequest::create(
+        odd_source.value()->view(), frame_range(0, 50'000), chain,
+        {binding}, frame_count(71));
+    QVERIFY(odd_req);
+    auto odd_result = rgsml::render::render_preview(
+        *odd_req.value(), *registry.value());
+    QVERIFY(odd_result);
+    const auto& odd_low = odd_result.value()->stereo_ms_stage_output_sidecars()
+        .front();
+    QCOMPARE(odd_low.side_low_status, StereoMsSideLowStatus::COMPLETE);
+    QVERIFY(odd_low.side_low_windows.size() >= std::size_t{5});
+    const std::array<std::int64_t, 5> starts{0, 4410, 8821, 13232, 17642};
+    for (std::size_t i = 0; i < starts.size(); ++i) {
+        const auto& w = odd_low.side_low_windows[i];
+        QCOMPARE(w.begin_frame, starts[i]);
+        QCOMPARE(w.end_frame - w.begin_frame, std::int64_t{17642});
+        QVERIFY(w.rms_before > 0.0);
+        QVERIFY(std::abs(w.rms_after - 0.5 * w.rms_before) < 1e-14);
+    }
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()

@@ -11,6 +11,7 @@
 #include <rgsml/dsp/imodule.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_module.hpp>
 
 #include <algorithm>
 #include <array>
@@ -236,6 +237,140 @@ void collect_stage_correlation(
             : StereoMsCorrelationStatus::COMPLETE;
     }
 }
+
+// Source-timeline Side Low RMS; the ring is 400 ms, not full audio PCM.
+// All memory is reserved BEFORE the DSP process loop and callbacks are noexcept.
+class SideLowWindowCollector final : public rgsml::dsp::IStereoMsSideLowTelemetrySink {
+public:
+    SideLowWindowCollector(std::int64_t origin, std::int64_t requested_begin,
+        std::int64_t requested_end, std::uint32_t fs, std::size_t budget)
+        : origin_(origin), requested_begin_(requested_begin),
+          requested_end_(requested_end), sample_rate_(fs), expected_frame_(origin)
+    {
+        constexpr std::size_t kMaxRingBytes = 4U * 1024U * 1024U;
+        constexpr std::size_t kMaxResultsBytes = 64U * 1024U;
+        constexpr std::size_t kEarlierSidecarBudget = 128U * 1024U;
+        if (fs == 0 || requested_end <= requested_begin) {
+            return;
+        }
+        const auto count = (2ULL * fs + 2ULL) / 5ULL;
+        if (count == 0 || count > kMaxRingBytes / sizeof(std::array<double, 2>)
+            || requested_end - requested_begin < static_cast<std::int64_t>(count)) {
+            return;
+        }
+        const auto ring_bytes = static_cast<std::size_t>(count) * sizeof(std::array<double, 2>);
+        if (budget <= kEarlierSidecarBudget || ring_bytes > budget - kEarlierSidecarBudget) {
+            return;
+        }
+        const auto remaining = budget - kEarlierSidecarBudget - ring_bytes;
+        capacity_ = std::min(kMaxResultsBytes, remaining) / sizeof(StereoMsSideLowWindow);
+        if (capacity_ == 0) {
+            return;
+        }
+        try {
+            ring_.resize(static_cast<std::size_t>(count));
+            windows_.reserve(capacity_);
+            enabled_ = true;
+        } catch (...) {
+            ring_.clear();
+            windows_.clear();
+            enabled_ = false;
+        }
+    }
+
+    void push_side_low_frame(
+        std::int64_t frame, double before, double after) noexcept override
+    {
+        if (!enabled_) return;
+        if (frame != expected_frame_ || !std::isfinite(before) || !std::isfinite(after)
+            || frame == std::numeric_limits<std::int64_t>::max()) {
+            enabled_ = false;
+            windows_.clear();
+            return;
+        }
+        ++expected_frame_;
+        ring_[cursor_] = {before, after};
+        cursor_ = (cursor_ + 1) % ring_.size();
+        if (seen_ < ring_.size()) ++seen_;
+        if (seen_ < ring_.size()) return;
+
+        // The earliest complete 400-ms window closes at origin + N.
+        // Each later start is computed directly from Grid100, never by
+        // adding rounded hop values to a previous frame.
+        while (!truncated_) {
+            const auto offset = correlation_grid_offset(grid_index_, sample_rate_);
+            if (!offset || *offset < 0 ||
+                origin_ > std::numeric_limits<std::int64_t>::max() - *offset) {
+                enabled_ = false;
+                windows_.clear();
+                return;
+            }
+            const auto start = origin_ + *offset;
+            const auto duration = static_cast<std::int64_t>(ring_.size());
+            if (start > std::numeric_limits<std::int64_t>::max() - duration) {
+                enabled_ = false;
+                windows_.clear();
+                return;
+            }
+            const auto end = start + duration;
+            if (end > expected_frame_) break;
+            if (start >= requested_begin_ && end <= requested_end_) {
+                if (windows_.size() == capacity_) {
+                    truncated_ = true;
+                    break;
+                }
+                long double before_square_sum = 0.0L;
+                long double after_square_sum = 0.0L;
+                for (const auto& point : ring_) {
+                    const auto b = static_cast<long double>(point[0]);
+                    const auto a = static_cast<long double>(point[1]);
+                    before_square_sum += b * b;
+                    after_square_sum += a * a;
+                }
+                const auto n = static_cast<long double>(ring_.size());
+                const double rms_before = static_cast<double>(
+                    std::sqrt(before_square_sum / n));
+                const double rms_after = static_cast<double>(
+                    std::sqrt(after_square_sum / n));
+                if (!std::isfinite(rms_before) || !std::isfinite(rms_after)) {
+                    enabled_ = false;
+                    windows_.clear();
+                    return;
+                }
+                windows_.push_back(
+                    StereoMsSideLowWindow{start, end, rms_before, rms_after});
+            }
+            if (grid_index_ == std::numeric_limits<std::uint64_t>::max()) {
+                enabled_ = false;
+                windows_.clear();
+                return;
+            }
+            ++grid_index_;
+        }
+    }
+
+    [[nodiscard]] StereoMsSideLowStatus status() const noexcept
+    {
+        if (!enabled_ || windows_.empty()) return StereoMsSideLowStatus::UNAVAILABLE;
+        return truncated_ ? StereoMsSideLowStatus::PARTIAL
+                          : StereoMsSideLowStatus::COMPLETE;
+    }
+
+    [[nodiscard]] std::vector<StereoMsSideLowWindow> take_windows() noexcept
+    {
+        return std::move(windows_);
+    }
+
+private:
+    std::int64_t origin_{0}, requested_begin_{0}, requested_end_{0};
+    std::uint64_t sample_rate_{0};
+    std::int64_t expected_frame_{0};
+    std::uint64_t grid_index_{0};
+    std::vector<std::array<double, 2>> ring_;
+    std::vector<StereoMsSideLowWindow> windows_;
+    std::size_t cursor_{0}, seen_{0}, capacity_{0};
+    bool enabled_{false}, truncated_{false};
+};
 
 [[nodiscard]] rgsml::core::Status copy_audio(
     rgsml::audio::AudioBufferView input,
@@ -614,6 +749,33 @@ rgsml::core::Result<RenderResult> render_preview(
                     }
                 }
 
+                std::unique_ptr<SideLowWindowCollector> side_low_collector;
+                auto* ms_mod = dynamic_cast<rgsml::dsp::StereoMsModule*>(
+                    modules[m].instance.get());
+                if (ms_mod != nullptr
+                    && source.format().channel_layout()
+                        == rgsml::audio::ChannelLayout::STEREO_LR
+                    && !ms_mod->parameters().side_muted()
+                    && ms_mod->parameters().mono_bass_mode()
+                        != rgsml::dsp::MonoBassMode::OFF) {
+                    const auto stage_origin = rgsml::core::checked_add(
+                        source_start, stage_accumulated_latency);
+                    const auto supported_begin = rgsml::core::checked_add(
+                        window.begin().value(), stage_accumulated_latency);
+                    const auto supported_end = rgsml::core::checked_add(
+                        window.end().value(), stage_accumulated_latency);
+                    if (stage_origin && supported_begin && supported_end) {
+                        side_low_collector = std::make_unique<SideLowWindowCollector>(
+                            *stage_origin.value(), *supported_begin.value(),
+                            *supported_end.value(),
+                            static_cast<std::uint32_t>(
+                                source.format().sample_rate().value()),
+                            request.max_telemetry_bytes().value_or(
+                                128U * 1024U * 1024U));
+                        ms_mod->set_side_low_telemetry_sink(side_low_collector.get());
+                    }
+                }
+
                 auto next_buffer = rgsml::audio::AudioBuffer::create(
                     source.format(),
                     source.timebase().frame_domain_id(),
@@ -699,6 +861,9 @@ rgsml::core::Result<RenderResult> render_preview(
                     comp_mod->set_telemetry_sink(nullptr);
                     compressor_sidecar = collector->build_sidecar();
                 }
+                if (ms_mod != nullptr && side_low_collector != nullptr) {
+                    ms_mod->set_side_low_telemetry_sink(nullptr);
+                }
 
                 if (modules[m].type_id == kStereoMsTypeId
                     && source.format().channel_layout()
@@ -777,6 +942,10 @@ rgsml::core::Result<RenderResult> render_preview(
                                 }
                             }
                         }
+                    }
+                    if (side_low_collector) {
+                        capture.side_low_status = side_low_collector->status();
+                        capture.side_low_windows = side_low_collector->take_windows();
                     }
                     // Compute canonical complete correlation windows from
                     // the FULL real stage output, never B4a's capped excerpt.

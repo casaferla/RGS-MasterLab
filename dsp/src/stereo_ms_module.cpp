@@ -164,6 +164,9 @@ struct StereoMsModule::Impl final {
     std::optional<StereoMsCrossoverRuntime> crossover;
     std::vector<double> scratch_left;
     std::vector<double> scratch_right;
+    std::vector<double> scratch_side_low_before;
+    std::vector<double> scratch_side_low_after;
+    IStereoMsSideLowTelemetrySink* side_low_sink{nullptr};
     std::optional<rgsml::core::FrameIndex> next_frame;
     bool stream_bound{false};
     bool stream_ended{false};
@@ -218,6 +221,12 @@ const StereoMsParameters& StereoMsModule::parameters() const noexcept
     return impl_->parameters;
 }
 
+void StereoMsModule::set_side_low_telemetry_sink(
+    IStereoMsSideLowTelemetrySink* sink) noexcept
+{
+    impl_->side_low_sink = sink;
+}
+
 const ModuleDescriptor& StereoMsModule::descriptor() const noexcept
 {
     return *impl_->descriptor;
@@ -262,6 +271,9 @@ rgsml::core::Status StereoMsModule::prepare(const DspProcessSpec& spec)
     impl_->crossover.reset();
     impl_->scratch_left.clear();
     impl_->scratch_right.clear();
+    impl_->scratch_side_low_before.clear();
+    impl_->scratch_side_low_after.clear();
+    impl_->side_low_sink = nullptr;
     impl_->next_frame.reset();
     impl_->stream_bound = false;
     impl_->stream_ended = false;
@@ -285,6 +297,8 @@ rgsml::core::Status StereoMsModule::prepare(const DspProcessSpec& spec)
                 spec.maximum_block_frames.value());
             impl_->scratch_left.assign(maximum, 0.0);
             impl_->scratch_right.assign(maximum, 0.0);
+            impl_->scratch_side_low_before.assign(maximum, 0.0);
+            impl_->scratch_side_low_after.assign(maximum, 0.0);
         }
         impl_->prepared_spec = spec;
         return rgsml::core::Status::success();
@@ -292,6 +306,8 @@ rgsml::core::Status StereoMsModule::prepare(const DspProcessSpec& spec)
         impl_->crossover.reset();
         impl_->scratch_left.clear();
         impl_->scratch_right.clear();
+        impl_->scratch_side_low_before.clear();
+        impl_->scratch_side_low_after.clear();
         return rgsml::core::Status::failure(ms_error(
             rgsml::core::ErrorCode::InvalidState,
             "DSP_PREPARE_FAILURE",
@@ -405,6 +421,10 @@ rgsml::core::Status StereoMsModule::process(
             }
             impl_->scratch_left[frame] = left;
             impl_->scratch_right[frame] = right;
+            if (impl_->side_low_sink != nullptr) {
+                impl_->scratch_side_low_before[frame] = filtered.side_low_before;
+                impl_->scratch_side_low_after[frame] = filtered.side_low_after;
+            }
         }
 
         // Commit output, recursive state and frame cursor as one successful
@@ -415,6 +435,17 @@ rgsml::core::Status StereoMsModule::process(
         impl_->next_frame = context.output_frame_range.end();
         impl_->stream_bound = true;
         impl_->stream_ended = context.ends_stream;
+        // Notify only AFTER the entire block, crossover state and PCM have
+        // committed. Rejected late frames publish no false branch evidence.
+        if (impl_->side_low_sink != nullptr) {
+            const auto first = context.output_frame_range.begin().value();
+            for (std::size_t i = 0; i < in0.size(); ++i) {
+                impl_->side_low_sink->push_side_low_frame(
+                    first + static_cast<std::int64_t>(i),
+                    impl_->scratch_side_low_before[i],
+                    impl_->scratch_side_low_after[i]);
+            }
+        }
         return rgsml::core::Status::success();
     }
 

@@ -3,9 +3,19 @@
 #include <rgsml/dsp/imodule.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
 
+#include <cstdint>
 #include <memory>
 
 namespace rgsml::dsp {
+
+// Non-owning observational sink; the renderer installs it only around
+// an active LR12/LR24 process. Never used for sonic feedback.
+class IStereoMsSideLowTelemetrySink {
+public:
+    virtual ~IStereoMsSideLowTelemetrySink() = default;
+    virtual void push_side_low_frame(
+        std::int64_t absolute_frame, double before, double after) noexcept = 0;
+};
 
 // M15 Stereo/M-S + Mono Bass: frozen broadband, LR12/LR24 and streamed
 // recursive checkpoint DSP. Registered in ModuleRegistry by the separate
@@ -19,6 +29,8 @@ public:
     ~StereoMsModule() override;
 
     [[nodiscard]] const StereoMsParameters& parameters() const noexcept;
+    void set_side_low_telemetry_sink(
+        IStereoMsSideLowTelemetrySink* sink) noexcept;
     [[nodiscard]] const ModuleDescriptor& descriptor() const noexcept override;
 
     [[nodiscard]] rgsml::core::Result<DspRuntimeRequirements>

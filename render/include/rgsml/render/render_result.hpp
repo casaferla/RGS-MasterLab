@@ -113,6 +113,20 @@ struct StereoMsCorrelationWindow final {
     std::optional<double> rho{std::nullopt};
 };
 
+// Purely observational RMS of TRUE Side Low branch before/after Low Width;
+// never reconstructed by a separate UI filter or a side-to-mid proxy.
+enum class StereoMsSideLowStatus : std::uint8_t {
+    COMPLETE,
+    PARTIAL,
+    UNAVAILABLE,
+};
+struct StereoMsSideLowWindow final {
+    std::int64_t begin_frame{0};
+    std::int64_t end_frame{0};
+    double rms_before{0.0};
+    double rms_after{0.0};
+};
+
 struct StereoMsStageOutputSidecar final {
     rgsml::dsp::ModuleInstanceId module_instance_id;
     std::uint64_t chain_revision{0};
@@ -127,6 +141,8 @@ struct StereoMsStageOutputSidecar final {
     std::vector<std::array<double, 2>> output_lr_frames;
     StereoMsCorrelationStatus correlation_status{StereoMsCorrelationStatus::UNAVAILABLE};
     std::vector<StereoMsCorrelationWindow> correlation_windows;
+    StereoMsSideLowStatus side_low_status{StereoMsSideLowStatus::UNAVAILABLE};
+    std::vector<StereoMsSideLowWindow> side_low_windows;
 
     explicit StereoMsStageOutputSidecar(
         rgsml::dsp::ModuleInstanceId instance_id) noexcept

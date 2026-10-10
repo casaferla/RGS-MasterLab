@@ -13,6 +13,9 @@ namespace rgsml::dsp {
 struct StereoMsCrossoverFrame final {
     double mid;
     double side;
+    // Observational values from the same Side Low branch, bracketing beta.
+    double side_low_before{0.0};
+    double side_low_after{0.0};
 };
 
 class StereoMsCrossoverRuntime final {

@@ -57,7 +57,9 @@ StereoMsCrossoverFrame StereoMsCrossoverRuntime::process(
         side_high = -side_high;
     }
 
-    return {mid_low + mid_high, beta * side_low + side_high};
+    const double side_low_after = beta * side_low;
+    return {mid_low + mid_high, side_low_after + side_high,
+            side_low, side_low_after};
 }
 
 bool StereoMsCrossoverRuntime::finite() const noexcept
