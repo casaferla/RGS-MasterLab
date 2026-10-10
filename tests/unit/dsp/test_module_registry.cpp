@@ -6,6 +6,7 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_module.hpp>
 
 #include <QtTest/QTest>
 
@@ -343,6 +344,13 @@ void ModuleRegistryTest::configuredModuleCreation()
     QVERIFY(ms_default);
     QCOMPARE((*ms_default.value())->descriptor().type_id(),
              std::string_view{"rgsml.dsp.stereo-ms"});
+    const auto* default_ms = dynamic_cast<const StereoMsModule*>(
+        ms_default.value()->get());
+    QVERIFY(default_ms != nullptr);
+    const auto canonical_default = StereoMsParameters::create_default();
+    QVERIFY(canonical_default);
+    QVERIFY(default_ms->parameters() == *canonical_default.value());
+
     auto ms_params = StereoMsParameters::create(
         -3.0, 8.0, false, MonoBassMode::LR24, 300.0, 25.0);
     QVERIFY(ms_params);
@@ -351,6 +359,11 @@ void ModuleRegistryTest::configuredModuleCreation()
     QVERIFY(ms);
     QCOMPARE((*ms.value())->descriptor().type_id(),
              std::string_view{"rgsml.dsp.stereo-ms"});
+    const auto* configured_ms = dynamic_cast<const StereoMsModule*>(
+        ms.value()->get());
+    QVERIFY(configured_ms != nullptr);
+    QVERIFY(configured_ms->parameters() == *ms_params.value());
+
 
     auto wrong_ms_payload =
         catalog.value()->create_module("rgsml.dsp.stereo-ms", gain_payload);
