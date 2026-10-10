@@ -462,6 +462,7 @@ private slots:
     void stereoMsCrossoverPartitionAndPreroll();
     void stereoMsMixedChainPreservesCompressorTelemetry();
     void stereoMsStageOutputCaptureBoundedAndProvenanced();
+    void stereoMsLocalCorrelationCanonicalGrid100();
     void activeUnavailableModuleFails();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
@@ -1195,6 +1196,149 @@ void RenderPreviewTest::stereoMsStageOutputCaptureBoundedAndProvenanced()
         *monoRequest.value(), *registry.value());
     QVERIFY(monoResult);
     QVERIFY(monoResult.value()->stereo_ms_stage_output_sidecars().empty());
+}
+
+
+void RenderPreviewTest::stereoMsLocalCorrelationCanonicalGrid100()
+{
+    using rgsml::render::StereoMsCorrelationStatus;
+    using rgsml::render::StereoMsCorrelationWindowValidity;
+    const auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain = empty_chain(*registry.value());
+    const auto id = make_id("24500000-0000-0000-0000-000000000001");
+    QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
+    auto neutral = rgsml::dsp::StereoMsParameters::create_default();
+    QVERIFY(neutral);
+    const rgsml::dsp::ModuleExecutionBinding binding{id, *neutral.value()};
+
+    // Valid identical nonconstant stereo -> rho +1 at all FULL windows.
+    const std::size_t n48 = 60'000;
+    std::vector<double> left(n48);
+    for (std::size_t i = 0; i < n48; ++i) {
+        left[i] = 0.3 * std::sin(2.0 * M_PI * 151.0
+                               * static_cast<double>(i) / 48'000.0);
+    }
+    auto input = make_buffer(format(rgsml::audio::ChannelLayout::STEREO_LR),
+                             0, left, left);
+    QVERIFY(input);
+    const auto source_bits = bits(input.value()->view());
+    auto req = rgsml::render::RenderRequest::create(
+        input.value()->view(), frame_range(0, 60'000), chain,
+        {binding}, frame_count(257));
+    QVERIFY(req);
+    auto result = rgsml::render::render_preview(*req.value(), *registry.value());
+    QVERIFY(result);
+    QCOMPARE(result.value()->stereo_ms_stage_output_sidecars().size(), std::size_t{1});
+    const auto& capture = result.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(capture.status, rgsml::render::StereoMsStageCaptureStatus::PARTIAL);
+    QCOMPARE(capture.correlation_status, StereoMsCorrelationStatus::COMPLETE);
+    QCOMPARE(capture.correlation_windows.size(), std::size_t{9});
+    const std::array<std::int64_t, 4> expected48{0, 4800, 9600, 14400};
+    for (std::size_t i = 0; i < capture.correlation_windows.size(); ++i) {
+        const auto& w = capture.correlation_windows[i];
+        if (i < expected48.size()) QCOMPARE(w.begin_frame, expected48[i]);
+        QCOMPARE(w.end_frame - w.begin_frame, std::int64_t{19200});
+        QCOMPARE(w.validity, StereoMsCorrelationWindowValidity::VALID);
+        QVERIFY(w.rho.has_value());
+        QVERIFY(std::abs(*w.rho - 1.0) < 1e-12);
+    }
+    QCOMPARE(bits(input.value()->view()), source_bits);
+
+    // A tight shared telemetry budget leaves exactly one complete 400-ms
+    // correlation window, truthfully reports PARTIAL and never changes PCM.
+    const std::size_t one_window_budget =
+        64U * 1024U + sizeof(rgsml::render::StereoMsCorrelationWindow);
+    auto tight_req = rgsml::render::RenderRequest::create(
+        input.value()->view(), frame_range(0, 60'000), chain,
+        {binding}, frame_count(1), one_window_budget);
+    QVERIFY(tight_req);
+    auto tight = rgsml::render::render_preview(
+        *tight_req.value(), *registry.value());
+    QVERIFY(tight);
+    QCOMPARE(bits(tight.value()->view()), bits(result.value()->view()));
+    const auto& budgeted = tight.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(budgeted.correlation_status, StereoMsCorrelationStatus::PARTIAL);
+    QCOMPARE(budgeted.correlation_windows.size(), std::size_t{1});
+
+    // Explicit zero cap does not convert absent telemetry into rho=0.
+    auto zero_req = rgsml::render::RenderRequest::create(
+        input.value()->view(), frame_range(0, 60'000), chain,
+        {binding}, frame_count(1024), std::size_t{0});
+    QVERIFY(zero_req);
+    auto zero = rgsml::render::render_preview(
+        *zero_req.value(), *registry.value());
+    QVERIFY(zero);
+    QCOMPARE(bits(zero.value()->view()), bits(result.value()->view()));
+    const auto& not_available = zero.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(not_available.correlation_status, StereoMsCorrelationStatus::UNAVAILABLE);
+    QVERIFY(not_available.correlation_windows.empty());
+
+    // 44,105 Hz is a regression guard: rounded ties-to-even Grid100 does
+    // NOT have one fixed 4,410-frame hop. j=2 starts at 8,821 exactly.
+    constexpr std::size_t nOdd = 50'000;
+    std::vector<double> oddLeft(nOdd), oddRight(nOdd);
+    for (std::size_t i = 0; i < nOdd; ++i) {
+        oddLeft[i] = 0.4 * std::sin(2.0 * M_PI * 173.0
+                                   * static_cast<double>(i) / 44'105.0);
+        oddRight[i] = -oddLeft[i];
+    }
+    auto oddSource = make_buffer(
+        format(rgsml::audio::ChannelLayout::STEREO_LR, 44'105),
+        0, oddLeft, oddRight);
+    QVERIFY(oddSource);
+    auto oddReq = rgsml::render::RenderRequest::create(
+        oddSource.value()->view(), frame_range(0, 50'000), chain,
+        {binding}, frame_count(4096));
+    QVERIFY(oddReq);
+    auto odd = rgsml::render::render_preview(
+        *oddReq.value(), *registry.value());
+    QVERIFY(odd);
+    const auto& oddCorr = odd.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(oddCorr.correlation_status, StereoMsCorrelationStatus::COMPLETE);
+    QVERIFY(oddCorr.correlation_windows.size() >= std::size_t{5});
+    const std::array<std::int64_t, 5> expectedOdd{0, 4410, 8821, 13232, 17642};
+    for (std::size_t i = 0; i < expectedOdd.size(); ++i) {
+        const auto& w = oddCorr.correlation_windows[i];
+        QCOMPARE(w.begin_frame, expectedOdd[i]);
+        QCOMPARE(w.end_frame - w.begin_frame, std::int64_t{17642});
+        QCOMPARE(w.validity, StereoMsCorrelationWindowValidity::VALID);
+        QVERIFY(w.rho.has_value());
+        QVERIFY(std::abs(*w.rho + 1.0) < 1e-12);
+    }
+
+    // A non-silent but constant DC pair has no qualifying AC variance.
+    std::vector<double> constantLeft(20'000, 0.5);
+    std::vector<double> constantRight(20'000, -0.5);
+    auto dcSource = make_buffer(
+        format(rgsml::audio::ChannelLayout::STEREO_LR),
+        0, constantLeft, constantRight);
+    QVERIFY(dcSource);
+    auto dcReq = rgsml::render::RenderRequest::create(
+        dcSource.value()->view(), frame_range(0, 20'000), chain,
+        {binding}, frame_count(1024));
+    QVERIFY(dcReq);
+    auto dc = rgsml::render::render_preview(
+        *dcReq.value(), *registry.value());
+    QVERIFY(dc);
+    const auto& dcCorr = dc.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(dcCorr.correlation_status, StereoMsCorrelationStatus::COMPLETE);
+    QCOMPARE(dcCorr.correlation_windows.size(), std::size_t{1});
+    QCOMPARE(dcCorr.correlation_windows.front().validity,
+             StereoMsCorrelationWindowValidity::UNDEFINED_LOW_AC);
+    QVERIFY(!dcCorr.correlation_windows.front().rho.has_value());
+
+    // Source windows shorter than 400 ms are not silently padded.
+    auto tooShortReq = rgsml::render::RenderRequest::create(
+        input.value()->view(), frame_range(0, 1000), chain,
+        {binding}, frame_count(31));
+    QVERIFY(tooShortReq);
+    auto tooShort = rgsml::render::render_preview(
+        *tooShortReq.value(), *registry.value());
+    QVERIFY(tooShort);
+    const auto& shortCorr = tooShort.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(shortCorr.correlation_status, StereoMsCorrelationStatus::UNAVAILABLE);
+    QVERIFY(shortCorr.correlation_windows.empty());
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()

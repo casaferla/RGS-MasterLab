@@ -17,8 +17,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -61,6 +63,159 @@ struct PreparedModule final {
             return binding.instance_id == id;
         });
     return iterator == bindings.end() ? nullptr : std::addressof(*iterator);
+}
+
+// Direct, integer Grid100 evaluation avoids cumulative rounding drift at
+// non-10-divisible sample rates (e.g. 44105 Hz hop 4410, 4411, 4411, 4410).
+[[nodiscard]] std::optional<std::int64_t> correlation_grid_offset(
+    std::uint64_t index,
+    std::uint64_t sample_rate) noexcept
+{
+    if (sample_rate == 0 ||
+        index > std::numeric_limits<std::uint64_t>::max() / sample_rate) {
+        return std::nullopt;
+    }
+    const auto numerator = index * sample_rate;
+    auto rounded = numerator / 10U;
+    const auto remainder = numerator % 10U;
+    if (remainder > 5U || (remainder == 5U && (rounded % 2U) == 1U)) {
+        ++rounded;
+    }
+    if (rounded > static_cast<std::uint64_t>(
+                      std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    return static_cast<std::int64_t>(rounded);
+}
+
+[[nodiscard]] StereoMsCorrelationWindow measure_centered_correlation(
+    std::int64_t begin,
+    std::int64_t end,
+    std::span<const double> left,
+    std::span<const double> right) noexcept
+{
+    StereoMsCorrelationWindow result{begin, end};
+    const auto n = left.size();
+    if (n == 0 || n != right.size()) {
+        return result;
+    }
+    // Both passes use the same exact complete window; removing the local
+    // means is mandatory, unlike raw Side-energy or RMS measurement.
+    long double mean_left = 0.0L;
+    long double mean_right = 0.0L;
+    for (std::size_t i = 0; i < n; ++i) {
+        mean_left += static_cast<long double>(left[i]);
+        mean_right += static_cast<long double>(right[i]);
+    }
+    mean_left /= static_cast<long double>(n);
+    mean_right /= static_cast<long double>(n);
+    long double energy_l = 0.0L;
+    long double energy_r = 0.0L;
+    long double covariance = 0.0L;
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto l = static_cast<long double>(left[i]) - mean_left;
+        const auto r = static_cast<long double>(right[i]) - mean_right;
+        energy_l += l * l;
+        energy_r += r * r;
+        covariance += l * r;
+    }
+    const auto denominator = std::sqrt(energy_l) * std::sqrt(energy_r);
+    if (energy_l / static_cast<long double>(n) < 1e-10L
+        || energy_r / static_cast<long double>(n) < 1e-10L
+        || denominator < 1e-20L
+        || !std::isfinite(denominator)) {
+        return result;
+    }
+    const auto value = covariance / denominator;
+    if (!std::isfinite(value) || value < -1.0L || value > 1.0L) {
+        // Do not clamp invalid rho into a plausible-looking valid value.
+        return result;
+    }
+    result.validity = StereoMsCorrelationWindowValidity::VALID;
+    result.rho = static_cast<double>(value);
+    return result;
+}
+
+void collect_stage_correlation(
+    StereoMsStageOutputSidecar& capture,
+    rgsml::audio::AudioBufferView output,
+    std::int64_t source_origin,
+    std::size_t max_telemetry_bytes)
+{
+    const auto fs = static_cast<std::uint64_t>(capture.sample_rate_hz);
+    const auto requested_begin = capture.requested_begin_frame;
+    const auto requested_end = capture.requested_end_frame;
+    if (fs == 0 || source_origin > requested_begin
+        || requested_begin >= requested_end || !output.channel(0)
+        || !output.channel(1)) {
+        return;
+    }
+    constexpr std::size_t kMaxCorrelationBytes = 64U * 1024U;
+    const auto used_capture_bytes =
+        capture.output_lr_frames.size() * sizeof(std::array<double, 2>);
+    const auto remaining_budget = max_telemetry_bytes > used_capture_bytes
+        ? max_telemetry_bytes - used_capture_bytes : 0U;
+    const auto capacity = std::min(kMaxCorrelationBytes, remaining_budget)
+        / sizeof(StereoMsCorrelationWindow);
+    if (capacity == 0) {
+        return;
+    }
+    const auto count = static_cast<std::int64_t>((2U * fs + 2U) / 5U);
+    if (count < 1 || requested_end - requested_begin < count) {
+        return;
+    }
+
+    const auto left = *output.channel(0).value();
+    const auto right = *output.channel(1).value();
+    const auto origin = output.absolute_start_frame().value();
+    const auto upper = output.absolute_end_frame().value();
+    const auto delta = static_cast<std::uint64_t>(requested_begin - source_origin);
+    // Start near the first eligible grid point without iterating the whole
+    // track's history (a preview can begin far beyond the source start).
+    const auto whole_seconds = delta / fs;
+    if (whole_seconds > std::numeric_limits<std::uint64_t>::max() / 10U) {
+        return;
+    }
+    auto j = whole_seconds * 10U;
+    capture.correlation_windows.reserve(std::min<std::size_t>(capacity, 256U));
+    bool omitted_windows = false;
+    while (true) {
+        const auto hop = correlation_grid_offset(j, fs);
+        if (!hop) {
+            break;
+        }
+        const auto absolute_start = rgsml::core::checked_add(
+            source_origin, *hop);
+        if (!absolute_start) {
+            break;
+        }
+        const auto begin = *absolute_start.value();
+        if (begin >= requested_end || requested_end - begin < count) {
+            break;
+        }
+        if (begin >= requested_begin && begin >= origin
+            && upper - begin >= count) {
+            if (capture.correlation_windows.size() >= capacity) {
+                omitted_windows = true;
+                break;
+            }
+            const auto offset = static_cast<std::size_t>(begin - origin);
+            const auto n = static_cast<std::size_t>(count);
+            capture.correlation_windows.push_back(
+                measure_centered_correlation(
+                    begin, begin + count,
+                    left.subspan(offset, n), right.subspan(offset, n)));
+        }
+        if (j == std::numeric_limits<std::uint64_t>::max()) {
+            break;
+        }
+        ++j;
+    }
+    if (!capture.correlation_windows.empty()) {
+        capture.correlation_status = omitted_windows
+            ? StereoMsCorrelationStatus::PARTIAL
+            : StereoMsCorrelationStatus::COMPLETE;
+    }
 }
 
 [[nodiscard]] rgsml::core::Status copy_audio(
@@ -603,6 +758,23 @@ rgsml::core::Result<RenderResult> render_preview(
                                 }
                             }
                         }
+                    }
+                    // Compute canonical complete correlation windows from
+                    // the FULL real stage output, never B4a's capped excerpt.
+                    // A failed or incomplete window remains UNAVAILABLE.
+                    try {
+                        const auto stage_grid_origin = rgsml::core::checked_add(
+                            source_start, stage_accumulated_latency);
+                        if (stage_grid_origin) {
+                            collect_stage_correlation(
+                                capture, next_buffer.value()->view(),
+                                *stage_grid_origin.value(),
+                                request.max_telemetry_bytes().value_or(
+                                    128U * 1024U * 1024U));
+                        }
+                    } catch (...) {
+                        capture.correlation_windows.clear();
+                        capture.correlation_status = StereoMsCorrelationStatus::UNAVAILABLE;
                     }
                     stereo_ms_stage_captures.push_back(std::move(capture));
                 }

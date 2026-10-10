@@ -94,6 +94,25 @@ enum class StereoMsStageCaptureStatus : std::uint8_t {
     UNAVAILABLE,
 };
 
+// Canonical local correlation of one COMPLETE 400-ms output window.
+// The canonical 100-ms grid is source-timeline anchored, NOT feeder-anchored.
+enum class StereoMsCorrelationStatus : std::uint8_t {
+    COMPLETE,
+    PARTIAL,
+    UNAVAILABLE,
+};
+enum class StereoMsCorrelationWindowValidity : std::uint8_t {
+    VALID,
+    UNDEFINED_LOW_AC,
+};
+
+struct StereoMsCorrelationWindow final {
+    std::int64_t begin_frame{0};
+    std::int64_t end_frame{0};
+    StereoMsCorrelationWindowValidity validity{StereoMsCorrelationWindowValidity::UNDEFINED_LOW_AC};
+    std::optional<double> rho{std::nullopt};
+};
+
 struct StereoMsStageOutputSidecar final {
     rgsml::dsp::ModuleInstanceId module_instance_id;
     std::uint64_t chain_revision{0};
@@ -106,6 +125,8 @@ struct StereoMsStageOutputSidecar final {
     std::int64_t requested_end_frame{0};
     std::int64_t captured_begin_frame{0};
     std::vector<std::array<double, 2>> output_lr_frames;
+    StereoMsCorrelationStatus correlation_status{StereoMsCorrelationStatus::UNAVAILABLE};
+    std::vector<StereoMsCorrelationWindow> correlation_windows;
 
     explicit StereoMsStageOutputSidecar(
         rgsml::dsp::ModuleInstanceId instance_id) noexcept
