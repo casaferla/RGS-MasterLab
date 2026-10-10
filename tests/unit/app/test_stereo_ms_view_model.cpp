@@ -25,7 +25,79 @@ private slots:
     void optInOnlyAndExactWidthMacro();
     void draftsAreTransactionalAndCommitOnce();
     void modesMuteAndBypassPreserveStoredValues();
+    void responsePointsRespectDraftAndActualSignalFormat();
 };
+
+
+void StereoMsViewModelTest::responsePointsRespectDraftAndActualSignalFormat()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *rgsml::core::Uuid::parse(
+        "54000000-0000-4000-8000-000000000001").value();
+    const auto gainId = id("54000000-0000-4000-8000-000000000010");
+    const auto eqId = id("54000000-0000-4000-8000-000000000020");
+    const auto compId = id("54000000-0000-4000-8000-000000000030");
+    const auto stereoId = id("54000000-0000-4000-8000-000000000040");
+    const auto defaults = dsp::StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId, gainId, eqId, compId,
+        stereoId, *defaults.value(), false);
+    QVERIFY(state);
+    MasteringPreviewController controller(state.value());
+    StereoMsViewModel vm(state.value(), &controller);
+
+    QCOMPARE(vm.width_response_status(), QStringLiteral("SOURCE_UNAVAILABLE"));
+    QVERIFY(vm.width_response_points().isEmpty());
+    vm.setSignalFormat(48000.0, 1);
+    QCOMPARE(vm.width_response_status(), QStringLiteral("MONO_INPUT"));
+    QVERIFY(vm.width_response_points().isEmpty());
+
+    vm.setSignalFormat(48000.0, 2);
+    QCOMPARE(vm.width_response_status(), QStringLiteral("READY"));
+    const auto original = vm.width_response_points();
+    QCOMPARE(original.size(), 129);
+    QCOMPARE(original.front().toMap().value(QStringLiteral("frequencyHz")).toDouble(), 20.0);
+    for (const auto& point : original)
+        QVERIFY(std::abs(point.toMap().value(QStringLiteral("widthPercent")).toDouble()
+                         - 100.0) < 1e-10);
+
+    // An OFF filter stays flat, but LR24 draft must shape the low Side
+    // response before a single commit; no preview generation during drag.
+    QVERIFY(vm.setDraftMonoBassMode(QStringLiteral("LR24")));
+    QVERIFY(vm.setDraftLowBandWidthPercent(20.0));
+    const auto shaped = vm.width_response_points();
+    QCOMPARE(shaped.size(), 129);
+    QVERIFY(shaped.front().toMap().value(QStringLiteral("widthPercent")).toDouble()
+            < 100.0);
+    QVERIFY(shaped.back().toMap().value(QStringLiteral("widthPercent")).toDouble()
+            > 90.0);
+    QCOMPARE(controller.preview_generation(), std::uint64_t{0});
+    QVERIFY(vm.setDraftWidthPercent(0.0));
+    const auto mono = vm.width_response_points();
+    QCOMPARE(mono.size(), 129);
+    for (const auto& point : mono)
+        QCOMPARE(point.toMap().value(QStringLiteral("widthPercent")).toDouble(), 0.0);
+    QCOMPARE(controller.preview_generation(), std::uint64_t{0});
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{1});
+
+    vm.setBypass(true);
+    QCOMPARE(vm.width_response_status(), QStringLiteral("BYPASSED"));
+    QVERIFY(vm.width_response_points().isEmpty());
+    vm.setBypass(false);
+    QCOMPARE(vm.width_response_status(), QStringLiteral("READY"));
+
+    vm.setSignalFormat(std::numeric_limits<double>::quiet_NaN(), 2);
+    QCOMPARE(vm.width_response_status(), QStringLiteral("SOURCE_UNAVAILABLE"));
+    QVERIFY(vm.width_response_points().isEmpty());
+
+    vm.setSignalFormat(44100.0, 2);
+    vm.resetForNewSource();
+    QCOMPARE(vm.width_response_status(), QStringLiteral("SOURCE_UNAVAILABLE"));
+    QVERIFY(vm.width_response_points().isEmpty());
+}
 
 void StereoMsViewModelTest::optInOnlyAndExactWidthMacro()
 {

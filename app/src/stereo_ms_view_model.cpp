@@ -1,6 +1,8 @@
 #include "stereo_ms_view_model.hpp"
 
 #include <utility>
+#include <cmath>
+#include <QVariantMap>
 
 namespace rgsml::app {
 
@@ -127,6 +129,60 @@ QString StereoMsViewModel::preview_status() const
 QString StereoMsViewModel::preview_error() const
 {
     return previewController_ ? previewController_->preview_error() : QString{};
+}
+
+
+void StereoMsViewModel::setSignalFormat(
+    double effectiveSampleRateHz, int channelCount)
+{
+    // Unverified/invalid source formats MUST disable response rendering,
+    // not silently reuse the previous source's DSP sample rate.
+    const bool valid = std::isfinite(effectiveSampleRateHz)
+        && effectiveSampleRateHz > 0.0
+        && (channelCount == 1 || channelCount == 2);
+    const double newRate = valid ? effectiveSampleRateHz : 0.0;
+    const int newChannels = valid ? channelCount : 0;
+    if (newRate == effectiveSampleRateHz_ && newChannels == sourceChannelCount_)
+        return;
+    effectiveSampleRateHz_ = newRate;
+    sourceChannelCount_ = newChannels;
+    emit changed();
+}
+
+QString StereoMsViewModel::width_response_status() const
+{
+    if (!available()) return QStringLiteral("MODULE_UNAVAILABLE");
+    if (sourceChannelCount_ == 0) return QStringLiteral("SOURCE_UNAVAILABLE");
+    if (sourceChannelCount_ == 1) return QStringLiteral("MONO_INPUT");
+    if (bypass()) return QStringLiteral("BYPASSED");
+
+    const auto* params = editing();
+    if (!params) return QStringLiteral("MODULE_UNAVAILABLE");
+    // Use only the C++ DSP response evaluator, which consumes the actual
+    // frozen crossover coefficients. QML will transform points to pixels.
+    const auto response = dsp::stereo_ms_width_response_grid(
+        *params, effectiveSampleRateHz_);
+    return response ? QStringLiteral("READY")
+                    : QStringLiteral("RESPONSE_UNAVAILABLE");
+}
+
+QVariantList StereoMsViewModel::width_response_points() const
+{
+    QVariantList points;
+    if (width_response_status() != QStringLiteral("READY")) return points;
+    const auto* params = editing();
+    if (!params) return points;
+    const auto response = dsp::stereo_ms_width_response_grid(
+        *params, effectiveSampleRateHz_);
+    if (!response) return points;
+    points.reserve(static_cast<qsizetype>(response.value()->size()));
+    for (const auto& point : *response.value()) {
+        QVariantMap item;
+        item.insert(QStringLiteral("frequencyHz"), point.frequency_hz);
+        item.insert(QStringLiteral("widthPercent"), point.effective_width_percent);
+        points.append(item);
+    }
+    return points;
 }
 
 void StereoMsViewModel::set_error(const QString& field, const QString& message)
@@ -310,6 +366,8 @@ void StereoMsViewModel::resetForNewSource()
     if (!defaults) return;
     // Source changes must not retain an unfinished pointer/slider draft.
     draft_.reset();
+    effectiveSampleRateHz_ = 0.0;
+    sourceChannelCount_ = 0;
     const auto status = chainState_->set_stereo_ms_parameters(*defaults.value());
     if (!status) {
         set_error(QStringLiteral("reset"),

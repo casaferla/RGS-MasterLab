@@ -4,9 +4,11 @@
 #include "mastering_preview_controller.hpp"
 
 #include <rgsml/dsp/stereo_ms_width.hpp>
+#include <rgsml/dsp/stereo_ms_width_response.hpp>
 
 #include <QObject>
 #include <QString>
+#include <QVariantList>
 
 #include <optional>
 
@@ -33,6 +35,8 @@ class StereoMsViewModel final : public QObject {
     Q_PROPERTY(quint64 previewGeneration READ preview_generation NOTIFY changed)
     Q_PROPERTY(QString previewStatus READ preview_status NOTIFY changed)
     Q_PROPERTY(QString previewError READ preview_error NOTIFY changed)
+    Q_PROPERTY(QVariantList widthResponsePoints READ width_response_points NOTIFY changed)
+    Q_PROPERTY(QString widthResponseStatus READ width_response_status NOTIFY changed)
 
 public:
     explicit StereoMsViewModel(
@@ -56,10 +60,16 @@ public:
     [[nodiscard]] quint64 preview_generation() const noexcept;
     [[nodiscard]] QString preview_status() const;
     [[nodiscard]] QString preview_error() const;
+    [[nodiscard]] QVariantList width_response_points() const;
+    [[nodiscard]] QString width_response_status() const;
 
     // All draft edits are validated by the canonical DSP constructors/helper;
     // invalid attempts cannot corrupt either the draft or chain state.
     // Width has NO persistent field and preserves common gain by contract.
+    // Display source-format seam. Must be supplied from the actual prepared
+    // realization, never guessed from its filename or a nominal global rate.
+    // An absent/mono format produces no fabricated stereo response.
+    Q_INVOKABLE void setSignalFormat(double effectiveSampleRateHz, int channelCount);
     Q_INVOKABLE bool setDraftWidthPercent(double value);
     Q_INVOKABLE bool setDraftMidGainDb(double value);
     Q_INVOKABLE bool setDraftSideGainDb(double value);
@@ -92,6 +102,8 @@ private:
     std::optional<dsp::StereoMsParameters> draft_;
     QString validationField_;
     QString validationMessage_;
+    double effectiveSampleRateHz_{0.0};
+    int sourceChannelCount_{0};
 };
 
 }  // namespace rgsml::app
