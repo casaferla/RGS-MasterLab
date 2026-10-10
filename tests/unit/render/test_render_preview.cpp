@@ -674,7 +674,7 @@ void RenderPreviewTest::activeUnavailableModuleFails()
     auto chain = empty_chain(*registry.value());
     QVERIFY(chain.add(
         make_id("24000000-0000-0000-0000-000000000001"),
-        "rgsml.dsp.stereo-ms", 0)); // Note: stereo-ms has no factory
+        "rgsml.dsp.dynamic-eq", 0)); // Dynamic EQ still has no production factory
     auto request = rgsml::render::RenderRequest::create(
         source.value()->view(), frame_range(0, 1), chain, {}, frame_count(1));
     auto result = rgsml::render::render_preview(*request.value(), *registry.value());
@@ -929,7 +929,7 @@ void RenderPreviewTest::errorOrderingActiveUnsupportedModuleFailsTruthfully()
     auto chain = empty_chain(*registry.value());
 
     const auto comp_id = make_id("27000000-0000-0000-0000-000000000001");
-    QVERIFY(chain.add(comp_id, "rgsml.dsp.stereo-ms", 0)); // Note: stereo-ms has no factory
+    QVERIFY(chain.add(comp_id, "rgsml.dsp.dynamic-eq", 0)); // Dynamic EQ still has no production factory
 
     auto req = rgsml::render::RenderRequest::create(
         source.value()->view(), frame_range(0, 1), chain,
