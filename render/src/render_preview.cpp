@@ -275,22 +275,22 @@ void collect_stage_density(
                 auto witness = [&](std::size_t slot) {
                     bucket.witnesses[slot] = {absolute_frame, side, mid, true};
                 };
-                if (side != 0.0 || mid != 0.0) {
-                    if (side < min_side) { min_side = side; witness(0); }
-                    if (side > max_side) { max_side = side; witness(1); }
-                    if (mid < min_mid) { min_mid = mid; witness(2); }
-                    if (mid > max_mid) { max_mid = mid; witness(3); }
-                    const auto radius = std::hypot(side, mid);
-                    if (!std::isfinite(radius)) {
-                        ++bucket.invalid_count;
-                        invalid = true;
-                        break;
-                    }
-                    if (radius > max_radius) { max_radius = radius; witness(4); }
-                    if (!bucket.witnesses[5].valid &&
-                        ((l < 0.0 && r > 0.0) || (l > 0.0 && r < 0.0))) {
-                        witness(5);
-                    }
+                // Silence remains a real mathematical extremum; only
+                // display-side origin intensity suppresses zero vectors.
+                if (side < min_side) { min_side = side; witness(0); }
+                if (side > max_side) { max_side = side; witness(1); }
+                if (mid < min_mid) { min_mid = mid; witness(2); }
+                if (mid > max_mid) { max_mid = mid; witness(3); }
+                const auto radius = std::hypot(side, mid);
+                if (!std::isfinite(radius)) {
+                    ++bucket.invalid_count;
+                    invalid = true;
+                    break;
+                }
+                if (radius > max_radius) { max_radius = radius; witness(4); }
+                if (!bucket.witnesses[5].valid &&
+                    ((l < 0.0 && r > 0.0) || (l > 0.0 && r < 0.0))) {
+                    witness(5);
                 }
                 if (std::abs(side) > a || std::abs(mid) > a) {
                     ++bucket.overflow_count;

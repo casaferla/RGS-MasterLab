@@ -465,6 +465,7 @@ private slots:
     void stereoMsLocalCorrelationCanonicalGrid100();
     void stereoMsSideLowRealBranchRmsGrid100();
     void stereoMsOutputDensityRealOccupancyGrid20();
+    void stereoMsOutputDensityZeroWitnessOracle();
     void activeUnavailableModuleFails();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
@@ -1668,6 +1669,92 @@ void RenderPreviewTest::stereoMsOutputDensityRealOccupancyGrid20()
         QCOMPARE(buckets[j].begin_frame, expected[j]);
         QCOMPARE(buckets[j].invalid_count, std::uint32_t{0});
     }
+}
+
+void RenderPreviewTest::stereoMsOutputDensityZeroWitnessOracle()
+{
+    using rgsml::render::StereoMsDensityStatus;
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain = empty_chain(*registry.value());
+    const auto id = make_id("24700000-0000-0000-0000-000000000002");
+    QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
+    auto neutral = rgsml::dsp::StereoMsParameters::create_default();
+    QVERIFY(neutral);
+    const rgsml::dsp::ModuleExecutionBinding binding{id, *neutral.value()};
+
+    // Independent event/frame oracle, not a copy of the extrema algorithm:
+    // bucket 0 is silent; bucket 1 begins negative then falls to silence;
+    // bucket 2 begins silent then contains one positive sample.
+    constexpr std::size_t kBucketFrames = 2400U; // 50 ms at 48 kHz
+    constexpr std::size_t kFrames = 3U * kBucketFrames;
+    std::vector<double> left(kFrames, 0.0), right(kFrames, 0.0);
+    left[2400] = -0.5;
+    left[4801] = 0.5;
+    auto input = make_buffer(
+        rgsml::audio::ChannelLayout::STEREO_LR, 0, left, right);
+    QVERIFY(input);
+    const auto original = bits(input.value()->view());
+    auto req = rgsml::render::RenderRequest::create(
+        input.value()->view(), frame_range(0, 7200), chain,
+        {binding}, frame_count(31));
+    QVERIFY(req);
+    auto result = rgsml::render::render_preview(
+        *req.value(), *registry.value());
+    QVERIFY(result);
+    QCOMPARE(bits(input.value()->view()), original);
+    QCOMPARE(result.value()->stereo_ms_stage_output_sidecars().size(),
+             std::size_t{1});
+    const auto& stage =
+        result.value()->stereo_ms_stage_output_sidecars().front();
+    QCOMPARE(stage.density_status, StereoMsDensityStatus::COMPLETE);
+    QCOMPARE(stage.density_buckets.size(), std::size_t{3});
+
+    // Expected earliest frame for MIN_SIDE, MAX_SIDE, MIN_MID, MAX_MID
+    // and MAX_RADIUS. Zero is a valid mathematical witness.
+    const std::array<std::array<std::int64_t, 5>, 3> oracle_frames{{
+        {{0, 0, 0, 0, 0}},
+        {{2400, 2401, 2400, 2401, 2400}},
+        {{4800, 4801, 4800, 4801, 4801}},
+    }};
+    for (std::size_t j = 0; j < stage.density_buckets.size(); ++j) {
+        const auto& bucket = stage.density_buckets[j];
+        QCOMPARE(bucket.begin_frame,
+                 static_cast<std::int64_t>(j * kBucketFrames));
+        QCOMPARE(bucket.frame_count, std::uint32_t{2400});
+        QCOMPARE(bucket.valid_frame_count, std::uint32_t{2400});
+        QCOMPARE(bucket.zero_vector_count,
+                 j == 0 ? std::uint32_t{2400} : std::uint32_t{2399});
+        QCOMPARE(bucket.invalid_count, std::uint32_t{0});
+        for (std::size_t kind = 0; kind < 5U; ++kind) {
+            const auto& witness = bucket.witnesses[kind];
+            QVERIFY2(witness.valid,
+                     "Finite silent and mixed buckets must retain extrema");
+            QCOMPARE(witness.absolute_frame, oracle_frames[j][kind]);
+        }
+        QVERIFY(!bucket.witnesses[5].valid); // no opposite-sign L/R
+    }
+
+    const auto& silent = stage.density_buckets[0];
+    for (std::size_t kind = 0; kind < 5U; ++kind) {
+        QCOMPARE(silent.witnesses[kind].side, 0.0);
+        QCOMPARE(silent.witnesses[kind].mid, 0.0);
+    }
+    // All 2400 silent samples are counted, but subtracting zero vectors
+    // from the center bin leaves no drawable origin activity.
+    QCOMPARE(silent.occupancy[16U * 33U + 16U],
+             silent.zero_vector_count);
+
+    const auto& negative = stage.density_buckets[1];
+    QVERIFY(negative.witnesses[0].side < 0.0);
+    QVERIFY(negative.witnesses[2].mid < 0.0);
+    QCOMPARE(negative.witnesses[1].side, 0.0);
+    QCOMPARE(negative.witnesses[3].mid, 0.0);
+    const auto& positive = stage.density_buckets[2];
+    QCOMPARE(positive.witnesses[0].side, 0.0);
+    QCOMPARE(positive.witnesses[2].mid, 0.0);
+    QVERIFY(positive.witnesses[1].side > 0.0);
+    QVERIFY(positive.witnesses[3].mid > 0.0);
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()
