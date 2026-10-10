@@ -13,6 +13,7 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
+#include "stereo_ms_view_model.hpp"
 #include "waveform_item.hpp"
 #include "waveform_presentation.hpp"
 #include "../audio_golden/wav/golden_vectors.hpp"
@@ -27,6 +28,8 @@
 #include <QLibraryInfo>
 #include <QRegularExpressionValidator>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
+#include <QQmlEngine>
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -36,6 +39,7 @@
 #include <QTest>
 #include <QWindow>
 
+#include <cmath>
 #include <memory>
 #include <optional>
 
@@ -462,7 +466,138 @@ class SourceMetadataPanelSmokeTest final : public QObject {
 
 private slots:
     void emptyReadyErrorAndWindowLifecycle();
+    void stereoMsOptInVisualEvidence();
 };
+
+
+void SourceMetadataPanelSmokeTest::stereoMsOptInVisualEvidence()
+{
+    // M15 isolated 4-node product chain: no startup/default project promotion.
+    // This proves the REAL QML editor host can instantiate and render on Windows,
+    // without claiming a dynamic telemetry source or .rgsml roundtrip.
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *core::Uuid::parse(
+        "f1000000-0000-4000-8000-000000000001").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("f1000000-0000-4000-8000-000000000010").value()).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("f1000000-0000-4000-8000-000000000020").value()).value();
+    const auto compId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("f1000000-0000-4000-8000-000000000030").value()).value();
+    const auto stereoId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("f1000000-0000-4000-8000-000000000040").value()).value();
+    auto parameters = dsp::StereoMsParameters::create_default();
+    QVERIFY(parameters);
+    auto stateResult = app::MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId, gainId, eqId, compId,
+        stereoId, *parameters.value(), false);
+    QVERIFY(stateResult);
+    auto state = std::move(*stateResult.value());
+    app::MasteringPreviewController preview{&state};
+    app::GainViewModel gain{&state, &preview};
+    app::EqViewModel eq{&state, &preview};
+    app::CompressorViewModel compressor{&state, &preview};
+    app::StereoMsViewModel stereo{&state, &preview};
+
+    // Real prepared-source format is supplied explicitly for this isolated
+    // fixture, never invented by production source/session initialization.
+    stereo.setSignalFormat(48000.0, 2);
+    QVERIFY(stereo.setDraftMonoBassMode(QStringLiteral("LR24")));
+    QVERIFY(stereo.setDraftMonoBassCutoffHz(125.0));
+    QVERIFY(stereo.setDraftLowBandWidthPercent(35.0));
+    QVERIFY(stereo.setDraftWidthPercent(140.0));
+    QVERIFY(stereo.commitDraft());
+    QCOMPARE(stereo.width_response_status(), QStringLiteral("READY"));
+    QCOMPARE(stereo.width_response_points().size(), qsizetype{129});
+
+    app::DspChainAdapterModel model{
+        &gain, &eq, &compressor, &state,
+        QStringLiteral("Mastering"), nullptr, &stereo};
+    QCOMPARE(model.modules().size(), qsizetype{4});
+    model.setSelectedIndex(3);
+    QCOMPARE(model.active_module()->editor_content_key(), QStringLiteral("STEREO_MS"));
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("m15VisualAdapterModel"), &model);
+    QQmlComponent component{&engine};
+    static constexpr auto qml = R"qml(
+import QtQuick
+import QtQuick.Window
+import Rgsml.Ui 1.0
+
+Window {
+    objectName: "m15StereoMsVisualWindow"
+    width: 1184
+    height: 688
+    color: "#06121F"
+    visible: false
+    DspEditorHost {
+        objectName: "m15StereoMsVisualHost"
+        anchors.fill: parent
+        anchors.margins: 18
+        adapterModel: m15VisualAdapterModel
+    }
+}
+)qml";
+    component.setData(QByteArray{qml}, QUrl{QStringLiteral("qrc:/m15/visual-window.qml")});
+    QVERIFY2(component.status() != QQmlComponent::Error,
+             qPrintable(component.errorString()));
+    QScopedPointer<QObject> componentRoot{component.create()};
+    QVERIFY2(componentRoot != nullptr, qPrintable(component.errorString()));
+    auto* window = qobject_cast<QQuickWindow*>(componentRoot.data());
+    QVERIFY(window);
+
+    window->show();
+    QTest::qWait(150);
+    auto* editor = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsEditor"));
+    auto* curve = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsResponseCurve"));
+    auto* widthHandle = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthHandle"));
+    auto* cutoffHandle = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCutoffHandle"));
+    auto* lowHandle = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthHandle"));
+    auto* dynamicWell = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsDynamicWell"));
+    auto* axes = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsStaticAxes"));
+    auto* widthSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthSlider"));
+    auto* cutoffSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCutoffSlider"));
+    auto* lowSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthSlider"));
+    auto* telemetry = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsTelemetryPlaceholder"));
+    QVERIFY2(editor && curve && widthHandle && cutoffHandle && lowHandle
+             && dynamicWell && axes && widthSlider && cutoffSlider
+             && lowSlider && telemetry, "M15 complete active/dynamic editor must load");
+    QVERIFY(editor->property("visible").toBool());
+    QVERIFY(curve->property("visible").toBool());
+    QVERIFY(widthHandle->property("visible").toBool());
+    QVERIFY(cutoffHandle->property("visible").toBool());
+    QVERIFY(lowHandle->property("visible").toBool());
+
+    // The M/S axes must remain square at compact and taller window sizes.
+    for (const auto size : {QSize{1184, 688}, QSize{1440, 900}}) {
+        window->resize(size);
+        QTest::qWait(120);
+        const auto side = axes->property("width").toDouble();
+        QVERIFY(side > 50);
+        QVERIFY(std::abs(side - axes->property("height").toDouble()) <= 0.5);
+        QVERIFY(qobject_cast<QQuickItem*>(editor)->height() > 250);
+        QVERIFY(capture_visual_evidence(
+            window,
+            QStringLiteral("m15_stereo_ms_%1x%2_lr24_width140.png")
+                .arg(size.width()).arg(size.height()),
+            size));
+    }
+
+    // Mono and bypass must NEVER display stale active response points.
+    stereo.setSignalFormat(48000.0, 1);
+    QCoreApplication::processEvents();
+    QVERIFY(!curve->property("visible").toBool());
+    QVERIFY(!widthHandle->property("visible").toBool());
+    stereo.setSignalFormat(48000.0, 2);
+    stereo.setBypass(true);
+    QCoreApplication::processEvents();
+    QVERIFY(!curve->property("visible").toBool());
+    stereo.setBypass(false);
+    window->close();
+    QCoreApplication::processEvents();
+}
 
 void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 {
