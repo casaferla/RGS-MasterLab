@@ -44,6 +44,7 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <utility>
 
 namespace rgsml::tests {
 namespace {
@@ -576,10 +577,14 @@ Window {
     auto* widthSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthSlider"));
     auto* cutoffSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCutoffSlider"));
     auto* lowSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthSlider"));
+    auto* widthField = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthField"));
+    auto* cutoffField = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCutoffField"));
+    auto* lowField = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthField"));
     auto* telemetry = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsTelemetryPlaceholder"));
     QVERIFY2(editor && curve && widthHandle && cutoffHandle && lowHandle
              && dynamicWell && title && telemetryStatus && axes && widthSlider && cutoffSlider
-             && lowSlider && telemetry, "M15 complete active/dynamic editor must load");
+             && lowSlider && widthField && cutoffField && lowField && telemetry,
+             "M15 complete active/dynamic editor must load");
     QVERIFY(editor->property("visible").toBool());
     QVERIFY(curve->property("visible").toBool());
     QVERIFY(widthHandle->property("visible").toBool());
@@ -611,6 +616,30 @@ Window {
                  "Goniometer must be vertically centered between header and footer");
         QCOMPARE(title->property("y").toDouble(), 8.0);
         QVERIFY(qobject_cast<QQuickItem*>(editor)->height() > 250);
+        // In published editors the slider track spans precisely its
+        // numeric rectangle; the unit suffix is outside this span.
+        // Check both endpoints at each native logical window size.
+        for (const auto& fieldAndSlider : {
+                 std::pair{widthField, widthSlider},
+                 std::pair{cutoffField, cutoffSlider},
+                 std::pair{lowField, lowSlider}}) {
+            auto* box = qobject_cast<QQuickItem*>(fieldAndSlider.first);
+            auto* slider = qobject_cast<QQuickItem*>(fieldAndSlider.second);
+            QVERIFY(box && slider);
+            const double numericBoxWidth =
+                fieldAndSlider.first->property("fieldWidth").toDouble();
+            QCOMPARE(numericBoxWidth, 86.0);
+            QVERIFY(std::abs(slider->width() - numericBoxWidth) <= 0.5);
+            const QPointF boxOrigin = box->mapToItem(
+                qobject_cast<QQuickItem*>(editor), QPointF{});
+            const QPointF sliderOrigin = slider->mapToItem(
+                qobject_cast<QQuickItem*>(editor), QPointF{});
+            QVERIFY2(std::abs(boxOrigin.x() - sliderOrigin.x()) <= 0.5,
+                     "Slider START must coincide with numeric box left edge");
+            QVERIFY2(std::abs(boxOrigin.x() + numericBoxWidth
+                              - sliderOrigin.x() - slider->width()) <= 0.5,
+                     "Slider END must coincide with numeric box right edge");
+        }
         auto* dynamicItem = qobject_cast<QQuickItem*>(dynamicWell);
         auto* editorItem = qobject_cast<QQuickItem*>(editor);
         QVERIFY(check_item_contained_in_ancestor(editorItem, captureSurface));

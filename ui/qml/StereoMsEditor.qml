@@ -221,6 +221,7 @@ Item {
                         Layout.fillWidth: true
                         spacing: 2
                         StudioNumericField {
+                            id: widthNumericField
                             objectName: "stereoMsWidthField"
                             compact: true
                             compactFieldWidth: 86
@@ -233,7 +234,13 @@ Item {
                         }
                         StudioParameterSlider {
                             objectName: "stereoMsWidthSlider"
-                            Layout.fillWidth: true
+                            // Match the NUMERIC BOX only, not its unit suffix or
+                            // the freely expanding column (Compressor precedent).
+                            Layout.fillWidth: false
+                            Layout.alignment: Qt.AlignLeft
+                            Layout.minimumWidth: widthNumericField.fieldWidth
+                            Layout.preferredWidth: widthNumericField.fieldWidth
+                            Layout.maximumWidth: widthNumericField.fieldWidth
                             compact: true
                             from: 0
                             to: 200
@@ -252,6 +259,7 @@ Item {
                         Layout.fillWidth: true
                         spacing: 2
                         StudioNumericField {
+                            id: cutoffNumericField
                             objectName: "stereoMsCutoffField"
                             compact: true
                             compactFieldWidth: 86
@@ -263,7 +271,13 @@ Item {
                         }
                         StudioParameterSlider {
                             objectName: "stereoMsCutoffSlider"
-                            Layout.fillWidth: true
+                            // Match the NUMERIC BOX only, not its unit suffix or
+                            // the freely expanding column (Compressor precedent).
+                            Layout.fillWidth: false
+                            Layout.alignment: Qt.AlignLeft
+                            Layout.minimumWidth: cutoffNumericField.fieldWidth
+                            Layout.preferredWidth: cutoffNumericField.fieldWidth
+                            Layout.maximumWidth: cutoffNumericField.fieldWidth
                             compact: true
                             from: 40
                             to: 300
@@ -282,6 +296,7 @@ Item {
                         Layout.fillWidth: true
                         spacing: 2
                         StudioNumericField {
+                            id: lowWidthNumericField
                             objectName: "stereoMsLowWidthField"
                             compact: true
                             compactFieldWidth: 86
@@ -293,7 +308,13 @@ Item {
                         }
                         StudioParameterSlider {
                             objectName: "stereoMsLowWidthSlider"
-                            Layout.fillWidth: true
+                            // Match the NUMERIC BOX only, not its unit suffix or
+                            // the freely expanding column (Compressor precedent).
+                            Layout.fillWidth: false
+                            Layout.alignment: Qt.AlignLeft
+                            Layout.minimumWidth: lowWidthNumericField.fieldWidth
+                            Layout.preferredWidth: lowWidthNumericField.fieldWidth
+                            Layout.maximumWidth: lowWidthNumericField.fieldWidth
                             compact: true
                             from: 0
                             to: 100
