@@ -10,6 +10,7 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
+#include <rgsml/dsp/stereo_ms_parameters.hpp>
 #include <rgsml/render/audible_compressor_telemetry_resolver.hpp>
 #include <rgsml/render/compressor_telemetry_collector.hpp>
 #include <rgsml/render/compressor_telemetry_history.hpp>
@@ -453,6 +454,7 @@ private slots:
     void activeGainIsChunkInvariantAndSourceImmutable();
     void multipleGainsUseFrozenSnapshotOrder();
     void requiredListeningPartitionsMatchForAllGains();
+    void stereoMsTypedBindingsRejectMissingWrongAndDuplicate();
     void stereoMsRequiresQualifiedRenderBindingEvenWithFactory();
     void activeUnavailableModuleFails();
     void resultLifetimeIsIndependent();
@@ -667,6 +669,67 @@ void RenderPreviewTest::requiredListeningPartitionsMatchForAllGains()
     }
 }
 
+void RenderPreviewTest::stereoMsTypedBindingsRejectMissingWrongAndDuplicate()
+{
+    const std::array samples{0.25, -0.5};
+    auto source = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, samples);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain = empty_chain(*registry.value());
+    const auto id = make_id("24000000-0000-0000-0000-000000000003");
+    QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
+    auto params = rgsml::dsp::StereoMsParameters::create(
+        -3.0, 8.0, false, rgsml::dsp::MonoBassMode::LR24, 300.0, 25.0);
+    QVERIFY(params);
+    const rgsml::dsp::ModuleExecutionBinding binding{id, *params.value()};
+
+    for (const bool bypass : {false, true}) {
+        if (bypass) QVERIFY(chain.set_user_bypass(id, true));
+
+        auto missing = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 2),
+            chain, {}, frame_count(7));
+        QVERIFY(!missing);
+        QCOMPARE(missing.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
+        QCOMPARE(std::string_view{missing.error()->message()},
+                 std::string_view{
+                    "Every supported parameterized module snapshot entry requires exactly one binding."});
+
+        auto wrong = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 2),
+            chain, {{id, gain(6.0)}}, frame_count(7));
+        QVERIFY(!wrong);
+        QCOMPARE(wrong.error()->code(), rgsml::core::ErrorCode::InvalidArgument);
+        QCOMPARE(std::string_view{wrong.error()->message()},
+                 std::string_view{
+                    "A Stereo/M-S binding contained a non-StereoMsParameters payload."});
+
+        auto duplicate = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 2),
+            chain, {binding, binding}, frame_count(7));
+        QVERIFY(!duplicate);
+        QCOMPARE(std::string_view{duplicate.error()->message()},
+                 std::string_view{
+                    "A module instance has more than one parameter binding."});
+
+        auto valid = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(0, 2),
+            chain, {binding}, frame_count(7));
+        QVERIFY(valid);
+        QCOMPARE(valid.value()->bindings().size(), std::size_t{1});
+        QVERIFY(valid.value()->bindings().front().parameters
+                == binding.parameters);
+
+        // B2a validates data ownership only. B2b/B2c must still implement
+        // execution signatures before Render Preview is allowed to run M15.
+        auto rendered = rgsml::render::render_preview(
+            *valid.value(), *registry.value());
+        QVERIFY(!rendered);
+        QCOMPARE(rendered.error()->code(),
+                 rgsml::core::ErrorCode::UnsupportedOperation);
+    }
+}
+
 void RenderPreviewTest::stereoMsRequiresQualifiedRenderBindingEvenWithFactory()
 {
     // B1 makes the DSP factory available; it MUST NOT cause Render Preview
@@ -680,14 +743,17 @@ void RenderPreviewTest::stereoMsRequiresQualifiedRenderBindingEvenWithFactory()
     auto chain = empty_chain(*registry.value());
     const auto id = make_id("24000000-0000-0000-0000-000000000002");
     QVERIFY(chain.add(id, "rgsml.dsp.stereo-ms", 0));
+    auto params = rgsml::dsp::StereoMsParameters::create(
+        -3.0, 8.0, false, rgsml::dsp::MonoBassMode::LR12, 120.0, 25.0);
+    QVERIFY(params);
 
     for (const bool bypass : {false, true}) {
         if (bypass) {
             QVERIFY(chain.set_user_bypass(id, true));
         }
         auto req = rgsml::render::RenderRequest::create(
-            source.value()->view(), frame_range(0, 1), chain, {},
-            frame_count(1));
+            source.value()->view(), frame_range(0, 1), chain,
+            {{id, *params.value()}}, frame_count(1));
         QVERIFY(req);
         auto result = rgsml::render::render_preview(
             *req.value(), *registry.value());
