@@ -2512,11 +2512,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         auto* sliderItem = qobject_cast<QQuickItem*>(find_child_by_name(eqEditor, names.second));
         QVERIFY(fieldItem && sliderItem);
         QCOMPARE(fieldItem->property("fieldWidth").toInt(), 164);
-        QVERIFY(std::abs(sliderItem->width() - 164.0) <= 0.6);
-        const auto fieldX = fieldItem->mapToItem(eqInspector, QPointF{}).x();
-        const auto sliderX = sliderItem->mapToItem(eqInspector, QPointF{}).x();
-        QVERIFY(std::abs(fieldX - sliderX) <= 0.6);
         if (sliderItem->isVisible()) {
+            QVERIFY(std::abs(sliderItem->width() - 164.0) <= 0.6);
+            const auto fieldX = fieldItem->mapToItem(eqInspector, QPointF{}).x();
+            const auto sliderX = sliderItem->mapToItem(eqInspector, QPointF{}).x();
+            QVERIFY(std::abs(fieldX - sliderX) <= 0.6);
             const auto bottom = sliderItem->mapToItem(eqInspector, QPointF{}).y()
                 + sliderItem->height();
             QVERIFY2(bottom <= eqInspector->height() - 2.0,

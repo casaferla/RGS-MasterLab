@@ -398,8 +398,8 @@ Rectangle {
                             to: 18.0
                             stepSize: 0.1
                             logarithmic: false
-                        fillFromOrigin: true
-                        positionFillOrigin: 0.0
+                            fillFromOrigin: true
+                            positionFillOrigin: 0.0
                             positionFillColor: Qt.alpha("#C4774A", 0.38)
                             accentColor: root.selectedBandHue
                             semanticAccent: root.selectedBandHue
