@@ -907,6 +907,9 @@ Window {
     QVERIFY(!lowControl->property("enabled").toBool());
     QCOMPARE(stereo.mono_bass_cutoff_hz(), 125.0);
     QCOMPARE(stereo.low_band_width_percent(), 35.0);
+    QVERIFY2(captureState(QStringLiteral(
+                "m15_gate_s_1184x688_mono_bass_off.png")),
+             "Gate S OFF must provide PO-visible disabled-control evidence");
     stereo.cancelDraft();
     QCoreApplication::processEvents();
     QVERIFY(cutoffControl->property("enabled").toBool());
@@ -919,12 +922,18 @@ Window {
     QVERIFY(!widthHandle->property("visible").toBool());
     for (auto* c : {widthControl, cutoffControl, lowControl, midControl, sideControl})
         QVERIFY(!c->property("enabled").toBool());
+    QVERIFY2(captureState(QStringLiteral(
+                "m15_gate_s_1184x688_mono_input.png")),
+             "Gate S mono must show all M/S editing controls non-effective");
     stereo.setSignalFormat(48000.0, 2);
     stereo.setBypass(true);
     QCoreApplication::processEvents();
     QVERIFY(!curve->property("visible").toBool());
     for (auto* c : {widthControl, cutoffControl, lowControl, midControl, sideControl})
         QVERIFY(!c->property("enabled").toBool());
+    QVERIFY2(captureState(QStringLiteral(
+                "m15_gate_s_1184x688_bypassed.png")),
+             "Gate S bypass must show disabled spatial controls");
     stereo.setBypass(false);
     QCoreApplication::processEvents();
     QVERIFY(widthControl->property("enabled").toBool());

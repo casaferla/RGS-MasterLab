@@ -58,10 +58,12 @@ void StereoMsViewModelTest::responsePointsRespectDraftAndActualSignalFormat()
     QCOMPARE(vm.width_response_status(), QStringLiteral("SOURCE_UNAVAILABLE"));
     QVERIFY(vm.width_response_points().isEmpty());
     vm.setSignalFormat(48000.0, 1);
+    QVERIFY(!vm.spatial_controls_effective());
     QCOMPARE(vm.width_response_status(), QStringLiteral("MONO_INPUT"));
     QVERIFY(vm.width_response_points().isEmpty());
 
     vm.setSignalFormat(48000.0, 2);
+    QVERIFY(vm.spatial_controls_effective());
     QCOMPARE(vm.width_response_status(), QStringLiteral("READY"));
     const auto original = vm.width_response_points();
     QCOMPARE(original.size(), 129);
@@ -91,9 +93,11 @@ void StereoMsViewModelTest::responsePointsRespectDraftAndActualSignalFormat()
     QCOMPARE(controller.preview_generation(), std::uint64_t{1});
 
     vm.setBypass(true);
+    QVERIFY(!vm.spatial_controls_effective());
     QCOMPARE(vm.width_response_status(), QStringLiteral("BYPASSED"));
     QVERIFY(vm.width_response_points().isEmpty());
     vm.setBypass(false);
+    QVERIFY(vm.spatial_controls_effective());
     QCOMPARE(vm.width_response_status(), QStringLiteral("READY"));
 
     vm.setSignalFormat(std::numeric_limits<double>::quiet_NaN(), 2);
@@ -102,6 +106,7 @@ void StereoMsViewModelTest::responsePointsRespectDraftAndActualSignalFormat()
 
     vm.setSignalFormat(44100.0, 2);
     vm.resetForNewSource();
+    QVERIFY(!vm.spatial_controls_effective());
     QCOMPARE(vm.width_response_status(), QStringLiteral("SOURCE_UNAVAILABLE"));
     QVERIFY(vm.width_response_points().isEmpty());
 }
