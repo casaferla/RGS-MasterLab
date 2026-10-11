@@ -191,8 +191,11 @@ void TruePeakGateGEdgePrequalTest::subnormalAndFiniteOverflowRemainTruthful()
     for (std::size_t i = 0; i < high.size(); ++i)
         QCOMPARE((*pristine.value())[i], high[i]);
 
-    // A late failure must leave a single-channel streaming snapshot unchanged,
-    // allowing an identical next valid frame after the failed attempt.
+    // A rejected extreme sample must not alter history, accepted count, or
+    // the last valid peak. The already-accepted DBL_MAX history may STILL
+    // overflow when the next input is zero: this is not failed recovery.
+    // Compare both success and categorical failure against a snapshot taken
+    // strictly BEFORE the rejected sample, rather than requiring success.
     TruePeakItu4xChannelStream s;
     bool sawOverflow = false;
     for (double sample : high) {
@@ -203,14 +206,39 @@ void TruePeakGateGEdgePrequalTest::subnormalAndFiniteOverflowRemainTruthful()
         QCOMPARE(step.error()->code(), core::ErrorCode::InvalidAudioSample);
         QCOMPARE(s.programme_frames(), before.programme_frames());
         QCOMPARE(s.linear_peak_so_far(), before.linear_peak_so_far());
-        auto validAfterFailure = s.push(0.0);
-        auto expectedAfterFailure = before;
-        auto expected = expectedAfterFailure.push(0.0);
-        QVERIFY(validAfterFailure && expected);
-        for (std::size_t phase = 0; phase < 4; ++phase)
-            QCOMPARE(validAfterFailure.value()->signed_phases[phase],
-                     expected.value()->signed_phases[phase]);
-        QCOMPARE(s.linear_peak_so_far(), expectedAfterFailure.linear_peak_so_far());
+        QCOMPARE(s.finalized(), before.finalized());
+
+        // Multiple probes start from independent cloned snapshots. Even if
+        // their validly retained extreme PCM causes a second overflow, the
+        // two histories must produce IDENTICAL outcomes and accepted state.
+        for (double probe : {0.0, 1.0, -1.0}) {
+            auto actual = s;
+            auto expectedAfterFailure = before;
+            auto following = actual.push(probe);
+            auto expected = expectedAfterFailure.push(probe);
+            QCOMPARE(following.has_value(), expected.has_value());
+            if (following) {
+                for (std::size_t phase = 0; phase < 4; ++phase)
+                    QCOMPARE(following.value()->signed_phases[phase],
+                             expected.value()->signed_phases[phase]);
+            } else {
+                QCOMPARE(following.error()->code(), expected.error()->code());
+            }
+            QCOMPARE(actual.programme_frames(),
+                     expectedAfterFailure.programme_frames());
+            QCOMPARE(actual.linear_peak_so_far(),
+                     expectedAfterFailure.linear_peak_so_far());
+            QCOMPARE(actual.finalized(), expectedAfterFailure.finalized());
+        }
+
+        // Reset is the explicit operation that removes the extreme history.
+        s.reset();
+        QCOMPARE(s.programme_frames(), std::uint64_t{0});
+        QCOMPARE(s.linear_peak_so_far(), 0.0);
+        QVERIFY(s.push(0.0));
+        auto freshSilence = s.finalize();
+        QVERIFY(freshSilence);
+        QCOMPARE(*freshSilence.value(), 0.0);
         break;
     }
     QVERIFY(sawOverflow);
