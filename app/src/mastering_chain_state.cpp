@@ -271,7 +271,9 @@ Result<MasteringChainState> MasteringChainState::restore(
     ModuleInstanceId eq_id,
     ParametricEqParameters eq_params,
     ModuleInstanceId compressor_id,
-    CompressorParameters compressor_params)
+    CompressorParameters compressor_params,
+    std::optional<ModuleInstanceId> stereo_ms_id,
+    std::optional<StereoMsParameters> stereo_ms_params)
 {
     if (!registry) {
         return Result<MasteringChainState>::failure(chain_state_error(
@@ -309,17 +311,31 @@ Result<MasteringChainState> MasteringChainState::restore(
             "DUPLICATE_MODULE_INSTANCE_ID",
             "Gain, Parametric EQ, and Compressor module instance IDs must be unique."));
     }
+    // Do not guess a fourth module from chain length alone. A missing half
+    // of this typed identity/payload pair would discard persisted DSP state.
+    if (stereo_ms_id.has_value() != stereo_ms_params.has_value()) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument, "STEREO_MS_INCOMPLETE_RESTORE",
+            "Stereo/M-S restore requires both identity and parameters."));
+    }
+    if (stereo_ms_id && (stereo_ms_id->uuid().is_nil()
+        || *stereo_ms_id == gain_id || *stereo_ms_id == eq_id
+        || *stereo_ms_id == compressor_id)) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument, "STEREO_MS_DUPLICATE_RESTORE",
+            "Stereo/M-S restore requires a unique non-nil instance ID."));
+    }
     if (chain.context().stage != ProcessingStage::MASTER || chain.context().segment != ChainSegment::MANUAL) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument,
             "INVALID_CHAIN_CONTEXT",
             "MasteringChainState requires a MASTER/MANUAL processing chain context."));
     }
-    if (chain.instances().size() != 3U) {
+    if (chain.instances().size() != (stereo_ms_id ? 4U : 3U)) {
         return Result<MasteringChainState>::failure(chain_state_error(
             ErrorCode::InvalidArgument,
             "INVALID_MODULE_COUNT",
-            "MasteringChainState requires exactly 3 module instances."));
+            "MasteringChainState requires 3 modules, or 4 with an explicit Stereo/M-S payload."));
     }
     if (chain.instances()[0].instance_id() != gain_id || chain.instances()[0].module_type_id() != kGainTypeId) {
         return Result<MasteringChainState>::failure(chain_state_error(
@@ -339,8 +355,14 @@ Result<MasteringChainState> MasteringChainState::restore(
             "INVALID_COMPRESSOR_MODULE",
             "Module 2 must be Compressor with matching instance_id."));
     }
+    if (stereo_ms_id && (chain.instances()[3].instance_id() != *stereo_ms_id
+        || chain.instances()[3].module_type_id() != kStereoMsTypeId)) {
+        return Result<MasteringChainState>::failure(chain_state_error(
+            ErrorCode::InvalidArgument, "INVALID_STEREO_MS_MODULE",
+            "Module 3 must be Stereo/M-S with matching instance_id."));
+    }
 
-    return Result<MasteringChainState>::success(MasteringChainState{
+    MasteringChainState restored{
         std::move(registry),
         chain_id,
         std::move(chain),
@@ -349,7 +371,10 @@ Result<MasteringChainState> MasteringChainState::restore(
         eq_id,
         std::move(eq_params),
         compressor_id,
-        std::move(compressor_params)});
+        std::move(compressor_params)};
+    restored.stereo_ms_id_ = std::move(stereo_ms_id);
+    restored.stereo_ms_params_ = std::move(stereo_ms_params);
+    return Result<MasteringChainState>::success(std::move(restored));
 }
 
 MasteringChainState::MasteringChainState(

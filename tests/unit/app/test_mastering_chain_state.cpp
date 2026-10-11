@@ -41,6 +41,7 @@ private slots:
     void bypassAndActiveState();
     void executionBindingsGeneration();
     void optInStereoMsStateAndBindings();
+    void restoredFourNodeStereoMsPreservesTypedIdentityAndBypass();
 };
 
 void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
@@ -309,6 +310,95 @@ void MasteringChainStateTest::optInStereoMsStateAndBindings()
     bypass = state.value()->is_bypassed(ms_id);
     QVERIFY(bypass);
     QVERIFY(!*bypass.value());
+}
+
+void MasteringChainStateTest::restoredFourNodeStereoMsPreservesTypedIdentityAndBypass()
+{
+    auto registryResult = ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registryResult);
+    auto registry = std::make_shared<const ModuleRegistry>(
+        *registryResult.value());
+    const auto chainId = test_uuid("a2000000-0000-4000-8000-000000000001");
+    const auto gainId = test_instance_id("a2000000-0000-4000-8000-000000000010");
+    const auto eqId = test_instance_id("a2000000-0000-4000-8000-000000000020");
+    const auto compId = test_instance_id("a2000000-0000-4000-8000-000000000030");
+    const auto msId = test_instance_id("a2000000-0000-4000-8000-000000000040");
+    const auto wrongId = test_instance_id("a2000000-0000-4000-8000-000000000050");
+    auto ms = StereoMsParameters::create(
+        -2.5, 4.0, false, MonoBassMode::LR12, 160.0, 50.0);
+    QVERIFY(ms);
+    auto candidate = MasteringChainState::create_with_stereo_ms(
+        *registry, chainId, gainId, eqId, compId, msId, *ms.value(), true);
+    QVERIFY(candidate);
+    auto preservedGain = GainParameters::create(-4.0);
+    QVERIFY(preservedGain);
+    QVERIFY(candidate.value()->set_gain_parameters(*preservedGain.value()));
+
+    const auto restoreChain = [&]() {
+        const auto items = candidate.value()->instances();
+        return ProcessingChain::restore(
+            *registry, {ProcessingStage::MASTER, ChainSegment::MANUAL},
+            candidate.value()->chain().revision(),
+            std::vector<ModuleInstance>(items.begin(), items.end()));
+    };
+    {
+        auto chain = restoreChain();
+        QVERIFY(chain);
+        auto restored = MasteringChainState::restore(
+            registry, chainId, std::move(*chain.value()),
+            gainId, candidate.value()->gain_parameters(),
+            eqId, candidate.value()->parametric_eq_parameters(),
+            compId, candidate.value()->compressor_parameters(),
+            msId, *ms.value());
+        QVERIFY(restored);
+        QCOMPARE(restored.value()->module_count(), std::size_t{4});
+        QCOMPARE(restored.value()->chain().revision(),
+                 candidate.value()->chain().revision());
+        QCOMPARE(restored.value()->stereo_ms_instance_id(), std::optional{msId});
+        QCOMPARE(restored.value()->stereo_ms_parameters(), std::optional{*ms.value()});
+        QCOMPARE(restored.value()->gain_parameters(), *preservedGain.value());
+        QCOMPARE(restored.value()->instances()[3].instance_id(), msId);
+        QCOMPARE(restored.value()->instances()[3].module_type_id(),
+                 std::string_view("rgsml.dsp.stereo-ms"));
+        const auto msBypass = restored.value()->is_bypassed(msId);
+        QVERIFY(msBypass);
+        QVERIFY(*msBypass.value());
+        const auto bindings = restored.value()->execution_bindings();
+        QCOMPARE(bindings.size(), std::size_t{4});
+        QCOMPARE(bindings[3].instance_id, msId);
+        QCOMPARE(std::get<StereoMsParameters>(bindings[3].parameters), *ms.value());
+    }
+    // Fail closed on dropped carrier, mismatched ID, or a fourth node
+    // accidentally supplied to the legacy three-module overload.
+    {
+        auto chain = restoreChain();
+        QVERIFY(chain);
+        QVERIFY(!MasteringChainState::restore(
+            registry, chainId, std::move(*chain.value()),
+            gainId, candidate.value()->gain_parameters(),
+            eqId, candidate.value()->parametric_eq_parameters(),
+            compId, candidate.value()->compressor_parameters()));
+    }
+    {
+        auto chain = restoreChain();
+        QVERIFY(chain);
+        QVERIFY(!MasteringChainState::restore(
+            registry, chainId, std::move(*chain.value()),
+            gainId, candidate.value()->gain_parameters(),
+            eqId, candidate.value()->parametric_eq_parameters(),
+            compId, candidate.value()->compressor_parameters(),
+            wrongId, *ms.value()));
+    }
+    {
+        auto chain = restoreChain();
+        QVERIFY(chain);
+        QVERIFY(!MasteringChainState::restore(
+            registry, chainId, std::move(*chain.value()),
+            gainId, candidate.value()->gain_parameters(),
+            eqId, candidate.value()->parametric_eq_parameters(),
+            compId, candidate.value()->compressor_parameters(),
+            msId, std::nullopt));
+    }
 }
 
 }  // namespace

@@ -78,7 +78,11 @@ public:
         dsp::ModuleInstanceId eq_id,
         dsp::ParametricEqParameters eq_params,
         dsp::ModuleInstanceId compressor_id,
-        dsp::CompressorParameters compressor_params);
+        dsp::CompressorParameters compressor_params,
+        // Both absent for legacy chains; both present only for an explicit
+        // fourth Stereo/M-S instance, never inferred from defaults.
+        std::optional<dsp::ModuleInstanceId> stereo_ms_id = std::nullopt,
+        std::optional<dsp::StereoMsParameters> stereo_ms_params = std::nullopt);
 
     [[nodiscard]] static rgsml::core::Result<MasteringChainState> restore(
         std::shared_ptr<const dsp::ModuleRegistry> registry,
