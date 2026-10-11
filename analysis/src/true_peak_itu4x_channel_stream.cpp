@@ -72,6 +72,26 @@ TruePeakItu4xChannelStream::push(double pcm)
     return output;
 }
 
+core::Status TruePeakItu4xChannelStream::push_chunk(
+    std::span<const double> pcm)
+{
+    if (finalized_) {
+        return core::Status::failure(
+            core::Error{core::ErrorCode::InvalidState,
+                        "True Peak FIR stream already finalized."});
+    }
+    // Never materialize a second PCM copy. Only the small fixed FIR history
+    // and accepted scalar counters are copied for transactional commit.
+    auto candidate = *this;
+    for (const double sample : pcm) {
+        auto step = candidate.push(sample);
+        if (!step)
+            return core::Status::failure(*step.error());
+    }
+    *this = candidate;
+    return core::Status::success();
+}
+
 core::Result<double> TruePeakItu4xChannelStream::finalize()
 {
     if (finalized_ || programme_frames_ == 0) {

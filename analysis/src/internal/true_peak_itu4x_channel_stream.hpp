@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 
 namespace rgsml::analysis::internal {
 
@@ -17,6 +18,12 @@ struct TruePeakItu4xPhaseGroup final {
 class TruePeakItu4xChannelStream final {
 public:
     [[nodiscard]] core::Result<TruePeakItu4xPhaseGroup> push(double pcm);
+    // INTERNAL chronological frame spans. An entire call is atomic: if a
+    // late PCM or FIR arithmetic failure occurs, retain the preceding history,
+    // frame counter, peak and finalization state byte-for-byte.
+    // Empty spans are pre-finalize no-ops in this INTERNAL primitive only;
+    // this does NOT decide public TruePeakMeasurement empty-resource rules.
+    [[nodiscard]] core::Status push_chunk(std::span<const double> pcm);
     // Complete FULL-resource zero-extended support with exactly eleven
     // analyzer-only zero input frames; never append them to programme PCM.
     [[nodiscard]] core::Result<double> finalize();
