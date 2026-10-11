@@ -28,6 +28,7 @@ class StereoMsViewModelTest final : public QObject {
     Q_OBJECT
 private slots:
     void optInOnlyAndExactWidthMacro();
+    void rangeOver200AndUnrepresentableEditsRemainAtomic();
     void draftsAreTransactionalAndCommitOnce();
     void modesMuteAndBypassPreserveStoredValues();
     void responsePointsRespectDraftAndActualSignalFormat();
@@ -300,6 +301,63 @@ void StereoMsViewModelTest::optInOnlyAndExactWidthMacro()
                      - originalCommon) < 1e-12);
     QVERIFY(std::abs(dsp::stereo_ms_width_coordinates(committed).current_width_percent
                      - 100.0) < 1e-10);
+}
+
+void StereoMsViewModelTest::rangeOver200AndUnrepresentableEditsRemainAtomic()
+{
+    // Gate S: the physical Width slider ends at 200%; the frozen typed
+    // Mid/Side state can nevertheless represent greater Width. Never
+    // silently clamp a valid existing value merely to fit that slider.
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *core::Uuid::parse(
+        "57000000-0000-4000-8000-000000000001").value();
+    const auto gainId = id("57000000-0000-4000-8000-000000000010");
+    const auto eqId = id("57000000-0000-4000-8000-000000000020");
+    const auto compId = id("57000000-0000-4000-8000-000000000030");
+    const auto msId = id("57000000-0000-4000-8000-000000000040");
+
+    const auto wide = dsp::StereoMsParameters::create(
+        0.0, 12.0, false, dsp::MonoBassMode::OFF, 120.0, 100.0);
+    QVERIFY(wide);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId, gainId, eqId, compId,
+        msId, *wide.value(), false);
+    QVERIFY(state);
+    MasteringPreviewController controller(state.value());
+    StereoMsViewModel vm(state.value(), &controller);
+    QVERIFY(vm.available());
+    const auto displayed = vm.draft_width_percent();
+    QVERIFY(displayed > 200.0 && displayed < 500.0);
+    QCOMPARE(displayed, vm.width_percent());
+    QCOMPARE(*state.value()->stereo_ms_parameters(), *wide.value());
+    // An identical displayed value is legitimate despite exceeding the
+    // slider's physical range: no preview or immutable-chain mutation.
+    QVERIFY(vm.setDraftWidthPercent(displayed));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{0});
+    QCOMPARE(*state.value()->stereo_ms_parameters(), *wide.value());
+
+    // With common gain C=+9 dB, the legal Side endpoint +12 limits Width
+    // to <200%. Asking 200% must report NOT REPRESENTABLE; it must not
+    // silently adjust the common gain, clamp the request or commit DSP.
+    const auto narrow = dsp::StereoMsParameters::create(
+        9.0, 9.0, false, dsp::MonoBassMode::LR12, 120.0, 35.0);
+    QVERIFY(narrow);
+    QVERIFY(state.value()->set_stereo_ms_parameters(*narrow.value()));
+    vm.refreshFromAuthority();
+    QCOMPARE(vm.width_percent(), 100.0);
+    QVERIFY(!vm.setDraftWidthPercent(200.0));
+    QCOMPARE(vm.validation_field(), QStringLiteral("widthPercent"));
+    QVERIFY(vm.validation_message().contains(
+        QStringLiteral("fixed-common-gain"), Qt::CaseInsensitive));
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(controller.preview_generation(), std::uint64_t{0});
+    QCOMPARE(*state.value()->stereo_ms_parameters(), *narrow.value());
+    QCOMPARE(vm.draft_width_percent(), 100.0);
+    vm.cancelDraft();
+    QVERIFY(vm.validation_message().isEmpty());
+    QCOMPARE(*state.value()->stereo_ms_parameters(), *narrow.value());
 }
 
 void StereoMsViewModelTest::draftsAreTransactionalAndCommitOnce()
