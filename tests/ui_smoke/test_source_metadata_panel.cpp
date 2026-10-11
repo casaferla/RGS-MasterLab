@@ -24,6 +24,7 @@
 #include "../unit/platform/fake_playback_service.hpp"
 
 #include <QCoreApplication>
+#include <QColor>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
@@ -704,6 +705,32 @@ Window {
     QCOMPARE(midSlider->property("to").toDouble(), 12.0);
     QCOMPARE(sideSlider->property("from").toDouble(), -24.0);
     QCOMPARE(sideSlider->property("to").toDouble(), 12.0);
+    // Reuse Compressor MAKE-UP's existing bipolar fillFromOrigin
+    // contract. Both tracks are filled from ZERO, at 38% opacity.
+    // The asymmetrical -24..+12 SIDE range means zero is exactly
+    // two thirds along the track, not visually centered.
+    for (auto* slider : {midSlider, sideSlider}) {
+        QVERIFY(slider->property("fillFromOrigin").toBool());
+        QCOMPARE(slider->property("positionFillOrigin").toDouble(), 0.0);
+        const QColor fill = slider->property("positionFillColor").value<QColor>();
+        QVERIFY(fill.isValid());
+        QVERIFY(std::abs(fill.alphaF() - 0.38) <= 0.006);
+    }
+    const QColor midFill = midSlider->property("positionFillColor").value<QColor>();
+    const QColor sideFill = sideSlider->property("positionFillColor").value<QColor>();
+    QCOMPARE(midFill.red(), 0x4A);
+    QCOMPARE(midFill.green(), 0x9A);
+    QCOMPARE(midFill.blue(), 0x88);
+    QCOMPARE(sideFill.red(), 0x65);
+    QCOMPARE(sideFill.green(), 0x9C);
+    QCOMPARE(sideFill.blue(), 0xAF);
+    const auto zeroNorm = [](QObject* slider) {
+        const double from = slider->property("from").toDouble();
+        const double to = slider->property("to").toDouble();
+        return (0.0 - from) / (to - from);
+    };
+    QVERIFY(std::abs(zeroNorm(midSlider) - 0.5) < 1e-12);
+    QVERIFY(std::abs(zeroNorm(sideSlider) - 2.0 / 3.0) < 1e-12);
     QCOMPARE(midLabel->property("text").toString(), QStringLiteral("M"));
     QCOMPARE(sideLabel->property("text").toString(), QStringLiteral("S"));
     QCOMPARE(telemetryStatus->property("text").toString(),
@@ -898,6 +925,31 @@ Window {
     QVERIFY2(captureState(QStringLiteral(
                 "m15_stereo_ms_exact_item_1184x688_not_auditioned.png")),
              "NOT AUDITIONED must not display a phantom M/S cloud");
+
+    // True bipolar gain slider travel at both polarities; visuals are
+    // explicitly NOT AUDITIONED, not confused with an audible result.
+    // Draft changes must NEVER mutate the committed DSP parameters.
+    const auto beforeGainPreview = state.stereo_ms_parameters();
+    QVERIFY(beforeGainPreview);
+    QVERIFY(stereo.setDraftMidGainDb(-6.0));
+    QVERIFY(stereo.setDraftSideGainDb(6.0));
+    QCoreApplication::processEvents();
+    QCOMPARE(midSlider->property("value").toDouble(), -6.0);
+    QCOMPARE(sideSlider->property("value").toDouble(), 6.0);
+    QVERIFY2(captureState(QStringLiteral(
+                "m15_bipolar_gain_mid_minus6_side_plus6_1184x688.png")),
+             "Bipolar MID-/SIDE+ filled-track evidence missing");
+    QVERIFY(stereo.setDraftMidGainDb(6.0));
+    QVERIFY(stereo.setDraftSideGainDb(-12.0));
+    QCoreApplication::processEvents();
+    QCOMPARE(midSlider->property("value").toDouble(), 6.0);
+    QCOMPARE(sideSlider->property("value").toDouble(), -12.0);
+    QVERIFY2(captureState(QStringLiteral(
+                "m15_bipolar_gain_mid_plus6_side_minus12_1184x688.png")),
+             "Bipolar MID+/SIDE- filled-track evidence missing");
+    QCOMPARE(state.stereo_ms_parameters(), beforeGainPreview);
+    stereo.cancelDraft();
+    QCoreApplication::processEvents();
 
     // Gate S: stored OFF-mode numbers remain visible but cannot be edited.
     QVERIFY(stereo.setDraftMonoBassMode(QStringLiteral("OFF")));

@@ -462,7 +462,7 @@ Item {
                         value: root.viewModel ? root.viewModel.midGainDb : 0
                         fillFromOrigin: true
                         positionFillOrigin: 0
-                        positionFillColor: Qt.alpha(root.midGainHue, 0.28)
+                        positionFillColor: Qt.alpha(root.midGainHue, 0.38)
                         accentColor: root.midGainHue
                         focusAccentOnly: true
                         sliderAccessibleName: "Mid gain continuous adjustment"
@@ -488,7 +488,7 @@ Item {
                         value: root.viewModel ? root.viewModel.sideGainDb : 0
                         fillFromOrigin: true
                         positionFillOrigin: 0
-                        positionFillColor: Qt.alpha(root.sideGainHue, 0.28)
+                        positionFillColor: Qt.alpha(root.sideGainHue, 0.38)
                         accentColor: root.sideGainHue
                         focusAccentOnly: true
                         sliderAccessibleName: "Side gain continuous adjustment"
