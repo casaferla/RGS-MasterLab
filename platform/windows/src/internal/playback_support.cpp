@@ -639,6 +639,7 @@ core::Status PlaybackEngine::handoff_pcm(
                 encodedCrossfade.value()->end());
         }
         scheduledOutputFrame_ = handoffOutputFrame + xfadeOutputFrames;
+        generatedOutputFrames_ += xfadeOutputFrames;
     } else {
         scheduledOutputFrame_ = handoffOutputFrame;
     }
@@ -964,59 +965,115 @@ core::Status PlaybackEngine::set_loop(std::optional<core::FrameRange> loop)
                 "Playback loop must be a non-empty range within the Source.");
         }
     }
-    const auto previousPosition = position_;
-    const auto previousLoop = loop_;
-    const auto previousEligibility = loopTraversalEligible_;
     const bool wasPlaying = state_ == core::PlaybackState::PLAYING;
     const bool wasPaused = state_ == core::PlaybackState::PAUSED;
+    if (!wasPlaying && !wasPaused) {
+        loop_ = loop;
+        loopTraversalEligible_ = loop_
+            && position_.value() < loop_->end().value();
+        return core::Status::success();
+    }
+
+    // All device bytes already generated (including partially enqueued pending
+    // bytes and bytes acquired internally by QAudioSink) are immutable. The
+    // switch becomes audible only when those frames have actually played.
+    // Neither stop(), clear_queue(), nor reset_queue_state() is allowed here.
     if (wasPlaying) {
         update_position();
     }
-    if ((wasPlaying || wasPaused) && output_) {
-        auto stopped = output_->stop();
-        if (!stopped) {
-            position_ = previousPosition;
-            loop_ = previousLoop;
-            loopTraversalEligible_ = previousEligibility;
-            return stopped;
+    const LoopEpoch oldEpoch = scheduledLoopEpochs_.empty()
+        ? initialLoopEpoch_ : scheduledLoopEpochs_.back();
+    const auto elapsedInOldEpoch = std::max<std::int64_t>(
+        0, generatedOutputFrames_ - oldEpoch.firstGeneratedFrame);
+    const auto wrapsBefore = oldEpoch.wrapsBefore
+        + wraps_in_loop_epoch(oldEpoch, elapsedInOldEpoch);
+
+    // The next sample must follow the last already generated sample. If
+    // enabling a region whose end has already been passed by the ahead-of-
+    // playback decoder, enter at the region's begin on the FUTURE boundary.
+    auto nextOutputFrame = scheduledOutputFrame_;
+    auto eligible = loop
+        && output_to_source_frame(nextOutputFrame) < loop->end().value();
+    if (loop && !eligible) {
+        nextOutputFrame = source_to_output_frame(loop->begin().value());
+        eligible = true;
+    }
+    const LoopEpoch nextEpoch{
+        generatedOutputFrames_, nextOutputFrame, loop, eligible, wrapsBefore};
+
+    try {
+        if (!scheduledLoopEpochs_.empty()
+            && scheduledLoopEpochs_.back().firstGeneratedFrame
+                == generatedOutputFrames_) {
+            // Rapid toggles with no intervening decoded frames collapse to
+            // one future policy; already committed PCM remains unchanged.
+            scheduledLoopEpochs_.back() = nextEpoch;
+        } else {
+            scheduledLoopEpochs_.push_back(nextEpoch);
         }
-        output_->clear_queue();
+    } catch (const std::bad_alloc&) {
+        return status_failure(
+            core::ErrorCode::IoFailure,
+            "Unable to schedule continuous Loop Region reconfiguration.");
     }
 
     loop_ = loop;
-    loopTraversalEligible_ = loop_
-        && position_.value() < loop_->end().value();
-    if (wasPlaying || wasPaused) {
-        pendingHandoff_.reset();
+    loopTraversalEligible_ = eligible;
+    scheduledOutputFrame_ = nextOutputFrame;
+    eofScheduled_ = !eligible
+        && scheduledOutputFrame_ >= outputDuration_->value();
+
+    // Keep pendingHandoff_: earlier buffered PCM may still belong to the old
+    // audible realization. Clearing it here would falsify GR provenance.
+    // PAUSED remains suspended and PLAYING keeps its existing QAudioSink.
+    return core::Status::success();
+}
+
+PlaybackEngine::LoopEpoch PlaybackEngine::audible_loop_epoch(
+    std::int64_t processedFrame) const noexcept
+{
+    auto epoch = initialLoopEpoch_;
+    for (const auto& scheduled : scheduledLoopEpochs_) {
+        if (scheduled.firstGeneratedFrame > processedFrame) {
+            break;
+        }
+        epoch = scheduled;
     }
-    if (!wasPlaying && !wasPaused) {
-        return core::Status::success();
+    return epoch;
+}
+
+std::uint64_t PlaybackEngine::wraps_in_loop_epoch(
+    const LoopEpoch& epoch, std::int64_t elapsedFrames) const noexcept
+{
+    if (!epoch.loop || !epoch.eligible || elapsedFrames <= 0) {
+        return 0;
     }
-    reset_queue_state(position_.value());
-    if (wasPaused) {
-        state_ = core::PlaybackState::PAUSED;
-        return core::Status::success();
+    const auto begin = source_to_output_frame(epoch.loop->begin().value());
+    const auto end = source_to_output_frame(epoch.loop->end().value());
+    const auto length = end - begin;
+    if (length <= 0) {
+        return 0;
     }
-    state_ = core::PlaybackState::STOPPED;
-    return play_internal(false);
+    const auto maximum = std::numeric_limits<std::int64_t>::max();
+    const auto candidate = elapsedFrames > maximum - epoch.firstOutputFrame
+        ? maximum : epoch.firstOutputFrame + elapsedFrames;
+    if (candidate < end) {
+        return 0;
+    }
+    return static_cast<std::uint64_t>((candidate - begin) / length);
 }
 
 std::uint64_t PlaybackEngine::current_loop_wrap_count() const noexcept
 {
-    if (!output_ || !outputDuration_ || !loop_ || !loopTraversalEligible_) {
+    if (!output_) {
         return baseLoopWrapCount_;
     }
-    const auto totalProcessed = std::max<std::int64_t>(0, output_->processed_frames());
-    const auto relativeProcessed = std::max<std::int64_t>(0, totalProcessed - processedFrameBaseline_);
-    const auto loopBeginOutput = source_to_output_frame(loop_->begin().value());
-    const auto loopEndOutput = source_to_output_frame(loop_->end().value());
-    const auto loopLength = loopEndOutput - loopBeginOutput;
-    std::int64_t candidateOutput = playbackStartOutputFrame_ + relativeProcessed;
-    if (relativeProcessed > 0 && candidateOutput >= loopEndOutput && loopLength > 0) {
-        const auto wraps = static_cast<std::uint64_t>((candidateOutput - loopBeginOutput) / loopLength);
-        return baseLoopWrapCount_ + wraps;
-    }
-    return baseLoopWrapCount_;
+    const auto processed = std::max<std::int64_t>(
+        0, output_->processed_frames() - processedFrameBaseline_);
+    const auto epoch = audible_loop_epoch(processed);
+    return epoch.wrapsBefore + wraps_in_loop_epoch(
+        epoch, std::max<std::int64_t>(
+            0, processed - epoch.firstGeneratedFrame));
 }
 
 core::Result<core::PlaybackSnapshot> PlaybackEngine::snapshot() const
@@ -1131,6 +1188,12 @@ core::Status PlaybackEngine::pump_once()
     }
     const auto frames = std::min(
         kDecodeBlockFrames, boundary - scheduledOutputFrame_);
+    if (frames > std::numeric_limits<std::int64_t>::max()
+            - generatedOutputFrames_) {
+        return status_failure(
+            core::ErrorCode::OutOfRange,
+            "Playback device frame timeline overflow.");
+    }
     auto blockFrameCount = core::FrameCount::create(frames);
     if (!blockFrameCount) {
         return core::Status::failure(*blockFrameCount.error());
@@ -1179,6 +1242,7 @@ core::Status PlaybackEngine::pump_once()
     }
     pendingBytes_ = std::move(*encoded.value());
     pendingOffset_ = 0U;
+    generatedOutputFrames_ += frames;
     scheduledOutputFrame_ += frames;
     if (!loop_ && scheduledOutputFrame_ == outputDuration_->value()) {
         eofScheduled_ = true;
@@ -1216,6 +1280,11 @@ void PlaybackEngine::reset_queue_state(std::int64_t frame) noexcept
 {
     scheduledOutputFrame_ = source_to_output_frame(frame);
     playbackStartOutputFrame_ = scheduledOutputFrame_;
+    generatedOutputFrames_ = 0;
+    initialLoopEpoch_ = LoopEpoch{
+        0, scheduledOutputFrame_, loop_, loopTraversalEligible_,
+        baseLoopWrapCount_};
+    scheduledLoopEpochs_.clear();
     pendingBytes_.clear();
     pendingOffset_ = 0U;
     eofScheduled_ = false;
@@ -1265,31 +1334,27 @@ std::int64_t PlaybackEngine::current_output_frame() const noexcept
     }
     const auto totalProcessed = std::max<std::int64_t>(
         0, output_->processed_frames());
-    const auto relativeProcessed = std::max<std::int64_t>(
+    const auto processed = std::max<std::int64_t>(
         0, totalProcessed - processedFrameBaseline_);
-    std::int64_t candidateOutput = playbackStartOutputFrame_;
-    if (relativeProcessed
-        <= std::numeric_limits<std::int64_t>::max() - candidateOutput) {
-        candidateOutput += relativeProcessed;
-    } else {
-        candidateOutput = outputDuration_->value();
-    }
-    if (loop_ && loopTraversalEligible_) {
-        const auto loopBeginOutput =
-            source_to_output_frame(loop_->begin().value());
-        const auto loopEndOutput =
-            source_to_output_frame(loop_->end().value());
-        if (relativeProcessed > 0 && candidateOutput >= loopEndOutput) {
-            const auto loopLength = loopEndOutput - loopBeginOutput;
-            if (loopLength > 0) {
-                candidateOutput = loopBeginOutput
-                    + ((candidateOutput - loopEndOutput) % loopLength);
+    const auto epoch = audible_loop_epoch(processed);
+    const auto elapsed = std::max<std::int64_t>(
+        0, processed - epoch.firstGeneratedFrame);
+    const auto maximum = std::numeric_limits<std::int64_t>::max();
+    auto candidate = elapsed > maximum - epoch.firstOutputFrame
+        ? maximum : epoch.firstOutputFrame + elapsed;
+    if (epoch.loop && epoch.eligible) {
+        const auto begin = source_to_output_frame(epoch.loop->begin().value());
+        const auto end = source_to_output_frame(epoch.loop->end().value());
+        if (elapsed > 0 && candidate >= end) {
+            const auto length = end - begin;
+            if (length > 0) {
+                candidate = begin + ((candidate - end) % length);
             }
         }
     } else {
-        candidateOutput = std::min(candidateOutput, outputDuration_->value());
+        candidate = std::min(candidate, outputDuration_->value());
     }
-    return candidateOutput;
+    return candidate;
 }
 
 core::AudibleRealizationState PlaybackEngine::audible_realization_state() const noexcept
