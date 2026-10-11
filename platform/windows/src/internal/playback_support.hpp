@@ -126,6 +126,9 @@ private:
         std::optional<core::FrameRange> loop;
         bool eligible{false};
         std::uint64_t wrapsBefore{0};
+        // Restore this cursor if repeated toggles replace the policy before
+        // any additional PCM is generated (ON/OFF must be a true no-op).
+        std::int64_t cursorBeforeUncommittedSwitch{0};
     };
 
     struct PendingHandoff final {
