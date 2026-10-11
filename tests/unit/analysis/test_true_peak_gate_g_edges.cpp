@@ -207,8 +207,9 @@ void TruePeakGateGEdgePrequalTest::subnormalAndFiniteOverflowRemainTruthful()
         auto expectedAfterFailure = before;
         auto expected = expectedAfterFailure.push(0.0);
         QVERIFY(validAfterFailure && expected);
-        QCOMPARE(validAfterFailure.value()->signed_phases,
-                 expected.value()->signed_phases);
+        for (std::size_t phase = 0; phase < 4; ++phase)
+            QCOMPARE(validAfterFailure.value()->signed_phases[phase],
+                     expected.value()->signed_phases[phase]);
         QCOMPARE(s.linear_peak_so_far(), expectedAfterFailure.linear_peak_so_far());
         break;
     }
