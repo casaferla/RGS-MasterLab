@@ -8,6 +8,7 @@ add_library(rgsml_analysis STATIC
     src/spsc_ring.cpp
     src/live_spectrum_analyzer.cpp
     src/true_peak_itu4x_channel_stream.cpp
+    src/true_peak_full_resource.cpp
 )
 
 target_include_directories(rgsml_analysis
