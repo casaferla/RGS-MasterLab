@@ -40,9 +40,10 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        // Recover 12px across four inter-section gaps (4*3). In short
-        // windows, never steal these pixels from the EQ response graph.
-        spacing: 5
+        // Never steal from the graph's 102px canonical minimum.
+        // Validation errors transiently overlay its bottom 16px rather
+        // than reserving a permanently empty footer.
+        spacing: 2
 
         // Unified toolbar: fixed control scale at every supported width.
         RowLayout {
@@ -205,6 +206,50 @@ Rectangle {
             Layout.minimumHeight: 102
             viewModel: root.viewModel
             spectrumViewModel: root.spectrumViewModel
+
+            // A validation problem becomes a nonpersistent overlay at the
+            // graph's lower edge; no extra height is consumed in the root.
+            Rectangle {
+                objectName: "eqStatusRegion"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 16
+                z: 40
+                visible: messageText.text.length > 0
+                color: "#E012243F"
+                radius: 3
+    
+                Text {
+                    id: messageText
+                    objectName: "validationMessageText"
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: {
+                        if (!root.viewModel) return ""
+                        if (root.viewModel.validationMessage.length > 0) return root.viewModel.validationMessage
+                        if (root.viewModel.previewStatus === "ERROR") return root.viewModel.previewError
+                        return ""
+                    }
+                    color: "#F27683"
+                    font.family: "Segoe UI"
+                    font.pixelSize: 12
+                    visible: text.length > 0
+                    elide: Text.ElideRight
+    
+                    ToolTip.text: text
+                    ToolTip.visible: messageMouseArea.containsMouse && text.length > 0
+    
+                    Accessible.name: text
+                    Accessible.description: text
+    
+                    MouseArea {
+                        id: messageMouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                    }
+                }
+            }
         }
 
         // Selected-Band Inspector: extended down for compact slider tier,
@@ -549,45 +594,6 @@ Rectangle {
             }
         }
 
-        // Error text uses 12px type and fits within 16px. Reclaim 8px
-        // vertically but preserve visibility even when errors are shown.
-        // In total with the 12px gap + 4px selector savings, this
-        // balances the inspector's exact +24px extension.
-        Rectangle {
-            objectName: "eqStatusRegion"
-            Layout.fillWidth: true
-            Layout.preferredHeight: 16
-            color: "transparent"
 
-            Text {
-                id: messageText
-                objectName: "validationMessageText"
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: {
-                    if (!root.viewModel) return ""
-                    if (root.viewModel.validationMessage.length > 0) return root.viewModel.validationMessage
-                    if (root.viewModel.previewStatus === "ERROR") return root.viewModel.previewError
-                    return ""
-                }
-                color: "#F27683"
-                font.family: "Segoe UI"
-                font.pixelSize: 12
-                visible: text.length > 0
-                elide: Text.ElideRight
-
-                ToolTip.text: text
-                ToolTip.visible: messageMouseArea.containsMouse && text.length > 0
-
-                Accessible.name: text
-                Accessible.description: text
-
-                MouseArea {
-                    id: messageMouseArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                }
-            }
-        }
     }
 }

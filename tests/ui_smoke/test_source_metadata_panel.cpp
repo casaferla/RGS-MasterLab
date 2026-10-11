@@ -244,6 +244,7 @@ struct LayoutEvalMetrics {
     bool gainEditorContainedInHost{false};
     bool eqInspectorContained{false};
     bool eqStatusContained{false};
+    bool eqStatusOverGraph{false};
     bool eqHeaderControlsContained{false};
     bool eqFilterButtonsContained{false};
     bool eqRoutingButtonsContained{false};
@@ -397,6 +398,8 @@ struct LayoutEvalResult {
             metrics.eqStatusHeight = statusItem->height();
             metrics.eqStatusContained = check_item_contained_in_ancestor(
                 statusItem, eqEditorItem);
+            metrics.eqStatusOverGraph = check_item_contained_in_ancestor(
+                statusItem, qobject_cast<QQuickItem*>(eqGraph));
         }
 
         // Header / Action Controls
@@ -2221,12 +2224,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqViewModel.validation_field(), QStringLiteral("frequency"));
     auto* valMsgText = find_child_by_name(eqEditor, QStringLiteral("validationMessageText"));
     QVERIFY2(valMsgText && valMsgText->property("visible").toBool(), "Validation message text must be visible for invalid draft");
+    auto* transientError = qobject_cast<QQuickItem*>(find_child_by_name(
+        eqEditor, QStringLiteral("eqStatusRegion")));
+    QVERIFY(transientError && transientError->isVisible());
+    QVERIFY2(check_item_contained_in_ancestor(
+        transientError, qobject_cast<QQuickItem*>(eqGraph)),
+        "Actual invalid input must show validation INSIDE EQ response graph");
 
     QTest::keyClick(window, Qt::Key_Escape);
     QCoreApplication::processEvents();
     QCOMPARE(freqInput->property("text").toString(), QStringLiteral("1000"));
     QCOMPARE(eqViewModel.frequency_text(), QStringLiteral("1000"));
     QVERIFY2(eqViewModel.validation_field().isEmpty(), "Validation field must be empty after Escape key cancel");
+    QVERIFY2(!transientError->isVisible(),
+        "Esc must remove temporary graph validation overlay");
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=ab-and-byp-semantics";
     auto* undoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqUndoButton"));
@@ -2433,8 +2444,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     verifyContainmentMetrics(res1440.metrics, "1440x900");
     QVERIFY2(res1440.metrics.adaptiveContextVisible, "Adaptive Context must remain present at 1440x900");
     QVERIFY2(res1440.metrics.eqInspectorContained, "EQ inspector must be vertically contained at 1440x900");
-    QVERIFY2(res1440.metrics.eqStatusContained,
-        "EQ status/error strip must remain inside editor at 1440x900");
+    QVERIFY2(res1440.metrics.eqStatusContained && res1440.metrics.eqStatusOverGraph,
+        "EQ validation overlay must remain inside graph at 1440x900");
     QVERIFY2(res1440.metrics.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
     QVERIFY2(res1440.metrics.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
 
@@ -2451,7 +2462,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             .arg(res1920Short.metrics.eqInspectorHeight)
             .arg(res1920Short.metrics.eqInspectorY + res1920Short.metrics.eqInspectorHeight)));
     QVERIFY2(res1920Short.metrics.eqStatusContained,
-        "EQ status/error strip must remain below inspector AND inside editor at 1920x688");
+        "EQ transient status must remain inside editor at 1920x688");
+    QVERIFY2(res1920Short.metrics.eqStatusOverGraph,
+        "EQ validation strip must overlay graph, not reserve permanent footer");
+    QVERIFY2(res1920Short.metrics.eqStatusY + res1920Short.metrics.eqStatusHeight
+             <= res1920Short.metrics.eqInspectorY + 0.5,
+        "EQ validation overlay must not overlap inspector controls");
+    QVERIFY2(res1920Short.metrics.eqGraphHeight >= 102.0,
+        "EQ graph must stay at least 102px tall");
     QCOMPARE(res1920Short.metrics.eqStatusHeight, 16.0);
     QVERIFY2(res1920Short.metrics.waveformHeight >= 135.0, "Waveform must remain recognizable in a wide, short window");
 
@@ -2469,8 +2487,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     verifyContainmentMetrics(res1184.metrics, "1184x688");
     QVERIFY2(res1184.metrics.adaptiveContextVisible, "Adaptive Context must remain visible at minimum composition");
     QVERIFY2(res1184.metrics.eqInspectorContained, "EQ inspector must be vertically contained at minimum composition");
-    QVERIFY2(res1184.metrics.eqStatusContained,
-        "EQ status/error strip must remain inside editor at 1184x688");
+    QVERIFY2(res1184.metrics.eqStatusContained && res1184.metrics.eqStatusOverGraph,
+        "EQ validation overlay must remain inside graph at 1184x688");
     QVERIFY2(res1184.metrics.waveformHeight >= 135.0, "Waveform height must be >= 135 px at 1184x688");
     QVERIFY2(res1184.metrics.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
 
