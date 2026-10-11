@@ -119,6 +119,8 @@ Item {
         }
 
         background: Rectangle {
+            id: trackBackground
+            objectName: "studioSliderTrack"
             x: internalSlider.leftPadding
             y: internalSlider.topPadding + internalSlider.availableHeight / 2 - height / 2
             width: internalSlider.availableWidth
@@ -128,13 +130,27 @@ Item {
             border.color: "#1E354A"
             border.width: 1
 
-            // Subdued subtle track fill showing current level
+            // Use the SAME geometry as the actual handle. A handle's CENTER
+            // moves within [radius, trackWidth-radius]; its visualPosition
+            // must not be multiplied by the full background width.
+            function thumbCenterAt(pos) {
+                const radius = internalSlider.handle
+                    ? internalSlider.handle.width / 2 : (control.compact ? 6 : 9)
+                return radius + Math.max(0, width - 2 * radius)
+                    * Math.max(0, Math.min(1, pos))
+            }
+
             Rectangle {
-                property real originPos: control.fillFromOrigin ? control.valueToPosition(control.positionFillOrigin) : 0.0
-                property real currentPos: internalSlider.visualPosition
-                x: Math.min(originPos, currentPos) * parent.width
+                id: trackFill
+                objectName: "studioSliderTrackFill"
+                readonly property real originPx: control.fillFromOrigin
+                    ? trackBackground.thumbCenterAt(
+                        control.valueToPosition(control.positionFillOrigin)) : 0
+                readonly property real currentPx:
+                    trackBackground.thumbCenterAt(internalSlider.visualPosition)
+                x: Math.min(originPx, currentPx)
                 y: 0
-                width: Math.abs(currentPos - originPos) * parent.width
+                width: Math.abs(currentPx - originPx)
                 height: parent.height
                 radius: parent.radius
                 color: control.positionFillColor
@@ -142,6 +158,7 @@ Item {
         }
 
         handle: Rectangle {
+            objectName: "studioSliderThumb"
             x: internalSlider.leftPadding + internalSlider.visualPosition * (internalSlider.availableWidth - width)
             y: internalSlider.topPadding + internalSlider.availableHeight / 2 - height / 2
             width: control.compact ? 12 : 18

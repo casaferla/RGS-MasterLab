@@ -165,6 +165,33 @@ namespace {
     return nullptr;
 }
 
+// Geometric regression oracle: the colored run terminates exactly at the
+// WHITE handle center, at both polarities. This accounts for handle radius
+// and also checks that the zero origin is at the correct normalized point.
+// Do not test just a plotted percentage of the background track width.
+[[nodiscard]] bool bipolar_fill_matches_handle(
+    QObject* slider, const QString& trackName,
+    const QString& fillName, const QString& thumbName,
+    double zeroNormalized)
+{
+    auto* track = qobject_cast<QQuickItem*>(
+        find_child_by_name(slider, trackName));
+    auto* fill = qobject_cast<QQuickItem*>(
+        find_child_by_name(slider, fillName));
+    auto* thumb = qobject_cast<QQuickItem*>(
+        find_child_by_name(slider, thumbName));
+    if (!track || !fill || !thumb || track->width() <= thumb->width())
+        return false;
+    const double centerX = thumb->mapToItem(
+        track, QPointF{thumb->width() / 2, thumb->height() / 2}).x();
+    const double radius = thumb->width() / 2;
+    const double zeroX = radius + zeroNormalized * (track->width() - 2 * radius);
+    const double startX = std::min(centerX, zeroX);
+    const double endX = std::max(centerX, zeroX);
+    return std::abs(fill->x() - startX) <= 0.7
+        && std::abs(fill->x() + fill->width() - endX) <= 0.7;
+}
+
 [[nodiscard]] bool capture_visual_evidence(
     QWindow* window,
     const QString& fileName,
@@ -731,6 +758,20 @@ Window {
     };
     QVERIFY(std::abs(zeroNorm(midSlider) - 0.5) < 1e-12);
     QVERIFY(std::abs(zeroNorm(sideSlider) - 2.0 / 3.0) < 1e-12);
+    const auto checkMidFill = [&]() {
+        return bipolar_fill_matches_handle(
+            midSlider, QStringLiteral("studioSliderTrack"),
+            QStringLiteral("studioSliderTrackFill"),
+            QStringLiteral("studioSliderThumb"), 0.5);
+    };
+    const auto checkSideFill = [&]() {
+        return bipolar_fill_matches_handle(
+            sideSlider, QStringLiteral("studioSliderTrack"),
+            QStringLiteral("studioSliderTrackFill"),
+            QStringLiteral("studioSliderThumb"), 2.0 / 3.0);
+    };
+    QVERIFY2(checkMidFill() && checkSideFill(),
+             "MID/SIDE zero-origin fills must terminate at white knob centers");
     QCOMPARE(midLabel->property("text").toString(), QStringLiteral("M"));
     QCOMPARE(sideLabel->property("text").toString(), QStringLiteral("S"));
     QCOMPARE(telemetryStatus->property("text").toString(),
@@ -936,6 +977,8 @@ Window {
     QCoreApplication::processEvents();
     QCOMPARE(midSlider->property("value").toDouble(), -6.0);
     QCOMPARE(sideSlider->property("value").toDouble(), 6.0);
+    QVERIFY2(checkMidFill() && checkSideFill(),
+             "MID negative and SIDE positive fills must reach the handles");
     QVERIFY2(captureState(QStringLiteral(
                 "m15_bipolar_gain_mid_minus6_side_plus6_1184x688.png")),
              "Bipolar MID-/SIDE+ filled-track evidence missing");
@@ -944,6 +987,8 @@ Window {
     QCoreApplication::processEvents();
     QCOMPARE(midSlider->property("value").toDouble(), 6.0);
     QCOMPARE(sideSlider->property("value").toDouble(), -12.0);
+    QVERIFY2(checkMidFill() && checkSideFill(),
+             "MID positive and SIDE negative fills must reach the handles");
     QVERIFY2(captureState(QStringLiteral(
                 "m15_bipolar_gain_mid_plus6_side_minus12_1184x688.png")),
              "Bipolar MID+/SIDE- filled-track evidence missing");
@@ -1816,6 +1861,22 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* gainValidationError = inputGainEditor->findChild<QObject*>(QStringLiteral("gainValidationError"));
 
     QVERIFY2(gainDbDisplay && gainDbInput && gainSlider && resetGainButton && gainValidationError, "Input Gain editor controls must exist");
+    const auto gainFillTracksKnob = [&]() {
+        return bipolar_fill_matches_handle(
+            gainSlider, QStringLiteral("gainSliderTrack"),
+            QStringLiteral("gainSliderTrackFill"),
+            QStringLiteral("gainSliderThumb"), 0.5);
+    };
+    QVERIFY2(gainFillTracksKnob(),
+             "Input Gain ZERO track must terminate at centered white knob");
+    auto* gainFill = find_child_by_name(
+        gainSlider, QStringLiteral("gainSliderTrackFill"));
+    QVERIFY(gainFill);
+    const QColor gainTrackColor = gainFill->property("color").value<QColor>();
+    QCOMPARE(gainTrackColor.red(), 0);
+    QCOMPARE(gainTrackColor.green(), 200);
+    QCOMPARE(gainTrackColor.blue(), 255);
+    QVERIFY(std::abs(gainTrackColor.alphaF() - 0.38) <= 0.006);
     QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("0.0 dB"));
     QCOMPARE(gainDbInput->property("text").toString(), QStringLiteral("0.0"));
     QVERIFY(gainDbInput->property("interactionHint").toString().contains(QStringLiteral("slider")));
@@ -1888,6 +1949,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(gainViewModel.setGainDb(3.5));
     QCoreApplication::processEvents();
     QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("+3.5 dB"));
+    QVERIFY2(gainFillTracksKnob(),
+             "Positive Input Gain track must end at the actual knob center");
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("+3.5 dB Manual"));
     QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
     QCOMPARE(chainTitleItem0->mapToItem(
@@ -1914,10 +1977,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(gainViewModel.setGainDb(-24.0));
     QCoreApplication::processEvents();
     QCOMPARE(gainViewModel.gain_db(), -24.0);
+    QVERIFY2(gainFillTracksKnob(),
+             "Negative Input Gain track must end at the actual knob center");
 
     QVERIFY(gainViewModel.setGainDb(24.0));
     QCoreApplication::processEvents();
     QCOMPARE(gainViewModel.gain_db(), 24.0);
+    QVERIFY(gainFillTracksKnob());
 
     // Invalid gain text format shows validation error and preserves previous value
     QVERIFY(!gainViewModel.setGainDbText(QStringLiteral("invalid")));
@@ -1929,6 +1995,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(QMetaObject::invokeMethod(resetGainButton, "clicked"), "Clicking resetGainButton must succeed");
     QCoreApplication::processEvents();
     QCOMPARE(gainViewModel.gain_db(), 0.0);
+    QVERIFY(gainFillTracksKnob());
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
     QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
     QVERIFY2(!gainValidationError->property("visible").toBool(), "gainValidationError must be hidden after reset");
@@ -2901,6 +2968,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     QVERIFY2(makeupSlider->property("fillFromOrigin").toBool(), "Make-up slider fillFromOrigin must be true");
     QCOMPARE(makeupSlider->property("positionFillOrigin").toDouble(), 0.0);
+    // Shared geometry correction is ALSO audited on Compressor MAKE-UP,
+    // not only on the new M15 editor.
+    QVERIFY2(bipolar_fill_matches_handle(
+        makeupSlider, QStringLiteral("studioSliderTrack"),
+        QStringLiteral("studioSliderTrackFill"),
+        QStringLiteral("studioSliderThumb"), 0.5),
+        "Compressor MAKE-UP centered fill must use the same handle geometry");
 
     QCOMPARE(compressorViewModel.transfer_curve_handles().size(), 4);
     auto* thresholdFieldCheck = find_child_by_name(compressorEditor, QStringLiteral("compressorThresholdField"));
