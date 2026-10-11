@@ -94,14 +94,21 @@ measure_unqualified_true_peak_full_resource(const audio::AudioBuffer& resource)
     }
 
     std::array<TruePeakItu4xChannelStream, 2> fir{};
-    // Chronological source frame order: L/R independent, never summed.
-    for (std::size_t i = 0; i < static_cast<std::size_t>(frames); ++i) {
-        for (std::size_t ch = 0; ch < count; ++ch) {
-            auto step = fir[ch].push(channels[ch][i]);
+    // Full owning resource only. Visit each channel in strictly increasing
+    // chronological frame order. Chunk boundaries NEVER reset FIR history;
+    // the same binary64 operations and 11-frame EOS apply as scalar push.
+    constexpr std::size_t kMeasurementChunkFrames = 4096;
+    const std::size_t totalFrames = static_cast<std::size_t>(frames);
+    for (std::size_t ch = 0; ch < count; ++ch) {
+        for (std::size_t begin = 0; begin < totalFrames;) {
+            const std::size_t length =
+                std::min(kMeasurementChunkFrames, totalFrames - begin);
+            auto step = fir[ch].push_chunk(channels[ch].subspan(begin, length));
             if (!step) {
                 return core::Result<UnqualifiedTruePeakResourceEvidence>::failure(
                     *step.error());
             }
+            begin += length;
         }
     }
 

@@ -1,4 +1,5 @@
 #include "internal/true_peak_full_resource.hpp"
+#include "internal/true_peak_itu4x_channel_stream.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
@@ -60,6 +61,7 @@ private slots:
     void stereoIndependentChannelsAndSwaps();
     void silenceNullDbAndDcNoCompensation();
     void rejectsLateNonfiniteAndUnsupportedWithoutSourceMutation();
+    void fullResource4096ChunkBoundaryParity();
 };
 
 void TruePeakFullResourceTest::monoSixRatesImpulseAndTail()
@@ -174,6 +176,100 @@ void TruePeakFullResourceTest::rejectsLateNonfiniteAndUnsupportedWithoutSourceMu
     QVERIFY(elevated);
     QCOMPARE(elevated.value()->global_linear_peak, 2.0 * 7964.0 / 8192.0);
     QVERIFY(*elevated.value()->global_db_tp > 0.0);
+}
+
+void TruePeakFullResourceTest::fullResource4096ChunkBoundaryParity()
+{
+    using analysis::internal::TruePeakItu4xChannelStream;
+    constexpr std::array<std::int64_t, 6> rates{
+        44100, 48000, 88200, 96000, 176400, 192000
+    };
+    // Exercise the exact boundary where the full-resource adapter switches
+    // chunk, plus adjacent frames and multiple-chunk finalization.
+    constexpr std::array<std::size_t, 4> lengths{
+        4095, 4096, 4097, 8193
+    };
+    for (std::int64_t hz : rates) {
+        for (std::size_t n : lengths) {
+            std::vector<double> left(n), right(n);
+            std::uint32_t sl = 0x4D313600U, sr = 0x4D313601U;
+            for (std::size_t i = 0; i < n; ++i) {
+                sl = sl * 1664525U + 1013904223U;
+                sr = sr * 1664525U + 1013904223U;
+                left[i] = static_cast<double>(
+                    static_cast<std::int32_t>((sl >> 24) & 0xffU) - 128) / 256.0;
+                right[i] = static_cast<double>(
+                    static_cast<std::int32_t>((sr >> 24) & 0xffU) - 128) / 256.0;
+            }
+            // A final-frame >1 finite PCM catches premature termination.
+            left[n - 1] = 2.0;
+            right[n - 1] = -1.5;
+
+            for (int stereo = 0; stereo <= 1; ++stereo) {
+                const auto layout = stereo
+                    ? ChannelLayout::STEREO_LR : ChannelLayout::MONO_C;
+                auto resource = make_pcm(hz, layout, left, stereo
+                    ? std::span<const double>{right}
+                    : std::span<const double>{});
+                QVERIFY(resource);
+                auto measured = measure_unqualified_true_peak_full_resource(
+                    *resource.value());
+                QVERIFY(measured);
+                QCOMPARE(measured.value()->sample_rate_hz, hz);
+                QCOMPARE(measured.value()->channel_count,
+                         static_cast<std::size_t>(stereo ? 2 : 1));
+
+                // Independent SCALAR history progression is a same-build
+                // reference for the new per-channel 4096-frame chunk path.
+                // An independent lag-major integer oracle already validates
+                // those signed phase maxima in B1e's separate test target.
+                double maximum = 0.0;
+                for (std::size_t ch = 0; ch < measured.value()->channel_count;
+                     ++ch) {
+                    const auto& pcm = ch == 0 ? left : right;
+                    TruePeakItu4xChannelStream scalar;
+                    for (double x : pcm)
+                        QVERIFY(scalar.push(x));
+                    auto expectedPeak = scalar.finalize();
+                    QVERIFY(expectedPeak);
+                    QCOMPARE(measured.value()->per_channel_linear_peak[ch],
+                             *expectedPeak.value());
+                    QCOMPARE(*measured.value()->per_channel_db_tp[ch],
+                             20.0 * std::log10(*expectedPeak.value()));
+                    maximum = std::max(maximum, *expectedPeak.value());
+                }
+                QCOMPARE(measured.value()->global_linear_peak, maximum);
+                QCOMPARE(*measured.value()->global_db_tp,
+                         20.0 * std::log10(maximum));
+                QVERIFY(!measured.value()->is_exact_silence);
+                auto preservedL = resource.value()->view().channel(0);
+                QVERIFY(preservedL);
+                QCOMPARE((*preservedL.value())[n - 1], 2.0);
+                if (stereo) {
+                    auto preservedR = resource.value()->view().channel(1);
+                    QVERIFY(preservedR);
+                    QCOMPARE((*preservedR.value())[n - 1], -1.5);
+                }
+            }
+        }
+    }
+
+    // Reject an invalid PCM near the second chunk, never expose partial
+    // result evidence, and never alter the input resource.
+    std::vector<double> left(4098, 0.125);
+    std::vector<double> right(4098, -0.25);
+    right[4097] = std::numeric_limits<double>::quiet_NaN();
+    auto invalidResource = make_pcm(
+        48000, ChannelLayout::STEREO_LR, left, right);
+    QVERIFY(invalidResource);
+    auto rejected = measure_unqualified_true_peak_full_resource(
+        *invalidResource.value());
+    QVERIFY(!rejected);
+    QCOMPARE(rejected.error()->code(), core::ErrorCode::InvalidAudioSample);
+    auto preserved = invalidResource.value()->view().channel(1);
+    QVERIFY(preserved);
+    QVERIFY(std::isnan((*preserved.value())[4097]));
+    QCOMPARE((*preserved.value())[4096], -0.25);
 }
 
 }  // namespace
