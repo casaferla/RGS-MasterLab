@@ -316,8 +316,23 @@ bool StereoMsViewModel::setDraftWidthPercent(double value)
     if (!p) return false;
     const auto result = dsp::stereo_ms_edit_width_preserving_common_gain(*p, value);
     if (!result) {
-        set_error(QStringLiteral("widthPercent"),
-                  QString::fromStdString(result.error()->message()));
+        // The editor's normal 0..200% slider range is not the hard DSP
+        // domain. On a finite, positive unrepresentable request, expose
+        // the true fixed-common-gain interval derived by the canonical DSP
+        // coordinate helper; do not clamp or adjust common gain.
+        const auto bounds = dsp::stereo_ms_width_coordinates(*p);
+        const bool outsidePositiveRange =
+            std::isfinite(value) && value > 0.0
+            && (value < bounds.minimum_positive_width_percent
+                || value > bounds.maximum_positive_width_percent);
+        const QString reason = outsidePositiveRange
+            ? QStringLiteral(
+                  "Width not representable at fixed-common-gain. "
+                  "Valid positive Width approx. %1-%2%; 0% mutes Side.")
+                  .arg(QString::number(bounds.minimum_positive_width_percent, 'f', 4))
+                  .arg(QString::number(bounds.maximum_positive_width_percent, 'f', 4))
+            : QString::fromStdString(result.error()->message());
+        set_error(QStringLiteral("widthPercent"), reason);
         return false;
     }
     draft_ = *result.value();

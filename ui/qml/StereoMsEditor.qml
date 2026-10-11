@@ -47,6 +47,8 @@ Item {
             }
             Item { Layout.fillWidth: true }
             Text {
+                id: validationFeedbackText
+                objectName: "stereoMsValidationFeedbackText"
                 text: root.viewModel ? root.viewModel.validationMessage : ""
                 visible: text.length > 0
                 color: "#F27683"
@@ -54,6 +56,14 @@ Item {
                 font.pixelSize: 11
                 elide: Text.ElideRight
                 Layout.maximumWidth: 250
+
+                // Preserve the compact header, but never hide the full
+                // representability interval behind Text.ElideRight.
+                HoverHandler { id: validationFeedbackHover }
+                ToolTip.text: validationFeedbackText.text
+                ToolTip.visible: validationFeedbackHover.hovered && validationFeedbackText.text.length > 0
+                ToolTip.delay: 450
+                Accessible.name: validationFeedbackText.text
             }
             StudioButton {
                 objectName: "stereoMsResetButton"

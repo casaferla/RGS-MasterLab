@@ -351,6 +351,15 @@ void StereoMsViewModelTest::rangeOver200AndUnrepresentableEditsRemainAtomic()
     QCOMPARE(vm.validation_field(), QStringLiteral("widthPercent"));
     QVERIFY(vm.validation_message().contains(
         QStringLiteral("fixed-common-gain"), Qt::CaseInsensitive));
+    // Gate S requires the *actual* representable range to be exposed.
+    // C=+9 gives d in [-6,+6] dB, approximately 50.1187..199.5262%.
+    const auto rangeFeedback = vm.validation_message();
+    QVERIFY(rangeFeedback.contains(QStringLiteral("50.1187")));
+    QVERIFY(rangeFeedback.contains(QStringLiteral("199.5262")));
+    QVERIFY(rangeFeedback.contains(QStringLiteral("0% mutes Side")));
+    // Lower-bound rejection is equally atomic, not just the upper bound.
+    QVERIFY(!vm.setDraftWidthPercent(25.0));
+    QCOMPARE(vm.validation_message(), rangeFeedback);
     QVERIFY(!vm.commitDraft());
     QCOMPARE(controller.preview_generation(), std::uint64_t{0});
     QCOMPARE(*state.value()->stereo_ms_parameters(), *narrow.value());
