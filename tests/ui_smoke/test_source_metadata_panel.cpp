@@ -2659,9 +2659,18 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqFilterLabel->property("text").toString(), QStringLiteral("FILTER"));
     QCOMPARE(eqRoutingLabel->property("text").toString(), QStringLiteral("ROUTING"));
     QCOMPARE(eqSlopeLabel->property("text").toString(), QStringLiteral("SLOPE"));
+    // Preserve the legacy graph/keyboard/wheel guidance AND advertise the
+    // new third input modality. Regression caught by exact CI #396.
     QVERIFY(frequencyFieldObj->property("interactionHint").toString().contains(QStringLiteral("left/right")));
     QVERIFY(gainFieldObj->property("interactionHint").toString().contains(QStringLiteral("up/down")));
     QVERIFY(qFieldObj->property("interactionHint").toString().contains(QStringLiteral("Mouse wheel")));
+    for (auto* field : {frequencyFieldObj, gainFieldObj, qFieldObj, shelfSlopeFieldObj}) {
+        const auto hint = field->property("interactionHint").toString();
+        QVERIFY2(hint.contains(QStringLiteral("slider"), Qt::CaseInsensitive),
+                 "An EQ numeric field with a slider must document that modality");
+    }
+    QVERIFY(qFieldObj->property("interactionHint").toString().contains(QStringLiteral("Shift + wheel")));
+    QVERIFY(shelfSlopeFieldObj->property("interactionHint").toString().contains(QStringLiteral("Shift + wheel")));
 
     for (auto* numericField : {frequencyFieldObj, gainFieldObj, qFieldObj}) {
         QVERIFY2(numericField != nullptr, "Numeric field must exist at minimum size");

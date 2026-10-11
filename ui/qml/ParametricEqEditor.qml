@@ -425,7 +425,7 @@ Rectangle {
                             hasSemanticAccent: true
                             haloOnFocus: true
                             lightAccentSeparator: root.whiteSelectedBand
-                            interactionHint: "Drag selected EQ point or slider. Enter to apply; Esc cancels."
+                            interactionHint: "Drag the EQ point left/right or use slider to adjust\nEnter to apply • Esc to cancel"
                             sliderAccessibleName: "FREQUENCY selected-band adjustment"
                         }
 
@@ -454,7 +454,7 @@ Rectangle {
                             hasSemanticAccent: true
                             haloOnFocus: true
                             lightAccentSeparator: root.whiteSelectedBand
-                            interactionHint: "Drag selected EQ point or slider. Enter to apply; Esc cancels."
+                            interactionHint: "Drag the EQ point up/down or use slider to adjust\nEnter to apply • Esc to cancel"
                             sliderAccessibleName: "GAIN selected-band adjustment"
                         }
 
@@ -481,7 +481,7 @@ Rectangle {
                             hasSemanticAccent: true
                             haloOnFocus: true
                             lightAccentSeparator: root.whiteSelectedBand
-                            interactionHint: "Mouse wheel on selected point or drag slider. Enter to apply."
+                            interactionHint: "Mouse wheel over the EQ point or use slider to adjust\nShift + wheel for fine adjustment"
                             sliderAccessibleName: "Q selected-band adjustment"
                         }
 
@@ -508,7 +508,7 @@ Rectangle {
                             hasSemanticAccent: true
                             haloOnFocus: true
                             lightAccentSeparator: root.whiteSelectedBand
-                            interactionHint: "Drag slider to adjust selected shelf's slope. Enter to apply."
+                            interactionHint: "Mouse wheel over the EQ point or use slider to adjust\nShift + wheel for fine adjustment"
                             sliderAccessibleName: "SHELF SLOPE selected-band adjustment"
                         }
 
