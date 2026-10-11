@@ -188,7 +188,8 @@ int main(int argc, char* argv[])
         &masteringChainState, &gainViewModel, &eqViewModel, &dspChainAdapterModel, &previewController};
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
-         &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession](
+         &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,
+         &stereoMsViewModel](
             const rgsml::core::ResourceReference& source) {
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
@@ -208,6 +209,11 @@ int main(int argc, char* argv[])
             }
             goldSelection.sourceChanged();
             sourceWaveform.source_committed(source);
+            // Use the committed source's real format AFTER the adapter's
+            // new-source reset has invalidated prior format evidence.
+            stereoMsViewModel.setSignalFormat(
+                static_cast<double>(sourceSelection.sample_rate_hz()),
+                sourceSelection.channel_count());
         });
     waveformPresentation.set_seek_handler(
         [&auditionRegion](rgsml::core::FrameIndex position) {

@@ -358,6 +358,8 @@ Item {
                     StudioNumericSliderPair {
                         objectName: "stereoMsWidthControl"
                         Layout.fillWidth: true
+                        enabled: root.viewModel && root.viewModel.spatialControlsEffective
+                        opacity: enabled ? 1 : 0.48
                         fieldObjectName: "stereoMsWidthField"
                         sliderObjectName: "stereoMsWidthSlider"
                         compactFieldWidth: root.numericFieldWidth
@@ -380,6 +382,9 @@ Item {
                     StudioNumericSliderPair {
                         objectName: "stereoMsCutoffControl"
                         Layout.fillWidth: true
+                        enabled: root.viewModel && root.viewModel.spatialControlsEffective
+                            && root.viewModel.monoBassControlsEffective
+                        opacity: enabled ? 1 : 0.48
                         fieldObjectName: "stereoMsCutoffField"
                         sliderObjectName: "stereoMsCutoffSlider"
                         compactFieldWidth: root.numericFieldWidth
@@ -401,6 +406,9 @@ Item {
                     StudioNumericSliderPair {
                         objectName: "stereoMsLowWidthControl"
                         Layout.fillWidth: true
+                        enabled: root.viewModel && root.viewModel.spatialControlsEffective
+                            && root.viewModel.monoBassControlsEffective
+                        opacity: enabled ? 1 : 0.48
                         fieldObjectName: "stereoMsLowWidthField"
                         sliderObjectName: "stereoMsLowWidthSlider"
                         compactFieldWidth: root.numericFieldWidth
@@ -437,6 +445,8 @@ Item {
                         objectName: "stereoMsMidGainControl"
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignTop
+                        enabled: root.viewModel && root.viewModel.spatialControlsEffective
+                        opacity: enabled ? 1 : 0.48
                         fieldObjectName: "stereoMsMidGainField"
                         sliderObjectName: "stereoMsMidGainSlider"
                         compactFieldWidth: root.numericFieldWidth
@@ -461,6 +471,8 @@ Item {
                         objectName: "stereoMsSideGainControl"
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignTop
+                        enabled: root.viewModel && root.viewModel.spatialControlsEffective
+                        opacity: enabled ? 1 : 0.48
                         fieldObjectName: "stereoMsSideGainField"
                         sliderObjectName: "stereoMsSideGainSlider"
                         compactFieldWidth: root.numericFieldWidth
@@ -510,7 +522,7 @@ Item {
                                     minimumControlWidth: 58
                                     selected: root.viewModel && root.viewModel.monoBassMode === modelData
                                     accentColor: root.seaGreen
-                                    enabled: root.viewModel && root.viewModel.available
+                                    enabled: root.viewModel && root.viewModel.spatialControlsEffective
                                     onClicked: if (root.viewModel
                                             && root.viewModel.setDraftMonoBassMode(modelData))
                                         root.viewModel.commitDraft()
@@ -525,7 +537,7 @@ Item {
                         objectName: "stereoMsSideMutedToggle"
                         text: "Side Muted"
                         checked: root.viewModel ? root.viewModel.sideMuted : false
-                        enabled: root.viewModel && root.viewModel.available
+                        enabled: root.viewModel && root.viewModel.spatialControlsEffective
                         onClicked: {
                             if (root.viewModel && root.viewModel.setDraftSideMuted(checked))
                                 root.viewModel.commitDraft()

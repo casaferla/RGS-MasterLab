@@ -101,6 +101,14 @@ double StereoMsViewModel::low_band_width_percent() const noexcept
     return editing() ? editing()->low_band_width_percent() : 100.0;
 }
 
+bool StereoMsViewModel::spatial_controls_effective() const noexcept
+{
+    // The frozen mono path is bit-exact. Missing source format and bypass
+    // must never be presented as effective stereo processing.
+    return available() && !bypass() && sourceChannelCount_ == 2
+        && effectiveSampleRateHz_ > 0.0;
+}
+
 bool StereoMsViewModel::mono_bass_controls_effective() const noexcept
 {
     const auto* params = editing();

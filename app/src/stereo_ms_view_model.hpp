@@ -35,6 +35,7 @@ class StereoMsViewModel final : public QObject {
     Q_PROPERTY(double lowBandWidthPercent READ low_band_width_percent NOTIFY changed)
     Q_PROPERTY(double draftWidthPercent READ draft_width_percent NOTIFY changed)
     Q_PROPERTY(bool monoBassControlsEffective READ mono_bass_controls_effective NOTIFY changed)
+    Q_PROPERTY(bool spatialControlsEffective READ spatial_controls_effective NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
     Q_PROPERTY(QString validationField READ validation_field NOTIFY changed)
     Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
@@ -67,6 +68,7 @@ public:
     [[nodiscard]] double low_band_width_percent() const noexcept;
     [[nodiscard]] double draft_width_percent() const noexcept;
     [[nodiscard]] bool mono_bass_controls_effective() const noexcept;
+    [[nodiscard]] bool spatial_controls_effective() const noexcept;
     [[nodiscard]] bool bypass() const noexcept;
     [[nodiscard]] QString validation_field() const;
     [[nodiscard]] QString validation_message() const;

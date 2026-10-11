@@ -899,16 +899,35 @@ Window {
                 "m15_stereo_ms_exact_item_1184x688_not_auditioned.png")),
              "NOT AUDITIONED must not display a phantom M/S cloud");
 
+    // Gate S: stored OFF-mode numbers remain visible but cannot be edited.
+    QVERIFY(stereo.setDraftMonoBassMode(QStringLiteral("OFF")));
+    QCoreApplication::processEvents();
+    QVERIFY(widthControl->property("enabled").toBool());
+    QVERIFY(!cutoffControl->property("enabled").toBool());
+    QVERIFY(!lowControl->property("enabled").toBool());
+    QCOMPARE(stereo.mono_bass_cutoff_hz(), 125.0);
+    QCOMPARE(stereo.low_band_width_percent(), 35.0);
+    stereo.cancelDraft();
+    QCoreApplication::processEvents();
+    QVERIFY(cutoffControl->property("enabled").toBool());
+    QVERIFY(lowControl->property("enabled").toBool());
+
     // Mono and bypass must NEVER display stale active response points.
     stereo.setSignalFormat(48000.0, 1);
     QCoreApplication::processEvents();
     QVERIFY(!curve->property("visible").toBool());
     QVERIFY(!widthHandle->property("visible").toBool());
+    for (auto* c : {widthControl, cutoffControl, lowControl, midControl, sideControl})
+        QVERIFY(!c->property("enabled").toBool());
     stereo.setSignalFormat(48000.0, 2);
     stereo.setBypass(true);
     QCoreApplication::processEvents();
     QVERIFY(!curve->property("visible").toBool());
+    for (auto* c : {widthControl, cutoffControl, lowControl, midControl, sideControl})
+        QVERIFY(!c->property("enabled").toBool());
     stereo.setBypass(false);
+    QCoreApplication::processEvents();
+    QVERIFY(widthControl->property("enabled").toBool());
 
     // Exercise Compressor through the SAME native DspEditorHost at exact
     // scenegraph dimensions; no second fake QML surface or product change.
