@@ -2140,6 +2140,33 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* gainFieldObj = find_child_by_name(eqEditor, QStringLiteral("gainField"));
     auto* qFieldObj = find_child_by_name(eqEditor, QStringLiteral("qField"));
     auto* shelfSlopeFieldObj = find_child_by_name(eqEditor, QStringLiteral("shelfSlopeField"));
+    auto* eqFreqSlider = find_child_by_name(eqEditor, QStringLiteral("eqFrequencySlider"));
+    auto* eqGainSlider = find_child_by_name(eqEditor, QStringLiteral("eqGainSlider"));
+    auto* eqQSlider = find_child_by_name(eqEditor, QStringLiteral("eqQSlider"));
+    auto* eqShelfSlider = find_child_by_name(eqEditor, QStringLiteral("eqShelfSlopeSlider"));
+    auto* eqInspector = qobject_cast<QQuickItem*>(find_child_by_name(
+        eqEditor, QStringLiteral("eqInspectorRegion")));
+    QVERIFY2(eqFreqSlider && eqGainSlider && eqQSlider && eqShelfSlider && eqInspector,
+             "All applicable EQ scalar fields require an actual slider");
+    QCOMPARE(eqFreqSlider->property("from").toDouble(), 20.0);
+    QCOMPARE(eqFreqSlider->property("to").toDouble(), 19845.0);
+    QCOMPARE(eqGainSlider->property("from").toDouble(), -18.0);
+    QCOMPARE(eqGainSlider->property("to").toDouble(), 18.0);
+    QCOMPARE(eqQSlider->property("from").toDouble(), 0.10);
+    QCOMPARE(eqQSlider->property("to").toDouble(), 12.0);
+    QVERIFY(eqFreqSlider->property("logarithmic").toBool());
+    QVERIFY(eqQSlider->property("logarithmic").toBool());
+    QVERIFY(eqGainSlider->property("fillFromOrigin").toBool());
+    QCOMPARE(eqGainSlider->property("positionFillOrigin").toDouble(), 0.0);
+    for (auto* slider : {eqFreqSlider, eqGainSlider, eqQSlider, eqShelfSlider}) {
+        QVERIFY(slider->property("hasSemanticAccent").toBool());
+        QVERIFY(slider->property("haloOnFocus").toBool());
+        const QColor c = slider->property("positionFillColor").value<QColor>();
+        QCOMPARE(c.red(), 196);
+        QCOMPARE(c.green(), 119);
+        QCOMPARE(c.blue(), 74);
+        QVERIFY(std::abs(c.alphaF() - 0.38) < 0.01);
+    }
 
     QVERIFY2(filterBell && filterNotch && filterLowShelf && filterHighPass, "Filter buttons must exist");
     QVERIFY2(gainFieldObj->property("visible").toBool(), "Gain field must be visible for Bell filter");
@@ -2152,6 +2179,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(QMetaObject::invokeMethod(filterLowShelf, "clicked"), "Clicking filterButton_LOW_SHELF must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(shelfSlopeFieldObj->property("visible").toBool(), "Shelf slope field must be visible for Low Shelf filter");
+    QVERIFY(eqShelfSlider->property("visible").toBool());
+    QVERIFY(!eqQSlider->property("visible").toBool());
 
     QVERIFY2(QMetaObject::invokeMethod(filterHighPass, "clicked"), "Clicking filterButton_HIGH_PASS must succeed");
     QCoreApplication::processEvents();
@@ -2302,6 +2331,31 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QCoreApplication::processEvents();
     }
     QCOMPARE(eqViewModel.band_count(), 6);
+    // One selected-band ring identity shared by all three controls,
+    // with uniform secondary copper tracks. Switching bands must not
+    // preview or commit any parameter and band six needs a separator.
+    const quint64 previewBeforeColorSwitch = eqViewModel.preview_generation();
+    const std::array expectedSliderBands{
+        QColor{QStringLiteral("#2ED3FF")},
+        QColor{QStringLiteral("#2FD98F")},
+        QColor{QStringLiteral("#FFD84A")},
+        QColor{QStringLiteral("#FF6B6B")},
+        QColor{QStringLiteral("#4F7CFF")},
+        QColor{QStringLiteral("#F5F8FC")}
+    };
+    for (std::size_t n = 0; n < expectedSliderBands.size(); ++n) {
+        eqViewModel.selectBand(static_cast<int>(n));
+        QCoreApplication::processEvents();
+        QCOMPARE(eqFreqSlider->property("semanticAccent").value<QColor>(),
+                 expectedSliderBands[n]);
+        QCOMPARE(eqGainSlider->property("semanticAccent").value<QColor>(),
+                 expectedSliderBands[n]);
+        QCOMPARE(eqQSlider->property("semanticAccent").value<QColor>(),
+                 expectedSliderBands[n]);
+        QCOMPARE(eqFreqSlider->property("lightAccentSeparator").toBool(),
+                 n == 5U);
+    }
+    QCOMPARE(eqViewModel.preview_generation(), previewBeforeColorSwitch);
 
     // Verify 48 kHz visual_wav() source maxFreq endpoint (0.45 * 48000 = 21600 Hz, capped at 20000 Hz)
     QCOMPARE(eqGraph->property("maxFreq").toDouble(), 20000.0);
@@ -2445,6 +2499,33 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
     QVERIFY2(dspChainStateText1->property("visible").toBool(),
         "Manual Edit must remain visible at the minimum supported window size");
+
+    // The added slider row must stay INSIDE the inspector at the smallest
+    // supported window, without spilling into EQ validation/status strips.
+    // The 164px field width is unchanged and sliders align with the boxes.
+    for (const auto& names : {
+             std::pair{QStringLiteral("frequencyField"), QStringLiteral("eqFrequencySlider")},
+             std::pair{QStringLiteral("gainField"), QStringLiteral("eqGainSlider")},
+             std::pair{QStringLiteral("qField"), QStringLiteral("eqQSlider")},
+             std::pair{QStringLiteral("shelfSlopeField"), QStringLiteral("eqShelfSlopeSlider")}}) {
+        auto* fieldItem = qobject_cast<QQuickItem*>(find_child_by_name(eqEditor, names.first));
+        auto* sliderItem = qobject_cast<QQuickItem*>(find_child_by_name(eqEditor, names.second));
+        QVERIFY(fieldItem && sliderItem);
+        QCOMPARE(fieldItem->property("fieldWidth").toInt(), 164);
+        QVERIFY(std::abs(sliderItem->width() - 164.0) <= 0.6);
+        const auto fieldX = fieldItem->mapToItem(eqInspector, QPointF{}).x();
+        const auto sliderX = sliderItem->mapToItem(eqInspector, QPointF{}).x();
+        QVERIFY(std::abs(fieldX - sliderX) <= 0.6);
+        if (sliderItem->isVisible()) {
+            const auto bottom = sliderItem->mapToItem(eqInspector, QPointF{}).y()
+                + sliderItem->height();
+            QVERIFY2(bottom <= eqInspector->height() - 2.0,
+                     "EQ slider must fit vertically within the inspector at min size");
+        }
+    }
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("m15_eq_selected_band_sliders_1184x688.png"),
+        QSize{1184, 688}));
 
     // Visible-window mapped geometry is the authoritative check for LayoutItemProxy
     // rehosting. The target is only guaranteed to be reparented/resized when the

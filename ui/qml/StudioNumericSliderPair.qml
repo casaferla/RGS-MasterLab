@@ -17,6 +17,10 @@ ColumnLayout {
     property alias rawText: numericField.rawText
     property alias compactFieldWidth: numericField.compactFieldWidth
     property alias compact: numericField.compact
+    // Allows EQ to keep its established full-size numeric fields while
+    // fitting 14px sliders into the inspector. Existing compact pairs
+    // retain their previous geometry via the default binding.
+    property bool sliderCompact: numericField.compact
     property alias interactionHint: numericField.interactionHint
 
     property alias from: parameterSlider.from
@@ -32,6 +36,8 @@ ColumnLayout {
     property alias semanticAccent: parameterSlider.semanticAccent
     // Opt-in only. Existing graph-handle color semantics remain untouched.
     property alias focusAccentOnly: parameterSlider.focusAccentOnly
+    property alias haloOnFocus: parameterSlider.haloOnFocus
+    property alias lightAccentSeparator: parameterSlider.lightAccentSeparator
     property alias sliderAccessibleName: parameterSlider.accessibleName
 
     StudioNumericField {
@@ -44,7 +50,7 @@ ColumnLayout {
         id: parameterSlider
         viewModel: control.viewModel
         fieldName: numericField.fieldName
-        compact: numericField.compact
+        compact: control.sliderCompact
 
         Layout.fillWidth: false
         Layout.alignment: Qt.AlignLeft

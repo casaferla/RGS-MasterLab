@@ -31,6 +31,7 @@ class EqViewModel final : public QObject {
     Q_PROPERTY(QString filter READ filter_label NOTIFY changed)
     Q_PROPERTY(QString routing READ routing_label NOTIFY changed)
     Q_PROPERTY(double frequency READ frequency NOTIFY changed)
+    Q_PROPERTY(double maximumFrequencyHz READ maximum_frequency_hz NOTIFY changed)
     Q_PROPERTY(double gain READ gain NOTIFY changed)
     Q_PROPERTY(double q READ q NOTIFY changed)
     Q_PROPERTY(double shelfSlope READ shelf_slope NOTIFY changed)
@@ -183,6 +184,10 @@ public:
     Q_INVOKABLE void setDraftGain(double gain);
     Q_INVOKABLE void setDraftQ(double q);
     Q_INVOKABLE void setDraftShelfSlope(double shelfSlope);
+    // Third input mode: route the shared slider's named draft edits into
+    // the exact existing selected-band validation / response semantics.
+    Q_INVOKABLE void setDraftFieldValue(const QString& fieldName, double value);
+    [[nodiscard]] double maximum_frequency_hz() const noexcept;
 
     Q_INVOKABLE void setDraftFrequencyText(const QString& text);
     Q_INVOKABLE void setDraftGainText(const QString& text);

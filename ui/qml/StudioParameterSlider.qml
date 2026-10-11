@@ -17,7 +17,11 @@ Item {
     // Secondary controls stay neutral except while actively selected.
     // The default remains false to preserve every existing DSP slider.
     property bool focusAccentOnly: false
-    readonly property bool accentActive: focusAccentOnly
+    // Optional EQ editor: a persistent 1px band-identity border plus
+    // a stronger focus/drag halo, without recoloring its common track.
+    property bool haloOnFocus: false
+    property bool lightAccentSeparator: false
+    readonly property bool accentActive: (focusAccentOnly || haloOnFocus)
         && internalSlider.enabled
         && (internalSlider.activeFocus || internalSlider.pressed)
     property bool fillFromOrigin: false
@@ -184,6 +188,18 @@ Item {
                 border.width: 1
                 z: -1
                 visible: control.accentActive
+            }
+            // The EQ's sixth band is white. A dark inner separator keeps
+            // its white identity ring distinct from the white thumb.
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width - 5
+                height: parent.height - 5
+                radius: width / 2
+                color: "#E6EEF0"
+                border.color: "#142635"
+                border.width: 1
+                visible: control.lightAccentSeparator
             }
         }
 
