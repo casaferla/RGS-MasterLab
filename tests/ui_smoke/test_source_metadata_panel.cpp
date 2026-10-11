@@ -243,6 +243,7 @@ struct LayoutEvalMetrics {
     bool eqEditorContainedInHost{false};
     bool gainEditorContainedInHost{false};
     bool eqInspectorContained{false};
+    bool eqStatusContained{false};
     bool eqHeaderControlsContained{false};
     bool eqFilterButtonsContained{false};
     bool eqRoutingButtonsContained{false};
@@ -394,6 +395,8 @@ struct LayoutEvalResult {
             const QPointF statusTopLeft = statusItem->mapToItem(eqEditorItem, QPointF{0.0, 0.0});
             metrics.eqStatusY = statusTopLeft.y();
             metrics.eqStatusHeight = statusItem->height();
+            metrics.eqStatusContained = check_item_contained_in_ancestor(
+                statusItem, eqEditorItem);
         }
 
         // Header / Action Controls
@@ -2430,6 +2433,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     verifyContainmentMetrics(res1440.metrics, "1440x900");
     QVERIFY2(res1440.metrics.adaptiveContextVisible, "Adaptive Context must remain present at 1440x900");
     QVERIFY2(res1440.metrics.eqInspectorContained, "EQ inspector must be vertically contained at 1440x900");
+    QVERIFY2(res1440.metrics.eqStatusContained,
+        "EQ status/error strip must remain inside editor at 1440x900");
     QVERIFY2(res1440.metrics.waveformHeight >= 180.0, "Waveform height must be >= 180 px at 1440x900");
     QVERIFY2(res1440.metrics.hostHeight >= 400.0, "dspEditorHost must be dominant (>= 400 px) at 1440x900");
 
@@ -2438,7 +2443,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     verifyUpperPadding(res1920Short.metrics);
     verifyContainmentMetrics(res1920Short.metrics, "1920x688");
     QVERIFY2(res1920Short.metrics.adaptiveContextVisible, "Adaptive Context must not disappear in a wide, short window");
-    QVERIFY2(res1920Short.metrics.eqInspectorContained, "EQ inspector must remain vertically contained in a wide, short window");
+    QVERIFY2(res1920Short.metrics.eqInspectorContained,
+        qPrintable(QStringLiteral(
+            "EQ inspector overflow at 1920x688: editor=%1, inspector top=%2, height=%3, bottom=%4")
+            .arg(res1920Short.metrics.eqEditorHeight)
+            .arg(res1920Short.metrics.eqInspectorY)
+            .arg(res1920Short.metrics.eqInspectorHeight)
+            .arg(res1920Short.metrics.eqInspectorY + res1920Short.metrics.eqInspectorHeight)));
+    QVERIFY2(res1920Short.metrics.eqStatusContained,
+        "EQ status/error strip must remain below inspector AND inside editor at 1920x688");
+    QCOMPARE(res1920Short.metrics.eqStatusHeight, 16.0);
     QVERIFY2(res1920Short.metrics.waveformHeight >= 135.0, "Waveform must remain recognizable in a wide, short window");
 
     const auto res1280 = evaluate_layout_at_size(engine, 1280, 720);
@@ -2455,6 +2469,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     verifyContainmentMetrics(res1184.metrics, "1184x688");
     QVERIFY2(res1184.metrics.adaptiveContextVisible, "Adaptive Context must remain visible at minimum composition");
     QVERIFY2(res1184.metrics.eqInspectorContained, "EQ inspector must be vertically contained at minimum composition");
+    QVERIFY2(res1184.metrics.eqStatusContained,
+        "EQ status/error strip must remain inside editor at 1184x688");
     QVERIFY2(res1184.metrics.waveformHeight >= 135.0, "Waveform height must be >= 135 px at 1184x688");
     QVERIFY2(res1184.metrics.workspaceHeight >= 300.0, "dspWorkspace must receive min 300 px height at 1184x688");
 

@@ -40,7 +40,9 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 8
+        // Recover 12px across four inter-section gaps (4*3). In short
+        // windows, never steal these pixels from the EQ response graph.
+        spacing: 5
 
         // Unified toolbar: fixed control scale at every supported width.
         RowLayout {
@@ -141,11 +143,12 @@ Rectangle {
             }
         }
 
-        // Band Selector Strip (40 lp)
+        // Band Selector Strip (36 lp): buttons keep their original 32px
+        // implicit height, with 2px vertical breathing room on each side.
         Rectangle {
             objectName: "eqBandStripRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 40
+            Layout.preferredHeight: 36
             color: "#12243F"
             border.color: "#2C5A78"
             border.width: 1
@@ -546,11 +549,14 @@ Rectangle {
             }
         }
 
-        // Validation & Preview Error Strip (24 lp)
+        // Error text uses 12px type and fits within 16px. Reclaim 8px
+        // vertically but preserve visibility even when errors are shown.
+        // In total with the 12px gap + 4px selector savings, this
+        // balances the inspector's exact +24px extension.
         Rectangle {
             objectName: "eqStatusRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 24
+            Layout.preferredHeight: 16
             color: "transparent"
 
             Text {
