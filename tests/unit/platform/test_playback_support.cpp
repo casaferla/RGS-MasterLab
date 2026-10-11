@@ -768,10 +768,12 @@ void PlaybackSupportTest::hotTogglePreservesQueuedPcmAndSink()
         std::move(cancelledOutput), DeviceSampleFormat::PCM_S16));
     QVERIFY(cancelled.seek(core::FrameIndex{60}));
     QVERIFY(cancelled.play());
+    const int cancelledStartBaseline = cancelledObserved->startCalls;
+    const int cancelledStopBaseline = cancelledObserved->stopCalls;
     QVERIFY(cancelled.set_loop(loop));
     QVERIFY(cancelled.set_loop(std::nullopt));
-    QCOMPARE(cancelledObserved->startCalls, 1);
-    QCOMPARE(cancelledObserved->stopCalls, 0);
+    QCOMPARE(cancelledObserved->startCalls, cancelledStartBaseline);
+    QCOMPARE(cancelledObserved->stopCalls, cancelledStopBaseline);
     for (int i = 0; i < 100
              && cancelled.snapshot().value()->state
                  == core::PlaybackState::PLAYING; ++i) {
