@@ -656,6 +656,11 @@ Window {
     auto* lowControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthControl"));
     auto* midControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsMidGainControl"));
     auto* sideControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsSideGainControl"));
+    auto* monoMode = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsMonoBassModeControls"));
+    auto* monoLabel = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsMonoBassModeLabel"));
+    auto* monoButtons = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsMonoBassModeButtons"));
+    QVERIFY2(monoMode && monoLabel && monoButtons,
+             "Mono Bass mode caption/buttons must be one vertically aligned control");
     QVERIFY2(widthControl && cutoffControl && lowControl && midControl && sideControl,
              "Every editable M15 numeric field must own a canonical slider pair");
     auto* widthSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthSlider"));
@@ -745,6 +750,33 @@ Window {
                  "Goniometer must be vertically centered between header and footer");
         QCOMPARE(title->property("y").toDouble(), 8.0);
         QVERIFY(qobject_cast<QQuickItem*>(editor)->height() > 250);
+        // The Mono Bass group and MID/SIDE gain captions have exactly
+        // the same top alignment, and the selector buttons line up
+        // vertically with the numeric input rectangles at BOTH sizes.
+        auto* editorItemForControls = qobject_cast<QQuickItem*>(editor);
+        auto* monoLabelItem = qobject_cast<QQuickItem*>(monoLabel);
+        auto* monoButtonsItem = qobject_cast<QQuickItem*>(monoButtons);
+        auto* midControlItem = qobject_cast<QQuickItem*>(midControl);
+        auto* sideControlItem = qobject_cast<QQuickItem*>(sideControl);
+        auto* midFieldItem = qobject_cast<QQuickItem*>(midField);
+        auto* sideFieldItem = qobject_cast<QQuickItem*>(sideField);
+        QVERIFY(editorItemForControls && monoLabelItem && monoButtonsItem &&
+                midControlItem && sideControlItem && midFieldItem && sideFieldItem);
+        const auto topInEditor = [editorItemForControls](QQuickItem* item) {
+            return item->mapToItem(editorItemForControls, QPointF{}).y();
+        };
+        QVERIFY(std::abs(topInEditor(midControlItem) -
+                         topInEditor(sideControlItem)) <= 0.5);
+        QVERIFY(std::abs(topInEditor(monoLabelItem) -
+                         topInEditor(midControlItem)) <= 0.5);
+        QVERIFY(std::abs(topInEditor(monoLabelItem) -
+                         topInEditor(sideControlItem)) <= 0.5);
+        // Numeric field: 14 px caption then 2 px gap before the box.
+        // Mono selector buttons begin at that same height beneath the caption.
+        QVERIFY(std::abs(topInEditor(monoButtonsItem) -
+                         (topInEditor(midFieldItem) + 16.0)) <= 1.0);
+        QVERIFY(std::abs(topInEditor(monoButtonsItem) -
+                         (topInEditor(sideFieldItem) + 16.0)) <= 1.0);
         // In published editors the slider track spans precisely its
         // numeric rectangle; the unit suffix is outside this span.
         // Check both endpoints at each native logical window size.
@@ -759,7 +791,7 @@ Window {
             QVERIFY(box && slider);
             const double numericBoxWidth =
                 fieldAndSlider.first->property("fieldWidth").toDouble();
-            QVERIFY(numericBoxWidth == 86.0 || numericBoxWidth == 78.0);
+            QCOMPARE(numericBoxWidth, 86.0);
             QVERIFY(std::abs(slider->width() - numericBoxWidth) <= 0.5);
             const QPointF boxOrigin = box->mapToItem(
                 qobject_cast<QQuickItem*>(editor), QPointF{});
@@ -1022,7 +1054,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             }
             return render::AuditionTarget::PREPARED;
         });
-    app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
+    app::StereoMsViewModel stereoMsViewModel{&masteringChainState, &previewController};
+    app::DspChainAdapterModel dspChainAdapterModel{
+        &gainViewModel, &eqViewModel, &compressorViewModel,
+        &masteringChainState, QStringLiteral("Mastering"),
+        nullptr, &stereoMsViewModel};
 
     app::GoldSelectionViewModel goldSelection{&auditionSelector};
     app::ProjectSessionViewModel projectSession{
@@ -2881,6 +2917,42 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     compressorViewModel.setMakeupGainDb(0.0);
     QCoreApplication::processEvents();
 
+    // View's menu is driven by the exact optional topology, NOT hardcoded
+    // as a permanently enabled fourth slot. Prove it is absent for legacy
+    // projects, then becomes enabled/selectable on real 4-node adoption.
+    QVERIFY(!root->findChild<QObject*>(
+        QStringLiteral("menuViewStereoMs")));
+    const auto stereoUuid = *core::Uuid::parse(
+        "55555555-5555-4555-8555-555555555555").value();
+    const auto stereoId = *dsp::ModuleInstanceId::from_uuid(stereoUuid).value();
+    auto stereoParams = dsp::StereoMsParameters::create_default();
+    QVERIFY(stereoParams);
+    auto optIn = app::MasteringChainState::create_with_stereo_ms(
+        *moduleRegistry.value(), chainUuid, gainId, eqId, compId,
+        stereoId, *stereoParams.value(), false);
+    QVERIFY(optIn);
+    masteringChainState = std::move(*optIn.value());
+    dspChainAdapterModel.refreshFromAuthority();
+    QTRY_COMPARE_WITH_TIMEOUT(
+        viewEditorInstantiator->property("count").toInt(), 4, 5000);
+    auto* stereoMenuItem = root->findChild<QObject*>(
+        QStringLiteral("menuViewStereoMs"));
+    QVERIFY2(stereoMenuItem,
+        "View must expose Stereo/M-S when the fourth module is opted in");
+    QVERIFY2(stereoMenuItem->property("enabled").toBool(),
+        "The fourth View action must be selectable, not a placeholder");
+    QVERIFY2(stereoMenuItem->property("text").toString().contains(
+        QStringLiteral("Stereo")),
+        "The fourth View entry must label the live Stereo/M-S adapter");
+    QCOMPARE(cleanupViewMenu->property("count").toInt(), 9);
+    QVERIFY2(QMetaObject::invokeMethod(stereoMenuItem, "triggered"),
+        "The fourth View entry must dispatch selection");
+    QCoreApplication::processEvents();
+    QCOMPARE(dspChainAdapterModel.selected_index(), 3);
+    auto* stereoEditorFromMenu = dspEditorHostObj->findChild<QObject*>(
+        QStringLiteral("stereoMsEditor"));
+    QVERIFY2(stereoEditorFromMenu && stereoEditorFromMenu->property("visible").toBool(),
+        "Selecting Stereo/M-S from View must open its real editor");
 
     window->close();
     QCoreApplication::processEvents();

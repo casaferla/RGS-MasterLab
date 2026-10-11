@@ -16,6 +16,9 @@ Item {
     // their direct cyan / emerald / yellow handle semantics.
     readonly property color midGainHue: "#4A9A88"
     readonly property color sideGainHue: "#659CAF"
+    // Same numeric rectangle width and matching slider span for ALL five
+    // editable Stereo/M-S scalar controls, regardless of row or unit.
+    readonly property int numericFieldWidth: 86
     readonly property color sliderFill: Qt.rgba(74 / 255, 154 / 255, 136 / 255, 0.38)
 
     // EQ-like top expansive region, but a separate near-square, strictly
@@ -357,7 +360,7 @@ Item {
                         Layout.fillWidth: true
                         fieldObjectName: "stereoMsWidthField"
                         sliderObjectName: "stereoMsWidthSlider"
-                        compactFieldWidth: 86
+                        compactFieldWidth: root.numericFieldWidth
                         labelText: "WIDTH"
                         unitText: "%"
                         fieldName: "widthPercent"
@@ -379,7 +382,7 @@ Item {
                         Layout.fillWidth: true
                         fieldObjectName: "stereoMsCutoffField"
                         sliderObjectName: "stereoMsCutoffSlider"
-                        compactFieldWidth: 86
+                        compactFieldWidth: root.numericFieldWidth
                         labelText: "MONO BASS CUTOFF"
                         unitText: "Hz"
                         fieldName: "monoBassCutoffHz"
@@ -400,7 +403,7 @@ Item {
                         Layout.fillWidth: true
                         fieldObjectName: "stereoMsLowWidthField"
                         sliderObjectName: "stereoMsLowWidthSlider"
-                        compactFieldWidth: 86
+                        compactFieldWidth: root.numericFieldWidth
                         labelText: "LOW WIDTH"
                         unitText: "%"
                         fieldName: "lowBandWidthPercent"
@@ -433,9 +436,10 @@ Item {
                     StudioNumericSliderPair {
                         objectName: "stereoMsMidGainControl"
                         Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignTop
                         fieldObjectName: "stereoMsMidGainField"
                         sliderObjectName: "stereoMsMidGainSlider"
-                        compactFieldWidth: 78
+                        compactFieldWidth: root.numericFieldWidth
                         labelText: "MID GAIN"
                         unitText: "dB"
                         fieldName: "midGainDb"
@@ -456,9 +460,10 @@ Item {
                     StudioNumericSliderPair {
                         objectName: "stereoMsSideGainControl"
                         Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignTop
                         fieldObjectName: "stereoMsSideGainField"
                         sliderObjectName: "stereoMsSideGainSlider"
-                        compactFieldWidth: 78
+                        compactFieldWidth: root.numericFieldWidth
                         labelText: "SIDE GAIN"
                         unitText: "dB"
                         fieldName: "sideGainDb"
@@ -478,15 +483,24 @@ Item {
                     }
 
                     ColumnLayout {
-                        spacing: 3
+                        id: monoBassModeControls
+                        objectName: "stereoMsMonoBassModeControls"
+                        Layout.alignment: Qt.AlignTop
+                        spacing: 2
                         Text {
+                            id: monoBassModeLabel
+                            objectName: "stereoMsMonoBassModeLabel"
                             text: "MONO BASS"
                             color: "#A1B5C9"
                             font.family: "Segoe UI"
                             font.pixelSize: 11
                             font.weight: Font.Bold
+                            height: 14
+                            Layout.preferredHeight: 14
                         }
                         RowLayout {
+                            id: monoBassModeButtons
+                            objectName: "stereoMsMonoBassModeButtons"
                             spacing: 3
                             Repeater {
                                 model: ["OFF", "LR12", "LR24"]
