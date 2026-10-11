@@ -1483,6 +1483,22 @@ set_tests_properties(rgsml_true_peak_itu4x_coefficients_tests PROPERTIES
     LABELS "analysis;true_peak;coefficients;unit"
 )
 
+qt_add_executable(rgsml_true_peak_itu4x_channel_stream_tests
+    unit/analysis/test_true_peak_itu4x_channel_stream.cpp
+)
+target_include_directories(rgsml_true_peak_itu4x_channel_stream_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_itu4x_channel_stream_tests
+    PRIVATE rgsml_analysis Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_true_peak_itu4x_channel_stream_tests)
+add_test(NAME rgsml_true_peak_itu4x_channel_stream_tests COMMAND rgsml_true_peak_itu4x_channel_stream_tests)
+set_tests_properties(rgsml_true_peak_itu4x_channel_stream_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;true_peak;stream;unit"
+)
+
 qt_add_executable(rgsml_live_spectrum_oracle_tests
     unit/analysis/live_spectrum_oracle_test.cpp
 )
