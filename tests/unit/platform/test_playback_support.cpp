@@ -719,14 +719,19 @@ void PlaybackSupportTest::hotTogglePreservesQueuedPcmAndSink()
     QCOMPARE(observed->startCalls, initialStarts);
     QCOMPARE(observed->stopCalls, initialStops);
 
-    // The audible, not speculative, frame cursor owns Loop wrap telemetry.
+    // Loop wrap telemetry reads the device counter directly, while the
+    // snapshot's position_ is updated by the owner-thread tick. Simulate the
+    // latter at each asserted audible instant (as the actual worker does).
     observed->set_processed_frames(179);
+    engine.tick();
     QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
     QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{239});
     observed->set_processed_frames(180);
+    engine.tick();
     QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
     QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{40});
     observed->set_processed_frames(220);
+    engine.tick();
     QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{1});
     QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{40});
 
