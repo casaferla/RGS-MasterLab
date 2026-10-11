@@ -755,6 +755,34 @@ void PlaybackSupportTest::hotTogglePreservesQueuedPcmAndSink()
     QCOMPARE(observed->resumeCalls, 1);
     QCOMPARE(observed->startCalls, initialStarts);
     QCOMPARE(observed->stopCalls, initialStops);
+
+    // Reversing an uncommitted hot-toggle must also preserve the decoder
+    // cursor, not just the sink. Otherwise ON/OFF can falsely jump to the
+    // Loop start after an entirely prefetched Source.
+    PlaybackEngine cancelled;
+    auto cancelledOutput =
+        std::make_unique<FakeOutput>(16U * bytesPerFrame, bytesPerFrame);
+    auto* cancelledObserved = cancelledOutput.get();
+    QVERIFY(cancelled.install_candidate(
+        open_pcm16_stereo(indexed_stereo_codes(duration)),
+        std::move(cancelledOutput), DeviceSampleFormat::PCM_S16));
+    QVERIFY(cancelled.seek(core::FrameIndex{60}));
+    QVERIFY(cancelled.play());
+    QVERIFY(cancelled.set_loop(loop));
+    QVERIFY(cancelled.set_loop(std::nullopt));
+    QCOMPARE(cancelledObserved->startCalls, 1);
+    QCOMPARE(cancelledObserved->stopCalls, 0);
+    for (int i = 0; i < 100
+             && cancelled.snapshot().value()->state
+                 == core::PlaybackState::PLAYING; ++i) {
+        cancelledObserved->consume_all();
+        cancelled.tick();
+    }
+    QCOMPARE(cancelled.snapshot().value()->state, core::PlaybackState::STOPPED);
+    QCOMPARE(cancelledObserved->history().size(),
+             static_cast<std::size_t>(duration - 60) * bytesPerFrame);
+    QCOMPARE(read_i16(cancelledObserved->history(), 0U),
+             static_cast<std::int16_t>(60));
 }
 
 void PlaybackSupportTest::hotTogglePreservesPendingHandoffProvenance()
