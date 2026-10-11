@@ -248,6 +248,8 @@ private slots:
     void explicitSeekLoopStateMatrix();
     void explicitSeekLoopTraversalEofAndSrcIdentity();
     void loopCommandIsPositionNeutralAcrossStates();
+    void hotTogglePreservesQueuedPcmAndSink();
+    void hotTogglePreservesPendingHandoffProvenance();
     void partialWritesNaturalEofAndRuntimeError();
     void seamlessPcmHandoffCrossfadeAndStateMatrix();
     void controlPlaneTraversalSeekAndLoopSerials();
@@ -648,8 +650,13 @@ void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
                     read_i16(observed->queue(), 0U),
                     static_cast<std::int16_t>(position));
             } else if (requestedState == core::PlaybackState::PAUSED) {
-                QVERIFY(observed->queue().empty());
+                // PAUSED retains already queued PCM; restarting would drop
+                // buffered samples and recreate the platform audio sink.
+                QVERIFY(!observed->queue().empty());
+                QCOMPARE(observed->startCalls, 1);
                 QVERIFY(engine.play());
+                QCOMPARE(observed->resumeCalls, 1);
+                QCOMPARE(observed->startCalls, 1);
                 QCOMPARE(engine.snapshot().value()->position.value(), position);
                 QVERIFY(observed->queue().size() >= 4U);
                 QCOMPARE(
@@ -663,6 +670,123 @@ void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
             QVERIFY(!engine.snapshot().value()->loop);
         }
     }
+}
+
+void PlaybackSupportTest::hotTogglePreservesQueuedPcmAndSink()
+{
+    // The scheduler may have generated PCM beyond the sink's bounded byte
+    // queue. Toggle must preserve both enqueued and pending PCM, even after
+    // those samples would have crossed the newly armed Loop boundary.
+    constexpr std::int64_t duration = 240;
+    constexpr std::size_t bytesPerFrame = 4U;
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(16U * bytesPerFrame, bytesPerFrame);
+    auto* observed = output.get();
+    QVERIFY(engine.install_candidate(
+        open_pcm16_stereo(indexed_stereo_codes(duration)),
+        std::move(output), DeviceSampleFormat::PCM_S16));
+    QVERIFY(engine.seek(core::FrameIndex{60}));
+    QVERIFY(engine.play());
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{40}, core::FrameIndex{80}).value();
+    const int initialStarts = observed->startCalls;
+    const int initialStops = observed->stopCalls;
+    const auto originalHistory = observed->history();
+
+    QVERIFY(engine.set_loop(loop));
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PLAYING);
+    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{60});
+    QCOMPARE(observed->history(), originalHistory);
+    // 180 pre-generated old frames remain first; only subsequent decoded
+    // frames enter the new Loop. No PCM is flushed, skipped, or duplicated.
+    constexpr std::size_t expectedFrames = 180U + 80U;
+    for (int i = 0;
+         i < 150 && observed->history().size() < expectedFrames * bytesPerFrame;
+         ++i) {
+        observed->consume_all();
+        engine.tick();
+    }
+    QVERIFY(observed->history().size() >= expectedFrames * bytesPerFrame);
+    const auto& history = observed->history();
+    for (std::size_t frame = 0; frame < expectedFrames; ++frame) {
+        const auto expected = frame < 180U
+            ? static_cast<std::int16_t>(60 + frame)
+            : static_cast<std::int16_t>(40 + ((frame - 180U) % 40U));
+        QCOMPARE(read_i16(history, frame * bytesPerFrame), expected);
+    }
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+
+    // The audible, not speculative, frame cursor owns Loop wrap telemetry.
+    observed->set_processed_frames(179);
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
+    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{239});
+    observed->set_processed_frames(180);
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
+    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{40});
+    observed->set_processed_frames(220);
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{1});
+    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{40});
+
+    // Already committed loop frames remain valid when disabling. Rapid
+    // re-arming is allowed without any device restart or queue deletion.
+    const auto queueBeforeDisable = observed->queue();
+    QVERIFY(engine.set_loop(std::nullopt));
+    QCOMPARE(observed->queue(), queueBeforeDisable);
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.set_loop(std::nullopt));
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{1});
+    QCOMPARE(engine.snapshot().value()->seekSerial, std::uint64_t{1});
+
+    // PAUSED toggles use the existing suspended sink and unchanged FIFO.
+    QVERIFY(engine.pause());
+    const auto pausedQueue = observed->queue();
+    QVERIFY(engine.set_loop(loop));
+    QCOMPARE(observed->queue(), pausedQueue);
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+    QVERIFY(engine.play());
+    QCOMPARE(observed->resumeCalls, 1);
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+}
+
+void PlaybackSupportTest::hotTogglePreservesPendingHandoffProvenance()
+{
+    // A PCM handoff's earlier queued frames must retain their OLD identity
+    // even when a subsequent Loop toggle changes the future decode policy.
+    auto oldBuffer = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 5000);
+    auto newBuffer = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 5000);
+    constexpr core::RealizationId oldId{41};
+    constexpr core::RealizationId newId{42};
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* observed = output.get();
+    QVERIFY(engine.install_pcm_candidate(
+        oldBuffer.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr, oldId));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{0}, core::FrameIndex{3000}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    QVERIFY(engine.handoff_pcm(newBuffer.view(), nullptr, newId));
+    const auto before = engine.snapshot().value()->audibleRealization;
+    QCOMPARE(before.phase, core::AudibleHandoffPhase::OLD);
+    QCOMPARE(before.realizationId, std::optional{oldId});
+    const auto starts = observed->startCalls;
+    const auto stops = observed->stopCalls;
+    QVERIFY(engine.set_loop(std::nullopt));
+    const auto after = engine.snapshot().value()->audibleRealization;
+    QCOMPARE(after.phase, core::AudibleHandoffPhase::OLD);
+    QCOMPARE(after.realizationId, std::optional{oldId});
+    QCOMPARE(observed->startCalls, starts);
+    QCOMPARE(observed->stopCalls, stops);
 }
 
 void PlaybackSupportTest::floatAndPcm16GoldenConversion()
@@ -1844,7 +1968,7 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     QCOMPARE(failSeekSnap.value()->seekSerial, std::uint64_t{1});
     QCOMPARE(failSeekSnap.value()->traversalSerial, std::uint64_t{2});
 
-    // set_loop internal restart does NOT falsely create a new traversal
+    // A Loop hot-toggle neither restarts output nor creates a new traversal
     const auto loop = *core::FrameRange::create(
         core::FrameIndex{50}, core::FrameIndex{150}).value();
     QVERIFY(engine.set_loop(loop));
@@ -1855,8 +1979,14 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     // loopWrapCount changes only when actual processed output crosses a loop boundary
     QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
 
-    // Simulate hardware processed frames crossing loop boundary (length 100 frames)
+    // The seek at 100 prefills 300 old source frames before the toggle.
+    // Hardware processing those frames must not count speculative Loop wraps.
     observedOutput->set_processed_frames(200);
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
+    observedOutput->set_processed_frames(300);
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
+    // A subsequent 200 processed frames in the new [50,150) region wrap twice.
+    observedOutput->set_processed_frames(500);
     auto wrapSnap = engine.snapshot();
     QCOMPARE(wrapSnap.value()->loopWrapCount, std::uint64_t{2});
 }
