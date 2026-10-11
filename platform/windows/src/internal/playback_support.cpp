@@ -991,7 +991,13 @@ core::Status PlaybackEngine::set_loop(std::optional<core::FrameRange> loop)
     // The next sample must follow the last already generated sample. If
     // enabling a region whose end has already been passed by the ahead-of-
     // playback decoder, enter at the region's begin on the FUTURE boundary.
-    auto nextOutputFrame = scheduledOutputFrame_;
+    const bool replacingPendingPolicy = !scheduledLoopEpochs_.empty()
+        && scheduledLoopEpochs_.back().firstGeneratedFrame
+            == generatedOutputFrames_;
+    const auto uncommittedCursor = replacingPendingPolicy
+        ? scheduledLoopEpochs_.back().cursorBeforeUncommittedSwitch
+        : scheduledOutputFrame_;
+    auto nextOutputFrame = uncommittedCursor;
     auto eligible = loop
         && output_to_source_frame(nextOutputFrame) < loop->end().value();
     if (loop && !eligible) {
@@ -999,7 +1005,8 @@ core::Status PlaybackEngine::set_loop(std::optional<core::FrameRange> loop)
         eligible = true;
     }
     const LoopEpoch nextEpoch{
-        generatedOutputFrames_, nextOutputFrame, loop, eligible, wrapsBefore};
+        generatedOutputFrames_, nextOutputFrame, loop, eligible, wrapsBefore,
+        uncommittedCursor};
 
     try {
         if (!scheduledLoopEpochs_.empty()
@@ -1283,7 +1290,7 @@ void PlaybackEngine::reset_queue_state(std::int64_t frame) noexcept
     generatedOutputFrames_ = 0;
     initialLoopEpoch_ = LoopEpoch{
         0, scheduledOutputFrame_, loop_, loopTraversalEligible_,
-        baseLoopWrapCount_};
+        baseLoopWrapCount_, scheduledOutputFrame_};
     scheduledLoopEpochs_.clear();
     pendingBytes_.clear();
     pendingOffset_ = 0U;
