@@ -1316,8 +1316,6 @@ void ProjectSessionTest::source_reset_vs_project_open()
 }
 
 
-}  // namespace rgsml::tests
-
 void ProjectSessionTest::stereo_ms_four_module_project_roundtrip_and_atomic_rejection()
 {
     QTemporaryDir dir;
@@ -1357,7 +1355,7 @@ void ProjectSessionTest::stereo_ms_four_module_project_roundtrip_and_atomic_reje
     QCOMPARE(original.chains[0].modules.size(), std::size_t{4});
     const auto& fourth = original.chains[0].modules[3];
     QCOMPARE(fourth.typeId, std::string("rgsml.dsp.stereo-ms"));
-    QCOMPARE(fourth.instanceId, msUuid.value().value());
+    QCOMPARE(fourth.instanceId, *msUuid.value());
     QCOMPARE(fourth.userBypass, true);
     QCOMPARE(original.chains[0].revision, revision);
     QCOMPARE(fourth.parameterSchemaId,
@@ -1460,6 +1458,8 @@ void ProjectSessionTest::stereo_ms_four_module_project_roundtrip_and_atomic_reje
         reject(std::move(bad), QStringLiteral("bad_ms_provenance.rgsml"));
     }
 }
+
+}  // namespace rgsml::tests
 
 QTEST_GUILESS_MAIN(rgsml::tests::ProjectSessionTest)
 #include "test_project_session.moc"
