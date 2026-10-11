@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -120,6 +121,12 @@ AuditionSourceSelector::processed_realization_snapshot() const noexcept
     return processed_;
 }
 
+std::optional<core::RealizationId>
+AuditionSourceSelector::processed_realization_id() const noexcept
+{
+    return processedRealizationId_;
+}
+
 void AuditionSourceSelector::set_source_loop_provider(SourceLoopProvider provider)
 {
     sourceLoopProvider_ = std::move(provider);
@@ -137,6 +144,7 @@ core::Status AuditionSourceSelector::source_committed(
     sourceDerivedCue_ = core::FrameIndex{0};
     prepared_.reset();
     processed_.reset();
+    processedRealizationId_.reset();
     activeTarget_.reset();
 
     if (gold_) {
@@ -182,7 +190,31 @@ core::Status AuditionSourceSelector::set_prepared_realization(
 core::Status AuditionSourceSelector::set_processed_realization(
     render::RenderResult realization)
 {
-    auto candidate = std::make_shared<const render::RenderResult>(std::move(realization));
+    if (nextProcessedRealizationIdValue_
+        == std::numeric_limits<std::uint64_t>::max()) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::IntegerOverflow,
+            "Processed realization identity sequence is exhausted."});
+    }
+
+    const core::RealizationId candidateRealizationId{
+        nextProcessedRealizationIdValue_};
+    auto identityBound =
+        realization.bind_compressor_telemetry_realization_id(
+            candidateRealizationId);
+    if (!identityBound) {
+        return identityBound;
+    }
+    // Bind stage-capture provenance to the SAME candidate before publishing
+    // the Processed realization or handing PCM off to playback.
+    auto msIdentityBound =
+        realization.bind_stereo_ms_stage_output_realization_id(
+            candidateRealizationId);
+    if (!msIdentityBound) {
+        return msIdentityBound;
+    }
+    auto candidate = std::make_shared<const render::RenderResult>(
+        std::move(realization));
 
     if (activeTarget_ == AuditionTarget::PROCESSED) {
         const auto range = candidate->render_window();
@@ -199,7 +231,8 @@ core::Status AuditionSourceSelector::set_processed_realization(
         }
 
         playback_->set_source_derived_active(true);
-        auto handedOff = playback_->handoff_pcm(candidate->view(), candidate);
+        auto handedOff = playback_->handoff_pcm(
+            candidate->view(), candidate, candidateRealizationId);
         if (!handedOff) {
             publish_error(QString::fromStdString(handedOff.error()->message()));
             return handedOff;
@@ -213,12 +246,16 @@ core::Status AuditionSourceSelector::set_processed_realization(
         }
 
         processed_ = candidate;
+        processedRealizationId_ = candidateRealizationId;
+        ++nextProcessedRealizationIdValue_;
         statusText_.clear();
         emit changed();
         return core::Status::success();
     }
 
     processed_ = candidate;
+    processedRealizationId_ = candidateRealizationId;
+    ++nextProcessedRealizationIdValue_;
     emit changed();
     return core::Status::success();
 }
@@ -328,8 +365,14 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
         }
     } else {
         playback_->set_source_derived_active(true);
-        const auto& real = (target == AuditionTarget::PREPARED ? prepared_ : processed_);
-        preparedStatus = prepare_realization(*real, real);
+        const auto& real =
+            (target == AuditionTarget::PREPARED ? prepared_ : processed_);
+        const auto realizationId =
+            target == AuditionTarget::PROCESSED
+            ? processedRealizationId_
+            : std::nullopt;
+        preparedStatus = prepare_realization(
+            *real, real, realizationId);
     }
     if (!preparedStatus) {
         fail_closed(*preparedStatus.error());
@@ -390,7 +433,8 @@ core::Status AuditionSourceSelector::store_active_cue()
 
 core::Status AuditionSourceSelector::prepare_realization(
     const render::RenderResult& realization,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
     const auto range = realization.render_window();
     if (sourceDerivedCue_.value() == range.end().value()) {
@@ -399,7 +443,8 @@ core::Status AuditionSourceSelector::prepare_realization(
     if (sourceDerivedCue_ < range.begin() || sourceDerivedCue_ > range.end()) {
         return unavailable("Source cue is outside the available realization range.");
     }
-    auto prepared = playback_->prepare_pcm(realization.view(), std::move(lifetime));
+    auto prepared = playback_->prepare_pcm(
+        realization.view(), std::move(lifetime), realizationId);
     if (!prepared) {
         return prepared;
     }

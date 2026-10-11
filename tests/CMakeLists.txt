@@ -68,6 +68,8 @@ qt_add_executable(rgsml_project_session_tests
     ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
@@ -381,6 +383,8 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
     ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
@@ -512,6 +516,30 @@ set_tests_properties(rgsml_playback_support_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "platform;playback"
 )
+
+# Exercise the same pure PlaybackEngine and FakeOutput tests on Linux without
+# pulling rgsml_platform's Windows-only resource/export backends into the link.
+if(NOT WIN32)
+    qt_add_executable(rgsml_playback_engine_portable_tests
+        unit/platform/test_playback_support.cpp
+        ${CMAKE_SOURCE_DIR}/platform/windows/src/internal/playback_support.cpp
+    )
+    target_include_directories(rgsml_playback_engine_portable_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/platform/windows/src/internal
+        ${CMAKE_SOURCE_DIR}/audio/src/internal
+    )
+    target_link_libraries(rgsml_playback_engine_portable_tests PRIVATE
+        rgsml_audio
+        Qt6::Test
+    )
+    rgsml_apply_project_warnings(rgsml_playback_engine_portable_tests)
+    add_test(NAME rgsml_playback_engine_portable_tests
+        COMMAND rgsml_playback_engine_portable_tests)
+    set_tests_properties(rgsml_playback_engine_portable_tests PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "platform;playback;portable"
+    )
+endif()
 
 qt_add_executable(rgsml_playback_composition_tests
     integration/platform/test_playback_composition.cpp
@@ -711,6 +739,195 @@ foreach(dsp_test IN ITEMS
         LABELS "${dsp_test_labels}"
     )
 endforeach()
+
+qt_add_executable(rgsml_stereo_ms_crossover_runtime_tests
+    unit/dsp/test_stereo_ms_crossover_runtime.cpp
+)
+target_link_libraries(rgsml_stereo_ms_crossover_runtime_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_crossover_runtime_tests)
+add_test(NAME rgsml_stereo_ms_crossover_runtime_tests
+    COMMAND rgsml_stereo_ms_crossover_runtime_tests)
+set_tests_properties(rgsml_stereo_ms_crossover_runtime_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;lr12;lr24;recursive"
+)
+
+qt_add_executable(rgsml_stereo_ms_crossover_tests
+    unit/dsp/test_stereo_ms_crossover.cpp
+)
+target_link_libraries(rgsml_stereo_ms_crossover_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_crossover_tests)
+add_test(NAME rgsml_stereo_ms_crossover_tests
+    COMMAND rgsml_stereo_ms_crossover_tests)
+set_tests_properties(rgsml_stereo_ms_crossover_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;lr12;lr24;coefficients"
+)
+
+qt_add_executable(rgsml_stereo_ms_width_response_tests
+    unit/dsp/test_stereo_ms_width_response.cpp
+)
+target_link_libraries(rgsml_stereo_ms_width_response_tests
+    PRIVATE rgsml_dsp rgsml_core Qt6::Test)
+rgsml_apply_project_warnings(rgsml_stereo_ms_width_response_tests)
+add_test(NAME rgsml_stereo_ms_width_response_tests
+    COMMAND rgsml_stereo_ms_width_response_tests)
+set_tests_properties(rgsml_stereo_ms_width_response_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;observational_response"
+)
+
+qt_add_executable(rgsml_stereo_ms_width_tests
+    unit/dsp/test_stereo_ms_width.cpp
+)
+target_link_libraries(rgsml_stereo_ms_width_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_width_tests)
+add_test(NAME rgsml_stereo_ms_width_tests
+    COMMAND rgsml_stereo_ms_width_tests)
+set_tests_properties(rgsml_stereo_ms_width_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;gate_g;width"
+)
+
+qt_add_executable(rgsml_stereo_ms_no_alloc_tests
+    unit/dsp/test_stereo_ms_no_alloc.cpp
+)
+target_link_libraries(rgsml_stereo_ms_no_alloc_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_no_alloc_tests)
+add_test(NAME rgsml_stereo_ms_no_alloc_tests
+    COMMAND rgsml_stereo_ms_no_alloc_tests)
+set_tests_properties(rgsml_stereo_ms_no_alloc_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;gate_g;no_alloc"
+)
+
+qt_add_executable(rgsml_stereo_ms_gate_g_spatial_evidence_tests
+    unit/dsp/test_stereo_ms_gate_g_spatial_evidence.cpp
+)
+target_link_libraries(rgsml_stereo_ms_gate_g_spatial_evidence_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_gate_g_spatial_evidence_tests)
+add_test(NAME rgsml_stereo_ms_gate_g_spatial_evidence_tests
+    COMMAND rgsml_stereo_ms_gate_g_spatial_evidence_tests)
+set_tests_properties(rgsml_stereo_ms_gate_g_spatial_evidence_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;gate_g;spatial_evidence"
+)
+
+qt_add_executable(rgsml_stereo_ms_independent_math_tests
+    unit/dsp/test_stereo_ms_independent_math.cpp
+)
+target_link_libraries(rgsml_stereo_ms_independent_math_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_independent_math_tests)
+add_test(NAME rgsml_stereo_ms_independent_math_tests
+    COMMAND rgsml_stereo_ms_independent_math_tests)
+set_tests_properties(rgsml_stereo_ms_independent_math_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;independent_oracle;runtime"
+)
+
+qt_add_executable(rgsml_stereo_ms_long_resume_tests
+    unit/dsp/test_stereo_ms_long_resume.cpp
+)
+target_link_libraries(rgsml_stereo_ms_long_resume_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_long_resume_tests)
+add_test(NAME rgsml_stereo_ms_long_resume_tests
+    COMMAND rgsml_stereo_ms_long_resume_tests)
+set_tests_properties(rgsml_stereo_ms_long_resume_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;independent_oracle;runtime"
+)
+
+qt_add_executable(rgsml_stereo_ms_checkpoint_tests
+    unit/dsp/test_stereo_ms_checkpoint.cpp
+)
+target_link_libraries(rgsml_stereo_ms_checkpoint_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_checkpoint_tests)
+add_test(NAME rgsml_stereo_ms_checkpoint_tests
+    COMMAND rgsml_stereo_ms_checkpoint_tests)
+set_tests_properties(rgsml_stereo_ms_checkpoint_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;lr12;lr24;checkpoint"
+)
+
+qt_add_executable(rgsml_stereo_ms_module_streaming_tests
+    unit/dsp/test_stereo_ms_module_streaming.cpp
+)
+target_link_libraries(rgsml_stereo_ms_module_streaming_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_module_streaming_tests)
+add_test(NAME rgsml_stereo_ms_module_streaming_tests
+    COMMAND rgsml_stereo_ms_module_streaming_tests)
+set_tests_properties(rgsml_stereo_ms_module_streaming_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;lr12;lr24;streaming;atomicity"
+)
+
+qt_add_executable(rgsml_stereo_ms_module_tests
+    unit/dsp/test_stereo_ms_module.cpp
+)
+target_link_libraries(rgsml_stereo_ms_module_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_module_tests)
+add_test(NAME rgsml_stereo_ms_module_tests
+    COMMAND rgsml_stereo_ms_module_tests)
+set_tests_properties(rgsml_stereo_ms_module_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;runtime"
+)
+
+qt_add_executable(rgsml_stereo_ms_parameters_tests
+    unit/dsp/test_stereo_ms_parameters.cpp
+)
+target_link_libraries(rgsml_stereo_ms_parameters_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_parameters_tests)
+add_test(NAME rgsml_stereo_ms_parameters_tests
+    COMMAND rgsml_stereo_ms_parameters_tests)
+set_tests_properties(rgsml_stereo_ms_parameters_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;parameters"
+)
 
 qt_add_executable(rgsml_gain_tests
     unit/dsp/test_gain.cpp
@@ -926,6 +1143,67 @@ add_test(NAME rgsml_mastering_preview_controller_tests COMMAND rgsml_mastering_p
 set_tests_properties(rgsml_mastering_preview_controller_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "app;mastering_chain;render"
+)
+
+qt_add_executable(rgsml_stereo_ms_view_model_tests
+    unit/app/test_stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
+)
+target_include_directories(rgsml_stereo_ms_view_model_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_stereo_ms_view_model_tests
+    PRIVATE
+        rgsml_render
+        rgsml_dsp
+        rgsml_audio
+        rgsml_core
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_view_model_tests)
+add_test(NAME rgsml_stereo_ms_view_model_tests COMMAND rgsml_stereo_ms_view_model_tests)
+set_tests_properties(rgsml_stereo_ms_view_model_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;stereo_ms;editor_draft"
+)
+
+qt_add_executable(rgsml_stereo_ms_signature_tests
+    unit/render/test_stereo_ms_execution_signature.cpp
+)
+target_link_libraries(rgsml_stereo_ms_signature_tests
+    PRIVATE
+        rgsml_render
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_signature_tests)
+add_test(NAME rgsml_stereo_ms_signature_tests
+    COMMAND rgsml_stereo_ms_signature_tests)
+set_tests_properties(rgsml_stereo_ms_signature_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;render;semantic_signature"
+)
+
+qt_add_executable(rgsml_stereo_ms_audible_resolver_tests
+    unit/render/test_audible_stereo_ms_telemetry_resolver.cpp
+)
+target_link_libraries(rgsml_stereo_ms_audible_resolver_tests
+    PRIVATE
+        rgsml_render
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_audible_resolver_tests)
+add_test(NAME rgsml_stereo_ms_audible_resolver_tests
+    COMMAND rgsml_stereo_ms_audible_resolver_tests)
+set_tests_properties(rgsml_stereo_ms_audible_resolver_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;render;audible_telemetry"
 )
 
 qt_add_executable(rgsml_render_preview_tests
@@ -1246,6 +1524,8 @@ qt_add_executable(rgsml_dsp_module_adapter_tests
     unit/app/test_dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.cpp
