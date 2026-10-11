@@ -30,6 +30,8 @@ ColumnLayout {
     property alias accentColor: parameterSlider.accentColor
     property alias hasSemanticAccent: parameterSlider.hasSemanticAccent
     property alias semanticAccent: parameterSlider.semanticAccent
+    // Opt-in only. Existing graph-handle color semantics remain untouched.
+    property alias focusAccentOnly: parameterSlider.focusAccentOnly
     property alias sliderAccessibleName: parameterSlider.accessibleName
 
     StudioNumericField {

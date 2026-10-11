@@ -654,11 +654,17 @@ Window {
     auto* widthControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthControl"));
     auto* cutoffControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCutoffControl"));
     auto* lowControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthControl"));
-    QVERIFY2(widthControl && cutoffControl && lowControl,
-             "All new M15 sliders must use the canonical numeric-slider pair");
+    auto* midControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsMidGainControl"));
+    auto* sideControl = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsSideGainControl"));
+    QVERIFY2(widthControl && cutoffControl && lowControl && midControl && sideControl,
+             "Every editable M15 numeric field must own a canonical slider pair");
     auto* widthSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthSlider"));
     auto* cutoffSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCutoffSlider"));
     auto* lowSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthSlider"));
+    auto* midSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsMidGainSlider"));
+    auto* sideSlider = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsSideGainSlider"));
+    auto* midField = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsMidGainField"));
+    auto* sideField = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsSideGainField"));
     auto* widthField = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsWidthField"));
     auto* cutoffField = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsCutoffField"));
     auto* lowField = find_child_by_name(componentRoot.data(), QStringLiteral("stereoMsLowWidthField"));
@@ -667,7 +673,8 @@ Window {
              && dynamicWell && title && telemetryStatus && axes && cloud
              && midAxis && sideAxis && midLabel && sideLabel
              && corrReadout && sideLowReadout && widthSlider && cutoffSlider
-             && lowSlider && widthField && cutoffField && lowField && telemetry,
+             && lowSlider && midSlider && sideSlider && midField && sideField
+             && widthField && cutoffField && lowField && telemetry,
              "M15 complete active/dynamic editor must load");
     QVERIFY(editor->property("visible").toBool());
     QVERIFY(curve->property("visible").toBool());
@@ -680,6 +687,18 @@ Window {
              "No synthetic or exclusively silent density is accepted");
     QCOMPARE(cloud->property("renderStyle").toString(),
              QStringLiteral("SOFT_RADIAL_DENSITY"));
+    // Secondary MID/SIDE controls have no default colored halo. Their
+    // field/slider carriers use exact frozen DSP parameter ranges.
+    QCOMPARE(midSlider->property("focusAccentOnly").toBool(), true);
+    QCOMPARE(sideSlider->property("focusAccentOnly").toBool(), true);
+    QCOMPARE(midSlider->property("hasSemanticAccent").toBool(), false);
+    QCOMPARE(sideSlider->property("hasSemanticAccent").toBool(), false);
+    QCOMPARE(midSlider->property("accentActive").toBool(), false);
+    QCOMPARE(sideSlider->property("accentActive").toBool(), false);
+    QCOMPARE(midSlider->property("from").toDouble(), -12.0);
+    QCOMPARE(midSlider->property("to").toDouble(), 12.0);
+    QCOMPARE(sideSlider->property("from").toDouble(), -24.0);
+    QCOMPARE(sideSlider->property("to").toDouble(), 12.0);
     QCOMPARE(midLabel->property("text").toString(), QStringLiteral("M"));
     QCOMPARE(sideLabel->property("text").toString(), QStringLiteral("S"));
     QCOMPARE(telemetryStatus->property("text").toString(),
@@ -732,13 +751,15 @@ Window {
         for (const auto& fieldAndSlider : {
                  std::pair{widthField, widthSlider},
                  std::pair{cutoffField, cutoffSlider},
-                 std::pair{lowField, lowSlider}}) {
+                 std::pair{lowField, lowSlider},
+                 std::pair{midField, midSlider},
+                 std::pair{sideField, sideSlider}}) {
             auto* box = qobject_cast<QQuickItem*>(fieldAndSlider.first);
             auto* slider = qobject_cast<QQuickItem*>(fieldAndSlider.second);
             QVERIFY(box && slider);
             const double numericBoxWidth =
                 fieldAndSlider.first->property("fieldWidth").toDouble();
-            QCOMPARE(numericBoxWidth, 86.0);
+            QVERIFY(numericBoxWidth == 86.0 || numericBoxWidth == 78.0);
             QVERIFY(std::abs(slider->width() - numericBoxWidth) <= 0.5);
             const QPointF boxOrigin = box->mapToItem(
                 qobject_cast<QQuickItem*>(editor), QPointF{});

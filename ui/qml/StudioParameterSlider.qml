@@ -14,6 +14,12 @@ Item {
     property color accentColor: "#00C8FF"
     property color semanticAccent: accentColor
     property bool hasSemanticAccent: false
+    // Secondary controls stay neutral except while actively selected.
+    // The default remains false to preserve every existing DSP slider.
+    property bool focusAccentOnly: false
+    readonly property bool accentActive: focusAccentOnly
+        && internalSlider.enabled
+        && (internalSlider.activeFocus || internalSlider.pressed)
     property bool fillFromOrigin: false
     property real positionFillOrigin: 0.0
     property color positionFillColor: Qt.alpha("#C4774A", 0.38)
@@ -142,8 +148,26 @@ Item {
             height: control.compact ? 12 : 18
             radius: width / 2
             color: internalSlider.enabled ? "#E6EEF0" : "#586773"
-            border.color: control.hasSemanticAccent ? control.semanticAccent : (internalSlider.activeFocus ? "#00C8FF" : "#1E354A")
-            border.width: control.hasSemanticAccent ? (internalSlider.activeFocus ? 2 : 1.5) : (internalSlider.activeFocus ? 2 : 1)
+            border.color: control.focusAccentOnly
+                ? (control.accentActive ? control.accentColor : "#1E354A")
+                : (control.hasSemanticAccent ? control.semanticAccent
+                    : (internalSlider.activeFocus ? "#00C8FF" : "#1E354A"))
+            border.width: control.focusAccentOnly
+                ? (control.accentActive ? 2 : 1)
+                : (control.hasSemanticAccent
+                    ? (internalSlider.activeFocus ? 2 : 1.5)
+                    : (internalSlider.activeFocus ? 2 : 1))
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width + 8
+                height: parent.height + 8
+                radius: width / 2
+                color: Qt.alpha(control.accentColor, 0.23)
+                border.color: Qt.alpha(control.accentColor, 0.53)
+                border.width: 1
+                z: -1
+                visible: control.accentActive
+            }
         }
 
         Accessible.name: control.accessibleName.length > 0 ? control.accessibleName : (control.fieldName + " slider")

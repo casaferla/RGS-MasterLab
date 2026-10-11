@@ -11,6 +11,11 @@ Item {
     readonly property color widthHue: "#2ED3FF"
     readonly property color cutoffHue: "#2FD98F"
     readonly property color lowHue: "#FFD84A"
+    // Secondary, muted M/S colors: only a focused or pressed gain slider
+    // lights its corresponding border/halo. Main response controls retain
+    // their direct cyan / emerald / yellow handle semantics.
+    readonly property color midGainHue: "#4A9A88"
+    readonly property color sideGainHue: "#659CAF"
     readonly property color sliderFill: Qt.rgba(74 / 255, 154 / 255, 136 / 255, 0.38)
 
     // EQ-like top expansive region, but a separate near-square, strictly
@@ -422,25 +427,54 @@ Item {
                     Layout.fillWidth: true
                     spacing: 12
 
-                    StudioNumericField {
-                        objectName: "stereoMsMidGainField"
-                        compact: true
+                    // M15's final two editable numeric fields get the same
+                    // third input mode as all other numeric DSP controls.
+                    // No graph handles exist for these independent gains.
+                    StudioNumericSliderPair {
+                        objectName: "stereoMsMidGainControl"
+                        Layout.fillWidth: true
+                        fieldObjectName: "stereoMsMidGainField"
+                        sliderObjectName: "stereoMsMidGainSlider"
                         compactFieldWidth: 78
                         labelText: "MID GAIN"
                         unitText: "dB"
                         fieldName: "midGainDb"
                         rawText: root.viewModel ? root.viewModel.midGainDb.toFixed(1) : "0.0"
                         viewModel: root.viewModel
+                        interactionHint: "Drag the slider for fine adjustment. Enter to apply."
+                        from: -12
+                        to: 12
+                        stepSize: 0.1
+                        value: root.viewModel ? root.viewModel.midGainDb : 0
+                        fillFromOrigin: true
+                        positionFillOrigin: 0
+                        positionFillColor: Qt.alpha(root.midGainHue, 0.28)
+                        accentColor: root.midGainHue
+                        focusAccentOnly: true
+                        sliderAccessibleName: "Mid gain continuous adjustment"
                     }
-                    StudioNumericField {
-                        objectName: "stereoMsSideGainField"
-                        compact: true
+                    StudioNumericSliderPair {
+                        objectName: "stereoMsSideGainControl"
+                        Layout.fillWidth: true
+                        fieldObjectName: "stereoMsSideGainField"
+                        sliderObjectName: "stereoMsSideGainSlider"
                         compactFieldWidth: 78
                         labelText: "SIDE GAIN"
                         unitText: "dB"
                         fieldName: "sideGainDb"
                         rawText: root.viewModel ? root.viewModel.sideGainDb.toFixed(1) : "0.0"
                         viewModel: root.viewModel
+                        interactionHint: "Drag the slider for fine adjustment. Enter to apply."
+                        from: -24
+                        to: 12
+                        stepSize: 0.1
+                        value: root.viewModel ? root.viewModel.sideGainDb : 0
+                        fillFromOrigin: true
+                        positionFillOrigin: 0
+                        positionFillColor: Qt.alpha(root.sideGainHue, 0.28)
+                        accentColor: root.sideGainHue
+                        focusAccentOnly: true
+                        sliderAccessibleName: "Side gain continuous adjustment"
                     }
 
                     ColumnLayout {
