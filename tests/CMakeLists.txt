@@ -1515,6 +1515,22 @@ set_tests_properties(rgsml_true_peak_full_resource_tests PROPERTIES
     LABELS "analysis;true_peak;full_resource;unit"
 )
 
+qt_add_executable(rgsml_true_peak_gate_g_edge_tests
+    unit/analysis/test_true_peak_gate_g_edges.cpp
+)
+target_include_directories(rgsml_true_peak_gate_g_edge_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_gate_g_edge_tests PRIVATE
+    rgsml_analysis Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_true_peak_gate_g_edge_tests)
+add_test(NAME rgsml_true_peak_gate_g_edge_tests COMMAND rgsml_true_peak_gate_g_edge_tests)
+set_tests_properties(rgsml_true_peak_gate_g_edge_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;true_peak;gate_g;edge_prequalification"
+)
+
 qt_add_executable(rgsml_live_spectrum_oracle_tests
     unit/analysis/live_spectrum_oracle_test.cpp
 )
