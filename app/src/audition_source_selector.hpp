@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/realization_identity.hpp>
 #include <rgsml/core/resource_reference.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/render/render_result.hpp>
@@ -8,6 +9,7 @@
 #include <QObject>
 #include <QString>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -52,6 +54,10 @@ public:
     [[nodiscard]] core::FrameIndex gold_cue() const noexcept;
     [[nodiscard]] std::shared_ptr<const render::RenderResult> prepared_realization_snapshot() const noexcept;
     [[nodiscard]] std::shared_ptr<const render::RenderResult> processed_realization_snapshot() const noexcept;
+    // Identity of the last ACCEPTED, published Processed RenderResult.
+    // Not necessarily audible; PlaybackSnapshot is the independent authority.
+    [[nodiscard]] std::optional<core::RealizationId>
+    processed_realization_id() const noexcept;
 
     void set_source_loop_provider(SourceLoopProvider provider);
     [[nodiscard]] core::Status source_committed(
@@ -78,7 +84,8 @@ private:
     [[nodiscard]] core::Status store_active_cue();
     [[nodiscard]] core::Status prepare_realization(
         const render::RenderResult& realization,
-        std::shared_ptr<const void> lifetime = nullptr);
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt);
     [[nodiscard]] core::Status materialize_prepared(
         const core::ResourceReference& source);
     void fail_closed(const core::Error& error);
@@ -89,6 +96,8 @@ private:
     std::optional<core::ResourceReference> source_;
     std::shared_ptr<const render::RenderResult> prepared_;
     std::shared_ptr<const render::RenderResult> processed_;
+    std::optional<core::RealizationId> processedRealizationId_;
+    std::uint64_t nextProcessedRealizationIdValue_{1};
     std::optional<core::ResourceReference> gold_;
     std::optional<core::SampleRate> goldRate_;
     std::optional<core::FrameCount> goldFrames_;

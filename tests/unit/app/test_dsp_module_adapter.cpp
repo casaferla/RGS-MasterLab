@@ -19,6 +19,7 @@ class DspModuleAdapterTest final : public QObject {
 
 private slots:
     void testAdapterInventoryAndOrder();
+    void testOptInStereoMsModuleSelection();
     void testStableInstanceIds();
     void testConfigurationStateRules();
     void testBypassOrthogonality();
@@ -35,6 +36,73 @@ private slots:
     void testIndependentModuleHistories();
     void testWorkflowContextLabel();
 };
+
+void DspModuleAdapterTest::testOptInStereoMsModuleSelection()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *core::Uuid::parse("61000000-0000-4000-8000-000000000001").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("61000000-0000-4000-8000-000000000010").value()).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("61000000-0000-4000-8000-000000000020").value()).value();
+    const auto compId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("61000000-0000-4000-8000-000000000030").value()).value();
+    const auto msId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("61000000-0000-4000-8000-000000000040").value()).value();
+    auto legacy = MasteringChainState::create_default(
+        *registry.value(), chainId, gainId, eqId, compId);
+    QVERIFY(legacy);
+    GainViewModel lg(legacy.value());
+    EqViewModel le(legacy.value());
+    CompressorViewModel lc(legacy.value());
+    StereoMsViewModel absent(legacy.value());
+    DspChainAdapterModel legacyModel(&lg, &le, &lc, legacy.value(),
+        QStringLiteral("Mastering"), nullptr, &absent);
+    QCOMPARE(legacyModel.modules().size(), 3);
+
+    auto defaults = dsp::StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    auto product = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId, gainId, eqId, compId,
+        msId, *defaults.value(), true);
+    QVERIFY(product);
+    GainViewModel gain(product.value());
+    EqViewModel eq(product.value());
+    CompressorViewModel comp(product.value());
+    StereoMsViewModel stereo(product.value());
+    DspChainAdapterModel model(&gain, &eq, &comp, product.value(),
+        QStringLiteral("Mastering"), nullptr, &stereo);
+    const auto modules = model.modules();
+    QCOMPARE(modules.size(), 4);
+    auto* adapter = qobject_cast<DspModuleAdapter*>(modules[3].value<QObject*>());
+    QVERIFY(adapter);
+    QCOMPARE(adapter->type_id(), QStringLiteral("rgsml.dsp.stereo-ms"));
+    QCOMPARE(adapter->display_name(), QStringLiteral("Stereo / M-S"));
+    QCOMPARE(adapter->editor_content_key(), QStringLiteral("STEREO_MS"));
+    QCOMPARE(adapter->family_accent(), QStringLiteral("#4A9A88"));
+    QCOMPARE(adapter->instance_id(), QString::fromStdString(msId.to_string()));
+    QCOMPARE(adapter->configuration_state(), QStringLiteral("Default"));
+    QVERIFY(adapter->stereo_ms_view_model() == &stereo);
+    QVERIFY(adapter->bypass());
+    QVERIFY(!adapter->history_supported());
+    QVERIFY(!adapter->can_undo());
+    QVERIFY(!adapter->can_redo());
+    model.selectModuleByInstanceId(adapter->instance_id());
+    QCOMPARE(model.selected_index(), 3);
+    QCOMPARE(model.active_module(), adapter);
+    adapter->setBypass(false);
+    QVERIFY(!adapter->bypass());
+    QVERIFY(stereo.setDraftWidthPercent(140.0));
+    QVERIFY(stereo.commitDraft());
+    QCOMPARE(adapter->configuration_state(), QStringLiteral("Manual"));
+    adapter->resetToDefault();
+    QCOMPARE(adapter->configuration_state(), QStringLiteral("Default"));
+    QVERIFY(!adapter->bypass());
+    model.refreshFromAuthority();
+    QCOMPARE(model.modules().size(), 4);
+    QCOMPARE(model.selected_instance_id(), QString::fromStdString(msId.to_string()));
+}
 
 void DspModuleAdapterTest::testAdapterInventoryAndOrder()
 {
