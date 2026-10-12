@@ -58,3 +58,51 @@ six-rate RGS matrices, independent ideal/oracle qualification,
 strict-FP/FMA, chunk/finalize, coefficient-hash, metadata/status tests
 and complete Gate G remain separate. `B2B_OFFICIAL_48KHZ_CPP_COMPARISON_PASS`
 is a narrow sub-result, **never** an overall Gate G PASS.
+
+
+## M16-B2c: six-rate Hertz-defined synthetic C++ evidence (NOT Gate G)
+
+The standalone, stdlib-only `qualify_six_rate_cpp.py` adds the missing
+physical-rate dimension. It uses the **already compiled CI #417 exact-head**
+C++ production-linked probe, independently hashes and verifies its exact
+source/run provenance, and executes six rates:
+
+`44100, 48000, 88200, 96000, 176400, 192000 Hz`.
+
+At every rate it synthesizes six stereo fixtures in memory: a 1000-Hz
+integer-defined bipolar square signal; a 997-Hz pulse train; sign-inverted
+and channel-swapped metamorphic pairs; a finite ±2/+3 dyadic boundary
+case; and exact digital silence. Hertz waveforms contain **different PCM
+sequences at different rates**, rather than relabeling one 48-kHz vector.
+The synthetic signals are RGS fixtures, **not EBU certification** or
+high-resolution sine/ideal continuous-waveform qualification.
+
+The independent direct signed integer FIR reference has the *separately
+transcribed* published lag-major coefficients, an explicit 11-frame EOS
+and exact dyadic rational denominator. It checks the real C++ L/R/global
+linear peaks by exact equality, each defined dBTP against the frozen RGS
+0.01-dB QTP, null dB fields for silence, rate/layout/length metadata,
+plus sign- and channel-swap invariance. The standalone bridge preserves
+the original C++ estimator and does not modify production code.
+
+Prerequisite: retain private CI #417 artifact
+`RGS-M16-B2b-CPP-Probe-4152f1ba6bfc2c8037a3397631cd4f19f5e471c2`
+and its `B2b_build_provenance.json`; do not substitute a rebuilt EXE.
+
+```sh
+python tools/qualification/true_peak/qualify_six_rate_cpp.py --selftest
+python tools/qualification/true_peak/qualify_six_rate_cpp.py \
+  --probe /private/rgsml_true_peak_b2b_probe.exe \
+  --provenance /private/B2b_build_provenance.json
+```
+
+Output is numerical JSON only and always retains
+`production_gate_g: NOT_COMPLETE`. This constitutes a *supplemental*
+six-rate normalized discrete-math / Hertz-defined synthetic check if and
+only if actually executed. It must never be reported as six official
+EBU tests, an independent ≥32x ideal reconstruction, a complete six-rate
+release-metadata qualification, or an overall Gate G pass.
+
+Remaining mandatory Gate G components must be reconciled against the
+M16 mathematical authority and actual CI evidence before any
+QUALIFIED label, Full Qualification, or milestone freeze.
