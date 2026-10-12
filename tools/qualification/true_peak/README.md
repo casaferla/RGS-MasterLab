@@ -63,9 +63,10 @@ is a narrow sub-result, **never** an overall Gate G PASS.
 ## M16-B2c: six-rate Hertz-defined synthetic C++ evidence (NOT Gate G)
 
 The standalone, stdlib-only `qualify_six_rate_cpp.py` adds the missing
-physical-rate dimension. It uses the **already compiled CI #417 exact-head**
-C++ production-linked probe, independently hashes and verifies its exact
-source/run provenance, and executes six rates:
+physical-rate dimension. In private local mode it pins the **CI #417 exact-head**
+C++ production-linked probe and its immutable byte SHA; fresh focused CI
+uses an independently pinned checkout HEAD/run ID plus actual packaged EXE
+SHA cross-check, and executes six rates:
 
 `44100, 48000, 88200, 96000, 176400, 192000 Hz`.
 
