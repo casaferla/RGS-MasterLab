@@ -1571,6 +1571,23 @@ set_tests_properties(rgsml_true_peak_chunk_invariance_tests PROPERTIES
     LABELS "analysis;true_peak;chunk_invariance;unit"
 )
 
+# B2b is an INTERNAL C++ probe of the real M16 estimator, not official Gate G.
+# The self-test is synthetic and can run in normal CI without EBU audio bytes.
+add_executable(rgsml_true_peak_b2b_probe
+    ../tools/qualification/true_peak/true_peak_cpp_probe.cpp
+)
+target_include_directories(rgsml_true_peak_b2b_probe PRIVATE
+    ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_b2b_probe PRIVATE rgsml_analysis)
+rgsml_apply_project_warnings(rgsml_true_peak_b2b_probe)
+add_test(NAME rgsml_true_peak_b2b_probe_selftest
+    COMMAND rgsml_true_peak_b2b_probe --selftest
+)
+set_tests_properties(rgsml_true_peak_b2b_probe_selftest PROPERTIES
+    LABELS "analysis;true_peak;gate_g;synthetic_prequalification"
+)
+
 qt_add_executable(rgsml_live_spectrum_oracle_tests
     unit/analysis/live_spectrum_oracle_test.cpp
 )
