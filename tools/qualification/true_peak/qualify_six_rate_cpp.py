@@ -90,18 +90,20 @@ def create_cases(rate: int):
     )
 
 
-def check_provenance(probe: Path, provenance: Path) -> str:
+def check_provenance(probe: Path, provenance: Path,
+                     expected_source_sha: str, expected_run_id: str,
+                     expected_exe_sha: str | None) -> str:
     if not probe.is_file() or not provenance.is_file():
         raise TestFailure("Probe or CI417 provenance JSON missing")
     obj = json.loads(provenance.read_text(encoding="utf-8-sig"))
     observed = hashlib.sha256(probe.read_bytes()).hexdigest()
     if (
-        obj.get("source_commit_sha") != CI417_SOURCE_SHA
-        or str(obj.get("workflow_run_id")) != CI417_RUN_ID
+        obj.get("source_commit_sha") != expected_source_sha
+        or str(obj.get("workflow_run_id")) != expected_run_id
         or obj.get("production_gate_g") != "NOT_EXECUTED"
         or obj.get("test_scope") != "SYNTHETIC_ONLY__OFFICIAL_EBU_WAVS_NOT_EXECUTED"
-        or observed != CI417_EXE_SHA
-        or obj.get("probe_exe_sha256") != CI417_EXE_SHA
+        or obj.get("probe_exe_sha256") != observed
+        or (expected_exe_sha is not None and observed != expected_exe_sha)
     ):
         raise TestFailure("Exact source/run/executable provenance mismatch")
     return observed
@@ -208,7 +210,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--probe", type=Path, help="CI417 exact-head Windows probe EXE")
-    ap.add_argument("--provenance", type=Path, help="CI417 build provenance JSON")
+    ap.add_argument("--provenance", type=Path, help="Exact build provenance JSON")
+    ap.add_argument("--expected-source-sha", help="Explicit CI checkout HEAD")
+    ap.add_argument("--expected-run-id", help="Explicit CI workflow run ID")
     args = ap.parse_args()
     try:
         internal_selftest()
@@ -218,7 +222,17 @@ def main() -> int:
             return 0
         if args.probe is None or args.provenance is None:
             raise TestFailure("Must supply both --probe and --provenance")
-        sha = check_provenance(args.probe, args.provenance)
+        if bool(args.expected_source_sha) != bool(args.expected_run_id):
+            raise TestFailure("Both expected build identifiers must be supplied")
+        # Default pins to previously qualified CI417 binary for private use.
+        # A fresh CI checks its own explicit exact HEAD and run ID and ties
+        # the EXE to the packaged hash; not an externally attested byte hash.
+        fresh_ci = args.expected_source_sha is not None
+        expected_source = args.expected_source_sha or CI417_SOURCE_SHA
+        expected_run = args.expected_run_id or CI417_RUN_ID
+        expected_exe = None if fresh_ci else CI417_EXE_SHA
+        sha = check_provenance(args.probe, args.provenance,
+                               expected_source, expected_run, expected_exe)
         synthetic = []
         for rate in RATES:
             raw_by_family = {}
@@ -237,7 +251,8 @@ def main() -> int:
     print(json.dumps({
         "status": "B2C_SYNTHETIC_SIX_RATE_CPP_COMPARISON_PASS",
         "production_gate_g": "NOT_COMPLETE",
-        "source_build_sha": CI417_SOURCE_SHA,
+        "source_build_sha": expected_source,
+        "workflow_run_id": expected_run,
         "probe_exe_sha256": sha,
         "scope": "RGS_SYNTHETIC_NOT_EBU",
         "sample_rates_hz": list(RATES),
