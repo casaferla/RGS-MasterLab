@@ -241,11 +241,14 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           $copy = Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'
           Copy-Item -Path $source -Destination $copy
-          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
-          $deploy = Join-Path $env:RGSML_QT_ROOT 'bin/windeployqt.exe'
-          if (-not (Test-Path $deploy)) { throw 'B2B_WINDEPLOYQT_MISSING' }
-          & $deploy --release --no-translations $copy
-          if ($LASTEXITCODE -ne 0) { throw "B2B_WINDEPLOYQT_FAILED_$LASTEXITCODE" }
+          # Probe links only rgsml_analysis/audio/core STATIC libraries (no Qt).
+          # CI #416 confirmed windeployqt rejects this non-Qt executable.
+          # Preserve the standalone EXE unchanged; assert no Qt6 import.
+          $exeBytes = [System.IO.File]::ReadAllBytes($copy)
+          $byteText = [System.Text.Encoding]::ASCII.GetString($exeBytes)
+          if ($byteText -match '(?i)Qt6(Core|Gui|Test|Qml|Widgets|Multimedia)\.dll') {
+            throw 'B2B_UNEXPECTED_QT_DYNAMIC_DEPENDENCY'
+          }
           $probeHash = (Get-FileHash -Path $copy -Algorithm SHA256).Hash.ToLowerInvariant()
           $stamp = [ordered]@{
             kind = 'RGS_M16_B2B_CPP_PROBE_SYNTHETIC_CI_ONLY'
