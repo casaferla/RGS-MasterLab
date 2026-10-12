@@ -107,3 +107,42 @@ release-metadata qualification, or an overall Gate G pass.
 Remaining mandatory Gate G components must be reconciled against the
 M16 mathematical authority and actual CI evidence before any
 QUALIFIED label, Full Qualification, or milestone freeze.
+
+## M16-B2d: extreme FP and fail-closed production probe (NOT Gate G)
+
+The new stdlib-only `qualify_extreme_fp_cpp.py` checks the UNCHANGED
+production True-Peak C++ estimator through the same exact-SHA authenticated
+qualification-only probe. All synthetic binary64 PCM is generated in RAM,
+streamed over an anonymous pipe; no audio files, EBU assets or decoded
+derivatives are saved or redistributed.
+
+There are 27 isolated stereo cases: +/- smallest subnormal and minimum
+normal (4); +/-DBL_MAX finite lone impulses (2); a 12-frame adversarial
+accumulation overflow (1, categorical failure); NaN, +Inf and -Inf in
+either channel at first/middle/last (18, categorical failure);
+one extra byte after expected frames (1); one unsupported 32-kHz rate (1).
+
+The independent expected binary64 result vectors come from the accepted M16
+independent mathematics preaudit, section G. Accepted cases check exact
+left/global linear peak, right-channel silence, defined dBTP within 0.01,
+and truthful unqualified status. Rejected cases require nonzero return,
+no misleading JSON values, and explicit failure. The script itself fails
+closed on an unexpected build/run hash, corrupted input, unexpected output,
+or an environment that flushes subnormals contrary to the frozen policy.
+
+```sh
+python tools/qualification/true_peak/qualify_extreme_fp_cpp.py --selftest
+python tools/qualification/true_peak/qualify_extreme_fp_cpp.py \
+  --probe /private/rgsml_true_peak_b2b_probe.exe \
+  --provenance /private/B2b_build_provenance.json
+```
+
+Private local mode pins to the known green CI #418 build. Fresh CI accepts
+an explicit exact source SHA/run ID, rehashes the actual packaged EXE and
+stores only numerical results in B2d_extreme_fp_result.json.
+
+A CI failure on a subnormal/overflow/NaN fixture is a qualification finding,
+NOT permission to weaken frozen mathematics or silently alter runtime FP
+policy. This B2d lane is not complete FMA/strict-FP qualification, not a
+high-resolution continuous ideal reconstruction, and not full Gate G. No
+Full Qualification, merge, freeze, or M17 is authorized by B2d alone.

@@ -292,6 +292,40 @@ jobs:
           }
           Write-Host 'B2C_SYNTHETIC_SIX_RATE_CPP_COMPARISON_PASS_36_OF_36__GATE_G_OPEN'
 
+      # B2d: categorical error-path / subnormal / overflow qualification.
+      # Uses the same EXACT built C++ probe, no EBU assets or audio artifacts.
+      - name: M16 B2d extreme-FP and fail-closed C++ qualification
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/qualification/true_peak/qualify_extreme_fp_cpp.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'B2D_ORACLE_SELFTEST_FAILED' }
+          $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
+          $argsB2d = @(
+            'tools/qualification/true_peak/qualify_extreme_fp_cpp.py',
+            '--probe', (Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'),
+            '--provenance', (Join-Path $dest 'B2b_build_provenance.json'),
+            '--expected-source-sha', '${{ github.event.pull_request.head.sha || github.sha }}',
+            '--expected-run-id', '${{ github.run_id }}'
+          )
+          $resultFile = Join-Path $dest 'B2d_extreme_fp_result.json'
+          python @argsB2d | Set-Content -Path $resultFile -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'B2D_EXTREME_FP_CPP_FAILED' }
+          $report = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+          if ($report.status -ne 'B2D_EXTREME_FP_CPP_COMPARISON_PASS' -or
+              $report.production_gate_g -ne 'NOT_COMPLETE' -or
+              $report.cases -ne 27 -or
+              $report.counts.tiny -ne 4 -or
+              $report.counts.large -ne 2 -or
+              $report.counts.nonfinite -ne 18 -or
+              $report.counts.overflow -ne 1 -or
+              $report.counts.framing -ne 1 -or
+              $report.counts.unsupported -ne 1) {
+            throw 'B2D_RESULT_CONTRACT_FAILED'
+          }
+          Write-Host 'B2D_EXTREME_FP_CPP_COMPARISON_PASS_27_OF_27__GATE_G_OPEN'
+
       - name: Upload B2b Windows C++ probe (NO EBU AUDIO)
         if: success()
         uses: actions/upload-artifact@v4
