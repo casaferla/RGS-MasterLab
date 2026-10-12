@@ -14,8 +14,10 @@ jobs:
     name: Linux Portable DSP Guard
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout exact PR head (B2b qualification provenance)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -41,7 +43,7 @@ jobs:
             -DRGSML_PROVENANCE_TYPE=PR \
             -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} \
             -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} \
-            -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }}
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Build Focused DSP Targets
         run: |
@@ -99,8 +101,10 @@ jobs:
     env:
       RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
     steps:
-      - name: Checkout repository
+      - name: Checkout exact PR head (B2b qualification provenance)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -118,7 +122,7 @@ jobs:
             -DRGSML_PROVENANCE_TYPE=PR `
             -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} `
             -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
-            -DRGSML_PROVENANCE_GIT_SHA=${{ github.sha }}
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Build Focused DSP Targets (Release)
         run: |
@@ -224,3 +228,42 @@ jobs:
             ${{ github.workspace }}\build\visual-evidence\*.png
             ${{ github.workspace }}\build\visual-evidence\*.json
           retention-days: 7
+# B2b only. Export the EXACT-SHA C++ probe + Qt dependencies, not WAVs,
+      # and only after the Windows focused tests (including the selftest) pass.
+      - name: Package B2b Windows C++ probe (no EBU audio)
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'build/windows-msvc/Release/rgsml_true_peak_b2b_probe.exe'
+          if (-not (Test-Path $source)) { throw 'B2B_PROBE_EXECUTABLE_MISSING' }
+          $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $copy = Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'
+          Copy-Item -Path $source -Destination $copy
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $deploy = Join-Path $env:RGSML_QT_ROOT 'bin/windeployqt.exe'
+          if (-not (Test-Path $deploy)) { throw 'B2B_WINDEPLOYQT_MISSING' }
+          & $deploy --release --no-translations $copy
+          if ($LASTEXITCODE -ne 0) { throw "B2B_WINDEPLOYQT_FAILED_$LASTEXITCODE" }
+          $probeHash = (Get-FileHash -Path $copy -Algorithm SHA256).Hash.ToLowerInvariant()
+          $stamp = [ordered]@{
+            kind = 'RGS_M16_B2B_CPP_PROBE_SYNTHETIC_CI_ONLY'
+            source_commit_sha = '${{ github.event.pull_request.head.sha || github.sha }}'
+            probe_exe_sha256 = $probeHash
+            workflow_run_id = '${{ github.run_id }}'
+            test_scope = 'SYNTHETIC_ONLY__OFFICIAL_EBU_WAVS_NOT_EXECUTED'
+            production_gate_g = 'NOT_EXECUTED'
+          }
+          $stamp | ConvertTo-Json | Set-Content -Path (Join-Path $dest 'B2b_build_provenance.json') -Encoding utf8
+          Write-Host "B2B_PROBE_EXE_SHA256=$probeHash"
+
+      - name: Upload B2b Windows C++ probe (NO EBU AUDIO)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M16-B2b-CPP-Probe-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}\rgsml-b2b-probe\
+          retention-days: 7
+          if-no-files-found: error
+
