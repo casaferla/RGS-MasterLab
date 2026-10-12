@@ -16,6 +16,11 @@
 #include <optional>
 #include <string_view>
 #include <system_error>
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#include <cstdio>
+#endif
 
 namespace {
 using namespace rgsml;
@@ -134,6 +139,14 @@ int main(int argc, char** argv)
         std::cerr << "B2B_SYNTHETIC_SELFTEST_FAILED\n";
         return 1;
     }
+    // MSVC CRT defaults stdin to TEXT. That converts CRLF and treats 0x1A
+    // as EOF, silently corrupting binary64 PCM piped from the private verifier.
+#if defined(_WIN32)
+    if (_setmode(_fileno(stdin), _O_BINARY) == -1) {
+        std::cerr << "B2B_STDIN_BINARY_MODE_FAILED\n";
+        return 1;
+    }
+#endif
     std::uint64_t rate = 0, frames = 0;
     if (argc != 3 || !read_decimal(argv[1], rate)
         || !read_decimal(argv[2], frames)) {
