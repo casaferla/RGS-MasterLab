@@ -261,6 +261,37 @@ jobs:
           $stamp | ConvertTo-Json | Set-Content -Path (Join-Path $dest 'B2b_build_provenance.json') -Encoding utf8
           Write-Host "B2B_PROBE_EXE_SHA256=$probeHash"
 
+      # B2c remains strictly qualification-only. PCM is generated in RAM and
+      # passed to the production-linked probe via a local anonymous pipe.
+      # Exact HEAD + run provenance is checked against this job's built artifact.
+      - name: M16 B2c six-rate independent C++ synthetic qualification
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/qualification/true_peak/qualify_six_rate_cpp.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'B2C_INDEPENDENT_ORACLE_SELFTEST_FAILED' }
+          $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
+          $argsB2c = @(
+            'tools/qualification/true_peak/qualify_six_rate_cpp.py',
+            '--probe', (Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'),
+            '--provenance', (Join-Path $dest 'B2b_build_provenance.json'),
+            '--expected-source-sha', '${{ github.event.pull_request.head.sha || github.sha }}',
+            '--expected-run-id', '${{ github.run_id }}'
+          )
+          $resultFile = Join-Path $dest 'B2c_six_rate_result.json'
+          python @argsB2c | Set-Content -Path $resultFile -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'B2C_SIX_RATE_CPP_COMPARISON_FAILED' }
+          $report = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+          if ($report.status -ne 'B2C_SYNTHETIC_SIX_RATE_CPP_COMPARISON_PASS' -or
+              $report.production_gate_g -ne 'NOT_COMPLETE' -or
+              $report.cases -ne 36 -or
+              $report.metamorphic_pairs -ne 12 -or
+              $report.results.Count -ne 36) {
+            throw 'B2C_SIX_RATE_RESULT_CONTRACT_FAILED'
+          }
+          Write-Host 'B2C_SYNTHETIC_SIX_RATE_CPP_COMPARISON_PASS_36_OF_36__GATE_G_OPEN'
+
       - name: Upload B2b Windows C++ probe (NO EBU AUDIO)
         if: success()
         uses: actions/upload-artifact@v4
