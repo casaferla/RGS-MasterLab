@@ -39,11 +39,21 @@ jobs:
           cmake -B build-linux -G Ninja \
             -DCMAKE_PREFIX_PATH="${{ github.workspace }}/6.8.3/gcc_64" \
             -DRGSML_BUILD_TESTS=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DRGSML_WARNINGS_AS_ERRORS=ON \
             -DRGSML_PROVENANCE_TYPE=PR \
             -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} \
             -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} \
             -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }}
+
+      # B2f: inspect Ninja's true compile command for each production object.
+      - name: Verify Linux True Peak scoped strict FP flags
+        run: |
+          python tools/qualification/true_peak/verify_fp_build_flags.py \
+            --platform linux --build-dir build-linux \
+            --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' \
+            --run-id '${{ github.run_id }}' \
+            --output "${RUNNER_TEMP}/B2f_linux_fp_compile_attestation.json"
 
       - name: Build Focused DSP Targets
         run: |
@@ -95,6 +105,15 @@ jobs:
         run: |
           ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_playback_engine_portable_tests|toolchain_manifest_)" --output-on-failure
 
+      - name: Upload Linux FP compile attestation (no audio)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M16-B2f-Linux-FP-Attestation-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/B2f_linux_fp_compile_attestation.json
+          retention-days: 7
+          if-no-files-found: error
+
   windows-focused-dsp:
     name: Windows Focused DSP
     runs-on: windows-2022
@@ -123,6 +142,14 @@ jobs:
             -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} `
             -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
             -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }}
+
+      # B2f: assert source-scoped strict FP in generated MSBuild project.
+      - name: Verify Windows True Peak scoped strict FP flags
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/qualification/true_peak/verify_fp_build_flags.py --platform windows --build-dir build/windows-msvc --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --run-id '${{ github.run_id }}' --output "$env:RUNNER_TEMP\B2f_windows_fp_compile_attestation.json"
+          if ($LASTEXITCODE -ne 0) { throw 'B2F_WINDOWS_SOURCE_FP_FLAG_CHECK_FAILED' }
 
       - name: Build Focused DSP Targets (Release)
         run: |
@@ -259,6 +286,10 @@ jobs:
             production_gate_g = 'NOT_EXECUTED'
           }
           $stamp | ConvertTo-Json | Set-Content -Path (Join-Path $dest 'B2b_build_provenance.json') -Encoding utf8
+          # Preserve numeric strict-FP configuration evidence beside the EXE.
+          $fpAttest = Join-Path $env:RUNNER_TEMP 'B2f_windows_fp_compile_attestation.json'
+          if (-not (Test-Path $fpAttest)) { throw 'B2F_FP_ATTESTATION_MISSING' }
+          Copy-Item -Path $fpAttest -Destination (Join-Path $dest 'B2f_windows_fp_compile_attestation.json')
           Write-Host "B2B_PROBE_EXE_SHA256=$probeHash"
 
       # B2c remains strictly qualification-only. PCM is generated in RAM and

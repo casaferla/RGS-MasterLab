@@ -179,3 +179,35 @@ Run privately against the preserved #419 exact-head probe EXE and provenance:
 CI pins its actual checkout SHA, run ID and produced EXE hash and saves
 only numeric screen results. No EBU assets or PCM derivatives, no Full
 Qualification, merge, QUALIFIED product status, freeze, or M17 authorization.
+
+## M16-B2f: explicit source-scoped strict floating-point build policy
+
+Compilation options apply ONLY to two True-Peak production objects:
+src/true_peak_itu4x_channel_stream.cpp and src/true_peak_full_resource.cpp.
+No modification to frozen 48-tap bank, fourfold FIR, EOS, PCM, UI,
+public schema, or other spectrum/FFT DSP translation units.
+
+MSVC: /fp:strict. GCC/Clang: -fno-fast-math -ffp-contract=off.
+Unrecognized C++ compilers fail CMake before creating an unaudited build.
+The CI uses verify_fp_build_flags.py to check effective per-source
+generated build settings: MSBuild ClCompile source metadata on Windows
+and Ninja compile_commands.json on Linux. Failure is categorical.
+Attestation output includes source SHA, run ID and only two checked
+source names and compiler flags. Windows numeric proof is packaged
+with the private exact-head C++ probe; Linux proof is a separate
+seven-day artifact. No EBU assets, PCM, or source audio exported.
+
+These checks prove explicit compiler configuration; they are NOT
+instruction-level FMA disassembly or runtime FP environment attestation,
+and cannot by themselves declare Gate G fully qualified.
+All pre-existing B2c 36/36, B2d 27/27, B2e 5/5 and CTest regressions
+must pass on the newly compiled candidate. RED means investigate, never
+change fixed FIR numerators or weaken the mathematical reference.
+
+The private original official EBU nine WAVs were last run against an
+older SHA. AFTER green B2f CI + reverse audit, obtain the NEW exact
+Windows probe and rerun the authentic B2b 9-of-9 suite on the user's
+Windows PC, retaining numeric output only.
+
+Gate G/L/M remain OPEN. No Full Qualification, merge, accepted-frozen
+claim, release QUALIFIED metadata, or M17 dependency is inferred.
