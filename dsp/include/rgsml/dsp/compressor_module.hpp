@@ -17,6 +17,21 @@ class ModuleDescriptor;
  * This struct is an internal/test-only qualification surface used to inspect sample-by-sample
  * detector, link, target reduction, smoothed reduction, and gain stages without duplicating DSP logic.
  */
+struct CompressorFrameTelemetry final {
+    double applied_reduction_db_ch0{0.0};
+    double applied_reduction_db_ch1{0.0};
+    double linear_gain_ch0{1.0};
+    double linear_gain_ch1{1.0};
+};
+
+class ICompressorTelemetrySink {
+public:
+    virtual ~ICompressorTelemetrySink() = default;
+    virtual void push_frame_telemetry(
+        std::int64_t absolute_frame,
+        const CompressorFrameTelemetry& frame) noexcept = 0;
+};
+
 struct CompressorControlTraceFrame final {
     double detector_magnitude_ch0{0.0};
     double detector_magnitude_ch1{0.0};
@@ -46,6 +61,9 @@ public:
 
     [[nodiscard]] const CompressorParameters& parameters() const noexcept;
     [[nodiscard]] const ModuleDescriptor& descriptor() const noexcept override;
+
+    void set_telemetry_sink(ICompressorTelemetrySink* sink) noexcept;
+    [[nodiscard]] ICompressorTelemetrySink* telemetry_sink() const noexcept;
 
     [[nodiscard]] rgsml::core::Result<DspRuntimeRequirements>
     runtime_requirements(const DspProcessSpec& spec) const override;
