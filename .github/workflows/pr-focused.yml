@@ -326,6 +326,38 @@ jobs:
           }
           Write-Host 'B2D_EXTREME_FP_CPP_COMPARISON_PASS_27_OF_27__GATE_G_OPEN'
 
+      # B2e high precision ideal reconstruction is a diagnostic screen ONLY.
+      # Frozen ITU QTP compares discrete FIR, NOT continuous ideal waveform.
+      - name: M16 B2e high precision ideal reconstruction screen
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install mpmath==1.3.0
+          if ($LASTEXITCODE -ne 0) { throw 'B2E_PINNED_MATH_LIB_INSTALL_FAILED' }
+          python tools/qualification/true_peak/qualify_ideal_screen_cpp.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'B2E_SINC_ORACLE_SELFTEST_FAILED' }
+          $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
+          $argsB2e = @(
+            'tools/qualification/true_peak/qualify_ideal_screen_cpp.py',
+            '--probe', (Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'),
+            '--provenance', (Join-Path $dest 'B2b_build_provenance.json'),
+            '--expected-source-sha', '${{ github.event.pull_request.head.sha || github.sha }}',
+            '--expected-run-id', '${{ github.run_id }}'
+          )
+          $resultFile = Join-Path $dest 'B2e_ideal_screen_result.json'
+          python @argsB2e | Set-Content -Path $resultFile -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'B2E_IDEAL_CPP_SCREEN_FAILED' }
+          $report = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+          if ($report.status -ne 'B2E_IDEAL_RECONSTRUCTION_SCREEN_PASS' -or
+              $report.production_gate_g -ne 'NOT_COMPLETE' -or
+              $report.cases -ne 5 -or
+              $report.results.Count -ne 5 -or
+              $report.results[0].ideal_tail_interval_certificate -ne 'NOT_EXECUTED') {
+            throw 'B2E_SCREEN_RESULT_CONTRACT_FAILED'
+          }
+          Write-Host 'B2E_IDEAL_RECONSTRUCTION_SCREEN_PASS_5_OF_5__NOT_CERTIFIED__GATE_G_OPEN'
+
       - name: Upload B2b Windows C++ probe (NO EBU AUDIO)
         if: success()
         uses: actions/upload-artifact@v4

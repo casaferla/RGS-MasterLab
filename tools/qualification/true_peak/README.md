@@ -146,3 +146,36 @@ NOT permission to weaken frozen mathematics or silently alter runtime FP
 policy. This B2d lane is not complete FMA/strict-FP qualification, not a
 high-resolution continuous ideal reconstruction, and not full Gate G. No
 Full Qualification, merge, freeze, or M17 is authorized by B2d alone.
+
+## M16-B2e: 80-digit independent ideal-reconstruction diagnostic (NOT Gate G)
+
+The qualify_ideal_screen_cpp.py harness requires the pinned mpmath==1.3.0
+high-precision mathematical dependency IN CI ONLY, never in production DSP.
+Five short exact-dyadic source vectors are independently sinc-interpolated
+at 80 decimal digits using locally refined 32x / 64x / 128x finite-grid
+screens, and a 120-digit point-evaluation consistency check.
+
+Five source vectors (unit impulse, adjacent positive, adjacent signed,
+separated signed, four alternating) reproduce estimated ideal-peak values
+from M16 independent Work section E. The harness separately compares real
+production C++ 4x FIR results with exact rational ITU integer numerators.
+It reports the diagnostic ITU minus ideal dB differences.
+The frozen RGS 0.01-dBTP QTP is against the discrete ITU FIR reference,
+NOT a 0.01-dB guarantee against the continuous mathematical ideal.
+
+These are convergence/high-precision point-check SCREENS ONLY:
+finite search interval [-16,N-1+16], no certified infinite sinc-tail bound,
+no outward-rounded adaptive interval cover and no globally certified ideal
+0.0001-dB interval. The 64x/128x diagnostic 0.0001-dB convergence threshold
+is a NEW PROPOSAL in the preaudit, not a frozen release acceptance threshold.
+NEVER mislabel as completed ideal certificate or full Gate G.
+
+Run privately against the preserved #419 exact-head probe EXE and provenance:
+
+    python -m pip install mpmath==1.3.0
+    python tools/qualification/true_peak/qualify_ideal_screen_cpp.py --selftest
+    python tools/qualification/true_peak/qualify_ideal_screen_cpp.py --probe PATH_TO_EXE --provenance PATH_TO_PROVENANCE_JSON
+
+CI pins its actual checkout SHA, run ID and produced EXE hash and saves
+only numeric screen results. No EBU assets or PCM derivatives, no Full
+Qualification, merge, QUALIFIED product status, freeze, or M17 authorization.
