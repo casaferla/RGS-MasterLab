@@ -252,5 +252,14 @@ Rectangle {
             Layout.fillHeight: true
             viewModel: root.activeModule ? root.activeModule.compressorViewModel : null
         }
+
+        StereoMsEditor {
+            id: stereoMsEditor
+            objectName: "stereoMsEditor"
+            visible: root.activeModule ? root.activeModule.editorContentKey === "STEREO_MS" : false
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            viewModel: root.activeModule ? root.activeModule.stereoMsViewModel : null
+        }
     }
 }
