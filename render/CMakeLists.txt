@@ -1,7 +1,12 @@
 add_library(rgsml_render STATIC
+    src/audible_compressor_telemetry_resolver.cpp
+    src/audible_stereo_ms_telemetry_resolver.cpp
+    src/compressor_telemetry_collector.cpp
+    src/compressor_telemetry_history.cpp
     src/render_preview.cpp
     src/render_request.cpp
     src/render_result.cpp
+    src/stereo_ms_execution_signature.cpp
 )
 
 target_include_directories(rgsml_render

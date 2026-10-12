@@ -162,7 +162,9 @@ Rectangle {
                         // Configuration Indicator LED
                         Rectangle {
                             objectName: "dspChainConfigLed_" + index
+                            Layout.minimumWidth: 8
                             Layout.preferredWidth: 8
+                            Layout.maximumWidth: 8
                             Layout.preferredHeight: 8
                             radius: 4
                             color: rowItem.isDefaultState ? "#273A4D" : "#00D47A"
@@ -183,9 +185,14 @@ Rectangle {
 
                         ColumnLayout {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             spacing: 2
 
                             Text {
+                                objectName: "dspChainModuleTitle_" + index
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.alignment: Qt.AlignLeft
                                 text: rowItem.moduleAdapter ? rowItem.moduleAdapter.displayName : ""
                                 color: rowItem.isSelected ? "#F5F8FC" : "#C4D4E0"
                                 font.family: "Segoe UI"
@@ -196,6 +203,10 @@ Rectangle {
 
                             Text {
                                 objectName: "dspChainStateText_" + index
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.alignment: Qt.AlignLeft
+                                elide: Text.ElideRight
                                 text: rowItem.moduleAdapter ? rowItem.moduleAdapter.stateText : ""
                                 color: "#7A8E9E"
                                 font.family: "Segoe UI"
@@ -206,7 +217,9 @@ Rectangle {
 
                         // Bypass Badge ("BYP") fixed width container to prevent title shift (UI-MINOR-03)
                         Item {
+                            Layout.minimumWidth: 28
                             Layout.preferredWidth: 28
+                            Layout.maximumWidth: 28
                             Layout.preferredHeight: 16
 
                             Rectangle {
@@ -229,14 +242,21 @@ Rectangle {
                             }
                         }
 
-                        // Error Indicator
-                        Rectangle {
-                            objectName: "dspChainErrorBadge_" + index
-                            visible: rowItem.hasError
+                        // Error indicator reserves its slot even when hidden.
+                        // FIX-UI-003: state/badge changes cannot move the title.
+                        Item {
+                            Layout.minimumWidth: 8
                             Layout.preferredWidth: 8
+                            Layout.maximumWidth: 8
                             Layout.preferredHeight: 8
-                            radius: 4
-                            color: "#F27683"
+
+                            Rectangle {
+                                objectName: "dspChainErrorBadge_" + index
+                                anchors.fill: parent
+                                visible: rowItem.hasError
+                                radius: 4
+                                color: "#F27683"
+                            }
                         }
                     }
                 }

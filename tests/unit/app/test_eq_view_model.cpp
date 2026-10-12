@@ -67,6 +67,7 @@ private slots:
     void testPreparedInputRemainsImmutable();
     void testSelectionOnlyNoPreview();
     void testGraphDragNoPreviewReleaseOneCommit();
+    void testSelectedBandSliderDraftCommitAndBounds();
     void testMixedRouting();
     void testSelectedBandResponseOnly();
     void testBandSummariesAndValidationPresentation();
@@ -617,6 +618,48 @@ void EqViewModelTest::testGraphDragNoPreviewReleaseOneCommit()
 
     vm.graphRelease();
     QCOMPARE(vm.preview_generation(), origGen + 1U);
+}
+
+void EqViewModelTest::testSelectedBandSliderDraftCommitAndBounds()
+{
+    EqViewModel vm;
+    QCOMPARE(vm.maximum_frequency_hz(), 20000.0);
+    vm.addBand();
+    const auto gen = vm.preview_generation();
+    const auto bandOneId = vm.selected_band_id();
+    vm.setDraftFieldValue(QStringLiteral("frequency"), 2500.0);
+    vm.setDraftFieldValue(QStringLiteral("gain"), -6.0);
+    vm.setDraftFieldValue(QStringLiteral("q"), 1.25);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), -6.0);
+    QCOMPARE(vm.q(), 1.25);
+    QCOMPARE(vm.preview_generation(), gen); // drag creates no render
+    vm.setDraftFieldValue(QStringLiteral("unsupported"), 999.0);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), gen + 1U); // release once
+    vm.selectBand(0);
+    QCOMPARE(vm.selected_index(), 0);
+    vm.selectBand(1);
+    QCOMPARE(vm.selected_band_id(), bandOneId);
+    QCOMPARE(vm.frequency(), 2500.0);
+    QCOMPARE(vm.gain(), -6.0);
+    QCOMPARE(vm.q(), 1.25);
+    // Preserve the same applicability law as graph and numeric edits.
+    vm.setFilter(QStringLiteral("LOW_SHELF"));
+    const auto shelfGen = vm.preview_generation();
+    vm.setDraftFieldValue(QStringLiteral("q"), 8.0);
+    vm.setDraftFieldValue(QStringLiteral("shelfSlope"), 0.45);
+    QCOMPARE(vm.shelf_slope(), 0.45);
+    QCOMPARE(vm.preview_generation(), shelfGen);
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), shelfGen + 1U);
+    vm.setFilter(QStringLiteral("HIGH_PASS"));
+    const auto hpGen = vm.preview_generation();
+    vm.setDraftFieldValue(QStringLiteral("gain"), 18.0);
+    vm.setDraftFieldValue(QStringLiteral("q"), 12.0);
+    vm.setDraftFieldValue(QStringLiteral("shelfSlope"), 0.7);
+    QCOMPARE(vm.preview_generation(), hpGen);
 }
 
 void EqViewModelTest::testMixedRouting()
