@@ -32,6 +32,11 @@ private slots:
     void staticTransferCurveOraclePoints();
     void resetToDefaultState();
     void textDraftContractAndCommitCancel();
+    void sliderDraftAndCommitCycle();
+    void interactiveCurveHandlesAndCancel();
+    void softKneeRatioHandleSolver();
+    void curveHandleDragClampsToAuthority();
+    void userFacingValidationMessages();
 };
 
 void CompressorViewModelTest::initialDefaults()
@@ -366,6 +371,228 @@ void CompressorViewModelTest::textDraftContractAndCommitCancel()
     QCOMPARE(vm.threshold_text(), QStringLiteral("-18.5"));
     QVERIFY(vm.validation_field().isEmpty());
     QCOMPARE(vm.threshold_dbfs(), -18.5);
+}
+
+void CompressorViewModelTest::sliderDraftAndCommitCycle()
+{
+    CompressorViewModel vm;
+    const auto gen0 = vm.preview_generation();
+
+    // 1. setDraftFieldValue changes draft only, no preview, no undo
+    vm.setDraftFieldValue(QStringLiteral("thresholdDbfs"), -18.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -18.0);
+    QCOMPARE(vm.threshold_text(), QStringLiteral("-18.0"));
+    QCOMPARE(vm.threshold_dbfs(), -24.0); // Committed state unchanged!
+    QCOMPARE(vm.preview_generation(), gen0); // No preview requested!
+    QVERIFY(!vm.can_undo()); // No undo pushed during drag!
+
+    // 2. Continuous drag updates draft repeatedly
+    vm.setDraftFieldValue(QStringLiteral("thresholdDbfs"), -12.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -12.0);
+    QCOMPARE(vm.threshold_text(), QStringLiteral("-12.0"));
+    QCOMPARE(vm.threshold_dbfs(), -24.0);
+    QCOMPARE(vm.preview_generation(), gen0);
+    QVERIFY(!vm.can_undo());
+
+    // 3. Commit on release updates authority and previews once
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.threshold_dbfs(), -12.0); // Committed!
+    QVERIFY(vm.preview_generation() > gen0); // Preview requested once!
+    QVERIFY(vm.can_undo()); // Exactly one undo entry pushed!
+
+    // 4. Unchanged commit creates no additional preview
+    const auto gen1 = vm.preview_generation();
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.preview_generation(), gen1);
+}
+
+void CompressorViewModelTest::interactiveCurveHandlesAndCancel()
+{
+    CompressorViewModel vm;
+    const auto gen0 = vm.preview_generation();
+
+    const auto handles = vm.transfer_curve_handles();
+    QCOMPARE(handles.size(), 4);
+
+    // Verify handle IDs, colors, and finite coordinates
+    const std::array expectedIds{QStringLiteral("threshold"), QStringLiteral("ratio"), QStringLiteral("knee"), QStringLiteral("makeup")};
+    const std::array expectedColors{QStringLiteral("#2ED3FF"), QStringLiteral("#2FD98F"), QStringLiteral("#FFD84A"), QStringLiteral("#FF6B6B")};
+
+    for (qsizetype i = 0; i < handles.size(); ++i) {
+        const auto map = handles[i].toMap();
+        const auto expectedIndex = static_cast<std::size_t>(i);
+        QCOMPARE(map[QStringLiteral("id")].toString(), expectedIds[expectedIndex]);
+        QCOMPARE(map[QStringLiteral("color")].toString(), expectedColors[expectedIndex]);
+        QVERIFY(std::isfinite(map[QStringLiteral("inputDbfs")].toDouble()));
+        QVERIFY(std::isfinite(map[QStringLiteral("outputDbfs")].toDouble()));
+    }
+
+    // Drag Threshold handle
+    vm.setCurveHandleDraft(QStringLiteral("threshold"), -18.0, -18.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -18.0);
+    QCOMPARE(vm.threshold_dbfs(), -24.0); // Uncommitted!
+    QCOMPARE(vm.preview_generation(), gen0); // No preview during handle drag!
+
+    // Obtain current Ratio handle metadata after Threshold move
+    const auto updatedHandles = vm.transfer_curve_handles();
+    QVariantMap ratioMap;
+    for (const auto& h : updatedHandles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("ratio")) {
+            ratioMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY(!ratioMap.isEmpty());
+
+    // Feed truthful Ratio handle coordinates back through setCurveHandleDraft
+    vm.setCurveHandleDraft(QStringLiteral("ratio"), ratioMap[QStringLiteral("inputDbfs")].toDouble(), ratioMap[QStringLiteral("outputDbfs")].toDouble());
+    QVERIFY(std::abs(vm.draft_ratio() - 2.0) < 1e-8); // Bisection round-trip precision
+    QCOMPARE(vm.ratio(), 2.0); // Uncommitted!
+    QCOMPARE(vm.preview_generation(), gen0); // No preview during handle drag!
+
+    // Drag Knee handle (lower knee boundary at threshold - knee/2 = -18 - 3 = -21)
+    vm.setCurveHandleDraft(QStringLiteral("knee"), -24.0, -24.0);
+    QCOMPARE(vm.draft_knee_db(), 12.0); // 2 * |-18 - (-24)| = 12 dB
+
+    // Drag Make-up handle using the truthful C++ anchor and move only Y by +4 dB
+    const auto makeupHandles = vm.transfer_curve_handles();
+    QVariantMap makeupMap;
+    for (const auto& h : makeupHandles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("makeup")) {
+            makeupMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY(!makeupMap.isEmpty());
+    vm.setCurveHandleDraft(QStringLiteral("makeup"),
+                           makeupMap[QStringLiteral("inputDbfs")].toDouble(),
+                           makeupMap[QStringLiteral("outputDbfs")].toDouble() + 4.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), 4.0);
+
+    // Cancel restores committed authority
+    vm.cancelDraft();
+    QCOMPARE(vm.draft_threshold_dbfs(), -24.0);
+    QCOMPARE(vm.draft_ratio(), 2.0);
+    QCOMPARE(vm.draft_knee_db(), 6.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), 0.0);
+    QCOMPARE(vm.preview_generation(), gen0);
+
+    // Re-apply threshold handle drag and commit once
+    vm.setCurveHandleDraft(QStringLiteral("threshold"), -15.0, -15.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -15.0);
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.threshold_dbfs(), -15.0); // Committed!
+    QVERIFY(vm.preview_generation() > gen0); // Single preview requested!
+}
+
+void CompressorViewModelTest::curveHandleDragClampsToAuthority()
+{
+    CompressorViewModel vm;
+    const auto gen0 = vm.preview_generation();
+
+    vm.setCurveHandleDraft(QStringLiteral("threshold"), -500.0, -500.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), -120.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    vm.setCurveHandleDraft(QStringLiteral("threshold"), 50.0, 50.0);
+    QCOMPARE(vm.draft_threshold_dbfs(), 0.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    vm.setDraftFieldValue(QStringLiteral("thresholdDbfs"), -18.0);
+    vm.setCurveHandleDraft(QStringLiteral("knee"), 100.0, 0.0);
+    QCOMPARE(vm.draft_knee_db(), 0.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    vm.setCurveHandleDraft(QStringLiteral("knee"), -100.0, 0.0);
+    QCOMPARE(vm.draft_knee_db(), 24.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    auto handles = vm.transfer_curve_handles();
+    QVariantMap makeupMap;
+    for (const auto& h : handles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("makeup")) {
+            makeupMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY(!makeupMap.isEmpty());
+
+    vm.setCurveHandleDraft(
+        QStringLiteral("makeup"),
+        makeupMap[QStringLiteral("inputDbfs")].toDouble(),
+        500.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), 24.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    vm.setCurveHandleDraft(
+        QStringLiteral("makeup"),
+        makeupMap[QStringLiteral("inputDbfs")].toDouble(),
+        -500.0);
+    QCOMPARE(vm.draft_makeup_gain_db(), -24.0);
+    QVERIFY(vm.validation_field().isEmpty());
+
+    QCOMPARE(vm.preview_generation(), gen0);
+}
+
+void CompressorViewModelTest::userFacingValidationMessages()
+{
+    CompressorViewModel vm;
+
+    vm.setDraftFieldText(QStringLiteral("makeupGainDb"), QStringLiteral("-58.4"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("makeupGainDb"));
+    QCOMPARE(
+        vm.validation_message(),
+        QStringLiteral("MAKE-UP must be within -24.0 to +24.0 dB"));
+
+    // Keep the two validation-message scenarios independent. The invalid
+    // Make-up draft must not remain active while testing a Threshold parse error.
+    vm.cancelDraft();
+    QVERIFY(vm.validation_field().isEmpty());
+    QVERIFY(vm.validation_message().isEmpty());
+
+    vm.setDraftFieldText(QStringLiteral("thresholdDbfs"), QStringLiteral("-"));
+    QCOMPARE(vm.validation_field(), QStringLiteral("thresholdDbfs"));
+    QCOMPARE(
+        vm.validation_message(),
+        QStringLiteral("THRESHOLD must be a number"));
+
+    vm.cancelDraft();
+    QVERIFY(vm.validation_field().isEmpty());
+    QVERIFY(vm.validation_message().isEmpty());
+}
+
+void CompressorViewModelTest::softKneeRatioHandleSolver()
+{
+    CompressorViewModel vm;
+
+    // High threshold = -2.0 dBFS, wide knee = 24.0 dB. The C++ Ratio anchor
+    // is capped at +6 dBFS, placing it 8 dB above threshold and therefore
+    // inside the +/-12 dB soft-knee region. Expected target ratio = 4.0.
+    vm.setThresholdDbfs(-2.0);
+    vm.setKneeDb(24.0);
+    vm.setRatio(4.0);
+    vm.setMakeupGainDb(0.0);
+
+    // Get C++ generated handle coordinates for ratio = 4.0 in soft knee
+    const auto handles = vm.transfer_curve_handles();
+    QVariantMap ratioMap;
+    for (const auto& h : handles) {
+        if (h.toMap()[QStringLiteral("id")].toString() == QStringLiteral("ratio")) {
+            ratioMap = h.toMap();
+            break;
+        }
+    }
+    QVERIFY(!ratioMap.isEmpty());
+
+    // Reset draft ratio to 2.0
+    vm.setDraftFieldValue(QStringLiteral("ratio"), 2.0);
+    QCOMPARE(vm.draft_ratio(), 2.0);
+
+    // Feed the soft-knee target coordinate back through setCurveHandleDraft
+    vm.setCurveHandleDraft(QStringLiteral("ratio"), ratioMap[QStringLiteral("inputDbfs")].toDouble(), ratioMap[QStringLiteral("outputDbfs")].toDouble());
+
+    // Verify solver reconstructs Ratio 4.0 within tolerance 0.01
+    QVERIFY(std::abs(vm.draft_ratio() - 4.0) < 0.01);
 }
 
 }  // namespace
