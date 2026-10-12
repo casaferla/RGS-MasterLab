@@ -517,6 +517,30 @@ set_tests_properties(rgsml_playback_support_tests PROPERTIES
     LABELS "platform;playback"
 )
 
+# Exercise the same pure PlaybackEngine and FakeOutput tests on Linux without
+# pulling rgsml_platform's Windows-only resource/export backends into the link.
+if(NOT WIN32)
+    qt_add_executable(rgsml_playback_engine_portable_tests
+        unit/platform/test_playback_support.cpp
+        ${CMAKE_SOURCE_DIR}/platform/windows/src/internal/playback_support.cpp
+    )
+    target_include_directories(rgsml_playback_engine_portable_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/platform/windows/src/internal
+        ${CMAKE_SOURCE_DIR}/audio/src/internal
+    )
+    target_link_libraries(rgsml_playback_engine_portable_tests PRIVATE
+        rgsml_audio
+        Qt6::Test
+    )
+    rgsml_apply_project_warnings(rgsml_playback_engine_portable_tests)
+    add_test(NAME rgsml_playback_engine_portable_tests
+        COMMAND rgsml_playback_engine_portable_tests)
+    set_tests_properties(rgsml_playback_engine_portable_tests PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "platform;playback;portable"
+    )
+endif()
+
 qt_add_executable(rgsml_playback_composition_tests
     integration/platform/test_playback_composition.cpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp

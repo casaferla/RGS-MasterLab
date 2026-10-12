@@ -117,6 +117,20 @@ public:
     void tick();
 
 private:
+    // Maps an uninterrupted device-frame timeline to Source frames. A Loop
+    // hot-toggle changes only future decoded PCM; already scheduled PCM keeps
+    // its original mapping until the sink actually processes it.
+    struct LoopEpoch final {
+        std::int64_t firstGeneratedFrame{0};
+        std::int64_t firstOutputFrame{0};
+        std::optional<core::FrameRange> loop;
+        bool eligible{false};
+        std::uint64_t wrapsBefore{0};
+        // Restore this cursor if repeated toggles replace the policy before
+        // any additional PCM is generated (ON/OFF must be a true no-op).
+        std::int64_t cursorBeforeUncommittedSwitch{0};
+    };
+
     struct PendingHandoff final {
         std::optional<core::RealizationId> oldRealizationId;
         std::optional<core::RealizationId> newRealizationId;
@@ -135,6 +149,9 @@ private:
     [[nodiscard]] std::int64_t output_boundary() const noexcept;
     [[nodiscard]] std::int64_t current_output_frame() const noexcept;
     [[nodiscard]] std::uint64_t current_loop_wrap_count() const noexcept;
+    [[nodiscard]] LoopEpoch audible_loop_epoch(std::int64_t processedFrame) const noexcept;
+    [[nodiscard]] std::uint64_t wraps_in_loop_epoch(
+        const LoopEpoch& epoch, std::int64_t elapsedFrames) const noexcept;
     [[nodiscard]] core::AudibleRealizationState audible_realization_state() const noexcept;
     [[nodiscard]] core::Status play_internal(bool isNewTraversal);
     [[nodiscard]] bool has_source() const noexcept;
@@ -159,6 +176,9 @@ private:
     bool loopTraversalEligible_{false};
     std::int64_t scheduledOutputFrame_{0};
     std::int64_t playbackStartOutputFrame_{0};
+    std::int64_t generatedOutputFrames_{0};
+    LoopEpoch initialLoopEpoch_;
+    std::vector<LoopEpoch> scheduledLoopEpochs_;
     std::vector<std::byte> pendingBytes_;
     std::size_t pendingOffset_{0U};
     bool eofScheduled_{false};
