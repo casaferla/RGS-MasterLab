@@ -11,6 +11,8 @@ qt_add_executable(rgsml_app
     src/eq_view_model.hpp
     src/gain_view_model.cpp
     src/gain_view_model.hpp
+    src/stereo_ms_view_model.cpp
+    src/stereo_ms_view_model.hpp
     src/mastering_preview_controller.cpp
     src/mastering_preview_controller.hpp
     src/audition_region_view_model.cpp
@@ -30,6 +32,8 @@ qt_add_executable(rgsml_app
     src/source_selection_view_model.hpp
     src/source_waveform_view_model.cpp
     src/source_waveform_view_model.hpp
+    src/true_peak_static_binding.cpp
+    src/true_peak_static_binding.hpp
     src/windows_window_chrome_helper.cpp
     src/windows_window_chrome_helper.hpp
 )
@@ -44,6 +48,7 @@ target_link_libraries(rgsml_app
         rgsml_core
         rgsml_project
         rgsml_audio
+        rgsml_analysis
         rgsml_dsp
         rgsml_platform
         rgsml_render
