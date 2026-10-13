@@ -211,3 +211,49 @@ Windows PC, retaining numeric output only.
 
 Gate G/L/M remain OPEN. No Full Qualification, merge, accepted-frozen
 claim, release QUALIFIED metadata, or M17 dependency is inferred.
+
+## M16-B2g: bounded per-rate Gate-G reconciliation — PRELIMINARY
+
+The companion b2g_gate_g_coverage_matrix.json is an evidence-by-predicate
+RECONCILIATION table, NOT an authoritative release matrix or a product
+TruePeakMeasurement DTO. Six rows deliberately remain
+SUPPORTED_UNQUALIFIED / gate_g_per_rate OPEN; a successful focused CI,
+a list of supported sample rates or a historical WAV oracle does not
+automatically qualify a product algorithm/filter/build/rate combination.
+
+Positive bounded evidence at the prior exact CI #421 source includes:
+four phase-major frozen coefficient/hash checks, first/last+11-tail,
+the complete resource, canonical 4096 boundary chunk cases, independent
+exact signed-integer ITU reference, per-channel stereo, signed peaks
+above unity, silence/DC, nonfinite/FP overflow and distinct six-rate
+physical Hertz stimuli. Official EBU version 5 assets 15..23 were
+executed and independently checked for the 48-kHz Windows strict-FP
+build only. These are NOT six official EBU certifications.
+
+B2g adds TruePeakFullResourceTest::binaryExactPowerOfTwoGainLawSixRates:
+six real supported Fs × mono/stereo × five signed dyadic scaling gains
+= 60 metamorphic full-resource comparisons. Exact peak equality follows
+for the bounded normal binary64 test inputs because powers-of-two
+scaling preserves the exact dyadic FIR products and accumulated sums;
+dBTP difference is checked within 1e-12 dB against 20*log10(|gain|).
+Other arbitrary finite gains can round differently; exact bitwise
+homogeneity is NOT claimed or imposed on the product.
+
+Pending after CI: complete per-rate evidence audit and independent
+high-resolution-oracle applicability/coverage, public algorithm version,
+policy/filter identity, product qualification evidence provenance,
+globalPeakChannel tie/all-silent resolution (escalate if no accepted
+rule), and truthful qualification status transitions. The five-case
+B2e 80-digit ideal sinc finite-interval screen remains diagnostic,
+NOT a global sinc-tail enclosure. A new 0.0001-dB *global* requirement
+is a preaudit NEW PROPOSAL, not a frozen Gate G threshold.
+
+B2g changes only this README, the qualification matrix and a Qt C++
+test body. Production True-Peak C++ sources and strict-FP compiler flags
+stay byte-for-byte unchanged, so the already accepted B2f Windows
+official EBU qualification retains its bounded algorithm/evidence
+identity; any future change to estimator/flags/asset requires new
+exact-build provenance plus authentic private EBU requalification.
+
+No Gate G completion, QUALIFIED release labeling, final FQ, M16 merge,
+Gate L/M closure or M17 transition is implied.

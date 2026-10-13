@@ -62,6 +62,7 @@ private slots:
     void silenceNullDbAndDcNoCompensation();
     void rejectsLateNonfiniteAndUnsupportedWithoutSourceMutation();
     void fullResource4096ChunkBoundaryParity();
+    void binaryExactPowerOfTwoGainLawSixRates();
 };
 
 void TruePeakFullResourceTest::monoSixRatesImpulseAndTail()
@@ -176,6 +177,101 @@ void TruePeakFullResourceTest::rejectsLateNonfiniteAndUnsupportedWithoutSourceMu
     QVERIFY(elevated);
     QCOMPARE(elevated.value()->global_linear_peak, 2.0 * 7964.0 / 8192.0);
     QVERIFY(*elevated.value()->global_db_tp > 0.0);
+}
+
+
+void TruePeakFullResourceTest::binaryExactPowerOfTwoGainLawSixRates()
+{
+    // M16 B2g: the frozen gain-law metamorphic check is exact in linear peak
+    // for bounded binary64 dyadic PCM multiplied by signed powers of two.
+    // DO NOT generalize bit-for-bit equality to arbitrary finite gain: those
+    // products can introduce rounding before the FIR itself is evaluated.
+    constexpr std::array<std::int64_t, 6> rates{
+        44100, 48000, 88200, 96000, 176400, 192000
+    };
+    constexpr std::array<double, 5> gains{
+        -4.0, -0.5, 0.25, 2.0, 8.0
+    };
+    std::vector<double> left(33), right(33);
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        const auto l = static_cast<int>((i * 37U) % 127U) - 63;
+        const auto r = static_cast<int>((i * 51U + 9U) % 113U) - 56;
+        left[i] = static_cast<double>(l) / 128.0;
+        right[i] = static_cast<double>(r) / 256.0;
+    }
+    // Include an initial and a last-frame over-unity sample: the 11-zero
+    // analyzer tail contributes to the true global peak but not programme N.
+    left[0] = 1.25;
+    right.back() = -1.5;
+
+    for (std::int64_t hz : rates) {
+        for (const bool stereo : {false, true}) {
+            const auto layout = stereo
+                ? ChannelLayout::STEREO_LR : ChannelLayout::MONO_C;
+            auto source = make_pcm(hz, layout, left,
+                stereo ? std::span<const double>{right}
+                       : std::span<const double>{});
+            QVERIFY(source);
+            auto baseline = measure_unqualified_true_peak_full_resource(
+                *source.value());
+            QVERIFY(baseline);
+            QVERIFY(baseline.value()->global_linear_peak > 0.0);
+            QVERIFY(baseline.value()->global_db_tp.has_value());
+            QCOMPARE(baseline.value()->sample_rate_hz, hz);
+            QCOMPARE(baseline.value()->channel_count,
+                     static_cast<std::size_t>(stereo ? 2 : 1));
+
+            for (const double gain : gains) {
+                const double scale = std::abs(gain);
+                const double shiftDb = 20.0 * std::log10(scale);
+                std::vector<double> scaledL(left.size()), scaledR(right.size());
+                for (std::size_t i = 0; i < left.size(); ++i) {
+                    scaledL[i] = gain * left[i];
+                    scaledR[i] = gain * right[i];
+                }
+                auto transformed = make_pcm(hz, layout, scaledL,
+                    stereo ? std::span<const double>{scaledR}
+                           : std::span<const double>{});
+                QVERIFY(transformed);
+                auto actual = measure_unqualified_true_peak_full_resource(
+                    *transformed.value());
+                QVERIFY(actual);
+                QCOMPARE(actual.value()->sample_rate_hz, hz);
+                QCOMPARE(actual.value()->channel_count,
+                         baseline.value()->channel_count);
+                QCOMPARE(actual.value()->is_exact_silence, false);
+                QCOMPARE(actual.value()->global_linear_peak,
+                         scale * baseline.value()->global_linear_peak);
+                QVERIFY(actual.value()->global_db_tp.has_value());
+                QVERIFY(std::abs(*actual.value()->global_db_tp
+                                 - *baseline.value()->global_db_tp
+                                 - shiftDb) <= 1.0e-12);
+                for (std::size_t ch = 0;
+                     ch < baseline.value()->channel_count; ++ch) {
+                    QCOMPARE(actual.value()->per_channel_linear_peak[ch],
+                             scale * baseline.value()->per_channel_linear_peak[ch]);
+                    QVERIFY(actual.value()->per_channel_db_tp[ch].has_value());
+                    QVERIFY(baseline.value()->per_channel_db_tp[ch].has_value());
+                    QVERIFY(std::abs(*actual.value()->per_channel_db_tp[ch]
+                                     - *baseline.value()->per_channel_db_tp[ch]
+                                     - shiftDb) <= 1.0e-12);
+                }
+                auto retainedL = transformed.value()->view().channel(0);
+                QVERIFY(retainedL);
+                QCOMPARE((*retainedL.value())[0], gain * left[0]);
+                if (stereo) {
+                    auto retainedR = transformed.value()->view().channel(1);
+                    QVERIFY(retainedR);
+                    QCOMPARE((*retainedR.value())[right.size()-1],
+                             gain * right.back());
+                }
+            }
+            // Measuring signed-gain copies must never mutate source PCM.
+            auto original = source.value()->view().channel(0);
+            QVERIFY(original);
+            QCOMPARE((*original.value())[0], 1.25);
+        }
+    }
 }
 
 void TruePeakFullResourceTest::fullResource4096ChunkBoundaryParity()
