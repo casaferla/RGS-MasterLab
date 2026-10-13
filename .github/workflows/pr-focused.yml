@@ -55,6 +55,15 @@ jobs:
             --run-id '${{ github.run_id }}' \
             --output "${RUNNER_TEMP}/B2f_linux_fp_compile_attestation.json"
 
+      # B2i: protected code blobs and negative product qualification transitions.
+      # No extra maths/DSP change; the result MUST remain UNQUALIFIED.
+      - name: M16 B2i Gate G conservative evidence guard (Linux)
+        run: |
+          python tools/qualification/true_peak/verify_gate_g_evidence.py \
+            --matrix tools/qualification/true_peak/b2g_gate_g_coverage_matrix.json \
+            --expected-head '${{ github.event.pull_request.head.sha || github.sha }}' \
+            --output "${RUNNER_TEMP}/B2i_linux_evidence_guard.json"
+
       - name: Build Focused DSP Targets
         run: |
           cmake --build build-linux --target \
@@ -150,6 +159,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python tools/qualification/true_peak/verify_fp_build_flags.py --platform windows --build-dir build/windows-msvc --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --run-id '${{ github.run_id }}' --output "$env:RUNNER_TEMP\B2f_windows_fp_compile_attestation.json"
           if ($LASTEXITCODE -ne 0) { throw 'B2F_WINDOWS_SOURCE_FP_FLAG_CHECK_FAILED' }
+
+      # B2i: independent negative falsification guard for status evidence.
+      - name: M16 B2i Gate G conservative evidence guard (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/qualification/true_peak/verify_gate_g_evidence.py --matrix tools/qualification/true_peak/b2g_gate_g_coverage_matrix.json --expected-head '${{ github.event.pull_request.head.sha || github.sha }}' --output "$env:RUNNER_TEMP\B2i_windows_evidence_guard.json"
+          if ($LASTEXITCODE -ne 0) { throw 'B2I_GATE_G_PROVENANCE_AND_STATUS_RECONCILIATION_FAILED' }
 
       - name: Build Focused DSP Targets (Release)
         run: |
@@ -286,6 +303,11 @@ jobs:
             production_gate_g = 'NOT_EXECUTED'
           }
           $stamp | ConvertTo-Json | Set-Content -Path (Join-Path $dest 'B2b_build_provenance.json') -Encoding utf8
+          # B2i: provenance guard reads all six frozen production source blobs;
+          # report deliberately contains NO QUALIFIED claim.
+          $guard = Join-Path $env:RUNNER_TEMP 'B2i_windows_evidence_guard.json'
+          if (-not (Test-Path $guard)) { throw 'B2I_EVIDENCE_GUARD_MISSING' }
+          Copy-Item -Path $guard -Destination (Join-Path $dest 'B2i_windows_evidence_guard.json')
           # Preserve numeric strict-FP configuration evidence beside the EXE.
           $fpAttest = Join-Path $env:RUNNER_TEMP 'B2f_windows_fp_compile_attestation.json'
           if (-not (Test-Path $fpAttest)) { throw 'B2F_FP_ATTESTATION_MISSING' }

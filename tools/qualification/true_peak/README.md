@@ -295,3 +295,42 @@ API, GUI, release status or authenticated EBU audio is changed.
 
 No FQ, merge, M16 freeze, Gate L/M acceptance or M17 authorization
 may follow automatically from a B2h SCREEN PASS.
+
+## M16-B2i: CI423 readback + fail-closed status/provenance guard
+
+The updated b2g_gate_g_coverage_matrix.json (schema 0.3) replaces
+stale B2g/B2h TEST_STAGED_AWAITING_CI rows with the independently
+audited CI422 and CI423 bounded PASS evidence. Each of the six
+frozen sample rates remains SUPPORTED_UNQUALIFIED / Gate G OPEN.
+
+Crucial distinction: the authentic EBU v5 WAVs 15–23 were executed
+on the CI421 Windows probe (9/9, 27/27 checks, real user PC verified).
+The CI423 probe EXE SHA is DIFFERENT; CI423 rebuilt unmodified
+production True-Peak sources and strict-FP policy but does not
+inherit a fictional authentic EBU run at that executable identity.
+Thus a final release authority cannot simply copy that 48-kHz
+qualification into the CI423 binary. The other five rates have
+RGS synthetic/high-resolution evidence, not official EBU WAV runs.
+
+verify_gate_g_evidence.py reads the matrix on Linux AND Windows.
+It enforces six immutable production Git blob IDs, official case
+source/executable identity, CI421/422/423 evidence scope, six
+distinct ordered rate rows, truthful OPEN/SUPPORTED_UNQUALIFIED
+status and distinct ITU 0.01dB vs ideal-sinc diagnostic semantics.
+The script performs twelve independent negative tampering/falsification
+fixtures (false QUALIFIED, wrong rate, missing evidence, false EBU
+scope, filter/compile hash mutation, fabricated sinc certificate).
+It checks the ACTUAL CI checkout HEAD and content-addressed blobs.
+GitHub Windows CI packages numeric-only JSON with its private probe;
+Linux prints an equivalent evidence-guard PASS to its CI log.
+
+A B2i test PASS is an audit of evidence GAPS as well as positives.
+It is NOT a production release registry, an ITU ideal-peak global
+certificate, a public TruePeakMeasurement implementation or a
+final authoritative Gate G PASS. The frozen public result identity,
+status wiring, globalPeakChannel tie/all-silent semantics and final
+exact-build 48-kHz EBU requalification remain distinct closeout tasks.
+
+The protected measurement DSP, coefficient bank, source-local strict
+FP options and Qt UI are unchanged. No merge/FQ/freeze/M17 action
+is authorized by this test.
