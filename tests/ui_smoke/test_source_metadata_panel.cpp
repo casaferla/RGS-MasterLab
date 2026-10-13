@@ -508,8 +508,164 @@ class SourceMetadataPanelSmokeTest final : public QObject {
 private slots:
     void emptyReadyErrorAndWindowLifecycle();
     void stereoMsOptInVisualEvidence();
+    void truePeakReadOnlyAnalysisVisualEvidence();
 };
 
+
+
+void SourceMetadataPanelSmokeTest::truePeakReadOnlyAnalysisVisualEvidence()
+{
+    // B4b: the actual QML host and Chain row, unlike the older 4/4 smoke,
+    // must be exercised with M16's presentation-only adapter selected.
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *core::Uuid::parse(
+        "fa000000-0000-4000-8000-000000000001").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("fa000000-0000-4000-8000-000000000010").value()).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("fa000000-0000-4000-8000-000000000020").value()).value();
+    const auto compId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("fa000000-0000-4000-8000-000000000030").value()).value();
+    auto stateResult = app::MasteringChainState::create_default(
+        *registry.value(), chainId, gainId, eqId, compId);
+    QVERIFY(stateResult);
+    auto state = std::move(*stateResult.value());
+    app::GainViewModel gain{&state};
+    app::EqViewModel eq{&state};
+    app::CompressorViewModel compressor{&state};
+    app::DspChainAdapterModel model{
+        &gain, &eq, &compressor, &state,
+        QStringLiteral("Mastering"), nullptr, nullptr, true};
+    QCOMPARE(state.instances().size(), std::size_t{3});
+    QCOMPARE(model.modules().size(), qsizetype{4});
+    model.setSelectedIndex(3);
+    QCOMPARE(model.active_module()->editor_content_key(),
+             QStringLiteral("TRUE_PEAK_METER"));
+    QVERIFY(!model.active_module()->bypass_supported());
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("m16VisualAdapterModel"), &model);
+    QQmlComponent component{&engine};
+    static constexpr auto qml = R"qml(
+import QtQuick
+import QtQuick.Window
+import Rgsml.Ui 1.0
+
+Window {
+    width: 1184
+    height: 688
+    visible: false
+    color: "#06121F"
+    Rectangle {
+        width: 1184
+        height: 688
+        color: "#06121F"
+        DspChainSelector {
+            objectName: "m16VisualChain"
+            x: 12
+            y: 16
+            width: 180
+            height: 600
+            adapterModel: m16VisualAdapterModel
+        }
+        DspEditorHost {
+            objectName: "m16VisualHost"
+            x: 202
+            y: 16
+            width: 960
+            height: 600
+            adapterModel: m16VisualAdapterModel
+            // Explicitly NO source-bound measurement in this fixture:
+            // no numeric true peak or fake audio source may appear.
+            truePeakStaticViewModel: null
+        }
+    }
+}
+)qml";
+    component.setData(
+        QByteArray{qml},
+        QUrl{QStringLiteral("qrc:/m16/read-only-visual-window.qml")});
+    QVERIFY2(component.status() != QQmlComponent::Error,
+             qPrintable(component.errorString()));
+    QScopedPointer<QObject> componentRoot{component.create()};
+    QVERIFY2(componentRoot != nullptr, qPrintable(component.errorString()));
+    auto* window = qobject_cast<QQuickWindow*>(componentRoot.data());
+    QVERIFY(window);
+    window->show();
+    QTest::qWait(150);
+    QCoreApplication::processEvents();
+
+    auto* host = find_child_by_name(
+        componentRoot.data(), QStringLiteral("m16VisualHost"));
+    auto* chain = find_child_by_name(
+        componentRoot.data(), QStringLiteral("m16VisualChain"));
+    auto* meter = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakMeterEditor"));
+    auto* recent = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakRecentCard"));
+    auto* full = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakFullResourceCard"));
+    auto* provenance = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakProvenanceCard"));
+    auto* row = find_child_by_name(
+        componentRoot.data(), QStringLiteral("dspChainRow_3"));
+    auto* previewBadge = find_child_by_name(
+        componentRoot.data(), QStringLiteral("dspHostPreviewBadge"));
+    auto* active = find_child_by_name(
+        componentRoot.data(), QStringLiteral("abButtonActive"));
+    auto* bypass = find_child_by_name(
+        componentRoot.data(), QStringLiteral("abButtonBypass"));
+    auto* undo = find_child_by_name(
+        componentRoot.data(), QStringLiteral("eqUndoButton"));
+    auto* redo = find_child_by_name(
+        componentRoot.data(), QStringLiteral("eqRedoButton"));
+    QVERIFY2(host && chain && meter && recent && full && provenance && row
+             && previewBadge && active && bypass && undo && redo,
+             "M16 needs a real row/editor/cards in the standard DSP host");
+    QCOMPARE(host->property("moduleTitle").toString(),
+             QStringLiteral("True Peak Meter"));
+    QVERIFY2(meter->property("visible").toBool(),
+             "Selecting virtual True Peak must display its editor");
+    QVERIFY2(!previewBadge->property("visible").toBool(),
+             "Analysis-only M16 has no synthetic preview status");
+    const auto* controlsParent = qobject_cast<QQuickItem*>(active)->parentItem();
+    QVERIFY(controlsParent);
+    QVERIFY2(!controlsParent->property("visible").toBool(),
+             "All sound processing and edit controls must vanish for M16");
+    QVERIFY2(!qobject_cast<QQuickItem*>(bypass)->parentItem()->property("visible").toBool(),
+             "No bypass control can be interactable for M16");
+    QCOMPARE(recent->property("reading").toString(),
+             QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(full->property("reading").toString(),
+             QStringLiteral("—"));
+    QCOMPARE(full->property("available").toBool(), false);
+    QCOMPARE(provenance->property("stateLabel").toString(),
+             QStringLiteral("NO SOURCE"));
+    QCOMPARE(provenance->property("qualification").toString(),
+             QStringLiteral("NO QUALIFIED MEASUREMENT"));
+    QCOMPARE(provenance->property("identity").toString(),
+             QStringLiteral("NO PUBLISHED REALIZATION"));
+    QVERIFY2(full->property("width").toDouble() > 100.0,
+             "Readout must receive nonzero QML layout width");
+    QVERIFY2(provenance->property("height").toDouble() > 0.0,
+             "Provenance panel must not collapse");
+    QCOMPARE(state.instances().size(), std::size_t{3});
+
+    // Switching to an actual processing module restores the original
+    // host actions without changing the audio ProcessingChain.
+    model.setSelectedIndex(1);
+    QCoreApplication::processEvents();
+    QVERIFY(!meter->property("visible").toBool());
+    QVERIFY(controlsParent->property("visible").toBool());
+    model.setSelectedIndex(3);
+    QCoreApplication::processEvents();
+    QVERIFY(meter->property("visible").toBool());
+    QVERIFY(!controlsParent->property("visible").toBool());
+    QCOMPARE(state.instances().size(), std::size_t{3});
+    window->close();
+}
 
 void SourceMetadataPanelSmokeTest::stereoMsOptInVisualEvidence()
 {
