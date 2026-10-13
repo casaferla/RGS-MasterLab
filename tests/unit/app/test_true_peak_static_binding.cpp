@@ -9,6 +9,7 @@
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
 
+#include <QCoreApplication>
 #include <QTest>
 
 #include <array>
@@ -184,6 +185,7 @@ void TruePeakStaticBindingTest::asynchronousSourceAndRealizationStaleness()
     auto one = core::ResourceReference::create("test", "source-a", true, false);
     auto two = core::ResourceReference::create("test", "source-b", true, false);
     QVERIFY(one && two);
+    QVERIFY(QCoreApplication::instance() != nullptr);
     app::TruePeakStaticCoordinator coordinator;
     coordinator.source_committed(*one.value(), full.value()->expected);
     QCOMPARE(coordinator.state(), app::TruePeakStaticCoordinator::State::NO_PROCESSED);
@@ -218,5 +220,5 @@ void TruePeakStaticBindingTest::asynchronousSourceAndRealizationStaleness()
 } // namespace
 } // namespace rgsml::tests
 
-QTEST_APPLESS_MAIN(rgsml::tests::TruePeakStaticBindingTest)
+QTEST_GUILESS_MAIN(rgsml::tests::TruePeakStaticBindingTest)
 #include "test_true_peak_static_binding.moc"
