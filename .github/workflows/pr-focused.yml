@@ -64,6 +64,11 @@ jobs:
             --expected-head '${{ github.event.pull_request.head.sha || github.sha }}' \
             --output "${RUNNER_TEMP}/B2i_linux_evidence_guard.json"
 
+      # B3: exact locked CMake blob + explicit nonqualifying adapter binding.
+      - name: M16 B3 CMake blob-lock and adapter boundary (Linux)
+        run: |
+          python tools/qualification/true_peak/verify_b3_adapter_boundary.py
+
       # Minor Fix G1: QML source-only contract; physical visual gate is separate.
       - name: Minor Fix G1 Compressor QML static regression (Linux)
         run: |
@@ -181,6 +186,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python tools/qualification/true_peak/verify_gate_g_evidence.py --matrix tools/qualification/true_peak/b2g_gate_g_coverage_matrix.json --expected-head '${{ github.event.pull_request.head.sha || github.sha }}' --output "$env:RUNNER_TEMP\B2i_windows_evidence_guard.json"
           if ($LASTEXITCODE -ne 0) { throw 'B2I_GATE_G_PROVENANCE_AND_STATUS_RECONCILIATION_FAILED' }
+
+      - name: M16 B3 CMake blob-lock and adapter boundary (Windows)
+        shell: pwsh
+        run: |
+          python tools/qualification/true_peak/verify_b3_adapter_boundary.py
+          if ($LASTEXITCODE -ne 0) { throw 'B3_CMAKE_SOURCE_BOUNDARY_REGRESSION' }
 
       # Minor Fix G1: additional QML source contract (not a visual substitute).
       - name: Minor Fix G1 Compressor QML static regression (Windows)
