@@ -2018,29 +2018,49 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(gainViewModel.gain_db(), 0.0);
     QVERIFY(gainFillTracksKnob());
 
-    // UX-002: real native wheel dispatch with one 0.1dB VM transaction.
+    // UX-002: real QWheelEvent delivery at left, center and right
+    // of the SAME full-width slider, not just over the white thumb.
     auto* gainSliderItem = qobject_cast<QQuickItem*>(gainSlider);
     QVERIFY(gainSliderItem);
-    QVERIFY(find_child_by_name(gainSlider, QStringLiteral("inputGainWheelHandler")));
-    const QPointF wheelPos = gainSliderItem->mapToScene(
-        QPointF{gainSliderItem->width() / 2.0,
-                gainSliderItem->height() / 2.0});
-    auto sendGainWheel = [&](int delta) {
+    auto* gainWheelArea = qobject_cast<QQuickItem*>(
+        find_child_by_name(gainSlider, QStringLiteral("inputGainWheelArea")));
+    QVERIFY2(gainWheelArea, "Full-width Input Gain wheel surface required");
+    QCOMPARE(gainWheelArea->width(), gainSliderItem->width());
+    QCOMPARE(gainWheelArea->height(), gainSliderItem->height());
+    QCOMPARE(gainWheelArea->property("acceptedButtons").toInt(),
+             static_cast<int>(Qt::NoButton));
+    const auto sendGainWheel = [&](double fraction, int delta) {
+        const QPointF wheelPos = gainSliderItem->mapToScene(
+            QPointF{gainSliderItem->width() * fraction,
+                    gainSliderItem->height() / 2.0});
         QTest::mouseMove(window, wheelPos.toPoint());
         QWheelEvent wheelEvent{
             wheelPos, window->mapToGlobal(wheelPos.toPoint()),
             QPoint{}, QPoint{0, delta}, Qt::NoButton,
             Qt::NoModifier, Qt::NoScrollPhase, false};
+        wheelEvent.ignore();
         QCoreApplication::sendEvent(window, &wheelEvent);
         QCoreApplication::processEvents();
+        return wheelEvent.isAccepted();
     };
-    sendGainWheel(120);
+    QVERIFY(sendGainWheel(0.03, 120));
     QCOMPARE(gainViewModel.gain_db(), 0.1);
     QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("+0.1 dB"));
-    sendGainWheel(-120);
+    QVERIFY(sendGainWheel(0.50, 120));
+    QCOMPARE(gainViewModel.gain_db(), 0.2);
+    QVERIFY(sendGainWheel(0.97, 120));
+    QCOMPARE(gainViewModel.gain_db(), 0.3);
+    QVERIFY(sendGainWheel(0.97, -120));
+    QCOMPARE(gainViewModel.gain_db(), 0.2);
+    QVERIFY(sendGainWheel(0.50, -120));
+    QCOMPARE(gainViewModel.gain_db(), 0.1);
+    QVERIFY(sendGainWheel(0.03, -120));
     QCOMPARE(gainViewModel.gain_db(), 0.0);
-    sendGainWheel(-120);
-    QCOMPARE(gainViewModel.gain_db(), -0.1);
+    // Partial high-resolution wheel motion must NOT commit.
+    QVERIFY(sendGainWheel(0.50, 60));
+    QCOMPARE(gainViewModel.gain_db(), 0.0);
+    QVERIFY(sendGainWheel(0.50, 60));
+    QCOMPARE(gainViewModel.gain_db(), 0.1);
     gainViewModel.undo();
     QCOMPARE(gainViewModel.gain_db(), 0.0);
     QVERIFY(gainFillTracksKnob());

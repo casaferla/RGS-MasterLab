@@ -159,14 +159,18 @@ Item {
                         // scheduling a render for each high-resolution tick.
                         property real wheelRemainder: 0
 
-                        WheelHandler {
-                            id: gainWheelHandler
-                            objectName: "inputGainWheelHandler"
-                            target: null
-                            orientation: Qt.Vertical
+                        // Transparent whole-slider wheel target: preserve
+                        // the Slider's existing mouse drag/handle semantics.
+                        MouseArea {
+                            id: gainWheelArea
+                            objectName: "inputGainWheelArea"
+                            anchors.fill: parent
+                            z: 5
+                            acceptedButtons: Qt.NoButton
+                            hoverEnabled: true
                             enabled: gainSlider.enabled && !gainSlider.pressed
-                            onWheel: function(event) {
-                                gainSlider.wheelRemainder += event.angleDelta.y
+                            onWheel: function(wheel) {
+                                gainSlider.wheelRemainder += wheel.angleDelta.y
                                 var steps = Math.trunc(gainSlider.wheelRemainder / 120)
                                 if (steps !== 0) {
                                     gainSlider.wheelRemainder -= steps * 120
@@ -176,12 +180,12 @@ Item {
                                                     Math.min(gainSlider.to, next))
                                     if (next !== root.currentGainDb && root.viewModel) {
                                         gainSlider.pendingGainDb = next
-                                        // One existing VM undo/preview transaction.
+                                        // Existing undo and preview; never
+                                        // commit sub-detent high-resolution ticks.
                                         root.viewModel.setGainDb(next)
                                     }
                                 }
-                                // Do not scroll the surrounding workspace.
-                                event.accepted = true
+                                wheel.accepted = true
                             }
                         }
 
