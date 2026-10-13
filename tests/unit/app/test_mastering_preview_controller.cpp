@@ -62,6 +62,7 @@ private slots:
     void testNumericEvidenceFullChainGainAndEq();
     void testFourDispositionPermutations();
     void testStaleJobRejection();
+    void testStaleSourceSwitchRejectedEvenWithoutNewGeneration();
     void testRenderFailurePreservesLastGoodAudio();
     void testPublisherFailureReportsErrorWithoutCorruptingState();
     void testPreparedInputRemainsImmutable();
@@ -356,6 +357,54 @@ void MasteringPreviewControllerTest::testStaleJobRejection()
     QCOMPARE(controller.preview_status(), QStringLiteral("READY"));
     QCOMPARE(controller.stale_results_discarded(), 1U);
     QCOMPARE(publishedGenerations.size(), std::size_t{1});
+}
+
+void MasteringPreviewControllerTest::testStaleSourceSwitchRejectedEvenWithoutNewGeneration()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    auto chain_id = *core::Uuid::parse("10000000-0000-4000-8000-000000000001").value();
+    auto gain_id = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("10000000-0000-4000-8000-000000000010").value()).value();
+    auto eq_id = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("10000000-0000-4000-8000-000000000020").value()).value();
+    auto state = MasteringChainState::create_default(*registry.value(), chain_id, gain_id, eq_id);
+    QVERIFY(state);
+    auto original = make_unit_prepared_result();
+    auto replacement = make_unit_prepared_result();
+    std::shared_ptr<render::RenderResult> selected = original;
+    int publishCount = 0;
+    MasteringPreviewController controller{
+        state.value(),
+        [&selected] { return selected; },
+        [&publishCount](render::RenderResult) {
+            ++publishCount;
+            return core::Status::success();
+        }
+    };
+    std::atomic<bool> unblock{false};
+    std::atomic<int> entered{0};
+    std::mutex gate;
+    std::condition_variable cv;
+    controller.set_preview_executor([&](const MasteringPreviewController::PreviewJob& job) {
+        ++entered;
+        std::unique_lock lock(gate);
+        cv.wait(lock, [&] { return unblock.load(); });
+        lock.unlock();
+        auto reg = dsp::ModuleRegistry::create_dsp_package_v1();
+        auto request = render::RenderRequest::create(
+            job.preparedSnapshot->view(), job.preparedSnapshot->view().absolute_range(),
+            job.chain, job.bindings, *core::FrameCount::create(7).value());
+        return render::render_preview(*request.value(), *reg.value());
+    });
+    controller.request_preview();
+    QTRY_VERIFY(entered.load() > 0);
+    // Source identity changes but no second DSP preview is requested.
+    selected = replacement;
+    unblock = true;
+    cv.notify_all();
+    QTRY_VERIFY(controller.stale_results_discarded() > 0);
+    QCOMPARE(publishCount, 0);
+    QVERIFY(controller.preview_status() != QStringLiteral("READY"));
 }
 
 void MasteringPreviewControllerTest::testRenderFailurePreservesLastGoodAudio()

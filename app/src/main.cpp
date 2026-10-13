@@ -15,6 +15,7 @@
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
 #include "stereo_ms_view_model.hpp"
+#include "true_peak_static_coordinator.hpp"
 
 #include "waveform_presentation.hpp"
 
@@ -93,6 +94,15 @@ int main(int argc, char* argv[])
         &waveformPresentation};
     rgsml::app::SourceSelectionViewModel sourceSelection;
     rgsml::app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    rgsml::app::TruePeakStaticCoordinator staticTruePeak;
+    // Publication of PROCESSED never implies that it is already audible.
+    QObject::connect(
+        &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
+        &staticTruePeak, [&auditionSelector, &staticTruePeak] {
+            staticTruePeak.processed_changed(
+                auditionSelector.processed_realization_snapshot(),
+                auditionSelector.processed_realization_id());
+        });
     auditionSelector.set_source_loop_provider([&auditionRegion] {
         return auditionRegion.loop_enabled()
             ? auditionRegion.region()
@@ -214,8 +224,10 @@ int main(int argc, char* argv[])
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,
-         &stereoMsViewModel, &compressorViewModel](
+         &stereoMsViewModel, &compressorViewModel, &staticTruePeak](
             const rgsml::core::ResourceReference& source) {
+            // Prevent a prior source's slow C1 work from becoming current.
+            staticTruePeak.invalidate_source();
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
             const auto sampleRate = rgsml::core::SampleRate::create(
@@ -225,6 +237,20 @@ int main(int argc, char* argv[])
                     *frameCount.value(), *sampleRate.value());
             }
             const auto prepared = auditionSelector.source_committed(source);
+            if (prepared && frameCount && sampleRate) {
+                const int channelCount = sourceSelection.channel_count();
+                if (channelCount == 1 || channelCount == 2) {
+                    staticTruePeak.source_committed(
+                        source, rgsml::app::TruePeakExpectedSource{
+                            *frameCount.value(), *sampleRate.value(),
+                            channelCount == 1
+                                ? rgsml::audio::ChannelLayout::MONO_C
+                                : rgsml::audio::ChannelLayout::STEREO_LR});
+                    staticTruePeak.processed_changed(
+                        auditionSelector.processed_realization_snapshot(),
+                        auditionSelector.processed_realization_id());
+                }
+            }
             if (prepared) {
                 // New source identity: clear previous GR regardless of whether
                 // project-open is restoring existing DSP parameter values.

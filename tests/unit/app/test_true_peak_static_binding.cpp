@@ -1,4 +1,5 @@
 #include "true_peak_static_binding.hpp"
+#include "true_peak_static_coordinator.hpp"
 #include "render_test_support.hpp"
 
 #include <rgsml/analysis/true_peak_measurement.hpp>
@@ -82,6 +83,7 @@ private slots:
     void partialRenderFailsClosed();
     void sourceMismatchAndMissingIdentityFailClosed();
     void monoSilenceAndUnqualifiedStatus();
+    void asynchronousSourceAndRealizationStaleness();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -172,6 +174,45 @@ void TruePeakStaticBindingTest::monoSilenceAndUnqualifiedStatus()
     QCOMPARE(result.value()->measurement.channel_count(), std::size_t{1});
     QCOMPARE(result.value()->measurement.qualification_status(),
              analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+}
+
+void TruePeakStaticBindingTest::asynchronousSourceAndRealizationStaleness()
+{
+    auto full = make_render(4, frame_range(0,4));
+    auto partial = make_render(4, frame_range(1,3));
+    QVERIFY(full && partial);
+    auto one = core::ResourceReference::create("test", "source-a", true, false);
+    auto two = core::ResourceReference::create("test", "source-b", true, false);
+    QVERIFY(one && two);
+    app::TruePeakStaticCoordinator coordinator;
+    coordinator.source_committed(*one.value(), full.value()->expected);
+    QCOMPARE(coordinator.state(), app::TruePeakStaticCoordinator::State::NO_PROCESSED);
+    coordinator.processed_changed(full.value()->result, core::RealizationId{31});
+    QCOMPARE(coordinator.state(), app::TruePeakStaticCoordinator::State::MEASURING);
+    QTRY_VERIFY(coordinator.state() == app::TruePeakStaticCoordinator::State::READY);
+    QVERIFY(coordinator.ready());
+    QCOMPARE(coordinator.ready()->realizationId.value, std::uint64_t{31});
+    QCOMPARE(coordinator.ready()->measurement.qualification_status(),
+             analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+
+    // Old source result is invalidated synchronously, even if its worker is busy.
+    coordinator.processed_changed(full.value()->result, core::RealizationId{32});
+    coordinator.invalidate_source();
+    QVERIFY(coordinator.ready() == nullptr);
+    QCOMPARE(coordinator.state(), app::TruePeakStaticCoordinator::State::NO_SOURCE);
+    coordinator.source_committed(*two.value(), full.value()->expected);
+    QVERIFY(coordinator.source_reference()->same_resource_identity(*two.value()));
+    coordinator.processed_changed(partial.value()->result, core::RealizationId{33});
+    QTRY_VERIFY(coordinator.state() == app::TruePeakStaticCoordinator::State::UNAVAILABLE);
+    QVERIFY(coordinator.ready() == nullptr);
+
+    coordinator.processed_changed(full.value()->result, core::RealizationId{34});
+    QTRY_VERIFY(coordinator.state() == app::TruePeakStaticCoordinator::State::READY);
+    QVERIFY(coordinator.ready());
+    QCOMPARE(coordinator.ready()->realizationId.value, std::uint64_t{34});
+    coordinator.processed_changed(full.value()->result, core::RealizationId{34});
+    QCOMPARE(coordinator.state(), app::TruePeakStaticCoordinator::State::READY);
+    QCOMPARE(coordinator.ready()->realizationId.value, std::uint64_t{34});
 }
 
 } // namespace

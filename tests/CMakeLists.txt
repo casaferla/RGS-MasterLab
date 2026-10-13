@@ -1543,6 +1543,8 @@ set_tests_properties(rgsml_true_peak_full_resource_tests PROPERTIES
 qt_add_executable(rgsml_true_peak_static_binding_tests
     unit/app/test_true_peak_static_binding.cpp
     ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_binding.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_coordinator.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_coordinator.hpp
 )
 target_include_directories(rgsml_true_peak_static_binding_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src

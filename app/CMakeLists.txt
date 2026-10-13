@@ -34,6 +34,8 @@ qt_add_executable(rgsml_app
     src/source_waveform_view_model.hpp
     src/true_peak_static_binding.cpp
     src/true_peak_static_binding.hpp
+    src/true_peak_static_coordinator.cpp
+    src/true_peak_static_coordinator.hpp
     src/windows_window_chrome_helper.cpp
     src/windows_window_chrome_helper.hpp
 )
