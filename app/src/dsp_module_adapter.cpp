@@ -590,4 +590,63 @@ void CompressorModuleAdapter::resetToDefault()
     }
 }
 
+// Stereo/M-S uses the established DSP host contract and Sea Green identity.
+StereoMsModuleAdapter::StereoMsModuleAdapter(StereoMsViewModel* vm,
+    MasteringChainState* state, QString context, QObject* parent)
+    : DspModuleAdapter(parent), vm_(vm), state_(state),
+      context_(std::move(context))
+{
+    if (vm_) connect(vm_, &StereoMsViewModel::changed, this,
+                     &DspModuleAdapter::changed);
+}
+QString StereoMsModuleAdapter::instance_id() const
+{
+    return state_ && state_->stereo_ms_instance_id()
+        ? QString::fromStdString(state_->stereo_ms_instance_id()->to_string()) : QString{};
+}
+QString StereoMsModuleAdapter::type_id() const { return QStringLiteral("rgsml.dsp.stereo-ms"); }
+QString StereoMsModuleAdapter::display_name() const { return QStringLiteral("Stereo / M-S"); }
+QString StereoMsModuleAdapter::workspace_context_label() const { return context_; }
+QString StereoMsModuleAdapter::configuration_state() const
+{
+    if (!vm_ || !vm_->available()) return QStringLiteral("Default");
+    const auto defaults = dsp::StereoMsParameters::create_default();
+    const auto& actual = state_->stereo_ms_parameters();
+    return defaults && actual && *actual == *defaults.value()
+        ? QStringLiteral("Default") : QStringLiteral("Manual");
+}
+bool StereoMsModuleAdapter::bypass_supported() const noexcept { return true; }
+bool StereoMsModuleAdapter::bypass() const noexcept { return vm_ && vm_->bypass(); }
+bool StereoMsModuleAdapter::preview_supported() const noexcept { return true; }
+QString StereoMsModuleAdapter::preview_status() const
+{ return vm_ ? vm_->preview_status() : QStringLiteral("IDLE"); }
+QString StereoMsModuleAdapter::preview_error() const
+{ return vm_ ? vm_->preview_error() : QString{}; }
+bool StereoMsModuleAdapter::history_supported() const noexcept { return false; }
+bool StereoMsModuleAdapter::can_undo() const noexcept { return false; }
+bool StereoMsModuleAdapter::can_redo() const noexcept { return false; }
+bool StereoMsModuleAdapter::reset_supported() const noexcept { return true; }
+QString StereoMsModuleAdapter::editor_content_key() const { return QStringLiteral("STEREO_MS"); }
+QString StereoMsModuleAdapter::live_change_policy() const
+{ return QStringLiteral("PREPARED_REALIZATION_HOT_SWAP"); }
+GainViewModel* StereoMsModuleAdapter::gain_view_model() const noexcept { return nullptr; }
+EqViewModel* StereoMsModuleAdapter::eq_view_model() const noexcept { return nullptr; }
+CompressorViewModel* StereoMsModuleAdapter::compressor_view_model() const noexcept { return nullptr; }
+StereoMsViewModel* StereoMsModuleAdapter::stereo_ms_view_model() const noexcept { return vm_; }
+QString StereoMsModuleAdapter::family_accent() const { return QStringLiteral("#4A9A88"); }
+QString StereoMsModuleAdapter::state_text() const
+{
+    return configuration_state() == QStringLiteral("Default")
+        ? QStringLiteral("Width 100% Default") : QStringLiteral("Manual Edit");
+}
+bool StereoMsModuleAdapter::has_error() const noexcept
+{
+    return vm_ && (!vm_->validation_message().isEmpty()
+        || vm_->preview_status() == QStringLiteral("ERROR"));
+}
+void StereoMsModuleAdapter::setBypass(bool bypass) { if (vm_) vm_->setBypass(bypass); }
+void StereoMsModuleAdapter::undo() {}
+void StereoMsModuleAdapter::redo() {}
+void StereoMsModuleAdapter::resetToDefault() { if (vm_) vm_->resetToDefault(); }
+
 }  // namespace rgsml::app

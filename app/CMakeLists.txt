@@ -11,6 +11,8 @@ qt_add_executable(rgsml_app
     src/eq_view_model.hpp
     src/gain_view_model.cpp
     src/gain_view_model.hpp
+    src/stereo_ms_view_model.cpp
+    src/stereo_ms_view_model.hpp
     src/mastering_preview_controller.cpp
     src/mastering_preview_controller.hpp
     src/audition_region_view_model.cpp
