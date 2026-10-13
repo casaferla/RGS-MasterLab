@@ -86,7 +86,7 @@ Rectangle {
                     readonly property var moduleAdapter: modelData
                     readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === index)
                     readonly property bool isDefaultState: moduleAdapter ? (moduleAdapter.configurationState === "Default") : true
-                    readonly property bool isBypassed: moduleAdapter ? moduleAdapter.bypass : false
+                    readonly property bool isBypassed: moduleAdapter ? (moduleAdapter.bypassSupported && moduleAdapter.bypass) : false
                     readonly property bool hasError: moduleAdapter ? moduleAdapter.hasError : false
 
                     color: isSelected ? "#1A324A" : (rowMouse.containsMouse ? "#122538" : "#0D1D2B")

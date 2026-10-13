@@ -263,6 +263,8 @@ ApplicationWindow {
             gainViewModel: root.appGainViewModel
             eqViewModel: root.appEqViewModel
             spectrumViewModel: root.appSpectrumViewModel
+            truePeakStaticViewModel: typeof truePeakStatic !== "undefined"
+                ? truePeakStatic : null
         }
     }
 

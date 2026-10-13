@@ -252,4 +252,51 @@ private:
     QString context_;
 };
 
+// A presentation-only observer in the DSP Chain selector. It never enters
+// MasteringChainState, ProcessingChain or ModuleRegistry; no sonic bypass exists.
+class TruePeakAnalysisModuleAdapter final : public DspModuleAdapter {
+    Q_OBJECT
+public:
+    explicit TruePeakAnalysisModuleAdapter(QString workflowContext, QObject* parent = nullptr)
+        : DspModuleAdapter(parent), workflowContext_(workflowContext) {}
+    [[nodiscard]] QString instance_id() const override
+        { return QStringLiteral("analysis:rgsml.true-peak-meter"); }
+    [[nodiscard]] QString type_id() const override
+        { return QStringLiteral("rgsml.analysis.true-peak-meter"); }
+    [[nodiscard]] QString display_name() const override
+        { return QStringLiteral("True Peak Meter"); }
+    [[nodiscard]] QString workspace_context_label() const override
+        { return workflowContext_ + QStringLiteral(" · Analysis"); }
+    [[nodiscard]] QString configuration_state() const override
+        { return QStringLiteral("Default"); }
+    [[nodiscard]] bool bypass_supported() const noexcept override { return false; }
+    [[nodiscard]] bool bypass() const noexcept override { return false; }
+    [[nodiscard]] bool preview_supported() const noexcept override { return false; }
+    [[nodiscard]] QString preview_status() const override
+        { return QStringLiteral("NO_PREVIEW"); }
+    [[nodiscard]] QString preview_error() const override { return {}; }
+    [[nodiscard]] bool history_supported() const noexcept override { return false; }
+    [[nodiscard]] bool can_undo() const noexcept override { return false; }
+    [[nodiscard]] bool can_redo() const noexcept override { return false; }
+    [[nodiscard]] bool reset_supported() const noexcept override { return false; }
+    [[nodiscard]] QString editor_content_key() const override
+        { return QStringLiteral("TRUE_PEAK_METER"); }
+    [[nodiscard]] QString live_change_policy() const override
+        { return QStringLiteral("OBSERVATION_ONLY"); }
+    [[nodiscard]] GainViewModel* gain_view_model() const noexcept override { return nullptr; }
+    [[nodiscard]] EqViewModel* eq_view_model() const noexcept override { return nullptr; }
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override { return nullptr; }
+    [[nodiscard]] QString family_accent() const override
+        { return QStringLiteral("#6CBCCF"); }
+    [[nodiscard]] QString state_text() const override
+        { return QStringLiteral("Read-only · True Peak"); }
+    [[nodiscard]] bool has_error() const noexcept override { return false; }
+    void setBypass(bool) override {} // The observer cannot affect audio.
+    void undo() override {}
+    void redo() override {}
+    void resetToDefault() override {}
+private:
+    QString workflowContext_;
+};
+
 }  // namespace rgsml::app

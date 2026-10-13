@@ -1,10 +1,68 @@
 #include "true_peak_static_coordinator.hpp"
 
 #include <QMetaObject>
+#include <QString>
 
 #include <utility>
 
 namespace rgsml::app {
+
+QString TruePeakStaticCoordinator::state_text() const
+{
+    switch (state_) {
+    case State::NO_SOURCE: return QStringLiteral("NO SOURCE");
+    case State::NO_PROCESSED: return QStringLiteral("NO PROCESSED RENDER");
+    case State::MEASURING: return QStringLiteral("MEASURING");
+    case State::READY: return QStringLiteral("READY · NOT NECESSARILY AUDIBLE");
+    case State::UNAVAILABLE: return QStringLiteral("UNAVAILABLE · INVALID OR PARTIAL RESOURCE");
+    }
+    return QStringLiteral("UNAVAILABLE");
+}
+
+QString TruePeakStaticCoordinator::peak_text() const
+{
+    if (!completed_) return QStringLiteral("—");
+    const auto& measurement = completed_->measurement;
+    if (measurement.is_exact_silence()) return QStringLiteral("−∞ dBTP");
+    if (!measurement.global_db_tp()) return QStringLiteral("—");
+    return QString::number(*measurement.global_db_tp(), 'f', 2)
+        + QStringLiteral(" dBTP");
+}
+
+QString TruePeakStaticCoordinator::channel_text() const
+{
+    if (!completed_) return QStringLiteral("UNAVAILABLE");
+    switch (completed_->measurement.global_peak_channel()) {
+    case analysis::TruePeakPeakChannel::NONE: return QStringLiteral("NONE · EXACT SILENCE");
+    case analysis::TruePeakPeakChannel::MONO_C: return QStringLiteral("MONO C");
+    case analysis::TruePeakPeakChannel::LEFT: return QStringLiteral("LEFT");
+    case analysis::TruePeakPeakChannel::RIGHT: return QStringLiteral("RIGHT");
+    case analysis::TruePeakPeakChannel::TIE: return QStringLiteral("STEREO TIE");
+    }
+    return QStringLiteral("UNAVAILABLE");
+}
+
+QString TruePeakStaticCoordinator::sample_rate_text() const
+{
+    return completed_
+        ? QString::number(completed_->measurement.sample_rate_hz()) + QStringLiteral(" Hz")
+        : QStringLiteral("—");
+}
+
+QString TruePeakStaticCoordinator::qualification_text() const
+{
+    // Gate G is OPEN: never treat an automated CI or future enum value as
+    // accepted exact-build release provenance.
+    return completed_ ? QStringLiteral("SUPPORTED · UNQUALIFIED")
+                      : QStringLiteral("NO QUALIFIED MEASUREMENT");
+}
+
+QString TruePeakStaticCoordinator::realization_text() const
+{
+    return completed_ ? QStringLiteral("PROCESSED #")
+        + QString::number(static_cast<qulonglong>(completed_->realizationId.value))
+        : QStringLiteral("NO PUBLISHED REALIZATION");
+}
 
 TruePeakStaticCoordinator::TruePeakStaticCoordinator(QObject* parent)
     : QObject(parent)

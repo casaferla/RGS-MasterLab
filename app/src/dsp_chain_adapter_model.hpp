@@ -33,7 +33,8 @@ public:
         MasteringChainState* chainState = nullptr,
         QString workflowContext = QStringLiteral("Mastering"),
         QObject* parent = nullptr,
-        StereoMsViewModel* stereoMsViewModel = nullptr);
+        StereoMsViewModel* stereoMsViewModel = nullptr,
+        bool includeTruePeakAnalysis = false);
 
     explicit DspChainAdapterModel(
         GainViewModel* gainViewModel,
@@ -67,6 +68,7 @@ private:
     EqViewModel* eqViewModel_{nullptr};
     CompressorViewModel* compressorViewModel_{nullptr};
     StereoMsViewModel* stereoMsViewModel_{nullptr};
+    bool includeTruePeakAnalysis_{false};
     MasteringChainState* chainState_{nullptr};
     QString workflowContext_;
 

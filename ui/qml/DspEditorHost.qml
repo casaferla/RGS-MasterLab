@@ -12,6 +12,7 @@ Rectangle {
     property var eqViewModel: null
     property var compressorViewModel: null
     property var spectrumViewModel: null
+    property var truePeakStaticViewModel: null
     property Item activeChainRow: null
 
     // Backward-compatibility alias so code referencing host.viewModel accesses eqViewModel
@@ -103,6 +104,7 @@ Rectangle {
             // Preview Status Badge
             Rectangle {
                 objectName: "dspHostPreviewBadge"
+                visible: root.activeModule ? root.activeModule.previewSupported : false
                 Layout.preferredHeight: 28
                 Layout.preferredWidth: statusText.implicitWidth + 24
                 radius: 6
@@ -151,6 +153,11 @@ Rectangle {
             // Undo / Redo + A/B Bypass Controls
             RowLayout {
                 spacing: 2
+                // A measuring-only module has no audible Active/Bypass, no
+                // parameter changes, and no edit history.
+                visible: root.activeModule
+                    ? (root.activeModule.bypassSupported || root.activeModule.historySupported)
+                    : false
 
                 StudioButton {
                     id: undoButton
@@ -251,6 +258,16 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             viewModel: root.activeModule ? root.activeModule.compressorViewModel : null
+        }
+
+        TruePeakMeterEditor {
+            id: truePeakMeterEditor
+            objectName: "truePeakMeterEditor"
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "TRUE_PEAK_METER" : false
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            measurementProvider: root.truePeakStaticViewModel
         }
 
         StereoMsEditor {

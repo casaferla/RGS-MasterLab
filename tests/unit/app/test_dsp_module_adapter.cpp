@@ -19,6 +19,7 @@ class DspModuleAdapterTest final : public QObject {
 
 private slots:
     void testAdapterInventoryAndOrder();
+    void testReadOnlyTruePeakAnalysisDoesNotEnterProcessingChain();
     void testOptInStereoMsModuleSelection();
     void testStableInstanceIds();
     void testConfigurationStateRules();
@@ -153,6 +154,58 @@ void DspModuleAdapterTest::testAdapterInventoryAndOrder()
     QCOMPARE(compAdapter->editor_content_key(), QStringLiteral("COMPRESSOR"));
     QCOMPARE(compAdapter->family_accent(), QStringLiteral("#C4774A"));
     QCOMPARE(compAdapter->live_change_policy(), QStringLiteral("PREPARED_REALIZATION_HOT_SWAP"));
+}
+
+void DspModuleAdapterTest::testReadOnlyTruePeakAnalysisDoesNotEnterProcessingChain()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *core::Uuid::parse("66000000-0000-4000-8000-000000000001").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("66000000-0000-4000-8000-000000000010").value()).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("66000000-0000-4000-8000-000000000020").value()).value();
+    const auto compId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("66000000-0000-4000-8000-000000000030").value()).value();
+    auto state = MasteringChainState::create_default(
+        *registry.value(), chainId, gainId, eqId, compId);
+    QVERIFY(state);
+    GainViewModel gain(state.value());
+    EqViewModel eq(state.value());
+    CompressorViewModel comp(state.value());
+    DspChainAdapterModel model(&gain, &eq, &comp, state.value(),
+                              QStringLiteral("Mastering"), nullptr, nullptr, true);
+    QCOMPARE(state.value()->instances().size(), 3U);
+    QCOMPARE(model.modules().size(), 4);
+    auto* meter = qobject_cast<DspModuleAdapter*>(
+        model.modules()[3].value<QObject*>());
+    QVERIFY(meter);
+    QCOMPARE(meter->type_id(), QStringLiteral("rgsml.analysis.true-peak-meter"));
+    QCOMPARE(meter->editor_content_key(), QStringLiteral("TRUE_PEAK_METER"));
+    QCOMPARE(meter->live_change_policy(), QStringLiteral("OBSERVATION_ONLY"));
+    QVERIFY(!meter->bypass_supported());
+    QVERIFY(!meter->bypass());
+    QVERIFY(!meter->preview_supported());
+    QVERIFY(!meter->history_supported());
+    QVERIFY(!meter->can_undo());
+    QVERIFY(!meter->can_redo());
+    QVERIFY(!meter->reset_supported());
+    QVERIFY(meter->gain_view_model() == nullptr);
+    QVERIFY(meter->eq_view_model() == nullptr);
+    QVERIFY(meter->compressor_view_model() == nullptr);
+    meter->setBypass(true);
+    meter->undo();
+    meter->redo();
+    meter->resetToDefault();
+    QVERIFY(!meter->bypass());
+    QCOMPARE(state.value()->instances().size(), 3U);
+    const QString id = meter->instance_id();
+    model.selectModuleByInstanceId(id);
+    QCOMPARE(model.selected_index(), 3);
+    model.refreshFromAuthority();
+    QCOMPARE(model.selected_instance_id(), id);
+    QCOMPARE(model.modules().size(), 4);
+    QCOMPARE(state.value()->instances().size(), 3U);
 }
 
 void DspModuleAdapterTest::testStableInstanceIds()

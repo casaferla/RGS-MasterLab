@@ -25,6 +25,9 @@ qt_add_qml_module(rgsml_ui
         qml/StudioParameterSlider.qml
         qml/StudioSegmentButton.qml
         qml/StudioToggle.qml
+        qml/TruePeakMeterEditor.qml
+        qml/TruePeakReadoutCard.qml
+        qml/TruePeakStatusCard.qml
         qml/TransportButton.qml
     RESOURCES
         resources/app_icon_canonical.jpg

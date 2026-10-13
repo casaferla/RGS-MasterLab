@@ -21,6 +21,13 @@ namespace rgsml::app {
 // No live peak bucket, UI DSP or release QUALIFIED status is produced here.
 class TruePeakStaticCoordinator final : public QObject {
     Q_OBJECT
+    Q_PROPERTY(QString stateText READ state_text NOTIFY changed)
+    Q_PROPERTY(QString peakText READ peak_text NOTIFY changed)
+    Q_PROPERTY(QString channelText READ channel_text NOTIFY changed)
+    Q_PROPERTY(QString sampleRateText READ sample_rate_text NOTIFY changed)
+    Q_PROPERTY(QString qualificationText READ qualification_text NOTIFY changed)
+    Q_PROPERTY(QString realizationText READ realization_text NOTIFY changed)
+    Q_PROPERTY(bool hasMeasurement READ has_measurement NOTIFY changed)
 public:
     enum class State {
         NO_SOURCE, NO_PROCESSED, MEASURING, READY, UNAVAILABLE
@@ -40,6 +47,13 @@ public:
     void processed_changed(std::shared_ptr<const render::RenderResult> render,
                            std::optional<core::RealizationId> id);
 
+    [[nodiscard]] QString state_text() const;
+    [[nodiscard]] QString peak_text() const;
+    [[nodiscard]] QString channel_text() const;
+    [[nodiscard]] QString sample_rate_text() const;
+    [[nodiscard]] QString qualification_text() const;
+    [[nodiscard]] QString realization_text() const;
+    [[nodiscard]] bool has_measurement() const noexcept { return completed_.has_value(); }
     [[nodiscard]] State state() const noexcept { return state_; }
     [[nodiscard]] const BoundStaticTruePeak* ready() const noexcept
     { return completed_ ? &*completed_ : nullptr; }

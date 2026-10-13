@@ -214,7 +214,7 @@ int main(int argc, char* argv[])
     rgsml::app::DspChainAdapterModel dspChainAdapterModel{
         &gainViewModel, &eqViewModel, &compressorViewModel,
         &masteringChainState, QStringLiteral("Mastering"),
-        nullptr, &stereoMsViewModel};
+        nullptr, &stereoMsViewModel, true};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
@@ -331,6 +331,8 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"),
         &dspChainAdapterModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("truePeakStatic"), &staticTruePeak);
     engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"),
         &liveSpectrumViewModel);
