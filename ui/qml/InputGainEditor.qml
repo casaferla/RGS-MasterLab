@@ -171,6 +171,8 @@ Item {
                         }
 
                         background: Rectangle {
+                            id: gainSliderTrack
+                            objectName: "gainSliderTrack"
                             x: gainSlider.leftPadding
                             y: gainSlider.topPadding + gainSlider.availableHeight / 2 - height / 2
                             width: gainSlider.availableWidth
@@ -179,6 +181,29 @@ Item {
                             color: "#08121C"
                             border.color: "#1E354A"
                             border.width: 1
+
+                            // Same bipolar convention as Compressor MAKE-UP
+                            // and Stereo/M-S gains: fill from the 0 dB handle
+                            // CENTER to the actual handle CENTER, never to
+                            // the visual track edge. No fill at exactly 0 dB.
+                            readonly property real thumbRadius:
+                                gainSlider.handle ? gainSlider.handle.width / 2 : 9
+                            readonly property real zeroCenterX:
+                                thumbRadius + 0.5 * (width - 2 * thumbRadius)
+                            readonly property real thumbCenterX:
+                                thumbRadius + gainSlider.visualPosition
+                                * Math.max(0, width - 2 * thumbRadius)
+                            Rectangle {
+                                objectName: "gainSliderTrackFill"
+                                x: Math.min(gainSliderTrack.zeroCenterX,
+                                            gainSliderTrack.thumbCenterX)
+                                y: 0
+                                width: Math.abs(gainSliderTrack.thumbCenterX
+                                                - gainSliderTrack.zeroCenterX)
+                                height: parent.height
+                                radius: parent.radius
+                                color: Qt.alpha(root.accent, 0.38)
+                            }
 
                             // Center 0 dB Reference Line
                             Rectangle {
@@ -191,6 +216,7 @@ Item {
                         }
 
                         handle: Rectangle {
+                            objectName: "gainSliderThumb"
                             x: gainSlider.leftPadding + gainSlider.visualPosition * (gainSlider.availableWidth - width)
                             y: gainSlider.topPadding + gainSlider.availableHeight / 2 - height / 2
                             width: 18
