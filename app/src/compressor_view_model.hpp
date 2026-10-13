@@ -146,11 +146,15 @@ public:
         std::function<core::Result<core::PlaybackSnapshot>()>;
     using AuditionTargetProvider =
         std::function<render::AuditionTarget()>;
+    // Only a published Processed render signature may attest bypass identity.
+    using PublishedBypassProvider =
+        std::function<std::optional<core::RealizationId>()>;
 
     void setTelemetryProviders(
         TelemetrySidecarProvider sidecarProvider,
         PlaybackSnapshotProvider playbackProvider,
-        AuditionTargetProvider auditionTargetProvider);
+        AuditionTargetProvider auditionTargetProvider,
+        PublishedBypassProvider publishedBypassProvider = {});
 
     [[nodiscard]] QString telemetry_status() const;
     [[nodiscard]] int telemetry_num_lanes() const noexcept;
@@ -181,6 +185,8 @@ public:
     Q_INVOKABLE void redo();
     Q_INVOKABLE void resetToDefault();
     Q_INVOKABLE void resetForNewSource();
+    // Separate from parameter reset: also required on project-open source changes.
+    void resetTelemetryForNewSource();
     Q_INVOKABLE void refreshFromAuthority();
 
 signals:
@@ -259,6 +265,7 @@ private:
     TelemetrySidecarProvider telemetrySidecarProvider_;
     PlaybackSnapshotProvider playbackSnapshotProvider_;
     AuditionTargetProvider auditionTargetProvider_;
+    PublishedBypassProvider publishedBypassProvider_;
     render::AudibleCompressorTelemetryResolver resolver_;
     QTimer telemetryTimer_;
 

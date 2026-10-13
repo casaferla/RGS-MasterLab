@@ -158,8 +158,10 @@ CompressorViewModel::CompressorViewModel(
 void CompressorViewModel::setTelemetryProviders(
     TelemetrySidecarProvider sidecarProvider,
     PlaybackSnapshotProvider playbackProvider,
-    AuditionTargetProvider auditionTargetProvider)
+    AuditionTargetProvider auditionTargetProvider,
+    PublishedBypassProvider publishedBypassProvider)
 {
+    publishedBypassProvider_ = std::move(publishedBypassProvider);
     telemetrySidecarProvider_ = std::move(sidecarProvider);
     playbackSnapshotProvider_ = std::move(playbackProvider);
     auditionTargetProvider_ = std::move(auditionTargetProvider);
@@ -197,6 +199,19 @@ void CompressorViewModel::update_telemetry()
         const auto sidecar = telemetrySidecarProvider_();
         if (sidecar != nullptr && sidecar->valid) {
             resolver_.register_sidecar(*sidecar, bypass(), mix_percent());
+        }
+    }
+
+    if (publishedBypassProvider_) {
+        const auto acceptedId = publishedBypassProvider_();
+        if (acceptedId.has_value()) {
+            // Accepted immutable BYPASS signature, not a GR measurement.
+            // The resolver still requires this realization to be audible.
+            render::CompressorTelemetrySidecar bypassEvidence{
+                active_chain_state().compressor_instance_id(), *acceptedId};
+            bypassEvidence.valid = true;
+            bypassEvidence.status = render::CompressorTelemetryStatus::BYPASS;
+            resolver_.register_sidecar(std::move(bypassEvidence), true);
         }
     }
 
@@ -1260,6 +1275,19 @@ void CompressorViewModel::resetToDefault()
 
     refreshFromAuthority();
     request_preview();
+}
+
+void CompressorViewModel::resetTelemetryForNewSource()
+{
+    // Source identity changed. Clear observations independently of whether
+    // project opening restores existing DSP parameter snapshots.
+    resolver_.reset();
+    cachedTelemetryStatus_ = QStringLiteral("UNAVAILABLE");
+    cachedTelemetryNumLanes_ = 1;
+    cachedTelemetryHistoryLanes_.clear();
+    cachedTelemetryGrScaleMaxDb_ = 6.0;
+    cachedTelemetryValid_ = false;
+    emit telemetryChanged();
 }
 
 void CompressorViewModel::resetForNewSource()

@@ -69,6 +69,10 @@ jobs:
         run: |
           python tools/qualification/ui/verify_compressor_minor_fix_g1.py
 
+      - name: Minor Fix G2 GR identity and lane topology contract (Linux)
+        run: |
+          python tools/qualification/ui/verify_compressor_minor_fix_g2.py
+
       - name: Build Focused DSP Targets
         run: |
           cmake --build build-linux --target \
@@ -179,6 +183,12 @@ jobs:
         run: |
           python tools/qualification/ui/verify_compressor_minor_fix_g1.py
           if ($LASTEXITCODE -ne 0) { throw 'MINOR_FIX_G1_STATIC_QML_REGRESSION' }
+
+      - name: Minor Fix G2 GR identity and lane topology contract (Windows)
+        shell: pwsh
+        run: |
+          python tools/qualification/ui/verify_compressor_minor_fix_g2.py
+          if ($LASTEXITCODE -ne 0) { throw 'MINOR_FIX_G2_STATIC_PROVENANCE_REGRESSION' }
 
       - name: Build Focused DSP Targets (Release)
         run: |

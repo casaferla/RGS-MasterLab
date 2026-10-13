@@ -343,6 +343,7 @@ Item {
 
                             implicitHeight: numLanes > 1 ? 72 : 54
 
+                            onNumLanesChanged: requestPaint()
                             onHistoryLanesChanged: requestPaint()
                             onScaleMaxDbChanged: requestPaint()
                             onLiveStateChanged: requestPaint()

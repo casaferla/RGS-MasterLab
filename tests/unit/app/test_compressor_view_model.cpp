@@ -31,6 +31,7 @@ private slots:
     void monoStereoApplicabilityPreservesStoredValue();
     void staticTransferCurveOraclePoints();
     void extremeThresholdPlotContinuity();
+    void sourceTelemetryResetAndPublishedBypass();
     void resetToDefaultState();
     void textDraftContractAndCommitCancel();
     void sliderDraftAndCommitCycle();
@@ -396,6 +397,125 @@ void CompressorViewModelTest::extremeThresholdPlotContinuity()
     QCOMPARE(defaults.constFirst().toMap()
              .value(QStringLiteral("inputDbfs")).toDouble(),
              vm.plot_x_min_dbfs());
+}
+
+void CompressorViewModelTest::sourceTelemetryResetAndPublishedBypass()
+{
+    const auto uuid = *rgsml::core::Uuid::parse(
+        "70000000-0000-0000-0000-000000000005").value();
+    const auto module = *dsp::ModuleInstanceId::from_uuid(uuid).value();
+    const rgsml::core::RealizationId wetId{801}, bypassId{802};
+
+    auto wet = std::make_shared<rgsml::render::CompressorTelemetrySidecar>(
+        module, wetId);
+    wet->valid = true;
+    wet->status = rgsml::render::CompressorTelemetryStatus::OK;
+    wet->channel_lanes.resize(1);
+    rgsml::render::CompressorTelemetryBucket bucket{module, wetId};
+    bucket.begin_frame = 0;
+    bucket.end_frame = 240;
+    bucket.frame_count = 240;
+    bucket.valid = true;
+    bucket.mean_reduction_db = 3.0;
+    bucket.peak_reduction_db = 4.0;
+    wet->channel_lanes[0].buckets.push_back(bucket);
+
+    rgsml::core::PlaybackSnapshot snap;
+    snap.state = rgsml::core::PlaybackState::PLAYING;
+    snap.traversalSerial = 1;
+    snap.position = rgsml::core::FrameIndex{0};
+    snap.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW, wetId};
+
+    const auto sidecarProvider = [wet]()
+        -> std::shared_ptr<const rgsml::render::CompressorTelemetrySidecar> {
+        return wet;
+    };
+    const auto snapshotProvider = [&snap]()
+        -> rgsml::core::Result<rgsml::core::PlaybackSnapshot> {
+        return rgsml::core::Result<rgsml::core::PlaybackSnapshot>::success(snap);
+    };
+    const auto targetProvider = []() {
+        return rgsml::render::AuditionTarget::PROCESSED;
+    };
+
+    CompressorViewModel vm;
+    vm.setThresholdDbfs(-17.0);
+    vm.setBypass(false); // accepted synthetic telemetry represents wet audio
+    QCOMPARE(vm.threshold_dbfs(), -17.0);
+    vm.setTelemetryProviders(
+        sidecarProvider, snapshotProvider, targetProvider);
+    snap.position = rgsml::core::FrameIndex{240};
+    vm.setTelemetryProviders(
+        sidecarProvider, snapshotProvider, targetProvider);
+    QCOMPARE(vm.telemetry_status(), QStringLiteral("ACTIVE WET"));
+    QCOMPARE(vm.telemetry_history_lanes().size(), 1);
+    QCOMPARE(vm.telemetry_history_lanes().constFirst()
+             .toMap().value(QStringLiteral("buckets")).toList().size(), 1);
+
+    // FIX-UI-009: source identity reset is separate from destructive
+    // DSP default-parameter reset, especially during project opening.
+    vm.resetTelemetryForNewSource();
+    QCOMPARE(vm.telemetry_status(), QStringLiteral("UNAVAILABLE"));
+    QVERIFY(vm.telemetry_history_lanes().isEmpty());
+    QCOMPARE(vm.telemetry_num_lanes(), 1);
+    QCOMPARE(vm.threshold_dbfs(), -17.0);
+    QVERIFY(vm.can_undo());
+
+    // FIX-UI-010: the published bypass identity can be verified against
+    // the actual audible snapshot without generating any 0-dB GR bucket.
+    CompressorViewModel bypassVm;
+    rgsml::core::PlaybackSnapshot bypassSnap;
+    bypassSnap.state = rgsml::core::PlaybackState::PLAYING;
+    bypassSnap.traversalSerial = 1;
+    bypassSnap.position = rgsml::core::FrameIndex{240};
+    bypassSnap.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW, bypassId};
+    const auto bypassSnapshotProvider = [&bypassSnap]()
+        -> rgsml::core::Result<rgsml::core::PlaybackSnapshot> {
+        return rgsml::core::Result<rgsml::core::PlaybackSnapshot>::success(
+            bypassSnap);
+    };
+    const auto emptySidecar = []()
+        -> std::shared_ptr<const rgsml::render::CompressorTelemetrySidecar> {
+        return {};
+    };
+    bypassVm.setTelemetryProviders(
+        emptySidecar, bypassSnapshotProvider, targetProvider,
+        [bypassId]() -> std::optional<rgsml::core::RealizationId> {
+            return bypassId;
+        });
+    QCOMPARE(bypassVm.telemetry_status(), QStringLiteral("BYPASS"));
+    QCOMPARE(bypassVm.telemetry_num_lanes(), 1);
+    QCOMPARE(bypassVm.telemetry_history_lanes().constFirst()
+             .toMap().value(QStringLiteral("buckets")).toList().size(), 0);
+
+    bypassSnap.state = rgsml::core::PlaybackState::PAUSED;
+    bypassVm.setTelemetryProviders(
+        emptySidecar, bypassSnapshotProvider, targetProvider,
+        [bypassId]() -> std::optional<rgsml::core::RealizationId> {
+            return bypassId;
+        });
+    QCOMPARE(bypassVm.telemetry_status(), QStringLiteral("BYPASS"));
+
+    // Published bypass with an unrelated audible identity must fail closed.
+    bypassSnap.state = rgsml::core::PlaybackState::PLAYING;
+    bypassSnap.audibleRealization = rgsml::core::AudibleRealizationState{
+        rgsml::core::AudibleHandoffPhase::NEW,
+        rgsml::core::RealizationId{999}};
+    bypassVm.setTelemetryProviders(
+        emptySidecar, bypassSnapshotProvider, targetProvider,
+        [bypassId]() -> std::optional<rgsml::core::RealizationId> {
+            return bypassId;
+        });
+    QCOMPARE(bypassVm.telemetry_status(), QStringLiteral("UNAVAILABLE"));
+    bypassSnap.state = rgsml::core::PlaybackState::PAUSED;
+    bypassVm.setTelemetryProviders(
+        emptySidecar, bypassSnapshotProvider, targetProvider,
+        [bypassId]() -> std::optional<rgsml::core::RealizationId> {
+            return bypassId;
+        });
+    QCOMPARE(bypassVm.telemetry_status(), QStringLiteral("UNAVAILABLE"));
 }
 
 void CompressorViewModelTest::resetToDefaultState()

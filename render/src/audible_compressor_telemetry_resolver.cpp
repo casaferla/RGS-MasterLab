@@ -178,7 +178,11 @@ void AudibleCompressorTelemetryResolver::update(const ResolverUpdateContext& con
     }
 
     if (snap.state == rgsml::core::PlaybackState::PAUSED) {
-        status_ = AudibleTelemetryStatus::PAUSED;
+        // Keep the last verified BYPASS/UNAVAILABLE evidence on pause.
+        if (status_ != AudibleTelemetryStatus::BYPASS &&
+            status_ != AudibleTelemetryStatus::UNAVAILABLE) {
+            status_ = AudibleTelemetryStatus::PAUSED;
+        }
         return;
     }
 
@@ -242,7 +246,13 @@ void AudibleCompressorTelemetryResolver::update(const ResolverUpdateContext& con
             status_ = AudibleTelemetryStatus::ACTIVE_WET;
         }
 
+        const auto& lanes = sidecar_entry.sidecar.channel_lanes;
         if (current_consuming_realization_ != real_id_opt) {
+            // Only an audible new realization can replace L/R lane topology.
+            if (!lanes.empty() && history_.num_lanes() != 0U &&
+                history_.num_lanes() != lanes.size()) {
+                history_.clear();
+            }
             current_consuming_realization_ = real_id_opt;
             next_bucket_index_ = 0;
             if (snap.audibleRealization.handoffEndFrame.has_value()) {
@@ -257,7 +267,6 @@ void AudibleCompressorTelemetryResolver::update(const ResolverUpdateContext& con
         prune_sidecars(snap.audibleRealization, audition_target);
 
         // 5. Consume Completed Audible Buckets
-        const auto& lanes = sidecar_entry.sidecar.channel_lanes;
         if (lanes.empty()) {
             return;
         }

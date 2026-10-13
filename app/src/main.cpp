@@ -26,6 +26,9 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+
+#include <optional>
+#include <variant>
 #include <QTimer>
 
 #include <cstdio>
@@ -153,6 +156,28 @@ int main(int argc, char* argv[])
                 return rgsml::render::AuditionTarget::GOLD;
             }
             return rgsml::render::AuditionTarget::PREPARED;
+        },
+        [&auditionSelector, &masteringChainState]()
+            -> std::optional<rgsml::core::RealizationId> {
+            const auto accepted = auditionSelector.processed_realization_snapshot();
+            const auto id = auditionSelector.processed_realization_id();
+            if (!accepted || !id) {
+                return std::nullopt;
+            }
+            for (const auto& signature : accepted->signatures()) {
+                if (signature.instance_id == masteringChainState.compressor_instance_id() &&
+                    signature.type_id == "rgsml.dsp.compressor" &&
+                    signature.disposition ==
+                        rgsml::render::ModuleExecutionDisposition::BYPASS_IDENTITY &&
+                    std::holds_alternative<
+                        rgsml::render::CompressorExecutionSignaturePayload>(
+                            signature.payload)) {
+                    // This is a published immutable render signature; the
+                    // resolver still checks that ID is ACTUALLY audible.
+                    return id;
+                }
+            }
+            return std::nullopt;
         });
     // B4c2c: bind M/S observation to PUBLISHED render identity and the
     // independent audible playback clock. Creating the observer does not
@@ -189,7 +214,7 @@ int main(int argc, char* argv[])
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,
-         &stereoMsViewModel](
+         &stereoMsViewModel, &compressorViewModel](
             const rgsml::core::ResourceReference& source) {
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
@@ -201,6 +226,9 @@ int main(int argc, char* argv[])
             }
             const auto prepared = auditionSelector.source_committed(source);
             if (prepared) {
+                // New source identity: clear previous GR regardless of whether
+                // project-open is restoring existing DSP parameter values.
+                compressorViewModel.resetTelemetryForNewSource();
                 static_cast<void>(auditionSelector.switch_to(
                     rgsml::app::AuditionTarget::PREPARED));
                 if (!projectSession.is_committing_project_open()) {

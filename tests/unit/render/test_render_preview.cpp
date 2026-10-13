@@ -496,6 +496,7 @@ private slots:
 
     // Stage 3B2 Audible Telemetry Resolver Contract Tests
     void audibleCompressorTelemetryResolverContract();
+    void compressorTopologyAndBypassProvenanceGate();
 };
 
 void RenderPreviewTest::validatesBindingsAndWindowAtomically()
@@ -2975,6 +2976,118 @@ void RenderPreviewTest::audibleCompressorTelemetryResolverContract()
     QCOMPARE(
         budgetResolver.status(),
         rgsml::render::AudibleTelemetryStatus::UNAVAILABLE);
+}
+
+void RenderPreviewTest::compressorTopologyAndBypassProvenanceGate()
+{
+    using namespace rgsml;
+    const auto uuid = *core::Uuid::parse("70000000-0000-0000-0000-000000000003").value();
+    const auto id = *dsp::ModuleInstanceId::from_uuid(uuid).value();
+    const core::RealizationId dualId{610}, linkedId{611},
+        linkedNextId{612}, bypassId{613}, missingId{699};
+
+    const auto makeSidecar = [&](core::RealizationId rid, std::size_t count) {
+        render::CompressorTelemetrySidecar sc{id, rid};
+        sc.valid = true;
+        sc.status = render::CompressorTelemetryStatus::OK;
+        sc.channel_lanes.resize(count);
+        for (std::size_t lane = 0; lane < count; ++lane) {
+            for (std::int64_t k = 0; k < 5; ++k) {
+                render::CompressorTelemetryBucket bucket{id, rid};
+                bucket.begin_frame = k * 240;
+                bucket.end_frame = (k + 1) * 240;
+                bucket.frame_count = 240;
+                bucket.valid = true;
+                bucket.mean_reduction_db = 2.0 + static_cast<double>(lane);
+                bucket.peak_reduction_db = 3.0 + static_cast<double>(lane);
+                sc.channel_lanes[lane].buckets.push_back(bucket);
+            }
+        }
+        return sc;
+    };
+
+    render::AudibleCompressorTelemetryResolver resolver;
+    resolver.register_sidecar(makeSidecar(dualId, 2));
+    render::ResolverUpdateContext ctx;
+    ctx.audition_target = render::AuditionTarget::PROCESSED;
+    ctx.playback_snapshot.state = core::PlaybackState::PLAYING;
+    ctx.playback_snapshot.traversalSerial = 1;
+    ctx.playback_snapshot.position = core::FrameIndex{0};
+    ctx.playback_snapshot.audibleRealization =
+        core::AudibleRealizationState{core::AudibleHandoffPhase::NEW, dualId};
+    resolver.update(ctx);
+    ctx.playback_snapshot.position = core::FrameIndex{240};
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().num_lanes(), std::size_t{2});
+    QCOMPARE(resolver.history().bucket_count(1), std::size_t{1});
+
+    // Queuing a LINKED render is NOT yet evidence of audible topology.
+    resolver.register_sidecar(makeSidecar(linkedId, 1));
+    ctx.playback_snapshot.audibleRealization =
+        core::AudibleRealizationState{core::AudibleHandoffPhase::OLD, dualId};
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().num_lanes(), std::size_t{2});
+
+    // FIX-UI-008: the actually audible 2 -> 1 handoff removes stale R.
+    ctx.playback_snapshot.audibleRealization =
+        core::AudibleRealizationState{
+            core::AudibleHandoffPhase::NEW, linkedId, 240};
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().num_lanes(), std::size_t{0});
+    ctx.playback_snapshot.position = core::FrameIndex{480};
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().num_lanes(), std::size_t{1});
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{1});
+    QCOMPARE(resolver.history().lane_buckets(0).back().realization_id,
+             std::optional{linkedId});
+
+    // Same-lane OLD/NEW still retains previous legitimate history.
+    resolver.register_sidecar(makeSidecar(linkedNextId, 1));
+    ctx.playback_snapshot.audibleRealization =
+        core::AudibleRealizationState{
+            core::AudibleHandoffPhase::NEW, linkedNextId, 480};
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{1});
+    ctx.playback_snapshot.position = core::FrameIndex{720};
+    resolver.update(ctx);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{2});
+    QCOMPARE(resolver.history().lane_buckets(0).front().realization_id,
+             std::optional{linkedId});
+    QCOMPARE(resolver.history().lane_buckets(0).back().realization_id,
+             std::optional{linkedNextId});
+
+    // FIX-UI-010: an accepted BYPASS render has a bypass execution
+    // signature and no numeric GR buckets. A published identity can
+    // register this status, but must still match the audible snapshot.
+    render::CompressorTelemetrySidecar bypassProof{id, bypassId};
+    bypassProof.valid = true;
+    bypassProof.status = render::CompressorTelemetryStatus::BYPASS;
+    resolver.register_sidecar(std::move(bypassProof), true);
+    ctx.playback_snapshot.audibleRealization =
+        core::AudibleRealizationState{
+            core::AudibleHandoffPhase::NEW, bypassId};
+    resolver.update(ctx);
+    QCOMPARE(resolver.status(), render::AudibleTelemetryStatus::BYPASS);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{2});
+
+    // FIX-UI-011: Pause cannot make old wet GR vividly PAUSED again.
+    ctx.playback_snapshot.state = core::PlaybackState::PAUSED;
+    resolver.update(ctx);
+    QCOMPARE(resolver.status(), render::AudibleTelemetryStatus::BYPASS);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{2});
+
+    // Without a bound audible bypass identity, fail closed as UNAVAILABLE
+    // and preserve that finding through Pause (never invent a 0-dB lane).
+    ctx.playback_snapshot.state = core::PlaybackState::PLAYING;
+    ctx.playback_snapshot.audibleRealization =
+        core::AudibleRealizationState{
+            core::AudibleHandoffPhase::NEW, missingId};
+    resolver.update(ctx);
+    QCOMPARE(resolver.status(), render::AudibleTelemetryStatus::UNAVAILABLE);
+    ctx.playback_snapshot.state = core::PlaybackState::PAUSED;
+    resolver.update(ctx);
+    QCOMPARE(resolver.status(), render::AudibleTelemetryStatus::UNAVAILABLE);
+    QCOMPARE(resolver.history().bucket_count(0), std::size_t{2});
 }
 
 void RenderPreviewTest::monoCompressorExecutionSignature()
