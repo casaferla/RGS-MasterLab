@@ -257,3 +257,41 @@ exact-build provenance plus authentic private EBU requalification.
 
 No Gate G completion, QUALIFIED release labeling, final FQ, M16 merge,
 Gate L/M closure or M17 transition is implied.
+
+## M16-B2h: extend independent high-resolution coverage to SIX physical rates
+
+The independent, stdlib+mpmath(1.3.0) CI-only script
+`qualify_six_rate_ideal_cpp.py` uses 80/120-digit sin/cos synthesis
+at 12345/6789 Hz, rounding the actual 24-frame stereo PCM once into
+binary64. At each of the six frozen Fs, the source interleaved PCM hash
+is distinct; high-precision generator stability must hold byte-for-byte.
+
+The script combines TWO SEPARATE independent reference problems:
+
+* NORMATIVE discrete ITU 4x frozen peak against exact signed integer
+  lag numerators applied to the actual rounded dyadic PCM at 100
+  digits. Both channels and global C++ peak/dBTP must satisfy the
+  pre-existing RGS 0.01-dBTP QTP against this DISCRETE oracle.
+* DIAGNOSTIC mathematical IDEAL sinc reconstruction of the LEFT input
+  tone at 80 decimal digits, refined on 64x/128x finite grids and
+  point checked at 120 digits. The prior B2e finite search window
+  and diagnostic 0.0001-dB CONVERGENCE screen are reused unchanged.
+  We report ITU-minus-ideal dB as OBSERVATION, not an RGS error.
+
+This broadens high-resolution sinc diagnostics from a handful of
+48k labelled vectors to real frequency-dependent source PCM for
+44.1/48/88.2/96/176.4/192 kHz. It is NOT an infinite-tail global
+maximum proof, not six EBU official 48-kHz cases at other rates,
+not a certificate that RGS 4x is within 0.01 dB of the ideal,
+and not the final per-rate production Gate G evidence registry.
+All rate rows remain SUPPORTED_UNQUALIFIED with Gate G OPEN.
+
+Execution is only in the Windows CI job, against the actual freshly
+built and provenance-pinned C++ probe, with numeric report
+B2h_six_rate_ideal_result.json. Synthetic PCM stays in RAM and is
+piped privately; only its SHA-256 fingerprint is retained.
+No production true-peak mathematics, filter taps, strict-FP options,
+API, GUI, release status or authenticated EBU audio is changed.
+
+No FQ, merge, M16 freeze, Gate L/M acceptance or M17 authorization
+may follow automatically from a B2h SCREEN PASS.

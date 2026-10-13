@@ -1,5 +1,5 @@
 {
-  "schema": "rgsml.m16.b2g.audit-evidence-matrix/0.1",
+  "schema": "rgsml.m16.b2h.audit-evidence-matrix/0.2",
   "status": "PRELIMINARY_NON_AUTHORITATIVE",
   "scope": "QUALIFICATION_EVIDENCE_RECONCILIATION_NOT_RELEASE_STATUS",
   "as_of_date": "2026-10-13",
@@ -39,6 +39,24 @@
       "status": "TEST_STAGED_AWAITING_FOCUSED_CI",
       "rule": "EXACT_LINEAR_BINARY64_DYADIC__DBTP_ERROR_LE_1E-12",
       "excluded": "ARBITRARY_GAIN_BIT_IDENTITY_NOT_PROMISED"
+    },
+    "b2h_high_resolution_six_hertz_rates": {
+      "source_parent_b2g": "0684483c2912641356539e4bb1c7d8c8992e183f",
+      "script": "tools/qualification/true_peak/qualify_six_rate_ideal_cpp.py",
+      "scope": "6_SUPPORTED_FS__24_FRAME_STEREO_HERTZ_TONES__LEFT_IDEAL_64X_128X_FINITE_SINC__L_R_DISCRETE_ITU",
+      "source_pcm_generation": "80_AND_120_DIGIT_INDEPENDENT_MPMATH_SIN_COS_DOUBLE_ROUND_STABLE",
+      "sample_rates_hz": [
+        44100,
+        48000,
+        88200,
+        96000,
+        176400,
+        192000
+      ],
+      "official_ebu_at_other_rates": "NOT_CLAIMED",
+      "global_ideal_certificate": "NOT_EXECUTED",
+      "release_status": "NOT_QUALIFIED",
+      "test_state": "TEST_STAGED_AWAITING_CI"
     }
   },
   "rows": [
@@ -56,7 +74,9 @@
       "signed_scalar_gain_metamorphism": "TEST_STAGED_AWAITING_FOCUSED_CI",
       "high_resolution_ideal_reconstruction": "NOT_YET_MATRIX_QUALIFIED_AT_RATE",
       "qualification_provenance_and_product_status": "NOT_IMPLEMENTED",
-      "gate_g_per_rate": "OPEN"
+      "gate_g_per_rate": "OPEN",
+      "b2h_high_resolution_ideal_left_hz_tone": "TEST_STAGED_AWAITING_CI",
+      "b2h_independent_stereo_discrete_itu_oracle": "TEST_STAGED_AWAITING_CI"
     },
     {
       "sample_rate_hz": 48000,
@@ -72,7 +92,9 @@
       "signed_scalar_gain_metamorphism": "TEST_STAGED_AWAITING_FOCUSED_CI",
       "high_resolution_ideal_reconstruction": "FIVE_SHORT_CASES_DIAGNOSTIC_SCREEN_ONLY",
       "qualification_provenance_and_product_status": "NOT_IMPLEMENTED",
-      "gate_g_per_rate": "OPEN"
+      "gate_g_per_rate": "OPEN",
+      "b2h_high_resolution_ideal_left_hz_tone": "TEST_STAGED_AWAITING_CI",
+      "b2h_independent_stereo_discrete_itu_oracle": "TEST_STAGED_AWAITING_CI"
     },
     {
       "sample_rate_hz": 88200,
@@ -88,7 +110,9 @@
       "signed_scalar_gain_metamorphism": "TEST_STAGED_AWAITING_FOCUSED_CI",
       "high_resolution_ideal_reconstruction": "NOT_YET_MATRIX_QUALIFIED_AT_RATE",
       "qualification_provenance_and_product_status": "NOT_IMPLEMENTED",
-      "gate_g_per_rate": "OPEN"
+      "gate_g_per_rate": "OPEN",
+      "b2h_high_resolution_ideal_left_hz_tone": "TEST_STAGED_AWAITING_CI",
+      "b2h_independent_stereo_discrete_itu_oracle": "TEST_STAGED_AWAITING_CI"
     },
     {
       "sample_rate_hz": 96000,
@@ -104,7 +128,9 @@
       "signed_scalar_gain_metamorphism": "TEST_STAGED_AWAITING_FOCUSED_CI",
       "high_resolution_ideal_reconstruction": "NOT_YET_MATRIX_QUALIFIED_AT_RATE",
       "qualification_provenance_and_product_status": "NOT_IMPLEMENTED",
-      "gate_g_per_rate": "OPEN"
+      "gate_g_per_rate": "OPEN",
+      "b2h_high_resolution_ideal_left_hz_tone": "TEST_STAGED_AWAITING_CI",
+      "b2h_independent_stereo_discrete_itu_oracle": "TEST_STAGED_AWAITING_CI"
     },
     {
       "sample_rate_hz": 176400,
@@ -120,7 +146,9 @@
       "signed_scalar_gain_metamorphism": "TEST_STAGED_AWAITING_FOCUSED_CI",
       "high_resolution_ideal_reconstruction": "NOT_YET_MATRIX_QUALIFIED_AT_RATE",
       "qualification_provenance_and_product_status": "NOT_IMPLEMENTED",
-      "gate_g_per_rate": "OPEN"
+      "gate_g_per_rate": "OPEN",
+      "b2h_high_resolution_ideal_left_hz_tone": "TEST_STAGED_AWAITING_CI",
+      "b2h_independent_stereo_discrete_itu_oracle": "TEST_STAGED_AWAITING_CI"
     },
     {
       "sample_rate_hz": 192000,
@@ -136,14 +164,18 @@
       "signed_scalar_gain_metamorphism": "TEST_STAGED_AWAITING_FOCUSED_CI",
       "high_resolution_ideal_reconstruction": "NOT_YET_MATRIX_QUALIFIED_AT_RATE",
       "qualification_provenance_and_product_status": "NOT_IMPLEMENTED",
-      "gate_g_per_rate": "OPEN"
+      "gate_g_per_rate": "OPEN",
+      "b2h_high_resolution_ideal_left_hz_tone": "TEST_STAGED_AWAITING_CI",
+      "b2h_independent_stereo_discrete_itu_oracle": "TEST_STAGED_AWAITING_CI"
     }
   ],
   "pending_mandatory": [
     "RECONCILE_INDEPENDENT_HIGH_RESOLUTION_ORACLE_BREADTH_AND_GATE_ACCEPTANCE_PER_RATE_WITH_FROZEN_PACKET",
     "CONFIRM_CANONICAL_PER_RATE_TEST_COVERAGE_INCLUDING_POWER_OF_TWO_GAIN_AND_ZERO_BOUNDARY",
     "QUALIFICATION_RESULT_SCHEMA_VERSION_FILTER_HASH_GLOBAL_PEAK_CHANNEL_AND_EVIDENCE_REGISTRY",
-    "PRODUCT_QUALIFIED_LABEL_MUST_BE_GATED_BY_BUILD_RATE_POLICY_EVIDENCE_NOT_RATE_MEMBERSHIP"
+    "PRODUCT_QUALIFIED_LABEL_MUST_BE_GATED_BY_BUILD_RATE_POLICY_EVIDENCE_NOT_RATE_MEMBERSHIP",
+    "INDEPENDENT_HI_RES_IDEAL_ACROSS_SIX_RATES_IS_BOUNDED_64X_128X_FINITE_SINC_SCREEN_NOT_GLOBAL_CERTIFICATE",
+    "PUBLIC_RELEASE_EVIDENCE_IDENTITY_AND_QUALIFIED_TRANSITION_STILL_NOT_IMPLEMENTED"
   ],
   "not_frozen_or_not_required_by_packet": [
     "INFINITE_SINC_TAIL_GLOBAL_INTERVAL_CERTIFICATE_AT_NEW_0_0001_DB_LIMIT",

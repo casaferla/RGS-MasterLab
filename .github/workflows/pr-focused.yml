@@ -389,6 +389,43 @@ jobs:
           }
           Write-Host 'B2E_IDEAL_RECONSTRUCTION_SCREEN_PASS_5_OF_5__NOT_CERTIFIED__GATE_G_OPEN'
 
+      # B2h: real-Hz, six-rate, high-precision ideal SIN/COS diagnostics.
+      # Reuses B2e mpmath install; independent exact-discrete ITU QTP.
+      - name: M16 B2h six-rate physical Hertz high resolution ideal screen
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/qualification/true_peak/qualify_six_rate_ideal_cpp.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'B2H_GENERATOR_AND_ITU_SELFTEST_FAILED' }
+          $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
+          $argsB2h = @(
+            'tools/qualification/true_peak/qualify_six_rate_ideal_cpp.py',
+            '--probe', (Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'),
+            '--provenance', (Join-Path $dest 'B2b_build_provenance.json'),
+            '--expected-source-sha', '${{ github.event.pull_request.head.sha || github.sha }}',
+            '--expected-run-id', '${{ github.run_id }}'
+          )
+          $resultFile = Join-Path $dest 'B2h_six_rate_ideal_result.json'
+          python @argsB2h | Set-Content -Path $resultFile -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'B2H_SIX_RATE_IDEAL_SCREEN_FAILED' }
+          $report = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+          $rates = @($report.results | ForEach-Object { $_.rate_hz }) -join ','
+          if ($report.status -ne 'B2H_SIX_RATE_HIGH_RES_IDEAL_SCREEN_AND_DISCRETE_CPP_PASS' -or
+              $report.production_gate_g -ne 'NOT_COMPLETE' -or
+              $report.release_qualification -ne 'NOT_AUTHORIZED' -or
+              $report.full_global_continuous_ideal_certificate -ne 'NOT_EXECUTED' -or
+              $report.cases -ne 6 -or
+              $report.results.Count -ne 6 -or
+              $rates -ne '44100,48000,88200,96000,176400,192000' -or
+              @($report.results | Where-Object { $_.screen -ne 'PASS' -or
+                $_.rgs_qtp_0_01_vs_discrete_itu -ne 'PASS' -or
+                $_.ideal_tail_interval_certificate -ne 'NOT_EXECUTED' -or
+                $_.qualification_status -ne 'SUPPORTED_UNQUALIFIED' }).Count -ne 0) {
+            throw 'B2H_SIX_RATE_SCOPE_AND_NUMERIC_RESULT_CONTRACT_FAILED'
+          }
+          Write-Host 'B2H_SIX_RATE_HIRES_DIAGNOSTIC_AND_ITU_CPP_PASS_6_OF_6__GATE_G_OPEN'
+
       - name: Upload B2b Windows C++ probe (NO EBU AUDIO)
         if: success()
         uses: actions/upload-artifact@v4
