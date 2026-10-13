@@ -34,18 +34,11 @@ Item {
         anchors.margins: 8
         spacing: 6
 
-        // Header Action Bar
+        // Header Action Bar: the shared DSP host already names "Compressor".
+        // UX-003: keep Reset aligned right without a redundant local title.
         RowLayout {
             Layout.fillWidth: true
             spacing: 12
-
-            Text {
-                text: "DYNAMICS COMPRESSOR"
-                color: root.textSecondary
-                font.family: "Segoe UI"
-                font.pixelSize: 11
-                font.weight: Font.Bold
-            }
 
             Item { Layout.fillWidth: true }
 
@@ -113,6 +106,9 @@ Item {
 
                         property var pointsList: root.viewModel ? root.viewModel.transferCurvePoints : []
                         property var handlesList: root.viewModel ? root.viewModel.transferCurveHandles : []
+                        // FIX-UI-006: bypass must actively repaint the STATIC curve;
+                        // GR HISTORY has separate audible-state and alpha rules.
+                        readonly property bool isBypassed: root.viewModel ? root.viewModel.bypass : false
 
                         readonly property real plotXMinDbfs: root.viewModel ? root.viewModel.plotXMinDbfs : -60.0
                         readonly property real plotXMaxDbfs: 6.0
@@ -131,6 +127,7 @@ Item {
 
                         onPointsListChanged: requestPaint()
                         onHandlesListChanged: requestPaint()
+                        onIsBypassedChanged: requestPaint()
                         onWidthChanged: requestPaint()
                         onHeightChanged: requestPaint()
 
@@ -186,6 +183,11 @@ Item {
                                 ctx.setLineDash([])
                             }
 
+                            // FIX-UI-006: only editable static curve and handles fade
+                            // in Bypass. The grid, labels and GR HISTORY remain
+                            // independent; their truth semantics must not change.
+                            ctx.globalAlpha = isBypassed ? 0.5 : 1.0
+
                             // Dynamics Copper Transfer Curve
                             if (pointsList && pointsList.length > 0) {
                                 ctx.strokeStyle = "#C4774A"
@@ -223,6 +225,7 @@ Item {
                                     ctx.stroke()
                                 }
                             }
+                            ctx.globalAlpha = 1.0
                         }
 
                         MouseArea {

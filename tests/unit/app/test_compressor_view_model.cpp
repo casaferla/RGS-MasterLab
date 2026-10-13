@@ -30,6 +30,7 @@ private slots:
     void peakRmsApplicabilityPreservesStoredValue();
     void monoStereoApplicabilityPreservesStoredValue();
     void staticTransferCurveOraclePoints();
+    void extremeThresholdPlotContinuity();
     void resetToDefaultState();
     void textDraftContractAndCommitCancel();
     void sliderDraftAndCommitCycle();
@@ -316,6 +317,85 @@ void CompressorViewModelTest::staticTransferCurveOraclePoints()
             break;
         }
     }
+}
+
+// FIX-UI-007: a legal soft knee can extend left of -120 dBFS.
+// The plotting grid must sample the *whole visible viewport*, not a fixed
+// -120..+6 segment. This is a display contract, never a DSP range change.
+void CompressorViewModelTest::extremeThresholdPlotContinuity()
+{
+    CompressorViewModel vm;
+    constexpr double kRightEdge = 6.0;
+    constexpr double kTolerance = 1.0e-8;
+    const auto initialGeneration = vm.preview_generation();
+
+    for (const double threshold : {-116.0, -117.0, -118.0, -119.0, -120.0}) {
+        for (const double knee : {0.0, 6.0, 24.0}) {
+            for (const double makeup : {0.0, 24.0}) {
+                for (const double ratio : {1.0, 20.0}) {
+                    vm.setThresholdDbfs(threshold);
+                    vm.setKneeDb(knee);
+                    vm.setMakeupGainDb(makeup);
+                    vm.setRatio(ratio);
+
+                    const auto points = vm.transfer_curve_points();
+                    const auto handles = vm.transfer_curve_handles();
+                    const double xMin = vm.plot_x_min_dbfs();
+                    const double yMin = vm.plot_y_min_dbfs();
+                    const double yMax = vm.plot_y_max_dbfs();
+                    QCOMPARE(points.size(), 191);
+                    QCOMPARE(handles.size(), 4);
+                    QVERIFY(xMin <= threshold - knee * 0.5);
+                    QVERIFY(xMin < kRightEdge);
+                    QCOMPARE(points.constFirst().toMap()
+                             .value(QStringLiteral("inputDbfs")).toDouble(), xMin);
+                    QCOMPARE(points.constLast().toMap()
+                             .value(QStringLiteral("inputDbfs")).toDouble(), kRightEdge);
+
+                    double previousInput = xMin - 1.0;
+                    for (const auto& point : points) {
+                        const auto map = point.toMap();
+                        const double input = map.value(QStringLiteral("inputDbfs")).toDouble();
+                        const double output = map.value(QStringLiteral("outputDbfs")).toDouble();
+                        const double gr = map.value(QStringLiteral("gainReductionDb")).toDouble();
+                        QVERIFY(std::isfinite(input));
+                        QVERIFY(std::isfinite(output));
+                        QVERIFY(input > previousInput);
+                        QVERIFY(input >= xMin && input <= kRightEdge);
+                        QVERIFY(output >= yMin - kTolerance);
+                        QVERIFY(output <= yMax + kTolerance);
+                        QVERIFY(std::abs((input - gr + makeup) - output) <= kTolerance);
+                        previousInput = input;
+                    }
+                    for (const auto& handle : handles) {
+                        const auto map = handle.toMap();
+                        const double x = map.value(QStringLiteral("inputDbfs")).toDouble();
+                        const double y = map.value(QStringLiteral("outputDbfs")).toDouble();
+                        QVERIFY(x >= xMin && x <= kRightEdge);
+                        QVERIFY(y >= yMin - kTolerance && y <= yMax + kTolerance);
+                    }
+
+                    if (knee == 24.0) {
+                        // Genuine left-of--120 support in the observed FQ57
+                        // extreme: x(Knee) = Threshold - 12 dB.
+                        QVERIFY(xMin < -120.0);
+                        const double firstInput = points.constFirst().toMap()
+                            .value(QStringLiteral("inputDbfs")).toDouble();
+                        QVERIFY(firstInput <= threshold - 12.0);
+                    }
+                }
+            }
+        }
+    }
+
+    // Display geometry edits are permitted preview requests, but do not
+    // directly render audio here or silently alter the 4/5 mode contract.
+    QVERIFY(vm.preview_generation() >= initialGeneration);
+    vm.resetToDefault();
+    const auto defaults = vm.transfer_curve_points();
+    QCOMPARE(defaults.constFirst().toMap()
+             .value(QStringLiteral("inputDbfs")).toDouble(),
+             vm.plot_x_min_dbfs());
 }
 
 void CompressorViewModelTest::resetToDefaultState()

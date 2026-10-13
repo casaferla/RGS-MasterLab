@@ -64,6 +64,11 @@ jobs:
             --expected-head '${{ github.event.pull_request.head.sha || github.sha }}' \
             --output "${RUNNER_TEMP}/B2i_linux_evidence_guard.json"
 
+      # Minor Fix G1: QML source-only contract; physical visual gate is separate.
+      - name: Minor Fix G1 Compressor QML static regression (Linux)
+        run: |
+          python tools/qualification/ui/verify_compressor_minor_fix_g1.py
+
       - name: Build Focused DSP Targets
         run: |
           cmake --build build-linux --target \
@@ -167,6 +172,13 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python tools/qualification/true_peak/verify_gate_g_evidence.py --matrix tools/qualification/true_peak/b2g_gate_g_coverage_matrix.json --expected-head '${{ github.event.pull_request.head.sha || github.sha }}' --output "$env:RUNNER_TEMP\B2i_windows_evidence_guard.json"
           if ($LASTEXITCODE -ne 0) { throw 'B2I_GATE_G_PROVENANCE_AND_STATUS_RECONCILIATION_FAILED' }
+
+      # Minor Fix G1: additional QML source contract (not a visual substitute).
+      - name: Minor Fix G1 Compressor QML static regression (Windows)
+        shell: pwsh
+        run: |
+          python tools/qualification/ui/verify_compressor_minor_fix_g1.py
+          if ($LASTEXITCODE -ne 0) { throw 'MINOR_FIX_G1_STATIC_QML_REGRESSION' }
 
       - name: Build Focused DSP Targets (Release)
         run: |

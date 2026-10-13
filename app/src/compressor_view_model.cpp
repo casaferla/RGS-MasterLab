@@ -494,25 +494,11 @@ void CompressorViewModel::update_cached_curve() const
     cachedTransferCurvePoints_.clear();
     cachedTransferCurveHandles_.clear();
 
+    // FIX-UI-007: resolve the actual viewport AFTER computing handles.
+    // Threshold is legally -120 dBFS, while its lower soft-knee handle may
+    // lie below -120. A fixed -120..+6 sample grid leaves a visible gap.
     constexpr int kPoints = 191;
-    constexpr double kMinDbfs = -120.0;
     constexpr double kMaxDbfs = 6.0;
-    constexpr double kStep = (kMaxDbfs - kMinDbfs) / (kPoints - 1);
-
-    cachedTransferCurvePoints_.reserve(kPoints);
-    for (int i = 0; i < kPoints; ++i) {
-        const double inDbfs = kMinDbfs + i * kStep;
-        const double gr = compute_gain_reduction_db(inDbfs, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
-        const double outDbfs = inDbfs - gr + draftMakeupGainDb_;
-
-        QVariantMap map;
-        map.insert(QStringLiteral("inputDbfs"), inDbfs);
-        map.insert(QStringLiteral("outputDbfs"), outDbfs);
-        map.insert(QStringLiteral("gainReductionDb"), gr);
-        map.insert(QStringLiteral("x"), inDbfs);
-        map.insert(QStringLiteral("y"), outDbfs);
-        cachedTransferCurvePoints_.append(map);
-    }
 
     cachedTransferCurveHandles_.reserve(4);
 
@@ -591,6 +577,29 @@ void CompressorViewModel::update_cached_curve() const
         if (inX < minX) minX = inX;
     }
     cachedPlotXMinDbfs_ = (minX < -60.0) ? std::floor((minX - 0.001) / 6.0) * 6.0 : -60.0;
+
+    // Sample the SAME frozen Compressor transfer law, now across the full
+    // plot support (including any below--120 dBFS presentation extension).
+    // These are visualization points only; no DSP range, gain law, parameter
+    // validity, audio buffer or reduction kernel is altered.
+    const double kStep = (kMaxDbfs - cachedPlotXMinDbfs_) / (kPoints - 1);
+    cachedTransferCurvePoints_.reserve(kPoints);
+    for (int i = 0; i < kPoints; ++i) {
+        const double inDbfs = (i == kPoints - 1)
+            ? kMaxDbfs
+            : cachedPlotXMinDbfs_ + i * kStep;
+        const double gr = compute_gain_reduction_db(
+            inDbfs, draftThresholdDbfs_, draftRatio_, draftKneeDb_);
+        const double outDbfs = inDbfs - gr + draftMakeupGainDb_;
+
+        QVariantMap map;
+        map.insert(QStringLiteral("inputDbfs"), inDbfs);
+        map.insert(QStringLiteral("outputDbfs"), outDbfs);
+        map.insert(QStringLiteral("gainReductionDb"), gr);
+        map.insert(QStringLiteral("x"), inDbfs);
+        map.insert(QStringLiteral("y"), outDbfs);
+        cachedTransferCurvePoints_.append(map);
+    }
 
     double minY = -60.0;
     double maxY = 6.0;
