@@ -155,9 +155,11 @@ Rectangle {
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 8
-                        spacing: 6
+                        // FIX-UI-004: reclaim label width at the 164px chain
+                        // minimum while preserving fixed LED/BYP/error slots.
+                        anchors.leftMargin: 7
+                        anchors.rightMargin: 4
+                        spacing: 2
 
                         // Configuration Indicator LED
                         Rectangle {

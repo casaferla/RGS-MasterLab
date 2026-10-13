@@ -73,6 +73,10 @@ jobs:
         run: |
           python tools/qualification/ui/verify_compressor_minor_fix_g2.py
 
+      - name: Minor Fix G3 UI static guard (Linux)
+        run: |
+          python tools/qualification/ui/verify_minor_fix_g3.py
+
       - name: Build Focused DSP Targets
         run: |
           cmake --build build-linux --target \
@@ -189,6 +193,12 @@ jobs:
         run: |
           python tools/qualification/ui/verify_compressor_minor_fix_g2.py
           if ($LASTEXITCODE -ne 0) { throw 'MINOR_FIX_G2_STATIC_PROVENANCE_REGRESSION' }
+
+      - name: Minor Fix G3 UI static guard (Windows)
+        shell: pwsh
+        run: |
+          python tools/qualification/ui/verify_minor_fix_g3.py
+          if ($LASTEXITCODE -ne 0) { throw 'MINOR_FIX_G3_STATIC_UI_REGRESSION' }
 
       - name: Build Focused DSP Targets (Release)
         run: |

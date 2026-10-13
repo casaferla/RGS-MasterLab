@@ -44,6 +44,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QWindow>
+#include <QWheelEvent>
 
 #include <cmath>
 #include <memory>
@@ -1662,6 +1663,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr && dspChainStateText0 != nullptr, "Row 0 (Input Gain) components must exist");
     QVERIFY2(dspChainRow1 != nullptr && dspChainConfigLed1 != nullptr && dspChainStateText1 != nullptr, "Row 1 (Parametric EQ) components must exist");
 
+    // FIX-UI-004: full 12px title in 164px sidebar (no badge changes).
+    auto* chainEqTitle = qobject_cast<QQuickItem*>(
+        dspChainRow1->findChild<QObject*>(
+            QStringLiteral("dspChainModuleTitle_1")));
+    QVERIFY(chainEqTitle);
+    QCOMPARE(chainEqTitle->property("text").toString(),
+             QStringLiteral("Parametric EQ"));
+    window->resize(QSize{1184, 688});
+    QTest::qWait(80);
+    QVERIFY2(!chainEqTitle->property("truncated").toBool(),
+             "FIX-UI-004: Parametric EQ title must not be elided");
+    QVERIFY2(chainEqTitle->implicitWidth() <= chainEqTitle->width() + 0.5,
+             "FIX-UI-004: full 12px title must fit without scaling");
+
     // Verify Compressor Editor components
     auto* compressorEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("compressorEditor"));
     auto* dspHostModuleTitle = dspEditorHostObj->findChild<QObject*>(QStringLiteral("dspHostModuleTitle"));
@@ -2000,6 +2015,33 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // Reset button restores 0.0 dB default
     QVERIFY2(QMetaObject::invokeMethod(resetGainButton, "clicked"), "Clicking resetGainButton must succeed");
     QCoreApplication::processEvents();
+    QCOMPARE(gainViewModel.gain_db(), 0.0);
+    QVERIFY(gainFillTracksKnob());
+
+    // UX-002: real native wheel dispatch with one 0.1dB VM transaction.
+    auto* gainSliderItem = qobject_cast<QQuickItem*>(gainSlider);
+    QVERIFY(gainSliderItem);
+    QVERIFY(find_child_by_name(gainSlider, QStringLiteral("inputGainWheelHandler")));
+    const QPointF wheelPos = gainSliderItem->mapToScene(
+        QPointF{gainSliderItem->width() / 2.0,
+                gainSliderItem->height() / 2.0});
+    auto sendGainWheel = [&](int delta) {
+        QTest::mouseMove(window, wheelPos.toPoint());
+        QWheelEvent wheelEvent{
+            wheelPos, window->mapToGlobal(wheelPos.toPoint()),
+            QPoint{}, QPoint{0, delta}, Qt::NoButton,
+            Qt::NoModifier, Qt::NoScrollPhase, false};
+        QCoreApplication::sendEvent(window, &wheelEvent);
+        QCoreApplication::processEvents();
+    };
+    sendGainWheel(120);
+    QCOMPARE(gainViewModel.gain_db(), 0.1);
+    QCOMPARE(gainDbDisplay->property("text").toString(), QStringLiteral("+0.1 dB"));
+    sendGainWheel(-120);
+    QCOMPARE(gainViewModel.gain_db(), 0.0);
+    sendGainWheel(-120);
+    QCOMPARE(gainViewModel.gain_db(), -0.1);
+    gainViewModel.undo();
     QCOMPARE(gainViewModel.gain_db(), 0.0);
     QVERIFY(gainFillTracksKnob());
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));

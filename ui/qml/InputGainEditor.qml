@@ -155,6 +155,36 @@ Item {
                         // immediately because Slider.pressed is false for them.
                         property real pendingGainDb: root.currentGainDb
 
+                        // UX-002: accumulate sub-detent motion without
+                        // scheduling a render for each high-resolution tick.
+                        property real wheelRemainder: 0
+
+                        WheelHandler {
+                            id: gainWheelHandler
+                            objectName: "inputGainWheelHandler"
+                            target: null
+                            orientation: Qt.Vertical
+                            enabled: gainSlider.enabled && !gainSlider.pressed
+                            onWheel: function(event) {
+                                gainSlider.wheelRemainder += event.angleDelta.y
+                                var steps = Math.trunc(gainSlider.wheelRemainder / 120)
+                                if (steps !== 0) {
+                                    gainSlider.wheelRemainder -= steps * 120
+                                    var next = Math.round(
+                                        (root.currentGainDb + steps * 0.1) * 10) / 10
+                                    next = Math.max(gainSlider.from,
+                                                    Math.min(gainSlider.to, next))
+                                    if (next !== root.currentGainDb && root.viewModel) {
+                                        gainSlider.pendingGainDb = next
+                                        // One existing VM undo/preview transaction.
+                                        root.viewModel.setGainDb(next)
+                                    }
+                                }
+                                // Do not scroll the surrounding workspace.
+                                event.accepted = true
+                            }
+                        }
+
                         onMoved: {
                             pendingGainDb = gainSlider.value
                             if (!gainSlider.pressed && root.viewModel) {
