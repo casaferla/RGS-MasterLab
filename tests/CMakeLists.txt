@@ -423,7 +423,9 @@ if(MSVC)
 endif()
 add_test(
     NAME rgsml_source_metadata_panel_smoke
-    COMMAND rgsml_source_metadata_panel_smoke
+    COMMAND "${CMAKE_COMMAND}"
+        "-DRGSML_SMOKE_EXE=$<TARGET_FILE:rgsml_source_metadata_panel_smoke>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/m16_c2_smoke_ctest_diagnostic.cmake"
 )
 set_tests_properties(rgsml_source_metadata_panel_smoke PROPERTIES
     ENVIRONMENT_MODIFICATION
