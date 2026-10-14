@@ -2692,10 +2692,6 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         const auto pos = item->mapToItem(eqToolbar, QPointF{0.0, 0.0});
         return QRectF{pos, QSizeF{item->width(), item->height()}};
     };
-    const QRectF resetOn = toolbarGeometry(resetItem);
-    const QRectF overallOn = toolbarGeometry(overallItem);
-    const QRectF spectrumOn = toolbarGeometry(spectrumItem);
-    const QRectF addOn = toolbarGeometry(addItem);
     // Investigation only. Quantify the *same* exact QRectF oracle at each
     // event-loop boundary instead of assuming a Qt Quick layout cause.
     const auto traceToolbarGeometry = [&](const char* phase) {
@@ -2709,10 +2705,18 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             << "spectrum=" << toolbarGeometry(spectrumItem)
             << "add=" << toolbarGeometry(addItem);
     };
-    traceToolbarGeometry("baseline_on_before_capture");
+    traceToolbarGeometry("before_capture_resize_show");
+    // The capture helper itself resizes/shows the QQuickWindow and renders.
+    // Take the reference geometry AFTER that operation, not before a
+    // pending RowLayout reflow; retain the original exact QRectF equality.
     QVERIFY(capture_visual_evidence(window,
         QStringLiteral("minor_fix_001_eq_spectrum_on_1184x688.png"),
         QSize{1184, 688}));
+    traceToolbarGeometry("baseline_on_after_capture");
+    const QRectF resetOn = toolbarGeometry(resetItem);
+    const QRectF overallOn = toolbarGeometry(overallItem);
+    const QRectF spectrumOn = toolbarGeometry(spectrumItem);
+    const QRectF addOn = toolbarGeometry(addItem);
 
     const bool undoStateBeforeToggle = eqViewModel.can_undo();
     const quint64 previewGenBeforeToggle = eqViewModel.preview_generation();
