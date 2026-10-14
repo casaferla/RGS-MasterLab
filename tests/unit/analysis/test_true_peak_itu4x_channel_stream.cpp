@@ -1,4 +1,5 @@
 #include "internal/true_peak_itu4x_channel_stream.hpp"
+#include "internal/true_peak_chronological_buckets.hpp"
 
 #include <rgsml/core/error.hpp>
 #include <QTest>
@@ -9,6 +10,7 @@
 #include <cstddef>
 #include <limits>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace rgsml::tests {
@@ -49,6 +51,9 @@ private slots:
     void signedPhaseIndexingAndFullTail();
     void directConvolutionAndChunkPartitionIdentity();
     void lifecycleAndLateFailureAtomicity();
+    void chronologicalBucketSixRatesAndFIRParity();
+    void chronologicalHoldAndGapNeverCertifyPartial();
+    void chronologicalInvalidInputsAreAtomic();
 };
 
 void TruePeakItu4xChannelStreamTest::signedPhaseIndexingAndFullTail()
@@ -150,6 +155,105 @@ void TruePeakItu4xChannelStreamTest::lifecycleAndLateFailureAtomicity()
     QCOMPARE(s.linear_peak_so_far(), first);
     QCOMPARE(s.programme_frames(), std::uint64_t{1});
     QVERIFY(s.finalize());
+}
+
+
+void TruePeakItu4xChannelStreamTest::chronologicalBucketSixRatesAndFIRParity()
+{
+    using analysis::internal::ChronologicalTruePeakBuckets;
+    for (const std::int64_t hz : {44100,48000,88200,96000,176400,192000}) {
+        for (const std::size_t channels : {std::size_t{1}, std::size_t{2}}) {
+            auto maker = ChronologicalTruePeakBuckets::create(hz, channels);
+            QVERIFY(maker);
+            auto meter = std::move(*maker.value());
+            QCOMPARE(meter.frames_per_bucket(), hz / 100);
+            const auto frames = meter.frames_per_bucket() * 10;
+            std::vector<double> independent(static_cast<std::size_t>(frames), 0.0);
+            const auto impulse = frames - 25;
+            independent[static_cast<std::size_t>(impulse)] = 0.875;
+            for (std::int64_t i = 0; i < frames; ++i) {
+                const std::array<double, 2> current{
+                    independent[static_cast<std::size_t>(i)],
+                    -0.5 * independent[static_cast<std::size_t>(i)]};
+                QVERIFY(meter.consume_frame(
+                    std::span<const double>{current.data(), channels}, true));
+            }
+            const auto seen = meter.snapshot();
+            QVERIFY(seen.recent100msComplete);
+            QVERIFY(!seen.shortHold1sComplete);
+            QCOMPARE(seen.consumedSourceFrames, frames);
+            QCOMPARE(seen.lastCompleteBucketEnd, frames);
+            QVERIFY(std::abs(seen.recentLinearPeak[0] - oracle_peak(independent)) < 2e-15);
+            if (channels == 2) {
+                QVERIFY(std::abs(seen.recentLinearPeak[1]
+                    - 0.5 * oracle_peak(independent)) < 2e-15);
+            } else {
+                QCOMPARE(seen.recentLinearPeak[1], 0.0);
+            }
+        }
+    }
+}
+
+void TruePeakItu4xChannelStreamTest::chronologicalHoldAndGapNeverCertifyPartial()
+{
+    using analysis::internal::ChronologicalTruePeakBuckets;
+    auto created = ChronologicalTruePeakBuckets::create(48000, 1);
+    QVERIFY(created);
+    auto meter = std::move(*created.value());
+    const std::array<double, 1> spike{0.95};
+    const std::array<double, 1> silence{0.0};
+    QVERIFY(meter.consume_frame(spike, true));
+    for (int frame = 1; frame < 48000; ++frame)
+        QVERIFY(meter.consume_frame(silence, true));
+    const auto oneSecond = meter.snapshot();
+    QVERIFY(oneSecond.recent100msComplete);
+    QVERIFY(oneSecond.shortHold1sComplete);
+    QCOMPARE(oneSecond.recentLinearPeak[0], 0.0);
+    QVERIFY(oneSecond.shortHoldLinearPeak[0] > 0.9);
+
+    // One consumed but UNPROVEN frame poisons the current bucket and the
+    // 11-frame FIR support after a discontinuity; missing is never silence.
+    QVERIFY(meter.consume_gap());
+    for (int i = 1; i < 480; ++i)
+        QVERIFY(meter.consume_frame(silence, true));
+    const auto gap = meter.snapshot();
+    QVERIFY(!gap.recent100msComplete);
+    QVERIFY(!gap.shortHold1sComplete);
+    QCOMPARE(gap.recentLinearPeak[0], 0.0);
+    QCOMPARE(gap.shortHoldLinearPeak[0], 0.0);
+    for (int i = 0; i < 480 * 100; ++i)
+        QVERIFY(meter.consume_frame(silence, true));
+    const auto recovered = meter.snapshot();
+    QVERIFY(recovered.recent100msComplete);
+    QVERIFY(recovered.shortHold1sComplete);
+    QCOMPARE(recovered.recentLinearPeak[0], 0.0);
+    QCOMPARE(recovered.shortHoldLinearPeak[0], 0.0);
+}
+
+void TruePeakItu4xChannelStreamTest::chronologicalInvalidInputsAreAtomic()
+{
+    using analysis::internal::ChronologicalTruePeakBuckets;
+    QVERIFY(!ChronologicalTruePeakBuckets::create(32000, 2));
+    QVERIFY(!ChronologicalTruePeakBuckets::create(48000, 3));
+    QVERIFY(!ChronologicalTruePeakBuckets::create(48000, 1, -1));
+    auto created = ChronologicalTruePeakBuckets::create(48000, 2);
+    QVERIFY(created);
+    auto meter = std::move(*created.value());
+    const std::array<double, 2> good{0.2, -0.2};
+    QVERIFY(meter.consume_frame(good, true));
+    const auto before = meter.snapshot();
+    const std::array<double, 2> badRight{
+        0.4, std::numeric_limits<double>::quiet_NaN()};
+    QVERIFY(!meter.consume_frame(badRight, true));
+    QCOMPARE(meter.consumed_source_frames(), before.consumedSourceFrames);
+    const std::array<double, 1> shortFrame{0.1};
+    QVERIFY(!meter.consume_frame(shortFrame, true));
+    QCOMPARE(meter.consumed_source_frames(), before.consumedSourceFrames);
+    for (int i = 1; i < 480 * 10; ++i)
+        QVERIFY(meter.consume_frame(good, true));
+    const auto after = meter.snapshot();
+    QVERIFY(after.recent100msComplete);
+    QVERIFY(after.recentLinearPeak[0] > 0.0);
 }
 
 }  // namespace
