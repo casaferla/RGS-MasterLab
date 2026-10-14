@@ -1728,3 +1728,16 @@ set_tests_properties(rgsml_dsp_module_adapter_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "app;dsp_adapter;view_model"
 )
+
+# M16 C2: stdlib-only TEST-ONLY interval observation model.
+# This test does not use the Windows audio callback or authoritative M16 FIR.
+# The Focused CI regex selects the existing channel_stream_tests prefix.
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(
+    NAME rgsml_true_peak_itu4x_channel_stream_tests_c2_coverage_contract
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/unit/analysis/test_m16_c2_interval_observer.py"
+)
+set_tests_properties(rgsml_true_peak_itu4x_channel_stream_tests_c2_coverage_contract PROPERTIES
+    LABELS "analysis;true_peak;c2;test_only"
+)
