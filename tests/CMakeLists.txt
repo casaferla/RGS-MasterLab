@@ -509,10 +509,12 @@ set_tests_properties(rgsml_pcm_playback_tests PROPERTIES
 target_include_directories(rgsml_playback_support_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/platform/windows/src/internal
+        ${CMAKE_SOURCE_DIR}/analysis/src
 )
 target_link_libraries(rgsml_playback_support_tests
     PRIVATE
         rgsml_audio
+        rgsml_analysis
         rgsml_platform
         Qt6::Test
 )
@@ -533,9 +535,11 @@ if(NOT WIN32)
     target_include_directories(rgsml_playback_engine_portable_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/platform/windows/src/internal
         ${CMAKE_SOURCE_DIR}/audio/src/internal
+        ${CMAKE_SOURCE_DIR}/analysis/src
     )
     target_link_libraries(rgsml_playback_engine_portable_tests PRIVATE
         rgsml_audio
+        rgsml_analysis
         Qt6::Test
     )
     rgsml_apply_project_warnings(rgsml_playback_engine_portable_tests)

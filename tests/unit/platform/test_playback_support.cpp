@@ -1,4 +1,5 @@
 #include "playback_support.hpp"
+#include "internal/true_peak_chronological_buckets.hpp"
 
 #include "../../audio_golden/wav/golden_vectors.hpp"
 #include "../audio/wav_test_support.hpp"
@@ -266,6 +267,7 @@ private slots:
     void c2D4ConsumedPrefixLoopOverflowIsConserved();
     void c2D4QueryIsObservationalAcrossLoopAndSeek();
     void c2D4PauseDoesNotAdvanceConsumedPrefix();
+    void c2D5SinkWatermarkFeedsRealNumericalRecentOnlyAfterFullBucket();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2558,6 +2560,75 @@ void PlaybackSupportTest::c2D4PauseDoesNotAdvanceConsumedPrefix()
     const auto resumed = engine.c2_consumed_prefix(before.generation);
     QCOMPARE(resumed.processedWatermarkExclusive, std::int64_t{20});
     QVERIFY(!resumed.certifiedForLiveTruePeak);
+}
+
+void PlaybackSupportTest::c2D5SinkWatermarkFeedsRealNumericalRecentOnlyAfterFullBucket()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using analysis::internal::ChronologicalTruePeakBuckets;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 5500);
+    auto writable = pcm.mutable_view();
+    const auto l = writable.channel(0);
+    const auto r = writable.channel(1);
+    QVERIFY(l && r);
+    std::fill(l.value()->begin(), l.value()->end(), 0.0);
+    std::fill(r.value()->begin(), r.value()->end(), 0.0);
+    // A 1-frame spike between timer polls is never skipped when consumption
+    // is replayed from the owner-stamped, sink-capped prefix.
+    (*l.value())[4 * 480 + 29] = 0.9;
+    (*r.value())[4 * 480 + 29] = -0.45;
+    PlaybackEngine engine;
+    auto out = std::make_unique<FakeOutput>(384U, 4U);
+    auto* sink = out.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(out),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1101}));
+    auto numeric = ChronologicalTruePeakBuckets::create(48'000, 2);
+    QVERIFY(numeric);
+    auto accumulator = std::move(*numeric.value());
+    QVERIFY(engine.play());
+    std::int64_t fed = 0;
+    int iteration = 0;
+    // Device processes just 96 frames per iteration; coarse UI polls could
+    // miss the spike if we relied on cursor differences or rendered values.
+    for (; iteration < 80 && fed < 4800; ++iteration) {
+        sink->consume_all();
+        engine.tick();
+        const auto prefix = engine.c2_consumed_prefix();
+        QVERIFY(prefix.partitionRepresented);
+        QVERIFY(!prefix.certifiedForLiveTruePeak);
+        QVERIFY(prefix.processedWatermarkExclusive >= fed);
+        const auto parts = prefix.view();
+        QCOMPARE(parts.size(), std::size_t{1});
+        QCOMPARE(parts.front().kind, Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+        QCOMPARE(parts.front().realizationId,
+            std::optional{core::RealizationId{1101}});
+        QVERIFY(parts.front().sourceBegin && parts.front().sourceEnd);
+        // This TEST knows the immutable buffer owner and source identity.
+        // Production must NOT use a mere candidate without separate proof.
+        const auto end = *parts.front().sourceEnd;
+        for (; fed < end; ++fed) {
+            const std::array<double, 2> sample{
+                (*l.value())[static_cast<std::size_t>(fed)],
+                (*r.value())[static_cast<std::size_t>(fed)]};
+            QVERIFY(accumulator.consume_frame(sample, true));
+        }
+        const auto evidence = accumulator.snapshot();
+        if (fed < 4800) {
+            QVERIFY(!evidence.recent100msComplete);
+        }
+    }
+    QCOMPARE(fed, std::int64_t{4800});
+    const auto observed = accumulator.snapshot();
+    QVERIFY(observed.recent100msComplete);
+    QVERIFY(!observed.shortHold1sComplete);
+    QCOMPARE(observed.consumedSourceFrames, std::int64_t{4800});
+    QCOMPARE(observed.lastCompleteBucketEnd, std::int64_t{4800});
+    QVERIFY(observed.recentLinearPeak[0] > 0.85);
+    QVERIFY(observed.recentLinearPeak[1] > 0.42);
+    // The observer intentionally does not publish LIVE: the required
+    // provenance/target/chain revision is *not* bound by this test adapter.
+    QCOMPARE(engine.c2_consumed_prefix().certifiedForLiveTruePeak, false);
 }
 
 }  // namespace rgsml::tests
