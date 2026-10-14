@@ -264,6 +264,8 @@ private slots:
     void c2D4ConsumedPrefixNoFuturePartialWritesAndSeek();
     void c2D4ConsumedPrefixSrcAndHandoffExposeGaps();
     void c2D4ConsumedPrefixLoopOverflowIsConserved();
+    void c2D4QueryIsObservationalAcrossLoopAndSeek();
+    void c2D4PauseDoesNotAdvanceConsumedPrefix();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2473,6 +2475,87 @@ void PlaybackSupportTest::c2D4ConsumedPrefixLoopOverflowIsConserved()
         expected = slice.outputEnd;
     }
     QCOMPARE(expected, probe.processedWatermarkExclusive);
+}
+
+void PlaybackSupportTest::c2D4QueryIsObservationalAcrossLoopAndSeek()
+{
+    // Independent replay oracle: querying C2 metadata does not alter PCM
+    // bytes, queue scheduling, hot loop toggles, seek, or sink consumption.
+    auto audioSource = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 3000);
+    auto view = audioSource.mutable_view();
+    for (std::size_t ch = 0; ch < 2; ++ch) {
+        const auto values = view.channel(ch);
+        QVERIFY(values);
+        for (std::size_t n = 0; n < values.value()->size(); ++n) {
+            (*values.value())[n] = (ch == 0 ? 1.0 : -1.0)
+                * static_cast<double>(n % 31U) / 64.0;
+        }
+    }
+    const auto exercise = [&](bool observe) {
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(64U, 4U, 7U);
+        auto* sink = output.get();
+        auto ok = engine.install_pcm_candidate(audioSource.view(),
+            std::move(output), DeviceSampleFormat::PCM_S16,
+            std::nullopt, nullptr, core::RealizationId{1001});
+        if (!ok) return std::vector<std::byte>{};
+        ok = engine.play();
+        if (!ok) return std::vector<std::byte>{};
+        const auto loop = core::FrameRange::create(
+            core::FrameIndex{100}, core::FrameIndex{140});
+        for (int i = 0; i < 52; ++i) {
+            if (i == 5 && loop) {
+                ok = engine.set_loop(*loop.value());
+                if (!ok) return std::vector<std::byte>{};
+            }
+            if (i == 17) {
+                ok = engine.set_loop(std::nullopt);
+                if (!ok) return std::vector<std::byte>{};
+            }
+            if (i == 31) {
+                ok = engine.seek(core::FrameIndex{300});
+                if (!ok) return std::vector<std::byte>{};
+            }
+            sink->consume_all();
+            engine.tick();
+            if (observe) {
+                const auto prefix = engine.c2_consumed_prefix();
+                QVERIFY(!prefix.certifiedForLiveTruePeak);
+            }
+        }
+        return sink->history();
+    };
+    const auto noObservation = exercise(false);
+    const auto withObservation = exercise(true);
+    QVERIFY(!noObservation.empty());
+    QCOMPARE(withObservation, noObservation);
+}
+
+void PlaybackSupportTest::c2D4PauseDoesNotAdvanceConsumedPrefix()
+{
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 1000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(256U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1002}));
+    QVERIFY(engine.play());
+    sink->set_processed_frames(20);
+    const auto before = engine.c2_consumed_prefix();
+    QVERIFY(before.partitionRepresented);
+    QCOMPARE(before.processedWatermarkExclusive, std::int64_t{20});
+    QVERIFY(engine.pause());
+    engine.tick();
+    const auto frozen = engine.c2_consumed_prefix(before.generation);
+    QCOMPARE(frozen.processedWatermarkExclusive, before.processedWatermarkExclusive);
+    QCOMPARE(frozen.size, before.size);
+    QCOMPARE(frozen.slices[0].sourceEnd, before.slices[0].sourceEnd);
+    QVERIFY(!frozen.certifiedForLiveTruePeak);
+    QVERIFY(engine.play());
+    const auto resumed = engine.c2_consumed_prefix(before.generation);
+    QCOMPARE(resumed.processedWatermarkExclusive, std::int64_t{20});
+    QVERIFY(!resumed.certifiedForLiveTruePeak);
 }
 
 }  // namespace rgsml::tests
