@@ -266,7 +266,7 @@ public:
     [[nodiscard]] QString display_name() const override
         { return QStringLiteral("True Peak Meter"); }
     [[nodiscard]] QString workspace_context_label() const override
-        { return workflowContext_ + QStringLiteral(" · Analysis"); }
+        { return workflowContext_; }
     [[nodiscard]] QString configuration_state() const override
         { return QStringLiteral("Default"); }
     [[nodiscard]] bool bypass_supported() const noexcept override { return false; }

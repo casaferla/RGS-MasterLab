@@ -23,6 +23,11 @@ class TruePeakStaticCoordinator final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString stateText READ state_text NOTIFY changed)
     Q_PROPERTY(QString peakText READ peak_text NOTIFY changed)
+    Q_PROPERTY(QString fullLeftText READ full_left_text NOTIFY changed)
+    Q_PROPERTY(QString fullRightText READ full_right_text NOTIFY changed)
+    Q_PROPERTY(double fullLeftMeterLevel READ full_left_meter_level NOTIFY changed)
+    Q_PROPERTY(double fullRightMeterLevel READ full_right_meter_level NOTIFY changed)
+    Q_PROPERTY(int measuredChannelCount READ measured_channel_count NOTIFY changed)
     Q_PROPERTY(QString channelText READ channel_text NOTIFY changed)
     Q_PROPERTY(QString sampleRateText READ sample_rate_text NOTIFY changed)
     Q_PROPERTY(QString qualificationText READ qualification_text NOTIFY changed)
@@ -49,6 +54,11 @@ public:
 
     [[nodiscard]] QString state_text() const;
     [[nodiscard]] QString peak_text() const;
+    [[nodiscard]] QString full_left_text() const;
+    [[nodiscard]] QString full_right_text() const;
+    [[nodiscard]] double full_left_meter_level() const;
+    [[nodiscard]] double full_right_meter_level() const;
+    [[nodiscard]] int measured_channel_count() const noexcept;
     [[nodiscard]] QString channel_text() const;
     [[nodiscard]] QString sample_rate_text() const;
     [[nodiscard]] QString qualification_text() const;

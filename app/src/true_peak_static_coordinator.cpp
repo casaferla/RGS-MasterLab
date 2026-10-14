@@ -1,11 +1,59 @@
 #include "true_peak_static_coordinator.hpp"
 
 #include <QMetaObject>
+#include <algorithm>
+#include <optional>
 #include <QString>
 
 #include <utility>
 
 namespace rgsml::app {
+namespace {
+
+// A visual transfer from dBTP to pixel coverage, not an audio-processing
+// algorithm or a safety/ceiling decision. The candidate display scale is
+// [-60,+6] dBTP; the exact numeric value remains unclamped in readout.
+[[nodiscard]] double displayed_level(const std::optional<double>& db)
+{
+    if (!db) return 0.0; // Exact silence is an empty bar, not -60 dBTP.
+    return std::clamp((*db + 60.0) / 66.0, 0.0, 1.0);
+}
+
+[[nodiscard]] QString channel_reading(const std::optional<double>& db)
+{
+    if (!db) return QStringLiteral("−∞ dBTP"); // Actual exact channel silence.
+    return QString::number(*db, 'f', 2) + QStringLiteral(" dBTP");
+}
+} // namespace
+
+int TruePeakStaticCoordinator::measured_channel_count() const noexcept
+{
+    return completed_ ? static_cast<int>(completed_->measurement.channel_count()) : 0;
+}
+
+QString TruePeakStaticCoordinator::full_left_text() const
+{
+    if (!completed_) return QStringLiteral("—");
+    return channel_reading(completed_->measurement.per_channel_db_tp()[0]);
+}
+
+QString TruePeakStaticCoordinator::full_right_text() const
+{
+    if (measured_channel_count() != 2) return QStringLiteral("—");
+    return channel_reading(completed_->measurement.per_channel_db_tp()[1]);
+}
+
+double TruePeakStaticCoordinator::full_left_meter_level() const
+{
+    if (!completed_) return 0.0;
+    return displayed_level(completed_->measurement.per_channel_db_tp()[0]);
+}
+
+double TruePeakStaticCoordinator::full_right_meter_level() const
+{
+    if (measured_channel_count() != 2) return 0.0;
+    return displayed_level(completed_->measurement.per_channel_db_tp()[1]);
+}
 
 QString TruePeakStaticCoordinator::state_text() const
 {

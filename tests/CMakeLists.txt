@@ -387,6 +387,10 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
     ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_binding.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_binding.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_coordinator.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_coordinator.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp

@@ -2,6 +2,7 @@
 #include "audition_source_selector.hpp"
 #include "compressor_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
+#include "true_peak_static_coordinator.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
 #include "gold_selection_view_model.hpp"
@@ -544,9 +545,12 @@ void SourceMetadataPanelSmokeTest::truePeakReadOnlyAnalysisVisualEvidence()
              QStringLiteral("TRUE_PEAK_METER"));
     QVERIFY(!model.active_module()->bypass_supported());
 
+    app::TruePeakStaticCoordinator visualMeasurement;
     QQmlEngine engine;
     engine.rootContext()->setContextProperty(
         QStringLiteral("m16VisualAdapterModel"), &model);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("m16StaticVisualProvider"), &visualMeasurement);
     QQmlComponent component{&engine};
     static constexpr auto qml = R"qml(
 import QtQuick
@@ -580,7 +584,7 @@ Window {
             adapterModel: m16VisualAdapterModel
             // Explicitly NO source-bound measurement in this fixture:
             // no numeric true peak or fake audio source may appear.
-            truePeakStaticViewModel: null
+            truePeakStaticViewModel: m16StaticVisualProvider
         }
     }
 }
@@ -610,6 +614,14 @@ Window {
         componentRoot.data(), QStringLiteral("truePeakFullResourceCard"));
     auto* provenance = find_child_by_name(
         componentRoot.data(), QStringLiteral("truePeakProvenanceCard"));
+    auto* staticBay = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakStaticMeterBay"));
+    auto* leftLane = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakLeftLane"));
+    auto* rightLane = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakRightLane"));
+    auto* sharedRail = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakMeterSharedRail"));
     auto* row = find_child_by_name(
         componentRoot.data(), QStringLiteral("dspChainRow_3"));
     auto* previewBadge = find_child_by_name(
@@ -622,11 +634,14 @@ Window {
         componentRoot.data(), QStringLiteral("eqUndoButton"));
     auto* redo = find_child_by_name(
         componentRoot.data(), QStringLiteral("eqRedoButton"));
-    QVERIFY2(host && chain && meter && recent && full && provenance && row
+    QVERIFY2(host && chain && meter && recent && full && provenance
+             && staticBay && leftLane && rightLane && sharedRail && row
              && previewBadge && active && bypass && undo && redo,
              "M16 needs a real row/editor/cards in the standard DSP host");
     QCOMPARE(host->property("moduleTitle").toString(),
              QStringLiteral("True Peak Meter"));
+    QCOMPARE(host->property("moduleContext").toString(),
+             QStringLiteral("Mastering"));
     QVERIFY2(meter->property("visible").toBool(),
              "Selecting virtual True Peak must display its editor");
     QVERIFY2(!previewBadge->property("visible").toBool(),
@@ -642,6 +657,16 @@ Window {
     QCOMPARE(full->property("reading").toString(),
              QStringLiteral("—"));
     QCOMPARE(full->property("available").toBool(), false);
+    QCOMPARE(leftLane->property("reading").toString(), QStringLiteral("—"));
+    QCOMPARE(rightLane->property("reading").toString(), QStringLiteral("—"));
+    QVERIFY(!leftLane->property("available").toBool());
+    QVERIFY(!rightLane->property("available").toBool());
+    QCOMPARE(leftLane->property("level").toDouble(), 0.0);
+    QCOMPARE(rightLane->property("level").toDouble(), 0.0);
+    QVERIFY2(staticBay->property("width").toDouble() > 340.0,
+             "The True Peak static meter well must have its own region");
+    QVERIFY2(sharedRail->property("width").toDouble() >= 278.0,
+             "The shared True Peak rail must remain usable");
     QCOMPARE(provenance->property("stateLabel").toString(),
              QStringLiteral("NO SOURCE"));
     QCOMPARE(provenance->property("qualification").toString(),
@@ -671,6 +696,14 @@ Window {
         QVERIFY2(check_item_contained_in_ancestor(
                      qobject_cast<QQuickItem*>(meter), captureSurface),
                  "The True Peak editor must fit the native capture scene");
+        QVERIFY2(check_item_contained_in_ancestor(
+                     qobject_cast<QQuickItem*>(staticBay),
+                     qobject_cast<QQuickItem*>(meter)),
+                 "The static meter well must remain inside M16 editor");
+        QVERIFY2(check_item_contained_in_ancestor(
+                     qobject_cast<QQuickItem*>(sharedRail),
+                     qobject_cast<QQuickItem*>(meter)),
+                 "The shared rail must remain inside M16 editor");
         const auto screenshot = captureSurface->grabToImage();
         QVERIFY2(screenshot, "M16 True Peak offscreen capture must start");
         QSignalSpy readySpy{screenshot.data(), &QQuickItemGrabResult::ready};
@@ -686,10 +719,100 @@ Window {
         if (!evidenceDir.isEmpty()) {
             QVERIFY(QDir{}.mkpath(evidenceDir));
             const QString fileName = QStringLiteral(
-                "m16_true_peak_meter_readonly_nosource_exact_%1x%2.png")
+                "m16_true_peak_meter_b4d_static_lanes_nosource_exact_%1x%2.png")
                 .arg(size.width()).arg(size.height());
             QVERIFY2(picture.save(QDir{evidenceDir}.filePath(fileName), "PNG"),
                      "Native M16 screenshot must be saved into CI artifact");
+        }
+    }
+
+    // Real, source-bound stereo case using the same production render and
+    // complete-resource M16 analysis as the app. No values are hard-coded
+    // into the QML fixture; live C2 remains genuinely UNAVAILABLE.
+    auto sourceBuffer = audio::AudioBuffer::create(
+        render_support::format(audio::ChannelLayout::STEREO_LR, 48000),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0}, render_support::frame_count(2048));
+    QVERIFY(sourceBuffer);
+    auto leftSamples = sourceBuffer.value()->mutable_view().channel(0);
+    auto rightSamples = sourceBuffer.value()->mutable_view().channel(1);
+    QVERIFY(leftSamples && rightSamples);
+    for (std::int64_t n = 0; n < 2048; ++n) {
+        (*leftSamples.value())[static_cast<std::size_t>(n)] =
+            n == 11 ? 0.78 : 0.0;
+        (*rightSamples.value())[static_cast<std::size_t>(n)] =
+            n == 23 ? -0.42 : 0.0;
+    }
+    auto emptyChain = dsp::ProcessingChain::create(
+        *registry.value(),
+        {dsp::ProcessingStage::MASTER, dsp::ChainSegment::MANUAL});
+    QVERIFY(emptyChain);
+    auto renderRequest = render::RenderRequest::create(
+        sourceBuffer.value()->view(), render_support::frame_range(0,2048),
+        *emptyChain.value(), std::vector<dsp::ModuleExecutionBinding>{},
+        render_support::frame_count(16));
+    QVERIFY(renderRequest);
+    auto renderOutcome = render::render_preview(
+        *renderRequest.value(), *registry.value());
+    QVERIFY(renderOutcome);
+    auto published = std::make_shared<const render::RenderResult>(
+        std::move(*renderOutcome.value()));
+    auto sourceReference = core::ResourceReference::create(
+        "test", "m16-b4d-real-pcm", true, false);
+    QVERIFY(sourceReference);
+    visualMeasurement.source_committed(
+        *sourceReference.value(), app::TruePeakExpectedSource{
+            render_support::frame_count(2048),
+            *core::SampleRate::create(48000).value(),
+            audio::ChannelLayout::STEREO_LR});
+    visualMeasurement.processed_changed(
+        published, core::RealizationId{4711});
+    QTRY_VERIFY_WITH_TIMEOUT(
+        visualMeasurement.state()
+            == app::TruePeakStaticCoordinator::State::READY, 10000);
+    QCoreApplication::processEvents();
+    QCOMPARE(visualMeasurement.measured_channel_count(), 2);
+    QVERIFY2(visualMeasurement.full_left_meter_level()
+                 > visualMeasurement.full_right_meter_level(),
+             "Genuine measured L > R must be reflected by M16 per-channel bars");
+    QVERIFY(leftLane->property("available").toBool());
+    QVERIFY(rightLane->property("available").toBool());
+    QCOMPARE(leftLane->property("reading").toString(),
+             visualMeasurement.full_left_text());
+    QCOMPARE(rightLane->property("reading").toString(),
+             visualMeasurement.full_right_text());
+    QCOMPARE(full->property("reading").toString(),
+             visualMeasurement.peak_text());
+    QCOMPARE(recent->property("reading").toString(),
+             QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(provenance->property("qualification").toString(),
+             QStringLiteral("SUPPORTED · UNQUALIFIED"));
+
+    for (const auto size : {QSize{1184, 688}, QSize{1440, 900}}) {
+        captureSurface->setWidth(size.width());
+        captureSurface->setHeight(size.height());
+        window->resize(size);
+        QTest::qWait(120);
+        QCoreApplication::processEvents();
+        const auto pictureResult = captureSurface->grabToImage();
+        QVERIFY(pictureResult);
+        QSignalSpy captureSpy{pictureResult.data(), &QQuickItemGrabResult::ready};
+        if (captureSpy.empty()) {
+            QVERIFY2(captureSpy.wait(15000),
+                     "Real M16 per-channel image capture must finish");
+        }
+        const QImage realImage = pictureResult->image();
+        QVERIFY(!realImage.isNull());
+        QCOMPARE(realImage.size(), size);
+        const auto evidenceDir =
+            qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if (!evidenceDir.isEmpty()) {
+            QVERIFY(QDir{}.mkpath(evidenceDir));
+            const auto fileName = QStringLiteral(
+                "m16_true_peak_meter_b4d_measured_fullresource_exact_%1x%2.png")
+                .arg(size.width()).arg(size.height());
+            QVERIFY2(realImage.save(QDir{evidenceDir}.filePath(fileName), "PNG"),
+                     "M16 genuine full-resource evidence must be persisted");
         }
     }
 

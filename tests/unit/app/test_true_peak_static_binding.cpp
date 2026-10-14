@@ -196,11 +196,22 @@ void TruePeakStaticBindingTest::asynchronousSourceAndRealizationStaleness()
     QCOMPARE(coordinator.ready()->realizationId.value, std::uint64_t{31});
     QCOMPARE(coordinator.ready()->measurement.qualification_status(),
              analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+    QCOMPARE(coordinator.measured_channel_count(), 2);
+    QVERIFY(coordinator.full_left_text().endsWith(QStringLiteral(" dBTP")));
+    QVERIFY(coordinator.full_right_text().endsWith(QStringLiteral(" dBTP")));
+    QVERIFY(coordinator.full_left_meter_level() > 0.0);
+    QVERIFY(coordinator.full_right_meter_level() > 0.0);
+    QVERIFY(coordinator.full_left_meter_level() > coordinator.full_right_meter_level());
 
     // Old source result is invalidated synchronously, even if its worker is busy.
     coordinator.processed_changed(full.value()->result, core::RealizationId{32});
     coordinator.invalidate_source();
     QVERIFY(coordinator.ready() == nullptr);
+    QCOMPARE(coordinator.measured_channel_count(), 0);
+    QCOMPARE(coordinator.full_left_text(), QStringLiteral("—"));
+    QCOMPARE(coordinator.full_right_text(), QStringLiteral("—"));
+    QCOMPARE(coordinator.full_left_meter_level(), 0.0);
+    QCOMPARE(coordinator.full_right_meter_level(), 0.0);
     QCOMPARE(coordinator.state(), app::TruePeakStaticCoordinator::State::NO_SOURCE);
     coordinator.source_committed(*two.value(), full.value()->expected);
     QVERIFY(coordinator.source_reference()->same_resource_identity(*two.value()));
