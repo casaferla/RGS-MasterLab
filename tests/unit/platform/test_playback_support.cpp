@@ -2520,7 +2520,9 @@ void PlaybackSupportTest::c2D4QueryIsObservationalAcrossLoopAndSeek()
             engine.tick();
             if (observe) {
                 const auto prefix = engine.c2_consumed_prefix();
-                QVERIFY(!prefix.certifiedForLiveTruePeak);
+                if (prefix.certifiedForLiveTruePeak) {
+                    return std::vector<std::byte>{}; // fail the outer parity oracle
+                }
             }
         }
         return sink->history();
