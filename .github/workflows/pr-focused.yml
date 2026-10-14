@@ -318,6 +318,8 @@ jobs:
           path: |
             ${{ github.workspace }}\build\visual-evidence\*.png
             ${{ github.workspace }}\build\visual-evidence\*.json
+            ${{ github.workspace }}\build\visual-evidence\*.txt
+            ${{ github.workspace }}\m12b-smoke.txt
           retention-days: 7
 # B2b only. Export the EXACT-SHA C++ probe + Qt dependencies, not WAVs,
       # and only after the Windows focused tests (including the selftest) pass.

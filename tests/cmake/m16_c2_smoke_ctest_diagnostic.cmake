@@ -34,15 +34,42 @@ else()
 endif()
 
 if(NOT "${_smoke_status}" STREQUAL "0" OR NOT EXISTS "${_qt_log}")
-    if(_qt_length GREATER 16000)
-        math(EXPR _tail_offset "${_qt_length} - 16000")
-        string(SUBSTRING "${_qt_log_content}" ${_tail_offset} -1 _qt_tail)
-    else()
-        set(_qt_tail "${_qt_log_content}")
+    # Emit every Qt failure and a bounded neighborhood, regardless of
+    # position in the complete log. Do not just print the trailing 16 KB.
+    set(_failure_context "")
+    if(EXISTS "${_qt_log}")
+        file(STRINGS "${_qt_log}" _qt_lines)
+        list(LENGTH _qt_lines _qt_line_count)
+        if(_qt_line_count GREATER 0)
+            math(EXPR _qt_last "${_qt_line_count} - 1")
+            foreach(_i RANGE 0 ${_qt_last})
+                list(GET _qt_lines ${_i} _line)
+                if(_line MATCHES "FAIL!|QFATAL|FATAL")
+                    math(EXPR _before "${_i} - 4")
+                    math(EXPR _after "${_i} + 12")
+                    if(_before LESS 0)
+                        set(_before 0)
+                    endif()
+                    if(_after GREATER _qt_last)
+                        set(_after ${_qt_last})
+                    endif()
+                    foreach(_j RANGE ${_before} ${_after})
+                        list(GET _qt_lines ${_j} _context_line)
+                        math(EXPR _human_line "${_j} + 1")
+                        string(APPEND _failure_context
+                            "QT_LINE_${_human_line}: ${_context_line}\n")
+                    endforeach()
+                endif()
+            endforeach()
+        endif()
+    endif()
+    if(_failure_context STREQUAL "")
+        set(_failure_context "NO_QT_ASSERTION_LINE_FOUND; inspect full archived TXT")
     endif()
     message(FATAL_ERROR
         "M16_C2_CTEST_SMOKE_FAILED; ORIGINAL_RESULT=${_smoke_status}\n"
-        "QT_LOG_LAST_16000_CHARS:\n${_qt_tail}\n"
+        "QT_FULL_LOG_PATH=${_qt_log}; LOG_BYTES=${_qt_length}\n"
+        "QT_FAILURE_CONTEXT:\n${_failure_context}\n"
         "STDOUT:\n${_smoke_stdout}\nSTDERR:\n${_smoke_stderr}")
 endif()
 message(STATUS "M16_C2_CTEST_SMOKE_PASSED; QT_LOG_BYTES=${_qt_length}")
