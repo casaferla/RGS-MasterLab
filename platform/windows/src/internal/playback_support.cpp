@@ -1157,6 +1157,93 @@ C2CoverageProbe PlaybackEngine::c2_processed_coverage_probe(
     return probe;
 }
 
+C2ConsumedPrefix PlaybackEngine::c2_consumed_prefix(
+    std::optional<std::uint64_t> expectedGeneration) const noexcept
+{
+    C2ConsumedPrefix result{};
+    const auto probe = c2_processed_coverage_probe(expectedGeneration);
+    result.generation = probe.generation;
+    result.reason = probe.reason;
+    // A clock discontinuity, stale token or absent output gives NO prefix,
+    // rather than a fabricated empty-silence or VALID coverage claim.
+    if (probe.reason == C2CoverageProbeReason::STALE_GENERATION
+        || probe.reason == C2CoverageProbeReason::GENERATION_EXHAUSTED
+        || probe.reason == C2CoverageProbeReason::CLOCK_BEFORE_BASELINE
+        || probe.reason == C2CoverageProbeReason::CLOCK_AHEAD_OF_GENERATED
+        || probe.reason == C2CoverageProbeReason::CLOCK_AHEAD_OF_ACCEPTED
+        || probe.reason == C2CoverageProbeReason::NOT_MONITORED) {
+        return result;
+    }
+    const auto watermark = probe.processedWatermarkExclusive;
+    result.processedWatermarkExclusive = watermark;
+    if (watermark == 0) {
+        return result; // an empty prefix does not prove a peak of zero
+    }
+
+    std::int64_t cursor = 0;
+    for (const auto& accepted : c2AcceptedRuns_) {
+        if (cursor >= watermark) {
+            break;
+        }
+        // Source ledger corruption or a silent non-contiguous interval is
+        // explicitly represented as GAP, never folded into adjacent owner.
+        if (accepted.generation != result.generation
+            || accepted.outputBegin != cursor
+            || accepted.outputEnd <= accepted.outputBegin) {
+            break;
+        }
+        const auto upper = std::min(watermark, accepted.outputEnd);
+        if (result.size >= C2ConsumedPrefix::kMaximumSlices) {
+            break;
+        }
+        auto& slice = result.slices[result.size++];
+        slice.generation = result.generation;
+        slice.outputBegin = cursor;
+        slice.outputEnd = upper;
+        slice.reason = probe.reason;
+        // This classification is explicitly *candidate*, NOT VALID coverage.
+        // A SOURCE_CANDIDATE still needs immutable PROCESSED ownership,
+        // chain revision, playback phase and canonical FIR support evidence.
+        if (accepted.exactOneToOne && accepted.realizationId
+            && accepted.sourceBegin && accepted.sourceEnd
+            && *accepted.sourceEnd - *accepted.sourceBegin
+                == accepted.outputEnd - accepted.outputBegin) {
+            slice.kind = C2ConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+            slice.realizationId = accepted.realizationId;
+            const auto offset = cursor - accepted.outputBegin;
+            slice.sourceBegin = *accepted.sourceBegin + offset;
+            slice.sourceEnd = *slice.sourceBegin + (upper - cursor);
+        } else {
+            slice.kind = C2ConsumedSliceKind::GAP_UNPROVEN;
+            slice.reason = c2AcceptedContainsUnprovenHandoff_
+                ? C2CoverageProbeReason::UNPROVEN_HANDOFF
+                : rateAdapter_ ? C2CoverageProbeReason::UNPROVEN_SRC
+                : (loop_ || initialLoopEpoch_.loop || !scheduledLoopEpochs_.empty())
+                    ? C2CoverageProbeReason::UNPROVEN_LOOP
+                    : C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER;
+        }
+        cursor = upper;
+    }
+    if (cursor < watermark) {
+        // A bounded producer that stops recording after overflow may still
+        // advance the processed counter. Its missing tail is *not* silence.
+        if (result.size < C2ConsumedPrefix::kMaximumSlices) {
+            auto& lost = result.slices[result.size++];
+            lost.generation = result.generation;
+            lost.outputBegin = cursor;
+            lost.outputEnd = watermark;
+            lost.kind = C2ConsumedSliceKind::GAP_LOST_PROVENANCE;
+            lost.reason = C2CoverageProbeReason::ACCEPTED_LEDGER_OVERFLOW;
+            cursor = watermark;
+        }
+    }
+    result.partitionRepresented = cursor == watermark;
+    // Crucial: even complete *representation* with source candidates does
+    // not establish the immutable PROCESSED target or true-peak FIR support.
+    result.certifiedForLiveTruePeak = false;
+    return result;
+}
+
 void PlaybackEngine::tick()
 {
     if (state_ != core::PlaybackState::PLAYING || !output_) {

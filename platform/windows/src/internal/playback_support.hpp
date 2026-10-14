@@ -6,6 +6,7 @@
 #include <rgsml/audio/wav_reader.hpp>
 #include <rgsml/core/audio_playback_service.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -116,6 +117,41 @@ struct C2CoverageProbe final {
     C2CoverageProbeReason reason{C2CoverageProbeReason::NOT_MONITORED};
 };
 
+// C2D4: fixed-capacity, owner-thread observation of the *consumed* prefix.
+// SOURCE_CANDIDATE is NEVER a certified PROCESSED target or True-Peak value:
+// owner key/chain revision, target and complete FIR support remain unbound.
+// The result is a detached snapshot; no span into mutable queue bookkeeping.
+enum class C2ConsumedSliceKind {
+    SOURCE_CANDIDATE_NOT_QUALIFIED,
+    GAP_UNPROVEN,
+    GAP_LOST_PROVENANCE,
+};
+
+struct C2ConsumedSlice final {
+    std::uint64_t generation{0};
+    std::int64_t outputBegin{0};
+    std::int64_t outputEnd{0};
+    C2ConsumedSliceKind kind{C2ConsumedSliceKind::GAP_UNPROVEN};
+    std::optional<std::int64_t> sourceBegin;
+    std::optional<std::int64_t> sourceEnd;
+    std::optional<core::RealizationId> realizationId;
+    C2CoverageProbeReason reason{C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER};
+};
+
+struct C2ConsumedPrefix final {
+    static constexpr std::size_t kMaximumSlices = 129U;
+    std::uint64_t generation{0};
+    std::int64_t processedWatermarkExclusive{0};
+    std::array<C2ConsumedSlice, kMaximumSlices> slices{};
+    std::size_t size{0};
+    bool partitionRepresented{false};
+    bool certifiedForLiveTruePeak{false}; // MUST remain false in C2D4
+    C2CoverageProbeReason reason{C2CoverageProbeReason::NOT_MONITORED};
+    [[nodiscard]] std::span<const C2ConsumedSlice> view() const noexcept {
+        return {slices.data(), size};
+    }
+};
+
 class PlaybackEngine final {
 public:
     static constexpr std::int64_t kDecodeBlockFrames = 1024;
@@ -160,6 +196,10 @@ public:
     // Runs represent only *accepted* whole device frames, never true LIVE TP.
     [[nodiscard]] std::span<const C2AcceptedOutputRun>
     c2_accepted_output_runs() const noexcept { return c2AcceptedRuns_; }
+    // No allocations, no callback/DSP work, bounded to 128 accepted events
+    // and one explicit missing-provenance tail. Does not certify target owner.
+    [[nodiscard]] C2ConsumedPrefix c2_consumed_prefix(
+        std::optional<std::uint64_t> expectedGeneration = std::nullopt) const noexcept;
 
     // Called by a bounded owner-thread timer, never by the audio callback.
     void tick();
