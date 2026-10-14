@@ -2692,13 +2692,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         const auto pos = item->mapToItem(eqToolbar, QPointF{0.0, 0.0});
         return QRectF{pos, QSizeF{item->width(), item->height()}};
     };
+    // The capture renders/shows the native Qt Quick window and can
+    // complete a pending RowLayout reflow. Snapshot the *rendered* geometry.
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("minor_fix_001_eq_spectrum_on_1184x688.png"),
+        QSize{1184, 688}));
     const QRectF resetOn = toolbarGeometry(resetItem);
     const QRectF overallOn = toolbarGeometry(overallItem);
     const QRectF spectrumOn = toolbarGeometry(spectrumItem);
     const QRectF addOn = toolbarGeometry(addItem);
-    QVERIFY(capture_visual_evidence(window,
-        QStringLiteral("minor_fix_001_eq_spectrum_on_1184x688.png"),
-        QSize{1184, 688}));
 
     const bool undoStateBeforeToggle = eqViewModel.can_undo();
     const quint64 previewGenBeforeToggle = eqViewModel.preview_generation();
@@ -3127,6 +3129,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* compressorEditorNative = qobject_cast<QQuickItem*>(compressorEditor);
     QVERIFY2(compressorEditorNative != nullptr && compressorEditorNative->isVisible(),
         "Compressor editor must be visible when selected at minimum size");
+    // Qt Quick can retain the previous editor's 403px intermediate height
+    // until its scene is rendered. A frame (not another fixed wait) makes
+    // the minimum-size LayoutItemProxy geometry authoritative.
+    auto* visualWindow = qobject_cast<QQuickWindow*>(window);
+    QVERIFY2(visualWindow != nullptr, "Compressor containment requires a native QQuickWindow");
+    QVERIFY2(!visualWindow->grabWindow().isNull(),
+        "Compressor containment requires a completed Qt Quick frame");
     QVERIFY2(check_item_contained_in_ancestor(compressorEditorNative, dspEditorHostNative),
         "Compressor editor must stay inside dspEditorHost at minimum size");
     auto* curveWellNative = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, QStringLiteral("compressorCurveWell")));
