@@ -76,6 +76,29 @@ public:
 
 class IPlaybackSource;
 
+// C2D1 conservative observation seam. This is NOT a coverage ledger, public ABI,
+// or authority to report recent True Peak: until chronological ownership and
+// exact source support are proven, every result remains incomplete.
+enum class C2CoverageProbeReason {
+    NOT_MONITORED,
+    STALE_GENERATION,
+    GENERATION_EXHAUSTED,
+    CLOCK_BEFORE_BASELINE,
+    CLOCK_AHEAD_OF_GENERATED,
+    UNPROVEN_HANDOFF,
+    UNPROVEN_SRC,
+    UNPROVEN_LOOP,
+    MISSING_CHRONOLOGICAL_LEDGER,
+};
+
+struct C2CoverageProbe final {
+    std::uint64_t generation{0};
+    std::int64_t processedWatermarkExclusive{0};
+    std::int64_t generatedOutputFrames{0};
+    bool completeThroughWatermark{false};
+    C2CoverageProbeReason reason{C2CoverageProbeReason::NOT_MONITORED};
+};
+
 class PlaybackEngine final {
 public:
     static constexpr std::int64_t kDecodeBlockFrames = 1024;
@@ -112,6 +135,10 @@ public:
     [[nodiscard]] core::Status seek(core::FrameIndex position);
     [[nodiscard]] core::Status set_loop(std::optional<core::FrameRange> loop);
     [[nodiscard]] core::Result<core::PlaybackSnapshot> snapshot() const;
+    // Serialized owner-thread diagnostic only; never called by the audio callback.
+    // Incomplete is intentional: no programme interval is yet certified VALID.
+    [[nodiscard]] C2CoverageProbe c2_processed_coverage_probe(
+        std::optional<std::uint64_t> expectedGeneration = std::nullopt) const noexcept;
 
     // Called by a bounded owner-thread timer, never by the audio callback.
     void tick();
@@ -189,6 +216,8 @@ private:
     std::uint64_t traversalSerial_{0};
     std::uint64_t seekSerial_{0};
     std::uint64_t baseLoopWrapCount_{0};
+    std::uint64_t c2CoverageGeneration_{0};
+    bool c2CoverageGenerationExhausted_{false};
 };
 
 }  // namespace rgsml::platform::windows::internal

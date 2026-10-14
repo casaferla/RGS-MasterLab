@@ -1093,6 +1093,53 @@ core::Result<core::PlaybackSnapshot> PlaybackEngine::snapshot() const
         traversalSerial_, seekSerial_, current_loop_wrap_count()});
 }
 
+C2CoverageProbe PlaybackEngine::c2_processed_coverage_probe(
+    std::optional<std::uint64_t> expectedGeneration) const noexcept
+{
+    C2CoverageProbe probe{};
+    probe.generation = c2CoverageGeneration_;
+    probe.generatedOutputFrames = generatedOutputFrames_;
+    if (expectedGeneration && *expectedGeneration != probe.generation) {
+        probe.reason = C2CoverageProbeReason::STALE_GENERATION;
+        return probe;
+    }
+    if (c2CoverageGenerationExhausted_) {
+        probe.reason = C2CoverageProbeReason::GENERATION_EXHAUSTED;
+        return probe;
+    }
+    if (!output_ || !source_
+        || (state_ != core::PlaybackState::PLAYING
+            && state_ != core::PlaybackState::PAUSED)) {
+        return probe; // NOT_MONITORED, never a synthetic zero-valued TP.
+    }
+
+    const auto processed = output_->processed_frames();
+    if (processedFrameBaseline_ < 0 || processed < processedFrameBaseline_) {
+        probe.reason = C2CoverageProbeReason::CLOCK_BEFORE_BASELINE;
+        return probe;
+    }
+    // Both values non-negative, so subtraction cannot overflow int64.
+    probe.processedWatermarkExclusive = processed - processedFrameBaseline_;
+    if (probe.processedWatermarkExclusive > generatedOutputFrames_) {
+        probe.reason = C2CoverageProbeReason::CLOCK_AHEAD_OF_GENERATED;
+    } else if (!activeRealizationId_) {
+        probe.reason = C2CoverageProbeReason::NOT_MONITORED;
+    } else if (pendingHandoff_) {
+        probe.reason = C2CoverageProbeReason::UNPROVEN_HANDOFF;
+    } else if (rateAdapter_) {
+        probe.reason = C2CoverageProbeReason::UNPROVEN_SRC;
+    } else if (loop_ || initialLoopEpoch_.loop || !scheduledLoopEpochs_.empty()) {
+        probe.reason = C2CoverageProbeReason::UNPROVEN_LOOP;
+    } else {
+        // Even direct 1:1 playback lacks a retained owner-stamped interval
+        // history. The sink clock alone cannot prove every consumed segment.
+        probe.reason = C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER;
+    }
+    // Do not claim complete coverage until a separate, falsified C2D ledger
+    // materializes every owner/phase/seek/loop boundary through the watermark.
+    return probe;
+}
+
 void PlaybackEngine::tick()
 {
     if (state_ != core::PlaybackState::PLAYING || !output_) {
@@ -1285,6 +1332,13 @@ void PlaybackEngine::record_runtime_error(core::Error error) noexcept
 
 void PlaybackEngine::reset_queue_state(std::int64_t frame) noexcept
 {
+    // Reset is the authoritative point for a new processed-output clock epoch.
+    // Never reuse token identities after int64 counters/device clocks restart.
+    if (c2CoverageGeneration_ == std::numeric_limits<std::uint64_t>::max()) {
+        c2CoverageGenerationExhausted_ = true;
+    } else {
+        ++c2CoverageGeneration_;
+    }
     scheduledOutputFrame_ = source_to_output_frame(frame);
     playbackStartOutputFrame_ = scheduledOutputFrame_;
     generatedOutputFrames_ = 0;

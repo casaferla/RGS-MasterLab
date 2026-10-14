@@ -253,6 +253,8 @@ private slots:
     void partialWritesNaturalEofAndRuntimeError();
     void seamlessPcmHandoffCrossfadeAndStateMatrix();
     void controlPlaneTraversalSeekAndLoopSerials();
+    void c2D1ProcessedWatermarkFailClosedAndGeneration();
+    void c2D1UnknownTargetHandoffAndLoopAreNotCoverage();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2024,6 +2026,82 @@ void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
     observedOutput->set_processed_frames(500);
     auto wrapSnap = engine.snapshot();
     QCOMPARE(wrapSnap.value()->loopWrapCount, std::uint64_t{2});
+}
+
+void PlaybackSupportTest::c2D1ProcessedWatermarkFailClosedAndGeneration()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    PlaybackEngine engine;
+    const auto empty = engine.c2_processed_coverage_probe();
+    QCOMPARE(empty.generation, std::uint64_t{0});
+    QCOMPARE(empty.reason, Reason::NOT_MONITORED);
+    QVERIFY(!empty.completeThroughWatermark);
+
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 16);
+    auto output = std::make_unique<FakeOutput>(128U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(
+        pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+        std::nullopt, nullptr, core::RealizationId{401}));
+    const auto ready = engine.c2_processed_coverage_probe();
+    QCOMPARE(ready.reason, Reason::NOT_MONITORED);
+    QVERIFY(ready.generation > empty.generation);
+
+    QVERIFY(engine.play());
+    const auto active = engine.c2_processed_coverage_probe();
+    QCOMPARE(active.reason, Reason::MISSING_CHRONOLOGICAL_LEDGER);
+    QCOMPARE(active.processedWatermarkExclusive, std::int64_t{0});
+    QVERIFY(active.generatedOutputFrames >= 16);
+    QVERIFY(!active.completeThroughWatermark);
+
+    sink->consume_all();
+    const auto consumed = engine.c2_processed_coverage_probe(active.generation);
+    QCOMPARE(consumed.processedWatermarkExclusive, std::int64_t{16});
+    QCOMPARE(consumed.reason, Reason::MISSING_CHRONOLOGICAL_LEDGER);
+    QVERIFY(!consumed.completeThroughWatermark);
+
+    sink->set_processed_frames(1000);
+    const auto ahead = engine.c2_processed_coverage_probe();
+    QCOMPARE(ahead.reason, Reason::CLOCK_AHEAD_OF_GENERATED);
+    QVERIFY(!ahead.completeThroughWatermark);
+
+    QVERIFY(engine.seek(core::FrameIndex{3}));
+    const auto afterSeek = engine.c2_processed_coverage_probe();
+    QVERIFY(afterSeek.generation > consumed.generation);
+    const auto stale = engine.c2_processed_coverage_probe(consumed.generation);
+    QCOMPARE(stale.reason, Reason::STALE_GENERATION);
+    QVERIFY(!stale.completeThroughWatermark);
+}
+
+void PlaybackSupportTest::c2D1UnknownTargetHandoffAndLoopAreNotCoverage()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2000);
+    auto another = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(512U, 4U);
+    QVERIFY(engine.install_pcm_candidate(
+        pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+        std::nullopt, nullptr, core::RealizationId{402}));
+    QVERIFY(engine.play());
+    QVERIFY(engine.handoff_pcm(another.view(), nullptr, core::RealizationId{403}));
+    const auto handoff = engine.c2_processed_coverage_probe();
+    QCOMPARE(handoff.reason, Reason::UNPROVEN_HANDOFF);
+    QVERIFY(!handoff.completeThroughWatermark);
+
+    QVERIFY(engine.stop());
+    const auto afterStop = engine.c2_processed_coverage_probe();
+    QCOMPARE(afterStop.reason, Reason::NOT_MONITORED);
+    QVERIFY(afterStop.generation > handoff.generation);
+
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{100}, core::FrameIndex{300}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.seek(core::FrameIndex{100}));
+    QVERIFY(engine.play());
+    const auto looping = engine.c2_processed_coverage_probe();
+    QCOMPARE(looping.reason, Reason::UNPROVEN_LOOP);
+    QVERIFY(!looping.completeThroughWatermark);
 }
 
 }  // namespace rgsml::tests
