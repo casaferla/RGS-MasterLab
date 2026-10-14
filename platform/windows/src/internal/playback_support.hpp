@@ -245,6 +245,7 @@ private:
     std::vector<C2AcceptedOutputRun> c2AcceptedRuns_;
     std::int64_t c2AcceptedOutputFrames_{0};
     bool c2AcceptedLedgerOverflow_{false};
+    bool c2AcceptedContainsUnprovenHandoff_{false};
     std::int64_t c2PendingSourceBegin_{0};
     std::optional<core::RealizationId> c2PendingOwner_;
     bool c2PendingExactMapping_{false};

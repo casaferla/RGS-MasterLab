@@ -259,6 +259,8 @@ private slots:
     void c2D2AcceptedRunLedgerOldOwnerResetAndFailClosed();
     void c2D2AcceptedRunLedgerOverflowIsSticky();
     void c2D2SrcAcceptedRunsAreNotExactSourceCoverage();
+    void c2D3CrossfadeAppendedToOldPendingCannotInheritSource();
+    void c2D3FreshCrossfadePendingCannotInheritStaleSource();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2249,6 +2251,88 @@ void PlaybackSupportTest::c2D2SrcAcceptedRunsAreNotExactSourceCoverage()
         QVERIFY(!run.sourceBegin.has_value());
         QVERIFY(!run.sourceEnd.has_value());
     }
+}
+
+void PlaybackSupportTest::c2D3CrossfadeAppendedToOldPendingCannotInheritSource()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    constexpr auto oldId = core::RealizationId{801};
+    auto oldPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2500);
+    auto newPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2500);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(128U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(oldPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr, oldId));
+    QVERIFY(engine.play());
+    const auto before = engine.c2_accepted_output_runs();
+    QVERIFY(!before.empty());
+    const auto provedOld = before.front();
+    QVERIFY(provedOld.exactOneToOne);
+    QCOMPARE(provedOld.realizationId, std::optional{oldId});
+
+    // A 128-byte sink leaves unaccepted OLD bytes in pendingBytes_ when the
+    // crossfade is appended. Only the *already accepted* prefix stays exact.
+    QVERIFY(engine.handoff_pcm(newPcm.view(), nullptr, core::RealizationId{802}));
+    for (int i = 0; i < 4; ++i) {
+        sink->consume_all();
+        engine.tick();
+    }
+    const auto runs = engine.c2_accepted_output_runs();
+    QVERIFY(runs.size() > before.size());
+    QCOMPARE(runs.front().sourceBegin, provedOld.sourceBegin);
+    QCOMPARE(runs.front().sourceEnd, provedOld.sourceEnd);
+    for (std::size_t i = before.size(); i < runs.size(); ++i) {
+        QVERIFY(!runs[i].exactOneToOne);
+        QVERIFY(!runs[i].sourceBegin.has_value());
+        QVERIFY(!runs[i].sourceEnd.has_value());
+        QVERIFY(!runs[i].realizationId.has_value());
+    }
+    const auto probe = engine.c2_processed_coverage_probe();
+    QCOMPARE(probe.reason, Reason::UNPROVEN_HANDOFF);
+    QVERIFY(!probe.completeThroughWatermark);
+}
+
+void PlaybackSupportTest::c2D3FreshCrossfadePendingCannotInheritStaleSource()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto oldPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 3500);
+    auto newPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 3500);
+    PlaybackEngine engine;
+    // Exactly one 1024-frame decode block: OLD pendingBytes_ is empty after
+    // prefill, but its last c2PendingOwner_ stamp still names OLD.
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(oldPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{811}));
+    QVERIFY(engine.play());
+    const auto first = engine.c2_accepted_output_runs();
+    QCOMPARE(first.size(), std::size_t{1});
+    QVERIFY(first.front().exactOneToOne);
+    QCOMPARE(first.front().outputEnd, std::int64_t{1024});
+    QVERIFY(engine.handoff_pcm(newPcm.view(), nullptr,
+        core::RealizationId{812}));
+    sink->consume_all();
+    engine.tick();
+    const auto after = engine.c2_accepted_output_runs();
+    QVERIFY(after.size() >= std::size_t{2});
+    // A freshly encoded mixed block may not inherit the stale OLD stamp.
+    const auto& mixed = after[1];
+    QCOMPARE(mixed.outputBegin, std::int64_t{1024});
+    QVERIFY(!mixed.exactOneToOne);
+    QVERIFY(!mixed.realizationId.has_value());
+    QVERIFY(!mixed.sourceBegin.has_value());
+    QVERIFY(!mixed.sourceEnd.has_value());
+    const auto p = engine.c2_processed_coverage_probe();
+    QCOMPARE(p.reason, Reason::UNPROVEN_HANDOFF);
+    QVERIFY(!p.completeThroughWatermark);
+
+    QVERIFY(engine.stop());
+    const auto reset = engine.c2_processed_coverage_probe();
+    QVERIFY(!reset.completeThroughWatermark);
+    QCOMPARE(reset.reason, Reason::NOT_MONITORED);
+    QCOMPARE(reset.acceptedRunCount, std::size_t{0});
 }
 
 }  // namespace rgsml::tests

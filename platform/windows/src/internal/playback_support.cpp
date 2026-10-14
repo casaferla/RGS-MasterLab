@@ -628,6 +628,16 @@ core::Status PlaybackEngine::handoff_pcm(
             return core::Status::failure(*encodedCrossfade.error());
         }
 
+        // This queue can contain undrained OLD bytes when we append a mixed
+        // OLD/NEW crossfade. A single pending-source stamp CANNOT distinguish
+        // the boundary. Conservatively invalidate the provenance of *all*
+        // as-yet-unaccepted pending bytes. Previously accepted OLD runs remain
+        // exact; the current mixed container MUST NEVER inherit that identity.
+        // A future bounded per-block ledger may recover exact boundaries.
+        c2PendingOwner_.reset();
+        c2PendingExactMapping_ = false;
+        c2AcceptedContainsUnprovenHandoff_ = true; // sticky in this generation
+
         // Seamlessly append crossfade block to pendingBytes_ WITHOUT clear_queue() or reset_queue_state()
         if (pendingBytes_.empty()) {
             pendingBytes_ = std::move(*encodedCrossfade.value());
@@ -1131,7 +1141,7 @@ C2CoverageProbe PlaybackEngine::c2_processed_coverage_probe(
         probe.reason = C2CoverageProbeReason::ACCEPTED_LEDGER_OVERFLOW;
     } else if (!activeRealizationId_) {
         probe.reason = C2CoverageProbeReason::NOT_MONITORED;
-    } else if (pendingHandoff_) {
+    } else if (pendingHandoff_ || c2AcceptedContainsUnprovenHandoff_) {
         probe.reason = C2CoverageProbeReason::UNPROVEN_HANDOFF;
     } else if (rateAdapter_) {
         probe.reason = C2CoverageProbeReason::UNPROVEN_SRC;
@@ -1419,6 +1429,7 @@ void PlaybackEngine::reset_queue_state(std::int64_t frame) noexcept
     c2AcceptedRuns_.clear();
     c2AcceptedOutputFrames_ = 0;
     c2AcceptedLedgerOverflow_ = false;
+    c2AcceptedContainsUnprovenHandoff_ = false;
     c2PendingSourceBegin_ = 0;
     c2PendingOwner_.reset();
     c2PendingExactMapping_ = false;
