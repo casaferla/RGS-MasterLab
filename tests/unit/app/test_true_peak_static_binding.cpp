@@ -33,7 +33,8 @@ struct RenderFixture final {
 [[nodiscard]] core::Result<RenderFixture> make_render(
     std::int64_t count, core::FrameRange window,
     std::int64_t rate = 48000,
-    audio::ChannelLayout layout = audio::ChannelLayout::STEREO_LR)
+    audio::ChannelLayout layout = audio::ChannelLayout::STEREO_LR,
+    double leftPulse = 0.75)
 {
     const auto fmt = format(layout, rate);
     const auto frames = frame_count(count);
@@ -46,7 +47,7 @@ struct RenderFixture final {
         if (!left) return core::Result<RenderFixture>::failure(*left.error());
         for (std::int64_t i = 0; i < count; ++i) {
             (*left.value())[static_cast<std::size_t>(i)] =
-                i == 1 ? 0.75 : 0.0;
+                i == 1 ? leftPulse : 0.0;
         }
         if (layout == audio::ChannelLayout::STEREO_LR) {
             auto right = source.value()->mutable_view().channel(1);
@@ -199,6 +200,8 @@ void TruePeakStaticBindingTest::asynchronousSourceAndRealizationStaleness()
     QCOMPARE(coordinator.measured_channel_count(), 2);
     QVERIFY(coordinator.full_left_text().endsWith(QStringLiteral(" dBTP")));
     QVERIFY(coordinator.full_right_text().endsWith(QStringLiteral(" dBTP")));
+    QVERIFY(!coordinator.full_left_over_zero());
+    QVERIFY(!coordinator.full_right_over_zero());
     QVERIFY(coordinator.full_left_meter_level() > 0.0);
     QVERIFY(coordinator.full_right_meter_level() > 0.0);
     QVERIFY(coordinator.full_left_meter_level() > coordinator.full_right_meter_level());
@@ -212,6 +215,8 @@ void TruePeakStaticBindingTest::asynchronousSourceAndRealizationStaleness()
     QCOMPARE(coordinator.full_right_text(), QStringLiteral("—"));
     QCOMPARE(coordinator.full_left_meter_level(), 0.0);
     QCOMPARE(coordinator.full_right_meter_level(), 0.0);
+    QVERIFY(!coordinator.full_left_over_zero());
+    QVERIFY(!coordinator.full_right_over_zero());
     QCOMPARE(coordinator.state(), app::TruePeakStaticCoordinator::State::NO_SOURCE);
     coordinator.source_committed(*two.value(), full.value()->expected);
     QVERIFY(coordinator.source_reference()->same_resource_identity(*two.value()));
@@ -226,6 +231,19 @@ void TruePeakStaticBindingTest::asynchronousSourceAndRealizationStaleness()
     coordinator.processed_changed(full.value()->result, core::RealizationId{34});
     QCOMPARE(coordinator.state(), app::TruePeakStaticCoordinator::State::READY);
     QCOMPARE(coordinator.ready()->realizationId.value, std::uint64_t{34});
+
+    // Real >0 dBTP is a digital-zero diagnostic, not a project Ceiling.
+    auto overZero = make_render(4, frame_range(0,4), 48000,
+                                audio::ChannelLayout::STEREO_LR, 1.30);
+    QVERIFY(overZero);
+    coordinator.processed_changed(overZero.value()->result,
+                                  core::RealizationId{35});
+    QTRY_VERIFY(coordinator.state()
+                == app::TruePeakStaticCoordinator::State::READY);
+    QVERIFY(coordinator.full_left_over_zero());
+    QVERIFY(!coordinator.full_right_over_zero());
+    QVERIFY(coordinator.full_left_meter_level()
+            > coordinator.full_right_meter_level());
 }
 
 } // namespace

@@ -58,7 +58,7 @@ Item {
                         TruePeakStaticLane {
                             objectName: "truePeakLeftLane"
                             Layout.fillHeight: true
-                            Layout.preferredWidth: 125
+                            Layout.preferredWidth: 135
                             channelName: root.isMono ? "C" : "L"
                             reading: root.hasMeasurement
                                 ? root.measurementProvider.fullLeftText : "—"
@@ -66,12 +66,12 @@ Item {
                             level: root.hasMeasurement
                                 ? root.measurementProvider.fullLeftMeterLevel : 0
                             aboveDigitalZero: root.hasMeasurement
-                                && root.measurementProvider.fullLeftMeterLevel > (60.0 / 66.0)
+                                && root.measurementProvider.fullLeftOverZero
                         }
                         TruePeakStaticLane {
                             objectName: "truePeakRightLane"
                             Layout.fillHeight: true
-                            Layout.preferredWidth: 125
+                            Layout.preferredWidth: 135
                             visible: !root.isMono
                             channelName: "R"
                             reading: root.measuredChannels === 2
@@ -80,12 +80,12 @@ Item {
                             level: root.measuredChannels === 2
                                 ? root.measurementProvider.fullRightMeterLevel : 0
                             aboveDigitalZero: root.measuredChannels === 2
-                                && root.measurementProvider.fullRightMeterLevel > (60.0 / 66.0)
+                                && root.measurementProvider.fullRightOverZero
                         }
                         Item { Layout.fillWidth: true }
                     }
                     Text {
-                        text: "Display scale −60 to +6 dBTP · 0 dBTP guide · not a Ceiling"
+                        text: "Scale −60 to +6 dBTP · coral only above 0 dBTP · no Ceiling selected"
                         color: "#8EAAB9"
                         font.family: "Segoe UI"
                         font.pixelSize: 10

@@ -55,6 +55,20 @@ double TruePeakStaticCoordinator::full_right_meter_level() const
     return displayed_level(completed_->measurement.per_channel_db_tp()[1]);
 }
 
+bool TruePeakStaticCoordinator::full_left_over_zero() const
+{
+    if (!completed_) return false;
+    const auto& peak = completed_->measurement.per_channel_db_tp()[0];
+    return peak.has_value() && *peak > 0.0;
+}
+
+bool TruePeakStaticCoordinator::full_right_over_zero() const
+{
+    if (measured_channel_count() != 2) return false;
+    const auto& peak = completed_->measurement.per_channel_db_tp()[1];
+    return peak.has_value() && *peak > 0.0;
+}
+
 QString TruePeakStaticCoordinator::state_text() const
 {
     switch (state_) {

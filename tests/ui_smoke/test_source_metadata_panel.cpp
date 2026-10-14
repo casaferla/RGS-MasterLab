@@ -622,6 +622,10 @@ Window {
         componentRoot.data(), QStringLiteral("truePeakRightLane"));
     auto* sharedRail = find_child_by_name(
         componentRoot.data(), QStringLiteral("truePeakMeterSharedRail"));
+    auto* railContents = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakSharedRailContents"));
+    auto* leftScale = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakDbTpScale"));
     auto* row = find_child_by_name(
         componentRoot.data(), QStringLiteral("dspChainRow_3"));
     auto* previewBadge = find_child_by_name(
@@ -635,7 +639,8 @@ Window {
     auto* redo = find_child_by_name(
         componentRoot.data(), QStringLiteral("eqRedoButton"));
     QVERIFY2(host && chain && meter && recent && full && provenance
-             && staticBay && leftLane && rightLane && sharedRail && row
+             && staticBay && leftLane && rightLane && sharedRail
+             && railContents && leftScale && row
              && previewBadge && active && bypass && undo && redo,
              "M16 needs a real row/editor/cards in the standard DSP host");
     QCOMPARE(host->property("moduleTitle").toString(),
@@ -661,12 +666,33 @@ Window {
     QCOMPARE(rightLane->property("reading").toString(), QStringLiteral("—"));
     QVERIFY(!leftLane->property("available").toBool());
     QVERIFY(!rightLane->property("available").toBool());
+    QVERIFY(!leftLane->property("aboveDigitalZero").toBool());
+    QVERIFY(!rightLane->property("aboveDigitalZero").toBool());
     QCOMPARE(leftLane->property("level").toDouble(), 0.0);
     QCOMPARE(rightLane->property("level").toDouble(), 0.0);
     QVERIFY2(staticBay->property("width").toDouble() > 340.0,
              "The True Peak static meter well must have its own region");
     QVERIFY2(sharedRail->property("width").toDouble() >= 278.0,
              "The shared True Peak rail must remain usable");
+    QVERIFY2(leftScale->property("height").toDouble() > 120.0,
+             "L/R dBTP tick scale must be visible");
+
+    // PO-approved: shared M16/M17 panel is vertically centred, not stretched.
+    auto checkRailCenter = [&] {
+        auto* railItem = qobject_cast<QQuickItem*>(sharedRail);
+        auto* contentsItem = qobject_cast<QQuickItem*>(railContents);
+        QVERIFY(railItem && contentsItem);
+        const QPointF outerCenter = railItem->mapToScene(
+            QPointF{railItem->width() / 2.0, railItem->height() / 2.0});
+        const QPointF innerCenter = contentsItem->mapToScene(
+            QPointF{contentsItem->width() / 2.0,
+                    contentsItem->height() / 2.0});
+        QVERIFY2(qAbs(outerCenter.y() - innerCenter.y()) <= 1.5,
+                 "Shared True Peak information cards must be centred vertically");
+        QVERIFY2(contentsItem->height() <= railItem->height() + 1.0,
+                 "True Peak cards must not overflow the available rail height");
+    };
+    checkRailCenter();
     QCOMPARE(provenance->property("stateLabel").toString(),
              QStringLiteral("NO SOURCE"));
     QCOMPARE(provenance->property("qualification").toString(),
@@ -693,6 +719,7 @@ Window {
         QTest::qWait(120);
         QCoreApplication::processEvents();
         QCOMPARE(captureSurface->size(), QSizeF{size});
+        checkRailCenter();
         QVERIFY2(check_item_contained_in_ancestor(
                      qobject_cast<QQuickItem*>(meter), captureSurface),
                  "The True Peak editor must fit the native capture scene");
@@ -719,12 +746,19 @@ Window {
         if (!evidenceDir.isEmpty()) {
             QVERIFY(QDir{}.mkpath(evidenceDir));
             const QString fileName = QStringLiteral(
-                "m16_true_peak_meter_b4d_static_lanes_nosource_exact_%1x%2.png")
+                "m16_true_peak_meter_b4e_centered_scale_nosource_exact_%1x%2.png")
                 .arg(size.width()).arg(size.height());
             QVERIFY2(picture.save(QDir{evidenceDir}.filePath(fileName), "PNG"),
                      "Native M16 screenshot must be saved into CI artifact");
         }
     }
+
+    // Height-only resize regression: checks genuine vertical centring.
+    captureSurface->setHeight(840);
+    window->resize(QSize{1440, 840});
+    QTest::qWait(100);
+    QCoreApplication::processEvents();
+    checkRailCenter();
 
     // Real, source-bound stereo case using the same production render and
     // complete-resource M16 analysis as the app. No values are hard-coded
@@ -772,10 +806,14 @@ Window {
             == app::TruePeakStaticCoordinator::State::READY, 10000);
     QCoreApplication::processEvents();
     QCOMPARE(visualMeasurement.measured_channel_count(), 2);
+    QVERIFY(!visualMeasurement.full_left_over_zero());
+    QVERIFY(!visualMeasurement.full_right_over_zero());
     QVERIFY2(visualMeasurement.full_left_meter_level()
                  > visualMeasurement.full_right_meter_level(),
              "Genuine measured L > R must be reflected by M16 per-channel bars");
     QVERIFY(leftLane->property("available").toBool());
+    QVERIFY(!leftLane->property("aboveDigitalZero").toBool());
+    QVERIFY(!rightLane->property("aboveDigitalZero").toBool());
     QVERIFY(rightLane->property("available").toBool());
     QCOMPARE(leftLane->property("reading").toString(),
              visualMeasurement.full_left_text());
@@ -794,6 +832,7 @@ Window {
         window->resize(size);
         QTest::qWait(120);
         QCoreApplication::processEvents();
+        checkRailCenter();
         const auto pictureResult = captureSurface->grabToImage();
         QVERIFY(pictureResult);
         QSignalSpy captureSpy{pictureResult.data(), &QQuickItemGrabResult::ready};
@@ -809,7 +848,7 @@ Window {
         if (!evidenceDir.isEmpty()) {
             QVERIFY(QDir{}.mkpath(evidenceDir));
             const auto fileName = QStringLiteral(
-                "m16_true_peak_meter_b4d_measured_fullresource_exact_%1x%2.png")
+                "m16_true_peak_meter_b4e_centered_scale_measured_exact_%1x%2.png")
                 .arg(size.width()).arg(size.height());
             QVERIFY2(realImage.save(QDir{evidenceDir}.filePath(fileName), "PNG"),
                      "M16 genuine full-resource evidence must be persisted");

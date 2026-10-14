@@ -12,8 +12,15 @@ Item {
     implicitWidth: 316
     implicitHeight: 400
 
+    // A common M16/M17 information group centred vertically at any height.
+    // Cards retain their natural size rather than growing to fill empty space.
     ColumnLayout {
-        anchors.fill: parent
+        id: railContents
+        objectName: "truePeakSharedRailContents"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        height: implicitHeight
         spacing: 10
 
         TruePeakReadoutCard {
@@ -60,6 +67,6 @@ Item {
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
         }
-        Item { Layout.fillHeight: true }
+
     }
 }
