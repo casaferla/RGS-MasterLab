@@ -14,6 +14,8 @@
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
+#include "stereo_ms_view_model.hpp"
+#include "true_peak_static_coordinator.hpp"
 
 #include "waveform_presentation.hpp"
 
@@ -25,11 +27,15 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+
+#include <optional>
+#include <variant>
 #include <QTimer>
 
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 
 namespace {
 
@@ -69,14 +75,18 @@ int main(int argc, char* argv[])
     playbackTransport.set_pcm_prepare_handler(
         [windowsPlayback](
             rgsml::audio::AudioBufferView source,
-            std::shared_ptr<const void> lifetime) {
-            return windowsPlayback->prepare_pcm(source, std::move(lifetime));
+            std::shared_ptr<const void> lifetime,
+            std::optional<rgsml::core::RealizationId> realizationId) {
+            return windowsPlayback->prepare_pcm(
+                source, std::move(lifetime), realizationId);
         });
     playbackTransport.set_pcm_handoff_handler(
         [windowsPlayback](
             rgsml::audio::AudioBufferView source,
-            std::shared_ptr<const void> lifetime) {
-            return windowsPlayback->handoff_pcm(source, std::move(lifetime));
+            std::shared_ptr<const void> lifetime,
+            std::optional<rgsml::core::RealizationId> realizationId) {
+            return windowsPlayback->handoff_pcm(
+                source, std::move(lifetime), realizationId);
         });
     rgsml::ui::WaveformPresentation waveformPresentation;
     rgsml::app::AuditionRegionViewModel auditionRegion{&playbackTransport};
@@ -84,6 +94,15 @@ int main(int argc, char* argv[])
         &waveformPresentation};
     rgsml::app::SourceSelectionViewModel sourceSelection;
     rgsml::app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    rgsml::app::TruePeakStaticCoordinator staticTruePeak;
+    // Publication of PROCESSED never implies that it is already audible.
+    QObject::connect(
+        &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
+        &staticTruePeak, [&auditionSelector, &staticTruePeak] {
+            staticTruePeak.processed_changed(
+                auditionSelector.processed_realization_snapshot(),
+                auditionSelector.processed_realization_id());
+        });
     auditionSelector.set_source_loop_provider([&auditionRegion] {
         return auditionRegion.loop_enabled()
             ? auditionRegion.region()
@@ -114,7 +133,88 @@ int main(int argc, char* argv[])
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
     rgsml::app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
-    rgsml::app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
+    compressorViewModel.setTelemetryProviders(
+        [&auditionSelector]()
+            -> std::shared_ptr<const rgsml::render::CompressorTelemetrySidecar> {
+            const auto processed =
+                auditionSelector.processed_realization_snapshot();
+            if (processed == nullptr) {
+                return {};
+            }
+            const auto& sidecar =
+                processed->compressor_telemetry_sidecar();
+            if (!sidecar.has_value() || !sidecar->valid) {
+                return {};
+            }
+            return std::shared_ptr<const rgsml::render::CompressorTelemetrySidecar>(
+                processed, &*sidecar);
+        },
+        [&playbackTransport]() {
+            return playbackTransport.playback_snapshot();
+        },
+        [&auditionSelector]() {
+            const auto target = auditionSelector.active_target();
+            if (!target.has_value()) {
+                return rgsml::render::AuditionTarget::PREPARED;
+            }
+            switch (*target) {
+            case rgsml::app::AuditionTarget::PREPARED:
+                return rgsml::render::AuditionTarget::PREPARED;
+            case rgsml::app::AuditionTarget::PROCESSED:
+                return rgsml::render::AuditionTarget::PROCESSED;
+            case rgsml::app::AuditionTarget::GOLD:
+                return rgsml::render::AuditionTarget::GOLD;
+            }
+            return rgsml::render::AuditionTarget::PREPARED;
+        },
+        [&auditionSelector, &masteringChainState]()
+            -> std::optional<rgsml::core::RealizationId> {
+            const auto accepted = auditionSelector.processed_realization_snapshot();
+            const auto id = auditionSelector.processed_realization_id();
+            if (!accepted || !id) {
+                return std::nullopt;
+            }
+            for (const auto& signature : accepted->signatures()) {
+                if (signature.instance_id == masteringChainState.compressor_instance_id() &&
+                    signature.type_id == "rgsml.dsp.compressor" &&
+                    signature.disposition ==
+                        rgsml::render::ModuleExecutionDisposition::BYPASS_IDENTITY &&
+                    std::holds_alternative<
+                        rgsml::render::CompressorExecutionSignaturePayload>(
+                            signature.payload)) {
+                    // This is a published immutable render signature; the
+                    // resolver still checks that ID is ACTUALLY audible.
+                    return id;
+                }
+            }
+            return std::nullopt;
+        });
+    // B4c2c: bind M/S observation to PUBLISHED render identity and the
+    // independent audible playback clock. Creating the observer does not
+    // opt a Stereo/M-S DSP node into legacy three-module projects.
+    rgsml::app::StereoMsViewModel stereoMsViewModel{
+        &masteringChainState, &previewController};
+    stereoMsViewModel.setTelemetryProviders(
+        [&auditionSelector]() -> rgsml::app::StereoMsViewModel::AcceptedRenderEvidence {
+            return {
+                auditionSelector.processed_realization_snapshot(),
+                auditionSelector.processed_realization_id()};
+        },
+        [&playbackTransport]() {
+            return playbackTransport.playback_snapshot();
+        },
+        [&auditionSelector]() {
+            const auto target = auditionSelector.active_target();
+            return target.has_value() &&
+                   *target == rgsml::app::AuditionTarget::PROCESSED;
+        });
+    // The adapter registers Stereo/M-S only if the current chain already
+    // contains that opt-in module. Do not alter create_default() or the
+    // accepted module order merely to make the telemetry visible.
+    rgsml::app::DspChainAdapterModel dspChainAdapterModel{
+        &gainViewModel, &eqViewModel, &compressorViewModel,
+        &masteringChainState, QStringLiteral("Mastering"),
+        nullptr, &stereoMsViewModel, true};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
@@ -123,8 +223,11 @@ int main(int argc, char* argv[])
         &masteringChainState, &gainViewModel, &eqViewModel, &dspChainAdapterModel, &previewController};
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
-         &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession](
+         &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,
+         &stereoMsViewModel, &compressorViewModel, &staticTruePeak](
             const rgsml::core::ResourceReference& source) {
+            // Prevent a prior source's slow C1 work from becoming current.
+            staticTruePeak.invalidate_source();
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
             const auto sampleRate = rgsml::core::SampleRate::create(
@@ -134,7 +237,24 @@ int main(int argc, char* argv[])
                     *frameCount.value(), *sampleRate.value());
             }
             const auto prepared = auditionSelector.source_committed(source);
+            if (prepared && frameCount && sampleRate) {
+                const int channelCount = sourceSelection.channel_count();
+                if (channelCount == 1 || channelCount == 2) {
+                    staticTruePeak.source_committed(
+                        source, rgsml::app::TruePeakExpectedSource{
+                            *frameCount.value(), *sampleRate.value(),
+                            channelCount == 1
+                                ? rgsml::audio::ChannelLayout::MONO_C
+                                : rgsml::audio::ChannelLayout::STEREO_LR});
+                    staticTruePeak.processed_changed(
+                        auditionSelector.processed_realization_snapshot(),
+                        auditionSelector.processed_realization_id());
+                }
+            }
             if (prepared) {
+                // New source identity: clear previous GR regardless of whether
+                // project-open is restoring existing DSP parameter values.
+                compressorViewModel.resetTelemetryForNewSource();
                 static_cast<void>(auditionSelector.switch_to(
                     rgsml::app::AuditionTarget::PREPARED));
                 if (!projectSession.is_committing_project_open()) {
@@ -143,6 +263,11 @@ int main(int argc, char* argv[])
             }
             goldSelection.sourceChanged();
             sourceWaveform.source_committed(source);
+            // Use the committed source's real format AFTER the adapter's
+            // new-source reset has invalidated prior format evidence.
+            stereoMsViewModel.setSignalFormat(
+                static_cast<double>(sourceSelection.sample_rate_hz()),
+                sourceSelection.channel_count());
         });
     waveformPresentation.set_seek_handler(
         [&auditionRegion](rgsml::core::FrameIndex position) {
@@ -198,12 +323,24 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("compressorViewModel"),
         &compressorViewModel);
+    // Read-only telemetry properties are ready for B4c3 QML; no fake
+    // visual points or default DSP activation are introduced here.
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("stereoMsViewModel"),
+        &stereoMsViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"),
         &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
+        QStringLiteral("truePeakStatic"), &staticTruePeak);
+    engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"),
         &liveSpectrumViewModel);
+#ifdef RGSML_BUILD_PROVENANCE
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("buildProvenance"),
+        QStringLiteral(RGSML_BUILD_PROVENANCE));
+#endif
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,
