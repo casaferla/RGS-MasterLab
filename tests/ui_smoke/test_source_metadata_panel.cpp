@@ -2696,6 +2696,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     const QRectF overallOn = toolbarGeometry(overallItem);
     const QRectF spectrumOn = toolbarGeometry(spectrumItem);
     const QRectF addOn = toolbarGeometry(addItem);
+    // Investigation only. Quantify the *same* exact QRectF oracle at each
+    // event-loop boundary instead of assuming a Qt Quick layout cause.
+    const auto traceToolbarGeometry = [&](const char* phase) {
+        qInfo().noquote() << "FIX_UI_001_EQ_LAYOUT_PROBE"
+            << "phase=" << phase
+            << "windowSize=" << window->size()
+            << "devicePixelRatio=" << window->devicePixelRatio()
+            << "toolbarSize=" << eqToolbar->size()
+            << "reset=" << toolbarGeometry(resetItem)
+            << "overall=" << toolbarGeometry(overallItem)
+            << "spectrum=" << toolbarGeometry(spectrumItem)
+            << "add=" << toolbarGeometry(addItem);
+    };
+    traceToolbarGeometry("baseline_on_before_capture");
     QVERIFY(capture_visual_evidence(window,
         QStringLiteral("minor_fix_001_eq_spectrum_on_1184x688.png"),
         QSize{1184, 688}));
@@ -2707,6 +2721,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY2(!liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle click must set spectrumEnabled to false");
     QVERIFY2(!spectrumCanvasObj->property("visible").toBool(), "spectrumCanvas must be hidden when SPECTRUM is OFF");
+    traceToolbarGeometry("off_after_process_events_immediate");
+    // Standalone falsification of the layout-settling hypothesis. The
+    // subsequent QCOMPARE assertions remain EXACT (no tolerance/xfail).
+    QTest::qWait(200);
+    traceToolbarGeometry("off_after_200ms_qt_event_loop");
     QCOMPARE(toolbarGeometry(resetItem), resetOn);
     QCOMPARE(toolbarGeometry(overallItem), overallOn);
     QCOMPARE(toolbarGeometry(spectrumItem), spectrumOn);
@@ -2721,6 +2740,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY2(liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle click must restore spectrumEnabled to true");
     QVERIFY2(spectrumCanvasObj->property("visible").toBool(), "spectrumCanvas must be restored visible when SPECTRUM is ON");
+    traceToolbarGeometry("on_after_process_events_immediate");
+    QTest::qWait(200);
+    traceToolbarGeometry("on_after_200ms_qt_event_loop");
 
     QCOMPARE(toolbarGeometry(resetItem), resetOn);
     QCOMPARE(toolbarGeometry(overallItem), overallOn);
