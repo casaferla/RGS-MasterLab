@@ -155,6 +155,40 @@ Item {
                         // immediately because Slider.pressed is false for them.
                         property real pendingGainDb: root.currentGainDb
 
+                        // UX-002: accumulate sub-detent motion without
+                        // scheduling a render for each high-resolution tick.
+                        property real wheelRemainder: 0
+
+                        // Transparent whole-slider wheel target: preserve
+                        // the Slider's existing mouse drag/handle semantics.
+                        MouseArea {
+                            id: gainWheelArea
+                            objectName: "inputGainWheelArea"
+                            anchors.fill: parent
+                            z: 5
+                            acceptedButtons: Qt.NoButton
+                            hoverEnabled: true
+                            enabled: gainSlider.enabled && !gainSlider.pressed
+                            onWheel: function(wheel) {
+                                gainSlider.wheelRemainder += wheel.angleDelta.y
+                                var steps = Math.trunc(gainSlider.wheelRemainder / 120)
+                                if (steps !== 0) {
+                                    gainSlider.wheelRemainder -= steps * 120
+                                    var next = Math.round(
+                                        (root.currentGainDb + steps * 0.1) * 10) / 10
+                                    next = Math.max(gainSlider.from,
+                                                    Math.min(gainSlider.to, next))
+                                    if (next !== root.currentGainDb && root.viewModel) {
+                                        gainSlider.pendingGainDb = next
+                                        // Existing undo and preview; never
+                                        // commit sub-detent high-resolution ticks.
+                                        root.viewModel.setGainDb(next)
+                                    }
+                                }
+                                wheel.accepted = true
+                            }
+                        }
+
                         onMoved: {
                             pendingGainDb = gainSlider.value
                             if (!gainSlider.pressed && root.viewModel) {
@@ -171,6 +205,8 @@ Item {
                         }
 
                         background: Rectangle {
+                            id: gainSliderTrack
+                            objectName: "gainSliderTrack"
                             x: gainSlider.leftPadding
                             y: gainSlider.topPadding + gainSlider.availableHeight / 2 - height / 2
                             width: gainSlider.availableWidth
@@ -179,6 +215,29 @@ Item {
                             color: "#08121C"
                             border.color: "#1E354A"
                             border.width: 1
+
+                            // Same bipolar convention as Compressor MAKE-UP
+                            // and Stereo/M-S gains: fill from the 0 dB handle
+                            // CENTER to the actual handle CENTER, never to
+                            // the visual track edge. No fill at exactly 0 dB.
+                            readonly property real thumbRadius:
+                                gainSlider.handle ? gainSlider.handle.width / 2 : 9
+                            readonly property real zeroCenterX:
+                                thumbRadius + 0.5 * (width - 2 * thumbRadius)
+                            readonly property real thumbCenterX:
+                                thumbRadius + gainSlider.visualPosition
+                                * Math.max(0, width - 2 * thumbRadius)
+                            Rectangle {
+                                objectName: "gainSliderTrackFill"
+                                x: Math.min(gainSliderTrack.zeroCenterX,
+                                            gainSliderTrack.thumbCenterX)
+                                y: 0
+                                width: Math.abs(gainSliderTrack.thumbCenterX
+                                                - gainSliderTrack.zeroCenterX)
+                                height: parent.height
+                                radius: parent.radius
+                                color: Qt.alpha(root.accent, 0.38)
+                            }
 
                             // Center 0 dB Reference Line
                             Rectangle {
@@ -191,6 +250,7 @@ Item {
                         }
 
                         handle: Rectangle {
+                            objectName: "gainSliderThumb"
                             x: gainSlider.leftPadding + gainSlider.visualPosition * (gainSlider.availableWidth - width)
                             y: gainSlider.topPadding + gainSlider.availableHeight / 2 - height / 2
                             width: 18

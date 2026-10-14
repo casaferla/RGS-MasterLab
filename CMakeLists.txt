@@ -42,6 +42,11 @@ add_subdirectory(project)
 add_subdirectory(audio)
 add_subdirectory(dsp)
 add_subdirectory(analysis)
+# B3: add the non-qualifying public DTO adapter OUTSIDE the cryptographically
+# locked M16 numerical target definition. The frozen analysis/CMakeLists.txt
+# and its strict-FP source list are preserved byte-for-byte by the B2i guard.
+target_sources(rgsml_analysis PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/src/true_peak_measurement.cpp")
 add_subdirectory(render)
 add_subdirectory(platform)
 add_subdirectory(ui)
