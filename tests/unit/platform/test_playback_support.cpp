@@ -257,6 +257,8 @@ private slots:
     void c2D1UnknownTargetHandoffAndLoopAreNotCoverage();
     void c2D2AcceptedRunLedgerPartialWriteAndClock();
     void c2D2AcceptedRunLedgerOldOwnerResetAndFailClosed();
+    void c2D2AcceptedRunLedgerOverflowIsSticky();
+    void c2D2SrcAcceptedRunsAreNotExactSourceCoverage();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2183,6 +2185,70 @@ void PlaybackSupportTest::c2D2AcceptedRunLedgerOldOwnerResetAndFailClosed()
     const auto afterReset = engine.c2_processed_coverage_probe(oldGeneration);
     QCOMPARE(afterReset.reason,
         platform::windows::internal::C2CoverageProbeReason::STALE_GENERATION);
+}
+
+void PlaybackSupportTest::c2D2AcceptedRunLedgerOverflowIsSticky()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    // Single-frame loop forces separate non-exact enqueue runs. Capacity and
+    // retention are finite: lost provenance must become an explicit condition.
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 32);
+    PlaybackEngine engine;
+    auto out = std::make_unique<FakeOutput>(4U, 4U);
+    auto* sink = out.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(out),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{701}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{0}, core::FrameIndex{1}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    for (int i = 0; i < 132; ++i) {
+        sink->consume_all();
+        engine.tick();
+    }
+    const auto probe = engine.c2_processed_coverage_probe();
+    QVERIFY(probe.acceptedLedgerOverflow);
+    QCOMPARE(probe.reason, Reason::ACCEPTED_LEDGER_OVERFLOW);
+    QCOMPARE(probe.acceptedRunCount, std::size_t{128});
+    QVERIFY(probe.acceptedOutputFrames > 128);
+    QVERIFY(!probe.completeThroughWatermark);
+    for (const auto& run : engine.c2_accepted_output_runs()) {
+        QVERIFY(!run.exactOneToOne); // loop provenance is unproven in C2D2
+        QCOMPARE(run.generation, probe.generation);
+    }
+    QVERIFY(engine.stop());
+    const auto cleared = engine.c2_processed_coverage_probe();
+    QVERIFY(!cleared.acceptedLedgerOverflow);
+    QCOMPARE(cleared.acceptedRunCount, std::size_t{0});
+}
+
+void PlaybackSupportTest::c2D2SrcAcceptedRunsAreNotExactSourceCoverage()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto inputRate = core::SampleRate::create(44'100);
+    auto outputRate = core::SampleRate::create(48'000);
+    QVERIFY(inputRate && outputRate);
+    auto converter = audio::PlaybackSampleRateAdapter::create(
+        audio::PlaybackRateSpec{*inputRate.value(), *outputRate.value(),
+            audio::ChannelLayout::STEREO_LR, frame_count(441)});
+    QVERIFY(converter);
+    auto pcm = make_buffer(44'100, audio::ChannelLayout::STEREO_LR, 441);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(128U, 4U);
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::move(*converter.value()),
+        nullptr, core::RealizationId{702}));
+    QVERIFY(engine.play());
+    const auto probe = engine.c2_processed_coverage_probe();
+    QCOMPARE(probe.reason, Reason::UNPROVEN_SRC);
+    QVERIFY(!probe.completeThroughWatermark);
+    QVERIFY(probe.acceptedRunCount > 0U);
+    for (const auto& run : engine.c2_accepted_output_runs()) {
+        QVERIFY(!run.exactOneToOne);
+        QVERIFY(!run.sourceBegin.has_value());
+        QVERIFY(!run.sourceEnd.has_value());
+    }
 }
 
 }  // namespace rgsml::tests
