@@ -47,6 +47,27 @@ add_subdirectory(analysis)
 # and its strict-FP source list are preserved byte-for-byte by the B2i guard.
 target_sources(rgsml_analysis PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/src/true_peak_measurement.cpp")
+
+# C2D5 chronological True-Peak transport is registered OUTSIDE the frozen
+# Gate-G analysis/CMakeLists.txt file, exactly like the B3 public DTO adapter.
+# Strict binary64 arithmetic is explicitly scoped to this additional file;
+# the protected original FIR source policies remain byte-identical.
+set(_rgsml_c2d5_chrono_source
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/src/true_peak_chronological_buckets.cpp")
+target_sources(rgsml_analysis PRIVATE "${_rgsml_c2d5_chrono_source}")
+if(MSVC)
+    set(_rgsml_c2d5_chrono_strict_fp_options "/fp:strict")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    set(_rgsml_c2d5_chrono_strict_fp_options "-fno-fast-math;-ffp-contract=off")
+else()
+    message(FATAL_ERROR
+        "M16 C2D5 chronological analysis requires strict-FP compiler support.")
+endif()
+set_source_files_properties("${_rgsml_c2d5_chrono_source}"
+    TARGET_DIRECTORY rgsml_analysis
+    PROPERTIES COMPILE_OPTIONS "${_rgsml_c2d5_chrono_strict_fp_options}")
+unset(_rgsml_c2d5_chrono_strict_fp_options)
+unset(_rgsml_c2d5_chrono_source)
 add_subdirectory(render)
 add_subdirectory(platform)
 add_subdirectory(ui)

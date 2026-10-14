@@ -8,7 +8,6 @@ add_library(rgsml_analysis STATIC
     src/spsc_ring.cpp
     src/live_spectrum_analyzer.cpp
     src/true_peak_itu4x_channel_stream.cpp
-    src/true_peak_chronological_buckets.cpp
     src/true_peak_full_resource.cpp
 )
 # M16 Gate G: preserve source-ordered binary64 FIR products, additions, and
@@ -17,7 +16,6 @@ add_library(rgsml_analysis STATIC
 # should change as a result of this compiler policy.
 set(_rgsml_true_peak_strict_fp_sources
     src/true_peak_itu4x_channel_stream.cpp
-    src/true_peak_chronological_buckets.cpp
     src/true_peak_full_resource.cpp
 )
 if(MSVC)
