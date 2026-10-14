@@ -255,6 +255,8 @@ private slots:
     void controlPlaneTraversalSeekAndLoopSerials();
     void c2D1ProcessedWatermarkFailClosedAndGeneration();
     void c2D1UnknownTargetHandoffAndLoopAreNotCoverage();
+    void c2D2AcceptedRunLedgerPartialWriteAndClock();
+    void c2D2AcceptedRunLedgerOldOwnerResetAndFailClosed();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2102,6 +2104,85 @@ void PlaybackSupportTest::c2D1UnknownTargetHandoffAndLoopAreNotCoverage()
     const auto looping = engine.c2_processed_coverage_probe();
     QCOMPARE(looping.reason, Reason::UNPROVEN_LOOP);
     QVERIFY(!looping.completeThroughWatermark);
+}
+
+void PlaybackSupportTest::c2D2AcceptedRunLedgerPartialWriteAndClock()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    // A two-byte device write may complete only half a stereo PCM16 frame.
+    // The observer must materialize only wholly accepted output frames.
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 16);
+    PlaybackEngine engine;
+    auto out = std::make_unique<FakeOutput>(12U, 4U, 2U);
+    auto* sink = out.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(out),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{501}));
+    QVERIFY(engine.play());
+    const auto initial = engine.c2_processed_coverage_probe();
+    QCOMPARE(initial.acceptedOutputFrames, std::int64_t{3});
+    QCOMPARE(initial.acceptedRunCount, std::size_t{1});
+    QVERIFY(!initial.acceptedLedgerOverflow);
+    QVERIFY(!initial.completeThroughWatermark);
+    QCOMPARE(engine.c2_accepted_output_runs().size(), std::size_t{1});
+    const auto first = engine.c2_accepted_output_runs().front();
+    QCOMPARE(first.generation, initial.generation);
+    QCOMPARE(first.outputBegin, std::int64_t{0});
+    QCOMPARE(first.outputEnd, std::int64_t{3});
+    QCOMPARE(first.sourceBegin, std::optional<std::int64_t>{0});
+    QCOMPARE(first.sourceEnd, std::optional<std::int64_t>{3});
+    QCOMPARE(first.realizationId, std::optional{core::RealizationId{501}});
+    QVERIFY(first.exactOneToOne);
+
+    sink->set_processed_frames(2);
+    const auto partial = engine.c2_processed_coverage_probe();
+    QCOMPARE(partial.processedWatermarkExclusive, std::int64_t{2});
+    QCOMPARE(partial.reason, Reason::MISSING_CHRONOLOGICAL_LEDGER);
+    QVERIFY(!partial.completeThroughWatermark);
+
+    sink->set_processed_frames(4); // fabricated sink clock beyond 3 accepted
+    const auto impossible = engine.c2_processed_coverage_probe();
+    QCOMPARE(impossible.reason, Reason::CLOCK_AHEAD_OF_ACCEPTED);
+    QVERIFY(!impossible.completeThroughWatermark);
+
+    sink->set_processed_frames(0);
+    sink->consume_all();
+    engine.tick();
+    const auto afterTick = engine.c2_processed_coverage_probe();
+    QVERIFY(afterTick.acceptedOutputFrames > initial.acceptedOutputFrames);
+    QVERIFY(!afterTick.completeThroughWatermark);
+    const auto runs = engine.c2_accepted_output_runs();
+    QCOMPARE(runs.size(), std::size_t{1}); // coalesced consecutive source runs
+    QCOMPARE(runs.front().outputBegin, std::int64_t{0});
+    QCOMPARE(runs.front().outputEnd, afterTick.acceptedOutputFrames);
+}
+
+void PlaybackSupportTest::c2D2AcceptedRunLedgerOldOwnerResetAndFailClosed()
+{
+    auto oldPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2500);
+    auto newPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2500);
+    PlaybackEngine engine;
+    auto out = std::make_unique<FakeOutput>(128U, 4U);
+    QVERIFY(engine.install_pcm_candidate(oldPcm.view(), std::move(out),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{601}));
+    QVERIFY(engine.play());
+    const auto oldRun = engine.c2_accepted_output_runs().front();
+    QCOMPARE(oldRun.realizationId, std::optional{core::RealizationId{601}});
+    QVERIFY(oldRun.exactOneToOne);
+    const auto oldGeneration = oldRun.generation;
+
+    QVERIFY(engine.handoff_pcm(newPcm.view(), nullptr, core::RealizationId{602}));
+    const auto probe = engine.c2_processed_coverage_probe();
+    QVERIFY(!probe.completeThroughWatermark);
+    // Queued OLD PCM retains its owner stamp even after candidate NEW is set.
+    QCOMPARE(engine.c2_accepted_output_runs().front().realizationId,
+        std::optional{core::RealizationId{601}});
+    QVERIFY(engine.stop());
+    QCOMPARE(engine.c2_accepted_output_runs().size(), std::size_t{0});
+    const auto afterReset = engine.c2_processed_coverage_probe(oldGeneration);
+    QCOMPARE(afterReset.reason,
+        platform::windows::internal::C2CoverageProbeReason::STALE_GENERATION);
 }
 
 }  // namespace rgsml::tests

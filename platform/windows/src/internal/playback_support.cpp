@@ -1099,6 +1099,9 @@ C2CoverageProbe PlaybackEngine::c2_processed_coverage_probe(
     C2CoverageProbe probe{};
     probe.generation = c2CoverageGeneration_;
     probe.generatedOutputFrames = generatedOutputFrames_;
+    probe.acceptedOutputFrames = c2AcceptedOutputFrames_;
+    probe.acceptedRunCount = c2AcceptedRuns_.size();
+    probe.acceptedLedgerOverflow = c2AcceptedLedgerOverflow_;
     if (expectedGeneration && *expectedGeneration != probe.generation) {
         probe.reason = C2CoverageProbeReason::STALE_GENERATION;
         return probe;
@@ -1122,6 +1125,10 @@ C2CoverageProbe PlaybackEngine::c2_processed_coverage_probe(
     probe.processedWatermarkExclusive = processed - processedFrameBaseline_;
     if (probe.processedWatermarkExclusive > generatedOutputFrames_) {
         probe.reason = C2CoverageProbeReason::CLOCK_AHEAD_OF_GENERATED;
+    } else if (probe.processedWatermarkExclusive > c2AcceptedOutputFrames_) {
+        probe.reason = C2CoverageProbeReason::CLOCK_AHEAD_OF_ACCEPTED;
+    } else if (c2AcceptedLedgerOverflow_) {
+        probe.reason = C2CoverageProbeReason::ACCEPTED_LEDGER_OVERFLOW;
     } else if (!activeRealizationId_) {
         probe.reason = C2CoverageProbeReason::NOT_MONITORED;
     } else if (pendingHandoff_) {
@@ -1218,7 +1225,14 @@ core::Status PlaybackEngine::pump_once()
                 core::ErrorCode::IoFailure,
                 "Playback output accepted an invalid byte count.");
         }
+        const auto bytesPerFrame =
+            source_format().channel_count() * bytes_per_sample(*sampleFormat_);
+        const auto completedBefore = pendingOffset_ / bytesPerFrame;
         pendingOffset_ += *written.value();
+        const auto completedAfter = pendingOffset_ / bytesPerFrame;
+        if (completedAfter > completedBefore) {
+            c2_record_accepted_frames(completedBefore, completedAfter);
+        }
         if (pendingOffset_ == pendingBytes_.size()) {
             pendingBytes_.clear();
             pendingOffset_ = 0U;
@@ -1296,6 +1310,12 @@ core::Status PlaybackEngine::pump_once()
     }
     pendingBytes_ = std::move(*encoded.value());
     pendingOffset_ = 0U;
+    // Capture owner/domain at *generation* time. A future handoff can change
+    // activeRealizationId_ while old bytes are still queued or pending.
+    c2PendingOwner_ = activeRealizationId_;
+    c2PendingSourceBegin_ = blockAbsoluteStart.value();
+    c2PendingExactMapping_ = !rateAdapter_ && !loop_ && !pendingHandoff_
+        && scheduledLoopEpochs_.empty() && c2PendingOwner_.has_value();
     generatedOutputFrames_ += frames;
     scheduledOutputFrame_ += frames;
     if (!loop_ && scheduledOutputFrame_ == outputDuration_->value()) {
@@ -1330,6 +1350,63 @@ void PlaybackEngine::record_runtime_error(core::Error error) noexcept
     runtimeError_ = std::move(error);
 }
 
+void PlaybackEngine::c2_record_accepted_frames(
+    std::size_t oldComplete, std::size_t newComplete) noexcept
+{
+    // Observer bookkeeping is CONTROL PLANE only. Never fail an audio write
+    // or alter PCM when a diagnostic allocation/retention bound is exceeded.
+    if (newComplete <= oldComplete) {
+        return;
+    }
+    const auto accepted = newComplete - oldComplete;
+    if (accepted > static_cast<std::size_t>(
+            std::numeric_limits<std::int64_t>::max() - c2AcceptedOutputFrames_)) {
+        c2AcceptedLedgerOverflow_ = true;
+        return;
+    }
+    const auto outputBegin = c2AcceptedOutputFrames_;
+    c2AcceptedOutputFrames_ += static_cast<std::int64_t>(accepted);
+    if (c2AcceptedLedgerOverflow_ || c2CoverageGenerationExhausted_) {
+        return;
+    }
+
+    C2AcceptedOutputRun run{};
+    run.generation = c2CoverageGeneration_;
+    run.outputBegin = outputBegin;
+    run.outputEnd = c2AcceptedOutputFrames_;
+    run.realizationId = c2PendingOwner_;
+    run.exactOneToOne = c2PendingExactMapping_;
+    if (run.exactOneToOne) {
+        // The decoded block was already checked to lie inside its finite
+        // source resource. Retain *generation-time* mapping, not UI cursor.
+        run.sourceBegin = c2PendingSourceBegin_
+            + static_cast<std::int64_t>(oldComplete);
+        run.sourceEnd = c2PendingSourceBegin_
+            + static_cast<std::int64_t>(newComplete);
+    }
+    if (!c2AcceptedRuns_.empty()) {
+        auto& previous = c2AcceptedRuns_.back();
+        if (run.exactOneToOne && previous.exactOneToOne
+            && previous.generation == run.generation
+            && previous.outputEnd == run.outputBegin
+            && previous.sourceEnd == run.sourceBegin
+            && previous.realizationId == run.realizationId) {
+            previous.outputEnd = run.outputEnd;
+            previous.sourceEnd = run.sourceEnd;
+            return;
+        }
+    }
+    if (c2AcceptedRuns_.size() >= kC2MaximumAcceptedRuns) {
+        c2AcceptedLedgerOverflow_ = true; // sticky until the next generation
+        return;
+    }
+    try {
+        c2AcceptedRuns_.push_back(std::move(run));
+    } catch (const std::bad_alloc&) {
+        c2AcceptedLedgerOverflow_ = true;
+    }
+}
+
 void PlaybackEngine::reset_queue_state(std::int64_t frame) noexcept
 {
     // Reset is the authoritative point for a new processed-output clock epoch.
@@ -1339,6 +1416,12 @@ void PlaybackEngine::reset_queue_state(std::int64_t frame) noexcept
     } else {
         ++c2CoverageGeneration_;
     }
+    c2AcceptedRuns_.clear();
+    c2AcceptedOutputFrames_ = 0;
+    c2AcceptedLedgerOverflow_ = false;
+    c2PendingSourceBegin_ = 0;
+    c2PendingOwner_.reset();
+    c2PendingExactMapping_ = false;
     scheduledOutputFrame_ = source_to_output_frame(frame);
     playbackStartOutputFrame_ = scheduledOutputFrame_;
     generatedOutputFrames_ = 0;

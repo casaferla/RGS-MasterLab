@@ -85,16 +85,33 @@ enum class C2CoverageProbeReason {
     GENERATION_EXHAUSTED,
     CLOCK_BEFORE_BASELINE,
     CLOCK_AHEAD_OF_GENERATED,
+    CLOCK_AHEAD_OF_ACCEPTED,
+    ACCEPTED_LEDGER_OVERFLOW,
     UNPROVEN_HANDOFF,
     UNPROVEN_SRC,
     UNPROVEN_LOOP,
     MISSING_CHRONOLOGICAL_LEDGER,
 };
 
+// Bounded owner-stamped ENQUEUE observations, NOT proof that frames were
+// consumed or that the source is the canonical PROCESSED monitoring target.
+struct C2AcceptedOutputRun final {
+    std::uint64_t generation{0};
+    std::int64_t outputBegin{0};
+    std::int64_t outputEnd{0};
+    std::optional<std::int64_t> sourceBegin;
+    std::optional<std::int64_t> sourceEnd;
+    std::optional<core::RealizationId> realizationId;
+    bool exactOneToOne{false};
+};
+
 struct C2CoverageProbe final {
     std::uint64_t generation{0};
     std::int64_t processedWatermarkExclusive{0};
     std::int64_t generatedOutputFrames{0};
+    std::int64_t acceptedOutputFrames{0};
+    std::size_t acceptedRunCount{0};
+    bool acceptedLedgerOverflow{false};
     bool completeThroughWatermark{false};
     C2CoverageProbeReason reason{C2CoverageProbeReason::NOT_MONITORED};
 };
@@ -139,6 +156,10 @@ public:
     // Incomplete is intentional: no programme interval is yet certified VALID.
     [[nodiscard]] C2CoverageProbe c2_processed_coverage_probe(
         std::optional<std::uint64_t> expectedGeneration = std::nullopt) const noexcept;
+    // Diagnostics on the serialized owner thread; span invalid after next tick/reset.
+    // Runs represent only *accepted* whole device frames, never true LIVE TP.
+    [[nodiscard]] std::span<const C2AcceptedOutputRun>
+    c2_accepted_output_runs() const noexcept { return c2AcceptedRuns_; }
 
     // Called by a bounded owner-thread timer, never by the audio callback.
     void tick();
@@ -189,6 +210,8 @@ private:
     void update_position() noexcept;
     void record_runtime_error(core::Error error) noexcept;
     void reset_queue_state(std::int64_t frame) noexcept;
+    void c2_record_accepted_frames(std::size_t oldComplete,
+        std::size_t newComplete) noexcept;
 
     std::unique_ptr<IPlaybackSource> source_;
     std::unique_ptr<IPlaybackOutput> output_;
@@ -218,6 +241,13 @@ private:
     std::uint64_t baseLoopWrapCount_{0};
     std::uint64_t c2CoverageGeneration_{0};
     bool c2CoverageGenerationExhausted_{false};
+    static constexpr std::size_t kC2MaximumAcceptedRuns = 128U;
+    std::vector<C2AcceptedOutputRun> c2AcceptedRuns_;
+    std::int64_t c2AcceptedOutputFrames_{0};
+    bool c2AcceptedLedgerOverflow_{false};
+    std::int64_t c2PendingSourceBegin_{0};
+    std::optional<core::RealizationId> c2PendingOwner_;
+    bool c2PendingExactMapping_{false};
 };
 
 }  // namespace rgsml::platform::windows::internal
