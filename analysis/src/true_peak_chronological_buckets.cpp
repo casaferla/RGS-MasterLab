@@ -68,7 +68,7 @@ void ChronologicalTruePeakBuckets::advance_one_frame() noexcept
     }
 }
 
-core::Status ChronologicalTruePeakBuckets::consume_gap() noexcept
+core::Status ChronologicalTruePeakBuckets::consume_gap()
 {
     if (nextSourceFrame_ == std::numeric_limits<std::int64_t>::max()
         || nextSourceFrame_ >= nextBucketEnd_) {

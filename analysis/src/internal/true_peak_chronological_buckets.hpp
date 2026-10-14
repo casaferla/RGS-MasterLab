@@ -36,7 +36,7 @@ public:
     // NaN/Inf and malformed frame sizes fail atomically, without consuming.
     [[nodiscard]] core::Status consume_frame(
         std::span<const double> samples, bool sourceSupportProven);
-    [[nodiscard]] core::Status consume_gap() noexcept;
+    [[nodiscard]] core::Status consume_gap();
     [[nodiscard]] ChronologicalTruePeakWindow snapshot() const noexcept;
 
     [[nodiscard]] std::int64_t consumed_source_frames() const noexcept {

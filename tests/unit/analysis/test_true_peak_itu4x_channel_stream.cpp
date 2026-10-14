@@ -54,6 +54,7 @@ private slots:
     void chronologicalBucketSixRatesAndFIRParity();
     void chronologicalHoldAndGapNeverCertifyPartial();
     void chronologicalInvalidInputsAreAtomic();
+    void chronologicalSeekAndUnknownHistoryDoNotInventValidBuckets();
 };
 
 void TruePeakItu4xChannelStreamTest::signedPhaseIndexingAndFullTail()
@@ -254,6 +255,36 @@ void TruePeakItu4xChannelStreamTest::chronologicalInvalidInputsAreAtomic()
     const auto after = meter.snapshot();
     QVERIFY(after.recent100msComplete);
     QVERIFY(after.recentLinearPeak[0] > 0.0);
+}
+
+
+void TruePeakItu4xChannelStreamTest::chronologicalSeekAndUnknownHistoryDoNotInventValidBuckets()
+{
+    using analysis::internal::ChronologicalTruePeakBuckets;
+    // A seek to frame 480 lacks the eleven previous source samples.
+    // The first bucket is intrinsically incomplete; after 11 proven samples,
+    // only *subsequent complete* buckets may become candidate-available.
+    auto created = ChronologicalTruePeakBuckets::create(48000, 1, 480);
+    QVERIFY(created);
+    auto meter = std::move(*created.value());
+    const std::array<double, 1> silence{0.0};
+    for (int n = 0; n < 480 * 11; ++n)
+        QVERIFY(meter.consume_frame(silence, true));
+    const auto first = meter.snapshot();
+    QCOMPARE(first.consumedSourceFrames, std::int64_t{5760});
+    QCOMPARE(first.lastCompleteBucketEnd, std::int64_t{5760});
+    QVERIFY(first.recent100msComplete);
+    QVERIFY(!first.shortHold1sComplete);
+    QCOMPARE(first.recentLinearPeak[0], 0.0);
+
+    // An unproven frame in an otherwise silent signal must destroy certainty,
+    // rather than being silently interpreted as an exact digital zero.
+    QVERIFY(meter.consume_gap());
+    for (int n = 1; n < 480; ++n)
+        QVERIFY(meter.consume_frame(silence, true));
+    const auto lost = meter.snapshot();
+    QVERIFY(!lost.recent100msComplete);
+    QVERIFY(!lost.shortHold1sComplete);
 }
 
 }  // namespace
