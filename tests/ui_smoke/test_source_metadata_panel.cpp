@@ -3181,6 +3181,29 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     traceCompressorContainment("after_diagnostic_200ms");
     QVERIFY2(compressorEditorNative->isVisible(),
         "Compressor editor must be visible when selected at minimum size");
+
+    // Record a screenshot at the exact problematic point, on the SECOND run.
+    // Unlike capture_visual_evidence(), grabWindow() does not explicitly call
+    // resize(), show(), or qWait(). Its rendering may still trigger polish:
+    // preserve the exact pre-grab truth, then re-check the live state.
+    const bool compressorContainedBeforeGrab = check_item_contained_in_ancestor(
+        compressorEditorNative, dspEditorHostNative);
+    const QString evidenceDir = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+    if (!evidenceDir.isEmpty() && QDir{}.mkpath(evidenceDir)) {
+        auto* visualWindow = qobject_cast<QQuickWindow*>(window);
+        if (visualWindow) {
+            const QImage image = visualWindow->grabWindow();
+            const QString path = QDir{evidenceDir}.filePath(
+                QStringLiteral("fix_ui_001_compressor_containment_at_assertion_1184x688.png"));
+            const bool saved = !image.isNull() && image.save(path, "PNG");
+            qInfo().noquote() << "FIX_UI_001_COMPRESSOR_ASSERTION_SCREENSHOT"
+                << "saved=" << saved << "path=" << path
+                << "preGrabContained=" << compressorContainedBeforeGrab;
+        }
+    }
+    traceCompressorContainment("after_grab_no_explicit_resize");
+    QVERIFY2(compressorContainedBeforeGrab,
+        "Compressor editor must stay inside dspEditorHost at minimum size (pre-grab)");
     QVERIFY2(check_item_contained_in_ancestor(compressorEditorNative, dspEditorHostNative),
         "Compressor editor must stay inside dspEditorHost at minimum size");
     auto* curveWellNative = qobject_cast<QQuickItem*>(find_child_by_name(compressorEditor, QStringLiteral("compressorCurveWell")));
