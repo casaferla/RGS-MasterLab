@@ -559,23 +559,24 @@ Window {
     visible: false
     color: "#06121F"
     Rectangle {
-        width: 1184
-        height: 688
+        objectName: "m16VisualCaptureSurface"
+        width: parent.width
+        height: parent.height
         color: "#06121F"
         DspChainSelector {
             objectName: "m16VisualChain"
             x: 12
             y: 16
             width: 180
-            height: 600
+            height: parent.height - 32
             adapterModel: m16VisualAdapterModel
         }
         DspEditorHost {
             objectName: "m16VisualHost"
             x: 202
             y: 16
-            width: 960
-            height: 600
+            width: parent.width - 224
+            height: parent.height - 32
             adapterModel: m16VisualAdapterModel
             // Explicitly NO source-bound measurement in this fixture:
             // no numeric true peak or fake audio source may appear.
@@ -652,6 +653,45 @@ Window {
     QVERIFY2(provenance->property("height").toDouble() > 0.0,
              "Provenance panel must not collapse");
     QCOMPARE(state.instances().size(), std::size_t{3});
+
+    // B4c: first genuine native Qt captures. Grab authored-size QQuickItem
+    // content; the CI virtual desktop must not clamp 1440x900 to its pixels.
+    // NO SOURCE is intentional: no invented True Peak numerical reading.
+    auto* captureSurface = qobject_cast<QQuickItem*>(
+        find_child_by_name(componentRoot.data(),
+                           QStringLiteral("m16VisualCaptureSurface")));
+    QVERIFY(captureSurface);
+    for (const auto size : {QSize{1184, 688}, QSize{1440, 900}}) {
+        captureSurface->setWidth(size.width());
+        captureSurface->setHeight(size.height());
+        window->resize(size);
+        QTest::qWait(120);
+        QCoreApplication::processEvents();
+        QCOMPARE(captureSurface->size(), QSizeF{size});
+        QVERIFY2(check_item_contained_in_ancestor(
+                     qobject_cast<QQuickItem*>(meter), captureSurface),
+                 "The True Peak editor must fit the native capture scene");
+        const auto screenshot = captureSurface->grabToImage();
+        QVERIFY2(screenshot, "M16 True Peak offscreen capture must start");
+        QSignalSpy readySpy{screenshot.data(), &QQuickItemGrabResult::ready};
+        if (readySpy.empty()) {
+            QVERIFY2(readySpy.wait(15000),
+                     "M16 offscreen scenegraph grab did not finish");
+        }
+        const QImage picture = screenshot->image();
+        QVERIFY2(!picture.isNull(), "M16 offscreen screenshot cannot be empty");
+        QCOMPARE(picture.size(), size);
+        const QString evidenceDir =
+            qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if (!evidenceDir.isEmpty()) {
+            QVERIFY(QDir{}.mkpath(evidenceDir));
+            const QString fileName = QStringLiteral(
+                "m16_true_peak_meter_readonly_nosource_exact_%1x%2.png")
+                .arg(size.width()).arg(size.height());
+            QVERIFY2(picture.save(QDir{evidenceDir}.filePath(fileName), "PNG"),
+                     "Native M16 screenshot must be saved into CI artifact");
+        }
+    }
 
     // Switching to an actual processing module restores the original
     // host actions without changing the audio ProcessingChain.
