@@ -22,18 +22,12 @@ Item {
         : root.hasMeasurement ? root.measurementProvider.measuredChannelCount : 0
     readonly property bool isMono: root.measuredChannels === 1
 
-    ScrollView {
-        id: meterScroll
+    // Canonical minimum window is a fully visible editor, never a scroller.
+    // The Qt layout itself distributes the available pixel height.
+    RowLayout {
+        objectName: "truePeakContentLayout"
         anchors.fill: parent
-        clip: true
-        contentWidth: availableWidth
-        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-
-        RowLayout {
-            width: meterScroll.availableWidth
-            height: Math.max(390, meterScroll.availableHeight)
-            spacing: 12
+        spacing: 10
 
             Rectangle {
                 id: meterBay
@@ -48,8 +42,8 @@ Item {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 12
+                    anchors.margins: 9
+                    spacing: 5
                     Text {
                         text: root.showLive ? "LIVE PROCESSED TRUE PEAK"
                                             : "STATIC FULL-RESOURCE TRUE PEAK"
@@ -148,6 +142,5 @@ Item {
                 measurementProvider: root.measurementProvider
                 liveProvider: root.liveProvider
             }
-        }
     }
 }

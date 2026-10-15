@@ -806,6 +806,13 @@ Window {
         }
     }
 
+    // The editor owns a real, non-scrolling layout rather than a Flickable.
+    auto* fixedContent = qobject_cast<QQuickItem*>(
+        find_child_by_name(meter, QStringLiteral("truePeakContentLayout")));
+    auto* meterItem = qobject_cast<QQuickItem*>(meter);
+    QVERIFY2(fixedContent && meterItem, "True Peak must use a fixed-size layout");
+    QVERIFY2(fixedContent->height() <= meterItem->height() + 1.0,
+             "M16 content must not extend below its actual editor height");
     // Height-only resize regression: checks genuine vertical centring.
     captureSurface->setHeight(840);
     window->resize(QSize{1440, 840});
@@ -905,6 +912,28 @@ Window {
                 .arg(size.width()).arg(size.height());
             QVERIFY2(realImage.save(QDir{evidenceDir}.filePath(fileName), "PNG"),
                      "M16 genuine full-resource evidence must be persisted");
+        }
+    }
+
+    // Readout grammar: preserve contiguous minus/integer and fixed
+    // decimal and unit positions when the integer grows to two digits.
+    auto* laneNumeric = find_child_by_name(
+        leftLane, QStringLiteral("truePeakLaneReading"));
+    auto* cardNumeric = find_child_by_name(
+        full, QStringLiteral("truePeakNumericValueText"));
+    QVERIFY(laneNumeric && cardNumeric);
+    for (const auto reading : {
+             QStringLiteral("-9.99 dBTP"), QStringLiteral("-10.00 dBTP"),
+             QStringLiteral("9.99 dBTP"), QStringLiteral("10.00 dBTP")}) {
+        QVERIFY(leftLane->setProperty("reading", reading));
+        QVERIFY(full->setProperty("reading", reading));
+        QCoreApplication::processEvents();
+        for (auto* numeral : {laneNumeric, cardNumeric}) {
+            const auto shown = numeral->property("text").toString();
+            QCOMPARE(shown.indexOf(QLatin1Char('.')), 4);
+            QCOMPARE(shown.indexOf(QStringLiteral("dBTP")), 9);
+            QVERIFY(shown.contains(reading.left(reading.indexOf(QLatin1Char('.')))
+                                   + QStringLiteral(".")));
         }
     }
 

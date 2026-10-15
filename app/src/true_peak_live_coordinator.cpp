@@ -183,14 +183,25 @@ void TruePeakLiveCoordinator::run_worker()
             sourceOrigin = input.consumedSourceBegin;
             processed = sourceOrigin;
         }
+        // A long GUI event-loop stall (e.g. continuous window resize) may
+        // cause the latest exact sink-consumed suffix to outrun the worker
+        // by >500 ms. Replay a bounded, independently source-mapped suffix
+        // from the immutable PROCESSED owner; NEVER preserve pre-stall FIR
+        // or 1-second HOLD history. Keeping sourceOrigin as the verified
+        // slice origin (separate from the rebased processed cursor) avoids
+        // the old permanent fail/retry-from-start feedback loop.
+        const auto cap = input.sampleRate.value() / 2;
+        if (input.consumedSourceEnd >= processed
+            && input.consumedSourceEnd - processed > cap) {
+            meter.reset();
+            processed = std::max(sourceOrigin, input.consumedSourceEnd - cap);
+        }
         if (!meter) {
             auto built = analysis::internal::ChronologicalTruePeakBuckets::create(
-                input.sampleRate.value(), channels, sourceOrigin);
+                input.sampleRate.value(), channels, processed);
             if (built) meter.emplace(std::move(*built.value()));
         }
-        // Bounded 500-ms backlog; unsupported lag must never silently skip.
         const auto remaining = input.consumedSourceEnd - processed;
-        const auto cap = input.sampleRate.value() / 2;
         if (meter && remaining >= 0 && remaining <= cap) {
             const auto view = input.owner->view();
             const auto left = view.channel(0);

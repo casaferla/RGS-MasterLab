@@ -11,6 +11,13 @@ Rectangle {
     property color valueColor: "#E9F7FF"
     property bool showColorKey: false
     property color keyColor: "#F2C66F"
+    function alignedDbtp(value) {
+        const match = /^(-?[0-9]+)\.([0-9]{2}) dBTP$/.exec(value)
+        if (!match)
+            return value
+        return " ".repeat(Math.max(0, 4 - match[1].length))
+                + match[1] + "." + match[2] + "  dBTP"
+    }
     implicitHeight: 108
     radius: 7
     color: "#10273A"
@@ -44,9 +51,10 @@ Rectangle {
             elide: Text.ElideRight
         }
         Text {
-            // Fixed-width digits and a reserved positive sign cell.
-            text: root.available && /^[0-9]/.test(root.reading)
-                ? " " + root.reading : root.reading
+            objectName: "truePeakNumericValueText"
+            // Decimal and unit are stationary; the minus is attached
+            // directly to the integer (including two-digit transitions).
+            text: root.available ? root.alignedDbtp(root.reading) : root.reading
             color: root.available ? root.valueColor : "#879CA9"
             font.family: "Consolas"
             font.pixelSize: 22

@@ -19,12 +19,20 @@ Rectangle {
     border.color: "#24425A"
     border.width: 1
     implicitWidth: 135
-    implicitHeight: 360
+    implicitHeight: 270
+
+    function alignedDbtp(value) {
+        const match = /^(-?[0-9]+)\.([0-9]{2}) dBTP$/.exec(value)
+        if (!match)
+            return value
+        return " ".repeat(Math.max(0, 4 - match[1].length))
+                + match[1] + "." + match[2] + "  dBTP"
+    }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 8
+        anchors.margins: 10
+        spacing: 4
         Text {
             objectName: "truePeakChannelLabel"
             text: root.channelName
@@ -157,16 +165,16 @@ Rectangle {
         }
         Text {
             objectName: "truePeakLaneReading"
-            // Fixed-width digits and a reserved positive sign cell avoid x-jitter.
-            text: root.available
-                ? (/^[0-9]/.test(root.reading) ? " " + root.reading : root.reading)
-                : "—"
+            // Right-aligned signed integer in a fixed four-character field;
+            // the minus remains glued to its integer. Decimal and dBTP
+            // positions never move even on -9.99 -> -10.00 crossings.
+            text: root.available ? root.alignedDbtp(root.reading) : "—"
             font.family: "Consolas"
-            font.pixelSize: 14
+            font.pixelSize: 13
             font.weight: Font.DemiBold
             color: !root.available ? "#7F98A9"
                 : root.aboveDigitalZero ? "#F39A9E" : "#EBF5FC"
-            horizontalAlignment: Text.AlignHCenter
+            horizontalAlignment: Text.AlignLeft
             Layout.fillWidth: true
             elide: Text.ElideRight
         }

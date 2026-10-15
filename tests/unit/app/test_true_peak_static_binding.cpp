@@ -92,6 +92,7 @@ private slots:
     void liveCoordinatorMeasuresSpikeAndInvalidatesTransitions();
     void consumedProcessedSeekRequiresProvenSourceMapping();
     void liveCoordinatorSeekReacquiresOnlyCompleteWindows();
+    void liveCoordinatorResyncsConsumedSuffixAfterGuiPollingStall();
     void postLoopRecoveryBindsOnlyFreshExactConsumedSuffix();
 };
 
@@ -536,6 +537,70 @@ void TruePeakStaticBindingTest::liveCoordinatorSeekReacquiresOnlyCompleteWindows
     QVERIFY(!live.hold_available());
 }
 
+
+void TruePeakStaticBindingTest::liveCoordinatorResyncsConsumedSuffixAfterGuiPollingStall()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    auto fixture = make_render(
+        144000, frame_range(0,144000), 48000,
+        audio::ChannelLayout::STEREO_LR, 0.9, 50);
+    QVERIFY(fixture);
+    core::PlaybackSnapshot playback{};
+    playback.state = core::PlaybackState::PLAYING;
+    playback.position = core::FrameIndex{4799};
+    playback.audibleRealization = {
+        core::AudibleHandoffPhase::NEW, core::RealizationId{2201}, std::nullopt};
+    platform::windows::WindowsConsumedOutputPrefix prefix{};
+    prefix.generation = 71;
+    prefix.reason = WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER;
+    prefix.partitionRepresented = true;
+    prefix.count = 1;
+    prefix.processedWatermarkExclusive = 4800;
+    auto& exact = prefix.slices[0];
+    exact.generation = 71;
+    exact.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    exact.realizationId = core::RealizationId{2201};
+    exact.outputBegin = 0;
+    exact.outputEnd = 4800;
+    exact.sourceBegin = 0;
+    exact.sourceEnd = 4800;
+    app::TruePeakLiveCoordinator live{
+        [&] { return core::Result<platform::windows::WindowsConsumedOutputPrefix>::success(prefix); },
+        [&] { return core::Result<core::PlaybackSnapshot>::success(playback); },
+        [&]() -> std::optional<app::TruePeakLiveSource> {
+            return app::TruePeakLiveSource{
+                fixture.value()->result, core::RealizationId{2201},
+                fixture.value()->expected};
+        }
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(live.recent_available(), 4500);
+    QVERIFY(live.peak_text() != QStringLiteral("−∞ dBTP"));
+    QVERIFY(!live.hold_available());
+    // Simulated GUI polling stall of 1.9 s. The prefix remains ONE
+    // contiguous, identical-owner, source-mapped consumed interval.
+    // The earlier pulse must NOT leak into the new 100-ms reading.
+    prefix.processedWatermarkExclusive = 96000;
+    exact.outputEnd = 96000;
+    exact.sourceEnd = 96000;
+    playback.position = core::FrameIndex{95999};
+    QTRY_COMPARE_WITH_TIMEOUT(live.peak_text(), QStringLiteral("−∞ dBTP"), 6000);
+    QVERIFY(live.recent_available());
+    QVERIFY(!live.hold_available()); // no invented cross-stall 1-s window
+    prefix.processedWatermarkExclusive = 115200;
+    exact.outputEnd = 115200;
+    exact.sourceEnd = 115200;
+    playback.position = core::FrameIndex{115199};
+    QTest::qWait(160);
+    QVERIFY(live.recent_available());
+    QVERIFY(!live.hold_available());
+    prefix.processedWatermarkExclusive = 122400;
+    exact.outputEnd = 122400;
+    exact.sourceEnd = 122400;
+    playback.position = core::FrameIndex{122399};
+    QTRY_VERIFY_WITH_TIMEOUT(live.hold_available(), 5000);
+    QCOMPARE(live.peak_text(), QStringLiteral("−∞ dBTP"));
+}
 
 void TruePeakStaticBindingTest::postLoopRecoveryBindsOnlyFreshExactConsumedSuffix()
 {

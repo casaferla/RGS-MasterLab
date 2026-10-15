@@ -11,7 +11,7 @@ Item {
     readonly property bool hasMeasurement: measurementProvider
         ? measurementProvider.hasMeasurement : false
     implicitWidth: 316
-    implicitHeight: 420
+    implicitHeight: 330
     readonly property bool compactRail: height < 530
     property color fullResourceAccent: "#6CBCCF"
 
@@ -24,13 +24,13 @@ Item {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         height: implicitHeight
-        spacing: root.compactRail ? 5 : 10
+        spacing: root.compactRail ? 3 : 10
 
         TruePeakReadoutCard {
             objectName: "truePeakRecentCard"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.compactRail ? 76 : 108
-            Layout.minimumHeight: 72
+            Layout.preferredHeight: root.compactRail ? 68 : 108
+            Layout.minimumHeight: 66
             heading: "RECENT / LIVE TRUE PEAK"
             reading: root.liveProvider && root.liveProvider.recentAvailable
                 ? root.liveProvider.peakText : "UNAVAILABLE"
@@ -42,8 +42,8 @@ Item {
         TruePeakReadoutCard {
             objectName: "truePeakHoldCard"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.compactRail ? 76 : 108
-            Layout.minimumHeight: 72
+            Layout.preferredHeight: root.compactRail ? 68 : 108
+            Layout.minimumHeight: 66
             heading: "SHORT HOLD / 1 SECOND"
             keyColor: "#F2C66F"
             valueColor: "#F2C66F"
@@ -57,8 +57,8 @@ Item {
         TruePeakReadoutCard {
             objectName: "truePeakFullResourceCard"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.compactRail ? 76 : 108
-            Layout.minimumHeight: 72
+            Layout.preferredHeight: root.compactRail ? 68 : 108
+            Layout.minimumHeight: 66
             heading: "COMPLETE PROCESSED RESOURCE"
             valueColor: root.fullResourceAccent
             reading: root.hasMeasurement
@@ -71,8 +71,8 @@ Item {
         TruePeakStatusCard {
             objectName: "truePeakProvenanceCard"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.compactRail ? 100 : 132
-            Layout.minimumHeight: 96
+            Layout.preferredHeight: root.compactRail ? 88 : 132
+            Layout.minimumHeight: 84
             stateLabel: root.measurementProvider
                 ? root.measurementProvider.stateText : "NO SOURCE"
             qualification: root.measurementProvider
