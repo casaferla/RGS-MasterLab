@@ -271,6 +271,7 @@ private slots:
     void c2D5SinkWatermarkFeedsRealNumericalRecentOnlyAfterFullBucket();
     void c2D6WorkerProjectionPreservesConsumedWatermarkAndGap();
     void c2D6WorkerProjectionNeverCertifiesProcessedTarget();
+    void c2D9RealSinkSeekMaintainsRelativeOutputAndAbsoluteSource();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2710,6 +2711,63 @@ void PlaybackSupportTest::c2D6WorkerProjectionNeverCertifiesProcessedTarget()
     QCOMPARE(stale.reason, WindowsConsumedGapReason::STALE_GENERATION);
     QVERIFY(!stale.partitionRepresented);
     QVERIFY(!stale.certifiedForLiveTruePeak);
+}
+
+
+void PlaybackSupportTest::c2D9RealSinkSeekMaintainsRelativeOutputAndAbsoluteSource()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 30'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(384U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1601}));
+    QVERIFY(engine.play());
+    sink->set_processed_frames(40);
+    const auto first = engine.c2_consumed_prefix();
+    QVERIFY(first.partitionRepresented);
+    QCOMPARE(first.size, std::size_t{1});
+    QCOMPARE(first.slices[0].sourceBegin, std::optional<std::int64_t>{0});
+    QCOMPARE(first.slices[0].sourceEnd, std::optional<std::int64_t>{40});
+    const auto initialGeneration = first.generation;
+
+    // A real seek restarts the backend's processed clock at zero, but the
+    // accepted PCM now starts at its ABSOLUTE SOURCE frame 4801.
+    QVERIFY(engine.seek(core::FrameIndex{4801}));
+    auto zero = engine.c2_consumed_prefix();
+    QVERIFY(zero.generation > initialGeneration);
+    QCOMPARE(zero.processedWatermarkExclusive, std::int64_t{0});
+    QVERIFY(!zero.partitionRepresented);
+    QVERIFY(!zero.certifiedForLiveTruePeak);
+    sink->set_processed_frames(31);
+    const auto afterSeek = engine.c2_consumed_prefix();
+    QCOMPARE(afterSeek.reason, Reason::MISSING_CHRONOLOGICAL_LEDGER);
+    QVERIFY(afterSeek.partitionRepresented);
+    QCOMPARE(afterSeek.processedWatermarkExclusive, std::int64_t{31});
+    QCOMPARE(afterSeek.size, std::size_t{1});
+    QCOMPARE(afterSeek.slices[0].kind, Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(afterSeek.slices[0].outputBegin, std::int64_t{0});
+    QCOMPARE(afterSeek.slices[0].outputEnd, std::int64_t{31});
+    QCOMPARE(afterSeek.slices[0].sourceBegin, std::optional<std::int64_t>{4801});
+    QCOMPARE(afterSeek.slices[0].sourceEnd, std::optional<std::int64_t>{4832});
+    QCOMPARE(afterSeek.slices[0].realizationId,
+        std::optional{core::RealizationId{1601}});
+    QVERIFY(!afterSeek.certifiedForLiveTruePeak);
+    QVERIFY(engine.seek(core::FrameIndex{9603}));
+    const auto stale = engine.c2_consumed_prefix(afterSeek.generation);
+    QCOMPARE(stale.reason, Reason::STALE_GENERATION);
+    sink->set_processed_frames(23);
+    const auto second = engine.c2_consumed_prefix();
+    QVERIFY(second.generation > afterSeek.generation);
+    QCOMPARE(second.processedWatermarkExclusive, std::int64_t{23});
+    QVERIFY(second.partitionRepresented);
+    QCOMPARE(second.size, std::size_t{1});
+    QCOMPARE(second.slices[0].sourceBegin, std::optional<std::int64_t>{9603});
+    QCOMPARE(second.slices[0].sourceEnd, std::optional<std::int64_t>{9626});
+    QVERIFY(!second.certifiedForLiveTruePeak);
 }
 
 }  // namespace rgsml::tests
