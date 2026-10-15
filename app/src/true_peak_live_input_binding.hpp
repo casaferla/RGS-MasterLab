@@ -19,6 +19,9 @@ struct BoundLiveTruePeakInput final {
     core::RealizationId realizationId;
     std::uint64_t chainRevision{0};
     std::uint64_t playbackGeneration{0};
+    // Absolute source-domain seek origin; output consumption stays relative
+    // to the new device-clock generation.
+    std::int64_t consumedSourceBegin{0};
     std::int64_t consumedSourceEnd{0};
     std::int64_t consumedOutputEnd{0};
     audio::ChannelLayout layout{audio::ChannelLayout::STEREO_LR};
@@ -26,7 +29,9 @@ struct BoundLiveTruePeakInput final {
 };
 
 // Contract accepts only a single uninterrupted, no-SRC/no-loop/no-handoff,
-// source-zero one-to-one run. More complex real timelines remain unqualified
+// one-to-one consumed run from any verified seek origin. A seek rebuilds FIR
+// history conservatively; gaps, loops and overlapping epochs stay unavailable.
+ // More complex real timelines remain unqualified
 // and explicitly unavailable until independent continuous-segment proofs.
 [[nodiscard]] core::Result<BoundLiveTruePeakInput>
 bind_processed_live_input(

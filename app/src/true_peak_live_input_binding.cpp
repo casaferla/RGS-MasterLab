@@ -22,7 +22,9 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
     if (consumed.certifiedForLiveTruePeak || !accepted
         || expectedRealization.value == 0
         || !consumed.partitionRepresented || consumed.count != 1U
-        || consumed.processedWatermarkExclusive <= 0) {
+        || consumed.processedWatermarkExclusive <= 0
+        || consumed.reason
+            != platform::windows::WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER) {
         return fail("C2D6 requires exactly one complete source-candidate prefix and a retained owner.");
     }
     if (playback.state != core::PlaybackState::PLAYING
@@ -50,17 +52,21 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
     if (slice.kind != platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED
         || slice.generation != consumed.generation
         || slice.outputBegin != 0 || slice.outputEnd != consumed.processedWatermarkExclusive
-        || slice.sourceBegin != std::optional<std::int64_t>{0}
-        || slice.sourceEnd != std::optional{consumed.processedWatermarkExclusive}
-        || slice.realizationId != std::optional{expectedRealization}
-        || slice.outputEnd > expectedSource.frameCount.value()) {
+        || !slice.sourceBegin || !slice.sourceEnd
+        || *slice.sourceBegin < 0
+        || *slice.sourceEnd <= *slice.sourceBegin
+        || *slice.sourceEnd > expectedSource.frameCount.value()
+        || *slice.sourceEnd - *slice.sourceBegin
+            != consumed.processedWatermarkExclusive
+        || slice.realizationId != std::optional{expectedRealization}) {
         return fail("C2D6 source mapping is discontinuous, SRC, stale or mismatched.");
     }
     const auto revision = accepted->chain_revision();
     return core::Result<BoundLiveTruePeakInput>::success(
         BoundLiveTruePeakInput{std::move(accepted), expectedRealization,
-            revision, consumed.generation, consumed.processedWatermarkExclusive,
-            consumed.processedWatermarkExclusive, expectedSource.layout,
+            revision, consumed.generation, *slice.sourceBegin,
+            *slice.sourceEnd, consumed.processedWatermarkExclusive,
+            expectedSource.layout,
             expectedSource.sampleRate});
 }
 

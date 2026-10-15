@@ -121,7 +121,10 @@ void TruePeakLiveCoordinator::poll()
     const bool fresh = !monitoringAttempted_
         || generation_ != std::optional{bound.value()->playbackGeneration}
         || activeId_ != std::optional{bound.value()->realizationId}
-        || currentOwner_ != bound.value()->owner;
+        || currentOwner_ != bound.value()->owner
+        || seekSerial_ != std::optional{after.value()->seekSerial}
+        || traversalSerial_ != std::optional{after.value()->traversalSerial}
+        || loopWrapCount_ != std::optional{after.value()->loopWrapCount};
     if (fresh) {
         clear_display(true);
         generation_ = bound.value()->playbackGeneration;
@@ -150,6 +153,7 @@ void TruePeakLiveCoordinator::run_worker()
     std::uint64_t generation = 0;
     std::uint64_t chainRevision = 0;
     std::uint64_t epoch = 0;
+    std::int64_t sourceOrigin = 0;
     std::int64_t processed = 0;
     while (true) {
         std::optional<Job> job;
@@ -168,18 +172,20 @@ void TruePeakLiveCoordinator::run_worker()
             || owner != input.owner
             || realization != std::optional{input.realizationId}
             || generation != input.playbackGeneration
-            || chainRevision != input.chainRevision) {
+            || chainRevision != input.chainRevision
+            || sourceOrigin != input.consumedSourceBegin) {
             meter.reset();
             owner = input.owner;
             realization = input.realizationId;
             generation = input.playbackGeneration;
             chainRevision = input.chainRevision;
             epoch = job->observationEpoch;
-            processed = 0;
+            sourceOrigin = input.consumedSourceBegin;
+            processed = sourceOrigin;
         }
         if (!meter) {
             auto built = analysis::internal::ChronologicalTruePeakBuckets::create(
-                input.sampleRate.value(), channels);
+                input.sampleRate.value(), channels, sourceOrigin);
             if (built) meter.emplace(std::move(*built.value()));
         }
         // Bounded 500-ms backlog; unsupported lag must never silently skip.
@@ -215,7 +221,7 @@ void TruePeakLiveCoordinator::run_worker()
         }
         if (!result.valid) {
             meter.reset();
-            processed = 0;
+            processed = sourceOrigin;
         }
         static_cast<void>(QMetaObject::invokeMethod(this,
             [this, serial = job->serial, result] {
