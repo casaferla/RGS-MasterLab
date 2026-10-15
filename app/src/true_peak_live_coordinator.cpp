@@ -210,10 +210,10 @@ void TruePeakLiveCoordinator::run_worker()
             meter.reset();
             processed = 0;
         }
-        QMetaObject::invokeMethod(this,
+        static_cast<void>(QMetaObject::invokeMethod(this,
             [this, serial = job->serial, result] {
                 accept_result(serial, result);
-            }, Qt::QueuedConnection);
+            }, Qt::QueuedConnection));
     }
 }
 
@@ -221,6 +221,26 @@ void TruePeakLiveCoordinator::accept_result(
     std::uint64_t serial, Completion completed)
 {
     if (serial != serial_ || !monitoringAttempted_) return;
+    // Reconfirm after asynchronous computation: a source change, paused seek
+    // or audible transition may happen after the last 50-ms polling instant.
+    const auto active = source_ ? source_() : std::nullopt;
+    const auto playback = playback_ ? playback_()
+        : core::Result<core::PlaybackSnapshot>::failure(core::Error{
+            core::ErrorCode::InvalidState, "M16 playback observer missing"});
+    if (!active || !playback || active->owner != currentOwner_
+        || activeId_ != std::optional{active->realizationId}
+        || playback.value()->audibleRealization.phase
+            != core::AudibleHandoffPhase::NEW
+        || playback.value()->audibleRealization.realizationId
+            != std::optional{active->realizationId}
+        || (playback.value()->state != core::PlaybackState::PLAYING
+            && playback.value()->state != core::PlaybackState::PAUSED)
+        || seekSerial_ != std::optional{playback.value()->seekSerial}
+        || traversalSerial_ != std::optional{playback.value()->traversalSerial}
+        || loopWrapCount_ != std::optional{playback.value()->loopWrapCount}) {
+        clear_display(true);
+        return;
+    }
     if (!completed.valid) {
         clear_display(true);
         return;
