@@ -1411,8 +1411,12 @@ core::Status PlaybackEngine::pump_once()
     // activeRealizationId_ while old bytes are still queued or pending.
     c2PendingOwner_ = activeRealizationId_;
     c2PendingSourceBegin_ = blockAbsoluteStart.value();
+    // A past loop policy does not taint NEW, precisely generated direct PCM.
+    // The chronological ledger still retains previous unproven loop runs.
+    // Old accepted/pending bytes preserve their original generation-time tags;
+    // do not clear, restart or rewrite the audio output on loop OFF.
     c2PendingExactMapping_ = !rateAdapter_ && !loop_ && !pendingHandoff_
-        && scheduledLoopEpochs_.empty() && c2PendingOwner_.has_value();
+        && c2PendingOwner_.has_value();
     generatedOutputFrames_ += frames;
     scheduledOutputFrame_ += frames;
     if (!loop_ && scheduledOutputFrame_ == outputDuration_->value()) {

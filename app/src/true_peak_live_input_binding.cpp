@@ -21,10 +21,13 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
     // the authoritative product target has been independently verified.
     if (consumed.certifiedForLiveTruePeak || !accepted
         || expectedRealization.value == 0
-        || !consumed.partitionRepresented || consumed.count != 1U
+        || !consumed.partitionRepresented || consumed.count == 0U
+        || consumed.count > consumed.kMaxSlices
         || consumed.processedWatermarkExclusive <= 0
-        || consumed.reason
-            != platform::windows::WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER) {
+        || (consumed.reason
+            != platform::windows::WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER
+            && consumed.reason
+            != platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP)) {
         return fail("C2D6 requires exactly one complete source-candidate prefix and a retained owner.");
     }
     if (playback.state != core::PlaybackState::PLAYING
@@ -48,16 +51,41 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         || view.format().channel_layout() != expectedSource.layout) {
         return fail("C2D6 PROCESSED owner lacks whole canonical source-domain coverage.");
     }
-    const auto& slice = consumed.slices[0];
+    // A loop may have left a real GAP in the past. After the user turns
+    // Loop Region OFF, only the NEW, fully consumed, directly source-mapped
+    // tail may be measured. Every earlier GAP remains explicitly represented
+    // and NO value is transferred across it. In particular, a current loop
+    // cannot generate a new exact source run from the playback backend.
+    std::int64_t cursor = 0;
+    bool earlierGap = false;
+    for (std::size_t i = 0; i < consumed.count; ++i) {
+        const auto& part = consumed.slices[i];
+        if (part.generation != consumed.generation
+            || part.outputBegin != cursor
+            || part.outputEnd <= part.outputBegin
+            || part.outputEnd > consumed.processedWatermarkExclusive)
+            return fail("C2D10 consumed loop chronology has a missing or malformed interval.");
+        if (i + 1U < consumed.count
+            && part.kind != platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED)
+            earlierGap = true;
+        cursor = part.outputEnd;
+    }
+    if (cursor != consumed.processedWatermarkExclusive
+        || (consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
+            && !earlierGap))
+        return fail("C2D10 requires a fresh proven suffix after the loop gap.");
+
+    const auto& slice = consumed.slices[consumed.count - 1U];
     if (slice.kind != platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED
         || slice.generation != consumed.generation
-        || slice.outputBegin != 0 || slice.outputEnd != consumed.processedWatermarkExclusive
+        || slice.outputBegin < 0
+        || slice.outputEnd != consumed.processedWatermarkExclusive
         || !slice.sourceBegin || !slice.sourceEnd
         || *slice.sourceBegin < 0
         || *slice.sourceEnd <= *slice.sourceBegin
         || *slice.sourceEnd > expectedSource.frameCount.value()
         || *slice.sourceEnd - *slice.sourceBegin
-            != consumed.processedWatermarkExclusive
+            != slice.outputEnd - slice.outputBegin
         || slice.realizationId != std::optional{expectedRealization}) {
         return fail("C2D6 source mapping is discontinuous, SRC, stale or mismatched.");
     }
