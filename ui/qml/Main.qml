@@ -265,6 +265,8 @@ ApplicationWindow {
             spectrumViewModel: root.appSpectrumViewModel
             truePeakStaticViewModel: typeof truePeakStatic !== "undefined"
                 ? truePeakStatic : null
+            truePeakLiveViewModel: typeof truePeakLive !== "undefined"
+                ? truePeakLive : null
         }
     }
 
