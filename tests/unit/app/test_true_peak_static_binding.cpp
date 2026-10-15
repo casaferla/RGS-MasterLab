@@ -315,19 +315,19 @@ void TruePeakStaticBindingTest::liveCoordinatorMeasuresSpikeAndInvalidatesTransi
     const auto owner = fixture.value()->result;
     auto playback = core::PlaybackSnapshot{};
     playback.state = core::PlaybackState::PLAYING;
-    playback.position = core::FrameIndex{4799};
+    playback.position = core::FrameIndex{2399};
     playback.audibleRealization = {
         core::AudibleHandoffPhase::NEW, core::RealizationId{601}, std::nullopt};
     auto prefix = platform::windows::WindowsConsumedOutputPrefix{};
     prefix.generation = 18;
-    prefix.processedWatermarkExclusive = 4800;
+    prefix.processedWatermarkExclusive = 2400;
     prefix.count = 1;
     prefix.partitionRepresented = true;
     prefix.slices[0].generation = 18;
     prefix.slices[0].outputBegin = 0;
-    prefix.slices[0].outputEnd = 4800;
+    prefix.slices[0].outputEnd = 2400;
     prefix.slices[0].sourceBegin = 0;
-    prefix.slices[0].sourceEnd = 4800;
+    prefix.slices[0].sourceEnd = 2400;
     prefix.slices[0].realizationId = core::RealizationId{601};
     prefix.slices[0].kind =
         platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
@@ -347,6 +347,15 @@ void TruePeakStaticBindingTest::liveCoordinatorMeasuresSpikeAndInvalidatesTransi
         }
     };
 
+    // True spike is not published until one full 100ms sink-consumed span.
+    QTRY_VERIFY_WITH_TIMEOUT(coordinator.monitoring_attempted(), 3500);
+    QTest::qWait(110);
+    QVERIFY(!coordinator.recent_available());
+    QVERIFY(!coordinator.hold_available());
+    prefix.processedWatermarkExclusive = 4800;
+    prefix.slices[0].outputEnd = 4800;
+    prefix.slices[0].sourceEnd = 4800;
+    playback.position = core::FrameIndex{4799};
     QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
     QVERIFY(coordinator.monitoring_attempted());
     QVERIFY(!coordinator.hold_available());
