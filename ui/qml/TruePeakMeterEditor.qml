@@ -13,6 +13,8 @@ Item {
         ? liveProvider.monitoringAttempted : false
     readonly property bool liveAvailable: root.showLive
         && liveProvider.recentAvailable
+    readonly property bool holdAvailable: root.showLive
+        && liveProvider.holdAvailable
     readonly property bool hasMeasurement: measurementProvider
         ? measurementProvider.hasMeasurement : false
     readonly property int measuredChannels: root.showLive
@@ -81,6 +83,9 @@ Item {
                                 : root.hasMeasurement
                                     && root.measurementProvider.fullLeftOverZero
                             meterKind: root.showLive ? "RECENT 100 MS" : "STATIC RESOURCE"
+                            holdAvailable: root.holdAvailable
+                            holdLevel: root.holdAvailable
+                                ? root.liveProvider.leftHoldLevel : 0.0
                         }
                         TruePeakStaticLane {
                             objectName: "truePeakRightLane"
@@ -104,6 +109,11 @@ Item {
                                 : root.measuredChannels === 2
                                     && root.measurementProvider.fullRightOverZero
                             meterKind: root.showLive ? "RECENT 100 MS" : "STATIC RESOURCE"
+                            holdAvailable: root.holdAvailable
+                                && root.measuredChannels === 2
+                            holdLevel: root.holdAvailable
+                                && root.measuredChannels === 2
+                                ? root.liveProvider.rightHoldLevel : 0.0
                         }
                         Item { Layout.fillWidth: true }
                     }

@@ -11,6 +11,8 @@ Rectangle {
     property real level: 0.0
     property bool available: false
     property bool aboveDigitalZero: false
+    property bool holdAvailable: false
+    property real holdLevel: 0.0
     property string meterKind: "FULL RESOURCE"
     radius: 7
     color: "#091C2B"
@@ -106,6 +108,21 @@ Rectangle {
                     height: 1
                     color: "#F0BE82"
                     opacity: 0.96
+                }
+                // One channel-specific marker for the rolling 1s maximum.
+                // It uses the same dBTP axis as RECENT and carries no
+                // artificial signal delay or unauthorised 1s lookahead.
+                Rectangle {
+                    objectName: "truePeakHoldLine"
+                    z: 3
+                    x: 2
+                    width: track.width - 4
+                    height: 3
+                    radius: 1.5
+                    y: 5 + (1 - Math.max(0, Math.min(1, root.holdLevel)))
+                        * (track.height - 10) - height / 2
+                    visible: root.holdAvailable
+                    color: "#F2C66F"
                 }
             }
             Item {
