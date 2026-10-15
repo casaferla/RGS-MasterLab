@@ -50,6 +50,9 @@ void TruePeakLiveCoordinator::clear_display(bool attempted)
     statusText_ = attempted ? QStringLiteral("GAP / UNAVAILABLE")
                             : QStringLiteral("NOT MONITORED");
     generation_.reset();
+    seekSerial_.reset();
+    traversalSerial_.reset();
+    loopWrapCount_.reset();
     activeId_.reset();
     currentOwner_.reset();
     {
@@ -76,7 +79,16 @@ void TruePeakLiveCoordinator::poll()
     if (before.value()->state == core::PlaybackState::PAUSED) {
         // Freeze only an already-matching owner; do not advance accepted-time.
         if (activeId_ != std::optional{source->realizationId}
-            || currentOwner_ != source->owner) {
+            || currentOwner_ != source->owner
+            || !seekSerial_ || *seekSerial_ != before.value()->seekSerial
+            || !traversalSerial_
+            || *traversalSerial_ != before.value()->traversalSerial
+            || !loopWrapCount_
+            || *loopWrapCount_ != before.value()->loopWrapCount
+            || before.value()->audibleRealization.phase
+                != core::AudibleHandoffPhase::NEW
+            || before.value()->audibleRealization.realizationId
+                != std::optional{source->realizationId}) {
             clear_display(true);
         }
         return;
@@ -110,6 +122,9 @@ void TruePeakLiveCoordinator::poll()
         currentOwner_ = bound.value()->owner;
         channelCount_ = bound.value()->layout == audio::ChannelLayout::MONO_C ? 1 : 2;
     }
+    seekSerial_ = after.value()->seekSerial;
+    traversalSerial_ = after.value()->traversalSerial;
+    loopWrapCount_ = after.value()->loopWrapCount;
     // The latest immutable owner snapshot replaces queued work. The worker
     // retains its consumed cursor; it never computes peaks on the GUI thread.
     const auto id = ++serial_;
