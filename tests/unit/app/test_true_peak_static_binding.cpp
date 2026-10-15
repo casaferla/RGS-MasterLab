@@ -36,7 +36,7 @@ struct RenderFixture final {
     std::int64_t count, core::FrameRange window,
     std::int64_t rate = 48000,
     audio::ChannelLayout layout = audio::ChannelLayout::STEREO_LR,
-    double leftPulse = 0.75)
+    double leftPulse = 0.75, std::int64_t leftPulseFrame = 1)
 {
     const auto fmt = format(layout, rate);
     const auto frames = frame_count(count);
@@ -49,14 +49,14 @@ struct RenderFixture final {
         if (!left) return core::Result<RenderFixture>::failure(*left.error());
         for (std::int64_t i = 0; i < count; ++i) {
             (*left.value())[static_cast<std::size_t>(i)] =
-                i == 1 ? leftPulse : 0.0;
+                i == leftPulseFrame ? leftPulse : 0.0;
         }
         if (layout == audio::ChannelLayout::STEREO_LR) {
             auto right = source.value()->mutable_view().channel(1);
             if (!right) return core::Result<RenderFixture>::failure(*right.error());
             for (std::int64_t i = 0; i < count; ++i) {
                 (*right.value())[static_cast<std::size_t>(i)] =
-                    i == 2 ? -0.5 : 0.0;
+                    i == leftPulseFrame + 1 ? -0.5 : 0.0;
             }
         }
     }
@@ -90,6 +90,8 @@ private slots:
     void asynchronousSourceAndRealizationStaleness();
     void consumedProcessedLiveInputBindingRejectsGapsAndMismatchedOwners();
     void liveCoordinatorMeasuresSpikeAndInvalidatesTransitions();
+    void consumedProcessedSeekRequiresProvenSourceMapping();
+    void liveCoordinatorSeekReacquiresOnlyCompleteWindows();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -263,6 +265,7 @@ void TruePeakStaticBindingTest::consumedProcessedLiveInputBindingRejectsGapsAndM
         core::AudibleHandoffPhase::NEW, core::RealizationId{512}, std::nullopt};
     auto prefix = platform::windows::WindowsConsumedOutputPrefix{};
     prefix.generation = 6;
+    prefix.reason = platform::windows::WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER;
     prefix.processedWatermarkExclusive = 500;
     prefix.count = 1;
     prefix.partitionRepresented = true;
@@ -320,6 +323,7 @@ void TruePeakStaticBindingTest::liveCoordinatorMeasuresSpikeAndInvalidatesTransi
         core::AudibleHandoffPhase::NEW, core::RealizationId{601}, std::nullopt};
     auto prefix = platform::windows::WindowsConsumedOutputPrefix{};
     prefix.generation = 18;
+    prefix.reason = platform::windows::WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER;
     prefix.processedWatermarkExclusive = 2400;
     prefix.count = 1;
     prefix.partitionRepresented = true;
@@ -381,6 +385,154 @@ void TruePeakStaticBindingTest::liveCoordinatorMeasuresSpikeAndInvalidatesTransi
     QTRY_VERIFY_WITH_TIMEOUT(!coordinator.monitoring_attempted(), 4500);
     QVERIFY(!coordinator.recent_available());
     QCOMPARE(coordinator.channel_count(), 0);
+}
+
+
+void TruePeakStaticBindingTest::consumedProcessedSeekRequiresProvenSourceMapping()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    auto fixture = make_render(16000, frame_range(0,16000));
+    QVERIFY(fixture);
+    auto owner = fixture.value()->result;
+    core::PlaybackSnapshot playback{};
+    playback.state = core::PlaybackState::PLAYING;
+    playback.position = core::FrameIndex{5500};
+    playback.seekSerial = 1;
+    playback.audibleRealization = {
+        core::AudibleHandoffPhase::NEW, core::RealizationId{813}, std::nullopt};
+    platform::windows::WindowsConsumedOutputPrefix prefix{};
+    prefix.generation = 20;
+    prefix.reason = WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER;
+    prefix.partitionRepresented = true;
+    prefix.count = 1;
+    prefix.processedWatermarkExclusive = 300;
+    auto& run = prefix.slices[0];
+    run.generation = prefix.generation;
+    run.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    run.realizationId = core::RealizationId{813};
+    run.outputBegin = 0;
+    run.outputEnd = 300;
+    run.sourceBegin = 5303;
+    run.sourceEnd = 5603;
+    auto bound = app::bind_processed_live_input(
+        owner, core::RealizationId{813}, fixture.value()->expected,
+        playback, prefix);
+    QVERIFY(bound);
+    QCOMPARE(bound.value()->consumedSourceBegin, std::int64_t{5303});
+    QCOMPARE(bound.value()->consumedSourceEnd, std::int64_t{5603});
+    QCOMPARE(bound.value()->consumedOutputEnd, std::int64_t{300});
+    // Reject every possibility of reading outside canonical owner support.
+    run.sourceEnd = 5700; // non-1:1 offset mapping
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{813},
+        fixture.value()->expected, playback, prefix));
+    run.sourceEnd = 5603;
+    run.sourceBegin = -1;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{813},
+        fixture.value()->expected, playback, prefix));
+    run.sourceBegin = 5303;
+    run.sourceEnd = 16001;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{813},
+        fixture.value()->expected, playback, prefix));
+    run.sourceEnd = 5603;
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_LOOP;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{813},
+        fixture.value()->expected, playback, prefix));
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{813},
+        fixture.value()->expected, playback, prefix));
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_HANDOFF;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{813},
+        fixture.value()->expected, playback, prefix));
+    prefix.reason = WindowsConsumedGapReason::STALE_GENERATION;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{813},
+        fixture.value()->expected, playback, prefix));
+    prefix.reason = WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER;
+    run.generation = 19;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{813},
+        fixture.value()->expected, playback, prefix));
+    run.generation = 20;
+    QVERIFY(app::bind_processed_live_input(owner, core::RealizationId{813},
+        fixture.value()->expected, playback, prefix));
+}
+
+void TruePeakStaticBindingTest::liveCoordinatorSeekReacquiresOnlyCompleteWindows()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    // A pulse just AFTER the seek, never included by reading the future.
+    constexpr std::int64_t start = 4801; // intentionally not 10-ms aligned
+    auto fixture = make_render(
+        15000, frame_range(0,15000), 48000,
+        audio::ChannelLayout::STEREO_LR, 0.85, start + 480 + 2);
+    QVERIFY(fixture);
+    const auto owner = fixture.value()->result;
+    core::PlaybackSnapshot playback{};
+    playback.state = core::PlaybackState::PLAYING;
+    playback.position = core::FrameIndex{start};
+    playback.seekSerial = 1;
+    playback.audibleRealization = {
+        core::AudibleHandoffPhase::NEW, core::RealizationId{814}, std::nullopt};
+    platform::windows::WindowsConsumedOutputPrefix prefix{};
+    prefix.generation = 31;
+    prefix.reason = WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER;
+    prefix.partitionRepresented = true;
+    prefix.count = 1;
+    auto& run = prefix.slices[0];
+    run.generation = 31;
+    run.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    run.realizationId = core::RealizationId{814};
+    run.outputBegin = 0;
+    run.sourceBegin = start;
+    prefix.processedWatermarkExclusive = 4800;
+    run.outputEnd = 4800;
+    run.sourceEnd = start + 4800;
+
+    app::TruePeakLiveCoordinator live{
+        [&] {
+            return core::Result<platform::windows::WindowsConsumedOutputPrefix>::success(prefix);
+        },
+        [&] { return core::Result<core::PlaybackSnapshot>::success(playback); },
+        [&]() -> std::optional<app::TruePeakLiveSource> {
+            return app::TruePeakLiveSource{
+                owner, core::RealizationId{814}, fixture.value()->expected};
+        }
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(live.monitoring_attempted(), 3500);
+    QTest::qWait(120);
+    // An unaligned first fragment lacks the eleven FIR history samples.
+    QVERIFY(!live.recent_available());
+    QVERIFY(!live.hold_available());
+    // First fully valid ten 10-ms buckets end at absolute frame 10080.
+    prefix.processedWatermarkExclusive = 10080 - start;
+    run.outputEnd = prefix.processedWatermarkExclusive;
+    run.sourceEnd = 10080;
+    playback.position = core::FrameIndex{10079};
+    QTRY_VERIFY_WITH_TIMEOUT(live.recent_available(), 4500);
+    QVERIFY(live.left_level() > 0.0);
+    QVERIFY(live.right_level() > 0.0);
+    QVERIFY(!live.hold_available());
+    // A second seek cannot inherit the old impulse, peak, or FIR history.
+    constexpr std::int64_t secondStart = 9603;
+    ++playback.seekSerial;
+    ++prefix.generation;
+    run.generation = prefix.generation;
+    run.sourceBegin = secondStart;
+    run.sourceEnd = secondStart + 2400;
+    prefix.processedWatermarkExclusive = 2400;
+    run.outputEnd = 2400;
+    playback.position = core::FrameIndex{secondStart + 2399};
+    QTRY_VERIFY_WITH_TIMEOUT(!live.recent_available(), 3500);
+    QTest::qWait(110);
+    QVERIFY(!live.recent_available());
+    // With complete new source-domain coverage, genuine zero is valid.
+    run.sourceEnd = 14880;
+    prefix.processedWatermarkExclusive = 14880 - secondStart;
+    run.outputEnd = prefix.processedWatermarkExclusive;
+    playback.position = core::FrameIndex{14879};
+    QTRY_VERIFY_WITH_TIMEOUT(live.recent_available(), 4500);
+    QCOMPARE(live.peak_text(), QStringLiteral("−∞ dBTP"));
+    QVERIFY(!live.hold_available());
 }
 
 } // namespace
