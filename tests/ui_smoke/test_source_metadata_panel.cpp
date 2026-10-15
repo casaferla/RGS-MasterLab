@@ -666,6 +666,13 @@ Window {
     QCOMPARE(hold->property("available").toBool(), false);
     QCOMPARE(hold->property("heading").toString(),
              QStringLiteral("SHORT HOLD / 1 SECOND"));
+    // HOLD's amber reading and its key must match the meter markers.
+    QVERIFY(hold->property("showColorKey").toBool());
+    auto* holdKey = find_child_by_name(
+        hold, QStringLiteral("truePeakHoldLegendLine"));
+    QVERIFY(holdKey);
+    QVERIFY(holdKey->property("visible").toBool());
+    QCOMPARE(hold->property("valueColor"), hold->property("keyColor"));
     QCOMPARE(full->property("reading").toString(),
              QStringLiteral("—"));
     QCOMPARE(full->property("available").toBool(), false);
@@ -677,6 +684,15 @@ Window {
     QVERIFY(!rightLane->property("aboveDigitalZero").toBool());
     QCOMPARE(leftLane->property("level").toDouble(), 0.0);
     QCOMPARE(rightLane->property("level").toDouble(), 0.0);
+    for (auto* lane : {leftLane, rightLane}) {
+        auto* marker = find_child_by_name(
+            lane, QStringLiteral("truePeakHoldLine"));
+        QVERIFY2(marker, "Each physical channel track needs its own HOLD mark");
+        QVERIFY2(!marker->property("visible").toBool(),
+                 "Unknown 1s history must never display a HOLD mark");
+        QCOMPARE(lane->property("holdAvailable").toBool(), false);
+        QCOMPARE(lane->property("holdLevel").toDouble(), 0.0);
+    }
     QVERIFY2(staticBay->property("width").toDouble() > 340.0,
              "The True Peak static meter well must have its own region");
     QVERIFY2(sharedRail->property("width").toDouble() >= 278.0,
