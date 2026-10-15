@@ -30,7 +30,11 @@ Rectangle {
             font.weight: Font.DemiBold
             color: "#DEEAF2"
             horizontalAlignment: Text.AlignHCenter
-            Layout.fillWidth: true
+            Layout.fillWidth: false
+            // Align the channel glyph to the actual meter TRACK, not to
+            // the entire card (which also contains the dBTP scale).
+            Layout.preferredWidth: 46
+            Layout.leftMargin: 9
         }
         Item {
             Layout.fillHeight: true
@@ -121,9 +125,13 @@ Rectangle {
                         font.weight: modelData === 0 ? Font.DemiBold
                                                      : Font.Normal
                         color: modelData === 0 ? "#F0BE82" : "#95ACBD"
-                        y: Math.max(0, Math.min(parent.height - height,
-                                    5 + (6 - modelData) / 66
-                                    * (parent.height - 10) - height / 2))
+                        // +6 is the top endpoint: center the glyph on
+                        // the actual top of the meter; do not clamp its
+                        // top edge down to the track's first interior pixel.
+                        y: modelData === 6 ? 5 - height / 2
+                            : Math.max(0, Math.min(parent.height - height,
+                                5 + (6 - modelData) / 66
+                                * (parent.height - 10) - height / 2))
                     }
                 }
             }

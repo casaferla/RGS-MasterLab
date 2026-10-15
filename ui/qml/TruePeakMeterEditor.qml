@@ -117,8 +117,7 @@ Item {
                     }
                     Text {
                         text: root.showLive
-                            ? "LIVE · " + root.liveProvider.statusText
-                              + " · HOLD 1 s: " + root.liveProvider.holdText
+                            ? "RECENT 100 ms · " + root.liveProvider.statusText
                             : "Full-resource maxima · STATIC, not audible LIVE."
                         color: "#8EAAB9"
                         font.family: "Segoe UI"

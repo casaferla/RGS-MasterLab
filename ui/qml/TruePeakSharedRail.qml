@@ -33,9 +33,20 @@ Item {
                 ? root.liveProvider.peakText : "UNAVAILABLE"
             detail: root.liveProvider && root.liveProvider.monitoringAttempted
                 ? root.liveProvider.statusText
-                  + " · HOLD 1 s: " + root.liveProvider.holdText
                 : "NOT MONITORED · select PROCESSED and press Play"
             available: root.liveProvider ? root.liveProvider.recentAvailable : false
+        }
+        TruePeakReadoutCard {
+            objectName: "truePeakHoldCard"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 108
+            heading: "SHORT HOLD / 1 SECOND"
+            reading: root.liveProvider && root.liveProvider.holdAvailable
+                ? root.liveProvider.holdText : "UNAVAILABLE"
+            detail: root.liveProvider && root.liveProvider.monitoringAttempted
+                ? "Max over the last fully covered 1 s of PROCESSED"
+                : "NOT MONITORED"
+            available: root.liveProvider ? root.liveProvider.holdAvailable : false
         }
         TruePeakReadoutCard {
             objectName: "truePeakFullResourceCard"
