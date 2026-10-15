@@ -36,6 +36,10 @@ qt_add_executable(rgsml_app
     src/true_peak_static_binding.hpp
     src/true_peak_static_coordinator.cpp
     src/true_peak_static_coordinator.hpp
+    src/true_peak_live_input_binding.cpp
+    src/true_peak_live_input_binding.hpp
+    src/true_peak_live_coordinator.cpp
+    src/true_peak_live_coordinator.hpp
     src/windows_window_chrome_helper.cpp
     src/windows_window_chrome_helper.hpp
 )
@@ -44,6 +48,8 @@ set_target_properties(rgsml_app PROPERTIES
     OUTPUT_NAME RGSMasterLab
     WIN32_EXECUTABLE TRUE
 )
+
+target_include_directories(rgsml_app PRIVATE ${CMAKE_SOURCE_DIR}/analysis/src)
 
 target_link_libraries(rgsml_app
     PRIVATE

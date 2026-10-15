@@ -16,6 +16,7 @@
 #include "source_waveform_view_model.hpp"
 #include "stereo_ms_view_model.hpp"
 #include "true_peak_static_coordinator.hpp"
+#include "true_peak_live_coordinator.hpp"
 
 #include "waveform_presentation.hpp"
 
@@ -95,6 +96,35 @@ int main(int argc, char* argv[])
     rgsml::app::SourceSelectionViewModel sourceSelection;
     rgsml::app::AuditionSourceSelector auditionSelector{&playbackTransport};
     rgsml::app::TruePeakStaticCoordinator staticTruePeak;
+    // C2D7: audio device callback untouched; only independently bound
+    // PROCESSED sink-consumed samples reach the off-thread M16 FIR worker.
+    rgsml::app::TruePeakLiveCoordinator liveTruePeak{
+        [windowsPlayback] {
+            return windowsPlayback->consumed_output_prefix();
+        },
+        [&playbackTransport] {
+            return playbackTransport.playback_snapshot();
+        },
+        [&auditionSelector, &sourceSelection]()
+            -> std::optional<rgsml::app::TruePeakLiveSource> {
+            if (auditionSelector.active_target()
+                    != rgsml::app::AuditionTarget::PROCESSED)
+                return std::nullopt;
+            const auto render = auditionSelector.processed_realization_snapshot();
+            const auto id = auditionSelector.processed_realization_id();
+            const auto count = rgsml::core::FrameCount::create(
+                sourceSelection.frame_count());
+            const auto rate = rgsml::core::SampleRate::create(
+                sourceSelection.sample_rate_hz());
+            const int channels = sourceSelection.channel_count();
+            if (!render || !id || !count || !rate ||
+                (channels != 1 && channels != 2)) return std::nullopt;
+            return rgsml::app::TruePeakLiveSource{
+                render, *id, rgsml::app::TruePeakExpectedSource{
+                    *count.value(), *rate.value(),
+                    channels == 1 ? rgsml::audio::ChannelLayout::MONO_C
+                                  : rgsml::audio::ChannelLayout::STEREO_LR}};
+        }};
     // Publication of PROCESSED never implies that it is already audible.
     QObject::connect(
         &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
@@ -333,6 +363,8 @@ int main(int argc, char* argv[])
         &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("truePeakStatic"), &staticTruePeak);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("truePeakLive"), &liveTruePeak);
     engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"),
         &liveSpectrumViewModel);
