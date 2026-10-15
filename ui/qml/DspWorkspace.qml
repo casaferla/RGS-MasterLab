@@ -12,6 +12,7 @@ Rectangle {
     property var eqViewModel: null
     property var spectrumViewModel: null
     property var truePeakStaticViewModel: null
+    property var truePeakLiveViewModel: null
 
     // Backward-compatibility alias so code referencing workspace.viewModel sets/gets eqViewModel
     property alias viewModel: root.eqViewModel
@@ -55,6 +56,7 @@ Rectangle {
             eqViewModel: root.eqViewModel
             spectrumViewModel: root.spectrumViewModel
             truePeakStaticViewModel: root.truePeakStaticViewModel
+            truePeakLiveViewModel: root.truePeakLiveViewModel
             activeChainRow: realChainSelector.activeRow
         }
     }

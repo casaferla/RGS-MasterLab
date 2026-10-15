@@ -13,6 +13,7 @@ Rectangle {
     property var compressorViewModel: null
     property var spectrumViewModel: null
     property var truePeakStaticViewModel: null
+    property var truePeakLiveViewModel: null
     property Item activeChainRow: null
 
     // Backward-compatibility alias so code referencing host.viewModel accesses eqViewModel
@@ -268,6 +269,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             measurementProvider: root.truePeakStaticViewModel
+            liveProvider: root.truePeakLiveViewModel
         }
 
         StereoMsEditor {
