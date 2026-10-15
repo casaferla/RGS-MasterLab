@@ -44,6 +44,9 @@ Item {
             Layout.preferredHeight: root.compactRail ? 82 : 108
             Layout.minimumHeight: 80
             heading: "SHORT HOLD / 1 SECOND"
+            showColorKey: true
+            keyColor: "#F2C66F"
+            valueColor: "#F2C66F"
             reading: root.liveProvider && root.liveProvider.holdAvailable
                 ? root.liveProvider.holdText : "UNAVAILABLE"
             detail: root.liveProvider && root.liveProvider.monitoringAttempted
