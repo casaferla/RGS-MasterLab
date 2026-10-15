@@ -675,8 +675,9 @@ Window {
     QCOMPARE(hold->property("valueColor"), hold->property("keyColor"));
     QCOMPARE(full->property("valueColor").value<QColor>(),
              QColor{QStringLiteral("#6CBCCF")});
+    // No LIVE provider is bound in this offscreen fixture.
     QCOMPARE(leftLane->property("meterKind").toString(),
-             QStringLiteral("RECENT 100 ms"));
+             QStringLiteral("STATIC RESOURCE"));
     QCOMPARE(full->property("reading").toString(),
              QStringLiteral("—"));
     QCOMPARE(full->property("available").toBool(), false);

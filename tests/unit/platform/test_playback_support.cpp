@@ -2208,7 +2208,7 @@ void PlaybackSupportTest::c2D2AcceptedRunLedgerOverflowIsSticky()
     using Reason = platform::windows::internal::C2CoverageProbeReason;
     // Deliberate alternating direct/loop history defeats safe GAP compaction:
     // fragmented provenance must remain bounded and overflow fail-closed.
-    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 32);
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 10'000);
     PlaybackEngine engine;
     auto out = std::make_unique<FakeOutput>(4U, 4U);
     auto* sink = out.get();
