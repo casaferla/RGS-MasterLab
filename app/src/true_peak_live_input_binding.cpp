@@ -60,6 +60,7 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
     // cannot generate a new exact source run from the playback backend.
     std::int64_t cursor = 0;
     bool earlierGap = false;
+    bool earlierMatchingGap = false;
     for (std::size_t i = 0; i < consumed.count; ++i) {
         const auto& part = consumed.slices[i];
         if (part.generation != consumed.generation
@@ -68,14 +69,20 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
             || part.outputEnd > consumed.processedWatermarkExclusive)
             return fail("C2D10 consumed loop chronology has a missing or malformed interval.");
         if (i + 1U < consumed.count
-            && part.kind != platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED)
+            && part.kind != platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED) {
             earlierGap = true;
+            // Never use an unrelated loop gap to justify a later handoff,
+            // or an unrelated handoff gap to justify a loop recovery.
+            if (part.kind == platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN
+                && part.reason == consumed.reason)
+                earlierMatchingGap = true;
+        }
         cursor = part.outputEnd;
     }
     if (cursor != consumed.processedWatermarkExclusive
         || ((consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
              || consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_HANDOFF)
-            && !earlierGap))
+            && (!earlierGap || !earlierMatchingGap)))
         return fail("C2D12 requires a fresh proven suffix after a loop or handoff gap.");
 
     const auto& slice = consumed.slices[consumed.count - 1U];

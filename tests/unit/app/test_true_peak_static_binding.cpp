@@ -594,8 +594,15 @@ void TruePeakStaticBindingTest::postLoopRecoveryBindsOnlyFreshExactConsumedSuffi
     QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{971},
         fixture.value()->expected, playback, prefix));
     prefix.reason = WindowsConsumedGapReason::UNPROVEN_HANDOFF;
+    // A LOOP gap cannot be silently reclassified as handoff evidence.
     QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{971},
         fixture.value()->expected, playback, prefix));
+    // A genuine source-unproven handoff followed by exact pure-NEW source
+    // may recover, but no mixed/OLD sample is promoted.
+    old.reason = WindowsConsumedGapReason::UNPROVEN_HANDOFF;
+    QVERIFY(app::bind_processed_live_input(owner, core::RealizationId{971},
+        fixture.value()->expected, playback, prefix));
+    old.reason = WindowsConsumedGapReason::UNPROVEN_LOOP;
     prefix.reason = WindowsConsumedGapReason::ACCEPTED_LEDGER_OVERFLOW;
     QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{971},
         fixture.value()->expected, playback, prefix));

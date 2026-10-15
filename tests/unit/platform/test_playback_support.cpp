@@ -2208,18 +2208,21 @@ void PlaybackSupportTest::c2D2AcceptedRunLedgerOverflowIsSticky()
     using Reason = platform::windows::internal::C2CoverageProbeReason;
     // Deliberate alternating direct/loop history defeats safe GAP compaction:
     // fragmented provenance must remain bounded and overflow fail-closed.
-    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 10'000);
+    // Full decoded blocks, rather than a 1-frame sink that merely drains
+    // the same 1024-frame pending container for hundreds of iterations:
+    // each policy switch then contributes a fresh owner-stamped or GAP run.
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 500'000);
     PlaybackEngine engine;
-    auto out = std::make_unique<FakeOutput>(4U, 4U);
+    auto out = std::make_unique<FakeOutput>(4096U, 4U);
     auto* sink = out.get();
     QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(out),
         DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
         core::RealizationId{701}));
     const auto loop = *core::FrameRange::create(
-        core::FrameIndex{0}, core::FrameIndex{1}).value();
+        core::FrameIndex{100}, core::FrameIndex{400}).value();
     QVERIFY(engine.set_loop(loop));
     QVERIFY(engine.play());
-    for (int i = 0; i < 320; ++i) {
+    for (int i = 0; i < 480; ++i) {
         QVERIFY(engine.set_loop(i % 2 == 0
             ? std::optional{loop} : std::nullopt));
         sink->consume_all();
