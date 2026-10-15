@@ -1,4 +1,5 @@
 #include "true_peak_static_binding.hpp"
+#include "true_peak_live_input_binding.hpp"
 #include "true_peak_static_coordinator.hpp"
 #include "render_test_support.hpp"
 
@@ -86,6 +87,7 @@ private slots:
     void sourceMismatchAndMissingIdentityFailClosed();
     void monoSilenceAndUnqualifiedStatus();
     void asynchronousSourceAndRealizationStaleness();
+    void consumedProcessedLiveInputBindingRejectsGapsAndMismatchedOwners();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -244,6 +246,63 @@ void TruePeakStaticBindingTest::asynchronousSourceAndRealizationStaleness()
     QVERIFY(!coordinator.full_right_over_zero());
     QVERIFY(coordinator.full_left_meter_level()
             > coordinator.full_right_meter_level());
+}
+
+void TruePeakStaticBindingTest::consumedProcessedLiveInputBindingRejectsGapsAndMismatchedOwners()
+{
+    using platform::windows::WindowsConsumedSliceKind;
+    auto fixture = make_render(4800, frame_range(0,4800));
+    QVERIFY(fixture);
+    auto owner = fixture.value()->result;
+    auto playback = core::PlaybackSnapshot{};
+    playback.state = core::PlaybackState::PLAYING;
+    playback.position = core::FrameIndex{500};
+    playback.audibleRealization = {
+        core::AudibleHandoffPhase::NEW, core::RealizationId{512}, std::nullopt};
+    auto prefix = platform::windows::WindowsConsumedOutputPrefix{};
+    prefix.generation = 6;
+    prefix.processedWatermarkExclusive = 500;
+    prefix.count = 1;
+    prefix.partitionRepresented = true;
+    prefix.slices[0].generation = 6;
+    prefix.slices[0].outputBegin = 0;
+    prefix.slices[0].outputEnd = 500;
+    prefix.slices[0].sourceBegin = 0;
+    prefix.slices[0].sourceEnd = 500;
+    prefix.slices[0].kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    prefix.slices[0].realizationId = core::RealizationId{512};
+    auto bound = app::bind_processed_live_input(
+        owner, core::RealizationId{512}, fixture.value()->expected,
+        playback, prefix);
+    QVERIFY(bound);
+    QVERIFY(bound.value()->owner == owner);
+    QCOMPARE(bound.value()->chainRevision, owner->chain_revision());
+    QCOMPARE(bound.value()->consumedSourceEnd, std::int64_t{500});
+    QVERIFY(!prefix.certifiedForLiveTruePeak); // input is NOT live-qualified
+
+    prefix.slices[0].kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{512},
+        fixture.value()->expected, playback, prefix));
+    prefix.slices[0].kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    prefix.slices[0].realizationId = core::RealizationId{513};
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{512},
+        fixture.value()->expected, playback, prefix));
+    prefix.slices[0].realizationId = core::RealizationId{512};
+    prefix.slices[0].sourceBegin = 100;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{512},
+        fixture.value()->expected, playback, prefix));
+    prefix.slices[0].sourceBegin = 0;
+    playback.audibleRealization.phase = core::AudibleHandoffPhase::TRANSITION;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{512},
+        fixture.value()->expected, playback, prefix));
+    playback.audibleRealization.phase = core::AudibleHandoffPhase::NEW;
+    prefix.partitionRepresented = false;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{512},
+        fixture.value()->expected, playback, prefix));
+    prefix.partitionRepresented = true;
+    prefix.certifiedForLiveTruePeak = true; // impossible premature certification
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{512},
+        fixture.value()->expected, playback, prefix));
 }
 
 } // namespace
