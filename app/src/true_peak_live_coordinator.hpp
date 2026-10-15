@@ -30,6 +30,8 @@ class TruePeakLiveCoordinator final : public QObject {
     Q_PROPERTY(bool monitoringAttempted READ monitoring_attempted NOTIFY changed)
     Q_PROPERTY(bool recentAvailable READ recent_available NOTIFY changed)
     Q_PROPERTY(bool holdAvailable READ hold_available NOTIFY changed)
+    Q_PROPERTY(double leftHoldLevel READ left_hold_level NOTIFY changed)
+    Q_PROPERTY(double rightHoldLevel READ right_hold_level NOTIFY changed)
     Q_PROPERTY(QString peakText READ peak_text NOTIFY changed)
     Q_PROPERTY(QString holdText READ hold_text NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
@@ -64,6 +66,8 @@ public:
     [[nodiscard]] QString right_text() const;
     [[nodiscard]] double left_level() const;
     [[nodiscard]] double right_level() const;
+    [[nodiscard]] double left_hold_level() const;
+    [[nodiscard]] double right_hold_level() const;
     [[nodiscard]] bool left_over_zero() const noexcept {
         return recentAvailable_ && recent_[0] > 1.0;
     }

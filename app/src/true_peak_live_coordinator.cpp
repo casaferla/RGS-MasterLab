@@ -309,5 +309,14 @@ double TruePeakLiveCoordinator::right_level() const
     return recentAvailable_ && channelCount_ == 2
         ? bar_level(recent_[1]) : 0.0;
 }
+double TruePeakLiveCoordinator::left_hold_level() const
+{
+    return holdAvailable_ ? bar_level(hold_[0]) : 0.0;
+}
+double TruePeakLiveCoordinator::right_hold_level() const
+{
+    return holdAvailable_ && channelCount_ == 2
+        ? bar_level(hold_[1]) : 0.0;
+}
 
 } // namespace rgsml::app
