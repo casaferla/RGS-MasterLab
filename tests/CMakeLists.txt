@@ -536,6 +536,7 @@ if(NOT WIN32)
     )
     target_include_directories(rgsml_playback_engine_portable_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/platform/windows/src/internal
+        ${CMAKE_SOURCE_DIR}/platform/windows/include
         ${CMAKE_SOURCE_DIR}/audio/src/internal
         ${CMAKE_SOURCE_DIR}/analysis/src
     )
@@ -1561,6 +1562,7 @@ qt_add_executable(rgsml_true_peak_static_binding_tests
 target_include_directories(rgsml_true_peak_static_binding_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src
     ${CMAKE_SOURCE_DIR}/tests/unit/render
+    ${CMAKE_SOURCE_DIR}/platform/windows/include
 )
 target_link_libraries(rgsml_true_peak_static_binding_tests PRIVATE
     rgsml_analysis rgsml_render Qt6::Test
