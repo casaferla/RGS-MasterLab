@@ -110,6 +110,9 @@ private:
     std::uint64_t serial_{0};
     std::uint64_t observationEpoch_{0};
     std::optional<std::uint64_t> generation_;
+    std::optional<std::uint64_t> seekSerial_;
+    std::optional<std::uint64_t> traversalSerial_;
+    std::optional<std::uint64_t> loopWrapCount_;
     std::optional<core::RealizationId> activeId_;
     std::shared_ptr<const render::RenderResult> currentOwner_;
 
