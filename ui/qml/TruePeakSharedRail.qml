@@ -11,7 +11,8 @@ Item {
     readonly property bool hasMeasurement: measurementProvider
         ? measurementProvider.hasMeasurement : false
     implicitWidth: 316
-    implicitHeight: 400
+    implicitHeight: 420
+    readonly property bool compactRail: height < 530
 
     // A common M16/M17 information group centred vertically at any height.
     // Cards retain their natural size rather than growing to fill empty space.
@@ -22,12 +23,13 @@ Item {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         height: implicitHeight
-        spacing: 10
+        spacing: root.compactRail ? 7 : 10
 
         TruePeakReadoutCard {
             objectName: "truePeakRecentCard"
             Layout.fillWidth: true
-            Layout.preferredHeight: 108
+            Layout.preferredHeight: root.compactRail ? 82 : 108
+            Layout.minimumHeight: 80
             heading: "RECENT / LIVE TRUE PEAK"
             reading: root.liveProvider && root.liveProvider.recentAvailable
                 ? root.liveProvider.peakText : "UNAVAILABLE"
@@ -39,7 +41,8 @@ Item {
         TruePeakReadoutCard {
             objectName: "truePeakHoldCard"
             Layout.fillWidth: true
-            Layout.preferredHeight: 108
+            Layout.preferredHeight: root.compactRail ? 82 : 108
+            Layout.minimumHeight: 80
             heading: "SHORT HOLD / 1 SECOND"
             reading: root.liveProvider && root.liveProvider.holdAvailable
                 ? root.liveProvider.holdText : "UNAVAILABLE"
@@ -51,7 +54,8 @@ Item {
         TruePeakReadoutCard {
             objectName: "truePeakFullResourceCard"
             Layout.fillWidth: true
-            Layout.preferredHeight: 108
+            Layout.preferredHeight: root.compactRail ? 82 : 108
+            Layout.minimumHeight: 80
             heading: "COMPLETE PROCESSED RESOURCE"
             reading: root.hasMeasurement
                 ? root.measurementProvider.peakText : "—"
@@ -63,7 +67,8 @@ Item {
         TruePeakStatusCard {
             objectName: "truePeakProvenanceCard"
             Layout.fillWidth: true
-            Layout.preferredHeight: 132
+            Layout.preferredHeight: root.compactRail ? 112 : 132
+            Layout.minimumHeight: 108
             stateLabel: root.measurementProvider
                 ? root.measurementProvider.stateText : "NO SOURCE"
             qualification: root.measurementProvider
@@ -77,7 +82,7 @@ Item {
         }
         Text {
             text: "RECENT requires exact sink-consumed PROCESSED ownership. "
-                + "Unknown SRC/handoff/loop = UNAVAILABLE. Gate G OPEN."
+                + "Active/unproven SRC, loop or handoff = UNAVAILABLE. Gate G OPEN."
             color: "#91A8B7"
             font.family: "Segoe UI"
             font.pixelSize: 10

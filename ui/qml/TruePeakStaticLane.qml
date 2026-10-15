@@ -24,6 +24,7 @@ Rectangle {
         anchors.margins: 12
         spacing: 8
         Text {
+            objectName: "truePeakChannelLabel"
             text: root.channelName
             font.family: "Segoe UI"
             font.pixelSize: 17
@@ -118,6 +119,7 @@ Rectangle {
                     model: [6, 0, -12, -24, -36, -48, -60]
                     Text {
                         required property int modelData
+                        objectName: modelData === 6 ? "truePeakPlusSixMarker" : "truePeakScaleOtherMarker"
                         text: modelData > 0 ? "+" + modelData : "" + modelData
                         width: parent.width
                         font.family: "Segoe UI"
