@@ -1,6 +1,7 @@
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include "internal/playback_support.hpp"
+#include "internal/c2_consumed_prefix_projection.hpp"
 
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
@@ -655,6 +656,13 @@ public:
         return engine_.snapshot();
     }
 
+    [[nodiscard]] WindowsConsumedOutputPrefix consumed_output_prefix(
+        std::optional<std::uint64_t> expectedGeneration = std::nullopt) const noexcept
+    {
+        return internal::project_c2_prefix(
+            engine_.c2_consumed_prefix(expectedGeneration));
+    }
+
     void attach_analyzer(rgsml::analysis::LiveSpectrumAnalyzer* analyzer)
     {
         analyzer_ = analyzer;
@@ -804,6 +812,33 @@ public:
         return std::move(*result);
     }
 
+    [[nodiscard]] core::Result<WindowsConsumedOutputPrefix>
+    consumed_output_prefix(std::optional<std::uint64_t> expectedGeneration) const
+    {
+        if (!ready_ || worker_ == nullptr) {
+            return failure<WindowsConsumedOutputPrefix>(
+                core::ErrorCode::IoFailure,
+                "The Windows playback observer worker is unavailable.");
+        }
+        if (QThread::currentThread() == worker_->thread()) {
+            return core::Result<WindowsConsumedOutputPrefix>::success(
+                worker_->consumed_output_prefix(expectedGeneration));
+        }
+        std::optional<WindowsConsumedOutputPrefix> observed;
+        const bool invoked = QMetaObject::invokeMethod(
+            worker_,
+            [&] { observed.emplace(
+                worker_->consumed_output_prefix(expectedGeneration)); },
+            Qt::BlockingQueuedConnection);
+        if (!invoked || !observed.has_value()) {
+            return failure<WindowsConsumedOutputPrefix>(
+                core::ErrorCode::IoFailure,
+                "Unable to query the Windows playback observer.");
+        }
+        return core::Result<WindowsConsumedOutputPrefix>::success(
+            std::move(*observed));
+    }
+
     void attach_analyzer(analysis::LiveSpectrumAnalyzer* analyzer)
     {
         if (!ready_ || worker_ == nullptr) {
@@ -917,6 +952,13 @@ core::Result<core::PlaybackSnapshot>
 WindowsAudioPlaybackService::snapshot() const
 {
     return impl_->snapshot();
+}
+
+core::Result<WindowsConsumedOutputPrefix>
+WindowsAudioPlaybackService::consumed_output_prefix(
+    std::optional<std::uint64_t> expectedGeneration) const
+{
+    return impl_->consumed_output_prefix(expectedGeneration);
 }
 
 void WindowsAudioPlaybackService::attach_analyzer(

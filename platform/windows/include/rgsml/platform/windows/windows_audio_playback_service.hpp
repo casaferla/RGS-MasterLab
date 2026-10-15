@@ -2,8 +2,11 @@
 
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/audio_playback_service.hpp>
+#include <rgsml/platform/windows/windows_consumed_output_prefix.hpp>
 
 #include <memory>
+#include <cstdint>
+#include <optional>
 
 namespace rgsml::analysis {
 class LiveSpectrumAnalyzer;
@@ -44,6 +47,11 @@ public:
     [[nodiscard]] core::Status set_loop(
         std::optional<core::FrameRange> loop) override;
     [[nodiscard]] core::Result<core::PlaybackSnapshot> snapshot() const override;
+    // C2D6: serialized worker snapshot, never an audible DAC clock or
+    // qualified LIVE True Peak. An expected stale generation is rejected.
+    [[nodiscard]] core::Result<WindowsConsumedOutputPrefix>
+    consumed_output_prefix(
+        std::optional<std::uint64_t> expectedGeneration = std::nullopt) const;
 
     void attach_analyzer(analysis::LiveSpectrumAnalyzer* analyzer);
 

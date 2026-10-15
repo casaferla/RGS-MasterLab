@@ -1,4 +1,5 @@
 #include "playback_support.hpp"
+#include "c2_consumed_prefix_projection.hpp"
 #include "internal/true_peak_chronological_buckets.hpp"
 
 #include "../../audio_golden/wav/golden_vectors.hpp"
@@ -268,6 +269,8 @@ private slots:
     void c2D4QueryIsObservationalAcrossLoopAndSeek();
     void c2D4PauseDoesNotAdvanceConsumedPrefix();
     void c2D5SinkWatermarkFeedsRealNumericalRecentOnlyAfterFullBucket();
+    void c2D6WorkerProjectionPreservesConsumedWatermarkAndGap();
+    void c2D6WorkerProjectionNeverCertifiesProcessedTarget();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2629,6 +2632,84 @@ void PlaybackSupportTest::c2D5SinkWatermarkFeedsRealNumericalRecentOnlyAfterFull
     // The observer intentionally does not publish LIVE: the required
     // provenance/target/chain revision is *not* bound by this test adapter.
     QCOMPARE(engine.c2_consumed_prefix().certifiedForLiveTruePeak, false);
+}
+
+void PlaybackSupportTest::c2D6WorkerProjectionPreservesConsumedWatermarkAndGap()
+{
+    using platform::windows::internal::project_c2_prefix;
+    using platform::windows::WindowsConsumedSliceKind;
+    using platform::windows::WindowsConsumedGapReason;
+
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2600);
+    auto replacement = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2600);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(128U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1201}));
+    QVERIFY(engine.play());
+    auto initial = project_c2_prefix(engine.c2_consumed_prefix());
+    QVERIFY(!initial.certifiedForLiveTruePeak);
+    QCOMPARE(initial.count, std::size_t{0});
+    QVERIFY(!initial.partitionRepresented);
+    const auto gen = initial.generation;
+    QVERIFY(engine.handoff_pcm(replacement.view(), nullptr,
+        core::RealizationId{1202}));
+    sink->consume_all();
+    engine.tick();
+    sink->set_processed_frames(64);
+    const auto actual = project_c2_prefix(engine.c2_consumed_prefix(gen));
+    QVERIFY(actual.partitionRepresented);
+    QCOMPARE(actual.processedWatermarkExclusive, std::int64_t{64});
+    QCOMPARE(actual.count, std::size_t{2});
+    QCOMPARE(actual.slices[0].kind,
+        WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(actual.slices[0].realizationId,
+        std::optional{core::RealizationId{1201}});
+    QCOMPARE(actual.slices[1].kind,
+        WindowsConsumedSliceKind::GAP_UNPROVEN);
+    QCOMPARE(actual.slices[1].reason,
+        WindowsConsumedGapReason::UNPROVEN_HANDOFF);
+    QVERIFY(!actual.slices[1].realizationId);
+    QVERIFY(!actual.slices[1].sourceBegin);
+    QVERIFY(!actual.slices[1].sourceEnd);
+    QVERIFY(!actual.certifiedForLiveTruePeak);
+}
+
+void PlaybackSupportTest::c2D6WorkerProjectionNeverCertifiesProcessedTarget()
+{
+    using platform::windows::internal::project_c2_prefix;
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::MONO_C, 1000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(128U, 2U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1301}));
+    QVERIFY(engine.play());
+    sink->set_processed_frames(5);
+    auto valid = project_c2_prefix(engine.c2_consumed_prefix());
+    QVERIFY(valid.partitionRepresented);
+    QCOMPARE(valid.count, std::size_t{1});
+    QCOMPARE(valid.slices[0].kind,
+        WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(valid.slices[0].sourceEnd, std::optional<std::int64_t>{5});
+    QVERIFY(!valid.certifiedForLiveTruePeak);
+    sink->set_processed_frames(500);
+    const auto invalidClock = project_c2_prefix(engine.c2_consumed_prefix());
+    QCOMPARE(invalidClock.reason,
+        WindowsConsumedGapReason::CLOCK_AHEAD_OF_ACCEPTED);
+    QVERIFY(!invalidClock.partitionRepresented);
+    QVERIFY(!invalidClock.certifiedForLiveTruePeak);
+    QVERIFY(engine.seek(core::FrameIndex{50}));
+    const auto stale = project_c2_prefix(
+        engine.c2_consumed_prefix(valid.generation));
+    QCOMPARE(stale.reason, WindowsConsumedGapReason::STALE_GENERATION);
+    QVERIFY(!stale.partitionRepresented);
+    QVERIFY(!stale.certifiedForLiveTruePeak);
 }
 
 }  // namespace rgsml::tests
