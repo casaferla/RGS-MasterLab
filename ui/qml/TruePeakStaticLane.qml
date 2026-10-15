@@ -11,6 +11,7 @@ Rectangle {
     property real level: 0.0
     property bool available: false
     property bool aboveDigitalZero: false
+    property string meterKind: "FULL RESOURCE"
     radius: 7
     color: "#091C2B"
     border.color: "#24425A"
@@ -140,7 +141,7 @@ Rectangle {
             elide: Text.ElideRight
         }
         Text {
-            text: root.available ? "FULL RESOURCE" : "NO MEASUREMENT"
+            text: root.available ? root.meterKind : "NO MEASUREMENT"
             font.family: "Segoe UI"
             font.pixelSize: 9
             color: "#8FAAB9"

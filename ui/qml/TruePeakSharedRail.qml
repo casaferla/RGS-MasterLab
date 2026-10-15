@@ -7,6 +7,7 @@ Item {
     id: root
     objectName: "truePeakSharedRail"
     property var measurementProvider: null
+    property var liveProvider: null
     readonly property bool hasMeasurement: measurementProvider
         ? measurementProvider.hasMeasurement : false
     implicitWidth: 316
@@ -28,9 +29,13 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 108
             heading: "RECENT / LIVE TRUE PEAK"
-            reading: "UNAVAILABLE"
-            detail: "Audible-cursor observation pending C2"
-            available: false
+            reading: root.liveProvider && root.liveProvider.recentAvailable
+                ? root.liveProvider.peakText : "UNAVAILABLE"
+            detail: root.liveProvider && root.liveProvider.monitoringAttempted
+                ? root.liveProvider.statusText
+                  + " · HOLD 1 s: " + root.liveProvider.holdText
+                : "NOT MONITORED · select PROCESSED and press Play"
+            available: root.liveProvider ? root.liveProvider.recentAvailable : false
         }
         TruePeakReadoutCard {
             objectName: "truePeakFullResourceCard"
@@ -60,7 +65,8 @@ Item {
                 ? root.measurementProvider.sampleRateText : "—"
         }
         Text {
-            text: "Static results are not evidence of audible NEW. Gate G OPEN."
+            text: "RECENT requires exact sink-consumed PROCESSED ownership. "
+                + "Unknown SRC/handoff/loop = UNAVAILABLE. Gate G OPEN."
             color: "#91A8B7"
             font.family: "Segoe UI"
             font.pixelSize: 10
