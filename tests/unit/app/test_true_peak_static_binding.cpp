@@ -354,11 +354,21 @@ void TruePeakStaticBindingTest::liveCoordinatorMeasuresSpikeAndInvalidatesTransi
     QVERIFY(coordinator.right_level() > 0.0);
     QVERIFY(coordinator.peak_text().endsWith(QStringLiteral(" dBTP")));
 
+    // PAUSE with the same source and chronology freezes genuine LIVE.
+    playback.state = core::PlaybackState::PAUSED;
+    QTest::qWait(110);
+    QVERIFY(coordinator.recent_available());
+    // Paused seek invalidates the old timeline instead of freezing it.
+    ++playback.seekSerial;
+    QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 3500);
+    playback.state = core::PlaybackState::PLAYING;
     // Audible transition must not inherit even a previously measured peak.
     playback.audibleRealization.phase = core::AudibleHandoffPhase::TRANSITION;
     QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 4500);
     QVERIFY(coordinator.monitoring_attempted());
     selectedProcessed = false;
+    coordinator.invalidate(); // source-change signal path is synchronous
+    QVERIFY(!coordinator.monitoring_attempted());
     QTRY_VERIFY_WITH_TIMEOUT(!coordinator.monitoring_attempted(), 4500);
     QVERIFY(!coordinator.recent_available());
     QCOMPARE(coordinator.channel_count(), 0);
