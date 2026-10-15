@@ -42,7 +42,7 @@ Rectangle {
         Item {
             Layout.fillHeight: true
             Layout.fillWidth: true
-            Layout.minimumHeight: 165
+            Layout.minimumHeight: 120
             Rectangle {
                 id: track
                 objectName: "truePeakTrack"
@@ -106,7 +106,7 @@ Rectangle {
                     anchors.margins: 1
                     y: Math.round(5 + 6.0 / 66.0 * (parent.height - 10))
                     height: 1
-                    color: "#F0BE82"
+                    color: "#7894A8"
                     opacity: 0.96
                 }
                 // One channel-specific marker for the rolling 1s maximum.
@@ -143,7 +143,7 @@ Rectangle {
                         font.pixelSize: 10
                         font.weight: modelData === 0 ? Font.DemiBold
                                                      : Font.Normal
-                        color: modelData === 0 ? "#F0BE82" : "#95ACBD"
+                        color: modelData === 0 ? "#A4BCCB" : "#95ACBD"
                         // +6 is the top endpoint: center the glyph on
                         // the actual top of the meter; do not clamp its
                         // top edge down to the track's first interior pixel.
@@ -157,8 +157,11 @@ Rectangle {
         }
         Text {
             objectName: "truePeakLaneReading"
-            text: root.available ? root.reading : "—"
-            font.family: "Segoe UI"
+            // Fixed-width digits and a reserved positive sign cell avoid x-jitter.
+            text: root.available
+                ? (/^[0-9]/.test(root.reading) ? " " + root.reading : root.reading)
+                : "—"
+            font.family: "Consolas"
             font.pixelSize: 14
             font.weight: Font.DemiBold
             color: !root.available ? "#7F98A9"

@@ -32,8 +32,8 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 5
+        anchors.margins: root.height < 95 ? 8 : 12
+        spacing: root.height < 95 ? 2 : 5
         Text {
             text: root.heading
             color: "#91AEC2"
@@ -44,9 +44,11 @@ Rectangle {
             elide: Text.ElideRight
         }
         Text {
-            text: root.reading
+            // Fixed-width digits and a reserved positive sign cell.
+            text: root.available && /^[0-9]/.test(root.reading)
+                ? " " + root.reading : root.reading
             color: root.available ? root.valueColor : "#879CA9"
-            font.family: "Segoe UI"
+            font.family: "Consolas"
             font.pixelSize: 22
             font.weight: Font.DemiBold
             Layout.fillWidth: true

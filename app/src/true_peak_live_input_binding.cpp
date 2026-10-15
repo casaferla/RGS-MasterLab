@@ -27,7 +27,9 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         || (consumed.reason
             != platform::windows::WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER
             && consumed.reason
-            != platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP)) {
+            != platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
+            && consumed.reason
+                != platform::windows::WindowsConsumedGapReason::UNPROVEN_HANDOFF)) {
         return fail("C2D6 requires exactly one complete source-candidate prefix and a retained owner.");
     }
     if (playback.state != core::PlaybackState::PLAYING
@@ -71,9 +73,10 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         cursor = part.outputEnd;
     }
     if (cursor != consumed.processedWatermarkExclusive
-        || (consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
+        || ((consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
+             || consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_HANDOFF)
             && !earlierGap))
-        return fail("C2D10 requires a fresh proven suffix after the loop gap.");
+        return fail("C2D12 requires a fresh proven suffix after a loop or handoff gap.");
 
     const auto& slice = consumed.slices[consumed.count - 1U];
     if (slice.kind != platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED

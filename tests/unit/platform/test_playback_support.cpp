@@ -265,7 +265,7 @@ private slots:
     void c2D3FreshCrossfadePendingCannotInheritStaleSource();
     void c2D4ConsumedPrefixNoFuturePartialWritesAndSeek();
     void c2D4ConsumedPrefixSrcAndHandoffExposeGaps();
-    void c2D4ConsumedPrefixLoopOverflowIsConserved();
+    void c2D4ConsumedPrefixLongLoopGapIsConserved();
     void c2D4QueryIsObservationalAcrossLoopAndSeek();
     void c2D4PauseDoesNotAdvanceConsumedPrefix();
     void c2D5SinkWatermarkFeedsRealNumericalRecentOnlyAfterFullBucket();
@@ -274,6 +274,7 @@ private slots:
     void c2D9RealSinkSeekMaintainsRelativeOutputAndAbsoluteSource();
     void c2D10LoopOffRecoversFreshSourceWithoutRestart();
     void c2D10Native44100IsNotInherentlyUnavailable();
+    void c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestart();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2205,8 +2206,8 @@ void PlaybackSupportTest::c2D2AcceptedRunLedgerOldOwnerResetAndFailClosed()
 void PlaybackSupportTest::c2D2AcceptedRunLedgerOverflowIsSticky()
 {
     using Reason = platform::windows::internal::C2CoverageProbeReason;
-    // Single-frame loop forces separate non-exact enqueue runs. Capacity and
-    // retention are finite: lost provenance must become an explicit condition.
+    // Deliberate alternating direct/loop history defeats safe GAP compaction:
+    // fragmented provenance must remain bounded and overflow fail-closed.
     auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 32);
     PlaybackEngine engine;
     auto out = std::make_unique<FakeOutput>(4U, 4U);
@@ -2218,9 +2219,12 @@ void PlaybackSupportTest::c2D2AcceptedRunLedgerOverflowIsSticky()
         core::FrameIndex{0}, core::FrameIndex{1}).value();
     QVERIFY(engine.set_loop(loop));
     QVERIFY(engine.play());
-    for (int i = 0; i < 132; ++i) {
+    for (int i = 0; i < 320; ++i) {
+        QVERIFY(engine.set_loop(i % 2 == 0
+            ? std::optional{loop} : std::nullopt));
         sink->consume_all();
         engine.tick();
+        if (engine.c2_processed_coverage_probe().acceptedLedgerOverflow) break;
     }
     const auto probe = engine.c2_processed_coverage_probe();
     QVERIFY(probe.acceptedLedgerOverflow);
@@ -2229,7 +2233,6 @@ void PlaybackSupportTest::c2D2AcceptedRunLedgerOverflowIsSticky()
     QVERIFY(probe.acceptedOutputFrames > 128);
     QVERIFY(!probe.completeThroughWatermark);
     for (const auto& run : engine.c2_accepted_output_runs()) {
-        QVERIFY(!run.exactOneToOne); // loop provenance is unproven in C2D2
         QCOMPARE(run.generation, probe.generation);
     }
     QVERIFY(engine.stop());
@@ -2447,7 +2450,7 @@ void PlaybackSupportTest::c2D4ConsumedPrefixSrcAndHandoffExposeGaps()
     QVERIFY(!transition.certifiedForLiveTruePeak);
 }
 
-void PlaybackSupportTest::c2D4ConsumedPrefixLoopOverflowIsConserved()
+void PlaybackSupportTest::c2D4ConsumedPrefixLongLoopGapIsConserved()
 {
     using Kind = platform::windows::internal::C2ConsumedSliceKind;
     auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 32);
@@ -2466,15 +2469,15 @@ void PlaybackSupportTest::c2D4ConsumedPrefixLoopOverflowIsConserved()
         engine.tick();
     }
     const auto probe = engine.c2_processed_coverage_probe();
-    QVERIFY(probe.acceptedLedgerOverflow);
+    QVERIFY(!probe.acceptedLedgerOverflow);
+    QCOMPARE(probe.acceptedRunCount, std::size_t{1});
     const auto partition = engine.c2_consumed_prefix();
     QVERIFY(partition.partitionRepresented);
     QCOMPARE(partition.processedWatermarkExclusive, probe.processedWatermarkExclusive);
-    QCOMPARE(partition.size, std::size_t{129});
+    QCOMPARE(partition.size, std::size_t{1});
     QCOMPARE(partition.slices[0].kind, Kind::GAP_UNPROVEN);
-    QCOMPARE(partition.slices[128].kind, Kind::GAP_LOST_PROVENANCE);
-    QCOMPARE(partition.slices[128].outputEnd, probe.processedWatermarkExclusive);
-    QVERIFY(partition.slices[128].outputEnd > partition.slices[128].outputBegin);
+    QCOMPARE(partition.slices[0].outputEnd, probe.processedWatermarkExclusive);
+    QVERIFY(partition.slices[0].outputEnd > partition.slices[0].outputBegin);
     QVERIFY(!partition.certifiedForLiveTruePeak);
     auto expected = std::int64_t{0};
     for (const auto& slice : partition.view()) {
@@ -2834,6 +2837,50 @@ void PlaybackSupportTest::c2D10LoopOffRecoversFreshSourceWithoutRestart()
     }
     QVERIFY2(sawFreshDirectTail,
         "Loop OFF must eventually yield new owner-stamped contiguous PROCESSED coverage.");
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+}
+
+void PlaybackSupportTest::c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestart()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto oldPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    auto newPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(oldPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1901}));
+    QVERIFY(engine.play());
+    const int starts = sink->startCalls;
+    const int stops = sink->stopCalls;
+    QVERIFY(engine.handoff_pcm(newPcm.view(), nullptr,
+        core::RealizationId{1902}));
+    bool sawGap = false;
+    bool sawNew = false;
+    for (int i = 0; i < 45 && !sawNew; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto p = engine.c2_consumed_prefix();
+        QVERIFY(!p.certifiedForLiveTruePeak);
+        if (!p.partitionRepresented) continue;
+        for (const auto& slice : p.view())
+            sawGap |= slice.kind == Kind::GAP_UNPROVEN;
+        if (p.size < 2U) continue;
+        const auto& last = p.slices[p.size - 1U];
+        if (last.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            || last.realizationId != std::optional{core::RealizationId{1902}}
+            || last.outputEnd != p.processedWatermarkExclusive) continue;
+        QVERIFY(sawGap);
+        QCOMPARE(p.reason, Reason::UNPROVEN_HANDOFF);
+        QVERIFY(last.sourceBegin && last.sourceEnd);
+        QCOMPARE(*last.sourceEnd - *last.sourceBegin,
+                 last.outputEnd - last.outputBegin);
+        sawNew = true;
+    }
+    QVERIFY2(sawNew, "Pure NEW post-crossfade source must recover without Stop.");
     QCOMPARE(sink->startCalls, starts);
     QCOMPARE(sink->stopCalls, stops);
 }

@@ -666,13 +666,17 @@ Window {
     QCOMPARE(hold->property("available").toBool(), false);
     QCOMPARE(hold->property("heading").toString(),
              QStringLiteral("SHORT HOLD / 1 SECOND"));
-    // HOLD's amber reading and its key must match the meter markers.
-    QVERIFY(hold->property("showColorKey").toBool());
+    // Amber reading alone identifies HOLD; no redundant legend line.
+    QVERIFY(!hold->property("showColorKey").toBool());
     auto* holdKey = find_child_by_name(
         hold, QStringLiteral("truePeakHoldLegendLine"));
     QVERIFY(holdKey);
-    QVERIFY(holdKey->property("visible").toBool());
+    QVERIFY(!holdKey->property("visible").toBool());
     QCOMPARE(hold->property("valueColor"), hold->property("keyColor"));
+    QCOMPARE(full->property("valueColor").value<QColor>(),
+             QColor{QStringLiteral("#6CBCCF")});
+    QCOMPARE(leftLane->property("meterKind").toString(),
+             QStringLiteral("RECENT 100 ms"));
     QCOMPARE(full->property("reading").toString(),
              QStringLiteral("—"));
     QCOMPARE(full->property("available").toBool(), false);

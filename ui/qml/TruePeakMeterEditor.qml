@@ -32,7 +32,7 @@ Item {
 
         RowLayout {
             width: meterScroll.availableWidth
-            height: Math.max(460, meterScroll.availableHeight)
+            height: Math.max(390, meterScroll.availableHeight)
             spacing: 12
 
             Rectangle {
@@ -82,7 +82,7 @@ Item {
                                 ? root.liveAvailable && root.liveProvider.leftOverZero
                                 : root.hasMeasurement
                                     && root.measurementProvider.fullLeftOverZero
-                            meterKind: root.showLive ? "RECENT 100 MS" : "STATIC RESOURCE"
+                            meterKind: root.showLive ? "RECENT 100 ms" : "STATIC RESOURCE"
                             holdAvailable: root.holdAvailable
                             holdLevel: root.holdAvailable
                                 ? root.liveProvider.leftHoldLevel : 0.0
@@ -108,7 +108,7 @@ Item {
                                 ? root.liveAvailable && root.liveProvider.rightOverZero
                                 : root.measuredChannels === 2
                                     && root.measurementProvider.fullRightOverZero
-                            meterKind: root.showLive ? "RECENT 100 MS" : "STATIC RESOURCE"
+                            meterKind: root.showLive ? "RECENT 100 ms" : "STATIC RESOURCE"
                             holdAvailable: root.holdAvailable
                                 && root.measuredChannels === 2
                             holdLevel: root.holdAvailable
@@ -118,7 +118,7 @@ Item {
                         Item { Layout.fillWidth: true }
                     }
                     Text {
-                        text: "Scale −60 to +6 dBTP · coral only above 0 dBTP · no Ceiling selected"
+                        text: "Coral fill > 0 dBTP · amber = 1 s HOLD · grey = 0 dBTP reference (not Ceiling)"
                         color: "#8EAAB9"
                         font.family: "Segoe UI"
                         font.pixelSize: 10

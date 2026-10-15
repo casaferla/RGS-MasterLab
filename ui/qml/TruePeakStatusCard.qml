@@ -16,8 +16,8 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 5
+        anchors.margins: root.height < 115 ? 8 : 12
+        spacing: root.height < 115 ? 3 : 5
         Text {
             text: "MEASUREMENT / PROVENANCE"
             color: "#91AEC2"

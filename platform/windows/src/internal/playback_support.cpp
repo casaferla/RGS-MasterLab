@@ -1415,8 +1415,18 @@ core::Status PlaybackEngine::pump_once()
     // The chronological ledger still retains previous unproven loop runs.
     // Old accepted/pending bytes preserve their original generation-time tags;
     // do not clear, restart or rewrite the audio output on loop OFF.
-    c2PendingExactMapping_ = !rateAdapter_ && !loop_ && !pendingHandoff_
-        && c2PendingOwner_.has_value();
+    // Crossfade and queued bytes remain GAP_UNPROVEN. Only a separately
+    // decoded, pure NEW block after the handoff's numeric boundary may
+    // regain source identity; the consumed sink watermark gates publication.
+    const bool pureNewAfterHandoff = pendingHandoff_
+        && !pendingHandoff_->awaitingReplay
+        && pendingHandoff_->newNumericStartSourceFrame
+        && c2PendingOwner_ == pendingHandoff_->newRealizationId
+        && blockAbsoluteStart.value()
+            >= *pendingHandoff_->newNumericStartSourceFrame;
+    c2PendingExactMapping_ = !rateAdapter_ && !loop_
+        && c2PendingOwner_.has_value()
+        && (!pendingHandoff_ || pureNewAfterHandoff);
     generatedOutputFrames_ += frames;
     scheduledOutputFrame_ += frames;
     if (!loop_ && scheduledOutputFrame_ == outputDuration_->value()) {
@@ -1494,6 +1504,17 @@ void PlaybackEngine::c2_record_accepted_frames(
             && previous.realizationId == run.realizationId) {
             previous.outputEnd = run.outputEnd;
             previous.sourceEnd = run.sourceEnd;
+            return;
+        }
+        // Merge only adjacent UNSAFE runs into one explicit GAP. This cannot
+        // manufacture source identity, and keeps long looping bounded.
+        if (!run.exactOneToOne && !previous.exactOneToOne
+            && previous.generation == run.generation
+            && previous.outputEnd == run.outputBegin) {
+            previous.outputEnd = run.outputEnd;
+            previous.realizationId.reset();
+            previous.sourceBegin.reset();
+            previous.sourceEnd.reset();
             return;
         }
     }
