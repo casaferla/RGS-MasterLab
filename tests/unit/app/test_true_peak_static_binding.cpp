@@ -92,6 +92,7 @@ private slots:
     void liveCoordinatorMeasuresSpikeAndInvalidatesTransitions();
     void consumedProcessedSeekRequiresProvenSourceMapping();
     void liveCoordinatorSeekReacquiresOnlyCompleteWindows();
+    void postLoopRecoveryBindsOnlyFreshExactConsumedSuffix();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -533,6 +534,78 @@ void TruePeakStaticBindingTest::liveCoordinatorSeekReacquiresOnlyCompleteWindows
     QTRY_VERIFY_WITH_TIMEOUT(live.recent_available(), 4500);
     QCOMPARE(live.peak_text(), QStringLiteral("−∞ dBTP"));
     QVERIFY(!live.hold_available());
+}
+
+
+void TruePeakStaticBindingTest::postLoopRecoveryBindsOnlyFreshExactConsumedSuffix()
+{
+    using platform::windows::WindowsConsumedOutputPrefix;
+    using platform::windows::WindowsConsumedSliceKind;
+    using platform::windows::WindowsConsumedGapReason;
+    auto fixture = make_render(10000, frame_range(0,10000));
+    QVERIFY(fixture);
+    const auto owner = fixture.value()->result;
+    core::PlaybackSnapshot playback{};
+    playback.state = core::PlaybackState::PLAYING;
+    playback.position = core::FrameIndex{3499};
+    playback.audibleRealization = {
+        core::AudibleHandoffPhase::NEW, core::RealizationId{971}, std::nullopt};
+    WindowsConsumedOutputPrefix prefix{};
+    prefix.generation = 91;
+    prefix.partitionRepresented = true;
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_LOOP;
+    prefix.processedWatermarkExclusive = 900;
+    prefix.count = 2;
+    auto& old = prefix.slices[0];
+    old.generation = 91;
+    old.outputBegin = 0;
+    old.outputEnd = 400;
+    old.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+    old.reason = WindowsConsumedGapReason::UNPROVEN_LOOP;
+    auto& fresh = prefix.slices[1];
+    fresh.generation = 91;
+    fresh.outputBegin = 400;
+    fresh.outputEnd = 900;
+    fresh.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    fresh.sourceBegin = 3000;
+    fresh.sourceEnd = 3500;
+    fresh.realizationId = core::RealizationId{971};
+
+    auto bound = app::bind_processed_live_input(owner,
+        core::RealizationId{971}, fixture.value()->expected, playback, prefix);
+    QVERIFY(bound);
+    QCOMPARE(bound.value()->consumedSourceBegin, std::int64_t{3000});
+    QCOMPARE(bound.value()->consumedSourceEnd, std::int64_t{3500});
+    // Last, fresh direct PCM is independently source-owned. Old loop PCM
+    // remains explicitly GAP rather than becoming fake valid history.
+    fresh.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{971},
+        fixture.value()->expected, playback, prefix));
+    fresh.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    old.outputEnd = 401; // hole/overlap
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{971},
+        fixture.value()->expected, playback, prefix));
+    old.outputEnd = 400;
+    fresh.sourceEnd = 3501; // source/output not exact 1:1
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{971},
+        fixture.value()->expected, playback, prefix));
+    fresh.sourceEnd = 3500;
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{971},
+        fixture.value()->expected, playback, prefix));
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_HANDOFF;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{971},
+        fixture.value()->expected, playback, prefix));
+    prefix.reason = WindowsConsumedGapReason::ACCEPTED_LEDGER_OVERFLOW;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{971},
+        fixture.value()->expected, playback, prefix));
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_LOOP;
+    prefix.slices[0].kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{971},
+        fixture.value()->expected, playback, prefix));
+    prefix.slices[0].kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+    QVERIFY(app::bind_processed_live_input(owner, core::RealizationId{971},
+        fixture.value()->expected, playback, prefix));
 }
 
 } // namespace
