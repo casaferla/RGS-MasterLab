@@ -8,10 +8,16 @@ Item {
     id: root
     objectName: "truePeakMeterSurface"
     property var measurementProvider: null
+    property var liveProvider: null
+    readonly property bool showLive: liveProvider
+        ? liveProvider.monitoringAttempted : false
+    readonly property bool liveAvailable: root.showLive
+        && liveProvider.recentAvailable
     readonly property bool hasMeasurement: measurementProvider
         ? measurementProvider.hasMeasurement : false
-    readonly property int measuredChannels: root.hasMeasurement
-        ? root.measurementProvider.measuredChannelCount : 0
+    readonly property int measuredChannels: root.showLive
+        ? root.liveProvider.channelCount
+        : root.hasMeasurement ? root.measurementProvider.measuredChannelCount : 0
     readonly property bool isMono: root.measuredChannels === 1
 
     ScrollView {
@@ -43,7 +49,8 @@ Item {
                     anchors.margins: 14
                     spacing: 12
                     Text {
-                        text: "FULL-RESOURCE TRUE PEAK"
+                        text: root.showLive ? "LIVE PROCESSED TRUE PEAK"
+                                            : "STATIC FULL-RESOURCE TRUE PEAK"
                         color: "#B3C9D9"
                         font.family: "Segoe UI"
                         font.pixelSize: 11
@@ -60,13 +67,20 @@ Item {
                             Layout.fillHeight: true
                             Layout.preferredWidth: 135
                             channelName: root.isMono ? "C" : "L"
-                            reading: root.hasMeasurement
-                                ? root.measurementProvider.fullLeftText : "—"
-                            available: root.hasMeasurement
-                            level: root.hasMeasurement
-                                ? root.measurementProvider.fullLeftMeterLevel : 0
-                            aboveDigitalZero: root.hasMeasurement
-                                && root.measurementProvider.fullLeftOverZero
+                            reading: root.showLive
+                                ? root.liveProvider.leftText
+                                : root.hasMeasurement
+                                    ? root.measurementProvider.fullLeftText : "—"
+                            available: root.showLive ? root.liveAvailable : root.hasMeasurement
+                            level: root.showLive
+                                ? root.liveProvider.leftLevel
+                                : root.hasMeasurement
+                                    ? root.measurementProvider.fullLeftMeterLevel : 0
+                            aboveDigitalZero: root.showLive
+                                ? root.liveAvailable && root.liveProvider.leftOverZero
+                                : root.hasMeasurement
+                                    && root.measurementProvider.fullLeftOverZero
+                            meterKind: root.showLive ? "RECENT 100 MS" : "STATIC RESOURCE"
                         }
                         TruePeakStaticLane {
                             objectName: "truePeakRightLane"
@@ -74,13 +88,22 @@ Item {
                             Layout.preferredWidth: 135
                             visible: !root.isMono
                             channelName: "R"
-                            reading: root.measuredChannels === 2
-                                ? root.measurementProvider.fullRightText : "—"
-                            available: root.measuredChannels === 2
-                            level: root.measuredChannels === 2
-                                ? root.measurementProvider.fullRightMeterLevel : 0
-                            aboveDigitalZero: root.measuredChannels === 2
-                                && root.measurementProvider.fullRightOverZero
+                            reading: root.showLive
+                                ? root.liveProvider.rightText
+                                : root.measuredChannels === 2
+                                    ? root.measurementProvider.fullRightText : "—"
+                            available: root.showLive
+                                ? root.liveAvailable && root.measuredChannels === 2
+                                : root.measuredChannels === 2
+                            level: root.showLive
+                                ? root.liveProvider.rightLevel
+                                : root.measuredChannels === 2
+                                    ? root.measurementProvider.fullRightMeterLevel : 0
+                            aboveDigitalZero: root.showLive
+                                ? root.liveAvailable && root.liveProvider.rightOverZero
+                                : root.measuredChannels === 2
+                                    && root.measurementProvider.fullRightOverZero
+                            meterKind: root.showLive ? "RECENT 100 MS" : "STATIC RESOURCE"
                         }
                         Item { Layout.fillWidth: true }
                     }
@@ -93,7 +116,10 @@ Item {
                         Layout.fillWidth: true
                     }
                     Text {
-                        text: "Full-resource maxima · static. Live/hold remains unavailable."
+                        text: root.showLive
+                            ? "LIVE · " + root.liveProvider.statusText
+                              + " · HOLD 1 s: " + root.liveProvider.holdText
+                            : "Full-resource maxima · STATIC, not audible LIVE."
                         color: "#8EAAB9"
                         font.family: "Segoe UI"
                         font.pixelSize: 10
@@ -111,6 +137,7 @@ Item {
                 Layout.maximumWidth: 330
                 Layout.fillHeight: true
                 measurementProvider: root.measurementProvider
+                liveProvider: root.liveProvider
             }
         }
     }
