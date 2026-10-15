@@ -125,6 +125,11 @@ int main(int argc, char* argv[])
                     channels == 1 ? rgsml::audio::ChannelLayout::MONO_C
                                   : rgsml::audio::ChannelLayout::STEREO_LR}};
         }};
+    // Source/target/render change invalidates LIVE in the SAME Qt event,
+    // before any later worker publication or the next 50-ms observer tick.
+    QObject::connect(
+        &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
+        &liveTruePeak, &rgsml::app::TruePeakLiveCoordinator::invalidate);
     // Publication of PROCESSED never implies that it is already audible.
     QObject::connect(
         &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
@@ -254,9 +259,11 @@ int main(int argc, char* argv[])
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,
-         &stereoMsViewModel, &compressorViewModel, &staticTruePeak](
+         &stereoMsViewModel, &compressorViewModel,
+         &staticTruePeak, &liveTruePeak](
             const rgsml::core::ResourceReference& source) {
-            // Prevent a prior source's slow C1 work from becoming current.
+            // Prevent a prior source's slow C1 and C2 work becoming current.
+            liveTruePeak.invalidate();
             staticTruePeak.invalidate_source();
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());

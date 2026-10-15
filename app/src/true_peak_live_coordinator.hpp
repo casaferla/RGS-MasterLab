@@ -72,6 +72,11 @@ public:
     }
     [[nodiscard]] int channel_count() const noexcept { return channelCount_; }
 
+public slots:
+    // Synchronous source/target invalidation, before the next 50-ms timer
+    // tick or asynchronous worker completion. No PCM/audio thread changes.
+    void invalidate();
+
 signals:
     void changed();
 

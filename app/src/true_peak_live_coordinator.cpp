@@ -37,6 +37,13 @@ TruePeakLiveCoordinator::~TruePeakLiveCoordinator()
     if (worker_.joinable()) worker_.join();
 }
 
+void TruePeakLiveCoordinator::invalidate()
+{
+    // A new source/selected target cannot borrow an old REAL peak even for
+    // the 50-ms polling interval. serial_ also drops any queued completion.
+    clear_display(false);
+}
+
 void TruePeakLiveCoordinator::clear_display(bool attempted)
 {
     ++serial_; // reject any in-flight worker completion
