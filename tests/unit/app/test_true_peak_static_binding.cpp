@@ -1,5 +1,6 @@
 #include "true_peak_static_binding.hpp"
 #include "true_peak_live_input_binding.hpp"
+#include "true_peak_live_coordinator.hpp"
 #include "true_peak_static_coordinator.hpp"
 #include "render_test_support.hpp"
 
@@ -88,6 +89,7 @@ private slots:
     void monoSilenceAndUnqualifiedStatus();
     void asynchronousSourceAndRealizationStaleness();
     void consumedProcessedLiveInputBindingRejectsGapsAndMismatchedOwners();
+    void liveCoordinatorMeasuresSpikeAndInvalidatesTransitions();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -303,6 +305,63 @@ void TruePeakStaticBindingTest::consumedProcessedLiveInputBindingRejectsGapsAndM
     prefix.certifiedForLiveTruePeak = true; // impossible premature certification
     QVERIFY(!app::bind_processed_live_input(owner, core::RealizationId{512},
         fixture.value()->expected, playback, prefix));
+}
+
+
+void TruePeakStaticBindingTest::liveCoordinatorMeasuresSpikeAndInvalidatesTransitions()
+{
+    auto fixture = make_render(4800, frame_range(0,4800));
+    QVERIFY(fixture);
+    const auto owner = fixture.value()->result;
+    auto playback = core::PlaybackSnapshot{};
+    playback.state = core::PlaybackState::PLAYING;
+    playback.position = core::FrameIndex{4799};
+    playback.audibleRealization = {
+        core::AudibleHandoffPhase::NEW, core::RealizationId{601}, std::nullopt};
+    auto prefix = platform::windows::WindowsConsumedOutputPrefix{};
+    prefix.generation = 18;
+    prefix.processedWatermarkExclusive = 4800;
+    prefix.count = 1;
+    prefix.partitionRepresented = true;
+    prefix.slices[0].generation = 18;
+    prefix.slices[0].outputBegin = 0;
+    prefix.slices[0].outputEnd = 4800;
+    prefix.slices[0].sourceBegin = 0;
+    prefix.slices[0].sourceEnd = 4800;
+    prefix.slices[0].realizationId = core::RealizationId{601};
+    prefix.slices[0].kind =
+        platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    bool selectedProcessed = true;
+
+    app::TruePeakLiveCoordinator coordinator{
+        [&] {
+            return core::Result<platform::windows::WindowsConsumedOutputPrefix>::success(prefix);
+        },
+        [&] {
+            return core::Result<core::PlaybackSnapshot>::success(playback);
+        },
+        [&]() -> std::optional<app::TruePeakLiveSource> {
+            if (!selectedProcessed) return std::nullopt;
+            return app::TruePeakLiveSource{
+                owner, core::RealizationId{601}, fixture.value()->expected};
+        }
+    };
+
+    QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+    QVERIFY(coordinator.monitoring_attempted());
+    QVERIFY(!coordinator.hold_available());
+    QVERIFY(coordinator.left_level() > 0.0);
+    QVERIFY(coordinator.right_level() > 0.0);
+    QVERIFY(coordinator.peak_text().endsWith(QStringLiteral(" dBTP")));
+
+    // Audible transition must not inherit even a previously measured peak.
+    playback.audibleRealization.phase = core::AudibleHandoffPhase::TRANSITION;
+    QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 4500);
+    QVERIFY(coordinator.monitoring_attempted());
+    selectedProcessed = false;
+    QTRY_VERIFY_WITH_TIMEOUT(!coordinator.monitoring_attempted(), 4500);
+    QVERIFY(!coordinator.recent_available());
+    QCOMPARE(coordinator.channel_count(), 0);
 }
 
 } // namespace

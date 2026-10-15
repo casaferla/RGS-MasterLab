@@ -1557,6 +1557,8 @@ qt_add_executable(rgsml_true_peak_static_binding_tests
     unit/app/test_true_peak_static_binding.cpp
     ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_binding.cpp
     ${CMAKE_SOURCE_DIR}/app/src/true_peak_live_input_binding.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_live_coordinator.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_live_coordinator.hpp
     ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_coordinator.cpp
     ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_coordinator.hpp
 )
@@ -1564,6 +1566,7 @@ target_include_directories(rgsml_true_peak_static_binding_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/app/src
     ${CMAKE_SOURCE_DIR}/tests/unit/render
     ${CMAKE_SOURCE_DIR}/platform/windows/include
+    ${CMAKE_SOURCE_DIR}/analysis/src
 )
 target_link_libraries(rgsml_true_peak_static_binding_tests PRIVATE
     rgsml_analysis rgsml_render Qt6::Test
