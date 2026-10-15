@@ -610,6 +610,8 @@ Window {
         componentRoot.data(), QStringLiteral("truePeakMeterEditor"));
     auto* recent = find_child_by_name(
         componentRoot.data(), QStringLiteral("truePeakRecentCard"));
+    auto* hold = find_child_by_name(
+        componentRoot.data(), QStringLiteral("truePeakHoldCard"));
     auto* full = find_child_by_name(
         componentRoot.data(), QStringLiteral("truePeakFullResourceCard"));
     auto* provenance = find_child_by_name(
@@ -638,7 +640,7 @@ Window {
         componentRoot.data(), QStringLiteral("eqUndoButton"));
     auto* redo = find_child_by_name(
         componentRoot.data(), QStringLiteral("eqRedoButton"));
-    QVERIFY2(host && chain && meter && recent && full && provenance
+    QVERIFY2(host && chain && meter && recent && hold && full && provenance
              && staticBay && leftLane && rightLane && sharedRail
              && railContents && leftScale && row
              && previewBadge && active && bypass && undo && redo,
@@ -659,6 +661,11 @@ Window {
              "No bypass control can be interactable for M16");
     QCOMPARE(recent->property("reading").toString(),
              QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(hold->property("reading").toString(),
+             QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(hold->property("available").toBool(), false);
+    QCOMPARE(hold->property("heading").toString(),
+             QStringLiteral("SHORT HOLD / 1 SECOND"));
     QCOMPARE(full->property("reading").toString(),
              QStringLiteral("—"));
     QCOMPARE(full->property("available").toBool(), false);
@@ -677,6 +684,31 @@ Window {
     QVERIFY2(leftScale->property("height").toDouble() > 120.0,
              "L/R dBTP tick scale must be visible");
 
+    // Correct physical placement of channel markers and upper +6 tick.
+    const auto checkMeterAlignment = [&](QObject* lane) {
+        auto* name = qobject_cast<QQuickItem*>(
+            find_child_by_name(lane, QStringLiteral("truePeakChannelLabel")));
+        auto* track = qobject_cast<QQuickItem*>(
+            find_child_by_name(lane, QStringLiteral("truePeakTrack")));
+        auto* scale = find_child_by_name(lane, QStringLiteral("truePeakDbTpScale"));
+        QVERIFY(name && track && scale);
+        const auto nameCenter = name->mapToScene(
+            QPointF{name->width() / 2.0, name->height() / 2.0});
+        const auto trackCenter = track->mapToScene(
+            QPointF{track->width() / 2.0, track->height() / 2.0});
+        QVERIFY2(qAbs(nameCenter.x() - trackCenter.x()) <= 1.5,
+                 "L/R must center on the meter track");
+        auto* plus = qobject_cast<QQuickItem*>(
+            find_child_by_name(scale, QStringLiteral("truePeakPlusSixMarker")));
+        QVERIFY(plus);
+        const auto mark = plus->mapToScene(
+            QPointF{0.0, plus->height() / 2.0});
+        const auto top = track->mapToScene(QPointF{0.0, 5.0});
+        QVERIFY2(qAbs(mark.y() - top.y()) <= 1.5,
+                 "+6 must center on the real scale top");
+    };
+    checkMeterAlignment(leftLane);
+    checkMeterAlignment(rightLane);
     // PO-approved: shared M16/M17 panel is vertically centred, not stretched.
     auto checkRailCenter = [&] {
         auto* railItem = qobject_cast<QQuickItem*>(sharedRail);
