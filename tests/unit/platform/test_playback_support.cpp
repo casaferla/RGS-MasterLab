@@ -3229,7 +3229,8 @@ void PlaybackSupportTest::c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed
         const auto postSeek = engine.c2_src_retirement_observation();
         QVERIFY(!postSeek.noFutureSourcePrefixExclusive);
 
-        // A looped replay breaks the single initial-output-traversal proof.
+        // A looped replay is OBSERVABLE only within one actually consumed
+        // SRC traversal. It never upgrades the underlying OUTPUT GAP.
         auto otherAdapter = audio::PlaybackSampleRateAdapter::create(
             audio::PlaybackRateSpec{*inputRate.value(),
                 *outputRate.value(), audio::ChannelLayout::STEREO_LR,
@@ -3247,8 +3248,16 @@ void PlaybackSupportTest::c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed
         QVERIFY(looping.set_loop(*region.value()));
         QVERIFY(looping.play());
         loopSink->set_processed_frames(400);
-        QVERIFY(!looping.c2_src_retirement_observation()
-            .noFutureSourcePrefixExclusive);
+        const auto loopWitness = looping.c2_src_retirement_observation();
+        QVERIFY(loopWitness.noFutureSourcePrefixExclusive.has_value());
+        QVERIFY(loopWitness.loopTraversalProven);
+        QCOMPARE(loopWitness.loopWrapCount, std::uint64_t{0});
+        const auto loopGap = looping.c2_consumed_prefix();
+        const auto projectedLoop = project_c2_prefix(loopGap, &loopWitness);
+        QVERIFY(projectedLoop.srcLoopTraversalProven);
+        QCOMPARE(projectedLoop.slices[0].kind,
+                 platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN);
+        QVERIFY(!projectedLoop.certifiedForLiveTruePeak);
     }
 }
 
