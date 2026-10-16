@@ -123,14 +123,17 @@ struct C2CoverageProbe final {
     C2CoverageProbeReason reason{C2CoverageProbeReason::NOT_MONITORED};
 };
 
-// Diagnostic ONLY: after a single uninterrupted SRC OUTPUT_RATE traversal
-// from frame zero, identifies the canonical SOURCE prefix excluded from ALL
-// FUTURE FIR windows. This does not certify that those samples were heard,
+// Diagnostic ONLY: after one uninterrupted SRC OUTPUT_RATE traversal
+// beginning at an independently retained absolute OUTPUT seek origin,
+// identifies a canonical SOURCE interval excluded from ALL future FIR windows. This does not certify that those samples were heard,
 // a PROCESSED target, a 100ms True Peak window or any LIVE value.
 struct C2SrcRetirementObservation final {
     std::uint64_t generation{0};
     std::int64_t consumedOutputExclusive{0};
     std::optional<std::int64_t> noFutureSourcePrefixExclusive;
+    // Absolute SOURCE origin of the NEW consumed seek epoch, never inferred
+    // from the current GUI cursor or sink watermark.
+    std::optional<std::int64_t> firstSourceFrame;
     std::optional<core::RealizationId> realizationId;
     std::int64_t sourceRateHz{0};
     std::int64_t outputRateHz{0};
