@@ -56,3 +56,10 @@
 - `.github/workflows/**` remains untouched until **new** ACK from operative M16 writer.
 - Trigger candidate: exact branch and one path `skinpack/ci/run-request.txt`, not ordinary pushes. Marker NOT created.
 - Qt build NOT RUN, actions NOT STARTED. Candidate static checks only; no runtime qualification.
+
+## 2026-10-16 — First Windows Qt failure, GitHub direct-file repair
+- CI run #38957388108: **RED** in experimental `app/src/skinpack_loader.cpp`, MSVC C2061 caused by missing `mz_strm.h` include before `mz_zip_rw.h`; checkout, Qt installation and other targets advanced successfully.
+- Precise source-only repair committed via the supported GitHub **update_file** operation: `d90c31a044f57bed99a90f9b48a12742465e72c3`.
+- Only `app/src/skinpack_loader.cpp` was changed by this repair; correct header order is `mz.h`, `mz_strm.h`, `mz_zip.h`, `mz_zip_rw.h`.
+- Branch and `main` were checked independently. This is not proof of compile success until the next isolated Windows Qt CI completes.
+- No need for manual user file editing. No PR, merge, production CI or M16 modification.
