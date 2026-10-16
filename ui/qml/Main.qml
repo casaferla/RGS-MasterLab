@@ -25,6 +25,9 @@ ApplicationWindow {
     readonly property color accent: "#00C8FF"
     readonly property color warning: "#F2B632"
     readonly property color error: "#F27683"
+    // Isolated visual-lab previews only. Default is 0 and changes no live R1 UI.
+    // Only --rgsml-skinpack-art-smoke changes this property in CI.
+    property int skinPackLabVariant: 0
 
     // Minimum-first desktop composition: the supported 1184 x 688 geometry is
     // already complete and readable. Larger windows expand elastic content
@@ -104,6 +107,22 @@ ApplicationWindow {
             color: "#050C11"
             border.color: root.border
             radius: 5
+            clip: root.skinPackLabVariant > 0
+
+            Image {
+                objectName: "rgsSkinWaveformLabTexture"
+                anchors.fill: parent
+                anchors.margins: 1
+                visible: skinPackLoader.active &&
+                         (root.skinPackLabVariant === 2 || root.skinPackLabVariant === 3)
+                source: !visible ? "" : root.skinPackLabVariant === 2
+                    ? "image://rgs-skin/accent01?revision=" + skinPackLoader.revision
+                    : "image://rgs-skin/accent02?revision=" + skinPackLoader.revision
+                fillMode: Image.Tile
+                cache: false
+                smooth: true
+                opacity: 0.10
+            }
 
             Rectangle {
                 id: waveformRuler
@@ -231,6 +250,19 @@ ApplicationWindow {
             color: "transparent"
             border.color: root.border
             radius: 5
+            clip: root.skinPackLabVariant > 0
+            Image {
+                objectName: "rgsSkinRegionLabTexture"
+                anchors.fill: parent
+                anchors.margins: 1
+                visible: skinPackLoader.active && root.skinPackLabVariant === 1
+                source: visible
+                    ? "image://rgs-skin/panelSoft?revision=" + skinPackLoader.revision : ""
+                fillMode: Image.Tile
+                cache: false
+                smooth: true
+                opacity: 0.13
+            }
             RowLayout {
                 objectName: "auditionRegionContent"
                 anchors.fill: parent
