@@ -109,19 +109,26 @@ ApplicationWindow {
             radius: 5
             clip: root.skinPackLabVariant > 0
 
+            // Art-lab only: 7px decorative rail strictly outside the
+            // 12px plotting margin. Signal pixels and L/R waveforms are clear.
             Image {
                 objectName: "rgsSkinWaveformLabTexture"
-                anchors.fill: parent
-                anchors.margins: 1
+                anchors.right: parent.right
+                anchors.rightMargin: 2
+                anchors.top: waveformRuler.bottom
+                anchors.topMargin: 2
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 2
+                width: 7
                 visible: skinPackLoader.active &&
                          (root.skinPackLabVariant === 2 || root.skinPackLabVariant === 3)
                 source: !visible ? "" : root.skinPackLabVariant === 2
                     ? "image://rgs-skin/accent01?revision=" + skinPackLoader.revision
                     : "image://rgs-skin/accent02?revision=" + skinPackLoader.revision
-                fillMode: Image.Tile
+                fillMode: Image.PreserveAspectCrop
                 cache: false
                 smooth: true
-                opacity: 0.10
+                opacity: 0.65
             }
 
             Rectangle {
@@ -251,17 +258,24 @@ ApplicationWindow {
             border.color: root.border
             radius: 5
             clip: root.skinPackLabVariant > 0
+            // Art-lab only: a 4px marble-gold lip above the controls,
+            // instead of veining across time editors and loop status.
             Image {
                 objectName: "rgsSkinRegionLabTexture"
-                anchors.fill: parent
-                anchors.margins: 1
+                anchors.left: parent.left
+                anchors.leftMargin: 4
+                anchors.right: parent.right
+                anchors.rightMargin: 4
+                anchors.top: parent.top
+                anchors.topMargin: 1
+                height: 4
                 visible: skinPackLoader.active && root.skinPackLabVariant === 1
                 source: visible
                     ? "image://rgs-skin/panelSoft?revision=" + skinPackLoader.revision : ""
                 fillMode: Image.Tile
                 cache: false
                 smooth: true
-                opacity: 0.13
+                opacity: 0.28
             }
             RowLayout {
                 objectName: "auditionRegionContent"
