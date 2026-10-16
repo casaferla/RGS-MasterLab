@@ -1604,6 +1604,15 @@ void PlaybackEngine::c2_record_accepted_frames(
             + static_cast<std::int64_t>(oldComplete);
         run.sourceEnd = c2PendingSourceBegin_
             + static_cast<std::int64_t>(newComplete);
+    } else if (rateAdapter_ && !pendingHandoff_
+               && c2PendingGapReason_ == C2CoverageProbeReason::UNPROVEN_SRC) {
+        // Retain the OUTPUT_RATE SRC decoder origin for this accepted block.
+        // This cannot be inferred from the GUI playhead or converted to
+        // canonical SOURCE without a separate consumed-clock/FIR proof.
+        run.srcOutputBegin = c2PendingSourceBegin_
+            + static_cast<std::int64_t>(oldComplete);
+        run.srcOutputEnd = c2PendingSourceBegin_
+            + static_cast<std::int64_t>(newComplete);
     }
     if (!c2AcceptedRuns_.empty()) {
         auto& previous = c2AcceptedRuns_.back();
@@ -1627,20 +1636,34 @@ void PlaybackEngine::c2_record_accepted_frames(
         if (!run.exactOneToOne && !previous.exactOneToOne
             && previous.generation == run.generation
             && previous.outputEnd == run.outputBegin
-            && previous.gapReason == run.gapReason) {
+            && previous.gapReason == run.gapReason
+            && (run.gapReason != C2CoverageProbeReason::UNPROVEN_SRC
+                || (previous.realizationId.has_value()
+                    && previous.realizationId == run.realizationId
+                    && previous.srcOutputEnd && run.srcOutputBegin
+                    && previous.srcOutputEnd == run.srcOutputBegin
+                    && previous.loopWrapCount == run.loopWrapCount
+                    && !previous.handoffPureNewProven
+                    && !run.handoffPureNewProven))) {
             const bool sameUninterruptedSrcOwner =
                 run.gapReason == C2CoverageProbeReason::UNPROVEN_SRC
                 && previous.realizationId.has_value()
                 && previous.realizationId == run.realizationId
+                && previous.srcOutputEnd && run.srcOutputBegin
+                && previous.srcOutputEnd == run.srcOutputBegin
                 && !previous.sourceBegin && !previous.sourceEnd
                 && !run.sourceBegin && !run.sourceEnd
                 && !previous.loopTraversalProven && !run.loopTraversalProven
-                && previous.loopWrapCount == 0 && run.loopWrapCount == 0
+                && previous.loopWrapCount == run.loopWrapCount
                 && !previous.handoffPureNewProven
                 && !run.handoffPureNewProven;
             previous.outputEnd = run.outputEnd;
-            if (!sameUninterruptedSrcOwner) {
+            if (sameUninterruptedSrcOwner) {
+                previous.srcOutputEnd = run.srcOutputEnd;
+            } else {
                 previous.realizationId.reset();
+                previous.srcOutputBegin.reset();
+                previous.srcOutputEnd.reset();
             }
             previous.sourceBegin.reset();
             previous.sourceEnd.reset();
