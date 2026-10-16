@@ -29,7 +29,9 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
             && consumed.reason
             != platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
             && consumed.reason
-                != platform::windows::WindowsConsumedGapReason::UNPROVEN_HANDOFF)) {
+                != platform::windows::WindowsConsumedGapReason::UNPROVEN_HANDOFF
+            && consumed.reason
+                != platform::windows::WindowsConsumedGapReason::UNPROVEN_SRC)) {
         return fail("C2D6 requires exactly one complete source-candidate prefix and a retained owner.");
     }
     if (playback.state != core::PlaybackState::PLAYING
@@ -53,6 +55,48 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         || view.format().channel_layout() != expectedSource.layout) {
         return fail("C2D6 PROCESSED owner lacks whole canonical source-domain coverage.");
     }
+    // SRC playback produces OUTPUT_RATE sink frames from the immutable
+    // SOURCE_PROCESSING_RATE PROCESSED resource. Only a source prefix
+    // excluded from ALL future polyphase FIR dependencies, measured against
+    // an owner-stamped actually consumed sink watermark, is eligible.
+    // The whole untrusted OUTPUT ledger remains a GAP and the worker's
+    // blanket certifiedForLiveTruePeak flag remains false.
+    if (consumed.reason
+        == platform::windows::WindowsConsumedGapReason::UNPROVEN_SRC) {
+        if (playback.loop || playback.loopWrapCount != 0
+            || consumed.retainedOutputBegin != 0
+            || consumed.count != 1U
+            || !consumed.srcRetiredSourceEnd || !consumed.srcRealizationId
+            || consumed.srcRealizationId != std::optional{expectedRealization}
+            || consumed.srcInputRateHz != expectedSource.sampleRate.value()
+            || !((consumed.srcInputRateHz == 44'100
+                    && consumed.srcOutputRateHz == 48'000)
+                || (consumed.srcInputRateHz == 48'000
+                    && consumed.srcOutputRateHz == 44'100))
+            || *consumed.srcRetiredSourceEnd <= 0
+            || *consumed.srcRetiredSourceEnd > expectedSource.frameCount.value()) {
+            return fail("C2D15 SRC source owner, rate or retired prefix is unverified.");
+        }
+        const auto& gap = consumed.slices[0];
+        if (gap.generation != consumed.generation
+            || gap.outputBegin != 0
+            || gap.outputEnd != consumed.processedWatermarkExclusive
+            || gap.kind != platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN
+            || gap.reason != platform::windows::WindowsConsumedGapReason::UNPROVEN_SRC
+            || gap.sourceBegin || gap.sourceEnd || gap.realizationId
+            || gap.loopTraversalProven || gap.loopWrapCount != 0
+            || gap.handoffPureNewProven) {
+            return fail("C2D15 SRC output chronology is not a pure consumed GAP.");
+        }
+        const auto revision = accepted->chain_revision();
+        return core::Result<BoundLiveTruePeakInput>::success(
+            BoundLiveTruePeakInput{std::move(accepted), expectedRealization,
+                revision, consumed.generation,
+                0, *consumed.srcRetiredSourceEnd,
+                consumed.processedWatermarkExclusive,
+                expectedSource.layout, expectedSource.sampleRate, 0});
+    }
+
     // A loop may have left a real GAP in the past. After the user turns
     // Loop Region OFF, only the NEW, fully consumed, directly source-mapped
     // tail may be measured. Every earlier GAP remains explicitly represented

@@ -30,11 +30,13 @@ struct BoundLiveTruePeakInput final {
     std::uint64_t loopWrapCount{0};
 };
 
-// Contract accepts only a single uninterrupted, no-SRC/no-loop/no-handoff,
-// one-to-one consumed run from any verified seek origin. A seek rebuilds FIR
-// history conservatively; gaps, loops and overlapping epochs stay unavailable.
- // More complex real timelines remain unqualified
-// and explicitly unavailable until independent continuous-segment proofs.
+// Strictly verified immutable PROCESSED SOURCE_PROCESSING_RATE target. Direct
+// 1:1 consumed suffixes remain eligible under the existing seek/loop/handoff
+// rules. C2D15 SRC permits only one uninterrupted, zero-origin 44.1↔48-kHz
+// traversal with a full owner-stamped sink ledger and conservative SOURCE
+// prefix retired from ALL future FIR dependencies. Raw SRC output slices stay
+// GAP_UNPROVEN, and no blanket certification is inferred from the GUI cursor.
+// Any unverified owner, rate, timeline, loop or handoff fails closed.
 [[nodiscard]] core::Result<BoundLiveTruePeakInput>
 bind_processed_live_input(
     std::shared_ptr<const render::RenderResult> accepted,

@@ -96,6 +96,8 @@ private slots:
     void postLoopRecoveryBindsOnlyFreshExactConsumedSuffix();
     void c2D14LoopTraversalMustMatchConsumedWrapAndOwner();
     void c2D14LiveCoordinatorResetsOneSecondHoldAcrossWrap();
+    void c2D15SrcBindingRequiresOwnerAndConservativeConsumedProof();
+    void c2D15SrcLiveCoordinatorWaitsForPreSrc100msAndClearsOnSeek();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -859,6 +861,171 @@ void TruePeakStaticBindingTest::postLoopRecoveryBindsOnlyFreshExactConsumedSuffi
     prefix.slices[0].kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
     QVERIFY(app::bind_processed_live_input(owner, core::RealizationId{971},
         fixture.value()->expected, playback, prefix));
+}
+
+void TruePeakStaticBindingTest::
+c2D15SrcBindingRequiresOwnerAndConservativeConsumedProof()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    for (const auto& pair :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        auto fixture = make_render(7'000, frame_range(0, 7'000), pair.first);
+        QVERIFY(fixture);
+        const auto owner = fixture.value()->result;
+        const auto expected = fixture.value()->expected;
+        const auto id = core::RealizationId{9'101};
+        core::PlaybackSnapshot playback{};
+        playback.state = core::PlaybackState::PLAYING;
+        playback.audibleRealization = {
+            core::AudibleHandoffPhase::NEW, id, std::nullopt};
+        platform::windows::WindowsConsumedOutputPrefix prefix{};
+        prefix.generation = 25;
+        prefix.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.processedWatermarkExclusive = 6'000;
+        prefix.partitionRepresented = true;
+        prefix.count = 1;
+        auto& gap = prefix.slices[0];
+        gap.generation = 25;
+        gap.outputBegin = 0;
+        gap.outputEnd = 6'000;
+        gap.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        gap.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+        prefix.srcRetiredSourceEnd = 5'000;
+        prefix.srcRealizationId = id;
+        prefix.srcInputRateHz = pair.first;
+        prefix.srcOutputRateHz = pair.second;
+        const auto bind = [&]() {
+            return app::bind_processed_live_input(
+                owner, id, expected, playback, prefix);
+        };
+        const auto good = bind();
+        QVERIFY(good);
+        QVERIFY(good.value()->owner == owner);
+        QCOMPARE(good.value()->consumedSourceBegin, std::int64_t{0});
+        QCOMPARE(good.value()->consumedSourceEnd, std::int64_t{5'000});
+        QCOMPARE(good.value()->consumedOutputEnd, std::int64_t{6'000});
+        QVERIFY(!prefix.certifiedForLiveTruePeak);
+
+        prefix.srcRealizationId = core::RealizationId{9'102};
+        QVERIFY(!bind());
+        prefix.srcRealizationId = id;
+        prefix.srcRetiredSourceEnd.reset();
+        QVERIFY(!bind());
+        prefix.srcRetiredSourceEnd = 7'001;
+        QVERIFY(!bind());
+        prefix.srcRetiredSourceEnd = 5'000;
+        prefix.srcInputRateHz = pair.second;
+        QVERIFY(!bind());
+        prefix.srcInputRateHz = pair.first;
+        prefix.srcOutputRateHz = pair.first;
+        QVERIFY(!bind());
+        prefix.srcOutputRateHz = pair.second;
+        prefix.partitionRepresented = false;
+        QVERIFY(!bind());
+        prefix.partitionRepresented = true;
+        prefix.retainedOutputBegin = 1;
+        QVERIFY(!bind());
+        prefix.retainedOutputBegin = 0;
+        gap.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+        QVERIFY(!bind());
+        gap.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+        gap.realizationId = id; // A GAP must never fake an exact source.
+        QVERIFY(!bind());
+        gap.realizationId.reset();
+        gap.sourceBegin = 0;
+        QVERIFY(!bind());
+        gap.sourceBegin.reset();
+        gap.reason = WindowsConsumedGapReason::UNPROVEN_HANDOFF;
+        QVERIFY(!bind());
+        gap.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        gap.outputEnd = 6'001;
+        QVERIFY(!bind());
+        gap.outputEnd = 6'000;
+        playback.audibleRealization.phase = core::AudibleHandoffPhase::TRANSITION;
+        QVERIFY(!bind());
+        playback.audibleRealization.phase = core::AudibleHandoffPhase::NEW;
+        playback.loop = frame_range(200, 900);
+        QVERIFY(!bind());
+        playback.loop.reset();
+        playback.loopWrapCount = 1;
+        QVERIFY(!bind());
+        playback.loopWrapCount = 0;
+        const auto restored = bind();
+        QVERIFY(restored);
+        QCOMPARE(restored.value()->consumedSourceEnd, std::int64_t{5'000});
+    }
+}
+
+void TruePeakStaticBindingTest::
+c2D15SrcLiveCoordinatorWaitsForPreSrc100msAndClearsOnSeek()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    for (const auto& rates :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        auto fixture = make_render(7'000, frame_range(0, 7'000),
+                                   rates.first, audio::ChannelLayout::STEREO_LR,
+                                   0.75, 4'900);
+        QVERIFY(fixture);
+        const auto owner = fixture.value()->result;
+        const auto id = core::RealizationId{9'151};
+        core::PlaybackSnapshot playback{};
+        playback.state = core::PlaybackState::PLAYING;
+        playback.audibleRealization = {
+            core::AudibleHandoffPhase::NEW, id, std::nullopt};
+        platform::windows::WindowsConsumedOutputPrefix prefix{};
+        prefix.generation = 27;
+        prefix.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.processedWatermarkExclusive = 3'000;
+        prefix.partitionRepresented = true;
+        prefix.count = 1;
+        prefix.slices[0].generation = 27;
+        prefix.slices[0].outputBegin = 0;
+        prefix.slices[0].outputEnd = 3'000;
+        prefix.slices[0].kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+        prefix.slices[0].reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.srcRealizationId = id;
+        prefix.srcRetiredSourceEnd = 3'000;
+        prefix.srcInputRateHz = rates.first;
+        prefix.srcOutputRateHz = rates.second;
+        app::TruePeakLiveCoordinator coordinator{
+            [&] {
+                return core::Result<
+                    platform::windows::WindowsConsumedOutputPrefix>::success(prefix);
+            },
+            [&] {
+                return core::Result<core::PlaybackSnapshot>::success(playback);
+            },
+            [&]() -> std::optional<app::TruePeakLiveSource> {
+                return app::TruePeakLiveSource{owner, id,
+                    fixture.value()->expected};
+            },
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.monitoring_attempted(), 3500);
+        QTest::qWait(110);
+        QVERIFY(!coordinator.recent_available());
+        QVERIFY(!coordinator.hold_available());
+        // The output clock progresses, but a recent window becomes complete
+        // only after >=100ms of canonical SOURCE_PROCESSING_RATE samples.
+        prefix.processedWatermarkExclusive = 6'000;
+        prefix.slices[0].outputEnd = 6'000;
+        prefix.srcRetiredSourceEnd = 5'100;
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+        QVERIFY(coordinator.left_level() > 0.0);
+        QVERIFY(!coordinator.hold_available());
+        // Seek must invalidate the worker result synchronously/at next poll;
+        // a stale owner or SOURCE-to-OUTPUT cursor must not preserve RECENT.
+        ++playback.seekSerial;
+        prefix.srcRetiredSourceEnd.reset();
+        QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 3500);
+        prefix.srcRetiredSourceEnd = 5'100;
+        prefix.srcRealizationId = core::RealizationId{9'152};
+        QTest::qWait(110);
+        QVERIFY(!coordinator.recent_available());
+    }
 }
 
 } // namespace

@@ -280,6 +280,7 @@ private slots:
     void c2D14LongLoopPrunesOnlyConsumedHistory();
     void c2D14HandoffDuringLoopRecoversPureNewPostWrap();
     void c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed();
+    void c2D15SrcPartialAcceptedWritesRetainOnlyDiagnosticOwner();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -3156,6 +3157,16 @@ void PlaybackSupportTest::c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed
         // Nothing generated/queued is presumed actually consumed.
         const auto before = engine.c2_src_retirement_observation();
         QVERIFY(!before.noFutureSourcePrefixExclusive);
+        // Multiple separately encoded/accepted SRC blocks are still one
+        // immutable owner. Their merged GAP remains non-exact and source-free.
+        const auto acceptedRuns = engine.c2_accepted_output_runs();
+        QCOMPARE(acceptedRuns.size(), std::size_t{1});
+        QCOMPARE(acceptedRuns[0].realizationId,
+                 std::optional{core::RealizationId{9'021}});
+        QCOMPARE(acceptedRuns[0].gapReason, Reason::UNPROVEN_SRC);
+        QVERIFY(!acceptedRuns[0].exactOneToOne);
+        QVERIFY(!acceptedRuns[0].sourceBegin);
+        QVERIFY(!acceptedRuns[0].sourceEnd);
         sink->set_processed_frames(400);
         const auto observed = engine.c2_src_retirement_observation();
         QCOMPARE(observed.reason, Reason::UNPROVEN_SRC);
@@ -3168,6 +3179,37 @@ void PlaybackSupportTest::c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed
         QCOMPARE(untouched.slices[0].kind, Kind::GAP_UNPROVEN);
         QCOMPARE(untouched.slices[0].reason, Reason::UNPROVEN_SRC);
         QVERIFY(!untouched.certifiedForLiveTruePeak);
+        // The detached Windows worker projection must carry an independently
+        // bounded SRC frontier, while the original GAP stays ownerless.
+        using platform::windows::internal::project_c2_prefix;
+        const auto projected = project_c2_prefix(untouched, &observed);
+        QCOMPARE(projected.reason,
+                 platform::windows::WindowsConsumedGapReason::UNPROVEN_SRC);
+        QCOMPARE(projected.srcRetiredSourceEnd,
+                 observed.noFutureSourcePrefixExclusive);
+        QCOMPARE(projected.srcRealizationId,
+                 std::optional{core::RealizationId{9'021}});
+        QCOMPARE(projected.srcInputRateHz, inputHz);
+        QCOMPARE(projected.srcOutputRateHz, outputHz);
+        QVERIFY(!projected.certifiedForLiveTruePeak);
+        QVERIFY(!projected.slices[0].realizationId);
+        QVERIFY(!projected.slices[0].sourceBegin);
+        QVERIFY(!projected.slices[0].sourceEnd);
+        auto torn = observed;
+        ++torn.generation;
+        QVERIFY(!project_c2_prefix(untouched, &torn).srcRetiredSourceEnd);
+        torn = observed;
+        ++torn.consumedOutputExclusive;
+        QVERIFY(!project_c2_prefix(untouched, &torn).srcRetiredSourceEnd);
+        torn = observed;
+        torn.realizationId.reset();
+        QVERIFY(!project_c2_prefix(untouched, &torn).srcRetiredSourceEnd);
+        torn = observed;
+        torn.sourceRateHz = 96'000;
+        QVERIFY(!project_c2_prefix(untouched, &torn).srcRetiredSourceEnd);
+        torn = observed;
+        torn.noFutureSourcePrefixExclusive.reset();
+        QVERIFY(!project_c2_prefix(untouched, &torn).srcRetiredSourceEnd);
         QVERIFY(!untouched.slices[0].sourceBegin);
         QVERIFY(!untouched.slices[0].sourceEnd);
 
@@ -3204,6 +3246,70 @@ void PlaybackSupportTest::c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed
         loopSink->set_processed_frames(400);
         QVERIFY(!looping.c2_src_retirement_observation()
             .noFutureSourcePrefixExclusive);
+    }
+}
+
+void PlaybackSupportTest::c2D15SrcPartialAcceptedWritesRetainOnlyDiagnosticOwner()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    // Tiny output queue forces multiple independent SRC partial-write
+    // acceptances. Future-dependency retirement must use the consumed
+    // clock and a *single* immutable owner, not the UI source cursor.
+    for (const auto& pair : std::array<std::pair<std::int64_t,
+                                                std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        auto inputRate = core::SampleRate::create(pair.first);
+        auto outputRate = core::SampleRate::create(pair.second);
+        QVERIFY(inputRate && outputRate);
+        auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(),
+                *outputRate.value(), audio::ChannelLayout::STEREO_LR,
+                frame_count(1'200)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(pair.first, audio::ChannelLayout::STEREO_LR, 1'200);
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(256U, 4U);
+        auto* sink = output.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'030}));
+        QVERIFY(engine.play());
+        QCOMPARE(engine.c2_accepted_output_runs().size(), std::size_t{1});
+        QCOMPARE(engine.c2_accepted_output_runs()[0].outputEnd,
+                 std::int64_t{64});
+        auto notConsumed = engine.c2_src_retirement_observation();
+        QVERIFY(!notConsumed.noFutureSourcePrefixExclusive);
+        // A clock that jumps ahead of accepted bytes is a gap, never proof.
+        sink->set_processed_frames(128);
+        auto impossible = engine.c2_src_retirement_observation();
+        QCOMPARE(impossible.reason, Reason::CLOCK_AHEAD_OF_ACCEPTED);
+        QVERIFY(!impossible.noFutureSourcePrefixExclusive);
+        sink->set_processed_frames(0);
+        for (int i = 0; i < 8; ++i) {
+            sink->consume_all();
+            engine.tick();
+        }
+        const auto accepted = engine.c2_accepted_output_runs();
+        QVERIFY(!accepted.empty());
+        QVERIFY(accepted.front().outputEnd >= 512);
+        for (const auto& run : accepted) {
+            QCOMPARE(run.realizationId,
+                     std::optional{core::RealizationId{9'030}});
+            QCOMPARE(run.gapReason, Reason::UNPROVEN_SRC);
+            QVERIFY(!run.exactOneToOne);
+            QVERIFY(!run.sourceBegin && !run.sourceEnd);
+        }
+        const auto result = engine.c2_src_retirement_observation();
+        QCOMPARE(result.reason, Reason::UNPROVEN_SRC);
+        QVERIFY(result.noFutureSourcePrefixExclusive.has_value());
+        QVERIFY(*result.noFutureSourcePrefixExclusive > 0);
+        const auto consumed = engine.c2_consumed_prefix();
+        QVERIFY(consumed.partitionRepresented);
+        QCOMPARE(consumed.slices[0].kind, Kind::GAP_UNPROVEN);
+        QVERIFY(!consumed.certifiedForLiveTruePeak);
+        QVERIFY(!consumed.slices[0].sourceBegin);
+        QVERIFY(!consumed.slices[0].sourceEnd);
     }
 }
 

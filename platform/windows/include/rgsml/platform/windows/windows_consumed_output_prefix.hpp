@@ -57,6 +57,14 @@ struct WindowsConsumedOutputPrefix final {
     std::array<WindowsConsumedOutputSlice, kMaxSlices> slices{};
     std::size_t count{0};
     bool partitionRepresented{false};
+    // Authenticated OBSERVATIONAL pre-SRC SOURCE prefix retired by the
+    // actual consumed OUTPUT timeline. The app must independently bind
+    // this owner to immutable PROCESSED before any LIVE True Peak work.
+    // Never derive it from the OUTPUT-to-SOURCE UI cursor.
+    std::optional<std::int64_t> srcRetiredSourceEnd;
+    std::optional<core::RealizationId> srcRealizationId;
+    std::int64_t srcInputRateHz{0};
+    std::int64_t srcOutputRateHz{0};
     bool certifiedForLiveTruePeak{false};  // NEVER set by C2D6
     WindowsConsumedGapReason reason{WindowsConsumedGapReason::NOT_MONITORED};
     [[nodiscard]] std::span<const WindowsConsumedOutputSlice>

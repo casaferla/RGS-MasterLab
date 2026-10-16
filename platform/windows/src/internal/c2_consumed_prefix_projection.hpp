@@ -38,7 +38,8 @@ namespace rgsml::platform::windows::internal {
 }
 
 [[nodiscard]] inline WindowsConsumedOutputPrefix project_c2_prefix(
-    const C2ConsumedPrefix& internal) noexcept
+    const C2ConsumedPrefix& internal,
+    const C2SrcRetirementObservation* srcObservation = nullptr) noexcept
 {
     WindowsConsumedOutputPrefix out{};
     out.generation = internal.generation;
@@ -83,6 +84,35 @@ namespace rgsml::platform::windows::internal {
         }
     }
     out.partitionRepresented = internal.partitionRepresented;
+    // Keep gap slices intrinsically untrusted. A SEPARATE conservative
+    // SRC-retirement observation is attached only when it agrees with the
+    // same complete consumed clock and one uninterrupted source-owned
+    // OUTPUT traversal, with neither owner leak nor type reclassification.
+    if (srcObservation
+        && out.reason == WindowsConsumedGapReason::UNPROVEN_SRC
+        && srcObservation->reason == C2CoverageProbeReason::UNPROVEN_SRC
+        && srcObservation->generation == out.generation
+        && srcObservation->consumedOutputExclusive
+            == out.processedWatermarkExclusive
+        && out.partitionRepresented && out.retainedOutputBegin == 0
+        && out.count == 1U && out.slices[0].generation == out.generation
+        && out.slices[0].outputBegin == 0
+        && out.slices[0].outputEnd == out.processedWatermarkExclusive
+        && out.slices[0].kind == WindowsConsumedSliceKind::GAP_UNPROVEN
+        && out.slices[0].reason == WindowsConsumedGapReason::UNPROVEN_SRC
+        && srcObservation->realizationId
+        && srcObservation->noFutureSourcePrefixExclusive
+        && *srcObservation->noFutureSourcePrefixExclusive > 0
+        && ((srcObservation->sourceRateHz == 44'100
+                  && srcObservation->outputRateHz == 48'000)
+            || (srcObservation->sourceRateHz == 48'000
+                  && srcObservation->outputRateHz == 44'100))) {
+        out.srcRetiredSourceEnd =
+            srcObservation->noFutureSourcePrefixExclusive;
+        out.srcRealizationId = srcObservation->realizationId;
+        out.srcInputRateHz = srcObservation->sourceRateHz;
+        out.srcOutputRateHz = srcObservation->outputRateHz;
+    }
     // A worker-origin SOURCE_CANDIDATE is not a full PROCESSED binding.
     out.certifiedForLiveTruePeak = false;
     return out;

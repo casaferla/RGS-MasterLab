@@ -659,8 +659,12 @@ public:
     [[nodiscard]] WindowsConsumedOutputPrefix consumed_output_prefix(
         std::optional<std::uint64_t> expectedGeneration = std::nullopt) const noexcept
     {
-        return internal::project_c2_prefix(
-            engine_.c2_consumed_prefix(expectedGeneration));
+        // Two owner-thread observations must match the *same* consumed
+        // generation and watermark; the projector rejects torn clocks.
+        const auto consumed = engine_.c2_consumed_prefix(expectedGeneration);
+        const auto retired = engine_.c2_src_retirement_observation(
+            expectedGeneration);
+        return internal::project_c2_prefix(consumed, &retired);
     }
 
     void attach_analyzer(rgsml::analysis::LiveSpectrumAnalyzer* analyzer)

@@ -1204,6 +1204,9 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
         core::FrameIndex{result.consumedOutputExclusive});
     if (!retired) return result;
     result.noFutureSourcePrefixExclusive = retired.value()->value();
+    result.realizationId = activeRealizationId_;
+    result.sourceRateHz = rateAdapter_->input_rate().value();
+    result.outputRateHz = rateAdapter_->output_rate().value();
     return result;
 }
 
@@ -1598,14 +1601,29 @@ void PlaybackEngine::c2_record_accepted_frames(
             previous.sourceEnd = run.sourceEnd;
             return;
         }
-        // Merge only adjacent UNSAFE runs into one explicit GAP. This cannot
-        // manufacture source identity, and keeps long looping bounded.
+        // Merge only adjacent UNSAFE runs into one explicit GAP. The gap
+        // NEVER becomes source-mapped or LIVE. Retain its generation-time
+        // owner *solely* for single-owner SRC negative dependency diagnostics
+        // when both halves demonstrably share that owner and traversal.
+        // Mixed/unknown owners and every other gap remain ownerless.
         if (!run.exactOneToOne && !previous.exactOneToOne
             && previous.generation == run.generation
             && previous.outputEnd == run.outputBegin
             && previous.gapReason == run.gapReason) {
+            const bool sameUninterruptedSrcOwner =
+                run.gapReason == C2CoverageProbeReason::UNPROVEN_SRC
+                && previous.realizationId.has_value()
+                && previous.realizationId == run.realizationId
+                && !previous.sourceBegin && !previous.sourceEnd
+                && !run.sourceBegin && !run.sourceEnd
+                && !previous.loopTraversalProven && !run.loopTraversalProven
+                && previous.loopWrapCount == 0 && run.loopWrapCount == 0
+                && !previous.handoffPureNewProven
+                && !run.handoffPureNewProven;
             previous.outputEnd = run.outputEnd;
-            previous.realizationId.reset();
+            if (!sameUninterruptedSrcOwner) {
+                previous.realizationId.reset();
+            }
             previous.sourceBegin.reset();
             previous.sourceEnd.reset();
             return;

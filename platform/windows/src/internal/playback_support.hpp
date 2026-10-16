@@ -131,6 +131,9 @@ struct C2SrcRetirementObservation final {
     std::uint64_t generation{0};
     std::int64_t consumedOutputExclusive{0};
     std::optional<std::int64_t> noFutureSourcePrefixExclusive;
+    std::optional<core::RealizationId> realizationId;
+    std::int64_t sourceRateHz{0};
+    std::int64_t outputRateHz{0};
     C2CoverageProbeReason reason{C2CoverageProbeReason::NOT_MONITORED};
 };
 
