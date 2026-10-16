@@ -1,11 +1,10 @@
-RGS_SKINPACK_EXPERIMENTAL_QT_R1_REJECTION_MATRIX_REQUEST_V4
+RGS_SKINPACK_EXPERIMENTAL_QT_R1_GEOMETRY_REQUEST_V5
 date=2026-10-16
-reason=Batch: native Qt validation seven hostile rgsskin cases with rollback, fallback and QML state checks
+reason=Verify canonical 1184x688 transport bounds persist after valid package, seven rejected packages, and Original reset
 workflow=.github/workflows/skinpack-experimental.yml
-previous_green_run_id=38963165042
-fixture_commit=c71ec4013fd40553428fe19e55e31ba369af1284
-runtime_test_commit=687153b156d3b9258d2fb7d84435bea0e4bfbe15
-ledger_commit=f83775511649383877852056bccb71916ab295bb
+previous_green_run_id=38967059687
+geometry_source_commit=22f4e6cf84f49158eb0a2a14445c5f63ef8c12e7
+ledger_commit=a82426984439c931f1683a17ced3905fca6e6e7a
 scope=skinpack-experimental-only
 permission=PO_STANDING_EXPERIMENTAL_CI_DELEGATION
 prohibited=PR,merge,main,M16,FQ,production_integration
