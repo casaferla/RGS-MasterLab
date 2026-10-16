@@ -100,6 +100,7 @@ private slots:
     void c2D15SrcLiveCoordinatorWaitsForPreSrc100msAndClearsOnSeek();
     void c2D15SrcLiveCoordinatorOneSecondHoldRequiresCompleteConsumedHistory();
     void c2D16SrcLongGuiStallCannotInventOneSecondHold();
+    void c2D17SrcSeekClearsPreviousMeterAndRebuildsNewOwnerInterval();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -1326,6 +1327,121 @@ c2D16SrcLongGuiStallCannotInventOneSecondHold()
         prefix.srcRealizationId = core::RealizationId{9'192};
         coordinator.invalidate();
         QTest::qWait(120);
+        QVERIFY(!coordinator.recent_available());
+        QVERIFY(!coordinator.hold_available());
+    }
+}
+
+
+void TruePeakStaticBindingTest::
+c2D17SrcSeekClearsPreviousMeterAndRebuildsNewOwnerInterval()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    for (const auto& rates :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = rates.first;
+        const auto outputHz = rates.second;
+        // An old spike must not be republished after an internal seek;
+        // complete SOURCE buckets and True Peak FIR support start fresh.
+        auto fixture = make_render(
+            3 * sourceHz, frame_range(0, 3 * sourceHz),
+            sourceHz, audio::ChannelLayout::STEREO_LR,
+            0.9, sourceHz / 10 + 10);
+        QVERIFY(fixture);
+        const auto owner = fixture.value()->result;
+        const auto id = core::RealizationId{9'211};
+        core::PlaybackSnapshot playback{};
+        playback.state = core::PlaybackState::PLAYING;
+        playback.audibleRealization = {
+            core::AudibleHandoffPhase::NEW, id, std::nullopt};
+
+        platform::windows::WindowsConsumedOutputPrefix prefix{};
+        prefix.generation = 99;
+        prefix.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.partitionRepresented = true;
+        prefix.count = 1;
+        auto& gap = prefix.slices[0];
+        gap.generation = prefix.generation;
+        gap.outputBegin = 0;
+        gap.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+        gap.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.srcRealizationId = id;
+        prefix.srcInputRateHz = sourceHz;
+        prefix.srcOutputRateHz = outputHz;
+        const auto setWindow = [&](std::int64_t begin,
+                                   std::int64_t sourceEnd,
+                                   std::int64_t outputEnd) {
+            prefix.srcRetiredSourceBegin = begin;
+            prefix.srcRetiredSourceEnd = sourceEnd;
+            prefix.processedWatermarkExclusive = outputEnd;
+            gap.outputEnd = outputEnd;
+        };
+        setWindow(0, sourceHz / 5, outputHz / 5 + 512);
+        app::TruePeakLiveCoordinator coordinator{
+            [&] {
+                return core::Result<
+                    platform::windows::WindowsConsumedOutputPrefix>::success(prefix);
+            },
+            [&] {
+                return core::Result<core::PlaybackSnapshot>::success(playback);
+            },
+            [&]() -> std::optional<app::TruePeakLiveSource> {
+                return app::TruePeakLiveSource{
+                    owner, id, fixture.value()->expected};
+            },
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+        QVERIFY(coordinator.left_level() > 0.0);
+        QVERIFY(!coordinator.hold_available());
+
+        // Seeking DURING PLAY reuses the immutable PROCESSED owner but must
+        // change consumed generation/seek identity and seek source origin.
+        ++playback.seekSerial;
+        ++prefix.generation;
+        gap.generation = prefix.generation;
+        const auto seekSource = sourceHz;
+        setWindow(seekSource, seekSource + sourceHz / 20,
+                  outputHz / 20 + 512);
+        QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 4500);
+        QVERIFY(!coordinator.hold_available());
+
+        // A complete 100ms with FIR warmup and no old pulse proves the
+        // recovered meter now follows ONLY the post-seek SOURCE interval.
+        setWindow(seekSource, seekSource + sourceHz / 5,
+                  outputHz / 5 + 512);
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+        QCOMPARE(coordinator.peak_text(), QStringLiteral("−∞ dBTP"));
+        QVERIFY(!coordinator.hold_available());
+
+        // Cannot borrow 1s history from before seek. The first complete
+        // 1-second post-seek HOLD is entirely silent on this fixture.
+        for (std::int64_t tenth = 3; tenth <= 10; ++tenth) {
+            setWindow(seekSource,
+                      seekSource + tenth * sourceHz / 10,
+                      tenth * outputHz / 10 + 512);
+            QTest::qWait(135);
+            QVERIFY(coordinator.recent_available());
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.hold_available(), 5000);
+        QCOMPARE(coordinator.hold_text(), QStringLiteral("−∞ dBTP"));
+
+        // Incomplete or forged new SOURCE origin must fail closed.
+        prefix.srcRetiredSourceBegin.reset();
+        QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 3500);
+        QVERIFY(!coordinator.hold_available());
+        setWindow(seekSource + sourceHz / 2, seekSource + sourceHz / 4,
+                  outputHz / 4 + 512);
+        QTest::qWait(140);
+        QVERIFY(!coordinator.recent_available());
+        QVERIFY(!coordinator.hold_available());
+
+        // One output frame missing from the accepted ledger is not proof.
+        setWindow(seekSource, seekSource + sourceHz / 5,
+                  outputHz / 5 + 512);
+        gap.outputEnd = prefix.processedWatermarkExclusive - 1;
+        QTest::qWait(140);
         QVERIFY(!coordinator.recent_available());
         QVERIFY(!coordinator.hold_available());
     }
