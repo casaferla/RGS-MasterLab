@@ -1239,15 +1239,16 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
         // independent wraps, even if the current source position repeats.
         auto retired = rateAdapter_->no_future_dependency_source_prefix(
             core::FrameIndex{srcAbsoluteAfter});
+        const auto retiredSourceEnd = retired
+            ? std::min(retired.value()->value(), loop_->end().value()) : 0;
         if (!first || !retired
-            || retired.value()->value() <= first.value()->value()
-            || retired.value()->value() > loop_->end().value())
+            || retiredSourceEnd <= first.value()->value())
             return result;
         result.consumedOutputBegin = epochOutputBegin;
         result.loopWrapCount = observedWrap;
         result.loopTraversalProven = true;
         result.firstSourceFrame = first.value()->value();
-        result.noFutureSourcePrefixExclusive = retired.value()->value();
+        result.noFutureSourcePrefixExclusive = retiredSourceEnd;
         result.realizationId = activeRealizationId_;
         result.sourceRateHz = rateAdapter_->input_rate().value();
         result.outputRateHz = rateAdapter_->output_rate().value();
