@@ -50,6 +50,9 @@ struct WindowsConsumedOutputPrefix final {
     static constexpr std::size_t kMaxSlices = 129U;
     std::uint64_t generation{0};
     std::int64_t processedWatermarkExclusive{0};
+    // First actually retained OUTPUT frame. Everything earlier was already
+    // consumed before being pruned; it is NOT claimed as certified history.
+    std::int64_t retainedOutputBegin{0};
     std::array<WindowsConsumedOutputSlice, kMaxSlices> slices{};
     std::size_t count{0};
     bool partitionRepresented{false};

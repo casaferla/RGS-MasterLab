@@ -1109,6 +1109,7 @@ C2CoverageProbe PlaybackEngine::c2_processed_coverage_probe(
     C2CoverageProbe probe{};
     probe.generation = c2CoverageGeneration_;
     probe.generatedOutputFrames = generatedOutputFrames_;
+    probe.retainedOutputBegin = c2RetainedOutputBegin_;
     probe.acceptedOutputFrames = c2AcceptedOutputFrames_;
     probe.acceptedRunCount = c2AcceptedRuns_.size();
     probe.acceptedLedgerOverflow = c2AcceptedLedgerOverflow_;
@@ -1164,6 +1165,7 @@ C2ConsumedPrefix PlaybackEngine::c2_consumed_prefix(
     const auto probe = c2_processed_coverage_probe(expectedGeneration);
     result.generation = probe.generation;
     result.reason = probe.reason;
+    result.retainedOutputBegin = c2RetainedOutputBegin_;
     // A clock discontinuity, stale token or absent output gives NO prefix,
     // rather than a fabricated empty-silence or VALID coverage claim.
     if (probe.reason == C2CoverageProbeReason::STALE_GENERATION
@@ -1180,7 +1182,11 @@ C2ConsumedPrefix PlaybackEngine::c2_consumed_prefix(
         return result; // an empty prefix does not prove a peak of zero
     }
 
-    std::int64_t cursor = 0;
+    // Only the retained SUFFIX is represented: omitted frames have already
+    // passed the sink clock and are never reclassified as silent or valid.
+    if (result.retainedOutputBegin < 0
+        || result.retainedOutputBegin >= watermark) return result;
+    std::int64_t cursor = result.retainedOutputBegin;
     for (const auto& accepted : c2AcceptedRuns_) {
         if (cursor >= watermark) {
             break;
@@ -1541,8 +1547,34 @@ void PlaybackEngine::c2_record_accepted_frames(
         }
     }
     if (c2AcceptedRuns_.size() >= kC2MaximumAcceptedRuns) {
-        c2AcceptedLedgerOverflow_ = true; // sticky until the next generation
-        return;
+        // Sliding OUTPUT_CONSUMED evidence: free only complete segments
+        // *behind* the actual sink clock. Unconsumed runs are immutable.
+        // Keep at least the last run to preserve its source/owner boundary;
+        // deleting history NEVER upgrades candidate or GAP classification.
+        const auto processed = output_
+            ? output_->processed_frames() : std::int64_t{-1};
+        // Reject inconsistent device clocks before pruning historical
+        // proof. The sink may never consume beyond accepted output.
+        if (processedFrameBaseline_ >= 0
+            && processed >= processedFrameBaseline_
+            && processed - processedFrameBaseline_ <= c2AcceptedOutputFrames_
+            && processed - processedFrameBaseline_ <= generatedOutputFrames_) {
+            const auto watermark = processed - processedFrameBaseline_;
+            std::size_t prune = 0;
+            while (prune + 1U < c2AcceptedRuns_.size()
+                && c2AcceptedRuns_[prune].outputEnd <= watermark)
+                ++prune;
+            if (prune > 0U) {
+                c2RetainedOutputBegin_ = c2AcceptedRuns_[prune].outputBegin;
+                c2AcceptedRuns_.erase(c2AcceptedRuns_.begin(),
+                    c2AcceptedRuns_.begin()
+                        + static_cast<std::ptrdiff_t>(prune));
+            }
+        }
+        if (c2AcceptedRuns_.size() >= kC2MaximumAcceptedRuns) {
+            c2AcceptedLedgerOverflow_ = true; // unprunable, fail closed
+            return;
+        }
     }
     try {
         c2AcceptedRuns_.push_back(std::move(run));
@@ -1562,6 +1594,7 @@ void PlaybackEngine::reset_queue_state(std::int64_t frame) noexcept
     }
     c2AcceptedRuns_.clear();
     c2AcceptedOutputFrames_ = 0;
+    c2RetainedOutputBegin_ = 0;
     c2AcceptedLedgerOverflow_ = false;
     c2AcceptedContainsUnprovenHandoff_ = false;
     c2PendingSourceBegin_ = 0;

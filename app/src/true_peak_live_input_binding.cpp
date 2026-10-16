@@ -58,7 +58,13 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
     // tail may be measured. Every earlier GAP remains explicitly represented
     // and NO value is transferred across it. In particular, a current loop
     // cannot generate a new exact source run from the playback backend.
-    std::int64_t cursor = 0;
+    // The bounded ledger may safely discard already-consumed OLD runs.
+    // Source proof is established ONLY for the latest fully represented
+    // retained suffix, never retroactively for omitted output history.
+    if (consumed.retainedOutputBegin < 0
+        || consumed.retainedOutputBegin >= consumed.processedWatermarkExclusive)
+        return fail("C2D14 retained output boundary is invalid.");
+    std::int64_t cursor = consumed.retainedOutputBegin;
     bool earlierGap = false;
     bool earlierMatchingGap = false;
     bool anyProvenLoopTraversal = false;
@@ -119,7 +125,7 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
             revision, consumed.generation, *slice.sourceBegin,
             *slice.sourceEnd, consumed.processedWatermarkExclusive,
             expectedSource.layout,
-            expectedSource.sampleRate});
+            expectedSource.sampleRate, playback.loopWrapCount});
 }
 
 } // namespace rgsml::app

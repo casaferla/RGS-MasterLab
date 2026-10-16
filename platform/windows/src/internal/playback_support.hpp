@@ -111,6 +111,8 @@ struct C2AcceptedOutputRun final {
 struct C2CoverageProbe final {
     std::uint64_t generation{0};
     std::int64_t processedWatermarkExclusive{0};
+    // Old already-consumed ledger entries may be safely pruned.
+    std::int64_t retainedOutputBegin{0};
     std::int64_t generatedOutputFrames{0};
     std::int64_t acceptedOutputFrames{0};
     std::size_t acceptedRunCount{0};
@@ -146,6 +148,8 @@ struct C2ConsumedPrefix final {
     static constexpr std::size_t kMaximumSlices = 129U;
     std::uint64_t generation{0};
     std::int64_t processedWatermarkExclusive{0};
+    // Bounded represented SUFFIX, not false evidence for discarded history.
+    std::int64_t retainedOutputBegin{0};
     std::array<C2ConsumedSlice, kMaximumSlices> slices{};
     std::size_t size{0};
     bool partitionRepresented{false};
@@ -288,6 +292,7 @@ private:
     static constexpr std::size_t kC2MaximumAcceptedRuns = 128U;
     std::vector<C2AcceptedOutputRun> c2AcceptedRuns_;
     std::int64_t c2AcceptedOutputFrames_{0};
+    std::int64_t c2RetainedOutputBegin_{0};
     bool c2AcceptedLedgerOverflow_{false};
     bool c2AcceptedContainsUnprovenHandoff_{false};
     std::int64_t c2PendingSourceBegin_{0};

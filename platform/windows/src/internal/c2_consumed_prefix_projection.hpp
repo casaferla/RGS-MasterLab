@@ -43,6 +43,7 @@ namespace rgsml::platform::windows::internal {
     WindowsConsumedOutputPrefix out{};
     out.generation = internal.generation;
     out.processedWatermarkExclusive = internal.processedWatermarkExclusive;
+    out.retainedOutputBegin = internal.retainedOutputBegin;
     out.reason = project_c2_reason(internal.reason);
     if (internal.size > out.kMaxSlices) {
         out.reason = WindowsConsumedGapReason::ACCEPTED_LEDGER_OVERFLOW;

@@ -95,6 +95,7 @@ private slots:
     void liveCoordinatorResyncsConsumedSuffixAfterGuiPollingStall();
     void postLoopRecoveryBindsOnlyFreshExactConsumedSuffix();
     void c2D14LoopTraversalMustMatchConsumedWrapAndOwner();
+    void c2D14LiveCoordinatorResetsOneSecondHoldAcrossWrap();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -670,6 +671,101 @@ void TruePeakStaticBindingTest::c2D14LoopTraversalMustMatchConsumedWrapAndOwner(
     third.sourceEnd = 48001;
     QVERIFY(!app::bind_processed_live_input(
         owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix));
+    // A pruned prefix cannot invent the missing old traversals, but a
+    // fully consumed, exact retained suffix can independently bind.
+    third.sourceEnd = 8800;
+    third.loopTraversalProven = true;
+    prefix.slices[0] = third;
+    prefix.count = 1;
+    prefix.retainedOutputBegin = 24000;
+    auto retained = app::bind_processed_live_input(
+        owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix);
+    QVERIFY(retained);
+    QCOMPARE(retained.value()->consumedSourceBegin, std::int64_t{4800});
+    prefix.retainedOutputBegin = 23999; // unrepresented start must fail
+    QVERIFY(!app::bind_processed_live_input(
+        owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix));
+}
+
+
+void TruePeakStaticBindingTest::c2D14LiveCoordinatorResetsOneSecondHoldAcrossWrap()
+{
+    using platform::windows::WindowsConsumedOutputPrefix;
+    using platform::windows::WindowsConsumedSliceKind;
+    using platform::windows::WindowsConsumedGapReason;
+    auto fixture = make_render(
+        100000, frame_range(0,100000), 48000,
+        audio::ChannelLayout::STEREO_LR, 0.92, 40000);
+    QVERIFY(fixture);
+    core::PlaybackSnapshot playback{};
+    playback.state = core::PlaybackState::PLAYING;
+    playback.loop = *core::FrameRange::create(
+        core::FrameIndex{0}, core::FrameIndex{60000}).value();
+    playback.audibleRealization = {
+        core::AudibleHandoffPhase::NEW, core::RealizationId{2304}, std::nullopt};
+    WindowsConsumedOutputPrefix prefix{};
+    prefix.generation = 53;
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_LOOP;
+    prefix.partitionRepresented = true;
+    prefix.count = 1;
+    auto& first = prefix.slices[0];
+    first.generation = 53;
+    first.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    first.realizationId = core::RealizationId{2304};
+    first.loopTraversalProven = true;
+    first.loopWrapCount = 0;
+    first.outputBegin = 0;
+    first.sourceBegin = 0;
+    app::TruePeakLiveCoordinator live{
+        [&] { return core::Result<WindowsConsumedOutputPrefix>::success(prefix); },
+        [&] { return core::Result<core::PlaybackSnapshot>::success(playback); },
+        [&]() -> std::optional<app::TruePeakLiveSource> {
+            return app::TruePeakLiveSource{
+                fixture.value()->result, core::RealizationId{2304},
+                fixture.value()->expected};
+        }
+    };
+    // Real sink-consumed 100-ms increments accumulate one second inside
+    // a single loop traversal, with no synthetic hold from the next wrap.
+    for (int bucket = 1; bucket <= 10; ++bucket) {
+        const auto frames = std::int64_t{4800} * bucket;
+        prefix.processedWatermarkExclusive = frames;
+        first.outputEnd = frames;
+        first.sourceEnd = frames;
+        playback.position = core::FrameIndex{frames - 1};
+        QTest::qWait(110);
+        if (bucket >= 2) QTRY_VERIFY_WITH_TIMEOUT(live.recent_available(), 4000);
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(live.hold_available(), 5000);
+    QVERIFY(live.hold_text() != QStringLiteral("−∞ dBTP"));
+    // A consumed jump to the end is still within the same known owner.
+    prefix.processedWatermarkExclusive = 60000;
+    first.outputEnd = 60000;
+    first.sourceEnd = 60000;
+    playback.position = core::FrameIndex{59999};
+    QTest::qWait(150);
+    // Audible wrap advances only when the sink crosses the source boundary.
+    prefix.count = 2;
+    auto& second = prefix.slices[1];
+    second = first;
+    second.outputBegin = 60000;
+    second.outputEnd = 64800;
+    second.sourceBegin = 0;
+    second.sourceEnd = 4800;
+    second.loopWrapCount = 1;
+    prefix.processedWatermarkExclusive = 64800;
+    playback.loopWrapCount = 1;
+    playback.position = core::FrameIndex{4799};
+    QTRY_VERIFY_WITH_TIMEOUT(!live.hold_available(), 5000);
+    QTest::qWait(150);
+    QVERIFY(!live.recent_available()); // 100ms plus FIR start is not yet covered
+    second.outputEnd = 70080;
+    second.sourceEnd = 10080;
+    prefix.processedWatermarkExclusive = 70080;
+    playback.position = core::FrameIndex{10079};
+    QTRY_VERIFY_WITH_TIMEOUT(live.recent_available(), 5000);
+    QCOMPARE(live.peak_text(), QStringLiteral("−∞ dBTP"));
+    QVERIFY(!live.hold_available());
 }
 
 void TruePeakStaticBindingTest::postLoopRecoveryBindsOnlyFreshExactConsumedSuffix()

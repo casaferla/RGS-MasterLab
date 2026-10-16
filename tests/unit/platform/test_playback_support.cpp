@@ -277,6 +277,7 @@ private slots:
     void c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestart();
     void c2D14LoopInternalConsumedSourceMappingAndWrapBoundary();
     void c2D14ShortLoopRemainsUnproven();
+    void c2D14LongLoopPrunesOnlyConsumedHistory();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2208,15 +2209,12 @@ void PlaybackSupportTest::c2D2AcceptedRunLedgerOldOwnerResetAndFailClosed()
 void PlaybackSupportTest::c2D2AcceptedRunLedgerOverflowIsSticky()
 {
     using Reason = platform::windows::internal::C2CoverageProbeReason;
-    // Deliberate alternating direct/loop history defeats safe GAP compaction:
-    // fragmented provenance must remain bounded and overflow fail-closed.
-    // Full decoded blocks, rather than a 1-frame sink that merely drains
-    // the same 1024-frame pending container for hundreds of iterations:
-    // each policy switch then contributes a fresh owner-stamped or GAP run.
+    // Deliberately keep all enqueued output UNCONSUMED. Pruning must
+    // be forbidden even if old accepted run count reaches its 128 cap.
+    // This preserves the original sticky-overflow fail-closed oracle.
     auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 500'000);
     PlaybackEngine engine;
-    auto out = std::make_unique<FakeOutput>(4096U, 4U);
-    auto* sink = out.get();
+    auto out = std::make_unique<FakeOutput>(16U * 1024U * 1024U, 4U);
     QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(out),
         DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
         core::RealizationId{701}));
@@ -2224,11 +2222,10 @@ void PlaybackSupportTest::c2D2AcceptedRunLedgerOverflowIsSticky()
         core::FrameIndex{100}, core::FrameIndex{400}).value();
     QVERIFY(engine.set_loop(loop));
     QVERIFY(engine.play());
-    for (int i = 0; i < 480; ++i) {
+    for (int i = 0; i < 320; ++i) {
         QVERIFY(engine.set_loop(i % 2 == 0
             ? std::optional{loop} : std::nullopt));
-        sink->consume_all();
-        engine.tick();
+        engine.tick(); // no sink consumption: must NOT prune
         if (engine.c2_processed_coverage_probe().acceptedLedgerOverflow) break;
     }
     const auto probe = engine.c2_processed_coverage_probe();
@@ -2982,6 +2979,63 @@ void PlaybackSupportTest::c2D14ShortLoopRemainsUnproven()
         }
     }
     QVERIFY(!engine.c2_processed_coverage_probe().acceptedLedgerOverflow);
+}
+
+
+void PlaybackSupportTest::c2D14LongLoopPrunesOnlyConsumedHistory()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{2303}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{0}, core::FrameIndex{6000}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    bool pruned = false;
+    std::uint64_t lastWrap = 0;
+    for (int i = 0; i < 1500; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto snap = engine.snapshot();
+        QVERIFY(snap);
+        const auto p = engine.c2_consumed_prefix();
+        const auto probe = engine.c2_processed_coverage_probe();
+        QVERIFY(!probe.acceptedLedgerOverflow);
+        QVERIFY(probe.acceptedRunCount <= 128U);
+        if (p.processedWatermarkExclusive == 0) continue;
+        QVERIFY(p.partitionRepresented);
+        QVERIFY(p.retainedOutputBegin >= 0);
+        QVERIFY(p.retainedOutputBegin <= p.processedWatermarkExclusive);
+        auto cursor = p.retainedOutputBegin;
+        for (const auto& slice : p.view()) {
+            QCOMPARE(slice.outputBegin, cursor);
+            QVERIFY(slice.outputEnd > slice.outputBegin);
+            cursor = slice.outputEnd;
+            QCOMPARE(slice.kind, Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+        }
+        QCOMPARE(cursor, p.processedWatermarkExclusive);
+        pruned |= p.retainedOutputBegin > 0;
+        lastWrap = snap.value()->loopWrapCount;
+        if (lastWrap >= 135 && pruned && p.size > 0U
+            && p.slices[p.size - 1U].loopWrapCount >= 135) break;
+    }
+    QVERIFY2(lastWrap >= 135, "Loop monitoring must survive >128 crossings.");
+    QVERIFY(pruned);
+    const auto tail = engine.c2_consumed_prefix();
+    QVERIFY(tail.partitionRepresented);
+    QVERIFY(tail.retainedOutputBegin > 0);
+    QVERIFY(tail.size > 0U);
+    const auto& last = tail.slices[tail.size - 1U];
+    QCOMPARE(last.outputEnd, tail.processedWatermarkExclusive);
+    QVERIFY(last.loopTraversalProven);
+    QVERIFY(last.loopWrapCount >= std::uint64_t{135});
+    QCOMPARE(last.realizationId, std::optional{core::RealizationId{2303}});
+    QVERIFY(!tail.certifiedForLiveTruePeak);
 }
 
 void PlaybackSupportTest::c2D10Native44100IsNotInherentlyUnavailable()

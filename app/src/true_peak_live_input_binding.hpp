@@ -26,6 +26,8 @@ struct BoundLiveTruePeakInput final {
     std::int64_t consumedOutputEnd{0};
     audio::ChannelLayout layout{audio::ChannelLayout::STEREO_LR};
     core::SampleRate sampleRate;
+    // Sink-audible traversal identity, never UI/checkbox-derived.
+    std::uint64_t loopWrapCount{0};
 };
 
 // Contract accepts only a single uninterrupted, no-SRC/no-loop/no-handoff,

@@ -213,8 +213,17 @@ void TruePeakLiveCoordinator::run_worker()
                     const std::array<double, 2> frame{
                         (*left.value())[offset],
                         channels == 2 ? (*right.value())[offset] : 0.0};
+                    // At a loop wrap, the preceding FIR support is unknown,
+                    // even when the next Source frame is absolute zero.
+                    // Consume the first 11 frames conservatively as GAP;
+                    // the FIR then rebuilds before publishing a 100-ms
+                    // or 1-second measurement from this traversal.
+                    const bool hasValidFIRHistory =
+                        input.loopWrapCount == 0
+                        || processed - sourceOrigin >= 11;
                     if (!meter->consume_frame(
-                            std::span<const double>{frame.data(), channels}, true)) {
+                            std::span<const double>{frame.data(), channels},
+                            hasValidFIRHistory)) {
                         valid = false;
                         break;
                     }
