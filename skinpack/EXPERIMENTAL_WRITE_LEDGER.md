@@ -72,3 +72,11 @@
 - Laboratory proof: generated fixture ZIP passed Python `ZipFile.testzip()`; native C++20 zip preflight CLI (GCC warnings-as-errors) ACCEPTED the valid synthetic fixture and REJECTED corrupted EOCD. Full Qt import/rollback runtime not yet run at the time of this note.
 - No production M16, `main` (`46e917bd2adc8ff13e83c0802895afda7daf6b2a`), audio math, third_party, CI workflow, shared QML components, PR, FQ or merge changed. Work remains preliminary/unqualified.
 - Next run must execute the new diagnostic; even success does NOT qualify pixels, accessibility, realistic Kintsugi asset rendering, security fuzz or audio.
+
+## 2026-10-16 — R1 native rejection/rollback coverage extension
+- CI #38963165042 **SUCCESS**, exact source commit `0fa939eb0d158b4229bc7f4d7a634af76df41599`. Native Windows Qt loader import, PNG decode/QML activation, corrupt EOCD reject and Original reset PASS.
+- Additional seven deterministic hostile package fixture variants added under previously allowed `tools/skinpack/generate_r1_smoke_fixture.py`, commit `c71ec4013fd40553428fe19e55e31ba369af1284`: wrong manifest asset SHA, disallowed semanticColors override, unsupported hostContract, executable code trust flag, correctly hashed invalid PNG, ZIP DEFLATE, unsafe parent directory path.
+- Existing `app/src/main.cpp` diagnostic extended (commit `687153b156d3b9258d2fb7d84435bea0e4bfbe15`) to reject all seven without mutating the accepted skin, decoded texture, revision, name or QML visibility; reset then must restore Original. No normal UI handler or DSP change.
+- Locally compiled C++20 **STORE-only** ZIP preflight: negative fixtures with valid ZIP envelopes accepted for subsequent schema/hash/PNG checks; Deflate and unsafe-path fixtures rejected at preflight. This is not Qt native evidence for the extended cases; Windows CI still required.
+- Retain scope as experimental. No PR/merge/FQ, no M16/main/workflow edits, main stays at `46e917bd2adc8ff13e83c0802895afda7daf6b2a`.
+- Source changes grouped before next CI; no run active when ledger recorded.
