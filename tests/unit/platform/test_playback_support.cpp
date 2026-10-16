@@ -283,6 +283,7 @@ private slots:
     void c2D15SrcPartialAcceptedWritesRetainOnlyDiagnosticOwner();
     void c2D16SrcRetirementTracksRealConsumedSinkClock();
     void c2D17SrcSeekRebasesOnlyActuallyConsumedOutput();
+    void c2D18SrcLoopRecoversAtEachActuallyConsumedWrap();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -3499,6 +3500,109 @@ void PlaybackSupportTest::c2D17SrcSeekRebasesOnlyActuallyConsumedOutput()
             core::FrameIndex{inputHz});
         QVERIFY(loop);
         QVERIFY(engine.set_loop(*loop.value()));
+        QVERIFY(!engine.c2_src_retirement_observation()
+            .noFutureSourcePrefixExclusive);
+    }
+}
+
+
+void PlaybackSupportTest::c2D18SrcLoopRecoversAtEachActuallyConsumedWrap()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using platform::windows::internal::project_c2_prefix;
+    for (const auto& pair :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = pair.first;
+        const auto outputHz = pair.second;
+        auto sourceRate = core::SampleRate::create(sourceHz);
+        auto sinkRate = core::SampleRate::create(outputHz);
+        QVERIFY(sourceRate && sinkRate);
+        auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*sourceRate.value(), *sinkRate.value(),
+                audio::ChannelLayout::STEREO_LR, frame_count(4 * sourceHz)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(
+            sourceHz, audio::ChannelLayout::STEREO_LR, 4 * sourceHz);
+        PlaybackEngine engine;
+        auto device = std::make_unique<FakeOutput>(16'384U, 4U);
+        auto* sink = device.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(device), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'301}));
+        auto loop = core::FrameRange::create(
+            core::FrameIndex{sourceHz}, core::FrameIndex{3 * sourceHz});
+        QVERIFY(loop);
+        QVERIFY(engine.set_loop(*loop.value()));
+        QVERIFY(engine.seek(core::FrameIndex{sourceHz}));
+        QVERIFY(engine.play());
+        const auto firstGeneration = engine.c2_consumed_prefix().generation;
+        QVERIFY(!engine.c2_src_retirement_observation()
+            .noFutureSourcePrefixExclusive);
+
+        std::int64_t lastConsumed = 0;
+        std::uint64_t maxProvenWrap = 0;
+        std::int64_t earliestAfterWrap = 0;
+        bool sawFirst = false;
+        bool sawWrapped = false;
+        for (int i = 0; i < 150; ++i) {
+            sink->consume_all();
+            engine.tick();
+            const auto consumed = engine.c2_src_retirement_observation();
+            QCOMPARE(consumed.reason, Reason::UNPROVEN_SRC);
+            QVERIFY(consumed.consumedOutputExclusive > lastConsumed);
+            lastConsumed = consumed.consumedOutputExclusive;
+            if (!consumed.noFutureSourcePrefixExclusive) continue;
+            QVERIFY(consumed.loopTraversalProven);
+            QCOMPARE(consumed.generation, firstGeneration);
+            QVERIFY(consumed.firstSourceFrame.has_value());
+            QVERIFY(*consumed.firstSourceFrame >= sourceHz);
+            QVERIFY(*consumed.firstSourceFrame <= sourceHz + 1);
+            QVERIFY(*consumed.noFutureSourcePrefixExclusive
+                    > *consumed.firstSourceFrame);
+            QVERIFY(*consumed.noFutureSourcePrefixExclusive <= 3 * sourceHz);
+            QVERIFY(consumed.loopWrapCount >= maxProvenWrap);
+            maxProvenWrap = consumed.loopWrapCount;
+            const auto projected = project_c2_prefix(
+                engine.c2_consumed_prefix(), &consumed);
+            QVERIFY(projected.srcLoopTraversalProven);
+            QCOMPARE(projected.srcLoopWrapCount, consumed.loopWrapCount);
+            QCOMPARE(projected.srcRetiredSourceBegin,
+                     consumed.firstSourceFrame);
+            QCOMPARE(projected.srcRetiredSourceEnd,
+                     consumed.noFutureSourcePrefixExclusive);
+            QCOMPARE(projected.srcConsumedOutputBegin,
+                     consumed.consumedOutputBegin);
+            QVERIFY(!projected.certifiedForLiveTruePeak);
+            // The entire SRC sink ledger is still a GAP, never 1:1 proof.
+            for (const auto& part : projected.view()) {
+                QCOMPARE(part.kind,
+                         platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN);
+                QVERIFY(!part.sourceBegin && !part.sourceEnd);
+            }
+            if (consumed.loopWrapCount == 0) {
+                sawFirst = true;
+            } else {
+                sawWrapped = true;
+                if (earliestAfterWrap == 0)
+                    earliestAfterWrap = consumed.consumedOutputBegin;
+                QVERIFY(consumed.consumedOutputBegin > 0);
+                QVERIFY(*consumed.firstSourceFrame >= sourceHz);
+                QVERIFY(consumed.consumedOutputBegin >= earliestAfterWrap);
+            }
+            if (maxProvenWrap >= 2) break;
+        }
+        QVERIFY(sawFirst);
+        QVERIFY(sawWrapped);
+        QVERIFY(maxProvenWrap >= 2);
+        QVERIFY(earliestAfterWrap > 0);
+        // The output watermark and owner cannot masquerade as another
+        // consumed generation, even if its loop region was unchanged.
+        QCOMPARE(engine.c2_src_retirement_observation(firstGeneration + 1)
+                     .reason, Reason::STALE_GENERATION);
+        QVERIFY(!engine.c2_src_retirement_observation(firstGeneration + 1)
+                    .noFutureSourcePrefixExclusive);
+        QVERIFY(engine.stop());
         QVERIFY(!engine.c2_src_retirement_observation()
             .noFutureSourcePrefixExclusive);
     }
