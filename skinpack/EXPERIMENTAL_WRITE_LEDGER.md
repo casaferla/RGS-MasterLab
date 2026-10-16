@@ -26,3 +26,10 @@
 - Local harness: GCC C++20 `-Wall -Wextra -Werror -pedantic -O2`; 18/18 local tests (valid original Kintsugi R1/R2 and negative/malformed ZIP scenarios). Python test generator is preserved in the deferred laboratory kit and should be versioned alongside the harness at the next checkpoint.
 - **Not tested:** Qt6 application linking, QML UI, Windows or Android, CI/FQ, full security fuzz, actual inflate CRC validation against minizip. No production integration.
 - Commit SHA: infer from branch history; next checkpoint shall cross-reference.
+
+## 2026-10-16 — Reproducible native ZIP fixture tests
+- Prior native-preflight commit: `f568cd17a35352d0db000b44114057b578685b33`.
+- Publish `skinpack/tests/test_zip_preflight.py` under allow-list.
+- Command: `python -m unittest discover -s skinpack/tests -v` (requires g++/C++20; real fixture optional via `SKINPACK_REAL_FIXTURE`).
+- On lab GCC: 18 tests PASS including genuine Kintsugi .rgsskin. Native C++ source blob on branch checked byte-identical to locally compiled source.
+- Not a Qt build; loader is not yet registered in app/CMakeLists.txt and UI is unchanged. No CI/FQ, no PR.
