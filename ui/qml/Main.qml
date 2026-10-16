@@ -76,6 +76,8 @@ ApplicationWindow {
     FileDialog { id: goldDialog; objectName: "goldFileDialog"; title: "Open Gold Reference WAV"; fileMode: FileDialog.OpenFile; nameFilters: ["WAV audio (*.wav *.wave)"]; onAccepted: goldSelection.selectGold(selectedFile); onRejected: goldSelection.cancelGoldSelection() }
     FileDialog { id: projectOpenDialog; objectName: "projectOpenFileDialog"; title: "Open RGS MasterLab Project"; fileMode: FileDialog.OpenFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.openProject(selectedFile); onRejected: projectSession.cancelProjectOpen() }
     FileDialog { id: projectSaveDialog; objectName: "projectSaveFileDialog"; title: "Save RGS MasterLab Project As"; fileMode: FileDialog.SaveFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.saveProjectAs(selectedFile); onRejected: projectSession.cancelProjectSave() }
+    FileDialog { id: skinPackDialog; objectName: "skinPackFileDialog"; title: "Install RGS SkinPack"; fileMode: FileDialog.OpenFile; nameFilters: ["RGS SkinPack (*.rgsskin)"]; onAccepted: { if (!skinPackLoader.openFromUrl(selectedFile)) skinPackError.open() } }
+    MessageDialog { id: skinPackError; title: "SkinPack not installed"; text: skinPackLoader.errorString; buttons: MessageDialog.Ok }
 
     Shortcut {
         sequence: "F10"
@@ -155,9 +157,22 @@ ApplicationWindow {
         Rectangle {
             id: realControlStrip
             objectName: "controlStrip"
-            color: "transparent"
-            border.color: root.border
+            color: skinPackLoader.active ? skinPackLoader.backgroundColor : "transparent"
+            border.color: skinPackLoader.active ? skinPackLoader.borderColor : root.border
             radius: 5
+            clip: skinPackLoader.active
+            Image {
+                id: rgsSkinTransportTexture
+                objectName: "rgsSkinTransportTexture"
+                anchors.fill: parent
+                anchors.margins: 2
+                visible: skinPackLoader.active
+                source: skinPackLoader.active
+                    ? "image://rgs-skin/transport?revision=" + skinPackLoader.revision : ""
+                fillMode: Image.Tile
+                cache: false
+                smooth: true
+            }
             RowLayout {
                 objectName: "controlStripContent"
                 anchors.fill: parent
@@ -390,6 +405,13 @@ ApplicationWindow {
                         StudioMenuItem { text: "Zoom Out\tCtrl+-"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.zoomOut() }
                         StudioMenuItem { text: "Fit Source\tHome"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; onTriggered: sourceWaveform.fitSource() }
                         StudioMenuItem { text: "Fit Region"; enabled: auditionRegion.controlsEnabled && auditionRegion.hasRegion; onTriggered: sourceWaveform.fitRegion() }
+                        MenuSeparator { }
+                        Menu {
+                            title: "Appearance"
+                            background: Rectangle { color: root.surface; border.color: root.border }
+                            StudioMenuItem { objectName: "menuSkinOriginal"; text: "RGS Original"; onTriggered: skinPackLoader.reset() }
+                            StudioMenuItem { objectName: "menuSkinInstall"; text: "Load SkinPack..."; onTriggered: skinPackDialog.open() }
+                        }
                     }
                     Menu {
                         title: "&Transport"

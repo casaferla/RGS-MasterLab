@@ -9,6 +9,7 @@
 #include "mastering_chain_state.hpp"
 #include "mastering_preview_controller.hpp"
 #include "playback_transport_view_model.hpp"
+#include "skinpack_loader.hpp"
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include "project_session_view_model.hpp"
@@ -27,6 +28,7 @@
 #include <QUuid>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickImageProvider>
 #include <QQuickStyle>
 
 #include <optional>
@@ -328,8 +330,13 @@ int main(int argc, char* argv[])
         [&waveformPresentation, &auditionRegion] {
             auditionRegion.set_waveform_ready(waveformPresentation.ready());
         });
+    auto skinImageStore = std::make_shared<rgsml::app::SkinImageStore>();
+    rgsml::app::SkinPackLoader skinPackLoader(skinImageStore);
     QQmlApplicationEngine engine;
+    engine.addImageProvider(QStringLiteral("rgs-skin"),
+        new rgsml::app::SkinImageProvider(skinImageStore));
     engine.addImportPath(QLibraryInfo::path(QLibraryInfo::QmlImportsPath));
+    engine.rootContext()->setContextProperty(QStringLiteral("skinPackLoader"), &skinPackLoader);
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"),
         &sourceSelection);

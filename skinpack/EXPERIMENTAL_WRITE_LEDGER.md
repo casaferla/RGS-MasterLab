@@ -33,3 +33,10 @@
 - Command: `python -m unittest discover -s skinpack/tests -v` (requires g++/C++20; real fixture optional via `SKINPACK_REAL_FIXTURE`).
 - On lab GCC: 18 tests PASS including genuine Kintsugi .rgsskin. Native C++ source blob on branch checked byte-identical to locally compiled source.
 - Not a Qt build; loader is not yet registered in app/CMakeLists.txt and UI is unchanged. No CI/FQ, no PR.
+
+## 2026-10-16 — R1 app/CMake/QML experimental wiring
+- Parent SHA: `000075f89e3664013cfba8eb7ac32d517bf50c7a`. All changes **only on SkinPack branch** in previously authorized minimal integration paths `app/CMakeLists.txt`, `app/src/main.cpp`, `ui/qml/Main.qml` plus this ledger.
+- CMake registers SkinPack loader and C++20 preflight and reuses `MINIZIP::minizip`; main.cpp registers context object and image provider; Main.qml adds Import/Original menu, error dialog, and image **behind** the Transport controls without changing controls or DSP.
+- Source-first anchor guards: one match per intended edit. Inspected existing Transport geometry/handlers remain byte-identical in the QML source apart from inserted decorations.
+- This is an **UNCOMPILED experimental source wiring**. Local toolchain lacks Qt 6 SDK. Native standalone preflight passed 18/18; this does NOT qualify Qt CMake/QML integration, contrast, mouse/focus or Windows/Android GUI.
+- No PR, CI, FQ, main or M16 branch write; production integration remains NOT AUTHORIZED.

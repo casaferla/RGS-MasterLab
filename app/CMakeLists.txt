@@ -28,6 +28,10 @@ qt_add_executable(rgsml_app
     src/project_session_view_model.hpp
     src/playback_transport_view_model.cpp
     src/playback_transport_view_model.hpp
+    src/skinpack_loader.cpp
+    src/skinpack_loader.hpp
+    src/skinpack_zip_preflight.cpp
+    src/skinpack_zip_preflight.hpp
     src/source_selection_view_model.cpp
     src/source_selection_view_model.hpp
     src/source_waveform_view_model.cpp
@@ -62,6 +66,7 @@ target_link_libraries(rgsml_app
         rgsml_render
         rgsml_ui
         rgsml_uiplugin
+        MINIZIP::minizip
         Qt6::Core
         Qt6::Gui
         Qt6::Qml
