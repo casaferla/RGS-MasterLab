@@ -1,6 +1,10 @@
 // Experimental R1 reference loader — UNQUALIFIED; not included in application build.
 // Source from the previously delivered R1 integration kit. Audit native ZIP parser before use.
 #include "skinpack_loader.hpp"
+#include "skinpack_zip_preflight.hpp"
+
+#include <span>
+#include <cstddef>
 
 #include <QBuffer>
 #include <QCryptographicHash>
@@ -274,6 +278,11 @@ bool SkinPackLoader::openFromUrl(const QUrl& fileUrl)
     const auto bytes = input.read(kMaxArchive + 1);
     if (bytes.size() != input.size() || bytes.size() > kMaxArchive)
         return reject("SkinPack read or length failed");
+    const auto checked = preflight_skinpack_zip(
+        std::span<const std::byte>(
+            reinterpret_cast<const std::byte*>(bytes.constData()),
+            static_cast<std::size_t>(bytes.size())));
+    if (!checked.ok) return reject("Unsafe SkinPack ZIP: " + QString::fromStdString(checked.reason));
     QString error;
     auto archive = unzipBounded(bytes, &error);
     if (!archive) return reject(error);

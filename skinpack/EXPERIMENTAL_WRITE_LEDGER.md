@@ -18,3 +18,11 @@
 - **Build status:** NOT REGISTERED IN CMAKE; NOT COMPILED; NO Qt GUI TEST; NO CI/FQ.
 - **Mandatory gaps:** native ZIP fuzz/local-vs-central consistency, strict schema validation, decoder/size and platform tests, UI regression and integration GO.
 - **Resulting commit SHA:** retrievable from Git history; to be cross-referenced at the next checkpoint.
+
+## 2026-10-16 — Native C++ ZIP container preflight checkpoint
+- Parent SHA: `1a5060592f8eb6ec36ec8c4a51e7b2d9501eb2bd`.
+- Source allow-list: `app/src/skinpack_zip_preflight.hpp`, `app/src/skinpack_zip_preflight.cpp`, `app/src/skinpack_loader.cpp`, `skinpack/tests/native_zip_preflight_cli.cpp`, `skinpack/EXPERIMENTAL_WRITE_LEDGER.md`.
+- Preflight is invoked before the minizip-based loader. Reject malformed ZIP metadata, duplicate/case aliases, symlinks, unknown paths, unsupported ZIP features, overlapping/gapped local records, unsafe expansion ratios and lengths.
+- Local harness: GCC C++20 `-Wall -Wextra -Werror -pedantic -O2`; 18/18 local tests (valid original Kintsugi R1/R2 and negative/malformed ZIP scenarios). Python test generator is preserved in the deferred laboratory kit and should be versioned alongside the harness at the next checkpoint.
+- **Not tested:** Qt6 application linking, QML UI, Windows or Android, CI/FQ, full security fuzz, actual inflate CRC validation against minizip. No production integration.
+- Commit SHA: infer from branch history; next checkpoint shall cross-reference.
