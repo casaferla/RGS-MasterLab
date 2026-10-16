@@ -26,6 +26,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QStringList>
 #include <QLibraryInfo>
 #include <QUuid>
 #include <QQmlApplicationEngine>
@@ -456,6 +457,40 @@ int main(int argc, char* argv[])
                 skinPackLoader.errorString().isEmpty()) {
                 fail("bad ZIP did not preserve previously accepted skin");
             }
+
+            const QStringList negativeFixtures{
+                QStringLiteral("r1-bad-hash.rgsskin"),
+                QStringLiteral("r1-bad-schema.rgsskin"),
+                QStringLiteral("r1-bad-host.rgsskin"),
+                QStringLiteral("r1-bad-trust.rgsskin"),
+                QStringLiteral("r1-bad-png.rgsskin"),
+                QStringLiteral("r1-deflate.rgsskin"),
+                QStringLiteral("r1-unsafe-path.rgsskin")
+            };
+            for (const QString& filename : negativeFixtures) {
+                const QString path = QFileInfo(skinSmokePath).dir().filePath(filename);
+                if (skinPackLoader.openFromUrl(QUrl::fromLocalFile(path))) {
+                    std::fprintf(stderr, "Unexpectedly accepted: %s\\n",
+                                 filename.toUtf8().constData());
+                    fail("hostile skin accepted");
+                }
+                if (!skinPackLoader.active() || skinPackLoader.revision() != 1 ||
+                    skinPackLoader.errorString().isEmpty() ||
+                    skinPackLoader.skinName() != QStringLiteral("SkinPack R1 Native Smoke")) {
+                    fail("hostile skin modified the accepted state");
+                }
+                {
+                    QReadLocker guard(&skinImageStore->lock);
+                    if (skinImageStore->transport.isNull() ||
+                        skinImageStore->transport.size() != QSize(4, 4) ||
+                        skinImageStore->transport.pixelColor(0, 0) != QColor(QStringLiteral("#F5F1EB"))) {
+                        fail("hostile skin modified the decoded texture");
+                    }
+                }
+                if (texture && !texture->property("visible").toBool())
+                    fail("hostile skin hid the accepted QML surface");
+            }
+            if (passed) std::puts("SKINPACK_R1_SEVEN_NEGATIVE_ARCHIVE_CASES_PASS");
             skinPackLoader.reset();
             if (skinPackLoader.active() ||
                 skinPackLoader.skinName() != QStringLiteral("RGS Original") ||
