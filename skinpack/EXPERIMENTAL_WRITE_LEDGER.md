@@ -80,3 +80,10 @@
 - Locally compiled C++20 **STORE-only** ZIP preflight: negative fixtures with valid ZIP envelopes accepted for subsequent schema/hash/PNG checks; Deflate and unsafe-path fixtures rejected at preflight. This is not Qt native evidence for the extended cases; Windows CI still required.
 - Retain scope as experimental. No PR/merge/FQ, no M16/main/workflow edits, main stays at `46e917bd2adc8ff13e83c0802895afda7daf6b2a`.
 - Source changes grouped before next CI; no run active when ledger recorded.
+
+## 2026-10-16 — CI #38967059687 GREEN / minimum-window SkinPack invariant follow-up
+- Verified GitHub CI `38967059687`, head `07d56665603e887f01c873fcf57a64ef9a4ef222`, conclusion SUCCESS. Log explicitly confirms `SKINPACK_R1_SEVEN_NEGATIVE_ARCHIVE_CASES_PASS` plus `SKINPACK_R1_NATIVE_IMPORT_ROLLBACK_RESET_SMOKE_PASS`.
+- Next consolidated proof (not yet run): `app/src/main.cpp` diagnostic adds Qt Quick item coordinate+size snapshot for `controlStrip`, `controlStripContent`, `rgsSkinTransportTexture`, `stopButton`, `playPauseButton`, `transportTimeModule`, `waveformZoomOutButton`. It enters the canonical 1184x688 minimum window before capture and checks unchanged geometry after valid skin import, after all seven rejections, and after Original reset.
+- Commits: `740bf2d10778a9e7671870ba61bb8e5f54d442c9`, `22f4e6cf84f49158eb0a2a14445c5f63ef8c12e7`. No QML component edits and no production logic changes; diagnostic CLI path only.
+- This tests bounding rectangles, not actual painted pixels, focus order, hit-testing, DPI or audio behavior. Real Kintsugi STORE pack has passed local archive/manifest checks but full realistic-art import is still unqualified.
+- Remains exclusively on experimental branch. No PR, FQ, merge, main/M16 or workflow edits.
