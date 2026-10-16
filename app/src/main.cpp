@@ -27,6 +27,7 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QQuickItem>
+#include <QQuickWindow>
 #include <QRectF>
 #include <QVector>
 #include <QStringList>
@@ -429,8 +430,19 @@ int main(int argc, char* argv[])
                 QStringLiteral("rgsSkinTransportTexture"));
             if (texture == nullptr) fail("transport texture QML item missing");
 
-            // Compare the actual Qt Quick item bounds against the original layout.
-            // Cosmetic SkinPack R1 must not alter geometry or touch target hitboxes.
+            // Test at the minimum supported window geometry (1184 x 688).
+            auto* mainWindow = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+            if (mainWindow == nullptr) {
+                fail("ApplicationWindow missing for canonical minimum geometry test");
+            } else {
+                mainWindow->resize(1184, 688);
+                QCoreApplication::processEvents();
+                if (mainWindow->width() != 1184 || mainWindow->height() != 688)
+                    fail("Could not enter 1184x688 canonical window geometry");
+            }
+
+            // Compare actual Qt Quick bounds before/after skin at minimum size.
+            // Cosmetic SkinPack R1 must never move hitboxes or controls.
             const QStringList geometryNames{
                 QStringLiteral("controlStrip"),
                 QStringLiteral("controlStripContent"),
