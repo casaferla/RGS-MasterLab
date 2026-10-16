@@ -63,3 +63,12 @@
 - Only `app/src/skinpack_loader.cpp` was changed by this repair; correct header order is `mz.h`, `mz_strm.h`, `mz_zip.h`, `mz_zip_rw.h`.
 - Branch and `main` were checked independently. This is not proof of compile success until the next isolated Windows Qt CI completes.
 - No need for manual user file editing. No PR, merge, production CI or M16 modification.
+
+## 2026-10-16 — Native R1 package import/rollback/reset functional smoke candidate
+- Last green Windows build/smoke CI: `38960457938`, `7ebadc31d863f350f93df78041e73f39aa434312`, SUCCESS (all steps). This did **not** load an archive.
+- New diagnostics added only in existing allow-list: `tools/skinpack/generate_r1_smoke_fixture.py` (commit `0d39e66981fef01445df0dae081f861532187ae3`), `app/src/main.cpp` (commits `dbc23397b30de42feb4712bc86d0e44fc96c52e3`, `71924e79701ca19ba04887b92fbdb3a5781a19e7`), and `tools/skinpack/qt_r1_probe.ps1` (`0726baca3dc60f14cff7b860e130c1314e6ea13d`).
+- Fixture format: STORE-only synthetic v0.1 archive, deterministic PNG 4x4, declarative manifest and SHA-256, deliberate EOCD corruption for rejection path. No outside QML or shaders.
+- Qt diagnostic flag tests actual native minizip unpack, JSON validation, PNG decode and QML transport texture activation, corrupt ZIP rejection without active-skin replacement, and reset to RGS Original.
+- Laboratory proof: generated fixture ZIP passed Python `ZipFile.testzip()`; native C++20 zip preflight CLI (GCC warnings-as-errors) ACCEPTED the valid synthetic fixture and REJECTED corrupted EOCD. Full Qt import/rollback runtime not yet run at the time of this note.
+- No production M16, `main` (`46e917bd2adc8ff13e83c0802895afda7daf6b2a`), audio math, third_party, CI workflow, shared QML components, PR, FQ or merge changed. Work remains preliminary/unqualified.
+- Next run must execute the new diagnostic; even success does NOT qualify pixels, accessibility, realistic Kintsugi asset rendering, security fuzz or audio.
