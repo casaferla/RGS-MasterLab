@@ -279,6 +279,7 @@ private slots:
     void c2D14ShortLoopRemainsUnproven();
     void c2D14LongLoopPrunesOnlyConsumedHistory();
     void c2D14HandoffDuringLoopRecoversPureNewPostWrap();
+    void c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -3122,6 +3123,88 @@ void PlaybackSupportTest::c2D10Native44100IsNotInherentlyUnavailable()
     QCOMPARE(p.slices[0].sourceBegin, std::optional<std::int64_t>{0});
     QCOMPARE(p.slices[0].sourceEnd, std::optional<std::int64_t>{20});
     QVERIFY(!p.certifiedForLiveTruePeak);
+}
+
+void PlaybackSupportTest::c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    // A genuine FakeOutput sink clock, immutable generation-time owner, and
+    // complete output accepted ledger are all required even for a NEGATIVE
+    // no-future-FIR-dependency witness. No actual SRC LIVE claim is emitted.
+    for (const auto& pair : std::array<std::pair<std::int64_t,
+                                                std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto inputHz = pair.first;
+        const auto outputHz = pair.second;
+        auto inputRate = core::SampleRate::create(inputHz);
+        auto outputRate = core::SampleRate::create(outputHz);
+        QVERIFY(inputRate && outputRate);
+        auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(),
+                *outputRate.value(), audio::ChannelLayout::STEREO_LR,
+                frame_count(1'200)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(inputHz, audio::ChannelLayout::STEREO_LR, 1'200);
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(8'192U, 4U);
+        auto* sink = output.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'021}));
+        QVERIFY(engine.play());
+        // Nothing generated/queued is presumed actually consumed.
+        const auto before = engine.c2_src_retirement_observation();
+        QVERIFY(!before.noFutureSourcePrefixExclusive);
+        sink->set_processed_frames(400);
+        const auto observed = engine.c2_src_retirement_observation();
+        QCOMPARE(observed.reason, Reason::UNPROVEN_SRC);
+        QCOMPARE(observed.consumedOutputExclusive, std::int64_t{400});
+        QVERIFY(observed.noFutureSourcePrefixExclusive.has_value());
+        QVERIFY(*observed.noFutureSourcePrefixExclusive > 0);
+        QVERIFY(*observed.noFutureSourcePrefixExclusive <= 1'200);
+        const auto untouched = engine.c2_consumed_prefix();
+        QVERIFY(untouched.partitionRepresented);
+        QCOMPARE(untouched.slices[0].kind, Kind::GAP_UNPROVEN);
+        QCOMPARE(untouched.slices[0].reason, Reason::UNPROVEN_SRC);
+        QVERIFY(!untouched.certifiedForLiveTruePeak);
+        QVERIFY(!untouched.slices[0].sourceBegin);
+        QVERIFY(!untouched.slices[0].sourceEnd);
+
+        const auto stale = engine.c2_src_retirement_observation(
+            observed.generation + 1U);
+        QCOMPARE(stale.reason, Reason::STALE_GENERATION);
+        QVERIFY(!stale.noFutureSourcePrefixExclusive);
+        sink->set_processed_frames(9'999);
+        const auto ahead = engine.c2_src_retirement_observation();
+        QCOMPARE(ahead.reason, Reason::CLOCK_AHEAD_OF_GENERATED);
+        QVERIFY(!ahead.noFutureSourcePrefixExclusive);
+        sink->set_processed_frames(400);
+        QVERIFY(engine.seek(core::FrameIndex{300}));
+        const auto postSeek = engine.c2_src_retirement_observation();
+        QVERIFY(!postSeek.noFutureSourcePrefixExclusive);
+
+        // A looped replay breaks the single initial-output-traversal proof.
+        auto otherAdapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(),
+                *outputRate.value(), audio::ChannelLayout::STEREO_LR,
+                frame_count(1'200)});
+        QVERIFY(otherAdapter);
+        PlaybackEngine looping;
+        auto loopOutput = std::make_unique<FakeOutput>(8'192U, 4U);
+        auto* loopSink = loopOutput.get();
+        QVERIFY(looping.install_pcm_candidate(
+            pcm.view(), std::move(loopOutput), DeviceSampleFormat::PCM_S16,
+            std::move(*otherAdapter.value()), nullptr, core::RealizationId{9'022}));
+        auto region = core::FrameRange::create(
+            core::FrameIndex{200}, core::FrameIndex{900});
+        QVERIFY(region);
+        QVERIFY(looping.set_loop(*region.value()));
+        QVERIFY(looping.play());
+        loopSink->set_processed_frames(400);
+        QVERIFY(!looping.c2_src_retirement_observation()
+            .noFutureSourcePrefixExclusive);
+    }
 }
 
 }  // namespace rgsml::tests

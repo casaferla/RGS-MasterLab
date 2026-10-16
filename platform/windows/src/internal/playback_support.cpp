@@ -1160,6 +1160,53 @@ C2CoverageProbe PlaybackEngine::c2_processed_coverage_probe(
     return probe;
 }
 
+C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
+    std::optional<std::uint64_t> expectedGeneration) const noexcept
+{
+    C2SrcRetirementObservation result{};
+    const auto probe = c2_processed_coverage_probe(expectedGeneration);
+    result.generation = probe.generation;
+    result.consumedOutputExclusive = probe.processedWatermarkExclusive;
+    result.reason = probe.reason;
+    // A source sample that cannot contribute to *future* SRC output is NOT
+    // necessarily audible: this control-plane witness must never upgrade
+    // UNPROVEN_SRC, or a loop/handoff/seek gap, into M16 LIVE coverage.
+    if (probe.reason != C2CoverageProbeReason::UNPROVEN_SRC
+        || probe.processedWatermarkExclusive <= 0
+        || !rateAdapter_ || !activeRealizationId_
+        || sourceBegin_.value() != 0 || playbackStartOutputFrame_ != 0
+        || c2RetainedOutputBegin_ != 0
+        || c2AcceptedLedgerOverflow_ || c2CoverageGenerationExhausted_
+        || pendingHandoff_ || c2AcceptedContainsUnprovenHandoff_
+        || loop_ || initialLoopEpoch_.loop
+        || !scheduledLoopEpochs_.empty()) {
+        return result;
+    }
+    // Preserve the ENTIRE accepted chronology [0, sink watermark). Merely
+    // observing the device clock or a last accepted SRC block is insufficient.
+    std::int64_t cursor = 0;
+    for (const auto& run : c2AcceptedRuns_) {
+        if (cursor == result.consumedOutputExclusive) break;
+        if (run.generation != result.generation
+            || run.outputBegin != cursor || run.outputEnd <= cursor
+            || run.realizationId != activeRealizationId_
+            || run.exactOneToOne || run.sourceBegin || run.sourceEnd
+            || run.gapReason != C2CoverageProbeReason::UNPROVEN_SRC
+            || run.loopTraversalProven || run.loopWrapCount != 0
+            || run.handoffPureNewProven) {
+            return result;
+        }
+        cursor = std::min(run.outputEnd, result.consumedOutputExclusive);
+    }
+    if (cursor != result.consumedOutputExclusive) return result;
+
+    auto retired = rateAdapter_->no_future_dependency_source_prefix(
+        core::FrameIndex{result.consumedOutputExclusive});
+    if (!retired) return result;
+    result.noFutureSourcePrefixExclusive = retired.value()->value();
+    return result;
+}
+
 C2ConsumedPrefix PlaybackEngine::c2_consumed_prefix(
     std::optional<std::uint64_t> expectedGeneration) const noexcept
 {

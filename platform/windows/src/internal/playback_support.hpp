@@ -123,6 +123,17 @@ struct C2CoverageProbe final {
     C2CoverageProbeReason reason{C2CoverageProbeReason::NOT_MONITORED};
 };
 
+// Diagnostic ONLY: after a single uninterrupted SRC OUTPUT_RATE traversal
+// from frame zero, identifies the canonical SOURCE prefix excluded from ALL
+// FUTURE FIR windows. This does not certify that those samples were heard,
+// a PROCESSED target, a 100ms True Peak window or any LIVE value.
+struct C2SrcRetirementObservation final {
+    std::uint64_t generation{0};
+    std::int64_t consumedOutputExclusive{0};
+    std::optional<std::int64_t> noFutureSourcePrefixExclusive;
+    C2CoverageProbeReason reason{C2CoverageProbeReason::NOT_MONITORED};
+};
+
 // C2D4: fixed-capacity, owner-thread observation of the *consumed* prefix.
 // SOURCE_CANDIDATE is NEVER a certified PROCESSED target or True-Peak value:
 // owner key/chain revision, target and complete FIR support remain unbound.
@@ -207,6 +218,11 @@ public:
     // Runs represent only *accepted* whole device frames, never true LIVE TP.
     [[nodiscard]] std::span<const C2AcceptedOutputRun>
     c2_accepted_output_runs() const noexcept { return c2AcceptedRuns_; }
+    // Read-only owner-thread sink-consumed SRC retirement observation.
+    // Fails closed on seek/loop/handoff, clock gaps, owner changes or
+    // pruned history. Never promotes an SRC GAP to an M16 LIVE candidate.
+    [[nodiscard]] C2SrcRetirementObservation c2_src_retirement_observation(
+        std::optional<std::uint64_t> expectedGeneration = std::nullopt) const noexcept;
     // No allocations, no callback/DSP work, bounded to 128 accepted events
     // and one explicit missing-provenance tail. Does not certify target owner.
     [[nodiscard]] C2ConsumedPrefix c2_consumed_prefix(
