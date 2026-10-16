@@ -87,6 +87,25 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
             || *consumed.srcRetiredSourceEnd > expectedSource.frameCount.value()) {
             return fail("C2D15 SRC source owner, rate or retired prefix is unverified.");
         }
+        // Recheck each preserved OUTPUT segment independently: an older
+        // unrepresented/foreign GAP can never authorize a later SRC loop
+        // reading, even when the newest source interval appears plausible.
+        std::int64_t cursor = consumed.retainedOutputBegin;
+        for (std::size_t i = 0; i < consumed.count; ++i) {
+            const auto& part = consumed.slices[i];
+            if (part.generation != consumed.generation
+                || part.outputBegin != cursor
+                || part.outputEnd <= cursor
+                || part.outputEnd > consumed.processedWatermarkExclusive
+                || part.kind != platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN
+                || part.reason != platform::windows::WindowsConsumedGapReason::UNPROVEN_SRC
+                || part.sourceBegin || part.sourceEnd || part.realizationId
+                || part.loopTraversalProven || part.handoffPureNewProven)
+                return fail("C2D18 SRC consumed chronology has a mixed or missing interval.");
+            cursor = part.outputEnd;
+        }
+        if (cursor != consumed.processedWatermarkExclusive)
+            return fail("C2D18 SRC cannot inherit an unrepresented output tail.");
         const auto& gap = consumed.slices[consumed.count - 1U];
         if (gap.generation != consumed.generation
             || gap.outputBegin != consumed.srcConsumedOutputBegin
