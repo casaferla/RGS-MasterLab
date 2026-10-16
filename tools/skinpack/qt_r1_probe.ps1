@@ -54,9 +54,15 @@ if (-not $SkipStartup) {
         throw "Art package SHA-256 mismatch: $artSha"
     }
     Write-Host "SKINPACK_R1_REAL_ART_ARCHIVE_EXACT_SHA256_PASS"
+    # A real read-only source enters the true playback-ready UI state; no
+    # audio playback is started and no model enabled flags are overridden.
+    $visualWav = Join-Path $fixtureDir "skinpack-visual-source.wav"
+    & python ./tools/skinpack/ci/generate_visual_source.py $visualWav
+    if ($LASTEXITCODE -ne 0) { throw "SkinPack visual WAV generation failed" }
+    $env:RGSML_SKINPACK_VISUAL_WAV = $visualWav
     $artProcess = Start-Process -FilePath $exe -ArgumentList ('--rgsml-skinpack-art-smoke="' + $artFile + '"') -NoNewWindow -PassThru -Wait
     if ($artProcess.ExitCode -ne 0) { throw "Real Kintsugi R1 v0.3 Qt import/screenshot/reset smoke failed: $($artProcess.ExitCode)" }
-    foreach ($resolution in @("1184", "expanded")) {
+    foreach ($resolution in @("1184", "enabled", "panel", "accent01", "accent02")) {
         $screenshot = Join-Path $build ("skinpack-art-" + $resolution + ".png")
         if (-not (Test-Path -LiteralPath $screenshot)) {
             throw "Real Kintsugi art screenshot missing: $screenshot"
@@ -65,4 +71,4 @@ if (-not $SkipStartup) {
         if ($LASTEXITCODE -ne 0) { throw "Cannot verify screenshot evidence for $resolution" }
     }
 }
-Write-Host "EXPERIMENTAL_R1_QT_BUILD_AND_REAL_KINTSUGI_ART_SMOKE_PASS (not pixel/audio/full qualification)"
+Write-Host "EXPERIMENTAL_R1_QT_NATIVE_SOURCE_ENABLED_ART_FAMILY_LAB_PASS (not DPI/audio/full qualification)"
