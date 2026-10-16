@@ -66,8 +66,8 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         if ((consumed.srcLoopTraversalProven
                 ? (!playback.loop
                     || consumed.srcLoopWrapCount != playback.loopWrapCount)
-                : (playback.loop || playback.loopWrapCount != 0
-                    || consumed.srcLoopWrapCount != 0))
+                : (playback.loop
+                    || consumed.srcLoopWrapCount != playback.loopWrapCount))
             || consumed.retainedOutputBegin < 0
             || consumed.retainedOutputBegin > consumed.srcConsumedOutputBegin
             || consumed.srcConsumedOutputBegin < 0
