@@ -32,9 +32,10 @@ struct BoundLiveTruePeakInput final {
 
 // Strictly verified immutable PROCESSED SOURCE_PROCESSING_RATE target. Direct
 // 1:1 consumed suffixes remain eligible under the existing seek/loop/handoff
-// rules. C2D15 SRC permits only one uninterrupted, zero-origin 44.1↔48-kHz
-// traversal with a full owner-stamped sink ledger and conservative SOURCE
-// prefix retired from ALL future FIR dependencies. Raw SRC output slices stay
+// rules. C2D17 SRC permits one uninterrupted, owner-stamped 44.1↔48-kHz
+// traversal from an independently retained SOURCE seek origin, with a complete
+// consumed OUTPUT ledger and conservative SOURCE interval retired from ALL
+// future FIR dependencies. Raw SRC output slices stay
 // GAP_UNPROVEN, and no blanket certification is inferred from the GUI cursor.
 // Any unverified owner, rate, timeline, loop or handoff fails closed.
 [[nodiscard]] core::Result<BoundLiveTruePeakInput>
