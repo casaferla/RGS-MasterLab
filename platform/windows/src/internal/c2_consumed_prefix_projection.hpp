@@ -122,11 +122,7 @@ namespace rgsml::platform::windows::internal {
             && !tail.sourceBegin && !tail.sourceEnd
             && !tail.realizationId
             && !tail.loopTraversalProven
-            && !tail.handoffPureNewProven
-            && (!srcObservation->loopTraversalProven
-                || srcObservation->loopWrapCount > 0
-                || srcObservation->consumedOutputBegin == 0
-                || out.count > 1U)) {
+            && !tail.handoffPureNewProven) {
             out.srcRetiredSourceEnd =
                 srcObservation->noFutureSourcePrefixExclusive;
             out.srcRetiredSourceBegin = srcObservation->firstSourceFrame;
