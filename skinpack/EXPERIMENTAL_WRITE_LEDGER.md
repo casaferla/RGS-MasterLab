@@ -48,3 +48,11 @@
 - **Proof:** regenerated R1/R2 STORE fixtures tested locally with v0.1 structural validator and C++ preflight PASS; GCC C++20 compile `-Wall -Wextra -Werror -pedantic -O2` and 18/18 adversarial unit tests PASS using R2 STORE fixture.
 - **Qt complete build:** NOT EXECUTED; Windows `tools/skinpack/qt_r1_probe.ps1` script prepared for isolated Release app build and --rgsml-deploy-smoke. No GitHub Actions, PR, merge, CI/FQ performed.
 - **Critical follow-up:** Native minizip R1 loader, QML startup, Windows visual/focus controls, pointer semantics, rollback and malicious archive fuzz not yet qualified. User-facing original compressed prototype cannot be installed with current experimental host until normalized.
+
+## 2026-10-16 — Candidate experimental CI workflow, pre-ACK staging
+- Parent SHA: `f4017ce415a7a0d87f065bfc1b1fa42f916e8012`.
+- PO extension written to MASTER PLAN: https://docs.google.com/document/d/12A4l9xAVCCZfZ3Ui7mksRvqhj3BozdE9uuzQi-yhRWQ/edit
+- New files staged under existing allow-list: `tools/skinpack/ci/skinpack-experimental.yml`, `tools/skinpack/ci/README.md`, `tools/skinpack/ci/check_experimental_workflow.py`.
+- `.github/workflows/**` remains untouched until **new** ACK from operative M16 writer.
+- Trigger candidate: exact branch and one path `skinpack/ci/run-request.txt`, not ordinary pushes. Marker NOT created.
+- Qt build NOT RUN, actions NOT STARTED. Candidate static checks only; no runtime qualification.

@@ -1,0 +1,76 @@
+# RGS SkinPack EXPERIMENTAL ONLY - NOT a production, milestone, CI/FQ workflow.
+# Candidate: install at .github/workflows/skinpack-experimental.yml ONLY AFTER
+# additional ACK from the M16 operative writer for the exact allow-list extension.
+# This workflow never runs for ordinary code pushes, PRs, or main.
+name: SkinPack Experimental Qt R1 Build (Unqualified)
+
+on:
+  push:
+    branches:
+      - experimental/skinpack-r1-r4-unqualified-20261016
+    paths:
+      - skinpack/ci/run-request.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skinpack-experimental-qt-r1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qt-r1-windows:
+    name: Experimental Windows Qt R1 build and deploy smoke
+    if: github.event_name == 'push' && github.ref == 'refs/heads/experimental/skinpack-r1-r4-unqualified-20261016'
+    runs-on: windows-2022
+    timeout-minutes: 50
+    env:
+      RGSML_QT_ROOT: ${{ github.workspace }}\6.8.3\msvc2022_64
+    steps:
+      - name: Checkout exact SkinPack experimental branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify branch, SHA and explicit CI request
+        shell: pwsh
+        run: |
+          $expected = 'refs/heads/experimental/skinpack-r1-r4-unqualified-20261016'
+          if ($env:GITHUB_REF -ne $expected) { throw "Unexpected branch/ref: $env:GITHUB_REF" }
+          $head = (& git rev-parse HEAD).Trim()
+          if ($head -ne $env:GITHUB_SHA) { throw "Checkout SHA mismatch" }
+          if (-not (Test-Path 'skinpack/ci/run-request.txt')) {
+            throw 'Explicit SkinPack run-request is absent'
+          }
+
+      - name: Prepare Python for pinned Qt installer
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Qt 6.8.3 MSVC2022 x64 and Qt Multimedia
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check aqtinstall
+          if ($LASTEXITCODE -ne 0) { throw 'aqtinstall setup failed' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'Qt kit install failed' }
+          if (-not (Test-Path (Join-Path $env:RGSML_QT_ROOT 'lib\cmake\Qt6\Qt6Config.cmake'))) {
+            throw 'Pinned Qt CMake package was not installed at expected location'
+          }
+
+      - name: Build R1 Qt app and run deployment smoke (not FQ)
+        shell: pwsh
+        run: |
+          & ./tools/skinpack/qt_r1_probe.ps1 -QtRoot $env:RGSML_QT_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'Experimental Qt R1 probe failed' }
+
+      - name: Annotate unqualified scope
+        if: success()
+        shell: pwsh
+        run: |
+          Write-Host 'EXPERIMENTAL_SKINPACK_R1_BUILD_SMOKE_ONLY=PASS'
+          Write-Host 'NOT_A_FULL_QUALIFICATION'
+          Write-Host 'NO_AUDIO_RUNTIME_OR_VISUAL_PIXEL_QUALIFICATION'
