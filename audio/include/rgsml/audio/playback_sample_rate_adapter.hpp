@@ -72,6 +72,14 @@ public:
     conservative_input_enclosure_for_output_range(
         core::FrameRange outputRange) const;
 
+    // An OUTPUT_RATE consumed prefix may only retire SOURCE samples that
+    // are absent from EVERY remaining output FIR dependency window.
+    // Pure single traversal from output frame zero ONLY. This is a negative
+    // dependency certificate, not positive sink/owner/loop LIVE evidence.
+    [[nodiscard]] core::Result<core::FrameIndex>
+    no_future_dependency_source_prefix(
+        core::FrameIndex consumedOutputExclusive) const;
+
     [[nodiscard]] core::Result<core::FrameCount> read_frames(
         WavReader& source,
         core::FrameIndex absoluteOutputStart,

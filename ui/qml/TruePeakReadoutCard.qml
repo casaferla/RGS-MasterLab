@@ -12,6 +12,13 @@ Rectangle {
     property bool showColorKey: false
     property color keyColor: "#F2C66F"
     function alignedDbtp(value) {
+        // Exact silence uses the finite readout's stable unit column;
+        // no invented fractional value, no semantic change to −∞.
+        if (value === "−∞ dBTP" || value === "-∞ dBTP") {
+            const symbol = value.slice(0, 2)
+            return " ".repeat(4 - symbol.length) + symbol
+                    + "   " + "  dBTP"
+        }
         const match = /^(-?[0-9]+)\.([0-9]{2}) dBTP$/.exec(value)
         if (!match)
             return value

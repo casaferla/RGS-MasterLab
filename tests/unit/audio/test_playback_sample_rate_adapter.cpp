@@ -108,6 +108,7 @@ private slots:
     void decodeWindowIsTrackDurationIndependent();
     void conservativeInputDependenciesMatchIndependentTapOracle();
     void conservativeInputDependenciesRejectInvalidRanges();
+    void noFutureDependencyPrefixAgainstIndependentOracle();
 };
 
 void PlaybackSampleRateAdapterTest::policyIdentityAndFrameMap()
@@ -437,6 +438,76 @@ void PlaybackSampleRateAdapterTest::conservativeInputDependenciesRejectInvalidRa
             *interval.value());
         QVERIFY(!rejected);
         QCOMPARE(rejected.error()->code(), core::ErrorCode::InvalidArgument);
+    }
+}
+
+void PlaybackSampleRateAdapterTest::noFutureDependencyPrefixAgainstIndependentOracle()
+{
+    // Independent chronological oracle: enumerate every FIR coefficient
+    // contribution of every NOT-YET-CONSUMED output frame. It deliberately
+    // does not use the new production source-frontier formula.
+    const auto reflectIndependent = [](std::int64_t logical,
+                                      std::int64_t inputFrames) {
+        if (inputFrames == 1) return std::int64_t{0};
+        const auto period = inputFrames * 2;
+        auto phase = logical % period;
+        if (phase < 0) phase += period;
+        return phase < inputFrames ? phase : period - 1 - phase;
+    };
+    for (const auto [inputRate, outputRate] :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        for (const auto inputFrames :
+             std::array<std::int64_t, 4>{{1, 2, 257, 2'000}}) {
+            auto converter = adapter(inputRate, outputRate, inputFrames);
+            const auto outputFrames = converter.output_frame_count().value();
+            const std::array<std::int64_t, 5> consumedPositions{{
+                0, outputFrames / 4, outputFrames / 2,
+                outputFrames - 1, outputFrames}};
+            std::int64_t lastRetired = 0;
+            for (const auto consumed : consumedPositions) {
+                auto boundary = converter.no_future_dependency_source_prefix(
+                    core::FrameIndex{consumed});
+                QVERIFY(boundary);
+                const auto retired = boundary.value()->value();
+                QVERIFY(retired >= lastRetired);
+                QVERIFY(retired <= inputFrames);
+                lastRetired = retired;
+                if (consumed == outputFrames) {
+                    QCOMPARE(retired, inputFrames);
+                    continue;
+                }
+                std::int64_t earliestFuture = inputFrames;
+                for (auto outputFrame = consumed;
+                     outputFrame < outputFrames; ++outputFrame) {
+                    const auto q = outputFrame * converter.decimation_factor()
+                        + converter.group_delay_high_rate_frames();
+                    const auto phase = q % converter.interpolation_factor();
+                    for (auto tap = phase;
+                         tap < static_cast<std::int64_t>(converter.kernel_size());
+                         tap += converter.interpolation_factor()) {
+                        const auto logical =
+                            (q - tap) / converter.interpolation_factor();
+                        earliestFuture = std::min(earliestFuture,
+                            reflectIndependent(logical, inputFrames));
+                    }
+                }
+                // Any source sample 'retired' by the helper must be absent
+                // from all future SRC output frames. A lower bound may be
+                // conservative, never above the exact independent oracle.
+                QVERIFY(retired <= earliestFuture);
+            }
+            auto beforeZero = converter.no_future_dependency_source_prefix(
+                core::FrameIndex{-1});
+            QVERIFY(!beforeZero);
+            QCOMPARE(beforeZero.error()->code(),
+                     core::ErrorCode::InvalidArgument);
+            auto pastEnd = converter.no_future_dependency_source_prefix(
+                core::FrameIndex{outputFrames + 1});
+            QVERIFY(!pastEnd);
+            QCOMPARE(pastEnd.error()->code(),
+                     core::ErrorCode::InvalidArgument);
+        }
     }
 }
 

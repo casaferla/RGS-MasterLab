@@ -540,6 +540,53 @@ PlaybackSampleRateAdapter::conservative_input_enclosure_for_output_range(
         core::FrameIndex{first}, core::FrameIndex{last + 1});
 }
 
+core::Result<core::FrameIndex>
+PlaybackSampleRateAdapter::no_future_dependency_source_prefix(
+    core::FrameIndex consumedOutputExclusive) const
+{
+    const auto consumed = consumedOutputExclusive.value();
+    const auto outputFrames = outputFrames_.value();
+    const auto sourceFrames = spec_.totalInputFrames.value();
+    if (consumed < 0 || consumed > outputFrames || sourceFrames <= 0) {
+        return failure<core::FrameIndex>(
+            core::ErrorCode::InvalidArgument,
+            "SRC retirement proof requires a valid consumed OUTPUT prefix.");
+    }
+    // No future convolution windows remain only at complete consumption.
+    if (consumed == outputFrames) {
+        return core::Result<core::FrameIndex>::success(
+            core::FrameIndex{sourceFrames});
+    }
+    auto firstFuture = convolution_window(
+        consumed, static_cast<std::uint32_t>(interpolation_),
+        static_cast<std::uint32_t>(decimation_), coefficientCount_);
+    auto finalFuture = convolution_window(
+        outputFrames - 1, static_cast<std::uint32_t>(interpolation_),
+        static_cast<std::uint32_t>(decimation_), coefficientCount_);
+    if (!firstFuture) {
+        return core::Result<core::FrameIndex>::failure(*firstFuture.error());
+    }
+    if (!finalFuture) {
+        return core::Result<core::FrameIndex>::failure(*finalFuture.error());
+    }
+    // Every possible remaining unreflected FIR tap index is within the
+    // monotone enclosure below; the actual active phase is a subset.
+    // Period 2*N is checked at adapter construction. Decline proof if the
+    // enclosure might cross an even-reflection trough or include negatives.
+    const auto low = firstFuture.value()->firstInput;
+    const auto high = finalFuture.value()->lastInput;
+    const auto period = sourceFrames * 2;
+    if (low < 0 || high >= period - 1 || low > high) {
+        return core::Result<core::FrameIndex>::success(core::FrameIndex{0});
+    }
+    // Reflect(x)=x up to N-1, otherwise 2*N-1-x. Its minimum
+    // over [low,high] lies at one of the two endpoints. Restrict the
+    // retirement frontier to this lower bound on future dependencies.
+    const auto firstRemaining = std::min(low, period - 1 - high);
+    return core::Result<core::FrameIndex>::success(core::FrameIndex{
+        std::clamp(firstRemaining, std::int64_t{0}, sourceFrames)});
+}
+
 core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
     WavReader& source,
     core::FrameIndex absoluteOutputStart,

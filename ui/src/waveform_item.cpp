@@ -752,16 +752,28 @@ QSGNode* WaveformItem::updatePaintNode(
             x - internal::kWaveformPlayheadMarkerSize * 0.5F, 0.0F,
             std::max(0.0F, static_cast<float>(width())
                 - internal::kWaveformPlayheadMarkerSize));
+        std::vector<Vertex> playheadGeometry{
+            {playheadLeft, 0.0F}, {playheadLeft, static_cast<float>(height())},
+            {playheadRight, static_cast<float>(height())},
+            {playheadLeft, 0.0F}, {playheadRight, static_cast<float>(height())},
+            {playheadRight, 0.0F},
+            {markerLeft, 0.0F},
+            {markerLeft + internal::kWaveformPlayheadMarkerSize, 0.0F},
+            {x, internal::kWaveformPlayheadMarkerSize},
+        };
+        // One shared stereo playhead, two visual lane-top markers.  No
+        // separate timeline, seek control, hit target or audio behavior.
+        if (channelCount == 2U
+            && laneHeight >= internal::kWaveformPlayheadMarkerSize) {
+            const auto laneTop = static_cast<float>(laneHeight);
+            playheadGeometry.insert(playheadGeometry.end(), {
+                {markerLeft, laneTop},
+                {markerLeft + internal::kWaveformPlayheadMarkerSize, laneTop},
+                {x, laneTop + internal::kWaveformPlayheadMarkerSize},
+            });
+        }
         root->appendChildNode(make_triangles(
-            std::vector<Vertex>{
-                {playheadLeft, 0.0F}, {playheadLeft, static_cast<float>(height())},
-                {playheadRight, static_cast<float>(height())},
-                {playheadLeft, 0.0F}, {playheadRight, static_cast<float>(height())},
-                {playheadRight, 0.0F},
-                {markerLeft, 0.0F}, {markerLeft + internal::kWaveformPlayheadMarkerSize, 0.0F},
-                {x, internal::kWaveformPlayheadMarkerSize},
-            },
-            playheadColor_));
+            playheadGeometry, playheadColor_));
     }
 
     if (hasOverrange_) {

@@ -22,6 +22,13 @@ Rectangle {
     implicitHeight: 270
 
     function alignedDbtp(value) {
+        // Preserve the same fixed decimal/unit columns for exact silence.
+        // −∞ has no decimal places: blank-fill them, never invent digits.
+        if (value === "−∞ dBTP" || value === "-∞ dBTP") {
+            const symbol = value.slice(0, 2)
+            return " ".repeat(4 - symbol.length) + symbol
+                    + "   " + "  dBTP"
+        }
         const match = /^(-?[0-9]+)\.([0-9]{2}) dBTP$/.exec(value)
         if (!match)
             return value

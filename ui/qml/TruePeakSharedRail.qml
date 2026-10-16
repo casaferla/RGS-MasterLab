@@ -91,6 +91,9 @@ Item {
             font.family: "Segoe UI"
             font.pixelSize: 10
             wrapMode: Text.WordWrap
+            // Keep the provenance note visibly below the card at
+            // canonical minimum height without resizing the card itself.
+            Layout.topMargin: root.compactRail ? 8 : 10
             Layout.fillWidth: true
         }
 
