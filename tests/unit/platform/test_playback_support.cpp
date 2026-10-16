@@ -281,6 +281,7 @@ private slots:
     void c2D14HandoffDuringLoopRecoversPureNewPostWrap();
     void c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed();
     void c2D15SrcPartialAcceptedWritesRetainOnlyDiagnosticOwner();
+    void c2D16SrcRetirementTracksRealConsumedSinkClock();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -3310,6 +3311,96 @@ void PlaybackSupportTest::c2D15SrcPartialAcceptedWritesRetainOnlyDiagnosticOwner
         QVERIFY(!consumed.certifiedForLiveTruePeak);
         QVERIFY(!consumed.slices[0].sourceBegin);
         QVERIFY(!consumed.slices[0].sourceEnd);
+    }
+}
+
+
+void PlaybackSupportTest::c2D16SrcRetirementTracksRealConsumedSinkClock()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    // A real PlaybackEngine + FakeOutput consumed clock, not a synthetic
+    // projection snapshot: prove forward SOURCE retirement over >1 second
+    // in both SRC directions while OUTPUT acceptance runs ahead of listening.
+    for (const auto& pair : std::array<std::pair<std::int64_t,
+                                                std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = pair.first;
+        const auto outputHz = pair.second;
+        const auto inputRate = core::SampleRate::create(sourceHz);
+        const auto outputRate = core::SampleRate::create(outputHz);
+        QVERIFY(inputRate && outputRate);
+        const auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(), *outputRate.value(),
+                audio::ChannelLayout::STEREO_LR, frame_count(2 * sourceHz)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(
+            sourceHz, audio::ChannelLayout::STEREO_LR, 2 * sourceHz);
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(4'096U, 4U);
+        auto* sink = output.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'181}));
+        QVERIFY(engine.play());
+
+        // Encoding and enqueueing a whole block cannot retire any SOURCE
+        // frame before the output device consumes at least one OUTPUT frame.
+        const auto unconsumed = engine.c2_src_retirement_observation();
+        QCOMPARE(unconsumed.consumedOutputExclusive, std::int64_t{0});
+        QVERIFY(!unconsumed.noFutureSourcePrefixExclusive);
+
+        std::int64_t lastOutput = 0;
+        std::int64_t lastRetiredSource = 0;
+        bool exceededOneSecond = false;
+        for (int block = 0; block < 128; ++block) {
+            // Consume the exact output queue, then refill from the same
+            // source owner. Production output chronology is independently
+            // recorded by the playback engine during each successful write.
+            sink->consume_all();
+            engine.tick();
+            const auto current = engine.c2_src_retirement_observation();
+            QCOMPARE(current.reason, Reason::UNPROVEN_SRC);
+            QVERIFY(current.consumedOutputExclusive > lastOutput);
+            QVERIFY(current.noFutureSourcePrefixExclusive.has_value());
+            const auto sourceEnd =
+                *current.noFutureSourcePrefixExclusive;
+            QVERIFY(sourceEnd >= lastRetiredSource);
+            QVERIFY(sourceEnd <= 2 * sourceHz);
+            const auto consumed = engine.c2_consumed_prefix();
+            QVERIFY(consumed.partitionRepresented);
+            QVERIFY(!consumed.certifiedForLiveTruePeak);
+            QCOMPARE(consumed.processedWatermarkExclusive,
+                     current.consumedOutputExclusive);
+            lastOutput = current.consumedOutputExclusive;
+            lastRetiredSource = sourceEnd;
+            if (lastOutput >= outputHz + outputHz / 10) {
+                exceededOneSecond = true;
+                break;
+            }
+        }
+        QVERIFY(exceededOneSecond);
+        // With more than 1.1 sec of physically simulated sink consumption,
+        // the strict no-future-FIR-dependency frontier must retire at least
+        // 1 sec of original SOURCE_PROCESSING_RATE samples.
+        QVERIFY(lastRetiredSource >= sourceHz);
+
+        // A new pump without sink consumption may enqueue OUTPUT samples,
+        // but must never advance the already consumed SOURCE frontier.
+        engine.tick();
+        const auto stationary = engine.c2_src_retirement_observation();
+        QCOMPARE(stationary.consumedOutputExclusive, lastOutput);
+        QCOMPARE(stationary.noFutureSourcePrefixExclusive,
+                 std::optional<std::int64_t>{lastRetiredSource});
+
+        // An impossible sink clock must fail closed instead of manufacturing
+        // extra SOURCE retirement even if the decoded track is much longer.
+        sink->set_processed_frames(lastOutput + 3'000);
+        QVERIFY(!engine.c2_src_retirement_observation()
+            .noFutureSourcePrefixExclusive);
+        sink->set_processed_frames(lastOutput);
+        const auto restored = engine.c2_src_retirement_observation();
+        QCOMPARE(restored.noFutureSourcePrefixExclusive,
+                 std::optional<std::int64_t>{lastRetiredSource});
     }
 }
 
