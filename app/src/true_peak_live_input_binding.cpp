@@ -66,14 +66,16 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         if (playback.loop || playback.loopWrapCount != 0
             || consumed.retainedOutputBegin != 0
             || consumed.count != 1U
-            || !consumed.srcRetiredSourceEnd || !consumed.srcRealizationId
+            || !consumed.srcRetiredSourceEnd || !consumed.srcRetiredSourceBegin
+            || !consumed.srcRealizationId
             || consumed.srcRealizationId != std::optional{expectedRealization}
             || consumed.srcInputRateHz != expectedSource.sampleRate.value()
             || !((consumed.srcInputRateHz == 44'100
                     && consumed.srcOutputRateHz == 48'000)
                 || (consumed.srcInputRateHz == 48'000
                     && consumed.srcOutputRateHz == 44'100))
-            || *consumed.srcRetiredSourceEnd <= 0
+            || *consumed.srcRetiredSourceBegin < 0
+            || *consumed.srcRetiredSourceEnd <= *consumed.srcRetiredSourceBegin
             || *consumed.srcRetiredSourceEnd > expectedSource.frameCount.value()) {
             return fail("C2D15 SRC source owner, rate or retired prefix is unverified.");
         }
@@ -92,7 +94,7 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         return core::Result<BoundLiveTruePeakInput>::success(
             BoundLiveTruePeakInput{std::move(accepted), expectedRealization,
                 revision, consumed.generation,
-                0, *consumed.srcRetiredSourceEnd,
+                *consumed.srcRetiredSourceBegin, *consumed.srcRetiredSourceEnd,
                 consumed.processedWatermarkExclusive,
                 expectedSource.layout, expectedSource.sampleRate, 0});
     }
