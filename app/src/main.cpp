@@ -23,6 +23,7 @@
 
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
+#include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QLibraryInfo>
