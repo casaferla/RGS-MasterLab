@@ -62,7 +62,7 @@ if (-not $SkipStartup) {
     $env:RGSML_SKINPACK_VISUAL_WAV = $visualWav
     $artProcess = Start-Process -FilePath $exe -ArgumentList ('--rgsml-skinpack-art-smoke="' + $artFile + '"') -NoNewWindow -PassThru -Wait
     if ($artProcess.ExitCode -ne 0) { throw "Real Kintsugi R1 v0.3 Qt import/screenshot/reset smoke failed: $($artProcess.ExitCode)" }
-    foreach ($resolution in @("1184", "enabled", "panel", "accent01", "accent02")) {
+    foreach ($resolution in @("1184", "source", "panel", "accent01", "accent02")) {
         $screenshot = Join-Path $build ("skinpack-art-" + $resolution + ".png")
         if (-not (Test-Path -LiteralPath $screenshot)) {
             throw "Real Kintsugi art screenshot missing: $screenshot"
@@ -71,4 +71,4 @@ if (-not $SkipStartup) {
         if ($LASTEXITCODE -ne 0) { throw "Cannot verify screenshot evidence for $resolution" }
     }
 }
-Write-Host "EXPERIMENTAL_R1_QT_NATIVE_SOURCE_ENABLED_ART_FAMILY_LAB_PASS (not DPI/audio/full qualification)"
+Write-Host "EXPERIMENTAL_R1_QT_NATIVE_SOURCE_ART_FAMILY_LAB_PASS (play-enabled state may be HOLD on headless runner; not DPI/audio/full qualification)"
