@@ -63,9 +63,17 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
     // blanket certifiedForLiveTruePeak flag remains false.
     if (consumed.reason
         == platform::windows::WindowsConsumedGapReason::UNPROVEN_SRC) {
-        if (playback.loop || playback.loopWrapCount != 0
-            || consumed.retainedOutputBegin != 0
-            || consumed.count != 1U
+        if ((consumed.srcLoopTraversalProven
+                ? (!playback.loop
+                    || consumed.srcLoopWrapCount != playback.loopWrapCount)
+                : (playback.loop || playback.loopWrapCount != 0
+                    || consumed.srcLoopWrapCount != 0))
+            || consumed.retainedOutputBegin < 0
+            || consumed.retainedOutputBegin > consumed.srcConsumedOutputBegin
+            || consumed.srcConsumedOutputBegin < 0
+            || consumed.srcConsumedOutputBegin
+                >= consumed.processedWatermarkExclusive
+            || consumed.count == 0U
             || !consumed.srcRetiredSourceEnd || !consumed.srcRetiredSourceBegin
             || !consumed.srcRealizationId
             || consumed.srcRealizationId != std::optional{expectedRealization}
@@ -79,9 +87,9 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
             || *consumed.srcRetiredSourceEnd > expectedSource.frameCount.value()) {
             return fail("C2D15 SRC source owner, rate or retired prefix is unverified.");
         }
-        const auto& gap = consumed.slices[0];
+        const auto& gap = consumed.slices[consumed.count - 1U];
         if (gap.generation != consumed.generation
-            || gap.outputBegin != 0
+            || gap.outputBegin != consumed.srcConsumedOutputBegin
             || gap.outputEnd != consumed.processedWatermarkExclusive
             || gap.kind != platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN
             || gap.reason != platform::windows::WindowsConsumedGapReason::UNPROVEN_SRC
@@ -96,7 +104,8 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
                 revision, consumed.generation,
                 *consumed.srcRetiredSourceBegin, *consumed.srcRetiredSourceEnd,
                 consumed.processedWatermarkExclusive,
-                expectedSource.layout, expectedSource.sampleRate, 0});
+                expectedSource.layout, expectedSource.sampleRate,
+                consumed.srcLoopWrapCount});
     }
 
     // A loop may have left a real GAP in the past. After the user turns
