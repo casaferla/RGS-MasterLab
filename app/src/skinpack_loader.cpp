@@ -245,6 +245,48 @@ bool getMarble(const QJsonObject& manifest, const QJsonObject& skin,
     if (image->isNull() || image->size() != size) { *error = "Texture decode failed"; return false; }
     return true;
 }
+
+// Optional art-family swatches are decoded only after strict ZIP and asset hash
+// validation. Any present malformed swatch rejects the entire candidate atomically.
+bool decodeOptionalSwatch(const QJsonObject& manifest, const QJsonObject& skin,
+                          const Payloads& archive, const QString& materialId,
+                          QImage* image, QString* error)
+{
+    const auto materials = skin.value("materials").toObject();
+    if (!materials.contains(materialId)) return true; // R1 legacy or test pack
+    const auto material = materials.value(materialId).toObject();
+    if (material.value("kind").toString() != "texture"
+        || material.value("fit").toString() != "tile-x") {
+        *error = "Optional swatch material rejected: " + materialId;
+        return false;
+    }
+    const auto assetId = material.value("asset").toString();
+    const auto asset = manifest.value("assetIndex").toObject().value(assetId).toObject();
+    const QString path = asset.value("path").toString();
+    const auto found = archive.files.find(path);
+    if (assetId.isEmpty() || found == archive.files.end() || !path.endsWith(".png")) {
+        *error = "Optional swatch asset absent or unsupported: " + materialId;
+        return false;
+    }
+    QBuffer buffer;
+    buffer.setData(found->second);
+    if (!buffer.open(QIODevice::ReadOnly)) {
+        *error = "Optional swatch unavailable: " + materialId; return false;
+    }
+    QImageReader decoder(&buffer, "png");
+    decoder.setAutoTransform(false);
+    const QSize size = decoder.size();
+    if (!size.isValid() || size.width() > kMaxDimension || size.height() > kMaxDimension
+        || qint64(size.width()) * size.height() > kMaxPixels || !decoder.canRead()) {
+        *error = "Optional swatch dimensions invalid: " + materialId;
+        return false;
+    }
+    *image = decoder.read();
+    if (image->isNull() || image->size() != size) {
+        *error = "Optional swatch PNG invalid: " + materialId; return false;
+    }
+    return true;
+}
 } // namespace
 
 SkinImageProvider::SkinImageProvider(std::shared_ptr<SkinImageStore> store)
@@ -253,7 +295,10 @@ SkinImageProvider::SkinImageProvider(std::shared_ptr<SkinImageStore> store)
 QImage SkinImageProvider::requestImage(const QString& id, QSize* size, const QSize&)
 {
     QReadLocker guard(&store_->lock);
-    const QImage result = id.startsWith("transport") ? store_->transport : QImage{};
+    const QImage result = id.startsWith("transport") ? store_->transport
+        : id.startsWith("panelSoft") ? store_->panelSoft
+        : id.startsWith("accent01") ? store_->accent01
+        : id.startsWith("accent02") ? store_->accent02 : QImage{};
     if (size) *size = result.size();
     return result;
 }
@@ -291,9 +336,15 @@ bool SkinPackLoader::openFromUrl(const QUrl& fileUrl)
     auto skin = parseObject(archive->files.at("skin.json"), &error);
     if (!manifest || !skin) return reject(error);
     if (!validateManifest(*manifest, *archive, &error)) return reject(error);
-    QImage candidate;
+    QImage candidate, panelCandidate, accentOneCandidate, accentTwoCandidate;
     QColor base, border;
-    if (!getMarble(*manifest, *skin, *archive, &candidate, &base, &border, &error))
+    if (!getMarble(*manifest, *skin, *archive, &candidate, &base, &border, &error)
+        || !decodeOptionalSwatch(*manifest, *skin, *archive, "marblePanelSoft",
+                                &panelCandidate, &error)
+        || !decodeOptionalSwatch(*manifest, *skin, *archive, "marbleAccent01",
+                                &accentOneCandidate, &error)
+        || !decodeOptionalSwatch(*manifest, *skin, *archive, "marbleAccent02",
+                                &accentTwoCandidate, &error))
         return reject(error);
     const auto name = manifest->value("name").toString();
     if (name.isEmpty() || name.size() > 128) return reject("Invalid SkinPack name");
@@ -301,6 +352,9 @@ bool SkinPackLoader::openFromUrl(const QUrl& fileUrl)
     {
         QWriteLocker guard(&store_->lock);
         store_->transport = std::move(candidate);
+        store_->panelSoft = std::move(panelCandidate);
+        store_->accent01 = std::move(accentOneCandidate);
+        store_->accent02 = std::move(accentTwoCandidate);
     }
     active_ = true;
     name_ = name;
@@ -317,6 +371,9 @@ void SkinPackLoader::reset()
     {
         QWriteLocker guard(&store_->lock);
         store_->transport = QImage{};
+        store_->panelSoft = QImage{};
+        store_->accent01 = QImage{};
+        store_->accent02 = QImage{};
     }
     active_ = false;
     name_ = "RGS Original";
