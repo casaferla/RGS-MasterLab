@@ -88,18 +88,21 @@ namespace rgsml::platform::windows::internal {
     // SRC-retirement observation is attached only when it agrees with the
     // same complete consumed clock and one uninterrupted source-owned
     // OUTPUT traversal, with neither owner leak nor type reclassification.
+    // A fresh SRC loop traversal is a proven OBSERVATIONAL suffix of
+    // sink-consumed OUTPUT time, even though its raw samples stay GAP_SRC.
+    // The current suffix must be an actual retained whole ledger run; never
+    // synthesize an output segment or relabel a gap SOURCE_CANDIDATE.
     if (srcObservation
         && out.reason == WindowsConsumedGapReason::UNPROVEN_SRC
         && srcObservation->reason == C2CoverageProbeReason::UNPROVEN_SRC
         && srcObservation->generation == out.generation
         && srcObservation->consumedOutputExclusive
             == out.processedWatermarkExclusive
-        && out.partitionRepresented && out.retainedOutputBegin == 0
-        && out.count == 1U && out.slices[0].generation == out.generation
-        && out.slices[0].outputBegin == 0
-        && out.slices[0].outputEnd == out.processedWatermarkExclusive
-        && out.slices[0].kind == WindowsConsumedSliceKind::GAP_UNPROVEN
-        && out.slices[0].reason == WindowsConsumedGapReason::UNPROVEN_SRC
+        && out.partitionRepresented
+        && srcObservation->consumedOutputBegin >= out.retainedOutputBegin
+        && srcObservation->consumedOutputBegin
+            < out.processedWatermarkExclusive
+        && out.count > 0U
         && srcObservation->realizationId
         && srcObservation->firstSourceFrame
         && srcObservation->noFutureSourcePrefixExclusive
@@ -110,12 +113,30 @@ namespace rgsml::platform::windows::internal {
                   && srcObservation->outputRateHz == 48'000)
             || (srcObservation->sourceRateHz == 48'000
                   && srcObservation->outputRateHz == 44'100))) {
-        out.srcRetiredSourceEnd =
-            srcObservation->noFutureSourcePrefixExclusive;
-        out.srcRetiredSourceBegin = srcObservation->firstSourceFrame;
-        out.srcRealizationId = srcObservation->realizationId;
-        out.srcInputRateHz = srcObservation->sourceRateHz;
-        out.srcOutputRateHz = srcObservation->outputRateHz;
+        const auto& tail = out.slices[out.count - 1U];
+        if (tail.generation == out.generation
+            && tail.outputBegin == srcObservation->consumedOutputBegin
+            && tail.outputEnd == out.processedWatermarkExclusive
+            && tail.kind == WindowsConsumedSliceKind::GAP_UNPROVEN
+            && tail.reason == WindowsConsumedGapReason::UNPROVEN_SRC
+            && !tail.sourceBegin && !tail.sourceEnd
+            && !tail.realizationId
+            && !tail.loopTraversalProven
+            && !tail.handoffPureNewProven
+            && (!srcObservation->loopTraversalProven
+                || srcObservation->loopWrapCount > 0
+                || srcObservation->consumedOutputBegin == 0
+                || out.count > 1U)) {
+            out.srcRetiredSourceEnd =
+                srcObservation->noFutureSourcePrefixExclusive;
+            out.srcRetiredSourceBegin = srcObservation->firstSourceFrame;
+            out.srcConsumedOutputBegin = srcObservation->consumedOutputBegin;
+            out.srcLoopWrapCount = srcObservation->loopWrapCount;
+            out.srcLoopTraversalProven = srcObservation->loopTraversalProven;
+            out.srcRealizationId = srcObservation->realizationId;
+            out.srcInputRateHz = srcObservation->sourceRateHz;
+            out.srcOutputRateHz = srcObservation->outputRateHz;
+        }
     }
     // A worker-origin SOURCE_CANDIDATE is not a full PROCESSED binding.
     out.certifiedForLiveTruePeak = false;
