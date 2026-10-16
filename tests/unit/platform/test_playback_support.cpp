@@ -278,6 +278,7 @@ private slots:
     void c2D14LoopInternalConsumedSourceMappingAndWrapBoundary();
     void c2D14ShortLoopRemainsUnproven();
     void c2D14LongLoopPrunesOnlyConsumedHistory();
+    void c2D14HandoffDuringLoopRecoversPureNewPostWrap();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -3036,6 +3037,68 @@ void PlaybackSupportTest::c2D14LongLoopPrunesOnlyConsumedHistory()
     QVERIFY(last.loopWrapCount >= std::uint64_t{135});
     QCOMPARE(last.realizationId, std::optional{core::RealizationId{2303}});
     QVERIFY(!tail.certifiedForLiveTruePeak);
+}
+
+
+void PlaybackSupportTest::c2D14HandoffDuringLoopRecoversPureNewPostWrap()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto oldPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    auto newPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(oldPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{2401}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{4800}, core::FrameIndex{14400}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    for (int i = 0; i < 8; ++i) {
+        sink->consume_all();
+        engine.tick();
+    }
+    const int starts = sink->startCalls;
+    const int stops = sink->stopCalls;
+    QVERIFY(engine.handoff_pcm(newPcm.view(), nullptr,
+        core::RealizationId{2402}));
+    bool sawUnprovenHandoff = false;
+    bool recoveredAfterWrap = false;
+    for (int i = 0; i < 150 && !recoveredAfterWrap; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto prefix = engine.c2_consumed_prefix();
+        QVERIFY(!prefix.certifiedForLiveTruePeak);
+        for (const auto& slice : prefix.view()) {
+            sawUnprovenHandoff |= slice.kind == Kind::GAP_UNPROVEN
+                && slice.reason == Reason::UNPROVEN_HANDOFF;
+        }
+        if (!prefix.partitionRepresented || prefix.size == 0U)
+            continue;
+        const auto& last = prefix.slices[prefix.size - 1U];
+        if (last.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            || !last.handoffPureNewProven
+            || !last.loopTraversalProven
+            || last.loopWrapCount < 2
+            || last.outputEnd != prefix.processedWatermarkExclusive)
+            continue;
+        QCOMPARE(prefix.reason, Reason::UNPROVEN_HANDOFF);
+        QCOMPARE(last.realizationId,
+                 std::optional{core::RealizationId{2402}});
+        QVERIFY(last.sourceBegin && last.sourceEnd);
+        QVERIFY(*last.sourceBegin >= 4800);
+        QVERIFY(*last.sourceEnd <= 14400);
+        QCOMPARE(*last.sourceEnd - *last.sourceBegin,
+                 last.outputEnd - last.outputBegin);
+        recoveredAfterWrap = true;
+    }
+    QVERIFY(sawUnprovenHandoff); // actual mixed bytes were not promoted
+    QVERIFY2(recoveredAfterWrap,
+        "Output-time handoff proof must survive Source-frame wrap to loop begin.");
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
 }
 
 void PlaybackSupportTest::c2D10Native44100IsNotInherentlyUnavailable()

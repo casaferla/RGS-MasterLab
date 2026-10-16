@@ -44,6 +44,7 @@ struct WindowsConsumedOutputSlice final {
     WindowsConsumedGapReason reason{WindowsConsumedGapReason::NOT_MONITORED};
     bool loopTraversalProven{false};
     std::uint64_t loopWrapCount{0};
+    bool handoffPureNewProven{false};
 };
 
 struct WindowsConsumedOutputPrefix final {

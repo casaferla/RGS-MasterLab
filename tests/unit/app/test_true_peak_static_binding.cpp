@@ -685,6 +685,21 @@ void TruePeakStaticBindingTest::c2D14LoopTraversalMustMatchConsumedWrapAndOwner(
     prefix.retainedOutputBegin = 23999; // unrepresented start must fail
     QVERIFY(!app::bind_processed_live_input(
         owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix));
+    // After the old mixed handoff GAP was safely PRUNED from the consumed
+    // ledger, a new owner-stamped, pure NEW candidate keeps its independent
+    // output-time attestation through later loop traversals.
+    prefix.retainedOutputBegin = 24000;
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_HANDOFF;
+    prefix.slices[0].handoffPureNewProven = true;
+    QVERIFY(app::bind_processed_live_input(
+        owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix));
+    prefix.slices[0].handoffPureNewProven = false;
+    QVERIFY(!app::bind_processed_live_input(
+        owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix));
+    prefix.slices[0].handoffPureNewProven = true;
+    playback.loopWrapCount = 3; // cannot present a previous traversal
+    QVERIFY(!app::bind_processed_live_input(
+        owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix));
 }
 
 

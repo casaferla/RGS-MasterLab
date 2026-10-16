@@ -94,8 +94,10 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
     const bool loopProofPresent =
         consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
         && anyProvenLoopTraversal;
+    const auto& tail = consumed.slices[consumed.count - 1U];
     if (cursor != consumed.processedWatermarkExclusive
         || (consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_HANDOFF
+            && !tail.handoffPureNewProven
             && (!earlierGap || !earlierMatchingGap))
         || (consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
             && !loopProofPresent && (!earlierGap || !earlierMatchingGap)))
@@ -113,9 +115,8 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         || *slice.sourceEnd - *slice.sourceBegin
             != slice.outputEnd - slice.outputBegin
         || slice.realizationId != std::optional{expectedRealization}
-        || (loopProofPresent && playback.loop
-            && !slice.loopTraversalProven)
-        || (loopProofPresent
+        || (playback.loop && !slice.loopTraversalProven)
+        || (slice.loopTraversalProven
             && slice.loopWrapCount != playback.loopWrapCount)) {
         return fail("C2D6 source mapping is discontinuous, SRC, stale or mismatched.");
     }

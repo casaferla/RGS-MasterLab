@@ -106,6 +106,8 @@ struct C2AcceptedOutputRun final {
     bool exactOneToOne{false};
     bool loopTraversalProven{false};
     std::uint64_t loopWrapCount{0};
+    bool handoffPureNewProven{false};
+    C2CoverageProbeReason gapReason{C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER};
 };
 
 struct C2CoverageProbe final {
@@ -142,6 +144,7 @@ struct C2ConsumedSlice final {
     C2CoverageProbeReason reason{C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER};
     bool loopTraversalProven{false};
     std::uint64_t loopWrapCount{0};
+    bool handoffPureNewProven{false};
 };
 
 struct C2ConsumedPrefix final {
@@ -299,6 +302,8 @@ private:
     std::optional<core::RealizationId> c2PendingOwner_;
     bool c2PendingExactMapping_{false};
     bool c2PendingLoopTraversalProven_{false};
+    bool c2PendingHandoffPureNew_{false};
+    C2CoverageProbeReason c2PendingGapReason_{C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER};
     std::uint64_t c2PendingLoopWrapCount_{0};
 };
 

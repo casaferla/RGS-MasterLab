@@ -636,6 +636,8 @@ core::Status PlaybackEngine::handoff_pcm(
         // A future bounded per-block ledger may recover exact boundaries.
         c2PendingOwner_.reset();
         c2PendingExactMapping_ = false;
+        c2PendingHandoffPureNew_ = false;
+        c2PendingGapReason_ = C2CoverageProbeReason::UNPROVEN_HANDOFF;
         c2AcceptedContainsUnprovenHandoff_ = true; // sticky in this generation
 
         // Seamlessly append crossfade block to pendingBytes_ WITHOUT clear_queue() or reset_queue_state()
@@ -1221,14 +1223,12 @@ C2ConsumedPrefix PlaybackEngine::c2_consumed_prefix(
             slice.sourceEnd = *slice.sourceBegin + (upper - cursor);
             slice.loopTraversalProven = accepted.loopTraversalProven;
             slice.loopWrapCount = accepted.loopWrapCount;
+            slice.handoffPureNewProven = accepted.handoffPureNewProven;
         } else {
             slice.kind = C2ConsumedSliceKind::GAP_UNPROVEN;
-            slice.reason = c2AcceptedContainsUnprovenHandoff_
-                ? C2CoverageProbeReason::UNPROVEN_HANDOFF
-                : rateAdapter_ ? C2CoverageProbeReason::UNPROVEN_SRC
-                : (loop_ || initialLoopEpoch_.loop || !scheduledLoopEpochs_.empty())
-                    ? C2CoverageProbeReason::UNPROVEN_LOOP
-                    : C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER;
+            // Retain generation-time GAP reason: later handoffs may not
+            // relabel an earlier loop gap as handoff evidence.
+            slice.reason = accepted.gapReason;
         }
         cursor = upper;
     }
@@ -1426,12 +1426,19 @@ core::Status PlaybackEngine::pump_once()
     // Crossfade and queued bytes remain GAP_UNPROVEN. Only a separately
     // decoded, pure NEW block after the handoff's numeric boundary may
     // regain source identity; the consumed sink watermark gates publication.
+    // NEW-only continuity is established in absolute OUTPUT time. Comparing
+    // numeric Source frames would incorrectly reject pure NEW loop wraps
+    // that naturally return below the initial handoff Source frame.
+    const bool outputClockMapped = processedFrameBaseline_ >= 0
+        && generatedOutputFrames_
+            <= std::numeric_limits<std::int64_t>::max() - processedFrameBaseline_;
     const bool pureNewAfterHandoff = pendingHandoff_
         && !pendingHandoff_->awaitingReplay
         && pendingHandoff_->newNumericStartSourceFrame
         && c2PendingOwner_ == pendingHandoff_->newRealizationId
-        && blockAbsoluteStart.value()
-            >= *pendingHandoff_->newNumericStartSourceFrame;
+        && outputClockMapped
+        && processedFrameBaseline_ + generatedOutputFrames_
+            >= pendingHandoff_->endProcessedFrame;
     // A decoder block is guaranteed not to cross the loop boundary: pump
     // limits frames to output_boundary(). Record a pure, source-mapped
     // per-traversal candidate ONLY with exact non-SRC owner identity and a
@@ -1446,6 +1453,13 @@ core::Status PlaybackEngine::pump_once()
         && (!pendingHandoff_ || pureNewAfterHandoff);
     c2PendingLoopTraversalProven_ = c2PendingExactMapping_
         && loopCandidate;
+    c2PendingHandoffPureNew_ = c2PendingExactMapping_
+        && pureNewAfterHandoff;
+    c2PendingGapReason_ = pendingHandoff_
+        ? C2CoverageProbeReason::UNPROVEN_HANDOFF
+        : rateAdapter_ ? C2CoverageProbeReason::UNPROVEN_SRC
+        : loop_ ? C2CoverageProbeReason::UNPROVEN_LOOP
+        : C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER;
     const auto epoch = audible_loop_epoch(generatedOutputFrames_);
     c2PendingLoopWrapCount_ = epoch.wrapsBefore
         + wraps_in_loop_epoch(epoch,
@@ -1513,6 +1527,8 @@ void PlaybackEngine::c2_record_accepted_frames(
     run.exactOneToOne = c2PendingExactMapping_;
     run.loopTraversalProven = c2PendingLoopTraversalProven_;
     run.loopWrapCount = c2PendingLoopWrapCount_;
+    run.handoffPureNewProven = c2PendingHandoffPureNew_;
+    run.gapReason = c2PendingGapReason_;
     if (run.exactOneToOne) {
         // The decoded block was already checked to lie inside its finite
         // source resource. Retain *generation-time* mapping, not UI cursor.
@@ -1529,7 +1545,8 @@ void PlaybackEngine::c2_record_accepted_frames(
             && previous.sourceEnd == run.sourceBegin
             && previous.realizationId == run.realizationId
             && previous.loopWrapCount == run.loopWrapCount
-            && previous.loopTraversalProven == run.loopTraversalProven) {
+            && previous.loopTraversalProven == run.loopTraversalProven
+            && previous.handoffPureNewProven == run.handoffPureNewProven) {
             previous.outputEnd = run.outputEnd;
             previous.sourceEnd = run.sourceEnd;
             return;
@@ -1538,7 +1555,8 @@ void PlaybackEngine::c2_record_accepted_frames(
         // manufacture source identity, and keeps long looping bounded.
         if (!run.exactOneToOne && !previous.exactOneToOne
             && previous.generation == run.generation
-            && previous.outputEnd == run.outputBegin) {
+            && previous.outputEnd == run.outputBegin
+            && previous.gapReason == run.gapReason) {
             previous.outputEnd = run.outputEnd;
             previous.realizationId.reset();
             previous.sourceBegin.reset();
@@ -1601,6 +1619,8 @@ void PlaybackEngine::reset_queue_state(std::int64_t frame) noexcept
     c2PendingOwner_.reset();
     c2PendingExactMapping_ = false;
     c2PendingLoopTraversalProven_ = false;
+    c2PendingHandoffPureNew_ = false;
+    c2PendingGapReason_ = C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER;
     c2PendingLoopWrapCount_ = 0;
     scheduledOutputFrame_ = source_to_output_frame(frame);
     playbackStartOutputFrame_ = scheduledOutputFrame_;

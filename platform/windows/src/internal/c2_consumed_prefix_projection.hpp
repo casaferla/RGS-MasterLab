@@ -60,6 +60,7 @@ namespace rgsml::platform::windows::internal {
         target.reason = project_c2_reason(original.reason);
         target.loopTraversalProven = original.loopTraversalProven;
         target.loopWrapCount = original.loopWrapCount;
+        target.handoffPureNewProven = original.handoffPureNewProven;
         switch (original.kind) {
         case C2ConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED:
             target.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
@@ -78,6 +79,7 @@ namespace rgsml::platform::windows::internal {
             target.realizationId.reset();
             target.loopTraversalProven = false;
             target.loopWrapCount = 0;
+            target.handoffPureNewProven = false;
         }
     }
     out.partitionRepresented = internal.partitionRepresented;
