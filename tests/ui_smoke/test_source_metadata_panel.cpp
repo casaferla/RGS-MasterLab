@@ -2469,11 +2469,23 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(gainWheelArea->height(), gainSliderItem->height());
     QCOMPARE(gainWheelArea->property("acceptedButtons").toInt(),
              static_cast<int>(Qt::NoButton));
+    // Stabilize the native-window event route after capture, resize and
+    // Ctrl+Z/Reset. Do not retry or fake any wheel value/change.
+    window->requestActivate();
+    QTRY_VERIFY_WITH_TIMEOUT(gainSliderItem->isVisible()
+        && gainSliderItem->isEnabled()
+        && gainWheelArea->isVisible()
+        && gainWheelArea->isEnabled()
+        && gainSliderItem->width() > 50
+        && gainSliderItem->height() > 0, 2000);
+    QTest::qWait(75);
+    QCoreApplication::processEvents();
     const auto sendGainWheel = [&](double fraction, int delta) {
         const QPointF wheelPos = gainSliderItem->mapToScene(
             QPointF{gainSliderItem->width() * fraction,
                     gainSliderItem->height() / 2.0});
         QTest::mouseMove(window, wheelPos.toPoint());
+        QCoreApplication::processEvents(); // settle hover/hit-test before wheel
         QWheelEvent wheelEvent{
             wheelPos, window->mapToGlobal(wheelPos.toPoint()),
             QPoint{}, QPoint{0, delta}, Qt::NoButton,
@@ -2481,6 +2493,21 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         wheelEvent.ignore();
         QCoreApplication::sendEvent(window, &wheelEvent);
         QCoreApplication::processEvents();
+        if (!wheelEvent.isAccepted()) {
+            const QPointF areaOrigin = gainWheelArea->mapToScene(QPointF{0, 0});
+            qWarning().noquote()
+                << "UX002_WHEEL_UNACCEPTED"
+                << "fraction" << fraction << "delta" << delta
+                << "window" << window->size()
+                << "active" << window->isActive()
+                << "sliderVisible" << gainSliderItem->isVisible()
+                << "sliderEnabled" << gainSliderItem->isEnabled()
+                << "slider" << gainSliderItem->width() << gainSliderItem->height()
+                << "wheelArea" << areaOrigin
+                << gainWheelArea->width() << gainWheelArea->height()
+                << "sceneWheel" << wheelPos
+                << "valueDb" << gainViewModel.gain_db();
+        }
         return wheelEvent.isAccepted();
     };
     QVERIFY(sendGainWheel(0.03, 120));
