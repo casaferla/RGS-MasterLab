@@ -64,6 +64,14 @@ public:
     [[nodiscard]] core::Result<core::FrameIndex> map_output_frame_to_input_cursor(
         core::FrameIndex outputFrame) const;
 
+    // Observation-only conservative enclosure of SOURCE dependencies of
+    // an OUTPUT_RATE interval. Includes FIR taps and mirrored boundaries.
+    // NOT consumed SOURCE coverage, NOT a cursor inverse, NOT LIVE proof.
+    // Bounded to one decode block; never invoke on the audio callback.
+    [[nodiscard]] core::Result<core::FrameRange>
+    conservative_input_enclosure_for_output_range(
+        core::FrameRange outputRange) const;
+
     [[nodiscard]] core::Result<core::FrameCount> read_frames(
         WavReader& source,
         core::FrameIndex absoluteOutputStart,

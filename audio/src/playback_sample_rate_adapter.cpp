@@ -501,6 +501,45 @@ PlaybackSampleRateAdapter::map_output_frame_to_input_cursor(
         std::min(*mapped.value(), spec_.totalInputFrames.value())});
 }
 
+core::Result<core::FrameRange>
+PlaybackSampleRateAdapter::conservative_input_enclosure_for_output_range(
+    core::FrameRange outputRange) const
+{
+    const auto begin = outputRange.begin().value();
+    const auto end = outputRange.end().value();
+    if (begin < 0 || end <= begin || end > outputFrames_.value()
+        || end - begin > kMaximumOutputBlockFrames
+        || spec_.totalInputFrames.value() <= 0) {
+        return failure<core::FrameRange>(
+            core::ErrorCode::InvalidArgument,
+            "Playback SRC dependency enclosure needs a bounded OUTPUT_RATE interval.");
+    }
+    std::int64_t first = spec_.totalInputFrames.value();
+    std::int64_t last = -1;
+    for (auto outputFrame = begin; outputFrame < end; ++outputFrame) {
+        auto window = convolution_window(
+            outputFrame, static_cast<std::uint32_t>(interpolation_),
+            static_cast<std::uint32_t>(decimation_), coefficientCount_);
+        if (!window) {
+            return core::Result<core::FrameRange>::failure(*window.error());
+        }
+        for (auto logical = window.value()->firstInput;
+             logical <= window.value()->lastInput; ++logical) {
+            auto reflected = reflect_frame(
+                logical, spec_.totalInputFrames.value());
+            if (!reflected) {
+                return core::Result<core::FrameRange>::failure(*reflected.error());
+            }
+            first = std::min(first, *reflected.value());
+            last = std::max(last, *reflected.value());
+        }
+    }
+    // Intentional over-approximation. A sink-consumed OUTPUT interval does
+    // NOT thereby certify any enclosed pre-SRC source window for M16 LIVE.
+    return core::FrameRange::create(
+        core::FrameIndex{first}, core::FrameIndex{last + 1});
+}
+
 core::Result<core::FrameCount> PlaybackSampleRateAdapter::read_frames(
     WavReader& source,
     core::FrameIndex absoluteOutputStart,

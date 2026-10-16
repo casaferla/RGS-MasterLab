@@ -6,6 +6,7 @@
 #include <QTest>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -105,6 +106,8 @@ private slots:
     void reverseDirectionAndAbsoluteSeekInvariance();
     void oneFrameBoundaryAndStereoIndependence();
     void decodeWindowIsTrackDurationIndependent();
+    void conservativeInputDependenciesMatchIndependentTapOracle();
+    void conservativeInputDependenciesRejectInvalidRanges();
 };
 
 void PlaybackSampleRateAdapterTest::policyIdentityAndFrameMap()
@@ -345,6 +348,96 @@ void PlaybackSampleRateAdapterTest::decodeWindowIsTrackDurationIndependent()
         *reader, core::FrameIndex{0}, oversized.mutable_view());
     QVERIFY(!rejected);
     QCOMPARE(rejected.error()->code(), core::ErrorCode::InvalidArgument);
+}
+
+void PlaybackSampleRateAdapterTest::conservativeInputDependenciesMatchIndependentTapOracle()
+{
+    // Independent tap oracle: enumerate rational convolution coefficients
+    // by interpolation phase; reflect the logical SOURCE frame separately.
+    // Do not call production convolution_window(), cursor or enclosure.
+    const auto independentlyReflected = [](std::int64_t logical,
+                                          std::int64_t sourceFrames) {
+        if (sourceFrames == 1) return std::int64_t{0};
+        const auto period = sourceFrames * 2;
+        auto index = logical % period;
+        if (index < 0) index += period;
+        return index < sourceFrames ? index : period - 1 - index;
+    };
+    for (const auto [inputRate, outputRate] :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        for (const auto sourceFrames :
+             std::array<std::int64_t, 5>{{1, 2, 19, 257, 2'000}}) {
+            auto converter = adapter(inputRate, outputRate, sourceFrames);
+            const auto outputFrames = converter.output_frame_count().value();
+            const auto blockLength = std::min<std::int64_t>(128, outputFrames);
+            const std::array<std::pair<std::int64_t, std::int64_t>, 4> ranges{{
+                {0, 1},
+                {outputFrames / 2, outputFrames / 2 + 1},
+                {outputFrames - 1, outputFrames},
+                {0, blockLength},
+            }};
+            for (const auto [begin, end] : ranges) {
+                auto interval = core::FrameRange::create(
+                    core::FrameIndex{begin}, core::FrameIndex{end});
+                QVERIFY(interval);
+                auto enclosure = converter.conservative_input_enclosure_for_output_range(
+                    *interval.value());
+                QVERIFY(enclosure);
+                std::int64_t minimum = sourceFrames;
+                std::int64_t maximum = -1;
+                for (auto outputFrame = begin; outputFrame < end; ++outputFrame) {
+                    const auto q = outputFrame * converter.decimation_factor()
+                        + converter.group_delay_high_rate_frames();
+                    const auto phase = q % converter.interpolation_factor();
+                    for (auto coefficient = phase;
+                         coefficient < static_cast<std::int64_t>(converter.kernel_size());
+                         coefficient += converter.interpolation_factor()) {
+                        const auto logical =
+                            (q - coefficient) / converter.interpolation_factor();
+                        const auto sourceIndex = independentlyReflected(
+                            logical, sourceFrames);
+                        minimum = std::min(minimum, sourceIndex);
+                        maximum = std::max(maximum, sourceIndex);
+                    }
+                }
+                QCOMPARE(enclosure.value()->begin().value(), minimum);
+                QCOMPARE(enclosure.value()->end().value(), maximum + 1);
+            }
+        }
+    }
+    // Negative oracle: output cursor zero DOES NOT prove that only
+    // SOURCE frame zero contributes to the already-consumed output frame.
+    auto converter = adapter(44'100, 48'000, 2'000);
+    auto firstOutput = core::FrameRange::create(
+        core::FrameIndex{0}, core::FrameIndex{1});
+    QVERIFY(firstOutput);
+    auto dependencies = converter.conservative_input_enclosure_for_output_range(
+        *firstOutput.value());
+    QVERIFY(dependencies);
+    auto cursor = converter.map_output_frame_to_input_cursor(core::FrameIndex{1});
+    QVERIFY(cursor);
+    QVERIFY(dependencies.value()->end().value() > cursor.value()->value());
+}
+
+void PlaybackSampleRateAdapterTest::conservativeInputDependenciesRejectInvalidRanges()
+{
+    auto converter = adapter(44'100, 48'000, 2'000);
+    const auto outputFrames = converter.output_frame_count().value();
+    const std::array<std::pair<std::int64_t, std::int64_t>, 4> invalid{{
+        {-1, 1}, {0, 0}, {outputFrames - 1, outputFrames + 1},
+        {0, audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames + 1},
+    }};
+    for (const auto [begin, end] : invalid) {
+        auto interval = core::FrameRange::create(
+            core::FrameIndex{begin}, core::FrameIndex{end});
+        // FrameRange may reject impossible ranges earlier than the adapter.
+        if (!interval) continue;
+        auto rejected = converter.conservative_input_enclosure_for_output_range(
+            *interval.value());
+        QVERIFY(!rejected);
+        QCOMPARE(rejected.error()->code(), core::ErrorCode::InvalidArgument);
+    }
 }
 
 }  // namespace rgsml::tests
