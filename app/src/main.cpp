@@ -24,6 +24,7 @@
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QQuickItem>
@@ -67,14 +68,18 @@ int main(int argc, char* argv[])
     QGuiApplication application(argc, argv);
     application.setApplicationName(QStringLiteral("RGS MasterLab"));
     const QString skinSmokePrefix = QStringLiteral("--rgsml-skinpack-smoke=");
+    const QString artSmokePrefix = QStringLiteral("--rgsml-skinpack-art-smoke=");
     QString skinSmokePath;
+    QString artSmokePath;
     for (const QString& arg : application.arguments()) {
-        if (arg.startsWith(skinSmokePrefix)) {
+        if (arg.startsWith(skinSmokePrefix))
             skinSmokePath = arg.mid(skinSmokePrefix.size());
-        }
+        if (arg.startsWith(artSmokePrefix))
+            artSmokePath = arg.mid(artSmokePrefix.size());
     }
     const bool skinSmoke = !skinSmokePath.isEmpty();
-    const bool deploySmoke = skinSmoke ||
+    const bool artSmoke = !artSmokePath.isEmpty();
+    const bool deploySmoke = skinSmoke || artSmoke ||
         application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
     if (deploySmoke) {
         qInstallMessageHandler(smokeMessageHandler);
@@ -419,7 +424,79 @@ int main(int argc, char* argv[])
 
     // Experimental R1 import/rollback diagnostic. Not a normal startup path.
     // Exercise the real Qt loader and its QML transport presentation on Windows.
-    if (skinSmoke && !engine.rootObjects().isEmpty()) {
+    // Art qualification path: test the uploaded, SHA-verified real v0.3 pack.
+    // Screenshot files are created in the disposable CI build directory only.
+    if (artSmoke && !engine.rootObjects().isEmpty()) {
+        auto* artWindow = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        if (artWindow == nullptr) {
+            std::fprintf(stderr, "SKINPACK_R1_REAL_ART_SMOKE_FAIL: no QQuickWindow\n");
+            QTimer::singleShot(0, &application, [] { QCoreApplication::exit(EXIT_FAILURE); });
+        } else {
+            artWindow->resize(1184, 688);
+            QTimer::singleShot(150, &application, [&, artWindow] {
+                bool loaded = skinPackLoader.openFromUrl(QUrl::fromLocalFile(artSmokePath));
+                const QString packName = skinPackLoader.skinName();
+                bool passed = loaded && skinPackLoader.active() &&
+                    packName.startsWith(QStringLiteral("Kintsugi Prestige")) &&
+                    skinPackLoader.revision() == 1 &&
+                    skinPackLoader.backgroundColor() == QColor(QStringLiteral("#F5F1EB"));
+                {
+                    QReadLocker guard(&skinImageStore->lock);
+                    passed = passed && !skinImageStore->transport.isNull() &&
+                        skinImageStore->transport.size() == QSize(2172, 96);
+                }
+                auto* texture = engine.rootObjects().first()->findChild<QQuickItem*>(
+                    QStringLiteral("rgsSkinTransportTexture"));
+                passed = passed && texture != nullptr && texture->isVisible();
+                if (!passed) {
+                    std::fprintf(stderr, "SKINPACK_R1_REAL_ART_SMOKE_FAIL: %s\n",
+                                 skinPackLoader.errorString().toUtf8().constData());
+                    QCoreApplication::exit(EXIT_FAILURE);
+                    return;
+                }
+                QTimer::singleShot(700, &application, [&, artWindow, texture] {
+                    const QString image1 = QStringLiteral("build/skinpack-r1-probe/skinpack-art-1184.png");
+                    bool passed1 = texture->property("status").toInt() == 1 &&
+                        artWindow->width() == 1184 && artWindow->height() == 688;
+                    const QImage screenshot1 = artWindow->grabWindow();
+                    passed1 = passed1 && !screenshot1.isNull() && screenshot1.save(image1, "PNG");
+                    if (!passed1) {
+                        std::fprintf(stderr, "SKINPACK_R1_REAL_ART_SMOKE_FAIL: 1184 screenshot\n");
+                        QCoreApplication::exit(EXIT_FAILURE);
+                        return;
+                    }
+                    std::puts("SKINPACK_R1_REAL_ART_NATIVE_IMPORT_1184_PASS");
+                    artWindow->resize(1440, 900);
+                    QTimer::singleShot(650, &application, [&, artWindow, texture] {
+                        const QString image2 = QStringLiteral("build/skinpack-r1-probe/skinpack-art-1440.png");
+                        bool passed2 = texture->isVisible() &&
+                            texture->property("status").toInt() == 1 &&
+                            artWindow->width() == 1440 && artWindow->height() == 900;
+                        const QImage screenshot2 = artWindow->grabWindow();
+                        passed2 = passed2 && !screenshot2.isNull() && screenshot2.save(image2, "PNG");
+                        if (!passed2) {
+                            std::fprintf(stderr, "SKINPACK_R1_REAL_ART_SMOKE_FAIL: 1440 screenshot\n");
+                            QCoreApplication::exit(EXIT_FAILURE);
+                            return;
+                        }
+                        skinPackLoader.reset();
+                        {
+                            QReadLocker guard(&skinImageStore->lock);
+                            passed2 = passed2 && skinImageStore->transport.isNull();
+                        }
+                        passed2 = passed2 && !skinPackLoader.active() &&
+                            skinPackLoader.skinName() == QStringLiteral("RGS Original") &&
+                            !texture->isVisible() && skinPackLoader.revision() == 2;
+                        if (passed2)
+                            std::puts("SKINPACK_R1_REAL_ART_NATIVE_IMPORT_AND_RESET_PASS");
+                        else
+                            std::fprintf(stderr, "SKINPACK_R1_REAL_ART_SMOKE_FAIL: reset\n");
+                        QCoreApplication::exit(passed2 ? EXIT_SUCCESS : EXIT_FAILURE);
+                    });
+                });
+            });
+        }
+    } else if (skinSmoke && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, [&] {
             bool passed = true;
             const auto fail = [&](const char* reason) {
