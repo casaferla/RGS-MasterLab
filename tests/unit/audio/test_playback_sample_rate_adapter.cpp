@@ -364,7 +364,7 @@ void PlaybackSampleRateAdapterTest::conservativeInputDependenciesMatchIndependen
         if (index < 0) index += period;
         return index < sourceFrames ? index : period - 1 - index;
     };
-    for (const auto [inputRate, outputRate] :
+    for (const auto& [inputRate, outputRate] :
          std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
              {44'100, 48'000}, {48'000, 44'100}}}) {
         for (const auto sourceFrames :
@@ -378,7 +378,7 @@ void PlaybackSampleRateAdapterTest::conservativeInputDependenciesMatchIndependen
                 {outputFrames - 1, outputFrames},
                 {0, blockLength},
             }};
-            for (const auto [begin, end] : ranges) {
+            for (const auto& [begin, end] : ranges) {
                 auto interval = core::FrameRange::create(
                     core::FrameIndex{begin}, core::FrameIndex{end});
                 QVERIFY(interval);
@@ -429,7 +429,7 @@ void PlaybackSampleRateAdapterTest::conservativeInputDependenciesRejectInvalidRa
         {-1, 1}, {0, 0}, {outputFrames - 1, outputFrames + 1},
         {0, audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames + 1},
     }};
-    for (const auto [begin, end] : invalid) {
+    for (const auto& [begin, end] : invalid) {
         auto interval = core::FrameRange::create(
             core::FrameIndex{begin}, core::FrameIndex{end});
         // FrameRange may reject impossible ranges earlier than the adapter.
@@ -454,7 +454,7 @@ void PlaybackSampleRateAdapterTest::noFutureDependencyPrefixAgainstIndependentOr
         if (phase < 0) phase += period;
         return phase < inputFrames ? phase : period - 1 - phase;
     };
-    for (const auto [inputRate, outputRate] :
+    for (const auto& [inputRate, outputRate] :
          std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
              {44'100, 48'000}, {48'000, 44'100}}}) {
         for (const auto inputFrames :
