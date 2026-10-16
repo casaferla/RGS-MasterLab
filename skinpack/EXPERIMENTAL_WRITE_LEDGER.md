@@ -9,3 +9,12 @@
 - **Evidence:** R2.5 local Python static validation reported 19/19 PASS; **no native C++/Qt compilation or CI/FQ**.
 - **First commit SHA:** referenced by branch history; append in the next checkpoint's ledger (a commit cannot embed its own SHA).
 - **Restricted actions:** no merge, no PR, no production CI, no modifications to branches or files outside the PO allow-list.
+
+## 2026-10-16 — R1 native loader reference sources
+- **Previous checkpoint commit:** `b26392eab2106587d1bdeeaf5b8daf70719f4f5a`.
+- **Parent SHA for this write:** `b26392eab2106587d1bdeeaf5b8daf70719f4f5a`.
+- **Scope:** `app/src/skinpack_loader.hpp` and `app/src/skinpack_loader.cpp` (new files only); append ledger.
+- **Origin:** offline R1 Integration Kit v0.1; preliminary native ZIP/JSON/PNG loader and `image://` store/provider.
+- **Build status:** NOT REGISTERED IN CMAKE; NOT COMPILED; NO Qt GUI TEST; NO CI/FQ.
+- **Mandatory gaps:** native ZIP fuzz/local-vs-central consistency, strict schema validation, decoder/size and platform tests, UI regression and integration GO.
+- **Resulting commit SHA:** retrievable from Git history; to be cross-referenced at the next checkpoint.
