@@ -63,7 +63,53 @@ def generate(folder: Path):
     corrupted[-22] ^= 0x01  # damage EOCD signature; fail closed in preflight
     invalid = folder / 'r1-invalid.rgsskin'
     invalid.write_bytes(corrupted)
-    print(f'SKINPACK_SMOKE_FIXTURES_CREATED valid={valid} invalid={invalid}')
+
+    def negative_archive(filename, *, change=None, compression=zipfile.ZIP_STORED,
+                         malicious_path=False):
+        """Keep the ZIP container valid while altering one hostile contract field."""
+        m = json.loads(json.dumps(manifest))
+        sk = json.loads(json.dumps(skin))
+        payload = image
+        if change == 'hash':
+            m['assetIndex']['marbleTile']['sha256'] = '0' * 64
+        elif change == 'schema':
+            sk['semanticColors'] = 'override'
+        elif change == 'host':
+            m['hostContract'] = 'rgsml.skin.host/unsupported'
+        elif change == 'trust':
+            m['trust']['executableCode'] = True
+        elif change == 'png':
+            payload = b'not-a-valid-png'
+            m['assetIndex']['marbleTile']['sha256'] = hashlib.sha256(payload).hexdigest()
+            m['assetIndex']['marbleTile']['bytes'] = len(payload)
+        entries = {
+            'manifest.json': json.dumps(m, separators=(',', ':'), sort_keys=True).encode(),
+            'skin.json': json.dumps(sk, separators=(',', ':'), sort_keys=True).encode(),
+            image_path: payload,
+        }
+        if malicious_path:
+            entries['assets/textures/../unsafe.png'] = b'unsafe'
+        target = folder / filename
+        with zipfile.ZipFile(target, 'w', compression=compression,
+                             allowZip64=False) as z:
+            for name, data in entries.items():
+                info = zipfile.ZipInfo(name, date_time=(2026, 10, 16, 0, 0, 0))
+                info.compress_type = compression
+                info.create_system = 0
+                z.writestr(info, data)
+        with zipfile.ZipFile(target) as z:
+            assert z.testzip() is None
+        return target
+
+    negative_archive('r1-bad-hash.rgsskin', change='hash')
+    negative_archive('r1-bad-schema.rgsskin', change='schema')
+    negative_archive('r1-bad-host.rgsskin', change='host')
+    negative_archive('r1-bad-trust.rgsskin', change='trust')
+    negative_archive('r1-bad-png.rgsskin', change='png')
+    negative_archive('r1-deflate.rgsskin', compression=zipfile.ZIP_DEFLATED)
+    negative_archive('r1-unsafe-path.rgsskin', malicious_path=True)
+    print(f'SKINPACK_SMOKE_FIXTURES_CREATED valid={valid} invalid={invalid}'
+          ' additional_rejected=7')
 
 
 if __name__ == '__main__':
