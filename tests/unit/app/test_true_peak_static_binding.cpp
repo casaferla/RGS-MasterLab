@@ -99,6 +99,7 @@ private slots:
     void c2D15SrcBindingRequiresOwnerAndConservativeConsumedProof();
     void c2D15SrcLiveCoordinatorWaitsForPreSrc100msAndClearsOnSeek();
     void c2D15SrcLiveCoordinatorOneSecondHoldRequiresCompleteConsumedHistory();
+    void c2D16SrcLongGuiStallCannotInventOneSecondHold();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -1228,6 +1229,101 @@ c2D15SrcLiveCoordinatorOneSecondHoldRequiresCompleteConsumedHistory()
         playback.state = core::PlaybackState::STOPPED;
         QTest::qWait(110);
         QVERIFY(!coordinator.recent_available());
+    }
+}
+
+
+void TruePeakStaticBindingTest::
+c2D16SrcLongGuiStallCannotInventOneSecondHold()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    for (const auto& rates :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = rates.first;
+        const auto outputHz = rates.second;
+        // The source impulse is in discarded history following a long GUI
+        // stall, so any later nonzero HOLD would reveal inherited history.
+        auto fixture = make_render(
+            3 * sourceHz, frame_range(0, 3 * sourceHz),
+            sourceHz, audio::ChannelLayout::STEREO_LR,
+            0.84, sourceHz / 3);
+        QVERIFY(fixture);
+        const auto owner = fixture.value()->result;
+        const auto id = core::RealizationId{9'191};
+        core::PlaybackSnapshot playback{};
+        playback.state = core::PlaybackState::PLAYING;
+        playback.audibleRealization = {
+            core::AudibleHandoffPhase::NEW, id, std::nullopt};
+
+        platform::windows::WindowsConsumedOutputPrefix prefix{};
+        prefix.generation = 81;
+        prefix.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.partitionRepresented = true;
+        prefix.count = 1;
+        auto& gap = prefix.slices[0];
+        gap.generation = prefix.generation;
+        gap.outputBegin = 0;
+        gap.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+        gap.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.srcRealizationId = id;
+        prefix.srcInputRateHz = sourceHz;
+        prefix.srcOutputRateHz = outputHz;
+        const auto advance = [&](std::int64_t sourceEnd,
+                                 std::int64_t outputEnd) {
+            prefix.srcRetiredSourceEnd = sourceEnd;
+            prefix.processedWatermarkExclusive = outputEnd;
+            gap.outputEnd = outputEnd;
+        };
+        advance(sourceHz / 20, outputHz / 20 + 1'024);
+        app::TruePeakLiveCoordinator coordinator{
+            [&] {
+                return core::Result<
+                    platform::windows::WindowsConsumedOutputPrefix>::success(prefix);
+            },
+            [&] {
+                return core::Result<core::PlaybackSnapshot>::success(playback);
+            },
+            [&]() -> std::optional<app::TruePeakLiveSource> {
+                return app::TruePeakLiveSource{
+                    owner, id, fixture.value()->expected};
+            },
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.monitoring_attempted(), 3500);
+        QVERIFY(!coordinator.hold_available());
+
+        // The GUI/event loop loses >500 ms of observation. A single later
+        // watermark can establish RECENT only after rebuilding genuine FIR
+        // support; it must never create 1-second HOLD from a skipped span.
+        advance(6 * sourceHz / 5, 6 * outputHz / 5 + 1'024);
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 5000);
+        QVERIFY(!coordinator.hold_available());
+        QCOMPARE(coordinator.peak_text(), QStringLiteral("−∞ dBTP"));
+
+        // Ten further distinct sink-consumed 100-ms advances are not a
+        // cosmetic timer: this is newly observed chronological SOURCE
+        // coverage, required before a genuine rolling HOLD can reappear.
+        for (std::int64_t tenth = 13; tenth <= 23; ++tenth) {
+            advance(tenth * sourceHz / 10,
+                    tenth * outputHz / 10 + 1'024);
+            QTest::qWait(130);
+            QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4000);
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.hold_available(), 5000);
+        QCOMPARE(coordinator.hold_text(), QStringLiteral("−∞ dBTP"));
+        QVERIFY(coordinator.recent_available());
+
+        // Absent output chronology or changed owner must invalidate both
+        // observations; the worker must not inherit the pre-stall peak.
+        gap.outputEnd = prefix.processedWatermarkExclusive - 1;
+        QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 4000);
+        QVERIFY(!coordinator.hold_available());
+        prefix.srcRealizationId = core::RealizationId{9'192};
+        coordinator.invalidate();
+        QTest::qWait(120);
+        QVERIFY(!coordinator.recent_available());
+        QVERIFY(!coordinator.hold_available());
     }
 }
 
