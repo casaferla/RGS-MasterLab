@@ -103,7 +103,7 @@ SkinZipCheck preflight_skinpack_zip(std::span<const std::byte> b) {
         const auto attributes = le32(b, p + 38);
         const auto localStart = le32(b, p + 42);
         if ((flags & ~std::uint16_t{0x0800U}) != 0 ||
-            (method != 0 && method != 8) || extraLen != 0 || commentLen != 0 ||
+            method != 0 || extraLen != 0 || commentLen != 0 ||
             diskStart != 0 || nameLen == 0 || nameLen > 512 ||
             compressed == 0xffffffffU || expanded == 0xffffffffU ||
             localStart == 0xffffffffU) return fail("unsupported_zip_features");

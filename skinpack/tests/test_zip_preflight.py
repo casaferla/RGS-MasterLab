@@ -15,7 +15,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def fixture(entries=None, compression=zipfile.ZIP_DEFLATED):
+def fixture(entries=None, compression=zipfile.ZIP_STORED):
     if entries is None:
         entries = [("manifest.json", b'{}'), ("skin.json", b'{}')]
     sink = io.BytesIO()
@@ -69,8 +69,8 @@ class ZipPreflightTest(unittest.TestCase):
     def test_stored_ok(self):
         self.check(fixture(compression=zipfile.ZIP_STORED), True)
 
-    def test_deflated_ok(self):
-        self.check(fixture(), True)
+    def test_deflated_rejected_without_zlib(self):
+        self.check(fixture(compression=zipfile.ZIP_DEFLATED))
 
     def test_real_kintsugi_package(self):
         p = os.getenv('SKINPACK_REAL_FIXTURE')
@@ -115,8 +115,8 @@ class ZipPreflightTest(unittest.TestCase):
     def test_central_fake_uncompressed_length(self):
         self.check(patch_central(fixture(),24,'<I',17*1024*1024))
 
-    def test_compression_bomb(self):
-        self.check(fixture([('manifest.json',b'{}'),('skin.json',b'{}'),('assets/textures/big.png',b'X' * (1024*1024))]))
+    def test_expanded_entry_limit(self):
+        self.check(fixture([('manifest.json',b'{}'),('skin.json',b'{}'),('assets/textures/big.png',b'X' * (17*1024*1024))]))
 
     def test_129_entries(self):
         files = [('manifest.json',b'{}'),('skin.json',b'{}')]

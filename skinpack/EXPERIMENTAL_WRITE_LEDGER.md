@@ -40,3 +40,11 @@
 - Source-first anchor guards: one match per intended edit. Inspected existing Transport geometry/handlers remain byte-identical in the QML source apart from inserted decorations.
 - This is an **UNCOMPILED experimental source wiring**. Local toolchain lacks Qt 6 SDK. Native standalone preflight passed 18/18; this does NOT qualify Qt CMake/QML integration, contrast, mouse/focus or Windows/Android GUI.
 - No PR, CI, FQ, main or M16 branch write; production integration remains NOT AUTHORIZED.
+
+## 2026-10-16 — Qt probe attempt and archive compression reconciliation
+- **Parent:** `7fb6daa7e15897830e45ba1b41268aa3b948e3fe` on exclusive SkinPack branch.
+- **Verified blocker:** host `third_party/CMakeLists.txt` sets `MZ_ZLIB OFF`; original Kintsugi R1/R2 use ZIP method 8 DEFLATE. Qt SDK absent in the local container; package-manager network/DNS unavailable. GitHub connector has no workflow_dispatch action; no production workflow invoked.
+- **Resolution (experiment only):** preflight now accepts STORE (method 0) only, aligned with minizip-ng build; old Deflate packages remain archived and are rejected by R1. Added STORE repack tool under `tools/skinpack/`; original asset bytes/asset hashes unchanged.
+- **Proof:** regenerated R1/R2 STORE fixtures tested locally with v0.1 structural validator and C++ preflight PASS; GCC C++20 compile `-Wall -Wextra -Werror -pedantic -O2` and 18/18 adversarial unit tests PASS using R2 STORE fixture.
+- **Qt complete build:** NOT EXECUTED; Windows `tools/skinpack/qt_r1_probe.ps1` script prepared for isolated Release app build and --rgsml-deploy-smoke. No GitHub Actions, PR, merge, CI/FQ performed.
+- **Critical follow-up:** Native minizip R1 loader, QML startup, Windows visual/focus controls, pointer semantics, rollback and malicious archive fuzz not yet qualified. User-facing original compressed prototype cannot be installed with current experimental host until normalized.
