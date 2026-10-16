@@ -101,14 +101,18 @@ namespace rgsml::platform::windows::internal {
         && out.slices[0].kind == WindowsConsumedSliceKind::GAP_UNPROVEN
         && out.slices[0].reason == WindowsConsumedGapReason::UNPROVEN_SRC
         && srcObservation->realizationId
+        && srcObservation->firstSourceFrame
         && srcObservation->noFutureSourcePrefixExclusive
-        && *srcObservation->noFutureSourcePrefixExclusive > 0
+        && *srcObservation->firstSourceFrame >= 0
+        && *srcObservation->noFutureSourcePrefixExclusive
+            > *srcObservation->firstSourceFrame
         && ((srcObservation->sourceRateHz == 44'100
                   && srcObservation->outputRateHz == 48'000)
             || (srcObservation->sourceRateHz == 48'000
                   && srcObservation->outputRateHz == 44'100))) {
         out.srcRetiredSourceEnd =
             srcObservation->noFutureSourcePrefixExclusive;
+        out.srcRetiredSourceBegin = srcObservation->firstSourceFrame;
         out.srcRealizationId = srcObservation->realizationId;
         out.srcInputRateHz = srcObservation->sourceRateHz;
         out.srcOutputRateHz = srcObservation->outputRateHz;
