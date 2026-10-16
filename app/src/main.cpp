@@ -45,6 +45,7 @@
 #include <QTimer>
 
 #include <cstdio>
+#include <functional>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -467,50 +468,106 @@ int main(int argc, char* argv[])
                         return;
                     }
                     std::puts("SKINPACK_R1_REAL_ART_NATIVE_IMPORT_1184_PASS");
-                    // CI's Hyper-V monitor cannot display 1440x900. Resize only
-                    // within the available desktop while keeping 1440x900 as an
-                    // explicit later physical-review gate, not a false PASS.
-                    const QRect desktop = artWindow->screen()->availableGeometry();
-                    const int expandedWidth = qMax(1184, qMin(1440, desktop.width() - 32));
-                    const int expandedHeight = qMax(688, qMin(900, desktop.height() - 64));
-                    artWindow->resize(expandedWidth, expandedHeight);
-                    QTimer::singleShot(650, &application, [&, artWindow, texture] {
-                        const QString image2 = QStringLiteral("build/skinpack-r1-probe/skinpack-art-expanded.png");
-                        const int actualWidth = artWindow->width();
-                        const int actualHeight = artWindow->height();
-                        bool passed2 = texture->isVisible() &&
-                            texture->property("status").toInt() == 1 &&
-                            actualWidth >= 1184 && actualHeight >= 688;
-                        const QImage screenshot2 = artWindow->grabWindow();
-                        passed2 = passed2 && !screenshot2.isNull() &&
-                            screenshot2.width() == actualWidth &&
-                            screenshot2.height() == actualHeight &&
-                            screenshot2.save(image2, "PNG");
-                        if (!passed2) {
-                            std::fprintf(stderr, "SKINPACK_R1_REAL_ART_SMOKE_FAIL: expanded screenshot\n");
-                            QCoreApplication::exit(EXIT_FAILURE);
-                            return;
-                        }
-                        std::fprintf(stdout,
-                            "SKINPACK_R1_REAL_ART_EXPANDED_CAPTURE_ACTUAL=%dx%d; 1440x900 PHYSICAL_REVIEW_PENDING\n",
-                            actualWidth, actualHeight);
-                        skinPackLoader.reset();
-                        {
-                            QReadLocker guard(&skinImageStore->lock);
-                            passed2 = passed2 && skinImageStore->transport.isNull();
-                        }
-                        passed2 = passed2 && !skinPackLoader.active() &&
-                            skinPackLoader.skinName() == QStringLiteral("RGS Original") &&
-                            !texture->isVisible() && skinPackLoader.revision() == 2;
-                        if (passed2)
-                            std::puts("SKINPACK_R1_REAL_ART_NATIVE_IMPORT_AND_RESET_PASS");
-                        else
-                            std::fprintf(stderr, "SKINPACK_R1_REAL_ART_SMOKE_FAIL: reset\n");
-                        QCoreApplication::exit(passed2 ? EXIT_SUCCESS : EXIT_FAILURE);
-                    });
-                });
-            });
-        }
+
+                    // Real source-open binding: do not fake an enabled button.
+                    // This synthetic WAV exists only for visual qualification;
+                    // we never invoke playOrResume or inspect audio measurements.
+                    const QString visualSource =
+                        qEnvironmentVariable("RGSML_SKINPACK_VISUAL_WAV");
+                    if (visualSource.isEmpty() || !QFileInfo::exists(visualSource)) {
+                        std::fprintf(stderr, "SKINPACK_R1_ART_LAB_FAIL: missing CI WAV\\n");
+                        QCoreApplication::exit(EXIT_FAILURE);
+                        return;
+                    }
+                    sourceSelection.selectSource(QUrl::fromLocalFile(visualSource));
+                    if (!sourceSelection.has_source() || !playbackTransport.can_play()) {
+                        std::fprintf(stderr, "SKINPACK_R1_ART_LAB_FAIL: source not playback-ready: %s\\n",
+                                     sourceSelection.error_message().toUtf8().constData());
+                        QCoreApplication::exit(EXIT_FAILURE);
+                        return;
+                    }
+                    auto* mainRoot = engine.rootObjects().first();
+                    auto* playControl = mainRoot->findChild<QObject*>(
+                        QStringLiteral("playPauseButton"));
+                    auto* stopControl = mainRoot->findChild<QObject*>(
+                        QStringLiteral("stopButton"));
+                    if (!playControl || !stopControl) {
+                        std::fprintf(stderr, "SKINPACK_R1_ART_LAB_FAIL: transport controls absent\\n");
+                        QCoreApplication::exit(EXIT_FAILURE);
+                        return;
+                    }
+
+                    // Four independent real-Qt screenshots at the supported
+                    // minimum viewport. Variant zero = actual WAV-enabled UI,
+                    // 1/2/3 = opt-in low-opacity panel / accents from the pack.
+                    const auto drive = std::make_shared<std::function<void(int)>>();
+                    *drive = [&, artWindow, texture, mainRoot, playControl,
+                              stopControl, drive](int variant) {
+                        mainRoot->setProperty("skinPackLabVariant", variant);
+                        QTimer::singleShot(480, &application,
+                            [&, artWindow, texture, mainRoot, playControl,
+                             stopControl, drive, variant] {
+                            const QStringList names{
+                                QStringLiteral("enabled"),
+                                QStringLiteral("panel"),
+                                QStringLiteral("accent01"),
+                                QStringLiteral("accent02")};
+                            bool passed = artWindow->width() == 1184 &&
+                                artWindow->height() == 688 &&
+                                texture->isVisible() && skinPackLoader.active() &&
+                                sourceSelection.has_source() && playbackTransport.can_play() &&
+                                playControl->property("enabled").toBool() &&
+                                stopControl->property("enabled").toBool();
+                            if (variant > 0) {
+                                auto* swatch = mainRoot->findChild<QObject*>(
+                                    variant == 1
+                                        ? QStringLiteral("rgsSkinRegionLabTexture")
+                                        : QStringLiteral("rgsSkinWaveformLabTexture"));
+                                passed = passed && swatch &&
+                                    swatch->property("visible").toBool() &&
+                                    swatch->property("status").toInt() == 1;
+                            }
+                            const QString filename =
+                                QStringLiteral("build/skinpack-r1-probe/skinpack-art-")
+                                + names.at(variant) + QStringLiteral(".png");
+                            const QImage shot = artWindow->grabWindow();
+                            passed = passed && !shot.isNull() &&
+                                shot.width() == 1184 && shot.height() == 688 &&
+                                shot.save(filename, "PNG");
+                            if (!passed) {
+                                std::fprintf(stderr,
+                                    "SKINPACK_R1_ART_LAB_FAIL: enabled/texture capture %d\\n",
+                                    variant);
+                                QCoreApplication::exit(EXIT_FAILURE);
+                                return;
+                            }
+                            std::fprintf(stdout, "SKINPACK_R1_ART_LAB_CAPTURE_%s_PASS\\n",
+                                         names.at(variant).toUtf8().constData());
+                            if (variant < 3) {
+                                (*drive)(variant + 1);
+                                return;
+                            }
+                            mainRoot->setProperty("skinPackLabVariant", 0);
+                            skinPackLoader.reset();
+                            {
+                                QReadLocker guard(&skinImageStore->lock);
+                                passed = passed && skinImageStore->transport.isNull()
+                                    && skinImageStore->panelSoft.isNull()
+                                    && skinImageStore->accent01.isNull()
+                                    && skinImageStore->accent02.isNull();
+                            }
+                            passed = passed && !skinPackLoader.active()
+                                && skinPackLoader.skinName() == QStringLiteral("RGS Original")
+                                && !texture->isVisible() && skinPackLoader.revision() == 2;
+                            if (passed)
+                                std::puts("SKINPACK_R1_REAL_ART_ENABLED_AND_PANEL_PREVIEWS_PASS");
+                            else
+                                std::fprintf(stderr,
+                                    "SKINPACK_R1_ART_LAB_FAIL: Original reset\\n");
+                            QCoreApplication::exit(passed ? EXIT_SUCCESS : EXIT_FAILURE);
+                        });
+                    };
+                    (*drive)(0);
     } else if (skinSmoke && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, [&] {
             bool passed = true;
