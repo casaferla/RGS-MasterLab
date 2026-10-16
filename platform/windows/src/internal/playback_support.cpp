@@ -1168,13 +1168,18 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
     result.generation = probe.generation;
     result.consumedOutputExclusive = probe.processedWatermarkExclusive;
     result.reason = probe.reason;
-    // A source sample that cannot contribute to *future* SRC output is NOT
-    // necessarily audible: this control-plane witness must never upgrade
-    // UNPROVEN_SRC, or a loop/handoff/seek gap, into M16 LIVE coverage.
+    // A source sample absent from *future* SRC output is not necessarily
+    // audible. We require one owner-stamped, actually consumed OUTPUT epoch,
+    // including after a seek; never reclassify the underlying GAP as VALID.
+    // The absolute SRC output origin was retained at queue reset/seek, NOT
+    // guessed from a GUI cursor or the current transport position.
     if (probe.reason != C2CoverageProbeReason::UNPROVEN_SRC
         || probe.processedWatermarkExclusive <= 0
-        || !rateAdapter_ || !activeRealizationId_
-        || sourceBegin_.value() != 0 || playbackStartOutputFrame_ != 0
+        || !rateAdapter_ || !activeRealizationId_ || !outputDuration_
+        || sourceBegin_.value() != 0 || playbackStartOutputFrame_ < 0
+        || playbackStartOutputFrame_ >= outputDuration_->value()
+        || probe.processedWatermarkExclusive
+            > outputDuration_->value() - playbackStartOutputFrame_
         || c2RetainedOutputBegin_ != 0
         || c2AcceptedLedgerOverflow_ || c2CoverageGenerationExhausted_
         || pendingHandoff_ || c2AcceptedContainsUnprovenHandoff_
@@ -1182,8 +1187,8 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
         || !scheduledLoopEpochs_.empty()) {
         return result;
     }
-    // Preserve the ENTIRE accepted chronology [0, sink watermark). Merely
-    // observing the device clock or a last accepted SRC block is insufficient.
+    // Preserve the ENTIRE accepted chronology [0, sink watermark) of the NEW
+    // post-seek OUTPUT epoch. Pre-seek accepted history is never reused.
     std::int64_t cursor = 0;
     for (const auto& run : c2AcceptedRuns_) {
         if (cursor == result.consumedOutputExclusive) break;
@@ -1200,9 +1205,22 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
     }
     if (cursor != result.consumedOutputExclusive) return result;
 
+    // Map the relative sink-consumed output into the absolute SRC timeline.
+    // The original FIR kernel/even-reflection oracle can now safely retire
+    // SOURCE frames from a nonzero seek origin, never from fake frame zero.
+    const auto absoluteConsumedOutput =
+        playbackStartOutputFrame_ + result.consumedOutputExclusive;
+    auto start = rateAdapter_->map_output_frame_to_input_cursor(
+        core::FrameIndex{playbackStartOutputFrame_});
     auto retired = rateAdapter_->no_future_dependency_source_prefix(
-        core::FrameIndex{result.consumedOutputExclusive});
-    if (!retired) return result;
+        core::FrameIndex{absoluteConsumedOutput});
+    if (!start || !retired
+        || start.value()->value() < 0
+        || retired.value()->value() <= start.value()->value()
+        || retired.value()->value() > rateAdapter_->input_frame_count().value()) {
+        return result;
+    }
+    result.firstSourceFrame = start.value()->value();
     result.noFutureSourcePrefixExclusive = retired.value()->value();
     result.realizationId = activeRealizationId_;
     result.sourceRateHz = rateAdapter_->input_rate().value();
