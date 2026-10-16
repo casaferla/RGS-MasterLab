@@ -1172,7 +1172,8 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
     // as if sink OUTPUT time never wrapped. Instead retain a separate
     // contiguous SRC OUTPUT_RATE traversal from the exact enqueue ledger.
     // This is a sink-clock-limited observation; the OUTPUT ledger stays GAP.
-    if (loop_ && rateAdapter_ && activeRealizationId_ && outputDuration_
+    if ((loop_ || !scheduledLoopEpochs_.empty())
+        && rateAdapter_ && activeRealizationId_ && outputDuration_
         && probe.reason == C2CoverageProbeReason::UNPROVEN_SRC
         && probe.processedWatermarkExclusive > 0
         && !pendingHandoff_ && !c2AcceptedContainsUnprovenHandoff_
@@ -1181,7 +1182,8 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
         && c2RetainedOutputBegin_ < probe.processedWatermarkExclusive) {
         const auto epoch = audible_loop_epoch(
             probe.processedWatermarkExclusive);
-        if (!epoch.loop || *epoch.loop != *loop_ || !epoch.eligible)
+        if (loop_ ? (!epoch.loop || *epoch.loop != *loop_
+                        || !epoch.eligible) : epoch.loop.has_value())
             return result;
         // Only the sink-AUDIBLE traversal is eligible: a future generated
         // loop block, the selected checkbox and the position cursor are not.
@@ -1228,8 +1230,9 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
             || srcAbsoluteAfter > outputDuration_->value()
             || epochOutputBegin >= result.consumedOutputExclusive)
             return result;
-        const auto regionOutputEnd =
-            source_to_output_frame(loop_->end().value());
+        const auto regionOutputEnd = loop_
+            ? source_to_output_frame(loop_->end().value())
+            : outputDuration_->value();
         if (srcAbsoluteAfter > regionOutputEnd)
             return result;
         auto first = rateAdapter_->map_output_frame_to_input_cursor(
@@ -1240,13 +1243,14 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
         auto retired = rateAdapter_->no_future_dependency_source_prefix(
             core::FrameIndex{srcAbsoluteAfter});
         const auto retiredSourceEnd = retired
-            ? std::min(retired.value()->value(), loop_->end().value()) : 0;
+            ? std::min(retired.value()->value(),
+                  loop_ ? loop_->end().value() : duration_->value()) : 0;
         if (!first || !retired
             || retiredSourceEnd <= first.value()->value())
             return result;
         result.consumedOutputBegin = epochOutputBegin;
         result.loopWrapCount = observedWrap;
-        result.loopTraversalProven = true;
+        result.loopTraversalProven = loop_.has_value();
         result.firstSourceFrame = first.value()->value();
         result.noFutureSourcePrefixExclusive = retiredSourceEnd;
         result.realizationId = activeRealizationId_;
