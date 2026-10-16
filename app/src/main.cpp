@@ -26,6 +26,9 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QQuickItem>
+#include <QRectF>
+#include <QVector>
 #include <QStringList>
 #include <QLibraryInfo>
 #include <QUuid>
@@ -426,6 +429,53 @@ int main(int argc, char* argv[])
                 QStringLiteral("rgsSkinTransportTexture"));
             if (texture == nullptr) fail("transport texture QML item missing");
 
+            // Compare the actual Qt Quick item bounds against the original layout.
+            // Cosmetic SkinPack R1 must not alter geometry or touch target hitboxes.
+            const QStringList geometryNames{
+                QStringLiteral("controlStrip"),
+                QStringLiteral("controlStripContent"),
+                QStringLiteral("rgsSkinTransportTexture"),
+                QStringLiteral("stopButton"),
+                QStringLiteral("playPauseButton"),
+                QStringLiteral("transportTimeModule"),
+                QStringLiteral("waveformZoomOutButton")
+            };
+            const auto captureBounds = [&]() {
+                QVector<QRectF> rects;
+                for (const QString& name : geometryNames) {
+                    auto* item = engine.rootObjects().first()->findChild<QQuickItem*>(name);
+                    if (item == nullptr) {
+                        fail("canonical transport item missing");
+                        rects.append(QRectF());
+                    } else {
+                        rects.append(QRectF(item->x(), item->y(),
+                                           item->width(), item->height()));
+                    }
+                }
+                return rects;
+            };
+            const auto baselineBounds = captureBounds();
+            if (engine.rootObjects().first()->property("minimumWidth").toInt() != 1184 ||
+                engine.rootObjects().first()->property("minimumHeight").toInt() != 688) {
+                fail("minimum window geometry changed");
+            }
+            const auto verifyBounds = [&]() {
+                QCoreApplication::processEvents();
+                const auto next = captureBounds();
+                for (qsizetype i = 0; i < next.size(); ++i) {
+                    const auto before = baselineBounds.at(i);
+                    const auto after = next.at(i);
+                    if (qAbs(before.x() - after.x()) > 0.01 ||
+                        qAbs(before.y() - after.y()) > 0.01 ||
+                        qAbs(before.width() - after.width()) > 0.01 ||
+                        qAbs(before.height() - after.height()) > 0.01) {
+                        std::fprintf(stderr, "Geometry shifted for %s\\n",
+                                     geometryNames.at(i).toUtf8().constData());
+                        fail("SkinPack changed canonical transport geometry");
+                    }
+                }
+            };
+
             if (!skinPackLoader.openFromUrl(QUrl::fromLocalFile(skinSmokePath))) {
                 fail("valid STORE fixture rejected by Qt loader");
                 std::fprintf(stderr, "loader: %s\\n",
@@ -447,6 +497,7 @@ int main(int argc, char* argv[])
             if (texture && !texture->property("visible").toBool()) {
                 fail("QML transport texture not visible after import");
             }
+            verifyBounds();
 
             const QString invalid = QFileInfo(skinSmokePath).dir().filePath(
                 QStringLiteral("r1-invalid.rgsskin"));
@@ -489,6 +540,7 @@ int main(int argc, char* argv[])
                 }
                 if (texture && !texture->property("visible").toBool())
                     fail("hostile skin hid the accepted QML surface");
+                verifyBounds();
             }
             if (passed) std::puts("SKINPACK_R1_SEVEN_NEGATIVE_ARCHIVE_CASES_PASS");
             skinPackLoader.reset();
@@ -507,6 +559,8 @@ int main(int argc, char* argv[])
             if (texture && texture->property("visible").toBool()) {
                 fail("QML transport texture still visible after reset");
             }
+            verifyBounds();
+            if (passed) std::puts("SKINPACK_R1_CANONICAL_TRANSPORT_GEOMETRY_PASS");
             if (passed) std::puts("SKINPACK_R1_NATIVE_IMPORT_ROLLBACK_RESET_SMOKE_PASS");
             QCoreApplication::exit(passed ? EXIT_SUCCESS : EXIT_FAILURE);
         });
