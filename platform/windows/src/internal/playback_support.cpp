@@ -1168,6 +1168,92 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
     result.generation = probe.generation;
     result.consumedOutputExclusive = probe.processedWatermarkExclusive;
     result.reason = probe.reason;
+    // C2D18: a looped SRC path cannot use the whole-track source prefix
+    // as if sink OUTPUT time never wrapped. Instead retain a separate
+    // contiguous SRC OUTPUT_RATE traversal from the exact enqueue ledger.
+    // This is a sink-clock-limited observation; the OUTPUT ledger stays GAP.
+    if (loop_ && rateAdapter_ && activeRealizationId_ && outputDuration_
+        && probe.reason == C2CoverageProbeReason::UNPROVEN_SRC
+        && probe.processedWatermarkExclusive > 0
+        && !pendingHandoff_ && !c2AcceptedContainsUnprovenHandoff_
+        && !c2AcceptedLedgerOverflow_ && !c2CoverageGenerationExhausted_
+        && c2RetainedOutputBegin_ >= 0
+        && c2RetainedOutputBegin_ < probe.processedWatermarkExclusive) {
+        const auto epoch = audible_loop_epoch(
+            probe.processedWatermarkExclusive);
+        if (!epoch.loop || *epoch.loop != *loop_ || !epoch.eligible)
+            return result;
+        // Only the sink-AUDIBLE traversal is eligible: a future generated
+        // loop block, the selected checkbox and the position cursor are not.
+        const auto audibleWrap = current_loop_wrap_count();
+        std::int64_t cursor = c2RetainedOutputBegin_;
+        std::int64_t srcAbsoluteFirst = -1;
+        std::int64_t srcAbsoluteAfter = -1;
+        std::int64_t epochOutputBegin = cursor;
+        std::uint64_t observedWrap = 0;
+        for (const auto& run : c2AcceptedRuns_) {
+            if (cursor == result.consumedOutputExclusive) break;
+            if (run.generation != result.generation
+                || run.outputBegin != cursor || run.outputEnd <= cursor
+                || run.realizationId != activeRealizationId_
+                || run.exactOneToOne || run.sourceBegin || run.sourceEnd
+                || run.gapReason != C2CoverageProbeReason::UNPROVEN_SRC
+                || !run.srcOutputBegin || !run.srcOutputEnd
+                || *run.srcOutputBegin < 0
+                || *run.srcOutputEnd - *run.srcOutputBegin
+                    != run.outputEnd - run.outputBegin
+                || run.loopTraversalProven || run.handoffPureNewProven)
+                return result;
+            const auto upper = std::min(
+                run.outputEnd, result.consumedOutputExclusive);
+            const auto absoluteBegin =
+                *run.srcOutputBegin + (cursor - run.outputBegin);
+            const auto absoluteAfter =
+                *run.srcOutputBegin + (upper - run.outputBegin);
+            if (srcAbsoluteAfter != absoluteBegin
+                || (srcAbsoluteFirst >= 0 && observedWrap != run.loopWrapCount)) {
+                // Never join different repetitions, policy epochs or SRC
+                // discontinuities. Discard all old FIR/RECENT/HOLD history.
+                epochOutputBegin = cursor;
+                srcAbsoluteFirst = absoluteBegin;
+            }
+            observedWrap = run.loopWrapCount;
+            srcAbsoluteAfter = absoluteAfter;
+            cursor = upper;
+        }
+        if (cursor != result.consumedOutputExclusive
+            || observedWrap != audibleWrap
+            || srcAbsoluteFirst < 0
+            || srcAbsoluteAfter <= srcAbsoluteFirst
+            || srcAbsoluteAfter > outputDuration_->value()
+            || epochOutputBegin >= result.consumedOutputExclusive)
+            return result;
+        const auto regionOutputEnd =
+            source_to_output_frame(loop_->end().value());
+        if (srcAbsoluteAfter > regionOutputEnd)
+            return result;
+        auto first = rateAdapter_->map_output_frame_to_input_cursor(
+            core::FrameIndex{srcAbsoluteFirst});
+        // Whole-track no-future FIR dependency is conservative for the
+        // remainder of this ONE SOURCE traversal. It must never combine
+        // independent wraps, even if the current source position repeats.
+        auto retired = rateAdapter_->no_future_dependency_source_prefix(
+            core::FrameIndex{srcAbsoluteAfter});
+        if (!first || !retired
+            || retired.value()->value() <= first.value()->value()
+            || retired.value()->value() > loop_->end().value())
+            return result;
+        result.consumedOutputBegin = epochOutputBegin;
+        result.loopWrapCount = observedWrap;
+        result.loopTraversalProven = true;
+        result.firstSourceFrame = first.value()->value();
+        result.noFutureSourcePrefixExclusive = retired.value()->value();
+        result.realizationId = activeRealizationId_;
+        result.sourceRateHz = rateAdapter_->input_rate().value();
+        result.outputRateHz = rateAdapter_->output_rate().value();
+        return result;
+    }
+
     // A source sample absent from *future* SRC output is not necessarily
     // audible. We require one owner-stamped, actually consumed OUTPUT epoch,
     // including after a seek; never reclassify the underlying GAP as VALID.
