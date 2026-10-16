@@ -1,0 +1,9 @@
+RGS_SKINPACK_EXPERIMENTAL_QT_R1_BUILD_REQUEST_V1
+date=2026-10-16
+reason=First isolated Qt 6.8.3 / Windows 2022 experimental build and deploy smoke after workflow installation
+workflow=.github/workflows/skinpack-experimental.yml
+installed_workflow_commit=68c7f2ade34e76a76bd7bb844426249fd1e6f998
+runner=windows-2022
+scope=skinpack-experimental-only
+permission=PO_STANDING_EXPERIMENTAL_CI_DELEGATION
+prohibited=PR,merge,main,M16,FQ,production_integration
