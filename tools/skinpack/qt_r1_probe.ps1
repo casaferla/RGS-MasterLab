@@ -38,5 +38,29 @@ if (-not $SkipStartup) {
     $validFixture = Join-Path $fixtureDir "r1-valid.rgsskin"
     & $exe ("--rgsml-skinpack-smoke=" + $validFixture)
     if ($LASTEXITCODE -ne 0) { throw "SkinPack native import/rollback/reset smoke failed." }
+
+    # Exact artwork uploaded by PO to isolated branch, never fetched from an
+    # unpinned URL or altered by fixture generation.
+    $artFile = Join-Path $PWD "skinpack\Kintsugi_Prestige_R1_ArtFamily_v0.3_STORE_UNQUALIFIED.rgsskin"
+    if (-not (Test-Path -LiteralPath $artFile)) {
+        throw "Missing real Kintsugi R1 v0.3 art archive in isolated checkout"
+    }
+    $artSize = (Get-Item -LiteralPath $artFile).Length
+    if ($artSize -ne 9394629) { throw "Art package size mismatch: $artSize" }
+    $artSha = (Get-FileHash -LiteralPath $artFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($artSha -ne "61186747376723442adaa18c3ba4d81e1939eed0475b565c49c48374bcd4b55a") {
+        throw "Art package SHA-256 mismatch: $artSha"
+    }
+    Write-Host "SKINPACK_R1_REAL_ART_ARCHIVE_EXACT_SHA256_PASS"
+    & $exe ("--rgsml-skinpack-art-smoke=" + $artFile)
+    if ($LASTEXITCODE -ne 0) { throw "Real Kintsugi R1 v0.3 Qt import/screenshot/reset smoke failed." }
+    foreach ($resolution in @("1184", "1440")) {
+        $screenshot = Join-Path $build ("skinpack-art-" + $resolution + ".png")
+        if (-not (Test-Path -LiteralPath $screenshot)) {
+            throw "Real Kintsugi art screenshot missing: $screenshot"
+        }
+        & python ./tools/skinpack/ci/emit_art_screenshot.py $screenshot $resolution
+        if ($LASTEXITCODE -ne 0) { throw "Cannot verify screenshot evidence for $resolution" }
+    }
 }
-Write-Host "EXPERIMENTAL_R1_QT_BUILD_AND_SKIN_IMPORT_SMOKE_PASS (not pixel/audio/full qualification)"
+Write-Host "EXPERIMENTAL_R1_QT_BUILD_AND_REAL_KINTSUGI_ART_SMOKE_PASS (not pixel/audio/full qualification)"
