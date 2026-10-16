@@ -913,6 +913,12 @@ c2D15SrcBindingRequiresOwnerAndConservativeConsumedProof()
         prefix.srcRealizationId = id;
         prefix.srcRetiredSourceEnd.reset();
         QVERIFY(!bind());
+        // Conservative SOURCE retirement is an exclusive, positive prefix.
+        // Neither an empty nor an inverted prefix may invent LIVE evidence.
+        prefix.srcRetiredSourceEnd = 0;
+        QVERIFY(!bind());
+        prefix.srcRetiredSourceEnd = -1;
+        QVERIFY(!bind());
         prefix.srcRetiredSourceEnd = 7'001;
         QVERIFY(!bind());
         prefix.srcRetiredSourceEnd = 5'000;
@@ -928,6 +934,11 @@ c2D15SrcBindingRequiresOwnerAndConservativeConsumedProof()
         prefix.retainedOutputBegin = 1;
         QVERIFY(!bind());
         prefix.retainedOutputBegin = 0;
+        // The output ledger must be stamped with the very generation being
+        // consumed: a stale slice cannot authorize a SOURCE prefix.
+        ++gap.generation;
+        QVERIFY(!bind());
+        --gap.generation;
         gap.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
         QVERIFY(!bind());
         gap.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
@@ -1008,21 +1019,73 @@ c2D15SrcLiveCoordinatorWaitsForPreSrc100msAndClearsOnSeek()
         QTest::qWait(110);
         QVERIFY(!coordinator.recent_available());
         QVERIFY(!coordinator.hold_available());
-        // The output clock progresses, but a recent window becomes complete
-        // only after >=100ms of canonical SOURCE_PROCESSING_RATE samples.
-        prefix.processedWatermarkExclusive = 6'000;
-        prefix.slices[0].outputEnd = 6'000;
-        prefix.srcRetiredSourceEnd = 5'100;
+        // RECENT availability is not evidence of a nonzero peak: a
+        // partially consumed 10-ms bucket must never publish its impulse.
+        // At 44.1k and 48k, the pulse at SOURCE frame 4900 belongs to
+        // [4851,5292) and [4800,5280), respectively.
+        constexpr std::int64_t pulseFrame = 4'900;
+        const auto framesPer10ms = rates.first / 100;
+        const auto firstCompletePulseBucketEnd =
+            ((pulseFrame / framesPer10ms) + 1) * framesPer10ms;
+        QCOMPARE(firstCompletePulseBucketEnd,
+                 rates.first == 44'100 ? std::int64_t{5'292}
+                                       : std::int64_t{5'280});
+        const auto advanceConsumed = [&](std::int64_t sourceEnd,
+                                         std::int64_t outputEnd) {
+            prefix.processedWatermarkExclusive = outputEnd;
+            prefix.slices[0].outputEnd = outputEnd;
+            prefix.srcRetiredSourceEnd = sourceEnd;
+        };
+        advanceConsumed(5'100, 6'000);
         QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
-        QVERIFY(coordinator.left_level() > 0.0);
+        QCOMPARE(coordinator.peak_text(), QStringLiteral("−∞ dBTP"));
+        QCOMPARE(coordinator.left_level(), 0.0);
+        QCOMPARE(coordinator.right_level(), 0.0);
         QVERIFY(!coordinator.hold_available());
-        // Seek must invalidate the worker result synchronously/at next poll;
-        // a stale owner or SOURCE-to-OUTPUT cursor must not preserve RECENT.
+
+        // Even one frame before closing the pulse bucket, the completed
+        // RECENT window remains genuine silence on both sample-rate paths.
+        advanceConsumed(firstCompletePulseBucketEnd - 1, 6'000);
+        QTest::qWait(160);
+        QVERIFY(coordinator.recent_available());
+        QCOMPARE(coordinator.left_level(), 0.0);
+        QCOMPARE(coordinator.right_level(), 0.0);
+
+        // A genuinely advanced, owner-stamped sink watermark retires the
+        // first complete pulse bucket and makes both L/R spikes measurable.
+        advanceConsumed(firstCompletePulseBucketEnd, 6'400);
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.left_level() > 0.0, 4500);
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.right_level() > 0.0, 4500);
+        QVERIFY(coordinator.recent_available());
+        QVERIFY(!coordinator.hold_available());
+
+        // A one-frame hole in the actually accepted OUTPUT chronology must
+        // invalidate the display; SOURCE retirement alone is insufficient.
+        prefix.slices[0].outputEnd = 6'399;
+        QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 3500);
+        QVERIFY(!coordinator.hold_available());
+
+        // A new seek/generation starts a fresh proof. It cannot inherit
+        // the positive result from the previous worker or bucket history.
+        ++playback.seekSerial;
+        ++prefix.generation;
+        prefix.slices[0].generation = prefix.generation;
+        advanceConsumed(5'100, 6'000);
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+        QCOMPARE(coordinator.left_level(), 0.0);
+        QCOMPARE(coordinator.right_level(), 0.0);
+
+        // Replaced SOURCE ownership and stale async completions cannot
+        // revive the old RECENT reading, even after the sink clock advances.
+        prefix.srcRealizationId = core::RealizationId{9'152};
+        coordinator.invalidate();
+        QVERIFY(!coordinator.recent_available());
+        advanceConsumed(firstCompletePulseBucketEnd, 6'400);
+        QTest::qWait(160);
+        QVERIFY(!coordinator.recent_available());
+        QVERIFY(!coordinator.hold_available());
         ++playback.seekSerial;
         prefix.srcRetiredSourceEnd.reset();
-        QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 3500);
-        prefix.srcRetiredSourceEnd = 5'100;
-        prefix.srcRealizationId = core::RealizationId{9'152};
         QTest::qWait(110);
         QVERIFY(!coordinator.recent_available());
     }
