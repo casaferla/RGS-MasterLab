@@ -23,6 +23,7 @@
 
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QLibraryInfo>
 #include <QUuid>
@@ -59,7 +60,16 @@ int main(int argc, char* argv[])
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QGuiApplication application(argc, argv);
     application.setApplicationName(QStringLiteral("RGS MasterLab"));
-    const bool deploySmoke = application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
+    const QString skinSmokePrefix = QStringLiteral("--rgsml-skinpack-smoke=");
+    QString skinSmokePath;
+    for (const QString& arg : application.arguments()) {
+        if (arg.startsWith(skinSmokePrefix)) {
+            skinSmokePath = arg.mid(skinSmokePrefix.size());
+        }
+    }
+    const bool skinSmoke = !skinSmokePath.isEmpty();
+    const bool deploySmoke = skinSmoke ||
+        application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
     if (deploySmoke) {
         qInstallMessageHandler(smokeMessageHandler);
     }
@@ -401,7 +411,70 @@ int main(int argc, char* argv[])
         Qt::QueuedConnection);
     engine.loadFromModule("Rgsml.Ui", "Main");
 
-    if (deploySmoke && !engine.rootObjects().isEmpty()) {
+    // Experimental R1 import/rollback diagnostic. Not a normal startup path.
+    // Exercise the real Qt loader and its QML transport presentation on Windows.
+    if (skinSmoke && !engine.rootObjects().isEmpty()) {
+        QTimer::singleShot(0, &application, [&] {
+            bool passed = true;
+            const auto fail = [&](const char* reason) {
+                std::fprintf(stderr, "SKINPACK_R1_IMPORT_SMOKE_FAIL: %s\\n", reason);
+                passed = false;
+            };
+            QObject* texture = engine.rootObjects().first()->findChild<QObject*>(
+                QStringLiteral("rgsSkinTransportTexture"));
+            if (texture == nullptr) fail("transport texture QML item missing");
+
+            if (!skinPackLoader.openFromUrl(QUrl::fromLocalFile(skinSmokePath))) {
+                fail("valid STORE fixture rejected by Qt loader");
+                std::fprintf(stderr, "loader: %s\\n",
+                             skinPackLoader.errorString().toUtf8().constData());
+            }
+            if (!skinPackLoader.active() ||
+                skinPackLoader.skinName() != QStringLiteral("SkinPack R1 Native Smoke") ||
+                skinPackLoader.revision() != 1 ||
+                skinPackLoader.backgroundColor() != QColor(QStringLiteral("#F5F1EB"))) {
+                fail("successful import did not publish expected surface state");
+            }
+            {
+                QReadLocker guard(&skinImageStore->lock);
+                if (skinImageStore->transport.isNull() ||
+                    skinImageStore->transport.size() != QSize(4, 4)) {
+                    fail("native PNG decode or image provider store invalid");
+                }
+            }
+            if (texture && !texture->property("visible").toBool()) {
+                fail("QML transport texture not visible after import");
+            }
+
+            const QString invalid = QFileInfo(skinSmokePath).dir().filePath(
+                QStringLiteral("r1-invalid.rgsskin"));
+            if (skinPackLoader.openFromUrl(QUrl::fromLocalFile(invalid))) {
+                fail("corrupt ZIP unexpectedly accepted");
+            }
+            if (!skinPackLoader.active() || skinPackLoader.revision() != 1 ||
+                skinPackLoader.errorString().isEmpty()) {
+                fail("bad ZIP did not preserve previously accepted skin");
+            }
+            skinPackLoader.reset();
+            if (skinPackLoader.active() ||
+                skinPackLoader.skinName() != QStringLiteral("RGS Original") ||
+                !skinPackLoader.errorString().isEmpty() ||
+                skinPackLoader.revision() != 2) {
+                fail("RGS Original reset state incorrect");
+            }
+            {
+                QReadLocker guard(&skinImageStore->lock);
+                if (!skinImageStore->transport.isNull()) {
+                    fail("reset retained the decoded texture");
+                }
+            }
+            if (texture && texture->property("visible").toBool()) {
+                fail("QML transport texture still visible after reset");
+            }
+            if (passed) std::puts("SKINPACK_R1_NATIVE_IMPORT_ROLLBACK_RESET_SMOKE_PASS");
+            QCoreApplication::exit(passed ? EXIT_SUCCESS : EXIT_FAILURE);
+        });
+    } else if (deploySmoke && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, &QCoreApplication::quit);
     }
 
