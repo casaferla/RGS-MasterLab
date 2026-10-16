@@ -1,0 +1,52 @@
+{
+  "$schema": "rgsml.skin.r2-slot-bridge/0.2-draft",
+  "status": "DESIGN_ONLY_NOT_EXECUTED",
+  "sourceHostContract": "rgsml.skin.host/0.1",
+  "targetHostContractProposal": "rgsml.skin.host/0.2-draft",
+  "principle": "Exact-key translation implemented by the host only. No wildcards or arbitrary Qt paths.",
+  "mappings": {
+    "transport.background": {
+      "context": "transport",
+      "role": "surface.toolbar"
+    },
+    "transport.button.stop": {
+      "context": "transport",
+      "role": "control.button.body"
+    },
+    "transport.button.playPause": {
+      "context": "transport",
+      "role": "control.button.primary"
+    },
+    "transport.button.zoom": {
+      "context": "transport",
+      "role": "control.button.icon"
+    },
+    "transport.slider.track": {
+      "context": "transport",
+      "role": "control.slider.track"
+    },
+    "transport.slider.thumb": {
+      "context": "transport",
+      "role": "control.slider.thumb"
+    },
+    "transport.timeDisplay": {
+      "context": "transport",
+      "role": "display.digital.body"
+    },
+    "region.timeField": {
+      "context": "transport",
+      "role": "control.field.body"
+    },
+    "region.button": {
+      "context": "transport",
+      "role": "control.button.body"
+    },
+    "region.toggle": {
+      "context": "transport",
+      "role": "control.toggle.track"
+    }
+  },
+  "collisionPolicy": "Keep legacy slots mapped to their original host targets; generic role mapping never expands scope by itself.",
+  "unknownLegacySlot": "REJECT_FOR_0_1_WHITELIST",
+  "unknownNewRole": "REJECT_FOR_0_2_DECLARED_PROFILE"
+}

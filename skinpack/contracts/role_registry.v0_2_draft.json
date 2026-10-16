@@ -1,0 +1,148 @@
+{
+  "$schema": "rgsml.skin.role-registry/0.2-draft",
+  "status": "PRELIMINARY_NON_AUTHORITATIVE",
+  "hostContractProposal": "rgsml.skin.host/0.2-draft",
+  "roleContractVersion": "0.2-draft",
+  "principle": "Host owns signal and DSP semantics, interaction, geometry, accessibility and executable behavior. A SkinPack may supply decorative presentation materials only.",
+  "contexts": [
+    "global",
+    "shell",
+    "transport",
+    "restore",
+    "master",
+    "compare",
+    "render"
+  ],
+  "roles": {
+    "surface.window": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "surface.toolbar": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "surface.panel": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "surface.panelHeader": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "surface.moduleCard": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "surface.dialog": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "surface.menu": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "control.button.body": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "control.button.primary": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "control.button.icon": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "control.slider.track": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "control.slider.thumb": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "control.field.body": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "control.toggle.track": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "control.toggle.thumb": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "control.segment.body": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "display.digital.body": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "display.digital.text": {
+      "kind": "foreground",
+      "minimumHostFallback": true
+    },
+    "graph.frame": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "graph.grid.decorative": {
+      "kind": "decoration",
+      "minimumHostFallback": true
+    },
+    "graph.legend.frame": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "meter.frame": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "meter.rail": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "meter.scale.frame": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    },
+    "badge.frame": {
+      "kind": "surface",
+      "minimumHostFallback": true
+    }
+  },
+  "forbiddenRolePrefixes": [
+    "audio.",
+    "dsp.",
+    "measurement.",
+    "signal.",
+    "semantics.",
+    "state.",
+    "interaction.",
+    "layout.",
+    "geometry.",
+    "moduleId.",
+    "editorContentKey."
+  ],
+  "hostOwnedCategories": [
+    "focus and keyboard cues",
+    "pointer hit areas",
+    "enabled and checked meaning",
+    "selection and validation errors",
+    "RAW/PREPARED/PROCESSED/GOLD identity",
+    "LIVE/RECENT/HOLD/STALE indicators",
+    "dB/dBTP/Hz/units/tick labels",
+    "true peak fills and clipping thresholds",
+    "EQ/Compressor/Stereo plots and edit handles",
+    "waveform meaning and data",
+    "typography and geometry metrics",
+    "accessibility text",
+    "audio-state timing"
+  ],
+  "requiredFallback": "RGS Original",
+  "externalExecutableContent": false
+}
