@@ -101,6 +101,7 @@ private slots:
     void c2D15SrcLiveCoordinatorOneSecondHoldRequiresCompleteConsumedHistory();
     void c2D16SrcLongGuiStallCannotInventOneSecondHold();
     void c2D17SrcSeekClearsPreviousMeterAndRebuildsNewOwnerInterval();
+    void c2D18SrcLoopRebuildsRecentAndHoldOnlyWithinConsumedTraversal();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -1454,6 +1455,136 @@ c2D17SrcSeekClearsPreviousMeterAndRebuildsNewOwnerInterval()
         QTest::qWait(140);
         QVERIFY(!coordinator.recent_available());
         QVERIFY(!coordinator.hold_available());
+    }
+}
+
+
+void TruePeakStaticBindingTest::
+c2D18SrcLoopRebuildsRecentAndHoldOnlyWithinConsumedTraversal()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    for (const auto& pair :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = pair.first;
+        const auto outputHz = pair.second;
+        auto fixture = make_render(
+            4 * sourceHz, frame_range(0, 4 * sourceHz), sourceHz,
+            audio::ChannelLayout::STEREO_LR, 0.9, sourceHz / 10);
+        QVERIFY(fixture);
+        const auto id = core::RealizationId{9'321};
+        core::PlaybackSnapshot playback{};
+        playback.state = core::PlaybackState::PLAYING;
+        playback.audibleRealization = {
+            core::AudibleHandoffPhase::NEW, id, std::nullopt};
+        playback.loop = frame_range(sourceHz, 3 * sourceHz);
+        platform::windows::WindowsConsumedOutputPrefix prefix{};
+        prefix.generation = 51;
+        prefix.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.partitionRepresented = true;
+        prefix.count = 1;
+        prefix.srcRetiredSourceBegin = sourceHz;
+        prefix.srcRetiredSourceEnd = sourceHz + sourceHz / 5;
+        prefix.srcRealizationId = id;
+        prefix.srcInputRateHz = sourceHz;
+        prefix.srcOutputRateHz = outputHz;
+        prefix.srcLoopTraversalProven = true;
+        prefix.srcLoopWrapCount = 0;
+        prefix.srcConsumedOutputBegin = 0;
+        prefix.processedWatermarkExclusive = outputHz / 5 + 512;
+        auto& first = prefix.slices[0];
+        first.generation = prefix.generation;
+        first.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+        first.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        first.outputBegin = 0;
+        first.outputEnd = prefix.processedWatermarkExclusive;
+
+        const auto bind = [&] {
+            return app::bind_processed_live_input(fixture.value()->result,
+                id, fixture.value()->expected, playback, prefix);
+        };
+        auto initial = bind();
+        QVERIFY(initial);
+        QCOMPARE(initial.value()->consumedSourceBegin, sourceHz);
+        QCOMPARE(initial.value()->loopWrapCount, std::uint64_t{0});
+        QVERIFY(!prefix.certifiedForLiveTruePeak);
+        app::TruePeakLiveCoordinator coordinator{
+            [&] {
+                return core::Result<
+                    platform::windows::WindowsConsumedOutputPrefix>::success(prefix);
+            },
+            [&] {
+                return core::Result<core::PlaybackSnapshot>::success(playback);
+            },
+            [&]() -> std::optional<app::TruePeakLiveSource> {
+                return app::TruePeakLiveSource{
+                    fixture.value()->result, id, fixture.value()->expected};
+            },
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+        QCOMPARE(coordinator.peak_text(), QStringLiteral("−∞ dBTP"));
+        QVERIFY(!coordinator.hold_available());
+
+        // A real SRC loop wraps at a new sink-consumed device OUTPUT
+        // boundary, not at the current GUI cursor. The two intervals must
+        // remain distinct even though every OUTPUT sample is GAP_UNPROVEN_SRC.
+        const auto previousEnd = prefix.processedWatermarkExclusive;
+        ++playback.loopWrapCount;
+        prefix.srcLoopWrapCount = playback.loopWrapCount;
+        prefix.srcConsumedOutputBegin = previousEnd;
+        prefix.count = 2;
+        auto& next = prefix.slices[1];
+        next.generation = prefix.generation;
+        next.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+        next.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        next.outputBegin = previousEnd;
+        prefix.processedWatermarkExclusive =
+            previousEnd + outputHz / 20 + 512;
+        next.outputEnd = prefix.processedWatermarkExclusive;
+        prefix.srcRetiredSourceBegin = sourceHz;
+        prefix.srcRetiredSourceEnd = sourceHz + sourceHz / 20;
+        QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 4500);
+        QVERIFY(!coordinator.hold_available());
+        // Old owner and pre-wrap meter peak must not be revived by the
+        // matching SOURCE coordinate on the next repetition.
+        prefix.srcRetiredSourceEnd = sourceHz + sourceHz / 5;
+        prefix.processedWatermarkExclusive =
+            previousEnd + outputHz / 5 + 512;
+        next.outputEnd = prefix.processedWatermarkExclusive;
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+        QCOMPARE(coordinator.peak_text(), QStringLiteral("−∞ dBTP"));
+        QVERIFY(!coordinator.hold_available());
+
+        for (std::int64_t tenth = 3; tenth <= 10; ++tenth) {
+            prefix.srcRetiredSourceEnd = sourceHz + tenth * sourceHz / 10;
+            prefix.processedWatermarkExclusive =
+                previousEnd + tenth * outputHz / 10 + 512;
+            next.outputEnd = prefix.processedWatermarkExclusive;
+            QTest::qWait(130);
+            QVERIFY(coordinator.recent_available());
+        }
+        // First 10-ms bucket is unproven after the new loop crossing.
+        QVERIFY(!coordinator.hold_available());
+        prefix.srcRetiredSourceEnd = sourceHz + 101 * sourceHz / 100;
+        prefix.processedWatermarkExclusive =
+            previousEnd + 101 * outputHz / 100 + 512;
+        next.outputEnd = prefix.processedWatermarkExclusive;
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.hold_available(), 4500);
+        QCOMPARE(coordinator.hold_text(), QStringLiteral("−∞ dBTP"));
+
+        // Wrong loop wrap, torn OUTPUT segment and loop-off toggle cannot
+        // claim a fresh source traversal or preserve pre-wrap HOLD.
+        ++playback.loopWrapCount;
+        QVERIFY(!bind());
+        QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 3500);
+        QVERIFY(!coordinator.hold_available());
+        --playback.loopWrapCount;
+        next.outputBegin += 1;
+        QVERIFY(!bind());
+        next.outputBegin -= 1;
+        playback.loop.reset();
+        QVERIFY(!bind());
     }
 }
 
