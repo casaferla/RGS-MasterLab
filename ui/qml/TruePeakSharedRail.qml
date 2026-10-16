@@ -86,7 +86,7 @@ Item {
         }
         Text {
             text: "RECENT requires exact sink-consumed PROCESSED ownership. "
-                + "Active/unproven SRC, loop or handoff = UNAVAILABLE. Gate G OPEN."
+                + "Unproven SRC/handoff or loop boundary = UNAVAILABLE; verified loop interior = LIVE. Gate G OPEN."
             color: "#91A8B7"
             font.family: "Segoe UI"
             font.pixelSize: 10

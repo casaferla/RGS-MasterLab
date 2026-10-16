@@ -104,6 +104,8 @@ struct C2AcceptedOutputRun final {
     std::optional<std::int64_t> sourceEnd;
     std::optional<core::RealizationId> realizationId;
     bool exactOneToOne{false};
+    bool loopTraversalProven{false};
+    std::uint64_t loopWrapCount{0};
 };
 
 struct C2CoverageProbe final {
@@ -136,6 +138,8 @@ struct C2ConsumedSlice final {
     std::optional<std::int64_t> sourceEnd;
     std::optional<core::RealizationId> realizationId;
     C2CoverageProbeReason reason{C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER};
+    bool loopTraversalProven{false};
+    std::uint64_t loopWrapCount{0};
 };
 
 struct C2ConsumedPrefix final {
@@ -289,6 +293,8 @@ private:
     std::int64_t c2PendingSourceBegin_{0};
     std::optional<core::RealizationId> c2PendingOwner_;
     bool c2PendingExactMapping_{false};
+    bool c2PendingLoopTraversalProven_{false};
+    std::uint64_t c2PendingLoopWrapCount_{0};
 };
 
 }  // namespace rgsml::platform::windows::internal

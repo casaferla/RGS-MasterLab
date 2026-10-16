@@ -1213,6 +1213,8 @@ C2ConsumedPrefix PlaybackEngine::c2_consumed_prefix(
             const auto offset = cursor - accepted.outputBegin;
             slice.sourceBegin = *accepted.sourceBegin + offset;
             slice.sourceEnd = *slice.sourceBegin + (upper - cursor);
+            slice.loopTraversalProven = accepted.loopTraversalProven;
+            slice.loopWrapCount = accepted.loopWrapCount;
         } else {
             slice.kind = C2ConsumedSliceKind::GAP_UNPROVEN;
             slice.reason = c2AcceptedContainsUnprovenHandoff_
@@ -1424,9 +1426,25 @@ core::Status PlaybackEngine::pump_once()
         && c2PendingOwner_ == pendingHandoff_->newRealizationId
         && blockAbsoluteStart.value()
             >= *pendingHandoff_->newNumericStartSourceFrame;
-    c2PendingExactMapping_ = !rateAdapter_ && !loop_
+    // A decoder block is guaranteed not to cross the loop boundary: pump
+    // limits frames to output_boundary(). Record a pure, source-mapped
+    // per-traversal candidate ONLY with exact non-SRC owner identity and a
+    // region long enough for at least a 100-ms window (FIR startup still
+    // requires its own proven history). Tiny loops remain UNPROVEN.
+    const bool loopCandidate = loop_ && loopTraversalEligible_
+        && loop_->end().value() - loop_->begin().value()
+            >= source_format().sample_rate().value() / 10;
+    c2PendingExactMapping_ = !rateAdapter_
+        && (!loop_ || loopCandidate)
         && c2PendingOwner_.has_value()
         && (!pendingHandoff_ || pureNewAfterHandoff);
+    c2PendingLoopTraversalProven_ = c2PendingExactMapping_
+        && loopCandidate;
+    const auto epoch = audible_loop_epoch(generatedOutputFrames_);
+    c2PendingLoopWrapCount_ = epoch.wrapsBefore
+        + wraps_in_loop_epoch(epoch,
+            std::max<std::int64_t>(0,
+                generatedOutputFrames_ - epoch.firstGeneratedFrame));
     generatedOutputFrames_ += frames;
     scheduledOutputFrame_ += frames;
     if (!loop_ && scheduledOutputFrame_ == outputDuration_->value()) {
@@ -1487,6 +1505,8 @@ void PlaybackEngine::c2_record_accepted_frames(
     run.outputEnd = c2AcceptedOutputFrames_;
     run.realizationId = c2PendingOwner_;
     run.exactOneToOne = c2PendingExactMapping_;
+    run.loopTraversalProven = c2PendingLoopTraversalProven_;
+    run.loopWrapCount = c2PendingLoopWrapCount_;
     if (run.exactOneToOne) {
         // The decoded block was already checked to lie inside its finite
         // source resource. Retain *generation-time* mapping, not UI cursor.
@@ -1501,7 +1521,9 @@ void PlaybackEngine::c2_record_accepted_frames(
             && previous.generation == run.generation
             && previous.outputEnd == run.outputBegin
             && previous.sourceEnd == run.sourceBegin
-            && previous.realizationId == run.realizationId) {
+            && previous.realizationId == run.realizationId
+            && previous.loopWrapCount == run.loopWrapCount
+            && previous.loopTraversalProven == run.loopTraversalProven) {
             previous.outputEnd = run.outputEnd;
             previous.sourceEnd = run.sourceEnd;
             return;
@@ -1545,6 +1567,8 @@ void PlaybackEngine::reset_queue_state(std::int64_t frame) noexcept
     c2PendingSourceBegin_ = 0;
     c2PendingOwner_.reset();
     c2PendingExactMapping_ = false;
+    c2PendingLoopTraversalProven_ = false;
+    c2PendingLoopWrapCount_ = 0;
     scheduledOutputFrame_ = source_to_output_frame(frame);
     playbackStartOutputFrame_ = scheduledOutputFrame_;
     generatedOutputFrames_ = 0;

@@ -94,6 +94,7 @@ private slots:
     void liveCoordinatorSeekReacquiresOnlyCompleteWindows();
     void liveCoordinatorResyncsConsumedSuffixAfterGuiPollingStall();
     void postLoopRecoveryBindsOnlyFreshExactConsumedSuffix();
+    void c2D14LoopTraversalMustMatchConsumedWrapAndOwner();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -600,6 +601,75 @@ void TruePeakStaticBindingTest::liveCoordinatorResyncsConsumedSuffixAfterGuiPoll
     playback.position = core::FrameIndex{122399};
     QTRY_VERIFY_WITH_TIMEOUT(live.hold_available(), 5000);
     QCOMPARE(live.peak_text(), QStringLiteral("−∞ dBTP"));
+}
+
+
+void TruePeakStaticBindingTest::c2D14LoopTraversalMustMatchConsumedWrapAndOwner()
+{
+    using platform::windows::WindowsConsumedOutputPrefix;
+    using platform::windows::WindowsConsumedSliceKind;
+    using platform::windows::WindowsConsumedGapReason;
+    auto fixture = make_render(48000, frame_range(0,48000));
+    QVERIFY(fixture);
+    auto owner = fixture.value()->result;
+    core::PlaybackSnapshot playback{};
+    playback.state = core::PlaybackState::PLAYING;
+    playback.position = core::FrameIndex{11499};
+    playback.loop = *core::FrameRange::create(
+        core::FrameIndex{4800}, core::FrameIndex{14400}).value();
+    playback.loopWrapCount = 2;
+    playback.audibleRealization = {
+        core::AudibleHandoffPhase::NEW, core::RealizationId{2301}, std::nullopt};
+    WindowsConsumedOutputPrefix prefix{};
+    prefix.generation = 51;
+    prefix.partitionRepresented = true;
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_LOOP;
+    prefix.processedWatermarkExclusive = 28000;
+    prefix.count = 3;
+    auto& first = prefix.slices[0];
+    first.generation = 51;
+    first.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    first.realizationId = core::RealizationId{2301};
+    first.loopTraversalProven = true;
+    first.loopWrapCount = 0;
+    first.sourceBegin = 0;
+    first.sourceEnd = 14400;
+    first.outputBegin = 0;
+    first.outputEnd = 14400;
+    auto& second = prefix.slices[1];
+    second = first;
+    second.loopWrapCount = 1;
+    second.outputBegin = 14400;
+    second.outputEnd = 24000;
+    second.sourceBegin = 4800;
+    second.sourceEnd = 14400;
+    auto& third = prefix.slices[2];
+    third = second;
+    third.loopWrapCount = 2;
+    third.outputBegin = 24000;
+    third.outputEnd = 28000;
+    third.sourceBegin = 4800;
+    third.sourceEnd = 8800;
+    auto bound = app::bind_processed_live_input(
+        owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix);
+    QVERIFY(bound);
+    QCOMPARE(bound.value()->consumedSourceBegin, std::int64_t{4800});
+    QCOMPARE(bound.value()->consumedSourceEnd, std::int64_t{8800});
+    playback.loopWrapCount = 3;
+    QVERIFY(!app::bind_processed_live_input(
+        owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix));
+    playback.loopWrapCount = 2;
+    third.loopTraversalProven = false; // lost provenance of final traversal
+    // A previous proven loop is not enough if current slice is unproven.
+    // No fabricated wrap identity or future source may qualify.
+    third.realizationId = core::RealizationId{9999};
+    QVERIFY(!app::bind_processed_live_input(
+        owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix));
+    third.realizationId = core::RealizationId{2301};
+    third.loopWrapCount = 2;
+    third.sourceEnd = 48001;
+    QVERIFY(!app::bind_processed_live_input(
+        owner, core::RealizationId{2301}, fixture.value()->expected, playback, prefix));
 }
 
 void TruePeakStaticBindingTest::postLoopRecoveryBindsOnlyFreshExactConsumedSuffix()

@@ -61,6 +61,7 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
     std::int64_t cursor = 0;
     bool earlierGap = false;
     bool earlierMatchingGap = false;
+    bool anyProvenLoopTraversal = false;
     for (std::size_t i = 0; i < consumed.count; ++i) {
         const auto& part = consumed.slices[i];
         if (part.generation != consumed.generation
@@ -77,12 +78,21 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
                 && part.reason == consumed.reason)
                 earlierMatchingGap = true;
         }
+        // Loop proof is a block-generation property, not a guess from the
+        // current checkbox state. Keep wrap identity for the consumed suffix.
+        anyProvenLoopTraversal |= part.kind
+                == platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            && part.loopTraversalProven;
         cursor = part.outputEnd;
     }
+    const bool loopProofPresent =
+        consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
+        && anyProvenLoopTraversal;
     if (cursor != consumed.processedWatermarkExclusive
-        || ((consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
-             || consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_HANDOFF)
-            && (!earlierGap || !earlierMatchingGap)))
+        || (consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_HANDOFF
+            && (!earlierGap || !earlierMatchingGap))
+        || (consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
+            && !loopProofPresent && (!earlierGap || !earlierMatchingGap)))
         return fail("C2D12 requires a fresh proven suffix after a loop or handoff gap.");
 
     const auto& slice = consumed.slices[consumed.count - 1U];
@@ -96,7 +106,11 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         || *slice.sourceEnd > expectedSource.frameCount.value()
         || *slice.sourceEnd - *slice.sourceBegin
             != slice.outputEnd - slice.outputBegin
-        || slice.realizationId != std::optional{expectedRealization}) {
+        || slice.realizationId != std::optional{expectedRealization}
+        || (loopProofPresent && playback.loop
+            && !slice.loopTraversalProven)
+        || (loopProofPresent
+            && slice.loopWrapCount != playback.loopWrapCount)) {
         return fail("C2D6 source mapping is discontinuous, SRC, stale or mismatched.");
     }
     const auto revision = accepted->chain_revision();

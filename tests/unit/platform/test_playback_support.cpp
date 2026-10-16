@@ -275,6 +275,8 @@ private slots:
     void c2D10LoopOffRecoversFreshSourceWithoutRestart();
     void c2D10Native44100IsNotInherentlyUnavailable();
     void c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestart();
+    void c2D14LoopInternalConsumedSourceMappingAndWrapBoundary();
+    void c2D14ShortLoopRemainsUnproven();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -2886,6 +2888,100 @@ void PlaybackSupportTest::c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestar
     QVERIFY2(sawNew, "Pure NEW post-crossfade source must recover without Stop.");
     QCOMPARE(sink->startCalls, starts);
     QCOMPARE(sink->stopCalls, stops);
+}
+
+
+void PlaybackSupportTest::c2D14LoopInternalConsumedSourceMappingAndWrapBoundary()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{2301}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{4800}, core::FrameIndex{14400}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    const auto starts = sink->startCalls;
+    const auto stops = sink->stopCalls;
+    bool sawCandidateBeforeWrap = false;
+    bool sawCandidateAfterWrap = false;
+    bool caughtWrapBoundary = false;
+    for (int i = 0; i < 100 && !sawCandidateAfterWrap; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto snap = engine.snapshot();
+        QVERIFY(snap);
+        const auto prefix = engine.c2_consumed_prefix();
+        QVERIFY(!prefix.certifiedForLiveTruePeak);
+        QVERIFY(!engine.c2_processed_coverage_probe().completeThroughWatermark);
+        if (!prefix.partitionRepresented || prefix.size == 0U)
+            continue;
+        const auto& last = prefix.slices[prefix.size - 1U];
+        if (last.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            || last.outputEnd != prefix.processedWatermarkExclusive
+            || last.loopWrapCount != snap.value()->loopWrapCount)
+            continue;
+        QVERIFY(last.loopTraversalProven);
+        QCOMPARE(last.realizationId, std::optional{core::RealizationId{2301}});
+        QVERIFY(last.sourceBegin && last.sourceEnd);
+        QCOMPARE(*last.sourceEnd - *last.sourceBegin,
+                 last.outputEnd - last.outputBegin);
+        QVERIFY(*last.sourceBegin >= 0);
+        QVERIFY(*last.sourceEnd <= 14400);
+        QCOMPARE(prefix.reason, Reason::UNPROVEN_LOOP);
+        if (last.loopWrapCount == 0) sawCandidateBeforeWrap = true;
+        if (last.loopWrapCount >= 1) {
+            sawCandidateAfterWrap = true;
+            for (std::size_t n = 1; n < prefix.size; ++n) {
+                if (prefix.slices[n].loopWrapCount
+                    != prefix.slices[n - 1U].loopWrapCount) {
+                    QVERIFY(prefix.slices[n].sourceBegin);
+                    QVERIFY(prefix.slices[n - 1U].sourceEnd);
+                    // The adjacent OUTPUT timeline may wrap Source. Such
+                    // two traversals MUST never be fused as one FIR history.
+                    QVERIFY(*prefix.slices[n].sourceBegin
+                        != *prefix.slices[n - 1U].sourceEnd);
+                    caughtWrapBoundary = true;
+                }
+            }
+        }
+    }
+    QVERIFY(sawCandidateBeforeWrap);
+    QVERIFY(sawCandidateAfterWrap);
+    QVERIFY(caughtWrapBoundary);
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+}
+
+void PlaybackSupportTest::c2D14ShortLoopRemainsUnproven()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{2302}));
+    const auto shortLoop = *core::FrameRange::create(
+        core::FrameIndex{0}, core::FrameIndex{100}).value();
+    QVERIFY(engine.set_loop(shortLoop));
+    QVERIFY(engine.play());
+    for (int i = 0; i < 10; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto prefix = engine.c2_consumed_prefix();
+        for (const auto& s : prefix.view()) {
+            QVERIFY(s.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+            QVERIFY(!s.loopTraversalProven);
+        }
+    }
+    QVERIFY(!engine.c2_processed_coverage_probe().acceptedLedgerOverflow);
 }
 
 void PlaybackSupportTest::c2D10Native44100IsNotInherentlyUnavailable()
