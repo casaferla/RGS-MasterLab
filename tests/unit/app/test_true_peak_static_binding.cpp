@@ -896,6 +896,7 @@ c2D15SrcBindingRequiresOwnerAndConservativeConsumedProof()
         gap.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
         prefix.srcRetiredSourceEnd = 5'000;
         prefix.srcRealizationId = id;
+        prefix.srcRetiredSourceBegin = 0;
         prefix.srcInputRateHz = pair.first;
         prefix.srcOutputRateHz = pair.second;
         const auto bind = [&]() {
@@ -1004,6 +1005,7 @@ c2D15SrcLiveCoordinatorWaitsForPreSrc100msAndClearsOnSeek()
         prefix.srcRetiredSourceEnd = 3'000;
         prefix.srcInputRateHz = rates.first;
         prefix.srcOutputRateHz = rates.second;
+        prefix.srcRetiredSourceBegin = 0;
         app::TruePeakLiveCoordinator coordinator{
             [&] {
                 return core::Result<
@@ -1129,6 +1131,7 @@ c2D15SrcLiveCoordinatorOneSecondHoldRequiresCompleteConsumedHistory()
         prefix.srcRealizationId = id;
         prefix.srcInputRateHz = rates.first;
         prefix.srcOutputRateHz = rates.second;
+        prefix.srcRetiredSourceBegin = 0;
         prefix.srcRetiredSourceEnd = rates.first / 20;
         prefix.processedWatermarkExclusive = rates.second / 20 + 768;
         gap.outputEnd = prefix.processedWatermarkExclusive;
@@ -1270,6 +1273,7 @@ c2D16SrcLongGuiStallCannotInventOneSecondHold()
         prefix.srcRealizationId = id;
         prefix.srcInputRateHz = sourceHz;
         prefix.srcOutputRateHz = outputHz;
+        prefix.srcRetiredSourceBegin = 0;
         const auto advance = [&](std::int64_t sourceEnd,
                                  std::int64_t outputEnd) {
             prefix.srcRetiredSourceEnd = sourceEnd;
