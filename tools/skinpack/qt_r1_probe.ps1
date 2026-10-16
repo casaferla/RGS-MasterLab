@@ -29,5 +29,14 @@ if (-not $SkipStartup) {
     if (-not (Test-Path $exe)) { throw "Staged executable missing: $exe" }
     & $exe --rgsml-deploy-smoke
     if ($LASTEXITCODE -ne 0) { throw "Qt/QML startup smoke failed." }
+    # Synthetic ZIP STORE fixture: real native minizip + Qt PNG decode, QML
+    # visibility, rejected-corrupt-ZIP rollback, and RGS Original reset.
+    # Synthetic fixture is not the real Kintsugi artwork or a pixel qualification.
+    $fixtureDir = Join-Path $build "skinpack-fixtures"
+    & python ./tools/skinpack/generate_r1_smoke_fixture.py $fixtureDir
+    if ($LASTEXITCODE -ne 0) { throw "SkinPack fixture generation failed." }
+    $validFixture = Join-Path $fixtureDir "r1-valid.rgsskin"
+    & $exe ("--rgsml-skinpack-smoke=" + $validFixture)
+    if ($LASTEXITCODE -ne 0) { throw "SkinPack native import/rollback/reset smoke failed." }
 }
-Write-Host "EXPERIMENTAL_R1_QT_BUILD_PROBE_PASS (not audio/UI qualification)"
+Write-Host "EXPERIMENTAL_R1_QT_BUILD_AND_SKIN_IMPORT_SMOKE_PASS (not pixel/audio/full qualification)"
