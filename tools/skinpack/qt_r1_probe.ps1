@@ -27,8 +27,10 @@ if (-not $SkipStartup) {
     if ($LASTEXITCODE -ne 0) { throw "Qt deploy/install failed." }
     $exe = Join-Path $stage "bin\RGSMasterLab.exe"
     if (-not (Test-Path $exe)) { throw "Staged executable missing: $exe" }
-    & $exe --rgsml-deploy-smoke
-    if ($LASTEXITCODE -ne 0) { throw "Qt/QML startup smoke failed." }
+    # Windows GUI-subsystem executables can return control to PowerShell
+    # before their GUI event loop exits. Start-Process -Wait is mandatory.
+    $deployProcess = Start-Process -FilePath $exe -ArgumentList "--rgsml-deploy-smoke" -NoNewWindow -PassThru -Wait
+    if ($deployProcess.ExitCode -ne 0) { throw "Qt/QML startup smoke failed: $($deployProcess.ExitCode)" }
     # Synthetic ZIP STORE fixture: real native minizip + Qt PNG decode, QML
     # visibility, rejected-corrupt-ZIP rollback, and RGS Original reset.
     # Synthetic fixture is not the real Kintsugi artwork or a pixel qualification.
@@ -36,8 +38,8 @@ if (-not $SkipStartup) {
     & python ./tools/skinpack/generate_r1_smoke_fixture.py $fixtureDir
     if ($LASTEXITCODE -ne 0) { throw "SkinPack fixture generation failed." }
     $validFixture = Join-Path $fixtureDir "r1-valid.rgsskin"
-    & $exe ("--rgsml-skinpack-smoke=" + $validFixture)
-    if ($LASTEXITCODE -ne 0) { throw "SkinPack native import/rollback/reset smoke failed." }
+    $syntheticProcess = Start-Process -FilePath $exe -ArgumentList ('--rgsml-skinpack-smoke="' + $validFixture + '"') -NoNewWindow -PassThru -Wait
+    if ($syntheticProcess.ExitCode -ne 0) { throw "SkinPack native import/rollback/reset smoke failed: $($syntheticProcess.ExitCode)" }
 
     # Exact artwork uploaded by PO to isolated branch, never fetched from an
     # unpinned URL or altered by fixture generation.
@@ -52,9 +54,9 @@ if (-not $SkipStartup) {
         throw "Art package SHA-256 mismatch: $artSha"
     }
     Write-Host "SKINPACK_R1_REAL_ART_ARCHIVE_EXACT_SHA256_PASS"
-    & $exe ("--rgsml-skinpack-art-smoke=" + $artFile)
-    if ($LASTEXITCODE -ne 0) { throw "Real Kintsugi R1 v0.3 Qt import/screenshot/reset smoke failed." }
-    foreach ($resolution in @("1184", "1440")) {
+    $artProcess = Start-Process -FilePath $exe -ArgumentList ('--rgsml-skinpack-art-smoke="' + $artFile + '"') -NoNewWindow -PassThru -Wait
+    if ($artProcess.ExitCode -ne 0) { throw "Real Kintsugi R1 v0.3 Qt import/screenshot/reset smoke failed: $($artProcess.ExitCode)" }
+    foreach ($resolution in @("1184", "expanded")) {
         $screenshot = Join-Path $build ("skinpack-art-" + $resolution + ".png")
         if (-not (Test-Path -LiteralPath $screenshot)) {
             throw "Real Kintsugi art screenshot missing: $screenshot"
