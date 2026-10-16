@@ -282,6 +282,7 @@ private slots:
     void c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed();
     void c2D15SrcPartialAcceptedWritesRetainOnlyDiagnosticOwner();
     void c2D16SrcRetirementTracksRealConsumedSinkClock();
+    void c2D17SrcSeekRebasesOnlyActuallyConsumedOutput();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -3401,6 +3402,105 @@ void PlaybackSupportTest::c2D16SrcRetirementTracksRealConsumedSinkClock()
         const auto restored = engine.c2_src_retirement_observation();
         QCOMPARE(restored.noFutureSourcePrefixExclusive,
                  std::optional<std::int64_t>{lastRetiredSource});
+    }
+}
+
+
+void PlaybackSupportTest::c2D17SrcSeekRebasesOnlyActuallyConsumedOutput()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using platform::windows::internal::project_c2_prefix;
+    for (const auto& pair : std::array<std::pair<std::int64_t,
+                                                std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto inputHz = pair.first;
+        const auto outputHz = pair.second;
+        auto inputRate = core::SampleRate::create(inputHz);
+        auto outputRate = core::SampleRate::create(outputHz);
+        QVERIFY(inputRate && outputRate);
+        auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(), *outputRate.value(),
+                audio::ChannelLayout::STEREO_LR, frame_count(4 * inputHz)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(inputHz,
+            audio::ChannelLayout::STEREO_LR, 4 * inputHz);
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(4'096U, 4U);
+        auto* sink = output.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'201}));
+        QVERIFY(engine.play());
+        const auto original = engine.c2_src_retirement_observation();
+        const auto firstGeneration = original.generation;
+
+        // Mid-play seek changes the real generation and OUTPUT absolute
+        // start; the first queued block is NOT yet audible/consumed.
+        const auto seekSource = inputHz + inputHz / 7;
+        QVERIFY(engine.seek(core::FrameIndex{seekSource}));
+        auto zero = engine.c2_src_retirement_observation();
+        QVERIFY(zero.generation > firstGeneration);
+        QCOMPARE(zero.consumedOutputExclusive, std::int64_t{0});
+        QVERIFY(!zero.noFutureSourcePrefixExclusive);
+        QVERIFY(!zero.firstSourceFrame);
+        QCOMPARE(engine.c2_src_retirement_observation(firstGeneration).reason,
+                 Reason::STALE_GENERATION);
+
+        std::int64_t lastRetired = 0;
+        for (int i = 0; i < 18; ++i) {
+            sink->consume_all();
+            engine.tick();
+            const auto watched = engine.c2_src_retirement_observation();
+            QCOMPARE(watched.reason, Reason::UNPROVEN_SRC);
+            QVERIFY(watched.firstSourceFrame.has_value());
+            QVERIFY(watched.noFutureSourcePrefixExclusive.has_value());
+            QVERIFY(*watched.firstSourceFrame >= seekSource);
+            QVERIFY(*watched.firstSourceFrame <= seekSource + 1);
+            QVERIFY(*watched.noFutureSourcePrefixExclusive
+                    > *watched.firstSourceFrame);
+            QVERIFY(*watched.noFutureSourcePrefixExclusive >= lastRetired);
+            QVERIFY(*watched.noFutureSourcePrefixExclusive <= 4 * inputHz);
+            lastRetired = *watched.noFutureSourcePrefixExclusive;
+            const auto projected = project_c2_prefix(
+                engine.c2_consumed_prefix(), &watched);
+            QVERIFY(projected.srcRetiredSourceBegin.has_value());
+            QCOMPARE(projected.srcRetiredSourceBegin,
+                     watched.firstSourceFrame);
+            QCOMPARE(projected.srcRetiredSourceEnd,
+                     watched.noFutureSourcePrefixExclusive);
+            QVERIFY(!projected.certifiedForLiveTruePeak);
+            QCOMPARE(projected.retainedOutputBegin, std::int64_t{0});
+            QCOMPARE(projected.slices[0].outputBegin, std::int64_t{0});
+            QVERIFY(!projected.slices[0].sourceBegin);
+        }
+        QVERIFY(lastRetired > seekSource + inputHz / 10);
+
+        // Seeking while stopped and pressing PLAY must reestablish another
+        // independent SOURCE origin; no earlier consumed peak may survive.
+        QVERIFY(engine.stop());
+        const auto nextSeek = inputHz / 2 + 11;
+        QVERIFY(engine.seek(core::FrameIndex{nextSeek}));
+        QVERIFY(engine.play());
+        sink->consume_all();
+        engine.tick();
+        const auto startedAgain = engine.c2_src_retirement_observation();
+        QVERIFY(startedAgain.firstSourceFrame.has_value());
+        QVERIFY(*startedAgain.firstSourceFrame >= nextSeek);
+        QVERIFY(*startedAgain.firstSourceFrame <= nextSeek + 1);
+        QVERIFY(startedAgain.noFutureSourcePrefixExclusive.has_value());
+        QVERIFY(*startedAgain.noFutureSourcePrefixExclusive
+                > *startedAgain.firstSourceFrame);
+        QVERIFY(startedAgain.generation > zero.generation);
+
+        // Loop configuration still invalidates this single traversal SRC
+        // observer; no cross-wrap values are ever published by this proof.
+        auto loop = core::FrameRange::create(
+            core::FrameIndex{inputHz / 2},
+            core::FrameIndex{inputHz});
+        QVERIFY(loop);
+        QVERIFY(engine.set_loop(*loop.value()));
+        QVERIFY(!engine.c2_src_retirement_observation()
+            .noFutureSourcePrefixExclusive);
     }
 }
 
