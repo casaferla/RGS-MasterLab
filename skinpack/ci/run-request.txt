@@ -1,13 +1,11 @@
-RGS_SKINPACK_EXPERIMENTAL_QT_R1_IMPORT_SMOKE_REQUEST_V3
+RGS_SKINPACK_EXPERIMENTAL_QT_R1_REJECTION_MATRIX_REQUEST_V4
 date=2026-10-16
-reason=First native STORE SkinPack package import, corrupt ZIP rejection, rollback and RGS Original reset through Qt host
+reason=Batch: native Qt validation seven hostile rgsskin cases with rollback, fallback and QML state checks
 workflow=.github/workflows/skinpack-experimental.yml
-prior_green_run_id=38960457938
-fixture_generator_commit=0d39e66981fef01445df0dae081f861532187ae3
-main_smoke_commit=71924e79701ca19ba04887b92fbdb3a5781a19e7
-windows_probe_commit=0726baca3dc60f14cff7b860e130c1314e6ea13d
-checkpoint_ledger_commit=603210d65295c7b0672bf5a7f32549b04117e324
-runner=windows-2022
+previous_green_run_id=38963165042
+fixture_commit=c71ec4013fd40553428fe19e55e31ba369af1284
+runtime_test_commit=687153b156d3b9258d2fb7d84435bea0e4bfbe15
+ledger_commit=f83775511649383877852056bccb71916ab295bb
 scope=skinpack-experimental-only
 permission=PO_STANDING_EXPERIMENTAL_CI_DELEGATION
 prohibited=PR,merge,main,M16,FQ,production_integration
