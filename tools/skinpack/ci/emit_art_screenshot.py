@@ -11,8 +11,8 @@ from pathlib import Path
 import sys
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[2] not in ("1184", "enabled", "panel", "accent01", "accent02"):
-        raise SystemExit("usage: emit_art_screenshot.py FILE 1184|enabled|panel|accent01|accent02")
+    if len(sys.argv) != 3 or sys.argv[2] not in ("1184", "source", "panel", "accent01", "accent02"):
+        raise SystemExit("usage: emit_art_screenshot.py FILE 1184|source|panel|accent01|accent02")
     path, label = Path(sys.argv[1]), sys.argv[2]
     payload = path.read_bytes()
     if not payload.startswith(b"\x89PNG\r\n\x1a\n") or len(payload) > 4_000_000:
