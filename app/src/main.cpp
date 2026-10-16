@@ -568,6 +568,9 @@ int main(int argc, char* argv[])
                         });
                     };
                     (*drive)(0);
+                });
+            });
+        }
     } else if (skinSmoke && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, [&] {
             bool passed = true;
