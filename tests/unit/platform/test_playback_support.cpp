@@ -3605,6 +3605,30 @@ void PlaybackSupportTest::c2D18SrcLoopRecoversAtEachActuallyConsumedWrap()
         QVERIFY(sawWrapped);
         QVERIFY(maxProvenWrap >= 2);
         QVERIFY(earliestAfterWrap > 0);
+
+        // Switching Loop Region OFF must preserve already queued PCM, and
+        // recover once a wholly consumed non-loop SRC traversal becomes
+        // audible. Until that boundary, even a true sink clock is not proof.
+        QVERIFY(engine.set_loop(std::nullopt));
+        QVERIFY(!engine.c2_src_retirement_observation()
+                    .noFutureSourcePrefixExclusive);
+        bool recoveredAfterOff = false;
+        for (int i = 0; i < 45; ++i) {
+            sink->consume_all();
+            engine.tick();
+            const auto off = engine.c2_src_retirement_observation();
+            if (off.noFutureSourcePrefixExclusive
+                && !off.loopTraversalProven) {
+                const auto projected = project_c2_prefix(
+                    engine.c2_consumed_prefix(), &off);
+                QVERIFY(projected.srcRetiredSourceEnd.has_value());
+                QVERIFY(!projected.srcLoopTraversalProven);
+                QCOMPARE(projected.srcLoopWrapCount, off.loopWrapCount);
+                recoveredAfterOff = true;
+                break;
+            }
+        }
+        QVERIFY(recoveredAfterOff);
         // The output watermark and owner cannot masquerade as another
         // consumed generation, even if its loop region was unchanged.
         QCOMPARE(engine.c2_src_retirement_observation(firstGeneration + 1)
