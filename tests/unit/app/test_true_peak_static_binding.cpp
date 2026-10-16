@@ -98,6 +98,7 @@ private slots:
     void c2D14LiveCoordinatorResetsOneSecondHoldAcrossWrap();
     void c2D15SrcBindingRequiresOwnerAndConservativeConsumedProof();
     void c2D15SrcLiveCoordinatorWaitsForPreSrc100msAndClearsOnSeek();
+    void c2D15SrcLiveCoordinatorOneSecondHoldRequiresCompleteConsumedHistory();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -1086,6 +1087,145 @@ c2D15SrcLiveCoordinatorWaitsForPreSrc100msAndClearsOnSeek()
         QVERIFY(!coordinator.hold_available());
         ++playback.seekSerial;
         prefix.srcRetiredSourceEnd.reset();
+        QTest::qWait(110);
+        QVERIFY(!coordinator.recent_available());
+    }
+}
+
+
+void TruePeakStaticBindingTest::
+c2D15SrcLiveCoordinatorOneSecondHoldRequiresCompleteConsumedHistory()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    // Both SRC directions retain the canonical SOURCE_PROCESSING_RATE meter
+    // timeline. An OUTPUT watermark alone is not proof of a SOURCE window.
+    for (const auto& rates :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto pulseFrame = rates.first / 5 + 20;
+        auto fixture = make_render(
+            2 * rates.first, frame_range(0, 2 * rates.first),
+            rates.first, audio::ChannelLayout::STEREO_LR,
+            0.82, pulseFrame);
+        QVERIFY(fixture);
+        const auto owner = fixture.value()->result;
+        const auto id = core::RealizationId{9'171};
+        core::PlaybackSnapshot playback{};
+        playback.state = core::PlaybackState::PLAYING;
+        playback.audibleRealization = {
+            core::AudibleHandoffPhase::NEW, id, std::nullopt};
+        platform::windows::WindowsConsumedOutputPrefix prefix{};
+        prefix.generation = 71;
+        prefix.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.partitionRepresented = true;
+        prefix.count = 1;
+        auto& gap = prefix.slices[0];
+        gap.generation = prefix.generation;
+        gap.outputBegin = 0;
+        gap.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+        gap.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.srcRealizationId = id;
+        prefix.srcInputRateHz = rates.first;
+        prefix.srcOutputRateHz = rates.second;
+        prefix.srcRetiredSourceEnd = rates.first / 20;
+        prefix.processedWatermarkExclusive = rates.second / 20 + 768;
+        gap.outputEnd = prefix.processedWatermarkExclusive;
+        app::TruePeakLiveCoordinator coordinator{
+            [&] {
+                return core::Result<
+                    platform::windows::WindowsConsumedOutputPrefix>::success(prefix);
+            },
+            [&] {
+                return core::Result<core::PlaybackSnapshot>::success(playback);
+            },
+            [&]() -> std::optional<app::TruePeakLiveSource> {
+                return app::TruePeakLiveSource{
+                    owner, id, fixture.value()->expected};
+            },
+        };
+        const auto consumed = [&](std::int64_t sourceEnd,
+                                  std::int64_t outputEnd) {
+            prefix.srcRetiredSourceEnd = sourceEnd;
+            prefix.processedWatermarkExclusive = outputEnd;
+            gap.outputEnd = outputEnd;
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.monitoring_attempted(), 3500);
+        QVERIFY(!coordinator.hold_available());
+
+        // Advance through genuine, ordered 100-ms SOURCE retirements, never
+        // skipping more than the worker's 500-ms bounded suffix. The OUTPUT
+        // witness is independently monotone and ahead of the SOURCE frontier
+        // to allow for FIR lookahead; neither value is a DAC measurement.
+        for (std::int64_t tenth = 1; tenth <= 9; ++tenth) {
+            consumed(tenth * rates.first / 10,
+                     tenth * rates.second / 10 + 768);
+            QTest::qWait(135);
+            if (tenth >= 2)
+                QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+            QVERIFY(!coordinator.hold_available());
+        }
+        // A one-frame-short SOURCE proof must not invent a 1-second HOLD.
+        consumed(rates.first - 1, rates.second + 768);
+        QTest::qWait(160);
+        QVERIFY(coordinator.recent_available());
+        QVERIFY(!coordinator.hold_available());
+
+        // Precisely 100 complete 10-ms SOURCE buckets now permit HOLD.
+        // The impulse at 0.2 s is outside the latest RECENT 100 ms but is
+        // still inside the actual 1-second consumed history.
+        consumed(rates.first, rates.second + 768);
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.hold_available(), 5000);
+        QCOMPARE(coordinator.peak_text(), QStringLiteral("−∞ dBTP"));
+        QVERIFY(coordinator.hold_text() != QStringLiteral("−∞ dBTP"));
+        QVERIFY(coordinator.left_hold_level() > 0.0);
+        QVERIFY(coordinator.right_hold_level() > 0.0);
+        QCOMPARE(coordinator.left_level(), 0.0);
+        QCOMPARE(coordinator.right_level(), 0.0);
+
+        // A further 300 ms of continuous same-owner SOURCE consumption
+        // expires the old impulse from the rolling HOLD while retaining a
+        // genuinely complete, now silent, 1-second window.
+        consumed(13 * rates.first / 10,
+                 13 * rates.second / 10 + 768);
+        QTRY_COMPARE_WITH_TIMEOUT(
+            coordinator.hold_text(), QStringLiteral("−∞ dBTP"), 6000);
+        QVERIFY(coordinator.hold_available());
+        QVERIFY(coordinator.recent_available());
+
+        // Even with SOURCE retirement still present, one missing OUTPUT
+        // frame defeats the consumed-chronology proof synchronously at poll.
+        gap.outputEnd = prefix.processedWatermarkExclusive - 1;
+        QTRY_VERIFY_WITH_TIMEOUT(!coordinator.hold_available(), 4500);
+        QVERIFY(!coordinator.recent_available());
+        gap.outputEnd = prefix.processedWatermarkExclusive;
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+        QVERIFY(!coordinator.hold_available()); // no inherited 1-s history
+
+        // PAUSE freezes only an already matching reading. A paused SEEK
+        // must invalidate it before a new worker may publish anything.
+        playback.state = core::PlaybackState::PAUSED;
+        QTest::qWait(140);
+        QVERIFY(coordinator.recent_available());
+        ++playback.seekSerial;
+        QTRY_VERIFY_WITH_TIMEOUT(!coordinator.recent_available(), 3500);
+        QVERIFY(!coordinator.hold_available());
+
+        playback.state = core::PlaybackState::PLAYING;
+        ++prefix.generation;
+        gap.generation = prefix.generation;
+        consumed(rates.first / 5, rates.second / 5 + 768);
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+        QCOMPARE(coordinator.peak_text(), QStringLiteral("−∞ dBTP"));
+        QVERIFY(!coordinator.hold_available());
+
+        // A stale/unmatched source owner cannot revive either observation.
+        prefix.srcRealizationId = core::RealizationId{9'172};
+        coordinator.invalidate();
+        QTest::qWait(150);
+        QVERIFY(!coordinator.recent_available());
+        QVERIFY(!coordinator.hold_available());
+        playback.state = core::PlaybackState::STOPPED;
         QTest::qWait(110);
         QVERIFY(!coordinator.recent_available());
     }
