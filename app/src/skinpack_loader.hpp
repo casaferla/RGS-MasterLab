@@ -14,6 +14,10 @@ namespace rgsml::app {
 struct SkinImageStore final {
     mutable QReadWriteLock lock;
     QImage transport;
+    // Experimental art-family swatches; absent for regular/synthetic R1 packs.
+    QImage panelSoft;
+    QImage accent01;
+    QImage accent02;
 };
 
 class SkinImageProvider final : public QQuickImageProvider {
