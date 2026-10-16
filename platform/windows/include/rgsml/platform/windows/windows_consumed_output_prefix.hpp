@@ -62,6 +62,9 @@ struct WindowsConsumedOutputPrefix final {
     // this owner to immutable PROCESSED before any LIVE True Peak work.
     // Never derive it from the OUTPUT-to-SOURCE UI cursor.
     std::optional<std::int64_t> srcRetiredSourceEnd;
+    // Explicit SOURCE origin of the same sink-consumed SRC epoch. A seek
+    // cannot borrow pre-seek samples or invent complete temporal buckets.
+    std::optional<std::int64_t> srcRetiredSourceBegin;
     std::optional<core::RealizationId> srcRealizationId;
     std::int64_t srcInputRateHz{0};
     std::int64_t srcOutputRateHz{0};
