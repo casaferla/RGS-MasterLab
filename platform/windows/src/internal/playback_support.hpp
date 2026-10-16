@@ -102,6 +102,10 @@ struct C2AcceptedOutputRun final {
     std::int64_t outputEnd{0};
     std::optional<std::int64_t> sourceBegin;
     std::optional<std::int64_t> sourceEnd;
+    // Generation-stamped SOURCE-independent absolute SRC OUTPUT interval.
+    // Never interpreted as 1:1 source coverage or a live True Peak value.
+    std::optional<std::int64_t> srcOutputBegin;
+    std::optional<std::int64_t> srcOutputEnd;
     std::optional<core::RealizationId> realizationId;
     bool exactOneToOne{false};
     bool loopTraversalProven{false};
@@ -134,6 +138,11 @@ struct C2SrcRetirementObservation final {
     // Absolute SOURCE origin of the NEW consumed seek epoch, never inferred
     // from the current GUI cursor or sink watermark.
     std::optional<std::int64_t> firstSourceFrame;
+    // New source traversal begins at this actually consumed OUTPUT frame;
+    // explicit loop identity never derives from a GUI loop checkbox alone.
+    std::int64_t consumedOutputBegin{0};
+    std::uint64_t loopWrapCount{0};
+    bool loopTraversalProven{false};
     std::optional<core::RealizationId> realizationId;
     std::int64_t sourceRateHz{0};
     std::int64_t outputRateHz{0};
