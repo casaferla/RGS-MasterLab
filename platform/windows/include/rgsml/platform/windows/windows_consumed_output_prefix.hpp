@@ -65,6 +65,10 @@ struct WindowsConsumedOutputPrefix final {
     // Explicit SOURCE origin of the same sink-consumed SRC epoch. A seek
     // cannot borrow pre-seek samples or invent complete temporal buckets.
     std::optional<std::int64_t> srcRetiredSourceBegin;
+    // Fresh device-consumed loop traversal, retained separately from GAPs.
+    std::int64_t srcConsumedOutputBegin{0};
+    std::uint64_t srcLoopWrapCount{0};
+    bool srcLoopTraversalProven{false};
     std::optional<core::RealizationId> srcRealizationId;
     std::int64_t srcInputRateHz{0};
     std::int64_t srcOutputRateHz{0};
