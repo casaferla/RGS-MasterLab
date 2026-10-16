@@ -480,12 +480,29 @@ int main(int argc, char* argv[])
                         return;
                     }
                     sourceSelection.selectSource(QUrl::fromLocalFile(visualSource));
-                    if (!sourceSelection.has_source() || !playbackTransport.can_play()) {
-                        std::fprintf(stderr, "SKINPACK_R1_ART_LAB_FAIL: source not playback-ready: %s\\n",
+                    if (!sourceSelection.has_source()) {
+                        std::fprintf(stderr, "SKINPACK_R1_ART_LAB_FAIL: fixture WAV was not accepted: %s\\n",
                                      sourceSelection.error_message().toUtf8().constData());
                         QCoreApplication::exit(EXIT_FAILURE);
                         return;
                     }
+                    // Playback needs a READY PREPARED realization and a real
+                    // audio output. Hosted Actions Windows can be headless.
+                    // Never force a QML enabled flag to obtain a false PASS.
+                    const bool realPlayEnabled = playbackTransport.can_play();
+                    std::fprintf(stdout,
+                        "SKINPACK_R1_ART_LAB_SOURCE_WAV_ACCEPTED; "
+                        "transport=%s; outputAvailable=%d; canPlay=%d; "
+                        "audition=%s; playbackError=%s\\n",
+                        playbackTransport.state_label().toUtf8().constData(),
+                        playbackTransport.playback_available() ? 1 : 0,
+                        realPlayEnabled ? 1 : 0,
+                        auditionSelector.status_text().toUtf8().constData(),
+                        playbackTransport.error_message().toUtf8().constData());
+                    if (realPlayEnabled)
+                        std::puts("SKINPACK_R1_ART_ENABLED_TRANSPORT_REAL_STATE_PASS");
+                    else
+                        std::puts("SKINPACK_R1_ART_ENABLED_TRANSPORT_HOLD_NO_READY_OUTPUT");
                     auto* mainRoot = engine.rootObjects().first();
                     auto* playControl = mainRoot->findChild<QObject*>(
                         QStringLiteral("playPauseButton"));
@@ -508,16 +525,19 @@ int main(int argc, char* argv[])
                             [&, artWindow, texture, mainRoot, playControl,
                              stopControl, drive, variant] {
                             const QStringList names{
-                                QStringLiteral("enabled"),
+                                QStringLiteral("source"),
                                 QStringLiteral("panel"),
                                 QStringLiteral("accent01"),
                                 QStringLiteral("accent02")};
                             bool passed = artWindow->width() == 1184 &&
                                 artWindow->height() == 688 &&
                                 texture->isVisible() && skinPackLoader.active() &&
-                                sourceSelection.has_source() && playbackTransport.can_play() &&
-                                playControl->property("enabled").toBool() &&
-                                stopControl->property("enabled").toBool();
+                                sourceSelection.has_source() &&
+                                playControl->property("enabled").toBool() ==
+                                    (playbackTransport.can_play() ||
+                                     playbackTransport.can_pause()) &&
+                                stopControl->property("enabled").toBool() ==
+                                    playbackTransport.can_stop();
                             if (variant > 0) {
                                 auto* swatch = mainRoot->findChild<QObject*>(
                                     variant == 1
@@ -560,7 +580,7 @@ int main(int argc, char* argv[])
                                 && skinPackLoader.skinName() == QStringLiteral("RGS Original")
                                 && !texture->isVisible() && skinPackLoader.revision() == 2;
                             if (passed)
-                                std::puts("SKINPACK_R1_REAL_ART_ENABLED_AND_PANEL_PREVIEWS_PASS");
+                                std::puts("SKINPACK_R1_REAL_ART_SOURCE_AND_PANEL_PREVIEWS_PASS");
                             else
                                 std::fprintf(stderr,
                                     "SKINPACK_R1_ART_LAB_FAIL: Original reset\\n");
