@@ -1424,6 +1424,16 @@ c2D17SrcSeekClearsPreviousMeterAndRebuildsNewOwnerInterval()
             QTest::qWait(135);
             QVERIFY(coordinator.recent_available());
         }
+        // The first 10-ms bucket after a nonzero seek lacks the eleven
+        // preceding pre-seek FIR taps and is deliberately UNPROVEN. At
+        // exactly one second of post-seek consumption, that incomplete
+        // bucket is still within HOLD's 100-bucket history: no HOLD yet.
+        QVERIFY(!coordinator.hold_available());
+        // One more complete 10-ms SOURCE bucket evicts the unproven first
+        // bucket; now (and not earlier) 100 genuinely complete buckets
+        // support the first post-seek HOLD.
+        setWindow(seekSource, seekSource + 101 * sourceHz / 100,
+                  101 * outputHz / 100 + 512);
         QTRY_VERIFY_WITH_TIMEOUT(coordinator.hold_available(), 5000);
         QCOMPARE(coordinator.hold_text(), QStringLiteral("−∞ dBTP"));
 
