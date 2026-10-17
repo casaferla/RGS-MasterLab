@@ -4,9 +4,14 @@
 #include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/core/error.hpp>
+#include <rgsml/core/sha256.hpp>
+#include <rgsml/dsp/true_peak_limiter_module.hpp>
 #include <rgsml/core/result.hpp>
 
 #include <bit>
+#include <array>
+#include <cstdint>
+#include <utility>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -14,6 +19,93 @@
 #include <string>
 
 namespace rgsml::tests::m17_verifier {
+
+// Pure test-harness envelope: the production DspProcessSpec has no
+// immutable whole-resource owner, PCM identity or chain revision.
+struct BoundCoreCheckpoint final {
+    dsp::DspRuntimeCheckpoint checkpoint;
+    std::string owner_resource_id;
+    std::string full_pcm_sha256;
+    std::int64_t programme_origin{0};
+    std::int64_t programme_frames{0};
+    audio::AudioFormat resource_format;
+    audio::FrameDomainId resource_domain{audio::FrameDomainId::OUTPUT_RATE};
+    std::uint64_t chain_revision{0};
+    std::string backend_identity;
+};
+
+[[nodiscard]] inline core::Result<std::string> full_pcm_digest(
+    const audio::AudioBuffer& resource)
+{
+    core::Sha256 sha;
+    const auto view=resource.view();
+    if(view.frame_count().value()<=0)
+        return core::Result<std::string>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,"Empty full resource."});
+    for(std::size_t ch=0;ch<view.format().channel_count();++ch) {
+        const auto samples=view.channel(ch);
+        if(!samples)return core::Result<std::string>::failure(*samples.error());
+        for(const double value:*samples.value()) {
+            if(!std::isfinite(value))
+                return core::Result<std::string>::failure(core::Error{
+                    core::ErrorCode::InvalidAudioSample,"Nonfinite full resource PCM."});
+            const auto bits=std::bit_cast<std::uint64_t>(value);
+            std::array<std::byte,8> le{};
+            for(unsigned j=0;j<8;++j)
+                le[j]=static_cast<std::byte>((bits>>(8*j))&0xffU);
+            sha.update(le);
+        }
+    }
+    return core::Result<std::string>::success(core::sha256_hex(sha.finalize()));
+}
+
+[[nodiscard]] inline core::Result<BoundCoreCheckpoint> bind_core_checkpoint(
+    const dsp::DspRuntimeCheckpoint& cp,std::string owner_resource_id,
+    const audio::AudioBuffer& full_programme,std::uint64_t chain_revision)
+{
+    const auto view=full_programme.view();
+    const auto start=view.absolute_range().begin().value();
+    const auto frames=view.frame_count().value();
+    if(owner_resource_id.empty() || frames<=0
+        ||view.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+        ||cp.audio_format!=view.format()
+        ||cp.frame_domain_id!=audio::FrameDomainId::OUTPUT_RATE
+        ||(cp.next_input_frame &&
+            (cp.next_input_frame->value()<start
+            ||cp.next_input_frame->value()-start>frames)))
+        return core::Result<BoundCoreCheckpoint>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,"Invalid full-resource checkpoint binding."});
+    const auto sha=full_pcm_digest(full_programme);
+    if(!sha)return core::Result<BoundCoreCheckpoint>::failure(*sha.error());
+    return core::Result<BoundCoreCheckpoint>::success(BoundCoreCheckpoint{
+        cp,std::move(owner_resource_id),*sha.value(),start,frames,
+        view.format(),view.timebase().frame_domain_id(),chain_revision,
+        cp.backend_identity});
+}
+
+[[nodiscard]] inline core::Status restore_bound_checkpoint(
+    dsp::TruePeakLimiterModule& module,const BoundCoreCheckpoint& bound,
+    const std::string& claimed_resource_id,const audio::AudioBuffer& full_programme,
+    std::uint64_t claimed_revision)
+{
+    const auto view=full_programme.view();
+    if(claimed_resource_id!=bound.owner_resource_id
+        ||claimed_revision!=bound.chain_revision
+        ||view.absolute_range().begin().value()!=bound.programme_origin
+        ||view.frame_count().value()!=bound.programme_frames
+        ||view.format()!=bound.resource_format
+        ||view.timebase().frame_domain_id()!=bound.resource_domain
+        ||bound.checkpoint.audio_format!=bound.resource_format
+        ||bound.checkpoint.frame_domain_id!=bound.resource_domain
+        ||bound.checkpoint.backend_identity!=bound.backend_identity)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidArgument,"INCOMPATIBLE_BOUND_CORE_RESOURCE"});
+    const auto sha=full_pcm_digest(full_programme);
+    if(!sha || *sha.value()!=bound.full_pcm_sha256)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidArgument,"INCOMPATIBLE_BOUND_CORE_RESOURCE"});
+    return module.restore_runtime_checkpoint(bound.checkpoint);
+}
 
 inline constexpr double kMinimumGlobalTrimGain=0x1.fa23a197d2819p-1;
 

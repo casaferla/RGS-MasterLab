@@ -773,7 +773,8 @@ foreach(m17_test IN ITEMS parameters core checkpoint verification)
     )
     # M16 is referenced strictly from the TEST-ONLY verification executable,
     # not as a reverse dependency of the M17 production DSP library.
-    if(m17_test STREQUAL "verification")
+    if(m17_test STREQUAL "verification" OR m17_test STREQUAL "checkpoint")
+        # M16/whole-resource binding stays test-only, never linked by DSP.
         target_link_libraries("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
             PRIVATE rgsml_analysis)
     endif()

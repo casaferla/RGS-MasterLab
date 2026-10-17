@@ -3,6 +3,7 @@
 #include <rgsml/dsp/module_descriptor.hpp>
 #include <rgsml/dsp/true_peak_limiter_module.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
+#include "../../oracles/true_peak_limiter/core_test_support.hpp"
 
 #include <QtTest/QTest>
 
@@ -14,6 +15,9 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <span>
+#include <string>
+#include <limits>
 #include <vector>
 
 namespace rgsml::tests {
@@ -94,6 +98,15 @@ using namespace rgsml::dsp;
             (*r.value())[static_cast<std::size_t>(i)]});
     return raw;
 }
+struct GainWitnessCollector final {
+    std::vector<TruePeakLimiterAppliedGainFrame> frames;
+    static void collect(void* context,
+        std::span<const TruePeakLimiterAppliedGainFrame> records) noexcept
+    {
+        auto& dst=*static_cast<GainWitnessCollector*>(context);
+        dst.frames.insert(dst.frames.end(),records.begin(),records.end());
+    }
+};
 class TruePeakLimiterCheckpointTest final : public QObject {
     Q_OBJECT
 private slots:
@@ -101,6 +114,7 @@ private slots:
     void checksumFormatBackendAndCeilingRejectAtomically();
     void finalizeBoundaryRejectsCheckpoints();
     void canonicalLengthIsU64LittleEndian();
+    void wholeResourceBoundCheckpointRejectsWrongOwnerAndDigest();
 };
 void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
 {
@@ -109,6 +123,11 @@ void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
             auto a=fresh(fs,-6.0);
             auto b=fresh(fs,-6.0);
             QVERIFY(a && b);
+            GainWitnessCollector witnessA,witnessB;
+            witnessA.frames.reserve(1131);
+            witnessB.frames.reserve(1131);
+            a->set_applied_gain_sink(&GainWitnessCollector::collect,&witnessA);
+            b->set_applied_gain_sink(&GainWitnessCollector::collect,&witnessB);
             auto initial=processBlock(*a,fs,0,at,true);
             QCOMPARE(initial.size(),static_cast<std::size_t>(at));
             auto cp=a->runtime_checkpoint();
@@ -138,6 +157,27 @@ void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
                 emitted+=k;
             }
             QCOMPARE(tailA.size(),tailB.size());
+            QCOMPARE(witnessA.frames.size(),std::size_t{1131});
+            QCOMPARE(witnessB.frames.size(),static_cast<std::size_t>(1131-at));
+            for(std::size_t i=0;i<witnessA.frames.size();++i) {
+                const auto& row=witnessA.frames[i];
+                QCOMPARE(row.programme_frame,static_cast<std::int64_t>(i));
+                QCOMPARE(row.raw_output_frame,
+                    static_cast<std::int64_t>(i)+fs/200+8);
+                QVERIFY(std::isfinite(row.reduction_db));
+                QVERIFY(row.reduction_db>=0.0);
+                QVERIFY(row.gain>0.0 && row.gain<=1.0);
+            }
+            for(std::size_t i=0;i<witnessB.frames.size();++i) {
+                const auto& resumed=witnessB.frames[i];
+                const auto& unbroken=witnessA.frames[i+static_cast<std::size_t>(at)];
+                QCOMPARE(resumed.programme_frame,unbroken.programme_frame);
+                QCOMPARE(resumed.raw_output_frame,unbroken.raw_output_frame);
+                QCOMPARE(std::bit_cast<std::uint64_t>(resumed.gain),
+                    std::bit_cast<std::uint64_t>(unbroken.gain));
+                QCOMPARE(std::bit_cast<std::uint64_t>(resumed.reduction_db),
+                    std::bit_cast<std::uint64_t>(unbroken.reduction_db));
+            }
             for(std::size_t i=0;i<tailA.size();++i)
                 for(std::size_t ch=0;ch<2;++ch)
                     QCOMPARE(std::bit_cast<std::uint64_t>(tailA[i][ch]),
@@ -193,6 +233,73 @@ void TruePeakLimiterCheckpointTest::checksumFormatBackendAndCeilingRejectAtomica
     QVERIFY(!processBlock(*bound,44100,0,17,true).empty());
     QVERIFY(!bound->restore_runtime_checkpoint(*checkpoint.value()));
 }
+void TruePeakLimiterCheckpointTest::wholeResourceBoundCheckpointRejectsWrongOwnerAndDigest()
+{
+    constexpr int fs=44100,n=1131,at=57;
+    auto full=audio::AudioBuffer::create(format(fs),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},*core::FrameCount::create(n).value());
+    QVERIFY(full);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=full.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(int i=0;i<n;++i) {
+            const double v=std::sin(double(i)*0.18)+(i%17==0?2.0:0.0);
+            (*lane.value())[static_cast<std::size_t>(i)]=ch==0?v:v*0.4;
+        }
+    }
+    auto original=fresh(fs,-6.0);
+    auto resumed=fresh(fs,-6.0);
+    QVERIFY(original && resumed);
+    QVERIFY(!processBlock(*original,fs,0,at,true).empty());
+    const auto cp=original->runtime_checkpoint();
+    QVERIFY(cp);
+    const auto envelope=m17_verifier::bind_core_checkpoint(
+        *cp.value(),"whole-wav-01",*full.value(),9);
+    QVERIFY(envelope);
+    const auto pristine=resumed->runtime_checkpoint();
+    QVERIFY(pristine);
+    const auto assertUnchanged=[&]() {
+        auto actual=resumed->runtime_checkpoint();
+        QVERIFY(actual);
+        QCOMPARE(*actual.value(),*pristine.value());
+    };
+    QVERIFY(!m17_verifier::restore_bound_checkpoint(
+        *resumed,*envelope.value(),"other-owner",*full.value(),9));
+    assertUnchanged();
+    QVERIFY(!m17_verifier::restore_bound_checkpoint(
+        *resumed,*envelope.value(),"whole-wav-01",*full.value(),10));
+    assertUnchanged();
+    auto shorter=audio::AudioBuffer::create(format(fs),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},*core::FrameCount::create(n-1).value());
+    QVERIFY(shorter);
+    QVERIFY(!m17_verifier::restore_bound_checkpoint(
+        *resumed,*envelope.value(),"whole-wav-01",*shorter.value(),9));
+    assertUnchanged();
+    auto lane=full.value()->mutable_view().channel(0);
+    QVERIFY(lane);
+    const double preserved=(*lane.value())[77];
+    (*lane.value())[77]=std::nextafter(
+        preserved,std::numeric_limits<double>::infinity());
+    QVERIFY(!m17_verifier::restore_bound_checkpoint(
+        *resumed,*envelope.value(),"whole-wav-01",*full.value(),9));
+    assertUnchanged();
+    (*lane.value())[77]=preserved;
+    auto corrupted=*envelope.value();
+    corrupted.full_pcm_sha256[0]^=1;
+    QVERIFY(!m17_verifier::restore_bound_checkpoint(
+        *resumed,corrupted,"whole-wav-01",*full.value(),9));
+    assertUnchanged();
+    QVERIFY(m17_verifier::restore_bound_checkpoint(
+        *resumed,*envelope.value(),"whole-wav-01",*full.value(),9));
+    const auto direct=processBlock(*original,fs,at,n-at,false);
+    const auto restored=processBlock(*resumed,fs,at,n-at,false);
+    QCOMPARE(direct.size(),restored.size());
+    for(std::size_t i=0;i<direct.size();++i)
+        for(std::size_t ch=0;ch<2;++ch)
+            QCOMPARE(std::bit_cast<std::uint64_t>(direct[i][ch]),
+                std::bit_cast<std::uint64_t>(restored[i][ch]));
+}
+
 void TruePeakLimiterCheckpointTest::canonicalLengthIsU64LittleEndian()
 {
     auto module=fresh(44100,-1.0);

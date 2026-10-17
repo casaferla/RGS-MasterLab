@@ -181,14 +181,15 @@ struct TruePeakLimiterModule::Impl final {
     }
     // Every tick from -62 is evaluated exactly once. Only certified complete
     // lookahead is eligible: future event history cannot be invented by seek.
-    [[nodiscard]] Result<double> gain_for_frame(std::int64_t n)
+    struct FrameGain final { double reduction_db{0.0}; double gain{1.0}; };
+    [[nodiscard]] Result<FrameGain> gain_for_frame(std::int64_t n)
     {
         const auto target=8*n;
         if (!detector_drained && coverage_tick < target+controller->lookahead_ticks()) {
-            return Result<double>::failure(fail(ErrorCode::InvalidState,
+            return Result<FrameGain>::failure(fail(ErrorCode::InvalidState,
                 "UNPROVEN_LIMITER_LOOKAHEAD", "Detector has not proved entire attack horizon."));
         }
-        double applied=1.0;
+        FrameGain applied{};
         while (controller->next_tick() <= target) {
             const auto m=controller->next_tick();
             while (search_cursor < events.size() && events[search_cursor].tick < m)
@@ -205,8 +206,8 @@ struct TruePeakLimiterModule::Impl final {
                 ? std::span<const LimiterDetectorEvent>{}
                 : std::span<const LimiterDetectorEvent>{events.data()+first,last-first};
             auto step=controller->advance(current,horizon);
-            if (!step) return Result<double>::failure(*step.error());
-            if (m==target) applied=step.value()->gain;
+            if (!step) return Result<FrameGain>::failure(*step.error());
+            if (m==target) applied={step.value()->reduction_db,step.value()->gain};
         }
         // Periodic bounded compaction; no stale former loop/seek events.
         if (search_cursor >= 4096 && search_cursor > events.size()/2) {
@@ -214,9 +215,10 @@ struct TruePeakLimiterModule::Impl final {
                 events.begin()+static_cast<std::ptrdiff_t>(search_cursor));
             search_cursor=0;
         }
-        return Result<double>::success(applied);
+        return Result<FrameGain>::success(applied);
     }
-    [[nodiscard]] Result<std::array<double,2>> emit_raw()
+    [[nodiscard]] Result<std::array<double,2>> emit_raw(
+        std::vector<TruePeakLimiterAppliedGainFrame>* witness = nullptr)
     {
         std::array<double,2> out{+0.0,+0.0};
         if (raw_emitted>=d) {
@@ -229,7 +231,11 @@ struct TruePeakLimiterModule::Impl final {
             const auto sample=pcm_delay.front();
             pcm_delay.pop_front();
             for (std::size_t ch=0;ch<spec->audio_format.channel_count();++ch)
-                out[ch]=*gain.value()==1.0 ? sample[ch] : sample[ch]*(*gain.value());
+                out[ch]=gain.value()->gain==1.0 ? sample[ch]
+                    : sample[ch]*gain.value()->gain;
+            if(witness) witness->push_back({
+                origin+n,origin+raw_emitted,
+                gain.value()->reduction_db,gain.value()->gain});
         }
         ++raw_emitted;
         return Result<std::array<double,2>>::success(out);
@@ -239,6 +245,12 @@ struct TruePeakLimiterModule::Impl final {
 TruePeakLimiterModule::TruePeakLimiterModule(std::unique_ptr<Impl> impl) noexcept
     : impl_(std::move(impl)) {}
 TruePeakLimiterModule::~TruePeakLimiterModule() = default;
+void TruePeakLimiterModule::set_applied_gain_sink(
+    TruePeakLimiterAppliedGainSink sink, void* context) noexcept
+{
+    applied_gain_sink_=sink;
+    applied_gain_sink_context_=sink ? context : nullptr;
+}
 
 Result<std::unique_ptr<TruePeakLimiterModule>>
 TruePeakLimiterModule::create(const ModuleDescriptor& descriptor,
@@ -355,6 +367,8 @@ Status TruePeakLimiterModule::process(audio::AudioBufferView input,
             candidate.bound=true;
         }
         std::array<std::vector<double>,2> staged;
+        std::vector<TruePeakLimiterAppliedGainFrame> witness;
+        if(applied_gain_sink_) witness.reserve(static_cast<std::size_t>(length));
         for (std::size_t ch=0;ch<spec.audio_format.channel_count();++ch)
             staged[ch].reserve(static_cast<std::size_t>(length));
         for (std::int64_t i=0;i<length;++i) {
@@ -369,7 +383,7 @@ Status TruePeakLimiterModule::process(audio::AudioBufferView input,
             }
             candidate.pcm_delay.push_back({left,right});
             ++candidate.frame_count;
-            auto raw=candidate.emit_raw();
+            auto raw=candidate.emit_raw(applied_gain_sink_ ? &witness : nullptr);
             if (!raw)return Status::failure(*raw.error());
             for (std::size_t ch=0;ch<spec.audio_format.channel_count();++ch)
                 staged[ch].push_back((*raw.value())[ch]);
@@ -377,6 +391,9 @@ Status TruePeakLimiterModule::process(audio::AudioBufferView input,
         *impl_=std::move(candidate);
         for (std::size_t ch=0;ch<spec.audio_format.channel_count();++ch)
             std::copy(staged[ch].begin(),staged[ch].end(),dst[ch].begin());
+        if(applied_gain_sink_ && !witness.empty())
+            applied_gain_sink_(applied_gain_sink_context_,
+                std::span<const TruePeakLimiterAppliedGainFrame>{witness});
         return Status::success();
     } catch (...) {
         return Status::failure(fail(ErrorCode::InvalidState,
@@ -424,10 +441,12 @@ Status TruePeakLimiterModule::finalize(audio::MutableAudioBufferView output,
             candidate.detector_drained=true;
         }
         std::array<std::vector<double>,2> staged;
+        std::vector<TruePeakLimiterAppliedGainFrame> witness;
+        if(applied_gain_sink_) witness.reserve(static_cast<std::size_t>(length));
         for(std::size_t ch=0;ch<candidate.spec->audio_format.channel_count();++ch)
             staged[ch].reserve(static_cast<std::size_t>(length));
         for(std::int64_t i=0;i<length;++i) {
-            auto raw=candidate.emit_raw();
+            auto raw=candidate.emit_raw(applied_gain_sink_ ? &witness : nullptr);
             if(!raw)return Status::failure(*raw.error());
             for(std::size_t ch=0;ch<candidate.spec->audio_format.channel_count();++ch)
                 staged[ch].push_back((*raw.value())[ch]);
@@ -442,6 +461,9 @@ Status TruePeakLimiterModule::finalize(audio::MutableAudioBufferView output,
         *impl_=std::move(candidate);
         for(std::size_t ch=0;ch<impl_->spec->audio_format.channel_count();++ch)
             std::copy(staged[ch].begin(),staged[ch].end(),dst[ch].begin());
+        if(applied_gain_sink_ && !witness.empty())
+            applied_gain_sink_(applied_gain_sink_context_,
+                std::span<const TruePeakLimiterAppliedGainFrame>{witness});
         return Status::success();
     } catch (...) {
         return Status::failure(fail(ErrorCode::InvalidState,
