@@ -675,9 +675,12 @@ Window {
     QCOMPARE(hold->property("valueColor"), hold->property("keyColor"));
     QCOMPARE(full->property("valueColor").value<QColor>(),
              QColor{QStringLiteral("#6CBCCF")});
-    // No LIVE provider is bound in this offscreen fixture.
+    // FIX-UI-015: with no independently consumed LIVE interval, the
+    // primary bars never fall back to future full-resource static maxima.
     QCOMPARE(leftLane->property("meterKind").toString(),
-             QStringLiteral("STATIC RESOURCE"));
+             QStringLiteral("RECENT 100 ms"));
+    QCOMPARE(rightLane->property("meterKind").toString(),
+             QStringLiteral("RECENT 100 ms"));
     QCOMPARE(full->property("reading").toString(),
              QStringLiteral("—"));
     QCOMPARE(full->property("available").toBool(), false);
@@ -870,15 +873,16 @@ Window {
     QVERIFY(!visualMeasurement.full_right_over_zero());
     QVERIFY2(visualMeasurement.full_left_meter_level()
                  > visualMeasurement.full_right_meter_level(),
-             "Genuine measured L > R must be reflected by M16 per-channel bars");
-    QVERIFY(leftLane->property("available").toBool());
+             "Real full-resource L/R peaks remain distinct and authoritative");
+    // Static processing readiness is not evidence of current listening.
+    QVERIFY(!leftLane->property("available").toBool());
+    QVERIFY(!rightLane->property("available").toBool());
     QVERIFY(!leftLane->property("aboveDigitalZero").toBool());
     QVERIFY(!rightLane->property("aboveDigitalZero").toBool());
-    QVERIFY(rightLane->property("available").toBool());
-    QCOMPARE(leftLane->property("reading").toString(),
-             visualMeasurement.full_left_text());
-    QCOMPARE(rightLane->property("reading").toString(),
-             visualMeasurement.full_right_text());
+    QCOMPARE(leftLane->property("reading").toString(), QStringLiteral("—"));
+    QCOMPARE(rightLane->property("reading").toString(), QStringLiteral("—"));
+    QCOMPARE(leftLane->property("level").toDouble(), 0.0);
+    QCOMPARE(rightLane->property("level").toDouble(), 0.0);
     QCOMPARE(full->property("reading").toString(),
              visualMeasurement.peak_text());
     QCOMPARE(recent->property("reading").toString(),
