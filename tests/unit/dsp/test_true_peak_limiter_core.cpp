@@ -40,6 +40,8 @@ private slots:
     void audioStreamingChunkPartitionAndStrictInput();
     void appliedGainWitnessReconstructsPcmAndIsNoninvasive();
     void strictFpRuntimeMode();
+    void failedCallsAreAtomicAndCannotPublishWitness();
+    void highRateChunkBoundednessAndBitIdentity();
 };
 
 void TruePeakLimiterCoreTest::frozenAssetsMatchIndependentSources()
@@ -498,6 +500,159 @@ void TruePeakLimiterCoreTest::appliedGainWitnessReconstructsPcmAndIsNoninvasive(
         }
     }
 }
+
+void TruePeakLimiterCoreTest::failedCallsAreAtomicAndCannotPublishWitness()
+{
+    constexpr int fs=44100;
+    const auto fmt=limiterFormat(fs,true);
+    auto p=dsp::TruePeakLimiterParameters::create(-12.0);
+    QVERIFY(p);
+    auto instance=dsp::TruePeakLimiterModule::create(frozenLimiterDescriptor(),
+        *p.value());
+    QVERIFY(instance);
+    auto& mod=**instance.value();
+    QVERIFY(mod.prepare(dsp::DspProcessSpec{fmt,
+        audio::FrameDomainId::OUTPUT_RATE,
+        *core::FrameCount::create(512).value()}));
+    AppliedGainTestCapture witness;
+    witness.records.reserve(128);
+    mod.set_applied_gain_sink(&AppliedGainTestCapture::accept,&witness);
+    const auto initial=mod.runtime_checkpoint();
+    QVERIFY(initial);
+
+    constexpr int n=128;
+    auto input=audio::AudioBuffer::create(fmt,audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},*core::FrameCount::create(n).value());
+    auto output=audio::AudioBuffer::create(fmt,audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},*core::FrameCount::create(n).value());
+    QVERIFY(input && output);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto in=input.value()->mutable_view().channel(ch);
+        auto out=output.value()->mutable_view().channel(ch);
+        QVERIFY(in && out);
+        for(std::size_t i=0;i<static_cast<std::size_t>(n);++i) {
+            (*in.value())[i]=i==0?4.0:0.0;
+            (*out.value())[i]=-0.0;
+        }
+    }
+    auto bad=input.value()->mutable_view().channel(1);
+    QVERIFY(bad);
+    (*bad.value())[n-1]=std::numeric_limits<double>::quiet_NaN();
+    auto block=core::FrameRange::create(core::FrameIndex{0},core::FrameIndex{n});
+    QVERIFY(block);
+    QVERIFY(!mod.process(input.value()->view(),output.value()->mutable_view(),
+        dsp::DspProcessContext{*block.value(),true,false}));
+    QCOMPARE(witness.records.size(),std::size_t{0});
+    const auto pristine=mod.runtime_checkpoint();
+    QVERIFY(pristine);
+    QCOMPARE(*pristine.value(),*initial.value());
+    for(std::size_t ch=0;ch<2;++ch) {
+        const auto plane=output.value()->view().channel(ch);
+        QVERIFY(plane);
+        for(const double v:*plane.value())
+            QCOMPARE(std::bit_cast<std::uint64_t>(v),
+                std::bit_cast<std::uint64_t>(-0.0));
+    }
+    (*bad.value())[n-1]=+0.0;
+    QVERIFY(mod.process(input.value()->view(),output.value()->mutable_view(),
+        dsp::DspProcessContext{*block.value(),true,false}));
+    const auto afterValid=mod.runtime_checkpoint();
+    QVERIFY(afterValid);
+    QCOMPARE(witness.records.size(),std::size_t{0}); // input shorter than D
+
+    auto discontinuousInput=audio::AudioBuffer::create(
+        fmt,audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{n+1},
+        *core::FrameCount::create(1).value());
+    auto discontinuousOutput=audio::AudioBuffer::create(
+        fmt,audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{n+1},
+        *core::FrameCount::create(1).value());
+    QVERIFY(discontinuousInput && discontinuousOutput);
+    auto sentinel=discontinuousOutput.value()->mutable_view().channel(0);
+    QVERIFY(sentinel);
+    (*sentinel.value())[0]=-0.0;
+    auto wrongRange=core::FrameRange::create(
+        core::FrameIndex{n+1},core::FrameIndex{n+2});
+    QVERIFY(wrongRange);
+    QVERIFY(!mod.process(discontinuousInput.value()->view(),
+        discontinuousOutput.value()->mutable_view(),
+        dsp::DspProcessContext{*wrongRange.value(),false,false}));
+    QCOMPARE(std::bit_cast<std::uint64_t>(
+        (*discontinuousOutput.value()->view().channel(0).value())[0]),
+        std::bit_cast<std::uint64_t>(-0.0));
+    const auto stillValid=mod.runtime_checkpoint();
+    QVERIFY(stillValid);
+    QCOMPARE(*stillValid.value(),*afterValid.value());
+
+    // An early claimed EOS must fail before any partial drain/witness.
+    constexpr int premature=7;
+    auto drained=audio::AudioBuffer::create(fmt,audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{n},*core::FrameCount::create(premature).value());
+    QVERIFY(drained);
+    auto drainRange=core::FrameRange::create(
+        core::FrameIndex{n},core::FrameIndex{n+premature});
+    QVERIFY(drainRange);
+    QVERIFY(!mod.finalize(drained.value()->mutable_view(),
+        dsp::DspProcessContext{*drainRange.value(),false,true}));
+    QCOMPARE(witness.records.size(),std::size_t{0});
+    const auto afterInvalidEos=mod.runtime_checkpoint();
+    QVERIFY(afterInvalidEos);
+    QCOMPARE(*afterInvalidEos.value(),*afterValid.value());
+}
+
+void TruePeakLimiterCoreTest::highRateChunkBoundednessAndBitIdentity()
+{
+    constexpr int fs=192000;
+    std::vector<double> input(2049,+0.0);
+    input[0]=+4.0;
+    input[120]=-1.0;
+    input[1024]=+2.5;
+    input[2048]=-0.5;
+    const auto single=runLimiterAudio(fs,true,input,-12.0,{4096});
+    const auto chunked=runLimiterAudio(fs,true,input,-12.0,{73,127,301,19});
+    QVERIFY(!single.empty() && !chunked.empty());
+    QCOMPARE(single.size(),std::size_t{2});
+    QCOMPARE(single.size(),chunked.size());
+    for(std::size_t ch=0;ch<single.size();++ch) {
+        QCOMPARE(single[ch].size(),input.size());
+        QCOMPARE(chunked[ch].size(),input.size());
+        for(std::size_t i=0;i<input.size();++i) {
+            QCOMPARE(std::bit_cast<std::uint64_t>(single[ch][i]),
+                std::bit_cast<std::uint64_t>(chunked[ch][i]));
+            QVERIFY(std::isfinite(single[ch][i]));
+        }
+    }
+    // A streaming checkpoint must remain safely below the canonical 32 MiB
+    // serialization resource bound even at the maximum supported Fs.
+    auto param=dsp::TruePeakLimiterParameters::create(-12.0);
+    auto module=dsp::TruePeakLimiterModule::create(
+        frozenLimiterDescriptor(),*param.value());
+    QVERIFY(module);
+    const auto fmt=limiterFormat(fs,true);
+    QVERIFY(module.value()->get()->prepare(dsp::DspProcessSpec{
+        fmt,audio::FrameDomainId::OUTPUT_RATE,
+        *core::FrameCount::create(4096).value()}));
+    auto source=audio::AudioBuffer::create(fmt,audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},*core::FrameCount::create(1024).value());
+    auto dest=audio::AudioBuffer::create(fmt,audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},*core::FrameCount::create(1024).value());
+    QVERIFY(source && dest);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=source.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        (*lane.value())[0]=ch==0?4.0:-1.5;
+    }
+    auto extent=core::FrameRange::create(
+        core::FrameIndex{0},core::FrameIndex{1024});
+    QVERIFY(extent);
+    QVERIFY(module.value()->get()->process(
+        source.value()->view(),dest.value()->mutable_view(),
+        dsp::DspProcessContext{*extent.value(),true,false}));
+    auto cp=module.value()->get()->runtime_checkpoint();
+    QVERIFY(cp);
+    QVERIFY(cp.value()->payload.size()>640U);
+    QVERIFY(cp.value()->payload.size()<(32U*1024U*1024U));
+}
+
 
 } // namespace
 } // namespace rgsml::tests

@@ -1,5 +1,6 @@
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/sha256.hpp>
 #include <rgsml/dsp/module_descriptor.hpp>
 #include <rgsml/dsp/true_peak_limiter_module.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
@@ -18,6 +19,7 @@
 #include <span>
 #include <string>
 #include <limits>
+#include <cstring>
 #include <vector>
 
 namespace rgsml::tests {
@@ -115,10 +117,12 @@ private slots:
     void finalizeBoundaryRejectsCheckpoints();
     void canonicalLengthIsU64LittleEndian();
     void wholeResourceBoundCheckpointRejectsWrongOwnerAndDigest();
+    void poisonedValidDigestCheckpointFailsAtomically();
+    void unboundAndSixRateResumeAreCanonical();
 };
 void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
 {
-    for(const int fs:{44100,48000,96000,192000}) {
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
         for(const int at:{1,57,228,441}) {
             auto a=fresh(fs,-6.0);
             auto b=fresh(fs,-6.0);
@@ -305,6 +309,88 @@ void TruePeakLimiterCheckpointTest::wholeResourceBoundCheckpointRejectsWrongOwne
         for(std::size_t ch=0;ch<2;++ch)
             QCOMPARE(std::bit_cast<std::uint64_t>(direct[i][ch]),
                 std::bit_cast<std::uint64_t>(restored[i][ch]));
+}
+
+
+void TruePeakLimiterCheckpointTest::poisonedValidDigestCheckpointFailsAtomically()
+{
+    // A well-formed SHA-256 is not sufficient to authorize hostile state.
+    // Change canonical payload fields and recompute the footer each time:
+    // rejection must be based on semantic invariants and remain atomic.
+    auto original=fresh(44100,-6.0);
+    auto target=fresh(44100,-6.0);
+    QVERIFY(original && target);
+    const auto start=processBlock(*original,44100,0,290,true);
+    QVERIFY(!start.empty());
+    const auto baseline=original->runtime_checkpoint();
+    const auto unbound=target->runtime_checkpoint();
+    QVERIFY(baseline && unbound);
+    const auto& good=*baseline.value();
+    const auto expectRejected=[&](std::size_t position,
+        std::uint64_t replacement,std::size_t length) {
+        auto cp=good;
+        QVERIFY(position+length<=cp.payload.size()-32U);
+        for(std::size_t i=0;i<length;++i)
+            cp.payload[position+i]=static_cast<std::uint8_t>(
+                (replacement>>(8*i))&0xffU);
+        core::Sha256 sha;
+        sha.update(std::as_bytes(std::span<const std::uint8_t>{
+            cp.payload.data(),cp.payload.size()-32U}));
+        const auto digest=sha.finalize();
+        for(std::size_t i=0;i<digest.size();++i)
+            cp.payload[cp.payload.size()-32U+i]=
+                static_cast<std::uint8_t>(digest[i]);
+        QVERIFY(!target->restore_runtime_checkpoint(cp));
+        const auto after=target->runtime_checkpoint();
+        QVERIFY(after);
+        QCOMPARE(*after.value(),*unbound.value());
+    };
+    // Field offsets are specified by M17CP1 v1.0 canonical layout.
+    // 32:bound, 52:N, 68:coverage, 100:detector N,
+    // 564:next control tick, 572:density, 588:hold counter.
+    expectRejected(32,2U,4U);                         // boolean outside {0,1}
+    expectRejected(52,291U,8U);                       // frame-count contradiction
+    expectRejected(68,0U,8U);                         // physical coverage mismatch
+    expectRejected(100,291U,8U);                      // detector N mismatch
+    expectRejected(564,0U,8U);                        // inconsistent next tick
+    expectRejected(572,0x7ff8000000000000ULL,8U);    // NaN density
+    expectRejected(588,500000U,8U);                   // hold beyond supported ticks
+    auto changedLength=good;
+    changedLength.payload[12]^=1U; // checksum mismatch required to fail early
+    QVERIFY(!target->restore_runtime_checkpoint(changedLength));
+    const auto after=target->runtime_checkpoint();
+    QVERIFY(after);
+    QCOMPARE(*after.value(),*unbound.value());
+    QVERIFY(target->restore_runtime_checkpoint(good));
+}
+
+void TruePeakLimiterCheckpointTest::unboundAndSixRateResumeAreCanonical()
+{
+    // Checkpoint is legal before any programme input and cannot invent
+    // source samples. A fresh-module restore must remain bit-identical.
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        auto original=fresh(fs,-1.0);
+        auto resumed=fresh(fs,-1.0);
+        QVERIFY(original && resumed);
+        const auto unbound=original->runtime_checkpoint();
+        QVERIFY(unbound);
+        QVERIFY(!unbound.value()->next_input_frame);
+        QVERIFY(resumed->restore_runtime_checkpoint(*unbound.value()));
+        const auto restoredUnbound=resumed->runtime_checkpoint();
+        QVERIFY(restoredUnbound);
+        QCOMPARE(*restoredUnbound.value(),*unbound.value());
+        const auto p1=processBlock(*original,fs,0,91,true);
+        const auto p2=processBlock(*resumed,fs,0,91,true);
+        QCOMPARE(p1.size(),p2.size());
+        for(std::size_t i=0;i<p1.size();++i)
+            for(std::size_t ch=0;ch<2;++ch)
+                QCOMPARE(std::bit_cast<std::uint64_t>(p1[i][ch]),
+                    std::bit_cast<std::uint64_t>(p2[i][ch]));
+        const auto boundA=original->runtime_checkpoint();
+        const auto boundB=resumed->runtime_checkpoint();
+        QVERIFY(boundA && boundB);
+        QCOMPARE(*boundA.value(),*boundB.value());
+    }
 }
 
 void TruePeakLimiterCheckpointTest::canonicalLengthIsU64LittleEndian()

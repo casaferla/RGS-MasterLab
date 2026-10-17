@@ -6,6 +6,8 @@
 #include <QtTest/QTest>
 
 #include <bit>
+#include <vector>
+#include <algorithm>
 #include <utility>
 #include <cmath>
 #include <cstdint>
@@ -34,6 +36,7 @@ private slots:
     void exactBinary64TrimThreshold();
     void genuineM16WholeResourceQuietAndFalsifiableHot();
     void rejectWrongCeilingAndPropagateM16Failures();
+    void actualM16ReverificationUsesOneGlobalStereoScalar();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
 {
@@ -106,6 +109,83 @@ void TruePeakLimiterVerificationTest::rejectWrongCeilingAndPropagateM16Failures(
         QVERIFY(!m17_verifier::verify_full_resource(*zeroLength.value(),-1.0));
     }
 }
+void TruePeakLimiterVerificationTest::actualM16ReverificationUsesOneGlobalStereoScalar()
+{
+    // The positive branch must call the REAL M16 full-resource meter both
+    // before and after ONE common stereo/mono binary64 scalar application.
+    // Force an approximately 0.04dB violation: trim is necessary and stays
+    // inside the frozen 0.10dB verification guard.
+    constexpr int count=303;
+    constexpr double ceilingDb=-1.0;
+    const double ceiling=std::pow(10.0,ceilingDb/20.0);
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const bool stereo:{false,true}) {
+            auto resource=buffer(fs,stereo,count);
+            for(std::size_t ch=0;ch<resource.view().format().channel_count();++ch) {
+                auto plane=resource.mutable_view().channel(ch);
+                QVERIFY(plane);
+                for(int i=0;i<count;++i) {
+                    const auto x=i==13?1.0:
+                        (i%19==0?-0.4:std::sin(double(i)*0.213)*0.3);
+                    (*plane.value())[static_cast<std::size_t>(i)]=
+                        ch==0?x:x*(-0.87);
+                }
+            }
+            const auto reference=analysis::measure_true_peak_full_resource(resource);
+            QVERIFY(reference);
+            QVERIFY(reference.value()->global_linear_peak()>0.0);
+            const double scale=ceiling/reference.value()->global_linear_peak()*1.005;
+            std::vector<std::vector<double>> before(
+                resource.view().format().channel_count());
+            for(std::size_t ch=0;ch<before.size();++ch) {
+                auto data=resource.mutable_view().channel(ch);
+                QVERIFY(data);
+                before[ch].reserve(count);
+                for(double& x:*data.value()) {
+                    x*=scale;
+                    before[ch].push_back(x);
+                }
+            }
+            const auto peakBefore=analysis::measure_true_peak_full_resource(resource);
+            QVERIFY(peakBefore);
+            const double p=peakBefore.value()->global_linear_peak();
+            QVERIFY2(p>ceiling,"Positive trim must not accidentally be neutral");
+            const double expectedGain=std::nextafter(ceiling/p,0.0);
+            QVERIFY(m17_verifier::trim_within_guard(expectedGain));
+            auto checked=m17_verifier::verify_full_resource(resource,ceilingDb);
+            QVERIFY(checked);
+            QVERIFY(checked.value()->trim_used);
+            QCOMPARE(std::bit_cast<std::uint64_t>(
+                checked.value()->global_trim_gain),
+                std::bit_cast<std::uint64_t>(expectedGain));
+            QCOMPARE(std::bit_cast<std::uint64_t>(
+                checked.value()->before_peak),
+                std::bit_cast<std::uint64_t>(p));
+            QVERIFY(checked.value()->after_peak<=ceiling);
+            for(std::size_t ch=0;ch<before.size();++ch) {
+                const auto after=resource.view().channel(ch);
+                QVERIFY(after);
+                for(int i=0;i<count;++i) {
+                    const double expected=
+                        before[ch][static_cast<std::size_t>(i)]*expectedGain;
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        (*after.value())[static_cast<std::size_t>(i)]),
+                        std::bit_cast<std::uint64_t>(expected));
+                }
+            }
+            const auto measuredAfter=analysis::measure_true_peak_full_resource(resource);
+            QVERIFY(measuredAfter);
+            QCOMPARE(std::bit_cast<std::uint64_t>(
+                checked.value()->after_peak),
+                std::bit_cast<std::uint64_t>(
+                    measuredAfter.value()->global_linear_peak()));
+            QCOMPARE(checked.value()->status,
+                analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+        }
+    }
+}
+
+
 } // namespace
 } // namespace rgsml::tests
 
