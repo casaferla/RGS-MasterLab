@@ -24,6 +24,7 @@ constexpr auto kGainSchemaId = "rgsml.dsp.gain.parameters/1.0.0";
 constexpr auto kEqSchemaId = "rgsml.dsp.parametric-eq.parameters/1.0.0";
 constexpr auto kCompressorSchemaId = "rgsml.dsp.compressor.parameters/1.0.0";
 constexpr auto kStereoMsSchemaId = "rgsml.dsp.stereo-ms.parameters/1.0.0";
+constexpr auto kTruePeakLimiterSchemaId = "rgsml.dsp.true-peak-limiter.parameters/1.0.0";
 
 [[nodiscard]] Error codec_error(ErrorCode code, std::string category, std::string message)
 {
@@ -546,6 +547,51 @@ Result<StereoMsParameters> decode_stereo_ms_parameters_json(std::string_view jso
         j["lowBandWidthPercent"].get<double>());
 }
 
+
+Result<std::string> encode_true_peak_limiter_parameters_json(
+    const TruePeakLimiterParameters& params)
+{
+    json j = json::object();
+    j["ceilingDbTp"] = params.ceiling_db_tp();
+    return Result<std::string>::success(j.dump());
+}
+
+Result<TruePeakLimiterParameters> decode_true_peak_limiter_parameters_json(
+    std::string_view json_text)
+{
+    // A regular JSON object map silently collapses duplicate keys.
+    // Count parser KEY events before the object is materialized, so even
+    // {"ceilingDbTp":-6,"ceilingDbTp":-1} is categorically rejected.
+    std::size_t seen_keys = 0;
+    const auto count_keys = [&seen_keys](
+        int, json::parse_event_t event, json&) -> bool {
+        if (event == json::parse_event_t::key) {
+            ++seen_keys;
+        }
+        return true;
+    };
+    json j = json::parse(
+        json_text.begin(), json_text.end(), count_keys, false);
+    if (j.is_discarded()) {
+        return Result<TruePeakLimiterParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "INVALID_JSON_SYNTAX",
+            "Failed to parse True Peak Limiter parameter JSON."));
+    }
+    if (!j.is_object() || j.size() != 1U || seen_keys != 1U
+        || !j.contains("ceilingDbTp")) {
+        return Result<TruePeakLimiterParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "STRICT_SCHEMA_VIOLATION",
+            "True Peak Limiter JSON must contain exactly one unique ceilingDbTp key."));
+    }
+    const auto& value = j["ceilingDbTp"];
+    if (!value.is_number()) {
+        return Result<TruePeakLimiterParameters>::failure(codec_error(
+            ErrorCode::InvalidArgument, "INVALID_PARAMETER_TYPE",
+            "ceilingDbTp must be a finite JSON number, not text or boolean."));
+    }
+    return TruePeakLimiterParameters::create(value.get<double>());
+}
+
 Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& payload)
 {
     return std::visit(
@@ -559,6 +605,8 @@ Result<std::string> encode_module_parameters_json(const ModuleParameterPayload& 
                 return encode_compressor_parameters_json(params);
             } else if constexpr (std::is_same_v<T, StereoMsParameters>) {
                 return encode_stereo_ms_parameters_json(params);
+            } else if constexpr (std::is_same_v<T, TruePeakLimiterParameters>) {
+                return encode_true_peak_limiter_parameters_json(params);
             }
         },
         payload);
@@ -597,6 +645,15 @@ Result<ModuleParameterPayload> decode_module_parameters_json(
         }
         return Result<ModuleParameterPayload>::success(
             ModuleParameterPayload{std::move(*ms_res.value())});
+    }
+
+    if (schema_id == kTruePeakLimiterSchemaId) {
+        auto limiter = decode_true_peak_limiter_parameters_json(json_text);
+        if (!limiter) {
+            return Result<ModuleParameterPayload>::failure(*limiter.error());
+        }
+        return Result<ModuleParameterPayload>::success(
+            ModuleParameterPayload{std::move(*limiter.value())});
     }
 
     return Result<ModuleParameterPayload>::failure(codec_error(

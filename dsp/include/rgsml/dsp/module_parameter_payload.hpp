@@ -4,6 +4,7 @@
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
 #include <variant>
 
@@ -13,6 +14,7 @@ using ModuleParameterPayload = std::variant<
     GainParameters,
     ParametricEqParameters,
     CompressorParameters,
-    StereoMsParameters>;
+    StereoMsParameters,
+    TruePeakLimiterParameters>;
 
 }  // namespace rgsml::dsp

@@ -8,6 +8,7 @@ add_library(rgsml_dsp STATIC
     src/compressor_parameters.cpp
     src/compressor_module.cpp
     src/stereo_ms_parameters.cpp
+    src/true_peak_limiter_parameters.cpp
     src/stereo_ms_width.cpp
     src/stereo_ms_width_response.cpp
     src/stereo_ms_module.cpp
