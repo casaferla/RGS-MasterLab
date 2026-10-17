@@ -1182,8 +1182,11 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
         && c2RetainedOutputBegin_ < probe.processedWatermarkExclusive) {
         const auto epoch = audible_loop_epoch(
             probe.processedWatermarkExclusive);
-        if (loop_ ? (!epoch.loop || *epoch.loop != *loop_
-                        || !epoch.eligible) : epoch.loop.has_value())
+        // The region may remain ARMED while a deliberate seek after its
+        // end plays normal whole-track PCM. This is not a loop traversal:
+        // preserve the source-owned SRC proof, but never label it as a wrap.
+        if (loop_ ? (!epoch.loop || *epoch.loop != *loop_)
+                  : epoch.loop.has_value())
             return result;
         // Only the sink-AUDIBLE traversal is eligible: a future generated
         // loop block, the selected checkbox and the position cursor are not.
@@ -1230,7 +1233,8 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
             || srcAbsoluteAfter > outputDuration_->value()
             || epochOutputBegin >= result.consumedOutputExclusive)
             return result;
-        const auto regionOutputEnd = loop_
+        const bool audibleTraversal = loop_ && epoch.eligible;
+        const auto regionOutputEnd = audibleTraversal
             ? source_to_output_frame(loop_->end().value())
             : outputDuration_->value();
         if (srcAbsoluteAfter > regionOutputEnd)
@@ -1244,13 +1248,14 @@ C2SrcRetirementObservation PlaybackEngine::c2_src_retirement_observation(
             core::FrameIndex{srcAbsoluteAfter});
         const auto retiredSourceEnd = retired
             ? std::min(retired.value()->value(),
-                  loop_ ? loop_->end().value() : duration_->value()) : 0;
+                  audibleTraversal ? loop_->end().value()
+                                     : duration_->value()) : 0;
         if (!first || !retired
             || retiredSourceEnd <= first.value()->value())
             return result;
         result.consumedOutputBegin = epochOutputBegin;
         result.loopWrapCount = observedWrap;
-        result.loopTraversalProven = loop_.has_value();
+        result.loopTraversalProven = audibleTraversal;
         result.firstSourceFrame = first.value()->value();
         result.noFutureSourcePrefixExclusive = retiredSourceEnd;
         result.realizationId = activeRealizationId_;
@@ -1606,8 +1611,13 @@ core::Status PlaybackEngine::pump_once()
     const bool loopCandidate = loop_ && loopTraversalEligible_
         && loop_->end().value() - loop_->begin().value()
             >= source_format().sample_rate().value() / 10;
+    // When an armed loop has been bypassed by a SOURCE seek beyond its
+    // end, this output block is genuinely non-looped and source-mapped.
+    const bool nonTraversingOutsideLoop = loop_ && !loopTraversalEligible_
+        && scheduledOutputFrame_
+            >= source_to_output_frame(loop_->end().value());
     c2PendingExactMapping_ = !rateAdapter_
-        && (!loop_ || loopCandidate)
+        && (!loop_ || loopCandidate || nonTraversingOutsideLoop)
         && c2PendingOwner_.has_value()
         && (!pendingHandoff_ || pureNewAfterHandoff);
     c2PendingLoopTraversalProven_ = c2PendingExactMapping_
