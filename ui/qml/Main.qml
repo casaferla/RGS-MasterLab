@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
+import QtQml.Models
 
 ApplicationWindow {
     id: root
@@ -262,6 +263,10 @@ ApplicationWindow {
             gainViewModel: root.appGainViewModel
             eqViewModel: root.appEqViewModel
             spectrumViewModel: root.appSpectrumViewModel
+            truePeakStaticViewModel: typeof truePeakStatic !== "undefined"
+                ? truePeakStatic : null
+            truePeakLiveViewModel: typeof truePeakLive !== "undefined"
+                ? truePeakLive : null
         }
     }
 
@@ -282,9 +287,15 @@ ApplicationWindow {
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
                 spacing: 12
-                Rectangle {
-                    Layout.preferredWidth: 40; Layout.preferredHeight: 40; radius: 4; color: "#8B111B"; border.color: "#C8CDD3"
-                    Text { anchors.centerIn: parent; text: "RGS"; color: "#F3F5F7"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold }
+                Image {
+                    id: headerAppIcon
+                    objectName: "headerAppIcon"
+                    Layout.preferredWidth: 40
+                    Layout.preferredHeight: 40
+                    source: "qrc:/qt/qml/Rgsml/Ui/resources/app_icon_canonical.jpg"
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
                 }
                 Column {
                     Layout.alignment: Qt.AlignVCenter; spacing: 0
@@ -332,36 +343,47 @@ ApplicationWindow {
                         StudioMenuItem { text: "Preferences"; enabled: false }
                     }
                     Menu {
+                        id: desktopViewMenu
                         objectName: "desktopViewMenu"
                         popupType: Popup.Item
                         width: 230
                         title: "&View"
                         background: Rectangle { color: root.surface; border.color: root.border }
-                        StudioMenuItem {
-                            objectName: "menuViewInputGain"
-                            text: "Input Gain"
-                            enabled: true
-                            onTriggered: {
-                                if (typeof dspChainAdapterModel !== "undefined" && dspChainAdapterModel && dspChainAdapterModel.modules && dspChainAdapterModel.modules.length > 0) {
-                                    dspChainAdapterModel.selectModuleByInstanceId(dspChainAdapterModel.modules[0].instanceId)
-                                } else {
-                                    realDspWorkspace.selectedModuleIndex = 0
+                        // FIX-UI-002: use the same live module-adapter list as
+                        // the DSP chain/editor host. No positional DSP menu list.
+                        Instantiator {
+                            id: viewEditorInstantiator
+                            objectName: "viewEditorInstantiator"
+                            model: typeof dspChainAdapterModel !== "undefined"
+                                && dspChainAdapterModel
+                                ? dspChainAdapterModel.modules : []
+                            delegate: StudioMenuItem {
+                                readonly property var editorAdapter: modelData
+                                readonly property string editorKey: editorAdapter
+                                    ? editorAdapter.editorContentKey : ""
+                                // Keep the historical smoke object names without
+                                // hard-coding a menu entry for each DSP type.
+                                objectName: "menuView" + editorKey.toLowerCase()
+                                    .split("_").map(function(part) {
+                                        return part.charAt(0).toUpperCase()
+                                            + part.slice(1)
+                                    }).join("")
+                                text: editorAdapter ? editorAdapter.displayName : ""
+                                enabled: editorAdapter !== null
+                                    && editorAdapter !== undefined
+                                    && editorKey.length > 0
+                                onTriggered: {
+                                    if (enabled && editorAdapter && dspChainAdapterModel) {
+                                        dspChainAdapterModel.selectModuleByInstanceId(
+                                            editorAdapter.instanceId)
+                                        realDspWorkspace.editorHost.forceActiveFocus()
+                                    }
                                 }
-                                realDspWorkspace.editorHost.forceActiveFocus()
                             }
-                        }
-                        StudioMenuItem {
-                            objectName: "menuViewParametricEq"
-                            text: "Parametric EQ"
-                            enabled: true
-                            onTriggered: {
-                                if (typeof dspChainAdapterModel !== "undefined" && dspChainAdapterModel && dspChainAdapterModel.modules && dspChainAdapterModel.modules.length > 1) {
-                                    dspChainAdapterModel.selectModuleByInstanceId(dspChainAdapterModel.modules[1].instanceId)
-                                } else {
-                                    realDspWorkspace.selectedModuleIndex = 1
-                                }
-                                realDspWorkspace.editorHost.forceActiveFocus()
-                            }
+                            onObjectAdded: (index, object) =>
+                                desktopViewMenu.insertItem(index, object)
+                            onObjectRemoved: (index, object) =>
+                                desktopViewMenu.removeItem(object)
                         }
                         MenuSeparator { }
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: sourceWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
@@ -1032,6 +1054,15 @@ ApplicationWindow {
                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
                 Rectangle { objectName: "statusReadyIndicator"; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: root.hasError ? root.error : "#00E6E6" }
                 Label { objectName: "statusBarMessage"; Layout.fillWidth: true; text: root.statusText; color: root.textSecondary; font.pixelSize: 10; elide: Text.ElideRight }
+                Text {
+                    id: statusBuildProvenanceLabel
+                    objectName: "statusBuildProvenanceLabel"
+                    text: typeof buildProvenance !== "undefined" ? buildProvenance : "DEV"
+                    color: root.textSecondary
+                    font.family: "Segoe UI"
+                    font.pixelSize: 10
+                    Layout.alignment: Qt.AlignVCenter
+                }
             }
         }
     }

@@ -11,6 +11,8 @@ qt_add_executable(rgsml_app
     src/eq_view_model.hpp
     src/gain_view_model.cpp
     src/gain_view_model.hpp
+    src/stereo_ms_view_model.cpp
+    src/stereo_ms_view_model.hpp
     src/mastering_preview_controller.cpp
     src/mastering_preview_controller.hpp
     src/audition_region_view_model.cpp
@@ -30,6 +32,14 @@ qt_add_executable(rgsml_app
     src/source_selection_view_model.hpp
     src/source_waveform_view_model.cpp
     src/source_waveform_view_model.hpp
+    src/true_peak_static_binding.cpp
+    src/true_peak_static_binding.hpp
+    src/true_peak_static_coordinator.cpp
+    src/true_peak_static_coordinator.hpp
+    src/true_peak_live_input_binding.cpp
+    src/true_peak_live_input_binding.hpp
+    src/true_peak_live_coordinator.cpp
+    src/true_peak_live_coordinator.hpp
     src/windows_window_chrome_helper.cpp
     src/windows_window_chrome_helper.hpp
 )
@@ -39,11 +49,14 @@ set_target_properties(rgsml_app PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
+target_include_directories(rgsml_app PRIVATE ${CMAKE_SOURCE_DIR}/analysis/src)
+
 target_link_libraries(rgsml_app
     PRIVATE
         rgsml_core
         rgsml_project
         rgsml_audio
+        rgsml_analysis
         rgsml_dsp
         rgsml_platform
         rgsml_render
