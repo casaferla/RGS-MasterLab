@@ -926,6 +926,12 @@ Window {
     auto* cardNumeric = find_child_by_name(
         full, QStringLiteral("truePeakNumericValueText"));
     QVERIFY(laneNumeric && cardNumeric);
+    // A LIVE lane must show no number without consumed playback proof.
+    // The following test-only availability isolates typography from source
+    // provenance; it does not publish synthetic LIVE evidence to the app.
+    QVERIFY(!leftLane->property("available").toBool());
+    QCOMPARE(laneNumeric->property("text").toString(), QStringLiteral("—"));
+    QVERIFY(leftLane->setProperty("available", true));
     for (const auto reading : {
              QStringLiteral("-9.99 dBTP"), QStringLiteral("-10.00 dBTP"),
              QStringLiteral("9.99 dBTP"), QStringLiteral("10.00 dBTP")}) {
@@ -940,6 +946,11 @@ Window {
                                    + QStringLiteral(".")));
         }
     }
+    // Restore fail-closed LIVE semantics after the typography fixture.
+    QVERIFY(leftLane->setProperty("available", false));
+    QVERIFY(leftLane->setProperty("reading", QStringLiteral("—")));
+    QCoreApplication::processEvents();
+    QCOMPARE(laneNumeric->property("text").toString(), QStringLiteral("—"));
 
     // Switching to an actual processing module restores the original
     // host actions without changing the audio ProcessingChain.
