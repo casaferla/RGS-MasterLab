@@ -284,6 +284,7 @@ private slots:
     void c2D16SrcRetirementTracksRealConsumedSinkClock();
     void c2D17SrcSeekRebasesOnlyActuallyConsumedOutput();
     void c2D18SrcLoopRecoversAtEachActuallyConsumedWrap();
+    void c2D19ArmedLoopSeekBeforeInsideAfterRetainsConsumedProof();
 };
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
@@ -3639,6 +3640,119 @@ void PlaybackSupportTest::c2D18SrcLoopRecoversAtEachActuallyConsumedWrap()
         QVERIFY(!engine.c2_src_retirement_observation()
             .noFutureSourcePrefixExclusive);
     }
+}
+
+
+void PlaybackSupportTest::c2D19ArmedLoopSeekBeforeInsideAfterRetainsConsumedProof()
+{
+    using platform::windows::internal::project_c2_prefix;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    for (const auto& pair :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = pair.first;
+        const auto outputHz = pair.second;
+        auto inputRate = core::SampleRate::create(sourceHz);
+        auto deviceRate = core::SampleRate::create(outputHz);
+        QVERIFY(inputRate && deviceRate);
+        auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(), *deviceRate.value(),
+                audio::ChannelLayout::STEREO_LR, frame_count(4 * sourceHz)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(sourceHz, audio::ChannelLayout::STEREO_LR,
+            4 * sourceHz);
+        PlaybackEngine engine;
+        auto device = std::make_unique<FakeOutput>(16'384U, 4U);
+        auto* sink = device.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(device), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'401}));
+        const auto loop = *core::FrameRange::create(
+            core::FrameIndex{sourceHz}, core::FrameIndex{2 * sourceHz}).value();
+        QVERIFY(engine.set_loop(loop));
+        const std::array<std::int64_t, 3> seeks{
+            sourceHz / 2, sourceHz + sourceHz / 4,
+            2 * sourceHz + sourceHz / 4};
+        std::uint64_t lastGeneration = 0;
+        for (std::size_t index = 0; index < seeks.size(); ++index) {
+            QVERIFY(engine.seek(core::FrameIndex{seeks[index]}));
+            if (index == 0U) QVERIFY(engine.play());
+            const auto snapshot = engine.snapshot();
+            QVERIFY(snapshot);
+            QCOMPARE(snapshot.value()->state, core::PlaybackState::PLAYING);
+            QCOMPARE(snapshot.value()->loop, std::optional{loop});
+            QCOMPARE(snapshot.value()->position.value(), seeks[index]);
+            const auto generation = engine.c2_consumed_prefix().generation;
+            QVERIFY(generation > lastGeneration);
+            lastGeneration = generation;
+            // No generated/queued future output can prove a recent reading.
+            QVERIFY(!engine.c2_src_retirement_observation()
+                .noFutureSourcePrefixExclusive);
+            bool got = false;
+            for (int tick = 0; tick < 3; ++tick) {
+                sink->consume_all();
+                engine.tick();
+                const auto proof = engine.c2_src_retirement_observation();
+                QCOMPARE(proof.reason, Reason::UNPROVEN_SRC);
+                if (!proof.noFutureSourcePrefixExclusive) continue;
+                QVERIFY(proof.firstSourceFrame.has_value());
+                QVERIFY(*proof.firstSourceFrame >= seeks[index]);
+                QVERIFY(*proof.firstSourceFrame <= seeks[index] + 1);
+                QVERIFY(*proof.noFutureSourcePrefixExclusive
+                    > *proof.firstSourceFrame);
+                QVERIFY(*proof.noFutureSourcePrefixExclusive
+                    <= 4 * sourceHz);
+                QCOMPARE(proof.loopTraversalProven, index != 2U);
+                QCOMPARE(proof.loopWrapCount, std::uint64_t{0});
+                const auto projected = project_c2_prefix(
+                    engine.c2_consumed_prefix(), &proof);
+                QVERIFY(projected.srcRetiredSourceBegin.has_value());
+                QVERIFY(projected.srcRetiredSourceEnd.has_value());
+                QCOMPARE(projected.srcLoopTraversalProven, index != 2U);
+                QCOMPARE(projected.srcLoopWrapCount, std::uint64_t{0});
+                QVERIFY(!projected.certifiedForLiveTruePeak);
+                if (index == 2U) {
+                    // Armed loop remains in snapshot but sink consumes normal
+                    // post-region SOURCE frames. A real proof must recover.
+                    QVERIFY(*projected.srcRetiredSourceBegin
+                        >= loop.end().value());
+                }
+                got = true;
+            }
+            QVERIFY(got);
+        }
+        QVERIFY(engine.stop());
+    }
+
+    // Native 1:1 must likewise recover: an armed loop is not a traversed
+    // loop after the playhead is deliberately sought beyond its end.
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR,
+        4 * 48'000);
+    PlaybackEngine direct;
+    auto device = std::make_unique<FakeOutput>(16'384U, 4U);
+    auto* sink = device.get();
+    QVERIFY(direct.install_pcm_candidate(pcm.view(), std::move(device),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{9'402}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{48'000}, core::FrameIndex{96'000}).value();
+    QVERIFY(direct.set_loop(loop));
+    QVERIFY(direct.seek(core::FrameIndex{108'000}));
+    QVERIFY(direct.play());
+    for (int tick = 0; tick < 3; ++tick) {
+        sink->consume_all();
+        direct.tick();
+    }
+    const auto observed = direct.c2_consumed_prefix();
+    QVERIFY(observed.partitionRepresented);
+    QVERIFY(observed.size >= std::size_t{1});
+    const auto& tail = observed.slices[observed.size - 1U];
+    QCOMPARE(tail.kind,
+        platform::windows::internal::C2ConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QVERIFY(tail.sourceBegin.has_value());
+    QVERIFY(*tail.sourceBegin >= loop.end().value());
+    QVERIFY(!tail.loopTraversalProven);
+    QCOMPARE(direct.snapshot().value()->loop, std::optional{loop});
 }
 
 }  // namespace rgsml::tests
