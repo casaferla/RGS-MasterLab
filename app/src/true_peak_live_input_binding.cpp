@@ -71,12 +71,16 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
             && consumed.srcRetiredSourceBegin
             && *consumed.srcRetiredSourceBegin
                 >= playback.loop->end().value();
+        // Loop eligibility already covers the continuous pre-region prefix.
+        // Its first, genuinely sink-consumed traversal has wrap count zero;
+        // after a real wrap, only frames inside the Loop Region qualify.
         const bool loopTraversalWithinRegion = !consumed.srcLoopTraversalProven
             || (playback.loop
                 && consumed.srcRetiredSourceBegin
                 && consumed.srcRetiredSourceEnd
-                && *consumed.srcRetiredSourceBegin
-                    >= playback.loop->begin().value()
+                && (consumed.srcLoopWrapCount == 0
+                    || *consumed.srcRetiredSourceBegin
+                        >= playback.loop->begin().value())
                 && *consumed.srcRetiredSourceEnd
                     <= playback.loop->end().value());
         if (!loopTraversalWithinRegion
@@ -213,8 +217,10 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         || (playback.loop && !slice.loopTraversalProven
             && (!slice.sourceBegin
                 || *slice.sourceBegin < playback.loop->end().value()))
+        // First traversal may start before loop.begin; after a real wrap it may not.
         || (slice.loopTraversalProven && playback.loop
-            && (*slice.sourceBegin < playback.loop->begin().value()
+            && ((*slice.sourceBegin < playback.loop->begin().value()
+                    && slice.loopWrapCount != 0)
                 || *slice.sourceEnd > playback.loop->end().value()))
         || (slice.loopTraversalProven
             && slice.loopWrapCount != playback.loopWrapCount)) {

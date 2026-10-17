@@ -103,6 +103,7 @@ private slots:
     void c2D17SrcSeekClearsPreviousMeterAndRebuildsNewOwnerInterval();
     void c2D18SrcLoopRebuildsRecentAndHoldOnlyWithinConsumedTraversal();
     void c2D19ArmedLoopAfterRegionBindsOnlyRealRetiredSource();
+    void c2D20ArmedLoopFirstTraversalBeforeRegionIsRealSource();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -1671,6 +1672,140 @@ c2D19ArmedLoopAfterRegionBindsOnlyRealRetiredSource()
         QVERIFY(!bind()); // inverted/retrograde claimed source interval
     }
 }
+
+
+void TruePeakStaticBindingTest::
+c2D20ArmedLoopFirstTraversalBeforeRegionIsRealSource()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+
+    // A source seek BEFORE an armed Loop Region has an actual sink-consumed
+    // pre-loop prefix. The first traversal (wrap=0) must bind; a repeated
+    // traversal must never borrow that pre-loop source interval.
+    for (const auto& pair :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = pair.first;
+        const auto outputHz = pair.second;
+        auto fixture = make_render(
+            4 * sourceHz, frame_range(0, 4 * sourceHz), sourceHz,
+            audio::ChannelLayout::STEREO_LR, 0.9, sourceHz / 10);
+        QVERIFY(fixture);
+        const auto id = core::RealizationId{9'404};
+        core::PlaybackSnapshot playback{};
+        playback.state = core::PlaybackState::PLAYING;
+        playback.audibleRealization = {
+            core::AudibleHandoffPhase::NEW, id, std::nullopt};
+        playback.loop = frame_range(sourceHz, 2 * sourceHz);
+        platform::windows::WindowsConsumedOutputPrefix prefix{};
+        prefix.generation = 92;
+        prefix.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.partitionRepresented = true;
+        prefix.count = 1;
+        prefix.srcRetiredSourceBegin = sourceHz / 2;
+        prefix.srcRetiredSourceEnd = 3 * sourceHz / 4;
+        prefix.srcRealizationId = id;
+        prefix.srcInputRateHz = sourceHz;
+        prefix.srcOutputRateHz = outputHz;
+        prefix.srcLoopTraversalProven = true;
+        prefix.srcLoopWrapCount = 0;
+        prefix.srcConsumedOutputBegin = 0;
+        prefix.processedWatermarkExclusive = outputHz / 4 + 512;
+        auto& gap = prefix.slices[0];
+        gap.generation = prefix.generation;
+        gap.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+        gap.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        gap.outputBegin = 0;
+        gap.outputEnd = prefix.processedWatermarkExclusive;
+
+        const auto bind = [&] {
+            return app::bind_processed_live_input(fixture.value()->result,
+                id, fixture.value()->expected, playback, prefix);
+        };
+        auto first = bind();
+        QVERIFY(first);
+        QCOMPARE(first.value()->consumedSourceBegin, sourceHz / 2);
+        QCOMPARE(first.value()->loopWrapCount, std::uint64_t{0});
+        QVERIFY(!prefix.certifiedForLiveTruePeak);
+
+        // An armed checkbox by itself is insufficient.
+        prefix.srcLoopTraversalProven = false;
+        QVERIFY(!bind());
+        prefix.srcLoopTraversalProven = true;
+        // Even matching wrap counters may not certify pre-loop PCM on a
+        // later loop repetition.
+        ++prefix.srcLoopWrapCount;
+        ++playback.loopWrapCount;
+        QVERIFY(!bind());
+        --prefix.srcLoopWrapCount;
+        --playback.loopWrapCount;
+        // A mixed interval crossing the end cannot be passed off as
+        // a continuous first traversal.
+        prefix.srcRetiredSourceEnd = 2 * sourceHz + 1;
+        QVERIFY(!bind());
+        prefix.srcRetiredSourceEnd = 3 * sourceHz / 4;
+        ++playback.loopWrapCount;
+        QVERIFY(!bind()); // stale consumed wrap
+        --playback.loopWrapCount;
+        QVERIFY(bind());
+    }
+
+    // The exact one-to-one (non-SRC) path uses the same first-traversal
+    // contract; do not make the fix depend on sample-rate conversion.
+    constexpr std::int64_t sourceHz = 48'000;
+    auto fixture = make_render(
+        4 * sourceHz, frame_range(0, 4 * sourceHz), sourceHz,
+        audio::ChannelLayout::STEREO_LR, 0.9, sourceHz / 10);
+    QVERIFY(fixture);
+    const auto id = core::RealizationId{9'405};
+    core::PlaybackSnapshot playback{};
+    playback.state = core::PlaybackState::PLAYING;
+    playback.audibleRealization = {
+        core::AudibleHandoffPhase::NEW, id, std::nullopt};
+    playback.loop = frame_range(sourceHz, 2 * sourceHz);
+    platform::windows::WindowsConsumedOutputPrefix prefix{};
+    prefix.generation = 93;
+    prefix.reason = WindowsConsumedGapReason::UNPROVEN_LOOP;
+    prefix.partitionRepresented = true;
+    prefix.count = 1;
+    prefix.processedWatermarkExclusive = sourceHz / 4;
+    auto& slice = prefix.slices[0];
+    slice.generation = prefix.generation;
+    slice.kind = WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    slice.reason = WindowsConsumedGapReason::UNPROVEN_LOOP;
+    slice.outputBegin = 0;
+    slice.outputEnd = prefix.processedWatermarkExclusive;
+    slice.realizationId = id;
+    slice.sourceBegin = sourceHz / 2;
+    slice.sourceEnd = 3 * sourceHz / 4;
+    slice.loopTraversalProven = true;
+    slice.loopWrapCount = 0;
+    const auto bind = [&] {
+        return app::bind_processed_live_input(fixture.value()->result,
+            id, fixture.value()->expected, playback, prefix);
+    };
+    QVERIFY(bind());
+    slice.loopTraversalProven = false;
+    QVERIFY(!bind());
+    slice.loopTraversalProven = true;
+    ++slice.loopWrapCount;
+    ++playback.loopWrapCount;
+    QVERIFY(!bind()); // no before-loop segment after a real wrap
+    --slice.loopWrapCount;
+    --playback.loopWrapCount;
+    slice.sourceEnd = 2 * sourceHz + 1;
+    QVERIFY(!bind()); // no crossed loop-end boundary
+    slice.sourceEnd = 3 * sourceHz / 4;
+    QVERIFY(bind());
+
+    // Preserve the already-working armed-loop seek AFTER the end.
+    slice.loopTraversalProven = false;
+    slice.sourceBegin = 5 * sourceHz / 2;
+    slice.sourceEnd = slice.sourceBegin.value() + sourceHz / 4;
+    QVERIFY(bind());
+}
+
 
 } // namespace
 } // namespace rgsml::tests
