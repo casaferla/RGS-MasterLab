@@ -63,10 +63,18 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
     // blanket certifiedForLiveTruePeak flag remains false.
     if (consumed.reason
         == platform::windows::WindowsConsumedGapReason::UNPROVEN_SRC) {
+        // A seek beyond an ARMED loop is normal playback, not a traversal.
+        // Require an independently retired SOURCE origin beyond the region
+        // end; the GUI cursor or loop checkbox alone never grants proof.
+        const bool outsideArmedLoop = playback.loop
+            && !consumed.srcLoopTraversalProven
+            && consumed.srcRetiredSourceBegin
+            && *consumed.srcRetiredSourceBegin
+                >= playback.loop->end().value();
         if ((consumed.srcLoopTraversalProven
                 ? (!playback.loop
                     || consumed.srcLoopWrapCount != playback.loopWrapCount)
-                : (playback.loop
+                : ((playback.loop && !outsideArmedLoop)
                     || consumed.srcLoopWrapCount != playback.loopWrapCount))
             || consumed.retainedOutputBegin < 0
             || consumed.retainedOutputBegin > consumed.srcConsumedOutputBegin
@@ -165,10 +173,14 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
             && part.loopTraversalProven;
         cursor = part.outputEnd;
     }
+    const auto& tail = consumed.slices[consumed.count - 1U];
+    const bool outsideArmedLoop = playback.loop
+        && tail.kind == platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED
+        && !tail.loopTraversalProven && tail.sourceBegin
+        && *tail.sourceBegin >= playback.loop->end().value();
     const bool loopProofPresent =
         consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP
-        && anyProvenLoopTraversal;
-    const auto& tail = consumed.slices[consumed.count - 1U];
+        && (anyProvenLoopTraversal || outsideArmedLoop);
     if (cursor != consumed.processedWatermarkExclusive
         || (consumed.reason == platform::windows::WindowsConsumedGapReason::UNPROVEN_HANDOFF
             && !tail.handoffPureNewProven
@@ -189,7 +201,9 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         || *slice.sourceEnd - *slice.sourceBegin
             != slice.outputEnd - slice.outputBegin
         || slice.realizationId != std::optional{expectedRealization}
-        || (playback.loop && !slice.loopTraversalProven)
+        || (playback.loop && !slice.loopTraversalProven
+            && (!slice.sourceBegin
+                || *slice.sourceBegin < playback.loop->end().value()))
         || (slice.loopTraversalProven
             && slice.loopWrapCount != playback.loopWrapCount)) {
         return fail("C2D6 source mapping is discontinuous, SRC, stale or mismatched.");
