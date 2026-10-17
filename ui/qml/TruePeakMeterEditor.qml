@@ -47,8 +47,7 @@ Item {
                     anchors.margins: 9
                     spacing: 5
                     Text {
-                        text: root.showLive ? "LIVE PROCESSED TRUE PEAK"
-                                            : "STATIC FULL-RESOURCE TRUE PEAK"
+                        text: "LIVE PROCESSED TRUE PEAK"
                         color: "#B3C9D9"
                         font.family: "Segoe UI"
                         font.pixelSize: 11
@@ -65,20 +64,14 @@ Item {
                             Layout.fillHeight: true
                             Layout.preferredWidth: 135
                             channelName: root.isMono ? "C" : "L"
-                            reading: root.showLive
-                                ? root.liveProvider.leftText
-                                : root.hasMeasurement
-                                    ? root.measurementProvider.fullLeftText : "—"
-                            available: root.showLive ? root.liveAvailable : root.hasMeasurement
-                            level: root.showLive
-                                ? root.liveProvider.leftLevel
-                                : root.hasMeasurement
-                                    ? root.measurementProvider.fullLeftMeterLevel : 0
-                            aboveDigitalZero: root.showLive
-                                ? root.liveAvailable && root.liveProvider.leftOverZero
-                                : root.hasMeasurement
-                                    && root.measurementProvider.fullLeftOverZero
-                            meterKind: root.showLive ? "RECENT 100 ms" : "STATIC RESOURCE"
+                            reading: root.liveAvailable
+                                ? root.liveProvider.leftText : "—"
+                            available: root.liveAvailable
+                            level: root.liveAvailable
+                                ? root.liveProvider.leftLevel : 0
+                            aboveDigitalZero: root.liveAvailable
+                                && root.liveProvider.leftOverZero
+                            meterKind: "RECENT 100 ms"
                             holdAvailable: root.holdAvailable
                             holdLevel: root.holdAvailable
                                 ? root.liveProvider.leftHoldLevel : 0.0
@@ -89,21 +82,17 @@ Item {
                             Layout.preferredWidth: 135
                             visible: !root.isMono
                             channelName: "R"
-                            reading: root.showLive
-                                ? root.liveProvider.rightText
-                                : root.measuredChannels === 2
-                                    ? root.measurementProvider.fullRightText : "—"
-                            available: root.showLive
-                                ? root.liveAvailable && root.measuredChannels === 2
-                                : root.measuredChannels === 2
-                            level: root.showLive
-                                ? root.liveProvider.rightLevel
-                                : root.measuredChannels === 2
-                                    ? root.measurementProvider.fullRightMeterLevel : 0
-                            aboveDigitalZero: root.showLive
-                                ? root.liveAvailable && root.liveProvider.rightOverZero
-                                : root.measuredChannels === 2
-                                    && root.measurementProvider.fullRightOverZero
+                            reading: root.liveAvailable
+                                && root.measuredChannels === 2
+                                ? root.liveProvider.rightText : "—"
+                            available: root.liveAvailable
+                                && root.measuredChannels === 2
+                            level: root.liveAvailable
+                                && root.measuredChannels === 2
+                                ? root.liveProvider.rightLevel : 0
+                            aboveDigitalZero: root.liveAvailable
+                                && root.measuredChannels === 2
+                                && root.liveProvider.rightOverZero
                             meterKind: root.showLive ? "RECENT 100 ms" : "STATIC RESOURCE"
                             holdAvailable: root.holdAvailable
                                 && root.measuredChannels === 2
@@ -122,9 +111,9 @@ Item {
                         Layout.fillWidth: true
                     }
                     Text {
-                        text: root.showLive
+                        text: root.liveProvider && root.liveProvider.monitoringAttempted
                             ? "RECENT 100 ms · " + root.liveProvider.statusText
-                            : "Full-resource maxima · STATIC, not audible LIVE."
+                            : "RECENT 100 ms · NOT MONITORED"
                         color: "#8EAAB9"
                         font.family: "Segoe UI"
                         font.pixelSize: 10
