@@ -47,6 +47,7 @@ class StructuralIntegrationTest final : public QObject {
 
 private slots:
     void deterministicPublicApiTrace();
+    void limiterTerminalBypassAndFactorySemantics();
 };
 
 void StructuralIntegrationTest::deterministicPublicApiTrace()
@@ -59,7 +60,7 @@ void StructuralIntegrationTest::deterministicPublicApiTrace()
         firstRegistry.value()->descriptors(),
         secondRegistry.value()->descriptors()));
     QCOMPARE(firstRegistry.value()->descriptors().size(), std::size_t{11});
-    QCOMPARE(firstRegistry.value()->factory_count(), std::size_t{4});
+    QCOMPARE(firstRegistry.value()->factory_count(), std::size_t{5});
 
     std::uint64_t firstRevision = 0;
     std::uint64_t secondRevision = 0;
@@ -91,6 +92,42 @@ void StructuralIntegrationTest::deterministicPublicApiTrace()
                 std::string_view{"MODULE_IMPLEMENTATION_UNAVAILABLE"});
         }
     }
+}
+
+void StructuralIntegrationTest::limiterTerminalBypassAndFactorySemantics()
+{
+    const auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto terminal=ProcessingChain::create(*registry.value(),
+        {ProcessingStage::MASTER,ChainSegment::TERMINAL});
+    QVERIFY(terminal);
+    const auto limiter=make_id("10000000-0000-0000-0000-000000000017");
+    QVERIFY(terminal.value()->add(limiter,"rgsml.dsp.true-peak-limiter",0));
+    QCOMPARE(terminal.value()->instances().size(),std::size_t{1});
+    QVERIFY(terminal.value()->instances()[0].active());
+
+    // BYPASS is an instance/chain state, never a silent default Ceiling or
+    // an active limiter pretending to use zero reduction. Renderer must SKIP
+    // inactive instances, with no D-frame drain nor whole-resource trim.
+    const auto initialRevision=terminal.value()->revision();
+    QVERIFY(terminal.value()->set_user_bypass(limiter,true));
+    QVERIFY(!terminal.value()->instances()[0].active());
+    QVERIFY(terminal.value()->instances()[0].user_bypass());
+    QCOMPARE(terminal.value()->revision(),initialRevision+1);
+    const auto stillRegistered=registry.value()->create_module("rgsml.dsp.true-peak-limiter");
+    QVERIFY(stillRegistered);
+    QVERIFY(terminal.value()->set_user_bypass(limiter,false));
+    QVERIFY(terminal.value()->instances()[0].active());
+    QCOMPARE(terminal.value()->revision(),initialRevision+2);
+
+    auto manual=ProcessingChain::create(*registry.value(),
+        {ProcessingStage::MASTER,ChainSegment::MANUAL});
+    QVERIFY(manual);
+    const auto id=make_id("10000000-0000-0000-0000-000000000018");
+    QVERIFY(!manual.value()->add(id,"rgsml.dsp.true-peak-limiter",0));
+    QVERIFY(!terminal.value()->duplicate(limiter,id,1));
+    const auto idTwo=make_id("10000000-0000-0000-0000-000000000019");
+    QVERIFY(!terminal.value()->add(idTwo,"rgsml.dsp.true-peak-limiter",1));
 }
 
 }  // namespace

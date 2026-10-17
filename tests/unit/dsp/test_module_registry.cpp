@@ -7,10 +7,16 @@
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_module.hpp>
+#include <rgsml/dsp/true_peak_limiter_module.hpp>
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
 #include <QtTest/QTest>
 
 #include <algorithm>
+#include <array>
+#include <bit>
+#include <cstdint>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <string>
@@ -124,12 +130,13 @@ void ModuleRegistryTest::emptyLookupAndUnavailableCatalog()
 
     auto catalog = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(catalog.value() != nullptr);
-    QCOMPARE(catalog.value()->factory_count(), std::size_t{4});
+    QCOMPARE(catalog.value()->factory_count(), std::size_t{5});
     for (const auto& descriptor : catalog.value()->descriptors()) {
         const auto hasProdFactory = descriptor.type_id() == "rgsml.dsp.gain"
             || descriptor.type_id() == "rgsml.dsp.parametric-eq"
             || descriptor.type_id() == "rgsml.dsp.compressor"
-            || descriptor.type_id() == "rgsml.dsp.stereo-ms";
+            || descriptor.type_id() == "rgsml.dsp.stereo-ms"
+            || descriptor.type_id() == "rgsml.dsp.true-peak-limiter";
         QCOMPARE(catalog.value()->has_factory(descriptor.type_id()), hasProdFactory);
         auto module = catalog.value()->create_module(descriptor.type_id());
         if (hasProdFactory) {
@@ -376,6 +383,54 @@ void ModuleRegistryTest::configuredModuleCreation()
     QVERIFY(!ms_to_gain);
     QCOMPARE(error_category(*ms_to_gain.error()),
              std::string_view{"MODULE_PARAMETER_PAYLOAD_MISMATCH"});
+
+    // M17 v1.0 has a REAL terminal-only module, not a placeholder or
+    // fallback that discards the exact nondefault typed Ceiling.
+    constexpr std::string_view kLimiter="rgsml.dsp.true-peak-limiter";
+    const auto limiterDescriptor=catalog.value()->find_descriptor(kLimiter);
+    QVERIFY(limiterDescriptor);
+    QCOMPARE(limiterDescriptor.value()->get().algorithm_version(),
+        std::optional<std::string_view>{"1.0.0"});
+    QCOMPARE(limiterDescriptor.value()->get().parameter_schema_id(),
+        std::optional<std::string_view>{
+            "rgsml.dsp.true-peak-limiter.parameters/1.0.0"});
+    QVERIFY(catalog.value()->has_factory(kLimiter));
+    const auto defaultLimiter=catalog.value()->create_module(kLimiter);
+    QVERIFY(defaultLimiter);
+    const auto* defaultInstance=dynamic_cast<const TruePeakLimiterModule*>(
+        defaultLimiter.value()->get());
+    QVERIFY(defaultInstance!=nullptr);
+    QCOMPARE(defaultInstance->parameters().ceiling_db_tp(),-1.0);
+
+    for(const double ceiling:{-12.0,-6.0,-1.0,
+            std::nextafter(-1.0,0.0),0.0}) {
+        const auto params=TruePeakLimiterParameters::create(ceiling);
+        QVERIFY(params);
+        const ModuleParameterPayload payload{*params.value()};
+        const auto typed=catalog.value()->create_module(kLimiter,payload);
+        QVERIFY(typed);
+        const auto* limiter=dynamic_cast<const TruePeakLimiterModule*>(
+            typed.value()->get());
+        QVERIFY(limiter!=nullptr);
+        QCOMPARE(std::bit_cast<std::uint64_t>(limiter->parameters().ceiling_db_tp()),
+            std::bit_cast<std::uint64_t>(ceiling));
+        QCOMPARE(limiter->descriptor().terminal_slot(),
+            std::optional{TerminalSlot::FINAL_TRUE_PEAK_LIMITER});
+    }
+    for(const auto& invalidPayload:
+        std::array<ModuleParameterPayload,3>{
+            gain_payload,eq_payload,ms_payload}) {
+        const auto wrong=catalog.value()->create_module(kLimiter,invalidPayload);
+        QVERIFY(!wrong);
+        QCOMPARE(error_category(*wrong.error()),
+            std::string_view{"MODULE_PARAMETER_PAYLOAD_MISMATCH"});
+    }
+    const auto wrongGain=catalog.value()->create_module(
+        "rgsml.dsp.gain",
+        ModuleParameterPayload{*TruePeakLimiterParameters::create(-6.0).value()});
+    QVERIFY(!wrongGain);
+    QCOMPARE(error_category(*wrongGain.error()),
+        std::string_view{"MODULE_PARAMETER_PAYLOAD_MISMATCH"});
 
     // Payload mismatch remains rejected deterministically.
     auto mismatch = catalog.value()->create_module("rgsml.dsp.gain", eq_payload);

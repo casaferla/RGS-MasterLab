@@ -100,6 +100,7 @@ private slots:
     void originAndChunkResumeBitIdentity();
     void checksumFormatBackendAndCeilingRejectAtomically();
     void finalizeBoundaryRejectsCheckpoints();
+    void canonicalLengthIsU64LittleEndian();
 };
 void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
 {
@@ -191,6 +192,28 @@ void TruePeakLimiterCheckpointTest::checksumFormatBackendAndCeilingRejectAtomica
     QVERIFY(bound);
     QVERIFY(!processBlock(*bound,44100,0,17,true).empty());
     QVERIFY(!bound->restore_runtime_checkpoint(*checkpoint.value()));
+}
+void TruePeakLimiterCheckpointTest::canonicalLengthIsU64LittleEndian()
+{
+    auto module=fresh(44100,-1.0);
+    QVERIFY(module);
+    const auto cp=module->runtime_checkpoint();
+    QVERIFY(cp);
+    const auto& bytes=cp.value()->payload;
+    QVERIFY(bytes.size()>=52U);
+    const std::array<std::uint8_t,8> magic{'M','1','7','C','P','1',0,0};
+    for(std::size_t i=0;i<magic.size();++i)QCOMPARE(bytes[i],magic[i]);
+    QCOMPARE(bytes[8],std::uint8_t{1});
+    for(std::size_t i=9;i<12;++i)QCOMPARE(bytes[i],std::uint8_t{0});
+    std::uint64_t stored=0;
+    for(unsigned i=0;i<8;++i)
+        stored|=std::uint64_t{bytes[12U+i]}<<(8*i);
+    QCOMPARE(stored,static_cast<std::uint64_t>(bytes.size()));
+    // The high dword is part of the frozen length field, not Fs metadata.
+    for(std::size_t i=16;i<20;++i)QCOMPARE(bytes[i],std::uint8_t{0});
+    auto restored=fresh(44100,-1.0);
+    QVERIFY(restored);
+    QVERIFY(restored->restore_runtime_checkpoint(*cp.value()));
 }
 void TruePeakLimiterCheckpointTest::finalizeBoundaryRejectsCheckpoints()
 {

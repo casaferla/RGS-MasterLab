@@ -465,7 +465,7 @@ Result<DspRuntimeCheckpoint> TruePeakLimiterModule::runtime_checkpoint() const
         for(const auto c:std::array<std::uint8_t,8>{'M','1','7','C','P','1',0,0})
             wr.bytes.push_back(c);
         wr.u32(1);
-        wr.u32(0); // completed below, after sections and SHA-256 footer.
+        wr.u64(0); // canonical u64LE total inclusive length, after SHA-256 footer.
         wr.i64(impl_->spec->audio_format.sample_rate().value());
         wr.u32(static_cast<std::uint32_t>(impl_->spec->audio_format.channel_count()));
         wr.u32(impl_->bound ? 1U:0U);
@@ -501,8 +501,8 @@ Result<DspRuntimeCheckpoint> TruePeakLimiterModule::runtime_checkpoint() const
         if(wr.bytes.size()+32U>kMaxCheckpointBytes)
             return Result<DspRuntimeCheckpoint>::failure(fail(ErrorCode::InvalidState,
                 "M17_CHECKPOINT_RESOURCE_LIMIT","Checkpoint serialization exceeded limit."));
-        const auto length=static_cast<std::uint32_t>(wr.bytes.size()+32U);
-        for(unsigned i=0;i<4;++i)
+        const auto length=static_cast<std::uint64_t>(wr.bytes.size()+32U);
+        for(unsigned i=0;i<8;++i)
             wr.bytes[12+i]=static_cast<std::uint8_t>(length>>(8*i));
         wr.checksum();
         DspRuntimeCheckpoint cp;
@@ -553,7 +553,8 @@ Status TruePeakLimiterModule::restore_runtime_checkpoint(const DspRuntimeCheckpo
         for(const auto c:std::array<std::uint8_t,8>{'M','1','7','C','P','1',0,0}) {
             if(rd.pos>=rd.bytes.size() || rd.bytes[rd.pos++]!=c)return incompatible();
         }
-        if(rd.u32()!=1 || rd.u32()!=rd.bytes.size())return incompatible();
+        if(rd.u32()!=1 || rd.u64()!=static_cast<std::uint64_t>(rd.bytes.size()))
+            return incompatible();
         const auto fs=rd.i64();
         const auto ch=rd.u32();
         const auto bound=rd.u32();
