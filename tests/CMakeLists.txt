@@ -753,6 +753,49 @@ foreach(dsp_test IN ITEMS
     )
 endforeach()
 
+# M17 Core-first focused test carrier. New M17 suites have their own
+# named CTest entries; the pre-existing Windows and Linux focused workflows
+# build rgsml_dsp_structural_integration_tests and execute ^rgsml_dsp_.
+# Keep the workflow immutable and make new tests explicit build dependencies.
+foreach(m17_test IN ITEMS parameters core)
+    qt_add_executable("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+        "unit/dsp/test_true_peak_limiter_${m17_test}.cpp"
+    )
+    target_include_directories("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/dsp/src
+            ${CMAKE_SOURCE_DIR}/analysis/src
+    )
+    target_link_libraries("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+        PRIVATE
+            rgsml_dsp
+            Qt6::Test
+    )
+    # Detector signed-grid tests share the protected M16 strict arithmetic
+    # requirement; source-file-scoped flags, no global DSP semantic changes.
+    if(MSVC)
+        target_compile_options("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+            PRIVATE /fp:strict)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+        target_compile_options("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+            PRIVATE -fno-fast-math -ffp-contract=off)
+    else()
+        message(FATAL_ERROR "M17 true peak tests require audited strict FP")
+    endif()
+    rgsml_apply_project_warnings("rgsml_dsp_true_peak_limiter_${m17_test}_tests")
+    add_test(
+        NAME "rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+        COMMAND "rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+    )
+    set_tests_properties("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+        PROPERTIES
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+            LABELS "dsp;m17;true_peak;core_first"
+    )
+    add_dependencies(rgsml_dsp_structural_integration_tests
+        "rgsml_dsp_true_peak_limiter_${m17_test}_tests")
+endforeach()
+
 qt_add_executable(rgsml_stereo_ms_crossover_runtime_tests
     unit/dsp/test_stereo_ms_crossover_runtime.cpp
 )
