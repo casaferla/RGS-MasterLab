@@ -200,14 +200,14 @@ void TruePeakLimiterCoreTest::controlFirstFramePrezeroAndHoldRelease()
             QVERIFY(result.value()->density>0.0);
             QVERIFY(result.value()->reduction_db>0.0);
             first_density=result.value()->density;
-            QCOMPARE(result.value()->hold_remaining(),std::int64_t{1764});
+            QCOMPARE(result.value()->hold_remaining,std::int64_t{1764});
         }
         if(m==0) {
             QVERIFY(result.value()->density>0.0);
             QVERIFY(result.value()->density<first_density);
             QVERIFY(result.value()->reduction_db>0.0);
             QVERIFY(result.value()->gain<1.0);
-            QCOMPARE(result.value()->hold_remaining(),std::int64_t{1743});
+            QCOMPARE(result.value()->hold_remaining,std::int64_t{1743});
         }
     }
     state.value()->reset();
