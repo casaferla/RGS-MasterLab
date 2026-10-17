@@ -761,17 +761,8 @@ QSGNode* WaveformItem::updatePaintNode(
             {markerLeft + internal::kWaveformPlayheadMarkerSize, 0.0F},
             {x, internal::kWaveformPlayheadMarkerSize},
         };
-        // One shared stereo playhead, two visual lane-top markers.  No
-        // separate timeline, seek control, hit target or audio behavior.
-        if (channelCount == 2U
-            && laneHeight >= internal::kWaveformPlayheadMarkerSize) {
-            const auto laneTop = static_cast<float>(laneHeight);
-            playheadGeometry.insert(playheadGeometry.end(), {
-                {markerLeft, laneTop},
-                {markerLeft + internal::kWaveformPlayheadMarkerSize, laneTop},
-                {x, laneTop + internal::kWaveformPlayheadMarkerSize},
-            });
-        }
+        // One top marker and one shared stereo playhead: no duplicate
+        // lower-lane ornament. Region handles likewise occur only at top.
         root->appendChildNode(make_triangles(
             playheadGeometry, playheadColor_));
     }
