@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <numbers>
 #include <vector>
 #include <string>
 
@@ -26,6 +27,9 @@ private slots:
     void signedTimelineAndFirstFrameImpulse();
     void directOracleMatchesAllPhaseAndTailEvents();
     void nonfiniteAndFinalizationAreAtomic();
+    void controlTimingAndParamValidation();
+    void controlFirstFramePrezeroAndHoldRelease();
+    void controlFutureAttackAndTransactionalFailure();
 };
 
 void TruePeakLimiterCoreTest::frozenAssetsMatchIndependentSources()
@@ -138,6 +142,120 @@ void TruePeakLimiterCoreTest::nonfiniteAndFinalizationAreAtomic()
     QCOMPARE(d.next_quarter_index(),std::int64_t{0});
     QVERIFY(d.push_programme_frame(0.0,0.0));
 }
+
+
+void TruePeakLimiterCoreTest::controlTimingAndParamValidation()
+{
+    using dsp::internal::TruePeakLimiterControllerState;
+    for (const auto [fs,h,d,lookahead,hold] : std::array<std::array<std::int64_t,5>,6>{{
+        {{44100,220,228,1760,1764}},
+        {{48000,240,248,1920,1920}},
+        {{88200,441,449,3528,3528}},
+        {{96000,480,488,3840,3840}},
+        {{176400,882,890,7056,7056}},
+        {{192000,960,968,7680,7680}}
+    }}) {
+        auto state=TruePeakLimiterControllerState::create(fs,-1.0);
+        QVERIFY(state);
+        QCOMPARE(state.value()->next_tick(),std::int64_t{-62});
+        QCOMPARE(state.value()->lookahead_frames(),h);
+        QCOMPARE(state.value()->delay_frames(),d);
+        QCOMPARE(state.value()->lookahead_ticks(),lookahead);
+        QCOMPARE(state.value()->hold_ticks(),hold);
+        QCOMPARE(state.value()->density(),0.0);
+        QCOMPARE(state.value()->previous_reduction_db(),0.0);
+        const auto sample=state.value()->advance(0.0,{});
+        QVERIFY(sample);
+        QCOMPARE(sample.value()->tick,std::int64_t{-62});
+        QCOMPARE(sample.value()->required_db,0.0);
+        QCOMPARE(sample.value()->reduction_db,0.0);
+        QCOMPARE(sample.value()->gain,1.0);
+        QCOMPARE(state.value()->next_tick(),std::int64_t{-61});
+    }
+    for (const auto fs : {0,8000,384000}) {
+        QVERIFY(!TruePeakLimiterControllerState::create(fs,-1.0));
+    }
+    for (const auto invalid : {-13.0,0.01,
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity()}) {
+        QVERIFY(!TruePeakLimiterControllerState::create(48000,invalid));
+    }
+}
+
+void TruePeakLimiterCoreTest::controlFirstFramePrezeroAndHoldRelease()
+{
+    using dsp::internal::TruePeakLimiterControllerState;
+    auto state=TruePeakLimiterControllerState::create(44100,-12.0);
+    QVERIFY(state);
+    QVERIFY(state.value()->advance(+0.0,{}));
+    double first_density=0.0;
+    for (int m=-61;m<=0;++m) {
+        // Exact PO adversarial impulse has anchor at j=13, m=-21
+        // with |4*730/8192| > -12dBTP before tick zero.
+        const double peak=m==-21 ? 4.0*730.0/8192.0 : 0.0;
+        const auto result=state.value()->advance(peak,{});
+        QVERIFY(result);
+        if (m==-21) {
+            QVERIFY(result.value()->required_db>0.0);
+            QVERIFY(result.value()->density>0.0);
+            QVERIFY(result.value()->reduction_db>0.0);
+            first_density=result.value()->density;
+            QCOMPARE(result.value()->hold_remaining(),std::int64_t{1764});
+        }
+        if(m==0) {
+            QVERIFY(result.value()->density>0.0);
+            QVERIFY(result.value()->density<first_density);
+            QVERIFY(result.value()->reduction_db>0.0);
+            QVERIFY(result.value()->gain<1.0);
+            QCOMPARE(result.value()->hold_remaining(),std::int64_t{1743});
+        }
+    }
+    state.value()->reset();
+    QCOMPARE(state.value()->next_tick(),std::int64_t{-62});
+    QCOMPARE(state.value()->density(),0.0);
+    QCOMPARE(state.value()->previous_reduction_db(),0.0);
+    QCOMPARE(state.value()->hold_remaining(),std::int64_t{0});
+}
+
+void TruePeakLimiterCoreTest::controlFutureAttackAndTransactionalFailure()
+{
+    using dsp::internal::TruePeakLimiterControllerState;
+    using dsp::internal::LimiterDetectorEvent;
+    auto state=TruePeakLimiterControllerState::create(48000,-1.0);
+    QVERIFY(state);
+    const auto m=state.value()->next_tick();
+    const auto L=state.value()->lookahead_ticks();
+    const double demandPeak=2.0;
+    const LimiterDetectorEvent near{m+L/2,demandPeak,true};
+    const LimiterDetectorEvent end{m+L,demandPeak,true};
+    auto step=state.value()->advance(0.0,std::array{near,end});
+    QVERIFY(step);
+    const double required=20.0*std::log10(
+        demandPeak/std::pow(10.0,-1.0/20.0));
+    const double w=0.5*(1.0+std::cos(std::numbers::pi_v<double>*0.5));
+    QVERIFY(std::abs(step.value()->attack_floor_db-required*w)<1e-12);
+    QCOMPARE(step.value()->gain,std::pow(10.0,-step.value()->reduction_db/20.0));
+    QCOMPARE(state.value()->next_tick(),m+1);
+    const auto oldDensity=state.value()->density();
+    const auto oldHold=state.value()->hold_remaining();
+    const auto oldReduction=state.value()->previous_reduction_db();
+    const LimiterDetectorEvent beyond{m+1+L+1,1.0,true};
+    QVERIFY(!state.value()->advance(0.0,std::array{beyond}));
+    QVERIFY(!state.value()->advance(
+        std::numeric_limits<double>::quiet_NaN(),{}));
+    QVERIFY(!state.value()->advance(0.0,std::array{
+        LimiterDetectorEvent{m+3,1.0,true},
+        LimiterDetectorEvent{m+2,1.0,true}}));
+    QCOMPARE(state.value()->next_tick(),m+1);
+    QCOMPARE(state.value()->density(),oldDensity);
+    QCOMPARE(state.value()->hold_remaining(),oldHold);
+    QCOMPARE(state.value()->previous_reduction_db(),oldReduction);
+    const auto valid=state.value()->advance(0.0,{});
+    QVERIFY(valid);
+    QCOMPARE(valid.value()->tick,m+1);
+    QCOMPARE(valid.value()->reduction_db,oldReduction);
+}
+
 
 } // namespace
 } // namespace rgsml::tests
