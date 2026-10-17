@@ -33,8 +33,40 @@ struct LimiterDetectorQuarter final {
     LimiterDetectorEvent midpoint{}; // tick = 2*j-62, always present
 };
 
+struct LimiterDetectorSnapshot final {
+    std::uint32_t channels{0};
+    std::array<std::array<double,12>,2> history{};
+    std::array<std::array<double,16>,2> anchors{};
+    std::uint64_t programme_frames{0};
+    std::int64_t next_quarter{0};
+    bool finalized{false};
+};
+
 class TruePeakLimiterDetectorState final {
 public:
+    [[nodiscard]] LimiterDetectorSnapshot snapshot() const noexcept
+    {
+        return {channels_,history_,anchors_,programme_frames_,next_quarter_,finalized_};
+    }
+    [[nodiscard]] bool restore(const LimiterDetectorSnapshot& snap) noexcept
+    {
+        if (snap.channels!=channels_ || snap.finalized
+            || snap.programme_frames>static_cast<std::uint64_t>(
+                (std::numeric_limits<std::int64_t>::max()-128)/4)
+            || snap.next_quarter<0
+            || snap.next_quarter!=static_cast<std::int64_t>(snap.programme_frames)*4)
+            return false;
+        for (const auto& row:snap.history)
+            for (const double x:row) if(!std::isfinite(x))return false;
+        for (const auto& row:snap.anchors)
+            for (const double x:row) if(!std::isfinite(x))return false;
+        history_=snap.history;
+        anchors_=snap.anchors;
+        programme_frames_=snap.programme_frames;
+        next_quarter_=snap.next_quarter;
+        finalized_=false;
+        return true;
+    }
     explicit TruePeakLimiterDetectorState(std::uint32_t channels) noexcept
         : channels_(channels)
     {
@@ -238,8 +270,33 @@ struct LimiterControlStep final {
     std::int64_t hold_remaining{0};
 };
 
+struct LimiterControllerSnapshot final {
+    std::int64_t next_tick{-62};
+    double density{+0.0};
+    double previous_reduction_db{+0.0};
+    std::int64_t hold_remaining{0};
+};
+
 class TruePeakLimiterControllerState final {
 public:
+    [[nodiscard]] LimiterControllerSnapshot snapshot() const noexcept
+    {
+        return {next_tick_,density_,r_previous_,hold_};
+    }
+    [[nodiscard]] bool restore(const LimiterControllerSnapshot& snap) noexcept
+    {
+        if (snap.next_tick < -62
+            || snap.next_tick >= std::numeric_limits<std::int64_t>::max()-lookahead_ticks()
+            || !std::isfinite(snap.density) || snap.density<0.0 || snap.density>1.0
+            || !std::isfinite(snap.previous_reduction_db)
+            || snap.previous_reduction_db<0.0
+            || snap.hold_remaining<0 || snap.hold_remaining>hold_ticks())return false;
+        next_tick_=snap.next_tick;
+        density_=snap.density;
+        r_previous_=snap.previous_reduction_db;
+        hold_=snap.hold_remaining;
+        return true;
+    }
     [[nodiscard]] static rgsml::core::Result<TruePeakLimiterControllerState>
     create(std::int64_t sample_rate, double ceiling_db_tp)
     {

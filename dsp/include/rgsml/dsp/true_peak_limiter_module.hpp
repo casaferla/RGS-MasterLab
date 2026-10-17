@@ -25,6 +25,9 @@ public:
         audio::MutableAudioBufferView output, const DspProcessContext& context) override;
     [[nodiscard]] core::Status finalize(audio::MutableAudioBufferView output,
         const DspProcessContext& context) override;
+    [[nodiscard]] core::Result<DspRuntimeCheckpoint> runtime_checkpoint() const override;
+    [[nodiscard]] core::Status
+    restore_runtime_checkpoint(const DspRuntimeCheckpoint& checkpoint) override;
 private:
     struct Impl;
     explicit TruePeakLimiterModule(std::unique_ptr<Impl> impl) noexcept;

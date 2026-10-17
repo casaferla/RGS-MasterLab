@@ -757,7 +757,7 @@ endforeach()
 # named CTest entries; the pre-existing Windows and Linux focused workflows
 # build rgsml_dsp_structural_integration_tests and execute ^rgsml_dsp_.
 # Keep the workflow immutable and make new tests explicit build dependencies.
-foreach(m17_test IN ITEMS parameters core)
+foreach(m17_test IN ITEMS parameters core checkpoint verification)
     qt_add_executable("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
         "unit/dsp/test_true_peak_limiter_${m17_test}.cpp"
     )
@@ -771,6 +771,12 @@ foreach(m17_test IN ITEMS parameters core)
             rgsml_dsp
             Qt6::Test
     )
+    # M16 is referenced strictly from the TEST-ONLY verification executable,
+    # not as a reverse dependency of the M17 production DSP library.
+    if(m17_test STREQUAL "verification")
+        target_link_libraries("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+            PRIVATE rgsml_analysis)
+    endif()
     # Detector signed-grid tests share the protected M16 strict arithmetic
     # requirement; source-file-scoped flags, no global DSP semantic changes.
     if(MSVC)
