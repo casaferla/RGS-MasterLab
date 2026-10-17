@@ -71,7 +71,16 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
             && consumed.srcRetiredSourceBegin
             && *consumed.srcRetiredSourceBegin
                 >= playback.loop->end().value();
-        if ((consumed.srcLoopTraversalProven
+        const bool loopTraversalWithinRegion = !consumed.srcLoopTraversalProven
+            || (playback.loop
+                && consumed.srcRetiredSourceBegin
+                && consumed.srcRetiredSourceEnd
+                && *consumed.srcRetiredSourceBegin
+                    >= playback.loop->begin().value()
+                && *consumed.srcRetiredSourceEnd
+                    <= playback.loop->end().value());
+        if (!loopTraversalWithinRegion
+            || (consumed.srcLoopTraversalProven
                 ? (!playback.loop
                     || consumed.srcLoopWrapCount != playback.loopWrapCount)
                 : ((playback.loop && !outsideArmedLoop)
@@ -204,6 +213,9 @@ core::Result<BoundLiveTruePeakInput> bind_processed_live_input(
         || (playback.loop && !slice.loopTraversalProven
             && (!slice.sourceBegin
                 || *slice.sourceBegin < playback.loop->end().value()))
+        || (slice.loopTraversalProven && playback.loop
+            && (*slice.sourceBegin < playback.loop->begin().value()
+                || *slice.sourceEnd > playback.loop->end().value()))
         || (slice.loopTraversalProven
             && slice.loopWrapCount != playback.loopWrapCount)) {
         return fail("C2D6 source mapping is discontinuous, SRC, stale or mismatched.");
