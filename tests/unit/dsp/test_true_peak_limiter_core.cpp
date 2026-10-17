@@ -11,6 +11,8 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <cfenv>
+#include <span>
 #include <cstdint>
 #include <limits>
 #include <numbers>
@@ -36,6 +38,8 @@ private slots:
     void controlFutureAttackAndTransactionalFailure();
     void audioStreamingOneLatencyAndTrueEos();
     void audioStreamingChunkPartitionAndStrictInput();
+    void appliedGainWitnessReconstructsPcmAndIsNoninvasive();
+    void strictFpRuntimeMode();
 };
 
 void TruePeakLimiterCoreTest::frozenAssetsMatchIndependentSources()
@@ -284,9 +288,19 @@ void TruePeakLimiterCoreTest::controlFutureAttackAndTransactionalFailure()
         stereo?audio::ChannelLayout::STEREO_LR:audio::ChannelLayout::MONO_C).value();
 }
 
+struct AppliedGainTestCapture final {
+    std::vector<dsp::TruePeakLimiterAppliedGainFrame> records;
+    static void accept(void* context,
+        std::span<const dsp::TruePeakLimiterAppliedGainFrame> batch) noexcept
+    {
+        auto& records=static_cast<AppliedGainTestCapture*>(context)->records;
+        records.insert(records.end(),batch.begin(),batch.end());
+    }
+};
 [[nodiscard]] std::vector<std::vector<double>> runLimiterAudio(
     std::int64_t fs, bool stereo, const std::vector<double>& samples,
-    double ceiling, const std::vector<std::size_t>& partitions)
+    double ceiling, const std::vector<std::size_t>& partitions,
+    std::vector<dsp::TruePeakLimiterAppliedGainFrame>* gainWitness = nullptr)
 {
     const auto format=limiterFormat(fs,stereo);
     const auto desc=frozenLimiterDescriptor();
@@ -302,6 +316,11 @@ void TruePeakLimiterCoreTest::controlFutureAttackAndTransactionalFailure()
     const auto d=req.value()->algorithmic_latency_frames.value();
     if (!mod.prepare(dsp::DspProcessSpec{format,audio::FrameDomainId::OUTPUT_RATE,
         *core::FrameCount::create(4096).value()}))return {};
+    AppliedGainTestCapture capture;
+    if(gainWitness) {
+        capture.records.reserve(samples.size()); // noexcept callback cannot allocate
+        mod.set_applied_gain_sink(&AppliedGainTestCapture::accept,&capture);
+    }
     std::vector<std::vector<double>> raw(stereo?2U:1U);
     std::size_t offset=0,block=0;
     while(offset<samples.size()) {
@@ -358,6 +377,7 @@ void TruePeakLimiterCoreTest::controlFutureAttackAndTransactionalFailure()
         if (channel.size()!=samples.size()+static_cast<std::size_t>(d))return {};
         channel.erase(channel.begin(),channel.begin()+d);
     }
+    if(gainWitness) *gainWitness=std::move(capture.records);
     return raw;
 }
 
@@ -415,6 +435,68 @@ void TruePeakLimiterCoreTest::audioStreamingChunkPartitionAndStrictInput()
         dsp::DspProcessSpec{format,audio::FrameDomainId::SOURCE_PROCESSING_RATE,
             *core::FrameCount::create(32).value()});
     QVERIFY(!wrong);
+}
+
+
+void TruePeakLimiterCoreTest::strictFpRuntimeMode()
+{
+    // Source-scoped /fp:strict or -fno-fast-math/-ffp-contract=off alone
+    // is not proof of the runtime rounding and gradual-underflow context.
+    QCOMPARE(std::fegetround(),FE_TONEAREST);
+    volatile double smallestNormal=std::numeric_limits<double>::min();
+    volatile double half=0.5;
+    const volatile double subnormal=smallestNormal*half;
+    QVERIFY(subnormal>0.0); // catches active flush-to-zero for this arithmetic
+    QVERIFY(std::fpclassify(static_cast<double>(subnormal))==FP_SUBNORMAL);
+}
+
+void TruePeakLimiterCoreTest::appliedGainWitnessReconstructsPcmAndIsNoninvasive()
+{
+    // U1/U4/U5 read-only witness: no ticks/placeholders, exactly N real
+    // frames, one stereo-linked base gain, no M16 global trim mixed in.
+    // Reproduce every actual PCM multiplication or bitwise identity copy.
+    constexpr std::size_t n=1103;
+    std::vector<double> source(n,+0.0);
+    source[0]=4.0; // prezero signed detector support is required
+    source[17]=-2.5;
+    source[256]=+0.7;
+    source[n-1]=-0.25;
+    for(const auto fs:{44100,48000,88200,96000,176400,192000}) {
+        const std::int64_t latency=(fs/200)+8;
+        for(const bool stereo:{false,true}) {
+            std::vector<dsp::TruePeakLimiterAppliedGainFrame> witness;
+            const auto withWitness=runLimiterAudio(
+                fs,stereo,source,-12.0,{83,71,239},&witness);
+            const auto withoutWitness=runLimiterAudio(
+                fs,stereo,source,-12.0,{1103});
+            QVERIFY(!withWitness.empty());
+            QCOMPARE(withWitness.size(),stereo?std::size_t{2}:std::size_t{1});
+            QCOMPARE(withWitness.size(),withoutWitness.size());
+            QCOMPARE(witness.size(),n);
+            bool actualReduction=false;
+            for(std::size_t i=0;i<n;++i) {
+                const auto& w=witness[i];
+                QCOMPARE(w.programme_frame,static_cast<std::int64_t>(i));
+                QCOMPARE(w.raw_output_frame,static_cast<std::int64_t>(i)+latency);
+                QVERIFY(std::isfinite(w.gain) && w.gain>0.0 && w.gain<=1.0);
+                QVERIFY(std::isfinite(w.reduction_db) && w.reduction_db>=0.0);
+                if(w.gain<1.0)actualReduction=true;
+                QCOMPARE(std::bit_cast<std::uint64_t>(w.gain),
+                    std::bit_cast<std::uint64_t>(
+                        w.reduction_db==0.0?1.0:
+                        std::pow(10.0,-w.reduction_db/20.0)));
+                for(std::size_t ch=0;ch<withWitness.size();++ch) {
+                    const auto sample=ch==0?source[i]:-source[i]*0.375;
+                    const double expected=w.gain==1.0?sample:sample*w.gain;
+                    QCOMPARE(std::bit_cast<std::uint64_t>(withWitness[ch][i]),
+                        std::bit_cast<std::uint64_t>(expected));
+                    QCOMPARE(std::bit_cast<std::uint64_t>(withWitness[ch][i]),
+                        std::bit_cast<std::uint64_t>(withoutWitness[ch][i]));
+                }
+            }
+            QVERIFY(actualReduction);
+        }
+    }
 }
 
 } // namespace
