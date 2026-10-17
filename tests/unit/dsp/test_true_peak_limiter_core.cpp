@@ -1,4 +1,8 @@
 #include "internal/true_peak_limiter_state.hpp"
+#include <rgsml/dsp/true_peak_limiter_module.hpp>
+#include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/core/frame_time.hpp>
 #include "../../oracles/true_peak_limiter/direct_oracle.hpp"
 
 #include <QtTest/QTest>
@@ -30,6 +34,8 @@ private slots:
     void controlTimingAndParamValidation();
     void controlFirstFramePrezeroAndHoldRelease();
     void controlFutureAttackAndTransactionalFailure();
+    void audioStreamingOneLatencyAndTrueEos();
+    void audioStreamingChunkPartitionAndStrictInput();
 };
 
 void TruePeakLimiterCoreTest::frozenAssetsMatchIndependentSources()
@@ -256,6 +262,160 @@ void TruePeakLimiterCoreTest::controlFutureAttackAndTransactionalFailure()
     QCOMPARE(valid.value()->reduction_db,oldReduction);
 }
 
+
+
+[[nodiscard]] dsp::ModuleDescriptor frozenLimiterDescriptor()
+{
+    using namespace dsp;
+    auto result=ModuleDescriptor::create(ModuleDescriptorSpec{
+        "rgsml.dsp.true-peak-limiter",
+        "rgsml.dsp.true-peak-limiter.display-name",
+        {ModuleCategory::DYNAMICS,ModuleCategory::OUTPUT},
+        {ProcessingStage::MASTER},{ChainSegment::TERMINAL},false,true,
+        PlacementClass::TERMINAL_SLOT,TerminalSlot::FINAL_TRUE_PEAK_LIMITER,
+        {},{},{},{},false,true,
+        "1.0.0","rgsml.dsp.true-peak-limiter.parameters/1.0.0"});
+    return *result.value();
+}
+[[nodiscard]] audio::AudioFormat limiterFormat(std::int64_t fs,bool stereo)
+{
+    return *audio::AudioFormat::create(
+        *core::SampleRate::create(fs).value(),
+        stereo?audio::ChannelLayout::STEREO_LR:audio::ChannelLayout::MONO_C).value();
+}
+
+[[nodiscard]] std::vector<std::vector<double>> runLimiterAudio(
+    std::int64_t fs, bool stereo, const std::vector<double>& samples,
+    double ceiling, const std::vector<std::size_t>& partitions)
+{
+    const auto format=limiterFormat(fs,stereo);
+    const auto desc=frozenLimiterDescriptor();
+    auto params=dsp::TruePeakLimiterParameters::create(ceiling);
+    if (!params) return {};
+    auto module=dsp::TruePeakLimiterModule::create(desc,*params.value());
+    if (!module)return {};
+    auto& mod=**module.value();
+    auto req=mod.runtime_requirements(dsp::DspProcessSpec{
+        format,audio::FrameDomainId::OUTPUT_RATE,
+        *core::FrameCount::create(4096).value()});
+    if (!req)return {};
+    const auto d=req.value()->algorithmic_latency_frames.value();
+    if (!mod.prepare(dsp::DspProcessSpec{format,audio::FrameDomainId::OUTPUT_RATE,
+        *core::FrameCount::create(4096).value()}))return {};
+    std::vector<std::vector<double>> raw(stereo?2U:1U);
+    std::size_t offset=0,block=0;
+    while(offset<samples.size()) {
+        const auto count=std::min(
+            samples.size()-offset,partitions[block++%partitions.size()]);
+        auto in=audio::AudioBuffer::create(format,audio::FrameDomainId::OUTPUT_RATE,
+            core::FrameIndex{static_cast<std::int64_t>(offset)},
+            *core::FrameCount::create(static_cast<std::int64_t>(count)).value());
+        auto out=audio::AudioBuffer::create(format,audio::FrameDomainId::OUTPUT_RATE,
+            core::FrameIndex{static_cast<std::int64_t>(offset)},
+            *core::FrameCount::create(static_cast<std::int64_t>(count)).value());
+        if(!in || !out)return {};
+        for(std::size_t ch=0;ch<raw.size();++ch) {
+            auto plane=in.value()->mutable_view().channel(ch);
+            if(!plane)return {};
+            for(std::size_t i=0;i<count;++i) {
+                const auto value=samples[offset+i];
+                (*plane.value())[i]=(ch==0)?value:-value*0.375;
+            }
+        }
+        auto range=core::FrameRange::create(
+            core::FrameIndex{static_cast<std::int64_t>(offset)},
+            core::FrameIndex{static_cast<std::int64_t>(offset+count)});
+        if(!range)return {};
+        if(!mod.process(in.value()->view(),out.value()->mutable_view(),
+            dsp::DspProcessContext{*range.value(),offset==0,false}))return {};
+        for(std::size_t ch=0;ch<raw.size();++ch) {
+            auto plane=out.value()->view().channel(ch);
+            if(!plane)return {};
+            raw[ch].insert(raw[ch].end(),plane.value()->begin(),plane.value()->end());
+        }
+        offset+=count;
+    }
+    std::int64_t drain=0;
+    while(drain<d) {
+        const auto count=std::min<std::int64_t>(d-drain,partitions[block++%partitions.size()]);
+        const auto first=static_cast<std::int64_t>(samples.size())+drain;
+        auto out=audio::AudioBuffer::create(format,audio::FrameDomainId::OUTPUT_RATE,
+            core::FrameIndex{first},*core::FrameCount::create(count).value());
+        if(!out)return {};
+        auto range=core::FrameRange::create(core::FrameIndex{first},
+            core::FrameIndex{first+count});
+        if(!range)return {};
+        if(!mod.finalize(out.value()->mutable_view(),
+            dsp::DspProcessContext{*range.value(),false,drain+count==d}))return {};
+        for(std::size_t ch=0;ch<raw.size();++ch) {
+            auto plane=out.value()->view().channel(ch);
+            if(!plane)return {};
+            raw[ch].insert(raw[ch].end(),plane.value()->begin(),plane.value()->end());
+        }
+        drain+=count;
+    }
+    for(auto& channel:raw) {
+        if (channel.size()!=samples.size()+static_cast<std::size_t>(d))return {};
+        channel.erase(channel.begin(),channel.begin()+d);
+    }
+    return raw;
+}
+
+void TruePeakLimiterCoreTest::audioStreamingOneLatencyAndTrueEos()
+{
+    for(const auto fs:{44100,48000,88200,96000,176400,192000}) {
+        const auto d=(fs/200)+8;
+        for(const auto n:{1,7,static_cast<int>(d-1),
+                             static_cast<int>(d+2)}) {
+            std::vector<double> sample(static_cast<std::size_t>(n),+0.0);
+            sample[0]=4.0; // 44.1kHz first-frame PO startup impulse
+            for (const bool stereo:{false,true}) {
+                auto result=runLimiterAudio(fs,stereo,sample,-12.0,{7,1,3,31});
+                QVERIFY2(!result.empty(),"Streaming PCM length/EOS contract failed");
+                QCOMPARE(result.size(),stereo?std::size_t{2}:std::size_t{1});
+                for(const auto& lane:result) {
+                    QCOMPARE(lane.size(),sample.size());
+                    for(const double v:lane)QVERIFY(std::isfinite(v));
+                    QVERIFY(std::abs(lane.front())<4.0);
+                }
+            }
+        }
+    }
+}
+
+void TruePeakLimiterCoreTest::audioStreamingChunkPartitionAndStrictInput()
+{
+    constexpr auto fs=44100;
+    std::vector<double> sample(274,+0.0);
+    sample[0]=4.0;sample[11]=2.5;sample[270]=-0.45;
+    const auto unchunked=runLimiterAudio(fs,true,sample,-12.0,{4096});
+    const auto chunked=runLimiterAudio(fs,true,sample,-12.0,{1,3,7,17});
+    QVERIFY(!unchunked.empty());
+    QCOMPARE(unchunked.size(),chunked.size());
+    for(std::size_t ch=0;ch<unchunked.size();++ch) {
+        QCOMPARE(unchunked[ch].size(),chunked[ch].size());
+        for(std::size_t i=0;i<unchunked[ch].size();++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>(unchunked[ch][i]),
+                     std::bit_cast<std::uint64_t>(chunked[ch][i]));
+    }
+    std::vector<double> quiet{+0.0,-0.0,0.0625,-0.125};
+    const auto neutral=runLimiterAudio(fs,false,quiet,0.0,{1});
+    QVERIFY(!neutral.empty());
+    for(std::size_t i=0;i<quiet.size();++i)
+        QCOMPARE(std::bit_cast<std::uint64_t>(neutral[0][i]),
+                 std::bit_cast<std::uint64_t>(quiet[i]));
+    // Core explicitly rejects SOURCE_PROCESSING_RATE; M17 never borrows
+    // M16 audition SRC or silently relabels the audio-domain timebase.
+    const auto desc=frozenLimiterDescriptor();
+    const auto params=*dsp::TruePeakLimiterParameters::create_default().value();
+    auto module=dsp::TruePeakLimiterModule::create(desc,params);
+    QVERIFY(module);
+    const auto format=limiterFormat(fs,true);
+    auto wrong=module.value()->get()->runtime_requirements(
+        dsp::DspProcessSpec{format,audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            *core::FrameCount::create(32).value()});
+    QVERIFY(!wrong);
+}
 
 } // namespace
 } // namespace rgsml::tests

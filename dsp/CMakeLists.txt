@@ -9,6 +9,7 @@ add_library(rgsml_dsp STATIC
     src/compressor_module.cpp
     src/stereo_ms_parameters.cpp
     src/true_peak_limiter_parameters.cpp
+    src/true_peak_limiter_module.cpp
     src/stereo_ms_width.cpp
     src/stereo_ms_width_response.cpp
     src/stereo_ms_module.cpp
@@ -41,3 +42,15 @@ include("${CMAKE_CURRENT_LIST_DIR}/../cmake/RgsmlDependencyRules.cmake")
 rgsml_assert_target_dependencies(
     TARGET rgsml_dsp
     FORBIDDEN_LAYERS QT QML PLATFORM UI PROJECT RENDER)
+
+# M17 strict-FP arithmetic remains source-scoped. Do not change existing DSP
+# numerical compilation policies or the protected M16 analysis implementation.
+if(MSVC)
+    set_source_files_properties(src/true_peak_limiter_module.cpp
+        PROPERTIES COMPILE_OPTIONS "/fp:strict")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    set_source_files_properties(src/true_peak_limiter_module.cpp
+        PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
+else()
+    message(FATAL_ERROR "M17 True Peak Limiter needs an audited strict-FP compiler")
+endif()
