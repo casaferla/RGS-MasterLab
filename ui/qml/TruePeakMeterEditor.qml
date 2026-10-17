@@ -9,16 +9,18 @@ Item {
     objectName: "truePeakMeterSurface"
     property var measurementProvider: null
     property var liveProvider: null
-    readonly property bool showLive: liveProvider
-        ? liveProvider.monitoringAttempted : false
-    readonly property bool liveAvailable: root.showLive
-        && liveProvider.recentAvailable
-    readonly property bool holdAvailable: root.showLive
-        && liveProvider.holdAvailable
+    // The large channel bars are LIVE-only: a whole-resource future maximum
+    // must never appear as a frozen "now" meter during Play or seek.
+    // Full-resource STATIC remains independently visible in the shared rail.
+    readonly property bool showLive: true
+    readonly property bool liveAvailable: liveProvider
+        ? liveProvider.recentAvailable : false
+    readonly property bool holdAvailable: liveProvider
+        ? liveProvider.holdAvailable : false
     readonly property bool hasMeasurement: measurementProvider
         ? measurementProvider.hasMeasurement : false
-    readonly property int measuredChannels: root.showLive
-        ? root.liveProvider.channelCount
+    readonly property int measuredChannels: liveProvider
+        && liveProvider.channelCount > 0 ? liveProvider.channelCount
         : root.hasMeasurement ? root.measurementProvider.measuredChannelCount : 0
     readonly property bool isMono: root.measuredChannels === 1
 
