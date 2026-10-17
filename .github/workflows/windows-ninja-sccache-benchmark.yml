@@ -1,0 +1,334 @@
+# EXPERIMENTAL ONLY: isolated from PR #51 and the canonical Windows/MSBuild gate.
+# No pull_request or main triggers. This job cannot certify M16/M17 or release.
+name: Windows Ninja+sccache isolated benchmark
+
+on:
+  push:
+    branches:
+      - 'experimental/windows-ninja-sccache-go-20261018'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ninja-sccache-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cold:
+    name: Ninja cold cache (Windows-2022)
+    runs-on: windows-2022
+    timeout-minutes: 50
+    env:
+      RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_VERSION: rgsml-msvc2022-qt683-strict-ninja-v1
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Enter VS2022 x64 toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: "v0.16.0"
+      - name: Expose ephemeral GHA cache backend credentials
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Prepare Ninja and Qt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'PYTHON_TOOL_INSTALL_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'QT_INSTALL_FAILED' }
+          ninja --version
+          cl /?
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC_ENV_MISSING' }
+      - name: Configure isolated Ninja Multi-Config (Release)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S . -B build/windows-ninja-cache -G "Ninja Multi-Config" `
+            -DCMAKE_CONFIGURATION_TYPES=Release `
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
+            -DCMAKE_POLICY_DEFAULT_CMP0141=NEW `
+            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DRGSML_BUILD_TESTS=ON `
+            -DRGSML_WARNINGS_AS_ERRORS=ON `
+            -DRGSML_PROVENANCE_TYPE=CI `
+            -DRGSML_PROVENANCE_RUN_NUMBER="${{ github.run_number }}" `
+            -DRGSML_PROVENANCE_GIT_SHA="${{ github.sha }}" `
+            -DRGSML_QT_ROOT="$env:RGSML_QT_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'NINJA_CONFIGURE_FAILED' }
+      - name: Independent Ninja strict-FP source evidence (not M16 certification)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $units = Get-Content build/windows-ninja-cache/compile_commands.json -Raw | ConvertFrom-Json
+          foreach ($file in @('true_peak_itu4x_channel_stream.cpp', 'true_peak_full_resource.cpp', 'true_peak_limiter_module.cpp')) {
+            $matches = @($units | Where-Object { $_.file.Replace('\','/').EndsWith("/" + $file, [System.StringComparison]::OrdinalIgnoreCase) })
+            if ($matches.Count -ne 1) { throw "FP_SOURCE_NOT_UNIQUE: $file count=$($matches.Count)" }
+            $cmd = [string]$matches[0].command
+            if ($cmd -notmatch '(?i)(?<!\w)/fp:strict(?![\w-])' -or $cmd -match '(?i)/fp:(fast|contract)\b') {
+              throw "FP_SOURCE_SCOPE_INVALID: $file"
+            }
+            Write-Host "FP_SOURCE_SCOPE_OBSERVED: $file"
+          }
+          Write-Host 'OBSERVATION_ONLY: does not replace M16 Visual Studio vcxproj attestation'
+      - name: Benchmark complete focused Windows target build — cold
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force benchmark | Out-Null
+          sccache --zero-stats
+          $targets = @(
+            'rgsml_dsp_module_descriptor_tests'
+            'rgsml_dsp_module_registry_tests'
+            'rgsml_dsp_processing_chain_tests'
+            'rgsml_dsp_structural_integration_tests'
+            'rgsml_gain_tests'
+            'rgsml_true_peak_itu4x_coefficients_tests'
+            'rgsml_true_peak_itu4x_channel_stream_tests'
+            'rgsml_true_peak_full_resource_tests'
+            'rgsml_true_peak_measurement_tests'
+            'rgsml_true_peak_static_binding_tests'
+            'rgsml_true_peak_gate_g_edge_tests'
+            'rgsml_true_peak_chunk_invariance_tests'
+            'rgsml_true_peak_b2b_probe'
+            'rgsml_stereo_ms_parameters_tests'
+            'rgsml_stereo_ms_module_tests'
+            'rgsml_stereo_ms_crossover_tests'
+            'rgsml_stereo_ms_crossover_runtime_tests'
+            'rgsml_stereo_ms_module_streaming_tests'
+            'rgsml_stereo_ms_checkpoint_tests'
+            'rgsml_stereo_ms_independent_math_tests'
+            'rgsml_stereo_ms_long_resume_tests'
+            'rgsml_stereo_ms_gate_g_spatial_evidence_tests'
+            'rgsml_stereo_ms_no_alloc_tests'
+            'rgsml_stereo_ms_width_tests'
+            'rgsml_stereo_ms_width_response_tests'
+            'rgsml_stereo_ms_signature_tests'
+            'rgsml_stereo_ms_view_model_tests'
+            'rgsml_stereo_ms_audible_resolver_tests'
+            'rgsml_gain_golden_tests'
+            'rgsml_compressor_tests'
+            'rgsml_compressor_gate_g_tests'
+            'rgsml_compressor_no_alloc_tests'
+            'rgsml_compressor_listening_gate'
+            'rgsml_module_parameter_codec_tests'
+            'rgsml_parametric_eq_tests'
+            'rgsml_parametric_eq_golden_tests'
+            'rgsml_parametric_eq_response_tests'
+            'rgsml_eq_view_model_tests'
+            'rgsml_gain_view_model_tests'
+            'rgsml_compressor_view_model_tests'
+            'rgsml_mastering_chain_state_tests'
+            'rgsml_mastering_preview_controller_tests'
+            'rgsml_dsp_module_adapter_tests'
+            'rgsml_render_preview_tests'
+            'rgsml_audition_source_selector_tests'
+            'rgsml_playback_src_tests'
+            'rgsml_playback_support_tests'
+            'rgsml_source_metadata_panel_smoke'
+            'rgsml_project_session_tests'
+            'rgsml_app'
+          )
+          $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+          & cmake --build build/windows-ninja-cache --config Release --parallel 4 --target $targets
+          $exit = $LASTEXITCODE
+          $stopwatch.Stop()
+          if ($exit -ne 0) { throw "NINJA_BUILD_FAILED_WITH_EXIT_$exit" }
+          $elapsed = [math]::Round($stopwatch.Elapsed.TotalSeconds, 1)
+          "phase=cold`nbuild_seconds=$elapsed`nsource_sha=$env:GITHUB_SHA`nparallel=4`ngenerator=Ninja Multi-Config`nmsvc=VS2022`ncache_backend=GHA" |
+            Set-Content benchmark/metrics.txt
+          sccache --show-stats | Tee-Object benchmark/sccache-stats.txt
+          Write-Host "NINJA_BUILD_SECONDS_cold=$elapsed"
+      - name: Execute independent focused sound/bridge tests — cold
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_true_peak_limiter_(parameters|core|checkpoint|verification)_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_dsp_structural_integration_tests)$" --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'NINJA_SANITY_TESTS_FAILED' }
+      - name: Upload non-authoritative benchmark evidence — cold
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninja-sccache-cold-${{ github.run_id }}
+          path: benchmark/
+          retention-days: 7
+          if-no-files-found: warn
+
+  warm:
+    name: Ninja warm cache (fresh runner)
+    needs: cold
+    runs-on: windows-2022
+    timeout-minutes: 50
+    env:
+      RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_VERSION: rgsml-msvc2022-qt683-strict-ninja-v1
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Enter VS2022 x64 toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: "v0.16.0"
+      - name: Expose ephemeral GHA cache backend credentials
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Prepare Ninja and Qt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'PYTHON_TOOL_INSTALL_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'QT_INSTALL_FAILED' }
+          ninja --version
+          cl /?
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC_ENV_MISSING' }
+      - name: Configure isolated Ninja Multi-Config (Release)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S . -B build/windows-ninja-cache -G "Ninja Multi-Config" `
+            -DCMAKE_CONFIGURATION_TYPES=Release `
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
+            -DCMAKE_POLICY_DEFAULT_CMP0141=NEW `
+            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DRGSML_BUILD_TESTS=ON `
+            -DRGSML_WARNINGS_AS_ERRORS=ON `
+            -DRGSML_PROVENANCE_TYPE=CI `
+            -DRGSML_PROVENANCE_RUN_NUMBER="${{ github.run_number }}" `
+            -DRGSML_PROVENANCE_GIT_SHA="${{ github.sha }}" `
+            -DRGSML_QT_ROOT="$env:RGSML_QT_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'NINJA_CONFIGURE_FAILED' }
+      - name: Independent Ninja strict-FP source evidence (not M16 certification)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $units = Get-Content build/windows-ninja-cache/compile_commands.json -Raw | ConvertFrom-Json
+          foreach ($file in @('true_peak_itu4x_channel_stream.cpp', 'true_peak_full_resource.cpp', 'true_peak_limiter_module.cpp')) {
+            $matches = @($units | Where-Object { $_.file.Replace('\','/').EndsWith("/" + $file, [System.StringComparison]::OrdinalIgnoreCase) })
+            if ($matches.Count -ne 1) { throw "FP_SOURCE_NOT_UNIQUE: $file count=$($matches.Count)" }
+            $cmd = [string]$matches[0].command
+            if ($cmd -notmatch '(?i)(?<!\w)/fp:strict(?![\w-])' -or $cmd -match '(?i)/fp:(fast|contract)\b') {
+              throw "FP_SOURCE_SCOPE_INVALID: $file"
+            }
+            Write-Host "FP_SOURCE_SCOPE_OBSERVED: $file"
+          }
+          Write-Host 'OBSERVATION_ONLY: does not replace M16 Visual Studio vcxproj attestation'
+      - name: Benchmark complete focused Windows target build — warm
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force benchmark | Out-Null
+          sccache --zero-stats
+          $targets = @(
+            'rgsml_dsp_module_descriptor_tests'
+            'rgsml_dsp_module_registry_tests'
+            'rgsml_dsp_processing_chain_tests'
+            'rgsml_dsp_structural_integration_tests'
+            'rgsml_gain_tests'
+            'rgsml_true_peak_itu4x_coefficients_tests'
+            'rgsml_true_peak_itu4x_channel_stream_tests'
+            'rgsml_true_peak_full_resource_tests'
+            'rgsml_true_peak_measurement_tests'
+            'rgsml_true_peak_static_binding_tests'
+            'rgsml_true_peak_gate_g_edge_tests'
+            'rgsml_true_peak_chunk_invariance_tests'
+            'rgsml_true_peak_b2b_probe'
+            'rgsml_stereo_ms_parameters_tests'
+            'rgsml_stereo_ms_module_tests'
+            'rgsml_stereo_ms_crossover_tests'
+            'rgsml_stereo_ms_crossover_runtime_tests'
+            'rgsml_stereo_ms_module_streaming_tests'
+            'rgsml_stereo_ms_checkpoint_tests'
+            'rgsml_stereo_ms_independent_math_tests'
+            'rgsml_stereo_ms_long_resume_tests'
+            'rgsml_stereo_ms_gate_g_spatial_evidence_tests'
+            'rgsml_stereo_ms_no_alloc_tests'
+            'rgsml_stereo_ms_width_tests'
+            'rgsml_stereo_ms_width_response_tests'
+            'rgsml_stereo_ms_signature_tests'
+            'rgsml_stereo_ms_view_model_tests'
+            'rgsml_stereo_ms_audible_resolver_tests'
+            'rgsml_gain_golden_tests'
+            'rgsml_compressor_tests'
+            'rgsml_compressor_gate_g_tests'
+            'rgsml_compressor_no_alloc_tests'
+            'rgsml_compressor_listening_gate'
+            'rgsml_module_parameter_codec_tests'
+            'rgsml_parametric_eq_tests'
+            'rgsml_parametric_eq_golden_tests'
+            'rgsml_parametric_eq_response_tests'
+            'rgsml_eq_view_model_tests'
+            'rgsml_gain_view_model_tests'
+            'rgsml_compressor_view_model_tests'
+            'rgsml_mastering_chain_state_tests'
+            'rgsml_mastering_preview_controller_tests'
+            'rgsml_dsp_module_adapter_tests'
+            'rgsml_render_preview_tests'
+            'rgsml_audition_source_selector_tests'
+            'rgsml_playback_src_tests'
+            'rgsml_playback_support_tests'
+            'rgsml_source_metadata_panel_smoke'
+            'rgsml_project_session_tests'
+            'rgsml_app'
+          )
+          $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+          & cmake --build build/windows-ninja-cache --config Release --parallel 4 --target $targets
+          $exit = $LASTEXITCODE
+          $stopwatch.Stop()
+          if ($exit -ne 0) { throw "NINJA_BUILD_FAILED_WITH_EXIT_$exit" }
+          $elapsed = [math]::Round($stopwatch.Elapsed.TotalSeconds, 1)
+          "phase=warm`nbuild_seconds=$elapsed`nsource_sha=$env:GITHUB_SHA`nparallel=4`ngenerator=Ninja Multi-Config`nmsvc=VS2022`ncache_backend=GHA" |
+            Set-Content benchmark/metrics.txt
+          sccache --show-stats | Tee-Object benchmark/sccache-stats.txt
+          Write-Host "NINJA_BUILD_SECONDS_warm=$elapsed"
+      - name: Execute independent focused sound/bridge tests — warm
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_true_peak_limiter_(parameters|core|checkpoint|verification)_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_dsp_structural_integration_tests)$" --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'NINJA_SANITY_TESTS_FAILED' }
+      - name: Upload non-authoritative benchmark evidence — warm
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninja-sccache-warm-${{ github.run_id }}
+          path: benchmark/
+          retention-days: 7
+          if-no-files-found: warn
+
