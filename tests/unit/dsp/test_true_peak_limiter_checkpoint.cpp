@@ -157,8 +157,14 @@ void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
                 emitted+=k;
             }
             QCOMPARE(tailA.size(),tailB.size());
+            // A checkpoint tracks input position, not the delivered output.
+            // The D-frame delay may leave frame 0 and later real frames
+            // pending even when hundreds of input frames were consumed.
+            const auto d=fs/200+8;
+            const auto emittedBeforeCheckpoint=std::max(0,at-d);
             QCOMPARE(witnessA.frames.size(),std::size_t{1131});
-            QCOMPARE(witnessB.frames.size(),static_cast<std::size_t>(1131-at));
+            QCOMPARE(witnessB.frames.size(),
+                static_cast<std::size_t>(1131-emittedBeforeCheckpoint));
             for(std::size_t i=0;i<witnessA.frames.size();++i) {
                 const auto& row=witnessA.frames[i];
                 QCOMPARE(row.programme_frame,static_cast<std::int64_t>(i));
@@ -170,7 +176,8 @@ void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
             }
             for(std::size_t i=0;i<witnessB.frames.size();++i) {
                 const auto& resumed=witnessB.frames[i];
-                const auto& unbroken=witnessA.frames[i+static_cast<std::size_t>(at)];
+                const auto& unbroken=witnessA.frames[
+                    i+static_cast<std::size_t>(emittedBeforeCheckpoint)];
                 QCOMPARE(resumed.programme_frame,unbroken.programme_frame);
                 QCOMPARE(resumed.raw_output_frame,unbroken.raw_output_frame);
                 QCOMPARE(std::bit_cast<std::uint64_t>(resumed.gain),
