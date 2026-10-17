@@ -102,6 +102,7 @@ private slots:
     void c2D16SrcLongGuiStallCannotInventOneSecondHold();
     void c2D17SrcSeekClearsPreviousMeterAndRebuildsNewOwnerInterval();
     void c2D18SrcLoopRebuildsRecentAndHoldOnlyWithinConsumedTraversal();
+    void c2D19ArmedLoopAfterRegionBindsOnlyRealRetiredSource();
 };
 
 void TruePeakStaticBindingTest::fullSourceProvenanceAndIdentity()
@@ -1585,6 +1586,89 @@ c2D18SrcLoopRebuildsRecentAndHoldOnlyWithinConsumedTraversal()
         next.outputBegin -= 1;
         playback.loop.reset();
         QVERIFY(!bind());
+    }
+}
+
+
+void TruePeakStaticBindingTest::
+c2D19ArmedLoopAfterRegionBindsOnlyRealRetiredSource()
+{
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    for (const auto& pair :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = pair.first;
+        const auto outputHz = pair.second;
+        auto fixture = make_render(
+            4 * sourceHz, frame_range(0, 4 * sourceHz), sourceHz,
+            audio::ChannelLayout::STEREO_LR, 0.9, sourceHz / 10);
+        QVERIFY(fixture);
+        const auto id = core::RealizationId{9'403};
+        core::PlaybackSnapshot playback{};
+        playback.state = core::PlaybackState::PLAYING;
+        playback.audibleRealization = {
+            core::AudibleHandoffPhase::NEW, id, std::nullopt};
+        playback.loop = frame_range(sourceHz, 2 * sourceHz);
+        playback.loopWrapCount = 0;
+        platform::windows::WindowsConsumedOutputPrefix prefix{};
+        prefix.generation = 91;
+        prefix.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        prefix.partitionRepresented = true;
+        prefix.count = 1;
+        prefix.srcRetiredSourceBegin = 2 * sourceHz + sourceHz / 4;
+        prefix.srcRetiredSourceEnd = 2 * sourceHz + sourceHz / 2;
+        prefix.srcRealizationId = id;
+        prefix.srcInputRateHz = sourceHz;
+        prefix.srcOutputRateHz = outputHz;
+        prefix.srcLoopTraversalProven = false;
+        prefix.srcLoopWrapCount = 0;
+        prefix.srcConsumedOutputBegin = 0;
+        prefix.processedWatermarkExclusive = outputHz / 4 + 512;
+        auto& gap = prefix.slices[0];
+        gap.generation = prefix.generation;
+        gap.kind = WindowsConsumedSliceKind::GAP_UNPROVEN;
+        gap.reason = WindowsConsumedGapReason::UNPROVEN_SRC;
+        gap.outputBegin = 0;
+        gap.outputEnd = prefix.processedWatermarkExclusive;
+        const auto bind = [&] {
+            return app::bind_processed_live_input(fixture.value()->result,
+                id, fixture.value()->expected, playback, prefix);
+        };
+        auto valid = bind();
+        QVERIFY(valid);
+        QCOMPARE(valid.value()->consumedSourceBegin,
+                 2 * sourceHz + sourceHz / 4);
+        QCOMPARE(valid.value()->loopWrapCount, std::uint64_t{0});
+        QVERIFY(!prefix.certifiedForLiveTruePeak);
+        app::TruePeakLiveCoordinator coordinator{
+            [&] {
+                return core::Result<
+                    platform::windows::WindowsConsumedOutputPrefix>::success(prefix);
+            },
+            [&] {
+                return core::Result<core::PlaybackSnapshot>::success(playback);
+            },
+            [&]() -> std::optional<app::TruePeakLiveSource> {
+                return app::TruePeakLiveSource{
+                    fixture.value()->result, id, fixture.value()->expected};
+            },
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(coordinator.recent_available(), 4500);
+        QCOMPARE(coordinator.peak_text(), QStringLiteral("−∞ dBTP"));
+        // Presence of an armed region cannot make an old within-loop peak
+        // appear as a current post-region reading.
+        prefix.srcRetiredSourceBegin = sourceHz / 2;
+        QVERIFY(!bind());
+        prefix.srcRetiredSourceBegin = 2 * sourceHz + sourceHz / 4;
+        prefix.srcLoopTraversalProven = true;
+        QVERIFY(!bind()); // fake traversed-loop proof is out of its region
+        prefix.srcLoopTraversalProven = false;
+        ++playback.loopWrapCount;
+        QVERIFY(!bind()); // stale observed wrap
+        --playback.loopWrapCount;
+        prefix.srcRetiredSourceEnd = 2 * sourceHz + sourceHz / 5;
+        QVERIFY(!bind()); // inverted/retrograde claimed source interval
     }
 }
 
