@@ -23,6 +23,14 @@ Rectangle {
     readonly property var activeViewModel: activeModule ? (activeModule.gainViewModel ? activeModule.gainViewModel : (activeModule.eqViewModel ? activeModule.eqViewModel : activeModule.compressorViewModel)) : null
     readonly property string moduleTitle: activeModule ? activeModule.displayName : ""
     readonly property string moduleContext: activeModule ? activeModule.workspaceContextLabel : ""
+    // M17 PO v1.1: a stable shared Meter/Limiter editor never changes
+    // geometry on BYP. Theme follows ANALYSIS Meter when bypassed and
+    // Dynamics Copper when truly active; do not recolor the M16 module.
+    readonly property bool isLimiterEditor: root.activeModule
+        ? root.activeModule.editorContentKey === "TRUE_PEAK_LIMITER" : false
+    readonly property color activeFamilyAccent: root.isLimiterEditor
+        ? (root.activeModule.bypass ? "#6CBCCF" : "#C4774A")
+        : (root.activeModule ? root.activeModule.familyAccent : "#262A6C9F")
 
     implicitWidth: 992
     implicitHeight: 612
@@ -45,7 +53,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.margins: 1
         height: 2
-        color: root.activeModule ? root.activeModule.familyAccent : "#262A6C9F"
+        color: root.activeFamilyAccent
     }
 
     Keys.onPressed: function(event) {
@@ -61,7 +69,8 @@ Rectangle {
     // established editor behavior. Unhandled Escape still bubbles to Keys above.
     Shortcut {
         sequence: "Escape"
-        enabled: (activeModule ? activeModule.editorContentKey === "INPUT_GAIN" : false) && activeChainRow !== null
+        enabled: (activeModule ? activeModule.editorContentKey === "INPUT_GAIN" : false)
+            && activeChainRow !== null && !inputGainEditor.editingNumeric
         onActivated: {
             if (activeChainRow) {
                 activeChainRow.forceActiveFocus()

@@ -660,7 +660,7 @@ Item {
                 Layout.fillHeight: true
                 radius: 6
                 color: root.panelBg
-                border.color: root.hasValidationError ? root.error : root.borderDark
+                border.color: root.borderDark
                 border.width: 1
 
                 ScrollView {
@@ -1090,18 +1090,35 @@ Item {
                             }
                         }
 
-                        // Validation Error Display
-                        Text {
-                            id: validationErrorLabel
-                            objectName: "compressorValidationError"
-                            text: root.validationErrorText
-                            color: root.error
-                            font.family: "Segoe UI"
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            visible: root.hasValidationError
-                            Layout.alignment: Qt.AlignHCenter
-                        }
+                    }
+                }
+
+                // Fixed local feedback; never contributes to the scroll
+                // content's implicitHeight or moves graph/controls on error.
+                Rectangle {
+                    objectName: "compressorValidationStatusRegion"
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 6
+                    height: 16
+                    z: 20
+                    color: "#E012243F"
+                    radius: 3
+                    visible: root.hasValidationError
+
+                    Text {
+                        id: validationErrorLabel
+                        objectName: "compressorValidationError"
+                        anchors.centerIn: parent
+                        width: parent.width - 8
+                        text: root.validationErrorText
+                        color: root.error
+                        font.family: "Segoe UI"
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
                     }
                 }
             }

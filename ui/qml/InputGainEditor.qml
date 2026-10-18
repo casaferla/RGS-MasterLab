@@ -18,6 +18,18 @@ Item {
 
     readonly property double currentGainDb: root.viewModel ? root.viewModel.gainDb : 0.0
     readonly property string currentGainText: root.viewModel ? root.viewModel.gainDbText : "0.0"
+    readonly property string draftGainText: root.viewModel ? root.viewModel.draftGainDbText : "0.0"
+    readonly property bool editingNumeric: gainInput.activeFocus
+
+    function commitNumericDraft() {
+        if (root.viewModel) root.viewModel.setGainDbText(gainInput.text)
+    }
+    function cancelNumericDraft() {
+        if (!root.viewModel) return
+        // A no-op commit clears field-local validation without preview/undo.
+        root.viewModel.setGainDbText(root.currentGainText)
+        gainInput.text = root.currentGainText
+    }
     readonly property string validationErrorText: root.viewModel ? root.viewModel.validationError : ""
     readonly property bool hasError: validationErrorText.length > 0
 
@@ -54,7 +66,7 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: root.panelBg
-            border.color: root.hasError ? root.error : root.borderDark
+            border.color: root.borderDark
             border.width: 1
             radius: 8
 
@@ -81,7 +93,7 @@ Item {
                         id: readout
                         objectName: "gainDbDisplay"
                         text: (root.currentGainDb > 0 ? "+" : "") + root.currentGainText + " dB"
-                        color: root.hasError ? root.error : (root.currentGainDb === 0.0 ? root.textPrimary : root.accent)
+                        color: root.currentGainDb === 0.0 ? root.textPrimary : root.accent
                         font.family: "Consolas"
                         font.pixelSize: 36
                         font.weight: Font.Bold
@@ -301,7 +313,7 @@ Item {
                             verticalAlignment: TextInput.AlignVCenter
                             horizontalAlignment: TextInput.AlignRight
 
-                            text: root.currentGainText
+                            text: root.draftGainText
                             font.family: "Consolas"
                             font.pixelSize: 16
                             color: root.hasError ? root.error : root.textPrimary
@@ -324,20 +336,20 @@ Item {
                             // (for example "3" -> "3.0") and request a full-chain
                             // preview before the user has finished entering a value.
                             // Enter/Return commits the complete text exactly once.
-                            Keys.onReturnPressed: {
-                                if (root.viewModel) {
-                                    root.viewModel.setGainDbText(gainInput.text)
-                                }
+                            Keys.onReturnPressed: function(event) {
+                                root.commitNumericDraft()
+                                event.accepted = true
                             }
-                            Keys.onEnterPressed: {
-                                if (root.viewModel) {
-                                    root.viewModel.setGainDbText(gainInput.text)
-                                }
+                            Keys.onEnterPressed: function(event) {
+                                root.commitNumericDraft()
+                                event.accepted = true
                             }
-                            Keys.onEscapePressed: {
-                                if (root.viewModel) {
-                                    gainInput.text = root.viewModel.gainDbText
-                                }
+                            Keys.onEscapePressed: function(event) {
+                                root.cancelNumericDraft()
+                                event.accepted = true
+                            }
+                            onActiveFocusChanged: {
+                                if (!activeFocus) root.commitNumericDraft()
                             }
 
                             Accessible.name: "Input Gain numeric text input field"
@@ -353,17 +365,35 @@ Item {
                     }
                 }
 
-                // Validation Feedback Label
+            }
+
+            // Fixed bottom-edge feedback, OUTSIDE ColumnLayout: invalid
+            // text cannot move the readout, slider or numeric field.
+            Rectangle {
+                id: gainValidationStatus
+                objectName: "gainValidationStatusRegion"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 8
+                height: 16
+                z: 10
+                color: "#E012243F"
+                radius: 3
+                visible: root.hasError
+
                 Text {
                     id: validationErrorLabel
                     objectName: "gainValidationError"
+                    anchors.centerIn: parent
+                    width: parent.width - 8
                     text: root.validationErrorText
                     color: root.error
                     font.family: "Segoe UI"
                     font.pixelSize: 12
                     font.weight: Font.DemiBold
-                    visible: root.hasError
-                    Layout.alignment: Qt.AlignHCenter
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
                 }
             }
         }
