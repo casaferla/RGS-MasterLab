@@ -105,3 +105,12 @@ after exactly D raw crop. Finalized calls reject further process and cannot
 emit stray gain witnesses. Both lifecycle entrypoints clear prior detector,
 PCM delay, controller GR, timing and frame identity without changing strict
 FP, sonic algorithms or permitting actual host resource ownership claims.
+
+U4 EOS lifecycle negative/continuation matrix: six Fs, mono/stereo and
+-12/0dBTP with a real D-frame drain. A premature EOS flag must fail before
+any PCM (including -0.0), checkpoint or applied-GR observer mutation; a
+legal first partial drain disables checkpoint extraction. Invalid SOURCE
+domain reprepare, post-drain process and discontinuous drain must not alter
+the pending real frames. The remaining drain resumed in irregular chunks
+must reconstruct the separately processed N-frame PCM bitwise on the same
+strict-FP backend. Still only Core-first; not product host qualification.
