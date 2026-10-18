@@ -22,6 +22,12 @@
 namespace rgsml::tests {
 namespace {
 
+// EXPERIMENT BRANCH ONLY: alter this M17 test translation unit to exercise
+// sccache invalidation without touching productive DSP or changing test logic.
+static_assert(std::numeric_limits<double>::is_iec559 &&
+    std::numeric_limits<std::uint64_t>::digits == 64,
+    "RGS_M17_SCCACHE_INCREMENTAL_INVALIDATION_REV2");
+
 using dsp::internal::TruePeakLimiterDetectorState;
 using dsp::internal::LimiterDetectorQuarter;
 using m17_oracle::Event;

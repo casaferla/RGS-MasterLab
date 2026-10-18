@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   cold:
-    name: Ninja cold cache (Windows-2022)
+    name: Ninja changed-source cache (fresh runner)
     runs-on: windows-2022
     timeout-minutes: 50
     env:
@@ -89,7 +89,7 @@ jobs:
             Write-Host "FP_SOURCE_SCOPE_OBSERVED: $file"
           }
           Write-Host 'OBSERVATION_ONLY: does not replace M16 Visual Studio vcxproj attestation'
-      - name: Benchmark complete focused Windows target build — cold
+      - name: Benchmark complete focused Windows target build — incremental
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -153,22 +153,38 @@ jobs:
           $stopwatch.Stop()
           if ($exit -ne 0) { throw "NINJA_BUILD_FAILED_WITH_EXIT_$exit" }
           $elapsed = [math]::Round($stopwatch.Elapsed.TotalSeconds, 1)
-          "phase=cold`nbuild_seconds=$elapsed`nsource_sha=$env:GITHUB_SHA`nparallel=4`ngenerator=Ninja Multi-Config`nmsvc=VS2022`ncache_backend=GHA" |
+          "phase=incremental`nbuild_seconds=$elapsed`nsource_sha=$env:GITHUB_SHA`nparallel=4`ngenerator=Ninja Multi-Config`nmsvc=VS2022`ncache_backend=GHA" |
             Set-Content benchmark/metrics.txt
           sccache --show-stats | Tee-Object benchmark/sccache-stats.txt
-          Write-Host "NINJA_BUILD_SECONDS_cold=$elapsed"
-      - name: Execute independent focused sound/bridge tests — cold
+          Write-Host "NINJA_BUILD_SECONDS_incremental=$elapsed"
+      - name: Windows UI smoke diagnostic (isolated Ninja) — incremental
+        shell: pwsh
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
+          $candidate = @(Get-ChildItem -Path build/windows-ninja-cache -Recurse -File -Filter rgsml_source_metadata_panel_smoke.exe)
+          if ($candidate.Count -ne 1) { throw "NINJA_SMOKE_EXE_EXPECTED_ONE_FOUND_$($candidate.Count)" }
+          New-Item -ItemType Directory -Force benchmark | Out-Null
+          & $candidate[0].FullName -v2 -o "benchmark/ui-smoke.txt,txt"
+          if ($LASTEXITCODE -ne 0) { throw "NINJA_WINDOWS_UI_SMOKE_FAILED_$LASTEXITCODE" }
+          Write-Host "NINJA_UI_SMOKE_SUCCESS: $($candidate[0].FullName)"
+      - name: Execute complete canonical CTest selection — incremental
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
-          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_true_peak_limiter_(parameters|core|checkpoint|verification)_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_dsp_structural_integration_tests)$" --output-on-failure
-          if ($LASTEXITCODE -ne 0) { throw 'NINJA_SANITY_TESTS_FAILED' }
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_playback_support_tests|toolchain_manifest_)" -N | Tee-Object benchmark/ctest-inventory.txt
+          if ($LASTEXITCODE -ne 0) { throw 'NINJA_CTEST_INVENTORY_FAILED' }
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_playback_support_tests|toolchain_manifest_)" --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'NINJA_FULL_FOCUSED_TESTS_FAILED' }
       - name: Upload non-authoritative benchmark evidence — cold
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ninja-sccache-cold-${{ github.run_id }}
+          name: ninja-sccache-incremental-${{ github.run_id }}
           path: benchmark/
           retention-days: 7
           if-no-files-found: warn
@@ -316,13 +332,29 @@ jobs:
             Set-Content benchmark/metrics.txt
           sccache --show-stats | Tee-Object benchmark/sccache-stats.txt
           Write-Host "NINJA_BUILD_SECONDS_warm=$elapsed"
-      - name: Execute independent focused sound/bridge tests — warm
+      - name: Windows UI smoke diagnostic (isolated Ninja) — warm
+        shell: pwsh
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
+          $candidate = @(Get-ChildItem -Path build/windows-ninja-cache -Recurse -File -Filter rgsml_source_metadata_panel_smoke.exe)
+          if ($candidate.Count -ne 1) { throw "NINJA_SMOKE_EXE_EXPECTED_ONE_FOUND_$($candidate.Count)" }
+          New-Item -ItemType Directory -Force benchmark | Out-Null
+          & $candidate[0].FullName -v2 -o "benchmark/ui-smoke.txt,txt"
+          if ($LASTEXITCODE -ne 0) { throw "NINJA_WINDOWS_UI_SMOKE_FAILED_$LASTEXITCODE" }
+          Write-Host "NINJA_UI_SMOKE_SUCCESS: $($candidate[0].FullName)"
+      - name: Execute complete canonical CTest selection — warm
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
-          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_true_peak_limiter_(parameters|core|checkpoint|verification)_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_dsp_structural_integration_tests)$" --output-on-failure
-          if ($LASTEXITCODE -ne 0) { throw 'NINJA_SANITY_TESTS_FAILED' }
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_playback_support_tests|toolchain_manifest_)" -N | Tee-Object benchmark/ctest-inventory.txt
+          if ($LASTEXITCODE -ne 0) { throw 'NINJA_CTEST_INVENTORY_FAILED' }
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_playback_support_tests|toolchain_manifest_)" --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'NINJA_FULL_FOCUSED_TESTS_FAILED' }
       - name: Upload non-authoritative benchmark evidence — warm
         if: always()
         uses: actions/upload-artifact@v4
