@@ -1,0 +1,601 @@
+# FQ NINJA ADOPTION TEMPLATE — NOT AN ACTIVE GITHUB WORKFLOW.
+# Source: successful isolated Windows FQ Ninja Pilot #8 (2026-10-18).
+# Lives outside .github/workflows: does NOT replace the canonical FQ yet.
+# Port it to the exact integrated candidate branch's canonical FQ workflow
+# ONLY at the first required official FQ; original VS build remains fallback.
+# Cold is authoritative compile-from-source; warm is acceleration-only.
+name: Windows Full Qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_source_sha:
+        description: "Exact 40-char SHA to qualify; must match workflow dispatch SHA"
+        required: true
+        type: string
+      cache_mode:
+        description: "cold is authoritative; warm is performance-only"
+        type: choice
+        options: [cold, warm]
+        default: cold
+permissions:
+  contents: read
+jobs:
+  windows-fq-ninja:
+    name: Canonical VS Debug + Ninja Release/TestsOFF (candidate)
+    runs-on: windows-2022
+    env:
+      RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
+      RGSML_FQ_SHA: ${{ github.sha }}
+      RGSML_FQ_CACHE_MODE: ${{ inputs.cache_mode }}
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_VERSION: "rgsml-fq-msvc2022-qt683-strict-ninja-v1"
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "true"
+    steps:
+      - name: Checkout exact source SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Enforce exact FQ source SHA before toolchain setup
+        shell: pwsh
+        run: |
+          $requested = '${{ inputs.expected_source_sha }}'.Trim().ToLowerInvariant()
+          $actual = "$env:RGSML_FQ_SHA".Trim().ToLowerInvariant()
+          if ($requested -notmatch '^[0-9a-f]{40}
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: "v0.16.0"
+      - name: Expose Actions cache runtime credentials
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Install Qt 6.8.3 and Ninja
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw "FQ_DEPS_FAILED" }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw "FQ_QT_FAILED" }
+          ninja --version
+          if ($LASTEXITCODE -ne 0) { throw "FQ_NINJA_FAILED" }
+      - name: Configure original Visual Studio generator only for frozen B2f attestation
+        shell: pwsh
+        run: |
+          $args = @('--preset','windows-msvc','-DRGSML_PROVENANCE_TYPE=FQ',
+            '-DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }}',
+            "-DRGSML_PROVENANCE_GIT_SHA=$env:RGSML_FQ_SHA")
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { throw "FQ_B2F_CONFIG_FAILED" }
+          python tools/qualification/true_peak/verify_fp_build_flags.py --platform windows --build-dir build/windows-msvc --source-sha "$env:RGSML_FQ_SHA" --run-id '${{ github.run_id }}' --output "$env:RUNNER_TEMP\pilot_b2f_attestation.json"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_B2F_ATTESTATION_FAILED" }
+      - name: Configure Release-only Ninja and enforce strict source FP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RGSML_FQ_CACHE_MODE -notin @('warm','cold')) { throw "INVALID_FQ_CACHE_MODE" }
+          $launcher = if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { 'sccache' } else { '' }
+          Write-Host "FQ_FQ_CACHE_MODE=$env:RGSML_FQ_CACHE_MODE"
+          $args = @('-S','.','-B','build/windows-fq-ninja','-G','Ninja Multi-Config',
+            '-DCMAKE_CONFIGURATION_TYPES=Release',
+            '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+            '-DCMAKE_POLICY_DEFAULT_CMP0141=NEW',
+            '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded',
+            "-DCMAKE_C_COMPILER_LAUNCHER=$launcher",
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=$launcher",
+            '-DRGSML_BUILD_TESTS=ON','-DRGSML_WARNINGS_AS_ERRORS=ON',
+            '-DRGSML_PROVENANCE_TYPE=FQ',
+            '-DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }}',
+            "-DRGSML_PROVENANCE_GIT_SHA=$env:RGSML_FQ_SHA",
+            "-DRGSML_QT_ROOT=$env:RGSML_QT_ROOT")
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { throw "FQ_NINJA_CONFIG_FAILED" }
+          $commands = Get-Content build/windows-fq-ninja/compile_commands.json -Raw | ConvertFrom-Json
+          # One Release compile command per protected translation unit;
+          # Debug is deliberately built by the frozen VS/MSBuild generator.
+          foreach ($source in @('true_peak_itu4x_channel_stream.cpp','true_peak_full_resource.cpp')) {
+            $matches = @($commands | Where-Object { $_.file.Replace([char]92,[char]47).EndsWith("/" + $source,[System.StringComparison]::OrdinalIgnoreCase) })
+            if ($matches.Count -ne 1) { throw "STRICT_FP_COVERAGE_INVALID: $source count=$($matches.Count)" }
+            foreach ($row in $matches) {
+              if ($row.command -notmatch '(?i)(?<!\w)/fp:strict(?![\w-])' -or $row.command -match '(?i)/fp:(fast|contract)\b') { throw "STRICT_FP_INVALID: $source" }
+            }
+          }
+      - name: Clean-build Debug with canonical Visual Studio (timed)
+        shell: pwsh
+        run: |
+          if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { sccache --zero-stats }
+          $sw=[System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build --preset windows-msvc-debug-clean
+          $code=$LASTEXITCODE
+          $sw.Stop()
+          "FQ_DEBUG_CLEAN_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          if ($code -ne 0) { throw "FQ_DEBUG_BUILD_FAILED" }
+      - name: Debug Qt UI smoke (canonical diagnostic)
+        shell: pwsh
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}/build/fq-adoption-visual-debug
+        run: |
+          $env:PATH="$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$env:RGSML_QT_ROOT\qml"
+          $log="$env:GITHUB_WORKSPACE\fq-debug-ui-smoke.txt"
+          & build/windows-msvc/Debug/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          $code=$LASTEXITCODE
+          if (Test-Path $log) { Get-Content $log }
+          if ($code -ne 0) { throw "FQ_DEBUG_UI_FAILED" }
+      - name: Full Debug CTest (canonical VS generator and exclusions)
+        shell: pwsh
+        run: |
+          ctest --preset windows-msvc-debug --output-on-failure -LE "playback_device|ui_smoke"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_DEBUG_CTEST_FAILED" }
+      - name: Clean-build Release (Ninja, timed)
+        shell: pwsh
+        run: |
+          $sw=[System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build build/windows-fq-ninja --config Release --clean-first --parallel 4
+          $code=$LASTEXITCODE
+          $sw.Stop()
+          "FQ_RELEASE_CLEAN_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          if ($code -ne 0) { throw "FQ_RELEASE_BUILD_FAILED" }
+      - name: Release Qt UI smoke (canonical diagnostic)
+        shell: pwsh
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}/build/fq-adoption-visual-release
+        run: |
+          $env:PATH="$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$env:RGSML_QT_ROOT\qml"
+          $log="$env:GITHUB_WORKSPACE\fq-release-ui-smoke.txt"
+          & build/windows-fq-ninja/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          $code=$LASTEXITCODE
+          if (Test-Path $log) { Get-Content $log }
+          if ($code -ne 0) { throw "FQ_RELEASE_UI_FAILED" }
+      - name: Full Release CTest (canonical exclusions)
+        shell: pwsh
+        run: |
+          ctest --test-dir build/windows-fq-ninja -C Release --output-on-failure -LE "playback_device|ui_smoke"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_RELEASE_CTEST_FAILED" }
+      - name: Assert Debug/Release test inventory parity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          # UI smoke runs separately on Debug and Release; inherited headless
+          # exclusions remain identical for the two CTest inventories.
+          $debugInventory=@(ctest --test-dir build/windows-msvc -C Debug -N -LE "playback_device|ui_smoke")
+          if ($LASTEXITCODE -ne 0) { throw "FQ_DEBUG_TEST_INVENTORY_ERROR" }
+          $releaseInventory=@(ctest --test-dir build/windows-fq-ninja -C Release -N -LE "playback_device|ui_smoke")
+          if ($LASTEXITCODE -ne 0) { throw "FQ_RELEASE_TEST_INVENTORY_ERROR" }
+          $findTests={
+            param($lines)
+            @($lines | ForEach-Object {
+              if ($_ -match '^\s*Test\s+#\s*\d+:\s*(.+?)\s*$') { $Matches[1] }
+            } | Sort-Object -Unique)
+          }
+          $debugTests=@(& $findTests $debugInventory)
+          $releaseTests=@(& $findTests $releaseInventory)
+          if ($debugTests.Count -eq 0 -or $releaseTests.Count -eq 0) { throw "FQ_EMPTY_TEST_INVENTORY" }
+          $delta=@(Compare-Object -ReferenceObject $debugTests -DifferenceObject $releaseTests)
+          if ($delta.Count -ne 0) {
+            $delta | Format-Table | Out-String | Write-Host
+            throw "FQ_DEBUG_RELEASE_INVENTORY_MISMATCH"
+          }
+          Write-Host "FQ_TEST_PARITY_PASS=$($debugTests.Count)"
+          "FQ_TEST_PARITY_COUNT=$($debugTests.Count)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Configure independent Tests-OFF Ninja Release tree
+        shell: pwsh
+        run: |
+          $launcher=if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { 'sccache' } else { '' }
+          $args=@('-S','.','-B','build/windows-fq-ninja-tests-off',
+            '-G','Ninja Multi-Config','-DCMAKE_CONFIGURATION_TYPES=Release',
+            '-DCMAKE_POLICY_DEFAULT_CMP0141=NEW',
+            '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded',
+            "-DCMAKE_C_COMPILER_LAUNCHER=$launcher",
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=$launcher",
+            '-DRGSML_BUILD_TESTS=OFF','-DRGSML_WARNINGS_AS_ERRORS=ON',
+            '-DRGSML_PROVENANCE_TYPE=FQ',
+            '-DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }}',
+            "-DRGSML_PROVENANCE_GIT_SHA=$env:RGSML_FQ_SHA",
+            "-DRGSML_QT_ROOT=$env:RGSML_QT_ROOT")
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { throw "FQ_TESTS_OFF_CONFIG_FAILED" }
+      - name: Build Tests-OFF Release (timed)
+        shell: pwsh
+        run: |
+          $sw=[System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build build/windows-fq-ninja-tests-off --config Release --parallel 4
+          $code=$LASTEXITCODE
+          $sw.Stop()
+          "FQ_TESTS_OFF_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          if ($code -ne 0) { throw "FQ_TESTS_OFF_BUILD_FAILED" }
+      - name: Verify cold compiler-cache exclusion and write pilot evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $mode=$env:RGSML_FQ_CACHE_MODE
+          if ($mode -notin @('warm','cold')) { throw "FQ_INVALID_CACHE_MODE" }
+          $expected=if ($mode -eq 'warm') { 'sccache' } else { '' }
+          $entries=@()
+          foreach ($tree in @('build/windows-fq-ninja','build/windows-fq-ninja-tests-off')) {
+            foreach ($key in @('CMAKE_C_COMPILER_LAUNCHER','CMAKE_CXX_COMPILER_LAUNCHER')) {
+              $matching=@(Get-Content "$tree/CMakeCache.txt" | Where-Object { $_ -match "^$($key):[^=]*=" })
+              if ($matching.Count -ne 1) { throw "FQ_COMPILER_LAUNCHER_ENTRY_MISSING" }
+              $value=($matching[0] -split '=',2)[1]
+              if ($value -ne $expected) { throw "FQ_COMPILER_LAUNCHER_NOT_$mode" }
+              $entries += [ordered]@{ tree=$tree; key=$key; launcher=$value }
+            }
+          }
+          New-Item -ItemType Directory -Path build/fq-adoption-evidence -Force | Out-Null
+          [ordered]@{
+            evidence_type='FQ_NINJA_ADOPTION_CANDIDATE'
+            source_sha=$env:RGSML_FQ_SHA
+            cache_mode=$mode
+            uncached_ninja_release=($mode -eq 'cold')
+            canonical_debug='Visual Studio 17 2022'
+            release='Ninja Multi-Config'
+            launcher_checks=$entries
+            parity='DEBUG_RELEASE_TEST_INVENTORY_CHECK_PASSED'
+            qualification=($(if ($mode -eq 'cold') { 'COLD_AUTOMATED_FQ_CANDIDATE_PENDING_PO_GATES' } else { 'WARM_NONAUTHORITATIVE' }))
+            physical_audio='NOT_QUALIFIED'
+          } | ConvertTo-Json -Depth 6 | Set-Content 'build/fq-adoption-evidence/fq-qualification-evidence.json' -Encoding utf8
+          Write-Host "FQ_CACHE_LAUNCHER_PROVENANCE_PASS=$mode"
+
+      - name: Install staged Release
+        shell: pwsh
+        run: |
+          cmake --install build/windows-fq-ninja --config Release --prefix build/windows-fq-ninja/stage/CI/Release
+          if ($LASTEXITCODE -ne 0) { throw "FQ_INSTALL_FAILED" }
+      - name: Run isolated staged deploy smoke with failure evidence
+        shell: pwsh
+        run: |
+          # Do NOT put Qt/bin on PATH: a staged deployment must be standalone.
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'build/windows-fq-ninja/stage/CI/Release'
+          $exe = Join-Path $stage 'bin/RGSMasterLab.exe'
+          $plugin = Join-Path $stage 'plugins/platforms/qwindows.dll'
+          $manifest = Join-Path $stage 'share/RGSMasterLab/ToolchainManifest.json'
+          foreach ($required in @($exe,$plugin,$manifest)) {
+            if (-not (Test-Path -LiteralPath $required)) {
+              throw "FQ_STAGED_REQUIRED_FILE_MISSING: $required"
+            }
+          }
+          $outLog = Join-Path $env:RUNNER_TEMP 'pilot-deploy-smoke.stdout.txt'
+          $errLog = Join-Path $env:RUNNER_TEMP 'pilot-deploy-smoke.stderr.txt'
+          $process = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+          $code = $process.ExitCode
+          Write-Host "FQ_DEPLOY_EXIT_DECIMAL=$code"
+          Write-Host "FQ_DEPLOY_EXIT_HEX=$(([System.BitConverter]::ToUInt32([System.BitConverter]::GetBytes([int]$code),0)).ToString('X8'))"
+          foreach ($log in @($outLog,$errLog)) {
+            if (Test-Path $log) {
+              Write-Host "FQ_DEPLOY_LOG=$log"
+              Get-Content $log
+            }
+          }
+          if ($code -ne 0) {
+            # A debug retry collects information; it CANNOT override failure.
+            $env:QT_DEBUG_PLUGINS = '1'
+            $traceOut = Join-Path $env:RUNNER_TEMP 'pilot-qt-debug.stdout.txt'
+            $traceErr = Join-Path $env:RUNNER_TEMP 'pilot-qt-debug.stderr.txt'
+            try {
+              $trace = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $traceOut -RedirectStandardError $traceErr
+              Write-Host "FQ_QT_TRACE_EXIT=$($trace.ExitCode)"
+              if (Test-Path $traceOut) { Get-Content $traceOut | Select-Object -Last 120 }
+              if (Test-Path $traceErr) { Get-Content $traceErr | Select-Object -Last 160 }
+            } catch {
+              Write-Host "FQ_QT_TRACE_EXCEPTION=$($_.Exception.Message)"
+            }
+            throw "FQ_DEPLOY_FAILED_EXIT_$code"
+          }
+          Write-Host 'FQ_STAGED_DEPLOY_SMOKE_PASS'
+      - name: Cache statistics and cold/warm evidence classification
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "FQ_SHA=$env:RGSML_FQ_SHA MODE=$env:RGSML_FQ_CACHE_MODE"
+          if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { sccache --show-stats }
+          Write-Host "FQ_ONLY_NOT_OFFICIAL_FQ"
+      - name: Upload FQ cold/warm provenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-FQ-Ninja-Adoption-Evidence-${{ github.run_number }}-${{ github.sha }}
+          path: build/fq-adoption-evidence/*.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload staged FQ candidate artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-MasterLab-Windows-FQ-${{ github.run_number }}-${{ github.sha }}
+          path: build/windows-fq-ninja/stage/CI/Release/**
+          retention-days: 7
+          if-no-files-found: error
+) { throw "FQ_EXPECTED_SOURCE_SHA_INVALID" }
+          if ($requested -ne $actual) { throw "FQ_WRONG_SOURCE_SHA: expected=$requested actual=$actual" }
+          if ($env:RGSML_FQ_CACHE_MODE -notin @('cold','warm')) { throw "FQ_CACHE_MODE_INVALID" }
+          Write-Host "FQ_EXACT_SHA_VERIFIED=$actual"
+          if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') {
+            Write-Host "FQ_WARM_PERFORMANCE_ONLY_NOT_AUTHORITATIVE"
+          }
+
+      - name: Enter Visual Studio x64 developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: "v0.16.0"
+      - name: Expose Actions cache runtime credentials
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Install Qt 6.8.3 and Ninja
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw "FQ_DEPS_FAILED" }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw "FQ_QT_FAILED" }
+          ninja --version
+          if ($LASTEXITCODE -ne 0) { throw "FQ_NINJA_FAILED" }
+      - name: Configure original Visual Studio generator only for frozen B2f attestation
+        shell: pwsh
+        run: |
+          $args = @('--preset','windows-msvc','-DRGSML_PROVENANCE_TYPE=FQ',
+            '-DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }}',
+            "-DRGSML_PROVENANCE_GIT_SHA=$env:RGSML_FQ_SHA")
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { throw "FQ_B2F_CONFIG_FAILED" }
+          python tools/qualification/true_peak/verify_fp_build_flags.py --platform windows --build-dir build/windows-msvc --source-sha "$env:RGSML_FQ_SHA" --run-id '${{ github.run_id }}' --output "$env:RUNNER_TEMP\pilot_b2f_attestation.json"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_B2F_ATTESTATION_FAILED" }
+      - name: Configure Release-only Ninja and enforce strict source FP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RGSML_FQ_CACHE_MODE -notin @('warm','cold')) { throw "INVALID_FQ_CACHE_MODE" }
+          $launcher = if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { 'sccache' } else { '' }
+          Write-Host "FQ_FQ_CACHE_MODE=$env:RGSML_FQ_CACHE_MODE"
+          $args = @('-S','.','-B','build/windows-fq-ninja','-G','Ninja Multi-Config',
+            '-DCMAKE_CONFIGURATION_TYPES=Release',
+            '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+            '-DCMAKE_POLICY_DEFAULT_CMP0141=NEW',
+            '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded',
+            "-DCMAKE_C_COMPILER_LAUNCHER=$launcher",
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=$launcher",
+            '-DRGSML_BUILD_TESTS=ON','-DRGSML_WARNINGS_AS_ERRORS=ON',
+            '-DRGSML_PROVENANCE_TYPE=FQ',
+            '-DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }}',
+            "-DRGSML_PROVENANCE_GIT_SHA=$env:RGSML_FQ_SHA",
+            "-DRGSML_QT_ROOT=$env:RGSML_QT_ROOT")
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { throw "FQ_NINJA_CONFIG_FAILED" }
+          $commands = Get-Content build/windows-fq-ninja/compile_commands.json -Raw | ConvertFrom-Json
+          # One Release compile command per protected translation unit;
+          # Debug is deliberately built by the frozen VS/MSBuild generator.
+          foreach ($source in @('true_peak_itu4x_channel_stream.cpp','true_peak_full_resource.cpp')) {
+            $matches = @($commands | Where-Object { $_.file.Replace([char]92,[char]47).EndsWith("/" + $source,[System.StringComparison]::OrdinalIgnoreCase) })
+            if ($matches.Count -ne 1) { throw "STRICT_FP_COVERAGE_INVALID: $source count=$($matches.Count)" }
+            foreach ($row in $matches) {
+              if ($row.command -notmatch '(?i)(?<!\w)/fp:strict(?![\w-])' -or $row.command -match '(?i)/fp:(fast|contract)\b') { throw "STRICT_FP_INVALID: $source" }
+            }
+          }
+      - name: Clean-build Debug with canonical Visual Studio (timed)
+        shell: pwsh
+        run: |
+          if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { sccache --zero-stats }
+          $sw=[System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build --preset windows-msvc-debug-clean
+          $code=$LASTEXITCODE
+          $sw.Stop()
+          "FQ_DEBUG_CLEAN_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          if ($code -ne 0) { throw "FQ_DEBUG_BUILD_FAILED" }
+      - name: Debug Qt UI smoke (canonical diagnostic)
+        shell: pwsh
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}/build/fq-adoption-visual-debug
+        run: |
+          $env:PATH="$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$env:RGSML_QT_ROOT\qml"
+          $log="$env:GITHUB_WORKSPACE\fq-debug-ui-smoke.txt"
+          & build/windows-msvc/Debug/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          $code=$LASTEXITCODE
+          if (Test-Path $log) { Get-Content $log }
+          if ($code -ne 0) { throw "FQ_DEBUG_UI_FAILED" }
+      - name: Full Debug CTest (canonical VS generator and exclusions)
+        shell: pwsh
+        run: |
+          ctest --preset windows-msvc-debug --output-on-failure -LE "playback_device|ui_smoke"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_DEBUG_CTEST_FAILED" }
+      - name: Clean-build Release (Ninja, timed)
+        shell: pwsh
+        run: |
+          $sw=[System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build build/windows-fq-ninja --config Release --clean-first --parallel 4
+          $code=$LASTEXITCODE
+          $sw.Stop()
+          "FQ_RELEASE_CLEAN_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          if ($code -ne 0) { throw "FQ_RELEASE_BUILD_FAILED" }
+      - name: Release Qt UI smoke (canonical diagnostic)
+        shell: pwsh
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}/build/fq-adoption-visual-release
+        run: |
+          $env:PATH="$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$env:RGSML_QT_ROOT\qml"
+          $log="$env:GITHUB_WORKSPACE\fq-release-ui-smoke.txt"
+          & build/windows-fq-ninja/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          $code=$LASTEXITCODE
+          if (Test-Path $log) { Get-Content $log }
+          if ($code -ne 0) { throw "FQ_RELEASE_UI_FAILED" }
+      - name: Full Release CTest (canonical exclusions)
+        shell: pwsh
+        run: |
+          ctest --test-dir build/windows-fq-ninja -C Release --output-on-failure -LE "playback_device|ui_smoke"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_RELEASE_CTEST_FAILED" }
+      - name: Assert Debug/Release test inventory parity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          # UI smoke runs separately on Debug and Release; inherited headless
+          # exclusions remain identical for the two CTest inventories.
+          $debugInventory=@(ctest --test-dir build/windows-msvc -C Debug -N -LE "playback_device|ui_smoke")
+          if ($LASTEXITCODE -ne 0) { throw "FQ_DEBUG_TEST_INVENTORY_ERROR" }
+          $releaseInventory=@(ctest --test-dir build/windows-fq-ninja -C Release -N -LE "playback_device|ui_smoke")
+          if ($LASTEXITCODE -ne 0) { throw "FQ_RELEASE_TEST_INVENTORY_ERROR" }
+          $findTests={
+            param($lines)
+            @($lines | ForEach-Object {
+              if ($_ -match '^\s*Test\s+#\s*\d+:\s*(.+?)\s*$') { $Matches[1] }
+            } | Sort-Object -Unique)
+          }
+          $debugTests=@(& $findTests $debugInventory)
+          $releaseTests=@(& $findTests $releaseInventory)
+          if ($debugTests.Count -eq 0 -or $releaseTests.Count -eq 0) { throw "FQ_EMPTY_TEST_INVENTORY" }
+          $delta=@(Compare-Object -ReferenceObject $debugTests -DifferenceObject $releaseTests)
+          if ($delta.Count -ne 0) {
+            $delta | Format-Table | Out-String | Write-Host
+            throw "FQ_DEBUG_RELEASE_INVENTORY_MISMATCH"
+          }
+          Write-Host "FQ_TEST_PARITY_PASS=$($debugTests.Count)"
+          "FQ_TEST_PARITY_COUNT=$($debugTests.Count)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Configure independent Tests-OFF Ninja Release tree
+        shell: pwsh
+        run: |
+          $launcher=if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { 'sccache' } else { '' }
+          $args=@('-S','.','-B','build/windows-fq-ninja-tests-off',
+            '-G','Ninja Multi-Config','-DCMAKE_CONFIGURATION_TYPES=Release',
+            '-DCMAKE_POLICY_DEFAULT_CMP0141=NEW',
+            '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded',
+            "-DCMAKE_C_COMPILER_LAUNCHER=$launcher",
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=$launcher",
+            '-DRGSML_BUILD_TESTS=OFF','-DRGSML_WARNINGS_AS_ERRORS=ON',
+            '-DRGSML_PROVENANCE_TYPE=FQ',
+            '-DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }}',
+            "-DRGSML_PROVENANCE_GIT_SHA=$env:RGSML_FQ_SHA",
+            "-DRGSML_QT_ROOT=$env:RGSML_QT_ROOT")
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { throw "FQ_TESTS_OFF_CONFIG_FAILED" }
+      - name: Build Tests-OFF Release (timed)
+        shell: pwsh
+        run: |
+          $sw=[System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build build/windows-fq-ninja-tests-off --config Release --parallel 4
+          $code=$LASTEXITCODE
+          $sw.Stop()
+          "FQ_TESTS_OFF_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          if ($code -ne 0) { throw "FQ_TESTS_OFF_BUILD_FAILED" }
+      - name: Verify cold compiler-cache exclusion and write pilot evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $mode=$env:RGSML_FQ_CACHE_MODE
+          if ($mode -notin @('warm','cold')) { throw "FQ_INVALID_CACHE_MODE" }
+          $expected=if ($mode -eq 'warm') { 'sccache' } else { '' }
+          $entries=@()
+          foreach ($tree in @('build/windows-fq-ninja','build/windows-fq-ninja-tests-off')) {
+            foreach ($key in @('CMAKE_C_COMPILER_LAUNCHER','CMAKE_CXX_COMPILER_LAUNCHER')) {
+              $matching=@(Get-Content "$tree/CMakeCache.txt" | Where-Object { $_ -match "^$($key):[^=]*=" })
+              if ($matching.Count -ne 1) { throw "FQ_COMPILER_LAUNCHER_ENTRY_MISSING" }
+              $value=($matching[0] -split '=',2)[1]
+              if ($value -ne $expected) { throw "FQ_COMPILER_LAUNCHER_NOT_$mode" }
+              $entries += [ordered]@{ tree=$tree; key=$key; launcher=$value }
+            }
+          }
+          New-Item -ItemType Directory -Path build/fq-adoption-evidence -Force | Out-Null
+          [ordered]@{
+            evidence_type='FQ_NINJA_ADOPTION_CANDIDATE'
+            source_sha=$env:RGSML_FQ_SHA
+            cache_mode=$mode
+            uncached_ninja_release=($mode -eq 'cold')
+            canonical_debug='Visual Studio 17 2022'
+            release='Ninja Multi-Config'
+            launcher_checks=$entries
+            parity='DEBUG_RELEASE_TEST_INVENTORY_CHECK_PASSED'
+            qualification=($(if ($mode -eq 'cold') { 'COLD_AUTOMATED_FQ_CANDIDATE_PENDING_PO_GATES' } else { 'WARM_NONAUTHORITATIVE' }))
+            physical_audio='NOT_QUALIFIED'
+          } | ConvertTo-Json -Depth 6 | Set-Content 'build/fq-adoption-evidence/fq-qualification-evidence.json' -Encoding utf8
+          Write-Host "FQ_CACHE_LAUNCHER_PROVENANCE_PASS=$mode"
+
+      - name: Install staged Release
+        shell: pwsh
+        run: |
+          cmake --install build/windows-fq-ninja --config Release --prefix build/windows-fq-ninja/stage/CI/Release
+          if ($LASTEXITCODE -ne 0) { throw "FQ_INSTALL_FAILED" }
+      - name: Run isolated staged deploy smoke with failure evidence
+        shell: pwsh
+        run: |
+          # Do NOT put Qt/bin on PATH: a staged deployment must be standalone.
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'build/windows-fq-ninja/stage/CI/Release'
+          $exe = Join-Path $stage 'bin/RGSMasterLab.exe'
+          $plugin = Join-Path $stage 'plugins/platforms/qwindows.dll'
+          $manifest = Join-Path $stage 'share/RGSMasterLab/ToolchainManifest.json'
+          foreach ($required in @($exe,$plugin,$manifest)) {
+            if (-not (Test-Path -LiteralPath $required)) {
+              throw "FQ_STAGED_REQUIRED_FILE_MISSING: $required"
+            }
+          }
+          $outLog = Join-Path $env:RUNNER_TEMP 'pilot-deploy-smoke.stdout.txt'
+          $errLog = Join-Path $env:RUNNER_TEMP 'pilot-deploy-smoke.stderr.txt'
+          $process = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+          $code = $process.ExitCode
+          Write-Host "FQ_DEPLOY_EXIT_DECIMAL=$code"
+          Write-Host "FQ_DEPLOY_EXIT_HEX=$(([System.BitConverter]::ToUInt32([System.BitConverter]::GetBytes([int]$code),0)).ToString('X8'))"
+          foreach ($log in @($outLog,$errLog)) {
+            if (Test-Path $log) {
+              Write-Host "FQ_DEPLOY_LOG=$log"
+              Get-Content $log
+            }
+          }
+          if ($code -ne 0) {
+            # A debug retry collects information; it CANNOT override failure.
+            $env:QT_DEBUG_PLUGINS = '1'
+            $traceOut = Join-Path $env:RUNNER_TEMP 'pilot-qt-debug.stdout.txt'
+            $traceErr = Join-Path $env:RUNNER_TEMP 'pilot-qt-debug.stderr.txt'
+            try {
+              $trace = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $traceOut -RedirectStandardError $traceErr
+              Write-Host "FQ_QT_TRACE_EXIT=$($trace.ExitCode)"
+              if (Test-Path $traceOut) { Get-Content $traceOut | Select-Object -Last 120 }
+              if (Test-Path $traceErr) { Get-Content $traceErr | Select-Object -Last 160 }
+            } catch {
+              Write-Host "FQ_QT_TRACE_EXCEPTION=$($_.Exception.Message)"
+            }
+            throw "FQ_DEPLOY_FAILED_EXIT_$code"
+          }
+          Write-Host 'FQ_STAGED_DEPLOY_SMOKE_PASS'
+      - name: Cache statistics and cold/warm evidence classification
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "FQ_SHA=$env:RGSML_FQ_SHA MODE=$env:RGSML_FQ_CACHE_MODE"
+          if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { sccache --show-stats }
+          Write-Host "FQ_ONLY_NOT_OFFICIAL_FQ"
+      - name: Upload FQ cold/warm provenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-FQ-Ninja-Adoption-Evidence-${{ github.run_number }}-${{ github.sha }}
+          path: build/fq-adoption-evidence/*.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload staged FQ candidate artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-MasterLab-Windows-FQ-${{ github.run_number }}-${{ github.sha }}
+          path: build/windows-fq-ninja/stage/CI/Release/**
+          retention-days: 7
+          if-no-files-found: error
