@@ -76,3 +76,14 @@ The final transactional M16 full-resource measurement/trim and every PCM
 sample also agree, with status SUPPORTED_UNQUALIFIED. The invalid foreign
 owner is rejected atomically before a valid restore. This is not a claim
 of product renderer ownership, bypass routing, listening quality, or U8.
+
+U4/U5 64-bit absolute-frame boundary hardening: although FrameRange input
+can be representable near INT64_MAX, process now rejects before touching
+state, PCM or GR if original frame origin + programme count + mandatory D
+drain would exceed FrameIndex. Every supported Fs, mono/stereo, invalid
+first frame and invalid second contiguous block leave checkpoint/witness
+and signed-zero PCM unchanged; the exact legal exclusive endpoint MAX
+remains valid and successfully drains. Separately, canonical-checksum
+checkpoint forgeries at 44.1/192 kHz whose origin would overflow the
+eventual drain are rejected atomically despite a valid next-input frame.
+No DSP sound mathematics, terminal routing, UI or M16 frozen files change.

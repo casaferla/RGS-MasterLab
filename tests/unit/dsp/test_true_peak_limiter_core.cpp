@@ -47,6 +47,7 @@ private slots:
     void adversarialStereoDetectorEightXOracle();
     void absoluteFrameOriginAndLinkedStereoWitness();
     void directEightXIndependentControllerReplayMatchesAppliedGain();
+    void absoluteFrameLimitRejectsAtomicallyAcrossSixRates();
 };
 
 void TruePeakLimiterCoreTest::frozenAssetsMatchIndependentSources()
@@ -1004,6 +1005,111 @@ void TruePeakLimiterCoreTest::directEightXIndependentControllerReplayMatchesAppl
                     }
                 }
             }
+        }
+    }
+}
+
+
+void TruePeakLimiterCoreTest::absoluteFrameLimitRejectsAtomicallyAcrossSixRates()
+{
+    // U4 absolute OUTPUT_RATE clock contract: a valid input span is not
+    // sufficient if the delayed raw stream's final exclusive end overflows.
+    // Negative cases must not alter PCM, checkpoint or genuine GR observer;
+    // the EXACT boundary end==INT64_MAX remains valid and can finalize.
+    constexpr auto max=std::numeric_limits<std::int64_t>::max();
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        const std::int64_t d=fs/200+8;
+        for(const bool stereo:{false,true}) {
+            const auto fmt=limiterFormat(fs,stereo);
+            const auto params=dsp::TruePeakLimiterParameters::create(-12.0);
+            QVERIFY(params);
+            auto created=dsp::TruePeakLimiterModule::create(
+                frozenLimiterDescriptor(),*params.value());
+            QVERIFY(created);
+            auto& module=**created.value();
+            QVERIFY(module.prepare(dsp::DspProcessSpec{
+                fmt,audio::FrameDomainId::OUTPUT_RATE,
+                *core::FrameCount::create(4096).value()}));
+            AppliedGainTestCapture witness;
+            witness.records.reserve(2);
+            module.set_applied_gain_sink(
+                &AppliedGainTestCapture::accept,&witness);
+            const auto clean=module.runtime_checkpoint();
+            QVERIFY(clean);
+            const auto processOne=[&](std::int64_t begin,bool first,
+                bool shouldPass) {
+                auto in=audio::AudioBuffer::create(
+                    fmt,audio::FrameDomainId::OUTPUT_RATE,
+                    core::FrameIndex{begin},
+                    *core::FrameCount::create(1).value());
+                auto out=audio::AudioBuffer::create(
+                    fmt,audio::FrameDomainId::OUTPUT_RATE,
+                    core::FrameIndex{begin},
+                    *core::FrameCount::create(1).value());
+                QVERIFY(in && out);
+                for(std::size_t ch=0;ch<(stereo?2U:1U);++ch) {
+                    auto input=in.value()->mutable_view().channel(ch);
+                    auto output=out.value()->mutable_view().channel(ch);
+                    QVERIFY(input && output);
+                    (*input.value())[0]=ch==0U?4.0:-2.0;
+                    (*output.value())[0]=-0.0;
+                }
+                const auto range=core::FrameRange::create(
+                    core::FrameIndex{begin},core::FrameIndex{begin+1});
+                QVERIFY(range);
+                const auto result=module.process(
+                    in.value()->view(),out.value()->mutable_view(),
+                    dsp::DspProcessContext{*range.value(),first,false});
+                QCOMPARE(bool(result),shouldPass);
+                if(!shouldPass) {
+                    for(std::size_t ch=0;ch<(stereo?2U:1U);++ch) {
+                        auto output=out.value()->view().channel(ch);
+                        QVERIFY(output);
+                        QCOMPARE(std::bit_cast<std::uint64_t>((*output.value())[0]),
+                            std::bit_cast<std::uint64_t>(-0.0));
+                    }
+                }
+            };
+            // A valid one-frame input near the positive limit cannot be
+            // accepted when the mandatory D-frame drain would wrap.
+            processOne(max-2,true,false);
+            QCOMPARE(witness.records.size(),std::size_t{0});
+            const auto afterRejectedStart=module.runtime_checkpoint();
+            QVERIFY(afterRejectedStart);
+            QCOMPARE(*afterRejectedStart.value(),*clean.value());
+
+            const auto boundaryOrigin=max-d-1;
+            processOne(boundaryOrigin,true,true);
+            const auto beforeRejectedContinuation=module.runtime_checkpoint();
+            QVERIFY(beforeRejectedContinuation);
+            QCOMPARE(beforeRejectedContinuation.value()->next_input_frame,
+                std::optional{core::FrameIndex{boundaryOrigin+1}});
+            processOne(boundaryOrigin+1,false,false);
+            QCOMPARE(witness.records.size(),std::size_t{0});
+            const auto afterRejectedContinuation=module.runtime_checkpoint();
+            QVERIFY(afterRejectedContinuation);
+            QCOMPARE(*afterRejectedContinuation.value(),
+                *beforeRejectedContinuation.value());
+
+            // The extreme accepted stream must drain all D physical frames:
+            // its exclusive output end is precisely INT64_MAX, never wrapped.
+            auto out=audio::AudioBuffer::create(
+                fmt,audio::FrameDomainId::OUTPUT_RATE,
+                core::FrameIndex{boundaryOrigin+1},
+                *core::FrameCount::create(d).value());
+            QVERIFY(out);
+            const auto tail=core::FrameRange::create(
+                core::FrameIndex{boundaryOrigin+1},
+                core::FrameIndex{max});
+            QVERIFY(tail);
+            QVERIFY(module.finalize(out.value()->mutable_view(),
+                dsp::DspProcessContext{*tail.value(),false,true}));
+            QCOMPARE(witness.records.size(),std::size_t{1});
+            QCOMPARE(witness.records[0].programme_frame,boundaryOrigin);
+            QCOMPARE(witness.records[0].raw_output_frame,
+                boundaryOrigin+d);
+            QVERIFY(std::isfinite(witness.records[0].gain));
+            QVERIFY(!module.runtime_checkpoint());
         }
     }
 }

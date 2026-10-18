@@ -347,6 +347,19 @@ Status TruePeakLimiterModule::process(audio::AudioBufferView input,
             return Status::failure(fail(ErrorCode::InvalidArgument,
                 "INVALID_M17_PROCESS_CONTEXT","Invalid/discontinuous OUTPUT_RATE process block."));
         }
+        // All OUTPUT_RATE coordinates include a physical D-frame drain.
+        // A finite input FrameRange may otherwise fit int64 while its
+        // eventual raw output / checkpoint clock would overflow FrameIndex.
+        // Fail before touching PCM, the detector, controller or gain sink.
+        // The relative count addition is safe after the length guard above.
+        const auto resourceOrigin=impl_->bound
+            ? impl_->origin : ctx.output_frame_range.begin().value();
+        const auto requiredRawEnd=impl_->frame_count+length+impl_->d;
+        if (resourceOrigin>0 &&
+            requiredRawEnd>std::numeric_limits<std::int64_t>::max()-resourceOrigin)
+            return Status::failure(fail(ErrorCode::InvalidArgument,
+                "INVALID_M17_PROCESS_CONTEXT",
+                "OUTPUT_RATE origin plus programme and drain exceeds FrameIndex."));
         std::array<std::span<const double>,2> src{};
         std::array<std::span<double>,2> dst{};
         for (std::size_t ch=0;ch<spec.audio_format.channel_count();++ch) {
@@ -605,6 +618,10 @@ Status TruePeakLimiterModule::restore_runtime_checkpoint(const DspRuntimeCheckpo
             || bound>1 || delay!=impl_->d
             || ceiling!=std::bit_cast<std::uint64_t>(impl_->params.ceiling_db_tp())
             || n<0 || n>(std::numeric_limits<std::int64_t>::max()-delay)/8
+            // A checksum-valid poisoned origin must never authorize a
+            // FrameIndex overflow in resumed process or final D drain.
+            || (bound==1 && origin>0 &&
+                n+delay>std::numeric_limits<std::int64_t>::max()-origin)
             || raw!=n || (bound==0 && (n!=0 || origin!=0))
             || (bound==1 && n==0)
             || detFinalized!=0 || detector.channels!=ch

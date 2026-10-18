@@ -122,6 +122,7 @@ private slots:
     void nonzeroOriginResumeIsAtomicAt192k();
     void longRunningMultiHopResumeIsBitIdentical();
     void allRateOwnerDigestAndRevisionAreAtomic();
+    void poisonedAbsoluteOriginCannotOverflowCheckpointClock();
 };
 void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
 {
@@ -674,6 +675,49 @@ void TruePeakLimiterCheckpointTest::allRateOwnerDigestAndRevisionAreAtomic()
             for(std::size_t ch=0;ch<2;++ch)
                 QCOMPARE(std::bit_cast<std::uint64_t>(direct[i][ch]),
                     std::bit_cast<std::uint64_t>(replay[i][ch]));
+    }
+}
+
+
+void TruePeakLimiterCheckpointTest::poisonedAbsoluteOriginCannotOverflowCheckpointClock()
+{
+    // A forged state with a mathematically valid SHA256 and next-input
+    // frame must still reject if its future drain overflows absolute time.
+    // Payload M17CP1 v1.0: origin int64 LE starts at byte 44.
+    constexpr auto max=std::numeric_limits<std::int64_t>::max();
+    for(const int fs:{44100,192000}) {
+        constexpr std::int64_t first=290;
+        auto source=fresh(fs,-6.0);
+        auto target=fresh(fs,-6.0);
+        QVERIFY(source && target);
+        QCOMPARE(processBlock(*source,fs,0,static_cast<int>(first),true).size(),
+            static_cast<std::size_t>(first));
+        const auto good=source->runtime_checkpoint();
+        const auto clean=target->runtime_checkpoint();
+        QVERIFY(good && clean);
+        auto forged=*good.value();
+        const auto overflowOrigin=max-first;
+        const auto bytes=std::bit_cast<std::uint64_t>(overflowOrigin);
+        QVERIFY(forged.payload.size()>76U);
+        for(std::size_t i=0;i<8U;++i)
+            forged.payload[44U+i]=static_cast<std::uint8_t>(
+                (bytes>>(8U*i))&0xffU);
+        forged.next_input_frame=core::FrameIndex{max};
+        core::Sha256 sha;
+        sha.update(std::as_bytes(std::span<const std::uint8_t>{
+            forged.payload.data(),forged.payload.size()-32U}));
+        const auto digest=sha.finalize();
+        for(std::size_t i=0;i<digest.size();++i)
+            forged.payload[forged.payload.size()-32U+i]=
+                static_cast<std::uint8_t>(digest[i]);
+        QVERIFY(!target->restore_runtime_checkpoint(forged));
+        const auto unchanged=target->runtime_checkpoint();
+        QVERIFY(unchanged);
+        QCOMPARE(*unchanged.value(),*clean.value());
+        QVERIFY(target->restore_runtime_checkpoint(*good.value()));
+        const auto accepted=target->runtime_checkpoint();
+        QVERIFY(accepted);
+        QCOMPARE(*accepted.value(),*good.value());
     }
 }
 
