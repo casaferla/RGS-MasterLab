@@ -508,6 +508,7 @@ class SourceMetadataPanelSmokeTest final : public QObject {
 
 private slots:
     void emptyReadyErrorAndWindowLifecycle();
+    void stereoMsProductDefaultDockedStartup();
     void stereoMsOptInVisualEvidence();
     void truePeakReadOnlyAnalysisVisualEvidence();
     void truePeakLimiterLayoutCandidate();
@@ -1342,6 +1343,171 @@ Window {
     QVERIFY(!controlsParent->property("visible").toBool());
     QCOMPARE(state.instances().size(), std::size_t{3});
     window->close();
+}
+
+void SourceMetadataPanelSmokeTest::stereoMsProductDefaultDockedStartup()
+{
+    // The actual NEW-product factory must publish a selectable, real fourth
+    // DSP editor at startup (initial BYP), never a passive placeholder.
+    // Historical three-module factories must remain exactly three nodes.
+    const auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *core::Uuid::parse(
+        "e5000000-0000-4000-8000-000000000001").value();
+    const auto gainId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("e5000000-0000-4000-8000-000000000010").value()).value();
+    const auto eqId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("e5000000-0000-4000-8000-000000000020").value()).value();
+    const auto compId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("e5000000-0000-4000-8000-000000000030").value()).value();
+    const auto stereoId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("e5000000-0000-4000-8000-000000000040").value()).value();
+
+    auto productResult = app::MasteringChainState::create_product_default(
+        *registry.value(), chainId, gainId, eqId, compId, stereoId);
+    QVERIFY(productResult);
+    auto product = std::move(*productResult.value());
+    app::MasteringPreviewController preview{&product};
+    app::GainViewModel gain{&product, &preview};
+    app::EqViewModel eq{&product, &preview};
+    app::CompressorViewModel compressor{&product, &preview};
+    app::StereoMsViewModel stereo{&product, &preview};
+    app::DspChainAdapterModel model{
+        &gain, &eq, &compressor, &product,
+        QStringLiteral("Mastering"), nullptr, &stereo};
+    QCOMPARE(model.modules().size(), qsizetype{4});
+    QCOMPARE(product.module_count(), std::size_t{4});
+    const auto instances = product.instances();
+    QCOMPARE(instances[0].module_type_id(), std::string_view("rgsml.dsp.gain"));
+    QCOMPARE(instances[1].module_type_id(), std::string_view("rgsml.dsp.parametric-eq"));
+    QCOMPARE(instances[2].module_type_id(), std::string_view("rgsml.dsp.compressor"));
+    QCOMPARE(instances[3].module_type_id(), std::string_view("rgsml.dsp.stereo-ms"));
+    QCOMPARE(instances[3].instance_id(), stereoId);
+    const auto defaultParameters = dsp::StereoMsParameters::create_default();
+    QVERIFY(defaultParameters);
+    QCOMPARE(product.stereo_ms_parameters(), std::optional{*defaultParameters.value()});
+    auto historical = app::MasteringChainState::create_default(
+        *registry.value(), chainId, gainId, eqId, compId);
+    QVERIFY(historical);
+    QCOMPARE(historical.value()->module_count(), std::size_t{3});
+    QVERIFY(!historical.value()->stereo_ms_instance_id());
+
+    model.selectModuleByInstanceId(QString::fromStdString(stereoId.to_string()));
+    QCOMPARE(model.selected_index(), 3);
+    QVERIFY(model.active_module());
+    QCOMPARE(model.active_module()->editor_content_key(), QStringLiteral("STEREO_MS"));
+    QVERIFY(model.active_module()->bypass());
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("m15ProductAdapterModel"), &model);
+    QQmlComponent component{&engine};
+    static constexpr auto qml = R"qml(
+import QtQuick
+import QtQuick.Window
+import Rgsml.Ui 1.0
+Window {
+    objectName: "m15ProductDockedWindow"
+    width: 1184
+    height: 688
+    color: "#06121F"
+    visible: false
+    Row {
+        anchors.fill: parent
+        anchors.margins: 8
+        spacing: 8
+        DspChainSelector {
+            id: realChain
+            objectName: "m15ProductChainSelector"
+            width: 180
+            height: parent.height
+            adapterModel: m15ProductAdapterModel
+        }
+        DspEditorHost {
+            objectName: "m15ProductEditorHost"
+            width: parent.width - 188
+            height: parent.height
+            adapterModel: m15ProductAdapterModel
+            activeChainRow: realChain.activeRow
+        }
+    }
+}
+)qml";
+    component.setData(QByteArray{qml},
+        QUrl{QStringLiteral("qrc:/m15/product-default-docked.qml")});
+    QVERIFY2(component.status() != QQmlComponent::Error,
+        qPrintable(component.errorString()));
+    QScopedPointer<QObject> created{component.create()};
+    QVERIFY2(created, qPrintable(component.errorString()));
+    auto* window = qobject_cast<QQuickWindow*>(created.data());
+    QVERIFY(window);
+    window->show();
+    QTRY_VERIFY_WITH_TIMEOUT(!window->grabWindow().isNull(), 5000);
+
+    auto* chainRow = qobject_cast<QQuickItem*>(find_child_by_name(
+        created.data(), QStringLiteral("dspChainRow_3")));
+    auto* bypassBadge = qobject_cast<QQuickItem*>(find_child_by_name(
+        created.data(), QStringLiteral("dspChainBypassBadge_3")));
+    auto* editor = qobject_cast<QQuickItem*>(find_child_by_name(
+        created.data(), QStringLiteral("stereoMsEditor")));
+    auto* host = qobject_cast<QQuickItem*>(find_child_by_name(
+        created.data(), QStringLiteral("m15ProductEditorHost")));
+    auto* controls = qobject_cast<QQuickItem*>(find_child_by_name(
+        created.data(), QStringLiteral("stereoMsControlsRegion")));
+    auto* activeButton = find_child_by_name(
+        created.data(), QStringLiteral("abButtonActive"));
+    auto* bypassButton = find_child_by_name(
+        created.data(), QStringLiteral("abButtonBypass"));
+    QVERIFY(chainRow && bypassBadge && editor && host && controls
+        && activeButton && bypassButton);
+    QVERIFY(chainRow->isVisible());
+    QVERIFY(editor->isVisible());
+    QVERIFY(bypassBadge->isVisible());
+    QVERIFY(bypassButton->property("selected").toBool());
+    QVERIFY(!activeButton->property("selected").toBool());
+    QVERIFY(!product.stereo_ms_instance_id().has_value()
+        || *product.stereo_ms_instance_id() == stereoId);
+    auto bypass = product.is_bypassed(stereoId);
+    QVERIFY(bypass);
+    QVERIFY(*bypass.value());
+    QVERIFY2(capture_visual_evidence(window,
+        QStringLiteral("m15_product_default_docked_byp_1184x688.png"),
+        QSize{1184, 688}), "New product must render live M15 in initial BYP");
+
+    // The same REAL typed DSP can be enabled and re-bypassed. Its controls
+    // and host do not shift; parameters, IDs and three predecessors persist.
+    QVERIFY2(!window->grabWindow().isNull(), "M15 baseline render required");
+    const QRectF hostBefore{host->mapToScene(QPointF{}), host->size()};
+    const QRectF controlsBefore{controls->mapToScene(QPointF{}), controls->size()};
+    model.active_module()->setBypass(false);
+    QCoreApplication::processEvents();
+    QVERIFY2(!window->grabWindow().isNull(), "M15 ON render required");
+    bypass = product.is_bypassed(stereoId);
+    QVERIFY(bypass);
+    QVERIFY(!*bypass.value());
+    QVERIFY(!bypassBadge->isVisible());
+    QVERIFY(activeButton->property("selected").toBool());
+    QVERIFY(!bypassButton->property("selected").toBool());
+    QCOMPARE(QRectF{host->mapToScene(QPointF{}), host->size()}, hostBefore);
+    QCOMPARE(QRectF{controls->mapToScene(QPointF{}), controls->size()}, controlsBefore);
+    QVERIFY2(capture_visual_evidence(window,
+        QStringLiteral("m15_product_default_docked_on_1184x688.png"),
+        QSize{1184, 688}), "Product M15 ON must render without layout reflow");
+
+    model.active_module()->setBypass(true);
+    QCoreApplication::processEvents();
+    QVERIFY2(!window->grabWindow().isNull(), "M15 restored BYP render required");
+    bypass = product.is_bypassed(stereoId);
+    QVERIFY(bypass);
+    QVERIFY(*bypass.value());
+    QVERIFY(bypassBadge->isVisible());
+    QVERIFY(bypassButton->property("selected").toBool());
+    QCOMPARE(product.stereo_ms_parameters(), std::optional{*defaultParameters.value()});
+    QCOMPARE(product.instances()[3].instance_id(), stereoId);
+    QCOMPARE(QRectF{host->mapToScene(QPointF{}), host->size()}, hostBefore);
+    QCOMPARE(QRectF{controls->mapToScene(QPointF{}), controls->size()}, controlsBefore);
+    window->close();
+    QCoreApplication::processEvents();
 }
 
 void SourceMetadataPanelSmokeTest::stereoMsOptInVisualEvidence()
