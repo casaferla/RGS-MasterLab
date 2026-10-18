@@ -1,5 +1,6 @@
 #include "render_test_support.hpp"
 
+#include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/core/checked_integer.hpp>
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
@@ -11,11 +12,13 @@
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include <rgsml/render/audible_compressor_telemetry_resolver.hpp>
 #include <rgsml/render/compressor_telemetry_collector.hpp>
 #include <rgsml/render/compressor_telemetry_history.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
+#include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 
 #include <QtTest/QTest>
 
@@ -26,6 +29,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -467,6 +471,10 @@ private slots:
     void stereoMsOutputDensityRealOccupancyGrid20();
     void stereoMsOutputDensityZeroWitnessOracle();
     void activeUnavailableModuleFails();
+    void truePeakLimiterTerminalRendererBoundary();
+    void truePeakLimiterOutputRateCandidateRendersRealPcm();
+    void truePeakLimiterCheckedCandidateGenuineM16SixRateMatrix();
+    void truePeakLimiterBoundTerminalChainRejectsStaleOrFakeBindings();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
     void mixedGainAndEqOrderAndBypassIdentity();
@@ -1756,6 +1764,437 @@ void RenderPreviewTest::stereoMsOutputDensityZeroWitnessOracle()
     QCOMPARE(positive.witnesses[2].mid, 0.0);
     QVERIFY(positive.witnesses[1].side > 0.0);
     QVERIFY(positive.witnesses[3].mid > 0.0);
+}
+
+void RenderPreviewTest::truePeakLimiterTerminalRendererBoundary()
+{
+    // Core-first M17 exists as a real DSP factory, but this renderer is
+    // Source-processing-rate, not the required terminal OUTPUT_RATE owner.
+    // An active terminal limiter must fail before touching PCM. A bypassed
+    // terminal limiter must preserve BOTH channels' raw binary64 bits.
+    const std::array left{+0.0, -0.0, 0.75, -1.25, 0.125};
+    const std::array right{-0.0, +0.0, -0.5, 1.5, -0.125};
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR,
+        100, left, right);
+    QVERIFY(source);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto terminal = rgsml::dsp::ProcessingChain::create(
+        *registry.value(), {rgsml::dsp::ProcessingStage::MASTER,
+                            rgsml::dsp::ChainSegment::TERMINAL});
+    QVERIFY(terminal);
+    const auto id = make_id("2a000000-0000-0000-0000-000000000017");
+    QVERIFY(terminal.value()->add(id, "rgsml.dsp.true-peak-limiter", 0));
+    QVERIFY(registry.value()->has_factory("rgsml.dsp.true-peak-limiter"));
+
+    const auto ceiling = rgsml::dsp::TruePeakLimiterParameters::create_default();
+    QVERIFY(ceiling);
+    // No premature compatibility claim: the request boundary still rejects
+    // typed M17 bindings until an OUTPUT_RATE terminal contract is wired.
+    auto unsupportedBinding = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(100, 105), *terminal.value(),
+        {{id, *ceiling.value()}}, frame_count(2));
+    QVERIFY(!unsupportedBinding);
+    QCOMPARE(unsupportedBinding.error()->code(),
+        rgsml::core::ErrorCode::InvalidArgument);
+    QCOMPARE(std::string_view{unsupportedBinding.error()->message()},
+        std::string_view{
+            "A parameter binding was provided for an unsupported or non-parameterized module."});
+
+    auto activeRequest = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(100, 105),
+        *terminal.value(), {}, frame_count(2));
+    QVERIFY(activeRequest);
+    auto rejected = rgsml::render::render_preview(
+        *activeRequest.value(), *registry.value());
+    QVERIFY(!rejected);
+    QCOMPARE(rejected.error()->code(),
+        rgsml::core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(std::string_view{rejected.error()->message()},
+        std::string_view{
+            "Active True Peak Limiter requires the qualified terminal OUTPUT_RATE renderer, typed Ceiling binding and real EOS/GR provenance."});
+
+    QVERIFY(terminal.value()->set_user_bypass(id, true));
+    for (const auto blockSize : {1, 2, 7}) {
+        auto bypassRequest = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(100, 105),
+            *terminal.value(), {}, frame_count(blockSize));
+        QVERIFY(bypassRequest);
+        auto bypassed = rgsml::render::render_preview(
+            *bypassRequest.value(), *registry.value());
+        QVERIFY(bypassed);
+        QCOMPARE(bits(bypassed.value()->view()),
+                 bits(source.value()->view()));
+    }
+
+    // The immutable M17 factory must not alter error semantics for an
+    // existing, unrelated source-processing-rate Gain stage.
+    QVERIFY(terminal.value()->set_user_bypass(id, false));
+    auto rejectedAgain = rgsml::render::render_preview(
+        *activeRequest.value(), *registry.value());
+    QVERIFY(!rejectedAgain);
+    QCOMPARE(rejectedAgain.error()->code(),
+             rgsml::core::ErrorCode::UnsupportedOperation);
+}
+
+void RenderPreviewTest::truePeakLimiterOutputRateCandidateRendersRealPcm()
+{
+    using rgsml::audio::FrameDomainId;
+    using rgsml::audio::AudioBuffer;
+    using rgsml::core::FrameIndex;
+    auto registry=rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto parameters=rgsml::dsp::TruePeakLimiterParameters::create(-12.0);
+    QVERIFY(parameters);
+    constexpr std::int64_t n=300;
+    constexpr std::int64_t origin=100;
+    const auto fmt=format(rgsml::audio::ChannelLayout::STEREO_LR,48000);
+    auto input=AudioBuffer::create(fmt,FrameDomainId::OUTPUT_RATE,
+        FrameIndex{origin},frame_count(n));
+    QVERIFY(input);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto plane=input.value()->mutable_view().channel(ch);
+        QVERIFY(plane);
+        for(std::size_t i=0;i<static_cast<std::size_t>(n);++i) {
+            const double sample=i==0?4.0:(i==17?-2.5:(i==static_cast<std::size_t>(n-1)?0.125:0.0));
+            (*plane.value())[i]=ch==0?sample:-sample*0.375;
+        }
+    }
+    // New terminal seam explicitly rejects the SOURCE_RATE Render Preview
+    // input, even if the M17 core can instantiate in ModuleRegistry.
+    const std::array<double,2> samples{0.5,-0.5};
+    auto wrong=make_buffer(rgsml::audio::ChannelLayout::STEREO_LR,
+        100,samples,samples);
+    QVERIFY(wrong);
+    auto refused=rgsml::render::render_true_peak_limiter_terminal_candidate(
+        wrong.value()->view(),*parameters.value(),*registry.value(),
+        frame_count(17),false);
+    QVERIFY(!refused);
+    QCOMPARE(refused.error()->code(),rgsml::core::ErrorCode::InvalidArgument);
+
+    auto bypassed=rgsml::render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*parameters.value(),*registry.value(),
+        frame_count(1),true);
+    QVERIFY(bypassed);
+    QCOMPARE(bits(bypassed.value()->compensated_pcm.view()),bits(input.value()->view()));
+    QCOMPARE(bypassed.value()->algorithmic_latency_frames,std::int64_t{0});
+    QVERIFY(bypassed.value()->applied_gain_frames.empty());
+    QVERIFY(bypassed.value()->bypassed);
+
+    auto partitioned=rgsml::render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*parameters.value(),*registry.value(),
+        frame_count(7),false);
+    QVERIFY(partitioned);
+    auto unpartitioned=rgsml::render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*parameters.value(),*registry.value(),
+        frame_count(512),false);
+    QVERIFY(unpartitioned);
+    QCOMPARE(partitioned.value()->compensated_pcm.view().absolute_range(),
+             input.value()->view().absolute_range());
+    QCOMPARE(partitioned.value()->compensated_pcm.view().frame_count(),frame_count(n));
+    QCOMPARE(partitioned.value()->algorithmic_latency_frames,std::int64_t{248});
+    QVERIFY(!partitioned.value()->bypassed);
+    QCOMPARE(bits(partitioned.value()->compensated_pcm.view()),
+             bits(unpartitioned.value()->compensated_pcm.view()));
+    QCOMPARE(partitioned.value()->applied_gain_frames.size(),
+             unpartitioned.value()->applied_gain_frames.size());
+    for(std::size_t i=0;
+        i<partitioned.value()->applied_gain_frames.size();++i) {
+        const auto& a=partitioned.value()->applied_gain_frames[i];
+        const auto& b=unpartitioned.value()->applied_gain_frames[i];
+        QCOMPARE(a.programme_frame,b.programme_frame);
+        QCOMPARE(a.raw_output_frame,b.raw_output_frame);
+        QCOMPARE(std::bit_cast<std::uint64_t>(a.gain),
+                 std::bit_cast<std::uint64_t>(b.gain));
+        QCOMPARE(std::bit_cast<std::uint64_t>(a.reduction_db),
+                 std::bit_cast<std::uint64_t>(b.reduction_db));
+    }
+    QCOMPARE(partitioned.value()->applied_gain_frames.size(),
+             static_cast<std::size_t>(n));
+    bool genuinelyReduced=false;
+    for(std::int64_t i=0;i<n;++i) {
+        const auto& w=partitioned.value()->applied_gain_frames[
+            static_cast<std::size_t>(i)];
+        QCOMPARE(w.programme_frame,origin+i);
+        QCOMPARE(w.raw_output_frame,origin+i+248);
+        QVERIFY(std::isfinite(w.gain) && w.gain>0 && w.gain<=1.0);
+        QVERIFY(std::isfinite(w.reduction_db) && w.reduction_db>=0.0);
+        if(w.gain<1.0)genuinelyReduced=true;
+        for(std::size_t ch=0;ch<2;++ch) {
+            const auto source= input.value()->view().channel(ch);
+            const auto processed= partitioned.value()->compensated_pcm.view().channel(ch);
+            QVERIFY(source && processed);
+            const auto sample=(*source.value())[static_cast<std::size_t>(i)];
+            const double expected=w.gain==1.0?sample:sample*w.gain;
+            QCOMPARE(std::bit_cast<std::uint64_t>(
+                         (*processed.value())[static_cast<std::size_t>(i)]),
+                     std::bit_cast<std::uint64_t>(expected));
+        }
+    }
+    QVERIFY(genuinelyReduced);
+}
+
+
+void RenderPreviewTest::truePeakLimiterCheckedCandidateGenuineM16SixRateMatrix()
+{
+    // This is NOT a product-qualified realization. The whole-resource
+    // checked candidate nevertheless executes REAL M17 PCM/GR, complete
+    // EOS D-drain, one authorized M16 meter, and a guarded global trim
+    // (with a second M16 measurement when trim is necessary).
+    // NONE of the observed numbers may claim QUALIFIED.
+    using rgsml::audio::FrameDomainId;
+    using rgsml::audio::AudioBuffer;
+    using rgsml::core::FrameIndex;
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    for (const int fs : {44100,48000,88200,96000,176400,192000}) {
+        const auto d=fs/200+8;
+        for (const auto stereo : {false,true}) {
+            for (const auto ceilingDb : {-12.0,0.0}) {
+                auto params=rgsml::dsp::TruePeakLimiterParameters::create(ceilingDb);
+                QVERIFY(params);
+                const auto channels=stereo?std::size_t{2}:std::size_t{1};
+                const auto fmt=format(stereo
+                    ?rgsml::audio::ChannelLayout::STEREO_LR
+                    :rgsml::audio::ChannelLayout::MONO_C,fs);
+                const auto origin=stereo?std::int64_t{12345}:std::int64_t{0};
+                for (const auto count : {1,2*d+41}) {
+                    auto input=AudioBuffer::create(fmt,FrameDomainId::OUTPUT_RATE,
+                        FrameIndex{origin},frame_count(count));
+                    QVERIFY(input);
+                    for(std::size_t ch=0;ch<channels;++ch) {
+                        auto lane=input.value()->mutable_view().channel(ch);
+                        QVERIFY(lane);
+                        for(int i=0;i<count;++i) {
+                            const double sample=i==0?4.0
+                                :(i==count-1?-3.0:(i%37==0?2.0:0.0625));
+                            (*lane.value())[static_cast<std::size_t>(i)]=
+                                ch==0?sample:sample*(-0.75);
+                        }
+                    }
+                    const auto sourceBits=bits(input.value()->view());
+                    auto checked=rgsml::render::render_true_peak_limiter_checked_candidate(
+                        input.value()->view(),*params.value(),*registry.value(),
+                        frame_count(17),false);
+                    QVERIFY2(checked,
+                        checked ? "" : checked.error()->message().c_str());
+                    QVERIFY(!checked.value()->terminal.bypassed);
+                    QVERIFY(checked.value()->final_check.has_value());
+                    const auto& report=*checked.value()->final_check;
+                    QCOMPARE(report.qualification_status,
+                        rgsml::analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+                    QVERIFY(report.before_linear_peak>=0.0);
+                    QVERIFY(report.after_linear_peak>=0.0);
+                    QVERIFY(report.global_trim_gain<=1.0);
+                    QVERIFY(report.global_trim_gain>=0x1.fa23a197d2819p-1);
+                    QCOMPARE(report.trim_used,report.global_trim_gain<1.0);
+                    QCOMPARE(checked.value()->terminal.algorithmic_latency_frames,
+                        static_cast<std::int64_t>(d));
+                    QCOMPARE(checked.value()->terminal.applied_gain_frames.size(),
+                        static_cast<std::size_t>(count));
+                    QCOMPARE(checked.value()->terminal.compensated_pcm.view().absolute_range(),
+                        input.value()->view().absolute_range());
+                    QCOMPARE(bits(input.value()->view()),sourceBits);
+                    const auto after=rgsml::analysis::measure_true_peak_full_resource(
+                        checked.value()->terminal.compensated_pcm);
+                    QVERIFY(after);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(after.value()->global_linear_peak()),
+                        std::bit_cast<std::uint64_t>(report.after_linear_peak));
+                    const auto ceiling=std::pow(10.0,ceilingDb/20.0);
+                    QVERIFY(report.after_linear_peak<=ceiling);
+
+                    // Real DSP applied-gain provenance is base-only; the
+                    // verification trim is separate, common to both lanes.
+                    for(int i=0;i<count;++i) {
+                        const auto& w=checked.value()->terminal.applied_gain_frames[
+                            static_cast<std::size_t>(i)];
+                        QCOMPARE(w.programme_frame,origin+i);
+                        QCOMPARE(w.raw_output_frame,origin+i+d);
+                        QVERIFY(w.gain>0.0 && w.gain<=1.0);
+                        for(std::size_t ch=0;ch<channels;++ch) {
+                            const auto src=input.value()->view().channel(ch);
+                            const auto actual=checked.value()->terminal
+                                .compensated_pcm.view().channel(ch);
+                            QVERIFY(src && actual);
+                            const double original=(*src.value())[static_cast<std::size_t>(i)];
+                            const double base=w.gain==1.0?original:original*w.gain;
+                            const double expected=report.trim_used
+                                ?base*report.global_trim_gain:base;
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                (*actual.value())[static_cast<std::size_t>(i)]),
+                                std::bit_cast<std::uint64_t>(expected));
+                        }
+                    }
+                    // Block partition must not change the actual rendered
+                    // PCM nor the exact completed M16 measurement.
+                    auto unchunked=rgsml::render::render_true_peak_limiter_checked_candidate(
+                        input.value()->view(),*params.value(),*registry.value(),
+                        frame_count(4096),false);
+                    QVERIFY(unchunked);
+                    QCOMPARE(bits(unchunked.value()->terminal.compensated_pcm.view()),
+                        bits(checked.value()->terminal.compensated_pcm.view()));
+                    QVERIFY(unchunked.value()->final_check.has_value());
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        unchunked.value()->final_check->global_trim_gain),
+                        std::bit_cast<std::uint64_t>(report.global_trim_gain));
+                }
+            }
+        }
+    }
+
+    // BYP never borrows an M16 meter or trim, even if its real source
+    // exceeds Ceiling: no D placeholders, base-GR or false final status.
+    const auto fmt=format(rgsml::audio::ChannelLayout::STEREO_LR,48000);
+    auto src=AudioBuffer::create(fmt,FrameDomainId::OUTPUT_RATE,
+        FrameIndex{101},frame_count(5));
+    QVERIFY(src);
+    const std::array<double,5> left{+0.0,-0.0,4.0,
+        std::numeric_limits<double>::denorm_min(),-2.0};
+    const std::array<double,5> right{-0.0,+0.0,-4.0,
+        -std::numeric_limits<double>::denorm_min(),2.0};
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto data=src.value()->mutable_view().channel(ch);
+        QVERIFY(data);
+        std::copy(ch==0?left.begin():right.begin(),
+            ch==0?left.end():right.end(),data.value()->begin());
+    }
+    auto p=rgsml::dsp::TruePeakLimiterParameters::create(-12.0);
+    QVERIFY(p);
+    auto bypass=rgsml::render::render_true_peak_limiter_checked_candidate(
+        src.value()->view(),*p.value(),*registry.value(),frame_count(1),true);
+    QVERIFY(bypass);
+    QVERIFY(bypass.value()->terminal.bypassed);
+    QVERIFY(!bypass.value()->final_check.has_value());
+    QVERIFY(bypass.value()->terminal.applied_gain_frames.empty());
+    QCOMPARE(bypass.value()->terminal.algorithmic_latency_frames,std::int64_t{0});
+    QCOMPARE(bits(bypass.value()->terminal.compensated_pcm.view()),
+        bits(src.value()->view()));
+
+    // A corrupt RIGHT lane must prevent BOTH active and BYP publication.
+    // No placeholder audio or fabricated silence is permitted on failure.
+    auto rightChannelView=src.value()->mutable_view().channel(1);
+    QVERIFY(rightChannelView);
+    (*rightChannelView.value())[4]=std::numeric_limits<double>::infinity();
+    for(const bool bypassState:{false,true}) {
+        auto rejected=rgsml::render::render_true_peak_limiter_checked_candidate(
+            src.value()->view(),*p.value(),*registry.value(),
+            frame_count(7),bypassState);
+        QVERIFY(!rejected);
+        QCOMPARE(rejected.error()->code(),
+            rgsml::core::ErrorCode::InvalidAudioSample);
+        QCOMPARE(error_category(*rejected.error()),
+            std::string_view{"M17_TERMINAL_NONFINITE_PCM"});
+    }
+}
+
+
+void RenderPreviewTest::truePeakLimiterBoundTerminalChainRejectsStaleOrFakeBindings()
+{
+    // A real Terminal ProcessingChain must own M17 activation. The caller
+    // cannot pass an arbitrary bypass bool or a dummy/default Ceiling.
+    auto registry=rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain=rgsml::dsp::ProcessingChain::create(*registry.value(),
+        {rgsml::dsp::ProcessingStage::MASTER,
+         rgsml::dsp::ChainSegment::TERMINAL});
+    QVERIFY(chain);
+    const auto id=make_id("2a000000-0000-0000-0000-000000000091");
+    const auto other=make_id("2a000000-0000-0000-0000-000000000092");
+    QVERIFY(chain.value()->add(id,"rgsml.dsp.true-peak-limiter",0));
+    auto ceiling=rgsml::dsp::TruePeakLimiterParameters::create(-12.0);
+    QVERIFY(ceiling);
+    const std::array<rgsml::dsp::ModuleExecutionBinding,1> binding{{
+        {id,*ceiling.value()}}};
+    constexpr std::int64_t n=301;
+    auto source=rgsml::audio::AudioBuffer::create(
+        format(rgsml::audio::ChannelLayout::STEREO_LR,48000),
+        rgsml::audio::FrameDomainId::OUTPUT_RATE,
+        rgsml::core::FrameIndex{1000},frame_count(n));
+    QVERIFY(source);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=source.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(std::size_t i=0;i<static_cast<std::size_t>(n);++i) {
+            const double x=i==0?4.0:(i==n-1?-3.0:(i%37==0?2.0:0.0625));
+            (*lane.value())[i]=ch==0?x:-0.75*x;
+        }
+    }
+    const auto beforeBits=bits(source.value()->view());
+
+    // Distinguish active processing from a genuine chain-owned bypass.
+    auto active=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),binding,*registry.value(),
+        frame_count(17));
+    QVERIFY2(active,active?"":active.error()->message().c_str());
+    QVERIFY(!active.value()->checked.terminal.bypassed);
+    QVERIFY(active.value()->checked.final_check.has_value());
+    QCOMPARE(active.value()->limiter_instance_id,id);
+    QCOMPARE(active.value()->terminal_chain_revision,chain.value()->revision());
+    QVERIFY(bits(active.value()->checked.terminal.compensated_pcm.view())
+        !=beforeBits);
+
+    QVERIFY(chain.value()->set_user_bypass(id,true));
+    auto bypass=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),binding,*registry.value(),
+        frame_count(1));
+    QVERIFY(bypass);
+    QVERIFY(bypass.value()->checked.terminal.bypassed);
+    QVERIFY(!bypass.value()->checked.final_check.has_value());
+    QVERIFY(bypass.value()->checked.terminal.applied_gain_frames.empty());
+    QCOMPARE(bypass.value()->limiter_instance_id,id);
+    QCOMPARE(bypass.value()->terminal_chain_revision,chain.value()->revision());
+    QCOMPARE(bits(bypass.value()->checked.terminal.compensated_pcm.view()),
+        beforeBits);
+
+    // All four failure modes must prevent BOTH active and BYP output.
+    const std::array<rgsml::dsp::ModuleExecutionBinding,1> wrongId{{
+        {other,*ceiling.value()}}};
+    const auto wrong= rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),wrongId,*registry.value(),
+        frame_count(17));
+    QVERIFY(!wrong);
+    QCOMPARE(error_category(*wrong.error()),
+        std::string_view{"M17_TERMINAL_TYPED_BINDING_REQUIRED"});
+
+    const std::array<rgsml::dsp::ModuleExecutionBinding,2> duplicated{{
+        {id,*ceiling.value()},{id,*ceiling.value()}}};
+    auto duplicate=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),duplicated,*registry.value(),
+        frame_count(17));
+    QVERIFY(!duplicate);
+    QCOMPARE(error_category(*duplicate.error()),
+        std::string_view{"M17_TERMINAL_TYPED_BINDING_REQUIRED"});
+
+    const std::array<rgsml::dsp::ModuleExecutionBinding,0> missing{};
+    auto absent=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),missing,*registry.value(),
+        frame_count(17));
+    QVERIFY(!absent);
+    QCOMPARE(error_category(*absent.error()),
+        std::string_view{"M17_TERMINAL_TYPED_BINDING_REQUIRED"});
+
+    auto gain=rgsml::dsp::GainParameters::create(0.0);
+    QVERIFY(gain);
+    const std::array<rgsml::dsp::ModuleExecutionBinding,1> wrongType{{
+        {id,*gain.value()}}};
+    auto mismatched=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),wrongType,*registry.value(),
+        frame_count(17));
+    QVERIFY(!mismatched);
+    QCOMPARE(error_category(*mismatched.error()),
+        std::string_view{"M17_TERMINAL_TYPED_CEILING_MISMATCH"});
+
+    auto manual=rgsml::dsp::ProcessingChain::create(*registry.value(),
+        {rgsml::dsp::ProcessingStage::MASTER,
+         rgsml::dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    auto manualAttempt=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*manual.value(),binding,*registry.value(),
+        frame_count(17));
+    QVERIFY(!manualAttempt);
+    QCOMPARE(error_category(*manualAttempt.error()),
+        std::string_view{"M17_TERMINAL_CHAIN_CONTEXT_INVALID"});
+    QCOMPARE(bits(source.value()->view()),beforeBits);
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()

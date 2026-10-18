@@ -1105,6 +1105,10 @@ qt_add_executable(rgsml_mastering_chain_state_tests
     unit/app/test_mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp
 )
 target_include_directories(rgsml_mastering_chain_state_tests
     PRIVATE
@@ -1114,6 +1118,7 @@ target_link_libraries(rgsml_mastering_chain_state_tests
     PRIVATE
         rgsml_dsp
         rgsml_core
+        rgsml_render
         Qt6::Test
 )
 rgsml_apply_project_warnings(rgsml_mastering_chain_state_tests)

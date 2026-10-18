@@ -129,7 +129,24 @@ jobs:
             rgsml_dsp_module_adapter_tests \
             rgsml_render_preview_tests \
             rgsml_playback_src_tests \
-            rgsml_playback_engine_portable_tests
+            rgsml_playback_engine_portable_tests \
+            > "$RUNNER_TEMP/rgsml-focused-linux-build.log" 2>&1
+          echo "FOCUSED_BUILD_LINUX_SUCCESS"
+
+      - name: Capture bounded Linux compiler errors
+        if: failure()
+        run: |
+          python tools/ci/summarize_focused_build.py --input "$RUNNER_TEMP/rgsml-focused-linux-build.log" --output "$RUNNER_TEMP/rgsml-focused-linux-summary.txt" --platform linux
+          cat "$RUNNER_TEMP/rgsml-focused-linux-summary.txt"
+
+      - name: Attach bounded Linux compile diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Focused-Errors-Linux-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-focused-linux-summary.txt
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Run Focused DSP Tests
         run: |
@@ -334,13 +351,30 @@ jobs:
             rgsml_playback_support_tests `
             rgsml_source_metadata_panel_smoke `
             rgsml_project_session_tests `
-            rgsml_app
+            rgsml_app *> "$env:RUNNER_TEMP/rgsml-focused-windows-build.log"
           $buildExit = $LASTEXITCODE
           $buildTimer.Stop()
           if ($buildExit -ne 0) { throw "NINJA_FOCUSED_BUILD_FAILED_$buildExit" }
           Write-Host "WINDOWS_NINJA_COMPILE_SECONDS=$([math]::Round($buildTimer.Elapsed.TotalSeconds,1))"
           sccache --show-stats
           if ($LASTEXITCODE -ne 0) { throw 'SCCACHE_STATISTICS_UNAVAILABLE' }
+
+      - name: Capture bounded Windows compiler errors
+        if: failure()
+        shell: pwsh
+        run: |
+          python tools/ci/summarize_focused_build.py --input "$env:RUNNER_TEMP/rgsml-focused-windows-build.log" --output "$env:RUNNER_TEMP/rgsml-focused-windows-summary.txt" --platform windows
+          if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_DIAGNOSTIC_EXTRACTION_FAILED' }
+          Get-Content "$env:RUNNER_TEMP/rgsml-focused-windows-summary.txt"
+
+      - name: Attach bounded Windows compile diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Focused-Errors-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-focused-windows-summary.txt
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Run Windows UI Smoke Diagnostic
         env:

@@ -33,6 +33,7 @@ constexpr auto kGainTypeId = "rgsml.dsp.gain";
 constexpr auto kEqTypeId = "rgsml.dsp.parametric-eq";
 constexpr auto kCompressorTypeId = "rgsml.dsp.compressor";
 constexpr auto kStereoMsTypeId = "rgsml.dsp.stereo-ms";
+constexpr auto kTruePeakLimiterTypeId = "rgsml.dsp.true-peak-limiter";
 
 struct PreparedModule final {
     std::unique_ptr<rgsml::dsp::IModule> instance;
@@ -590,6 +591,21 @@ rgsml::core::Result<RenderResult> render_preview(
             const auto descriptor = registry.find_descriptor(instance.module_type_id());
             if (!descriptor) {
                 return rgsml::core::Result<RenderResult>::failure(*descriptor.error());
+            }
+
+            // M17 Core-first has a real factory, but that does NOT authorize
+            // execution in Source-processing-rate Render Preview. The core
+            // requires OUTPUT_RATE input and strict EOS D-frame drain; this
+            // renderer has neither the terminal typed-binding authority nor
+            // the proven post-trim/GR realization owner yet. Fail *before*
+            // factory creation, even if someone mistakenly activates M17.
+            // Its bypassed terminal node remains an exact audio identity.
+            if (instance.module_type_id() == kTruePeakLimiterTypeId
+                && instance.active()) {
+                return rgsml::core::Result<RenderResult>::failure(render_error(
+                    rgsml::core::ErrorCode::UnsupportedOperation,
+                    "M17_OUTPUT_RATE_RENDER_NOT_INTEGRATED",
+                    "Active True Peak Limiter requires the qualified terminal OUTPUT_RATE renderer, typed Ceiling binding and real EOS/GR provenance."));
             }
 
             // M15-B2c: Stereo/M-S uses only its exact immutable typed binding.
