@@ -138,6 +138,8 @@ private slots:
     void actualM16ReverificationUsesOneGlobalStereoScalar();
     void renderedM17FullResourceMeasuredAndVerifiedByM16();
     void shortAndSplitEosDoesNotCreatePhantomPcm();
+    void inactiveBypassIsZeroLatencyBitCopyAboveCeilingSixRates();
+    void bypassAndEnabledLimiterAreObservablyDistinct();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
 {
@@ -376,6 +378,143 @@ void TruePeakLimiterVerificationTest::shortAndSplitEosDoesNotCreatePhantomPcm()
             QCOMPARE(std::bit_cast<std::uint64_t>(ma.value()->global_linear_peak()),
                 std::bit_cast<std::uint64_t>(mb.value()->global_linear_peak()));
         }
+    }
+}
+
+
+void TruePeakLimiterVerificationTest::inactiveBypassIsZeroLatencyBitCopyAboveCeilingSixRates()
+{
+    // AC-06: no limiter, no M16 trim, no PCM padding/drain and no GR when
+    // inactive. An OVER-CEILING bypass remains deliberately over Ceiling:
+    // M16 measurement is observational and NEVER a certification in BYP.
+    constexpr std::int64_t origin=31'000'027;
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const bool stereo:{false,true}) {
+            for(const double ceilingDb:{-12.0,-6.0,-1.0,0.0}) {
+                for(const int n:{1,fs/200+17}) {
+                    auto input=buffer(fs,stereo,n,origin);
+                    for(std::size_t ch=0;ch<input.view().format().channel_count();++ch) {
+                        auto lane=input.mutable_view().channel(ch);
+                        QVERIFY(lane);
+                        for(int i=0;i<n;++i) {
+                            const double x=i==0?4.0:
+                                (i==n-1?-3.0:(i%13==0?+0.5:-0.25));
+                            (*lane.value())[static_cast<std::size_t>(i)]=
+                                ch==0?x:-x*0.75;
+                        }
+                        if(n>3) {
+                            (*lane.value())[1]=-0.0;
+                            (*lane.value())[2]=+0.0;
+                            (*lane.value())[3]=std::numeric_limits<double>::denorm_min();
+                        }
+                    }
+                    const auto before=analysis::measure_true_peak_full_resource(input);
+                    QVERIFY(before);
+                    const double ceiling=std::pow(10.0,ceilingDb/20.0);
+                    QVERIFY2(before.value()->global_linear_peak()>ceiling,
+                        "Hot bypass fixture unexpectedly below Ceiling");
+                    const auto bypass=m17_verifier::bypass_full_resource(input);
+                    QVERIFY(bypass);
+                    QCOMPARE(bypass.value()->view().format(),input.view().format());
+                    QCOMPARE(bypass.value()->view().frame_count(),input.view().frame_count());
+                    QCOMPARE(bypass.value()->view().absolute_range(),
+                        input.view().absolute_range());
+                    QCOMPARE(bypass.value()->view().timebase().frame_domain_id(),
+                        audio::FrameDomainId::OUTPUT_RATE);
+                    for(std::size_t ch=0;ch<input.view().format().channel_count();++ch) {
+                        const auto original=input.view().channel(ch);
+                        const auto passthrough=bypass.value()->view().channel(ch);
+                        QVERIFY(original && passthrough);
+                        for(int i=0;i<n;++i)
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                (*passthrough.value())[static_cast<std::size_t>(i)]),
+                                std::bit_cast<std::uint64_t>(
+                                    (*original.value())[static_cast<std::size_t>(i)]));
+                        if(n>3) {
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                (*passthrough.value())[1]),
+                                std::bit_cast<std::uint64_t>(-0.0));
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                (*passthrough.value())[2]),
+                                std::bit_cast<std::uint64_t>(+0.0));
+                        }
+                    }
+                    const auto observed=analysis::measure_true_peak_full_resource(
+                        *bypass.value());
+                    QVERIFY(observed);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        observed.value()->global_linear_peak()),
+                        std::bit_cast<std::uint64_t>(
+                            before.value()->global_linear_peak()));
+                    QVERIFY(observed.value()->global_linear_peak()>ceiling);
+                }
+            }
+        }
+    }
+}
+void TruePeakLimiterVerificationTest::bypassAndEnabledLimiterAreObservablyDistinct()
+{
+    // Deliberately unbounded first/last impulses. The disabled path remains
+    // untouched while the enabled Core must attenuate and may then use the
+    // one-shot M16 verifier. Bypass must NOT accidentally invoke this verifier.
+    const int fs=44100;
+    constexpr double ceilingDb=-12.0;
+    auto programme=buffer(fs,true,319,19'000'021);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=programme.mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(int i=0;i<319;++i)
+            (*lane.value())[static_cast<std::size_t>(i)]=
+                i==0?(ch==0?4.0:-4.0):
+                (i==318?(ch==0?-3.0:3.0):+0.0);
+    }
+    const auto inactive=m17_verifier::bypass_full_resource(programme);
+    QVERIFY(inactive);
+    const std::array<std::size_t,3> partition{1,37,301};
+    auto enabled=renderRealM17(programme,ceilingDb,partition);
+    QVERIFY(enabled.has_value());
+    const auto before=analysis::measure_true_peak_full_resource(
+        *inactive.value());
+    QVERIFY(before);
+    QVERIFY(before.value()->global_linear_peak()>
+        std::pow(10.0,ceilingDb/20.0));
+    const auto verdict=m17_verifier::verify_full_resource(*enabled,ceilingDb);
+    QVERIFY(verdict);
+    QVERIFY(verdict.value()->after_peak<=std::pow(10.0,ceilingDb/20.0));
+    bool diverged=false;
+    for(std::size_t ch=0;ch<2;++ch) {
+        const auto bypassLane=inactive.value()->view().channel(ch);
+        const auto activeLane=enabled->view().channel(ch);
+        const auto source=programme.view().channel(ch);
+        QVERIFY(bypassLane && activeLane && source);
+        for(int i=0;i<319;++i) {
+            const auto old=std::bit_cast<std::uint64_t>(
+                (*source.value())[static_cast<std::size_t>(i)]);
+            QCOMPARE(std::bit_cast<std::uint64_t>(
+                (*bypassLane.value())[static_cast<std::size_t>(i)]),old);
+            diverged |= std::bit_cast<std::uint64_t>(
+                (*activeLane.value())[static_cast<std::size_t>(i)])!=old;
+        }
+    }
+    QVERIFY2(diverged,"Enabled M17 had no observable change over hot bypass");
+    // A direct M16 verification on BYP would need >0.10dB of global
+    // attenuation and is deliberately NOT performed by the inactive path.
+    auto verifierAttempt=m17_verifier::bypass_full_resource(programme);
+    QVERIFY(verifierAttempt);
+    const auto rejected=m17_verifier::verify_full_resource(
+        *verifierAttempt.value(),ceilingDb);
+    QVERIFY(!rejected);
+    QCOMPARE(category(*rejected.error()),
+        std::string_view{"LIMITER_VERIFICATION_GUARD_EXCEEDED"});
+    for(std::size_t ch=0;ch<2;++ch) {
+        const auto lane=verifierAttempt.value()->view().channel(ch);
+        const auto src=programme.view().channel(ch);
+        QVERIFY(lane && src);
+        for(int i=0;i<319;++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>(
+                (*lane.value())[static_cast<std::size_t>(i)]),
+                std::bit_cast<std::uint64_t>(
+                    (*src.value())[static_cast<std::size_t>(i)]));
     }
 }
 

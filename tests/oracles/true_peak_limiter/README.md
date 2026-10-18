@@ -46,3 +46,14 @@ rejection, PCM and gain-witness bitwise continuity. A separate six-rate
 bound-envelope test rejects one-ULP changes solely in the right lane, owner
 and chain revision mismatches. These are TEST-ONLY proofs, not production
 resource ownership, CPU-budget certification or acoustic qualification.
+
+AC-06 inactive-path test-only reference (not shipped bypass): six sample
+rates x mono/stereo x four Ceilings x N in {1,D+17}, including hot PCM,
+negative zero and subnormals, must bit-copy exactly N frames with the
+original absolute range. No M17 instance, latency, drain, GR, M16 trim or
+Ceiling clamping occurs. Independent M16 observation remains above Ceiling
+for deliberately hot bypassed PCM; this is intentionally NOT a bypass
+Ceiling certification. The separate enabled run is observably attenuated,
+verified by full-resource M16, and cannot be confused with bypass identity.
+Actual host/renderer bypass routing and zero-latency product integration
+remain unqualified, requiring separate authorized scope.

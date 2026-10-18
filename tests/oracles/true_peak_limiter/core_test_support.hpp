@@ -14,6 +14,7 @@
 #include <utility>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <limits>
 #include <span>
 #include <string>
@@ -105,6 +106,38 @@ struct BoundCoreCheckpoint final {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidArgument,"INCOMPATIBLE_BOUND_CORE_RESOURCE"});
     return module.restore_runtime_checkpoint(bound.checkpoint);
+}
+
+
+// AC-06 inactive-path reference harness only. NO M17 instance, NO detector,
+// NO D placeholder/drain, NO verification trim, NO gain callback. The
+// product renderer's bypass is not part of this Core-first entry.
+[[nodiscard]] inline core::Result<audio::AudioBuffer> bypass_full_resource(
+    const audio::AudioBuffer& source)
+{
+    const auto view=source.view();
+    if(view.frame_count().value()<=0 ||
+        view.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE)
+        return core::Result<audio::AudioBuffer>::failure(error(
+            core::ErrorCode::InvalidArgument,"INVALID_M17_BYPASS_RESOURCE",
+            "Inactive M17 test harness requires full OUTPUT_RATE PCM."));
+    auto copy=audio::AudioBuffer::create(
+        view.format(),audio::FrameDomainId::OUTPUT_RATE,
+        view.absolute_range().begin(),view.frame_count());
+    if(!copy)return core::Result<audio::AudioBuffer>::failure(*copy.error());
+    for(std::size_t ch=0;ch<view.format().channel_count();++ch) {
+        const auto from=view.channel(ch);
+        const auto into=copy.value()->mutable_view().channel(ch);
+        if(!from || !into)
+            return core::Result<audio::AudioBuffer>::failure(error(
+                core::ErrorCode::InvalidArgument,"INVALID_M17_BYPASS_BUFFER",
+                "Inactive M17 reference requires complete PCM channels."));
+        // Memcpy is deliberately a pure bitwise payload copy, including
+        // -0.0. No float arithmetic or postprocessing occurs.
+        std::memcpy(into.value()->data(),from.value()->data(),
+            from.value()->size()*sizeof(double));
+    }
+    return copy;
 }
 
 inline constexpr double kMinimumGlobalTrimGain=0x1.fa23a197d2819p-1;
