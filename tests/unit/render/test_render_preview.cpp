@@ -2173,7 +2173,7 @@ void RenderPreviewTest::truePeakLimiterBoundTerminalChainRejectsStaleOrFakeBindi
     QCOMPARE(error_category(*absent.error()),
         std::string_view{"M17_TERMINAL_TYPED_BINDING_REQUIRED"});
 
-    auto gain=rgsml::dsp::GainParameters::create_default();
+    auto gain=rgsml::dsp::GainParameters::create(0.0);
     QVERIFY(gain);
     const std::array<rgsml::dsp::ModuleExecutionBinding,1> wrongType{{
         {id,*gain.value()}}};
