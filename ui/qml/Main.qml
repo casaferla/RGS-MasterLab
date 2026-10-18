@@ -305,6 +305,8 @@ ApplicationWindow {
                 ? truePeakStatic : null
             truePeakLiveViewModel: typeof truePeakLive !== "undefined"
                 ? truePeakLive : null
+            terminalLimiterViewModel: typeof terminalLimiterViewModel !== "undefined"
+                ? terminalLimiterViewModel : null
         }
     }
 

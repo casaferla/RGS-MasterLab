@@ -17,6 +17,7 @@ Rectangle {
     property var spectrumViewModel: null
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
+    property var terminalLimiterViewModel: null
     property Item activeChainRow: null
 
     // Backward-compatibility alias so code referencing host.viewModel accesses eqViewModel
@@ -224,9 +225,15 @@ Rectangle {
                     tone: "primary"
                     accentColor: root.isLimiterEditor ? root.activeFamilyAccent : "#00C8FF"
                     selectedFamilyAccent: root.isLimiterEditor
+                    // M17 exists as real BYP state but has no processed OUTPUT_RATE
+                    // publisher; prevent a clickable false "Active" claim.
+                    enabled: !root.isLimiterEditor
+                        || (root.activeModule && root.activeModule.bypassSupported)
                     onClicked: if (root.activeModule) root.activeModule.setBypass(false)
                     Accessible.name: text
-                    ToolTip.text: "Activate module processing"
+                    ToolTip.text: root.isLimiterEditor && !enabled
+                        ? "True Peak Limiter processing is pending verified OUTPUT_RATE routing"
+                        : "Activate module processing"
                     ToolTip.visible: hovered
                 }
 
@@ -238,6 +245,8 @@ Rectangle {
                     tone: "gold"
                     accentColor: root.isLimiterEditor ? root.activeFamilyAccent : "#F2B632"
                     selectedFamilyAccent: root.isLimiterEditor
+                    enabled: !root.isLimiterEditor
+                        || (root.activeModule && root.activeModule.bypassSupported)
                     onClicked: if (root.activeModule) root.activeModule.setBypass(true)
                     Accessible.name: "Bypass"
                     ToolTip.text: "Bypass module processing"
@@ -303,8 +312,10 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             limiterModule: root.isLimiterEditor ? root.activeModule : null
-            // Fail closed until a production limiter parameter VM is wired.
-            limiterViewModel: null
+            // Real typed committed/draft Ceiling; still disabled by authentic
+            // BYP, with no sonic Preview and no fabricated applied-GR or trim.
+            limiterViewModel: root.isLimiterEditor
+                ? root.terminalLimiterViewModel : null
             measurementProvider: root.truePeakStaticViewModel
             liveProvider: root.truePeakLiveViewModel
         }
