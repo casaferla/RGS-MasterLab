@@ -1734,6 +1734,10 @@ qt_add_executable(rgsml_dsp_module_adapter_tests
     unit/app/test_dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
