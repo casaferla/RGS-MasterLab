@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 // Shared M16/M17 readout primitive. Its parent owns responsive positioning.
