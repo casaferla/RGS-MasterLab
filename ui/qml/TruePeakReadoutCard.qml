@@ -8,6 +8,11 @@ Rectangle {
     property string reading: "—"
     property string detail: ""
     property bool available: false
+    property bool detailTooltipEnabled: false
+    HoverHandler { id: readoutHover }
+    ToolTip.text: root.heading + "\n" + root.reading + "\n" + root.detail
+    ToolTip.visible: root.detailTooltipEnabled && readoutHover.hovered
+    ToolTip.delay: 550
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     property color valueColor: "#E9F7FF"

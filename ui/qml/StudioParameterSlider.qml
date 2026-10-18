@@ -32,6 +32,8 @@ Item {
 
     property string accessibleName: ""
     property string accessibleDescription: ""
+    // Optional tooltip for new slider instances; legacy DSP stays unchanged.
+    property string interactionHint: ""
 
     signal draftValueChanged(real draftVal)
     signal commitRequested(real finalVal)
@@ -72,6 +74,10 @@ Item {
         stepSize: 0.001
         enabled: control.enabled
         activeFocusOnTab: true
+        hoverEnabled: true
+        ToolTip.text: control.interactionHint
+        ToolTip.visible: hovered && control.interactionHint.length > 0
+        ToolTip.delay: 550
 
         value: control.valueToPosition(control.value)
 
@@ -204,6 +210,7 @@ Item {
         }
 
         Accessible.name: control.accessibleName.length > 0 ? control.accessibleName : (control.fieldName + " slider")
-        Accessible.description: control.accessibleDescription
+        Accessible.description: control.interactionHint.length > 0
+            ? control.interactionHint : control.accessibleDescription
     }
 }

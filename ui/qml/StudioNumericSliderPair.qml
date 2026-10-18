@@ -22,6 +22,7 @@ ColumnLayout {
     // retain their previous geometry via the default binding.
     property bool sliderCompact: numericField.compact
     property alias interactionHint: numericField.interactionHint
+    property alias sliderInteractionHint: parameterSlider.interactionHint
 
     property alias from: parameterSlider.from
     property alias to: parameterSlider.to

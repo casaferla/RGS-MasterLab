@@ -11,6 +11,7 @@ Item {
     // M17 only: turn four separate readout cards into an equal-height,
     // coherent second column. Standalone M16 keeps its exact prior layout.
     property bool framedForLimiter: false
+    property bool showProvenanceTooltips: framedForLimiter
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     readonly property bool hasMeasurement: measurementProvider
@@ -47,6 +48,7 @@ Item {
 
         TruePeakReadoutCard {
             objectName: "truePeakRecentCard"
+            detailTooltipEnabled: root.showProvenanceTooltips
             Layout.fillHeight: root.framedForLimiter
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
@@ -63,6 +65,7 @@ Item {
         }
         TruePeakReadoutCard {
             objectName: "truePeakHoldCard"
+            detailTooltipEnabled: root.showProvenanceTooltips
             Layout.fillHeight: root.framedForLimiter
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
@@ -81,6 +84,7 @@ Item {
         }
         TruePeakReadoutCard {
             objectName: "truePeakFullResourceCard"
+            detailTooltipEnabled: root.showProvenanceTooltips
             Layout.fillHeight: root.framedForLimiter
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
@@ -98,6 +102,7 @@ Item {
         }
         TruePeakStatusCard {
             objectName: "truePeakProvenanceCard"
+            detailTooltipEnabled: root.showProvenanceTooltips
             Layout.fillHeight: root.framedForLimiter
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent

@@ -647,10 +647,22 @@ Window {
     id: fixtureWindow
     objectName: "m17CandidateBypassState"
     property bool bypass: true
+    // Isolated UI-test validation stub; never a productive DSP binding.
+    property bool injectValidationViewModel: false
+    property string injectedValidationMessage: ""
     width: 1184
     height: 688
     visible: false
     color: "#06121F"
+    QtObject {
+        id: isolatedValidationStub
+        objectName: "m17IsolatedErrorStub"
+        property string validationField:
+            fixtureWindow.injectedValidationMessage.length > 0 ? "ceilingDbTp" : ""
+        property string validationMessage: fixtureWindow.injectedValidationMessage
+        property real ceilingDbTp: -1.0
+        property string ceilingDbTpText: "-1.00"
+    }
     Rectangle {
         id: captureSurface
         objectName: "m17CandidateCaptureSurface"
@@ -675,6 +687,8 @@ Window {
             width: captureSurface.width - 474
             height: captureSurface.height - 140
             limiterModule: fixtureWindow
+            limiterViewModel: fixtureWindow.injectValidationViewModel
+                ? isolatedValidationStub : null
         }
     }
 }
@@ -702,6 +716,14 @@ Window {
         instance.data(), QStringLiteral("m17LimiterColumn")));
     auto* ceiling = find_child_by_name(instance.data(),
         QStringLiteral("m17CeilingControl"));
+    auto* numericField = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17CeilingNumericField")));
+    auto* slider = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17CeilingSlider")));
+    auto* validationBand = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17LimiterValidationStatusRegion")));
+    auto* validationText = find_child_by_name(instance.data(),
+        QStringLiteral("m17LimiterValidationMessage"));
     auto* rail = find_child_by_name(instance.data(),
         QStringLiteral("truePeakMeterSharedRail"));
     auto* gr = find_child_by_name(instance.data(),
@@ -713,7 +735,9 @@ Window {
     auto* ceilingCard = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("m17CeilingCard")));
     QVERIFY(state && captureSurface && editor && meter && limiter
-        && ceiling && rail && gr && trim && railFrame && ceilingCard);
+        && ceiling && rail && gr && trim && railFrame && ceilingCard
+        && numericField && slider && validationBand && validationText);
+    QVERIFY(!validationBand->isVisible());
     auto captureCandidate = [captureSurface](
         const QSize& size, const QString& fileName) -> bool {
         // grabToImage captures exact native QML coordinates even if a virtual
@@ -797,6 +821,71 @@ Window {
         QCOMPARE(limiter->size(), limiterSize);
         QVERIFY2(!ceiling->property("enabled").toBool(),
             "Missing productive limiter VM must not enable a false Ceiling edit");
+        QVERIFY(state->setProperty("bypass", true));
+        QCoreApplication::processEvents();
+    }
+
+    // Error-in-place regression: compare the SAME native Qt objects before,
+    // during and after a deliberately injected UI-only validation failure.
+    // This fixture is NOT a fabricated limiter measurement or sonic output.
+    for (const QSize size : {QSize{1184, 688}, QSize{1440, 900}}) {
+        captureSurface->setWidth(size.width());
+        captureSurface->setHeight(size.height());
+        window->resize(size);
+        QVERIFY(state->setProperty("bypass", false));
+        QVERIFY(state->setProperty("injectValidationViewModel", true));
+        QVERIFY(state->setProperty("injectedValidationMessage", QString{}));
+        QTest::qWait(120);
+        QCoreApplication::processEvents();
+        QCOMPARE(validationBand->isVisible(), false);
+        QVERIFY(ceiling->property("enabled").toBool());
+        const QVector<QQuickItem*> stableItems{
+            meter, limiter, railFrame, ceilingCard,
+            numericField, slider, qobject_cast<QQuickItem*>(gr),
+            qobject_cast<QQuickItem*>(trim)};
+        auto stableRect = [editor](QQuickItem* item) {
+            return QRectF{
+                item->mapToItem(editor, QPointF{}),
+                QSizeF{item->width(), item->height()}};
+        };
+        QVector<QRectF> baseline;
+        baseline.reserve(stableItems.size());
+        for (auto* item : stableItems)
+            baseline.push_back(stableRect(item));
+
+        const QString suffix = QString::number(size.width()) + "x"
+            + QString::number(size.height()) + ".png";
+        QVERIFY2(captureCandidate(size,
+            QStringLiteral("m17_validation_fixture_clean_") + suffix),
+            "M17 Qt validation baseline screenshot missing");
+        const QString message =
+            QStringLiteral("Ceiling must be within [-12.0, 0.0] dBTP.");
+        QVERIFY(state->setProperty("injectedValidationMessage", message));
+        QCoreApplication::processEvents();
+        QVERIFY(validationBand->isVisible());
+        QCOMPARE(validationText->property("text").toString(), message);
+        QVERIFY(numericField->property("isInvalid").toBool());
+        QCOMPARE(validationText->property("color").value<QColor>(),
+            QColor{QStringLiteral("#F27683")});
+        for (int i = 0; i < stableItems.size(); ++i) {
+            QVERIFY2(stableRect(stableItems[i]) == baseline[i],
+                "Validation overlay must never change a M17 control rectangle");
+        }
+        QVERIFY2(captureCandidate(size,
+            QStringLiteral("m17_validation_fixture_error_") + suffix),
+            "M17 native Qt validation error screenshot missing");
+        QVERIFY(state->setProperty("injectedValidationMessage", QString{}));
+        QCoreApplication::processEvents();
+        QVERIFY(!validationBand->isVisible());
+        QVERIFY(!numericField->property("isInvalid").toBool());
+        for (int i = 0; i < stableItems.size(); ++i) {
+            QVERIFY2(stableRect(stableItems[i]) == baseline[i],
+                "Clearing validation must never change M17 geometry");
+        }
+        QVERIFY2(captureCandidate(size,
+            QStringLiteral("m17_validation_fixture_corrected_") + suffix),
+            "M17 native Qt corrected validation screenshot missing");
+        QVERIFY(state->setProperty("injectValidationViewModel", false));
         QVERIFY(state->setProperty("bypass", true));
         QCoreApplication::processEvents();
     }

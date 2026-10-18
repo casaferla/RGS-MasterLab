@@ -8,6 +8,13 @@ Rectangle {
     property string qualification: "NO QUALIFIED MEASUREMENT"
     property string identity: "NO PUBLISHED REALIZATION"
     property string formatLabel: "—"
+    property bool detailTooltipEnabled: false
+    HoverHandler { id: provenanceHover }
+    ToolTip.text: "MEASUREMENT / PROVENANCE\n"
+        + root.stateLabel + "\n" + root.qualification + "\n"
+        + root.identity + "\n" + root.formatLabel
+    ToolTip.visible: root.detailTooltipEnabled && provenanceHover.hovered
+    ToolTip.delay: 550
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     implicitHeight: 112
