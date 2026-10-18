@@ -1,5 +1,7 @@
 # ISOLATED PILOT — the original Windows Full Qualification is unchanged.
 # A warm cached build is NEVER evidence of recompilation from scratch.
+# PR pilot #7 intentionally defaults to cold for independent all-source evidence.
+# Explicit workflow_dispatch cache_mode=warm remains supported; official FQ unchanged.
 name: Windows FQ Ninja Pilot
 on:
   pull_request:
@@ -23,7 +25,7 @@ jobs:
     env:
       RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
       RGSML_FQ_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      RGSML_FQ_CACHE_MODE: ${{ inputs.cache_mode || 'warm' }}
+      RGSML_FQ_CACHE_MODE: ${{ inputs.cache_mode || 'cold' }}
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_GHA_VERSION: "rgsml-fq-msvc2022-qt683-strict-ninja-v1"
       SCCACHE_IGNORE_SERVER_IO_ERROR: "true"
