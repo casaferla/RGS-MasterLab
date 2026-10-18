@@ -124,6 +124,7 @@ private slots:
     void allRateOwnerDigestAndRevisionAreAtomic();
     void poisonedAbsoluteOriginCannotOverflowCheckpointClock();
     void oldRateCheckpointRejectedAfterNewRatePrepare();
+    void detachedGainObserverCheckpointRetainsExactLiveState();
 };
 void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
 {
@@ -775,6 +776,103 @@ void TruePeakLimiterCheckpointTest::oldRateCheckpointRejectedAfterNewRatePrepare
             QVERIFY(fromNew);
             QCOMPARE(*fromNew.value(),*canonical.value());
         }
+}
+
+
+void TruePeakLimiterCheckpointTest::detachedGainObserverCheckpointRetainsExactLiveState()
+{
+    // Closing Core-first U3/U5 contract: telemetry sink lifecycle is not
+    // serialized DSP state. Snapshot after 17 unobserved live frames,
+    // restore to a fresh instance, reattach gain sink, compare all
+    // subsequent real PCM/GR bits and exact frame provenance.
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        const int d=fs/200+8,first=d+19,off=17,at=first+off,n=2*d+79;
+        for(const double ceiling:{-12.0,0.0}) {
+            auto base=fresh(fs,ceiling);
+            auto detached=fresh(fs,ceiling);
+            auto restored=fresh(fs,ceiling);
+            QVERIFY(base && detached && restored);
+            GainWitnessCollector full,early,later;
+            full.frames.reserve(static_cast<std::size_t>(n));
+            early.frames.reserve(static_cast<std::size_t>(first));
+            later.frames.reserve(static_cast<std::size_t>(n));
+            base->set_applied_gain_sink(&GainWitnessCollector::collect,&full);
+            detached->set_applied_gain_sink(&GainWitnessCollector::collect,&early);
+            const auto firstA=processBlock(*base,fs,0,first,true);
+            const auto firstB=processBlock(*detached,fs,0,first,true);
+            QCOMPARE(firstA.size(),static_cast<std::size_t>(first));
+            QCOMPARE(firstA.size(),firstB.size());
+            for(std::size_t i=0;i<firstA.size();++i)
+                for(std::size_t ch=0;ch<2;++ch)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(firstA[i][ch]),
+                        std::bit_cast<std::uint64_t>(firstB[i][ch]));
+            QCOMPARE(early.frames.size(),std::size_t{19});
+            detached->set_applied_gain_sink(nullptr,nullptr);
+            const auto gapA=processBlock(*base,fs,first,off,false);
+            const auto gapB=processBlock(*detached,fs,first,off,false);
+            QCOMPARE(gapA.size(),std::size_t{off});
+            QCOMPARE(gapA.size(),gapB.size());
+            for(std::size_t i=0;i<gapA.size();++i)
+                for(std::size_t ch=0;ch<2;++ch)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(gapA[i][ch]),
+                        std::bit_cast<std::uint64_t>(gapB[i][ch]));
+            QCOMPARE(early.frames.size(),std::size_t{19});
+            QCOMPARE(full.frames.size(),std::size_t{36});
+            const auto original=base->runtime_checkpoint();
+            const auto withoutObserver=detached->runtime_checkpoint();
+            QVERIFY(original && withoutObserver);
+            QCOMPARE(*withoutObserver.value(),*original.value());
+            QCOMPARE(withoutObserver.value()->next_input_frame,
+                std::optional{core::FrameIndex{at}});
+            QVERIFY(restored->restore_runtime_checkpoint(*withoutObserver.value()));
+            restored->set_applied_gain_sink(&GainWitnessCollector::collect,&later);
+            const auto replayed=restored->runtime_checkpoint();
+            QVERIFY(replayed);
+            QCOMPARE(*replayed.value(),*original.value());
+            std::vector<std::array<double,2>> rawA,rawB;
+            for(int position=at;position<n;) {
+                const int count=std::min(n-position,47+position%31);
+                const auto a=processBlock(*base,fs,position,count,false);
+                const auto b=processBlock(*restored,fs,position,count,false);
+                QCOMPARE(a.size(),static_cast<std::size_t>(count));
+                QCOMPARE(a.size(),b.size());
+                rawA.insert(rawA.end(),a.begin(),a.end());
+                rawB.insert(rawB.end(),b.begin(),b.end());
+                position+=count;
+            }
+            for(int drain=0;drain<d;) {
+                const int count=std::min(127,d-drain);
+                const bool ends=drain+count==d;
+                const auto a=finalBlock(*base,fs,n+drain,count,ends);
+                const auto b=finalBlock(*restored,fs,n+drain,count,ends);
+                QCOMPARE(a.size(),static_cast<std::size_t>(count));
+                QCOMPARE(a.size(),b.size());
+                rawA.insert(rawA.end(),a.begin(),a.end());
+                rawB.insert(rawB.end(),b.begin(),b.end());
+                drain+=count;
+            }
+            QCOMPARE(rawA.size(),rawB.size());
+            for(std::size_t i=0;i<rawA.size();++i)
+                for(std::size_t ch=0;ch<2;++ch)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(rawA[i][ch]),
+                        std::bit_cast<std::uint64_t>(rawB[i][ch]));
+            QCOMPARE(full.frames.size(),static_cast<std::size_t>(n));
+            QCOMPARE(later.frames.size(),static_cast<std::size_t>(n-36));
+            QCOMPARE(early.frames.size(),std::size_t{19});
+            for(std::size_t i=0;i<later.frames.size();++i) {
+                const auto& observed=later.frames[i];
+                const auto& expected=full.frames[i+36U];
+                QCOMPARE(observed.programme_frame,expected.programme_frame);
+                QCOMPARE(observed.raw_output_frame,expected.raw_output_frame);
+                QCOMPARE(std::bit_cast<std::uint64_t>(observed.gain),
+                    std::bit_cast<std::uint64_t>(expected.gain));
+                QCOMPARE(std::bit_cast<std::uint64_t>(observed.reduction_db),
+                    std::bit_cast<std::uint64_t>(expected.reduction_db));
+            }
+            QVERIFY(!base->runtime_checkpoint());
+            QVERIFY(!restored->runtime_checkpoint());
+        }
+    }
 }
 
 } // namespace

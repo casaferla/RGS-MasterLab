@@ -167,3 +167,14 @@ Before any PCM/GR/checkpoint mutation the entire second block must be
 rejected; an immediate corrected same-range retry must reconstruct
 the independently processed and exactly D-cropped PCM bitwise.
 This test-only fixture does NOT certify renderer ownership or U8 listening.
+
+Final Core-first U3/U5 observer/checkpoint interaction regression:
+all six Fs, STEREO and -12/0dBTP process D+19 hot input frames with an
+applied-gain sink, 17 further frames without a sink, then snapshot the
+still-active DSP. The checkpoint must match a continuously witnessed
+reference byte-for-byte. Restore into a fresh prepared instance,
+reattach a sink and finish N+D in varied blocks. Every remaining PCM
+binary64 bit and genuine GR gain/reduction/provenance suffix must match
+the uninterrupted reference; no synthetic observations may fill the 36
+frames already emitted before the snapshot. No production UI, renderer,
+new platform contract or U8 sonic qualification is implied.
