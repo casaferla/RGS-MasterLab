@@ -120,6 +120,8 @@ private slots:
     void poisonedValidDigestCheckpointFailsAtomically();
     void unboundAndSixRateResumeAreCanonical();
     void nonzeroOriginResumeIsAtomicAt192k();
+    void longRunningMultiHopResumeIsBitIdentical();
+    void allRateOwnerDigestAndRevisionAreAtomic();
 };
 void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
 {
@@ -504,6 +506,174 @@ void TruePeakLimiterCheckpointTest::nonzeroOriginResumeIsAtomicAt192k()
             QCOMPARE(std::bit_cast<std::uint64_t>(a.reduction_db),
                 std::bit_cast<std::uint64_t>(b.reduction_db));
         }
+    }
+}
+
+
+void TruePeakLimiterCheckpointTest::longRunningMultiHopResumeIsBitIdentical()
+{
+    // Repeated replacement of a live same-backend state, spanning 44.1k and
+    // 192k with nonzero absolute origin, first frame, D boundary and EOS.
+    // This test is NOT a production whole-resource owner.
+    constexpr int origin=11'000'027;
+    constexpr int n=8191;
+    for(const int fs:{44100,192000}) {
+        const int d=fs/200+8;
+        const std::array<int,6> checkpoints{{1,99,d-1,d+1,4097,n}};
+        auto reference=fresh(fs,-6.0);
+        auto resumed=fresh(fs,-6.0);
+        QVERIFY(reference && resumed);
+        GainWitnessCollector referenceGain,resumedGain;
+        referenceGain.frames.reserve(n);
+        resumedGain.frames.reserve(n);
+        reference->set_applied_gain_sink(&GainWitnessCollector::collect,&referenceGain);
+        resumed->set_applied_gain_sink(&GainWitnessCollector::collect,&resumedGain);
+        int prior=0;
+        for(const int at:checkpoints) {
+            const int count=at-prior;
+            QVERIFY(count>0 && count<=4096);
+            const auto a=processBlock(*reference,fs,origin+prior,count,prior==0);
+            const auto b=processBlock(*resumed,fs,origin+prior,count,prior==0);
+            QCOMPARE(a.size(),static_cast<std::size_t>(count));
+            QCOMPARE(b.size(),a.size());
+            for(std::size_t i=0;i<a.size();++i)
+                for(std::size_t ch=0;ch<2;++ch)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(a[i][ch]),
+                        std::bit_cast<std::uint64_t>(b[i][ch]));
+            prior=at;
+            const auto cp=reference->runtime_checkpoint();
+            const auto replacementCp=resumed->runtime_checkpoint();
+            QVERIFY(cp && replacementCp);
+            QCOMPARE(*replacementCp.value(),*cp.value());
+            QCOMPARE(cp.value()->next_input_frame,
+                std::optional{core::FrameIndex{origin+at}});
+            QVERIFY(cp.value()->payload.size()<1024U*1024U);
+            auto successor=fresh(fs,-6.0);
+            QVERIFY(successor);
+            successor->set_applied_gain_sink(&GainWitnessCollector::collect,&resumedGain);
+            const auto pristine=successor->runtime_checkpoint();
+            QVERIFY(pristine);
+            auto tampered=*cp.value();
+            if((at&1)!=0)
+                tampered.next_input_frame=core::FrameIndex{origin+at+1};
+            else
+                tampered.backend_identity="foreign-FP-backend";
+            const auto witnessSize=resumedGain.frames.size();
+            QVERIFY(!successor->restore_runtime_checkpoint(tampered));
+            const auto unchanged=successor->runtime_checkpoint();
+            QVERIFY(unchanged);
+            QCOMPARE(*unchanged.value(),*pristine.value());
+            QCOMPARE(resumedGain.frames.size(),witnessSize);
+            QVERIFY(successor->restore_runtime_checkpoint(*cp.value()));
+            const auto roundtrip=successor->runtime_checkpoint();
+            QVERIFY(roundtrip);
+            QCOMPARE(*roundtrip.value(),*cp.value());
+            resumed=std::move(successor);
+        }
+        for(int out=0;out<d;) {
+            const int count=std::min(d-out,(out%2)==0?19:71);
+            const bool eos=out+count==d;
+            const auto a=finalBlock(*reference,fs,origin+n+out,count,eos);
+            const auto b=finalBlock(*resumed,fs,origin+n+out,count,eos);
+            QCOMPARE(a.size(),static_cast<std::size_t>(count));
+            QCOMPARE(b.size(),a.size());
+            for(std::size_t i=0;i<a.size();++i)
+                for(std::size_t ch=0;ch<2;++ch)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(a[i][ch]),
+                        std::bit_cast<std::uint64_t>(b[i][ch]));
+            out+=count;
+        }
+        QVERIFY(!reference->runtime_checkpoint());
+        QVERIFY(!resumed->runtime_checkpoint());
+        QCOMPARE(referenceGain.frames.size(),static_cast<std::size_t>(n));
+        QCOMPARE(resumedGain.frames.size(),referenceGain.frames.size());
+        std::size_t attenuated=0;
+        for(std::size_t i=0;i<referenceGain.frames.size();++i) {
+            const auto& a=referenceGain.frames[i];
+            const auto& b=resumedGain.frames[i];
+            QCOMPARE(a.programme_frame,origin+static_cast<std::int64_t>(i));
+            QCOMPARE(a.raw_output_frame,
+                origin+static_cast<std::int64_t>(i)+d);
+            QCOMPARE(a.programme_frame,b.programme_frame);
+            QCOMPARE(a.raw_output_frame,b.raw_output_frame);
+            QCOMPARE(std::bit_cast<std::uint64_t>(a.gain),
+                std::bit_cast<std::uint64_t>(b.gain));
+            QCOMPARE(std::bit_cast<std::uint64_t>(a.reduction_db),
+                std::bit_cast<std::uint64_t>(b.reduction_db));
+            QVERIFY(std::isfinite(a.gain) && a.gain>0.0 && a.gain<=1.0);
+            if(a.gain<1.0)++attenuated;
+        }
+        QVERIFY(attenuated>0U);
+    }
+}
+
+void TruePeakLimiterCheckpointTest::allRateOwnerDigestAndRevisionAreAtomic()
+{
+    // Six-rate test-only owner envelope: mutation in only the RIGHT lane,
+    // even past the checkpoint prefix, invalidates the full resource.
+    constexpr int origin=7'000'029;
+    constexpr int n=1501;
+    constexpr int at=123;
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        auto whole=audio::AudioBuffer::create(format(fs),
+            audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{origin},
+            *core::FrameCount::create(n).value());
+        QVERIFY(whole);
+        for(std::size_t ch=0;ch<2;++ch) {
+            const auto lane=whole.value()->mutable_view().channel(ch);
+            QVERIFY(lane);
+            for(int i=0;i<n;++i) {
+                const double x=std::sin(double(origin+i)*0.18)+
+                    ((origin+i)%17==0?2.0:0.0);
+                (*lane.value())[static_cast<std::size_t>(i)]=
+                    ch==0?x:x*0.4;
+            }
+        }
+        auto primary=fresh(fs,-6.0);
+        auto receiver=fresh(fs,-6.0);
+        QVERIFY(primary && receiver);
+        QCOMPARE(processBlock(*primary,fs,origin,at,true).size(),
+            static_cast<std::size_t>(at));
+        const auto cp=primary->runtime_checkpoint();
+        QVERIFY(cp);
+        const auto bound=m17_verifier::bind_core_checkpoint(
+            *cp.value(),"six-rate-owner",*whole.value(),42);
+        QVERIFY(bound);
+        const auto initial=receiver->runtime_checkpoint();
+        QVERIFY(initial);
+        const auto right=whole.value()->mutable_view().channel(1);
+        QVERIFY(right);
+        const auto original=(*right.value())[n-1];
+        (*right.value())[n-1]=std::nextafter(
+            original,std::numeric_limits<double>::infinity());
+        QVERIFY(!m17_verifier::restore_bound_checkpoint(
+            *receiver,*bound.value(),"six-rate-owner",*whole.value(),42));
+        auto current=receiver->runtime_checkpoint();
+        QVERIFY(current);
+        QCOMPARE(*current.value(),*initial.value());
+        (*right.value())[n-1]=original;
+        QVERIFY(!m17_verifier::restore_bound_checkpoint(
+            *receiver,*bound.value(),"six-rate-owner",*whole.value(),43));
+        current=receiver->runtime_checkpoint();
+        QVERIFY(current);
+        QCOMPARE(*current.value(),*initial.value());
+        QVERIFY(!m17_verifier::restore_bound_checkpoint(
+            *receiver,*bound.value(),"foreign",*whole.value(),42));
+        current=receiver->runtime_checkpoint();
+        QVERIFY(current);
+        QCOMPARE(*current.value(),*initial.value());
+        QVERIFY(m17_verifier::restore_bound_checkpoint(
+            *receiver,*bound.value(),"six-rate-owner",*whole.value(),42));
+        const auto accepted=receiver->runtime_checkpoint();
+        QVERIFY(accepted);
+        QCOMPARE(*accepted.value(),*cp.value());
+        const auto direct=processBlock(*primary,fs,origin+at,567,false);
+        const auto replay=processBlock(*receiver,fs,origin+at,567,false);
+        QCOMPARE(direct.size(),replay.size());
+        for(std::size_t i=0;i<direct.size();++i)
+            for(std::size_t ch=0;ch<2;++ch)
+                QCOMPARE(std::bit_cast<std::uint64_t>(direct[i][ch]),
+                    std::bit_cast<std::uint64_t>(replay[i][ch]));
     }
 }
 

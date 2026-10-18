@@ -38,3 +38,11 @@ finalize, wrong channels, incomplete phase state. Other M17 tests separately
 exercise checkpoint/restore, end-of-stream compensation and M16 full-resource
 verification. Resource ownership in the actual renderer, product bypass, U8
 listening, and full production qualification remain open.
+
+Checkpoint U5 addendum: the dedicated checkpoint suite exercises repeated
+same-backend replacement on 8191-frame nonzero-origin 44.1/192-kHz stereo
+streams across D and EOS, validating serialized shape, atomic forged-state
+rejection, PCM and gain-witness bitwise continuity. A separate six-rate
+bound-envelope test rejects one-ULP changes solely in the right lane, owner
+and chain revision mismatches. These are TEST-ONLY proofs, not production
+resource ownership, CPU-budget certification or acoustic qualification.
