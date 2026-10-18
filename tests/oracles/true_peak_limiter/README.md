@@ -87,3 +87,12 @@ remains valid and successfully drains. Separately, canonical-checksum
 checkpoint forgeries at 44.1/192 kHz whose origin would overflow the
 eventual drain are rejected atomically despite a valid next-input frame.
 No DSP sound mathematics, terminal routing, UI or M16 frozen files change.
+
+U4 shared-buffer / in-place alias contract: six Fs x mono/stereo x -12/0
+dBTP x N={1,2D+31} stress real M17 process with exactly one owning
+AudioBuffer passed as both source view and destination mutable view. Full
+N+D raw production, D crop, GR witnesses and every resulting PCM sample
+must reproduce the separate-buffer streaming oracle bit for bit, including
+-0.0 and hot first/last samples. Nonfinite aliased input must be rejected
+atomically without PCM, checkpoint or gain-witness mutation. This is
+Core-first evidence, not authorization of a production host renderer.
