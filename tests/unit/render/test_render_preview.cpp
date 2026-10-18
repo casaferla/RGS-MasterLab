@@ -2071,9 +2071,9 @@ void RenderPreviewTest::truePeakLimiterCheckedCandidateGenuineM16SixRateMatrix()
 
     // A corrupt RIGHT lane must prevent BOTH active and BYP publication.
     // No placeholder audio or fabricated silence is permitted on failure.
-    auto right=src.value()->mutable_view().channel(1);
-    QVERIFY(right);
-    (*right.value())[4]=std::numeric_limits<double>::infinity();
+    auto rightChannelView=src.value()->mutable_view().channel(1);
+    QVERIFY(rightChannelView);
+    (*rightChannelView.value())[4]=std::numeric_limits<double>::infinity();
     for(const bool bypassState:{false,true}) {
         auto rejected=rgsml::render::render_true_peak_limiter_checked_candidate(
             src.value()->view(),*p.value(),*registry.value(),
