@@ -66,3 +66,13 @@ leave every original lane bit-for-bit untouched. Six-rate mono/stereo
 flat-versus-irregular chunk matrices check exact PCM before/after one-shot
 whole-resource M16 verification, including last-frame transients. This
 improves the TEST harness only and does not qualify the product renderer.
+
+U4/U5/U6 combined integration: the real M17 core is interrupted at frame
+1 or N-1 and restored into a separately prepared same-FP-backend instance
+through the TEST-ONLY full-resource owner envelope. All six supported rates,
+mono/stereo, -12/0dBTP, N<D and N>2D, and irregular frame partitions
+must yield the identical compensated N-frame PCM as uninterrupted playback.
+The final transactional M16 full-resource measurement/trim and every PCM
+sample also agree, with status SUPPORTED_UNQUALIFIED. The invalid foreign
+owner is rejected atomically before a valid restore. This is not a claim
+of product renderer ownership, bypass routing, listening quality, or U8.

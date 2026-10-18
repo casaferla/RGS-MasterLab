@@ -41,7 +41,8 @@ namespace {
 // Not a qualified product renderer, nor a bypass/ownership implementation.
 [[nodiscard]] std::optional<audio::AudioBuffer> renderRealM17(
     const audio::AudioBuffer& source,double ceilingDb,
-    std::span<const std::size_t> chunks)
+    std::span<const std::size_t> chunks,
+    std::optional<std::int64_t> resumeAt = std::nullopt)
 {
     if(chunks.empty())return std::nullopt;
     for(const auto chunk:chunks)if(chunk==0 || chunk>4096)return std::nullopt;
@@ -57,16 +58,16 @@ namespace {
     if(!descriptor || !params)return std::nullopt;
     auto module=dsp::TruePeakLimiterModule::create(*descriptor.value(),*params.value());
     if(!module)return std::nullopt;
-    auto& limiter=**module.value();
+    auto active=std::move(*module.value());
     const auto view=source.view();
     const auto fmt=view.format();
     const auto n=view.frame_count().value();
     const auto origin=view.absolute_range().begin().value();
-    if(n<=0)return std::nullopt;
+    if(n<=0 || (resumeAt && (*resumeAt<=0 || *resumeAt>=n)))return std::nullopt;
     const dsp::DspProcessSpec spec{fmt,audio::FrameDomainId::OUTPUT_RATE,
         *core::FrameCount::create(4096).value()};
-    const auto requirements=limiter.runtime_requirements(spec);
-    if(!requirements || !limiter.prepare(spec))return std::nullopt;
+    const auto requirements=active->runtime_requirements(spec);
+    if(!requirements || !active->prepare(spec))return std::nullopt;
     const auto d=requirements.value()->algorithmic_latency_frames.value();
     std::array<std::vector<double>,2> raw;
     std::size_t chunkIndex=0;
@@ -80,8 +81,10 @@ namespace {
         return true;
     };
     for(std::int64_t pos=0;pos<n;) {
-        const auto count=std::min<std::int64_t>(n-pos,
+        auto count=std::min<std::int64_t>(n-pos,
             static_cast<std::int64_t>(chunks[chunkIndex++%chunks.size()]));
+        if(resumeAt && pos<*resumeAt)
+            count=std::min(count,*resumeAt-pos);
         const auto first=origin+pos;
         auto in=audio::AudioBuffer::create(fmt,audio::FrameDomainId::OUTPUT_RATE,
             core::FrameIndex{first},*core::FrameCount::create(count).value());
@@ -98,10 +101,39 @@ namespace {
                 (*dst.value())[static_cast<std::size_t>(i)]=
                     (*src.value())[static_cast<std::size_t>(pos+i)];
         }
-        if(!limiter.process(in.value()->view(),out.value()->mutable_view(),
+        if(!active->process(in.value()->view(),out.value()->mutable_view(),
             dsp::DspProcessContext{*range.value(),pos==0,false})
             || !append(*out.value()))return std::nullopt;
         pos+=count;
+        if(resumeAt && pos==*resumeAt) {
+            const auto cp=active->runtime_checkpoint();
+            if(!cp || cp.value()->next_input_frame !=
+                std::optional{core::FrameIndex{origin+pos}})
+                return std::nullopt;
+            const auto owned=m17_verifier::bind_core_checkpoint(
+                *cp.value(),"whole-resource-m17-test",source,17U);
+            if(!owned)return std::nullopt;
+            auto replacement=dsp::TruePeakLimiterModule::create(
+                *descriptor.value(),*params.value());
+            if(!replacement)return std::nullopt;
+            auto successor=std::move(*replacement.value());
+            if(!successor->prepare(spec))return std::nullopt;
+            const auto pristine=successor->runtime_checkpoint();
+            if(!pristine)return std::nullopt;
+            if(m17_verifier::restore_bound_checkpoint(
+                *successor,*owned.value(),"foreign-resource",source,17U))
+                return std::nullopt;
+            const auto failed=successor->runtime_checkpoint();
+            if(!failed || *failed.value()!=*pristine.value())
+                return std::nullopt;
+            if(!m17_verifier::restore_bound_checkpoint(
+                *successor,*owned.value(),"whole-resource-m17-test",source,17U))
+                return std::nullopt;
+            const auto restored=successor->runtime_checkpoint();
+            if(!restored || *restored.value()!=*cp.value())
+                return std::nullopt;
+            active=std::move(successor);
+        }
     }
     for(std::int64_t drain=0;drain<d;) {
         const auto count=std::min<std::int64_t>(d-drain,127);
@@ -110,7 +142,7 @@ namespace {
             core::FrameIndex{first},*core::FrameCount::create(count).value());
         auto range=core::FrameRange::create(core::FrameIndex{first},
             core::FrameIndex{first+count});
-        if(!out || !range || !limiter.finalize(out.value()->mutable_view(),
+        if(!out || !range || !active->finalize(out.value()->mutable_view(),
             dsp::DspProcessContext{*range.value(),false,drain+count==d})
             || !append(*out.value()))return std::nullopt;
         drain+=count;
@@ -142,6 +174,7 @@ private slots:
     void bypassAndEnabledLimiterAreObservablyDistinct();
     void failedVerificationNeverMutatesResourceAcrossSixRates();
     void fullResourceSixRateChunkMatrixRemainsBitIdentical();
+    void fullResourceResumeGatesAreBitwiseIdentical();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
 {
@@ -671,6 +704,91 @@ void TruePeakLimiterVerificationTest::fullResourceSixRateChunkMatrixRemainsBitId
         }
     }
 }
+
+void TruePeakLimiterVerificationTest::fullResourceResumeGatesAreBitwiseIdentical()
+{
+    // U4+U5+U6 end-to-end; full PCM owner is TEST-ONLY, never a product claim.
+    // Actual module process -> owner-bound same-backend resume -> D drain ->
+    // exact N frames -> full M16 peak -> transactional final trim.
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        const int d=fs/200+8;
+        for(const bool stereo:{false,true})
+            for(const double ceilingDb:{-12.0,0.0})
+                for(const int n:{d-1,2*d+37}) {
+                    auto input=buffer(fs,stereo,n,stereo?17'000'029:0);
+                    for(std::size_t ch=0;ch<input.view().format().channel_count();++ch) {
+                        const auto lane=input.mutable_view().channel(ch);
+                        QVERIFY(lane);
+                        for(int i=0;i<n;++i) {
+                            const double x=i==0?4.0:(i==n-1?-3.0:
+                                (i%113==0?2.25:((i&1)==0?0.1875:-0.1875)));
+                            (*lane.value())[static_cast<std::size_t>(i)]=
+                                ch==0U?x:(i%71<35?-x*0.8:x*1.25);
+                        }
+                    }
+                    const std::array<std::size_t,1> flat{4096};
+                    const std::array<std::size_t,5> irregular{3,47,257,4096,11};
+                    auto original=renderRealM17(input,ceilingDb,flat);
+                    QVERIFY(original.has_value());
+                    const auto peak=analysis::measure_true_peak_full_resource(*original);
+                    QVERIFY(peak);
+                    for(const std::int64_t at:{std::int64_t{1},
+                            static_cast<std::int64_t>(n-1)}) {
+                        auto resumed=renderRealM17(input,ceilingDb,irregular,at);
+                        QVERIFY2(resumed.has_value(),
+                            "Owner-bound midstream checkpoint failed");
+                        QCOMPARE(resumed->view().absolute_range(),
+                            original->view().absolute_range());
+                        QCOMPARE(resumed->view().frame_count(),
+                            original->view().frame_count());
+                        for(std::size_t ch=0;ch<resumed->view().format().channel_count();++ch) {
+                            const auto left=original->view().channel(ch);
+                            const auto right=resumed->view().channel(ch);
+                            QVERIFY(left && right);
+                            for(int i=0;i<n;++i)
+                                QCOMPARE(std::bit_cast<std::uint64_t>(
+                                    (*left.value())[static_cast<std::size_t>(i)]),
+                                    std::bit_cast<std::uint64_t>(
+                                        (*right.value())[static_cast<std::size_t>(i)]));
+                        }
+                        const auto verdict=m17_verifier::verify_full_resource(
+                            *resumed,ceilingDb);
+                        QVERIFY2(verdict,"Resumed full M16 verification failed");
+                        QCOMPARE(verdict.value()->status,
+                            analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            verdict.value()->before_peak),
+                            std::bit_cast<std::uint64_t>(
+                                peak.value()->global_linear_peak()));
+                        QVERIFY(m17_verifier::trim_within_guard(
+                            verdict.value()->global_trim_gain));
+                        const auto measured=analysis::measure_true_peak_full_resource(
+                            *resumed);
+                        QVERIFY(measured);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            measured.value()->global_linear_peak()),
+                            std::bit_cast<std::uint64_t>(
+                                verdict.value()->after_peak));
+                        QVERIFY(measured.value()->global_linear_peak()<=
+                            std::pow(10.0,ceilingDb/20.0));
+                        for(std::size_t ch=0;ch<resumed->view().format().channel_count();++ch) {
+                            const auto before=original->view().channel(ch);
+                            const auto after=resumed->view().channel(ch);
+                            QVERIFY(before && after);
+                            for(int i=0;i<n;++i) {
+                                const double x=(*before.value())[static_cast<std::size_t>(i)];
+                                const double y=verdict.value()->global_trim_gain==1.0
+                                    ?x:x*verdict.value()->global_trim_gain;
+                                QCOMPARE(std::bit_cast<std::uint64_t>(
+                                    (*after.value())[static_cast<std::size_t>(i)]),
+                                    std::bit_cast<std::uint64_t>(y));
+                            }
+                        }
+                    }
+                }
+    }
+}
+
 } // namespace
 } // namespace rgsml::tests
 
