@@ -125,3 +125,17 @@ and GR witness must match a separately prepared reference without prior
 history, even with radically different nonzero absolute frame origins.
 This is a model-level cancellation probe, NOT an implemented product stop,
 renderer owner or UI contract.
+
+Core-first combined pre-host integrity matrix (NOT production qualified):
+reprepare the SAME M17 instance with a different output sample rate and
+opposite mono/stereo layout while its preceding old-rate resource is
+unfinished, or already has a partial D drain. Six adjacent old/new Fs
+pairs x both layouts x two Ceilings x both cancellation points require
+whole-resource PCM bitwise identity with a separately created module,
+including reset of detector, lookahead, delay and absolute timeline.
+Separately, a six-rate mono/stereo two-Ceiling live observer test detaches
+the optional GR witness sink for 17 real emitted programme frames, then
+reattaches it for the remaining input and EOS. Whole PCM must still match
+no-sink output bitwise; GR observations contain the correct 17-frame
+provenance gap with no invented records. This does not implement renderer
+identity, final SRC, UI GR or U8 listening qualification.
