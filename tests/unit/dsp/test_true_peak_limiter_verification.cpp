@@ -1,6 +1,7 @@
 #include "../../oracles/true_peak_limiter/core_test_support.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/dsp/module_descriptor.hpp>
 #include <rgsml/core/frame_time.hpp>
 
 #include <QtTest/QTest>
