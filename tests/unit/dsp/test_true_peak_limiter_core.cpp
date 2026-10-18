@@ -1397,7 +1397,7 @@ void TruePeakLimiterCoreTest::resetAndReprepareOwnDistinctResourcesAcrossSixRate
                     }
                     // Terminal, finalized state cannot be silently reused
                     // without an explicit reset/reprepare and new origin.
-                    const auto wrong=audio::AudioBuffer::create(
+                    auto wrong=audio::AudioBuffer::create(
                         fmt,audio::FrameDomainId::OUTPUT_RATE,
                         core::FrameIndex{origin+n+d},
                         *core::FrameCount::create(1).value());
