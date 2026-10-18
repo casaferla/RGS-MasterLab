@@ -175,7 +175,7 @@ int main(int argc, char* argv[])
         rgsml::app::TerminalLimiterState::create_default(
             *moduleRegistry.value(), terminalLimiterInstanceId);
     if (!terminalLimiterStateResult) {
-        std::fprintf(stderr, "M17 terminal bootstrap refused: %s\\n",
+        std::fprintf(stderr, "M17 terminal bootstrap refused: %s\n",
                      terminalLimiterStateResult.error()->message().c_str());
         return EXIT_FAILURE;
     }
