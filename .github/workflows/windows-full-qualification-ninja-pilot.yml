@@ -7,6 +7,7 @@ on:
       - feature/l1-m16-b3-public-true-peak-unqualified-20261013
     paths:
       - .github/workflows/windows-full-qualification-ninja-pilot.yml
+      - .github/workflows/fq-ninja-pilot-overlay.cmake
   workflow_dispatch:
     inputs:
       cache_mode:
@@ -79,6 +80,7 @@ jobs:
             '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
             '-DCMAKE_POLICY_DEFAULT_CMP0141=NEW',
             '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded',
+            "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=$env:GITHUB_WORKSPACE/.github/workflows/fq-ninja-pilot-overlay.cmake",
             "-DCMAKE_C_COMPILER_LAUNCHER=$launcher",
             "-DCMAKE_CXX_COMPILER_LAUNCHER=$launcher",
             '-DRGSML_BUILD_TESTS=ON','-DRGSML_WARNINGS_AS_ERRORS=ON',
@@ -89,6 +91,25 @@ jobs:
           & cmake @args
           if ($LASTEXITCODE -ne 0) { throw "PILOT_NINJA_CONFIG_FAILED" }
           $commands = Get-Content build/windows-fq-ninja/compile_commands.json -Raw | ConvertFrom-Json
+          # Preserve MSBuild's per-source Debug optimization and RTC policy:
+          # the optimized playback SRC TU has /O2 and its *last* RTC switch
+          # must be /RTC-. Other Debug TUs retain canonical /RTC1.
+          $optimizedDebug=@($commands | Where-Object {
+            $_.file.Replace([char]92,[char]47).EndsWith(
+              '/audio/src/playback_sample_rate_adapter.cpp',
+              [System.StringComparison]::OrdinalIgnoreCase) -and
+            $_.command -match 'CMAKE_INTDIR=.*Debug'
+          })
+          if ($optimizedDebug.Count -ne 1) { throw "PILOT_SRC_DEBUG_COMMAND_MISSING" }
+          $cmd=[string]$optimizedDebug[0].command
+          if ($cmd -notmatch '(?i)/O2\b' -or
+              $cmd -notmatch '(?i)/RTC1\b' -or
+              $cmd -notmatch '(?i)/RTC-(?!\w)' -or
+              $cmd.IndexOf('/RTC-', [System.StringComparison]::OrdinalIgnoreCase) -lt
+              $cmd.IndexOf('/O2', [System.StringComparison]::OrdinalIgnoreCase)) {
+              throw "PILOT_SRC_DEBUG_OPTIMIZATION_RUNTIME_CHECK_OVERRIDE_MISSING"
+          }
+          Write-Host "PILOT_SRC_DEBUG_MSVC_VS_SETTINGS_PARITY_CONFIRMED"
           foreach ($source in @('true_peak_itu4x_channel_stream.cpp','true_peak_full_resource.cpp')) {
             $matches = @($commands | Where-Object { $_.file.Replace([char]92,[char]47).EndsWith("/" + $source,[System.StringComparison]::OrdinalIgnoreCase) })
             if ($matches.Count -ne 2) { throw "STRICT_FP_COVERAGE_INVALID: $source count=$($matches.Count)" }
@@ -157,6 +178,7 @@ jobs:
             '-G','Ninja Multi-Config','-DCMAKE_CONFIGURATION_TYPES=Release',
             '-DCMAKE_POLICY_DEFAULT_CMP0141=NEW',
             '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded',
+            "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=$env:GITHUB_WORKSPACE/.github/workflows/fq-ninja-pilot-overlay.cmake",
             "-DCMAKE_C_COMPILER_LAUNCHER=$launcher",
             "-DCMAKE_CXX_COMPILER_LAUNCHER=$launcher",
             '-DRGSML_BUILD_TESTS=OFF','-DRGSML_WARNINGS_AS_ERRORS=ON',
