@@ -182,11 +182,48 @@ jobs:
         run: |
           cmake --install build/windows-fq-ninja --config Release --prefix build/windows-fq-ninja/stage/CI/Release
           if ($LASTEXITCODE -ne 0) { throw "PILOT_INSTALL_FAILED" }
-      - name: Run deploy smoke
+      - name: Run isolated staged deploy smoke with failure evidence
         shell: pwsh
         run: |
-          & build/windows-fq-ninja/stage/CI/Release/bin/RGSMasterLab.exe --rgsml-deploy-smoke
-          if ($LASTEXITCODE -ne 0) { throw "PILOT_DEPLOY_FAILED" }
+          # Do NOT put Qt/bin on PATH: a staged deployment must be standalone.
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'build/windows-fq-ninja/stage/CI/Release'
+          $exe = Join-Path $stage 'bin/RGSMasterLab.exe'
+          $plugin = Join-Path $stage 'plugins/platforms/qwindows.dll'
+          $manifest = Join-Path $stage 'share/RGSMasterLab/ToolchainManifest.json'
+          foreach ($required in @($exe,$plugin,$manifest)) {
+            if (-not (Test-Path -LiteralPath $required)) {
+              throw "PILOT_STAGED_REQUIRED_FILE_MISSING: $required"
+            }
+          }
+          $outLog = Join-Path $env:RUNNER_TEMP 'pilot-deploy-smoke.stdout.txt'
+          $errLog = Join-Path $env:RUNNER_TEMP 'pilot-deploy-smoke.stderr.txt'
+          $process = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+          $code = $process.ExitCode
+          Write-Host "PILOT_DEPLOY_EXIT_DECIMAL=$code"
+          Write-Host "PILOT_DEPLOY_EXIT_HEX=$(([System.BitConverter]::ToUInt32([System.BitConverter]::GetBytes([int]$code),0)).ToString('X8'))"
+          foreach ($log in @($outLog,$errLog)) {
+            if (Test-Path $log) {
+              Write-Host "PILOT_DEPLOY_LOG=$log"
+              Get-Content $log
+            }
+          }
+          if ($code -ne 0) {
+            # A debug retry collects information; it CANNOT override failure.
+            $env:QT_DEBUG_PLUGINS = '1'
+            $traceOut = Join-Path $env:RUNNER_TEMP 'pilot-qt-debug.stdout.txt'
+            $traceErr = Join-Path $env:RUNNER_TEMP 'pilot-qt-debug.stderr.txt'
+            try {
+              $trace = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $traceOut -RedirectStandardError $traceErr
+              Write-Host "PILOT_QT_TRACE_EXIT=$($trace.ExitCode)"
+              if (Test-Path $traceOut) { Get-Content $traceOut | Select-Object -Last 120 }
+              if (Test-Path $traceErr) { Get-Content $traceErr | Select-Object -Last 160 }
+            } catch {
+              Write-Host "PILOT_QT_TRACE_EXCEPTION=$($_.Exception.Message)"
+            }
+            throw "PILOT_DEPLOY_FAILED_EXIT_$code"
+          }
+          Write-Host 'PILOT_STAGED_DEPLOY_SMOKE_PASS'
       - name: Cache stats / non-authoritative pilot marker
         if: always()
         shell: pwsh
