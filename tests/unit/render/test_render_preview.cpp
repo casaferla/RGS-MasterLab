@@ -11,6 +11,7 @@
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include <rgsml/render/audible_compressor_telemetry_resolver.hpp>
 #include <rgsml/render/compressor_telemetry_collector.hpp>
 #include <rgsml/render/compressor_telemetry_history.hpp>
@@ -467,6 +468,7 @@ private slots:
     void stereoMsOutputDensityRealOccupancyGrid20();
     void stereoMsOutputDensityZeroWitnessOracle();
     void activeUnavailableModuleFails();
+    void truePeakLimiterTerminalRendererBoundary();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
     void mixedGainAndEqOrderAndBypassIdentity();
@@ -1756,6 +1758,77 @@ void RenderPreviewTest::stereoMsOutputDensityZeroWitnessOracle()
     QCOMPARE(positive.witnesses[2].mid, 0.0);
     QVERIFY(positive.witnesses[1].side > 0.0);
     QVERIFY(positive.witnesses[3].mid > 0.0);
+}
+
+void RenderPreviewTest::truePeakLimiterTerminalRendererBoundary()
+{
+    // Core-first M17 exists as a real DSP factory, but this renderer is
+    // Source-processing-rate, not the required terminal OUTPUT_RATE owner.
+    // An active terminal limiter must fail before touching PCM. A bypassed
+    // terminal limiter must preserve BOTH channels' raw binary64 bits.
+    const std::array left{+0.0, -0.0, 0.75, -1.25, 0.125};
+    const std::array right{-0.0, +0.0, -0.5, 1.5, -0.125};
+    auto source = make_buffer(rgsml::audio::ChannelLayout::STEREO_LR,
+        100, left, right);
+    QVERIFY(source);
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto terminal = rgsml::dsp::ProcessingChain::create(
+        *registry.value(), {rgsml::dsp::ProcessingStage::MASTER,
+                            rgsml::dsp::ChainSegment::TERMINAL});
+    QVERIFY(terminal);
+    const auto id = make_id("2a000000-0000-0000-0000-000000000017");
+    QVERIFY(terminal.value()->add(id, "rgsml.dsp.true-peak-limiter", 0));
+    QVERIFY(registry.value()->has_factory("rgsml.dsp.true-peak-limiter"));
+
+    const auto ceiling = rgsml::dsp::TruePeakLimiterParameters::create_default();
+    QVERIFY(ceiling);
+    // No premature compatibility claim: the request boundary still rejects
+    // typed M17 bindings until an OUTPUT_RATE terminal contract is wired.
+    auto unsupportedBinding = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(100, 105), *terminal.value(),
+        {{id, *ceiling.value()}}, frame_count(2));
+    QVERIFY(!unsupportedBinding);
+    QCOMPARE(unsupportedBinding.error()->code(),
+        rgsml::core::ErrorCode::InvalidArgument);
+    QCOMPARE(std::string_view{unsupportedBinding.error()->message()},
+        std::string_view{
+            "A parameter binding was provided for an unsupported or non-parameterized module."});
+
+    auto activeRequest = rgsml::render::RenderRequest::create(
+        source.value()->view(), frame_range(100, 105),
+        *terminal.value(), {}, frame_count(2));
+    QVERIFY(activeRequest);
+    auto rejected = rgsml::render::render_preview(
+        *activeRequest.value(), *registry.value());
+    QVERIFY(!rejected);
+    QCOMPARE(rejected.error()->code(),
+        rgsml::core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(std::string_view{rejected.error()->message()},
+        std::string_view{
+            "Active True Peak Limiter requires the qualified terminal OUTPUT_RATE renderer, typed Ceiling binding and real EOS/GR provenance."});
+
+    QVERIFY(terminal.value()->set_user_bypass(id, true));
+    for (const auto blockSize : {1, 2, 7}) {
+        auto bypassRequest = rgsml::render::RenderRequest::create(
+            source.value()->view(), frame_range(100, 105),
+            *terminal.value(), {}, frame_count(blockSize));
+        QVERIFY(bypassRequest);
+        auto bypassed = rgsml::render::render_preview(
+            *bypassRequest.value(), *registry.value());
+        QVERIFY(bypassed);
+        QCOMPARE(bits(bypassed.value()->view()),
+                 bits(source.value()->view()));
+    }
+
+    // The immutable M17 factory must not alter error semantics for an
+    // existing, unrelated source-processing-rate Gain stage.
+    QVERIFY(terminal.value()->set_user_bypass(id, false));
+    auto rejectedAgain = rgsml::render::render_preview(
+        *activeRequest.value(), *registry.value());
+    QVERIFY(!rejectedAgain);
+    QCOMPARE(rejectedAgain.error()->code(),
+             rgsml::core::ErrorCode::UnsupportedOperation);
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()
