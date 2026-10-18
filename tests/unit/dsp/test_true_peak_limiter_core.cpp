@@ -712,10 +712,10 @@ void TruePeakLimiterCoreTest::controlAllCeilingsLookaheadBoundarySixRates()
                 {mid.value()->next_tick()+horizon+1,1.0,true}
             }};
             QVERIFY(!mid.value()->advance(0.0,outside));
-            QCOMPARE(mid.value()->next_tick,before.next_tick);
-            QCOMPARE(mid.value()->density,before.density);
-            QCOMPARE(mid.value()->previous_reduction_db,before.previous_reduction_db);
-            QCOMPARE(mid.value()->hold_remaining,before.hold_remaining);
+            QCOMPARE(mid.value()->next_tick(),before.next_tick);
+            QCOMPARE(mid.value()->density(),before.density);
+            QCOMPARE(mid.value()->previous_reduction_db(),before.previous_reduction_db);
+            QCOMPARE(mid.value()->hold_remaining(),before.hold_remaining);
         }
     }
 }
