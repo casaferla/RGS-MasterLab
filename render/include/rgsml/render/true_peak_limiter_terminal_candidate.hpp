@@ -1,12 +1,14 @@
 #pragma once
 
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/true_peak_limiter_module.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace rgsml::render {
@@ -37,5 +39,36 @@ render_true_peak_limiter_terminal_candidate(
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames,
     bool bypassed);
+
+ // A measurement is NOT official qualification, irrespective of numeric peak.
+ // It is attached only to an ACTIVE, final M17 output-rate candidate.
+ struct TruePeakLimiterFinalCheck final {
+     double before_linear_peak{0.0};
+     double after_linear_peak{0.0};
+     double global_trim_gain{1.0};
+     bool trim_used{false};
+     analysis::TruePeakQualificationStatus qualification_status{
+         analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED};
+ };
+
+ struct TruePeakLimiterCheckedCandidate final {
+     TruePeakLimiterTerminalCandidate terminal;
+     // No measurement/trim at all for bypassed M17. Do not fabricate GR.
+     std::optional<TruePeakLimiterFinalCheck> final_check;
+ };
+
+ // UNQUALIFIED, candidate-only complete realization path. Produces no
+ // publishable PROCESSED/export audio: owner and UI integration gates remain.
+ // Active requires REAL M16 full-resource final measurement and at most one
+ // common stereo/mono verification trim <= 0.10dB; trim success requires an
+ // independent M16 remeasurement. Failure never publishes staged PCM.
+ // BYP keeps binary64 identity and has no meter/trim/GR/delay.
+ [[nodiscard]] core::Result<TruePeakLimiterCheckedCandidate>
+ render_true_peak_limiter_checked_candidate(
+     audio::AudioBufferView full_output_rate_source,
+     dsp::TruePeakLimiterParameters parameters,
+     const dsp::ModuleRegistry& registry,
+     core::FrameCount maximum_block_frames,
+     bool bypassed);
 
 } // namespace rgsml::render
