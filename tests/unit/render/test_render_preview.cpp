@@ -1852,7 +1852,7 @@ void RenderPreviewTest::truePeakLimiterOutputRateCandidateRendersRealPcm()
         auto plane=input.value()->mutable_view().channel(ch);
         QVERIFY(plane);
         for(std::size_t i=0;i<static_cast<std::size_t>(n);++i) {
-            const double sample=i==0?4.0:(i==17?-2.5:(i==n-1?0.125:0.0));
+            const double sample=i==0?4.0:(i==17?-2.5:(i==static_cast<std::size_t>(n-1)?0.125:0.0));
             (*plane.value())[i]=ch==0?sample:-sample*0.375;
         }
     }
@@ -1892,8 +1892,19 @@ void RenderPreviewTest::truePeakLimiterOutputRateCandidateRendersRealPcm()
     QVERIFY(!partitioned.value()->bypassed);
     QCOMPARE(bits(partitioned.value()->compensated_pcm.view()),
              bits(unpartitioned.value()->compensated_pcm.view()));
-    QCOMPARE(partitioned.value()->applied_gain_frames,
-             unpartitioned.value()->applied_gain_frames);
+    QCOMPARE(partitioned.value()->applied_gain_frames.size(),
+             unpartitioned.value()->applied_gain_frames.size());
+    for(std::size_t i=0;
+        i<partitioned.value()->applied_gain_frames.size();++i) {
+        const auto& a=partitioned.value()->applied_gain_frames[i];
+        const auto& b=unpartitioned.value()->applied_gain_frames[i];
+        QCOMPARE(a.programme_frame,b.programme_frame);
+        QCOMPARE(a.raw_output_frame,b.raw_output_frame);
+        QCOMPARE(std::bit_cast<std::uint64_t>(a.gain),
+                 std::bit_cast<std::uint64_t>(b.gain));
+        QCOMPARE(std::bit_cast<std::uint64_t>(a.reduction_db),
+                 std::bit_cast<std::uint64_t>(b.reduction_db));
+    }
     QCOMPARE(partitioned.value()->applied_gain_frames.size(),
              static_cast<std::size_t>(n));
     bool genuinelyReduced=false;
