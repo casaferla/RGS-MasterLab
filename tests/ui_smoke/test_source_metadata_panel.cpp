@@ -3176,7 +3176,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(freqInput->property("text").toString(), QStringLiteral("99999"));
     QCOMPARE(eqViewModel.validation_field(), QStringLiteral("frequency"));
     auto* valMsgText = find_child_by_name(eqEditor, QStringLiteral("validationMessageText"));
-    QVERIFY2(valMsgText && valMsgText->property("visible").toBool(), "Validation message text must be visible for invalid draft");
+    QVERIFY2(valMsgText && !valMsgText->property("visible").toBool(),
+        "Global status bar must own the visible validation message, not EQ graph");
     auto* transientError = qobject_cast<QQuickItem*>(find_child_by_name(
         eqEditor, QStringLiteral("eqStatusRegion")));
     QVERIFY(transientError && !transientError->isVisible());
@@ -3188,7 +3189,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QColor{QStringLiteral("#F27683")});
     QVERIFY2(check_item_contained_in_ancestor(
         transientError, qobject_cast<QQuickItem*>(eqGraph)),
-        "Actual invalid input must show validation INSIDE EQ response graph");
+        "Hidden EQ validation overlay must retain its original fixed geometry");
+    QCOMPARE(statusBar->property("height").toInt(), 24);
+    QCOMPARE(statusBarMessage->property("color").value<QColor>(),
+        QColor{QStringLiteral("#F27683")});
+    QVERIFY2(capture_visual_evidence(window,
+        QStringLiteral("m17_global_status_eq_invalid_1184x688.png"),
+        QSize{1184, 688}),
+        "Native Qt evidence of centralized EQ error must be captured");
 
     QTest::keyClick(window, Qt::Key_Escape);
     QCoreApplication::processEvents();
@@ -3198,6 +3206,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(!transientError->isVisible(),
         "Global-bar mode must keep local EQ overlay hidden");
     QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
+    QCOMPARE(root->property("statusSeverity").toString(), QStringLiteral("INFO"));
+    QCOMPARE(statusIndicator->property("color").value<QColor>(),
+        QColor{QStringLiteral("#00E6E6")});
+    QCOMPARE(statusBar->property("height").toInt(), 24);
+    QVERIFY2(capture_visual_evidence(window,
+        QStringLiteral("m17_global_status_eq_corrected_1184x688.png"),
+        QSize{1184, 688}),
+        "Native Qt evidence of centralized EQ correction must be captured");
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=ab-and-byp-semantics";
     auto* undoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqUndoButton"));
