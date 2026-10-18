@@ -18,9 +18,10 @@ namespace rgsml::render {
 
 // UNQUALIFIED M17 terminal-render integration seam, intentionally separate
 // from SOURCE_PROCESSING_RATE Render Preview. Caller must already own a full,
-// contiguous OUTPUT_RATE resource. No SRC, export, M16 full-resource TP
-// verification, permitted global verification trim, audible-realization
-// routing or final product availability is conferred by this API.
+// contiguous OUTPUT_RATE resource. This low-level entrypoint does NOT
+// itself confer SRC, export, verified trim, audible-realization routing
+// or final product availability. The separate checked-candidate entrypoint
+// performs M16 measurement and guarded trim but is still UNQUALIFIED.
 struct TruePeakLimiterTerminalCandidate final {
     audio::AudioBuffer compensated_pcm;
     std::vector<dsp::TruePeakLimiterAppliedGainFrame> applied_gain_frames;
