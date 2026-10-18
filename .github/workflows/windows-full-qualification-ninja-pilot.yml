@@ -98,15 +98,17 @@ jobs:
             $_.file.Replace([char]92,[char]47).EndsWith(
               '/audio/src/playback_sample_rate_adapter.cpp',
               [System.StringComparison]::OrdinalIgnoreCase) -and
-            $_.command -match 'CMAKE_INTDIR=.*Debug'
+            $_.command -match '(?i)/RTC1\b'
           })
-          if ($optimizedDebug.Count -ne 1) { throw "PILOT_SRC_DEBUG_COMMAND_MISSING" }
+          if ($optimizedDebug.Count -ne 1) {
+            throw "PILOT_SRC_DEBUG_COMMAND_MISSING count=$($optimizedDebug.Count)"
+          }
           $cmd=[string]$optimizedDebug[0].command
-          if ($cmd -notmatch '(?i)/O2\b' -or
-              $cmd -notmatch '(?i)/RTC1\b' -or
-              $cmd -notmatch '(?i)/RTC-(?!\w)' -or
-              $cmd.IndexOf('/RTC-', [System.StringComparison]::OrdinalIgnoreCase) -lt
-              $cmd.IndexOf('/O2', [System.StringComparison]::OrdinalIgnoreCase)) {
+          $rtcDisabled=$cmd.LastIndexOf('/RTC-', [System.StringComparison]::OrdinalIgnoreCase)
+          $rtcChecks=$cmd.LastIndexOf('/RTC1', [System.StringComparison]::OrdinalIgnoreCase)
+          $optimization=$cmd.LastIndexOf('/O2', [System.StringComparison]::OrdinalIgnoreCase)
+          if ($optimization -lt 0 -or $rtcChecks -lt 0 -or
+              $rtcDisabled -le $rtcChecks -or $rtcDisabled -le $optimization) {
               throw "PILOT_SRC_DEBUG_OPTIMIZATION_RUNTIME_CHECK_OVERRIDE_MISSING"
           }
           Write-Host "PILOT_SRC_DEBUG_MSVC_VS_SETTINGS_PARITY_CONFIRMED"
