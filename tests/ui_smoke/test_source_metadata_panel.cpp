@@ -3705,6 +3705,90 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(check_item_contained_in_ancestor(controlsPanelNative, compressorEditorNative),
         "Compressor controls panel must stay inside Compressor editor at minimum size");
 
+    // Global 24lp status bar regression for Compressor. Errors in the
+    // selected module must replace ordinary status without reflow or a
+    // duplicate red message inside the controls panel. Errors belonging to
+    // an inactive module must not leak into the selected module's footer.
+    {
+        auto* localCompressorError = qobject_cast<QQuickItem*>(
+            find_child_by_name(compressorEditor,
+                QStringLiteral("compressorValidationStatusRegion")));
+        auto* thresholdField = qobject_cast<QQuickItem*>(
+            find_child_by_name(compressorEditor,
+                QStringLiteral("compressorThresholdField")));
+        auto* statusBarItem = qobject_cast<QQuickItem*>(statusBar);
+        QVERIFY(localCompressorError && thresholdField && statusBarItem);
+        QVERIFY(!localCompressorError->isVisible());
+        const auto beforeControl = QRectF{
+            thresholdField->mapToItem(compressorEditorNative, QPointF{}),
+            thresholdField->size()};
+        const auto beforePanel = QRectF{
+            controlsPanelNative->mapToItem(compressorEditorNative, QPointF{}),
+            controlsPanelNative->size()};
+        const auto beforeFooter = QRectF{
+            statusBarItem->mapToScene(QPointF{}),
+            statusBarItem->size()};
+        compressorViewModel.setDraftFieldText(
+            QStringLiteral("thresholdDbfs"), QStringLiteral("not-a-number"));
+        QCoreApplication::processEvents();
+        QVERIFY(!compressorViewModel.validation_message().isEmpty());
+        QCOMPARE(compressorViewModel.validation_field(),
+            QStringLiteral("thresholdDbfs"));
+        QVERIFY2(!localCompressorError->isVisible(),
+            "Full app must not show a duplicate in-panel Compressor error");
+        QVERIFY2(root->property("statusDspErrorText").toString().contains(
+            QStringLiteral("Compressor")),
+            "Compressor validation must reach the global status bar");
+        QCOMPARE(root->property("statusSeverity").toString(), QStringLiteral("ERROR"));
+        QCOMPARE(statusIndicator->property("color").value<QColor>(),
+            QColor{QStringLiteral("#F27683")});
+        QCOMPARE(statusBarMessage->property("color").value<QColor>(),
+            QColor{QStringLiteral("#F27683")});
+        QCOMPARE(statusBar->property("height").toInt(), 24);
+        QCOMPARE(QRectF(
+            thresholdField->mapToItem(compressorEditorNative, QPointF{}),
+            thresholdField->size()), beforeControl);
+        QCOMPARE(QRectF(
+            controlsPanelNative->mapToItem(compressorEditorNative, QPointF{}),
+            controlsPanelNative->size()), beforePanel);
+        QCOMPARE(QRectF(
+            statusBarItem->mapToScene(QPointF{}),
+            statusBarItem->size()), beforeFooter);
+        QVERIFY(capture_visual_evidence(window,
+            QStringLiteral("m17_global_status_compressor_invalid_1184x688.png"),
+            QSize{1184, 688}));
+
+        QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 0));
+        QCoreApplication::processEvents();
+        QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
+        QVERIFY2(!statusBarMessage->property("text").toString().contains(
+            QStringLiteral("Compressor")),
+            "Inactive DSP errors must not replace the active module's status");
+        QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 2));
+        QTest::qWait(80);
+        QCoreApplication::processEvents();
+        QVERIFY(root->property("statusDspErrorText").toString().contains(
+            QStringLiteral("Compressor")));
+        compressorViewModel.cancelDraft();
+        QCoreApplication::processEvents();
+        QVERIFY(compressorViewModel.validation_message().isEmpty());
+        QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
+        QVERIFY(!localCompressorError->isVisible());
+        QCOMPARE(QRectF(
+            thresholdField->mapToItem(compressorEditorNative, QPointF{}),
+            thresholdField->size()), beforeControl);
+        QCOMPARE(QRectF(
+            controlsPanelNative->mapToItem(compressorEditorNative, QPointF{}),
+            controlsPanelNative->size()), beforePanel);
+        QCOMPARE(QRectF(
+            statusBarItem->mapToScene(QPointF{}),
+            statusBarItem->size()), beforeFooter);
+        QCOMPARE(statusBar->property("height").toInt(), 24);
+        QVERIFY(capture_visual_evidence(window,
+            QStringLiteral("m17_global_status_compressor_corrected_1184x688.png"),
+            QSize{1184, 688}));
+    }
+
     // Verify Live GR Ribbon UI Smoke Assertions inside curveWell
     auto* grRibbonSectionObj = find_child_by_name(compressorEditor, QStringLiteral("compressorGrRibbonSection"));
     auto* grRibbonCanvasObj = find_child_by_name(compressorEditor, QStringLiteral("compressorGrRibbonCanvas"));
