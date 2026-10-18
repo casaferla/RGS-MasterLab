@@ -4339,6 +4339,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     window->resize(QSize{1184, 688});
     QTest::qWait(120);
     QCoreApplication::processEvents();
+    // Qt Quick's deferred polish can finish after the native resize, notably
+    // on busy Windows runners. The #532 evidence images show the stable
+    // 1184x688 control surface at 713x166, y=501, while the earlier snapshot
+    // was transient (479x166, y=453). Wait for that authored minimum-size
+    // composition BEFORE taking the no-reflow baseline. All error/correction
+    // rectangle equality checks below remain strict and unchanged.
+    QTRY_VERIFY_WITH_TIMEOUT(
+        msControls->width() >= 700.0
+            && msControls->mapToScene(QPointF{}).y() >= 490.0,
+        5000);
+    QCoreApplication::processEvents();
     const QRectF controlsBefore{
         msControls->mapToScene(QPointF{}), msControls->size()};
     const QRectF footerBefore{
