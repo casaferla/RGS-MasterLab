@@ -6,6 +6,9 @@ Button {
 
     property string tone: "secondary"
     property bool selected: false
+    // Opt-in M17 semantic family styling. Non-limiter buttons retain the
+    // historic primary/cyan and gold identities without any visual changes.
+    property bool selectedFamilyAccent: false
     property string iconKind: ""
     property color accentColor: tone === "gold" ? "#F2B632" : "#00C8FF"
     property int minimumControlWidth: 80
@@ -47,6 +50,7 @@ Button {
                     && (control.selected || control.tone === "primary")
                     ? Font.DemiBold : Font.Normal
                 color: !control.enabled ? "#6E7E8D"
+                     : control.selectedFamilyAccent && control.selected ? "#F4F9FC"
                      : control.tone === "primary" ? "#F4F9FC"
                      : control.tone === "gold" && control.selected ? "#FFF4C8"
                      : control.down ? "#B8C7D9"
@@ -71,6 +75,8 @@ Button {
             anchors.fill: parent
             radius: 6
             color: !control.enabled ? "#0B141C"
+                 : control.selectedFamilyAccent && control.selected
+                     ? Qt.alpha(control.accentColor, 0.20)
                  : control.tone === "primary" ? (control.down ? "#073344" : control.hovered ? "#0B4154" : "#0A3443")
                  : control.tone === "gold" && control.selected ? "#3B2D08"
                  : control.selected ? "#0A3443"
@@ -78,6 +84,8 @@ Button {
                  : control.hovered ? "#132433" : "#0E1A24"
             border.width: 1
             border.color: !control.enabled ? "#22303A"
+                        : control.selectedFamilyAccent && control.selected
+                            ? control.accentColor
                         : control.tone === "gold" && control.selected ? "#F2B632"
                         : control.selected ? control.accentColor
                         : control.hovered ? "#3A566B" : "#2A3F4F"

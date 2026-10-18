@@ -7,11 +7,16 @@ Rectangle {
     objectName: "dspEditorHost"
 
     property var adapterModel: null
+    // Opt-in via Main only. Standalone DSP editor fixtures preserve their
+    // historical local validation feedback for isolated smoke coverage.
+    property bool errorsInGlobalStatusBar: false
     property int selectedModuleIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
     property var compressorViewModel: null
     property var spectrumViewModel: null
+    property var truePeakStaticViewModel: null
+    property var truePeakLiveViewModel: null
     property Item activeChainRow: null
 
     // Backward-compatibility alias so code referencing host.viewModel accesses eqViewModel
@@ -21,6 +26,14 @@ Rectangle {
     readonly property var activeViewModel: activeModule ? (activeModule.gainViewModel ? activeModule.gainViewModel : (activeModule.eqViewModel ? activeModule.eqViewModel : activeModule.compressorViewModel)) : null
     readonly property string moduleTitle: activeModule ? activeModule.displayName : ""
     readonly property string moduleContext: activeModule ? activeModule.workspaceContextLabel : ""
+    // M17 PO v1.1: a stable shared Meter/Limiter editor never changes
+    // geometry on BYP. Theme follows ANALYSIS Meter when bypassed and
+    // Dynamics Copper when truly active; do not recolor the M16 module.
+    readonly property bool isLimiterEditor: root.activeModule
+        ? root.activeModule.editorContentKey === "TRUE_PEAK_LIMITER" : false
+    readonly property color activeFamilyAccent: root.isLimiterEditor
+        ? (root.activeModule.bypass ? "#6CBCCF" : "#C4774A")
+        : (root.activeModule ? root.activeModule.familyAccent : "#262A6C9F")
 
     implicitWidth: 992
     implicitHeight: 612
@@ -28,7 +41,7 @@ Rectangle {
     // Board02 Editor Panel Material
     radius: 8
     color: "#0F2236"
-    border.color: "#27465F"
+    border.color: root.isLimiterEditor ? root.activeFamilyAccent : "#27465F"
     border.width: 1
 
     gradient: Gradient {
@@ -43,7 +56,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.margins: 1
         height: 2
-        color: root.activeModule ? root.activeModule.familyAccent : "#262A6C9F"
+        color: root.activeFamilyAccent
     }
 
     Keys.onPressed: function(event) {
@@ -59,7 +72,8 @@ Rectangle {
     // established editor behavior. Unhandled Escape still bubbles to Keys above.
     Shortcut {
         sequence: "Escape"
-        enabled: (activeModule ? activeModule.editorContentKey === "INPUT_GAIN" : false) && activeChainRow !== null
+        enabled: (activeModule ? activeModule.editorContentKey === "INPUT_GAIN" : false)
+            && activeChainRow !== null && !inputGainEditor.editingNumeric
         onActivated: {
             if (activeChainRow) {
                 activeChainRow.forceActiveFocus()
@@ -103,6 +117,7 @@ Rectangle {
             // Preview Status Badge
             Rectangle {
                 objectName: "dspHostPreviewBadge"
+                visible: root.activeModule ? root.activeModule.previewSupported : false
                 Layout.preferredHeight: 28
                 Layout.preferredWidth: statusText.implicitWidth + 24
                 radius: 6
@@ -151,6 +166,11 @@ Rectangle {
             // Undo / Redo + A/B Bypass Controls
             RowLayout {
                 spacing: 2
+                // A measuring-only module has no audible Active/Bypass, no
+                // parameter changes, and no edit history.
+                visible: root.activeModule
+                    ? (root.activeModule.bypassSupported || root.activeModule.historySupported)
+                    : false
 
                 StudioButton {
                     id: undoButton
@@ -202,7 +222,8 @@ Rectangle {
                     Layout.maximumWidth: 100
                     selected: root.activeModule ? !root.activeModule.bypass : true
                     tone: "primary"
-                    accentColor: "#00C8FF"
+                    accentColor: root.isLimiterEditor ? root.activeFamilyAccent : "#00C8FF"
+                    selectedFamilyAccent: root.isLimiterEditor
                     onClicked: if (root.activeModule) root.activeModule.setBypass(false)
                     Accessible.name: text
                     ToolTip.text: "Activate module processing"
@@ -215,7 +236,8 @@ Rectangle {
                     text: "Bypass"
                     selected: root.activeModule ? root.activeModule.bypass : false
                     tone: "gold"
-                    accentColor: "#F2B632"
+                    accentColor: root.isLimiterEditor ? root.activeFamilyAccent : "#F2B632"
+                    selectedFamilyAccent: root.isLimiterEditor
                     onClicked: if (root.activeModule) root.activeModule.setBypass(true)
                     Accessible.name: "Bypass"
                     ToolTip.text: "Bypass module processing"
@@ -226,15 +248,21 @@ Rectangle {
 
         // Active Editor Content Area
         InputGainEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
             id: inputGainEditor
             objectName: "inputGainEditor"
             visible: root.activeModule ? (root.activeModule.editorContentKey === "INPUT_GAIN") : false
             Layout.fillWidth: true
             Layout.fillHeight: true
             viewModel: root.activeModule ? root.activeModule.gainViewModel : null
+            onEscapeToChainRequested: {
+                if (root.activeChainRow)
+                    root.activeChainRow.forceActiveFocus()
+            }
         }
 
         ParametricEqEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
             id: parametricEqEditor
             objectName: "parametricEqEditor"
             visible: root.activeModule ? (root.activeModule.editorContentKey === "PARAMETRIC_EQ") : false
@@ -245,12 +273,50 @@ Rectangle {
         }
 
         CompressorEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
             id: compressorEditor
             objectName: "compressorEditor"
             visible: root.activeModule ? (root.activeModule.editorContentKey === "COMPRESSOR") : false
             Layout.fillWidth: true
             Layout.fillHeight: true
             viewModel: root.activeModule ? root.activeModule.compressorViewModel : null
+        }
+
+        TruePeakMeterEditor {
+            id: truePeakMeterEditor
+            objectName: "truePeakMeterEditor"
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "TRUE_PEAK_METER" : false
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            measurementProvider: root.truePeakStaticViewModel
+            liveProvider: root.truePeakLiveViewModel
+        }
+
+        // The M17 editor is reachable ONLY from a real terminal adapter;
+        // M16 retains its independent meter presentation identity.
+        TruePeakLimiterEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
+            id: truePeakLimiterEditor
+            objectName: "truePeakLimiterEditor"
+            visible: root.isLimiterEditor
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            limiterModule: root.isLimiterEditor ? root.activeModule : null
+            // Fail closed until a production limiter parameter VM is wired.
+            limiterViewModel: null
+            measurementProvider: root.truePeakStaticViewModel
+            liveProvider: root.truePeakLiveViewModel
+        }
+
+        StereoMsEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
+            id: stereoMsEditor
+            objectName: "stereoMsEditor"
+            visible: root.activeModule ? root.activeModule.editorContentKey === "STEREO_MS" : false
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            viewModel: root.activeModule ? root.activeModule.stereoMsViewModel : null
         }
     }
 }

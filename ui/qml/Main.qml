@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
+import QtQml.Models
 
 ApplicationWindow {
     id: root
@@ -41,26 +42,63 @@ ApplicationWindow {
     readonly property var appEqViewModel: typeof eqViewModel !== "undefined" ? eqViewModel : null
     readonly property var appSpectrumViewModel: typeof liveSpectrumViewModel !== "undefined" ? liveSpectrumViewModel : null
 
-    readonly property bool hasError: {
-        return projectSession.errorMessage.length > 0
-            || sourceSelection.errorMessage.length > 0
-            || goldSelection.errorMessage.length > 0
-            || auditionSelector.statusText.length > 0
-            || playbackTransport.errorMessage.length > 0
-            || auditionRegion.errorMessage.length > 0
+    // Single, permanently allocated 24lp status bar. The selected module
+    // alone supplies its validation/preview errors; inactive drafts remain
+    // local to their owning ViewModel and never replace another DSP status.
+    readonly property var statusDspModule: typeof dspChainAdapterModel !== "undefined"
+        && dspChainAdapterModel ? dspChainAdapterModel.activeModule : null
+    readonly property string statusDspKey: statusDspModule
+        ? statusDspModule.editorContentKey : ""
+    readonly property var statusDspViewModel: {
+        const module = root.statusDspModule
+        if (!module) return null
+        if (root.statusDspKey === "INPUT_GAIN") return module.gainViewModel
+        if (root.statusDspKey === "PARAMETRIC_EQ") return module.eqViewModel
+        if (root.statusDspKey === "COMPRESSOR") return module.compressorViewModel
+        if (root.statusDspKey === "STEREO_MS") return module.stereoMsViewModel
+        // M17 Limiter is not yet a productive adapter or editable ViewModel.
+        // This must be wired only when its real parameter contract exists.
+        return null
     }
-
-    property string statusText: {
+    readonly property string statusDspErrorText: {
+        const vm = root.statusDspViewModel
+        if (!vm) return ""
+        let message = root.statusDspKey === "INPUT_GAIN"
+            ? vm.validationError : vm.validationMessage
+        if ((!message || message.length === 0)
+                && vm.previewStatus === "ERROR") {
+            message = vm.previewError
+        }
+        if (!message || message.length === 0) return ""
+        return (root.statusDspModule.displayName || "DSP") + ": " + message
+    }
+    // Keep the established application-failure priority; do not allow a
+    // field typo to mask a transport, project, Source or Gold failure.
+    readonly property string applicationErrorText: {
         if (projectSession.errorMessage.length > 0) return projectSession.errorMessage
         if (sourceSelection.errorMessage.length > 0) return sourceSelection.errorMessage
         if (goldSelection.errorMessage.length > 0) return goldSelection.errorMessage
         if (auditionSelector.statusText.length > 0) return auditionSelector.statusText
         if (playbackTransport.errorMessage.length > 0) return playbackTransport.errorMessage
         if (auditionRegion.errorMessage.length > 0) return auditionRegion.errorMessage
+        return ""
+    }
+    readonly property string statusSeverity: {
+        if (root.applicationErrorText.length > 0) return "ERROR"
+        if (projectSession.degraded) return "WARNING"
+        if (root.statusDspErrorText.length > 0) return "ERROR"
+        return "INFO"
+    }
+    readonly property bool hasError: root.statusSeverity === "ERROR"
+
+    property string statusText: {
+        if (root.applicationErrorText.length > 0) return root.applicationErrorText
         if (projectSession.degraded) return projectSession.statusText
+        if (root.statusDspErrorText.length > 0) return root.statusDspErrorText
         if (sourceWaveform.state === "BUILDING") return "Analyzing Source waveform"
         if (!sourceSelection.hasSource) return "Ready | Open a Source WAV"
-        return "Ready | " + sourceSelection.sampleRateHz + " Hz | " + sourceSelection.sampleFormatLabel + " | " + sourceSelection.channelLayoutLabel
+        return "Ready | " + sourceSelection.sampleRateHz + " Hz | "
+            + sourceSelection.sampleFormatLabel + " | " + sourceSelection.channelLayoutLabel
     }
 
     component StudioMenuItem: MenuItem {
@@ -262,6 +300,11 @@ ApplicationWindow {
             gainViewModel: root.appGainViewModel
             eqViewModel: root.appEqViewModel
             spectrumViewModel: root.appSpectrumViewModel
+            errorsInGlobalStatusBar: true
+            truePeakStaticViewModel: typeof truePeakStatic !== "undefined"
+                ? truePeakStatic : null
+            truePeakLiveViewModel: typeof truePeakLive !== "undefined"
+                ? truePeakLive : null
         }
     }
 
@@ -282,9 +325,15 @@ ApplicationWindow {
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
                 spacing: 12
-                Rectangle {
-                    Layout.preferredWidth: 40; Layout.preferredHeight: 40; radius: 4; color: "#8B111B"; border.color: "#C8CDD3"
-                    Text { anchors.centerIn: parent; text: "RGS"; color: "#F3F5F7"; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.Bold }
+                Image {
+                    id: headerAppIcon
+                    objectName: "headerAppIcon"
+                    Layout.preferredWidth: 40
+                    Layout.preferredHeight: 40
+                    source: "qrc:/qt/qml/Rgsml/Ui/resources/app_icon_canonical.jpg"
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
                 }
                 Column {
                     Layout.alignment: Qt.AlignVCenter; spacing: 0
@@ -332,36 +381,47 @@ ApplicationWindow {
                         StudioMenuItem { text: "Preferences"; enabled: false }
                     }
                     Menu {
+                        id: desktopViewMenu
                         objectName: "desktopViewMenu"
                         popupType: Popup.Item
                         width: 230
                         title: "&View"
                         background: Rectangle { color: root.surface; border.color: root.border }
-                        StudioMenuItem {
-                            objectName: "menuViewInputGain"
-                            text: "Input Gain"
-                            enabled: true
-                            onTriggered: {
-                                if (typeof dspChainAdapterModel !== "undefined" && dspChainAdapterModel && dspChainAdapterModel.modules && dspChainAdapterModel.modules.length > 0) {
-                                    dspChainAdapterModel.selectModuleByInstanceId(dspChainAdapterModel.modules[0].instanceId)
-                                } else {
-                                    realDspWorkspace.selectedModuleIndex = 0
+                        // FIX-UI-002: use the same live module-adapter list as
+                        // the DSP chain/editor host. No positional DSP menu list.
+                        Instantiator {
+                            id: viewEditorInstantiator
+                            objectName: "viewEditorInstantiator"
+                            model: typeof dspChainAdapterModel !== "undefined"
+                                && dspChainAdapterModel
+                                ? dspChainAdapterModel.modules : []
+                            delegate: StudioMenuItem {
+                                readonly property var editorAdapter: modelData
+                                readonly property string editorKey: editorAdapter
+                                    ? editorAdapter.editorContentKey : ""
+                                // Keep the historical smoke object names without
+                                // hard-coding a menu entry for each DSP type.
+                                objectName: "menuView" + editorKey.toLowerCase()
+                                    .split("_").map(function(part) {
+                                        return part.charAt(0).toUpperCase()
+                                            + part.slice(1)
+                                    }).join("")
+                                text: editorAdapter ? editorAdapter.displayName : ""
+                                enabled: editorAdapter !== null
+                                    && editorAdapter !== undefined
+                                    && editorKey.length > 0
+                                onTriggered: {
+                                    if (enabled && editorAdapter && dspChainAdapterModel) {
+                                        dspChainAdapterModel.selectModuleByInstanceId(
+                                            editorAdapter.instanceId)
+                                        realDspWorkspace.editorHost.forceActiveFocus()
+                                    }
                                 }
-                                realDspWorkspace.editorHost.forceActiveFocus()
                             }
-                        }
-                        StudioMenuItem {
-                            objectName: "menuViewParametricEq"
-                            text: "Parametric EQ"
-                            enabled: true
-                            onTriggered: {
-                                if (typeof dspChainAdapterModel !== "undefined" && dspChainAdapterModel && dspChainAdapterModel.modules && dspChainAdapterModel.modules.length > 1) {
-                                    dspChainAdapterModel.selectModuleByInstanceId(dspChainAdapterModel.modules[1].instanceId)
-                                } else {
-                                    realDspWorkspace.selectedModuleIndex = 1
-                                }
-                                realDspWorkspace.editorHost.forceActiveFocus()
-                            }
+                            onObjectAdded: (index, object) =>
+                                desktopViewMenu.insertItem(index, object)
+                            onObjectRemoved: (index, object) =>
+                                desktopViewMenu.removeItem(object)
                         }
                         MenuSeparator { }
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: sourceWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
@@ -1030,8 +1090,39 @@ ApplicationWindow {
             border.color: root.border
             RowLayout {
                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
-                Rectangle { objectName: "statusReadyIndicator"; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: root.hasError ? root.error : "#00E6E6" }
-                Label { objectName: "statusBarMessage"; Layout.fillWidth: true; text: root.statusText; color: root.textSecondary; font.pixelSize: 10; elide: Text.ElideRight }
+                Rectangle {
+                    objectName: "statusReadyIndicator"
+                    Layout.preferredWidth: 8
+                    Layout.preferredHeight: 8
+                    radius: 4
+                    color: root.statusSeverity === "ERROR" ? root.error
+                        : root.statusSeverity === "WARNING" ? root.warning : "#00E6E6"
+                }
+                Label {
+                    id: statusMessage
+                    objectName: "statusBarMessage"
+                    Layout.fillWidth: true
+                    text: root.statusText
+                    color: root.statusSeverity === "ERROR" ? root.error
+                        : root.statusSeverity === "WARNING" ? root.warning : root.textSecondary
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                    HoverHandler { id: globalStatusHover }
+                    ToolTip.text: root.statusText
+                    ToolTip.visible: globalStatusHover.hovered && root.statusText.length > 0
+                    ToolTip.delay: 450
+                    Accessible.name: root.statusText
+                    Accessible.description: root.statusSeverity + ": " + root.statusText
+                }
+                Text {
+                    id: statusBuildProvenanceLabel
+                    objectName: "statusBuildProvenanceLabel"
+                    text: typeof buildProvenance !== "undefined" ? buildProvenance : "DEV"
+                    color: root.textSecondary
+                    font.family: "Segoe UI"
+                    font.pixelSize: 10
+                    Layout.alignment: Qt.AlignVCenter
+                }
             }
         }
     }

@@ -7,6 +7,7 @@ Item {
     objectName: "compressorEditor"
 
     property var viewModel: null
+    property bool showLocalValidation: true
 
     readonly property color textPrimary: "#F5F8FC"
     readonly property color textSecondary: "#A1B5C9"
@@ -20,6 +21,10 @@ Item {
     // Authored from the 1184x688 minimum composition upward. Keep the
     // 3-column topology stable; reclaim width from padding, gaps and controls.
     readonly property int compactNumericFieldWidth: 92
+    // Bound the controls panel to the authored content rather than a guessed
+    // fixed width. The graph owns any additional horizontal space.
+    readonly property real authoredControlsPanelWidth: Math.ceil(
+        Math.max(detectorLinkStrip.implicitWidth, parameterGrid.implicitWidth) + 12)
 
     readonly property string validationField: root.viewModel ? root.viewModel.validationField : ""
     readonly property string validationErrorText: root.viewModel ? root.viewModel.validationMessage : ""
@@ -27,21 +32,14 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 10
+        anchors.margins: 8
+        spacing: 6
 
-        // Header Action Bar
+        // Header Action Bar: the shared DSP host already names "Compressor".
+        // UX-003: keep Reset aligned right without a redundant local title.
         RowLayout {
             Layout.fillWidth: true
             spacing: 12
-
-            Text {
-                text: "DYNAMICS COMPRESSOR"
-                color: root.textSecondary
-                font.family: "Segoe UI"
-                font.pixelSize: 11
-                font.weight: Font.Bold
-            }
 
             Item { Layout.fillWidth: true }
 
@@ -63,13 +61,14 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 12
+            spacing: 10
 
             // Left Side: Static Transfer Curve Display Well
             Rectangle {
                 id: curveWell
                 objectName: "compressorCurveWell"
                 Layout.preferredWidth: 280
+                Layout.fillWidth: true
                 Layout.fillHeight: true
                 radius: 6
                 color: root.wellBg
@@ -78,8 +77,8 @@ Item {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 6
+                    anchors.margins: 8
+                    spacing: 4
 
                     RowLayout {
                         Layout.fillWidth: true
@@ -92,14 +91,14 @@ Item {
                         }
                         Item { Layout.fillWidth: true }
                         Text {
-                            text: "In: -60..+6 dBFS"
+                            text: curveCanvas.rangeLabel
                             color: root.textMuted
                             font.family: "Segoe UI"
                             font.pixelSize: 9
                         }
                     }
 
-                    // Canvas Graph
+                    // Canvas Graph with Interactive Handles
                     Canvas {
                         id: curveCanvas
                         objectName: "compressorCurveCanvas"
@@ -107,8 +106,29 @@ Item {
                         Layout.fillHeight: true
 
                         property var pointsList: root.viewModel ? root.viewModel.transferCurvePoints : []
+                        property var handlesList: root.viewModel ? root.viewModel.transferCurveHandles : []
+                        // FIX-UI-006: bypass must actively repaint the STATIC curve;
+                        // GR HISTORY has separate audible-state and alpha rules.
+                        readonly property bool isBypassed: root.viewModel ? root.viewModel.bypass : false
+
+                        readonly property real plotXMinDbfs: root.viewModel ? root.viewModel.plotXMinDbfs : -60.0
+                        readonly property real plotXMaxDbfs: 6.0
+                        readonly property real plotYMinDbfs: root.viewModel ? root.viewModel.plotYMinDbfs : -60.0
+                        readonly property real plotYMaxDbfs: root.viewModel ? root.viewModel.plotYMaxDbfs : 6.0
+                        readonly property string rangeLabel: {
+                            const xMin = plotXMinDbfs.toFixed(0)
+                            const xMax = (plotXMaxDbfs >= 0 ? "+" : "") + plotXMaxDbfs.toFixed(0)
+                            const yMin = plotYMinDbfs.toFixed(0)
+                            const yMax = (plotYMaxDbfs >= 0 ? "+" : "") + plotYMaxDbfs.toFixed(0)
+                            if (plotXMinDbfs === plotYMinDbfs && plotXMaxDbfs === plotYMaxDbfs) {
+                                return "X/Y: " + xMin + ".." + xMax + " dBFS"
+                            }
+                            return "X " + xMin + ".." + xMax + " · Y " + yMin + ".." + yMax + " dBFS"
+                        }
 
                         onPointsListChanged: requestPaint()
+                        onHandlesListChanged: requestPaint()
+                        onIsBypassedChanged: requestPaint()
                         onWidthChanged: requestPaint()
                         onHeightChanged: requestPaint()
 
@@ -116,48 +136,60 @@ Item {
                             var ctx = getContext("2d")
                             ctx.clearRect(0, 0, width, height)
 
-                            const minDbfs = -60.0
-                            const maxDbfs = 6.0
-                            const dbRange = maxDbfs - minDbfs
+                            const minXDbfs = plotXMinDbfs
+                            const maxXDbfs = plotXMaxDbfs
+                            const minYDbfs = plotYMinDbfs
+                            const maxYDbfs = plotYMaxDbfs
+                            const xRange = maxXDbfs - minXDbfs
+                            const yRange = maxYDbfs - minYDbfs
 
                             function mapX(db) {
-                                return (db - minDbfs) / dbRange * width
+                                return (db - minXDbfs) / xRange * width
                             }
                             function mapY(db) {
-                                return height - ((db - minDbfs) / dbRange * height)
+                                return height - ((db - minYDbfs) / yRange * height)
                             }
 
                             // Grid Lines
                             ctx.lineWidth = 1
                             ctx.strokeStyle = "#122536"
-                            const gridSteps = [-48, -36, -24, -12, 0]
-                            for (var i = 0; i < gridSteps.length; ++i) {
-                                var gx = mapX(gridSteps[i])
-                                var gy = mapY(gridSteps[i])
-
-                                // Vertical line
+                            const gridStepDb = 12.0
+                            const firstXGrid = Math.ceil(minXDbfs / gridStepDb) * gridStepDb
+                            for (var xDb = firstXGrid; xDb <= maxXDbfs; xDb += gridStepDb) {
+                                var gx = mapX(xDb)
                                 ctx.beginPath()
                                 ctx.moveTo(gx, 0)
                                 ctx.lineTo(gx, height)
                                 ctx.stroke()
-
-                                // Horizontal line
+                            }
+                            const firstYGrid = Math.ceil(minYDbfs / gridStepDb) * gridStepDb
+                            for (var yDb = firstYGrid; yDb <= maxYDbfs; yDb += gridStepDb) {
+                                var gy = mapY(yDb)
                                 ctx.beginPath()
                                 ctx.moveTo(0, gy)
                                 ctx.lineTo(width, gy)
                                 ctx.stroke()
                             }
 
-                            // 1:1 45-degree Reference Line
-                            ctx.strokeStyle = "#1E3A52"
-                            ctx.setLineDash([3, 3])
-                            ctx.beginPath()
-                            ctx.moveTo(mapX(-60), mapY(-60))
-                            ctx.lineTo(mapX(6), mapY(6))
-                            ctx.stroke()
-                            ctx.setLineDash([])
+                            // 1:1 reference line over the physically represented common range.
+                            const referenceMin = Math.max(minXDbfs, minYDbfs, -120.0)
+                            const referenceMax = Math.min(maxXDbfs, maxYDbfs, 6.0)
+                            if (referenceMin <= referenceMax) {
+                                ctx.strokeStyle = "#1E3A52"
+                                ctx.setLineDash([3, 3])
+                                ctx.beginPath()
+                                ctx.moveTo(mapX(referenceMin), mapY(referenceMin))
+                                ctx.lineTo(mapX(referenceMax), mapY(referenceMax))
+                                ctx.stroke()
+                                ctx.setLineDash([])
+                            }
 
-                            // Transfer Curve
+                            // FIX-UI-006: only editable static curve and handles fade
+                            // in Bypass. The grid, labels and GR HISTORY remain
+                            // independent; their truth semantics must not change.
+                            ctx.globalAlpha = isBypassed ? 0.5 : 1.0
+
+                            // Dynamics Copper Transfer Curve
                             if (pointsList && pointsList.length > 0) {
                                 ctx.strokeStyle = "#C4774A"
                                 ctx.lineWidth = 2
@@ -176,39 +208,487 @@ Item {
                                 }
                                 ctx.stroke()
                             }
+
+                            // C++ Transfer Curve Handles
+                            if (handlesList && handlesList.length > 0) {
+                                for (var h = 0; h < handlesList.length; ++h) {
+                                    var handle = handlesList[h]
+                                    var hx = mapX(handle.inputDbfs)
+                                    var hy = mapY(handle.outputDbfs)
+
+                                    ctx.fillStyle = handle.color
+                                    ctx.strokeStyle = "#FFFFFF"
+                                    ctx.lineWidth = 1.5
+
+                                    ctx.beginPath()
+                                    ctx.arc(hx, hy, 5, 0, 2 * Math.PI)
+                                    ctx.fill()
+                                    ctx.stroke()
+                                }
+                            }
+                            ctx.globalAlpha = 1.0
+                        }
+
+                        MouseArea {
+                            id: curveMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+
+                            property string activeHandleId: ""
+
+                            function mapXToDbfs(px) {
+                                return curveCanvas.plotXMinDbfs
+                                    + (px / curveCanvas.width)
+                                        * (curveCanvas.plotXMaxDbfs - curveCanvas.plotXMinDbfs)
+                            }
+
+                            function mapYToDbfs(py) {
+                                return curveCanvas.plotYMinDbfs
+                                    + ((curveCanvas.height - py) / curveCanvas.height)
+                                        * (curveCanvas.plotYMaxDbfs - curveCanvas.plotYMinDbfs)
+                            }
+
+                            onPressed: (mouse) => {
+                                activeHandleId = ""
+                                if (!root.viewModel) return
+
+                                var handles = root.viewModel.transferCurveHandles
+                                if (!handles || handles.length === 0) return
+
+                                const minXDbfs = curveCanvas.plotXMinDbfs
+                                const maxXDbfs = curveCanvas.plotXMaxDbfs
+                                const minYDbfs = curveCanvas.plotYMinDbfs
+                                const maxYDbfs = curveCanvas.plotYMaxDbfs
+                                const xRange = maxXDbfs - minXDbfs
+                                const yRange = maxYDbfs - minYDbfs
+
+                                var bestId = ""
+                                var bestDist = 20.0
+
+                                for (var i = 0; i < handles.length; ++i) {
+                                    var h = handles[i]
+                                    var hx = (h.inputDbfs - minXDbfs) / xRange * curveCanvas.width
+                                    var hy = curveCanvas.height - ((h.outputDbfs - minYDbfs) / yRange * curveCanvas.height)
+                                    var dist = Math.hypot(mouse.x - hx, mouse.y - hy)
+                                    if (dist < bestDist) {
+                                        bestDist = dist
+                                        bestId = h.id
+                                    }
+                                }
+
+                                activeHandleId = bestId
+                            }
+
+                            onPositionChanged: (mouse) => {
+                                if (pressed && activeHandleId !== "" && root.viewModel) {
+                                    var inDbfs = mapXToDbfs(mouse.x)
+                                    var outDbfs = mapYToDbfs(mouse.y)
+                                    root.viewModel.setCurveHandleDraft(activeHandleId, inDbfs, outDbfs)
+                                }
+                            }
+
+                            onReleased: {
+                                if (activeHandleId !== "" && root.viewModel) {
+                                    root.viewModel.commitDraft()
+                                    activeHandleId = ""
+                                }
+                            }
                         }
                     }
+
+
+                    // Integrated Live GR history: dedicated observational band
+                    // below the editable transfer curve, inside the SAME
+                    // compressorCurveWell. Editing and observation do not overlap.
+                    ColumnLayout {
+                        id: grRibbonSection
+                        objectName: "compressorGrRibbonSection"
+                        Layout.fillWidth: true
+                        spacing: 2
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "GR HISTORY"
+                                color: root.textSecondary
+                                font.family: "Segoe UI"
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                id: grStateText
+                                objectName: "compressorGrStateLabel"
+                                text: root.viewModel ? root.viewModel.telemetryStatus : "UNAVAILABLE"
+                                color: {
+                                    const st = text
+                                    if (st === "ACTIVE WET" || st === "ACTIVE DRY ONLY") return "#A088FF"
+                                    if (st === "PAUSED" || st === "STOPPED / END" || st === "BYPASS") return "#A1B5C9"
+                                    if (st === "TRANSITION" || st === "NOT AUDITIONED") return "#7B61FF"
+                                    return root.textMuted
+                                }
+                                font.family: "Segoe UI"
+                                font.pixelSize: 9
+                                font.weight: Font.Bold
+                            }
+                        }
+
+                        Canvas {
+                            id: grRibbonCanvas
+                            objectName: "compressorGrRibbonCanvas"
+                            Layout.fillWidth: true
+
+                            readonly property int numLanes: root.viewModel ? root.viewModel.telemetryNumLanes : 1
+                            readonly property real scaleMaxDb: root.viewModel ? root.viewModel.telemetryGrScaleMaxDb : 6.0
+                            readonly property var historyLanes: root.viewModel ? root.viewModel.telemetryHistoryLanes : []
+                            readonly property string liveState: root.viewModel ? root.viewModel.telemetryStatus : "UNAVAILABLE"
+
+                            implicitHeight: numLanes > 1 ? 72 : 54
+
+                            onNumLanesChanged: requestPaint()
+                            onHistoryLanesChanged: requestPaint()
+                            onScaleMaxDbChanged: requestPaint()
+                            onLiveStateChanged: requestPaint()
+                            onWidthChanged: requestPaint()
+                            onHeightChanged: requestPaint()
+
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+
+                                const isUnavailable = (liveState === "UNAVAILABLE")
+                                const isTransition = (liveState === "TRANSITION")
+                                const isBypassed = (liveState === "BYPASS")
+                                const scaleGutter = 38
+                                const plotWidth = Math.max(1, width - scaleGutter)
+
+                                ctx.save()
+                                if (isBypassed) {
+                                    ctx.globalAlpha = 0.4
+                                }
+
+                                const activeLanes =
+                                    (historyLanes && historyLanes.length > 0)
+                                        ? Math.min(numLanes, historyLanes.length)
+                                        : 1
+                                const laneGap = 4
+                                const laneHeight =
+                                    (height - (activeLanes - 1) * laneGap)
+                                        / activeLanes
+                                const maxSlots = 1000.0
+                                const stepX = plotWidth / maxSlots
+
+                                function drawSegment(segment, laneZeroY) {
+                                    if (!segment || segment.length < 2)
+                                        return
+
+                                    ctx.fillStyle = "rgba(123, 97, 255, 0.25)"
+                                    ctx.beginPath()
+                                    ctx.moveTo(segment[0].x, laneZeroY)
+                                    for (var s = 0; s < segment.length; ++s)
+                                        ctx.lineTo(segment[s].x, segment[s].meanY)
+                                    ctx.lineTo(
+                                        segment[segment.length - 1].x,
+                                        laneZeroY)
+                                    ctx.closePath()
+                                    ctx.fill()
+
+                                    ctx.fillStyle = "rgba(160, 136, 255, 0.45)"
+                                    ctx.beginPath()
+                                    ctx.moveTo(
+                                        segment[0].x,
+                                        segment[0].meanY)
+                                    for (var p = 0; p < segment.length; ++p)
+                                        ctx.lineTo(
+                                            segment[p].x,
+                                            segment[p].peakY)
+                                    for (var m = segment.length - 1;
+                                         m >= 0; --m)
+                                        ctx.lineTo(
+                                            segment[m].x,
+                                            segment[m].meanY)
+                                    ctx.closePath()
+                                    ctx.fill()
+
+                                    ctx.strokeStyle = "#A088FF"
+                                    ctx.lineWidth = 1.2
+                                    ctx.beginPath()
+                                    for (var c = 0; c < segment.length; ++c) {
+                                        if (c === 0)
+                                            ctx.moveTo(
+                                                segment[c].x,
+                                                segment[c].meanY)
+                                        else
+                                            ctx.lineTo(
+                                                segment[c].x,
+                                                segment[c].meanY)
+                                    }
+                                    ctx.stroke()
+
+                                    ctx.strokeStyle = "#8A70FF"
+                                    ctx.lineWidth = 1.0
+                                    ctx.beginPath()
+                                    for (var k = 0; k < segment.length; ++k) {
+                                        if (k === 0)
+                                            ctx.moveTo(
+                                                segment[k].x,
+                                                segment[k].peakY)
+                                        else
+                                            ctx.lineTo(
+                                                segment[k].x,
+                                                segment[k].peakY)
+                                    }
+                                    ctx.stroke()
+                                }
+
+                                for (var l = 0; l < activeLanes; ++l) {
+                                    const laneTopY =
+                                        l * (laneHeight + laneGap)
+                                    const laneZeroY = laneTopY + 1
+
+                                    ctx.strokeStyle = "#1E354A"
+                                    ctx.lineWidth = 1
+                                    ctx.beginPath()
+                                    ctx.moveTo(0, laneZeroY)
+                                    ctx.lineTo(plotWidth, laneZeroY)
+                                    ctx.stroke()
+
+                                    var laneData =
+                                        historyLanes && l < historyLanes.length
+                                            ? historyLanes[l]
+                                            : null
+                                    var buckets =
+                                        laneData ? laneData.buckets : []
+
+                                    if (!isUnavailable && buckets
+                                            && buckets.length > 0) {
+                                        var rawPoints = []
+                                        var slot = 0
+                                        var previous = null
+
+                                        for (var i = 0;
+                                             i < buckets.length; ++i) {
+                                            const b = buckets[i]
+                                            var gapSlots = 0
+                                            var loopBefore = false
+                                            if (previous !== null) {
+                                                const nominalFrames =
+                                                    Math.max(
+                                                        1,
+                                                        b.frameCount || 0,
+                                                        previous.frameCount || 0)
+                                                const frameGap =
+                                                    b.beginFrame
+                                                        - previous.endFrame
+                                                const realizationChanged =
+                                                    (b.realizationId
+                                                        !== previous.realizationId)
+
+                                                if (frameGap > 0) {
+                                                    gapSlots = Math.max(
+                                                        1,
+                                                        Math.min(
+                                                            12,
+                                                            Math.ceil(
+                                                                frameGap
+                                                                    / nominalFrames)))
+                                                } else if (frameGap < 0) {
+                                                    // Loop wrap: retain history but
+                                                    // never draw a connecting line.
+                                                    gapSlots = 2
+                                                    loopBefore = true
+                                                } else if (realizationChanged) {
+                                                    // OLD -> NEW must remain visibly
+                                                    // discontinuous even if source
+                                                    // frame domains meet exactly.
+                                                    gapSlots = 2
+                                                }
+                                            }
+
+                                            slot += gapSlots
+                                            rawPoints.push({
+                                                slot: slot,
+                                                meanDb:
+                                                    b.valid ? b.meanDb : 0.0,
+                                                peakDb:
+                                                    b.valid ? b.peakDb : 0.0,
+                                                valid: b.valid,
+                                                breakBefore: gapSlots > 0,
+                                                loopBefore: loopBefore
+                                            })
+                                            slot += 1
+                                            previous = b
+                                        }
+
+                                        const startX =
+                                            plotWidth - slot * stepX
+                                        var segments = []
+                                        var segment = []
+                                        var markers = []
+
+                                        for (var r = 0;
+                                             r < rawPoints.length; ++r) {
+                                            const rp = rawPoints[r]
+                                            const x =
+                                                startX + rp.slot * stepX
+                                            const meanY =
+                                                laneZeroY
+                                                    + (Math.max(
+                                                        0,
+                                                        Math.min(
+                                                            scaleMaxDb,
+                                                            rp.meanDb))
+                                                        / scaleMaxDb)
+                                                        * (laneHeight - 2)
+                                            const peakY =
+                                                laneZeroY
+                                                    + (Math.max(
+                                                        0,
+                                                        Math.min(
+                                                            scaleMaxDb,
+                                                            rp.peakDb))
+                                                        / scaleMaxDb)
+                                                        * (laneHeight - 2)
+
+                                            if (rp.breakBefore
+                                                    && segment.length > 0) {
+                                                segments.push(segment)
+                                                segment = []
+                                                markers.push({
+                                                    x: x - stepX,
+                                                    loop: rp.loopBefore
+                                                })
+                                            }
+                                            segment.push({
+                                                x: x,
+                                                meanY: meanY,
+                                                peakY: peakY
+                                            })
+                                        }
+                                        if (segment.length > 0)
+                                            segments.push(segment)
+
+                                        for (var sg = 0;
+                                             sg < segments.length; ++sg)
+                                            drawSegment(
+                                                segments[sg],
+                                                laneZeroY)
+
+                                        for (var mk = 0;
+                                             mk < markers.length; ++mk) {
+                                            ctx.strokeStyle =
+                                                markers[mk].loop
+                                                    ? "#586773"
+                                                    : "#7B61FF"
+                                            ctx.lineWidth = 1
+                                            ctx.setLineDash([2, 2])
+                                            ctx.beginPath()
+                                            ctx.moveTo(
+                                                markers[mk].x,
+                                                laneTopY)
+                                            ctx.lineTo(
+                                                markers[mk].x,
+                                                laneTopY + laneHeight)
+                                            ctx.stroke()
+                                            ctx.setLineDash([])
+                                        }
+                                    }
+
+                                    if (activeLanes > 1) {
+                                        ctx.fillStyle = "#A1B5C9"
+                                        ctx.font = "8px 'Segoe UI'"
+                                        ctx.fillText(
+                                            l === 0 ? "L" : "R",
+                                            4,
+                                            laneTopY + 9)
+                                    }
+
+                                    // Sparse truthful GR scale: 0, midpoint,
+                                    // max. Default therefore reads 0 / 3 / 6.
+                                    ctx.fillStyle = "#586773"
+                                    ctx.font = "7px 'Segoe UI'"
+                                    const sx = plotWidth + 3
+                                    ctx.fillText(
+                                        "0",
+                                        sx,
+                                        laneTopY + 7)
+                                    const midpoint = scaleMaxDb * 0.5
+                                    ctx.fillText(
+                                        midpoint.toFixed(
+                                            midpoint < 2 ? 1 : 0),
+                                        sx,
+                                        laneTopY
+                                            + laneHeight * 0.5 + 2)
+                                    const maxLabel =
+                                        l === activeLanes - 1
+                                            ? scaleMaxDb.toFixed(0)
+                                                + " dB GR"
+                                            : scaleMaxDb.toFixed(0)
+                                    ctx.fillText(
+                                        maxLabel,
+                                        sx,
+                                        laneTopY + laneHeight - 2)
+                                }
+
+                                if (isTransition) {
+                                    ctx.strokeStyle = "#7B61FF"
+                                    ctx.lineWidth = 1
+                                    ctx.setLineDash([2, 2])
+                                    ctx.beginPath()
+                                    ctx.moveTo(plotWidth - 2, 0)
+                                    ctx.lineTo(plotWidth - 2, height)
+                                    ctx.stroke()
+                                    ctx.setLineDash([])
+                                }
+
+                                ctx.restore()
+                            }
+                        }
+
+                                        }
+
                 }
+
+
             }
 
             // Right Side: Control Panels
             Rectangle {
                 id: controlsPanel
                 objectName: "compressorControlsPanel"
-                Layout.fillWidth: true
+                Layout.minimumWidth: root.authoredControlsPanelWidth
+                Layout.preferredWidth: root.authoredControlsPanelWidth
+                Layout.fillWidth: false
                 Layout.fillHeight: true
                 radius: 6
                 color: root.panelBg
-                border.color: root.hasValidationError ? root.error : root.borderDark
+                border.color: root.borderDark
                 border.width: 1
 
                 ScrollView {
+                    id: controlsViewport
+                    objectName: "compressorControlsViewport"
                     anchors.fill: parent
-                    anchors.margins: 8
+                    anchors.margins: 6
                     clip: true
 
                     ColumnLayout {
+                        id: controlsContent
+                        objectName: "compressorControlsContent"
                         width: parent.width
-                        spacing: 12
+                        spacing: 8
+                        // Center only when all controls fit. A zero offset at
+                        // constrained heights retains the canonical scroll path.
+                        y: Math.max(0, (controlsViewport.availableHeight - implicitHeight) / 2)
 
                         // Detector & Stereo Link Selector Strip
                         RowLayout {
+                            id: detectorLinkStrip
                             Layout.fillWidth: true
                             spacing: 8
 
                             // Detector Mode Group
                             ColumnLayout {
-                                spacing: 4
+                                spacing: 2
                                 Text {
                                     text: "DETECTOR MODE"
                                     color: root.textSecondary
@@ -224,7 +704,7 @@ Item {
                                         text: "RMS"
                                         selected: root.viewModel ? (root.viewModel.detectorMode === "RMS") : true
                                         minimumControlWidth: 56
-                                        contentPadding: 8
+                                        contentPadding: 6
                                         onClicked: if (root.viewModel) root.viewModel.setDetectorMode("RMS")
                                     }
                                     StudioButton {
@@ -233,7 +713,7 @@ Item {
                                         text: "PEAK"
                                         selected: root.viewModel ? (root.viewModel.detectorMode === "PEAK") : false
                                         minimumControlWidth: 56
-                                        contentPadding: 8
+                                        contentPadding: 6
                                         onClicked: if (root.viewModel) root.viewModel.setDetectorMode("PEAK")
                                     }
                                 }
@@ -243,7 +723,7 @@ Item {
                             ColumnLayout {
                                 opacity: root.viewModel ? (root.viewModel.channelLinkEffective ? 1.0 : 0.4) : 1.0
                                 enabled: root.viewModel ? root.viewModel.channelLinkEffective : true
-                                spacing: 4
+                                spacing: 2
 
                                 RowLayout {
                                     spacing: 4
@@ -303,154 +783,343 @@ Item {
                             color: "#1A2C3D"
                         }
 
-                        // Grid of Numeric Controls
+                        // Grid of Numeric Controls & Sliders
                         GridLayout {
+                            id: parameterGrid
                             Layout.fillWidth: true
                             columns: 3
                             columnSpacing: 8
-                            rowSpacing: 12
+                            rowSpacing: 6
 
                             // 1. Threshold
-                            StudioNumericField {
-                                id: thresholdField
-                                objectName: "compressorThresholdField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "thresholdDbfs"
-                                labelText: "THRESHOLD"
-                                unitText: "dBFS"
-                                rawText: root.viewModel ? root.viewModel.thresholdText : "-24.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 2
+
+                                StudioNumericField {
+                                    id: thresholdField
+                                    objectName: "compressorThresholdField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "thresholdDbfs"
+                                    labelText: "THRESHOLD"
+                                    unitText: "dBFS"
+                                    rawText: root.viewModel ? root.viewModel.thresholdText : "-24.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag cyan curve point left/right or use the slider.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorThresholdSlider"
+                                    from: -120.0
+                                    to: 0.0
+                                    stepSize: 0.1
+                                    value: root.viewModel ? root.viewModel.draftThresholdDbfs : -24.0
+                                    fieldName: "thresholdDbfs"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
+                                    accentColor: "#2ED3FF"
+                                    semanticAccent: "#2ED3FF"
+                                    hasSemanticAccent: true
+                                    accessibleName: "Threshold continuous adjustment slider"
+                                }
                             }
 
                             // 2. Ratio
-                            StudioNumericField {
-                                id: ratioField
-                                objectName: "compressorRatioField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "ratio"
-                                labelText: "RATIO"
-                                unitText: ": 1"
-                                rawText: root.viewModel ? root.viewModel.ratioText : "2.00"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 2
+
+                                StudioNumericField {
+                                    id: ratioField
+                                    objectName: "compressorRatioField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "ratio"
+                                    labelText: "RATIO"
+                                    unitText: ": 1"
+                                    rawText: root.viewModel ? root.viewModel.ratioText : "2.00"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag emerald curve point up/down or use the slider.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorRatioSlider"
+                                    from: 1.0
+                                    to: 20.0
+                                    stepSize: 0.05
+                                    value: root.viewModel ? root.viewModel.draftRatio : 2.0
+                                    fieldName: "ratio"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
+                                    accentColor: "#2FD98F"
+                                    semanticAccent: "#2FD98F"
+                                    hasSemanticAccent: true
+                                    accessibleName: "Ratio continuous adjustment slider"
+                                }
                             }
 
                             // 3. Knee
-                            StudioNumericField {
-                                id: kneeField
-                                objectName: "compressorKneeField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "kneeDb"
-                                labelText: "KNEE"
-                                unitText: "dB"
-                                rawText: root.viewModel ? root.viewModel.kneeText : "6.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 2
+
+                                StudioNumericField {
+                                    id: kneeField
+                                    objectName: "compressorKneeField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "kneeDb"
+                                    labelText: "KNEE"
+                                    unitText: "dB"
+                                    rawText: root.viewModel ? root.viewModel.kneeText : "6.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag yellow curve point left/right or use the slider.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorKneeSlider"
+                                    from: 0.0
+                                    to: 24.0
+                                    stepSize: 0.1
+                                    value: root.viewModel ? root.viewModel.draftKneeDb : 6.0
+                                    fieldName: "kneeDb"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
+                                    accentColor: "#FFD84A"
+                                    semanticAccent: "#FFD84A"
+                                    hasSemanticAccent: true
+                                    accessibleName: "Knee continuous adjustment slider"
+                                }
                             }
 
                             // 4. Attack
-                            StudioNumericField {
-                                id: attackField
-                                objectName: "compressorAttackField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "attackMs"
-                                labelText: "ATTACK"
-                                unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.attackText : "30.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 2
+
+                                StudioNumericField {
+                                    id: attackField
+                                    objectName: "compressorAttackField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "attackMs"
+                                    labelText: "ATTACK"
+                                    unitText: "ms"
+                                    rawText: root.viewModel ? root.viewModel.attackText : "30.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag the slider to adjust.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorAttackSlider"
+                                    from: 0.1
+                                    to: 500.0
+                                    stepSize: 0.1
+                                    logarithmic: true
+                                    value: root.viewModel ? root.viewModel.draftAttackMs : 30.0
+                                    fieldName: "attackMs"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
+                                    accessibleName: "Attack continuous adjustment slider"
+                                }
                             }
 
                             // 5. Release
-                            StudioNumericField {
-                                id: releaseField
-                                objectName: "compressorReleaseField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "releaseMs"
-                                labelText: "RELEASE"
-                                unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.releaseText : "200.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 2
+
+                                StudioNumericField {
+                                    id: releaseField
+                                    objectName: "compressorReleaseField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "releaseMs"
+                                    labelText: "RELEASE"
+                                    unitText: "ms"
+                                    rawText: root.viewModel ? root.viewModel.releaseText : "200.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag the slider to adjust.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorReleaseSlider"
+                                    from: 1.0
+                                    to: 5000.0
+                                    stepSize: 1.0
+                                    logarithmic: true
+                                    value: root.viewModel ? root.viewModel.draftReleaseMs : 200.0
+                                    fieldName: "releaseMs"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
+                                    accessibleName: "Release continuous adjustment slider"
+                                }
                             }
 
                             // 6. RMS Time Constant (Applicability bound)
-                            StudioNumericField {
-                                id: rmsTimeField
-                                objectName: "compressorRmsTimeField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "rmsTimeConstantMs"
-                                labelText: root.viewModel && root.viewModel.rmsTimeEffective ? "RMS TIME" : "RMS TIME (PEAK)"
-                                unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.rmsTimeConstantText : "50.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 2
                                 opacity: root.viewModel ? (root.viewModel.rmsTimeEffective ? 1.0 : 0.4) : 1.0
-                                enabled: root.viewModel ? root.viewModel.rmsTimeEffective : true
+
+                                StudioNumericField {
+                                    id: rmsTimeField
+                                    objectName: "compressorRmsTimeField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "rmsTimeConstantMs"
+                                    labelText: root.viewModel && root.viewModel.rmsTimeEffective ? "RMS TIME" : "RMS TIME (PEAK)"
+                                    unitText: "ms"
+                                    rawText: root.viewModel ? root.viewModel.rmsTimeConstantText : "50.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag the slider to adjust.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                    enabled: root.viewModel ? root.viewModel.rmsTimeEffective : true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorRmsTimeSlider"
+                                    from: 1.0
+                                    to: 500.0
+                                    stepSize: 0.1
+                                    logarithmic: true
+                                    value: root.viewModel ? root.viewModel.draftRmsTimeConstantMs : 50.0
+                                    fieldName: "rmsTimeConstantMs"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
+                                    enabled: root.viewModel ? root.viewModel.rmsTimeEffective : true
+                                    accessibleName: "RMS Time Constant continuous adjustment slider"
+                                }
                             }
 
                             // 7. Lookahead
-                            StudioNumericField {
-                                id: lookAheadField
-                                objectName: "compressorLookAheadField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "lookAheadMs"
-                                labelText: "LOOKAHEAD"
-                                unitText: "ms"
-                                rawText: root.viewModel ? root.viewModel.lookAheadText : "5.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 2
+
+                                StudioNumericField {
+                                    id: lookAheadField
+                                    objectName: "compressorLookAheadField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "lookAheadMs"
+                                    labelText: "LOOKAHEAD"
+                                    unitText: "ms"
+                                    rawText: root.viewModel ? root.viewModel.lookAheadText : "5.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag the slider to adjust.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorLookAheadSlider"
+                                    from: 0.0
+                                    to: 20.0
+                                    stepSize: 0.1
+                                    value: root.viewModel ? root.viewModel.draftLookAheadMs : 5.0
+                                    fieldName: "lookAheadMs"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
+                                    accessibleName: "Lookahead continuous adjustment slider"
+                                }
                             }
 
                             // 8. Mix
-                            StudioNumericField {
-                                id: mixField
-                                objectName: "compressorMixField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "mixPercent"
-                                labelText: "MIX"
-                                unitText: "%"
-                                rawText: root.viewModel ? root.viewModel.mixPercentText : "100.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 2
+
+                                StudioNumericField {
+                                    id: mixField
+                                    objectName: "compressorMixField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "mixPercent"
+                                    labelText: "MIX"
+                                    unitText: "%"
+                                    rawText: root.viewModel ? root.viewModel.mixPercentText : "100.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag the slider to adjust.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorMixSlider"
+                                    from: 0.0
+                                    to: 100.0
+                                    stepSize: 0.5
+                                    value: root.viewModel ? root.viewModel.draftMixPercent : 100.0
+                                    fieldName: "mixPercent"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
+                                    accessibleName: "Mix continuous adjustment slider"
+                                }
                             }
 
                             // 9. Make-up Gain
-                            StudioNumericField {
-                                id: makeupField
-                                objectName: "compressorMakeupField"
-                                compactFieldWidth: root.compactNumericFieldWidth
-                                fieldName: "makeupGainDb"
-                                labelText: "MAKE-UP"
-                                unitText: "dB"
-                                rawText: root.viewModel ? root.viewModel.makeupGainText : "0.0"
-                                viewModel: root.viewModel
-                                interactionHint: "Type a value • Enter to apply\nEsc to cancel"
-                                compact: true
+                            ColumnLayout {
+                                spacing: 2
+
+                                StudioNumericField {
+                                    id: makeupField
+                                    objectName: "compressorMakeupField"
+                                    compactFieldWidth: root.compactNumericFieldWidth
+                                    fieldName: "makeupGainDb"
+                                    labelText: "MAKE-UP"
+                                    unitText: "dB"
+                                    rawText: root.viewModel ? root.viewModel.makeupGainText : "0.0"
+                                    viewModel: root.viewModel
+                                    interactionHint: "Drag coral curve point up/down or use the slider.\nEnter to apply • Esc to cancel."
+                                    compact: true
+                                }
+
+                                StudioParameterSlider {
+                                    objectName: "compressorMakeupSlider"
+                                    from: -24.0
+                                    to: 24.0
+                                    stepSize: 0.1
+                                    value: root.viewModel ? root.viewModel.draftMakeupGainDb : 0.0
+                                    fieldName: "makeupGainDb"
+                                    viewModel: root.viewModel
+                                    compact: true
+                                    Layout.preferredWidth: root.compactNumericFieldWidth
+                                    fillFromOrigin: true
+                                    positionFillOrigin: 0.0
+                                    accentColor: "#FF6B6B"
+                                    semanticAccent: "#FF6B6B"
+                                    hasSemanticAccent: true
+                                    accessibleName: "Make-up Gain continuous adjustment slider"
+                                }
                             }
                         }
 
-                        // Validation Error Display
-                        Text {
-                            id: validationErrorLabel
-                            objectName: "compressorValidationError"
-                            text: root.validationErrorText
-                            color: root.error
-                            font.family: "Segoe UI"
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            visible: root.hasValidationError
-                            Layout.alignment: Qt.AlignHCenter
-                        }
+                    }
+                }
+
+                // Fixed local feedback; never contributes to the scroll
+                // content's implicitHeight or moves graph/controls on error.
+                Rectangle {
+                    objectName: "compressorValidationStatusRegion"
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 6
+                    height: 16
+                    z: 20
+                    color: "#E012243F"
+                    radius: 3
+                    visible: root.showLocalValidation && root.hasValidationError
+
+                    Text {
+                        id: validationErrorLabel
+                        objectName: "compressorValidationError"
+                        anchors.centerIn: parent
+                        width: parent.width - 8
+                        text: root.validationErrorText
+                        color: root.error
+                        font.family: "Segoe UI"
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
                     }
                 }
             }

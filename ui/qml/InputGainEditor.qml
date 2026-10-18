@@ -7,6 +7,10 @@ Item {
     objectName: "inputGainEditor"
 
     property var viewModel: null
+    property bool showLocalValidation: true
+    // Escape cancels the local numeric draft before the host returns
+    // keyboard focus to the selected DSP-chain row (M12 smoke contract).
+    signal escapeToChainRequested()
 
     readonly property color textPrimary: "#F5F8FC"
     readonly property color textSecondary: "#A1B5C9"
@@ -18,6 +22,18 @@ Item {
 
     readonly property double currentGainDb: root.viewModel ? root.viewModel.gainDb : 0.0
     readonly property string currentGainText: root.viewModel ? root.viewModel.gainDbText : "0.0"
+    readonly property string draftGainText: root.viewModel ? root.viewModel.draftGainDbText : "0.0"
+    readonly property bool editingNumeric: gainInput.activeFocus
+
+    function commitNumericDraft() {
+        if (root.viewModel) root.viewModel.setGainDbText(gainInput.text)
+    }
+    function cancelNumericDraft() {
+        if (!root.viewModel) return
+        // A no-op commit clears field-local validation without preview/undo.
+        root.viewModel.setGainDbText(root.currentGainText)
+        gainInput.text = root.currentGainText
+    }
     readonly property string validationErrorText: root.viewModel ? root.viewModel.validationError : ""
     readonly property bool hasError: validationErrorText.length > 0
 
@@ -54,7 +70,7 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: root.panelBg
-            border.color: root.hasError ? root.error : root.borderDark
+            border.color: root.borderDark
             border.width: 1
             radius: 8
 
@@ -81,7 +97,7 @@ Item {
                         id: readout
                         objectName: "gainDbDisplay"
                         text: (root.currentGainDb > 0 ? "+" : "") + root.currentGainText + " dB"
-                        color: root.hasError ? root.error : (root.currentGainDb === 0.0 ? root.textPrimary : root.accent)
+                        color: root.currentGainDb === 0.0 ? root.textPrimary : root.accent
                         font.family: "Consolas"
                         font.pixelSize: 36
                         font.weight: Font.Bold
@@ -155,6 +171,40 @@ Item {
                         // immediately because Slider.pressed is false for them.
                         property real pendingGainDb: root.currentGainDb
 
+                        // UX-002: accumulate sub-detent motion without
+                        // scheduling a render for each high-resolution tick.
+                        property real wheelRemainder: 0
+
+                        // Transparent whole-slider wheel target: preserve
+                        // the Slider's existing mouse drag/handle semantics.
+                        MouseArea {
+                            id: gainWheelArea
+                            objectName: "inputGainWheelArea"
+                            anchors.fill: parent
+                            z: 5
+                            acceptedButtons: Qt.NoButton
+                            hoverEnabled: true
+                            enabled: gainSlider.enabled && !gainSlider.pressed
+                            onWheel: function(wheel) {
+                                gainSlider.wheelRemainder += wheel.angleDelta.y
+                                var steps = Math.trunc(gainSlider.wheelRemainder / 120)
+                                if (steps !== 0) {
+                                    gainSlider.wheelRemainder -= steps * 120
+                                    var next = Math.round(
+                                        (root.currentGainDb + steps * 0.1) * 10) / 10
+                                    next = Math.max(gainSlider.from,
+                                                    Math.min(gainSlider.to, next))
+                                    if (next !== root.currentGainDb && root.viewModel) {
+                                        gainSlider.pendingGainDb = next
+                                        // Existing undo and preview; never
+                                        // commit sub-detent high-resolution ticks.
+                                        root.viewModel.setGainDb(next)
+                                    }
+                                }
+                                wheel.accepted = true
+                            }
+                        }
+
                         onMoved: {
                             pendingGainDb = gainSlider.value
                             if (!gainSlider.pressed && root.viewModel) {
@@ -171,6 +221,8 @@ Item {
                         }
 
                         background: Rectangle {
+                            id: gainSliderTrack
+                            objectName: "gainSliderTrack"
                             x: gainSlider.leftPadding
                             y: gainSlider.topPadding + gainSlider.availableHeight / 2 - height / 2
                             width: gainSlider.availableWidth
@@ -179,6 +231,29 @@ Item {
                             color: "#08121C"
                             border.color: "#1E354A"
                             border.width: 1
+
+                            // Same bipolar convention as Compressor MAKE-UP
+                            // and Stereo/M-S gains: fill from the 0 dB handle
+                            // CENTER to the actual handle CENTER, never to
+                            // the visual track edge. No fill at exactly 0 dB.
+                            readonly property real thumbRadius:
+                                gainSlider.handle ? gainSlider.handle.width / 2 : 9
+                            readonly property real zeroCenterX:
+                                thumbRadius + 0.5 * (width - 2 * thumbRadius)
+                            readonly property real thumbCenterX:
+                                thumbRadius + gainSlider.visualPosition
+                                * Math.max(0, width - 2 * thumbRadius)
+                            Rectangle {
+                                objectName: "gainSliderTrackFill"
+                                x: Math.min(gainSliderTrack.zeroCenterX,
+                                            gainSliderTrack.thumbCenterX)
+                                y: 0
+                                width: Math.abs(gainSliderTrack.thumbCenterX
+                                                - gainSliderTrack.zeroCenterX)
+                                height: parent.height
+                                radius: parent.radius
+                                color: Qt.alpha(root.accent, 0.38)
+                            }
 
                             // Center 0 dB Reference Line
                             Rectangle {
@@ -191,6 +266,7 @@ Item {
                         }
 
                         handle: Rectangle {
+                            objectName: "gainSliderThumb"
                             x: gainSlider.leftPadding + gainSlider.visualPosition * (gainSlider.availableWidth - width)
                             y: gainSlider.topPadding + gainSlider.availableHeight / 2 - height / 2
                             width: 18
@@ -241,7 +317,7 @@ Item {
                             verticalAlignment: TextInput.AlignVCenter
                             horizontalAlignment: TextInput.AlignRight
 
-                            text: root.currentGainText
+                            text: root.draftGainText
                             font.family: "Consolas"
                             font.pixelSize: 16
                             color: root.hasError ? root.error : root.textPrimary
@@ -264,20 +340,21 @@ Item {
                             // (for example "3" -> "3.0") and request a full-chain
                             // preview before the user has finished entering a value.
                             // Enter/Return commits the complete text exactly once.
-                            Keys.onReturnPressed: {
-                                if (root.viewModel) {
-                                    root.viewModel.setGainDbText(gainInput.text)
-                                }
+                            Keys.onReturnPressed: function(event) {
+                                root.commitNumericDraft()
+                                event.accepted = true
                             }
-                            Keys.onEnterPressed: {
-                                if (root.viewModel) {
-                                    root.viewModel.setGainDbText(gainInput.text)
-                                }
+                            Keys.onEnterPressed: function(event) {
+                                root.commitNumericDraft()
+                                event.accepted = true
                             }
-                            Keys.onEscapePressed: {
-                                if (root.viewModel) {
-                                    gainInput.text = root.viewModel.gainDbText
-                                }
+                            Keys.onEscapePressed: function(event) {
+                                root.cancelNumericDraft()
+                                root.escapeToChainRequested()
+                                event.accepted = true
+                            }
+                            onActiveFocusChanged: {
+                                if (!activeFocus) root.commitNumericDraft()
                             }
 
                             Accessible.name: "Input Gain numeric text input field"
@@ -293,17 +370,35 @@ Item {
                     }
                 }
 
-                // Validation Feedback Label
+            }
+
+            // Fixed bottom-edge feedback, OUTSIDE ColumnLayout: invalid
+            // text cannot move the readout, slider or numeric field.
+            Rectangle {
+                id: gainValidationStatus
+                objectName: "gainValidationStatusRegion"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 8
+                height: 16
+                z: 10
+                color: "#E012243F"
+                radius: 3
+                visible: root.showLocalValidation && root.hasError
+
                 Text {
                     id: validationErrorLabel
                     objectName: "gainValidationError"
+                    anchors.centerIn: parent
+                    width: parent.width - 8
                     text: root.validationErrorText
                     color: root.error
                     font.family: "Segoe UI"
                     font.pixelSize: 12
                     font.weight: Font.DemiBold
-                    visible: root.hasError
-                    Layout.alignment: Qt.AlignHCenter
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
                 }
             }
         }

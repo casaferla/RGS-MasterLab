@@ -1,6 +1,7 @@
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include "internal/playback_support.hpp"
+#include "internal/c2_consumed_prefix_projection.hpp"
 
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
@@ -525,12 +526,14 @@ public:
         }
         preparedSource_ = source;
         preparedPcm_.reset();
+        preparedPcmRealizationId_.reset();
         return core::Status::success();
     }
 
     [[nodiscard]] core::Status prepare_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
         auto output = make_output_candidate(
             source.format(), source.frame_count());
@@ -545,7 +548,8 @@ public:
             std::move(output.value()->output),
             output.value()->sampleFormat,
             std::move(output.value()->rateAdapter),
-            std::move(lifetime));
+            std::move(lifetime),
+            realizationId);
         if (!installed) {
             return installed;
         }
@@ -555,19 +559,23 @@ public:
         }
         preparedSource_.reset();
         preparedPcm_ = source;
+        preparedPcmRealizationId_ = realizationId;
         return core::Status::success();
     }
 
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
-        auto handedOff = engine_.handoff_pcm(source, lifetime);
+        auto handedOff = engine_.handoff_pcm(
+            source, lifetime, realizationId);
         if (!handedOff) {
             return handedOff;
         }
         preparedSource_.reset();
         preparedPcm_ = source;
+        preparedPcmRealizationId_ = realizationId;
         return core::Status::success();
     }
 
@@ -577,6 +585,7 @@ public:
         if (cleared) {
             preparedSource_.reset();
             preparedPcm_.reset();
+            preparedPcmRealizationId_.reset();
         }
         return cleared;
     }
@@ -593,9 +602,10 @@ public:
             const auto preservedLoop = snapshot.value()->loop;
             const auto source = preparedSource_;
             const auto pcm = preparedPcm_;
+            const auto pcmRealizationId = preparedPcmRealizationId_;
             auto reprepared = source
                 ? prepare(*source)
-                : prepare_pcm(*pcm);
+                : prepare_pcm(*pcm, nullptr, pcmRealizationId);
             if (!reprepared) {
                 return reprepared;
             }
@@ -646,6 +656,17 @@ public:
         return engine_.snapshot();
     }
 
+    [[nodiscard]] WindowsConsumedOutputPrefix consumed_output_prefix(
+        std::optional<std::uint64_t> expectedGeneration = std::nullopt) const noexcept
+    {
+        // Two owner-thread observations must match the *same* consumed
+        // generation and watermark; the projector rejects torn clocks.
+        const auto consumed = engine_.c2_consumed_prefix(expectedGeneration);
+        const auto retired = engine_.c2_src_retirement_observation(
+            expectedGeneration);
+        return internal::project_c2_prefix(consumed, &retired);
+    }
+
     void attach_analyzer(rgsml::analysis::LiveSpectrumAnalyzer* analyzer)
     {
         analyzer_ = analyzer;
@@ -659,6 +680,7 @@ private:
     QTimer* timer_{nullptr};
     std::optional<core::ResourceReference> preparedSource_;
     std::optional<audio::AudioBufferView> preparedPcm_;
+    std::optional<core::RealizationId> preparedPcmRealizationId_;
 };
 
 }  // namespace
@@ -704,20 +726,28 @@ public:
 
     [[nodiscard]] core::Status prepare_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
-        return invoke_status([source, lifetime = std::move(lifetime)](PlaybackWorker& worker) mutable {
-            return worker.prepare_pcm(source, std::move(lifetime));
-        });
+        return invoke_status(
+            [source, lifetime = std::move(lifetime), realizationId](
+                PlaybackWorker& worker) mutable {
+                return worker.prepare_pcm(
+                    source, std::move(lifetime), realizationId);
+            });
     }
 
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
-        return invoke_status([source, lifetime = std::move(lifetime)](PlaybackWorker& worker) mutable {
-            return worker.handoff_pcm(source, std::move(lifetime));
-        });
+        return invoke_status(
+            [source, lifetime = std::move(lifetime), realizationId](
+                PlaybackWorker& worker) mutable {
+                return worker.handoff_pcm(
+                    source, std::move(lifetime), realizationId);
+            });
     }
 
     [[nodiscard]] core::Status clear()
@@ -786,6 +816,33 @@ public:
         return std::move(*result);
     }
 
+    [[nodiscard]] core::Result<WindowsConsumedOutputPrefix>
+    consumed_output_prefix(std::optional<std::uint64_t> expectedGeneration) const
+    {
+        if (!ready_ || worker_ == nullptr) {
+            return failure<WindowsConsumedOutputPrefix>(
+                core::ErrorCode::IoFailure,
+                "The Windows playback observer worker is unavailable.");
+        }
+        if (QThread::currentThread() == worker_->thread()) {
+            return core::Result<WindowsConsumedOutputPrefix>::success(
+                worker_->consumed_output_prefix(expectedGeneration));
+        }
+        std::optional<WindowsConsumedOutputPrefix> observed;
+        const bool invoked = QMetaObject::invokeMethod(
+            worker_,
+            [&] { observed.emplace(
+                worker_->consumed_output_prefix(expectedGeneration)); },
+            Qt::BlockingQueuedConnection);
+        if (!invoked || !observed.has_value()) {
+            return failure<WindowsConsumedOutputPrefix>(
+                core::ErrorCode::IoFailure,
+                "Unable to query the Windows playback observer.");
+        }
+        return core::Result<WindowsConsumedOutputPrefix>::success(
+            std::move(*observed));
+    }
+
     void attach_analyzer(analysis::LiveSpectrumAnalyzer* analyzer)
     {
         if (!ready_ || worker_ == nullptr) {
@@ -843,21 +900,25 @@ core::Status WindowsAudioPlaybackService::prepare(
 core::Status WindowsAudioPlaybackService::prepare_pcm(
     audio::AudioBufferView source)
 {
-    return impl_->prepare_pcm(source, nullptr);
+    return impl_->prepare_pcm(source, nullptr, std::nullopt);
 }
 
 core::Status WindowsAudioPlaybackService::prepare_pcm(
     audio::AudioBufferView source,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
-    return impl_->prepare_pcm(source, std::move(lifetime));
+    return impl_->prepare_pcm(
+        source, std::move(lifetime), realizationId);
 }
 
 core::Status WindowsAudioPlaybackService::handoff_pcm(
     audio::AudioBufferView source,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
-    return impl_->handoff_pcm(source, std::move(lifetime));
+    return impl_->handoff_pcm(
+        source, std::move(lifetime), realizationId);
 }
 
 core::Status WindowsAudioPlaybackService::clear()
@@ -895,6 +956,13 @@ core::Result<core::PlaybackSnapshot>
 WindowsAudioPlaybackService::snapshot() const
 {
     return impl_->snapshot();
+}
+
+core::Result<WindowsConsumedOutputPrefix>
+WindowsAudioPlaybackService::consumed_output_prefix(
+    std::optional<std::uint64_t> expectedGeneration) const
+{
+    return impl_->consumed_output_prefix(expectedGeneration);
 }
 
 void WindowsAudioPlaybackService::attach_analyzer(
