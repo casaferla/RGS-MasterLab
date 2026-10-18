@@ -1438,7 +1438,7 @@ Window {
     QVERIFY2(component.status() != QQmlComponent::Error,
         qPrintable(component.errorString()));
     QScopedPointer<QObject> created{component.create()};
-    QVERIFY2(created, qPrintable(component.errorString()));
+    QVERIFY2(created != nullptr, qPrintable(component.errorString()));
     auto* window = qobject_cast<QQuickWindow*>(created.data());
     QVERIFY(window);
     window->show();
@@ -1488,8 +1488,8 @@ Window {
     QVERIFY(!bypassBadge->isVisible());
     QVERIFY(activeButton->property("selected").toBool());
     QVERIFY(!bypassButton->property("selected").toBool());
-    QCOMPARE(QRectF{host->mapToScene(QPointF{}), host->size()}, hostBefore);
-    QCOMPARE(QRectF{controls->mapToScene(QPointF{}), controls->size()}, controlsBefore);
+    QCOMPARE(QRectF(host->mapToScene(QPointF{}), host->size()), hostBefore);
+    QCOMPARE(QRectF(controls->mapToScene(QPointF{}), controls->size()), controlsBefore);
     QVERIFY2(capture_visual_evidence(window,
         QStringLiteral("m15_product_default_docked_on_1184x688.png"),
         QSize{1184, 688}), "Product M15 ON must render without layout reflow");
@@ -1504,8 +1504,8 @@ Window {
     QVERIFY(bypassButton->property("selected").toBool());
     QCOMPARE(product.stereo_ms_parameters(), std::optional{*defaultParameters.value()});
     QCOMPARE(product.instances()[3].instance_id(), stereoId);
-    QCOMPARE(QRectF{host->mapToScene(QPointF{}), host->size()}, hostBefore);
-    QCOMPARE(QRectF{controls->mapToScene(QPointF{}), controls->size()}, controlsBefore);
+    QCOMPARE(QRectF(host->mapToScene(QPointF{}), host->size()), hostBefore);
+    QCOMPARE(QRectF(controls->mapToScene(QPointF{}), controls->size()), controlsBefore);
     window->close();
     QCoreApplication::processEvents();
 }
