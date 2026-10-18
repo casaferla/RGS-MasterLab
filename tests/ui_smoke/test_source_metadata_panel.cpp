@@ -4339,17 +4339,32 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     window->resize(QSize{1184, 688});
     QTest::qWait(120);
     QCoreApplication::processEvents();
-    // Qt Quick's deferred polish can finish after the native resize, notably
-    // on busy Windows runners. The #532 evidence images show the stable
-    // 1184x688 control surface at 713x166, y=501, while the earlier snapshot
-    // was transient (479x166, y=453). Wait for that authored minimum-size
-    // composition BEFORE taking the no-reflow baseline. All error/correction
-    // rectangle equality checks below remain strict and unchanged.
-    QTRY_VERIFY_WITH_TIMEOUT(
-        msControls->width() >= 700.0
-            && msControls->mapToScene(QPointF{}).y() >= 490.0,
-        5000);
-    QCoreApplication::processEvents();
+    // Qt Quick's deferred polish can finish after a native resize even
+    // when processEvents() has returned. Render the actual host window,
+    // then require successive painted-frame rectangles to settle BEFORE
+    // establishing the no-reflow baseline. Do not assert an absolute width
+    // or Y coordinate: the Windows CI HyperVMonitor can clamp a requested
+    // 1184px top-level window to 1028px. The exact geometry equality
+    // checks across error and correction below remain strict.
+    auto* paintedWindow = qobject_cast<QQuickWindow*>(window);
+    QVERIFY(paintedWindow);
+    QRectF lastPaintedControls;
+    int sameFrameGeometryCount = 0;
+    QTRY_VERIFY_WITH_TIMEOUT(([&] {
+        if (paintedWindow->grabWindow().isNull())
+            return false;
+        QCoreApplication::processEvents();
+        const QRectF current{
+            msControls->mapToScene(QPointF{}), msControls->size()};
+        if (current.isEmpty()) {
+            sameFrameGeometryCount = 0;
+            return false;
+        }
+        sameFrameGeometryCount =
+            current == lastPaintedControls ? sameFrameGeometryCount + 1 : 0;
+        lastPaintedControls = current;
+        return sameFrameGeometryCount >= 2;
+    })(), 5000);
     const QRectF controlsBefore{
         msControls->mapToScene(QPointF{}), msControls->size()};
     const QRectF footerBefore{
