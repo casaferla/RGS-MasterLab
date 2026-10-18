@@ -1,5 +1,6 @@
 #include "mastering_chain_state.hpp"
 #include "terminal_limiter_state.hpp"
+#include "terminal_limiter_view_model.hpp"
 
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/uuid.hpp>
@@ -52,6 +53,7 @@ private slots:
     void optInStereoMsStateAndBindings();
     void restoredFourNodeStereoMsPreservesTypedIdentityAndBypass();
     void terminalLimiterProductStateAndActualPcm();
+    void limiterCeilingViewModelDraftAndValidation();
 };
 
 void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
@@ -491,6 +493,74 @@ void MasteringChainStateTest::terminalLimiterProductStateAndActualPcm()
     QCOMPARE(std::get<TruePeakLimiterParameters>(updated[0].parameters)
         .ceiling_db_tp(),-6.0);
     QCOMPARE(state.value()->instance_id(),id);
+}
+
+
+
+void MasteringChainStateTest::limiterCeilingViewModelDraftAndValidation()
+{
+    auto reg=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(reg);
+    const auto id=test_instance_id("7a000000-0000-4000-8000-000000000017");
+    auto product=TerminalLimiterState::create_default(*reg.value(),id);
+    QVERIFY(product);
+    int acceptedChanges=0;
+    TerminalLimiterViewModel vm{product.value(),[&acceptedChanges]{
+        ++acceptedChanges;
+    }};
+    QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    QCOMPARE(vm.ceiling_db_tp_text(),QStringLiteral("-1.00"));
+    QVERIFY(vm.bypass());
+    QCOMPARE(acceptedChanges,0);
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-6.0));
+    QCOMPARE(vm.draft_ceiling_db_tp(),-6.0);
+    QCOMPARE(vm.ceiling_db_tp_text(),QStringLiteral("-6.00"));
+    QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    QCOMPARE(product.value()->execution_bindings()[0].instance_id,id);
+    QCOMPARE(std::get<TruePeakLimiterParameters>(
+        product.value()->execution_bindings()[0].parameters).ceiling_db_tp(),-1.0);
+    QCOMPARE(acceptedChanges,0);
+
+    QVERIFY(!vm.setDraftFieldText(QStringLiteral("ceilingDbTp"),
+        QStringLiteral("not a number")));
+    QCOMPARE(vm.validation_field(),QStringLiteral("ceilingDbTp"));
+    QVERIFY(!vm.validation_message().isEmpty());
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    QCOMPARE(acceptedChanges,0);
+    QVERIFY(!vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-13.0));
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    vm.cancelDraft();
+    QCOMPARE(vm.draft_ceiling_db_tp(),-1.0);
+    QVERIFY(vm.validation_field().isEmpty());
+    QVERIFY(vm.validation_message().isEmpty());
+
+    QVERIFY(vm.setDraftFieldText(QStringLiteral("ceilingDbTp"),
+        QStringLiteral(" -9.50 ")));
+    QCOMPARE(vm.draft_ceiling_db_tp(),-9.5);
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.ceiling_db_tp(),-9.5);
+    QCOMPARE(product.value()->parameters().ceiling_db_tp(),-9.5);
+    QCOMPARE(acceptedChanges,1);
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(acceptedChanges,1);
+    vm.setBypass(false);
+    QVERIFY(!vm.bypass());
+    QCOMPARE(acceptedChanges,2);
+    vm.setBypass(false);
+    QCOMPARE(acceptedChanges,2);
+    vm.setBypass(true);
+    QVERIFY(vm.bypass());
+    QCOMPARE(acceptedChanges,3);
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-2.0));
+    vm.cancelDraft();
+    QCOMPARE(vm.draft_ceiling_db_tp(),-9.5);
+    QCOMPARE(vm.ceiling_db_tp(),-9.5);
+    QCOMPARE(acceptedChanges,3);
+    QVERIFY(!vm.setDraftFieldText(QStringLiteral("unrelated"),QStringLiteral("-6.0")));
+    QCOMPARE(vm.ceiling_db_tp(),-9.5);
+    QCOMPARE(acceptedChanges,3);
 }
 
 

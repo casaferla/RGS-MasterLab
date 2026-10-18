@@ -15,6 +15,8 @@ qt_add_executable(rgsml_app
     src/stereo_ms_view_model.hpp
     src/terminal_limiter_state.cpp
     src/terminal_limiter_state.hpp
+    src/terminal_limiter_view_model.cpp
+    src/terminal_limiter_view_model.hpp
     src/mastering_preview_controller.cpp
     src/mastering_preview_controller.hpp
     src/audition_region_view_model.cpp

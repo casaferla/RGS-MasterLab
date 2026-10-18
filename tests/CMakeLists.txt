@@ -1107,6 +1107,8 @@ qt_add_executable(rgsml_mastering_chain_state_tests
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp
 )
 target_include_directories(rgsml_mastering_chain_state_tests
     PRIVATE
