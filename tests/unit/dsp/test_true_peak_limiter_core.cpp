@@ -42,6 +42,8 @@ private slots:
     void strictFpRuntimeMode();
     void failedCallsAreAtomicAndCannotPublishWitness();
     void highRateChunkBoundednessAndBitIdentity();
+    void controlAllCeilingsLookaheadBoundarySixRates();
+    void oneSecond192kAnd44100StressWithBoundedCheckpoints();
     void adversarialStereoDetectorEightXOracle();
     void absoluteFrameOriginAndLinkedStereoWitness();
 };
@@ -305,7 +307,8 @@ struct AppliedGainTestCapture final {
     std::int64_t fs, bool stereo, const std::vector<double>& samples,
     double ceiling, const std::vector<std::size_t>& partitions,
     std::vector<dsp::TruePeakLimiterAppliedGainFrame>* gainWitness = nullptr,
-    std::int64_t origin=0, std::span<const double> rightOverride={})
+    std::int64_t origin=0, std::span<const double> rightOverride={},
+    std::vector<std::size_t>* checkpointBytes = nullptr)
 {
     if(!rightOverride.empty() && (!stereo || rightOverride.size()!=samples.size()))
         return {};
@@ -355,6 +358,11 @@ struct AppliedGainTestCapture final {
         if(!range)return {};
         if(!mod.process(in.value()->view(),out.value()->mutable_view(),
             dsp::DspProcessContext{*range.value(),offset==0,false}))return {};
+        if(checkpointBytes) {
+            const auto state=mod.runtime_checkpoint();
+            if(!state)return {};
+            checkpointBytes->push_back(state.value()->payload.size());
+        }
         for(std::size_t ch=0;ch<raw.size();++ch) {
             auto plane=out.value()->view().channel(ch);
             if(!plane)return {};
@@ -659,6 +667,137 @@ void TruePeakLimiterCoreTest::highRateChunkBoundednessAndBitIdentity()
     QVERIFY(cp.value()->payload.size()<(32U*1024U*1024U));
 }
 
+
+
+void TruePeakLimiterCoreTest::controlAllCeilingsLookaheadBoundarySixRates()
+{
+    using dsp::internal::TruePeakLimiterControllerState;
+    using dsp::internal::LimiterDetectorEvent;
+    // A future peak at the inclusive horizon END contributes zero to the
+    // raised-cosine attack, while a halfway event contributes half its demand.
+    // The full six-rate/four-ceiling matrix is independent of audio chunk size.
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const double ceilingDb:{-12.0,-6.0,-1.0,0.0}) {
+            auto deadline=TruePeakLimiterControllerState::create(fs,ceilingDb);
+            QVERIFY(deadline);
+            const auto m=deadline.value()->next_tick();
+            const auto horizon=deadline.value()->lookahead_ticks();
+            const std::array<LimiterDetectorEvent,1> end{{
+                {m+horizon,8.0,true}
+            }};
+            const auto neutral=deadline.value()->advance(0.0,end);
+            QVERIFY(neutral);
+            QCOMPARE(neutral.value()->attack_floor_db,0.0);
+            QCOMPARE(neutral.value()->gain,1.0);
+            QCOMPARE(neutral.value()->density,0.0);
+
+            auto mid=TruePeakLimiterControllerState::create(fs,ceilingDb);
+            QVERIFY(mid);
+            const std::array<LimiterDetectorEvent,2> horizonEvents{{
+                {m+horizon/2,2.0,true},
+                {m+horizon,8.0,true}
+            }};
+            const auto step=mid.value()->advance(0.0,horizonEvents);
+            QVERIFY(step);
+            const double c=std::pow(10.0,ceilingDb/20.0);
+            const double demand=20.0*std::log10(2.0/c);
+            const double w=0.5*(1.0+std::cos(std::numbers::pi_v<double>*0.5));
+            QVERIFY(std::abs(step.value()->attack_floor_db-demand*w)<1e-12);
+            QVERIFY(step.value()->reduction_db>0.0);
+            QVERIFY(step.value()->gain<1.0);
+            QCOMPARE(step.value()->hold_remaining,mid.value()->hold_ticks());
+
+            const auto before=mid.value()->snapshot();
+            const std::array<LimiterDetectorEvent,1> outside{{
+                {mid.value()->next_tick()+horizon+1,1.0,true}
+            }};
+            QVERIFY(!mid.value()->advance(0.0,outside));
+            QCOMPARE(mid.value()->next_tick,before.next_tick);
+            QCOMPARE(mid.value()->density,before.density);
+            QCOMPARE(mid.value()->previous_reduction_db,before.previous_reduction_db);
+            QCOMPARE(mid.value()->hold_remaining,before.hold_remaining);
+        }
+    }
+}
+
+void TruePeakLimiterCoreTest::oneSecond192kAnd44100StressWithBoundedCheckpoints()
+{
+    // One complete second per rate, including 192k stereo and the 44.1k
+    // ties-to-even H=220 case: sparse impulses, channel-dominance swaps,
+    // short dense alternating bursts, and an adversarial final-frame peak.
+    // This is deterministic functional/serialization stress, NOT a portable
+    // CPU-time or resident-memory certification of the production renderer.
+    constexpr std::int64_t origin=1'000'000'027;
+    constexpr std::size_t maxCheckpointBytes=1024U*1024U;
+    for(const int fs:{44100,192000}) {
+        const auto count=static_cast<std::size_t>(fs);
+        std::vector<double> left(count,0.03125),right(count,-0.046875);
+        for(std::size_t i=0;i<count;++i) {
+            if((i%8192U)<16U) {
+                left[i]=(i&1U)?-0.875:+0.875;
+                right[i]=(i&1U)?+1.125:-1.125;
+            }
+            if((i%4096U)==0U) {
+                left[i]=(i%8192U)==0U?4.0:-2.0;
+                right[i]=(i%8192U)==0U?-0.0625:3.0;
+            }
+        }
+        left.back()=-3.0;
+        right.back()=4.0;
+
+        std::vector<dsp::TruePeakLimiterAppliedGainFrame> referenceGain;
+        std::vector<dsp::TruePeakLimiterAppliedGainFrame> splitGain;
+        std::vector<std::size_t> checkpointBytes;
+        const auto whole=runLimiterAudio(fs,true,left,-12.0,{4096},
+            &referenceGain,origin,std::span<const double>{right},
+            &checkpointBytes);
+        const auto split=runLimiterAudio(fs,true,left,-12.0,
+            {3,47,257,4096,11,511},&splitGain,origin,
+            std::span<const double>{right});
+        QVERIFY2(!whole.empty() && !split.empty(),
+            "One-second OUTPUT_RATE PCM, drain or checkpoint failed");
+        QCOMPARE(whole.size(),std::size_t{2});
+        QCOMPARE(split.size(),whole.size());
+        QCOMPARE(referenceGain.size(),count);
+        QCOMPARE(splitGain.size(),count);
+        QVERIFY(checkpointBytes.size()>=count/4096U);
+        for(const auto bytes:checkpointBytes) {
+            QVERIFY(bytes>640U);
+            QVERIFY2(bytes<maxCheckpointBytes,
+                "Checkpoint serialization grew beyond 1 MiB in long stress");
+        }
+        std::size_t attenuated=0;
+        for(std::size_t i=0;i<count;++i) {
+            const auto& frame=referenceGain[i];
+            QCOMPARE(frame.programme_frame,origin+static_cast<std::int64_t>(i));
+            QCOMPARE(frame.raw_output_frame,
+                origin+static_cast<std::int64_t>(i)+fs/200+8);
+            QCOMPARE(frame.programme_frame,splitGain[i].programme_frame);
+            QCOMPARE(frame.raw_output_frame,splitGain[i].raw_output_frame);
+            QCOMPARE(std::bit_cast<std::uint64_t>(frame.gain),
+                std::bit_cast<std::uint64_t>(splitGain[i].gain));
+            QCOMPARE(std::bit_cast<std::uint64_t>(frame.reduction_db),
+                std::bit_cast<std::uint64_t>(splitGain[i].reduction_db));
+            QVERIFY(std::isfinite(frame.gain));
+            QVERIFY(frame.gain>0.0 && frame.gain<=1.0);
+            if(frame.gain<1.0)++attenuated;
+            for(std::size_t ch=0;ch<2U;++ch) {
+                QCOMPARE(whole[ch].size(),count);
+                QCOMPARE(split[ch].size(),count);
+                const double input=ch==0U?left[i]:right[i];
+                const double reconstructed=frame.gain==1.0
+                    ?input:input*frame.gain;
+                QCOMPARE(std::bit_cast<std::uint64_t>(whole[ch][i]),
+                    std::bit_cast<std::uint64_t>(reconstructed));
+                QCOMPARE(std::bit_cast<std::uint64_t>(whole[ch][i]),
+                    std::bit_cast<std::uint64_t>(split[ch][i]));
+                QVERIFY(std::isfinite(whole[ch][i]));
+            }
+        }
+        QVERIFY2(attenuated>0U,
+            "Adversarial hot stereo fixture never exercised gain reduction");
+    }
+}
 
 void TruePeakLimiterCoreTest::adversarialStereoDetectorEightXOracle()
 {
