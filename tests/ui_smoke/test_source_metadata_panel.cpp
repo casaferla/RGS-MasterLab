@@ -1572,6 +1572,22 @@ Window {
     QCOMPARE(midSlider->property("to").toDouble(), 12.0);
     QCOMPARE(sideSlider->property("from").toDouble(), -24.0);
     QCOMPARE(sideSlider->property("to").toDouble(), 12.0);
+    // M15 tooltip completion: every editable field and its companion slider
+    // must expose a real, nonempty interaction hint without entering layout
+    // flow or changing the accepted compact field/slider geometry.
+    for (const auto& fieldAndSlider : {
+             std::pair{widthField, widthSlider},
+             std::pair{cutoffField, cutoffSlider},
+             std::pair{lowField, lowSlider},
+             std::pair{midField, midSlider},
+             std::pair{sideField, sideSlider}}) {
+        const auto fieldHint = fieldAndSlider.first->property("interactionHint").toString();
+        const auto sliderHint = fieldAndSlider.second->property("interactionHint").toString();
+        QVERIFY2(!fieldHint.trimmed().isEmpty(),
+                 "Each M15 numeric field needs an actionable tooltip");
+        QVERIFY2(!sliderHint.trimmed().isEmpty(),
+                 "Each M15 slider needs an actionable tooltip");
+    }
     // Reuse Compressor MAKE-UP's existing bipolar fillFromOrigin
     // contract. Both tracks are filled from ZERO, at 38% opacity.
     // The asymmetrical -24..+12 SIDE range means zero is exactly
@@ -4300,6 +4316,70 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("stereoMsEditor"));
     QVERIFY2(stereoEditorFromMenu && stereoEditorFromMenu->property("visible").toBool(),
         "Selecting Stereo/M-S from View must open its real editor");
+
+    // M15 was previously opt-in and is now proposed for new-product startup:
+    // verify actual ViewModel error routing from the fourth selected DSP
+    // through the SINGLE fixed global bar, without a duplicate header message
+    // or a panel resize. No fabricated audible data are used.
+    stereoMsViewModel.refreshFromAuthority();
+    QCoreApplication::processEvents();
+    auto* stereoEditorItem = qobject_cast<QQuickItem*>(stereoEditorFromMenu);
+    auto* localMsError = qobject_cast<QQuickItem*>(
+        find_child_by_name(stereoEditorFromMenu,
+            QStringLiteral("stereoMsValidationFeedbackText")));
+    auto* msControls = qobject_cast<QQuickItem*>(
+        find_child_by_name(stereoEditorFromMenu,
+            QStringLiteral("stereoMsControlsRegion")));
+    auto* globalStatusBarItem = qobject_cast<QQuickItem*>(statusBar);
+    QVERIFY(stereoEditorItem && localMsError && msControls && globalStatusBarItem);
+    QVERIFY(!localMsError->isVisible());
+    const QRectF controlsBefore{
+        msControls->mapToScene(QPointF{}), msControls->size()};
+    const QRectF footerBefore{
+        globalStatusBarItem->mapToScene(QPointF{}), globalStatusBarItem->size()};
+    const auto msReadoutBefore = stereoMsViewModel.mid_gain_db();
+    QVERIFY2(!stereoMsViewModel.setDraftFieldText(
+        QStringLiteral("midGainDb"), QStringLiteral("not-a-number")),
+        "An invalid M15 draft must be rejected without changing sonic state");
+    QCoreApplication::processEvents();
+    QVERIFY2(!stereoMsViewModel.validation_message().isEmpty(),
+        "Stereo/M-S typed ViewModel must report the invalid field");
+    QCOMPARE(stereoMsViewModel.mid_gain_db(), msReadoutBefore);
+    QCOMPARE(root->property("statusSeverity").toString(),
+        QStringLiteral("ERROR"));
+    QVERIFY2(root->property("statusDspErrorText").toString().contains(
+        QStringLiteral("Stereo"), Qt::CaseInsensitive),
+        "Selected M15 validation must reach the global bottom status bar");
+    QCOMPARE(statusIndicator->property("color").value<QColor>(),
+        QColor{QStringLiteral("#F27683")});
+    QCOMPARE(statusBarMessage->property("color").value<QColor>(),
+        QColor{QStringLiteral("#F27683")});
+    QVERIFY(!localMsError->isVisible());
+    QCOMPARE(QRectF(msControls->mapToScene(QPointF{}), msControls->size()),
+        controlsBefore);
+    QCOMPARE(QRectF(globalStatusBarItem->mapToScene(QPointF{}),
+        globalStatusBarItem->size()), footerBefore);
+    QCOMPARE(statusBar->property("height").toInt(), 24);
+    QVERIFY2(capture_visual_evidence(window,
+        QStringLiteral("m15_global_status_stereo_invalid_1184x688.png"),
+        QSize{1184, 688}),
+        "Capture real Qt Stereo/M-S invalid-field global status");
+    stereoMsViewModel.cancelDraft();
+    QCoreApplication::processEvents();
+    QCOMPARE(stereoMsViewModel.validation_message(), QString{});
+    QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
+    QCOMPARE(root->property("statusSeverity").toString(),
+        QStringLiteral("INFO"));
+    QCOMPARE(statusIndicator->property("color").value<QColor>(),
+        QColor{QStringLiteral("#00E6E6")});
+    QCOMPARE(QRectF(msControls->mapToScene(QPointF{}), msControls->size()),
+        controlsBefore);
+    QCOMPARE(QRectF(globalStatusBarItem->mapToScene(QPointF{}),
+        globalStatusBarItem->size()), footerBefore);
+    QVERIFY2(capture_visual_evidence(window,
+        QStringLiteral("m15_global_status_stereo_corrected_1184x688.png"),
+        QSize{1184, 688}),
+        "Capture real Qt Stereo/M-S corrected global status");
 
     window->close();
     QCoreApplication::processEvents();

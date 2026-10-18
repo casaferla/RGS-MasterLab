@@ -195,8 +195,10 @@ Rectangle {
                 }
             }
         }
-        ToolTip.text: "WIDTH — vertical drag"
-        ToolTip.visible: widthDrag.active
+        HoverHandler { id: widthHandleHover }
+        ToolTip.text: "WIDTH: drag up/down; use the matching numeric field or slider for precision."
+        ToolTip.visible: widthDrag.active || widthHandleHover.hovered
+        ToolTip.delay: widthDrag.active ? 0 : 550
     }
 
     Rectangle {
@@ -228,8 +230,10 @@ Rectangle {
                 }
             }
         }
-        ToolTip.text: "MONO BASS CUTOFF — horizontal drag"
-        ToolTip.visible: cutoffDrag.active
+        HoverHandler { id: cutoffHandleHover }
+        ToolTip.text: "MONO BASS CUTOFF: drag horizontally to adjust the crossover (40–300 Hz when valid)."
+        ToolTip.visible: cutoffDrag.active || cutoffHandleHover.hovered
+        ToolTip.delay: cutoffDrag.active ? 0 : 550
     }
 
     Rectangle {
@@ -260,8 +264,10 @@ Rectangle {
                 }
             }
         }
-        ToolTip.text: "LOW WIDTH — vertical drag"
-        ToolTip.visible: lowDrag.active
+        HoverHandler { id: lowHandleHover }
+        ToolTip.text: "LOW WIDTH: drag vertically to control the Side contribution of the low band (0–100%)."
+        ToolTip.visible: lowDrag.active || lowHandleHover.hovered
+        ToolTip.delay: lowDrag.active ? 0 : 550
     }
 
     Rectangle {

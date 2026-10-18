@@ -71,6 +71,10 @@ Item {
                 text: "Reset to Default"
                 minimumControlWidth: 140
                 enabled: root.viewModel && root.viewModel.available
+                accentColor: root.seaGreen
+                ToolTip.text: "Restore all Stereo/M-S parameters to defaults. This does not change the module bypass state."
+                ToolTip.visible: hovered
+                ToolTip.delay: 550
                 onClicked: if (root.viewModel) root.viewModel.resetToDefault()
                 Accessible.name: "Reset Stereo M/S parameters"
             }
@@ -97,6 +101,10 @@ Item {
             Rectangle {
                 id: dynamicWell
                 objectName: "stereoMsDynamicWell"
+                HoverHandler { id: stereoDynamicHover }
+                ToolTip.text: "Actual post-M/S output density (M vertical, S horizontal), measured correlation and low-frequency Side energy. This is observation only; dragging the cloud does not edit audio."
+                ToolTip.visible: stereoDynamicHover.hovered
+                ToolTip.delay: 550
                 Layout.minimumWidth: 210
                 Layout.preferredWidth: Math.min(330, Math.max(210, visualWells.height - 8))
                 Layout.maximumWidth: 350
@@ -295,6 +303,10 @@ Item {
                 Text {
                     id: telemetryStatus
                     objectName: "stereoMsTelemetryStatus"
+                    HoverHandler { id: stereoTelemetryHover }
+                    ToolTip.text: "Telemetric state reflects real published and audible post-M/S data. Unavailable, paused or bypassed readings must not be presented as live measurements."
+                    ToolTip.visible: stereoTelemetryHover.hovered
+                    ToolTip.delay: 550
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.bottom: telemetryRow.top
                     anchors.bottomMargin: 9
@@ -319,6 +331,10 @@ Item {
                     spacing: 10
                     Text {
                         objectName: "stereoMsCorrelationReadout"
+                        HoverHandler { id: stereoCorrHover }
+                        ToolTip.text: "Observed L/R correlation for verified post-M/S output. Undefined or missing measurements display --, not an invented zero."
+                        ToolTip.visible: stereoCorrHover.hovered
+                        ToolTip.delay: 550
                         readonly property var metric: root.viewModel
                             ? root.viewModel.telemetryCorrelation : ({})
                         text: metric.valid === true && metric.value !== undefined
@@ -331,6 +347,10 @@ Item {
                     Item { Layout.fillWidth: true }
                     Text {
                         objectName: "stereoMsSideLowReadout"
+                        HoverHandler { id: stereoSideLowHover }
+                        ToolTip.text: "Observed low-frequency Side energy, before / after the Low Width operation. Only verified output-stage values are shown."
+                        ToolTip.visible: stereoSideLowHover.hovered
+                        ToolTip.delay: 550
                         readonly property var metric: root.viewModel
                             ? root.viewModel.telemetrySideLow : ({})
                         text: metric.before !== undefined && metric.after !== undefined
@@ -379,7 +399,8 @@ Item {
                         fieldName: "widthPercent"
                         rawText: root.viewModel ? root.viewModel.draftWidthPercent.toFixed(1) : "100.0"
                         viewModel: root.viewModel
-                        interactionHint: "Drag the cyan handle vertically, or use slider. Enter to apply."
+                        interactionHint: "WIDTH: 0–200%. Drag the cyan handle vertically, use this slider, or type an exact number; Enter applies, Esc restores."
+                        sliderInteractionHint: "WIDTH 0–200%: change the broadband Mid/Side balance. Release commits one DSP change; no mouse-wheel edits."
                         from: 0
                         to: 200
                         stepSize: 0.5
@@ -402,6 +423,8 @@ Item {
                         labelText: "MONO BASS CUTOFF"
                         unitText: "Hz"
                         fieldName: "monoBassCutoffHz"
+                        interactionHint: "CUTOFF: 40–300 Hz subject to source rate. Drag the green handle horizontally or type the exact frequency; Enter applies, Esc restores."
+                        sliderInteractionHint: "MONO BASS CUTOFF: select the crossover frequency, only when LR12/LR24 is effective."
                         rawText: root.viewModel ? root.viewModel.monoBassCutoffHz.toFixed(1) : "120.0"
                         viewModel: root.viewModel
                         from: 40
@@ -426,6 +449,8 @@ Item {
                         labelText: "LOW WIDTH"
                         unitText: "%"
                         fieldName: "lowBandWidthPercent"
+                        interactionHint: "LOW WIDTH: 0–100%. Drag the yellow handle vertically or enter a value; only effective while Mono Bass is active."
+                        sliderInteractionHint: "LOW WIDTH 0–100%: control low-frequency Side width without changing the independent Mid/Side gains."
                         rawText: root.viewModel ? root.viewModel.lowBandWidthPercent.toFixed(1) : "100.0"
                         viewModel: root.viewModel
                         from: 0
@@ -466,7 +491,8 @@ Item {
                         fieldName: "midGainDb"
                         rawText: root.viewModel ? root.viewModel.midGainDb.toFixed(1) : "0.0"
                         viewModel: root.viewModel
-                        interactionHint: "Drag the slider for fine adjustment. Enter to apply."
+                        interactionHint: "MID GAIN: -12 to +12 dB; edit numerically, Enter to apply, Esc to restore."
+                        sliderInteractionHint: "MID GAIN: move the gain from -12 to +12 dB, measured from the zero dB center; release to commit."
                         from: -12
                         to: 12
                         stepSize: 0.1
@@ -492,7 +518,8 @@ Item {
                         fieldName: "sideGainDb"
                         rawText: root.viewModel ? root.viewModel.sideGainDb.toFixed(1) : "0.0"
                         viewModel: root.viewModel
-                        interactionHint: "Drag the slider for fine adjustment. Enter to apply."
+                        interactionHint: "SIDE GAIN: -24 to +12 dB; edit numerically, Enter to apply, Esc to restore."
+                        sliderInteractionHint: "SIDE GAIN: move the gain from -24 to +12 dB, with zero at two-thirds along the track; release to commit."
                         from: -24
                         to: 12
                         stepSize: 0.1
@@ -533,6 +560,14 @@ Item {
                                     minimumControlWidth: 58
                                     selected: root.viewModel && root.viewModel.monoBassMode === modelData
                                     accentColor: root.seaGreen
+                                    selectedFamilyFill: true
+                                    ToolTip.text: modelData === "OFF"
+                                        ? "Disable Mono Bass crossover; broadband M/S controls remain available."
+                                        : modelData === "LR12"
+                                            ? "Use the 12 dB/oct Linkwitz-Riley Mono Bass crossover."
+                                            : "Use the 24 dB/oct Linkwitz-Riley Mono Bass crossover."
+                                    ToolTip.visible: hovered
+                                    ToolTip.delay: 550
                                     enabled: root.viewModel && root.viewModel.spatialControlsEffective
                                     onClicked: if (root.viewModel
                                             && root.viewModel.setDraftMonoBassMode(modelData))
@@ -547,6 +582,11 @@ Item {
                     StudioToggle {
                         objectName: "stereoMsSideMutedToggle"
                         text: "Side Muted"
+                        accentColor: root.seaGreen
+                        useFamilyAccent: true
+                        ToolTip.text: "Mute the Side component while preserving the stored Mid/Side gain parameters. The resulting stereo collapses toward Mid only."
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 550
                         checked: root.viewModel ? root.viewModel.sideMuted : false
                         enabled: root.viewModel && root.viewModel.spatialControlsEffective
                         onClicked: {
