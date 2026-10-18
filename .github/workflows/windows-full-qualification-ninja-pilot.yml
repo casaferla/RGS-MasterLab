@@ -7,7 +7,6 @@ on:
       - feature/l1-m16-b3-public-true-peak-unqualified-20261013
     paths:
       - .github/workflows/windows-full-qualification-ninja-pilot.yml
-      - .github/workflows/fq-ninja-pilot-overlay.cmake
   workflow_dispatch:
     inputs:
       cache_mode:
@@ -19,7 +18,7 @@ permissions:
   contents: read
 jobs:
   windows-fq-ninja:
-    name: Full Windows Debug+Release+TestsOFF (experimental)
+    name: Canonical VS Debug + Ninja Release/TestsOFF (experimental)
     runs-on: windows-2022
     env:
       RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
@@ -68,7 +67,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "PILOT_B2F_CONFIG_FAILED" }
           python tools/qualification/true_peak/verify_fp_build_flags.py --platform windows --build-dir build/windows-msvc --source-sha "$env:RGSML_FQ_SHA" --run-id '${{ github.run_id }}' --output "$env:RUNNER_TEMP\pilot_b2f_attestation.json"
           if ($LASTEXITCODE -ne 0) { throw "PILOT_B2F_ATTESTATION_FAILED" }
-      - name: Configure Ninja Multi-Config and enforce strict source FP
+      - name: Configure Release-only Ninja and enforce strict source FP
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -76,11 +75,10 @@ jobs:
           $launcher = if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { 'sccache' } else { '' }
           Write-Host "FQ_PILOT_CACHE_MODE=$env:RGSML_FQ_CACHE_MODE"
           $args = @('-S','.','-B','build/windows-fq-ninja','-G','Ninja Multi-Config',
-            '-DCMAKE_CONFIGURATION_TYPES=Debug;Release',
+            '-DCMAKE_CONFIGURATION_TYPES=Release',
             '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
             '-DCMAKE_POLICY_DEFAULT_CMP0141=NEW',
             '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded',
-            "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=$env:GITHUB_WORKSPACE/.github/workflows/fq-ninja-pilot-overlay.cmake",
             "-DCMAKE_C_COMPILER_LAUNCHER=$launcher",
             "-DCMAKE_CXX_COMPILER_LAUNCHER=$launcher",
             '-DRGSML_BUILD_TESTS=ON','-DRGSML_WARNINGS_AS_ERRORS=ON',
@@ -91,40 +89,21 @@ jobs:
           & cmake @args
           if ($LASTEXITCODE -ne 0) { throw "PILOT_NINJA_CONFIG_FAILED" }
           $commands = Get-Content build/windows-fq-ninja/compile_commands.json -Raw | ConvertFrom-Json
-          # Preserve MSBuild's per-source Debug optimization and RTC policy:
-          # the optimized playback SRC TU has /O2 and its *last* RTC switch
-          # must be /RTC-. Other Debug TUs retain canonical /RTC1.
-          $optimizedDebug=@($commands | Where-Object {
-            $_.file.Replace([char]92,[char]47).EndsWith(
-              '/audio/src/playback_sample_rate_adapter.cpp',
-              [System.StringComparison]::OrdinalIgnoreCase) -and
-            $_.command -match '(?i)/RTC1\b'
-          })
-          if ($optimizedDebug.Count -ne 1) {
-            throw "PILOT_SRC_DEBUG_COMMAND_MISSING count=$($optimizedDebug.Count)"
-          }
-          $cmd=[string]$optimizedDebug[0].command
-          $rtcDisabled=$cmd.LastIndexOf('/RTC-', [System.StringComparison]::OrdinalIgnoreCase)
-          $rtcChecks=$cmd.LastIndexOf('/RTC1', [System.StringComparison]::OrdinalIgnoreCase)
-          $optimization=$cmd.LastIndexOf('/O2', [System.StringComparison]::OrdinalIgnoreCase)
-          if ($optimization -lt 0 -or $rtcChecks -lt 0 -or
-              $rtcDisabled -le $rtcChecks -or $rtcDisabled -le $optimization) {
-              throw "PILOT_SRC_DEBUG_OPTIMIZATION_RUNTIME_CHECK_OVERRIDE_MISSING"
-          }
-          Write-Host "PILOT_SRC_DEBUG_MSVC_VS_SETTINGS_PARITY_CONFIRMED"
+          # One Release compile command per protected translation unit;
+          # Debug is deliberately built by the frozen VS/MSBuild generator.
           foreach ($source in @('true_peak_itu4x_channel_stream.cpp','true_peak_full_resource.cpp')) {
             $matches = @($commands | Where-Object { $_.file.Replace([char]92,[char]47).EndsWith("/" + $source,[System.StringComparison]::OrdinalIgnoreCase) })
-            if ($matches.Count -ne 2) { throw "STRICT_FP_COVERAGE_INVALID: $source count=$($matches.Count)" }
+            if ($matches.Count -ne 1) { throw "STRICT_FP_COVERAGE_INVALID: $source count=$($matches.Count)" }
             foreach ($row in $matches) {
               if ($row.command -notmatch '(?i)(?<!\w)/fp:strict(?![\w-])' -or $row.command -match '(?i)/fp:(fast|contract)\b') { throw "STRICT_FP_INVALID: $source" }
             }
           }
-      - name: Clean-build Debug (Ninja, timed)
+      - name: Clean-build Debug with canonical Visual Studio (timed)
         shell: pwsh
         run: |
           if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { sccache --zero-stats }
           $sw=[System.Diagnostics.Stopwatch]::StartNew()
-          cmake --build build/windows-fq-ninja --config Debug --clean-first --parallel 4
+          cmake --build --preset windows-msvc-debug-clean
           $code=$LASTEXITCODE
           $sw.Stop()
           "PILOT_DEBUG_CLEAN_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
@@ -137,14 +116,14 @@ jobs:
           $env:PATH="$env:RGSML_QT_ROOT\bin;$env:PATH"
           $env:QML2_IMPORT_PATH="$env:RGSML_QT_ROOT\qml"
           $log="$env:GITHUB_WORKSPACE\pilot-debug-ui-smoke.txt"
-          & build/windows-fq-ninja/Debug/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          & build/windows-msvc/Debug/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
           $code=$LASTEXITCODE
           if (Test-Path $log) { Get-Content $log }
           if ($code -ne 0) { throw "PILOT_DEBUG_UI_FAILED" }
-      - name: Full Debug CTest (canonical exclusions)
+      - name: Full Debug CTest (canonical VS generator and exclusions)
         shell: pwsh
         run: |
-          ctest --test-dir build/windows-fq-ninja -C Debug --output-on-failure -LE "playback_device|ui_smoke"
+          ctest --preset windows-msvc-debug --output-on-failure -LE "playback_device|ui_smoke"
           if ($LASTEXITCODE -ne 0) { throw "PILOT_DEBUG_CTEST_FAILED" }
       - name: Clean-build Release (Ninja, timed)
         shell: pwsh
@@ -180,7 +159,6 @@ jobs:
             '-G','Ninja Multi-Config','-DCMAKE_CONFIGURATION_TYPES=Release',
             '-DCMAKE_POLICY_DEFAULT_CMP0141=NEW',
             '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded',
-            "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=$env:GITHUB_WORKSPACE/.github/workflows/fq-ninja-pilot-overlay.cmake",
             "-DCMAKE_C_COMPILER_LAUNCHER=$launcher",
             "-DCMAKE_CXX_COMPILER_LAUNCHER=$launcher",
             '-DRGSML_BUILD_TESTS=OFF','-DRGSML_WARNINGS_AS_ERRORS=ON',
