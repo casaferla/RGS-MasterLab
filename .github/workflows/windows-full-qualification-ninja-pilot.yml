@@ -153,6 +153,33 @@ jobs:
         run: |
           ctest --test-dir build/windows-fq-ninja -C Release --output-on-failure -LE "playback_device|ui_smoke"
           if ($LASTEXITCODE -ne 0) { throw "PILOT_RELEASE_CTEST_FAILED" }
+      - name: Assert Debug/Release test inventory parity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          # UI smoke runs separately on Debug and Release; inherited headless
+          # exclusions remain identical for the two CTest inventories.
+          $debugInventory=@(ctest --test-dir build/windows-msvc -C Debug -N -LE "playback_device|ui_smoke")
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_DEBUG_TEST_INVENTORY_ERROR" }
+          $releaseInventory=@(ctest --test-dir build/windows-fq-ninja -C Release -N -LE "playback_device|ui_smoke")
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_RELEASE_TEST_INVENTORY_ERROR" }
+          $findTests={
+            param($lines)
+            @($lines | ForEach-Object {
+              if ($_ -match '^\s*Test\s+#\s*\d+:\s*(.+?)\s*$') { $Matches[1] }
+            } | Sort-Object -Unique)
+          }
+          $debugTests=@(& $findTests $debugInventory)
+          $releaseTests=@(& $findTests $releaseInventory)
+          if ($debugTests.Count -eq 0 -or $releaseTests.Count -eq 0) { throw "PILOT_EMPTY_TEST_INVENTORY" }
+          $delta=@(Compare-Object -ReferenceObject $debugTests -DifferenceObject $releaseTests)
+          if ($delta.Count -ne 0) {
+            $delta | Format-Table | Out-String | Write-Host
+            throw "PILOT_DEBUG_RELEASE_INVENTORY_MISMATCH"
+          }
+          Write-Host "PILOT_TEST_PARITY_PASS=$($debugTests.Count)"
+          "PILOT_TEST_PARITY_COUNT=$($debugTests.Count)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+
       - name: Configure independent Tests-OFF Ninja Release tree
         shell: pwsh
         run: |
@@ -179,6 +206,38 @@ jobs:
           $sw.Stop()
           "PILOT_TESTS_OFF_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           if ($code -ne 0) { throw "PILOT_TESTS_OFF_BUILD_FAILED" }
+      - name: Verify cold compiler-cache exclusion and write pilot evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $mode=$env:RGSML_FQ_CACHE_MODE
+          if ($mode -notin @('warm','cold')) { throw "PILOT_INVALID_CACHE_MODE" }
+          $expected=if ($mode -eq 'warm') { 'sccache' } else { '' }
+          $entries=@()
+          foreach ($tree in @('build/windows-fq-ninja','build/windows-fq-ninja-tests-off')) {
+            foreach ($key in @('CMAKE_C_COMPILER_LAUNCHER','CMAKE_CXX_COMPILER_LAUNCHER')) {
+              $matching=@(Get-Content "$tree/CMakeCache.txt" | Where-Object { $_ -match "^$($key):[^=]*=" })
+              if ($matching.Count -ne 1) { throw "PILOT_COMPILER_LAUNCHER_ENTRY_MISSING" }
+              $value=($matching[0] -split '=',2)[1]
+              if ($value -ne $expected) { throw "PILOT_COMPILER_LAUNCHER_NOT_$mode" }
+              $entries += [ordered]@{ tree=$tree; key=$key; launcher=$value }
+            }
+          }
+          New-Item -ItemType Directory -Path build/fq-pilot-evidence -Force | Out-Null
+          [ordered]@{
+            evidence_type='EXPERIMENTAL_FQ_NINJA_PILOT'
+            source_sha=$env:RGSML_FQ_SHA
+            cache_mode=$mode
+            uncached_ninja_release=($mode -eq 'cold')
+            canonical_debug='Visual Studio 17 2022'
+            release='Ninja Multi-Config'
+            launcher_checks=$entries
+            parity='DEBUG_RELEASE_TEST_INVENTORY_CHECK_PASSED'
+            qualification='NOT_OFFICIAL_FQ'
+            physical_audio='NOT_QUALIFIED'
+          } | ConvertTo-Json -Depth 6 | Set-Content 'build/fq-pilot-evidence/pilot-qualification-evidence.json' -Encoding utf8
+          Write-Host "PILOT_CACHE_LAUNCHER_PROVENANCE_PASS=$mode"
+
       - name: Install staged Release
         shell: pwsh
         run: |
@@ -232,7 +291,16 @@ jobs:
         run: |
           Write-Host "PILOT_SHA=$env:RGSML_FQ_SHA MODE=$env:RGSML_FQ_CACHE_MODE"
           if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { sccache --show-stats }
-          Write-Host "PILOT_ONLY_NOT_OFFICIAL_FQ_OR_INDEPENDENT_COLD_BUILD"
+          Write-Host "PILOT_ONLY_NOT_OFFICIAL_FQ"
+      - name: Upload FQ pilot provenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-FQ-Ninja-Evidence-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: build/fq-pilot-evidence/*.json
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Upload staged PILOT artifact
         if: success()
         uses: actions/upload-artifact@v4
