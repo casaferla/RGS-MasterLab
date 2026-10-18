@@ -15,6 +15,8 @@
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
 #include "stereo_ms_view_model.hpp"
+#include "terminal_limiter_state.hpp"
+#include "terminal_limiter_view_model.hpp"
 #include "true_peak_static_coordinator.hpp"
 #include "true_peak_live_coordinator.hpp"
 
@@ -149,16 +151,40 @@ int main(int argc, char* argv[])
     const auto eqUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto compUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto stereoMsUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+    const auto terminalLimiterUuid = *rgsml::core::Uuid::parse(
+        QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto gainInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(gainUuid).value();
     const auto eqInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(eqUuid).value();
     const auto compInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(compUuid).value();
     const auto stereoMsInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(stereoMsUuid).value();
+    const auto terminalLimiterInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(
+        terminalLimiterUuid).value();
     // Product startup: four real DSP nodes, milestone order, M15 safely
     // bypassed. Historic saved three-node projects restore unchanged.
     auto masteringChainStateRes = rgsml::app::MasteringChainState::create_product_default(
         *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId,
         compInstanceId, stereoMsInstanceId);
     auto masteringChainState = std::move(*masteringChainStateRes.value());
+    // M17 has its own real MASTER/TERMINAL DSP segment, distinct from
+    // manual Gain/EQ/Compressor/Stereo-M/S and the M16 analysis-only meter.
+    // The current Product audition renderer is still SOURCE_PROCESSING_RATE.
+    // Do NOT route this terminal state through Render Preview or pretend
+    // that it participates in audible PROCESSED until the output-rate
+    // resource/identity handoff is integrated and verified.
+    auto terminalLimiterStateResult =
+        rgsml::app::TerminalLimiterState::create_default(
+            *moduleRegistry.value(), terminalLimiterInstanceId);
+    if (!terminalLimiterStateResult) {
+        std::fprintf(stderr, "M17 terminal bootstrap refused: %s\\n",
+                     terminalLimiterStateResult.error()->message().c_str());
+        return EXIT_FAILURE;
+    }
+    auto terminalLimiterState = std::move(*terminalLimiterStateResult.value());
+    // Real typed Ceiling VM, but no accepted-render callback until the
+    // production terminal job and its stale-result guard exist. QML editor
+    // still remains fail-closed with limiterViewModel: null at this milestone.
+    rgsml::app::TerminalLimiterViewModel terminalLimiterViewModel{
+        &terminalLimiterState};
 
     rgsml::app::MasteringPreviewController previewController{
         &masteringChainState,
@@ -370,6 +396,11 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("stereoMsViewModel"),
         &stereoMsViewModel);
+    // Real candidate state is inspectable, but no M17 sonic adapter or
+    // UI control may activate until PROCESSED routes authentic terminal PCM.
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("terminalLimiterViewModel"),
+        &terminalLimiterViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"),
         &dspChainAdapterModel);
