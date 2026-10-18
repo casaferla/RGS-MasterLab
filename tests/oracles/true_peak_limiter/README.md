@@ -153,3 +153,17 @@ Obsolete digest-valid checkpoints fail without modifying the new pristine
 state; a new 287-frame checkpoint matches the independent freshly prepared
 instance byte-for-byte and restores to a third same-backend instance.
 No protected M16 edits, renderer work or U8 claims.
+
+Core-first final numerical-negative combined guard (no U8 sonic claim):
+all six OUTPUT_RATE sample rates x mono/stereo x -12/0 dBTP test a
+low-level sequence containing +0, -0, +/-binary64 subnormal minima,
+half the smallest normal, tiny normals, and exact fractions, including
+independent asymmetric stereo. Chunk partitions must be bit-identical,
+each real quiet PCM sample must preserve its original bit pattern,
+and all N real gain witnesses remain neutral (gain=1, GR=0).
+An active STEREO stream separately injects NaN and +Infinity into the
+last sample of the right-hand input channel after a valid first block.
+Before any PCM/GR/checkpoint mutation the entire second block must be
+rejected; an immediate corrected same-range retry must reconstruct
+the independently processed and exactly D-cropped PCM bitwise.
+This test-only fixture does NOT certify renderer ownership or U8 listening.

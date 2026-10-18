@@ -54,6 +54,8 @@ private slots:
     void crossFormatPrepareCancelsPriorPendingResource();
     void liveWitnessDetachCannotAffectPcmOrTiming();
     void maximumBlockFrameContractRejectsAtomically();
+    void quietSubnormalPcmAndGrRemainNeutralAcrossSixRates();
+    void lateNonfiniteRightChannelRejectsAtomicallyAndCanRetry();
 };
 
 void TruePeakLimiterCoreTest::frozenAssetsMatchIndependentSources()
@@ -2076,6 +2078,198 @@ void TruePeakLimiterCoreTest::maximumBlockFrameContractRejectsAtomically()
                     QCOMPARE(observer.records[i].raw_output_frame,
                         origin+static_cast<std::int64_t>(i)+d);
                 }
+            }
+    }
+}
+
+
+void TruePeakLimiterCoreTest::quietSubnormalPcmAndGrRemainNeutralAcrossSixRates()
+{
+    // U3/U4: very small finite PCM, negative zero, gradual underflow and
+    // genuinely silent sections must not trigger gain reduction, change
+    // the bit pattern of uncompensated real samples, or depend on chunks.
+    const double sub=std::numeric_limits<double>::denorm_min();
+    const double minNorm=std::numeric_limits<double>::min();
+    const std::array<double,12> vocabulary{
+        +0.0,-0.0,sub,-sub,minNorm*0.5,-minNorm*0.5,
+        minNorm,-minNorm,0.0625,-0.0625,
+        std::ldexp(1.0,-500),-std::ldexp(1.0,-500)
+    };
+    constexpr std::int64_t origin=41'000'019;
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        const int n=2*(fs/200+8)+39;
+        for(const bool stereo:{false,true})
+            for(const double ceiling:{-12.0,0.0}) {
+                std::vector<double> pcm(static_cast<std::size_t>(n));
+                for(int i=0;i<n;++i)
+                    pcm[static_cast<std::size_t>(i)]=
+                        vocabulary[static_cast<std::size_t>(i)%vocabulary.size()];
+                // The independent right channel stresses asymmetric
+                // small signals while preserving +/-0 and denormal signs.
+                std::vector<double> right;
+                if(stereo) {
+                    right.resize(pcm.size());
+                    for(std::size_t i=0;i<right.size();++i)
+                        right[i]=vocabulary[(i*7U+3U)%vocabulary.size()];
+                }
+                std::vector<dsp::TruePeakLimiterAppliedGainFrame> observations;
+                const auto flat=runLimiterAudio(fs,stereo,pcm,ceiling,
+                    {4096},&observations,origin,right);
+                const auto varied=runLimiterAudio(fs,stereo,pcm,ceiling,
+                    {1,7,31,79},nullptr,origin,right);
+                QVERIFY(flat.size()==(stereo?2U:1U));
+                QCOMPARE(flat.size(),varied.size());
+                QCOMPARE(observations.size(),pcm.size());
+                for(std::size_t ch=0;ch<flat.size();++ch) {
+                    QCOMPARE(flat[ch].size(),pcm.size());
+                    QCOMPARE(flat[ch].size(),varied[ch].size());
+                    for(std::size_t i=0;i<pcm.size();++i) {
+                        const double expected=ch==0U?pcm[i]:right[i];
+                        QCOMPARE(std::bit_cast<std::uint64_t>(flat[ch][i]),
+                            std::bit_cast<std::uint64_t>(varied[ch][i]));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(flat[ch][i]),
+                            std::bit_cast<std::uint64_t>(expected));
+                    }
+                }
+                for(std::size_t i=0;i<observations.size();++i) {
+                    const auto& row=observations[i];
+                    QCOMPARE(row.programme_frame,
+                        origin+static_cast<std::int64_t>(i));
+                    QCOMPARE(row.raw_output_frame,
+                        origin+static_cast<std::int64_t>(i)+(fs/200+8));
+                    QCOMPARE(row.gain,1.0);
+                    QCOMPARE(row.reduction_db,0.0);
+                }
+            }
+    }
+}
+
+void TruePeakLimiterCoreTest::lateNonfiniteRightChannelRejectsAtomicallyAndCanRetry()
+{
+    // An invalid SECOND channel must be detected before process commits
+    // anything, even when the left channel has been scanned completely
+    // and a stream is already hot. A corrected retry at the SAME range
+    // must give precisely the fresh single-resource N-frame reference.
+    constexpr std::int64_t origin=43'000'029;
+    constexpr int firstFrames=31,secondFrames=17;
+    constexpr int n=firstFrames+secondFrames;
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        const int d=fs/200+8;
+        for(const double ceiling:{-12.0,0.0})
+            for(const bool useNan:{false,true}) {
+                std::vector<double> samples(n,0.0);
+                for(int i=0;i<n;++i)
+                    samples[static_cast<std::size_t>(i)]=
+                        i==0?4.0:(i==n-1?-3.0:
+                        (i%11==0?2.25:(i%5==0?-0.0:0.125)));
+                const auto reference=runLimiterAudio(fs,true,samples,
+                    ceiling,{1,9,37,2},nullptr,origin);
+                QCOMPARE(reference.size(),std::size_t{2});
+                const auto fmt=limiterFormat(fs,true);
+                const auto params=dsp::TruePeakLimiterParameters::create(ceiling);
+                QVERIFY(params);
+                auto created=dsp::TruePeakLimiterModule::create(
+                    frozenLimiterDescriptor(),*params.value());
+                QVERIFY(created);
+                auto& module=**created.value();
+                QVERIFY(module.prepare(dsp::DspProcessSpec{
+                    fmt,audio::FrameDomainId::OUTPUT_RATE,
+                    *core::FrameCount::create(4096).value()}));
+                AppliedGainTestCapture capture;
+                capture.records.reserve(n);
+                module.set_applied_gain_sink(
+                    &AppliedGainTestCapture::accept,&capture);
+                std::vector<std::vector<double>> raw(2);
+                for(const int phase:{0,1}) {
+                    const int count=phase==0?firstFrames:secondFrames;
+                    const int start=phase==0?0:firstFrames;
+                    auto input=audio::AudioBuffer::create(fmt,
+                        audio::FrameDomainId::OUTPUT_RATE,
+                        core::FrameIndex{origin+start},
+                        *core::FrameCount::create(count).value());
+                    auto output=audio::AudioBuffer::create(fmt,
+                        audio::FrameDomainId::OUTPUT_RATE,
+                        core::FrameIndex{origin+start},
+                        *core::FrameCount::create(count).value());
+                    QVERIFY(input && output);
+                    for(std::size_t ch=0;ch<2;++ch) {
+                        auto lane=input.value()->mutable_view().channel(ch);
+                        QVERIFY(lane);
+                        for(int i=0;i<count;++i) {
+                            const double x=samples[static_cast<std::size_t>(start+i)];
+                            (*lane.value())[static_cast<std::size_t>(i)]=
+                                ch==0U?x:-x*0.375;
+                        }
+                        auto dst=output.value()->mutable_view().channel(ch);
+                        QVERIFY(dst);
+                        std::fill(dst.value()->begin(),dst.value()->end(),-0.0);
+                    }
+                    const auto range=core::FrameRange::create(
+                        core::FrameIndex{origin+start},
+                        core::FrameIndex{origin+start+count});
+                    QVERIFY(range);
+                    if(phase==1) {
+                        const auto clean=module.runtime_checkpoint();
+                        QVERIFY(clean);
+                        const auto oldWitnesses=capture.records.size();
+                        auto right=input.value()->mutable_view().channel(1);
+                        QVERIFY(right);
+                        (*right.value())[static_cast<std::size_t>(count-1)]=
+                            useNan?std::numeric_limits<double>::quiet_NaN()
+                                  :std::numeric_limits<double>::infinity();
+                        QVERIFY(!module.process(input.value()->view(),
+                            output.value()->mutable_view(),
+                            dsp::DspProcessContext{*range.value(),false,false}));
+                        const auto untouched=module.runtime_checkpoint();
+                        QVERIFY(untouched);
+                        QCOMPARE(*untouched.value(),*clean.value());
+                        QCOMPARE(capture.records.size(),oldWitnesses);
+                        for(std::size_t ch=0;ch<2;++ch) {
+                            const auto lane=output.value()->view().channel(ch);
+                            QVERIFY(lane);
+                            for(const double x:*lane.value())
+                                QCOMPARE(std::bit_cast<std::uint64_t>(x),
+                                    std::bit_cast<std::uint64_t>(-0.0));
+                        }
+                        (*right.value())[static_cast<std::size_t>(count-1)]=
+                            -samples.back()*0.375;
+                    }
+                    QVERIFY(module.process(input.value()->view(),
+                        output.value()->mutable_view(),
+                        dsp::DspProcessContext{*range.value(),phase==0,false}));
+                    for(std::size_t ch=0;ch<2;++ch) {
+                        const auto lane=output.value()->view().channel(ch);
+                        QVERIFY(lane);
+                        raw[ch].insert(raw[ch].end(),
+                            lane.value()->begin(),lane.value()->end());
+                    }
+                }
+                auto tail=audio::AudioBuffer::create(fmt,
+                    audio::FrameDomainId::OUTPUT_RATE,
+                    core::FrameIndex{origin+n},
+                    *core::FrameCount::create(d).value());
+                QVERIFY(tail);
+                const auto range=core::FrameRange::create(
+                    core::FrameIndex{origin+n},
+                    core::FrameIndex{origin+n+d});
+                QVERIFY(range);
+                QVERIFY(module.finalize(tail.value()->mutable_view(),
+                    dsp::DspProcessContext{*range.value(),false,true}));
+                for(std::size_t ch=0;ch<2;++ch) {
+                    const auto lane=tail.value()->view().channel(ch);
+                    QVERIFY(lane);
+                    raw[ch].insert(raw[ch].end(),
+                        lane.value()->begin(),lane.value()->end());
+                    QCOMPARE(raw[ch].size(),
+                        static_cast<std::size_t>(n+d));
+                    for(int i=0;i<n;++i)
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            raw[ch][static_cast<std::size_t>(d+i)]),
+                            std::bit_cast<std::uint64_t>(
+                                reference[ch][static_cast<std::size_t>(i)]));
+                }
+                QCOMPARE(capture.records.size(),std::size_t{n});
+                QVERIFY(!module.runtime_checkpoint());
             }
     }
 }
