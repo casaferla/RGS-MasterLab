@@ -114,3 +114,14 @@ domain reprepare, post-drain process and discontinuous drain must not alter
 the pending real frames. The remaining drain resumed in irregular chunks
 must reconstruct the separately processed N-frame PCM bitwise on the same
 strict-FP backend. Still only Core-first; not product host qualification.
+
+U4/U5 cancellation regression (same-backend Core-first only): the six-rate,
+mono/stereo, two-Ceiling sequential-resource test now deliberately starts a
+hot fourth resource and cancels it mid-programme before reset, then starts
+another and cancels it after a true partial D drain before reprepare.
+Outstanding M17 checkpoint ownership must disappear, the newly unbound
+checkpoint must equal a pristine instance and the new source's exact PCM
+and GR witness must match a separately prepared reference without prior
+history, even with radically different nonzero absolute frame origins.
+This is a model-level cancellation probe, NOT an implemented product stop,
+renderer owner or UI contract.

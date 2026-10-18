@@ -1297,8 +1297,74 @@ void TruePeakLimiterCoreTest::resetAndReprepareOwnDistinctResourcesAcrossSixRate
                     &AppliedGainTestCapture::accept,&witness);
                 const std::array<std::int64_t,3> origins{0,17'000'029,37};
                 for(int stage=0;stage<3;++stage) {
-                    if(stage==1)module.reset();
-                    if(stage==2)QVERIFY(module.prepare(spec));
+                    if(stage>0) {
+                        // Cancel a NEW, deliberately hot resource after some
+                        // output has been emitted; stage 1 cancels before EOS,
+                        // stage 2 after an actual partial D drain. This is
+                        // distinct from recycling a fully finalized module.
+                        module.reset();
+                        const int abandonedN=static_cast<int>(d)+23;
+                        const std::int64_t abandonedOrigin=
+                            29'000'000+stage*4096;
+                        auto abandonedIn=audio::AudioBuffer::create(
+                            fmt,audio::FrameDomainId::OUTPUT_RATE,
+                            core::FrameIndex{abandonedOrigin},
+                            *core::FrameCount::create(abandonedN).value());
+                        auto abandonedOut=audio::AudioBuffer::create(
+                            fmt,audio::FrameDomainId::OUTPUT_RATE,
+                            core::FrameIndex{abandonedOrigin},
+                            *core::FrameCount::create(abandonedN).value());
+                        QVERIFY(abandonedIn && abandonedOut);
+                        for(std::size_t ch=0;ch<(stereo?2U:1U);++ch) {
+                            const auto lane=abandonedIn.value()->
+                                mutable_view().channel(ch);
+                            QVERIFY(lane);
+                            for(int i=0;i<abandonedN;++i) {
+                                const double x=i==0?4.0:
+                                    (i==abandonedN-1?-3.0:
+                                    (i%31==0?2.375:0.125));
+                                (*lane.value())[static_cast<std::size_t>(i)]=
+                                    ch==0U?x:-x*0.375;
+                            }
+                        }
+                        const auto abandonedRange=core::FrameRange::create(
+                            core::FrameIndex{abandonedOrigin},
+                            core::FrameIndex{abandonedOrigin+abandonedN});
+                        QVERIFY(abandonedRange);
+                        const auto witnessBefore=witness.records.size();
+                        QVERIFY(module.process(abandonedIn.value()->view(),
+                            abandonedOut.value()->mutable_view(),
+                            dsp::DspProcessContext{
+                                *abandonedRange.value(),true,false}));
+                        QVERIFY(witness.records.size()>witnessBefore);
+                        const auto pending=module.runtime_checkpoint();
+                        QVERIFY(pending);
+                        QCOMPARE(pending.value()->next_input_frame,
+                            std::optional{core::FrameIndex{
+                                abandonedOrigin+abandonedN}});
+                        if(stage==2) {
+                            constexpr int partial=17;
+                            const auto first=abandonedOrigin+abandonedN;
+                            auto tail=audio::AudioBuffer::create(
+                                fmt,audio::FrameDomainId::OUTPUT_RATE,
+                                core::FrameIndex{first},
+                                *core::FrameCount::create(partial).value());
+                            QVERIFY(tail);
+                            const auto tailRange=core::FrameRange::create(
+                                core::FrameIndex{first},
+                                core::FrameIndex{first+partial});
+                            QVERIFY(tailRange);
+                            QVERIFY(module.finalize(
+                                tail.value()->mutable_view(),
+                                dsp::DspProcessContext{
+                                    *tailRange.value(),false,false}));
+                            QVERIFY(!module.runtime_checkpoint());
+                        }
+                        // A user cancel / fresh item load has to clear all
+                        // PCM, detector history, absolute origin and GR.
+                        if(stage==1)module.reset();
+                        else QVERIFY(module.prepare(spec));
+                    }
                     const auto clean=module.runtime_checkpoint();
                     QVERIFY(clean);
                     QCOMPARE(*clean.value(),*pristine.value());
