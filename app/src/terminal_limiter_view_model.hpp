@@ -1,0 +1,63 @@
+#pragma once
+
+#include "terminal_limiter_state.hpp"
+
+#include <QObject>
+#include <QString>
+
+#include <functional>
+#include <optional>
+
+namespace rgsml::app {
+
+// M17 typed Ceiling editor authority. The VM owns only a UI draft;
+// TerminalLimiterState and its immutable bindings are the DSP truth.
+// Merely constructing this VM does not publish audio or certify M17.
+class TerminalLimiterViewModel final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(double ceilingDbTp READ ceiling_db_tp NOTIFY changed)
+    Q_PROPERTY(QString ceilingDbTpText READ ceiling_db_tp_text NOTIFY changed)
+    Q_PROPERTY(double draftCeilingDbTp READ draft_ceiling_db_tp NOTIFY changed)
+    Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
+    Q_PROPERTY(QString validationField READ validation_field NOTIFY changed)
+    Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
+public:
+    using AcceptedStateChange = std::function<void()>;
+
+    explicit TerminalLimiterViewModel(
+        TerminalLimiterState* state,
+        AcceptedStateChange stateChanged = {},
+        QObject* parent = nullptr);
+
+    [[nodiscard]] double ceiling_db_tp() const noexcept;
+    [[nodiscard]] QString ceiling_db_tp_text() const;
+    [[nodiscard]] double draft_ceiling_db_tp() const noexcept;
+    [[nodiscard]] bool bypass() const noexcept;
+    [[nodiscard]] QString validation_field() const { return validationField_; }
+    [[nodiscard]] QString validation_message() const { return validationMessage_; }
+
+    // Common StudioNumericField/StudioParameterSlider contract.
+    // Drag/text changes are staged; a committed edit is validated again
+    // by the canonical DSP constructor and invokes the accepted callback
+    // only once. No per-pointer-move render is permitted.
+    Q_INVOKABLE bool setDraftFieldValue(const QString& field, double value);
+    Q_INVOKABLE bool setDraftFieldText(const QString& field, const QString& text);
+    Q_INVOKABLE bool commitDraft();
+    Q_INVOKABLE void cancelDraft();
+    Q_INVOKABLE void setBypass(bool bypass);
+    Q_INVOKABLE void refreshFromAuthority();
+
+signals:
+    void changed();
+
+private:
+    void set_validation(const QString& message);
+    void clear_validation();
+    TerminalLimiterState* state_{nullptr};
+    std::optional<double> draftCeilingDbTp_;
+    QString validationField_;
+    QString validationMessage_;
+    AcceptedStateChange stateChanged_;
+};
+
+} // namespace rgsml::app
