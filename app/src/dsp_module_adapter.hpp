@@ -5,11 +5,14 @@
 #include "gain_view_model.hpp"
 #include "mastering_chain_state.hpp"
 #include "stereo_ms_view_model.hpp"
+#include "terminal_limiter_state.hpp"
+#include "terminal_limiter_view_model.hpp"
 
 #include <QObject>
 #include <QString>
 
 #include <memory>
+#include <utility>
 
 namespace rgsml::app {
 
@@ -249,6 +252,63 @@ public:
 private:
     StereoMsViewModel* vm_{nullptr};
     MasteringChainState* state_{nullptr};
+    QString context_;
+};
+
+
+// Genuine product M17 terminal INSTANCE. Presentation is BYP/read-only
+// until a verified output-rate realization becomes the processed source.
+class TruePeakLimiterModuleAdapter final : public DspModuleAdapter {
+    Q_OBJECT
+public:
+    TruePeakLimiterModuleAdapter(TerminalLimiterState* state,
+        TerminalLimiterViewModel* vm, QString context, QObject* parent=nullptr)
+      : DspModuleAdapter(parent),state_(state),vm_(vm),context_(std::move(context))
+    {
+        if(vm_)connect(vm_,&TerminalLimiterViewModel::changed,
+                       this,&DspModuleAdapter::changed);
+    }
+    [[nodiscard]] QString instance_id() const override
+    { return state_ ? QString::fromStdString(state_->instance_id().to_string()) : QString{}; }
+    [[nodiscard]] QString type_id() const override
+    { return QStringLiteral("rgsml.dsp.true-peak-limiter"); }
+    [[nodiscard]] QString display_name() const override
+    { return QStringLiteral("True Peak Limiter"); }
+    [[nodiscard]] QString workspace_context_label() const override { return context_; }
+    [[nodiscard]] QString configuration_state() const override
+    { return state_ && state_->parameters().ceiling_db_tp()!=-1.0
+        ? QStringLiteral("Manual") : QStringLiteral("Default"); }
+    [[nodiscard]] bool bypass_supported() const noexcept override { return false; }
+    [[nodiscard]] bool bypass() const noexcept override { return !state_||state_->bypassed(); }
+    [[nodiscard]] bool preview_supported() const noexcept override { return false; }
+    [[nodiscard]] QString preview_status() const override
+    { return QStringLiteral("TERMINAL_OUTPUT_ROUTE_PENDING"); }
+    [[nodiscard]] QString preview_error() const override { return {}; }
+    [[nodiscard]] bool history_supported() const noexcept override { return false; }
+    [[nodiscard]] bool can_undo() const noexcept override { return false; }
+    [[nodiscard]] bool can_redo() const noexcept override { return false; }
+    [[nodiscard]] bool reset_supported() const noexcept override { return false; }
+    [[nodiscard]] QString editor_content_key() const override
+    { return QStringLiteral("TRUE_PEAK_LIMITER"); }
+    [[nodiscard]] QString live_change_policy() const override
+    { return QStringLiteral("UNQUALIFIED_TERMINAL_DISABLED"); }
+    [[nodiscard]] GainViewModel* gain_view_model() const noexcept override { return nullptr; }
+    [[nodiscard]] EqViewModel* eq_view_model() const noexcept override { return nullptr; }
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override { return nullptr; }
+    [[nodiscard]] QString family_accent() const override
+    { return bypass() ? QStringLiteral("#6CBCCF") : QStringLiteral("#C4774A"); }
+    [[nodiscard]] QString state_text() const override
+    { return bypass() ? QStringLiteral("BYPASS · Output route pending")
+        : QStringLiteral("UNQUALIFIED · No audible output"); }
+    [[nodiscard]] bool has_error() const noexcept override
+    { return vm_ && !vm_->validation_message().isEmpty(); }
+    void setBypass(bool) override {} // No false sonic activation.
+    void undo() override {}
+    void redo() override {}
+    void resetToDefault() override {}
+private:
+    TerminalLimiterState* state_{nullptr};
+    TerminalLimiterViewModel* vm_{nullptr};
     QString context_;
 };
 

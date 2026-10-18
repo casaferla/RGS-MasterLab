@@ -12,13 +12,17 @@ DspChainAdapterModel::DspChainAdapterModel(
     QString workflowContext,
     QObject* parent,
     StereoMsViewModel* stereoMsViewModel,
-    bool includeTruePeakAnalysis)
+    bool includeTruePeakAnalysis,
+    TerminalLimiterState* terminalLimiterState,
+    TerminalLimiterViewModel* terminalLimiterViewModel)
     : QObject(parent)
     , gainViewModel_(gainViewModel)
     , eqViewModel_(eqViewModel)
     , compressorViewModel_(compressorViewModel)
     , stereoMsViewModel_(stereoMsViewModel)
     , includeTruePeakAnalysis_(includeTruePeakAnalysis)
+    , terminalLimiterState_(terminalLimiterState)
+    , terminalLimiterViewModel_(terminalLimiterViewModel)
     , chainState_(chainState)
     , workflowContext_(std::move(workflowContext))
 {
@@ -75,6 +79,20 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         connect(analysis.get(), &DspModuleAdapter::changed,
                 this, &DspChainAdapterModel::changed);
         moduleAdapters_.push_back(std::move(analysis));
+    }
+
+    // Terminal instance is separate from the MANUAL mastering chain.
+    if (terminalLimiterState_ && terminalLimiterViewModel_
+        && terminalLimiterState_->chain().context().stage == dsp::ProcessingStage::MASTER
+        && terminalLimiterState_->chain().context().segment == dsp::ChainSegment::TERMINAL
+        && terminalLimiterState_->chain().instances().size() == 1
+        && terminalLimiterState_->chain().instances()[0].module_type_id()
+            == "rgsml.dsp.true-peak-limiter") {
+        auto limiter=std::make_unique<TruePeakLimiterModuleAdapter>(
+            terminalLimiterState_,terminalLimiterViewModel_,workflowContext_);
+        connect(limiter.get(),&DspModuleAdapter::changed,this,
+                &DspChainAdapterModel::changed);
+        moduleAdapters_.push_back(std::move(limiter));
     }
 
     // Authoritative selection reconciliation following rehydration

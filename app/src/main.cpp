@@ -280,7 +280,8 @@ int main(int argc, char* argv[])
     rgsml::app::DspChainAdapterModel dspChainAdapterModel{
         &gainViewModel, &eqViewModel, &compressorViewModel,
         &masteringChainState, QStringLiteral("Mastering"),
-        nullptr, &stereoMsViewModel, true};
+        nullptr, &stereoMsViewModel, true,
+        &terminalLimiterState, &terminalLimiterViewModel};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
