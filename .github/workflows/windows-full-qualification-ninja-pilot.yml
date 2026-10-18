@@ -1,0 +1,202 @@
+# ISOLATED PILOT — the original Windows Full Qualification is unchanged.
+# A warm cached build is NEVER evidence of recompilation from scratch.
+name: Windows FQ Ninja Pilot
+on:
+  pull_request:
+    branches:
+      - feature/l1-m16-b3-public-true-peak-unqualified-20261013
+    paths:
+      - .github/workflows/windows-full-qualification-ninja-pilot.yml
+  workflow_dispatch:
+    inputs:
+      cache_mode:
+        description: "warm uses sccache; cold disables the compiler cache"
+        type: choice
+        options: [warm, cold]
+        default: warm
+permissions:
+  contents: read
+jobs:
+  windows-fq-ninja:
+    name: Full Windows Debug+Release+TestsOFF (experimental)
+    runs-on: windows-2022
+    env:
+      RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
+      RGSML_FQ_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      RGSML_FQ_CACHE_MODE: ${{ inputs.cache_mode || 'warm' }}
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_VERSION: "rgsml-fq-msvc2022-qt683-strict-ninja-v1"
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "true"
+    steps:
+      - name: Checkout exact source SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Enter Visual Studio x64 developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: "v0.16.0"
+      - name: Expose Actions cache runtime credentials
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Install Qt 6.8.3 and Ninja
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_DEPS_FAILED" }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_QT_FAILED" }
+          ninja --version
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_NINJA_FAILED" }
+      - name: Configure original Visual Studio generator only for frozen B2f attestation
+        shell: pwsh
+        run: |
+          $args = @('--preset','windows-msvc','-DRGSML_PROVENANCE_TYPE=FQ',
+            '-DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }}',
+            "-DRGSML_PROVENANCE_GIT_SHA=$env:RGSML_FQ_SHA")
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_B2F_CONFIG_FAILED" }
+          python tools/qualification/true_peak/verify_fp_build_flags.py --platform windows --build-dir build/windows-msvc --source-sha "$env:RGSML_FQ_SHA" --run-id '${{ github.run_id }}' --output "$env:RUNNER_TEMP\pilot_b2f_attestation.json"
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_B2F_ATTESTATION_FAILED" }
+      - name: Configure Ninja Multi-Config and enforce strict source FP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RGSML_FQ_CACHE_MODE -notin @('warm','cold')) { throw "INVALID_PILOT_CACHE_MODE" }
+          $launcher = if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { 'sccache' } else { '' }
+          Write-Host "FQ_PILOT_CACHE_MODE=$env:RGSML_FQ_CACHE_MODE"
+          $args = @('-S','.','-B','build/windows-fq-ninja','-G','Ninja Multi-Config',
+            '-DCMAKE_CONFIGURATION_TYPES=Debug;Release',
+            '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+            '-DCMAKE_POLICY_DEFAULT_CMP0141=NEW',
+            '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded',
+            "-DCMAKE_C_COMPILER_LAUNCHER=$launcher",
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=$launcher",
+            '-DRGSML_BUILD_TESTS=ON','-DRGSML_WARNINGS_AS_ERRORS=ON',
+            '-DRGSML_PROVENANCE_TYPE=FQ',
+            '-DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }}',
+            "-DRGSML_PROVENANCE_GIT_SHA=$env:RGSML_FQ_SHA",
+            "-DRGSML_QT_ROOT=$env:RGSML_QT_ROOT")
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_NINJA_CONFIG_FAILED" }
+          $commands = Get-Content build/windows-fq-ninja/compile_commands.json -Raw | ConvertFrom-Json
+          foreach ($source in @('true_peak_itu4x_channel_stream.cpp','true_peak_full_resource.cpp')) {
+            $matches = @($commands | Where-Object { $_.file.Replace([char]92,[char]47).EndsWith("/" + $source,[System.StringComparison]::OrdinalIgnoreCase) })
+            if ($matches.Count -ne 2) { throw "STRICT_FP_COVERAGE_INVALID: $source count=$($matches.Count)" }
+            foreach ($row in $matches) {
+              if ($row.command -notmatch '(?i)(?<!\w)/fp:strict(?![\w-])' -or $row.command -match '(?i)/fp:(fast|contract)\b') { throw "STRICT_FP_INVALID: $source" }
+            }
+          }
+      - name: Clean-build Debug (Ninja, timed)
+        shell: pwsh
+        run: |
+          if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { sccache --zero-stats }
+          $sw=[System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build build/windows-fq-ninja --config Debug --clean-first --parallel 4
+          $code=$LASTEXITCODE
+          $sw.Stop()
+          "PILOT_DEBUG_CLEAN_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          if ($code -ne 0) { throw "PILOT_DEBUG_BUILD_FAILED" }
+      - name: Debug Qt UI smoke (canonical diagnostic)
+        shell: pwsh
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}/build/fq-pilot-visual-debug
+        run: |
+          $env:PATH="$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$env:RGSML_QT_ROOT\qml"
+          $log="$env:GITHUB_WORKSPACE\pilot-debug-ui-smoke.txt"
+          & build/windows-fq-ninja/Debug/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          $code=$LASTEXITCODE
+          if (Test-Path $log) { Get-Content $log }
+          if ($code -ne 0) { throw "PILOT_DEBUG_UI_FAILED" }
+      - name: Full Debug CTest (canonical exclusions)
+        shell: pwsh
+        run: |
+          ctest --test-dir build/windows-fq-ninja -C Debug --output-on-failure -LE "playback_device|ui_smoke"
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_DEBUG_CTEST_FAILED" }
+      - name: Clean-build Release (Ninja, timed)
+        shell: pwsh
+        run: |
+          $sw=[System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build build/windows-fq-ninja --config Release --clean-first --parallel 4
+          $code=$LASTEXITCODE
+          $sw.Stop()
+          "PILOT_RELEASE_CLEAN_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          if ($code -ne 0) { throw "PILOT_RELEASE_BUILD_FAILED" }
+      - name: Release Qt UI smoke (canonical diagnostic)
+        shell: pwsh
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}/build/fq-pilot-visual-release
+        run: |
+          $env:PATH="$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH="$env:RGSML_QT_ROOT\qml"
+          $log="$env:GITHUB_WORKSPACE\pilot-release-ui-smoke.txt"
+          & build/windows-fq-ninja/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          $code=$LASTEXITCODE
+          if (Test-Path $log) { Get-Content $log }
+          if ($code -ne 0) { throw "PILOT_RELEASE_UI_FAILED" }
+      - name: Full Release CTest (canonical exclusions)
+        shell: pwsh
+        run: |
+          ctest --test-dir build/windows-fq-ninja -C Release --output-on-failure -LE "playback_device|ui_smoke"
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_RELEASE_CTEST_FAILED" }
+      - name: Configure independent Tests-OFF Ninja Release tree
+        shell: pwsh
+        run: |
+          $launcher=if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { 'sccache' } else { '' }
+          $args=@('-S','.','-B','build/windows-fq-ninja-tests-off',
+            '-G','Ninja Multi-Config','-DCMAKE_CONFIGURATION_TYPES=Release',
+            '-DCMAKE_POLICY_DEFAULT_CMP0141=NEW',
+            '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded',
+            "-DCMAKE_C_COMPILER_LAUNCHER=$launcher",
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=$launcher",
+            '-DRGSML_BUILD_TESTS=OFF','-DRGSML_WARNINGS_AS_ERRORS=ON',
+            '-DRGSML_PROVENANCE_TYPE=FQ',
+            '-DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }}',
+            "-DRGSML_PROVENANCE_GIT_SHA=$env:RGSML_FQ_SHA",
+            "-DRGSML_QT_ROOT=$env:RGSML_QT_ROOT")
+          & cmake @args
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_TESTS_OFF_CONFIG_FAILED" }
+      - name: Build Tests-OFF Release (timed)
+        shell: pwsh
+        run: |
+          $sw=[System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build build/windows-fq-ninja-tests-off --config Release --parallel 4
+          $code=$LASTEXITCODE
+          $sw.Stop()
+          "PILOT_TESTS_OFF_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          if ($code -ne 0) { throw "PILOT_TESTS_OFF_BUILD_FAILED" }
+      - name: Install staged Release
+        shell: pwsh
+        run: |
+          cmake --install build/windows-fq-ninja --config Release --prefix build/windows-fq-ninja/stage/CI/Release
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_INSTALL_FAILED" }
+      - name: Run deploy smoke
+        shell: pwsh
+        run: |
+          & build/windows-fq-ninja/stage/CI/Release/bin/RGSMasterLab.exe --rgsml-deploy-smoke
+          if ($LASTEXITCODE -ne 0) { throw "PILOT_DEPLOY_FAILED" }
+      - name: Cache stats / non-authoritative pilot marker
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "PILOT_SHA=$env:RGSML_FQ_SHA MODE=$env:RGSML_FQ_CACHE_MODE"
+          if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { sccache --show-stats }
+          Write-Host "PILOT_ONLY_NOT_OFFICIAL_FQ_OR_INDEPENDENT_COLD_BUILD"
+      - name: Upload staged PILOT artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Windows-FQ-PILOT-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: build/windows-fq-ninja/stage/CI/Release/**
+          retention-days: 7
+          if-no-files-found: error
