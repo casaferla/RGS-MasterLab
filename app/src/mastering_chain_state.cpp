@@ -73,6 +73,23 @@ Result<MasteringChainState> MasteringChainState::create_default(
         true);
 }
 
+Result<MasteringChainState> MasteringChainState::create_product_default(
+    const ModuleRegistry& registry,
+    Uuid chain_id,
+    ModuleInstanceId gain_id,
+    ModuleInstanceId eq_id,
+    ModuleInstanceId compressor_id,
+    ModuleInstanceId stereo_ms_id)
+{
+    auto default_ms = StereoMsParameters::create_default();
+    if (!default_ms) {
+        return Result<MasteringChainState>::failure(*default_ms.error());
+    }
+    return create_with_stereo_ms(
+        registry, chain_id, gain_id, eq_id, compressor_id,
+        stereo_ms_id, *default_ms.value(), true);
+}
+
 Result<MasteringChainState> MasteringChainState::create_with_stereo_ms(
     const ModuleRegistry& registry,
     Uuid chain_id,

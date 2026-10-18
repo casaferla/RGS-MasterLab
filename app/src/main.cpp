@@ -148,11 +148,16 @@ int main(int argc, char* argv[])
     const auto gainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto eqUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto compUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+    const auto stereoMsUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto gainInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(gainUuid).value();
     const auto eqInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(eqUuid).value();
     const auto compInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(compUuid).value();
-    auto masteringChainStateRes = rgsml::app::MasteringChainState::create_default(
-        *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId, compInstanceId);
+    const auto stereoMsInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(stereoMsUuid).value();
+    // Product startup: four real DSP nodes, milestone order, M15 safely
+    // bypassed. Historic saved three-node projects restore unchanged.
+    auto masteringChainStateRes = rgsml::app::MasteringChainState::create_product_default(
+        *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId,
+        compInstanceId, stereoMsInstanceId);
     auto masteringChainState = std::move(*masteringChainStateRes.value());
 
     rgsml::app::MasteringPreviewController previewController{

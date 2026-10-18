@@ -35,7 +35,18 @@ public:
         dsp::ModuleInstanceId gain_id,
         dsp::ModuleInstanceId eq_id);
 
-    // Explicit opt-in only: legacy three-module product state remains unchanged.
+    // New, unsaved product sessions contain M11 Gain -> M12 EQ -> M14 Compressor
+    // -> M15 Stereo/M-S (initial BYPASS_IDENTITY). Historical 2/3-node project
+    // restore and the legacy create_default() contract stay unchanged.
+    [[nodiscard]] static rgsml::core::Result<MasteringChainState> create_product_default(
+        const dsp::ModuleRegistry& registry,
+        rgsml::core::Uuid chain_id,
+        dsp::ModuleInstanceId gain_id,
+        dsp::ModuleInstanceId eq_id,
+        dsp::ModuleInstanceId compressor_id,
+        dsp::ModuleInstanceId stereo_ms_id);
+
+    // Explicit typed construction, also used by the new product-default path.
     [[nodiscard]] static rgsml::core::Result<MasteringChainState> create_with_stereo_ms(
         const dsp::ModuleRegistry& registry,
         rgsml::core::Uuid chain_id,

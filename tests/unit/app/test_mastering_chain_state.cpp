@@ -35,6 +35,7 @@ class MasteringChainStateTest final : public QObject {
 
 private slots:
     void defaultTopologyAndCanonicalOrder();
+    void productStartupHasFourModulesWithStereoMsInitiallyBypassed();
     void stableInstanceIdsDuringEdits();
     void rejectionOfNilOrDuplicateIdentities();
     void gainAndEqParameterUpdates();
@@ -78,6 +79,57 @@ void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
     auto comp_bypass = state.value()->is_bypassed(comp_id);
     QVERIFY(comp_bypass);
     QVERIFY(*comp_bypass.value());
+}
+
+void MasteringChainStateTest::productStartupHasFourModulesWithStereoMsInitiallyBypassed()
+{
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = test_uuid("70000000-0000-4000-8000-000000000001");
+    const auto gainId = test_instance_id("70000000-0000-4000-8000-000000000011");
+    const auto eqId = test_instance_id("70000000-0000-4000-8000-000000000012");
+    const auto compId = test_instance_id("70000000-0000-4000-8000-000000000014");
+    const auto stereoId = test_instance_id("70000000-0000-4000-8000-000000000015");
+    auto state = MasteringChainState::create_product_default(
+        *registry.value(), chainId, gainId, eqId, compId, stereoId);
+    QVERIFY(state);
+    QCOMPARE(state.value()->module_count(), std::size_t{4});
+    const auto instances = state.value()->instances();
+    QCOMPARE(instances[0].module_type_id(), std::string_view("rgsml.dsp.gain"));
+    QCOMPARE(instances[1].module_type_id(), std::string_view("rgsml.dsp.parametric-eq"));
+    QCOMPARE(instances[2].module_type_id(), std::string_view("rgsml.dsp.compressor"));
+    QCOMPARE(instances[3].module_type_id(), std::string_view("rgsml.dsp.stereo-ms"));
+    QCOMPARE(instances[0].instance_id(), gainId);
+    QCOMPARE(instances[1].instance_id(), eqId);
+    QCOMPARE(instances[2].instance_id(), compId);
+    QCOMPARE(instances[3].instance_id(), stereoId);
+    QCOMPARE(state.value()->stereo_ms_instance_id(), std::optional{stereoId});
+    const auto defaults = StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    QCOMPARE(state.value()->stereo_ms_parameters(), std::optional{*defaults.value()});
+    auto stereoBypass = state.value()->is_bypassed(stereoId);
+    QVERIFY(stereoBypass);
+    QVERIFY(*stereoBypass.value());
+    QCOMPARE(state.value()->execution_bindings().size(), std::size_t{4});
+    QCOMPARE(state.value()->execution_bindings()[3].instance_id, stereoId);
+    QVERIFY(std::holds_alternative<StereoMsParameters>(
+        state.value()->execution_bindings()[3].parameters));
+
+    // Guard against accidentally converting old 3-node project factories
+    // to four nodes or mutating historically saved chain identities.
+    auto historical = MasteringChainState::create_default(
+        *registry.value(), chainId, gainId, eqId, compId);
+    QVERIFY(historical);
+    QCOMPARE(historical.value()->module_count(), std::size_t{3});
+    QVERIFY(!historical.value()->stereo_ms_instance_id());
+    QVERIFY(!historical.value()->stereo_ms_parameters());
+
+    // User may enable this real module later; startup bypass is not a
+    // permanently disabled or decorative editor-only entry.
+    QVERIFY(state.value()->set_user_bypass(stereoId, false));
+    stereoBypass = state.value()->is_bypassed(stereoId);
+    QVERIFY(stereoBypass);
+    QVERIFY(!*stereoBypass.value());
 }
 
 void MasteringChainStateTest::stableInstanceIdsDuringEdits()
