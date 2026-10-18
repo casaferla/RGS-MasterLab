@@ -114,8 +114,8 @@ void TerminalLimiterViewModel::cancelDraft()
 void TerminalLimiterViewModel::setBypass(bool value)
 {
     if(!state_||state_->bypassed()==value)return;
-    auto changed=state_->set_user_bypass(value);
-    if(!changed) {
+    auto status=state_->set_user_bypass(value);
+    if(!status) {
         set_validation(QStringLiteral(
             "True Peak Limiter bypass could not be updated"));
         return;
