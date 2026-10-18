@@ -57,3 +57,12 @@ Ceiling certification. The separate enabled run is observably attenuated,
 verified by full-resource M16, and cannot be confused with bypass identity.
 Actual host/renderer bypass routing and zero-latency product integration
 remain unqualified, requiring separate authorized scope.
+
+U6 transactional test-only verification addendum: the M16 global scalar is
+applied first to an owning candidate OUTPUT_RATE resource; complete M16
+remeasurement must pass before a bitwise PCM commit to the caller. Invalid
+Ceiling, wrong frame domain, nonfinite PCM or >0.10dB trim guard failures
+leave every original lane bit-for-bit untouched. Six-rate mono/stereo
+flat-versus-irregular chunk matrices check exact PCM before/after one-shot
+whole-resource M16 verification, including last-frame transients. This
+improves the TEST harness only and does not qualify the product renderer.

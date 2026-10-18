@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <algorithm>
 #include <limits>
 #include <span>
 #include <string>
@@ -169,6 +170,13 @@ verify_full_resource(audio::AudioBuffer& resource,double ceiling_db_tp)
         return Result<VerificationResult>::failure(error(
             core::ErrorCode::InvalidArgument,"INVALID_M17_CEILING",
             "M17 test-only verifier requires a valid Ceiling."));
+    // This Core-first verifier owns precisely one materialized OUTPUT_RATE
+    // resource. Reject other domains rather than silently relabeling PCM.
+    if(resource.view().timebase().frame_domain_id()!=
+        audio::FrameDomainId::OUTPUT_RATE)
+        return Result<VerificationResult>::failure(error(
+            core::ErrorCode::InvalidArgument,"INVALID_M17_VERIFY_DOMAIN",
+            "Full-resource M17 verification requires OUTPUT_RATE."));
     auto measured=analysis::measure_true_peak_full_resource(resource);
     if(!measured)return Result<VerificationResult>::failure(*measured.error());
     if(measured.value()->qualification_status()
@@ -193,27 +201,50 @@ verify_full_resource(audio::AudioBuffer& resource,double ceiling_db_tp)
         return Result<VerificationResult>::failure(error(
             core::ErrorCode::InvalidState,"LIMITER_VERIFICATION_GUARD_EXCEEDED",
             "Global verification trim would exceed frozen 0.10 dB guard."));
-    // A single global scalar for the whole stereo resource. Test-only caller
-    // owns a materialized, unquantized binary64 OUTPUT_RATE audio buffer.
-    for(std::size_t ch=0;ch<resource.view().format().channel_count();++ch) {
-        auto writable=resource.mutable_view().channel(ch);
-        if(!writable)return Result<VerificationResult>::failure(*writable.error());
-        for(double& v:*writable.value()) {
-            v = v*gain;
-            if(!std::isfinite(v))
+    // Transactional one-shot trim: build a separate full-resource binary64
+    // candidate; let the frozen M16 meter verify that *candidate* before
+    // publishing any of its PCM back to the caller. If measurement, shape or
+    // numeric guards fail, every bit of the original buffer remains intact.
+    const auto original=resource.view();
+    auto candidate=audio::AudioBuffer::create(original.format(),
+        audio::FrameDomainId::OUTPUT_RATE,
+        original.absolute_range().begin(),original.frame_count());
+    if(!candidate)return Result<VerificationResult>::failure(*candidate.error());
+    std::array<std::span<double>,2> originals{},staged{};
+    const auto channels=original.format().channel_count();
+    for(std::size_t ch=0;ch<channels;++ch) {
+        const auto src=original.channel(ch);
+        const auto dst=resource.mutable_view().channel(ch);
+        const auto temporary=candidate.value()->mutable_view().channel(ch);
+        if(!src || !dst || !temporary)
+            return Result<VerificationResult>::failure(error(
+                core::ErrorCode::InvalidState,
+                "LIMITER_VERIFICATION_NUMERIC_FAILURE",
+                "Full-resource trim could not bind every channel."));
+        originals[ch]=*dst.value();
+        staged[ch]=*temporary.value();
+        for(std::size_t i=0;i<src.value()->size();++i) {
+            const double value=(*src.value())[i]*gain;
+            if(!std::isfinite(value))
                 return Result<VerificationResult>::failure(error(
                     core::ErrorCode::InvalidAudioSample,
                     "LIMITER_VERIFICATION_NUMERIC_FAILURE",
                     "Global trim produced nonfinite PCM."));
+            staged[ch][i]=value;
         }
     }
-    auto after=analysis::measure_true_peak_full_resource(resource);
+    auto after=analysis::measure_true_peak_full_resource(*candidate.value());
     if(!after)return Result<VerificationResult>::failure(*after.error());
     if(after.value()->global_linear_peak()>ceiling)
         return Result<VerificationResult>::failure(error(
             core::ErrorCode::InvalidState,
             "LIMITER_VERIFICATION_NUMERIC_FAILURE",
             "One allowed trim still exceeds Ceiling under M16."));
+    // Commit only after successful M16 full-resource remeasurement; never
+    // publish a partially trimmed left lane ahead of a failing right lane.
+    for(std::size_t ch=0;ch<channels;++ch)
+        std::memcpy(originals[ch].data(),staged[ch].data(),
+            staged[ch].size()*sizeof(double));
     result.after_peak=after.value()->global_linear_peak();
     result.global_trim_gain=gain;
     result.trim_used=true;

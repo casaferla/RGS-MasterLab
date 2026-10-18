@@ -140,6 +140,8 @@ private slots:
     void shortAndSplitEosDoesNotCreatePhantomPcm();
     void inactiveBypassIsZeroLatencyBitCopyAboveCeilingSixRates();
     void bypassAndEnabledLimiterAreObservablyDistinct();
+    void failedVerificationNeverMutatesResourceAcrossSixRates();
+    void fullResourceSixRateChunkMatrixRemainsBitIdentical();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
 {
@@ -518,6 +520,157 @@ void TruePeakLimiterVerificationTest::bypassAndEnabledLimiterAreObservablyDistin
     }
 }
 
+
+void TruePeakLimiterVerificationTest::failedVerificationNeverMutatesResourceAcrossSixRates()
+{
+    // Before success every path is fail-closed. In particular a failed M16
+    // validation may not leak a left-lane trim when the right lane fails.
+    const auto bits=[](const audio::AudioBuffer& resource) {
+        std::vector<std::vector<std::uint64_t>> image(
+            resource.view().format().channel_count());
+        for(std::size_t ch=0;ch<image.size();++ch) {
+            const auto lane=resource.view().channel(ch);
+            if(!lane)return image;
+            for(const double x:*lane.value())
+                image[ch].push_back(std::bit_cast<std::uint64_t>(x));
+        }
+        return image;
+    };
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const bool stereo:{false,true}) {
+            auto hot=buffer(fs,stereo,319,5'000'029);
+            for(std::size_t ch=0;ch<hot.view().format().channel_count();++ch) {
+                auto lane=hot.mutable_view().channel(ch);
+                QVERIFY(lane);
+                for(std::size_t i=0;i<lane.value()->size();++i)
+                    (*lane.value())[i]=i==0U?(ch==0U?4.0:-3.0):
+                        (i==1U?-0.0:(i%31U==0U?0.375:-0.125));
+            }
+            const auto original=bits(hot);
+            QVERIFY(!m17_verifier::verify_full_resource(hot,-12.01));
+            QVERIFY(bits(hot)==original);
+            QVERIFY(!m17_verifier::verify_full_resource(hot,0.01));
+            QVERIFY(bits(hot)==original);
+            const auto exceeded=m17_verifier::verify_full_resource(hot,-12.0);
+            QVERIFY(!exceeded);
+            QCOMPARE(category(*exceeded.error()),
+                std::string_view{"LIMITER_VERIFICATION_GUARD_EXCEEDED"});
+            QVERIFY(bits(hot)==original);
+            auto lane=hot.mutable_view().channel(stereo?1U:0U);
+            QVERIFY(lane);
+            const auto saved=(*lane.value())[67];
+            (*lane.value())[67]=std::numeric_limits<double>::quiet_NaN();
+            const auto nonfiniteBefore=bits(hot);
+            QVERIFY(!m17_verifier::verify_full_resource(hot,-6.0));
+            QVERIFY(bits(hot)==nonfiniteBefore);
+            (*lane.value())[67]=saved;
+            QVERIFY(bits(hot)==original);
+
+            // The M16 meter itself can accept supported numeric values in
+            // other domains; Core-first verification MUST reject the domain
+            // mismatch before mutating the supplied audio.
+            auto wrong=audio::AudioBuffer::create(
+                hot.view().format(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+                core::FrameIndex{5'000'029},
+                *core::FrameCount::create(3).value());
+            QVERIFY(wrong);
+            for(std::size_t ch=0;ch<wrong.value()->view().format().channel_count();++ch) {
+                auto dst=wrong.value()->mutable_view().channel(ch);
+                QVERIFY(dst);
+                (*dst.value())[0]=4.0;
+                (*dst.value())[1]=-0.0;
+                (*dst.value())[2]=-1.0;
+            }
+            const auto wrongBefore=bits(*wrong.value());
+            const auto rejected=m17_verifier::verify_full_resource(
+                *wrong.value(),-12.0);
+            QVERIFY(!rejected);
+            QCOMPARE(category(*rejected.error()),
+                std::string_view{"INVALID_M17_VERIFY_DOMAIN"});
+            QVERIFY(bits(*wrong.value())==wrongBefore);
+        }
+    }
+}
+
+void TruePeakLimiterVerificationTest::fullResourceSixRateChunkMatrixRemainsBitIdentical()
+{
+    // U4/U6: six supported Fs, stereo linked and mono, two extreme ceilings
+    // and two nontrivial partition schedules. Compare all PCM before AND
+    // after the permitted M16 full-resource verification, including the
+    // final 8x tail, without attributing the global scalar to base M17 GR.
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        const int d=fs/200+8;
+        for(const bool stereo:{false,true}) {
+            for(const double ceilingDb:{-12.0,0.0}) {
+                const int n=2*d+37;
+                auto input=buffer(fs,stereo,n,stereo?9'000'029:0);
+                for(std::size_t ch=0;ch<input.view().format().channel_count();++ch) {
+                    auto lane=input.mutable_view().channel(ch);
+                    QVERIFY(lane);
+                    for(int i=0;i<n;++i) {
+                        const double x=i==0?4.0:(i==n-1?-3.0:
+                            (i%113==0?2.25:((i&1)==0?0.1875:-0.1875)));
+                        (*lane.value())[static_cast<std::size_t>(i)]=
+                            ch==0U?x:(i%71<35?-x*0.8:x*1.25);
+                    }
+                }
+                const std::array<std::size_t,1> flat{4096};
+                const std::array<std::size_t,4> irregular{3,47,257,4096};
+                auto a=renderRealM17(input,ceilingDb,flat);
+                auto b=renderRealM17(input,ceilingDb,irregular);
+                QVERIFY(a.has_value() && b.has_value());
+                QCOMPARE(a->view().frame_count(),b->view().frame_count());
+                QCOMPARE(a->view().absolute_range(),b->view().absolute_range());
+                for(std::size_t ch=0;ch<a->view().format().channel_count();++ch) {
+                    const auto first=a->view().channel(ch);
+                    const auto second=b->view().channel(ch);
+                    QVERIFY(first && second);
+                    for(int i=0;i<n;++i)
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            (*first.value())[static_cast<std::size_t>(i)]),
+                            std::bit_cast<std::uint64_t>(
+                                (*second.value())[static_cast<std::size_t>(i)]));
+                }
+                const auto ma=analysis::measure_true_peak_full_resource(*a);
+                const auto mb=analysis::measure_true_peak_full_resource(*b);
+                QVERIFY(ma && mb);
+                QCOMPARE(std::bit_cast<std::uint64_t>(
+                    ma.value()->global_linear_peak()),
+                    std::bit_cast<std::uint64_t>(
+                        mb.value()->global_linear_peak()));
+                const auto va=m17_verifier::verify_full_resource(*a,ceilingDb);
+                const auto vb=m17_verifier::verify_full_resource(*b,ceilingDb);
+                QVERIFY2(va && vb,"Valid M17 output exceeded frozen M16 trim guard");
+                QCOMPARE(va.value()->trim_used,vb.value()->trim_used);
+                QCOMPARE(std::bit_cast<std::uint64_t>(
+                    va.value()->global_trim_gain),
+                    std::bit_cast<std::uint64_t>(
+                        vb.value()->global_trim_gain));
+                QCOMPARE(va.value()->status,
+                    analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+                for(std::size_t ch=0;ch<a->view().format().channel_count();++ch) {
+                    const auto first=a->view().channel(ch);
+                    const auto second=b->view().channel(ch);
+                    QVERIFY(first && second);
+                    for(int i=0;i<n;++i)
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            (*first.value())[static_cast<std::size_t>(i)]),
+                            std::bit_cast<std::uint64_t>(
+                                (*second.value())[static_cast<std::size_t>(i)]));
+                }
+                const auto finalA=analysis::measure_true_peak_full_resource(*a);
+                const auto finalB=analysis::measure_true_peak_full_resource(*b);
+                QVERIFY(finalA && finalB);
+                QCOMPARE(std::bit_cast<std::uint64_t>(
+                    finalA.value()->global_linear_peak()),
+                    std::bit_cast<std::uint64_t>(
+                        finalB.value()->global_linear_peak()));
+                QVERIFY(finalA.value()->global_linear_peak()<=
+                    std::pow(10.0,ceilingDb/20.0));
+            }
+        }
+    }
+}
 } // namespace
 } // namespace rgsml::tests
 
