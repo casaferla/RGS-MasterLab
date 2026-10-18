@@ -517,8 +517,8 @@ private slots:
 
 void SourceMetadataPanelSmokeTest::truePeakLimiterLayoutCandidate()
 {
-    // True Qt scenegraph candidate only: simulated BYP/ON switches presentation.
-    // A real Limiter DSP/VM is not part of this fixture or this commit.
+    // Native Qt M17 candidate: true product QML components and native capture,
+    // but no production limiter adapter, real DSP active state or sample data.
     QQmlEngine engine;
     QQmlComponent component{&engine};
     static constexpr auto qml = R"qml(
@@ -527,19 +527,32 @@ import QtQuick.Window
 import Rgsml.Ui 1.0
 Window {
     id: fixtureWindow
+    objectName: "m17CandidateBypassState"
+    property bool bypass: true
     width: 1184
     height: 688
     visible: false
-    QtObject {
-        id: state
-        objectName: "m17CandidateBypassState"
-        property bool bypass: true
-    }
-    TruePeakLimiterEditor {
-        objectName: "m17CandidateEditor"
-        width: fixtureWindow.width - 474
-        height: fixtureWindow.height - 140
-        limiterModule: state
+    color: "#06121F"
+    Rectangle {
+        anchors.fill: parent
+        color: "#06121F"
+        Text {
+            anchors.top: parent.top
+            anchors.topMargin: 24
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: "M17 — QT UI LAYOUT CANDIDATE / NO PRODUCTIVE LIMITER BINDING"
+            color: "#8EAAB9"
+            font.family: "Segoe UI"
+            font.pixelSize: 13
+        }
+        TruePeakLimiterEditor {
+            objectName: "m17CandidateEditor"
+            x: (parent.width - width) / 2
+            y: 70
+            width: fixtureWindow.width - 474
+            height: fixtureWindow.height - 140
+            limiterModule: fixtureWindow
+        }
     }
 }
 )qml";
@@ -575,10 +588,20 @@ Window {
         window->resize(size);
         QTest::qWait(100);
         QCoreApplication::processEvents();
+        const QString dimension = QString::number(size.width()) + "x"
+            + QString::number(size.height());
+        qInfo().noquote() << "M17_UI_CAPTURE_PHASE=BYP" << dimension;
+        QVERIFY2(capture_visual_evidence(window,
+            QStringLiteral("m17_qt_candidate_byp_") + dimension + ".png", size),
+            "Native Qt BYP screenshot could not be written");
         const QPointF meterPos = meter->mapToItem(editor, QPointF{});
         const QPointF limiterPos = limiter->mapToItem(editor, QPointF{});
         const QSizeF meterSize = meter->size();
         const QSizeF limiterSize = limiter->size();
+        qInfo() << "M17_GEOMETRY" << size << meterSize << limiterSize
+            << "meterPos" << meterPos << "limiterPos" << limiterPos;
+        // Geometry/correctness assertions are ALWAYS required. Screenshots
+        // are evidence, not a replacement for fail-closed layout checks.
         QVERIFY2(meterSize.width() >= 505.0 && limiterSize.width() >= 190.0,
             "Three M17 columns do not fit available editor width");
         QVERIFY2(limiterPos.x() >= meterPos.x() + meterSize.width(),
@@ -588,19 +611,24 @@ Window {
         QVERIFY(rail->property("visible").toBool());
         QVERIFY(gr->property("visible").toBool());
         QVERIFY(trim->property("visible").toBool());
-        QVERIFY(!ceiling->property("enabled").toBool());
+        QVERIFY2(!ceiling->property("enabled").toBool(),
+            "BYP must not enable Limiter sonic controls");
         QCOMPARE(editor->property("familyAccent").value<QColor>(),
             QColor{QStringLiteral("#6CBCCF")});
         QVERIFY(state->setProperty("bypass", false));
         QCoreApplication::processEvents();
         QCOMPARE(editor->property("familyAccent").value<QColor>(),
             QColor{QStringLiteral("#C4774A")});
+        qInfo().noquote() << "M17_UI_CAPTURE_PHASE=ON" << dimension;
+        QVERIFY2(capture_visual_evidence(window,
+            QStringLiteral("m17_qt_candidate_on_") + dimension + ".png", size),
+            "Native Qt ON screenshot could not be written");
         QCOMPARE(meter->mapToItem(editor, QPointF{}), meterPos);
         QCOMPARE(limiter->mapToItem(editor, QPointF{}), limiterPos);
         QCOMPARE(meter->size(), meterSize);
         QCOMPARE(limiter->size(), limiterSize);
         QVERIFY2(!ceiling->property("enabled").toBool(),
-            "Without a real ViewModel, an active preview cannot edit Ceiling");
+            "Missing productive limiter VM must not enable a false Ceiling edit");
         QVERIFY(state->setProperty("bypass", true));
         QCoreApplication::processEvents();
     }
