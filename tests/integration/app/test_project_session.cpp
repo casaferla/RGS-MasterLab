@@ -176,6 +176,7 @@ private slots:
     void future_opaque_preservation_and_non_degraded_b4();
     void source_reset_vs_project_open();
     void stereo_ms_four_module_project_roundtrip_and_atomic_rejection();
+    void product_default_stereo_ms_project_save_open_save_identity();
 };
 
 void ProjectSessionTest::source_save_open_existing_fail()
@@ -1315,6 +1316,88 @@ void ProjectSessionTest::source_reset_vs_project_open()
              QString::fromStdString(bandId.value()->to_string()));
 }
 
+
+void ProjectSessionTest::product_default_stereo_ms_project_save_open_save_identity()
+{
+    // Product-startup M15 is a real fourth persisted module, but the legacy
+    // 2/3-node project factories remain unchanged and never auto-insert it.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto wavPath = wav(dir, QStringLiteral("product_default_source.wav"), 9);
+    QVERIFY(!wavPath.isEmpty());
+
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(wavPath));
+    QVERIFY(author.source.source_resource());
+    const auto stereoUuid = core::Uuid::parse(
+        "17000000-0000-4000-8000-000000000015");
+    QVERIFY(stereoUuid);
+    const auto stereoId = dsp::ModuleInstanceId::from_uuid(*stereoUuid.value());
+    QVERIFY(stereoId);
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto product = app::MasteringChainState::create_product_default(
+        *registry.value(), author.chainId, author.gainId, author.eqId,
+        author.compId, *stereoId.value());
+    QVERIFY(product);
+    *author.masteringChainState = std::move(*product.value());
+    author.adapterModel->refreshFromAuthority();
+    QCOMPARE(author.masteringChainState->module_count(), std::size_t{4});
+    const auto defaults = dsp::StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    QCOMPARE(author.masteringChainState->stereo_ms_parameters(),
+             std::optional{*defaults.value()});
+    auto bypass = author.masteringChainState->is_bypassed(*stereoId.value());
+    QVERIFY(bypass);
+    QVERIFY(*bypass.value());
+
+    const auto firstPath = dir.filePath(QStringLiteral("product_default_four.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(firstPath));
+    QCOMPARE(author.project.error_message(), QString{});
+    auto first = load_project(firstPath);
+    QVERIFY(first);
+    const auto& authored = first.value()->document().chains;
+    QCOMPARE(authored.size(), std::size_t{1});
+    QCOMPARE(authored[0].modules.size(), std::size_t{4});
+    QCOMPARE(authored[0].modules[0].typeId, std::string("rgsml.dsp.gain"));
+    QCOMPARE(authored[0].modules[1].typeId, std::string("rgsml.dsp.parametric-eq"));
+    QCOMPARE(authored[0].modules[2].typeId, std::string("rgsml.dsp.compressor"));
+    QCOMPARE(authored[0].modules[3].typeId, std::string("rgsml.dsp.stereo-ms"));
+    QCOMPARE(authored[0].modules[3].instanceId, *stereoUuid.value());
+    QCOMPARE(authored[0].modules[3].userBypass, true);
+
+    Session reopened;
+    reopened.project.openProject(QUrl::fromLocalFile(firstPath));
+    QCOMPARE(reopened.project.error_message(), QString{});
+    QVERIFY(!reopened.project.degraded());
+    QCOMPARE(reopened.masteringChainState->module_count(), std::size_t{4});
+    QCOMPARE(reopened.masteringChainState->chain_id(), author.chainId);
+    QCOMPARE(reopened.masteringChainState->stereo_ms_instance_id(),
+             std::optional{*stereoId.value()});
+    QCOMPARE(reopened.masteringChainState->stereo_ms_parameters(),
+             std::optional{*defaults.value()});
+    bypass = reopened.masteringChainState->is_bypassed(*stereoId.value());
+    QVERIFY(bypass);
+    QVERIFY(*bypass.value());
+
+    const auto secondPath = dir.filePath(QStringLiteral("product_default_four_again.rgsml"));
+    reopened.project.saveProjectAs(QUrl::fromLocalFile(secondPath));
+    QCOMPARE(reopened.project.error_message(), QString{});
+    auto second = load_project(secondPath);
+    QVERIFY(second);
+    const auto& roundtripped = second.value()->document().chains;
+    QCOMPARE(roundtripped.size(), std::size_t{1});
+    QCOMPARE(roundtripped[0].chainId, authored[0].chainId);
+    QCOMPARE(roundtripped[0].revision, authored[0].revision);
+    QCOMPARE(roundtripped[0].modules.size(), std::size_t{4});
+    for (std::size_t i = 0; i < 4U; ++i) {
+        QCOMPARE(roundtripped[0].modules[i].typeId, authored[0].modules[i].typeId);
+        QCOMPARE(roundtripped[0].modules[i].instanceId, authored[0].modules[i].instanceId);
+        QCOMPARE(roundtripped[0].modules[i].userBypass, authored[0].modules[i].userBypass);
+        QCOMPARE(roundtripped[0].modules[i].parameters.canonical_utf8(),
+                 authored[0].modules[i].parameters.canonical_utf8());
+    }
+}
 
 void ProjectSessionTest::stereo_ms_four_module_project_roundtrip_and_atomic_rejection()
 {
