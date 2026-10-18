@@ -8,6 +8,8 @@ Item {
     objectName: "truePeakSharedRail"
     property var measurementProvider: null
     property var liveProvider: null
+    property bool useFamilyAccent: false
+    property color familyAccent: "#6CBCCF"
     readonly property bool hasMeasurement: measurementProvider
         ? measurementProvider.hasMeasurement : false
     implicitWidth: 316
@@ -28,6 +30,8 @@ Item {
 
         TruePeakReadoutCard {
             objectName: "truePeakRecentCard"
+            useFamilyAccent: root.useFamilyAccent
+            familyAccent: root.familyAccent
             Layout.fillWidth: true
             Layout.preferredHeight: root.compactRail ? 68 : 108
             Layout.minimumHeight: 66
@@ -41,6 +45,8 @@ Item {
         }
         TruePeakReadoutCard {
             objectName: "truePeakHoldCard"
+            useFamilyAccent: root.useFamilyAccent
+            familyAccent: root.familyAccent
             Layout.fillWidth: true
             Layout.preferredHeight: root.compactRail ? 68 : 108
             Layout.minimumHeight: 66
@@ -56,6 +62,8 @@ Item {
         }
         TruePeakReadoutCard {
             objectName: "truePeakFullResourceCard"
+            useFamilyAccent: root.useFamilyAccent
+            familyAccent: root.familyAccent
             Layout.fillWidth: true
             Layout.preferredHeight: root.compactRail ? 68 : 108
             Layout.minimumHeight: 66
@@ -70,6 +78,8 @@ Item {
         }
         TruePeakStatusCard {
             objectName: "truePeakProvenanceCard"
+            useFamilyAccent: root.useFamilyAccent
+            familyAccent: root.familyAccent
             Layout.fillWidth: true
             Layout.preferredHeight: root.compactRail ? 88 : 132
             Layout.minimumHeight: 84

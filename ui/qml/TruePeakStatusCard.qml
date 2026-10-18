@@ -8,10 +8,12 @@ Rectangle {
     property string qualification: "NO QUALIFIED MEASUREMENT"
     property string identity: "NO PUBLISHED REALIZATION"
     property string formatLabel: "—"
+    property bool useFamilyAccent: false
+    property color familyAccent: "#6CBCCF"
     implicitHeight: 112
     radius: 7
     color: "#10273A"
-    border.color: "#294459"
+    border.color: root.useFamilyAccent ? root.familyAccent : "#294459"
     border.width: 1
 
     ColumnLayout {
@@ -20,7 +22,7 @@ Rectangle {
         spacing: root.height < 115 ? 3 : 5
         Text {
             text: "MEASUREMENT / PROVENANCE"
-            color: "#91AEC2"
+            color: root.useFamilyAccent ? root.familyAccent : "#91AEC2"
             font.family: "Segoe UI"
             font.pixelSize: 11
             font.bold: true

@@ -9,6 +9,10 @@ Item {
     objectName: "truePeakMeterSurface"
     property var measurementProvider: null
     property var liveProvider: null
+    // M17 opts into compact and family theme; M16 defaults remain unchanged.
+    property bool compactForLimiter: false
+    property bool useFamilyAccent: false
+    property color familyAccent: "#6CBCCF"
     // The large channel bars are LIVE-only: a whole-resource future maximum
     // must never appear as a frozen "now" meter during Play or seek.
     // Full-resource STATIC remains independently visible in the shared rail.
@@ -29,17 +33,17 @@ Item {
     RowLayout {
         objectName: "truePeakContentLayout"
         anchors.fill: parent
-        spacing: 10
+        spacing: root.compactForLimiter ? 8 : 10
 
             Rectangle {
                 id: meterBay
                 objectName: "truePeakStaticMeterBay"
                 Layout.fillWidth: true
-                Layout.minimumWidth: 340
+                Layout.minimumWidth: root.compactForLimiter ? 270 : 340
                 Layout.fillHeight: true
                 radius: 8
                 color: "#0A1C2D"
-                border.color: "#31506B"
+                border.color: root.useFamilyAccent ? root.familyAccent : "#31506B"
                 border.width: 1
 
                 ColumnLayout {
@@ -48,7 +52,7 @@ Item {
                     spacing: 5
                     Text {
                         text: "LIVE PROCESSED TRUE PEAK"
-                        color: "#B3C9D9"
+                        color: root.useFamilyAccent ? root.familyAccent : "#B3C9D9"
                         font.family: "Segoe UI"
                         font.pixelSize: 11
                         font.weight: Font.DemiBold
@@ -57,13 +61,15 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        spacing: 12
+                        spacing: root.compactForLimiter ? 6 : 12
                         Item { Layout.fillWidth: true }
                         TruePeakStaticLane {
                             objectName: "truePeakLeftLane"
                             Layout.fillHeight: true
-                            Layout.preferredWidth: 135
+                            Layout.preferredWidth: root.compactForLimiter ? 117 : 135
                             channelName: root.isMono ? "C" : "L"
+                            useFamilyAccent: root.useFamilyAccent
+                            familyAccent: root.familyAccent
                             reading: root.liveAvailable
                                 ? root.liveProvider.leftText : "—"
                             available: root.liveAvailable
@@ -79,9 +85,11 @@ Item {
                         TruePeakStaticLane {
                             objectName: "truePeakRightLane"
                             Layout.fillHeight: true
-                            Layout.preferredWidth: 135
+                            Layout.preferredWidth: root.compactForLimiter ? 117 : 135
                             visible: !root.isMono
                             channelName: "R"
+                            useFamilyAccent: root.useFamilyAccent
+                            familyAccent: root.familyAccent
                             reading: root.liveAvailable
                                 && root.measuredChannels === 2
                                 ? root.liveProvider.rightText : "—"
@@ -126,12 +134,15 @@ Item {
             TruePeakSharedRail {
                 id: rail
                 objectName: "truePeakMeterSharedRail"
-                Layout.minimumWidth: 278
-                Layout.preferredWidth: 318
-                Layout.maximumWidth: 330
+                Layout.minimumWidth: root.compactForLimiter ? 225 : 278
+                Layout.preferredWidth: root.compactForLimiter ? 225 : 318
+                Layout.maximumWidth: root.compactForLimiter ? 240 : 330
                 Layout.fillHeight: true
                 measurementProvider: root.measurementProvider
                 liveProvider: root.liveProvider
+                useFamilyAccent: root.useFamilyAccent
+                familyAccent: root.familyAccent
+                fullResourceAccent: root.useFamilyAccent ? root.familyAccent : "#6CBCCF"
             }
     }
 }

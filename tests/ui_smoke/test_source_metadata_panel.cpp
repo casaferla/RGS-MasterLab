@@ -510,9 +510,102 @@ private slots:
     void emptyReadyErrorAndWindowLifecycle();
     void stereoMsOptInVisualEvidence();
     void truePeakReadOnlyAnalysisVisualEvidence();
+    void truePeakLimiterLayoutCandidate();
 };
 
 
+
+void SourceMetadataPanelSmokeTest::truePeakLimiterLayoutCandidate()
+{
+    // True Qt scenegraph candidate only: simulated BYP/ON switches presentation.
+    // A real Limiter DSP/VM is not part of this fixture or this commit.
+    QQmlEngine engine;
+    QQmlComponent component{&engine};
+    static constexpr auto qml = R"qml(
+import QtQuick
+import QtQuick.Window
+import Rgsml.Ui 1.0
+Window {
+    id: fixtureWindow
+    width: 1184
+    height: 688
+    visible: false
+    QtObject {
+        id: state
+        objectName: "m17CandidateBypassState"
+        property bool bypass: true
+    }
+    TruePeakLimiterEditor {
+        objectName: "m17CandidateEditor"
+        width: fixtureWindow.width - 474
+        height: fixtureWindow.height - 140
+        limiterModule: state
+    }
+}
+)qml";
+    component.setData(QByteArray{qml},
+        QUrl{QStringLiteral("qrc:/m17/geometry-candidate.qml")});
+    QVERIFY2(component.status() != QQmlComponent::Error,
+        qPrintable(component.errorString()));
+    QScopedPointer<QObject> instance{component.create()};
+    QVERIFY2(instance, qPrintable(component.errorString()));
+    auto* window = qobject_cast<QQuickWindow*>(instance.data());
+    QVERIFY(window);
+    window->show();
+    QTest::qWait(160);
+    QCoreApplication::processEvents();
+    auto* state = find_child_by_name(instance.data(),
+        QStringLiteral("m17CandidateBypassState"));
+    auto* editor = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17CandidateEditor")));
+    auto* meter = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17SharedMeter")));
+    auto* limiter = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17LimiterColumn")));
+    auto* ceiling = find_child_by_name(instance.data(),
+        QStringLiteral("m17CeilingControl"));
+    auto* rail = find_child_by_name(instance.data(),
+        QStringLiteral("truePeakMeterSharedRail"));
+    auto* gr = find_child_by_name(instance.data(),
+        QStringLiteral("m17GainReductionHistory"));
+    auto* trim = find_child_by_name(instance.data(),
+        QStringLiteral("m17VerificationTrim"));
+    QVERIFY(state && editor && meter && limiter && ceiling && rail && gr && trim);
+    for (const QSize size : {QSize{1184, 688}, QSize{1440, 900}}) {
+        window->resize(size);
+        QTest::qWait(100);
+        QCoreApplication::processEvents();
+        const QPointF meterPos = meter->mapToItem(editor, QPointF{});
+        const QPointF limiterPos = limiter->mapToItem(editor, QPointF{});
+        const QSizeF meterSize = meter->size();
+        const QSizeF limiterSize = limiter->size();
+        QVERIFY2(meterSize.width() >= 505.0 && limiterSize.width() >= 190.0,
+            "Three M17 columns do not fit available editor width");
+        QVERIFY2(limiterPos.x() >= meterPos.x() + meterSize.width(),
+            "M17 meter and limiter columns overlap");
+        QVERIFY2(limiterPos.x() + limiterSize.width() <= editor->width() + 0.5,
+            "M17 limiter overflows editor");
+        QVERIFY(rail->property("visible").toBool());
+        QVERIFY(gr->property("visible").toBool());
+        QVERIFY(trim->property("visible").toBool());
+        QVERIFY(!ceiling->property("enabled").toBool());
+        QCOMPARE(editor->property("familyAccent").value<QColor>(),
+            QColor{QStringLiteral("#6CBCCF")});
+        QVERIFY(state->setProperty("bypass", false));
+        QCoreApplication::processEvents();
+        QCOMPARE(editor->property("familyAccent").value<QColor>(),
+            QColor{QStringLiteral("#C4774A")});
+        QCOMPARE(meter->mapToItem(editor, QPointF{}), meterPos);
+        QCOMPARE(limiter->mapToItem(editor, QPointF{}), limiterPos);
+        QCOMPARE(meter->size(), meterSize);
+        QCOMPARE(limiter->size(), limiterSize);
+        QVERIFY2(!ceiling->property("enabled").toBool(),
+            "Without a real ViewModel, an active preview cannot edit Ceiling");
+        QVERIFY(state->setProperty("bypass", true));
+        QCoreApplication::processEvents();
+    }
+    window->close();
+}
 
 void SourceMetadataPanelSmokeTest::truePeakReadOnlyAnalysisVisualEvidence()
 {

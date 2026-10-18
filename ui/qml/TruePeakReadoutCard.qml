@@ -8,6 +8,8 @@ Rectangle {
     property string reading: "—"
     property string detail: ""
     property bool available: false
+    property bool useFamilyAccent: false
+    property color familyAccent: "#6CBCCF"
     property color valueColor: "#E9F7FF"
     property bool showColorKey: false
     property color keyColor: "#F2C66F"
@@ -28,7 +30,7 @@ Rectangle {
     implicitHeight: 108
     radius: 7
     color: "#10273A"
-    border.color: "#294459"
+    border.color: root.useFamilyAccent ? root.familyAccent : "#294459"
     border.width: 1
 
     Rectangle {
@@ -50,7 +52,7 @@ Rectangle {
         spacing: root.height < 95 ? 2 : 5
         Text {
             text: root.heading
-            color: "#91AEC2"
+            color: root.useFamilyAccent ? root.familyAccent : "#91AEC2"
             font.family: "Segoe UI"
             font.pixelSize: 11
             font.bold: true

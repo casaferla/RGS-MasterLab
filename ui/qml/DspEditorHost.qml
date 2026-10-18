@@ -285,6 +285,21 @@ Rectangle {
             liveProvider: root.truePeakLiveViewModel
         }
 
+        // The M17 editor is reachable ONLY from a real terminal adapter;
+        // M16 retains its independent meter presentation identity.
+        TruePeakLimiterEditor {
+            id: truePeakLimiterEditor
+            objectName: "truePeakLimiterEditor"
+            visible: root.isLimiterEditor
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            limiterModule: root.isLimiterEditor ? root.activeModule : null
+            // Fail closed until a production limiter parameter VM is wired.
+            limiterViewModel: null
+            measurementProvider: root.truePeakStaticViewModel
+            liveProvider: root.truePeakLiveViewModel
+        }
+
         StereoMsEditor {
             id: stereoMsEditor
             objectName: "stereoMsEditor"

@@ -14,9 +14,11 @@ Rectangle {
     property bool holdAvailable: false
     property real holdLevel: 0.0
     property string meterKind: "FULL RESOURCE"
+    property bool useFamilyAccent: false
+    property color familyAccent: "#6CBCCF"
     radius: 7
     color: "#091C2B"
-    border.color: "#24425A"
+    border.color: root.useFamilyAccent ? root.familyAccent : "#24425A"
     border.width: 1
     implicitWidth: 135
     implicitHeight: 270
@@ -91,11 +93,13 @@ Rectangle {
                     gradient: Gradient {
                         GradientStop {
                             position: 0.0
-                            color: root.aboveDigitalZero ? "#F27683" : "#9BBED2"
+                            color: root.aboveDigitalZero ? "#F27683"
+                                : root.useFamilyAccent ? root.familyAccent : "#9BBED2"
                         }
                         GradientStop {
                             position: 1.0
-                            color: root.aboveDigitalZero ? "#B64A53" : "#527B9F"
+                            color: root.aboveDigitalZero ? "#B64A53"
+                                : root.useFamilyAccent ? Qt.darker(root.familyAccent, 1.35) : "#527B9F"
                         }
                     }
                 }
