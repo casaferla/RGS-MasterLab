@@ -534,7 +534,12 @@ Window {
     visible: false
     color: "#06121F"
     Rectangle {
-        anchors.fill: parent
+        id: captureSurface
+        objectName: "m17CandidateCaptureSurface"
+        // Independent from the GitHub runner's constrained virtual monitor.
+        // Same technique as the already-proven M16 true-peak Qt evidence.
+        width: 1184
+        height: 688
         color: "#06121F"
         Text {
             anchors.top: parent.top
@@ -549,8 +554,8 @@ Window {
             objectName: "m17CandidateEditor"
             x: (parent.width - width) / 2
             y: 70
-            width: fixtureWindow.width - 474
-            height: fixtureWindow.height - 140
+            width: captureSurface.width - 474
+            height: captureSurface.height - 140
             limiterModule: fixtureWindow
         }
     }
@@ -569,6 +574,8 @@ Window {
     QCoreApplication::processEvents();
     auto* state = find_child_by_name(instance.data(),
         QStringLiteral("m17CandidateBypassState"));
+    auto* captureSurface = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17CandidateCaptureSurface")));
     auto* editor = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("m17CandidateEditor")));
     auto* meter = qobject_cast<QQuickItem*>(find_child_by_name(
@@ -583,17 +590,40 @@ Window {
         QStringLiteral("m17GainReductionHistory"));
     auto* trim = find_child_by_name(instance.data(),
         QStringLiteral("m17VerificationTrim"));
-    QVERIFY(state && editor && meter && limiter && ceiling && rail && gr && trim);
+    QVERIFY(state && captureSurface && editor && meter && limiter
+        && ceiling && rail && gr && trim);
+    auto captureCandidate = [captureSurface](
+        const QSize& size, const QString& fileName) -> bool {
+        // grabToImage captures exact native QML coordinates even if a virtual
+        // display clamps the outer QWindow; never upscale a cropped window.
+        const auto grab = captureSurface->grabToImage();
+        if (!grab)
+            return false;
+        QSignalSpy ready{grab.data(), &QQuickItemGrabResult::ready};
+        if (ready.empty() && !ready.wait(15000))
+            return false;
+        const QImage image = grab->image();
+        if (image.isNull() || image.size() != size)
+            return false;
+        const QString directory =
+            qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if (directory.isEmpty())
+            return true;
+        return QDir{}.mkpath(directory)
+            && image.save(QDir{directory}.filePath(fileName), "PNG");
+    };
     for (const QSize size : {QSize{1184, 688}, QSize{1440, 900}}) {
+        captureSurface->setWidth(size.width());
+        captureSurface->setHeight(size.height());
         window->resize(size);
         QTest::qWait(100);
         QCoreApplication::processEvents();
         const QString dimension = QString::number(size.width()) + "x"
             + QString::number(size.height());
         qInfo().noquote() << "M17_UI_CAPTURE_PHASE=BYP" << dimension;
-        QVERIFY2(capture_visual_evidence(window,
-            QStringLiteral("m17_qt_candidate_byp_") + dimension + ".png", size),
-            "Native Qt BYP screenshot could not be written");
+        QVERIFY2(captureCandidate(size,
+            QStringLiteral("m17_qt_candidate_byp_") + dimension + ".png"),
+            "Native Qt BYP offscreen screenshot could not be written");
         const QPointF meterPos = meter->mapToItem(editor, QPointF{});
         const QPointF limiterPos = limiter->mapToItem(editor, QPointF{});
         const QSizeF meterSize = meter->size();
@@ -620,9 +650,9 @@ Window {
         QCOMPARE(editor->property("familyAccent").value<QColor>(),
             QColor{QStringLiteral("#C4774A")});
         qInfo().noquote() << "M17_UI_CAPTURE_PHASE=ON" << dimension;
-        QVERIFY2(capture_visual_evidence(window,
-            QStringLiteral("m17_qt_candidate_on_") + dimension + ".png", size),
-            "Native Qt ON screenshot could not be written");
+        QVERIFY2(captureCandidate(size,
+            QStringLiteral("m17_qt_candidate_on_") + dimension + ".png"),
+            "Native Qt ON offscreen screenshot could not be written");
         QCOMPARE(meter->mapToItem(editor, QPointF{}), meterPos);
         QCOMPARE(limiter->mapToItem(editor, QPointF{}), limiterPos);
         QCOMPARE(meter->size(), meterSize);
