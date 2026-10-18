@@ -65,6 +65,21 @@ render_true_peak_limiter_terminal_candidate(
             "M17 source timeline is outside the representable frame range."));
     }
 
+    // A bypass must not smuggle nonfinite PCM into a supposedly valid
+    // realization. Check EVERY channel before writing either output lane.
+    for (std::size_t channel=0;channel<input.format().channel_count();++channel) {
+        const auto lane=input.channel(channel);
+        if (!lane)
+            return Result<TruePeakLimiterTerminalCandidate>::failure(candidate_error(
+                ErrorCode::InvalidArgument,"M17_TERMINAL_CHANNEL_UNAVAILABLE",
+                "Complete terminal PCM requires every channel."));
+        for (const double sample:*lane.value())
+            if (!std::isfinite(sample))
+                return Result<TruePeakLimiterTerminalCandidate>::failure(candidate_error(
+                    ErrorCode::InvalidAudioSample,"M17_TERMINAL_NONFINITE_PCM",
+                    "Terminal PCM contains a nonfinite sample."));
+    }
+
     try {
         auto output = audio::AudioBuffer::create(input.format(),
             audio::FrameDomainId::OUTPUT_RATE, FrameIndex{origin},

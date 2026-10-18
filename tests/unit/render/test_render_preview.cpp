@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -2067,6 +2068,22 @@ void RenderPreviewTest::truePeakLimiterCheckedCandidateGenuineM16SixRateMatrix()
     QCOMPARE(bypass.value()->terminal.algorithmic_latency_frames,std::int64_t{0});
     QCOMPARE(bits(bypass.value()->terminal.compensated_pcm.view()),
         bits(src.value()->view()));
+
+    // A corrupt RIGHT lane must prevent BOTH active and BYP publication.
+    // No placeholder audio or fabricated silence is permitted on failure.
+    auto right=src.value()->mutable_view().channel(1);
+    QVERIFY(right);
+    (*right.value())[4]=std::numeric_limits<double>::infinity();
+    for(const bool bypassState:{false,true}) {
+        auto rejected=rgsml::render::render_true_peak_limiter_checked_candidate(
+            src.value()->view(),*p.value(),*registry.value(),
+            frame_count(7),bypassState);
+        QVERIFY(!rejected);
+        QCOMPARE(rejected.error()->code(),
+            rgsml::core::ErrorCode::InvalidAudioSample);
+        QCOMPARE(error_category(*rejected.error()),
+            std::string_view{"M17_TERMINAL_NONFINITE_PCM"});
+    }
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()
