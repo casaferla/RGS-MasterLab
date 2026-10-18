@@ -1,4 +1,5 @@
 #include "mastering_chain_state.hpp"
+#include "terminal_limiter_state.hpp"
 
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/uuid.hpp>
@@ -7,10 +8,18 @@
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
+#include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
+#include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/audio_format.hpp>
 
 #include <QtTest/QTest>
 
 #include <variant>
+#include <bit>
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace rgsml::tests {
@@ -42,6 +51,7 @@ private slots:
     void executionBindingsGeneration();
     void optInStereoMsStateAndBindings();
     void restoredFourNodeStereoMsPreservesTypedIdentityAndBypass();
+    void terminalLimiterProductStateAndActualPcm();
 };
 
 void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
@@ -403,6 +413,89 @@ void MasteringChainStateTest::restoredFourNodeStereoMsPreservesTypedIdentityAndB
 
 }  // namespace
 }  // namespace rgsml::tests
+
+
+void MasteringChainStateTest::terminalLimiterProductStateAndActualPcm()
+{
+    auto reg=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(reg);
+    const auto id=test_instance_id("7e000000-0000-4000-8000-000000000017");
+    auto state=TerminalLimiterState::create_default(*reg.value(),id);
+    QVERIFY(state);
+    QCOMPARE(state.value()->chain().context().stage,ProcessingStage::MASTER);
+    QCOMPARE(state.value()->chain().context().segment,ChainSegment::TERMINAL);
+    QCOMPARE(state.value()->chain().instances().size(),std::size_t{1});
+    QCOMPARE(state.value()->chain().instances()[0].module_type_id(),
+        std::string_view{"rgsml.dsp.true-peak-limiter"});
+    QCOMPARE(state.value()->instance_id(),id);
+    QVERIFY(state.value()->bypassed());
+    auto original=state.value()->parameters();
+    for(double bad:{-12.01,0.01,std::numeric_limits<double>::infinity(),
+                    std::numeric_limits<double>::quiet_NaN()}) {
+        QVERIFY(!state.value()->set_ceiling_db_tp(bad));
+        QCOMPARE(state.value()->parameters(),original);
+    }
+    QVERIFY(state.value()->set_ceiling_db_tp(-12.0));
+    auto bindings=state.value()->execution_bindings();
+    QCOMPARE(bindings.size(),std::size_t{1});
+    QCOMPARE(bindings[0].instance_id,id);
+    QCOMPARE(std::get<TruePeakLimiterParameters>(bindings[0].parameters)
+        .ceiling_db_tp(),-12.0);
+
+    auto rate=core::SampleRate::create(48000);
+    QVERIFY(rate);
+    auto fmt=rgsml::audio::AudioFormat::create(*rate.value(),
+        rgsml::audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto count=core::FrameCount::create(301);
+    auto block=core::FrameCount::create(17);
+    QVERIFY(count && block);
+    auto pcm=rgsml::audio::AudioBuffer::create(*fmt.value(),
+        rgsml::audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{1000},*count.value());
+    QVERIFY(pcm);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto plane=pcm.value()->mutable_view().channel(ch);
+        QVERIFY(plane);
+        for(std::size_t i=0;i<301;++i) {
+            const double x=i==0?4.0:(i==300?-3.0:(i%37==0?2.0:0.0625));
+            (*plane.value())[i]=ch==0?x:-0.75*x;
+        }
+    }
+    auto byp=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        pcm.value()->view(),state.value()->chain(),bindings,
+        *reg.value(),*block.value());
+    QVERIFY(byp);
+    QVERIFY(byp.value()->checked.terminal.bypassed);
+    QVERIFY(!byp.value()->checked.final_check.has_value());
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto a=pcm.value()->view().channel(ch);
+        auto b=byp.value()->checked.terminal.compensated_pcm.view().channel(ch);
+        QVERIFY(a && b);
+        for(std::size_t i=0;i<301;++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>((*a.value())[i]),
+                     std::bit_cast<std::uint64_t>((*b.value())[i]));
+    }
+    QVERIFY(state.value()->set_user_bypass(false));
+    auto active=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        pcm.value()->view(),state.value()->chain(),
+        state.value()->execution_bindings(),*reg.value(),*block.value());
+    QVERIFY2(active,active?"":active.error()->message().c_str());
+    QVERIFY(!active.value()->checked.terminal.bypassed);
+    QVERIFY(active.value()->checked.final_check.has_value());
+    QCOMPARE(active.value()->limiter_instance_id,id);
+    QCOMPARE(active.value()->terminal_chain_revision,state.value()->chain().revision());
+    QVERIFY(active.value()->checked.final_check->after_linear_peak
+        <=std::pow(10.0,-12.0/20.0));
+    QCOMPARE(active.value()->checked.terminal.applied_gain_frames.size(),std::size_t{301});
+    QVERIFY(state.value()->set_ceiling_db_tp(-6.0));
+    QCOMPARE(std::get<TruePeakLimiterParameters>(bindings[0].parameters)
+        .ceiling_db_tp(),-12.0);
+    auto updated=state.value()->execution_bindings();
+    QCOMPARE(std::get<TruePeakLimiterParameters>(updated[0].parameters)
+        .ceiling_db_tp(),-6.0);
+    QCOMPARE(state.value()->instance_id(),id);
+}
 
 QTEST_APPLESS_MAIN(rgsml::tests::MasteringChainStateTest)
 
