@@ -123,6 +123,7 @@ private slots:
     void longRunningMultiHopResumeIsBitIdentical();
     void allRateOwnerDigestAndRevisionAreAtomic();
     void poisonedAbsoluteOriginCannotOverflowCheckpointClock();
+    void oldRateCheckpointRejectedAfterNewRatePrepare();
 };
 void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
 {
@@ -719,6 +720,61 @@ void TruePeakLimiterCheckpointTest::poisonedAbsoluteOriginCannotOverflowCheckpoi
         QVERIFY(accepted);
         QCOMPARE(*accepted.value(),*good.value());
     }
+}
+
+
+void TruePeakLimiterCheckpointTest::oldRateCheckpointRejectedAfterNewRatePrepare()
+{
+    // U5: a real digest-valid checkpoint from an interrupted old resource
+    // cannot jump across an authorized format reprepare, even if module
+    // type, parameter fingerprint and strict FP backend all match.
+    // A later new-format checkpoint remains canonical and restorable.
+    constexpr std::array<int,6> fs{44100,48000,88200,96000,176400,192000};
+    for(std::size_t k=0;k<fs.size();++k)
+        for(const double ceiling:{-12.0,0.0}) {
+            const int oldRate=fs[k],nextRate=fs[(k+1U)%fs.size()];
+            auto active=fresh(oldRate,ceiling);
+            QVERIFY(active);
+            const auto first=processBlock(*active,oldRate,0,193,true);
+            QCOMPARE(first.size(),std::size_t{193});
+            const auto obsolete=active->runtime_checkpoint();
+            QVERIFY(obsolete);
+            const auto nextSpec=DspProcessSpec{
+                format(nextRate),audio::FrameDomainId::OUTPUT_RATE,
+                *core::FrameCount::create(4096).value()};
+            QVERIFY(active->prepare(nextSpec));
+            const auto pristine=active->runtime_checkpoint();
+            QVERIFY(pristine);
+            QVERIFY(!pristine.value()->next_input_frame);
+            QVERIFY(!active->restore_runtime_checkpoint(*obsolete.value()));
+            const auto unchanged=active->runtime_checkpoint();
+            QVERIFY(unchanged);
+            QCOMPARE(*unchanged.value(),*pristine.value());
+            auto freshReference=fresh(nextRate,ceiling);
+            QVERIFY(freshReference);
+            const auto virgin=freshReference->runtime_checkpoint();
+            QVERIFY(virgin);
+            QCOMPARE(*pristine.value(),*virgin.value());
+            constexpr int newFrames=287;
+            const auto a=processBlock(*active,nextRate,0,newFrames,true);
+            const auto b=processBlock(*freshReference,nextRate,0,newFrames,true);
+            QCOMPARE(a.size(),std::size_t{newFrames});
+            QCOMPARE(a.size(),b.size());
+            for(std::size_t i=0;i<a.size();++i)
+                for(std::size_t ch=0;ch<2;++ch)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(a[i][ch]),
+                        std::bit_cast<std::uint64_t>(b[i][ch]));
+            const auto canonical=active->runtime_checkpoint();
+            const auto freshCp=freshReference->runtime_checkpoint();
+            QVERIFY(canonical && freshCp);
+            QCOMPARE(*canonical.value(),*freshCp.value());
+            auto successor=fresh(nextRate,ceiling);
+            QVERIFY(successor);
+            QVERIFY(successor->restore_runtime_checkpoint(*canonical.value()));
+            const auto fromNew=successor->runtime_checkpoint();
+            QVERIFY(fromNew);
+            QCOMPARE(*fromNew.value(),*canonical.value());
+        }
 }
 
 } // namespace

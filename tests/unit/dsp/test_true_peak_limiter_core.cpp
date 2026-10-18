@@ -53,6 +53,7 @@ private slots:
     void midDrainInvalidCallsPreservePcmAndGainAcrossSixRates();
     void crossFormatPrepareCancelsPriorPendingResource();
     void liveWitnessDetachCannotAffectPcmOrTiming();
+    void maximumBlockFrameContractRejectsAtomically();
 };
 
 void TruePeakLimiterCoreTest::frozenAssetsMatchIndependentSources()
@@ -1879,6 +1880,202 @@ void TruePeakLimiterCoreTest::liveWitnessDetachCannotAffectPcmOrTiming()
                     QVERIFY(observer.records[i].gain>0.0&&observer.records[i].gain<=1.0);
                 }
                 QVERIFY(!mod.runtime_checkpoint());
+            }
+    }
+}
+
+
+void TruePeakLimiterCoreTest::maximumBlockFrameContractRejectsAtomically()
+{
+    // The caller can choose a small maximum process block even when the
+    // mandatory physical latency D is much larger. Exact-cap blocks are
+    // legal; oversize process AND finalize must reject before PCM, GR or
+    // checkpoint mutation, and the completed N+D result must be identical
+    // to an independently partitioned fresh instance.
+    constexpr int blockCap=64,n=131;
+    constexpr std::int64_t origin=25'000'019;
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        const int d=fs/200+8;
+        for(const bool stereo:{false,true})
+            for(const double ceiling:{-12.0,0.0}) {
+                std::vector<double> signal(n,+0.0);
+                for(int i=0;i<n;++i)
+                    signal[static_cast<std::size_t>(i)]=i==0?4.0:
+                        (i==n-1?-3.0:(i%47==0?-2.25:
+                        (i%13==0?-0.0:+0.125)));
+                const auto reference=runLimiterAudio(fs,stereo,signal,
+                    ceiling,{1,7,31,53},nullptr,origin);
+                QVERIFY(reference.size()==(stereo?2U:1U));
+                const auto fmt=limiterFormat(fs,stereo);
+                const auto params=dsp::TruePeakLimiterParameters::create(ceiling);
+                QVERIFY(params);
+                auto made=dsp::TruePeakLimiterModule::create(
+                    frozenLimiterDescriptor(),*params.value());
+                QVERIFY(made);
+                auto& module=**made.value();
+                const dsp::DspProcessSpec spec{
+                    fmt,audio::FrameDomainId::OUTPUT_RATE,
+                    *core::FrameCount::create(blockCap).value()};
+                const auto req=module.runtime_requirements(spec);
+                QVERIFY(req);
+                QCOMPARE(req.value()->algorithmic_latency_frames.value(),
+                    static_cast<std::int64_t>(d));
+                QVERIFY(module.prepare(spec));
+                AppliedGainTestCapture observer;
+                observer.records.reserve(n);
+                module.set_applied_gain_sink(
+                    &AppliedGainTestCapture::accept,&observer);
+                std::vector<std::vector<double>> raw(stereo?2U:1U);
+                int pos=0;
+                for(const int accepted:{blockCap,blockCap,n-2*blockCap}) {
+                    // Exercise failure both before the first packet and at
+                    // an already bound continuation with a hot detector.
+                    if(pos==0||pos==blockCap) {
+                        constexpr int oversized=blockCap+1;
+                        auto oversizedIn=audio::AudioBuffer::create(
+                            fmt,audio::FrameDomainId::OUTPUT_RATE,
+                            core::FrameIndex{origin+pos},
+                            *core::FrameCount::create(oversized).value());
+                        auto oversizedOut=audio::AudioBuffer::create(
+                            fmt,audio::FrameDomainId::OUTPUT_RATE,
+                            core::FrameIndex{origin+pos},
+                            *core::FrameCount::create(oversized).value());
+                        QVERIFY(oversizedIn && oversizedOut);
+                        for(std::size_t ch=0;ch<raw.size();++ch) {
+                            auto output=oversizedOut.value()->mutable_view().channel(ch);
+                            QVERIFY(output);
+                            std::fill(output.value()->begin(),
+                                output.value()->end(),-0.0);
+                        }
+                        const auto wrongRange=core::FrameRange::create(
+                            core::FrameIndex{origin+pos},
+                            core::FrameIndex{origin+pos+oversized});
+                        QVERIFY(wrongRange);
+                        const auto before=module.runtime_checkpoint();
+                        QVERIFY(before);
+                        const auto count=observer.records.size();
+                        QVERIFY(!module.process(oversizedIn.value()->view(),
+                            oversizedOut.value()->mutable_view(),
+                            dsp::DspProcessContext{*wrongRange.value(),
+                                pos==0,false}));
+                        const auto after=module.runtime_checkpoint();
+                        QVERIFY(after);
+                        QCOMPARE(*after.value(),*before.value());
+                        QCOMPARE(observer.records.size(),count);
+                        for(std::size_t ch=0;ch<raw.size();++ch) {
+                            const auto output=oversizedOut.value()->view().channel(ch);
+                            QVERIFY(output);
+                            for(const double x:*output.value())
+                                QCOMPARE(std::bit_cast<std::uint64_t>(x),
+                                    std::bit_cast<std::uint64_t>(-0.0));
+                        }
+                    }
+                    auto in=audio::AudioBuffer::create(fmt,
+                        audio::FrameDomainId::OUTPUT_RATE,
+                        core::FrameIndex{origin+pos},
+                        *core::FrameCount::create(accepted).value());
+                    auto out=audio::AudioBuffer::create(fmt,
+                        audio::FrameDomainId::OUTPUT_RATE,
+                        core::FrameIndex{origin+pos},
+                        *core::FrameCount::create(accepted).value());
+                    QVERIFY(in && out);
+                    for(std::size_t ch=0;ch<raw.size();++ch) {
+                        auto lane=in.value()->mutable_view().channel(ch);
+                        QVERIFY(lane);
+                        for(int i=0;i<accepted;++i) {
+                            const double x=signal[static_cast<std::size_t>(pos+i)];
+                            (*lane.value())[static_cast<std::size_t>(i)]=
+                                ch==0U?x:-x*0.375;
+                        }
+                    }
+                    const auto range=core::FrameRange::create(
+                        core::FrameIndex{origin+pos},
+                        core::FrameIndex{origin+pos+accepted});
+                    QVERIFY(range);
+                    QVERIFY(module.process(in.value()->view(),
+                        out.value()->mutable_view(),
+                        dsp::DspProcessContext{*range.value(),pos==0,false}));
+                    for(std::size_t ch=0;ch<raw.size();++ch) {
+                        const auto lane=out.value()->view().channel(ch);
+                        QVERIFY(lane);
+                        raw[ch].insert(raw[ch].end(),
+                            lane.value()->begin(),lane.value()->end());
+                    }
+                    pos+=accepted;
+                }
+                QCOMPARE(pos,n);
+                // A >maxBlock EOS request is invalid even though D is
+                // larger: it must not drain the detector or emit witness.
+                constexpr int oversizedDrain=blockCap+1;
+                auto failed=audio::AudioBuffer::create(fmt,
+                    audio::FrameDomainId::OUTPUT_RATE,
+                    core::FrameIndex{origin+n},
+                    *core::FrameCount::create(oversizedDrain).value());
+                QVERIFY(failed);
+                for(std::size_t ch=0;ch<raw.size();++ch) {
+                    auto lane=failed.value()->mutable_view().channel(ch);
+                    QVERIFY(lane);
+                    std::fill(lane.value()->begin(),lane.value()->end(),-0.0);
+                }
+                const auto badDrainRange=core::FrameRange::create(
+                    core::FrameIndex{origin+n},
+                    core::FrameIndex{origin+n+oversizedDrain});
+                QVERIFY(badDrainRange);
+                const auto saved=module.runtime_checkpoint();
+                QVERIFY(saved);
+                const auto witnessCount=observer.records.size();
+                QVERIFY(!module.finalize(failed.value()->mutable_view(),
+                    dsp::DspProcessContext{*badDrainRange.value(),false,false}));
+                const auto unchanged=module.runtime_checkpoint();
+                QVERIFY(unchanged);
+                QCOMPARE(*unchanged.value(),*saved.value());
+                QCOMPARE(observer.records.size(),witnessCount);
+                for(std::size_t ch=0;ch<raw.size();++ch) {
+                    const auto lane=failed.value()->view().channel(ch);
+                    QVERIFY(lane);
+                    for(const double x:*lane.value())
+                        QCOMPARE(std::bit_cast<std::uint64_t>(x),
+                            std::bit_cast<std::uint64_t>(-0.0));
+                }
+                int drained=0;
+                while(drained<d) {
+                    const int count=std::min(blockCap,d-drained);
+                    const auto frame=origin+n+drained;
+                    auto out=audio::AudioBuffer::create(fmt,
+                        audio::FrameDomainId::OUTPUT_RATE,
+                        core::FrameIndex{frame},
+                        *core::FrameCount::create(count).value());
+                    QVERIFY(out);
+                    const auto range=core::FrameRange::create(
+                        core::FrameIndex{frame},
+                        core::FrameIndex{frame+count});
+                    QVERIFY(range);
+                    QVERIFY(module.finalize(out.value()->mutable_view(),
+                        dsp::DspProcessContext{*range.value(),false,
+                            drained+count==d}));
+                    for(std::size_t ch=0;ch<raw.size();++ch) {
+                        const auto lane=out.value()->view().channel(ch);
+                        QVERIFY(lane);
+                        raw[ch].insert(raw[ch].end(),
+                            lane.value()->begin(),lane.value()->end());
+                    }
+                    drained+=count;
+                }
+                QCOMPARE(observer.records.size(),signal.size());
+                QVERIFY(!module.runtime_checkpoint());
+                for(std::size_t ch=0;ch<raw.size();++ch) {
+                    QCOMPARE(raw[ch].size(),signal.size()+static_cast<std::size_t>(d));
+                    for(std::size_t i=0;i<signal.size();++i)
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            raw[ch][static_cast<std::size_t>(d)+i]),
+                            std::bit_cast<std::uint64_t>(reference[ch][i]));
+                }
+                for(std::size_t i=0;i<observer.records.size();++i) {
+                    QCOMPARE(observer.records[i].programme_frame,
+                        origin+static_cast<std::int64_t>(i));
+                    QCOMPARE(observer.records[i].raw_output_frame,
+                        origin+static_cast<std::int64_t>(i)+d);
+                }
             }
     }
 }

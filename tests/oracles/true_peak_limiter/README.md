@@ -139,3 +139,17 @@ reattaches it for the remaining input and EOS. Whole PCM must still match
 no-sink output bitwise; GR observations contain the correct 17-frame
 provenance gap with no invented records. This does not implement renderer
 identity, final SRC, UI GR or U8 listening qualification.
+
+Pre-integration batch: U4 maximumBlockFrames contract (64 frames, D > 64)
+at six Fs, mono/stereo, -12/0 dBTP. A 65-frame process request before
+stream binding and after the first accepted 64-frame block, and a 65-frame
+finalize request before drain, all reject atomically: signed-zero PCM,
+gain witness and exact binary checkpoint unchanged. Accepted 64-frame
+stream blocks and D drain segmented to <=64 frames must reconstruct
+every N-frame sample bitwise against the independent fresh render.
+U5 checkpoint format-boundary matrix additionally cancels a 193-frame
+old-Fs resource by new-Fs prepare (six adjacent rate pairs, -12/0 dBTP).
+Obsolete digest-valid checkpoints fail without modifying the new pristine
+state; a new 287-frame checkpoint matches the independent freshly prepared
+instance byte-for-byte and restores to a third same-backend instance.
+No protected M16 edits, renderer work or U8 claims.
