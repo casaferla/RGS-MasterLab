@@ -474,6 +474,7 @@ private slots:
     void truePeakLimiterTerminalRendererBoundary();
     void truePeakLimiterOutputRateCandidateRendersRealPcm();
     void truePeakLimiterCheckedCandidateGenuineM16SixRateMatrix();
+    void truePeakLimiterBoundTerminalChainRejectsStaleOrFakeBindings();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
     void mixedGainAndEqOrderAndBypassIdentity();
@@ -2084,6 +2085,116 @@ void RenderPreviewTest::truePeakLimiterCheckedCandidateGenuineM16SixRateMatrix()
         QCOMPARE(error_category(*rejected.error()),
             std::string_view{"M17_TERMINAL_NONFINITE_PCM"});
     }
+}
+
+
+void RenderPreviewTest::truePeakLimiterBoundTerminalChainRejectsStaleOrFakeBindings()
+{
+    // A real Terminal ProcessingChain must own M17 activation. The caller
+    // cannot pass an arbitrary bypass bool or a dummy/default Ceiling.
+    auto registry=rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain=rgsml::dsp::ProcessingChain::create(*registry.value(),
+        {rgsml::dsp::ProcessingStage::MASTER,
+         rgsml::dsp::ChainSegment::TERMINAL});
+    QVERIFY(chain);
+    const auto id=make_id("2a000000-0000-0000-0000-000000000091");
+    const auto other=make_id("2a000000-0000-0000-0000-000000000092");
+    QVERIFY(chain.value()->add(id,"rgsml.dsp.true-peak-limiter",0));
+    auto ceiling=rgsml::dsp::TruePeakLimiterParameters::create(-12.0);
+    QVERIFY(ceiling);
+    const std::array<rgsml::dsp::ModuleExecutionBinding,1> binding{{
+        {id,*ceiling.value()}}};
+    constexpr std::int64_t n=301;
+    auto source=rgsml::audio::AudioBuffer::create(
+        format(rgsml::audio::ChannelLayout::STEREO_LR,48000),
+        rgsml::audio::FrameDomainId::OUTPUT_RATE,
+        rgsml::core::FrameIndex{1000},frame_count(n));
+    QVERIFY(source);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=source.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(std::size_t i=0;i<static_cast<std::size_t>(n);++i) {
+            const double x=i==0?4.0:(i==n-1?-3.0:(i%37==0?2.0:0.0625));
+            (*lane.value())[i]=ch==0?x:-0.75*x;
+        }
+    }
+    const auto beforeBits=bits(source.value()->view());
+
+    // Distinguish active processing from a genuine chain-owned bypass.
+    auto active=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),binding,*registry.value(),
+        frame_count(17));
+    QVERIFY2(active,active?"":active.error()->message().c_str());
+    QVERIFY(!active.value()->checked.terminal.bypassed);
+    QVERIFY(active.value()->checked.final_check.has_value());
+    QCOMPARE(active.value()->limiter_instance_id,id);
+    QCOMPARE(active.value()->terminal_chain_revision,chain.value()->revision());
+    QVERIFY(bits(active.value()->checked.terminal.compensated_pcm.view())
+        !=beforeBits);
+
+    QVERIFY(chain.value()->set_user_bypass(id,true));
+    auto bypass=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),binding,*registry.value(),
+        frame_count(1));
+    QVERIFY(bypass);
+    QVERIFY(bypass.value()->checked.terminal.bypassed);
+    QVERIFY(!bypass.value()->checked.final_check.has_value());
+    QVERIFY(bypass.value()->checked.terminal.applied_gain_frames.empty());
+    QCOMPARE(bypass.value()->limiter_instance_id,id);
+    QCOMPARE(bypass.value()->terminal_chain_revision,chain.value()->revision());
+    QCOMPARE(bits(bypass.value()->checked.terminal.compensated_pcm.view()),
+        beforeBits);
+
+    // All four failure modes must prevent BOTH active and BYP output.
+    const std::array<rgsml::dsp::ModuleExecutionBinding,1> wrongId{{
+        {other,*ceiling.value()}}};
+    const auto wrong= rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),wrongId,*registry.value(),
+        frame_count(17));
+    QVERIFY(!wrong);
+    QCOMPARE(error_category(*wrong.error()),
+        std::string_view{"M17_TERMINAL_TYPED_BINDING_REQUIRED"});
+
+    const std::array<rgsml::dsp::ModuleExecutionBinding,2> duplicated{{
+        {id,*ceiling.value()},{id,*ceiling.value()}}};
+    auto duplicate=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),duplicated,*registry.value(),
+        frame_count(17));
+    QVERIFY(!duplicate);
+    QCOMPARE(error_category(*duplicate.error()),
+        std::string_view{"M17_TERMINAL_TYPED_BINDING_REQUIRED"});
+
+    const std::array<rgsml::dsp::ModuleExecutionBinding,0> missing{};
+    auto absent=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),missing,*registry.value(),
+        frame_count(17));
+    QVERIFY(!absent);
+    QCOMPARE(error_category(*absent.error()),
+        std::string_view{"M17_TERMINAL_TYPED_BINDING_REQUIRED"});
+
+    auto gain=rgsml::dsp::GainParameters::create_default();
+    QVERIFY(gain);
+    const std::array<rgsml::dsp::ModuleExecutionBinding,1> wrongType{{
+        {id,*gain.value()}}};
+    auto mismatched=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*chain.value(),wrongType,*registry.value(),
+        frame_count(17));
+    QVERIFY(!mismatched);
+    QCOMPARE(error_category(*mismatched.error()),
+        std::string_view{"M17_TERMINAL_TYPED_CEILING_MISMATCH"});
+
+    auto manual=rgsml::dsp::ProcessingChain::create(*registry.value(),
+        {rgsml::dsp::ProcessingStage::MASTER,
+         rgsml::dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    auto manualAttempt=rgsml::render::render_true_peak_limiter_bound_terminal_candidate(
+        source.value()->view(),*manual.value(),binding,*registry.value(),
+        frame_count(17));
+    QVERIFY(!manualAttempt);
+    QCOMPARE(error_category(*manualAttempt.error()),
+        std::string_view{"M17_TERMINAL_CHAIN_CONTEXT_INVALID"});
+    QCOMPARE(bits(source.value()->view()),beforeBits);
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()

@@ -4,11 +4,14 @@
 #include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/dsp/module_execution_binding.hpp>
+#include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/true_peak_limiter_module.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace rgsml::render {
@@ -70,5 +73,28 @@ render_true_peak_limiter_terminal_candidate(
      const dsp::ModuleRegistry& registry,
      core::FrameCount maximum_block_frames,
      bool bypassed);
+
+ 
+// Tested but UNQUALIFIED bridge from the actual terminal-chain INSTANCE
+// and immutable typed payload to the already separate OUTPUT_RATE renderer.
+// This is not a Product processed-realization or export activation: it has
+// no trusted source resource/realization ID, SRC or audible publication owner.
+struct TruePeakLimiterBoundTerminalCandidate final {
+    TruePeakLimiterCheckedCandidate checked;
+    dsp::ModuleInstanceId limiter_instance_id;
+    std::uint64_t terminal_chain_revision{0};
+};
+
+// Exactly one authentic terminal M17 instance and one exact typed parameter
+// binding. Any absent, wrong-id, duplicate, wrong-type, or manual-chain input
+// FAILS CLOSED before PCM processing, including when instance is bypassed.
+// The bypass state comes exclusively from ProcessingChain, never a caller bool.
+[[nodiscard]] core::Result<TruePeakLimiterBoundTerminalCandidate>
+render_true_peak_limiter_bound_terminal_candidate(
+    audio::AudioBufferView full_output_rate_source,
+    const dsp::ProcessingChain& terminal_chain,
+    std::span<const dsp::ModuleExecutionBinding> immutable_bindings,
+    const dsp::ModuleRegistry& registry,
+    core::FrameCount maximum_block_frames);
 
 } // namespace rgsml::render
