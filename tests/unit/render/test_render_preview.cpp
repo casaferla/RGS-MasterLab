@@ -17,6 +17,7 @@
 #include <rgsml/render/compressor_telemetry_history.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
+#include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 
 #include <QtTest/QTest>
 
@@ -469,6 +470,7 @@ private slots:
     void stereoMsOutputDensityZeroWitnessOracle();
     void activeUnavailableModuleFails();
     void truePeakLimiterTerminalRendererBoundary();
+    void truePeakLimiterOutputRateCandidateRendersRealPcm();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
     void mixedGainAndEqOrderAndBypassIdentity();
@@ -1829,6 +1831,92 @@ void RenderPreviewTest::truePeakLimiterTerminalRendererBoundary()
     QVERIFY(!rejectedAgain);
     QCOMPARE(rejectedAgain.error()->code(),
              rgsml::core::ErrorCode::UnsupportedOperation);
+}
+
+void RenderPreviewTest::truePeakLimiterOutputRateCandidateRendersRealPcm()
+{
+    using rgsml::audio::FrameDomainId;
+    using rgsml::audio::AudioBuffer;
+    using rgsml::core::FrameIndex;
+    auto registry=rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto parameters=rgsml::dsp::TruePeakLimiterParameters::create(-12.0);
+    QVERIFY(parameters);
+    constexpr std::int64_t n=300;
+    constexpr std::int64_t origin=100;
+    const auto fmt=format(rgsml::audio::ChannelLayout::STEREO_LR,48000);
+    auto input=AudioBuffer::create(fmt,FrameDomainId::OUTPUT_RATE,
+        FrameIndex{origin},frame_count(n));
+    QVERIFY(input);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto plane=input.value()->mutable_view().channel(ch);
+        QVERIFY(plane);
+        for(std::size_t i=0;i<static_cast<std::size_t>(n);++i) {
+            const double sample=i==0?4.0:(i==17?-2.5:(i==n-1?0.125:0.0));
+            (*plane.value())[i]=ch==0?sample:-sample*0.375;
+        }
+    }
+    // New terminal seam explicitly rejects the SOURCE_RATE Render Preview
+    // input, even if the M17 core can instantiate in ModuleRegistry.
+    const std::array<double,2> samples{0.5,-0.5};
+    auto wrong=make_buffer(rgsml::audio::ChannelLayout::STEREO_LR,
+        100,samples,samples);
+    QVERIFY(wrong);
+    auto refused=rgsml::render::render_true_peak_limiter_terminal_candidate(
+        wrong.value()->view(),*parameters.value(),*registry.value(),
+        frame_count(17),false);
+    QVERIFY(!refused);
+    QCOMPARE(refused.error()->code(),rgsml::core::ErrorCode::InvalidArgument);
+
+    auto bypassed=rgsml::render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*parameters.value(),*registry.value(),
+        frame_count(1),true);
+    QVERIFY(bypassed);
+    QCOMPARE(bits(bypassed.value()->compensated_pcm.view()),bits(input.value()->view()));
+    QCOMPARE(bypassed.value()->algorithmic_latency_frames,std::int64_t{0});
+    QVERIFY(bypassed.value()->applied_gain_frames.empty());
+    QVERIFY(bypassed.value()->bypassed);
+
+    auto partitioned=rgsml::render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*parameters.value(),*registry.value(),
+        frame_count(7),false);
+    QVERIFY(partitioned);
+    auto unpartitioned=rgsml::render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*parameters.value(),*registry.value(),
+        frame_count(512),false);
+    QVERIFY(unpartitioned);
+    QCOMPARE(partitioned.value()->compensated_pcm.view().absolute_range(),
+             input.value()->view().absolute_range());
+    QCOMPARE(partitioned.value()->compensated_pcm.view().frame_count(),frame_count(n));
+    QCOMPARE(partitioned.value()->algorithmic_latency_frames,std::int64_t{248});
+    QVERIFY(!partitioned.value()->bypassed);
+    QCOMPARE(bits(partitioned.value()->compensated_pcm.view()),
+             bits(unpartitioned.value()->compensated_pcm.view()));
+    QCOMPARE(partitioned.value()->applied_gain_frames,
+             unpartitioned.value()->applied_gain_frames);
+    QCOMPARE(partitioned.value()->applied_gain_frames.size(),
+             static_cast<std::size_t>(n));
+    bool genuinelyReduced=false;
+    for(std::int64_t i=0;i<n;++i) {
+        const auto& w=partitioned.value()->applied_gain_frames[
+            static_cast<std::size_t>(i)];
+        QCOMPARE(w.programme_frame,origin+i);
+        QCOMPARE(w.raw_output_frame,origin+i+248);
+        QVERIFY(std::isfinite(w.gain) && w.gain>0 && w.gain<=1.0);
+        QVERIFY(std::isfinite(w.reduction_db) && w.reduction_db>=0.0);
+        if(w.gain<1.0)genuinelyReduced=true;
+        for(std::size_t ch=0;ch<2;++ch) {
+            const auto source= input.value()->view().channel(ch);
+            const auto processed= partitioned.value()->compensated_pcm.view().channel(ch);
+            QVERIFY(source && processed);
+            const auto sample=(*source.value())[static_cast<std::size_t>(i)];
+            const double expected=w.gain==1.0?sample:sample*w.gain;
+            QCOMPARE(std::bit_cast<std::uint64_t>(
+                         (*processed.value())[static_cast<std::size_t>(i)]),
+                     std::bit_cast<std::uint64_t>(expected));
+        }
+    }
+    QVERIFY(genuinelyReduced);
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()

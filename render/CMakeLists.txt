@@ -5,6 +5,7 @@ add_library(rgsml_render STATIC
     src/compressor_telemetry_history.cpp
     src/render_preview.cpp
     src/render_request.cpp
+    src/true_peak_limiter_terminal_candidate.cpp
     src/render_result.cpp
     src/stereo_ms_execution_signature.cpp
 )
