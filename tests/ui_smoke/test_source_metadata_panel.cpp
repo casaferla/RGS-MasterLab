@@ -4377,6 +4377,26 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(!stereoMsViewModel.validation_message().isEmpty(),
         "Stereo/M-S typed ViewModel must report the invalid field");
     QCOMPARE(stereoMsViewModel.mid_gain_db(), msReadoutBefore);
+    // Only the owning numeric field is marked invalid; the other four M15
+    // scalar inputs stay neutral. Expose the complete diagnostic in the
+    // invalid field's tooltip even when the global footer text is elided.
+    auto* invalidMidField = find_child_by_name(
+        stereoEditorFromMenu, QStringLiteral("stereoMsMidGainField"));
+    QVERIFY(invalidMidField);
+    QCOMPARE(stereoMsViewModel.validation_field(), QStringLiteral("midGainDb"));
+    QVERIFY(invalidMidField->property("isInvalid").toBool());
+    QCOMPARE(invalidMidField->property("validationTooltip").toString(),
+        stereoMsViewModel.validation_message());
+    for (const auto& unaffected : {
+             QStringLiteral("stereoMsWidthField"),
+             QStringLiteral("stereoMsCutoffField"),
+             QStringLiteral("stereoMsLowWidthField"),
+             QStringLiteral("stereoMsSideGainField")}) {
+        auto* field = find_child_by_name(stereoEditorFromMenu, unaffected);
+        QVERIFY2(field, qPrintable(unaffected + QStringLiteral(" missing")));
+        QVERIFY2(!field->property("isInvalid").toBool(),
+            qPrintable(unaffected + QStringLiteral(" must not turn coral")));
+    }
     QCOMPARE(root->property("statusSeverity").toString(),
         QStringLiteral("ERROR"));
     QVERIFY2(root->property("statusDspErrorText").toString().contains(
@@ -4396,9 +4416,36 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("m15_global_status_stereo_invalid_1184x688.png"),
         QSize{1184, 688}),
         "Capture real Qt Stereo/M-S invalid-field global status");
+
+    // A retained M15 invalid draft MUST NOT contaminate another DSP's
+    // global footer; returning to Stereo/M-S must restore that exact
+    // unapplied error without mutating its audible parameters.
+    QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 0));
+    QCoreApplication::processEvents();
+    QCOMPARE(dspChainAdapterModel.selected_index(), 0);
+    QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
+    QVERIFY2(!statusBarMessage->property("text").toString().contains(
+        QStringLiteral("Stereo"), Qt::CaseInsensitive),
+        "Inactive Stereo/M-S errors must not replace the selected Gain status");
+    QCOMPARE(root->property("statusSeverity").toString(), QStringLiteral("INFO"));
+    QCOMPARE(QRectF(globalStatusBarItem->mapToScene(QPointF{}),
+                     globalStatusBarItem->size()), footerBefore);
+    QVERIFY(dspWorkspaceObj->setProperty("selectedModuleIndex", 3));
+    QCoreApplication::processEvents();
+    QCOMPARE(dspChainAdapterModel.selected_index(), 3);
+    QVERIFY(root->property("statusDspErrorText").toString().contains(
+        QStringLiteral("Stereo"), Qt::CaseInsensitive));
+    QVERIFY(invalidMidField->property("isInvalid").toBool());
+    QCOMPARE(stereoMsViewModel.mid_gain_db(), msReadoutBefore);
+    QCOMPARE(QRectF(msControls->mapToScene(QPointF{}), msControls->size()),
+             controlsBefore);
+    QCOMPARE(QRectF(globalStatusBarItem->mapToScene(QPointF{}),
+                     globalStatusBarItem->size()), footerBefore);
     stereoMsViewModel.cancelDraft();
     QCoreApplication::processEvents();
     QCOMPARE(stereoMsViewModel.validation_message(), QString{});
+    QVERIFY(!invalidMidField->property("isInvalid").toBool());
+    QVERIFY(invalidMidField->property("validationTooltip").toString().isEmpty());
     QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
     QCOMPARE(root->property("statusSeverity").toString(),
         QStringLiteral("INFO"));
