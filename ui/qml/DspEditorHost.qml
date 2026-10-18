@@ -249,6 +249,10 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             viewModel: root.activeModule ? root.activeModule.gainViewModel : null
+            onEscapeToChainRequested: {
+                if (root.activeChainRow)
+                    root.activeChainRow.forceActiveFocus()
+            }
         }
 
         ParametricEqEditor {

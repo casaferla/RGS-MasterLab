@@ -7,6 +7,9 @@ Item {
     objectName: "inputGainEditor"
 
     property var viewModel: null
+    // Escape cancels the local numeric draft before the host returns
+    // keyboard focus to the selected DSP-chain row (M12 smoke contract).
+    signal escapeToChainRequested()
 
     readonly property color textPrimary: "#F5F8FC"
     readonly property color textSecondary: "#A1B5C9"
@@ -346,6 +349,7 @@ Item {
                             }
                             Keys.onEscapePressed: function(event) {
                                 root.cancelNumericDraft()
+                                root.escapeToChainRequested()
                                 event.accepted = true
                             }
                             onActiveFocusChanged: {
