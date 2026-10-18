@@ -42,6 +42,8 @@ private slots:
     void strictFpRuntimeMode();
     void failedCallsAreAtomicAndCannotPublishWitness();
     void highRateChunkBoundednessAndBitIdentity();
+    void adversarialStereoDetectorEightXOracle();
+    void absoluteFrameOriginAndLinkedStereoWitness();
 };
 
 void TruePeakLimiterCoreTest::frozenAssetsMatchIndependentSources()
@@ -302,8 +304,11 @@ struct AppliedGainTestCapture final {
 [[nodiscard]] std::vector<std::vector<double>> runLimiterAudio(
     std::int64_t fs, bool stereo, const std::vector<double>& samples,
     double ceiling, const std::vector<std::size_t>& partitions,
-    std::vector<dsp::TruePeakLimiterAppliedGainFrame>* gainWitness = nullptr)
+    std::vector<dsp::TruePeakLimiterAppliedGainFrame>* gainWitness = nullptr,
+    std::int64_t origin=0, std::span<const double> rightOverride={})
 {
+    if(!rightOverride.empty() && (!stereo || rightOverride.size()!=samples.size()))
+        return {};
     const auto format=limiterFormat(fs,stereo);
     const auto desc=frozenLimiterDescriptor();
     auto params=dsp::TruePeakLimiterParameters::create(ceiling);
@@ -329,10 +334,10 @@ struct AppliedGainTestCapture final {
         const auto count=std::min(
             samples.size()-offset,partitions[block++%partitions.size()]);
         auto in=audio::AudioBuffer::create(format,audio::FrameDomainId::OUTPUT_RATE,
-            core::FrameIndex{static_cast<std::int64_t>(offset)},
+            core::FrameIndex{origin+static_cast<std::int64_t>(offset)},
             *core::FrameCount::create(static_cast<std::int64_t>(count)).value());
         auto out=audio::AudioBuffer::create(format,audio::FrameDomainId::OUTPUT_RATE,
-            core::FrameIndex{static_cast<std::int64_t>(offset)},
+            core::FrameIndex{origin+static_cast<std::int64_t>(offset)},
             *core::FrameCount::create(static_cast<std::int64_t>(count)).value());
         if(!in || !out)return {};
         for(std::size_t ch=0;ch<raw.size();++ch) {
@@ -340,12 +345,13 @@ struct AppliedGainTestCapture final {
             if(!plane)return {};
             for(std::size_t i=0;i<count;++i) {
                 const auto value=samples[offset+i];
-                (*plane.value())[i]=(ch==0)?value:-value*0.375;
+                (*plane.value())[i]=(ch==0)?value
+                    :(rightOverride.empty()?-value*0.375:rightOverride[offset+i]);
             }
         }
         auto range=core::FrameRange::create(
-            core::FrameIndex{static_cast<std::int64_t>(offset)},
-            core::FrameIndex{static_cast<std::int64_t>(offset+count)});
+            core::FrameIndex{origin+static_cast<std::int64_t>(offset)},
+            core::FrameIndex{origin+static_cast<std::int64_t>(offset+count)});
         if(!range)return {};
         if(!mod.process(in.value()->view(),out.value()->mutable_view(),
             dsp::DspProcessContext{*range.value(),offset==0,false}))return {};
@@ -359,7 +365,7 @@ struct AppliedGainTestCapture final {
     std::int64_t drain=0;
     while(drain<d) {
         const auto count=std::min<std::int64_t>(d-drain,partitions[block++%partitions.size()]);
-        const auto first=static_cast<std::int64_t>(samples.size())+drain;
+        const auto first=origin+static_cast<std::int64_t>(samples.size())+drain;
         auto out=audio::AudioBuffer::create(format,audio::FrameDomainId::OUTPUT_RATE,
             core::FrameIndex{first},*core::FrameCount::create(count).value());
         if(!out)return {};
@@ -653,6 +659,147 @@ void TruePeakLimiterCoreTest::highRateChunkBoundednessAndBitIdentity()
     QVERIFY(cp.value()->payload.size()<(32U*1024U*1024U));
 }
 
+
+void TruePeakLimiterCoreTest::adversarialStereoDetectorEightXOracle()
+{
+    // Full finite 8x direct convolution, across M16 asset phase order,
+    // verifies signed prezero, tail and stereo max after channel dominance
+    // swaps. Independent oracle has no M17 detector/ring-buffer state.
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        Q_UNUSED(fs); // all rates share per-frame physical 8x tick geometry
+        for(const int shape:{0,1,2,3}) {
+            const std::size_t n=47U+19U*static_cast<std::size_t>(shape);
+            std::vector<double> left(n,+0.0),right(n,+0.0);
+            std::uint64_t seed=0x4b1d8c726af92113ULL;
+            for(std::size_t i=0;i<n;++i) {
+                seed^=seed<<13;seed^=seed>>7;seed^=seed<<17;
+                const double noise=static_cast<double>((seed>>43)&1023U)
+                    /1024.0-0.5;
+                switch(shape) {
+                case 0: // independent starting/ending impulses
+                    left[i]=i==0?4.0:(i==n-1?-2.0:+0.0);
+                    right[i]=i==0?-0.125:(i==n-1?6.0:+0.0);
+                    break;
+                case 1: // alternating near Nyquist
+                    left[i]=(i&1U)?-0.875:+0.875;
+                    right[i]=(i&1U)?+1.25:-1.25;
+                    break;
+                case 2: // deterministic non-periodic stereo
+                    left[i]=noise;
+                    right[i]=static_cast<double>((seed>>31)&2047U)/1024.0-1.0;
+                    break;
+                default: // dominant lane changes across programme
+                    left[i]=(i%17U==0U)?3.0:-0.03125;
+                    right[i]=(i%13U==0U)?-5.0:+0.0625;
+                    break;
+                }
+            }
+            for(const std::uint32_t channels:{1U,2U}) {
+                TruePeakLimiterDetectorState d{channels};
+                std::vector<Event> events;
+                events.reserve(8U*n+110U);
+                const auto append=[&](const LimiterDetectorQuarter& q) {
+                    if(q.preceding_anchor.valid) events.push_back(
+                        {q.preceding_anchor.tick,q.preceding_anchor.peak});
+                    if(q.midpoint.valid) events.push_back(
+                        {q.midpoint.tick,q.midpoint.peak});
+                };
+                for(std::size_t i=0;i<n;++i) {
+                    const auto group=d.push_programme_frame(left[i],
+                        channels==2U?right[i]:+0.0);
+                    QVERIFY(group);
+                    for(const auto& q:*group.value())append(q);
+                }
+                const auto tail=d.finalize_detector();
+                QVERIFY(tail);
+                for(const auto& q:*tail.value())append(q);
+                const auto reference=m17_oracle::direct_events(left,
+                    channels==2U?std::span<const double>{right}
+                                :std::span<const double>{});
+                QCOMPARE(events.size(),reference.size());
+                QCOMPARE(events.size(),8U*n+110U);
+                QCOMPARE(events.front().tick,std::int64_t{-62});
+                QCOMPARE(events.back().tick,static_cast<std::int64_t>(8U*n+54U));
+                for(std::size_t i=0;i<reference.size();++i) {
+                    QCOMPARE(events[i].tick,reference[i].tick);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(events[i].peak),
+                        std::bit_cast<std::uint64_t>(reference[i].peak));
+                    QVERIFY(std::isfinite(events[i].peak));
+                    QVERIFY(events[i].peak>=0.0);
+                    if(i>0)QVERIFY(events[i].tick>events[i-1].tick);
+                }
+            }
+        }
+    }
+}
+
+void TruePeakLimiterCoreTest::absoluteFrameOriginAndLinkedStereoWitness()
+{
+    // Distinct absolute resource origins cannot change DSP audio or gain:
+    // only provenance fields are translated by the exact origin.
+    constexpr std::int64_t origin=10'000'027;
+    std::vector<double> source(1091,+0.0);
+    source[0]=4.0;source[47]=-1.5;source[271]=1.0;source.back()=-0.125;
+    for(const int fs:{44100,96000,192000}) {
+        for(const bool stereo:{false,true}) {
+            std::vector<dsp::TruePeakLimiterAppliedGainFrame> zeroWitness,movedWitness;
+            const auto zero=runLimiterAudio(fs,stereo,source,-12.0,
+                {1091},&zeroWitness);
+            const auto moved=runLimiterAudio(fs,stereo,source,-12.0,
+                {1,7,59,131},&movedWitness,origin);
+            QVERIFY(!zero.empty() && !moved.empty());
+            QCOMPARE(zero.size(),moved.size());
+            QCOMPARE(zeroWitness.size(),source.size());
+            QCOMPARE(movedWitness.size(),source.size());
+            for(std::size_t i=0;i<source.size();++i) {
+                QCOMPARE(movedWitness[i].programme_frame,
+                    origin+static_cast<std::int64_t>(i));
+                QCOMPARE(movedWitness[i].raw_output_frame,
+                    origin+static_cast<std::int64_t>(i)+fs/200+8);
+                QCOMPARE(std::bit_cast<std::uint64_t>(zeroWitness[i].gain),
+                    std::bit_cast<std::uint64_t>(movedWitness[i].gain));
+                QCOMPARE(std::bit_cast<std::uint64_t>(zeroWitness[i].reduction_db),
+                    std::bit_cast<std::uint64_t>(movedWitness[i].reduction_db));
+                for(std::size_t ch=0;ch<zero.size();++ch)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(zero[ch][i]),
+                        std::bit_cast<std::uint64_t>(moved[ch][i]));
+            }
+        }
+    }
+    // Only right channel drives the limiter, but both lanes must receive
+    // one identical applied gain, and the quiet left mono stays unaffected.
+    constexpr int fs=48000;
+    std::vector<double> left(511,+0.0),right(511,+0.0);
+    left[0]=0.125;left[50]=-0.0625;
+    right[0]=4.0;right[50]=-2.0;right.back()=-1.0;
+    std::vector<dsp::TruePeakLimiterAppliedGainFrame> witness;
+    const auto linked=runLimiterAudio(fs,true,left,-12.0,{11,127,3,53},
+        &witness,0,std::span<const double>{right});
+    const auto noWitness=runLimiterAudio(fs,true,left,-12.0,{511},
+        nullptr,0,std::span<const double>{right});
+    const auto mono=runLimiterAudio(fs,false,left,-12.0,{511});
+    QVERIFY(!linked.empty() && !noWitness.empty() && !mono.empty());
+    QCOMPARE(linked.size(),std::size_t{2});
+    QCOMPARE(witness.size(),left.size());
+    QVERIFY(witness.front().gain<1.0);
+    for(std::size_t i=0;i<left.size();++i) {
+        const double inputs[]{left[i],right[i]};
+        QCOMPARE(std::bit_cast<std::uint64_t>(mono[0][i]),
+            std::bit_cast<std::uint64_t>(left[i]));
+        QCOMPARE(witness[i].programme_frame,static_cast<std::int64_t>(i));
+        QCOMPARE(witness[i].raw_output_frame,static_cast<std::int64_t>(i)+248);
+        QVERIFY(witness[i].gain>0.0 && witness[i].gain<=1.0);
+        for(std::size_t ch=0;ch<2;++ch) {
+            const double expected=witness[i].gain==1.0
+                ? inputs[ch]:inputs[ch]*witness[i].gain;
+            QCOMPARE(std::bit_cast<std::uint64_t>(linked[ch][i]),
+                std::bit_cast<std::uint64_t>(expected));
+            QCOMPARE(std::bit_cast<std::uint64_t>(linked[ch][i]),
+                std::bit_cast<std::uint64_t>(noWitness[ch][i]));
+        }
+    }
+    QVERIFY(std::abs(linked[0][0])<std::abs(mono[0][0]));
+}
 
 } // namespace
 } // namespace rgsml::tests

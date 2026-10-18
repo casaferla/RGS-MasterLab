@@ -119,6 +119,7 @@ private slots:
     void wholeResourceBoundCheckpointRejectsWrongOwnerAndDigest();
     void poisonedValidDigestCheckpointFailsAtomically();
     void unboundAndSixRateResumeAreCanonical();
+    void nonzeroOriginResumeIsAtomicAt192k();
 };
 void TruePeakLimiterCheckpointTest::originAndChunkResumeBitIdentity()
 {
@@ -434,6 +435,78 @@ void TruePeakLimiterCheckpointTest::finalizeBoundaryRejectsCheckpoints()
     QVERIFY(!empty->restore_runtime_checkpoint(*initial.value()));
     QVERIFY(finalBlock(*empty,48000,249,1,true).empty());
 }
+void TruePeakLimiterCheckpointTest::nonzeroOriginResumeIsAtomicAt192k()
+{
+    // Resuming a nonzero-origin resource must bind the next absolute frame.
+    // A discontinuity must not mutate state or leak a gain witness.
+    constexpr int origin=10'000'027,at=989,n=1031;
+    for(const int fs:{44100,192000}) {
+        auto primary=fresh(fs,-12.0);
+        auto resumed=fresh(fs,-12.0);
+        QVERIFY(primary && resumed);
+        GainWitnessCollector first,second;
+        first.frames.reserve(n);second.frames.reserve(n);
+        primary->set_applied_gain_sink(&GainWitnessCollector::collect,&first);
+        resumed->set_applied_gain_sink(&GainWitnessCollector::collect,&second);
+        QCOMPARE(processBlock(*primary,fs,origin,at,true).size(),
+            static_cast<std::size_t>(at));
+        const auto cp=primary->runtime_checkpoint();
+        QVERIFY(cp);
+        QCOMPARE(cp.value()->next_input_frame,
+            std::optional{core::FrameIndex{origin+at}});
+        QVERIFY(resumed->restore_runtime_checkpoint(*cp.value()));
+        const auto pristine=resumed->runtime_checkpoint();
+        QVERIFY(pristine);
+        const auto previouslyEmitted=first.frames.size();
+        QCOMPARE(previouslyEmitted,static_cast<std::size_t>(
+            std::max(0,at-(fs/200+8))));
+        QVERIFY(processBlock(*resumed,fs,origin+at+1,1,false).empty());
+        const auto afterBad=resumed->runtime_checkpoint();
+        QVERIFY(afterBad);
+        QCOMPARE(*afterBad.value(),*pristine.value());
+        QCOMPARE(second.frames.size(),std::size_t{0});
+        auto tailA=processBlock(*primary,fs,origin+at,n-at,false);
+        auto tailB=processBlock(*resumed,fs,origin+at,n-at,false);
+        QCOMPARE(tailA.size(),static_cast<std::size_t>(n-at));
+        QCOMPARE(tailA.size(),tailB.size());
+        const int delay=fs/200+8;
+        for(int emitted=0;emitted<delay;) {
+            const int count=std::min(37,delay-emitted);
+            const bool eos=emitted+count==delay;
+            const auto a=finalBlock(*primary,fs,origin+n+emitted,count,eos);
+            const auto b=finalBlock(*resumed,fs,origin+n+emitted,count,eos);
+            QCOMPARE(a.size(),static_cast<std::size_t>(count));
+            QCOMPARE(a.size(),b.size());
+            tailA.insert(tailA.end(),a.begin(),a.end());
+            tailB.insert(tailB.end(),b.begin(),b.end());
+            emitted+=count;
+        }
+        QCOMPARE(tailA.size(),tailB.size());
+        for(std::size_t i=0;i<tailA.size();++i)
+            for(std::size_t ch=0;ch<2;++ch)
+                QCOMPARE(std::bit_cast<std::uint64_t>(tailA[i][ch]),
+                    std::bit_cast<std::uint64_t>(tailB[i][ch]));
+        QCOMPARE(first.frames.size(),static_cast<std::size_t>(n));
+        QCOMPARE(second.frames.size(),static_cast<std::size_t>(n)-previouslyEmitted);
+        for(std::size_t i=0;i<first.frames.size();++i) {
+            QCOMPARE(first.frames[i].programme_frame,
+                static_cast<std::int64_t>(origin)+static_cast<std::int64_t>(i));
+            QCOMPARE(first.frames[i].raw_output_frame,
+                static_cast<std::int64_t>(origin+delay)+static_cast<std::int64_t>(i));
+        }
+        for(std::size_t i=0;i<second.frames.size();++i) {
+            const auto& a=first.frames[i+previouslyEmitted];
+            const auto& b=second.frames[i];
+            QCOMPARE(a.programme_frame,b.programme_frame);
+            QCOMPARE(a.raw_output_frame,b.raw_output_frame);
+            QCOMPARE(std::bit_cast<std::uint64_t>(a.gain),
+                std::bit_cast<std::uint64_t>(b.gain));
+            QCOMPARE(std::bit_cast<std::uint64_t>(a.reduction_db),
+                std::bit_cast<std::uint64_t>(b.reduction_db));
+        }
+    }
+}
+
 } // namespace
 } // namespace rgsml::tests
 
