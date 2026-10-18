@@ -237,7 +237,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $commands = Get-Content build/windows-ninja-cache/compile_commands.json -Raw | ConvertFrom-Json
           foreach ($source in @('true_peak_itu4x_channel_stream.cpp', 'true_peak_full_resource.cpp', 'true_peak_limiter_module.cpp')) {
-            $match = @($commands | Where-Object { $_.file.Replace('\\','/').EndsWith("/" + $source, [System.StringComparison]::OrdinalIgnoreCase) })
+            $match = @($commands | Where-Object { $_.file.Replace([char]92,[char]47).EndsWith("/" + $source, [System.StringComparison]::OrdinalIgnoreCase) })
             if ($match.Count -ne 1) { throw "NINJA_STRICT_FP_MISSING_OR_DUPLICATED: $source count=$($match.Count)" }
             $command = [string]$match[0].command
             if ($command -notmatch '(?i)(?<!\w)/fp:strict(?![\w-])' -or
