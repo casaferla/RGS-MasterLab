@@ -149,29 +149,77 @@ jobs:
     runs-on: windows-2022
     env:
       RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_VERSION: "rgsml-msvc2022-qt683-strict-ninja-v1"
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "true"
     steps:
       - name: Checkout exact PR head (B2b qualification provenance)
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Enter VS2022 x64 toolchain for Ninja/MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Install Qt 6.8.3 via aqtinstall
-        run: |
-          pip install "aqtinstall==3.3.0" "py7zr==1.1.0"
-          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: "v0.16.0"
 
-      - name: Configure CMake (Windows MSVC)
+      - name: Expose GHA cache runtime credentials
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Install Qt 6.8.3 and Ninja
+        run: |
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_TOOL_INSTALL_FAILED' }
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_QT_INSTALL_FAILED' }
+          ninja --version
+
+      # Preserve the original M16 B2f attestation source unchanged: configure
+      # Visual Studio only to inspect source-scoped .vcxproj, NEVER MSBuild.
+      - name: Configure Visual Studio only for frozen M16 B2f evidence
         run: |
           cmake --preset windows-msvc `
             -DRGSML_PROVENANCE_TYPE=PR `
             -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} `
             -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
             -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }}
+          if ($LASTEXITCODE -ne 0) { throw 'VS_B2F_CONFIGURATION_FAILED' }
+
+      # Product CI now compiles with Microsoft cl.exe, Ninja Multi-Config and
+      # sccache; Visual Studio generator above is evidence-only.
+      - name: Configure canonical Windows MSVC with Ninja Multi-Config
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S . -B build/windows-ninja-cache -G "Ninja Multi-Config" `
+            -DCMAKE_CONFIGURATION_TYPES=Release `
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
+            -DCMAKE_POLICY_DEFAULT_CMP0141=NEW `
+            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DRGSML_BUILD_TESTS=ON `
+            -DRGSML_WARNINGS_AS_ERRORS=ON `
+            -DRGSML_PROVENANCE_TYPE=PR `
+            -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} `
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }} `
+            -DRGSML_QT_ROOT="$env:RGSML_QT_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'NINJA_MSVC_CONFIGURATION_FAILED' }
 
       # B2f: assert source-scoped strict FP in generated MSBuild project.
       - name: Verify Windows True Peak scoped strict FP flags
@@ -180,6 +228,24 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python tools/qualification/true_peak/verify_fp_build_flags.py --platform windows --build-dir build/windows-msvc --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --run-id '${{ github.run_id }}' --output "$env:RUNNER_TEMP\B2f_windows_fp_compile_attestation.json"
           if ($LASTEXITCODE -ne 0) { throw 'B2F_WINDOWS_SOURCE_FP_FLAG_CHECK_FAILED' }
+
+      # Additional fail-closed source-scoped evidence from the REAL Ninja
+      # compiler command; not a replacement for frozen M16 B2f attestation.
+      - name: Verify effective Ninja strict-FP compilation flags (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $commands = Get-Content build/windows-ninja-cache/compile_commands.json -Raw | ConvertFrom-Json
+          foreach ($source in @('true_peak_itu4x_channel_stream.cpp', 'true_peak_full_resource.cpp', 'true_peak_limiter_module.cpp')) {
+            $match = @($commands | Where-Object { $_.file.Replace('\\','/').EndsWith("/" + $source, [System.StringComparison]::OrdinalIgnoreCase) })
+            if ($match.Count -ne 1) { throw "NINJA_STRICT_FP_MISSING_OR_DUPLICATED: $source count=$($match.Count)" }
+            $command = [string]$match[0].command
+            if ($command -notmatch '(?i)(?<!\w)/fp:strict(?![\w-])' -or
+                $command -match '(?i)/fp:(fast|contract)\b') {
+              throw "NINJA_STRICT_FP_FLAGS_INVALID: $source"
+            }
+            Write-Host "NINJA_SCOPED_STRICT_FP_CONFIRMED: $source"
+          }
 
       # B2i: independent negative falsification guard for status evidence.
       - name: M16 B2i Gate G conservative evidence guard (Windows)
@@ -214,9 +280,11 @@ jobs:
           python tools/qualification/ui/verify_minor_fix_g3.py
           if ($LASTEXITCODE -ne 0) { throw 'MINOR_FIX_G3_STATIC_UI_REGRESSION' }
 
-      - name: Build Focused DSP Targets (Release)
+      - name: Build Focused DSP Targets (Release) — Ninja + sccache
         run: |
-          cmake --build build/windows-msvc --config Release --target `
+          sccache --zero-stats
+          $buildTimer = [System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build build/windows-ninja-cache --config Release --parallel 4 --target `
             rgsml_dsp_module_descriptor_tests `
             rgsml_dsp_module_registry_tests `
             rgsml_dsp_processing_chain_tests `
@@ -267,6 +335,12 @@ jobs:
             rgsml_source_metadata_panel_smoke `
             rgsml_project_session_tests `
             rgsml_app
+          $buildExit = $LASTEXITCODE
+          $buildTimer.Stop()
+          if ($buildExit -ne 0) { throw "NINJA_FOCUSED_BUILD_FAILED_$buildExit" }
+          Write-Host "WINDOWS_NINJA_COMPILE_SECONDS=$([math]::Round($buildTimer.Elapsed.TotalSeconds,1))"
+          sccache --show-stats
+          if ($LASTEXITCODE -ne 0) { throw 'SCCACHE_STATISTICS_UNAVAILABLE' }
 
       - name: Run Windows UI Smoke Diagnostic
         env:
@@ -275,7 +349,7 @@ jobs:
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
           $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
           $log = "$env:GITHUB_WORKSPACE\m12b-smoke.txt"
-          & build/windows-msvc/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          & build/windows-ninja-cache/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
           $exitCode = $LASTEXITCODE
           if (Test-Path $log) {
               Get-Content $log
@@ -290,14 +364,16 @@ jobs:
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
         run: |
-          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_playback_support_tests|toolchain_manifest_)" --output-on-failure --verbose
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_playback_support_tests|toolchain_manifest_)" --output-on-failure --verbose
 
       - name: Playback engine failure diagnostics
         if: failure()
         continue-on-error: true
         run: |
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
-          $exe = "build/windows-msvc/Release/rgsml_playback_support_tests.exe"
+          $exe = "build/windows-ninja-cache/Release/rgsml_playback_support_tests.exe"
           if (Test-Path $exe) {
             $log = "$env:GITHUB_WORKSPACE\playback-support-diagnostic.txt"
             & $exe -v2 -o "$log,txt"
@@ -330,7 +406,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $source = Join-Path $env:GITHUB_WORKSPACE 'build/windows-msvc/Release/rgsml_true_peak_b2b_probe.exe'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'build/windows-ninja-cache/Release/rgsml_true_peak_b2b_probe.exe'
           if (-not (Test-Path $source)) { throw 'B2B_PROBE_EXECUTABLE_MISSING' }
           $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
