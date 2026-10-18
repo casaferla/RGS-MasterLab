@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <numbers>
 #include <span>
 #include <vector>
 
@@ -78,5 +79,87 @@ inline constexpr std::array<double, 16> kReferenceMidpoint{{
         emitted.push_back(Event{2*j-62,peak});
     }
     return emitted;
+}
+
+// Test-only controller replay derived from the frozen physical 8x event list.
+// It neither calls TruePeakLimiterControllerState nor reads M17 internal state,
+// its event buffer, its applied-gain witness, or production gain_for_frame.
+// The entire finite resource (including signed prezero and EOS tail) is
+// available to this offline oracle; missing events denote exact zero demand.
+// Running on the SAME strict-FP backend permits binary64 replay assertions.
+struct ReferenceFrameGain final {
+    std::int64_t frame;
+    double reduction_db;
+    double gain;
+};
+[[nodiscard]] inline std::vector<ReferenceFrameGain> replay_control_from_events(
+    std::span<const Event> events,std::int64_t sample_rate,
+    double ceiling_db_tp,std::size_t programme_frames)
+{
+    const auto half=sample_rate/200;
+    const auto remainder=sample_rate%200;
+    const std::int64_t h=half+
+        ((remainder>100 || (remainder==100 && (half%2)!=0))?1:0);
+    const std::int64_t lookahead=8*h;
+    const std::int64_t hold_length=sample_rate/25;
+    const double threshold=std::pow(10.0,ceiling_db_tp/20.0);
+    const double density_coeff=std::exp(
+        -1.0/(0.100*static_cast<double>(8*sample_rate)));
+    const auto demand=[threshold](double peak)->double {
+        return peak>threshold ? 20.0*std::log10(peak/threshold):+0.0;
+    };
+    std::vector<ReferenceFrameGain> output;
+    output.reserve(programme_frames);
+    double density=+0.0;
+    double previous_reduction=+0.0;
+    std::int64_t hold=0;
+    std::size_t cursor=0;
+    const auto last_tick=8*static_cast<std::int64_t>(programme_frames-1U);
+    for(std::int64_t tick=-62;tick<=last_tick;++tick) {
+        while(cursor<events.size() && events[cursor].tick<tick)++cursor;
+        const bool current_valid=cursor<events.size() &&
+            events[cursor].tick==tick;
+        const double current=current_valid?events[cursor].peak:+0.0;
+        const double required=demand(current);
+        double floor=required;
+        const auto first=cursor+(current_valid?1U:0U);
+        for(auto i=first;i<events.size() &&
+            events[i].tick<=tick+lookahead;++i) {
+            const double needed=demand(events[i].peak);
+            if(needed>0.0) {
+                const double distance=static_cast<double>(events[i].tick-tick);
+                const double weight=0.5*(1.0+std::cos(
+                    std::numbers::pi_v<double>*distance/
+                    static_cast<double>(lookahead)));
+                floor=std::max(floor,needed*weight);
+            }
+        }
+        const double q=required>0.0?1.0:0.0;
+        density=density_coeff*density+(1.0-density_coeff)*q;
+        const double remaining=1.0-density;
+        const double s=1.0-remaining*remaining*remaining*remaining;
+        const double release_ms=20.0+980.0*s;
+        const double release_coeff=std::exp(-1.0/(
+            (release_ms/1000.0)*static_cast<double>(8*sample_rate)));
+        double applied=+0.0;
+        if(floor>=previous_reduction) {
+            applied=floor;
+            hold=hold_length;
+        } else if(hold>0) {
+            applied=std::max(floor,previous_reduction);
+            --hold;
+        } else {
+            const double candidate=release_coeff*previous_reduction+
+                (1.0-release_coeff)*floor;
+            applied=std::max(floor,candidate);
+        }
+        previous_reduction=applied;
+        if(tick>=0 && tick%8==0) {
+            const double gain=applied==0.0?1.0:
+                std::pow(10.0,-applied/20.0);
+            output.push_back({tick/8,applied,gain});
+        }
+    }
+    return output;
 }
 } // namespace rgsml::tests::m17_oracle

@@ -46,6 +46,7 @@ private slots:
     void oneSecond192kAnd44100StressWithBoundedCheckpoints();
     void adversarialStereoDetectorEightXOracle();
     void absoluteFrameOriginAndLinkedStereoWitness();
+    void directEightXIndependentControllerReplayMatchesAppliedGain();
 };
 
 void TruePeakLimiterCoreTest::frozenAssetsMatchIndependentSources()
@@ -938,6 +939,73 @@ void TruePeakLimiterCoreTest::absoluteFrameOriginAndLinkedStereoWitness()
         }
     }
     QVERIFY(std::abs(linked[0][0])<std::abs(mono[0][0]));
+}
+
+
+void TruePeakLimiterCoreTest::directEightXIndependentControllerReplayMatchesAppliedGain()
+{
+    // U2/U3: independent physical event convolution + offline controller
+    // recurrence -> one gain per ACTUAL frame (no invented prezero PCM).
+    // Compare same-backend exact IEEE-754 bits, not a displayed GR estimate.
+    constexpr std::int64_t origin=4'000'029;
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const double ceiling:{-12.0,-6.0,-1.0,0.0}) {
+            for(const bool stereo:{false,true}) {
+                for(const int pattern:{0,1}) {
+                    const std::size_t n=pattern==0?73U:127U;
+                    std::vector<double> left(n,+0.0),right(n,+0.0);
+                    for(std::size_t i=0;i<n;++i) {
+                        if(pattern==0) {
+                            left[i]=i==0U?4.0:(i==n-1U?-2.0:
+                                (i==31U?+0.5:+0.0));
+                            right[i]=i==0U?-0.125:(i==n-1U?3.0:
+                                (i==31U?-4.0:+0.0));
+                        } else {
+                            left[i]=(i&1U)?-0.8125:+0.8125;
+                            right[i]=(i%19U<9U)?+1.25:-1.25;
+                            if(i%37U==0U) {
+                                left[i]=+3.0;
+                                right[i]=-2.0;
+                            }
+                        }
+                    }
+                    const auto direct=m17_oracle::direct_events(left,
+                        stereo?std::span<const double>{right}:
+                            std::span<const double>{});
+                    const auto expected=m17_oracle::replay_control_from_events(
+                        direct,fs,ceiling,n);
+                    QCOMPARE(expected.size(),n);
+                    std::vector<dsp::TruePeakLimiterAppliedGainFrame> actual;
+                    const auto pcm=runLimiterAudio(fs,stereo,left,ceiling,
+                        {3,17,1,57},&actual,origin,
+                        stereo?std::span<const double>{right}:
+                            std::span<const double>{});
+                    QVERIFY2(!pcm.empty(),"M17 output failed offline replay fixture");
+                    QCOMPARE(actual.size(),n);
+                    for(std::size_t i=0;i<n;++i) {
+                        const auto& predicted=expected[i];
+                        const auto& observed=actual[i];
+                        QCOMPARE(predicted.frame,static_cast<std::int64_t>(i));
+                        QCOMPARE(observed.programme_frame,
+                            origin+static_cast<std::int64_t>(i));
+                        QCOMPARE(observed.raw_output_frame,
+                            origin+static_cast<std::int64_t>(i)+fs/200+8);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(observed.reduction_db),
+                            std::bit_cast<std::uint64_t>(predicted.reduction_db));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(observed.gain),
+                            std::bit_cast<std::uint64_t>(predicted.gain));
+                        for(std::size_t ch=0;ch<pcm.size();++ch) {
+                            const double input=ch==0U?left[i]:right[i];
+                            const double reconstructed=predicted.gain==1.0?
+                                input:input*predicted.gain;
+                            QCOMPARE(std::bit_cast<std::uint64_t>(pcm[ch][i]),
+                                std::bit_cast<std::uint64_t>(reconstructed));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 } // namespace

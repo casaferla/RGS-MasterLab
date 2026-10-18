@@ -18,18 +18,23 @@ Work C AC-01..AC-07. This test oracle is **not** a release result.
   create programme PCM frames.
 - The controller must start at m=-62 neutral, advance missing ticks with
   q=0, and evaluate density[q current tick] before adaptive release.
-  This oracle intentionally does NOT compute rControl or attach a fake
-  production limiter.
+- The separate test-only `replay_control_from_events` now implements an
+  offline reference recurrence from the **direct M16-based 8x event list**.
+  It does not invoke the M17 controller or read its state or gain observer.
+  For the same strict-FP backend, six Fs x four Ceilings x mono/stereo x
+  two adversarial waveforms compare the reference and applied gain bitwise,
+  then reconstruct both output lanes from those predicted gains.
 - First impulse x[0]=4, C=-12dBTP, nonzero anchor at j=13/m=-21 has
   amplitude exactly 4*730/8192=0.3564453125. This positive requirement
   occurs before programme origin tick 0.
 - Frozen midpoint binary64 little-endian SHA256:
   C6E63340BE925C8A35136C78B1E6248B57813ED8C4A7B808A2E9F0F33F0DF4F7
-- Cross-platform exact PCM/controller evidence is **NOT** yet available.
-  These two test sources are staged before the full U1–U7 four-executable
-  CI carrier; do not label a green build of unrelated modules as M17 PASS.
+- The offline replay is exact only **within the same FP backend**; it is not
+  a cross-platform golden-bit fixture. Cross-backend and physical Windows
+  U8 qualification are still outstanding, irrespective of focused CI green.
 
 Negative cases: nonfinite PCM, empty EOS, repeated finalize, input after
-finalize, wrong channels, incomplete phase state. Resume/checkpoint, complete
-controller, latency compensation and M16 full-resource verifier are still
-required before executing the full C gate and making sound claims.
+finalize, wrong channels, incomplete phase state. Other M17 tests separately
+exercise checkpoint/restore, end-of-stream compensation and M16 full-resource
+verification. Resource ownership in the actual renderer, product bypass, U8
+listening, and full production qualification remain open.
