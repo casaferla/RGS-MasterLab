@@ -221,7 +221,7 @@ jobs:
           $sw.Stop()
           "FQ_TESTS_OFF_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           if ($code -ne 0) { throw "FQ_TESTS_OFF_BUILD_FAILED" }
-      - name: Verify cold compiler-cache exclusion and write pilot evidence
+      - name: Verify cold compiler-cache exclusion and write adoption evidence
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -272,8 +272,8 @@ jobs:
               throw "FQ_STAGED_REQUIRED_FILE_MISSING: $required"
             }
           }
-          $outLog = Join-Path $env:RUNNER_TEMP 'pilot-deploy-smoke.stdout.txt'
-          $errLog = Join-Path $env:RUNNER_TEMP 'pilot-deploy-smoke.stderr.txt'
+          $outLog = Join-Path $env:RUNNER_TEMP 'fq-deploy-smoke.stdout.txt'
+          $errLog = Join-Path $env:RUNNER_TEMP 'fq-deploy-smoke.stderr.txt'
           $process = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $outLog -RedirectStandardError $errLog
           $code = $process.ExitCode
           Write-Host "FQ_DEPLOY_EXIT_DECIMAL=$code"
@@ -287,8 +287,8 @@ jobs:
           if ($code -ne 0) {
             # A debug retry collects information; it CANNOT override failure.
             $env:QT_DEBUG_PLUGINS = '1'
-            $traceOut = Join-Path $env:RUNNER_TEMP 'pilot-qt-debug.stdout.txt'
-            $traceErr = Join-Path $env:RUNNER_TEMP 'pilot-qt-debug.stderr.txt'
+            $traceOut = Join-Path $env:RUNNER_TEMP 'fq-qt-debug.stdout.txt'
+            $traceErr = Join-Path $env:RUNNER_TEMP 'fq-qt-debug.stderr.txt'
             try {
               $trace = Start-Process -FilePath $exe -ArgumentList '--rgsml-deploy-smoke' -PassThru -Wait -RedirectStandardOutput $traceOut -RedirectStandardError $traceErr
               Write-Host "FQ_QT_TRACE_EXIT=$($trace.ExitCode)"
@@ -306,7 +306,11 @@ jobs:
         run: |
           Write-Host "FQ_SHA=$env:RGSML_FQ_SHA MODE=$env:RGSML_FQ_CACHE_MODE"
           if ($env:RGSML_FQ_CACHE_MODE -eq 'warm') { sccache --show-stats }
-          Write-Host "FQ_ONLY_NOT_OFFICIAL_FQ"
+          if ($env:RGSML_FQ_CACHE_MODE -eq 'cold') {
+            Write-Host 'FQ_COLD_AUTOMATED_CHECKS_PASSED_PENDING_PO_GATES'
+          } else {
+            Write-Host 'FQ_WARM_PERFORMANCE_ONLY_NOT_AUTHORITATIVE'
+          }
       - name: Upload FQ cold/warm provenance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -316,8 +320,8 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-      - name: Upload staged FQ candidate artifact
-        if: success()
+      - name: Upload staged FQ candidate artifact (cold only)
+        if: ${{ success() && inputs.cache_mode == 'cold' }}
         uses: actions/upload-artifact@v4
         with:
           name: RGS-MasterLab-Windows-FQ-${{ github.run_number }}-${{ github.sha }}
