@@ -411,10 +411,6 @@ void MasteringChainStateTest::restoredFourNodeStereoMsPreservesTypedIdentityAndB
     }
 }
 
-}  // namespace
-}  // namespace rgsml::tests
-
-
 void MasteringChainStateTest::terminalLimiterProductStateAndActualPcm()
 {
     auto reg=ModuleRegistry::create_dsp_package_v1();
@@ -496,6 +492,11 @@ void MasteringChainStateTest::terminalLimiterProductStateAndActualPcm()
         .ceiling_db_tp(),-6.0);
     QCOMPARE(state.value()->instance_id(),id);
 }
+
+
+}  // namespace
+}  // namespace rgsml::tests
+
 
 QTEST_APPLESS_MAIN(rgsml::tests::MasteringChainStateTest)
 
