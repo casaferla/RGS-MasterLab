@@ -7,6 +7,7 @@ Rectangle {
     objectName: "dspWorkspace"
 
     property var adapterModel: null
+    property bool errorsInGlobalStatusBar: false
     property int selectedModuleIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
@@ -54,6 +55,7 @@ Rectangle {
             adapterModel: root.adapterModel
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
+            errorsInGlobalStatusBar: root.errorsInGlobalStatusBar
             spectrumViewModel: root.spectrumViewModel
             truePeakStaticViewModel: root.truePeakStaticViewModel
             truePeakLiveViewModel: root.truePeakLiveViewModel

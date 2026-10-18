@@ -7,6 +7,9 @@ Rectangle {
     objectName: "dspEditorHost"
 
     property var adapterModel: null
+    // Opt-in via Main only. Standalone DSP editor fixtures preserve their
+    // historical local validation feedback for isolated smoke coverage.
+    property bool errorsInGlobalStatusBar: false
     property int selectedModuleIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
@@ -245,6 +248,7 @@ Rectangle {
 
         // Active Editor Content Area
         InputGainEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
             id: inputGainEditor
             objectName: "inputGainEditor"
             visible: root.activeModule ? (root.activeModule.editorContentKey === "INPUT_GAIN") : false
@@ -258,6 +262,7 @@ Rectangle {
         }
 
         ParametricEqEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
             id: parametricEqEditor
             objectName: "parametricEqEditor"
             visible: root.activeModule ? (root.activeModule.editorContentKey === "PARAMETRIC_EQ") : false
@@ -268,6 +273,7 @@ Rectangle {
         }
 
         CompressorEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
             id: compressorEditor
             objectName: "compressorEditor"
             visible: root.activeModule ? (root.activeModule.editorContentKey === "COMPRESSOR") : false
@@ -290,6 +296,7 @@ Rectangle {
         // The M17 editor is reachable ONLY from a real terminal adapter;
         // M16 retains its independent meter presentation identity.
         TruePeakLimiterEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
             id: truePeakLimiterEditor
             objectName: "truePeakLimiterEditor"
             visible: root.isLimiterEditor
@@ -303,6 +310,7 @@ Rectangle {
         }
 
         StereoMsEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
             id: stereoMsEditor
             objectName: "stereoMsEditor"
             visible: root.activeModule ? root.activeModule.editorContentKey === "STEREO_MS" : false

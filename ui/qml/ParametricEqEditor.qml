@@ -6,6 +6,7 @@ Rectangle {
     id: root
     property var viewModel: null
     property var spectrumViewModel: null
+    property bool showLocalValidation: true
 
     implicitWidth: 992
     implicitHeight: 612
@@ -216,7 +217,7 @@ Rectangle {
                 anchors.bottom: parent.bottom
                 height: 16
                 z: 40
-                visible: messageText.text.length > 0
+                visible: root.showLocalValidation && messageText.text.length > 0
                 color: "#E012243F"
                 radius: 3
     

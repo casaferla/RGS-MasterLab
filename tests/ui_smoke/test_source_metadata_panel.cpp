@@ -2126,9 +2126,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(desktopMenu);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("controlStripElasticCenter")));
     auto* statusBar = root->findChild<QObject*>(QStringLiteral("statusBar"));
+    auto* statusBarMessage = root->findChild<QObject*>(QStringLiteral("statusBarMessage"));
     auto* statusIndicator = root->findChild<QObject*>(QStringLiteral("statusReadyIndicator"));
     auto* statusBuildProvenanceLabel = root->findChild<QObject*>(QStringLiteral("statusBuildProvenanceLabel"));
-    QVERIFY(statusBar && statusIndicator && statusBuildProvenanceLabel);
+    QVERIFY(statusBar && statusBarMessage && statusIndicator && statusBuildProvenanceLabel);
+    QCOMPARE(root->property("statusSeverity").toString(), QStringLiteral("INFO"));
     QCOMPARE(statusBar->property("height").toInt(), 24);
     QCOMPARE(statusIndicator->property("width").toInt(), 8);
     QCOMPARE(statusIndicator->property("height").toInt(), 8);
@@ -2843,7 +2845,27 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!gainViewModel.setGainDbText(QStringLiteral("invalid")));
     QCoreApplication::processEvents();
     QVERIFY2(!gainViewModel.validation_error().isEmpty(), "Validation error must be non-empty for invalid gain text");
-    QVERIFY2(gainValidationError->property("visible").toBool(), "gainValidationError must be visible when error exists");
+    // PO: the application's shared status bar owns validation presentation.
+    // Input Gain keeps only the local invalid field outline; no inline footer
+    // may push the editor. Isolated editor fixtures still use local feedback.
+    QVERIFY2(!qobject_cast<QQuickItem*>(gainValidationError)->isVisible(),
+        "Full application must suppress duplicate local Gain error message");
+    QVERIFY2(root->property("statusDspErrorText").toString().contains(
+        QStringLiteral("Input Gain")),
+        "Selected Gain validation should be routed to global status");
+    QCOMPARE(root->property("statusSeverity").toString(), QStringLiteral("ERROR"));
+    const auto gainStatusMessage = statusBarMessage->property("text").toString();
+    QVERIFY2(gainStatusMessage.contains(QStringLiteral("Input Gain"))
+        && gainStatusMessage.contains(QStringLiteral("invalid"), Qt::CaseInsensitive),
+        "Global footer must name the offending DSP and preserve error detail");
+    QCOMPARE(statusIndicator->property("color").value<QColor>(),
+        QColor{QStringLiteral("#F27683")});
+    QCOMPARE(statusBarMessage->property("color").value<QColor>(),
+        QColor{QStringLiteral("#F27683")});
+    QCOMPARE(statusBar->property("height").toInt(), 24);
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("m17_global_status_gain_invalid_1184x688.png"),
+        QSize{1184, 688}));
 
     // Reset button restores 0.0 dB default
     QVERIFY2(QMetaObject::invokeMethod(resetGainButton, "clicked"), "Clicking resetGainButton must succeed");
@@ -2926,7 +2948,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(gainFillTracksKnob());
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
     QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
-    QVERIFY2(!gainValidationError->property("visible").toBool(), "gainValidationError must be hidden after reset");
+    QVERIFY2(!qobject_cast<QQuickItem*>(gainValidationError)->isVisible(),
+        "Gain local error display must remain suppressed after correction");
+    QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
+    QCOMPARE(root->property("statusSeverity").toString(), QStringLiteral("INFO"));
+    QCOMPARE(statusIndicator->property("color").value<QColor>(),
+        QColor{QStringLiteral("#00E6E6")});
+    QCOMPARE(statusBar->property("height").toInt(), 24);
+    QVERIFY(capture_visual_evidence(window,
+        QStringLiteral("m17_global_status_gain_corrected_1184x688.png"),
+        QSize{1184, 688}));
 
     // Escape key in editor host restores focus to active chain row
     auto* gainDbInputItem = qobject_cast<QQuickItem*>(gainDbInput);
@@ -3148,7 +3179,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(valMsgText && valMsgText->property("visible").toBool(), "Validation message text must be visible for invalid draft");
     auto* transientError = qobject_cast<QQuickItem*>(find_child_by_name(
         eqEditor, QStringLiteral("eqStatusRegion")));
-    QVERIFY(transientError && transientError->isVisible());
+    QVERIFY(transientError && !transientError->isVisible());
+    QCOMPARE(root->property("statusSeverity").toString(), QStringLiteral("ERROR"));
+    QVERIFY2(statusBarMessage->property("text").toString().contains(
+        QStringLiteral("Parametric"), Qt::CaseInsensitive),
+        "EQ validation must be present in the global status bar");
+    QCOMPARE(statusIndicator->property("color").value<QColor>(),
+        QColor{QStringLiteral("#F27683")});
     QVERIFY2(check_item_contained_in_ancestor(
         transientError, qobject_cast<QQuickItem*>(eqGraph)),
         "Actual invalid input must show validation INSIDE EQ response graph");
@@ -3159,7 +3196,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqViewModel.frequency_text(), QStringLiteral("1000"));
     QVERIFY2(eqViewModel.validation_field().isEmpty(), "Validation field must be empty after Escape key cancel");
     QVERIFY2(!transientError->isVisible(),
-        "Esc must remove temporary graph validation overlay");
+        "Global-bar mode must keep local EQ overlay hidden");
+    QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=ab-and-byp-semantics";
     auto* undoBtn = dspEditorHostObj->findChild<QObject*>(QStringLiteral("eqUndoButton"));

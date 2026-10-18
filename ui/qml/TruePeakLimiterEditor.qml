@@ -9,6 +9,7 @@ Item {
     id: root
     objectName: "truePeakLimiterSurface"
     property var limiterModule: null
+    property bool showLocalValidation: true
     property var limiterViewModel: null
     property var measurementProvider: null
     property var liveProvider: null
@@ -250,7 +251,7 @@ Item {
                 z: 20
                 radius: 3
                 color: "#E012243F"
-                visible: root.hasValidationError
+                visible: root.showLocalValidation && root.hasValidationError
 
                 Text {
                     id: validationText

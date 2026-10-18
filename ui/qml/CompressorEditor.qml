@@ -7,6 +7,7 @@ Item {
     objectName: "compressorEditor"
 
     property var viewModel: null
+    property bool showLocalValidation: true
 
     readonly property color textPrimary: "#F5F8FC"
     readonly property color textSecondary: "#A1B5C9"
@@ -1105,7 +1106,7 @@ Item {
                     z: 20
                     color: "#E012243F"
                     radius: 3
-                    visible: root.hasValidationError
+                    visible: root.showLocalValidation && root.hasValidationError
 
                     Text {
                         id: validationErrorLabel

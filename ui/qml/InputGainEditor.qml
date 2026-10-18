@@ -7,6 +7,7 @@ Item {
     objectName: "inputGainEditor"
 
     property var viewModel: null
+    property bool showLocalValidation: true
     // Escape cancels the local numeric draft before the host returns
     // keyboard focus to the selected DSP-chain row (M12 smoke contract).
     signal escapeToChainRequested()
@@ -384,7 +385,7 @@ Item {
                 z: 10
                 color: "#E012243F"
                 radius: 3
-                visible: root.hasError
+                visible: root.showLocalValidation && root.hasError
 
                 Text {
                     id: validationErrorLabel

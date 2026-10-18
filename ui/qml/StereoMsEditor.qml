@@ -6,6 +6,7 @@ Item {
     id: root
     objectName: "stereoMsEditor"
     property var viewModel: null
+    property bool showLocalValidation: true
 
     readonly property color seaGreen: "#4A9A88"
     readonly property color widthHue: "#2ED3FF"
@@ -50,7 +51,7 @@ Item {
                 id: validationFeedbackText
                 objectName: "stereoMsValidationFeedbackText"
                 text: root.viewModel ? root.viewModel.validationMessage : ""
-                visible: text.length > 0
+                visible: root.showLocalValidation && text.length > 0
                 color: "#F27683"
                 font.family: "Segoe UI"
                 font.pixelSize: 11
