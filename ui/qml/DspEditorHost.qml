@@ -38,7 +38,7 @@ Rectangle {
     // Board02 Editor Panel Material
     radius: 8
     color: "#0F2236"
-    border.color: "#27465F"
+    border.color: root.isLimiterEditor ? root.activeFamilyAccent : "#27465F"
     border.width: 1
 
     gradient: Gradient {
@@ -219,7 +219,8 @@ Rectangle {
                     Layout.maximumWidth: 100
                     selected: root.activeModule ? !root.activeModule.bypass : true
                     tone: "primary"
-                    accentColor: "#00C8FF"
+                    accentColor: root.isLimiterEditor ? root.activeFamilyAccent : "#00C8FF"
+                    selectedFamilyAccent: root.isLimiterEditor
                     onClicked: if (root.activeModule) root.activeModule.setBypass(false)
                     Accessible.name: text
                     ToolTip.text: "Activate module processing"
@@ -232,7 +233,8 @@ Rectangle {
                     text: "Bypass"
                     selected: root.activeModule ? root.activeModule.bypass : false
                     tone: "gold"
-                    accentColor: "#F2B632"
+                    accentColor: root.isLimiterEditor ? root.activeFamilyAccent : "#F2B632"
+                    selectedFamilyAccent: root.isLimiterEditor
                     onClicked: if (root.activeModule) root.activeModule.setBypass(true)
                     Accessible.name: "Bypass"
                     ToolTip.text: "Bypass module processing"

@@ -78,10 +78,23 @@ Item {
                 // Disabled until the real Ceiling ViewModel is connected.
                 // The only parameter uses the canonical shared field/slider,
                 // zero-origin fill from RIGHT, and no M17 wheel gesture.
-                StudioNumericSliderPair {
+                Rectangle {
+                    id: ceilingCard
+                    objectName: "m17CeilingCard"
+                    Layout.fillWidth: true
+                    Layout.minimumHeight: 100
+                    Layout.preferredHeight: 100
+                    radius: 6
+                    color: "#10273A"
+                    border.color: root.familyAccent
+                    border.width: 1
+
+                    StudioNumericSliderPair {
                     id: ceilingControl
                     objectName: "m17CeilingControl"
-                    Layout.alignment: Qt.AlignLeft
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.margins: 10
                     enabled: root.sonicControlsEnabled
                     opacity: root.sonicControlsEnabled ? 1.0 : 0.48
                     viewModel: root.limiterViewModel
@@ -103,13 +116,15 @@ Item {
                     accentColor: root.familyAccent
                     focusAccentOnly: true
                     sliderAccessibleName: "True Peak Ceiling"
+                    }
                 }
 
                 Rectangle {
                     objectName: "m17GainReductionHistory"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 114
-                    Layout.minimumHeight: 114
+                    Layout.fillHeight: true
+                    Layout.preferredHeight: 240
+                    Layout.minimumHeight: 166
                     radius: 6
                     color: "#081521"
                     border.color: root.familyAccent
@@ -142,8 +157,8 @@ Item {
                 Rectangle {
                     objectName: "m17VerificationTrim"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 72
-                    Layout.minimumHeight: 72
+                    Layout.preferredHeight: 92
+                    Layout.minimumHeight: 92
                     radius: 6
                     color: "#081521"
                     border.color: root.familyAccent
@@ -170,7 +185,6 @@ Item {
                         }
                     }
                 }
-                Item { Layout.fillHeight: true }
                 Text {
                     objectName: "m17UnqualifiedNotice"
                     Layout.fillWidth: true

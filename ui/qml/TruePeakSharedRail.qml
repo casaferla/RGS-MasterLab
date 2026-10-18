@@ -8,28 +8,46 @@ Item {
     objectName: "truePeakSharedRail"
     property var measurementProvider: null
     property var liveProvider: null
+    // M17 only: turn four separate readout cards into an equal-height,
+    // coherent second column. Standalone M16 keeps its exact prior layout.
+    property bool framedForLimiter: false
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     readonly property bool hasMeasurement: measurementProvider
         ? measurementProvider.hasMeasurement : false
     implicitWidth: 316
     implicitHeight: 330
-    readonly property bool compactRail: height < 530
+    readonly property bool compactRail: framedForLimiter || height < 530
     property color fullResourceAccent: "#6CBCCF"
 
-    // A common M16/M17 information group centred vertically at any height.
+    // A complete panel boundary, not just four individually outlined cards.
+    Rectangle {
+        objectName: "truePeakSharedRailFrame"
+        anchors.fill: parent
+        visible: root.framedForLimiter
+        radius: 8
+        color: "#0A1C2D"
+        border.color: root.familyAccent
+        border.width: 1
+    }
+
+    // M16 is centered as before; M17 fills the panel and distributes height.
     // Cards retain their natural size rather than growing to fill empty space.
     ColumnLayout {
         id: railContents
         objectName: "truePeakSharedRailContents"
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        height: implicitHeight
-        spacing: root.compactRail ? 3 : 10
+        anchors.top: root.framedForLimiter ? parent.top : undefined
+        anchors.bottom: root.framedForLimiter ? parent.bottom : undefined
+        anchors.verticalCenter: root.framedForLimiter ? undefined : parent.verticalCenter
+        anchors.margins: root.framedForLimiter ? 8 : 0
+        height: root.framedForLimiter ? undefined : implicitHeight
+        spacing: root.framedForLimiter ? 6 : root.compactRail ? 3 : 10
 
         TruePeakReadoutCard {
             objectName: "truePeakRecentCard"
+            Layout.fillHeight: root.framedForLimiter
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
@@ -45,6 +63,7 @@ Item {
         }
         TruePeakReadoutCard {
             objectName: "truePeakHoldCard"
+            Layout.fillHeight: root.framedForLimiter
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
@@ -62,6 +81,7 @@ Item {
         }
         TruePeakReadoutCard {
             objectName: "truePeakFullResourceCard"
+            Layout.fillHeight: root.framedForLimiter
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
@@ -78,6 +98,7 @@ Item {
         }
         TruePeakStatusCard {
             objectName: "truePeakProvenanceCard"
+            Layout.fillHeight: root.framedForLimiter
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
@@ -103,7 +124,7 @@ Item {
             wrapMode: Text.WordWrap
             // Keep the provenance note visibly below the card at
             // canonical minimum height without resizing the card itself.
-            Layout.topMargin: root.compactRail ? 8 : 10
+            Layout.topMargin: root.framedForLimiter ? 1 : root.compactRail ? 8 : 10
             Layout.fillWidth: true
         }
 

@@ -511,9 +511,127 @@ private slots:
     void stereoMsOptInVisualEvidence();
     void truePeakReadOnlyAnalysisVisualEvidence();
     void truePeakLimiterLayoutCandidate();
+    void truePeakLimiterHostFamilyTheme();
 };
 
 
+
+void SourceMetadataPanelSmokeTest::truePeakLimiterHostFamilyTheme()
+{
+    // Real DspEditorHost/StudioButton QML, with a clearly isolated visual
+    // fixture. No synthetic module is installed in the productive chain.
+    QQmlEngine engine;
+    QQmlComponent component{&engine};
+    static constexpr auto qml = R"qml(
+import QtQuick
+import QtQuick.Window
+import Rgsml.Ui 1.0
+Window {
+    id: fixtureWindow
+    width: 1184
+    height: 688
+    visible: false
+    color: "#06121F"
+    QtObject {
+        id: limiter
+        objectName: "m17FixtureLimiter"
+        property string editorContentKey: "TRUE_PEAK_LIMITER"
+        property string displayName: "True Peak Limiter"
+        property string workspaceContextLabel: "Mastering · UI fixture"
+        property string familyAccent: "#C4774A"
+        property bool bypass: true
+        property bool bypassSupported: true
+        property bool historySupported: false
+        property bool previewSupported: false
+        property bool canUndo: false
+        property bool canRedo: false
+        property var gainViewModel: null
+        property var eqViewModel: null
+        property var compressorViewModel: null
+        function setBypass(value) { bypass = value }
+    }
+    QtObject {
+        id: fixtureModel
+        property var activeModule: limiter
+    }
+    Rectangle {
+        id: captureSurface
+        objectName: "m17HostCaptureSurface"
+        width: 1184
+        height: 688
+        color: "#06121F"
+        DspEditorHost {
+            id: host
+            objectName: "m17HostFixture"
+            x: 196
+            y: 18
+            width: 972
+            height: 652
+            adapterModel: fixtureModel
+        }
+    }
+}
+)qml";
+    component.setData(QByteArray{qml},
+        QUrl{QStringLiteral("qrc:/m17/host-theme-fixture.qml")});
+    QVERIFY2(component.status() != QQmlComponent::Error,
+        qPrintable(component.errorString()));
+    QScopedPointer<QObject> root{component.create()};
+    QVERIFY2(root, qPrintable(component.errorString()));
+    auto* window = qobject_cast<QQuickWindow*>(root.data());
+    QVERIFY(window);
+    window->show();
+    QTest::qWait(150);
+    QCoreApplication::processEvents();
+    auto* surface = qobject_cast<QQuickItem*>(find_child_by_name(
+        root.data(), QStringLiteral("m17HostCaptureSurface")));
+    auto* fixture = find_child_by_name(root.data(),
+        QStringLiteral("m17FixtureLimiter"));
+    auto* host = find_child_by_name(root.data(),
+        QStringLiteral("m17HostFixture"));
+    auto* active = find_child_by_name(root.data(),
+        QStringLiteral("abButtonActive"));
+    auto* bypass = find_child_by_name(root.data(),
+        QStringLiteral("abButtonBypass"));
+    auto* editor = find_child_by_name(root.data(),
+        QStringLiteral("truePeakLimiterEditor"));
+    QVERIFY(surface && fixture && host && active && bypass && editor);
+    auto captureHost = [surface](const QString& fileName) {
+        const auto grab = surface->grabToImage();
+        if (!grab)
+            return false;
+        QSignalSpy ready{grab.data(), &QQuickItemGrabResult::ready};
+        if (ready.empty() && !ready.wait(15000))
+            return false;
+        const auto picture = grab->image();
+        if (picture.isNull() || picture.size() != QSize{1184, 688})
+            return false;
+        const QString dir = qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        return dir.isEmpty() || (QDir{}.mkpath(dir)
+            && picture.save(QDir{dir}.filePath(fileName), "PNG"));
+    };
+    QVERIFY(editor->property("visible").toBool());
+    QVERIFY(active->property("selectedFamilyAccent").toBool());
+    QVERIFY(bypass->property("selectedFamilyAccent").toBool());
+    const auto checkTheme = [&](bool isBypass, const QString& expected) {
+        if (!fixture->setProperty("bypass", isBypass)) return false;
+        QCoreApplication::processEvents();
+        const QColor accent{expected};
+        if (host->property("activeFamilyAccent").value<QColor>() != accent) return false;
+        if (active->property("accentColor").value<QColor>() != accent) return false;
+        if (bypass->property("accentColor").value<QColor>() != accent) return false;
+        if (!editor->property("visible").toBool()) return false;
+        return true;
+    };
+    QVERIFY(checkTheme(true, QStringLiteral("#6CBCCF")));
+    QVERIFY2(captureHost(QStringLiteral("m17_host_family_byp_1184x688.png")),
+        "Native M17 DSP host BYP screenshot must be captured");
+    QVERIFY(checkTheme(false, QStringLiteral("#C4774A")));
+    QVERIFY2(captureHost(QStringLiteral("m17_host_family_on_1184x688.png")),
+        "Native M17 DSP host ON screenshot must be captured");
+    QVERIFY(checkTheme(true, QStringLiteral("#6CBCCF")));
+    window->close();
+}
 
 void SourceMetadataPanelSmokeTest::truePeakLimiterLayoutCandidate()
 {
@@ -590,8 +708,12 @@ Window {
         QStringLiteral("m17GainReductionHistory"));
     auto* trim = find_child_by_name(instance.data(),
         QStringLiteral("m17VerificationTrim"));
+    auto* railFrame = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("truePeakSharedRailFrame")));
+    auto* ceilingCard = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17CeilingCard")));
     QVERIFY(state && captureSurface && editor && meter && limiter
-        && ceiling && rail && gr && trim);
+        && ceiling && rail && gr && trim && railFrame && ceilingCard);
     auto captureCandidate = [captureSurface](
         const QSize& size, const QString& fileName) -> bool {
         // grabToImage captures exact native QML coordinates even if a virtual
@@ -639,6 +761,22 @@ Window {
         QVERIFY2(limiterPos.x() + limiterSize.width() <= editor->width() + 0.5,
             "M17 limiter overflows editor");
         QVERIFY(rail->property("visible").toBool());
+        QVERIFY2(railFrame->property("visible").toBool(),
+            "M17 second column must have its own permanent outer panel border");
+        QVERIFY2(std::abs(railFrame->height() - limiterSize.height()) <= 1.0,
+            "Second and third column external panels must share a height");
+        QVERIFY2(gr->property("height").toDouble() >= 166.0,
+            "M17 GR area must expand vertically and not accumulate at the top");
+        QVERIFY2(trim->property("height").toDouble() >= 92.0,
+            "Verification Trim must have an aligned, legible panel");
+        QVERIFY2(check_item_contained_in_ancestor(ceilingCard, limiter),
+            "M17 Ceiling card must be contained in the Limiter column");
+        QVERIFY2(check_item_contained_in_ancestor(
+            qobject_cast<QQuickItem*>(gr), limiter),
+            "M17 GR panel must be contained in the Limiter column");
+        QVERIFY2(check_item_contained_in_ancestor(
+            qobject_cast<QQuickItem*>(trim), limiter),
+            "M17 Trim panel must be contained in the Limiter column");
         QVERIFY(gr->property("visible").toBool());
         QVERIFY(trim->property("visible").toBool());
         QVERIFY2(!ceiling->property("enabled").toBool(),

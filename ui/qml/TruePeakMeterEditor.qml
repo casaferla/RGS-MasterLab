@@ -142,6 +142,7 @@ Item {
                 liveProvider: root.liveProvider
                 useFamilyAccent: root.useFamilyAccent
                 familyAccent: root.familyAccent
+                framedForLimiter: root.compactForLimiter
                 fullResourceAccent: root.useFamilyAccent ? root.familyAccent : "#6CBCCF"
             }
     }
