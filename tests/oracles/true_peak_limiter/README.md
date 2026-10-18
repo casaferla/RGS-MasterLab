@@ -96,3 +96,12 @@ must reproduce the separate-buffer streaming oracle bit for bit, including
 -0.0 and hot first/last samples. Nonfinite aliased input must be rejected
 atomically without PCM, checkpoint or gain-witness mutation. This is
 Core-first evidence, not authorization of a production host renderer.
+
+U4/U5 multi-resource instance lifecycle: six Fs, mono/stereo, Ceilings
+-12/0 dBTP and three sequential, distinct programme resources / frame
+origins validate original prepare, post-EOS reset and post-EOS reprepare.
+Each independently rendered reference (new instance) must be bit-identical
+after exactly D raw crop. Finalized calls reject further process and cannot
+emit stray gain witnesses. Both lifecycle entrypoints clear prior detector,
+PCM delay, controller GR, timing and frame identity without changing strict
+FP, sonic algorithms or permitting actual host resource ownership claims.
