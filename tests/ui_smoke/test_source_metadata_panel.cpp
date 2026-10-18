@@ -4333,6 +4333,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* globalStatusBarItem = qobject_cast<QQuickItem*>(statusBar);
     QVERIFY(stereoEditorItem && localMsError && msControls && globalStatusBarItem);
     QVERIFY(!localMsError->isVisible());
+    // capture_visual_evidence() changes the native window size to its
+    // requested geometry. Normalize BEFORE the baseline rectangle so a
+    // resize is never mistaken for an error-induced DSP layout shift.
+    window->resize(QSize{1184, 688});
+    QTest::qWait(120);
+    QCoreApplication::processEvents();
     const QRectF controlsBefore{
         msControls->mapToScene(QPointF{}), msControls->size()};
     const QRectF footerBefore{
