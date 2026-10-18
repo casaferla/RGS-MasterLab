@@ -1,5 +1,6 @@
 #include "render_test_support.hpp"
 
+#include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/core/checked_integer.hpp>
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
@@ -471,6 +472,7 @@ private slots:
     void activeUnavailableModuleFails();
     void truePeakLimiterTerminalRendererBoundary();
     void truePeakLimiterOutputRateCandidateRendersRealPcm();
+    void truePeakLimiterCheckedCandidateGenuineM16SixRateMatrix();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
     void mixedGainAndEqOrderAndBypassIdentity();
@@ -1928,6 +1930,143 @@ void RenderPreviewTest::truePeakLimiterOutputRateCandidateRendersRealPcm()
         }
     }
     QVERIFY(genuinelyReduced);
+}
+
+
+void RenderPreviewTest::truePeakLimiterCheckedCandidateGenuineM16SixRateMatrix()
+{
+    // This is NOT a product-qualified realization. The whole-resource
+    // checked candidate nevertheless executes REAL M17 PCM/GR, complete
+    // EOS D-drain, one authorized M16 meter, and a guarded global trim
+    // (with a second M16 measurement when trim is necessary).
+    // NONE of the observed numbers may claim QUALIFIED.
+    using rgsml::audio::FrameDomainId;
+    using rgsml::audio::AudioBuffer;
+    using rgsml::core::FrameIndex;
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    for (const int fs : {44100,48000,88200,96000,176400,192000}) {
+        const auto d=fs/200+8;
+        for (const auto stereo : {false,true}) {
+            for (const auto ceilingDb : {-12.0,0.0}) {
+                auto params=rgsml::dsp::TruePeakLimiterParameters::create(ceilingDb);
+                QVERIFY(params);
+                const auto channels=stereo?std::size_t{2}:std::size_t{1};
+                const auto fmt=format(stereo
+                    ?rgsml::audio::ChannelLayout::STEREO_LR
+                    :rgsml::audio::ChannelLayout::MONO_C,fs);
+                const auto origin=stereo?std::int64_t{12345}:std::int64_t{0};
+                for (const auto count : {1,2*d+41}) {
+                    auto input=AudioBuffer::create(fmt,FrameDomainId::OUTPUT_RATE,
+                        FrameIndex{origin},frame_count(count));
+                    QVERIFY(input);
+                    for(std::size_t ch=0;ch<channels;++ch) {
+                        auto lane=input.value()->mutable_view().channel(ch);
+                        QVERIFY(lane);
+                        for(int i=0;i<count;++i) {
+                            const double sample=i==0?4.0
+                                :(i==count-1?-3.0:(i%37==0?2.0:0.0625));
+                            (*lane.value())[static_cast<std::size_t>(i)]=
+                                ch==0?sample:sample*(-0.75);
+                        }
+                    }
+                    const auto sourceBits=bits(input.value()->view());
+                    auto checked=rgsml::render::render_true_peak_limiter_checked_candidate(
+                        input.value()->view(),*params.value(),*registry.value(),
+                        frame_count(17),false);
+                    QVERIFY2(checked,
+                        checked ? "" : checked.error()->message().c_str());
+                    QVERIFY(!checked.value()->terminal.bypassed);
+                    QVERIFY(checked.value()->final_check.has_value());
+                    const auto& report=*checked.value()->final_check;
+                    QCOMPARE(report.qualification_status,
+                        rgsml::analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+                    QVERIFY(report.before_linear_peak>=0.0);
+                    QVERIFY(report.after_linear_peak>=0.0);
+                    QVERIFY(report.global_trim_gain<=1.0);
+                    QVERIFY(report.global_trim_gain>=0x1.fa23a197d2819p-1);
+                    QCOMPARE(report.trim_used,report.global_trim_gain<1.0);
+                    QCOMPARE(checked.value()->terminal.algorithmic_latency_frames,
+                        static_cast<std::int64_t>(d));
+                    QCOMPARE(checked.value()->terminal.applied_gain_frames.size(),
+                        static_cast<std::size_t>(count));
+                    QCOMPARE(checked.value()->terminal.compensated_pcm.view().absolute_range(),
+                        input.value()->view().absolute_range());
+                    QCOMPARE(bits(input.value()->view()),sourceBits);
+                    const auto after=rgsml::analysis::measure_true_peak_full_resource(
+                        checked.value()->terminal.compensated_pcm);
+                    QVERIFY(after);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(after.value()->global_linear_peak()),
+                        std::bit_cast<std::uint64_t>(report.after_linear_peak));
+                    const auto ceiling=std::pow(10.0,ceilingDb/20.0);
+                    QVERIFY(report.after_linear_peak<=ceiling);
+
+                    // Real DSP applied-gain provenance is base-only; the
+                    // verification trim is separate, common to both lanes.
+                    for(int i=0;i<count;++i) {
+                        const auto& w=checked.value()->terminal.applied_gain_frames[
+                            static_cast<std::size_t>(i)];
+                        QCOMPARE(w.programme_frame,origin+i);
+                        QCOMPARE(w.raw_output_frame,origin+i+d);
+                        QVERIFY(w.gain>0.0 && w.gain<=1.0);
+                        for(std::size_t ch=0;ch<channels;++ch) {
+                            const auto src=input.value()->view().channel(ch);
+                            const auto actual=checked.value()->terminal
+                                .compensated_pcm.view().channel(ch);
+                            QVERIFY(src && actual);
+                            const double original=(*src.value())[static_cast<std::size_t>(i)];
+                            const double base=w.gain==1.0?original:original*w.gain;
+                            const double expected=report.trim_used
+                                ?base*report.global_trim_gain:base;
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                (*actual.value())[static_cast<std::size_t>(i)]),
+                                std::bit_cast<std::uint64_t>(expected));
+                        }
+                    }
+                    // Block partition must not change the actual rendered
+                    // PCM nor the exact completed M16 measurement.
+                    auto unchunked=rgsml::render::render_true_peak_limiter_checked_candidate(
+                        input.value()->view(),*params.value(),*registry.value(),
+                        frame_count(4096),false);
+                    QVERIFY(unchunked);
+                    QCOMPARE(bits(unchunked.value()->terminal.compensated_pcm.view()),
+                        bits(checked.value()->terminal.compensated_pcm.view()));
+                    QVERIFY(unchunked.value()->final_check.has_value());
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        unchunked.value()->final_check->global_trim_gain),
+                        std::bit_cast<std::uint64_t>(report.global_trim_gain));
+                }
+            }
+        }
+    }
+
+    // BYP never borrows an M16 meter or trim, even if its real source
+    // exceeds Ceiling: no D placeholders, base-GR or false final status.
+    const auto fmt=format(rgsml::audio::ChannelLayout::STEREO_LR,48000);
+    auto src=AudioBuffer::create(fmt,FrameDomainId::OUTPUT_RATE,
+        FrameIndex{101},frame_count(5));
+    QVERIFY(src);
+    const std::array<double,5> left{+0.0,-0.0,4.0,
+        std::numeric_limits<double>::denorm_min(),-2.0};
+    const std::array<double,5> right{-0.0,+0.0,-4.0,
+        -std::numeric_limits<double>::denorm_min(),2.0};
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto data=src.value()->mutable_view().channel(ch);
+        QVERIFY(data);
+        std::copy(ch==0?left.begin():right.begin(),
+            ch==0?left.end():right.end(),data.value()->begin());
+    }
+    auto p=rgsml::dsp::TruePeakLimiterParameters::create(-12.0);
+    QVERIFY(p);
+    auto bypass=rgsml::render::render_true_peak_limiter_checked_candidate(
+        src.value()->view(),*p.value(),*registry.value(),frame_count(1),true);
+    QVERIFY(bypass);
+    QVERIFY(bypass.value()->terminal.bypassed);
+    QVERIFY(!bypass.value()->final_check.has_value());
+    QVERIFY(bypass.value()->terminal.applied_gain_frames.empty());
+    QCOMPARE(bypass.value()->terminal.algorithmic_latency_frames,std::int64_t{0});
+    QCOMPARE(bits(bypass.value()->terminal.compensated_pcm.view()),
+        bits(src.value()->view()));
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()
