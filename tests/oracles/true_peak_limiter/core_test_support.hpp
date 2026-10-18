@@ -109,6 +109,12 @@ struct BoundCoreCheckpoint final {
 }
 
 
+[[nodiscard]] inline core::Error error(core::ErrorCode code,
+    const char* category,const char* message)
+{
+    return core::Error{code,message,{{"category",category}}};
+}
+
 // AC-06 inactive-path reference harness only. NO M17 instance, NO detector,
 // NO D placeholder/drain, NO verification trim, NO gain callback. The
 // product renderer's bypass is not part of this Core-first entry.
@@ -154,11 +160,6 @@ struct VerificationResult final {
     analysis::TruePeakQualificationStatus status{
         analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED};
 };
-[[nodiscard]] inline core::Error error(core::ErrorCode code,
-    const char* category,const char* message)
-{
-    return core::Error{code,message,{{"category",category}}};
-}
 [[nodiscard]] inline core::Result<VerificationResult>
 verify_full_resource(audio::AudioBuffer& resource,double ceiling_db_tp)
 {
