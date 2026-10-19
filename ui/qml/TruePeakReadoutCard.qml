@@ -13,6 +13,9 @@ Rectangle {
     property string additionalTooltip: ""
     property bool available: false
     property bool detailTooltipEnabled: false
+    // M17 two-column only: keep extra breathing room around each readout.
+    // Standalone M16 card dimensions and padding are not changed.
+    property bool roomyLimiterReadout: false
     HoverHandler { id: readoutHover }
     ToolTip.text: root.heading + "\n" + root.reading + "\n" + root.detail
         + (root.additionalTooltip.length > 0
@@ -58,9 +61,12 @@ Rectangle {
     }
 
     ColumnLayout {
+        objectName: "truePeakReadoutTextColumn"
         anchors.fill: parent
-        anchors.margins: root.height < 95 ? 8 : 12
-        spacing: root.height < 95 ? 2 : 5
+        anchors.margins: root.roomyLimiterReadout ? 10
+            : root.height < 95 ? 8 : 12
+        spacing: root.roomyLimiterReadout ? 4
+            : root.height < 95 ? 2 : 5
         Text {
             text: root.heading
             color: root.useFamilyAccent ? root.familyAccent : "#91AEC2"

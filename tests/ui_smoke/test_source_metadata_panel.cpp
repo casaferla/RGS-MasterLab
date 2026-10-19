@@ -846,8 +846,19 @@ Window {
         QVERIFY(!provenance->isVisible());
         for (auto* readout : {recentReadout, holdReadout, fullReadout}) {
             QVERIFY(readout->isVisible());
-            QCOMPARE(readout->height(), 66.0);
-            if (firstReadoutHeight == 0.0) firstReadoutHeight = readout->height();
+            QCOMPARE(readout->height(), 84.0);
+            QVERIFY2(readout->property("roomyLimiterReadout").toBool(),
+                "M17 readout must use deliberate breathing-room spacing");
+            auto* content = qobject_cast<QQuickItem*>(find_child_by_name(
+                readout, QStringLiteral("truePeakReadoutTextColumn")));
+            QVERIFY(content);
+            const QPointF inset = content->mapToItem(readout, QPointF{});
+            QVERIFY2(inset.y() >= 9.5,
+                "Readout text must remain at least 10px below the top border");
+            QVERIFY2(readout->height() - inset.y() - content->height() >= 9.5,
+                "Readout text must remain at least 10px above the bottom border");
+            if (firstReadoutHeight == 0.0)
+                firstReadoutHeight = readout->height();
             QCOMPARE(readout->height(), firstReadoutHeight);
         }
         QVERIFY(std::abs(upperSpacer->height() - lowerSpacer->height()) <= 1.0);
