@@ -10,6 +10,8 @@
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
 #include <cstdint>
+#include <memory>
+#include <rgsml/render/render_result.hpp>
 #include <optional>
 #include <span>
 #include <vector>
@@ -95,6 +97,39 @@ render_true_peak_limiter_bound_terminal_candidate(
     audio::AudioBufferView full_output_rate_source,
     const dsp::ProcessingChain& terminal_chain,
     std::span<const dsp::ModuleExecutionBinding> immutable_bindings,
+    const dsp::ModuleRegistry& registry,
+    core::FrameCount maximum_block_frames);
+
+
+// First identity-preserving candidate handoff from a complete, OWNED,
+// SOURCE_PROCESSING_RATE manual RenderResult to one contiguous OUTPUT_RATE
+// resource. Only the proven 1:1 rate path is implemented. 44.1->48k
+// (or ANY rate conversion) MUST FAIL CLOSED until a complete-resource SRC
+// with exact source frame-map / Loop Region contracts exists.
+// This does not publish PROCESSED audio or confer M17 qualification.
+struct TruePeakLimiterOwnedSourceCandidate final {
+    std::shared_ptr<const RenderResult> manual_owner;
+    TruePeakLimiterBoundTerminalCandidate terminal;
+    core::SampleRate output_rate;
+    core::FrameCount programme_frames;
+    std::uint64_t manual_chain_revision{0};
+};
+
+// Caller must supply the currently accepted, immutable manual owner and
+// expected true FULL resource length and manual chain revision. The function
+// guards against stale, partial and mixed-domain PCM, copies every binary64
+// bit into an owned OUTPUT_RATE buffer (only for EXACT same rate), invokes
+// the REAL typed terminal DSP/verification and retains source lifetime.
+// Still not a product realization: no playback identity or source resource
+// authorization can be fabricated from this result.
+[[nodiscard]] core::Result<TruePeakLimiterOwnedSourceCandidate>
+render_true_peak_limiter_owned_same_rate_candidate(
+    std::shared_ptr<const RenderResult> accepted_manual_owner,
+    core::FrameCount original_full_resource_frames,
+    std::uint64_t expected_manual_chain_revision,
+    core::SampleRate required_output_rate,
+    const dsp::ProcessingChain& terminal_chain,
+    std::span<const dsp::ModuleExecutionBinding> immutable_terminal_bindings,
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames);
 

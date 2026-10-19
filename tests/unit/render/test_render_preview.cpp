@@ -475,6 +475,7 @@ private slots:
     void truePeakLimiterOutputRateCandidateRendersRealPcm();
     void truePeakLimiterCheckedCandidateGenuineM16SixRateMatrix();
     void truePeakLimiterBoundTerminalChainRejectsStaleOrFakeBindings();
+    void truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndSameRate();
     void resultLifetimeIsIndependent();
     void parametricEqPreviewAndCausalPrerollEquivalence();
     void mixedGainAndEqOrderAndBypassIdentity();
@@ -2195,6 +2196,138 @@ void RenderPreviewTest::truePeakLimiterBoundTerminalChainRejectsStaleOrFakeBindi
     QCOMPARE(error_category(*manualAttempt.error()),
         std::string_view{"M17_TERMINAL_CHAIN_CONTEXT_INVALID"});
     QCOMPARE(bits(source.value()->view()),beforeBits);
+}
+
+
+void RenderPreviewTest::truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndSameRate()
+{
+    auto registry=rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto manualChain=empty_chain(*registry.value());
+    auto limiterChain=rgsml::dsp::ProcessingChain::create(*registry.value(),
+        {rgsml::dsp::ProcessingStage::MASTER,
+         rgsml::dsp::ChainSegment::TERMINAL});
+    QVERIFY(limiterChain);
+    const auto id=make_id("2b000000-0000-4000-8000-000000000017");
+    QVERIFY(limiterChain.value()->add(id,"rgsml.dsp.true-peak-limiter",0));
+    QVERIFY(limiterChain.value()->set_user_bypass(id,true));
+    auto params=rgsml::dsp::TruePeakLimiterParameters::create(-12.0);
+    QVERIFY(params);
+    const std::array<rgsml::dsp::ModuleExecutionBinding,1> binding{{
+        {id,*params.value()}}};
+    const auto rate48000=*rgsml::core::SampleRate::create(48000).value();
+    const auto rate44100=*rgsml::core::SampleRate::create(44100).value();
+    const auto n=frame_count(301);
+    const auto block=frame_count(17);
+
+    for(int hz:{44100,48000}) {
+        auto source=AudioBuffer::create(
+            format(rgsml::audio::ChannelLayout::STEREO_LR,hz),
+            FrameDomainId::SOURCE_PROCESSING_RATE,FrameIndex{0},n);
+        QVERIFY(source);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto lane=source.value()->mutable_view().channel(ch);
+            QVERIFY(lane);
+            for(int i=0;i<301;++i) {
+                const double x=i==0?4.0:(i==300?-3.0
+                    :(i==2?-0.0:(i%37==0?2.0:0.0625)));
+                (*lane.value())[static_cast<std::size_t>(i)]
+                    =ch==0?x:-0.75*x;
+            }
+        }
+        auto req=rgsml::render::RenderRequest::create(
+            source.value()->view(),source.value()->view().absolute_range(),
+            manualChain,{},block);
+        QVERIFY(req);
+        auto preview=rgsml::render::render_preview(
+            *req.value(),*registry.value());
+        QVERIFY(preview);
+        auto owner=std::make_shared<const rgsml::render::RenderResult>(
+            std::move(*preview.value()));
+        const auto sourceBits=bits(owner->view());
+        const auto manualRev=owner->chain_revision();
+        auto nullOwner=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
+            {},n,manualRev,hz==44100?rate44100:rate48000,
+            *limiterChain.value(),binding,*registry.value(),block);
+        QVERIFY(!nullOwner);
+        QCOMPARE(error_category(*nullOwner.error()),
+                 std::string_view{"M17_MANUAL_OWNER_MISSING"});
+        auto stale=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
+            owner,n,manualRev+1,hz==44100?rate44100:rate48000,
+            *limiterChain.value(),binding,*registry.value(),block);
+        QVERIFY(!stale);
+        QCOMPARE(error_category(*stale.error()),
+                 std::string_view{"M17_MANUAL_REVISION_STALE"});
+        auto shortCount=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
+            owner,frame_count(300),manualRev,hz==44100?rate44100:rate48000,
+            *limiterChain.value(),binding,*registry.value(),block);
+        QVERIFY(!shortCount);
+        QCOMPARE(error_category(*shortCount.error()),
+                 std::string_view{"M17_MANUAL_FULL_RESOURCE_REQUIRED"});
+
+        if(hz==44100) {
+            auto noSrc=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
+                owner,n,manualRev,rate48000,*limiterChain.value(),binding,
+                *registry.value(),block);
+            QVERIFY(!noSrc);
+            QCOMPARE(error_category(*noSrc.error()),
+                     std::string_view{"M17_OUTPUT_RATE_SRC_REQUIRED"});
+        }
+        auto owned=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
+            owner,n,manualRev,hz==44100?rate44100:rate48000,
+            *limiterChain.value(),binding,*registry.value(),block);
+        QVERIFY2(owned,owned?"":owned.error()->message().c_str());
+        QCOMPARE(owned.value()->manual_owner,owner);
+        QCOMPARE(owned.value()->manual_chain_revision,manualRev);
+        QCOMPARE(owned.value()->programme_frames,n);
+        QCOMPARE(owned.value()->terminal.terminal_chain_revision,
+                 limiterChain.value()->revision());
+        QVERIFY(owned.value()->terminal.checked.terminal.bypassed);
+        QVERIFY(!owned.value()->terminal.checked.final_check.has_value());
+        QCOMPARE(owned.value()->terminal.checked.terminal
+                 .compensated_pcm.view().timebase().frame_domain_id(),
+                 FrameDomainId::OUTPUT_RATE);
+        QCOMPARE(bits(owned.value()->terminal.checked.terminal
+                      .compensated_pcm.view()),sourceBits);
+        owner.reset();
+        QVERIFY(owned.value()->manual_owner);
+        QCOMPARE(bits(owned.value()->manual_owner->view()),sourceBits);
+
+        // Active uses the AUTHENTIC limiter with complete M16 verification.
+        if(hz==48000) {
+            QVERIFY(limiterChain.value()->set_user_bypass(id,false));
+            auto on=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
+                owned.value()->manual_owner,n,manualRev,rate48000,
+                *limiterChain.value(),binding,*registry.value(),block);
+            QVERIFY2(on,on?"":on.error()->message().c_str());
+            QVERIFY(!on.value()->terminal.checked.terminal.bypassed);
+            QVERIFY(on.value()->terminal.checked.final_check.has_value());
+            QCOMPARE(on.value()->terminal.checked.terminal
+                     .applied_gain_frames.size(),std::size_t{301});
+            QCOMPARE(bits(on.value()->manual_owner->view()),sourceBits);
+        }
+    }
+
+    // An otherwise valid source preview of only part of the programme
+    // is never a final full-resource limiter input.
+    auto original=AudioBuffer::create(
+        format(rgsml::audio::ChannelLayout::MONO_C,48000),
+        FrameDomainId::SOURCE_PROCESSING_RATE,FrameIndex{0},n);
+    QVERIFY(original);
+    auto partial=rgsml::render::RenderRequest::create(
+        original.value()->view(),frame_range(1,300),manualChain,{},block);
+    QVERIFY(partial);
+    auto partResult=rgsml::render::render_preview(
+        *partial.value(),*registry.value());
+    QVERIFY(partResult);
+    auto partOwner=std::make_shared<const rgsml::render::RenderResult>(
+        std::move(*partResult.value()));
+    auto rejected=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
+        partOwner,n,partOwner->chain_revision(),rate48000,
+        *limiterChain.value(),binding,*registry.value(),block);
+    QVERIFY(!rejected);
+    QCOMPARE(error_category(*rejected.error()),
+             std::string_view{"M17_MANUAL_FULL_RESOURCE_REQUIRED"});
 }
 
 void RenderPreviewTest::activeUnavailableModuleFails()
