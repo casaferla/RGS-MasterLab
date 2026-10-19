@@ -1,5 +1,4 @@
 #include "playback_transport_view_model.hpp"
-#include "terminal_audio_session_gate.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -254,7 +253,7 @@ void PlaybackTransportViewModel::set_source_derived_active(bool active) noexcept
 }
 
 core::Status PlaybackTransportViewModel::bind_private_terminal_source_controls(
-    TerminalAudioSessionGate& gate)
+    TerminalSourceTransportPort& gate)
 {
     if (!service_ || terminalGate_ || !sourceDerivedActive_
         || !gate.has_session() || !gate.owns_playback(*service_)) {
@@ -262,7 +261,7 @@ core::Status PlaybackTransportViewModel::bind_private_terminal_source_controls(
             core::ErrorCode::InvalidState,
             "No uniquely owned terminal OUTPUT_RATE session for SOURCE binding."});
     }
-    auto display=gate.source_snapshot();
+    auto display=gate.source_display_snapshot();
     auto rate=gate.source_rate();
     auto lease=gate.session_liveness();
     if (!display || !rate || lease.expired()) {
@@ -287,7 +286,7 @@ PlaybackTransportViewModel::source_display_snapshot() const
             return core::Result<S>::failure(core::Error{
                 core::ErrorCode::InvalidState,
                 "Stale M17 SOURCE adapter: expired terminal lease."});
-        auto mapped=terminalGate_->source_snapshot();
+        auto mapped=terminalGate_->source_display_snapshot();
         if (!mapped) return core::Result<S>::failure(*mapped.error());
         return core::Result<S>::success(S{
             mapped.value()->state,mapped.value()->position,
@@ -389,7 +388,7 @@ void PlaybackTransportViewModel::playOrResume()
         return;
     }
     if (terminalGate_ && (terminalLease_.expired()
-        || !terminalGate_->source_snapshot())) {
+        || !terminalGate_->source_display_snapshot())) {
         publish_failure(core::Error{
             core::ErrorCode::InvalidState,"Expired terminal owner: Play refused."});
         refresh();

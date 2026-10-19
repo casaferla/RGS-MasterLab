@@ -110,6 +110,17 @@ core::Result<core::SampleRate> TerminalAudioSessionGate::source_rate() const
         owner_->rendered.manual_owner->view().format().sample_rate());
 }
 
+core::Result<TerminalSourceTransportPort::DisplaySnapshot>
+TerminalAudioSessionGate::source_display_snapshot() const
+{
+    auto source=source_snapshot();
+    if (!source)
+        return core::Result<DisplaySnapshot>::failure(*source.error());
+    return core::Result<DisplaySnapshot>::success(DisplaySnapshot{
+        source.value()->state, source.value()->position,
+        source.value()->duration, source.value()->loop});
+}
+
 core::Status TerminalAudioSessionGate::seek_source(core::FrameIndex source)
 {
     if(!control_)return core::Status::failure(denied(

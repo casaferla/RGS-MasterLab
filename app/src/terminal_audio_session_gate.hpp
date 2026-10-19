@@ -2,6 +2,7 @@
 
 #include "terminal_candidate_gate.hpp"
 #include "terminal_source_control_bridge.hpp"
+#include "terminal_source_transport_port.hpp"
 
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/core/audio_playback_service.hpp>
@@ -16,7 +17,7 @@ namespace rgsml::app {
 // Private, pre-product two-phase M17 audio-session installer.
 // It does NOT change AuditionSourceSelector, allocate a terminal RealizationId,
 // or expose a new PROCESSED/UI destination. Actual publication is future-gated.
-class TerminalAudioSessionGate final {
+class TerminalAudioSessionGate final : public TerminalSourceTransportPort {
 public:
     using DevicePrepare = std::function<core::Status(
         audio::AudioBufferView,
@@ -39,17 +40,19 @@ public:
         std::optional<core::RealizationId> current_manual_id,
         core::RealizationId distinct_terminal_id);
 
-    [[nodiscard]] bool has_session() const noexcept
+    [[nodiscard]] bool has_session() const noexcept override
     { return control_.has_value(); }
-    [[nodiscard]] std::weak_ptr<const void> session_liveness() const noexcept
+    [[nodiscard]] std::weak_ptr<const void> session_liveness() const noexcept override
     { return sessionLease_; }
     [[nodiscard]] bool owns_playback(const core::IAudioPlaybackService& service)
-        const noexcept { return playback_ == &service; }
-    [[nodiscard]] core::Result<core::SampleRate> source_rate() const;
+        const noexcept override { return playback_ == &service; }
+    [[nodiscard]] core::Result<core::SampleRate> source_rate() const override;
+    [[nodiscard]] core::Result<DisplaySnapshot>
+    source_display_snapshot() const override;
 
-    [[nodiscard]] core::Status seek_source(core::FrameIndex source);
+    [[nodiscard]] core::Status seek_source(core::FrameIndex source) override;
     [[nodiscard]] core::Status set_source_loop(
-        std::optional<core::FrameRange> loop);
+        std::optional<core::FrameRange> loop) override;
     [[nodiscard]] core::Result<TerminalSourceControlBridge::SourceSnapshot>
     source_snapshot() const;
 
