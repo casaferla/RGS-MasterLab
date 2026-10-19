@@ -1,5 +1,6 @@
 #include "terminal_consumed_output_binding.hpp"
 #include "terminal_limiter_state.hpp"
+#include "terminal_private_gr_view_model.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/uuid.hpp>
@@ -9,6 +10,7 @@
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 #include <QtTest/QTest>
+#include <QSignalSpy>
 #include <cmath>
 #include <memory>
 
@@ -18,6 +20,7 @@ class TerminalPrivateGrProjectionTest final : public QObject {
 private slots:
     void gainWitnessRateMatrix_data();
     void gainWitnessRateMatrix();
+    void qmlPresentationFailClosed();
 };
 
 void TerminalPrivateGrProjectionTest::gainWitnessRateMatrix_data()
@@ -162,6 +165,71 @@ void TerminalPrivateGrProjectionTest::gainWitnessRateMatrix()
     auto bypProof=proof;
     bypProof.owner=bypStage;
     QVERIFY(!app::project_private_terminal_gr(bypProof));
+}
+
+void TerminalPrivateGrProjectionTest::qmlPresentationFailClosed()
+{
+    using namespace rgsml;
+    using Series=app::TerminalPrivateGrSeries;
+    std::optional<Series> source;
+    bool workerRejects=false;
+    app::TerminalPrivateGrViewModel provider([&]()->core::Result<Series> {
+        if(workerRejects || !source)
+            return core::Result<Series>::failure(core::Error{
+                core::ErrorCode::InvalidState,"No consumed OUTPUT_RATE witness."});
+        return core::Result<Series>::success(*source);
+    });
+    QSignalSpy changed(&provider,&app::TerminalPrivateGrViewModel::changed);
+    QVERIFY(changed.isValid());
+    QVERIFY(!provider.verified());
+    QVERIFY(provider.verified_series().isEmpty());
+    provider.refresh();
+    QVERIFY(!provider.verified());
+    QCOMPARE(changed.size(),0);
+
+    // Production can only supply this source through the authentic
+    // observe_private_terminal_gr(product,WindowsPrefixReader) callback.
+    // This standalone presentation fixture deliberately synthesizes a
+    // positive *result* to test fail-closed UI conversion, not the sink.
+    source=Series{core::RealizationId{8201},42,100,104,
+        {{100,102,3.0},{102,104,1.5}}};
+    provider.refresh();
+    QVERIFY(provider.verified());
+    QCOMPARE(changed.size(),1);
+    QCOMPARE(provider.verified_series().size(),qsizetype{2});
+    QCOMPARE(provider.verified_series().at(0).toMap()
+        .value(QStringLiteral("peakReductionDb")).toDouble(),3.0);
+    QCOMPARE(provider.verified_series().at(1).toMap()
+        .value(QStringLiteral("frameEndExclusive")).toLongLong(),
+        qint64{104});
+    provider.refresh();
+    QCOMPARE(changed.size(),1); // no repaint of identical chronology
+    source->buckets[0].peakReductionDb=-1.0;
+    provider.refresh();
+    QVERIFY(!provider.verified());
+    QVERIFY(provider.verified_series().isEmpty());
+    QCOMPARE(changed.size(),2);
+    source->buckets[0].peakReductionDb=3.0;
+    source->buckets[1].frameBegin=103; // consumed chronology gap
+    provider.refresh();
+    QVERIFY(!provider.verified());
+    source->buckets[1].frameBegin=102;
+    source->playbackGeneration=0;
+    provider.refresh();
+    QVERIFY(!provider.verified());
+    source->playbackGeneration=43;
+    provider.refresh();
+    QVERIFY(provider.verified());
+    workerRejects=true; // Paused/Seek/Loop/Handoff/worker reset
+    provider.refresh();
+    QVERIFY(!provider.verified());
+    QVERIFY(provider.verified_series().isEmpty());
+    workerRejects=false;
+    provider.refresh();
+    QVERIFY(provider.verified());
+    provider.invalidate();
+    QVERIFY(!provider.verified());
+    QVERIFY(provider.verified_series().isEmpty());
 }
 } // namespace rgsml::tests
 

@@ -20,6 +20,7 @@
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
 #include "terminal_consumed_output_binding.hpp"
+#include "terminal_private_gr_view_model.hpp"
 #include "terminal_private_product_session.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
@@ -262,18 +263,26 @@ int main(int argc, char* argv[])
         });
     // Product-private output rate is now explicitly discoverable but no
     // automatic call or QML sonic activation takes place.
-    // Device-backed, still PRIVATE observation seam. The product owns a
-    // real Windows-worker reader, fenced by two snapshots and a generation
-    // token, but deliberately does NOT call it until a qualified policy
-    // permits terminal readings. No fake M16 LIVE or M17 GR is published.
-    [[maybe_unused]] const auto privateTerminalConsumedObserve =
+    // A PRIVATE read-only GR presenter. It observes actual Windows-worker
+    // consumed OUTPUT_RATE frames and their exact active M17 applied gains.
+    // No user-accessible activation/publishing is introduced by this wiring;
+    // absent private sink ownership remains UNAVAILABLE (never fake zero).
+    rgsml::app::TerminalPrivateGrViewModel terminalPrivateGrViewModel{
         [&privateProductSession,windowsPlayback] {
-            return rgsml::app::observe_private_terminal_consumed_output(
+            return rgsml::app::observe_private_terminal_gr(
                 privateProductSession,
                 [windowsPlayback](std::optional<std::uint64_t> generation) {
                     return windowsPlayback->consumed_output_prefix(generation);
                 });
-        };
+        }};
+    QObject::connect(&playbackTransport,
+        &rgsml::app::PlaybackTransportViewModel::playbackChanged,
+        &terminalPrivateGrViewModel,
+        &rgsml::app::TerminalPrivateGrViewModel::refresh);
+    QObject::connect(&privateProductSession,
+        &rgsml::app::TerminalPrivateProductSession::changed,
+        &terminalPrivateGrViewModel,
+        &rgsml::app::TerminalPrivateGrViewModel::invalidate);
     static_cast<void>(privateProductSession);
     QObject::connect(&auditionSelector,
         &rgsml::app::AuditionSourceSelector::changed,
@@ -503,6 +512,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("terminalLimiterViewModel"),
         &terminalLimiterViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("terminalPrivateGrViewModel"),
+        &terminalPrivateGrViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"),
         &dspChainAdapterModel);

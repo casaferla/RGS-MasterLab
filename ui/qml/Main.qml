@@ -311,6 +311,8 @@ ApplicationWindow {
                 ? truePeakLive : null
             terminalLimiterViewModel: typeof terminalLimiterViewModel !== "undefined"
                 ? terminalLimiterViewModel : null
+            limiterGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
+                ? terminalPrivateGrViewModel : null
         }
     }
 

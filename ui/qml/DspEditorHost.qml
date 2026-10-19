@@ -18,6 +18,7 @@ Rectangle {
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
     property var terminalLimiterViewModel: null
+    property var limiterGrProvider: null
     property Item activeChainRow: null
 
     // Backward-compatibility alias so code referencing host.viewModel accesses eqViewModel
@@ -316,6 +317,8 @@ Rectangle {
             // BYP, with no sonic Preview and no fabricated applied-GR or trim.
             limiterViewModel: root.isLimiterEditor
                 ? root.terminalLimiterViewModel : null
+            limiterGrProvider: root.isLimiterEditor
+                ? root.limiterGrProvider : null
             measurementProvider: root.truePeakStaticViewModel
             liveProvider: root.truePeakLiveViewModel
         }

@@ -6,7 +6,9 @@ if(NOT _rgsml_gr_sources)
 endif()
 list(FILTER _rgsml_gr_sources EXCLUDE REGEX "test_mastering_chain_state\\.cpp$")
 list(APPEND _rgsml_gr_sources
-    "${CMAKE_SOURCE_DIR}/tests/unit/app/test_terminal_private_gr_projection.cpp")
+    "${CMAKE_SOURCE_DIR}/tests/unit/app/test_terminal_private_gr_projection.cpp"
+    "${CMAKE_SOURCE_DIR}/app/src/terminal_private_gr_view_model.cpp"
+    "${CMAKE_SOURCE_DIR}/app/src/terminal_private_gr_view_model.hpp")
 qt_add_executable(rgsml_terminal_private_gr_projection_tests
     ${_rgsml_gr_sources})
 target_include_directories(rgsml_terminal_private_gr_projection_tests
