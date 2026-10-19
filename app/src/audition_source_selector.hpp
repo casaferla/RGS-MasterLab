@@ -84,6 +84,17 @@ public:
     [[nodiscard]] core::Status clear_gold();
     [[nodiscard]] core::Status switch_to(AuditionTarget target);
 
+    // Strict future M17 BYPASS/rollback seam. Call ONLY after retiring the
+    // exact private terminal owner; restore the ORIGINAL, immutable manual
+    // PROCESSED PCM without allocating a new identity, invoking DSP, changing
+    // the selected target, or copying OUTPUT_RATE samples to SOURCE_RATE.
+    // The caller must supply the pre-revocation source playhead and verify
+    // successful playback restoration before claiming audible BYPASS.
+    [[nodiscard]] core::Status restore_manual_processed_after_terminal(
+        std::shared_ptr<const render::RenderResult> expectedManual,
+        core::RealizationId expectedManualId,
+        core::FrameIndex sourceCue);
+
     Q_INVOKABLE void selectPrepared();
     Q_INVOKABLE void selectProcessed();
     Q_INVOKABLE void selectGold();

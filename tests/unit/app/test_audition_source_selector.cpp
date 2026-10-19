@@ -186,6 +186,7 @@ private slots:
     void seamlessProcessedHandoffPreservesStateAndTargetRaces();
     void processedRealizationIdentityIsMonotonicAndFailureAtomic();
     void terminalIdentityReservationChecksOwnersPhaseAndSharedSequence();
+    void privateTerminalReturnRestoresExactManualSourceCueAndLoop();
     void processedTelemetryBindsAcceptedRealizationIdentity();
 };
 
@@ -634,6 +635,62 @@ void AuditionSourceSelectorTest::terminalIdentityReservationChecksOwnersPhaseAnd
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     QVERIFY(!selector.reserve_private_terminal_realization_id(
         prepared, freshManual, nextManualId));
+}
+
+void AuditionSourceSelectorTest::privateTerminalReturnRestoresExactManualSourceCueAndLoop()
+{
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* audio=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport,audio);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_prepared_realization(realization(0,200)));
+    QVERIFY(selector.set_processed_realization(realization(0,200)));
+    const auto manual=selector.processed_realization_snapshot();
+    const auto id=selector.processed_realization_id();
+    QVERIFY(manual && id);
+    auto loop=core::FrameRange::create(
+        core::FrameIndex{20},core::FrameIndex{60});
+    QVERIFY(loop);
+    selector.set_source_loop_provider([&] {
+        return std::optional{*loop.value()};
+    });
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(audio->state,core::PlaybackState::STOPPED);
+    QCOMPARE(audio->loop,std::optional{*loop.value()});
+    QCOMPARE(audio->audibleRealization.realizationId,id);
+    QVERIFY(!selector.restore_manual_processed_after_terminal(
+        manual,*id,core::FrameIndex{37})); // Never replace a live MANUAL.
+
+    // A terminal device can leave NO_SOURCE only after its own separately
+    // authorized retirement. Simulate that exact state without inventing
+    // an OUTPUT_RATE owner or claiming the limiter was actually heard.
+    QVERIFY(transport.stop_and_clear());
+    QVERIFY(!selector.restore_manual_processed_after_terminal(
+        manual,core::RealizationId{id->value+1},core::FrameIndex{37}));
+    QVERIFY(!selector.restore_manual_processed_after_terminal(
+        manual,*id,core::FrameIndex{201}));
+    QVERIFY(!selector.restore_manual_processed_after_terminal(
+        {},*id,core::FrameIndex{37}));
+    QVERIFY(selector.restore_manual_processed_after_terminal(
+        manual,*id,core::FrameIndex{37}));
+    QCOMPARE(selector.active_target(),std::optional{app::AuditionTarget::PROCESSED});
+    QVERIFY(selector.processed_realization_snapshot()==manual);
+    QCOMPARE(selector.processed_realization_id(),id);
+    QCOMPARE(audio->audibleRealization.realizationId,id);
+    QCOMPARE(audio->position,core::FrameIndex{37});
+    QVERIFY(audio->duration.has_value());
+    QCOMPARE(audio->duration->value(),std::int64_t{200});
+    QCOMPARE(audio->loop,std::optional{*loop.value()});
+    QCOMPARE(audio->state,core::PlaybackState::STOPPED);
+    QVERIFY(!selector.restore_manual_processed_after_terminal(
+        manual,*id,core::FrameIndex{38})); // no double-install
+    // Canonical EOF cue returns to beginning, never one sample beyond.
+    QVERIFY(transport.stop_and_clear());
+    QVERIFY(selector.restore_manual_processed_after_terminal(
+        manual,*id,core::FrameIndex{200}));
+    QCOMPARE(audio->position,core::FrameIndex{0});
+    QCOMPARE(selector.processed_realization_id(),id);
 }
 
 void AuditionSourceSelectorTest::processedTelemetryBindsAcceptedRealizationIdentity()

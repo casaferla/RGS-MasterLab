@@ -444,6 +444,76 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
     return core::Status::success();
 }
 
+core::Status AuditionSourceSelector::restore_manual_processed_after_terminal(
+    std::shared_ptr<const render::RenderResult> expectedManual,
+    core::RealizationId expectedManualId, core::FrameIndex sourceCue)
+{
+    auto refuse=[](const char* message) -> core::Status {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,message});
+    };
+    if(!playback_ || activeTarget_!=AuditionTarget::PROCESSED
+       ||!expectedManual || expectedManualId.value==0
+       ||processed_!=expectedManual
+       ||processedRealizationId_!=std::optional{expectedManualId})
+        return refuse("M17 return-to-manual requires the current exact selected predecessor.");
+    // A current terminal sink, live or stopped, may ONLY be retired via
+    // TerminalPrivateProductSession::cancel(). Never clear an alien owner.
+    const auto sink=playback_->playback_snapshot();
+    if(!sink) return core::Status::failure(*sink.error());
+    if(sink.value()->state!=core::PlaybackState::NO_SOURCE
+       ||sink.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||sink.value()->audibleRealization.realizationId)
+        return refuse("M17 return-to-manual requires an already retired empty sink.");
+    const auto range=processed_->render_window();
+    if(range.begin().value()!=0 || sourceCue.value()<0
+       ||sourceCue>range.end())
+        return refuse("M17 return-to-manual cue lies outside the full SOURCE programme.");
+
+    // EOF has the same semantics as normal selector activation: begin.
+    const auto canonical=sourceCue==range.end()?range.begin():sourceCue;
+    const auto previousCue=sourceDerivedCue_;
+    sourceDerivedCue_=canonical;
+    playback_->set_source_derived_active(true);
+    auto restored=prepare_realization(
+        *expectedManual,expectedManual,expectedManualId);
+    if(!restored) {
+        sourceDerivedCue_=previousCue;
+        // prepare_realization may have installed PCM before failing seek
+        // or loop setup. Retire only the MANUAL ID that we just installed;
+        // never clear a successor that won the device asynchronously.
+        const auto current=playback_->playback_snapshot();
+        if(current && current.value()->audibleRealization.phase
+               ==core::AudibleHandoffPhase::NEW
+           &&current.value()->audibleRealization.realizationId
+               ==std::optional{expectedManualId})
+            static_cast<void>(playback_->stop_and_clear());
+        return restored;
+    }
+    const auto after=playback_->playback_snapshot();
+    if(!after || after.value()->state!=core::PlaybackState::STOPPED
+       ||after.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||after.value()->audibleRealization.realizationId
+            !=std::optional{expectedManualId}
+       ||after.value()->position!=canonical
+       ||after.value()->duration
+            !=std::optional{expectedManual->view().frame_count()}) {
+        sourceDerivedCue_=previousCue;
+        // Fail closed; do not claim restored audio without exact ownership.
+        if(after && after.value()->audibleRealization.phase
+                ==core::AudibleHandoffPhase::NEW
+            &&after.value()->audibleRealization.realizationId
+                ==std::optional{expectedManualId})
+            static_cast<void>(playback_->stop_and_clear());
+        return refuse("M17 manual return failed its post-install sink identity check.");
+    }
+    statusText_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
 void AuditionSourceSelector::selectPrepared()
 {
     auto result = switch_to(AuditionTarget::PREPARED);
