@@ -10,6 +10,7 @@ Item {
     objectName: "truePeakLimiterSurface"
     property var limiterModule: null
     property bool showLocalValidation: true
+    property var limiterGrProvider: null
     property var limiterViewModel: null
     property var measurementProvider: null
     property var liveProvider: null
@@ -37,6 +38,7 @@ Item {
         showLimiterGrHistory: true
         showLimiterControls: true
         limiterBypassed: root.bypassed
+        limiterGrProvider: root.limiterGrProvider
         limiterViewModel: root.limiterViewModel
         limiterSonicControlsEnabled: root.sonicControlsEnabled
         useFamilyAccent: true

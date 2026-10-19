@@ -2,6 +2,9 @@
 
 #include <rgsml/core/error.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -42,6 +45,79 @@ using GapReason = platform::windows::WindowsConsumedGapReason;
         && before.source.loop == after.source.loop;
 }
 } // namespace
+
+core::Result<TerminalPrivateGrSeries>
+project_private_terminal_gr(const TerminalConsumedOutputEvidence& proof)
+{
+    using Result=core::Result<TerminalPrivateGrSeries>;
+    auto reject=[](const char* why)->Result {
+        return Result::failure(core::Error{core::ErrorCode::InvalidState,why});
+    };
+    if (!proof.owner || proof.realizationId.value==0
+        || proof.realizationId==proof.owner->original_manual_realization_id
+        || proof.playbackGeneration==0
+        || proof.consumedOutputWatermarkExclusive<=0)
+        return reject("M17 GR lacks independent consumed output ownership.");
+    const auto& output=proof.owner->rendered;
+    const auto& terminal=output.terminal.checked;
+    const auto pcm=terminal.terminal.compensated_pcm.view();
+    const auto n=pcm.frame_count().value();
+    const auto& gains=terminal.terminal.applied_gain_frames;
+    const auto delay=terminal.terminal.algorithmic_latency_frames;
+    if(terminal.terminal.bypassed || !terminal.final_check
+       ||pcm.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||pcm.absolute_start_frame().value()!=0
+       ||pcm.format().sample_rate()!=output.output_rate
+       ||delay<=0 || n<=0
+       ||gains.size()!=static_cast<std::size_t>(n)
+       ||proof.firstTerminalFrame<0
+       ||proof.lastTerminalFrameExclusive>n
+       ||proof.firstTerminalFrame>=proof.lastTerminalFrameExclusive)
+        return reject("M17 active gain witness is missing or out of bounds.");
+    const auto begin=proof.firstTerminalFrame;
+    const auto end=proof.lastTerminalFrameExclusive;
+    const auto length=end-begin;
+    constexpr std::int64_t kMaxBuckets=256;
+    const auto width=1+(length-1)/kMaxBuckets;
+    TerminalPrivateGrSeries series{
+        proof.realizationId,proof.playbackGeneration,begin,end,{}};
+    series.buckets.reserve(static_cast<std::size_t>(1+(length-1)/width));
+    for(auto start=begin;start<end;) {
+        const auto stop=start+std::min(width,end-start);
+        double peak=0.0;
+        for(auto frame=start;frame<stop;++frame) {
+            const auto& observed=gains[static_cast<std::size_t>(frame)];
+            if(frame>std::numeric_limits<std::int64_t>::max()-delay
+                || observed.programme_frame!=frame
+                ||observed.raw_output_frame!=frame+delay
+                ||!std::isfinite(observed.reduction_db)
+                ||observed.reduction_db<0.0
+                ||!std::isfinite(observed.gain)
+                ||observed.gain<=0.0 ||observed.gain>1.0)
+                return reject("M17 actual gain witness is invalid.");
+            if(std::abs(observed.reduction_db
+                +20.0*std::log10(observed.gain))>1e-5)
+                return reject("M17 actual gain and dB witness disagree.");
+            peak=std::max(peak,observed.reduction_db);
+        }
+        series.buckets.push_back({start,stop,peak});
+        start=stop;
+    }
+    if(series.buckets.empty() ||series.buckets.size()>256)
+        return reject("M17 gain history must remain bounded.");
+    return Result::success(std::move(series));
+}
+
+core::Result<TerminalPrivateGrSeries>
+observe_private_terminal_gr(
+    const TerminalPrivateProductSession& product,
+    const TerminalConsumedPrefixRead& readPrefix)
+{
+    auto evidence=observe_private_terminal_consumed_output(product,readPrefix);
+    if(!evidence)
+        return core::Result<TerminalPrivateGrSeries>::failure(*evidence.error());
+    return project_private_terminal_gr(*evidence.value());
+}
 
 core::Result<TerminalConsumedOutputEvidence>
 observe_private_terminal_consumed_output(

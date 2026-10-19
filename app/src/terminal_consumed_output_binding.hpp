@@ -4,6 +4,7 @@
 #include <rgsml/platform/windows/windows_consumed_output_prefix.hpp>
 
 #include <functional>
+#include <vector>
 #include <optional>
 #include <cstdint>
 #include <memory>
@@ -23,6 +24,24 @@ struct TerminalConsumedOutputEvidence final {
     std::uint64_t loopWrapCount;
 };
 
+// Bounded, PRIVATE GR projection from genuine applied-gain sidecar and
+// independently validated consumed OUTPUT_RATE evidence. Verification trim
+// is intentionally excluded; this is not public/live product telemetry.
+struct TerminalPrivateGrBucket final {
+    std::int64_t frameBegin{0};
+    std::int64_t frameEndExclusive{0};
+    double peakReductionDb{0.0};
+};
+struct TerminalPrivateGrSeries final {
+    core::RealizationId realizationId;
+    std::uint64_t playbackGeneration{0};
+    std::int64_t consumedFrameBegin{0};
+    std::int64_t consumedFrameEndExclusive{0};
+    std::vector<TerminalPrivateGrBucket> buckets;
+};
+[[nodiscard]] core::Result<TerminalPrivateGrSeries>
+project_private_terminal_gr(const TerminalConsumedOutputEvidence& proof);
+
 // PRIVATE worker callback. Both reads use Windows' serialized worker prefix.
 // The second query is generation-fenced against the first, while product
 // identity observations enclose the entire probe. May fail without samples,
@@ -30,6 +49,11 @@ struct TerminalConsumedOutputEvidence final {
 using TerminalConsumedPrefixRead = std::function<
     core::Result<platform::windows::WindowsConsumedOutputPrefix>(
         std::optional<std::uint64_t> expectedGeneration)>;
+
+[[nodiscard]] core::Result<TerminalPrivateGrSeries>
+observe_private_terminal_gr(
+    const TerminalPrivateProductSession& product,
+    const TerminalConsumedPrefixRead& readPrefix);
 
 [[nodiscard]] core::Result<TerminalConsumedOutputEvidence>
 observe_private_terminal_consumed_output(

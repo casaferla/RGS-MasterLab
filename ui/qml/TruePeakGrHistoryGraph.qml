@@ -8,7 +8,12 @@ import QtQuick
 Canvas {
     id: root
     objectName: "m17GainReductionPlot"
-    readonly property bool verifiedSeriesAvailable: false
+    // Only a backend-bound authenticated GR provider may populate history.
+    // The current production default stays NULL / NO GRAPH, not fake zero.
+    property var verifiedHistory: []
+    property bool backendVerified: false
+    readonly property bool verifiedSeriesAvailable: backendVerified
+        && !bypassed && verifiedHistory && verifiedHistory.length > 0
     property color familyAccent: "#C4774A"
     property bool bypassed: true
     implicitWidth: 160
@@ -19,6 +24,8 @@ Canvas {
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
     onFamilyAccentChanged: requestPaint()
+    onVerifiedHistoryChanged: requestPaint()
+    onBackendVerifiedChanged: requestPaint()
     onBypassedChanged: requestPaint()
 
     onPaint: {
@@ -33,9 +40,24 @@ Canvas {
         const plotWidth = Math.max(1, right - left)
         const plotHeight = Math.max(1, bottom - top)
 
-        // A quiet, persistent scale in the Compressor's GR grammar:
-        // 0 dB at top; attenuation grows downwards (3, then 6 dB).
-        // No plot whatsoever is produced while history is unverified.
+        // No signal curve is drawn unless the backend explicitly marks
+        // an authentic gain witness bound to consumed OUTPUT_RATE frames.
+        const history = root.verifiedSeriesAvailable ? root.verifiedHistory : []
+        let valid = history.length > 0 && history.length <= 256
+        let axisMax = 6
+        if (valid) {
+            for (let i = 0; i < history.length; ++i) {
+                const sample = history[i]
+                if (!sample || typeof sample.peakReductionDb !== "number"
+                    || !isFinite(sample.peakReductionDb)
+                    || sample.peakReductionDb < 0) {
+                    valid = false
+                    break
+                }
+                axisMax = Math.max(axisMax, sample.peakReductionDb)
+            }
+        }
+        axisMax = Math.ceil(axisMax / 3) * 3
         const rgb = bypassed ? "108, 188, 207" : "196, 119, 74"
         ctx.save()
         ctx.lineWidth = 1
@@ -49,7 +71,7 @@ Canvas {
             ctx.stroke()
             ctx.fillStyle = "#7895A6"
             ctx.font = "9px 'Segoe UI'"
-            ctx.fillText(String(tick * 3), right + 5, y + 3)
+            ctx.fillText(String(axisMax * tick / 2), right + 5, y + 3)
         }
         for (let tick = 1; tick <= 3; ++tick) {
             const x = left + plotWidth * tick / 4
@@ -58,6 +80,20 @@ Canvas {
             ctx.beginPath()
             ctx.moveTo(Math.round(x) + 0.5, top)
             ctx.lineTo(Math.round(x) + 0.5, bottom)
+            ctx.stroke()
+        }
+        if (valid) {
+            ctx.setLineDash([])
+            ctx.strokeStyle = "#C4774A"
+            ctx.lineWidth = 1.5
+            ctx.beginPath()
+            for (let i = 0; i < history.length; ++i) {
+                const x = left + plotWidth * (i + 0.5) / history.length
+                const y = top + plotHeight
+                    * history[i].peakReductionDb / axisMax
+                if (i === 0) ctx.moveTo(x, y)
+                else ctx.lineTo(x, y)
+            }
             ctx.stroke()
         }
         ctx.setLineDash([])

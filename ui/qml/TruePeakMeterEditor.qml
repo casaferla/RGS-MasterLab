@@ -17,6 +17,7 @@ Item {
     property bool showLimiterControls: false
     property bool limiterBypassed: true
     property bool limiterSonicControlsEnabled: false
+    property var limiterGrProvider: null
     property var limiterViewModel: null
     // The entire lower band is fixed. In this combined layout,
     // GR and Ceiling+Verification Trim use the SAME 198px height.
@@ -182,7 +183,9 @@ Item {
                             Text {
                                 objectName: "m17GrProvenanceStatus"
                                 text: root.limiterBypassed ? "BYPASS · NO ACTIVE GR"
-                                    : "UNAVAILABLE · NO VERIFIED GR"
+                                    : grHistoryGraph.verifiedSeriesAvailable
+                                        ? "VERIFIED · CONSUMED GR"
+                                        : "UNAVAILABLE · NO VERIFIED GR"
                                 color: "#91A8B7"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
@@ -203,6 +206,10 @@ Item {
                             Layout.maximumHeight: root.showLimiterControls
                                 ? -1 : implicitHeight
                             familyAccent: root.familyAccent
+                            backendVerified: root.limiterGrProvider
+                                ? root.limiterGrProvider.verified : false
+                            verifiedHistory: root.limiterGrProvider
+                                ? root.limiterGrProvider.verifiedSeries : []
                             bypassed: root.limiterBypassed
                         }
                     }
