@@ -561,6 +561,7 @@ void MasteringChainStateTest::limiterCeilingViewModelDraftAndValidation()
         ++acceptedChanges;
     }};
     QCOMPARE(vm.ceiling_db_tp(),-1.0);
+    QCOMPARE(product.value()->parameter_revision(),std::uint64_t{0});
     QCOMPARE(vm.ceiling_db_tp_text(),QStringLiteral("-1.00"));
     QVERIFY(vm.bypass());
     QCOMPARE(acceptedChanges,0);
@@ -594,8 +595,10 @@ void MasteringChainStateTest::limiterCeilingViewModelDraftAndValidation()
     QVERIFY(vm.commitDraft());
     QCOMPARE(vm.ceiling_db_tp(),-9.5);
     QCOMPARE(product.value()->parameters().ceiling_db_tp(),-9.5);
+    QCOMPARE(product.value()->parameter_revision(),std::uint64_t{1});
     QCOMPARE(acceptedChanges,1);
     QVERIFY(vm.commitDraft());
+    QCOMPARE(product.value()->parameter_revision(),std::uint64_t{1});
     QCOMPARE(acceptedChanges,1);
     vm.setBypass(false);
     QVERIFY(!vm.bypass());

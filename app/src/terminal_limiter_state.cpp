@@ -1,5 +1,7 @@
 #include "terminal_limiter_state.hpp"
 #include <utility>
+#include <limits>
+#include <rgsml/core/error.hpp>
 namespace rgsml::app {
 core::Result<TerminalLimiterState> TerminalLimiterState::create_default(
     const dsp::ModuleRegistry& registry, dsp::ModuleInstanceId id)
@@ -32,7 +34,14 @@ core::Status TerminalLimiterState::set_ceiling_db_tp(double value)
 {
     auto validated=dsp::TruePeakLimiterParameters::create(value);
     if(!validated)return core::Status::failure(*validated.error());
+    if (params_.ceiling_db_tp()==validated.value()->ceiling_db_tp())
+        return core::Status::success();
+    if(parameterRevision_==std::numeric_limits<std::uint64_t>::max())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::IntegerOverflow,
+            "M17 Ceiling parameter revision sequence exhausted."});
     params_=*validated.value();
+    ++parameterRevision_;
     return core::Status::success();
 }
 core::Status TerminalLimiterState::set_user_bypass(bool bypass)

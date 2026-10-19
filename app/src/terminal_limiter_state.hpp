@@ -4,6 +4,7 @@
 #include <rgsml/dsp/processing_chain.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include <vector>
+#include <cstdint>
 namespace rgsml::app {
 // Candidate product state: an authentic MASTER TERMINAL segment, separate
 // from the M11/M12/M14/M15 MANUAL processing chain. No audition/export
@@ -21,6 +22,8 @@ public:
     { return id_; }
     [[nodiscard]] const dsp::TruePeakLimiterParameters& parameters() const noexcept
     { return params_; }
+    [[nodiscard]] std::uint64_t parameter_revision() const noexcept
+    { return parameterRevision_; }
     [[nodiscard]] bool bypassed() const noexcept
     { return chain_.instances()[0].user_bypass(); }
     [[nodiscard]] core::Status set_ceiling_db_tp(double value);
@@ -32,5 +35,8 @@ private:
     dsp::ProcessingChain chain_;
     dsp::ModuleInstanceId id_;
     dsp::TruePeakLimiterParameters params_;
+    // Ceiling is not a ProcessingChain topology edit. Track it separately
+    // to reject stale renderer completions, including A->B->A changes.
+    std::uint64_t parameterRevision_{0};
 };
 } // namespace rgsml::app
