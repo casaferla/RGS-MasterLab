@@ -19,6 +19,7 @@
 #include "terminal_audio_session_gate.hpp"
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
+#include "terminal_private_product_session.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
 #include "true_peak_static_coordinator.hpp"
@@ -218,40 +219,14 @@ int main(int argc, char* argv[])
                 std::move(prepared),std::move(manual),id);
         }};
     static_cast<void>(privateTerminalPublisher);
-    // SOURCE/PREPARED/PROCESSED owner and accepted identity changes must
-    // invalidate pending M17 jobs immediately on the UI owning thread.
-    QObject::connect(
-        &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
-        &terminalLimiterViewModel, [&terminalCandidateGate,
-                                    &privateTerminalPublisher] {
-            static_cast<void>(privateTerminalPublisher.revoke_private());
-            terminalCandidateGate.invalidate();
-        });
-    // Ceiling drafts, commits and BYP transitions are fail-closed.
-    QObject::connect(
-        &terminalLimiterViewModel, &rgsml::app::TerminalLimiterViewModel::changed,
-        &terminalLimiterViewModel, [&terminalCandidateGate,
-                                    &privateTerminalPublisher] {
-            static_cast<void>(privateTerminalPublisher.revoke_private());
-            terminalCandidateGate.invalidate();
-        });
-
-    // Private M17 output-rate job worker. No output rate guess or UI trigger.
+    // Product-private rendering worker. OUTPUT_RATE is an explicit caller
+    // parameter; no assumption about the active Windows device rate.
     rgsml::app::TerminalPrivateRenderController privateTerminalRenderer{
         terminalCandidateGate,terminalLimiterState,
         [&auditionSelector] {return auditionSelector.prepared_realization_snapshot();},
         [&auditionSelector] {return auditionSelector.processed_realization_snapshot();},
         [&auditionSelector] {return auditionSelector.processed_realization_id();},
         [&masteringChainState] {return masteringChainState.chain();}};
-    static_cast<void>(privateTerminalRenderer);
-    QObject::connect(&auditionSelector,
-        &rgsml::app::AuditionSourceSelector::changed,
-        &privateTerminalRenderer,
-        &rgsml::app::TerminalPrivateRenderController::invalidate);
-    QObject::connect(&terminalLimiterViewModel,
-        &rgsml::app::TerminalLimiterViewModel::changed,
-        &privateTerminalRenderer,
-        &rgsml::app::TerminalPrivateRenderController::invalidate);
 
     rgsml::app::MasteringPreviewController previewController{
         &masteringChainState,
@@ -263,18 +238,46 @@ int main(int argc, char* argv[])
         }
     };
 
-    QObject::connect(
-        &previewController, &rgsml::app::MasteringPreviewController::changed,
-        &terminalLimiterViewModel, [&terminalCandidateGate,
-                                    &privateTerminalPublisher] {
-            static_cast<void>(privateTerminalPublisher.revoke_private());
-            terminalCandidateGate.invalidate();
+    // All invalidations atomically revoke terminal device ownership and
+    // discard pending OUTPUT_RATE renders before any future publication.
+    // This PRIVATE session coordinator is never exposed to QML/UI yet.
+    rgsml::app::TerminalPrivateProductSession privateProductSession{
+        privateTerminalRenderer,privateTerminalPublisher,
+        terminalCandidateGate,playbackTransport,
+        [&auditionSelector] {return auditionSelector.prepared_realization_snapshot();},
+        [&auditionSelector] {return auditionSelector.processed_realization_snapshot();},
+        [&auditionSelector] {return auditionSelector.processed_realization_id();},
+        [&auditionRegion] {
+            return auditionRegion.loop_enabled()
+                ? auditionRegion.region() : std::nullopt;
+        },
+        [&auditionSelector] {
+            return auditionSelector.active_target()
+                ==rgsml::app::AuditionTarget::PROCESSED;
+        }};
+    static_cast<void>(privateProductSession);
+    QObject::connect(&auditionSelector,
+        &rgsml::app::AuditionSourceSelector::changed,
+        &privateProductSession,
+        [&privateProductSession] {
+            static_cast<void>(privateProductSession.cancel());
         });
-
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::changed,
+        &privateProductSession,
+        [&privateProductSession] {
+            static_cast<void>(privateProductSession.cancel());
+        });
     QObject::connect(&previewController,
         &rgsml::app::MasteringPreviewController::changed,
-        &privateTerminalRenderer,
-        &rgsml::app::TerminalPrivateRenderController::invalidate);
+        &privateProductSession,
+        [&privateProductSession] {
+            static_cast<void>(privateProductSession.cancel());
+        });
+    QObject::connect(&auditionRegion,
+        &rgsml::app::AuditionRegionViewModel::changed,
+        &privateProductSession,
+        &rgsml::app::TerminalPrivateProductSession::cancel_pending_on_region_change);
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
     rgsml::app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};

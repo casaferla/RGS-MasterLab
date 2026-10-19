@@ -25,6 +25,8 @@ qt_add_executable(rgsml_app
     src/terminal_private_publication_coordinator.hpp
     src/terminal_private_render_controller.cpp
     src/terminal_private_render_controller.hpp
+    src/terminal_private_product_session.cpp
+    src/terminal_private_product_session.hpp
     src/terminal_limiter_state.cpp
     src/terminal_limiter_state.hpp
     src/terminal_limiter_view_model.cpp

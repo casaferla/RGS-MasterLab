@@ -6,6 +6,7 @@
 #include "terminal_audio_session_gate.hpp"
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
+#include "terminal_private_product_session.hpp"
 #include "playback_transport_view_model.hpp"
 #include "../platform/fake_playback_service.hpp"
 #include <rgsml/render/render_preview.hpp>
@@ -70,6 +71,7 @@ private slots:
     void terminalOutputAdmissionRejectsObsoleteOwnersAndCeiling();
     void terminalOutputFrameMapPreservesSourceLoopAndSeekCoordinates();
     void terminalPrivateWorkerStagesOnlyCurrentOwnedOutput();
+    void terminalPrivateEndToEndRenderInstallAndRollback();
 };
 
 void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
@@ -1310,6 +1312,153 @@ void MasteringChainStateTest::terminalPrivateWorkerStagesOnlyCurrentOwnedOutput(
     QVERIFY(limiter.value()->set_ceiling_db_tp(-1.0));
     QTRY_COMPARE(worker.status(),QStringLiteral("STALE"));
     QVERIFY(!gate.staged());
+}
+
+
+void MasteringChainStateTest::terminalPrivateEndToEndRenderInstallAndRollback()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto manual=dsp::ProcessingChain::create(*registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    auto limiter=TerminalLimiterState::create_default(
+        *registry.value(),
+        test_instance_id("7c000000-0000-4000-8000-000000000071"));
+    QVERIFY(limiter);
+    const auto sourceRate=*core::SampleRate::create(44100).value();
+    const auto outputRate=*core::SampleRate::create(48000).value();
+    auto format=audio::AudioFormat::create(
+        sourceRate,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto n=*core::FrameCount::create(441).value();
+    auto source=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},n);
+    QVERIFY(source);
+    auto request=render::RenderRequest::create(
+        source.value()->view(),source.value()->view().absolute_range(),
+        *manual.value(),{},*core::FrameCount::create(17).value());
+    QVERIFY(request);
+    auto rendered=render::render_preview(*request.value(),*registry.value());
+    QVERIFY(rendered);
+    auto owner=std::make_shared<const render::RenderResult>(
+        std::move(*rendered.value()));
+    std::shared_ptr<const render::RenderResult> prepared=owner,processed=owner;
+    std::optional<core::RealizationId> manualId=core::RealizationId{71};
+    bool processedSelected=true;
+    auto sourceLoop=core::FrameRange::create(
+        core::FrameIndex{10},core::FrameIndex{20});
+    QVERIFY(sourceLoop);
+    std::optional<core::FrameRange> loop=*sourceLoop.value();
+    auto service=std::make_unique<FakePlaybackService>();
+    auto& device=*service;
+    PlaybackTransportViewModel transport{std::move(service)};
+    device.state=core::PlaybackState::STOPPED;
+    device.position=core::FrameIndex{147};
+    device.duration=n;
+    device.audibleRealization=core::AudibleRealizationState{
+        core::AudibleHandoffPhase::NEW,manualId};
+    TerminalCandidateGate candidates;
+    TerminalPrivateRenderController renderer{
+        candidates,*limiter.value(),
+        [&]{return prepared;},[&]{return processed;},
+        [&]{return manualId;},[&]{return *manual.value();}};
+    int installedCount=0,issuedCount=0;
+    TerminalAudioSessionGate terminalDevice{
+        candidates,device,
+        [&](audio::AudioBufferView pcm,std::shared_ptr<const void> ownerLease,
+            core::RealizationId id) -> core::Status {
+            ++installedCount;
+            if(!ownerLease || pcm.timebase().frame_domain_id()
+                   !=audio::FrameDomainId::OUTPUT_RATE
+               ||pcm.format().sample_rate()!=outputRate
+               ||pcm.frame_count().value()!=480)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,"Wrong terminal output PCM."});
+            device.state=core::PlaybackState::STOPPED;
+            device.position=core::FrameIndex{0};
+            device.duration=pcm.frame_count();
+            device.loop.reset();
+            device.audibleRealization=core::AudibleRealizationState{
+                core::AudibleHandoffPhase::NEW,id};
+            return core::Status::success();
+        }};
+    TerminalPrivatePublicationCoordinator publisher{
+        candidates,terminalDevice,transport,
+        [&](std::shared_ptr<const render::RenderResult> p,
+            std::shared_ptr<const render::RenderResult> m,
+            std::optional<core::RealizationId> id)
+                -> core::Result<core::RealizationId> {
+            ++issuedCount;
+            if(p!=prepared||m!=processed||id!=manualId)
+                return core::Result<core::RealizationId>::failure(
+                    core::Error{core::ErrorCode::InvalidState,
+                        "Terminal publication owner changed."});
+            return core::Result<core::RealizationId>::success(
+                core::RealizationId{7200});
+        }};
+    TerminalPrivateProductSession product{
+        renderer,publisher,candidates,transport,
+        [&]{return prepared;},[&]{return processed;},[&]{return manualId;},
+        [&]{return loop;},[&]{return processedSelected;}};
+
+    processedSelected=false;
+    QVERIFY(!product.request_private(outputRate));
+    QCOMPARE(issuedCount,0);
+    processedSelected=true;
+    device.state=core::PlaybackState::PLAYING;
+    QVERIFY(!product.request_private(outputRate));
+    QCOMPARE(issuedCount,0);
+    device.state=core::PlaybackState::STOPPED;
+
+    QVERIFY(product.request_private(outputRate));
+    QTRY_COMPARE(product.status(),QStringLiteral("PRIVATE_INSTALLED"));
+    QCOMPARE(product.private_id(),std::optional{core::RealizationId{7200}});
+    QCOMPARE(installedCount,1);
+    QCOMPARE(issuedCount,1);
+    QCOMPARE(device.position.value(),std::int64_t{160});
+    QCOMPARE(device.duration->value(),std::int64_t{480});
+    QCOMPARE(device.loop->begin().value(),std::int64_t{11});
+    QCOMPARE(device.loop->end().value(),std::int64_t{22});
+    auto sourceView=transport.source_display_snapshot();
+    QVERIFY(sourceView);
+    QCOMPARE(sourceView.value()->position.value(),std::int64_t{147});
+    QCOMPARE(sourceView.value()->duration.value(),std::int64_t{441});
+    QVERIFY(!product.request_private(outputRate));
+    QCOMPARE(installedCount,1);
+    QCOMPARE(issuedCount,1);
+
+    auto clears=device.clearCalls;
+    QVERIFY(product.cancel());
+    QVERIFY(!product.private_id());
+    QCOMPARE(device.clearCalls,clears+1);
+    QCOMPARE(device.state,core::PlaybackState::NO_SOURCE);
+    QVERIFY(!candidates.staged());
+    QVERIFY(product.cancel());
+
+    // A Loop Region change between request and worker delivery must cancel
+    // the staged transaction before it can borrow a terminal identity.
+    device.state=core::PlaybackState::STOPPED;
+    device.position=core::FrameIndex{147};
+    device.duration=n;
+    device.audibleRealization=core::AudibleRealizationState{
+        core::AudibleHandoffPhase::NEW,manualId};
+    QVERIFY(product.request_private(outputRate));
+    loop.reset();
+    product.cancel_pending_on_region_change();
+    QTest::qWait(30);
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QCOMPARE(issuedCount,1);
+    QVERIFY(!candidates.staged());
+
+    // A changed manual identity also forbids the old job's installation.
+    QVERIFY(product.request_private(outputRate));
+    manualId=core::RealizationId{72};
+    QVERIFY(product.cancel());
+    QTest::qWait(30);
+    QCOMPARE(issuedCount,1);
+    QVERIFY(!candidates.staged());
 }
 
 
