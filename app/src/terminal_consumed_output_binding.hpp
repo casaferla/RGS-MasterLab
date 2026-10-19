@@ -22,6 +22,10 @@ struct TerminalConsumedOutputEvidence final {
     std::int64_t firstTerminalFrame;
     std::int64_t lastTerminalFrameExclusive;
     std::uint64_t loopWrapCount;
+    // Preserved from the authenticated, stable before/after transport
+    // snapshots. These are epoch identifiers, never synthetic GR data.
+    std::uint64_t seekSerial{0};
+    std::uint64_t traversalSerial{0};
 };
 
 // Bounded, PRIVATE GR projection from genuine applied-gain sidecar and
@@ -38,6 +42,10 @@ struct TerminalPrivateGrSeries final {
     std::int64_t consumedFrameBegin{0};
     std::int64_t consumedFrameEndExclusive{0};
     std::vector<TerminalPrivateGrBucket> buckets;
+    std::int64_t consumedOutputWatermarkExclusive{0};
+    std::uint64_t loopWrapCount{0};
+    std::uint64_t seekSerial{0};
+    std::uint64_t traversalSerial{0};
 };
 [[nodiscard]] core::Result<TerminalPrivateGrSeries>
 project_private_terminal_gr(const TerminalConsumedOutputEvidence& proof);

@@ -80,7 +80,9 @@ project_private_terminal_gr(const TerminalConsumedOutputEvidence& proof)
     constexpr std::int64_t kMaxBuckets=256;
     const auto width=1+(length-1)/kMaxBuckets;
     TerminalPrivateGrSeries series{
-        proof.realizationId,proof.playbackGeneration,begin,end,{}};
+        proof.realizationId,proof.playbackGeneration,begin,end,{},
+        proof.consumedOutputWatermarkExclusive,proof.loopWrapCount,
+        proof.seekSerial,proof.traversalSerial};
     series.buckets.reserve(static_cast<std::size_t>(1+(length-1)/width));
     for(auto start=begin;start<end;) {
         const auto stop=start+std::min(width,end-start);
@@ -243,6 +245,7 @@ bind_private_terminal_consumed_output(
     return core::Result<Evidence>::success(Evidence{
         accepted, before.realizationId, consumed.generation,
         consumed.processedWatermarkExclusive, firstTerminalFrame,
-        terminalCursor, before.playback.loopWrapCount});
+        terminalCursor, before.playback.loopWrapCount,
+        before.playback.seekSerial, before.playback.traversalSerial});
 }
 } // namespace rgsml::app

@@ -227,9 +227,74 @@ void TerminalPrivateGrProjectionTest::qmlPresentationFailClosed()
     workerRejects=false;
     provider.refresh();
     QVERIFY(provider.verified());
+    // A verified source/identity and a new SOURCE traversal may coexist
+    // in the Compressor-style GR strip only with an explicit split.
+    // The missing worker proof NEVER permits the old trace to be shown.
+    workerRejects=true;
+    provider.refresh();
+    QVERIFY(!provider.verified());
+    QVERIFY(provider.verified_series().isEmpty());
+    workerRejects=false;
+    source->seekSerial=1;
+    source->consumedFrameBegin=200;
+    source->consumedFrameEndExclusive=204;
+    source->buckets={{200,202,2.0},{202,204,1.0}};
+    provider.refresh();
+    QVERIFY(provider.verified());
+    auto bridged=provider.verified_series();
+    QCOMPARE(bridged.size(),qsizetype{4});
+    QVERIFY(!bridged.at(1).toMap()
+        .value(QStringLiteral("breakBefore")).toBool());
+    QVERIFY(bridged.at(2).toMap()
+        .value(QStringLiteral("breakBefore")).toBool());
+    QVERIFY(!bridged.at(2).toMap()
+        .value(QStringLiteral("loopBefore")).toBool());
+    QCOMPARE(bridged.at(1).toMap()
+        .value(QStringLiteral("frameEndExclusive")).toLongLong(),qint64{104});
+    QCOMPARE(bridged.at(2).toMap()
+        .value(QStringLiteral("frameBegin")).toLongLong(),qint64{200});
+    // Continuation of the SAME traversal preserves the dashed break.
+    source->consumedFrameEndExclusive=206;
+    source->buckets.push_back({204,206,0.5});
+    provider.refresh();
+    QVERIFY(provider.verified());
+    bridged=provider.verified_series();
+    QCOMPARE(bridged.size(),qsizetype{5});
+    QVERIFY(bridged.at(2).toMap()
+        .value(QStringLiteral("breakBefore")).toBool());
+
+    // Independently proved Loop wrap gets the same two-slot break,
+    // but grey instead of copper, as for the Compressor grammar.
+    source->loopWrapCount=1;
+    source->traversalSerial=2;
+    source->consumedFrameBegin=100;
+    source->consumedFrameEndExclusive=102;
+    source->buckets={{100,102,4.0}};
+    provider.refresh();
+    QVERIFY(provider.verified());
+    bridged=provider.verified_series();
+    QVERIFY(bridged.size()>1);
+    QVERIFY(bridged.back().toMap()
+        .value(QStringLiteral("breakBefore")).toBool());
+    QVERIFY(bridged.back().toMap()
+        .value(QStringLiteral("loopBefore")).toBool());
+
+    // A different realization is NEVER drawn alongside old GR history.
+    source->realizationId=core::RealizationId{8202};
+    provider.refresh();
+    QVERIFY(provider.verified());
+    QCOMPARE(provider.verified_series().size(),qsizetype{1});
+    QVERIFY(!provider.verified_series().front().toMap()
+        .value(QStringLiteral("breakBefore")).toBool());
+
     provider.invalidate();
     QVERIFY(!provider.verified());
     QVERIFY(provider.verified_series().isEmpty());
+    provider.refresh();
+    QVERIFY(provider.verified());
+    QCOMPARE(provider.verified_series().size(),qsizetype{1});
+    QVERIFY(!provider.verified_series().front().toMap()
+        .value(QStringLiteral("breakBefore")).toBool());
 }
 } // namespace rgsml::tests
 

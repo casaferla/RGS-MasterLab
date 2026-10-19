@@ -1,6 +1,7 @@
 #include "terminal_private_gr_view_model.hpp"
 
 #include <QVariantMap>
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -11,8 +12,9 @@ TerminalPrivateGrViewModel::TerminalPrivateGrViewModel(
     :QObject(parent),observe_(std::move(observe))
 {}
 
-void TerminalPrivateGrViewModel::invalidate()
+void TerminalPrivateGrViewModel::suspend_unverified()
 {
+    // No stale GR is ever rendered while Windows cannot prove consumption.
     if(!verified_ && series_.isEmpty()
         &&status_==QStringLiteral("UNAVAILABLE_NO_VERIFIED_GR"))
         return;
@@ -24,11 +26,21 @@ void TerminalPrivateGrViewModel::invalidate()
     emit changed();
 }
 
+void TerminalPrivateGrViewModel::invalidate()
+{
+    // A product/source/limiter ownership change destroys retained history.
+    suspend_unverified();
+    lastProven_.reset();
+    lastProvenPoints_.clear();
+    historicalPrefix_.clear();
+    historicalLoopMarker_=false;
+}
+
 void TerminalPrivateGrViewModel::refresh()
 {
-    if(!observe_) {invalidate();return;}
+    if(!observe_) {suspend_unverified();return;}
     const auto next=observe_();
-    if(!next) {invalidate();return;}
+    if(!next) {suspend_unverified();return;}
     const auto& witnessed=*next.value();
     if(witnessed.realizationId.value==0
         ||witnessed.playbackGeneration==0
@@ -37,11 +49,10 @@ void TerminalPrivateGrViewModel::refresh()
             <=witnessed.consumedFrameBegin
         ||witnessed.buckets.empty()
         ||witnessed.buckets.size()>256) {
-        invalidate();
+        suspend_unverified();
         return;
     }
-    // A newly observed generation or realization can ONLY replace history,
-    // never silently append unconsumed old buckets.
+
     QVariantList points;
     points.reserve(static_cast<qsizetype>(witnessed.buckets.size()));
     auto cursor=witnessed.consumedFrameBegin;
@@ -51,7 +62,7 @@ void TerminalPrivateGrViewModel::refresh()
             ||bucket.frameEndExclusive>witnessed.consumedFrameEndExclusive
             ||!std::isfinite(bucket.peakReductionDb)
             ||bucket.peakReductionDb<0.0) {
-            invalidate();
+            suspend_unverified();
             return;
         }
         QVariantMap point;
@@ -66,17 +77,65 @@ void TerminalPrivateGrViewModel::refresh()
         cursor=bucket.frameEndExclusive;
     }
     if(cursor!=witnessed.consumedFrameEndExclusive) {
-        invalidate();
+        suspend_unverified();
         return;
     }
-    if(verified_ && realization_==witnessed.realizationId
-        && generation_==witnessed.playbackGeneration
+
+    const ProvenEpoch current{
+        witnessed.realizationId,witnessed.playbackGeneration,
+        witnessed.consumedFrameBegin,witnessed.consumedFrameEndExclusive,
+        witnessed.consumedOutputWatermarkExclusive,witnessed.loopWrapCount,
+        witnessed.seekSerial,witnessed.traversalSerial};
+    const bool sameOwner=lastProven_
+        &&lastProven_->realizationId==current.realizationId;
+    if(!sameOwner) {
+        // Never bridge two different RealizationIds. A different source can
+        // only produce a completely fresh verified plot.
+        historicalPrefix_.clear();
+        historicalLoopMarker_=false;
+    } else {
+        const bool epochChanged=
+            current.playbackGeneration!=lastProven_->playbackGeneration
+            ||current.loopWrapCount!=lastProven_->loopWrapCount
+            ||current.seekSerial!=lastProven_->seekSerial
+            ||current.traversalSerial!=lastProven_->traversalSerial
+            ||current.frameBegin>lastProven_->frameEndExclusive
+            ||current.frameEndExclusive<lastProven_->frameEndExclusive;
+        if(epochChanged) {
+            // The Compressor GR grammar retains only already VERIFIED
+            // history, separated by a two-slot break and 1px marker.
+            // Only the next independently accepted worker proof can show
+            // these points again. Never bridge unconsumed samples.
+            constexpr qsizetype kOldTail=48;
+            historicalPrefix_=lastProvenPoints_.mid(
+                std::max<qsizetype>(0,lastProvenPoints_.size()-kOldTail));
+            historicalLoopMarker_=
+                current.loopWrapCount!=lastProven_->loopWrapCount;
+        }
+    }
+    lastProven_=current;
+    if(!historicalPrefix_.isEmpty() && sameOwner) {
+        constexpr qsizetype kNewPoints=208;
+        if(points.size()>kNewPoints)
+            points=points.mid(points.size()-kNewPoints);
+        QVariantMap first=points.front().toMap();
+        first.insert(QStringLiteral("breakBefore"),true);
+        first.insert(QStringLiteral("loopBefore"),historicalLoopMarker_);
+        points.front()=first;
+        QVariantList combined=historicalPrefix_;
+        combined.append(points);
+        points=std::move(combined);
+    }
+
+    lastProvenPoints_=points;
+    if(verified_ && realization_==current.realizationId
+        && generation_==current.playbackGeneration
         &&series_==points)
         return;
     series_=std::move(points);
     verified_=true;
-    realization_=witnessed.realizationId;
-    generation_=witnessed.playbackGeneration;
+    realization_=current.realizationId;
+    generation_=current.playbackGeneration;
     status_=QStringLiteral("PRIVATE_SINK_CONSUMED_GR_UNQUALIFIED");
     emit changed();
 }

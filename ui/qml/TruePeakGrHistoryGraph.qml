@@ -83,18 +83,52 @@ Canvas {
             ctx.stroke()
         }
         if (valid) {
+            // Match Compressor GR's visual discontinuity grammar: two empty
+            // horizontal slots and a subtle, 1px vertical 2-2 dashed marker.
+            // BREAK flags come only from backend-verified epoch transitions;
+            // never interpolate across a seek, loop wrap or ownership reset.
+            let breakCount = 0
+            for (let i = 1; i < history.length; ++i) {
+                if (history[i].breakBefore === true)
+                    breakCount += 1
+            }
+            const stepX = plotWidth / (history.length + breakCount * 2)
+            let slot = 0
+            const markers = []
             ctx.setLineDash([])
             ctx.strokeStyle = "#C4774A"
             ctx.lineWidth = 1.5
             ctx.beginPath()
             for (let i = 0; i < history.length; ++i) {
-                const x = left + plotWidth * (i + 0.5) / history.length
-                const y = top + plotHeight
-                    * history[i].peakReductionDb / axisMax
-                if (i === 0) ctx.moveTo(x, y)
-                else ctx.lineTo(x, y)
+                const point = history[i]
+                if (i > 0 && point.breakBefore === true) {
+                    ctx.stroke()
+                    slot += 2
+                    markers.push({
+                        x: left + (slot - 0.5) * stepX,
+                        loop: point.loopBefore === true
+                    })
+                    ctx.beginPath()
+                }
+                const x = left + (slot + 0.5) * stepX
+                const y = top + plotHeight * point.peakReductionDb / axisMax
+                if (i === 0 || point.breakBefore === true)
+                    ctx.moveTo(x, y)
+                else
+                    ctx.lineTo(x, y)
+                slot += 1
             }
             ctx.stroke()
+            for (let m = 0; m < markers.length; ++m) {
+                ctx.strokeStyle = markers[m].loop ? "#586773" : "#C4774A"
+                ctx.lineWidth = 1
+                ctx.setLineDash([2, 2])
+                ctx.beginPath()
+                ctx.moveTo(markers[m].x, top)
+                ctx.lineTo(markers[m].x, bottom)
+                ctx.stroke()
+                ctx.setLineDash([])
+            }
         }
         ctx.setLineDash([])
         ctx.fillStyle = "#7895A6"

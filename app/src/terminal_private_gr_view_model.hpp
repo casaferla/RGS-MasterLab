@@ -37,12 +37,30 @@ public slots:
 signals:
     void changed();
 private:
+    struct ProvenEpoch {
+        core::RealizationId realizationId;
+        std::uint64_t playbackGeneration;
+        std::int64_t frameBegin;
+        std::int64_t frameEndExclusive;
+        std::int64_t watermarkExclusive;
+        std::uint64_t loopWrapCount;
+        std::uint64_t seekSerial;
+        std::uint64_t traversalSerial;
+    };
+    // A failed device read immediately hides the GR plot, but a bounded
+    // previously VERIFIED trace can bridge to the next verified same-owner
+    // traversal. Explicit product invalidation discards it permanently.
+    void suspend_unverified();
     Observation observe_;
     bool verified_{false};
     QVariantList series_;
     QString status_{QStringLiteral("UNAVAILABLE_NO_VERIFIED_GR")};
     std::optional<core::RealizationId> realization_;
     std::uint64_t generation_{0};
+    std::optional<ProvenEpoch> lastProven_;
+    QVariantList lastProvenPoints_;
+    QVariantList historicalPrefix_;
+    bool historicalLoopMarker_{false};
 };
 
 } // namespace rgsml::app
