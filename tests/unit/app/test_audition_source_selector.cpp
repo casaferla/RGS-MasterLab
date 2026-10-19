@@ -185,6 +185,7 @@ private slots:
     void loopRegionIntentPreservedAcrossAuditionRebinds();
     void seamlessProcessedHandoffPreservesStateAndTargetRaces();
     void processedRealizationIdentityIsMonotonicAndFailureAtomic();
+    void terminalIdentityReservationChecksOwnersPhaseAndSharedSequence();
     void processedTelemetryBindsAcceptedRealizationIdentity();
 };
 
@@ -566,6 +567,73 @@ void AuditionSourceSelectorTest::processedRealizationIdentityIsMonotonicAndFailu
     const auto thirdId = observed->audibleRealization.realizationId;
     QVERIFY(thirdId.has_value());
     QCOMPARE(thirdId->value, secondId->value + 1U);
+}
+
+void AuditionSourceSelectorTest::terminalIdentityReservationChecksOwnersPhaseAndSharedSequence()
+{
+    auto service = std::make_unique<FakePlaybackService>();
+    auto* audible = service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport, audible);
+    app::AuditionSourceSelector selector{&transport};
+
+    QVERIFY(!selector.reserve_private_terminal_realization_id({}, {}, {}));
+    QVERIFY(selector.set_prepared_realization(realization(0, 200)));
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    const auto prepared = selector.prepared_realization_snapshot();
+    const auto manual = selector.processed_realization_snapshot();
+    const auto manualId = selector.processed_realization_id();
+    QVERIFY(prepared && manual && manualId);
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        prepared, manual, manualId)); // PROCESSED not selected/audible
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        manual, manual, manualId)); // wrong PREPARED owner
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        prepared, prepared, manualId)); // wrong MANUAL owner
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        prepared, manual, core::RealizationId{0}));
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        prepared, manual, core::RealizationId{manualId->value + 50U}));
+    audible->audibleRealization.phase = core::AudibleHandoffPhase::OLD;
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        prepared, manual, manualId));
+    audible->audibleRealization.phase = core::AudibleHandoffPhase::NEW;
+    audible->duration = *core::FrameCount::create(199).value();
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        prepared, manual, manualId));
+    audible->duration = *core::FrameCount::create(200).value();
+    transport.playOrResume();
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        prepared, manual, manualId));
+    transport.pause();
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        prepared, manual, manualId));
+    transport.stop();
+    auto terminal1 = selector.reserve_private_terminal_realization_id(
+        prepared, manual, manualId);
+    QVERIFY(terminal1);
+    QCOMPARE(terminal1.value()->value, manualId->value + 1U);
+    QCOMPARE(selector.processed_realization_id(), manualId);
+    QCOMPARE(audible->audibleRealization.realizationId, manualId);
+    QCOMPARE(selector.active_target(), std::optional{app::AuditionTarget::PROCESSED});
+    // A failed or stale future terminal installation must not reuse its ID.
+    auto terminal2 = selector.reserve_private_terminal_realization_id(
+        prepared, manual, manualId);
+    QVERIFY(terminal2);
+    QCOMPARE(terminal2.value()->value, terminal1.value()->value + 1U);
+    QVERIFY(selector.set_processed_realization(realization(0, 200)));
+    const auto nextManualId = selector.processed_realization_id();
+    QVERIFY(nextManualId);
+    QCOMPARE(nextManualId->value, terminal2.value()->value + 1U);
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        prepared, manual, manualId)); // stale prior MANUAL owner
+    const auto freshManual = selector.processed_realization_snapshot();
+    QVERIFY(selector.reserve_private_terminal_realization_id(
+        prepared, freshManual, nextManualId));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QVERIFY(!selector.reserve_private_terminal_realization_id(
+        prepared, freshManual, nextManualId));
 }
 
 void AuditionSourceSelectorTest::processedTelemetryBindsAcceptedRealizationIdentity()

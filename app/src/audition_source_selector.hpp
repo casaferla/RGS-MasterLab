@@ -59,6 +59,17 @@ public:
     [[nodiscard]] std::optional<core::RealizationId>
     processed_realization_id() const noexcept;
 
+    // Allocate a distinct, monotonic M17 terminal identity from the SAME
+    // sequence as the accepted manual PROCESSED realizations. This reserves
+    // an ID only: it does not publish PCM, change audition targets, or grant
+    // M16 LIVE authority. Caller must additionally present a valid accepted
+    // TerminalCandidateGate owner to the separate private session gate.
+    [[nodiscard]] core::Result<core::RealizationId>
+    reserve_private_terminal_realization_id(
+        std::shared_ptr<const render::RenderResult> prepared_owner,
+        std::shared_ptr<const render::RenderResult> manual_owner,
+        std::optional<core::RealizationId> manual_id);
+
     void set_source_loop_provider(SourceLoopProvider provider);
     [[nodiscard]] core::Status source_committed(
         const core::ResourceReference& source);
@@ -97,7 +108,8 @@ private:
     std::shared_ptr<const render::RenderResult> prepared_;
     std::shared_ptr<const render::RenderResult> processed_;
     std::optional<core::RealizationId> processedRealizationId_;
-    std::uint64_t nextProcessedRealizationIdValue_{1};
+    // Shared MANUAL + TERMINAL monotonic namespace. Never reset at Source switch.
+    std::uint64_t nextRealizationIdValue_{1};
     std::optional<core::ResourceReference> gold_;
     std::optional<core::SampleRate> goldRate_;
     std::optional<core::FrameCount> goldFrames_;

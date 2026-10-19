@@ -127,6 +127,52 @@ AuditionSourceSelector::processed_realization_id() const noexcept
     return processedRealizationId_;
 }
 
+core::Result<core::RealizationId>
+AuditionSourceSelector::reserve_private_terminal_realization_id(
+    std::shared_ptr<const render::RenderResult> prepared_owner,
+    std::shared_ptr<const render::RenderResult> manual_owner,
+    std::optional<core::RealizationId> manual_id)
+{
+    // Ownership and audible-device authority are independent. A private
+    // terminal candidate may never borrow an unselected or stale Manual ID.
+    if (!prepared_owner || !manual_owner || !manual_id
+        || manual_id->value == 0
+        || prepared_ != prepared_owner || processed_ != manual_owner
+        || processedRealizationId_ != manual_id
+        || activeTarget_ != AuditionTarget::PROCESSED
+        || !playback_) {
+        return core::Result<core::RealizationId>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17 private ID requires current PREPARED/MANUAL owners and the selected PROCESSED target."});
+    }
+    auto current = playback_->playback_snapshot();
+    if (!current) {
+        return core::Result<core::RealizationId>::failure(*current.error());
+    }
+    const auto range = manual_owner->render_window();
+    if (range.begin().value() != 0
+        || current.value()->state != core::PlaybackState::STOPPED
+        || current.value()->audibleRealization.phase
+            != core::AudibleHandoffPhase::NEW
+        || current.value()->audibleRealization.realizationId != manual_id
+        || !current.value()->duration
+        || *current.value()->duration != manual_owner->view().frame_count()) {
+        return core::Result<core::RealizationId>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17 private ID requires the stopped exact audible manual PROCESSED realization."});
+    }
+    if (nextRealizationIdValue_
+        == std::numeric_limits<std::uint64_t>::max()) {
+        return core::Result<core::RealizationId>::failure(core::Error{
+            core::ErrorCode::IntegerOverflow,
+            "The shared MANUAL/TERMINAL realization ID sequence is exhausted."});
+    }
+    // Burn the reserved ID even if a subsequent terminal prepare fails:
+    // another audio owner may have briefly observed that identity.
+    const core::RealizationId terminalId{nextRealizationIdValue_++};
+    return core::Result<core::RealizationId>::success(terminalId);
+}
+
 void AuditionSourceSelector::set_source_loop_provider(SourceLoopProvider provider)
 {
     sourceLoopProvider_ = std::move(provider);
@@ -190,7 +236,7 @@ core::Status AuditionSourceSelector::set_prepared_realization(
 core::Status AuditionSourceSelector::set_processed_realization(
     render::RenderResult realization)
 {
-    if (nextProcessedRealizationIdValue_
+    if (nextRealizationIdValue_
         == std::numeric_limits<std::uint64_t>::max()) {
         return core::Status::failure(core::Error{
             core::ErrorCode::IntegerOverflow,
@@ -198,7 +244,7 @@ core::Status AuditionSourceSelector::set_processed_realization(
     }
 
     const core::RealizationId candidateRealizationId{
-        nextProcessedRealizationIdValue_};
+        nextRealizationIdValue_};
     auto identityBound =
         realization.bind_compressor_telemetry_realization_id(
             candidateRealizationId);
@@ -247,7 +293,7 @@ core::Status AuditionSourceSelector::set_processed_realization(
 
         processed_ = candidate;
         processedRealizationId_ = candidateRealizationId;
-        ++nextProcessedRealizationIdValue_;
+        ++nextRealizationIdValue_;
         statusText_.clear();
         emit changed();
         return core::Status::success();
@@ -255,7 +301,7 @@ core::Status AuditionSourceSelector::set_processed_realization(
 
     processed_ = candidate;
     processedRealizationId_ = candidateRealizationId;
-    ++nextProcessedRealizationIdValue_;
+    ++nextRealizationIdValue_;
     emit changed();
     return core::Status::success();
 }
