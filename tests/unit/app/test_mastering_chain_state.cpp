@@ -577,6 +577,12 @@ void MasteringChainStateTest::limiterCeilingViewModelDraftAndValidation()
     TerminalLimiterViewModel vm{product.value(),[&acceptedChanges]{
         ++acceptedChanges;
     }};
+    QSignalSpy acceptedSignals{&vm,
+        &TerminalLimiterViewModel::acceptedStateChanged};
+    QSignalSpy visualSignals{&vm,
+        &TerminalLimiterViewModel::changed};
+    QVERIFY(acceptedSignals.isValid());
+    QVERIFY(visualSignals.isValid());
     QCOMPARE(vm.ceiling_db_tp(),-1.0);
     QCOMPARE(product.value()->parameter_revision(),std::uint64_t{0});
     QCOMPARE(vm.ceiling_db_tp_text(),QStringLiteral("-1.00"));
@@ -590,6 +596,8 @@ void MasteringChainStateTest::limiterCeilingViewModelDraftAndValidation()
     QCOMPARE(std::get<TruePeakLimiterParameters>(
         product.value()->execution_bindings()[0].parameters).ceiling_db_tp(),-1.0);
     QCOMPARE(acceptedChanges,0);
+    QCOMPARE(acceptedSignals.count(),0);
+    QVERIFY(visualSignals.count()>0);
 
     QVERIFY(!vm.setDraftFieldText(QStringLiteral("ceilingDbTp"),
         QStringLiteral("not a number")));
@@ -598,6 +606,7 @@ void MasteringChainStateTest::limiterCeilingViewModelDraftAndValidation()
     QVERIFY(!vm.commitDraft());
     QCOMPARE(vm.ceiling_db_tp(),-1.0);
     QCOMPARE(acceptedChanges,0);
+    QCOMPARE(acceptedSignals.count(),0);
     QVERIFY(!vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-13.0));
     QVERIFY(!vm.commitDraft());
     QCOMPARE(vm.ceiling_db_tp(),-1.0);
@@ -614,25 +623,33 @@ void MasteringChainStateTest::limiterCeilingViewModelDraftAndValidation()
     QCOMPARE(product.value()->parameters().ceiling_db_tp(),-9.5);
     QCOMPARE(product.value()->parameter_revision(),std::uint64_t{1});
     QCOMPARE(acceptedChanges,1);
+    QCOMPARE(acceptedSignals.count(),1);
     QVERIFY(vm.commitDraft());
     QCOMPARE(product.value()->parameter_revision(),std::uint64_t{1});
     QCOMPARE(acceptedChanges,1);
+    QCOMPARE(acceptedSignals.count(),1);
     vm.setBypass(false);
     QVERIFY(!vm.bypass());
     QCOMPARE(acceptedChanges,2);
+    QCOMPARE(acceptedSignals.count(),2);
     vm.setBypass(false);
     QCOMPARE(acceptedChanges,2);
+    QCOMPARE(acceptedSignals.count(),2);
     vm.setBypass(true);
     QVERIFY(vm.bypass());
     QCOMPARE(acceptedChanges,3);
+    QCOMPARE(acceptedSignals.count(),3);
     QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-2.0));
     vm.cancelDraft();
     QCOMPARE(vm.draft_ceiling_db_tp(),-9.5);
     QCOMPARE(vm.ceiling_db_tp(),-9.5);
     QCOMPARE(acceptedChanges,3);
+    QCOMPARE(acceptedSignals.count(),3);
     QVERIFY(!vm.setDraftFieldText(QStringLiteral("unrelated"),QStringLiteral("-6.0")));
     QCOMPARE(vm.ceiling_db_tp(),-9.5);
     QCOMPARE(acceptedChanges,3);
+    QCOMPARE(acceptedSignals.count(),3);
+    QVERIFY(visualSignals.count()>acceptedSignals.count());
 }
 
 

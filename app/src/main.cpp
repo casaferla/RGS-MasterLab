@@ -263,7 +263,7 @@ int main(int argc, char* argv[])
             static_cast<void>(privateProductSession.cancel());
         });
     QObject::connect(&terminalLimiterViewModel,
-        &rgsml::app::TerminalLimiterViewModel::changed,
+        &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
         &privateProductSession,
         [&privateProductSession] {
             static_cast<void>(privateProductSession.cancel());

@@ -100,6 +100,7 @@ bool TerminalLimiterViewModel::commitDraft()
     // Sole producer of product-owned rerender invalidation. A missing
     // callback does not imply that processing is audible or available.
     if(stateChanged_)stateChanged_();
+    emit acceptedStateChanged();
     return true;
 }
 
@@ -123,6 +124,7 @@ void TerminalLimiterViewModel::setBypass(bool value)
     clear_validation();
     emit changed();
     if(stateChanged_)stateChanged_();
+    emit acceptedStateChanged();
 }
 
 void TerminalLimiterViewModel::refreshFromAuthority()

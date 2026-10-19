@@ -48,7 +48,11 @@ public:
     Q_INVOKABLE void refreshFromAuthority();
 
 signals:
+    // Authored/draft/validation changed: repaint ONLY.
     void changed();
+    // Semantic state is committed by TerminalLimiterState. Never emitted
+    // for a draft, failed validation, no-op or refresh.
+    void acceptedStateChanged();
 
 private:
     void set_validation(const QString& message);
