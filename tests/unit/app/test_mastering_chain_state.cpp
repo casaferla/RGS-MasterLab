@@ -760,6 +760,23 @@ void MasteringChainStateTest::terminalOutputAdmissionRejectsObsoleteOwnersAndCei
         .applied_gain_frames.size(),std::size_t{480});
     gate.invalidate();
     QVERIFY(!gate.staged());
+    // Even an invalid replacement request must withdraw a previously
+    // admitted terminal candidate. No old candidate can remain publishable.
+    auto newCapture=gate.capture(owner,owner,identity,*manual.value(),
+        *terminal.value(),outputRate);
+    QVERIFY(newCapture);
+    auto candidateAgain=render::render_true_peak_limiter_owned_output_rate_candidate(
+        owner,*manual.value(),n,manual.value()->revision(),
+        outputRate,terminal.value()->chain(),
+        terminal.value()->execution_bindings(),*registry.value(),block);
+    QVERIFY(candidateAgain);
+    QVERIFY(gate.accept(*newCapture.value(),std::move(*candidateAgain.value()),
+        owner,owner,identity,*manual.value(),*terminal.value()));
+    QVERIFY(gate.staged());
+    auto invalidReplacement=gate.capture(owner,{},identity,*manual.value(),
+        *terminal.value(),outputRate);
+    QVERIFY(!invalidReplacement);
+    QVERIFY(!gate.staged());
     // The snapshot is still immutable and privately owned by its consumer;
     // invalidation does not make it an audible Processed realization.
     QCOMPARE(snap->rendered.manual_owner.get(),owner.get());

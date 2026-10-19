@@ -50,14 +50,19 @@ TerminalCandidateGate::capture(
        ||terminal.chain().instances().size()!=1
        ||terminal.chain().instances()[0].instance_id()!=terminal.instance_id()
        ||terminal.chain().instances()[0].module_type_id()!="rgsml.dsp.true-peak-limiter") {
+        // Even a failed replacement attempt must withdraw an older staged
+        // output, never leave seemingly-current PCM available for promotion.
+        invalidate();
         return core::Result<Capture>::failure(reject(
             "M17_CAPTURE_INVALID_AUTHORITY",
             "M17 cannot capture an incomplete or unowned manual/terminal realization."));
     }
-    if(ticket_>=std::numeric_limits<std::uint64_t>::max()-1)
+    if(ticket_>=std::numeric_limits<std::uint64_t>::max()-1) {
+        staged_.reset();
         return core::Result<Capture>::failure(reject(
             "M17_CAPTURE_TICKET_EXHAUSTED",
             "Terminal candidate admission sequence exhausted."));
+    }
     // Evaluate non-owning metadata BEFORE moving the owner pointers.
     // C++ aggregate initializer evaluation is left-to-right: using
     // manual->view() after std::move(manual) would dereference null.
