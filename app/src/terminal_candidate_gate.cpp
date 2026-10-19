@@ -54,10 +54,14 @@ TerminalCandidateGate::capture(
             "M17_CAPTURE_INVALID_AUTHORITY",
             "M17 cannot capture an incomplete or unowned manual/terminal realization."));
     }
-    if(ticket_==std::numeric_limits<std::uint64_t>::max())
+    if(ticket_>=std::numeric_limits<std::uint64_t>::max()-1)
         return core::Result<Capture>::failure(reject(
             "M17_CAPTURE_TICKET_EXHAUSTED",
             "Terminal candidate admission sequence exhausted."));
+    // Evaluate non-owning metadata BEFORE moving the owner pointers.
+    // C++ aggregate initializer evaluation is left-to-right: using
+    // manual->view() after std::move(manual) would dereference null.
+    const auto originalFrameCount=manual->view().frame_count();
     ++ticket_;
     staged_.reset();
     return core::Result<Capture>::success(Capture{
@@ -65,7 +69,7 @@ TerminalCandidateGate::capture(
         manual_chain.revision(),terminal.chain().revision(),
         terminal.parameter_revision(),terminal.instance_id(),
         terminal.bypassed(),terminal.parameters().ceiling_db_tp(),
-        manual->view().frame_count(),rate
+        originalFrameCount,rate
     });
 }
 
@@ -105,6 +109,10 @@ core::Status TerminalCandidateGate::accept(
         ||candidate.terminal.limiter_instance_id!=job.terminal_instance_id
         ||candidate.programme_frames!=job.full_source_frames
         ||candidate.output_rate!=job.output_rate
+        ||candidate.used_candidate_src
+            !=(manual->view().format().sample_rate()!=job.output_rate)
+        ||(candidate.used_candidate_src
+            &&candidate.src_kernel_sha256.empty())
         ||check.terminal.bypassed!=job.terminal_bypassed
         ||pcmView.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
         ||pcmView.format().sample_rate()!=job.output_rate
