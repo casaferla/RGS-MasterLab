@@ -58,6 +58,9 @@ public:
 
     // Invalidates logical ownership, but never clears a different session.
     void detach() noexcept;
+    // Retire only the exact ID installed by this gate. A newer audible
+    // owner must NEVER be stopped or cleared by an obsolete M17 gate.
+    [[nodiscard]] core::Status retire_owned_session();
 
 private:
     // Reclaim only our own partial terminal install. If another owner took
@@ -70,6 +73,7 @@ private:
     std::optional<TerminalSourceControlBridge> control_;
     std::shared_ptr<const TerminalCandidateGate::StagedCandidate> owner_;
     std::shared_ptr<const void> sessionLease_;
+    std::optional<core::RealizationId> installedTerminalId_;
 };
 
 } // namespace rgsml::app

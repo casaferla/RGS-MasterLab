@@ -71,6 +71,7 @@ core::Status TerminalAudioSessionGate::prepare_private_session(
     owner_=std::move(accepted);
     control_.emplace(std::move(*controller.value()));
     sessionLease_ = std::make_shared<int>(0);
+    installedTerminalId_ = terminalId;
     return core::Status::success();
 }
 
@@ -92,9 +93,34 @@ void TerminalAudioSessionGate::clear_owned_failed_install(
     static_cast<void>(playback_->clear());
 }
 
+core::Status TerminalAudioSessionGate::retire_owned_session()
+{
+    core::Status result=core::Status::success();
+    if (installedTerminalId_) {
+        auto current=playback_->snapshot();
+        if (!current) {
+            result=core::Status::failure(*current.error());
+        } else if (current.value()->audibleRealization.phase
+                   ==core::AudibleHandoffPhase::NEW
+                   &&current.value()->audibleRealization.realizationId
+                       ==installedTerminalId_) {
+            if (current.value()->state==core::PlaybackState::PLAYING
+                ||current.value()->state==core::PlaybackState::PAUSED) {
+                result=playback_->stop();
+            }
+            if (result) result=playback_->clear();
+        }
+    }
+    // Retire logical authority even if the physical device reports error.
+    // Any failure is propagated; another owner is never erased.
+    detach();
+    return result;
+}
+
 void TerminalAudioSessionGate::detach() noexcept
 {
     sessionLease_.reset();
+    installedTerminalId_.reset();
     if(control_)control_->detach();
     control_.reset();
     owner_.reset();

@@ -4,6 +4,7 @@
 #include "terminal_playback_frame_map.hpp"
 #include "terminal_source_control_bridge.hpp"
 #include "terminal_audio_session_gate.hpp"
+#include "terminal_private_publication_coordinator.hpp"
 #include "playback_transport_view_model.hpp"
 #include "../platform/fake_playback_service.hpp"
 #include <rgsml/render/render_preview.hpp>
@@ -1018,13 +1019,34 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             QVERIFY(!installer.prepare_private_session(
                 owner,owner,core::RealizationId{91},core::RealizationId{91}));
             QCOMPARE(installations,0);
+            int issues=0;
+            TerminalPrivatePublicationCoordinator privatePublisher{
+                gate,installer,terminalTransport,
+                [&](std::shared_ptr<const render::RenderResult> p,
+                    std::shared_ptr<const render::RenderResult> m,
+                    std::optional<core::RealizationId> id) {
+                    ++issues;
+                    if(p!=owner || m!=owner || id!=core::RealizationId{91})
+                        return core::Result<core::RealizationId>::failure(
+                            core::Error{core::ErrorCode::InvalidState,
+                                "Wrong central identity issuer owner."});
+                    return core::Result<core::RealizationId>::success(
+                        core::RealizationId{9100});
+                }};
             manualAudible.state=core::PlaybackState::PLAYING;
-            QVERIFY(!installer.prepare_private_session(
-                owner,owner,core::RealizationId{91},core::RealizationId{9100}));
+            QVERIFY(!privatePublisher.install_private(
+                owner,owner,core::RealizationId{91},*range.value()));
+            QCOMPARE(issues,0); // no ID may be consumed before preflight
             QCOMPARE(installations,0);
             manualAudible.state=core::PlaybackState::STOPPED;
-            QVERIFY(installer.prepare_private_session(
-                owner,owner,core::RealizationId{91},core::RealizationId{9100}));
+            manualAudible.position=core::FrameIndex{147};
+            auto published=privatePublisher.install_private(
+                owner,owner,core::RealizationId{91},*range.value());
+            QVERIFY(published);
+            QCOMPARE(*published.value(),core::RealizationId{9100});
+            QCOMPARE(issues,1);
+            QCOMPARE(manualAudible.position.value(),std::int64_t{160});
+            QCOMPARE(manualAudible.loop,std::optional{*mappedLoop.value()});
             QVERIFY(installer.has_session());
             QCOMPARE(installations,1);
             QVERIFY(validOutputPcm);
@@ -1038,8 +1060,6 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             QVERIFY(installedSnapshot);
             QCOMPARE(installedSnapshot.value()->position.value(),
                      std::int64_t{300});
-            QVERIFY(terminalTransport.bind_private_terminal_source_controls(
-                installer));
             auto displayed=terminalTransport.source_display_snapshot();
             QVERIFY(displayed);
             QCOMPARE(displayed.value()->position.value(),std::int64_t{300});

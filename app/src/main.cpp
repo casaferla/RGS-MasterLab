@@ -17,6 +17,7 @@
 #include "stereo_ms_view_model.hpp"
 #include "terminal_candidate_gate.hpp"
 #include "terminal_audio_session_gate.hpp"
+#include "terminal_private_publication_coordinator.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
 #include "true_peak_static_coordinator.hpp"
@@ -203,6 +204,19 @@ int main(int argc, char* argv[])
             return windowsPlayback->prepare_terminal_output_pcm(
                 pcm,std::move(lifetime),terminalIdentity);
         }};
+    // Product-owned but not callable from the UI yet: prepare a single
+    // transaction entrypoint that reserves the actual selector's common
+    // RealizationId namespace before installing an independently owned PCM.
+    rgsml::app::TerminalPrivatePublicationCoordinator privateTerminalPublisher{
+        terminalCandidateGate, terminalAudioSessionGate, playbackTransport,
+        [&auditionSelector](
+            std::shared_ptr<const rgsml::render::RenderResult> prepared,
+            std::shared_ptr<const rgsml::render::RenderResult> manual,
+            std::optional<rgsml::core::RealizationId> id) {
+            return auditionSelector.reserve_private_terminal_realization_id(
+                std::move(prepared),std::move(manual),id);
+        }};
+    static_cast<void>(privateTerminalPublisher);
     // SOURCE/PREPARED/PROCESSED owner and accepted identity changes must
     // invalidate pending M17 jobs immediately on the UI owning thread.
     QObject::connect(
