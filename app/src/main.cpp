@@ -16,6 +16,7 @@
 #include "source_waveform_view_model.hpp"
 #include "stereo_ms_view_model.hpp"
 #include "terminal_candidate_gate.hpp"
+#include "terminal_audio_session_gate.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
 #include "true_peak_static_coordinator.hpp"
@@ -190,17 +191,33 @@ int main(int argc, char* argv[])
     // published by this gate. It will only stage future independently
     // accepted complete OUTPUT_RATE candidates.
     rgsml::app::TerminalCandidateGate terminalCandidateGate;
+    // The exact-rate Windows device seam is registered but cannot be
+    // invoked by the product until a separate Processed publisher allocates
+    // a unique M17 identity and authorizes an end-to-end SOURCE controller.
+    rgsml::app::TerminalAudioSessionGate terminalAudioSessionGate{
+        terminalCandidateGate,*windowsPlayback,
+        [windowsPlayback](
+            rgsml::audio::AudioBufferView pcm,
+            std::shared_ptr<const void> lifetime,
+            rgsml::core::RealizationId terminalIdentity) {
+            return windowsPlayback->prepare_terminal_output_pcm(
+                pcm,std::move(lifetime),terminalIdentity);
+        }};
     // SOURCE/PREPARED/PROCESSED owner and accepted identity changes must
     // invalidate pending M17 jobs immediately on the UI owning thread.
     QObject::connect(
         &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
-        &terminalLimiterViewModel, [&terminalCandidateGate] {
+        &terminalLimiterViewModel, [&terminalCandidateGate,
+                                    &terminalAudioSessionGate] {
+            terminalAudioSessionGate.detach();
             terminalCandidateGate.invalidate();
         });
     // Ceiling drafts, commits and BYP transitions are fail-closed.
     QObject::connect(
         &terminalLimiterViewModel, &rgsml::app::TerminalLimiterViewModel::changed,
-        &terminalLimiterViewModel, [&terminalCandidateGate] {
+        &terminalLimiterViewModel, [&terminalCandidateGate,
+                                    &terminalAudioSessionGate] {
+            terminalAudioSessionGate.detach();
             terminalCandidateGate.invalidate();
         });
 
@@ -216,7 +233,9 @@ int main(int argc, char* argv[])
 
     QObject::connect(
         &previewController, &rgsml::app::MasteringPreviewController::changed,
-        &terminalLimiterViewModel, [&terminalCandidateGate] {
+        &terminalLimiterViewModel, [&terminalCandidateGate,
+                                    &terminalAudioSessionGate] {
+            terminalAudioSessionGate.detach();
             terminalCandidateGate.invalidate();
         });
 
