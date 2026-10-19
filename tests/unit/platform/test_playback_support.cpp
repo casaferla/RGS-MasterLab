@@ -247,6 +247,7 @@ private slots:
     void conversionFailuresAndChunkInvariance();
     void stateMachineAndBoundedPump();
     void adaptedTimelineUsesAbsoluteRateMapping();
+    void terminalOutputCandidateNoSecondSrcAndLiveWitnessFailClosed();
     void explicitSeekLoopStateMatrix();
     void explicitSeekLoopTraversalEofAndSrcIdentity();
     void loopCommandIsPositionNeutralAcrossStates();
@@ -326,6 +327,92 @@ void PlaybackSupportTest::formatSelectionIsDeterministic()
         *format.value(), false, false, false, false);
     QVERIFY(!unsupported);
     QCOMPARE(unsupported.error()->code(), core::ErrorCode::UnsupportedOperation);
+}
+
+
+void PlaybackSupportTest::terminalOutputCandidateNoSecondSrcAndLiveWitnessFailClosed()
+{
+    // Internal ONLY: output already materialized at device rate.
+    // Its numeric control coordinates are OUTPUT frames until an external
+    // verified source↔output frame-map is explicitly supplied.
+    const auto rate=*core::SampleRate::create(48000).value();
+    auto format=audio::AudioFormat::create(
+        rate,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto pcm=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},frame_count(480));
+    QVERIFY(pcm);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=pcm.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(std::int64_t i=0;i<480;++i)
+            (*lane.value())[static_cast<std::size_t>(i)]
+                =(ch==0?1.0:-1.0)*static_cast<double>(i)/32768.0;
+    }
+    auto owner=std::make_shared<int>(17);
+    {
+        PlaybackEngine engine;
+        auto sink=std::make_unique<FakeOutput>(64U,4U);
+        QVERIFY(!engine.install_pcm_candidate(
+            pcm.value()->view(),std::move(sink),
+            DeviceSampleFormat::PCM_S16,std::nullopt,owner,
+            core::RealizationId{17}));
+        QCOMPARE(engine.snapshot().value()->state,
+                 core::PlaybackState::NO_SOURCE);
+    }
+    {
+        PlaybackEngine engine;
+        auto sink=std::make_unique<FakeOutput>(64U,4U);
+        QVERIFY(!engine.install_terminal_output_pcm_candidate(
+            pcm.value()->view(),std::move(sink),
+            DeviceSampleFormat::PCM_S16,owner,
+            core::RealizationId{17},
+            *core::SampleRate::create(44100).value()));
+    }
+    {
+        PlaybackEngine engine;
+        auto sink=std::make_unique<FakeOutput>(64U,4U);
+        QVERIFY(!engine.install_terminal_output_pcm_candidate(
+            pcm.value()->view(),std::move(sink),
+            DeviceSampleFormat::PCM_S16,
+            std::shared_ptr<const void>{},core::RealizationId{17},rate));
+    }
+    PlaybackEngine engine;
+    auto sink=std::make_unique<FakeOutput>(64U,4U);
+    auto* observed=sink.get();
+    QVERIFY(engine.install_terminal_output_pcm_candidate(
+        pcm.value()->view(),std::move(sink),DeviceSampleFormat::PCM_S16,
+        owner,core::RealizationId{901},rate));
+    QCOMPARE(engine.snapshot().value()->duration->value(),
+             std::int64_t{480});
+    QCOMPARE(engine.snapshot().value()->audibleRealization.realizationId,
+             std::optional{core::RealizationId{901}});
+    auto historicSource=make_buffer(
+        48000,audio::ChannelLayout::STEREO_LR,480);
+    QVERIFY(!engine.handoff_pcm(
+        historicSource.view(),owner,core::RealizationId{902}));
+    QCOMPARE(engine.snapshot().value()->audibleRealization.realizationId,
+             std::optional{core::RealizationId{901}});
+
+    const auto loop=*core::FrameRange::create(
+        core::FrameIndex{11},core::FrameIndex{22}).value();
+    QVERIFY(engine.set_loop(loop));
+    for(const auto seekFrame:{5,11,17,22,30}) {
+        QVERIFY(engine.seek(core::FrameIndex{seekFrame}));
+        QCOMPARE(engine.snapshot().value()->position.value(),
+                 std::int64_t{seekFrame});
+        QVERIFY(engine.play());
+        QVERIFY(observed->queue().size()>=4U);
+        QCOMPARE(read_i16(observed->queue(),0U),
+                 static_cast<std::int16_t>(seekFrame));
+        QCOMPARE(engine.c2_processed_coverage_probe().reason,
+                 platform::windows::internal::C2CoverageProbeReason
+                     ::MISSING_CHRONOLOGICAL_LEDGER);
+        QVERIFY(engine.stop());
+    }
+    QVERIFY(engine.clear());
+    QCOMPARE(engine.snapshot().value()->state,core::PlaybackState::NO_SOURCE);
 }
 
 void PlaybackSupportTest::adaptedTimelineUsesAbsoluteRateMapping()
