@@ -244,6 +244,7 @@ class PlaybackSupportTest final : public QObject {
 private slots:
     void formatSelectionIsDeterministic();
     void terminalFormatRejectsDeviceRateFallback();
+    void preferredTerminalRateIsExplicitAndFailClosed();
     void floatAndPcm16GoldenConversion();
     void conversionFailuresAndChunkInvariance();
     void stateMachineAndBoundedPump();
@@ -317,6 +318,30 @@ void PlaybackSupportTest::terminalFormatRejectsDeviceRateFallback()
     QVERIFY(ordinary);
     QVERIFY(ordinary.value()->srcApplied);
     QCOMPARE(ordinary.value()->sampleRateHz,44100);
+}
+
+void PlaybackSupportTest::preferredTerminalRateIsExplicitAndFailClosed()
+{
+    using platform::windows::internal::select_preferred_terminal_output_rate;
+    for(const int preferred: {44100,48000,88200,96000,176400,192000}) {
+        auto chosen=select_preferred_terminal_output_rate(
+            preferred,audio::ChannelLayout::STEREO_LR,true,true);
+        QVERIFY(chosen);
+        QCOMPARE(chosen.value()->value(),std::int64_t{preferred});
+    }
+    auto mono=select_preferred_terminal_output_rate(
+        48000,audio::ChannelLayout::MONO_C,false,true);
+    QVERIFY(mono);
+    QCOMPARE(mono.value()->value(),std::int64_t{48000});
+    for(const int unsupported: {0,-1,32000,384000}) {
+        auto invalid=select_preferred_terminal_output_rate(
+            unsupported,audio::ChannelLayout::STEREO_LR,true,true);
+        QVERIFY(!invalid);
+    }
+    QVERIFY(!select_preferred_terminal_output_rate(
+        48000,audio::ChannelLayout::STEREO_LR,false,false));
+    QVERIFY(!select_preferred_terminal_output_rate(
+        44100,audio::ChannelLayout::STEREO_LR,false,false));
 }
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()

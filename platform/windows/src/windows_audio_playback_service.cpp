@@ -600,6 +600,32 @@ public:
     }
 
 
+    [[nodiscard]] core::Result<core::SampleRate>
+    preferred_terminal_output_rate(audio::ChannelLayout layout) const
+    {
+        const auto device=QMediaDevices::defaultAudioOutput();
+        if(device.isNull() || device.mode()!=QAudioDevice::Output)
+            return failure<core::SampleRate>(
+                core::ErrorCode::UnsupportedOperation,
+                "No default Windows output for M17 rate negotiation.");
+        const int hz=device.preferredFormat().sampleRate();
+        if(hz<=0)
+            return failure<core::SampleRate>(
+                core::ErrorCode::UnsupportedOperation,
+                "Default Windows output has no valid preferred sample rate.");
+        auto rate=core::SampleRate::create(hz);
+        if(!rate)
+            return core::Result<core::SampleRate>::failure(*rate.error());
+        auto fmt=audio::AudioFormat::create(*rate.value(),layout);
+        if(!fmt)
+            return core::Result<core::SampleRate>::failure(*fmt.error());
+        const auto nativeFloat=make_format(*fmt.value(),hz,QAudioFormat::Float);
+        const auto nativePcm=make_format(*fmt.value(),hz,QAudioFormat::Int16);
+        return internal::select_preferred_terminal_output_rate(
+            hz,layout,device.isFormatSupported(nativeFloat),
+            device.isFormatSupported(nativePcm));
+    }
+
     [[nodiscard]] core::Status prepare_terminal_output_pcm(
         audio::AudioBufferView pcm,
         std::shared_ptr<const void> lifetime,
@@ -822,6 +848,24 @@ public:
     }
 
 
+    [[nodiscard]] core::Result<core::SampleRate>
+    preferred_terminal_output_rate(audio::ChannelLayout layout) const
+    {
+        if(!ready_ || worker_==nullptr)
+            return failure<core::SampleRate>(
+                core::ErrorCode::IoFailure,"Windows audio worker is unavailable.");
+        if(QThread::currentThread()==worker_->thread())
+            return worker_->preferred_terminal_output_rate(layout);
+        std::optional<core::Result<core::SampleRate>> result;
+        const bool invoked=QMetaObject::invokeMethod(worker_,[&] {
+            result.emplace(worker_->preferred_terminal_output_rate(layout));
+        },Qt::BlockingQueuedConnection);
+        if(!invoked || !result)
+            return failure<core::SampleRate>(
+                core::ErrorCode::IoFailure,"Windows preferred-rate probe failed.");
+        return std::move(*result);
+    }
+
     [[nodiscard]] core::Status prepare_terminal_output_pcm(
         audio::AudioBufferView pcm,
         std::shared_ptr<const void> lifetime,
@@ -1008,6 +1052,13 @@ core::Status WindowsAudioPlaybackService::prepare_pcm(
 {
     return impl_->prepare_pcm(
         source, std::move(lifetime), realizationId);
+}
+
+core::Result<core::SampleRate>
+WindowsAudioPlaybackService::preferred_terminal_output_rate(
+    audio::ChannelLayout layout) const
+{
+    return impl_->preferred_terminal_output_rate(layout);
 }
 
 core::Status WindowsAudioPlaybackService::prepare_terminal_output_pcm(

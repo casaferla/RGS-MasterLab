@@ -233,6 +233,34 @@ core::Result<DeviceFormat> select_terminal_output_device_format(
         exactPcm16Supported,false,false);
 }
 
+core::Result<core::SampleRate> select_preferred_terminal_output_rate(
+    int preferredRateHz, audio::ChannelLayout layout,
+    bool exactFloat32Supported, bool exactPcm16Supported)
+{
+    constexpr std::array<int,6> eligibleRates{44'100,48'000,88'200,
+                                              96'000,176'400,192'000};
+    if (std::find(eligibleRates.begin(),eligibleRates.end(),preferredRateHz)
+            ==eligibleRates.end()) {
+        return failure<core::SampleRate>(
+            core::ErrorCode::UnsupportedOperation,
+            "Default device preferred rate is not one of the six M17 DSP rates.");
+    }
+    auto rate=core::SampleRate::create(preferredRateHz);
+    if (!rate) return core::Result<core::SampleRate>::failure(*rate.error());
+    auto format=audio::AudioFormat::create(*rate.value(),layout);
+    if (!format)
+        return core::Result<core::SampleRate>::failure(*format.error());
+    auto exact=select_terminal_output_device_format(*format.value(),
+        exactFloat32Supported,exactPcm16Supported);
+    if (!exact)
+        return core::Result<core::SampleRate>::failure(*exact.error());
+    if (exact.value()->srcApplied
+        || exact.value()->sampleRateHz!=preferredRateHz)
+        return failure<core::SampleRate>(
+            core::ErrorCode::InvalidState,"M17 preferred sink rate is not exact.");
+    return core::Result<core::SampleRate>::success(*rate.value());
+}
+
 core::Result<std::vector<std::byte>> encode_device_block(
     audio::AudioBufferView source,
     DeviceSampleFormat destinationFormat)

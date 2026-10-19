@@ -48,6 +48,13 @@ struct DeviceFormat final {
     bool exactFloat32Supported,
     bool exactPcm16Supported);
 
+// Private M17 rate probe: only six documented DSP rates are allowed.
+// Preferred is device-advertised and exact-format supported; it is NOT proof
+// of the physical Windows shared-mixer clock or qualification of playback.
+[[nodiscard]] core::Result<core::SampleRate> select_preferred_terminal_output_rate(
+    int preferredRateHz, audio::ChannelLayout layout,
+    bool exactFloat32Supported, bool exactPcm16Supported);
+
 [[nodiscard]] core::Result<std::vector<std::byte>> encode_device_block(
     audio::AudioBufferView source,
     DeviceSampleFormat destinationFormat);

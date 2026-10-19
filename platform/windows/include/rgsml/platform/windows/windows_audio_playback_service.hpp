@@ -36,6 +36,10 @@ public:
         std::shared_ptr<const void> lifetime,
         std::optional<core::RealizationId> realizationId = std::nullopt);
     // M17 candidate-only: no PROCESSED publication or active UI yet.
+    // Advisory owner-thread probe of the current device preferred exact
+    // output format; install rechecks against the actual selected device.
+    [[nodiscard]] core::Result<core::SampleRate>
+    preferred_terminal_output_rate(audio::ChannelLayout layout) const;
     [[nodiscard]] core::Status prepare_terminal_output_pcm(
         audio::AudioBufferView pcm,
         std::shared_ptr<const void> lifetime,

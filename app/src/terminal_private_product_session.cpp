@@ -82,6 +82,26 @@ core::Status TerminalPrivateProductSession::request_private(core::SampleRate rat
     return core::Status::success();
 }
 
+core::Status TerminalPrivateProductSession::request_private_for_device()
+{
+    if(!rateProbe_ || !selected_ || !selected_() || !manual_)
+        return core::Status::failure(rejected(
+            "No selected manual programme or real output-rate probe for M17."));
+    auto manual=manual_();
+    if(!manual || manual->view().frame_count().value()<=0
+       ||manual->frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE)
+        return core::Status::failure(rejected(
+            "M17 output-rate discovery requires complete SOURCE-domain manual PCM."));
+    auto rate=rateProbe_(manual->view().format().channel_layout());
+    if(!rate)return core::Status::failure(*rate.error());
+    if(manual_()!=manual || !selected_())
+        return core::Status::failure(rejected(
+            "M17 manual owner or audition target changed during device probe."));
+    // request_private rechecks stopped audible ownership and Loop Region;
+    // device install independently rechecks the exact rate and channel format.
+    return request_private(*rate.value());
+}
+
 core::Result<TerminalPrivateProductSession::InstalledOutputIdentity>
 TerminalPrivateProductSession::private_installed_output_identity() const
 {

@@ -22,6 +22,8 @@ public:
     using ManualId=std::function<std::optional<core::RealizationId>()>;
     using Loop=std::function<std::optional<core::FrameRange>()>;
     using Selected=std::function<bool()>;
+    using RateProbe=std::function<core::Result<core::SampleRate>(
+        audio::ChannelLayout)>;
 
     TerminalPrivateProductSession(
         TerminalPrivateRenderController& renderer,
@@ -32,6 +34,12 @@ public:
         Loop sourceLoop,Selected selected,QObject* parent=nullptr);
 
     [[nodiscard]] core::Status request_private(core::SampleRate outputRate);
+    // Explicit opt-in, still product-private: probe device format on its
+    // owner thread, capture exact whole-manual format, then request render.
+    // No Q_INVOKABLE and no automatic/UI activation.
+    void set_preferred_output_rate_probe(RateProbe probe)
+    { rateProbe_=std::move(probe); }
+    [[nodiscard]] core::Status request_private_for_device();
     [[nodiscard]] core::Status cancel();
     // Changes to a Loop Region cancel pending handoffs but do not stop
     // an already installed SOURCE-mapped session: its own live loop
@@ -76,6 +84,7 @@ private:
     ManualId manualId_;
     Loop sourceLoop_;
     Selected selected_;
+    RateProbe rateProbe_;
     std::optional<Pending> pending_;
     std::optional<core::RealizationId> privateId_;
     QString status_{QStringLiteral("IDLE")};

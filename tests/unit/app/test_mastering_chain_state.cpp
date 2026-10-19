@@ -1421,16 +1421,34 @@ void MasteringChainStateTest::terminalPrivateEndToEndRenderInstallAndRollback()
         [&]{return prepared;},[&]{return processed;},[&]{return manualId;},
         [&]{return loop;},[&]{return processedSelected;}};
 
+    int preferredProbeCalls=0;
+    bool rejectPreferredRate=false;
+    product.set_preferred_output_rate_probe(
+        [&](audio::ChannelLayout layout)->core::Result<core::SampleRate> {
+            ++preferredProbeCalls;
+            if(layout!=audio::ChannelLayout::STEREO_LR || rejectPreferredRate)
+                return core::Result<core::SampleRate>::failure(
+                    core::Error{core::ErrorCode::UnsupportedOperation,
+                        "Preferred device rate is unsupported."});
+            return core::Result<core::SampleRate>::success(outputRate);
+        });
     processedSelected=false;
-    QVERIFY(!product.request_private(outputRate));
+    QVERIFY(!product.request_private_for_device());
+    QCOMPARE(preferredProbeCalls,0);
     QCOMPARE(issuedCount,0);
     processedSelected=true;
     device.state=core::PlaybackState::PLAYING;
     QVERIFY(!product.request_private(outputRate));
     QCOMPARE(issuedCount,0);
     device.state=core::PlaybackState::STOPPED;
+    rejectPreferredRate=true;
+    QVERIFY(!product.request_private_for_device());
+    QCOMPARE(issuedCount,0);
+    QCOMPARE(installedCount,0);
+    rejectPreferredRate=false;
 
-    QVERIFY(product.request_private(outputRate));
+    QVERIFY(product.request_private_for_device());
+    QCOMPARE(preferredProbeCalls,2);
     QTRY_COMPARE(product.status(),QStringLiteral("PRIVATE_INSTALLED"));
     QCOMPARE(product.private_id(),std::optional{core::RealizationId{7200}});
     QCOMPARE(installedCount,1);

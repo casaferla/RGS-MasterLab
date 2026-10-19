@@ -255,6 +255,12 @@ int main(int argc, char* argv[])
             return auditionSelector.active_target()
                 ==rgsml::app::AuditionTarget::PROCESSED;
         }};
+    privateProductSession.set_preferred_output_rate_probe(
+        [windowsPlayback](rgsml::audio::ChannelLayout layout) {
+            return windowsPlayback->preferred_terminal_output_rate(layout);
+        });
+    // Product-private output rate is now explicitly discoverable but no
+    // automatic call or QML sonic activation takes place.
     static_cast<void>(privateProductSession);
     QObject::connect(&auditionSelector,
         &rgsml::app::AuditionSourceSelector::changed,
