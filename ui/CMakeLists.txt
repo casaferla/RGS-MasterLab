@@ -27,6 +27,7 @@ qt_add_qml_module(rgsml_ui
         qml/StudioToggle.qml
         qml/TruePeakMeterEditor.qml
         qml/TruePeakLimiterEditor.qml
+        qml/TruePeakGrHistoryGraph.qml
         qml/TruePeakReadoutCard.qml
         qml/TruePeakSharedRail.qml
         qml/TruePeakStaticLane.qml

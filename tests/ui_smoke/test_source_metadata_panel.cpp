@@ -731,13 +731,21 @@ Window {
         QStringLiteral("m17GainReductionHistory"));
     auto* trim = find_child_by_name(instance.data(),
         QStringLiteral("m17VerificationTrim"));
+    auto* grPlot = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17GainReductionPlot")));
+    auto* grStatus = find_child_by_name(instance.data(),
+        QStringLiteral("m17GrProvenanceStatus"));
     auto* railFrame = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("truePeakSharedRailFrame")));
     auto* ceilingCard = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("m17CeilingCard")));
     QVERIFY(state && captureSurface && editor && meter && limiter
-        && ceiling && rail && gr && trim && railFrame && ceilingCard
+        && ceiling && rail && gr && trim && grPlot && grStatus
+        && railFrame && ceilingCard
         && numericField && slider && validationBand && validationText);
+    // Graph chrome is always present, but there is NO authenticated
+    // applied gain series at this milestone, even in isolated UI ON mode.
+    QVERIFY(!grPlot->property("verifiedSeriesAvailable").toBool());
     QVERIFY(!validationBand->isVisible());
     auto captureCandidate = [captureSurface](
         const QSize& size, const QString& fileName) -> bool {
@@ -775,6 +783,9 @@ Window {
         const QPointF limiterPos = limiter->mapToItem(editor, QPointF{});
         const QSizeF meterSize = meter->size();
         const QSizeF limiterSize = limiter->size();
+        const QRectF grPlotBypassGeometry{
+            grPlot->mapToItem(editor, QPointF{}),
+            QSizeF{grPlot->width(), grPlot->height()}};
         qInfo() << "M17_GEOMETRY" << size << meterSize << limiterSize
             << "meterPos" << meterPos << "limiterPos" << limiterPos;
         // Geometry/correctness assertions are ALWAYS required. Screenshots
@@ -804,6 +815,15 @@ Window {
             "M17 Trim panel must be contained in the Limiter column");
         QVERIFY(gr->property("visible").toBool());
         QVERIFY(trim->property("visible").toBool());
+        QVERIFY(grPlot->property("visible").toBool());
+        QVERIFY(grPlot->height() >= 72.0);
+        QVERIFY(grPlot->width() > 75.0);
+        QVERIFY(check_item_contained_in_ancestor(grPlot,
+            qobject_cast<QQuickItem*>(gr)));
+        QCOMPARE(gr->property("opacity").toDouble(), 0.5);
+        QVERIFY(!grPlot->property("verifiedSeriesAvailable").toBool());
+        QCOMPARE(grStatus->property("text").toString(),
+            QStringLiteral("BYPASS · NO ACTIVE GR"));
         QVERIFY2(!ceiling->property("enabled").toBool(),
             "BYP must not enable Limiter sonic controls");
         QCOMPARE(editor->property("familyAccent").value<QColor>(),
@@ -812,6 +832,10 @@ Window {
         QCoreApplication::processEvents();
         QCOMPARE(editor->property("familyAccent").value<QColor>(),
             QColor{QStringLiteral("#C4774A")});
+        QCOMPARE(gr->property("opacity").toDouble(), 1.0);
+        QCOMPARE(grStatus->property("text").toString(),
+            QStringLiteral("UNAVAILABLE · NO VERIFIED GR"));
+        QVERIFY(!grPlot->property("verifiedSeriesAvailable").toBool());
         qInfo().noquote() << "M17_UI_CAPTURE_PHASE=ON" << dimension;
         QVERIFY2(captureCandidate(size,
             QStringLiteral("m17_qt_candidate_on_") + dimension + ".png"),
@@ -820,6 +844,9 @@ Window {
         QCOMPARE(limiter->mapToItem(editor, QPointF{}), limiterPos);
         QCOMPARE(meter->size(), meterSize);
         QCOMPARE(limiter->size(), limiterSize);
+        QCOMPARE(QRectF(grPlot->mapToItem(editor, QPointF{}),
+            QSizeF{grPlot->width(), grPlot->height()}),
+            grPlotBypassGeometry);
         QVERIFY2(!ceiling->property("enabled").toBool(),
             "Missing productive limiter VM must not enable a false Ceiling edit");
         QVERIFY(state->setProperty("bypass", true));
@@ -843,7 +870,7 @@ Window {
         const QVector<QQuickItem*> stableItems{
             meter, limiter, railFrame, ceilingCard,
             numericField, slider, qobject_cast<QQuickItem*>(gr),
-            qobject_cast<QQuickItem*>(trim)};
+            grPlot, qobject_cast<QQuickItem*>(trim)};
         auto stableRect = [editor](QQuickItem* item) {
             return QRectF{
                 item->mapToItem(editor, QPointF{}),
