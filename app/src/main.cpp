@@ -15,6 +15,7 @@
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
 #include "stereo_ms_view_model.hpp"
+#include "terminal_candidate_gate.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
 #include "true_peak_static_coordinator.hpp"
@@ -185,6 +186,23 @@ int main(int argc, char* argv[])
     // still remains fail-closed with limiterViewModel: null at this milestone.
     rgsml::app::TerminalLimiterViewModel terminalLimiterViewModel{
         &terminalLimiterState};
+    // Product-owned but still PRIVATE: no terminal PCM/RealizationId is
+    // published by this gate. It will only stage future independently
+    // accepted complete OUTPUT_RATE candidates.
+    rgsml::app::TerminalCandidateGate terminalCandidateGate;
+    // SOURCE/PREPARED/PROCESSED owner and accepted identity changes must
+    // invalidate pending M17 jobs immediately on the UI owning thread.
+    QObject::connect(
+        &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
+        &terminalLimiterViewModel, [&terminalCandidateGate] {
+            terminalCandidateGate.invalidate();
+        });
+    // Ceiling drafts, commits and BYP transitions are fail-closed.
+    QObject::connect(
+        &terminalLimiterViewModel, &rgsml::app::TerminalLimiterViewModel::changed,
+        &terminalLimiterViewModel, [&terminalCandidateGate] {
+            terminalCandidateGate.invalidate();
+        });
 
     rgsml::app::MasteringPreviewController previewController{
         &masteringChainState,
@@ -195,6 +213,12 @@ int main(int argc, char* argv[])
             return auditionSelector.set_processed_realization(std::move(result));
         }
     };
+
+    QObject::connect(
+        &previewController, &rgsml::app::MasteringPreviewController::changed,
+        &terminalLimiterViewModel, [&terminalCandidateGate] {
+            terminalCandidateGate.invalidate();
+        });
 
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
