@@ -35,6 +35,11 @@ public:
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime,
         std::optional<core::RealizationId> realizationId = std::nullopt);
+    // M17 candidate-only: no PROCESSED publication or active UI yet.
+    [[nodiscard]] core::Status prepare_terminal_output_pcm(
+        audio::AudioBufferView pcm,
+        std::shared_ptr<const void> lifetime,
+        core::RealizationId candidateIdentity);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr,

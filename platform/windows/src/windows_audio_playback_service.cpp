@@ -454,6 +454,38 @@ struct OutputCandidate final {
     }
 }
 
+
+[[nodiscard]] core::Result<OutputCandidate> make_terminal_output_candidate(
+    const audio::AudioFormat& format)
+{
+    const auto device=QMediaDevices::defaultAudioOutput();
+    if(device.isNull()||device.mode()!=QAudioDevice::Output)
+        return failure<OutputCandidate>(core::ErrorCode::UnsupportedOperation,
+            "No default Windows audio output is available.");
+    const auto hz=format.sample_rate().value();
+    if(hz<=0||hz>std::numeric_limits<int>::max())
+        return failure<OutputCandidate>(core::ErrorCode::OutOfRange,
+            "Terminal PCM rate is not representable by Qt audio.");
+    const auto floatQt=make_format(format,static_cast<int>(hz),QAudioFormat::Float);
+    const auto pcmQt=make_format(format,static_cast<int>(hz),QAudioFormat::Int16);
+    auto selected=internal::select_terminal_output_device_format(
+        format,device.isFormatSupported(floatQt),device.isFormatSupported(pcmQt));
+    if(!selected)return core::Result<OutputCandidate>::failure(*selected.error());
+    if(selected.value()->srcApplied||selected.value()->sampleRateHz!=hz)
+        return failure<OutputCandidate>(core::ErrorCode::InvalidState,
+            "Terminal output may not undergo another device-side SRC.");
+    try{
+        return core::Result<OutputCandidate>::success(OutputCandidate{
+            std::make_unique<QtPlaybackOutput>(device,
+                selected.value()->sampleFormat==DeviceSampleFormat::IEEE_F32
+                  ?floatQt:pcmQt),
+            selected.value()->sampleFormat,std::nullopt});
+    }catch(const std::bad_alloc&){
+        return failure<OutputCandidate>(core::ErrorCode::IoFailure,
+            "Failed to allocate exact-rate terminal audio output.");
+    }
+}
+
 class PlaybackWorker final : public QObject {
 public:
     [[nodiscard]] core::Status start()
@@ -527,6 +559,8 @@ public:
         preparedSource_ = source;
         preparedPcm_.reset();
         preparedPcmRealizationId_.reset();
+        terminalPcmPrepared_=false;
+        terminalPcmLifetime_.reset();
         return core::Status::success();
     }
 
@@ -560,6 +594,43 @@ public:
         preparedSource_.reset();
         preparedPcm_ = source;
         preparedPcmRealizationId_ = realizationId;
+        terminalPcmPrepared_=false;
+        terminalPcmLifetime_.reset();
+        return core::Status::success();
+    }
+
+
+    [[nodiscard]] core::Status prepare_terminal_output_pcm(
+        audio::AudioBufferView pcm,
+        std::shared_ptr<const void> lifetime,
+        core::RealizationId identity)
+    {
+        if(!lifetime||identity.value==0
+           ||pcm.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+           ||pcm.absolute_start_frame().value()!=0
+           ||pcm.frame_count().value()<=0)
+            return status_failure(core::ErrorCode::InvalidArgument,
+                "M17 output requires owned zero-origin OUTPUT_RATE PCM.");
+        auto output=make_terminal_output_candidate(pcm.format());
+        if(!output)return core::Status::failure(*output.error());
+        if(output.value()->rateAdapter)
+            return status_failure(core::ErrorCode::InvalidState,
+                "M17 terminal PCM cannot have a second SRC.");
+        if(analyzer_)output.value()->output->attach_analyzer(analyzer_);
+        auto installed=engine_.install_terminal_output_pcm_candidate(
+            pcm,std::move(output.value()->output),
+            output.value()->sampleFormat,lifetime,identity,
+            pcm.format().sample_rate());
+        if(!installed)return installed;
+        if(analyzer_){
+            analyzer_->set_stream_generation(nextStreamGeneration_++);
+            analyzer_->invalidate_and_clear();
+        }
+        preparedSource_.reset();
+        preparedPcm_=pcm;
+        preparedPcmRealizationId_=identity;
+        terminalPcmPrepared_=true;
+        terminalPcmLifetime_=std::move(lifetime);
         return core::Status::success();
     }
 
@@ -576,6 +647,8 @@ public:
         preparedSource_.reset();
         preparedPcm_ = source;
         preparedPcmRealizationId_ = realizationId;
+        terminalPcmPrepared_=false;
+        terminalPcmLifetime_.reset();
         return core::Status::success();
     }
 
@@ -586,6 +659,8 @@ public:
             preparedSource_.reset();
             preparedPcm_.reset();
             preparedPcmRealizationId_.reset();
+            terminalPcmPrepared_=false;
+            terminalPcmLifetime_.reset();
         }
         return cleared;
     }
@@ -603,9 +678,16 @@ public:
             const auto source = preparedSource_;
             const auto pcm = preparedPcm_;
             const auto pcmRealizationId = preparedPcmRealizationId_;
+            const auto terminal=terminalPcmPrepared_;
+            const auto owner=terminalPcmLifetime_;
+            if(terminal&&(!pcm||!pcmRealizationId||!owner))
+                return status_failure(core::ErrorCode::InvalidState,
+                    "Cannot reopen unowned terminal PCM.");
             auto reprepared = source
                 ? prepare(*source)
-                : prepare_pcm(*pcm, nullptr, pcmRealizationId);
+                : terminal
+                  ? prepare_terminal_output_pcm(*pcm,owner,*pcmRealizationId)
+                  : prepare_pcm(*pcm,nullptr,pcmRealizationId);
             if (!reprepared) {
                 return reprepared;
             }
@@ -681,6 +763,8 @@ private:
     std::optional<core::ResourceReference> preparedSource_;
     std::optional<audio::AudioBufferView> preparedPcm_;
     std::optional<core::RealizationId> preparedPcmRealizationId_;
+    bool terminalPcmPrepared_{false};
+    std::shared_ptr<const void> terminalPcmLifetime_;
 };
 
 }  // namespace
@@ -734,6 +818,20 @@ public:
                 PlaybackWorker& worker) mutable {
                 return worker.prepare_pcm(
                     source, std::move(lifetime), realizationId);
+            });
+    }
+
+
+    [[nodiscard]] core::Status prepare_terminal_output_pcm(
+        audio::AudioBufferView pcm,
+        std::shared_ptr<const void> lifetime,
+        core::RealizationId identity)
+    {
+        return invoke_status(
+            [pcm,lifetime=std::move(lifetime),identity](
+                PlaybackWorker& worker) mutable {
+                return worker.prepare_terminal_output_pcm(
+                    pcm,std::move(lifetime),identity);
             });
     }
 
@@ -910,6 +1008,15 @@ core::Status WindowsAudioPlaybackService::prepare_pcm(
 {
     return impl_->prepare_pcm(
         source, std::move(lifetime), realizationId);
+}
+
+core::Status WindowsAudioPlaybackService::prepare_terminal_output_pcm(
+    audio::AudioBufferView pcm,
+    std::shared_ptr<const void> lifetime,
+    core::RealizationId candidateIdentity)
+{
+    return impl_->prepare_terminal_output_pcm(
+        pcm,std::move(lifetime),candidateIdentity);
 }
 
 core::Status WindowsAudioPlaybackService::handoff_pcm(
