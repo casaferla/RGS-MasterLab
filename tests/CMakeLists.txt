@@ -72,6 +72,10 @@ qt_add_executable(rgsml_project_session_tests
     ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
@@ -387,6 +391,10 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
     ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_binding.cpp
     ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_binding.hpp
     ${CMAKE_SOURCE_DIR}/app/src/true_peak_live_input_binding.cpp
@@ -1814,3 +1822,27 @@ add_test(
 set_tests_properties(rgsml_true_peak_itu4x_channel_stream_tests_c2_coverage_contract PROPERTIES
     LABELS "analysis;true_peak;c2;test_only"
 )
+
+# The terminal limiter adapter connects to the Q_OBJECT ViewModel from
+# the header. Qt AUTOMOC must compile that ViewModel in EVERY executable
+# that compiles DspChainAdapterModel, including smoke and project tests.
+# This configure-time contract prevents another Windows LNK2019/LNK2001
+# on a future non-core consumer while leaving M16 DSP/FP untouched.
+foreach(_rgsml_m17_consumer IN ITEMS
+        rgsml_project_session_tests
+        rgsml_source_metadata_panel_smoke
+        rgsml_dsp_module_adapter_tests)
+    get_target_property(_rgsml_m17_sources
+        ${_rgsml_m17_consumer} SOURCES)
+    foreach(_rgsml_m17_required IN ITEMS
+            "${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp"
+            "${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp"
+            "${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp"
+            "${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp")
+        if(NOT _rgsml_m17_required IN_LIST _rgsml_m17_sources)
+            message(FATAL_ERROR
+                "${_rgsml_m17_consumer} missing M17 Qt/MOC dependency: "
+                "${_rgsml_m17_required}")
+        endif()
+    endforeach()
+endforeach()
