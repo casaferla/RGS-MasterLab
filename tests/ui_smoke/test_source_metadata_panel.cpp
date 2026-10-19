@@ -876,6 +876,8 @@ Window {
             QCOMPARE(readout->height(), firstReadoutHeight);
         }
         QVERIFY(std::abs(upperSpacer->height() - lowerSpacer->height()) <= 1.0);
+        QVERIFY2(upperSpacer->height() >= 2.0 && lowerSpacer->height() >= 2.0,
+            "Upper readout group must have real centering clearance even at minimum window");
         QVERIFY2(upperSpacer->height() > lastUpperSpacerHeight,
             "Extra height must centre fixed-height top readouts using spacers");
         lastUpperSpacerHeight = upperSpacer->height();

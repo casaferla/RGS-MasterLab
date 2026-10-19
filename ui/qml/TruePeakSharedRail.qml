@@ -57,7 +57,12 @@ Item {
         anchors.margins: root.limiterControlsIncluded ? 9
             : root.framedForLimiter ? 8 : 0
         height: root.framedForLimiter ? undefined : implicitHeight
-        spacing: root.framedForLimiter ? 6 : root.compactRail ? 3 : 10
+        // M17 lower band (198px) + three 100px reflow cards must fit the
+        // 548px minimum editor height with TWO nonzero centering springs.
+        // Six outer gaps at 4px fit; at 6px they exhaust the min-height
+        // free space. Keep the standalone M16 spacing untouched.
+        spacing: root.limiterControlsIncluded ? 4
+            : root.framedForLimiter ? 6 : root.compactRail ? 3 : 10
         // This upper spacer and its lower twin share extra height equally.
         Item {
             objectName: "m17ReadoutUpperSpacer"
