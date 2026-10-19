@@ -681,6 +681,11 @@ void MasteringChainStateTest::terminalOutputAdmissionRejectsObsoleteOwnersAndCei
     QVERIFY(terminal.value()->set_ceiling_db_tp(-6.0));
     QCOMPARE(terminal.value()->chain().revision(),chainRev);
     QCOMPARE(terminal.value()->parameter_revision(),std::uint64_t{1});
+    // Even an A -> B -> A Ceiling edit must not resurrect old PCM:
+    // exact parameter equality is NOT an adequate staleness certificate.
+    QVERIFY(terminal.value()->set_ceiling_db_tp(-1.0));
+    QVERIFY(terminal.value()->set_ceiling_db_tp(-6.0));
+    QCOMPARE(terminal.value()->parameter_revision(),std::uint64_t{3});
     QVERIFY(!gate.accept(*job.value(),std::move(*old.value()),
         owner,owner,identity,*manual.value(),*terminal.value()));
     QVERIFY(!gate.staged());
@@ -732,6 +737,27 @@ void MasteringChainStateTest::terminalOutputAdmissionRejectsObsoleteOwnersAndCei
     QVERIFY(!snap->rendered.terminal.checked.final_check.has_value());
     QVERIFY(snap->rendered.terminal.checked.terminal.applied_gain_frames.empty());
 
+    gate.invalidate();
+    QVERIFY(!gate.staged());
+    // A real ACTIVE completed terminal candidate must carry M16 final check
+    // and one genuine OUTPUT_RATE gain witness per rendered frame.
+    QVERIFY(terminal.value()->set_user_bypass(false));
+    auto activeJob=gate.capture(owner,owner,identity,*manual.value(),
+        *terminal.value(),outputRate);
+    QVERIFY(activeJob);
+    auto activeOutput=render::render_true_peak_limiter_owned_output_rate_candidate(
+        owner,*manual.value(),n,manual.value()->revision(),
+        outputRate,terminal.value()->chain(),
+        terminal.value()->execution_bindings(),*registry.value(),block);
+    QVERIFY(activeOutput);
+    QVERIFY(gate.accept(*activeJob.value(),std::move(*activeOutput.value()),
+        owner,owner,identity,*manual.value(),*terminal.value()));
+    auto activeStaged=gate.staged();
+    QVERIFY(activeStaged);
+    QVERIFY(!activeStaged->rendered.terminal.checked.terminal.bypassed);
+    QVERIFY(activeStaged->rendered.terminal.checked.final_check.has_value());
+    QCOMPARE(activeStaged->rendered.terminal.checked.terminal
+        .applied_gain_frames.size(),std::size_t{480});
     gate.invalidate();
     QVERIFY(!gate.staged());
     // The snapshot is still immutable and privately owned by its consumer;
