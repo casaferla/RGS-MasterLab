@@ -2,6 +2,8 @@
 #include "terminal_limiter_state.hpp"
 #include "terminal_candidate_gate.hpp"
 #include "terminal_playback_frame_map.hpp"
+#include "terminal_source_control_bridge.hpp"
+#include "../platform/fake_playback_service.hpp"
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
 #include "terminal_limiter_view_model.hpp"
@@ -885,6 +887,80 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
                                              core::FrameIndex{442});
         QVERIFY(badLoop);
         QVERIFY(!map.value()->source_loop_to_output(*badLoop.value()));
+
+        // Run the pure APP control plane against an exact OUTPUT_RATE fake
+        // session. Product PROCESSED remains SOURCE-owned and unchanged.
+        FakePlaybackService playback;
+        playback.state=core::PlaybackState::STOPPED;
+        playback.position=core::FrameIndex{0};
+        playback.duration=map.value()->output_frames();
+        playback.audibleRealization=core::AudibleRealizationState{
+            core::AudibleHandoffPhase::NEW,core::RealizationId{9001}};
+        QVERIFY(!TerminalSourceControlBridge::create(
+            gate,playback,core::RealizationId{0}));
+        QVERIFY(!TerminalSourceControlBridge::create(
+            gate,playback,core::RealizationId{91})); // manual ID is not terminal
+        QVERIFY(!TerminalSourceControlBridge::create(
+            gate,playback,core::RealizationId{9002})); // wrong audible ID
+        auto control=TerminalSourceControlBridge::create(
+            gate,playback,core::RealizationId{9001});
+        QVERIFY(control);
+        QVERIFY(control.value()->set_source_loop(*range.value()));
+        QCOMPARE(playback.loop,std::optional{*mappedLoop.value()});
+        for(const auto sourceFrame:{0,5,11,17,20,30,300,441}) {
+            QVERIFY(control.value()->seek_source(core::FrameIndex{sourceFrame}));
+            auto mapped=map.value()->source_to_output(core::FrameIndex{sourceFrame});
+            QVERIFY(mapped);
+            QCOMPARE(playback.position,*mapped.value());
+            auto snapshot=control.value()->source_snapshot();
+            QVERIFY(snapshot);
+            QCOMPARE(snapshot.value()->duration.value(),std::int64_t{441});
+            QCOMPARE(snapshot.value()->loop,std::optional{*range.value()});
+            // At SRC boundaries an inverse display cursor may be the
+            // preceding SOURCE frame; never use it as exact TP-LIVE proof.
+            const auto inverse=map.value()->output_to_source_display(playback.position);
+            QVERIFY(inverse);
+            QCOMPARE(snapshot.value()->position,*inverse.value());
+        }
+        auto invalidSource=playback.position;
+        QVERIFY(!control.value()->seek_source(core::FrameIndex{442}));
+        QCOMPARE(playback.position,invalidSource);
+        const auto beforeLoop=playback.loop;
+        QVERIFY(!control.value()->set_source_loop(*badLoop.value()));
+        QCOMPARE(playback.loop,beforeLoop);
+        // An output-session owner change must suppress every old command,
+        // including a seek while PLAYING, without touching the new owner.
+        playback.state=core::PlaybackState::PLAYING;
+        playback.audibleRealization=core::AudibleRealizationState{
+            core::AudibleHandoffPhase::OLD,core::RealizationId{9001}};
+        QVERIFY(!control.value()->seek_source(core::FrameIndex{11}));
+        QCOMPARE(playback.position,invalidSource);
+        playback.audibleRealization=core::AudibleRealizationState{
+            core::AudibleHandoffPhase::NEW,core::RealizationId{9002}};
+        QVERIFY(!control.value()->set_source_loop(std::nullopt));
+        QCOMPARE(playback.loop,beforeLoop);
+        playback.audibleRealization=core::AudibleRealizationState{
+            core::AudibleHandoffPhase::NEW,core::RealizationId{9001}};
+        playback.state=core::PlaybackState::PAUSED;
+        QVERIFY(control.value()->set_source_loop(std::nullopt));
+        QVERIFY(!playback.loop);
+        auto paused=control.value()->source_snapshot();
+        QVERIFY(paused);
+        QCOMPARE(paused.value()->state,core::PlaybackState::PAUSED);
+        QVERIFY(control.value()->set_source_loop(*range.value()));
+        // An unannounced external loop mutation must not be represented
+        // as the approved SOURCE loop.
+        playback.loop.reset();
+        QVERIFY(!control.value()->source_snapshot());
+        playback.loop=*mappedLoop.value();
+        QVERIFY(control.value()->source_snapshot());
+        gate.invalidate();
+        QVERIFY(!control.value()->seek_source(core::FrameIndex{11}));
+        QVERIFY(!control.value()->set_source_loop(std::nullopt));
+        QVERIFY(!control.value()->source_snapshot());
+        QCOMPARE(playback.loop,std::optional{*mappedLoop.value()});
+        control.value()->detach();
+        QVERIFY(!control.value()->seek_source(core::FrameIndex{5}));
         gate.invalidate();
         QVERIFY(!gate.staged());
     }
