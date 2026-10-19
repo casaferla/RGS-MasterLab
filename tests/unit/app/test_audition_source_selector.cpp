@@ -187,6 +187,7 @@ private slots:
     void processedRealizationIdentityIsMonotonicAndFailureAtomic();
     void terminalIdentityReservationChecksOwnersPhaseAndSharedSequence();
     void privateTerminalReturnRestoresExactManualSourceCueAndLoop();
+    void terminalActivationIntentCapturesExactPlayingAndPausedSource();
     void processedTelemetryBindsAcceptedRealizationIdentity();
 };
 
@@ -635,6 +636,55 @@ void AuditionSourceSelectorTest::terminalIdentityReservationChecksOwnersPhaseAnd
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     QVERIFY(!selector.reserve_private_terminal_realization_id(
         prepared, freshManual, nextManualId));
+}
+
+void AuditionSourceSelectorTest::terminalActivationIntentCapturesExactPlayingAndPausedSource()
+{
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* audio=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    install_pcm_handler(transport,audio);
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(!selector.capture_terminal_activation_intent());
+    QVERIFY(selector.set_prepared_realization(realization(0,200)));
+    QVERIFY(selector.set_processed_realization(realization(0,200)));
+    QVERIFY(!selector.capture_terminal_activation_intent()); // Not selected.
+    const auto owner=selector.processed_realization_snapshot();
+    const auto id=selector.processed_realization_id();
+    QVERIFY(id);
+    const auto loop=core::FrameRange::create(core::FrameIndex{20},
+        core::FrameIndex{90});
+    QVERIFY(loop);
+    selector.set_source_loop_provider([&] {
+        return std::optional{*loop.value()};
+    });
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    auto intent=selector.capture_terminal_activation_intent();
+    QVERIFY(intent);
+    QVERIFY(intent.value()->manualOwner==owner);
+    QCOMPARE(intent.value()->manualId,*id);
+    QCOMPARE(intent.value()->previousPlaybackState,core::PlaybackState::STOPPED);
+    QCOMPARE(intent.value()->sourceLoop,std::optional{*loop.value()});
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{37}));
+    transport.playOrResume();
+    intent=selector.capture_terminal_activation_intent();
+    QVERIFY(intent);
+    QCOMPARE(intent.value()->sourceCue,core::FrameIndex{37});
+    QCOMPARE(intent.value()->previousPlaybackState,core::PlaybackState::PLAYING);
+    transport.pause();
+    intent=selector.capture_terminal_activation_intent();
+    QVERIFY(intent);
+    QCOMPARE(intent.value()->previousPlaybackState,core::PlaybackState::PAUSED);
+    audio->audibleRealization.realizationId=core::RealizationId{id->value+22};
+    QVERIFY(!selector.capture_terminal_activation_intent());
+    audio->audibleRealization.realizationId=id;
+    audio->audibleRealization.phase=core::AudibleHandoffPhase::TRANSITION;
+    QVERIFY(!selector.capture_terminal_activation_intent());
+    audio->audibleRealization.phase=core::AudibleHandoffPhase::NEW;
+    audio->duration=*core::FrameCount::create(199).value();
+    QVERIFY(!selector.capture_terminal_activation_intent());
+    audio->duration=*core::FrameCount::create(200).value();
+    QVERIFY(selector.capture_terminal_activation_intent());
 }
 
 void AuditionSourceSelectorTest::privateTerminalReturnRestoresExactManualSourceCueAndLoop()

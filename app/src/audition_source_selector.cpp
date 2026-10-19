@@ -127,6 +127,60 @@ AuditionSourceSelector::processed_realization_id() const noexcept
     return processedRealizationId_;
 }
 
+core::Result<AuditionSourceSelector::TerminalActivationIntent>
+AuditionSourceSelector::capture_terminal_activation_intent() const
+{
+    using I=TerminalActivationIntent;
+    auto refused=[](const char* message)->core::Result<I> {
+        return core::Result<I>::failure(core::Error{
+            core::ErrorCode::InvalidState,message});
+    };
+    if(!playback_ || activeTarget_!=AuditionTarget::PROCESSED
+       ||!prepared_ || !processed_ || !processedRealizationId_
+       ||processedRealizationId_->value==0)
+        return refused("M17 activation needs selected, accepted full PROCESSED manual.");
+    const auto& manual=*processed_;
+    const auto range=manual.render_window();
+    if(range.begin().value()!=0
+       ||manual.frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE
+       ||manual.view().frame_count().value()<=0
+       ||manual.view().absolute_start_frame().value()!=0)
+        return refused("M17 activation needs an origin-zero complete SOURCE manual owner.");
+    const auto before=playback_->playback_snapshot();
+    if(!before)return core::Result<I>::failure(*before.error());
+    if(before.value()->state!=core::PlaybackState::STOPPED
+       &&before.value()->state!=core::PlaybackState::PLAYING
+       &&before.value()->state!=core::PlaybackState::PAUSED)
+        return refused("M17 activation has no valid audible transport state.");
+    if(before.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||before.value()->audibleRealization.realizationId
+            !=processedRealizationId_
+       ||before.value()->duration!=std::optional{manual.view().frame_count()})
+        return refused("M17 activation cannot borrow another device realization.");
+    const auto source=playback_->source_display_snapshot();
+    const auto after=playback_->playback_snapshot();
+    if(!source)return core::Result<I>::failure(*source.error());
+    if(!after)return core::Result<I>::failure(*after.error());
+    // Snapshot is an eligibility capture only. A later user seek, device
+    // handoff, region edit or source change MUST invalidate it before install.
+    if(*after.value()!=*before.value()
+       ||source.value()->position.value()<0
+       ||source.value()->position>range.end()
+       ||source.value()->duration!=manual.view().frame_count()
+       ||source.value()->state!=before.value()->state)
+        return refused("M17 activation SOURCE and device clocks are not stable.");
+    const auto actualLoop=sourceLoopProvider_?sourceLoopProvider_():std::nullopt;
+    if(source.value()->loop!=actualLoop
+       ||(actualLoop&&(actualLoop->begin()<range.begin()
+                      ||actualLoop->end()>range.end())))
+        return refused("M17 activation loop snapshot is stale.");
+    return core::Result<I>::success(I{
+        processed_,*processedRealizationId_,source.value()->position,
+        actualLoop,before.value()->state,before.value()->seekSerial,
+        before.value()->traversalSerial,before.value()->loopWrapCount});
+}
+
 core::Result<core::RealizationId>
 AuditionSourceSelector::reserve_private_terminal_realization_id(
     std::shared_ptr<const render::RenderResult> prepared_owner,

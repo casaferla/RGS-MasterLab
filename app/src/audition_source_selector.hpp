@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/audio_playback_service.hpp>
 #include <rgsml/core/realization_identity.hpp>
 #include <rgsml/core/resource_reference.hpp>
 #include <rgsml/core/result.hpp>
@@ -58,6 +59,22 @@ public:
     // Not necessarily audible; PlaybackSnapshot is the independent authority.
     [[nodiscard]] std::optional<core::RealizationId>
     processed_realization_id() const noexcept;
+
+    // Capture the one exact SOURCE/PROCESSED handoff intent BEFORE stopping
+    // playback for M17. A preflight is not an activation or permission to
+    // publish terminal output; post-stop and post-install guards still apply.
+    struct TerminalActivationIntent final {
+        std::shared_ptr<const render::RenderResult> manualOwner;
+        core::RealizationId manualId;
+        core::FrameIndex sourceCue;
+        std::optional<core::FrameRange> sourceLoop;
+        core::PlaybackState previousPlaybackState;
+        std::uint64_t seekSerial;
+        std::uint64_t traversalSerial;
+        std::uint64_t loopWrapCount;
+    };
+    [[nodiscard]] core::Result<TerminalActivationIntent>
+    capture_terminal_activation_intent() const;
 
     // Allocate a distinct, monotonic M17 terminal identity from the SAME
     // sequence as the accepted manual PROCESSED realizations. This reserves
