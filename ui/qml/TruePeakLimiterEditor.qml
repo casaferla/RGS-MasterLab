@@ -61,9 +61,16 @@ Item {
             border.color: root.familyAccent
             border.width: 1
 
+            // Keep the entire right controls ensemble at the vertical
+            // centre. Its fixed natural height must NOT stretch when the
+            // DSP editor grows; the left meter lanes receive that space.
             ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 8
+                id: centeredControls
+                objectName: "m17LimiterCenteredControls"
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - 16
+                height: implicitHeight
                 spacing: 8
 
                 Text {
@@ -150,7 +157,6 @@ Item {
                     }
                 }
 
-                Item { Layout.fillHeight: true }
                 Rectangle {
                     objectName: "m17VerificationTrim"
                     Layout.fillWidth: true

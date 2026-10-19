@@ -12,7 +12,9 @@ Canvas {
     property color familyAccent: "#C4774A"
     property bool bypassed: true
     implicitWidth: 160
-    implicitHeight: 80
+    // Single stereo-linked GR history lane: identical native Canvas height
+    // to CompressorEditor.qml's single-lane GR ribbon (54px).
+    implicitHeight: 54
 
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()

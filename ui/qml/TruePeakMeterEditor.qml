@@ -150,9 +150,13 @@ Item {
                         objectName: "m17GainReductionHistory"
                         visible: root.showLimiterGrHistory
                         Layout.fillWidth: true
-                        Layout.minimumHeight: 120
-                        Layout.preferredHeight: 132
-                        Layout.maximumHeight: 170
+                        // Intrinsic height exactly follows Compressor
+                        // GR ribbon: 10px header + 2px spacing + 54px
+                        // single linked-lane Canvas. Never consume surplus
+                        // vertical space: the L/R meter RowLayout does.
+                        Layout.minimumHeight: implicitHeight
+                        Layout.preferredHeight: implicitHeight
+                        Layout.maximumHeight: implicitHeight
                         spacing: 2
                         opacity: root.limiterBypassed ? 0.5 : 1.0
                         RowLayout {
@@ -183,8 +187,9 @@ Item {
                         TruePeakGrHistoryGraph {
                             id: grHistoryGraph
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Layout.minimumHeight: 72
+                            Layout.minimumHeight: implicitHeight
+                            Layout.preferredHeight: implicitHeight
+                            Layout.maximumHeight: implicitHeight
                             familyAccent: root.familyAccent
                             bypassed: root.limiterBypassed
                         }
