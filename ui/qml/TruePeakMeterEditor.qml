@@ -14,7 +14,13 @@ Item {
     // M17 only: Compressor-like GR ribbon in the left meter well. The
     // standalone M16 Meter keeps its original uninterrupted geometry.
     property bool showLimiterGrHistory: false
+    property bool showLimiterControls: false
     property bool limiterBypassed: true
+    property bool limiterSonicControlsEnabled: false
+    property var limiterViewModel: null
+    // The entire lower band is fixed. In this combined layout,
+    // GR and Ceiling+Verification Trim use the SAME 198px height.
+    readonly property int lowerControlBandHeight: 100 + 92 + 6
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     // The large channel bars are LIVE-only: a whole-resource future maximum
@@ -154,9 +160,12 @@ Item {
                         // GR ribbon: 10px header + 2px spacing + 54px
                         // single linked-lane Canvas. Never consume surplus
                         // vertical space: the L/R meter RowLayout does.
-                        Layout.minimumHeight: implicitHeight
-                        Layout.preferredHeight: implicitHeight
-                        Layout.maximumHeight: implicitHeight
+                        Layout.minimumHeight: root.showLimiterControls
+                            ? root.lowerControlBandHeight : implicitHeight
+                        Layout.preferredHeight: root.showLimiterControls
+                            ? root.lowerControlBandHeight : implicitHeight
+                        Layout.maximumHeight: root.showLimiterControls
+                            ? root.lowerControlBandHeight : implicitHeight
                         spacing: 2
                         opacity: root.limiterBypassed ? 0.5 : 1.0
                         RowLayout {
@@ -187,9 +196,12 @@ Item {
                         TruePeakGrHistoryGraph {
                             id: grHistoryGraph
                             Layout.fillWidth: true
+                            Layout.fillHeight: root.showLimiterControls
                             Layout.minimumHeight: implicitHeight
-                            Layout.preferredHeight: implicitHeight
-                            Layout.maximumHeight: implicitHeight
+                            Layout.preferredHeight: root.showLimiterControls
+                                ? -1 : implicitHeight
+                            Layout.maximumHeight: root.showLimiterControls
+                                ? -1 : implicitHeight
                             familyAccent: root.familyAccent
                             bypassed: root.limiterBypassed
                         }
@@ -209,6 +221,11 @@ Item {
                 useFamilyAccent: root.useFamilyAccent
                 familyAccent: root.familyAccent
                 framedForLimiter: root.compactForLimiter
+                limiterControlsIncluded: root.showLimiterControls
+                limiterViewModel: root.limiterViewModel
+                limiterBypassed: root.limiterBypassed
+                limiterSonicControlsEnabled: root.limiterSonicControlsEnabled
+                lowerControlBandHeight: root.lowerControlBandHeight
                 fullResourceAccent: root.useFamilyAccent ? root.familyAccent : "#6CBCCF"
             }
     }

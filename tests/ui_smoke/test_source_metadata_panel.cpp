@@ -722,8 +722,22 @@ Window {
         instance.data(), QStringLiteral("m17CandidateEditor")));
     auto* meter = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("m17SharedMeter")));
-    auto* limiter = qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(), QStringLiteral("m17LimiterColumn")));
+    auto* lowerControls = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17LimiterLowerControlGroup")));
+    auto* railDivider = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17LimiterControlsDivider")));
+    auto* upperSpacer = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17ReadoutUpperSpacer")));
+    auto* lowerSpacer = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17ReadoutLowerSpacer")));
+    auto* recentReadout = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("truePeakRecentCard")));
+    auto* holdReadout = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("truePeakHoldCard")));
+    auto* fullReadout = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("truePeakFullResourceCard")));
+    auto* provenance = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("truePeakProvenanceCard")));
     auto* ceiling = find_child_by_name(instance.data(),
         QStringLiteral("m17CeilingControl"));
     auto* numericField = qobject_cast<QQuickItem*>(find_child_by_name(
@@ -754,18 +768,19 @@ Window {
         instance.data(), QStringLiteral("compressorGrRibbonCanvas")));
     auto* meterLeftLane = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("truePeakLeftLane")));
-    auto* centeredControls = qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(), QStringLiteral("m17LimiterCenteredControls")));
+    // No separate rightmost third column in the combined product editor.
     auto* grStatus = find_child_by_name(instance.data(),
         QStringLiteral("m17GrProvenanceStatus"));
     auto* railFrame = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("truePeakSharedRailFrame")));
     auto* ceilingCard = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("m17CeilingCard")));
-    QVERIFY(state && captureSurface && editor && meter && limiter
+    QVERIFY(state && captureSurface && editor && meter && lowerControls
+        && railDivider && upperSpacer && lowerSpacer && recentReadout
+        && holdReadout && fullReadout && provenance
         && ceiling && rail && gr && meterBay && grDivider && grHeading
         && trim && grPlot && grStatus && compressorGr
-        && compressorGrCanvas && meterLeftLane && centeredControls
+        && compressorGrCanvas && meterLeftLane
         && railFrame && ceilingCard
         && numericField && slider && validationBand && validationText);
     // Graph chrome is always present, but there is NO authenticated
@@ -794,6 +809,9 @@ Window {
     };
     qreal lastGrPlotWidth = 0.0;
     qreal lastMeterLaneHeight = 0.0;
+    qreal lastUpperSpacerHeight = 0.0;
+    qreal firstLowerControlsHeight = 0.0;
+    qreal firstReadoutHeight = 0.0;
     for (const QSize size : {QSize{1184, 688}, QSize{1440, 900}}) {
         captureSurface->setWidth(size.width());
         captureSurface->setHeight(size.height());
@@ -807,60 +825,72 @@ Window {
             QStringLiteral("m17_qt_candidate_byp_") + dimension + ".png"),
             "Native Qt BYP offscreen screenshot could not be written");
         const QPointF meterPos = meter->mapToItem(editor, QPointF{});
-        const QPointF limiterPos = limiter->mapToItem(editor, QPointF{});
+        const QPointF controlsPos = lowerControls->mapToItem(editor, QPointF{});
         const QSizeF meterSize = meter->size();
-        const QSizeF limiterSize = limiter->size();
+        const QSizeF controlsSize = lowerControls->size();
         const QRectF grPlotBypassGeometry{
             grPlot->mapToItem(editor, QPointF{}),
             QSizeF{grPlot->width(), grPlot->height()}};
-        qInfo() << "M17_GEOMETRY" << size << meterSize << limiterSize
-            << "meterPos" << meterPos << "limiterPos" << limiterPos;
-        // Geometry/correctness assertions are ALWAYS required. Screenshots
-        // are evidence, not a replacement for fail-closed layout checks.
-        QVERIFY2(meterSize.width() >= 505.0 && limiterSize.width() >= 190.0,
-            "Three M17 columns do not fit available editor width");
-        QVERIFY2(limiterPos.x() >= meterPos.x() + meterSize.width(),
-            "M17 meter and limiter columns overlap");
-        QVERIFY2(limiterPos.x() + limiterSize.width() <= editor->width() + 0.5,
-            "M17 limiter overflows editor");
+        qInfo() << "M17_TWO_COLUMNS" << size << meterSize
+            << controlsSize << "controlsPos" << controlsPos;
+        QVERIFY2(meterSize.width() >= 700.0,
+            "The entire two-column M17 layout must fill the editor");
+        QCOMPARE(meterPos, QPointF{0.0, 0.0});
+        QCOMPARE(meterSize, editor->size());
+        QVERIFY(!find_child_by_name(instance.data(),
+            QStringLiteral("m17LimiterColumn")));
         QVERIFY(rail->property("visible").toBool());
         QVERIFY2(railFrame->property("visible").toBool(),
             "M17 second column must have its own permanent outer panel border");
-        QVERIFY2(std::abs(railFrame->height() - limiterSize.height()) <= 1.0,
-            "Second and third column external panels must share a height");
-        QCOMPARE(grPlot->height(), compressorGrCanvas->height());
-        QCOMPARE(gr->height(), compressorGr->height());
-        QVERIFY2(grPlot->height() >= 54.0,
-            "M17 GR must preserve Compressor's single-lane plot height");
+        QCOMPARE(railFrame->height(), editor->height());
+        QVERIFY(!provenance->isVisible());
+        for (auto* readout : {recentReadout, holdReadout, fullReadout}) {
+            QVERIFY(readout->isVisible());
+            QCOMPARE(readout->height(), 66.0);
+            if (firstReadoutHeight == 0.0) firstReadoutHeight = readout->height();
+            QCOMPARE(readout->height(), firstReadoutHeight);
+        }
+        QVERIFY(std::abs(upperSpacer->height() - lowerSpacer->height()) <= 1.0);
+        QVERIFY2(upperSpacer->height() > lastUpperSpacerHeight,
+            "Extra height must centre fixed-height top readouts using spacers");
+        lastUpperSpacerHeight = upperSpacer->height();
+        QCOMPARE(lowerControls->height(), 198.0);
+        if (firstLowerControlsHeight == 0.0)
+            firstLowerControlsHeight = lowerControls->height();
+        QCOMPARE(lowerControls->height(), firstLowerControlsHeight);
+        QCOMPARE(gr->height(), lowerControls->height());
+        QVERIFY2(std::abs(
+            lowerControls->mapToItem(editor, QPointF{}).y() + lowerControls->height()
+            - gr->mapToItem(editor, QPointF{}).y() - gr->height()) <= 1.0,
+            "GR and the two Limiter cards must occupy one aligned lower band");
+        QVERIFY2(grPlot->height() >= compressorGrCanvas->height(),
+            "The fixed lower GR band grows to align with the two Limiter cards");
         QVERIFY2(meterLeftLane->height() > lastMeterLaneHeight,
             "Surplus vertical height must grow the LIVE L/R meters, not GR");
         lastMeterLaneHeight = meterLeftLane->height();
-        const QPointF controlsCenter = centeredControls->mapToItem(
-            limiter, QPointF{centeredControls->width() / 2.0,
-                             centeredControls->height() / 2.0});
-        QVERIFY2(std::abs(controlsCenter.y() - limiter->height() / 2.0) <= 1.0,
-            "Ceiling and Verification Trim group must remain vertically centred");
+        QVERIFY(railDivider->isVisible());
+        QVERIFY2(check_item_contained_in_ancestor(lowerControls, rail),
+            "Both Limiter control cards must occupy the shared readout rail");
         QVERIFY2(trim->property("height").toDouble() >= 92.0,
             "Verification Trim must have an aligned, legible panel");
-        QVERIFY2(check_item_contained_in_ancestor(ceilingCard, limiter),
-            "M17 Ceiling card must be contained in the Limiter column");
+        QVERIFY2(check_item_contained_in_ancestor(ceilingCard, lowerControls),
+            "Ceiling must belong to the fixed lower Limiter control band");
         QVERIFY2(check_item_contained_in_ancestor(
             qobject_cast<QQuickItem*>(gr), meterBay),
             "Compressor-style M17 GR must be inside the elastic L/R meter bay");
-        QVERIFY2(!check_item_contained_in_ancestor(
-            qobject_cast<QQuickItem*>(gr), limiter),
-            "GR must not remain in the narrow Limiter controls column");
+        QVERIFY2(!check_item_contained_in_ancestor(gr, lowerControls),
+            "GR must remain in the left meter bay, not under right controls");
         QVERIFY2(check_item_contained_in_ancestor(grDivider, meterBay),
             "Full-width GR divider must share the L/R meter well");
         QCOMPARE(grHeading->property("text").toString(),
             QStringLiteral("GR HISTORY"));
         QVERIFY2(check_item_contained_in_ancestor(
-            qobject_cast<QQuickItem*>(trim), limiter),
-            "M17 Trim panel must be contained in the Limiter column");
+            qobject_cast<QQuickItem*>(trim), lowerControls),
+            "Verification Trim must be in the lower shared rail band");
         QVERIFY(gr->property("visible").toBool());
         QVERIFY(trim->property("visible").toBool());
         QVERIFY(grPlot->property("visible").toBool());
-        QCOMPARE(grPlot->height(), compressorGrCanvas->height());
+        QVERIFY(grPlot->height() >= compressorGrCanvas->height());
         QVERIFY(grPlot->width() > 75.0);
         QVERIFY2(grPlot->width() > lastGrPlotWidth,
             "M17 GR must expand horizontally as the window widens");
@@ -894,15 +924,10 @@ Window {
             QStringLiteral("m17_qt_candidate_on_") + dimension + ".png"),
             "Native Qt ON offscreen screenshot could not be written");
         QCOMPARE(meter->mapToItem(editor, QPointF{}), meterPos);
-        QCOMPARE(limiter->mapToItem(editor, QPointF{}), limiterPos);
+        QCOMPARE(lowerControls->mapToItem(editor, QPointF{}), controlsPos);
         QCOMPARE(meter->size(), meterSize);
-        QCOMPARE(limiter->size(), limiterSize);
-        QCOMPARE(gr->height(), compressorGr->height());
-        const QPointF controlsCenterOn = centeredControls->mapToItem(
-            limiter, QPointF{centeredControls->width() / 2.0,
-                             centeredControls->height() / 2.0});
-        QVERIFY2(std::abs(controlsCenterOn.y() - limiter->height() / 2.0) <= 1.0,
-            "ON must not move the centered Ceiling and Trim group");
+        QCOMPARE(lowerControls->size(), controlsSize);
+        QCOMPARE(gr->height(), lowerControls->height());
         QCOMPARE(QRectF(grPlot->mapToItem(editor, QPointF{}),
             QSizeF{grPlot->width(), grPlot->height()}),
             grPlotBypassGeometry);
@@ -927,7 +952,7 @@ Window {
         QCOMPARE(validationBand->isVisible(), false);
         QVERIFY(ceiling->property("enabled").toBool());
         const QVector<QQuickItem*> stableItems{
-            meter, limiter, railFrame, ceilingCard,
+            meter, lowerControls, railFrame, ceilingCard,
             numericField, slider, qobject_cast<QQuickItem*>(gr),
             grPlot, qobject_cast<QQuickItem*>(trim)};
         auto stableRect = [editor](QQuickItem* item) {

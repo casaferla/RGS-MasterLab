@@ -8,10 +8,15 @@ Rectangle {
     property string heading: ""
     property string reading: "—"
     property string detail: ""
+    // State, qualification, realization identity and output format remain
+    // discoverable even without the large redundant provenance card.
+    property string additionalTooltip: ""
     property bool available: false
     property bool detailTooltipEnabled: false
     HoverHandler { id: readoutHover }
     ToolTip.text: root.heading + "\n" + root.reading + "\n" + root.detail
+        + (root.additionalTooltip.length > 0
+            ? "\nMEASUREMENT / PROVENANCE\n" + root.additionalTooltip : "")
     ToolTip.visible: root.detailTooltipEnabled && readoutHover.hovered
     ToolTip.delay: 550
     property bool useFamilyAccent: false

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls
 
 // The one common True Peak informational rail intended for M16/M17.
 // M17 must bind the verified actual POST-TRIM result, not copy M16 input.
@@ -11,6 +12,17 @@ Item {
     // M17 only: turn four separate readout cards into an equal-height,
     // coherent second column. Standalone M16 keeps its exact prior layout.
     property bool framedForLimiter: false
+    property bool limiterControlsIncluded: false
+    property bool limiterBypassed: true
+    property bool limiterSonicControlsEnabled: false
+    property var limiterViewModel: null
+    property int lowerControlBandHeight: 198
+    readonly property string provenanceDetails: root.measurementProvider
+        ? root.measurementProvider.stateText + "\n"
+            + root.measurementProvider.qualificationText + "\n"
+            + root.measurementProvider.realizationText + "\n"
+            + root.measurementProvider.sampleRateText
+        : "NO SOURCE\nNO QUALIFIED MEASUREMENT\nNO PUBLISHED REALIZATION\n—"
     property bool showProvenanceTooltips: framedForLimiter
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
@@ -42,18 +54,31 @@ Item {
         anchors.top: root.framedForLimiter ? parent.top : undefined
         anchors.bottom: root.framedForLimiter ? parent.bottom : undefined
         anchors.verticalCenter: root.framedForLimiter ? undefined : parent.verticalCenter
-        anchors.margins: root.framedForLimiter ? 8 : 0
+        anchors.margins: root.limiterControlsIncluded ? 9
+            : root.framedForLimiter ? 8 : 0
         height: root.framedForLimiter ? undefined : implicitHeight
         spacing: root.framedForLimiter ? 6 : root.compactRail ? 3 : 10
+        // This upper spacer and its lower twin share extra height equally.
+        Item {
+            objectName: "m17ReadoutUpperSpacer"
+            visible: root.limiterControlsIncluded
+            Layout.fillHeight: root.limiterControlsIncluded
+            Layout.preferredHeight: 0
+            Layout.minimumHeight: 0
+        }
 
         TruePeakReadoutCard {
             objectName: "truePeakRecentCard"
+            additionalTooltip: root.limiterControlsIncluded
+                ? root.provenanceDetails : ""
             detailTooltipEnabled: root.showProvenanceTooltips
-            Layout.fillHeight: root.framedForLimiter
+            Layout.fillHeight: root.framedForLimiter && !root.limiterControlsIncluded
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.compactRail ? 68 : 108
+            Layout.preferredHeight: root.limiterControlsIncluded ? 66
+                : root.compactRail ? 68 : 108
+            Layout.maximumHeight: root.limiterControlsIncluded ? 66 : -1
             Layout.minimumHeight: 66
             heading: "RECENT / LIVE TRUE PEAK"
             reading: root.liveProvider && root.liveProvider.recentAvailable
@@ -65,12 +90,16 @@ Item {
         }
         TruePeakReadoutCard {
             objectName: "truePeakHoldCard"
+            additionalTooltip: root.limiterControlsIncluded
+                ? root.provenanceDetails : ""
             detailTooltipEnabled: root.showProvenanceTooltips
-            Layout.fillHeight: root.framedForLimiter
+            Layout.fillHeight: root.framedForLimiter && !root.limiterControlsIncluded
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.compactRail ? 68 : 108
+            Layout.preferredHeight: root.limiterControlsIncluded ? 66
+                : root.compactRail ? 68 : 108
+            Layout.maximumHeight: root.limiterControlsIncluded ? 66 : -1
             Layout.minimumHeight: 66
             heading: "SHORT HOLD / 1 SECOND"
             keyColor: "#F2C66F"
@@ -84,12 +113,16 @@ Item {
         }
         TruePeakReadoutCard {
             objectName: "truePeakFullResourceCard"
+            additionalTooltip: root.limiterControlsIncluded
+                ? root.provenanceDetails : ""
             detailTooltipEnabled: root.showProvenanceTooltips
-            Layout.fillHeight: root.framedForLimiter
+            Layout.fillHeight: root.framedForLimiter && !root.limiterControlsIncluded
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.compactRail ? 68 : 108
+            Layout.preferredHeight: root.limiterControlsIncluded ? 66
+                : root.compactRail ? 68 : 108
+            Layout.maximumHeight: root.limiterControlsIncluded ? 66 : -1
             Layout.minimumHeight: 66
             heading: "COMPLETE PROCESSED RESOURCE"
             valueColor: root.fullResourceAccent
@@ -102,8 +135,9 @@ Item {
         }
         TruePeakStatusCard {
             objectName: "truePeakProvenanceCard"
+            visible: !root.limiterControlsIncluded
             detailTooltipEnabled: root.showProvenanceTooltips
-            Layout.fillHeight: root.framedForLimiter
+            Layout.fillHeight: root.framedForLimiter && !root.limiterControlsIncluded
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
@@ -121,6 +155,7 @@ Item {
                 ? root.measurementProvider.sampleRateText : "—"
         }
         Text {
+            visible: !root.limiterControlsIncluded
             text: "RECENT requires exact sink-consumed PROCESSED ownership. "
                 + "Unproven SRC/handoff or loop boundary = UNAVAILABLE; verified loop interior = LIVE. Gate G OPEN."
             color: "#91A8B7"
@@ -131,6 +166,121 @@ Item {
             // canonical minimum height without resizing the card itself.
             Layout.topMargin: root.framedForLimiter ? 1 : root.compactRail ? 8 : 10
             Layout.fillWidth: true
+        }
+        // A second spring centers all three readouts IN THE UPPER AREA.
+        Item {
+            objectName: "m17ReadoutLowerSpacer"
+            visible: root.limiterControlsIncluded
+            Layout.fillHeight: root.limiterControlsIncluded
+            Layout.preferredHeight: 0
+            Layout.minimumHeight: 0
+        }
+        Rectangle {
+            objectName: "m17LimiterControlsDivider"
+            visible: root.limiterControlsIncluded
+            Layout.fillWidth: true
+            Layout.minimumHeight: 1
+            Layout.preferredHeight: 1
+            Layout.maximumHeight: 1
+            color: Qt.alpha(root.familyAccent, 0.45)
+        }
+        ColumnLayout {
+            objectName: "m17LimiterLowerControlGroup"
+            visible: root.limiterControlsIncluded
+            Layout.fillWidth: true
+            Layout.minimumHeight: root.lowerControlBandHeight
+            Layout.preferredHeight: root.lowerControlBandHeight
+            Layout.maximumHeight: root.lowerControlBandHeight
+            spacing: 6
+            Rectangle {
+                id: ceilingCard
+                objectName: "m17CeilingCard"
+                Layout.fillWidth: true
+                opacity: root.limiterBypassed ? 0.5 : 1.0
+                HoverHandler { id: ceilingCardHover }
+                ToolTip.text: root.limiterBypassed
+                    ? "True Peak Ceiling is retained, but cannot be edited while bypassed."
+                    : !root.limiterSonicControlsEnabled
+                        ? "Ceiling edit unavailable until the production limiter is connected."
+                        : "Set the maximum output True Peak from -12.0 to 0.0 dBTP."
+                ToolTip.visible: ceilingCardHover.hovered
+                ToolTip.delay: 550
+                Layout.minimumHeight: 100
+                Layout.preferredHeight: 100
+                radius: 6
+                color: "#10273A"
+                border.color: root.familyAccent
+                border.width: 1
+            
+                StudioNumericSliderPair {
+                id: ceilingControl
+                objectName: "m17CeilingControl"
+                fieldObjectName: "m17CeilingNumericField"
+                sliderObjectName: "m17CeilingSlider"
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.margins: 10
+                enabled: root.limiterSonicControlsEnabled
+                opacity: root.limiterBypassed ? 1.0
+                    : root.limiterSonicControlsEnabled ? 1.0 : 0.48
+                viewModel: root.limiterViewModel
+                labelText: "CEILING"
+                unitText: "dBTP"
+                fieldName: "ceilingDbTp"
+                interactionHint: "Type an exact Ceiling in [-12.0, 0.0] dBTP; Enter confirms, Esc cancels."
+                sliderInteractionHint: "Adjust Ceiling from -12.0 to 0.0 dBTP; pointer release commits once."
+                rawText: root.limiterViewModel
+                    ? root.limiterViewModel.ceilingDbTpText : "-1.00"
+                from: -12.0
+                to: 0.0
+                value: root.limiterViewModel
+                    ? root.limiterViewModel.ceilingDbTp : -1.0
+                stepSize: 0.1
+                compact: true
+                compactFieldWidth: 120
+                fillFromOrigin: true
+                positionFillOrigin: 0.0
+                positionFillColor: Qt.alpha("#C4774A", 0.38)
+                accentColor: root.familyAccent
+                focusAccentOnly: true
+                sliderAccessibleName: "True Peak Ceiling"
+                }
+            }
+            Rectangle {
+                objectName: "m17VerificationTrim"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 92
+                Layout.minimumHeight: 92
+                radius: 6
+                color: "#081521"
+                border.color: root.familyAccent
+                opacity: root.limiterBypassed ? 0.5 : 1.0
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 7
+                    Text {
+                        text: "VERIFICATION TRIM"
+                        color: root.familyAccent
+                        font.family: "Segoe UI"
+                        font.pixelSize: 10
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        objectName: "m17TrimProvenanceStatus"
+                        HoverHandler { id: trimStatusHover }
+                        ToolTip.text: "Verification Trim is a distinct measured observation, not an adjustable sonic control. Status remains unavailable until verified."
+                        ToolTip.visible: trimStatusHover.hovered
+                        ToolTip.delay: 550
+                        text: "UNAVAILABLE · NOT VERIFIED"
+                        color: "#B3C9D9"
+                        font.family: "Segoe UI"
+                        font.pixelSize: 10
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                    }
+                }
+            }
         }
 
     }
