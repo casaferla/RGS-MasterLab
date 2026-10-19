@@ -2253,7 +2253,7 @@ void RenderPreviewTest::truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndS
         QCOMPARE(error_category(*nullOwner.error()),
                  std::string_view{"M17_MANUAL_OWNER_MISSING"});
         auto stale=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
-            owner,n,manualRev+1,hz==44100?rate44100:rate48000,
+            owner,manualChain,n,manualRev+1,hz==44100?rate44100:rate48000,
             *limiterChain.value(),binding,*registry.value(),block);
         QVERIFY(!stale);
         QCOMPARE(error_category(*stale.error()),

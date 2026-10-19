@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <utility>
 
 namespace rgsml::render {
@@ -72,7 +73,7 @@ render_true_peak_limiter_owned_same_rate_candidate(
     }
     for(std::size_t i=0;i<instances.size();++i) {
         if(instances[i].instance_id()!=signatures[i].instance_id
-           || instances[i].module_type_id()!=signatures[i].type_id) {
+           || instances[i].module_type_id()!=std::string_view{signatures[i].type_id}) {
             return core::Result<Candidate>::failure(source_error(
                 core::ErrorCode::InvalidState,"M17_MANUAL_SIGNATURE_STALE",
                 "The manual render module identity/order does not match."));
