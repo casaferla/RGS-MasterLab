@@ -29,6 +29,8 @@
 #include <rgsml/dsp/stereo_ms_parameters.hpp>
 
 #include <QtTest/QTest>
+#include <QCoreApplication>
+#include <QSignalSpy>
 
 #include <variant>
 #include <vector>
@@ -1172,16 +1174,24 @@ void MasteringChainStateTest::terminalPrivateWorkerStagesOnlyCurrentOwnedOutput(
         std::move(*rendered.value()));
     std::shared_ptr<const render::RenderResult> active=owner;
     std::optional<core::RealizationId> activeId=core::RealizationId{57};
+    // Qt queued worker completion requires a QCoreApplication event loop.
+    // QTEST_APPLESS_MAIN silently strands the completion in RENDERING.
+    QVERIFY(QCoreApplication::instance() != nullptr);
     TerminalCandidateGate gate;
     TerminalPrivateRenderController worker{
         gate,*limiter.value(),[&]{return active;},[&]{return active;},
         [&]{return activeId;},[&]{return *manual.value();}};
+    QSignalSpy completions(&worker,&TerminalPrivateRenderController::changed);
+    QVERIFY(completions.isValid());
     QVERIFY(worker.request_private(outputRate));
     QTRY_COMPARE(worker.status(),QStringLiteral("READY_PRIVATE"));
     auto first=gate.staged();
     QVERIFY(first);
     QCOMPARE(first->original_manual_realization_id,core::RealizationId{57});
     QCOMPARE(first->rendered.output_rate,outputRate);
+    // invalidate + RENDERING + accepted READY_PRIVATE must be observable
+    // on Qt's owner-thread event dispatcher, not just in worker memory.
+    QVERIFY(completions.size() >= 3);
     QCOMPARE(first->rendered.terminal.checked.terminal.compensated_pcm
         .view().frame_count().value(),std::int64_t{480});
     QVERIFY(worker.request_private(sourceRate));
@@ -1201,12 +1211,20 @@ void MasteringChainStateTest::terminalPrivateWorkerStagesOnlyCurrentOwnedOutput(
     QTRY_COMPARE(worker.status(),QStringLiteral("READY_PRIVATE"));
     QCOMPARE(gate.staged()->original_manual_realization_id,
              core::RealizationId{58});
+
+    // Reversible A->B->A Ceiling edits may restore the same numeric target,
+    // but must not resurrect a worker job captured at the older revision.
+    QVERIFY(worker.request_private(outputRate));
+    QVERIFY(limiter.value()->set_ceiling_db_tp(-6.0));
+    QVERIFY(limiter.value()->set_ceiling_db_tp(-1.0));
+    QTRY_COMPARE(worker.status(),QStringLiteral("STALE"));
+    QVERIFY(!gate.staged());
 }
 
 
 }  // namespace
 }  // namespace rgsml::tests
 
-QTEST_APPLESS_MAIN(rgsml::tests::MasteringChainStateTest)
+QTEST_GUILESS_MAIN(rgsml::tests::MasteringChainStateTest)
 
 #include "test_mastering_chain_state.moc"
