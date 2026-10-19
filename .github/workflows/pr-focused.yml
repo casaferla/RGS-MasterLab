@@ -390,6 +390,11 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      # Pure-Python regression: ensure direct QtTest failure reports are
+      # bounded and never upload the full UI smoke or GitHub job logs.
+      - name: Verify runner-filtered Qt smoke diagnostics
+        run: python tools/ci/test_summarize_focused_tests.py
+
       - name: Run Windows UI Smoke Diagnostic
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
@@ -421,7 +426,7 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
-          python tools/ci/summarize_focused_tests.py --ctest-dir build/windows-ninja-cache/Testing/Temporary --output "$env:RUNNER_TEMP/rgsml-focused-windows-test-summary.txt"
+          python tools/ci/summarize_focused_tests.py --ctest-dir build/windows-ninja-cache/Testing/Temporary --output "$env:RUNNER_TEMP/rgsml-focused-windows-test-summary.txt" --qt-smoke-log "$env:GITHUB_WORKSPACE/m12b-smoke.txt"
           if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_TEST_DIAGNOSTIC_FAILED' }
       - name: Attach bounded Windows test diagnostics
         if: failure()

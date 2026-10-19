@@ -15,6 +15,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ctest-dir", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
+    ap.add_argument("--qt-smoke-log", type=Path, default=None,
+                    help="Runner-local direct QtTest log (never uploaded raw)")
     args = ap.parse_args()
     folder = args.ctest_dir
     failure_file = folder / "LastTestsFailed.log"
@@ -53,7 +55,38 @@ def main():
             result.append("No assertion pattern found in failed CTest test blocks.")
     else:
         result.append("Local CTest LastTest.log unavailable.")
-    out = ("\n".join(result) + "\n")[:12000]
+    # Qt UI smoke runs DIRECTLY before CTest. If it fails, no CTest
+    # LastTest.log exists. Extract only relevant assertions ON RUNNER.
+    if args.qt_smoke_log is not None:
+        result.append("Direct Qt UI smoke — RUNNER FILTERED")
+        if args.qt_smoke_log.is_file():
+            rows = args.qt_smoke_log.read_text(
+                encoding="utf-8", errors="replace").splitlines()
+            qt_pattern = re.compile(
+                r"FAIL!|QFATAL|QWARN|Loc:|Actual|Expected|"
+                r"ASSERT|Exception|Fatal error|Unable to assign|"
+                r"ReferenceError|TypeError|QQmlComponent: Component is not ready",
+                re.IGNORECASE)
+            indexes = set()
+            for i, line in enumerate(rows):
+                if qt_pattern.search(line):
+                    indexes.update(range(i, min(i + 3, len(rows))))
+            shown = 0
+            for i in sorted(indexes):
+                # Context helps locate a failure, but never copy PASS spam.
+                if rows[i].lstrip().startswith("PASS"):
+                    continue
+                result.append(f"QT{i + 1}: {rows[i][:190]}")
+                shown += 1
+                if shown >= 35:
+                    break
+            if not indexes:
+                result.append("No QtTest failure-pattern lines found.")
+        else:
+            result.append("Direct Qt UI smoke local log unavailable.")
+    # Enforce the 12 KB artifact cap on bytes, not Unicode code points.
+    out = ("\n".join(result) + "\n").encode("utf-8")[:12000].decode(
+        "utf-8", errors="ignore")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(out, encoding="utf-8")
     print("RUNNER_FILTERED_CTEST_BYTES", len(out.encode("utf-8")))
