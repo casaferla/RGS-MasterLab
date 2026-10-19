@@ -1,4 +1,5 @@
 #include "playback_transport_view_model.hpp"
+#include "terminal_audio_session_gate.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -160,6 +161,8 @@ core::Status PlaybackTransportViewModel::stop_and_clear()
         publish_failure(*cleared.error());
         return cleared;
     }
+    terminalLease_.reset();
+    terminalGate_ = nullptr;
     sampleRateHz_ = 0;
     errorMessage_.clear();
     refresh();
@@ -223,6 +226,11 @@ core::Status PlaybackTransportViewModel::handoff_pcm(
     std::shared_ptr<const void> lifetime,
     std::optional<core::RealizationId> realizationId)
 {
+    if (terminalGate_) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "SOURCE PCM handoff requires retiring the terminal session."});
+    }
     if (!pcmHandoffHandler_) {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
@@ -245,13 +253,63 @@ void PlaybackTransportViewModel::set_source_derived_active(bool active) noexcept
     sourceDerivedActive_ = active;
 }
 
+core::Status PlaybackTransportViewModel::bind_private_terminal_source_controls(
+    TerminalAudioSessionGate& gate)
+{
+    if (!service_ || terminalGate_ || !sourceDerivedActive_
+        || !gate.has_session() || !gate.owns_playback(*service_)) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "No uniquely owned terminal OUTPUT_RATE session for SOURCE binding."});
+    }
+    auto display=gate.source_snapshot();
+    auto rate=gate.source_rate();
+    auto lease=gate.session_liveness();
+    if (!display || !rate || lease.expired()) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "Invalid or stale terminal SOURCE mapping."});
+    }
+    terminalGate_=&gate;
+    terminalLease_=std::move(lease);
+    sampleRateHz_=rate.value()->value();
+    errorMessage_.clear();
+    refresh();
+    return core::Status::success();
+}
+
+core::Result<PlaybackTransportViewModel::SourceDisplaySnapshot>
+PlaybackTransportViewModel::source_display_snapshot() const
+{
+    using S=SourceDisplaySnapshot;
+    if (terminalGate_) {
+        if (terminalLease_.expired())
+            return core::Result<S>::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "Stale M17 SOURCE adapter: expired terminal lease."});
+        auto mapped=terminalGate_->source_snapshot();
+        if (!mapped) return core::Result<S>::failure(*mapped.error());
+        return core::Result<S>::success(S{
+            mapped.value()->state,mapped.value()->position,
+            mapped.value()->duration,mapped.value()->loop});
+    }
+    auto raw=playback_snapshot();
+    if (!raw) return core::Result<S>::failure(*raw.error());
+    if (!raw.value()->duration)
+        return core::Result<S>::failure(core::Error{
+            core::ErrorCode::InvalidState,"No SOURCE duration available."});
+    return core::Result<S>::success(S{
+        raw.value()->state,raw.value()->position,*raw.value()->duration,
+        raw.value()->loop});
+}
+
 core::Status PlaybackTransportViewModel::seek_target_frame(
     core::FrameIndex position)
 {
-    if (!service_) {
+    if (!service_ || terminalGate_) {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
-            "Playback service is unavailable."});
+            "Raw target seek forbidden during terminal OUTPUT_RATE session."});
     }
     auto result = service_->seek(position);
     if (!result) {
@@ -266,6 +324,15 @@ core::Status PlaybackTransportViewModel::seek_target_frame(
 core::Status PlaybackTransportViewModel::seek_source_frame(
     core::FrameIndex position)
 {
+    if (terminalGate_) {
+        if (!sourceDerivedActive_ || terminalLease_.expired())
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"Terminal SOURCE seek owner stale."});
+        auto result=terminalGate_->seek_source(position);
+        if (!result) publish_failure(*result.error());
+        else { errorMessage_.clear(); refresh(); }
+        return result;
+    }
     if (!sourceDerivedActive_) {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
@@ -277,6 +344,15 @@ core::Status PlaybackTransportViewModel::seek_source_frame(
 core::Status PlaybackTransportViewModel::set_loop_source_range(
     std::optional<core::FrameRange> loop)
 {
+    if (terminalGate_) {
+        if (!sourceDerivedActive_ || terminalLease_.expired())
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"Terminal SOURCE loop owner stale."});
+        auto result=terminalGate_->set_source_loop(std::move(loop));
+        if (!result) publish_failure(*result.error());
+        else { errorMessage_.clear(); refresh(); }
+        return result;
+    }
     if (!sourceDerivedActive_) {
         return core::Status::success();
     }
@@ -310,6 +386,13 @@ PlaybackTransportViewModel::playback_snapshot() const
 void PlaybackTransportViewModel::playOrResume()
 {
     if (!service_) {
+        return;
+    }
+    if (terminalGate_ && (terminalLease_.expired()
+        || !terminalGate_->source_snapshot())) {
+        publish_failure(core::Error{
+            core::ErrorCode::InvalidState,"Expired terminal owner: Play refused."});
+        refresh();
         return;
     }
     const auto result = service_->play();
@@ -360,12 +443,20 @@ void PlaybackTransportViewModel::refresh()
         return;
     }
 
-    const auto newState = snapshot.value()->state;
-    const auto newPosition = snapshot.value()->position.value();
-    const auto newDuration = snapshot.value()->duration
-        ? snapshot.value()->duration->value()
-        : 0;
-    const bool newAvailable = newState != core::PlaybackState::NO_SOURCE;
+    // Never present OUTPUT_RATE positions or duration as SOURCE frames.
+    auto mapped=source_display_snapshot();
+    const bool stale=terminalGate_ && !mapped;
+    const auto newState=stale
+        ? core::PlaybackState::NO_SOURCE : snapshot.value()->state;
+    const auto newPosition=stale ? 0
+        : (terminalGate_ ? mapped.value()->position.value()
+                         : snapshot.value()->position.value());
+    const auto newDuration=stale ? 0
+        : (terminalGate_ ? mapped.value()->duration.value()
+                         : (snapshot.value()->duration
+                             ? snapshot.value()->duration->value() : 0));
+    const bool newAvailable=!stale
+        && newState != core::PlaybackState::NO_SOURCE;
     if (state_ == newState
         && positionFrames_ == newPosition
         && durationFrames_ == newDuration

@@ -4,6 +4,7 @@
 #include "terminal_playback_frame_map.hpp"
 #include "terminal_source_control_bridge.hpp"
 #include "terminal_audio_session_gate.hpp"
+#include "playback_transport_view_model.hpp"
 #include "../platform/fake_playback_service.hpp"
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
@@ -983,7 +984,9 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             const auto sessionAccepted=gate.staged();
             QVERIFY(sessionAccepted);
             QVERIFY(sessionAccepted!=accepted);
-            FakePlaybackService manualAudible;
+            auto manualService=std::make_unique<FakePlaybackService>();
+            auto& manualAudible=*manualService;
+            PlaybackTransportViewModel terminalTransport{std::move(manualService)};
             manualAudible.state=core::PlaybackState::STOPPED;
             manualAudible.duration=n;
             manualAudible.audibleRealization=core::AudibleRealizationState{
@@ -1035,9 +1038,32 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             QVERIFY(installedSnapshot);
             QCOMPARE(installedSnapshot.value()->position.value(),
                      std::int64_t{300});
+            QVERIFY(terminalTransport.bind_private_terminal_source_controls(
+                installer));
+            auto displayed=terminalTransport.source_display_snapshot();
+            QVERIFY(displayed);
+            QCOMPARE(displayed.value()->position.value(),std::int64_t{300});
+            QCOMPARE(displayed.value()->duration.value(),std::int64_t{441});
+            auto raw=terminalTransport.playback_snapshot();
+            QVERIFY(raw);
+            QCOMPARE(raw.value()->position.value(),std::int64_t{327});
+            QCOMPARE(raw.value()->duration->value(),std::int64_t{480});
+            QVERIFY(!terminalTransport.seek_target_frame(core::FrameIndex{20}));
+            QVERIFY(terminalTransport.seek_source_frame(core::FrameIndex{20}));
+            QCOMPARE(manualAudible.position.value(),std::int64_t{22});
+            QVERIFY(terminalTransport.set_loop_source_range(*range.value()));
+            QCOMPARE(manualAudible.loop,std::optional{*mappedLoop.value()});
             QVERIFY(installer.set_source_loop(std::nullopt));
             QVERIFY(!manualAudible.loop);
             installer.detach();
+            const auto lastOutputPosition=manualAudible.position;
+            QVERIFY(!terminalTransport.seek_source_frame(core::FrameIndex{11}));
+            QVERIFY(!terminalTransport.set_loop_source_range(*range.value()));
+            QVERIFY(!terminalTransport.source_display_snapshot());
+            QCOMPARE(manualAudible.position,lastOutputPosition);
+            auto unchangedRaw=terminalTransport.playback_snapshot();
+            QVERIFY(unchangedRaw);
+            QCOMPARE(unchangedRaw.value()->position,lastOutputPosition);
             QVERIFY(!installer.has_session());
             QVERIFY(!installer.seek_source(core::FrameIndex{20}));
 

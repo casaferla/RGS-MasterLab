@@ -14,6 +14,8 @@
 
 namespace rgsml::app {
 
+class TerminalAudioSessionGate;
+
 class PlaybackTransportViewModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool playbackAvailable READ playback_available NOTIFY playbackChanged)
@@ -75,6 +77,18 @@ public:
     [[nodiscard]] core::Status stop_and_clear();
     [[nodiscard]] core::Status seek_target_frame(core::FrameIndex position);
     void set_source_derived_active(bool active) noexcept;
+    // Private M17 exact-output source-control binding; no product UI activation.
+    [[nodiscard]] core::Status bind_private_terminal_source_controls(
+        TerminalAudioSessionGate& gate);
+    struct SourceDisplaySnapshot final {
+        core::PlaybackState state;
+        core::FrameIndex position;
+        core::FrameCount duration;
+        std::optional<core::FrameRange> loop;
+    };
+    // UI-only: NOT an M16 sink-consumption or RealizationId certificate.
+    [[nodiscard]] core::Result<SourceDisplaySnapshot>
+    source_display_snapshot() const;
     [[nodiscard]] core::Status seek_source_frame(core::FrameIndex position);
     [[nodiscard]] core::Status set_loop_source_range(
         std::optional<core::FrameRange> loop);
@@ -96,6 +110,8 @@ private:
     PcmPrepareHandler pcmPrepareHandler_;
     PcmHandoffHandler pcmHandoffHandler_;
     bool sourceDerivedActive_{true};
+    TerminalAudioSessionGate* terminalGate_{nullptr};
+    std::weak_ptr<const void> terminalLease_;
     QTimer refreshTimer_;
     core::PlaybackState state_{core::PlaybackState::NO_SOURCE};
     qint64 positionFrames_{0};

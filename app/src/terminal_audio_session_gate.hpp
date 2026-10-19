@@ -41,6 +41,11 @@ public:
 
     [[nodiscard]] bool has_session() const noexcept
     { return control_.has_value(); }
+    [[nodiscard]] std::weak_ptr<const void> session_liveness() const noexcept
+    { return sessionLease_; }
+    [[nodiscard]] bool owns_playback(const core::IAudioPlaybackService& service)
+        const noexcept { return playback_ == &service; }
+    [[nodiscard]] core::Result<core::SampleRate> source_rate() const;
 
     [[nodiscard]] core::Status seek_source(core::FrameIndex source);
     [[nodiscard]] core::Status set_source_loop(
@@ -61,6 +66,7 @@ private:
     DevicePrepare prepare_;
     std::optional<TerminalSourceControlBridge> control_;
     std::shared_ptr<const TerminalCandidateGate::StagedCandidate> owner_;
+    std::shared_ptr<const void> sessionLease_;
 };
 
 } // namespace rgsml::app

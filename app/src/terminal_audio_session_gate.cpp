@@ -70,6 +70,7 @@ core::Status TerminalAudioSessionGate::prepare_private_session(
     }
     owner_=std::move(accepted);
     control_.emplace(std::move(*controller.value()));
+    sessionLease_ = std::make_shared<int>(0);
     return core::Status::success();
 }
 
@@ -93,9 +94,20 @@ void TerminalAudioSessionGate::clear_owned_failed_install(
 
 void TerminalAudioSessionGate::detach() noexcept
 {
+    sessionLease_.reset();
     if(control_)control_->detach();
     control_.reset();
     owner_.reset();
+}
+
+core::Result<core::SampleRate> TerminalAudioSessionGate::source_rate() const
+{
+    auto checked=source_snapshot();
+    if (!checked || !owner_ || !owner_->rendered.manual_owner)
+        return core::Result<core::SampleRate>::failure(denied(
+            "M17_SESSION_NOT_OWNED","No authoritative terminal SOURCE rate."));
+    return core::Result<core::SampleRate>::success(
+        owner_->rendered.manual_owner->view().format().sample_rate());
 }
 
 core::Status TerminalAudioSessionGate::seek_source(core::FrameIndex source)

@@ -1119,6 +1119,8 @@ qt_add_executable(rgsml_mastering_chain_state_tests
     ${CMAKE_SOURCE_DIR}/app/src/terminal_source_control_bridge.hpp
     ${CMAKE_SOURCE_DIR}/app/src/terminal_audio_session_gate.cpp
     ${CMAKE_SOURCE_DIR}/app/src/terminal_audio_session_gate.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp
