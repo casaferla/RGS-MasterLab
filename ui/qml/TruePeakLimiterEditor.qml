@@ -40,6 +40,9 @@ Item {
             Layout.fillHeight: true
             Layout.minimumWidth: 505
             compactForLimiter: true
+            // Match Compressor: GR history below L/R in the SAME fluid well.
+            showLimiterGrHistory: true
+            limiterBypassed: root.bypassed
             useFamilyAccent: true
             familyAccent: root.familyAccent
             measurementProvider: root.measurementProvider
@@ -147,57 +150,7 @@ Item {
                     }
                 }
 
-                Rectangle {
-                    objectName: "m17GainReductionHistory"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.preferredHeight: 240
-                    Layout.minimumHeight: 166
-                    radius: 6
-                    color: "#081521"
-                    border.color: root.familyAccent
-                    opacity: root.bypassed ? 0.5 : 1.0
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 7
-                        spacing: 5
-                        Text {
-                            text: "GAIN REDUCTION"
-                            color: root.familyAccent
-                            font.family: "Segoe UI"
-                            font.pixelSize: 10
-                            font.bold: true
-                            Layout.fillWidth: true
-                        }
-                        // Permanent graph, not a fabricated series. The plot
-                        // will get a real applied-gain feed only after an
-                        // independently verified M17 sink-consumed binding.
-                        TruePeakGrHistoryGraph {
-                            id: grHistoryGraph
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Layout.minimumHeight: 72
-                            familyAccent: root.familyAccent
-                            bypassed: root.bypassed
-                        }
-                        Text {
-                            objectName: "m17GrProvenanceStatus"
-                            HoverHandler { id: grStatusHover }
-                            ToolTip.text: "Applied GR history is not connected yet. The 0/3/6 dB labels are an axis, not measured attenuation. Future values require the exact audible terminal identity and consumed output samples."
-                            ToolTip.visible: grStatusHover.hovered
-                            ToolTip.delay: 550
-                            text: root.bypassed ? "BYPASS · NO ACTIVE GR"
-                                : "UNAVAILABLE · NO VERIFIED GR"
-                            color: "#B3C9D9"
-                            font.family: "Segoe UI"
-                            font.pixelSize: 9
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 28
-                            Layout.maximumHeight: 32
-                        }
-                    }
-                }
+                Item { Layout.fillHeight: true }
                 Rectangle {
                     objectName: "m17VerificationTrim"
                     Layout.fillWidth: true

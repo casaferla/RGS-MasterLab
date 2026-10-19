@@ -729,6 +729,12 @@ Window {
         QStringLiteral("truePeakMeterSharedRail"));
     auto* gr = find_child_by_name(instance.data(),
         QStringLiteral("m17GainReductionHistory"));
+    auto* meterBay = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("truePeakStaticMeterBay")));
+    auto* grDivider = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17GainReductionDivider")));
+    auto* grHeading = find_child_by_name(instance.data(),
+        QStringLiteral("m17GrHistoryHeading"));
     auto* trim = find_child_by_name(instance.data(),
         QStringLiteral("m17VerificationTrim"));
     auto* grPlot = qobject_cast<QQuickItem*>(find_child_by_name(
@@ -740,7 +746,8 @@ Window {
     auto* ceilingCard = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("m17CeilingCard")));
     QVERIFY(state && captureSurface && editor && meter && limiter
-        && ceiling && rail && gr && trim && grPlot && grStatus
+        && ceiling && rail && gr && meterBay && grDivider && grHeading
+        && trim && grPlot && grStatus
         && railFrame && ceilingCard
         && numericField && slider && validationBand && validationText);
     // Graph chrome is always present, but there is NO authenticated
@@ -767,6 +774,7 @@ Window {
         return QDir{}.mkpath(directory)
             && image.save(QDir{directory}.filePath(fileName), "PNG");
     };
+    qreal lastGrPlotWidth = 0.0;
     for (const QSize size : {QSize{1184, 688}, QSize{1440, 900}}) {
         captureSurface->setWidth(size.width());
         captureSurface->setHeight(size.height());
@@ -801,15 +809,22 @@ Window {
             "M17 second column must have its own permanent outer panel border");
         QVERIFY2(std::abs(railFrame->height() - limiterSize.height()) <= 1.0,
             "Second and third column external panels must share a height");
-        QVERIFY2(gr->property("height").toDouble() >= 166.0,
-            "M17 GR area must expand vertically and not accumulate at the top");
+        QVERIFY2(gr->property("height").toDouble() >= 120.0,
+            "M17 wide GR ribbon must remain legible below the meters");
         QVERIFY2(trim->property("height").toDouble() >= 92.0,
             "Verification Trim must have an aligned, legible panel");
         QVERIFY2(check_item_contained_in_ancestor(ceilingCard, limiter),
             "M17 Ceiling card must be contained in the Limiter column");
         QVERIFY2(check_item_contained_in_ancestor(
+            qobject_cast<QQuickItem*>(gr), meterBay),
+            "Compressor-style M17 GR must be inside the elastic L/R meter bay");
+        QVERIFY2(!check_item_contained_in_ancestor(
             qobject_cast<QQuickItem*>(gr), limiter),
-            "M17 GR panel must be contained in the Limiter column");
+            "GR must not remain in the narrow Limiter controls column");
+        QVERIFY2(check_item_contained_in_ancestor(grDivider, meterBay),
+            "Full-width GR divider must share the L/R meter well");
+        QCOMPARE(grHeading->property("text").toString(),
+            QStringLiteral("GR HISTORY"));
         QVERIFY2(check_item_contained_in_ancestor(
             qobject_cast<QQuickItem*>(trim), limiter),
             "M17 Trim panel must be contained in the Limiter column");
@@ -818,9 +833,18 @@ Window {
         QVERIFY(grPlot->property("visible").toBool());
         QVERIFY(grPlot->height() >= 72.0);
         QVERIFY(grPlot->width() > 75.0);
+        QVERIFY2(grPlot->width() > lastGrPlotWidth,
+            "M17 GR must expand horizontally as the window widens");
+        lastGrPlotWidth = grPlot->width();
+        QVERIFY2(grDivider->width() >= grPlot->width(),
+            "GR separator must span the same width as history");
+        QVERIFY2(gr->mapToItem(meterBay, QPointF{}).y()
+                > grDivider->mapToItem(meterBay, QPointF{}).y(),
+            "M17 GR must follow the horizontal separation rule");
         QVERIFY(check_item_contained_in_ancestor(grPlot,
             qobject_cast<QQuickItem*>(gr)));
         QCOMPARE(gr->property("opacity").toDouble(), 0.5);
+        QVERIFY(grDivider->property("visible").toBool());
         QVERIFY(!grPlot->property("verifiedSeriesAvailable").toBool());
         QCOMPARE(grStatus->property("text").toString(),
             QStringLiteral("BYPASS · NO ACTIVE GR"));

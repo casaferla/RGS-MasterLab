@@ -40,6 +40,8 @@ ApplicationWindow {
     // passing them into components that expose same-named properties.
     readonly property var appGainViewModel: typeof gainViewModel !== "undefined" ? gainViewModel : null
     readonly property var appEqViewModel: typeof eqViewModel !== "undefined" ? eqViewModel : null
+    readonly property var appTerminalLimiterViewModel: typeof terminalLimiterViewModel !== "undefined"
+        ? terminalLimiterViewModel : null
     readonly property var appSpectrumViewModel: typeof liveSpectrumViewModel !== "undefined" ? liveSpectrumViewModel : null
 
     // Single, permanently allocated 24lp status bar. The selected module
@@ -56,8 +58,10 @@ ApplicationWindow {
         if (root.statusDspKey === "PARAMETRIC_EQ") return module.eqViewModel
         if (root.statusDspKey === "COMPRESSOR") return module.compressorViewModel
         if (root.statusDspKey === "STEREO_MS") return module.stereoMsViewModel
-        // M17 Limiter is not yet a productive adapter or editable ViewModel.
-        // This must be wired only when its real parameter contract exists.
+        // Only the SELECTED M17 typed Ceiling VM supplies validation errors.
+        // Existing application > degraded-project > DSP severity stays intact.
+        if (root.statusDspKey === "TRUE_PEAK_LIMITER")
+            return root.appTerminalLimiterViewModel
         return null
     }
     readonly property string statusDspErrorText: {

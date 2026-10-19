@@ -11,6 +11,10 @@ Item {
     property var liveProvider: null
     // M17 opts into compact and family theme; M16 defaults remain unchanged.
     property bool compactForLimiter: false
+    // M17 only: Compressor-like GR ribbon in the left meter well. The
+    // standalone M16 Meter keeps its original uninterrupted geometry.
+    property bool showLimiterGrHistory: false
+    property bool limiterBypassed: true
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     // The large channel bars are LIVE-only: a whole-resource future maximum
@@ -127,6 +131,63 @@ Item {
                         font.pixelSize: 10
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
+                    }
+
+                    // Deliberately the SAME visual grammar as Compressor:
+                    // one continuous dark well, full-width horizontal rule,
+                    // then GR HISTORY label/state and an unframed Canvas.
+                    // The rule is a divider, not an extra boxed DSP card.
+                    Rectangle {
+                        objectName: "m17GainReductionDivider"
+                        visible: root.showLimiterGrHistory
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
+                        Layout.minimumHeight: 1
+                        color: Qt.alpha(root.familyAccent, 0.45)
+                    }
+                    ColumnLayout {
+                        id: grHistory
+                        objectName: "m17GainReductionHistory"
+                        visible: root.showLimiterGrHistory
+                        Layout.fillWidth: true
+                        Layout.minimumHeight: 120
+                        Layout.preferredHeight: 132
+                        Layout.maximumHeight: 170
+                        spacing: 2
+                        opacity: root.limiterBypassed ? 0.5 : 1.0
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                objectName: "m17GrHistoryHeading"
+                                text: "GR HISTORY"
+                                color: "#B3C9D9"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                objectName: "m17GrProvenanceStatus"
+                                text: root.limiterBypassed ? "BYPASS · NO ACTIVE GR"
+                                    : "UNAVAILABLE · NO VERIFIED GR"
+                                color: "#91A8B7"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 9
+                                font.weight: Font.Bold
+                                HoverHandler { id: grStatusHover }
+                                ToolTip.text: "The grid is a reference, not an observed gain-reduction series. Verified applied limiter gain and sink-consumed OUTPUT identity are required before drawing GR."
+                                ToolTip.visible: grStatusHover.hovered
+                                ToolTip.delay: 550
+                            }
+                        }
+                        TruePeakGrHistoryGraph {
+                            id: grHistoryGraph
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            Layout.minimumHeight: 72
+                            familyAccent: root.familyAccent
+                            bypassed: root.limiterBypassed
+                        }
                     }
                 }
             }
