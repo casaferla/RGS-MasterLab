@@ -33,6 +33,8 @@ qt_add_executable(rgsml_app
     src/terminal_consumed_output_binding.hpp
     src/terminal_private_gr_view_model.cpp
     src/terminal_private_gr_view_model.hpp
+    src/terminal_post_limiter_true_peak_coordinator.cpp
+    src/terminal_post_limiter_true_peak_coordinator.hpp
     src/terminal_limiter_state.cpp
     src/terminal_limiter_state.hpp
     src/terminal_limiter_view_model.cpp

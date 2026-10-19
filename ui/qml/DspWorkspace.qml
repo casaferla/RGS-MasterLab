@@ -14,6 +14,7 @@ Rectangle {
     property var spectrumViewModel: null
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
+    property var terminalPostLimiterTruePeak: null
     property var terminalLimiterViewModel: null
     property var limiterGrProvider: null
 
@@ -61,6 +62,7 @@ Rectangle {
             spectrumViewModel: root.spectrumViewModel
             truePeakStaticViewModel: root.truePeakStaticViewModel
             truePeakLiveViewModel: root.truePeakLiveViewModel
+            terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
             terminalLimiterViewModel: root.terminalLimiterViewModel
             limiterGrProvider: root.limiterGrProvider
             activeChainRow: realChainSelector.activeRow

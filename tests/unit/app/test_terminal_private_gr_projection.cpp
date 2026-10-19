@@ -1,6 +1,8 @@
 #include "terminal_consumed_output_binding.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_private_gr_view_model.hpp"
+#include "terminal_post_limiter_true_peak_coordinator.hpp"
+#include <rgsml/core/error.hpp>
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/uuid.hpp>
@@ -21,6 +23,7 @@ private slots:
     void gainWitnessRateMatrix_data();
     void gainWitnessRateMatrix();
     void qmlPresentationFailClosed();
+    void postLimiterMeterRejectsUnverifiedAndUsesActualOutputPcm();
 };
 
 void TerminalPrivateGrProjectionTest::gainWitnessRateMatrix_data()
@@ -300,6 +303,91 @@ void TerminalPrivateGrProjectionTest::qmlPresentationFailClosed()
     QVERIFY(!provider.verified_series().front().toMap()
         .value(QStringLiteral("breakBefore")).toBool());
 }
+
+void TerminalPrivateGrProjectionTest::postLimiterMeterRejectsUnverifiedAndUsesActualOutputPcm()
+{
+    using namespace rgsml;
+    using Evidence=app::TerminalConsumedOutputEvidence;
+    std::optional<Evidence> proof;
+    app::TerminalPostLimiterTruePeakCoordinator meter([&]()
+        ->core::Result<Evidence> {
+        if(!proof)
+            return core::Result<Evidence>::failure(core::Error{
+                core::ErrorCode::InvalidState,"No verified Windows sink prefix."});
+        return core::Result<Evidence>::success(*proof);
+    });
+    QVERIFY(!meter.recent_available());
+    QVERIFY(!meter.hold_available());
+    QCOMPARE(meter.left_text(),QStringLiteral("—"));
+    QTest::qWait(110);
+    QVERIFY(!meter.recent_available());
+
+    const auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto manual=dsp::ProcessingChain::create(*registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    const auto instance=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("7f000000-0000-4000-8000-000000000118").value());
+    QVERIFY(instance);
+    auto limiter=app::TerminalLimiterState::create_default(
+        *registry.value(),*instance.value());
+    QVERIFY(limiter);
+    QVERIFY(limiter.value()->set_user_bypass(false));
+    const auto rate=core::SampleRate::create(48000);
+    const auto frames=core::FrameCount::create(5760); // 120 ms
+    const auto block=core::FrameCount::create(257);
+    QVERIFY(rate && frames && block);
+    const auto format=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto pcm=audio::AudioBuffer::create(*format.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(pcm);
+    for(std::size_t channel=0;channel<2;++channel) {
+        const auto lane=pcm.value()->mutable_view().channel(channel);
+        QVERIFY(lane);
+        for(std::size_t i=0;i<5760;++i)
+            (*lane.value())[i]=channel==0 ? 0.72 : -0.57;
+    }
+    const auto requested=render::RenderRequest::create(
+        pcm.value()->view(),pcm.value()->view().absolute_range(),
+        *manual.value(),{},*block.value());
+    QVERIFY(requested);
+    auto rendered=render::render_preview(
+        *requested.value(),*registry.value());
+    QVERIFY(rendered);
+    auto owner=std::make_shared<const render::RenderResult>(
+        std::move(*rendered.value()));
+    auto candidate=render::render_true_peak_limiter_owned_final_master_candidate(
+        owner,*manual.value(),*frames.value(),manual.value()->revision(),
+        std::nullopt,limiter.value()->chain(),
+        limiter.value()->execution_bindings(),*registry.value(),*block.value());
+    QVERIFY(candidate);
+    auto stage=std::make_shared<const app::TerminalCandidateGate::StagedCandidate>(
+        app::TerminalCandidateGate::StagedCandidate{
+            std::move(candidate.value()->output),core::RealizationId{91},owner});
+    // Only this TEST injects an evidence RESULT; in production the observer
+    // is exclusively observe_private_terminal_consumed_output() with the
+    // independently consumed, generation-fenced Windows prefix.
+    proof=Evidence{stage,core::RealizationId{92},17,5760,0,5760,0};
+    QTRY_VERIFY_WITH_TIMEOUT(meter.recent_available(),10000);
+    QVERIFY(meter.monitoring_attempted());
+    QCOMPARE(meter.channel_count(),2);
+    QVERIFY(meter.status_text().contains(QStringLiteral("POST-LIMITER")));
+    QVERIFY(meter.left_text()!=QStringLiteral("—"));
+    QVERIFY(meter.right_text()!=QStringLiteral("—"));
+    QVERIFY(!meter.hold_available()); // 120 ms does not prove 1s hold.
+    proof.reset();
+    QTRY_VERIFY_WITH_TIMEOUT(!meter.recent_available(),3000);
+    QVERIFY(!meter.hold_available());
+    QCOMPARE(meter.peak_text(),QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(meter.left_level(),0.0);
+    QTest::qWait(100);
+    QVERIFY(!meter.recent_available()); // never reuse an old owner on GAP
+}
+
 } // namespace rgsml::tests
 
 QTEST_GUILESS_MAIN(rgsml::tests::TerminalPrivateGrProjectionTest)

@@ -42,6 +42,8 @@ ApplicationWindow {
     readonly property var appEqViewModel: typeof eqViewModel !== "undefined" ? eqViewModel : null
     readonly property var appTerminalLimiterViewModel: typeof terminalLimiterViewModel !== "undefined"
         ? terminalLimiterViewModel : null
+    readonly property var appTerminalPostLimiterMeter: typeof terminalPostLimiterTruePeak !== "undefined"
+        ? terminalPostLimiterTruePeak : null
     readonly property var appSpectrumViewModel: typeof liveSpectrumViewModel !== "undefined" ? liveSpectrumViewModel : null
 
     // Single, permanently allocated 24lp status bar. The selected module
@@ -309,6 +311,7 @@ ApplicationWindow {
                 ? truePeakStatic : null
             truePeakLiveViewModel: typeof truePeakLive !== "undefined"
                 ? truePeakLive : null
+            terminalPostLimiterTruePeak: root.appTerminalPostLimiterMeter
             // The context value is captured on root. Directly reading the
             // same-named child property here creates a QML binding loop.
             terminalLimiterViewModel: root.appTerminalLimiterViewModel

@@ -21,6 +21,7 @@
 #include "terminal_private_render_controller.hpp"
 #include "terminal_consumed_output_binding.hpp"
 #include "terminal_private_gr_view_model.hpp"
+#include "terminal_post_limiter_true_peak_coordinator.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "terminal_private_product_session.hpp"
 #include "terminal_limiter_state.hpp"
@@ -276,6 +277,18 @@ int main(int argc, char* argv[])
                     return windowsPlayback->consumed_output_prefix(generation);
                 });
         }};
+    rgsml::app::TerminalPostLimiterTruePeakCoordinator terminalPostMeter{
+        [&privateProductSession,windowsPlayback] {
+            return rgsml::app::observe_private_terminal_consumed_output(
+                privateProductSession,
+                [windowsPlayback](std::optional<std::uint64_t> generation) {
+                    return windowsPlayback->consumed_output_prefix(generation);
+                });
+        }};
+    QObject::connect(&privateProductSession,
+        &rgsml::app::TerminalPrivateProductSession::changed,
+        &terminalPostMeter,
+        &rgsml::app::TerminalPostLimiterTruePeakCoordinator::invalidate);
     QObject::connect(&playbackTransport,
         &rgsml::app::PlaybackTransportViewModel::playbackChanged,
         &terminalPrivateGrViewModel,
@@ -516,6 +529,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("terminalPrivateGrViewModel"),
         &terminalPrivateGrViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("terminalPostLimiterTruePeak"),
+        &terminalPostMeter);
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"),
         &dspChainAdapterModel);

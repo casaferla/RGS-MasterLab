@@ -17,6 +17,13 @@ Rectangle {
     property var spectrumViewModel: null
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
+    property var terminalPostLimiterTruePeak: null
+    readonly property bool terminalOn: root.terminalLimiterViewModel
+        && !root.terminalLimiterViewModel.bypass
+    readonly property var truePeakCurrentLive: terminalOn
+        ? root.terminalPostLimiterTruePeak : root.truePeakLiveViewModel
+    readonly property var truePeakCurrentStatic: terminalOn
+        ? null : root.truePeakStaticViewModel
     property var terminalLimiterViewModel: null
     property var limiterGrProvider: null
     property Item activeChainRow: null
@@ -299,8 +306,8 @@ Rectangle {
                 ? root.activeModule.editorContentKey === "TRUE_PEAK_METER" : false
             Layout.fillWidth: true
             Layout.fillHeight: true
-            measurementProvider: root.truePeakStaticViewModel
-            liveProvider: root.truePeakLiveViewModel
+            measurementProvider: root.truePeakCurrentStatic
+            liveProvider: root.truePeakCurrentLive
         }
 
         // The M17 editor is reachable ONLY from a real terminal adapter;
@@ -319,8 +326,8 @@ Rectangle {
                 ? root.terminalLimiterViewModel : null
             limiterGrProvider: root.isLimiterEditor
                 ? root.limiterGrProvider : null
-            measurementProvider: root.truePeakStaticViewModel
-            liveProvider: root.truePeakLiveViewModel
+            measurementProvider: root.truePeakCurrentStatic
+            liveProvider: root.truePeakCurrentLive
         }
 
         StereoMsEditor {

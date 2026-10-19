@@ -83,4 +83,5 @@ if(RGSML_BUILD_TESTS)
     # Separate M17 private-GR proof target, reusing the exact working
     # app-test dependencies without modifying the large frozen test suite.
     include(cmake/RgsmlTerminalPrivateGrTests.cmake)
+    include(cmake/RgsmlTerminalProductActivationTests.cmake)
 endif()
