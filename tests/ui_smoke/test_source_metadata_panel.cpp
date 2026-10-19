@@ -748,8 +748,8 @@ Window {
         instance.data(), QStringLiteral("m17LimiterValidationStatusRegion")));
     auto* validationText = find_child_by_name(instance.data(),
         QStringLiteral("m17LimiterValidationMessage"));
-    auto* rail = find_child_by_name(instance.data(),
-        QStringLiteral("truePeakMeterSharedRail"));
+    auto* rail = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("truePeakMeterSharedRail")));
     auto* gr = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("m17GainReductionHistory")));
     auto* meterBay = qobject_cast<QQuickItem*>(find_child_by_name(
@@ -835,7 +835,7 @@ Window {
             << controlsSize << "controlsPos" << controlsPos;
         QVERIFY2(meterSize.width() >= 700.0,
             "The entire two-column M17 layout must fill the editor");
-        QCOMPARE(meterPos, QPointF{0.0, 0.0});
+        QCOMPARE(meterPos, QPointF(0.0, 0.0));
         QCOMPARE(meterSize, editor->size());
         QVERIFY(!find_child_by_name(instance.data(),
             QStringLiteral("m17LimiterColumn")));
