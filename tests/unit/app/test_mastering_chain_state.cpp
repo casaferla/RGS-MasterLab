@@ -963,9 +963,26 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
         control.value()->detach();
         QVERIFY(!control.value()->seek_source(core::FrameIndex{5}));
 
-        // The next gate binds a REAL private terminal session to an
-        // independently issued candidate ID, never to Manual PROCESSED.
+        // The prior stale-owner test deliberately invalidated the gate.
+        // A new private session MUST use a freshly captured and accepted
+        // candidate; retaining the old snapshot must not resurrect it.
         if(src) {
+            QVERIFY(!gate.staged());
+            auto sessionCapture=gate.capture(owner,owner,
+                core::RealizationId{91},*manual.value(),*limiter.value(),target);
+            QVERIFY(sessionCapture);
+            auto sessionOutput=
+                render::render_true_peak_limiter_owned_output_rate_candidate(
+                    owner,*manual.value(),n,manual.value()->revision(),target,
+                    limiter.value()->chain(),limiter.value()->execution_bindings(),
+                    *registry.value(),block);
+            QVERIFY(sessionOutput);
+            QVERIFY(gate.accept(*sessionCapture.value(),
+                std::move(*sessionOutput.value()),owner,owner,
+                core::RealizationId{91},*manual.value(),*limiter.value()));
+            const auto sessionAccepted=gate.staged();
+            QVERIFY(sessionAccepted);
+            QVERIFY(sessionAccepted!=accepted);
             FakePlaybackService manualAudible;
             manualAudible.state=core::PlaybackState::STOPPED;
             manualAudible.duration=n;
@@ -1009,7 +1026,7 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             QCOMPARE(installations,1);
             QVERIFY(validOutputPcm);
             QVERIFY(observedLifetime.get()
-                ==static_cast<const void*>(accepted.get()));
+                ==static_cast<const void*>(sessionAccepted.get()));
             QVERIFY(installer.seek_source(core::FrameIndex{300}));
             QCOMPARE(manualAudible.position.value(),std::int64_t{327});
             QVERIFY(installer.set_source_loop(*range.value()));
