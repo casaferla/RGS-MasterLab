@@ -1111,6 +1111,8 @@ set_tests_properties(rgsml_module_parameter_codec_tests PROPERTIES
 
 qt_add_executable(rgsml_mastering_chain_state_tests
     unit/app/test_mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_candidate_gate.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_candidate_gate.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp

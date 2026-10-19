@@ -1,5 +1,8 @@
 #include "mastering_chain_state.hpp"
 #include "terminal_limiter_state.hpp"
+#include "terminal_candidate_gate.hpp"
+#include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/render_request.hpp>
 #include "terminal_limiter_view_model.hpp"
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
@@ -55,6 +58,7 @@ private slots:
     void restoredFourNodeStereoMsPreservesTypedIdentityAndBypass();
     void terminalLimiterProductStateAndActualPcm();
     void limiterCeilingViewModelDraftAndValidation();
+    void terminalOutputAdmissionRejectsObsoleteOwnersAndCeiling();
 };
 
 void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
@@ -616,6 +620,123 @@ void MasteringChainStateTest::limiterCeilingViewModelDraftAndValidation()
     QVERIFY(!vm.setDraftFieldText(QStringLiteral("unrelated"),QStringLiteral("-6.0")));
     QCOMPARE(vm.ceiling_db_tp(),-9.5);
     QCOMPARE(acceptedChanges,3);
+}
+
+
+
+void MasteringChainStateTest::terminalOutputAdmissionRejectsObsoleteOwnersAndCeiling()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto manual=dsp::ProcessingChain::create(*registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    const auto id=test_instance_id("7b000000-0000-4000-8000-000000000017");
+    auto terminal=TerminalLimiterState::create_default(*registry.value(),id);
+    QVERIFY(terminal);
+    const auto sampleRate=*core::SampleRate::create(44100).value();
+    const auto outputRate=*core::SampleRate::create(48000).value();
+    auto fmt=audio::AudioFormat::create(
+        sampleRate,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto n=*core::FrameCount::create(441).value();
+    auto block=*core::FrameCount::create(17).value();
+    auto source=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,core::FrameIndex{0},n);
+    QVERIFY(source);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto data=source.value()->mutable_view().channel(ch);
+        QVERIFY(data);
+        for(std::size_t i=0;i<441;++i)
+            (*data.value())[i]=i==0 ? (ch==0?4.0:-3.0)
+                                    : (ch==0?0.25:-0.125);
+    }
+    auto request=render::RenderRequest::create(
+        source.value()->view(),source.value()->view().absolute_range(),
+        *manual.value(),{},block);
+    QVERIFY(request);
+    auto manualRender=render::render_preview(
+        *request.value(),*registry.value());
+    QVERIFY(manualRender);
+    auto owner=std::make_shared<const render::RenderResult>(
+        std::move(*manualRender.value()));
+    const auto identity=core::RealizationId{77};
+    TerminalCandidateGate gate;
+
+    auto missing=gate.capture(owner,{},identity,*manual.value(),
+        *terminal.value(),outputRate);
+    QVERIFY(!missing);
+    QVERIFY(!gate.staged());
+
+    auto job=gate.capture(owner,owner,identity,*manual.value(),
+        *terminal.value(),outputRate);
+    QVERIFY(job);
+    QCOMPARE(job.value()->terminal_parameter_revision,std::uint64_t{0});
+    auto old=render::render_true_peak_limiter_owned_output_rate_candidate(
+        owner,*manual.value(),n,manual.value()->revision(),
+        outputRate,terminal.value()->chain(),
+        terminal.value()->execution_bindings(),*registry.value(),block);
+    QVERIFY(old);
+    const auto chainRev=terminal.value()->chain().revision();
+    QVERIFY(terminal.value()->set_ceiling_db_tp(-6.0));
+    QCOMPARE(terminal.value()->chain().revision(),chainRev);
+    QCOMPARE(terminal.value()->parameter_revision(),std::uint64_t{1});
+    QVERIFY(!gate.accept(*job.value(),std::move(*old.value()),
+        owner,owner,identity,*manual.value(),*terminal.value()));
+    QVERIFY(!gate.staged());
+
+    auto job2=gate.capture(owner,owner,identity,*manual.value(),
+        *terminal.value(),outputRate);
+    QVERIFY(job2);
+    auto swapped=render::render_true_peak_limiter_owned_output_rate_candidate(
+        owner,*manual.value(),n,manual.value()->revision(),
+        outputRate,terminal.value()->chain(),
+        terminal.value()->execution_bindings(),*registry.value(),block);
+    QVERIFY(swapped);
+    QVERIFY(!gate.accept(*job2.value(),std::move(*swapped.value()),
+        owner,{},identity,*manual.value(),*terminal.value()));
+    QVERIFY(!gate.staged());
+
+    auto job3=gate.capture(owner,owner,identity,*manual.value(),
+        *terminal.value(),outputRate);
+    QVERIFY(job3);
+    auto produced=render::render_true_peak_limiter_owned_output_rate_candidate(
+        owner,*manual.value(),n,manual.value()->revision(),
+        outputRate,terminal.value()->chain(),
+        terminal.value()->execution_bindings(),*registry.value(),block);
+    QVERIFY(produced);
+    auto newId=core::RealizationId{78};
+    QVERIFY(!gate.accept(*job3.value(),std::move(*produced.value()),
+        owner,owner,newId,*manual.value(),*terminal.value()));
+    QVERIFY(!gate.staged());
+
+    auto job4=gate.capture(owner,owner,identity,*manual.value(),
+        *terminal.value(),outputRate);
+    QVERIFY(job4);
+    auto accepted=render::render_true_peak_limiter_owned_output_rate_candidate(
+        owner,*manual.value(),n,manual.value()->revision(),
+        outputRate,terminal.value()->chain(),
+        terminal.value()->execution_bindings(),*registry.value(),block);
+    QVERIFY(accepted);
+    QVERIFY(gate.accept(*job4.value(),std::move(*accepted.value()),
+        owner,owner,identity,*manual.value(),*terminal.value()));
+    auto snap=gate.staged();
+    QVERIFY(snap);
+    QCOMPARE(snap->original_manual_realization_id.value,std::uint64_t{77});
+    QCOMPARE(snap->prepared_owner.get(),owner.get());
+    QCOMPARE(snap->rendered.manual_owner.get(),owner.get());
+    QVERIFY(snap->rendered.used_candidate_src);
+    QCOMPARE(snap->rendered.terminal.checked.terminal
+        .compensated_pcm.view().frame_count().value(),std::int64_t{480});
+    QVERIFY(snap->rendered.terminal.checked.terminal.bypassed);
+    QVERIFY(!snap->rendered.terminal.checked.final_check.has_value());
+    QVERIFY(snap->rendered.terminal.checked.terminal.applied_gain_frames.empty());
+
+    gate.invalidate();
+    QVERIFY(!gate.staged());
+    // The snapshot is still immutable and privately owned by its consumer;
+    // invalidation does not make it an audible Processed realization.
+    QCOMPARE(snap->rendered.manual_owner.get(),owner.get());
 }
 
 
