@@ -139,6 +139,14 @@ void PlaybackTransportViewModel::set_pcm_handoff_handler(
 
 core::Status PlaybackTransportViewModel::stop_and_clear()
 {
+    // Source switches must not erase a successor after M17 ownership or
+    // liveness has expired. Only an exact live gate can authorize clearing.
+    if (terminalGate_ && (terminalLease_.expired()
+        || !terminalGate_->source_display_snapshot())) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "Stale terminal playback cannot be cleared by a SOURCE command."});
+    }
     if (!service_) {
         playbackAvailable_ = false;
         errorMessage_ = QStringLiteral("Playback service is unavailable.");
@@ -277,6 +285,30 @@ core::Status PlaybackTransportViewModel::bind_private_terminal_source_controls(
     return core::Status::success();
 }
 
+core::Status PlaybackTransportViewModel::detach_private_terminal_source_controls(
+    const TerminalSourceTransportPort& expected)
+{
+    if (terminalGate_ != &expected || !terminalLease_.expired() || !service_) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "Terminal transport may detach only its expired exact owner."});
+    }
+    auto snap=service_->snapshot();
+    if (!snap) return core::Status::failure(*snap.error());
+    if (snap.value()->state!=core::PlaybackState::NO_SOURCE
+        ||snap.value()->audibleRealization.realizationId) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "Terminal output must be retired before manual transport reuse."});
+    }
+    terminalGate_=nullptr;
+    terminalLease_.reset();
+    sampleRateHz_=0;
+    errorMessage_.clear();
+    refresh();
+    return core::Status::success();
+}
+
 core::Result<PlaybackTransportViewModel::SourceDisplaySnapshot>
 PlaybackTransportViewModel::source_display_snapshot() const
 {
@@ -408,6 +440,14 @@ void PlaybackTransportViewModel::pause()
     if (!service_) {
         return;
     }
+    if (terminalGate_ && (terminalLease_.expired()
+        || !terminalGate_->source_display_snapshot())) {
+        publish_failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "Stale terminal session: Pause refused."});
+        refresh();
+        return;
+    }
     const auto result = service_->pause();
     if (!result) {
         publish_failure(*result.error());
@@ -420,6 +460,14 @@ void PlaybackTransportViewModel::pause()
 void PlaybackTransportViewModel::stop()
 {
     if (!service_) {
+        return;
+    }
+    if (terminalGate_ && (terminalLease_.expired()
+        || !terminalGate_->source_display_snapshot())) {
+        publish_failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "Stale terminal session: Stop refused."});
+        refresh();
         return;
     }
     const auto result = service_->stop();

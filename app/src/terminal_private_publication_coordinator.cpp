@@ -60,7 +60,14 @@ TerminalPrivatePublicationCoordinator::install_private(
     if (!installed) return Result::failure(*installed.error());
     auto rollback=[this](const core::Error& failure) -> Result {
         auto retired=session_->retire_owned_session();
-        return Result::failure(retired?failure:*retired.error());
+        // Roll back the SOURCE adapter as well as the device. The transport
+        // may resume its normal manual path only if retirement confirmed the
+        // sink is actually NO_SOURCE; an alien owner remains fail-closed.
+        auto unbound=transport_->detach_private_terminal_source_controls(*session_);
+        if (!retired) return Result::failure(*retired.error());
+        if (!unbound && transport_->source_display_snapshot())
+            return Result::failure(*unbound.error());
+        return Result::failure(failure);
     };
     auto bound=transport_->bind_private_terminal_source_controls(*session_);
     if (!bound) return rollback(*bound.error());

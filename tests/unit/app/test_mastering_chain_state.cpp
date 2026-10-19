@@ -1052,6 +1052,10 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             QCOMPARE(manualAudible.position.value(),std::int64_t{160});
             QCOMPARE(manualAudible.loop,std::optional{*mappedLoop.value()});
             QVERIFY(installer.has_session());
+            // A live terminal mapping cannot be unbound before retiring
+            // the actual audible output; no SOURCE fallback is legal yet.
+            QVERIFY(!terminalTransport.detach_private_terminal_source_controls(
+                installer));
             QCOMPARE(installations,1);
             QVERIFY(validOutputPcm);
             QVERIFY(observedLifetime.get()
@@ -1079,6 +1083,29 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             QCOMPARE(manualAudible.loop,std::optional{*mappedLoop.value()});
             QVERIFY(installer.set_source_loop(std::nullopt));
             QVERIFY(!manualAudible.loop);
+            // A different audible identity can take over: old transport
+            // Pause/Stop/clear must never send commands to the new owner.
+            manualAudible.state=core::PlaybackState::PLAYING;
+            manualAudible.audibleRealization=core::AudibleRealizationState{
+                core::AudibleHandoffPhase::NEW,core::RealizationId{9898}};
+            const auto pausedBefore=manualAudible.pauseCalls;
+            const auto stoppedBefore=manualAudible.stopCalls;
+            const auto clearsBefore=manualAudible.clearCalls;
+            terminalTransport.pause();
+            terminalTransport.stop();
+            QVERIFY(!terminalTransport.stop_and_clear());
+            QCOMPARE(manualAudible.pauseCalls,pausedBefore);
+            QCOMPARE(manualAudible.stopCalls,stoppedBefore);
+            QCOMPARE(manualAudible.clearCalls,clearsBefore);
+            QCOMPARE(manualAudible.audibleRealization.realizationId,
+                     std::optional{core::RealizationId{9898}});
+            QVERIFY(!terminalTransport.detach_private_terminal_source_controls(
+                installer));
+            // Simulate exact owner returning to STOPPED, then a logical
+            // invalidation. Unbinding is forbidden while PCM remains live.
+            manualAudible.state=core::PlaybackState::STOPPED;
+            manualAudible.audibleRealization=core::AudibleRealizationState{
+                core::AudibleHandoffPhase::NEW,core::RealizationId{9100}};
             installer.detach();
             const auto lastOutputPosition=manualAudible.position;
             QVERIFY(!terminalTransport.seek_source_frame(core::FrameIndex{11}));
@@ -1088,6 +1115,17 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             auto unchangedRaw=terminalTransport.playback_snapshot();
             QVERIFY(unchangedRaw);
             QCOMPARE(unchangedRaw.value()->position,lastOutputPosition);
+            QVERIFY(!terminalTransport.stop_and_clear());
+            QVERIFY(!terminalTransport.detach_private_terminal_source_controls(
+                installer));
+            QCOMPARE(manualAudible.position,lastOutputPosition);
+            // Only after an independent exact terminal output retire
+            // (NO_SOURCE + no identity) may normal manual transport resume.
+            QVERIFY(manualAudible.clear());
+            QVERIFY(terminalTransport.detach_private_terminal_source_controls(
+                installer));
+            QVERIFY(!terminalTransport.detach_private_terminal_source_controls(
+                installer));
             QVERIFY(!installer.has_session());
             QVERIFY(!installer.seek_source(core::FrameIndex{20}));
 

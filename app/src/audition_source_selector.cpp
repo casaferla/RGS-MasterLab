@@ -264,7 +264,9 @@ core::Status AuditionSourceSelector::set_processed_realization(
 
     if (activeTarget_ == AuditionTarget::PROCESSED) {
         const auto range = candidate->render_window();
-        auto snapshot = playback_->playback_snapshot();
+        // PROCESSED can temporarily be OUTPUT_RATE private audio. Preserve
+        // the original SOURCE playhead, never store an output-rate cursor.
+        auto snapshot = playback_->source_display_snapshot();
         if (snapshot) {
             sourceDerivedCue_ = snapshot.value()->position;
         }
@@ -465,15 +467,18 @@ core::Status AuditionSourceSelector::store_active_cue()
     if (!activeTarget_) {
         return core::Status::success();
     }
-    auto snapshot = playback_->playback_snapshot();
-    if (!snapshot) {
-        return core::Status::failure(*snapshot.error());
-    }
+    auto snapshot = *activeTarget_ == AuditionTarget::GOLD
+        ? playback_->playback_snapshot()
+        : core::Result<core::PlaybackSnapshot>::failure(core::Error{
+            core::ErrorCode::InvalidState, "Source-target cursor uses mapped coordinates."});
     if (*activeTarget_ == AuditionTarget::GOLD) {
+        if (!snapshot) return core::Status::failure(*snapshot.error());
         goldCue_ = snapshot.value()->position;
-    } else {
-        sourceDerivedCue_ = snapshot.value()->position;
+        return core::Status::success();
     }
+    auto source=playback_->source_display_snapshot();
+    if (!source) return core::Status::failure(*source.error());
+    sourceDerivedCue_=source.value()->position;
     return core::Status::success();
 }
 

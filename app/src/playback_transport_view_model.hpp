@@ -79,6 +79,11 @@ public:
     // Private M17 exact-output source-control binding; no product UI activation.
     [[nodiscard]] core::Status bind_private_terminal_source_controls(
         TerminalSourceTransportPort& gate);
+    // Remove an EXPIRED gate only when the old terminal sink is already
+    // NO_SOURCE. An alien audible successor must never be silently converted
+    // into a manual SOURCE session, or cleared by a later handoff.
+    [[nodiscard]] core::Status detach_private_terminal_source_controls(
+        const TerminalSourceTransportPort& expected);
     using SourceDisplaySnapshot = TerminalSourceTransportPort::DisplaySnapshot;
     // UI-only: NOT an M16 sink-consumption or RealizationId certificate.
     [[nodiscard]] core::Result<SourceDisplaySnapshot>
