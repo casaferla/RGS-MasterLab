@@ -21,6 +21,7 @@
 #include "terminal_private_render_controller.hpp"
 #include "terminal_consumed_output_binding.hpp"
 #include "terminal_private_gr_view_model.hpp"
+#include "terminal_product_activation_coordinator.hpp"
 #include "terminal_private_product_session.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
@@ -283,15 +284,15 @@ int main(int argc, char* argv[])
         &rgsml::app::TerminalPrivateProductSession::changed,
         &terminalPrivateGrViewModel,
         &rgsml::app::TerminalPrivateGrViewModel::invalidate);
-    static_cast<void>(privateProductSession);
+    // The only product ON/BYPASS conductor. The adapter calls the typed
+    // ViewModel; its accepted-state signal now drives exact-source,
+    // reversible, output-owned device installation (no modal rate prompt).
+    // Device-rate SRC applies only to audition, never to final WAV master.
+    rgsml::app::TerminalProductActivationCoordinator terminalProductActivation{
+        terminalLimiterState,terminalLimiterViewModel,auditionSelector,
+        playbackTransport,privateProductSession};
     QObject::connect(&auditionSelector,
         &rgsml::app::AuditionSourceSelector::changed,
-        &privateProductSession,
-        [&privateProductSession] {
-            static_cast<void>(privateProductSession.cancel());
-        });
-    QObject::connect(&terminalLimiterViewModel,
-        &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
         &privateProductSession,
         [&privateProductSession] {
             static_cast<void>(privateProductSession.cancel());

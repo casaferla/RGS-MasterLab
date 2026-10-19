@@ -19,6 +19,7 @@ class TerminalLimiterViewModel final : public QObject {
     Q_PROPERTY(QString ceilingDbTpText READ ceiling_db_tp_text NOTIFY changed)
     Q_PROPERTY(double draftCeilingDbTp READ draft_ceiling_db_tp NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
+    Q_PROPERTY(QString audioStatus READ audio_status NOTIFY changed)
     Q_PROPERTY(QString validationField READ validation_field NOTIFY changed)
     Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
 public:
@@ -33,6 +34,7 @@ public:
     [[nodiscard]] QString ceiling_db_tp_text() const;
     [[nodiscard]] double draft_ceiling_db_tp() const noexcept;
     [[nodiscard]] bool bypass() const noexcept;
+    [[nodiscard]] QString audio_status() const {return audioStatus_;}
     [[nodiscard]] QString validation_field() const { return validationField_; }
     [[nodiscard]] QString validation_message() const { return validationMessage_; }
 
@@ -46,6 +48,11 @@ public:
     Q_INVOKABLE void cancelDraft();
     Q_INVOKABLE void setBypass(bool bypass);
     Q_INVOKABLE void refreshFromAuthority();
+    // Fail-closed device/PCM transition error in the existing fixed footer.
+    // Never replace the typed Ceiling range error with a fictitious success.
+    void reportAudioError(const QString& message);
+    void setAudioStatus(const QString& value);
+    void clearAudioError();
 
 signals:
     // Authored/draft/validation changed: repaint ONLY.
@@ -62,6 +69,7 @@ private:
     QString validationField_;
     QString validationMessage_;
     AcceptedStateChange stateChanged_;
+    QString audioStatus_{QStringLiteral("BYPASS")};
 };
 
 } // namespace rgsml::app

@@ -278,11 +278,11 @@ public:
     [[nodiscard]] QString configuration_state() const override
     { return state_ && state_->parameters().ceiling_db_tp()!=-1.0
         ? QStringLiteral("Manual") : QStringLiteral("Default"); }
-    [[nodiscard]] bool bypass_supported() const noexcept override { return false; }
+    [[nodiscard]] bool bypass_supported() const noexcept override { return vm_!=nullptr; }
     [[nodiscard]] bool bypass() const noexcept override { return !state_||state_->bypassed(); }
     [[nodiscard]] bool preview_supported() const noexcept override { return false; }
     [[nodiscard]] QString preview_status() const override
-    { return QStringLiteral("TERMINAL_OUTPUT_ROUTE_PENDING"); }
+    { return QStringLiteral("OUTPUT_RATE_AUDITION_UNQUALIFIED"); }
     [[nodiscard]] QString preview_error() const override { return {}; }
     [[nodiscard]] bool history_supported() const noexcept override { return false; }
     [[nodiscard]] bool can_undo() const noexcept override { return false; }
@@ -291,18 +291,18 @@ public:
     [[nodiscard]] QString editor_content_key() const override
     { return QStringLiteral("TRUE_PEAK_LIMITER"); }
     [[nodiscard]] QString live_change_policy() const override
-    { return QStringLiteral("UNQUALIFIED_TERMINAL_DISABLED"); }
+    { return QStringLiteral("OFFLINE_TERMINAL_RENDER_ON_ACCEPTED_CHANGE"); }
     [[nodiscard]] GainViewModel* gain_view_model() const noexcept override { return nullptr; }
     [[nodiscard]] EqViewModel* eq_view_model() const noexcept override { return nullptr; }
     [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override { return nullptr; }
     [[nodiscard]] QString family_accent() const override
     { return bypass() ? QStringLiteral("#6CBCCF") : QStringLiteral("#C4774A"); }
     [[nodiscard]] QString state_text() const override
-    { return bypass() ? QStringLiteral("BYPASS · Output route pending")
-        : QStringLiteral("UNQUALIFIED · No audible output"); }
+    { return vm_ ? vm_->audio_status()
+        : QStringLiteral("UNAVAILABLE · NO AUDIO OWNER"); }
     [[nodiscard]] bool has_error() const noexcept override
     { return vm_ && !vm_->validation_message().isEmpty(); }
-    void setBypass(bool) override {} // No false sonic activation.
+    void setBypass(bool value) override { if(vm_)vm_->setBypass(value); }
     void undo() override {}
     void redo() override {}
     void resetToDefault() override {}

@@ -127,6 +127,26 @@ void TerminalLimiterViewModel::setBypass(bool value)
     emit acceptedStateChanged();
 }
 
+void TerminalLimiterViewModel::setAudioStatus(const QString& value)
+{
+    if(audioStatus_==value)return;
+    audioStatus_=value;
+    emit changed();
+}
+
+void TerminalLimiterViewModel::reportAudioError(const QString& message)
+{
+    validationField_=QStringLiteral("audio");
+    validationMessage_=message;
+    emit changed();
+}
+void TerminalLimiterViewModel::clearAudioError()
+{
+    if(validationField_!=QStringLiteral("audio"))return;
+    clear_validation();
+    emit changed();
+}
+
 void TerminalLimiterViewModel::refreshFromAuthority()
 {
     cancelDraft();

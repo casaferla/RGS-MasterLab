@@ -201,24 +201,35 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     QCOMPARE(limiter->editor_content_key(),QStringLiteral("TRUE_PEAK_LIMITER"));
     QCOMPARE(limiter->display_name(),QStringLiteral("True Peak Limiter"));
     QCOMPARE(limiter->live_change_policy(),
-        QStringLiteral("UNQUALIFIED_TERMINAL_DISABLED"));
+        QStringLiteral("OFFLINE_TERMINAL_RENDER_ON_ACCEPTED_CHANGE"));
     QCOMPARE(limiter->family_accent(),QStringLiteral("#6CBCCF"));
     QVERIFY(limiter->bypass());
-    QVERIFY(!limiter->bypass_supported());
+    QVERIFY(limiter->bypass_supported());
     QVERIFY(!limiter->preview_supported());
     QVERIFY(!limiter->reset_supported());
     QVERIFY(!limiter->can_undo());
     QVERIFY(!limiter->can_redo());
     QCOMPARE(vm.ceiling_db_tp(),-1.0);
     const auto oldRevision=terminal.value()->chain().revision();
+    QSignalSpy commits(&vm,&TerminalLimiterViewModel::acceptedStateChanged);
+    QVERIFY(commits.isValid());
     limiter->setBypass(false);
+    QVERIFY(!limiter->bypass());
+    QVERIFY(!terminal.value()->bypassed());
+    QCOMPARE(commits.size(),1);
+    // This fixture has no coordinator/device: a VM change by itself is
+    // NOT an audible M17 certification.
+    QCOMPARE(vm.audio_status(),QStringLiteral("BYPASS"));
+    vm.setAudioStatus(QStringLiteral("RENDERING · AUDITION ONLY"));
+    QCOMPARE(limiter->state_text(),vm.audio_status());
     limiter->setBypass(true);
+    QCOMPARE(commits.size(),2);
     limiter->resetToDefault();
     limiter->undo();
     limiter->redo();
     QVERIFY(limiter->bypass());
     QVERIFY(terminal.value()->bypassed());
-    QCOMPARE(terminal.value()->chain().revision(),oldRevision);
+    QVERIFY(terminal.value()->chain().revision()>oldRevision);
     QCOMPARE(manual.value()->instances().size(),std::size_t{3});
     model.selectModuleByInstanceId(limiter->instance_id());
     QCOMPARE(model.selected_index(),4);
@@ -228,8 +239,9 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
         QString::fromStdString(limiterId.to_string()));
     QCOMPARE(model.modules().size(),qsizetype{5});
     QCOMPARE(terminal.value()->chain().instances().size(),std::size_t{1});
-    // An M17 editor exists for the real module without permitting any
-    // unowned rendering or false audible applied GR.
+    // The typed limiter adapter now forwards only the accepted DSP state.
+    // Production must also pass the exact owned audio session coordinator;
+    // this isolated adapter fixture does not install or claim audio.
     QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
 }
 

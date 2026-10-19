@@ -164,7 +164,17 @@ AuditionSourceSelector::capture_terminal_activation_intent() const
     if(!after)return core::Result<I>::failure(*after.error());
     // Snapshot is an eligibility capture only. A later user seek, device
     // handoff, region edit or source change MUST invalidate it before install.
-    if(*after.value()!=*before.value()
+    // PLAYING advances frames between otherwise stable serialized reads.
+    // Match owner/epoch/loop/state instead of requiring an impossible
+    // byte-identical playhead. The middle SOURCE snapshot is the cue to save.
+    if(after.value()->state!=before.value()->state
+       ||after.value()->audibleRealization
+           !=before.value()->audibleRealization
+       ||after.value()->duration!=before.value()->duration
+       ||after.value()->loop!=before.value()->loop
+       ||after.value()->seekSerial!=before.value()->seekSerial
+       ||after.value()->traversalSerial!=before.value()->traversalSerial
+       ||after.value()->loopWrapCount!=before.value()->loopWrapCount
        ||source.value()->position.value()<0
        ||source.value()->position>range.end()
        ||source.value()->duration!=manual.view().frame_count()
