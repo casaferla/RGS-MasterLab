@@ -25,6 +25,7 @@ namespace {
 core::Result<TruePeakLimiterOwnedSourceCandidate>
 render_true_peak_limiter_owned_same_rate_candidate(
     std::shared_ptr<const RenderResult> manual,
+    const dsp::ProcessingChain& manual_chain,
     core::FrameCount full_frames,
     std::uint64_t manual_revision,
     core::SampleRate output_rate,
@@ -52,10 +53,30 @@ render_true_peak_limiter_owned_same_rate_candidate(
             core::ErrorCode::InvalidArgument,"M17_MANUAL_FULL_RESOURCE_REQUIRED",
             "Terminal limiter may consume only a complete zero-origin manual realization."));
     }
-    if (manual->chain_revision()!=manual_revision) {
+    if (manual_chain.context().stage!=dsp::ProcessingStage::MASTER
+        || manual_chain.context().segment!=dsp::ChainSegment::MANUAL
+        || manual_chain.revision()!=manual_revision
+        || manual->chain_revision()!=manual_revision) {
         return core::Result<Candidate>::failure(source_error(
             core::ErrorCode::InvalidState,"M17_MANUAL_REVISION_STALE",
             "Manual chain revision changed since the candidate was captured."));
+    }
+    // A different module order/identity cannot be substituted merely
+    // because two chain histories happen to have the same revision.
+    const auto instances=manual_chain.instances();
+    const auto& signatures=manual->signatures();
+    if(instances.size()!=signatures.size()) {
+        return core::Result<Candidate>::failure(source_error(
+            core::ErrorCode::InvalidState,"M17_MANUAL_SIGNATURE_STALE",
+            "The manual render does not match the expected DSP chain."));
+    }
+    for(std::size_t i=0;i<instances.size();++i) {
+        if(instances[i].instance_id()!=signatures[i].instance_id
+           || instances[i].module_type_id()!=signatures[i].type_id) {
+            return core::Result<Candidate>::failure(source_error(
+                core::ErrorCode::InvalidState,"M17_MANUAL_SIGNATURE_STALE",
+                "The manual render module identity/order does not match."));
+        }
     }
     const auto in_hz=view.format().sample_rate().value();
     if (!m16_supported_rate(in_hz)

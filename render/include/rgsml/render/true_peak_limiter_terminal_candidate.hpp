@@ -115,8 +115,8 @@ struct TruePeakLimiterOwnedSourceCandidate final {
     std::uint64_t manual_chain_revision{0};
 };
 
-// Caller must supply the currently accepted, immutable manual owner and
-// expected true FULL resource length and manual chain revision. The function
+// Caller must supply the currently accepted, immutable manual owner, real
+// MASTER/MANUAL chain snapshot, and expected FULL length/revision. The function
 // guards against stale, partial and mixed-domain PCM, copies every binary64
 // bit into an owned OUTPUT_RATE buffer (only for EXACT same rate), invokes
 // the REAL typed terminal DSP/verification and retains source lifetime.
@@ -125,6 +125,7 @@ struct TruePeakLimiterOwnedSourceCandidate final {
 [[nodiscard]] core::Result<TruePeakLimiterOwnedSourceCandidate>
 render_true_peak_limiter_owned_same_rate_candidate(
     std::shared_ptr<const RenderResult> accepted_manual_owner,
+    const dsp::ProcessingChain& manual_chain_snapshot,
     core::FrameCount original_full_resource_frames,
     std::uint64_t expected_manual_chain_revision,
     core::SampleRate required_output_rate,

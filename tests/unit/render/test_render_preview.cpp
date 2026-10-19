@@ -2247,7 +2247,7 @@ void RenderPreviewTest::truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndS
         const auto sourceBits=bits(owner->view());
         const auto manualRev=owner->chain_revision();
         auto nullOwner=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
-            {},n,manualRev,hz==44100?rate44100:rate48000,
+            {},manualChain,n,manualRev,hz==44100?rate44100:rate48000,
             *limiterChain.value(),binding,*registry.value(),block);
         QVERIFY(!nullOwner);
         QCOMPARE(error_category(*nullOwner.error()),
@@ -2259,7 +2259,7 @@ void RenderPreviewTest::truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndS
         QCOMPARE(error_category(*stale.error()),
                  std::string_view{"M17_MANUAL_REVISION_STALE"});
         auto shortCount=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
-            owner,frame_count(300),manualRev,hz==44100?rate44100:rate48000,
+            owner,manualChain,frame_count(300),manualRev,hz==44100?rate44100:rate48000,
             *limiterChain.value(),binding,*registry.value(),block);
         QVERIFY(!shortCount);
         QCOMPARE(error_category(*shortCount.error()),
@@ -2267,17 +2267,17 @@ void RenderPreviewTest::truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndS
 
         if(hz==44100) {
             auto noSrc=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
-                owner,n,manualRev,rate48000,*limiterChain.value(),binding,
+                owner,manualChain,n,manualRev,rate48000,*limiterChain.value(),binding,
                 *registry.value(),block);
             QVERIFY(!noSrc);
             QCOMPARE(error_category(*noSrc.error()),
                      std::string_view{"M17_OUTPUT_RATE_SRC_REQUIRED"});
         }
         auto owned=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
-            owner,n,manualRev,hz==44100?rate44100:rate48000,
+            owner,manualChain,n,manualRev,hz==44100?rate44100:rate48000,
             *limiterChain.value(),binding,*registry.value(),block);
         QVERIFY2(owned,owned?"":owned.error()->message().c_str());
-        QCOMPARE(owned.value()->manual_owner,owner);
+        QCOMPARE(owned.value()->manual_owner.get(),owner.get());
         QCOMPARE(owned.value()->manual_chain_revision,manualRev);
         QCOMPARE(owned.value()->programme_frames,n);
         QCOMPARE(owned.value()->terminal.terminal_chain_revision,
@@ -2297,7 +2297,7 @@ void RenderPreviewTest::truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndS
         if(hz==48000) {
             QVERIFY(limiterChain.value()->set_user_bypass(id,false));
             auto on=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
-                owned.value()->manual_owner,n,manualRev,rate48000,
+                owned.value()->manual_owner,manualChain,n,manualRev,rate48000,
                 *limiterChain.value(),binding,*registry.value(),block);
             QVERIFY2(on,on?"":on.error()->message().c_str());
             QVERIFY(!on.value()->terminal.checked.terminal.bypassed);
@@ -2323,7 +2323,7 @@ void RenderPreviewTest::truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndS
     auto partOwner=std::make_shared<const rgsml::render::RenderResult>(
         std::move(*partResult.value()));
     auto rejected=rgsml::render::render_true_peak_limiter_owned_same_rate_candidate(
-        partOwner,n,partOwner->chain_revision(),rate48000,
+        partOwner,manualChain,n,partOwner->chain_revision(),rate48000,
         *limiterChain.value(),binding,*registry.value(),block);
     QVERIFY(!rejected);
     QCOMPARE(error_category(*rejected.error()),
