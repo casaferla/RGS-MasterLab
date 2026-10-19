@@ -5,6 +5,7 @@
 #include "terminal_source_control_bridge.hpp"
 #include "terminal_audio_session_gate.hpp"
 #include "terminal_private_publication_coordinator.hpp"
+#include "terminal_private_render_controller.hpp"
 #include "playback_transport_view_model.hpp"
 #include "../platform/fake_playback_service.hpp"
 #include <rgsml/render/render_preview.hpp>
@@ -66,6 +67,7 @@ private slots:
     void limiterCeilingViewModelDraftAndValidation();
     void terminalOutputAdmissionRejectsObsoleteOwnersAndCeiling();
     void terminalOutputFrameMapPreservesSourceLoopAndSeekCoordinates();
+    void terminalPrivateWorkerStagesOnlyCurrentOwnedOutput();
 };
 
 void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
@@ -1136,6 +1138,69 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
         gate.invalidate();
         QVERIFY(!gate.staged());
     }
+}
+
+
+void MasteringChainStateTest::terminalPrivateWorkerStagesOnlyCurrentOwnedOutput()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto manual=dsp::ProcessingChain::create(*registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    auto limiter=TerminalLimiterState::create_default(
+        *registry.value(),
+        test_instance_id("7c000000-0000-4000-8000-000000000057"));
+    QVERIFY(limiter);
+    const auto sourceRate=*core::SampleRate::create(44100).value();
+    const auto outputRate=*core::SampleRate::create(48000).value();
+    auto fmt=audio::AudioFormat::create(
+        sourceRate,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    const auto frames=*core::FrameCount::create(441).value();
+    auto buffer=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},frames);
+    QVERIFY(buffer);
+    auto request=render::RenderRequest::create(
+        buffer.value()->view(),buffer.value()->view().absolute_range(),
+        *manual.value(),{},*core::FrameCount::create(17).value());
+    QVERIFY(request);
+    auto rendered=render::render_preview(*request.value(),*registry.value());
+    QVERIFY(rendered);
+    auto owner=std::make_shared<const render::RenderResult>(
+        std::move(*rendered.value()));
+    std::shared_ptr<const render::RenderResult> active=owner;
+    std::optional<core::RealizationId> activeId=core::RealizationId{57};
+    TerminalCandidateGate gate;
+    TerminalPrivateRenderController worker{
+        gate,*limiter.value(),[&]{return active;},[&]{return active;},
+        [&]{return activeId;},[&]{return *manual.value();}};
+    QVERIFY(worker.request_private(outputRate));
+    QTRY_COMPARE(worker.status(),QStringLiteral("READY_PRIVATE"));
+    auto first=gate.staged();
+    QVERIFY(first);
+    QCOMPARE(first->original_manual_realization_id,core::RealizationId{57});
+    QCOMPARE(first->rendered.output_rate,outputRate);
+    QCOMPARE(first->rendered.terminal.checked.terminal.compensated_pcm
+        .view().frame_count().value(),std::int64_t{480});
+    QVERIFY(worker.request_private(sourceRate));
+    QVERIFY(!gate.staged());
+    QTRY_COMPARE(worker.status(),QStringLiteral("READY_PRIVATE"));
+    QVERIFY(gate.staged());
+    QCOMPARE(gate.staged()->rendered.output_rate,sourceRate);
+    QCOMPARE(gate.staged()->rendered.terminal.checked.terminal
+        .compensated_pcm.view().frame_count().value(),std::int64_t{441});
+    QVERIFY(worker.request_private(outputRate));
+    activeId=core::RealizationId{58};
+    worker.invalidate();
+    QVERIFY(!gate.staged());
+    QTest::qWait(30);
+    QVERIFY(!gate.staged());
+    QVERIFY(worker.request_private(outputRate));
+    QTRY_COMPARE(worker.status(),QStringLiteral("READY_PRIVATE"));
+    QCOMPARE(gate.staged()->original_manual_realization_id,
+             core::RealizationId{58});
 }
 
 

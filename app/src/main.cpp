@@ -18,6 +18,7 @@
 #include "terminal_candidate_gate.hpp"
 #include "terminal_audio_session_gate.hpp"
 #include "terminal_private_publication_coordinator.hpp"
+#include "terminal_private_render_controller.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
 #include "true_peak_static_coordinator.hpp"
@@ -235,6 +236,23 @@ int main(int argc, char* argv[])
             terminalCandidateGate.invalidate();
         });
 
+    // Private M17 output-rate job worker. No output rate guess or UI trigger.
+    rgsml::app::TerminalPrivateRenderController privateTerminalRenderer{
+        terminalCandidateGate,terminalLimiterState,
+        [&auditionSelector] {return auditionSelector.prepared_realization_snapshot();},
+        [&auditionSelector] {return auditionSelector.processed_realization_snapshot();},
+        [&auditionSelector] {return auditionSelector.processed_realization_id();},
+        [&masteringChainState] {return masteringChainState.chain();}};
+    static_cast<void>(privateTerminalRenderer);
+    QObject::connect(&auditionSelector,
+        &rgsml::app::AuditionSourceSelector::changed,
+        &privateTerminalRenderer,
+        &rgsml::app::TerminalPrivateRenderController::invalidate);
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::changed,
+        &privateTerminalRenderer,
+        &rgsml::app::TerminalPrivateRenderController::invalidate);
+
     rgsml::app::MasteringPreviewController previewController{
         &masteringChainState,
         [&auditionSelector] {
@@ -253,6 +271,10 @@ int main(int argc, char* argv[])
             terminalCandidateGate.invalidate();
         });
 
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &privateTerminalRenderer,
+        &rgsml::app::TerminalPrivateRenderController::invalidate);
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
     rgsml::app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
