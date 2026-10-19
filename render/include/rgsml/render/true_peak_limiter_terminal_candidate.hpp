@@ -153,4 +153,35 @@ render_true_peak_limiter_owned_output_rate_candidate(
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames);
 
+
+// UNQUALIFIED FINAL-MASTER rate contract, independent of the Windows device.
+// No device preferred rate is consulted. If no rate is requested, the
+// original MANUAL source rate is retained; an explicit new master rate
+// causes full-resource Final Output SRC BEFORE the real M17 and M16 check.
+// This prepares a candidate for a future encoder; it does NOT encode WAV,
+// imply the existence of Dither, or authorize product export/publication.
+struct TruePeakLimiterFinalMasterCandidate final {
+    TruePeakLimiterOwnedSourceCandidate output;
+    core::SampleRate master_sample_rate;
+};
+
+[[nodiscard]] core::Result<TruePeakLimiterFinalMasterCandidate>
+render_true_peak_limiter_owned_final_master_candidate(
+    std::shared_ptr<const RenderResult> accepted_manual_owner,
+    const dsp::ProcessingChain& manual_chain_snapshot,
+    core::FrameCount original_full_resource_frames,
+    std::uint64_t expected_manual_chain_revision,
+    std::optional<core::SampleRate> requested_master_sample_rate,
+    const dsp::ProcessingChain& terminal_chain,
+    std::span<const dsp::ModuleExecutionBinding> immutable_terminal_bindings,
+    const dsp::ModuleRegistry& registry,
+    core::FrameCount maximum_block_frames);
+
+// Must be checked AGAIN at a future Dither/Quantizer/WAV encoder boundary:
+// encoding after an unapproved extra SRC invalidates the M17 Ceiling check.
+// Rate validation alone never certifies PCM quantization or WAV export.
+[[nodiscard]] core::Status validate_final_master_encoding_rate(
+    const TruePeakLimiterFinalMasterCandidate& candidate,
+    core::SampleRate proposed_encoder_sample_rate);
+
 } // namespace rgsml::render

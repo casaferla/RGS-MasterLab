@@ -25,7 +25,7 @@ void TerminalPrivateGrProjectionTest::gainWitnessRateMatrix_data()
     QTest::addColumn<int>("sourceHz");
     QTest::addColumn<int>("outputHz");
     QTest::newRow("source-44100-master-44100") << 44100 << 44100;
-    QTest::newRow("source-44100-device-48000") << 44100 << 48000;
+    QTest::newRow("source-44100-explicit-master-48000") << 44100 << 48000;
     QTest::newRow("native-48000-master-device") << 48000 << 48000;
 }
 
@@ -78,19 +78,33 @@ void TerminalPrivateGrProjectionTest::gainWitnessRateMatrix()
     const auto owner=std::make_shared<const render::RenderResult>(
         std::move(*rendered.value()));
     QVERIFY(terminal.value()->set_user_bypass(false));
-    auto output=render::render_true_peak_limiter_owned_output_rate_candidate(
+    // Future WAV master target is INDEPENDENT of the device. Missing
+    // requested rate preserves the source exactly, 44.1->48 is only an
+    // EXPLICIT final-master selection; all SRC precedes M17/M16.
+    const std::optional<core::SampleRate> requestedMasterRate =
+        sourceHz==outputHz ? std::nullopt
+        : std::optional<core::SampleRate>{*outputRate.value()};
+    auto master=render::render_true_peak_limiter_owned_final_master_candidate(
         owner,*manual.value(),*frames.value(),manual.value()->revision(),
-        *outputRate.value(),terminal.value()->chain(),
+        requestedMasterRate,terminal.value()->chain(),
         terminal.value()->execution_bindings(),*registry.value(),*block.value());
-    QVERIFY(output);
-    QCOMPARE(output.value()->output_rate,*outputRate.value());
-    QCOMPARE(output.value()->used_candidate_src,sourceHz!=outputHz);
-    QCOMPARE(output.value()->terminal.checked.terminal.compensated_pcm
+    QVERIFY(master);
+    QCOMPARE(master.value()->master_sample_rate,*outputRate.value());
+    QVERIFY(render::validate_final_master_encoding_rate(
+        *master.value(),*outputRate.value()));
+    auto wrongRate=core::SampleRate::create(outputHz==44100 ? 48000 : 44100);
+    QVERIFY(wrongRate);
+    QVERIFY(!render::validate_final_master_encoding_rate(
+        *master.value(),*wrongRate.value()));
+    auto output=std::move(master.value()->output);
+    QCOMPARE(output.output_rate,*outputRate.value());
+    QCOMPARE(output.used_candidate_src,sourceHz!=outputHz);
+    QCOMPARE(output.terminal.checked.terminal.compensated_pcm
         .view().frame_count().value(),std::int64_t{outputHz/100});
-    QVERIFY(output.value()->terminal.checked.final_check);
+    QVERIFY(output.terminal.checked.final_check);
     auto stage=std::make_shared<const app::TerminalCandidateGate::StagedCandidate>(
         app::TerminalCandidateGate::StagedCandidate{
-            std::move(*output.value()),core::RealizationId{33},owner});
+            std::move(output),core::RealizationId{33},owner});
     // Synthetic consumed interval in this unit test, NOT physical
     // sink chronology. The real observer must validate it separately.
     const app::TerminalConsumedOutputEvidence proof{

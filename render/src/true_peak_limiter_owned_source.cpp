@@ -150,4 +150,60 @@ render_true_peak_limiter_owned_output_rate_candidate(
         std::move(manual),manual_chain,full_frames,manual_revision,
         output_rate,terminal_chain,bindings,registry,block,true);
 }
+
+core::Result<TruePeakLimiterFinalMasterCandidate>
+render_true_peak_limiter_owned_final_master_candidate(
+    std::shared_ptr<const RenderResult> manual,
+    const dsp::ProcessingChain& manual_chain,
+    core::FrameCount full_frames,
+    std::uint64_t manual_revision,
+    std::optional<core::SampleRate> requested_master_rate,
+    const dsp::ProcessingChain& terminal_chain,
+    std::span<const dsp::ModuleExecutionBinding> bindings,
+    const dsp::ModuleRegistry& registry,
+    core::FrameCount block)
+{
+    using Final = TruePeakLimiterFinalMasterCandidate;
+    if(!manual)
+        return core::Result<Final>::failure(source_error(
+            core::ErrorCode::InvalidState,"M17_FINAL_MASTER_NO_OWNER",
+            "Final master rate requires a complete immutable manual owner."));
+    // Final MASTER rate is explicitly requested or defaults to SOURCE.
+    // Never probe or infer the Windows device rate at this boundary.
+    const auto masterRate=requested_master_rate.value_or(
+        manual->view().format().sample_rate());
+    auto rendered=render_true_peak_limiter_owned_output_rate_candidate(
+        std::move(manual),manual_chain,full_frames,manual_revision,
+        masterRate,terminal_chain,bindings,registry,block);
+    if(!rendered)
+        return core::Result<Final>::failure(*rendered.error());
+    Final result{std::move(*rendered.value()),masterRate};
+    auto verified=validate_final_master_encoding_rate(result,masterRate);
+    if(!verified)
+        return core::Result<Final>::failure(*verified.error());
+    return core::Result<Final>::success(std::move(result));
+}
+
+core::Status validate_final_master_encoding_rate(
+    const TruePeakLimiterFinalMasterCandidate& candidate,
+    core::SampleRate encoder_rate)
+{
+    const auto& output=candidate.output;
+    const auto& terminal=output.terminal.checked;
+    const auto pcm=terminal.terminal.compensated_pcm.view();
+    if(!output.manual_owner
+       ||encoder_rate!=candidate.master_sample_rate
+       ||output.output_rate!=candidate.master_sample_rate
+       ||pcm.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||pcm.format().sample_rate()!=candidate.master_sample_rate
+       ||pcm.absolute_start_frame().value()!=0
+       ||pcm.frame_count().value()<=0
+       ||output.programme_frames!=output.manual_owner->view().frame_count()
+       ||(!terminal.terminal.bypassed && !terminal.final_check))
+        return core::Status::failure(source_error(
+            core::ErrorCode::InvalidState,"M17_FINAL_MASTER_ENCODER_RATE_MISMATCH",
+            "Final encoder must accept the exact M17-processed and verified master rate, without a later SRC."));
+    return core::Status::success();
+}
+
 } // namespace rgsml::render
