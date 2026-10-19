@@ -2201,6 +2201,9 @@ void RenderPreviewTest::truePeakLimiterBoundTerminalChainRejectsStaleOrFakeBindi
 
 void RenderPreviewTest::truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndSameRate()
 {
+    using rgsml::audio::AudioBuffer;
+    using rgsml::audio::FrameDomainId;
+    using rgsml::core::FrameIndex;
     auto registry=rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);
     auto manualChain=empty_chain(*registry.value());
