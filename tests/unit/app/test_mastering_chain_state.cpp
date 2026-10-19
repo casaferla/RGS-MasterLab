@@ -1052,6 +1052,12 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             QCOMPARE(manualAudible.position.value(),std::int64_t{160});
             QCOMPARE(manualAudible.loop,std::optional{*mappedLoop.value()});
             QVERIFY(installer.has_session());
+            // Refuse replacing an active terminal owner without retirement.
+            QVERIFY(!installer.prepare_private_session(
+                owner,owner,core::RealizationId{91},core::RealizationId{9500}));
+            QVERIFY(installer.has_session());
+            QCOMPARE(manualAudible.audibleRealization.realizationId,
+                     std::optional{core::RealizationId{9100}});
             // A live terminal mapping cannot be unbound before retiring
             // the actual audible output; no SOURCE fallback is legal yet.
             QVERIFY(!terminalTransport.detach_private_terminal_source_controls(
@@ -1099,6 +1105,12 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             QCOMPARE(manualAudible.clearCalls,clearsBefore);
             QCOMPARE(manualAudible.audibleRealization.realizationId,
                      std::optional{core::RealizationId{9898}});
+            // Revocation can abandon its own lease, NOT the alien PCM.
+            QVERIFY(!privatePublisher.revoke_private());
+            QVERIFY(!installer.has_session());
+            QCOMPARE(manualAudible.audibleRealization.realizationId,
+                     std::optional{core::RealizationId{9898}});
+            QCOMPARE(manualAudible.clearCalls,clearsBefore);
             QVERIFY(!terminalTransport.detach_private_terminal_source_controls(
                 installer));
             // Simulate exact owner returning to STOPPED, then a logical
@@ -1124,10 +1136,51 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             QVERIFY(manualAudible.clear());
             QVERIFY(terminalTransport.detach_private_terminal_source_controls(
                 installer));
-            QVERIFY(!terminalTransport.detach_private_terminal_source_controls(
+            QVERIFY(terminalTransport.detach_private_terminal_source_controls(
                 installer));
             QVERIFY(!installer.has_session());
             QVERIFY(!installer.seek_source(core::FrameIndex{20}));
+
+            // Fresh exact-owned terminal installation must be fully retired
+            // by the coordinator (device CLEAR and expired SOURCE lease).
+            manualAudible.state=core::PlaybackState::STOPPED;
+            manualAudible.position=core::FrameIndex{147};
+            manualAudible.duration=n;
+            manualAudible.audibleRealization=core::AudibleRealizationState{
+                core::AudibleHandoffPhase::NEW,core::RealizationId{91}};
+            TerminalAudioSessionGate exactGate{
+                gate,manualAudible,
+                [&](audio::AudioBufferView output,std::shared_ptr<const void>,
+                    core::RealizationId id) -> core::Status {
+                    manualAudible.position=core::FrameIndex{0};
+                    manualAudible.duration=output.frame_count();
+                    manualAudible.state=core::PlaybackState::STOPPED;
+                    manualAudible.loop.reset();
+                    manualAudible.audibleRealization=core::AudibleRealizationState{
+                        core::AudibleHandoffPhase::NEW,id};
+                    return core::Status::success();
+                }};
+            TerminalPrivatePublicationCoordinator exactPublisher{
+                gate,exactGate,terminalTransport,
+                [&](std::shared_ptr<const render::RenderResult>,
+                    std::shared_ptr<const render::RenderResult>,
+                    std::optional<core::RealizationId>) {
+                    return core::Result<core::RealizationId>::success(
+                        core::RealizationId{9200});
+                }};
+            auto second=exactPublisher.install_private(
+                owner,owner,core::RealizationId{91},*range.value());
+            QVERIFY(second);
+            QCOMPARE(manualAudible.position.value(),std::int64_t{160});
+            QCOMPARE(manualAudible.loop,std::optional{*mappedLoop.value()});
+            const auto clearsExact=manualAudible.clearCalls;
+            QVERIFY(exactPublisher.revoke_private());
+            QCOMPARE(manualAudible.clearCalls,clearsExact+1);
+            QCOMPARE(manualAudible.state,core::PlaybackState::NO_SOURCE);
+            QVERIFY(!manualAudible.audibleRealization.realizationId);
+            QVERIFY(!exactGate.has_session());
+            QVERIFY(exactPublisher.revoke_private());
+            QVERIFY(!terminalTransport.source_display_snapshot());
 
             // Failure after a callback reports success MUST NOT clear a
             // different audible identity acquired by another publisher.

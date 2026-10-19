@@ -19,8 +19,11 @@ core::Status TerminalAudioSessionGate::prepare_private_session(
     std::optional<core::RealizationId> manualId,
     core::RealizationId terminalId)
 {
-    // It would be unsafe for an unsupported early caller to leave a prior
-    // logical terminal control usable while attempting a replacement.
+    // Do not orphan a still-audible old OUTPUT_RATE session or its lease.
+    if (installedTerminalId_ || control_)
+        return core::Status::failure(denied(
+            "M17_SESSION_ALREADY_INSTALLED",
+            "Retire the current terminal device owner before reinstalling."));
     detach();
     auto accepted=gate_->staged();
     if(!accepted || !prepared || !manual || !manualId

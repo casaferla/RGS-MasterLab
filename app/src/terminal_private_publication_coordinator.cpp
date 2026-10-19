@@ -10,6 +10,15 @@ namespace {
 }
 } // namespace
 
+core::Status TerminalPrivatePublicationCoordinator::revoke_private()
+{
+    auto retired=session_->retire_owned_session();
+    auto unbound=transport_->detach_private_terminal_source_controls(*session_);
+    if(!retired) return retired;
+    if(!unbound) return unbound;
+    return core::Status::success();
+}
+
 core::Result<core::RealizationId>
 TerminalPrivatePublicationCoordinator::install_private(
     std::shared_ptr<const render::RenderResult> prepared,
@@ -19,6 +28,9 @@ TerminalPrivatePublicationCoordinator::install_private(
 {
     using Result=core::Result<core::RealizationId>;
     auto staged=candidate_->staged();
+    if(session_->has_session())
+        return Result::failure(refused(
+            "Private terminal must be revoked before another installation."));
     if (!issueId_ || !staged || !prepared || !manual || !manualId
         ||manualId->value==0
         ||staged->prepared_owner!=prepared
@@ -65,8 +77,7 @@ TerminalPrivatePublicationCoordinator::install_private(
         // sink is actually NO_SOURCE; an alien owner remains fail-closed.
         auto unbound=transport_->detach_private_terminal_source_controls(*session_);
         if (!retired) return Result::failure(*retired.error());
-        if (!unbound && transport_->source_display_snapshot())
-            return Result::failure(*unbound.error());
+        if (!unbound) return Result::failure(*unbound.error());
         return Result::failure(failure);
     };
     auto bound=transport_->bind_private_terminal_source_controls(*session_);

@@ -223,16 +223,16 @@ int main(int argc, char* argv[])
     QObject::connect(
         &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
         &terminalLimiterViewModel, [&terminalCandidateGate,
-                                    &terminalAudioSessionGate] {
-            terminalAudioSessionGate.detach();
+                                    &privateTerminalPublisher] {
+            static_cast<void>(privateTerminalPublisher.revoke_private());
             terminalCandidateGate.invalidate();
         });
     // Ceiling drafts, commits and BYP transitions are fail-closed.
     QObject::connect(
         &terminalLimiterViewModel, &rgsml::app::TerminalLimiterViewModel::changed,
         &terminalLimiterViewModel, [&terminalCandidateGate,
-                                    &terminalAudioSessionGate] {
-            terminalAudioSessionGate.detach();
+                                    &privateTerminalPublisher] {
+            static_cast<void>(privateTerminalPublisher.revoke_private());
             terminalCandidateGate.invalidate();
         });
 
@@ -266,8 +266,8 @@ int main(int argc, char* argv[])
     QObject::connect(
         &previewController, &rgsml::app::MasteringPreviewController::changed,
         &terminalLimiterViewModel, [&terminalCandidateGate,
-                                    &terminalAudioSessionGate] {
-            terminalAudioSessionGate.detach();
+                                    &privateTerminalPublisher] {
+            static_cast<void>(privateTerminalPublisher.revoke_private());
             terminalCandidateGate.invalidate();
         });
 

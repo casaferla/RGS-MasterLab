@@ -288,6 +288,8 @@ core::Status PlaybackTransportViewModel::bind_private_terminal_source_controls(
 core::Status PlaybackTransportViewModel::detach_private_terminal_source_controls(
     const TerminalSourceTransportPort& expected)
 {
+    // Ordinary manual-source invalidations have no terminal to release.
+    if (!terminalGate_) return core::Status::success();
     if (terminalGate_ != &expected || !terminalLease_.expired() || !service_) {
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
