@@ -1125,6 +1125,8 @@ qt_add_executable(rgsml_mastering_chain_state_tests
     ${CMAKE_SOURCE_DIR}/app/src/terminal_private_render_controller.hpp
     ${CMAKE_SOURCE_DIR}/app/src/terminal_private_product_session.cpp
     ${CMAKE_SOURCE_DIR}/app/src/terminal_private_product_session.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_consumed_output_binding.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_consumed_output_binding.hpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
@@ -1137,6 +1139,7 @@ qt_add_executable(rgsml_mastering_chain_state_tests
 target_include_directories(rgsml_mastering_chain_state_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/app/src
+        ${CMAKE_SOURCE_DIR}/platform/windows/include
 )
 target_link_libraries(rgsml_mastering_chain_state_tests
     PRIVATE

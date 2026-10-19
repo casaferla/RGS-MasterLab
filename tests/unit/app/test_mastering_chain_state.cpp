@@ -7,6 +7,7 @@
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
 #include "terminal_private_product_session.hpp"
+#include "terminal_consumed_output_binding.hpp"
 #include "playback_transport_view_model.hpp"
 #include "../platform/fake_playback_service.hpp"
 #include <rgsml/render/render_preview.hpp>
@@ -1444,6 +1445,86 @@ void MasteringChainStateTest::terminalPrivateEndToEndRenderInstallAndRollback()
     QCOMPARE(installed.value()->owner,candidates.staged());
     QCOMPARE(installed.value()->playback.duration->value(),std::int64_t{480});
     QCOMPARE(installed.value()->source.duration.value(),std::int64_t{441});
+
+    // A privately installed terminal alone cannot claim a consumed sample.
+    // The observer must bracket a genuine device prefix with TWO fresh owner
+    // snapshots. Use a synthetic consumed ledger against the real 44.1->48
+    // rendered terminal fixture, without publishing fake meter/GR data.
+    platform::windows::WindowsConsumedOutputPrefix consumed{};
+    consumed.generation=8;
+    consumed.partitionRepresented=true;
+    consumed.retainedOutputBegin=0;
+    consumed.processedWatermarkExclusive=12;
+    consumed.count=1;
+    consumed.reason=platform::windows::WindowsConsumedGapReason::MISSING_CHRONOLOGICAL_LEDGER;
+    consumed.slices[0].generation=8;
+    consumed.slices[0].outputBegin=0;
+    consumed.slices[0].outputEnd=12;
+    consumed.slices[0].kind=
+        platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    consumed.slices[0].sourceBegin=160;
+    consumed.slices[0].sourceEnd=172;
+    consumed.slices[0].realizationId=core::RealizationId{7200};
+    consumed.slices[0].handoffPureNewProven=true;
+    QVERIFY(!bind_private_terminal_consumed_output(
+        *installed.value(),consumed,*installed.value())); // STOPPED
+    QVERIFY(transport.set_loop_source_range(std::nullopt));
+    device.state=core::PlaybackState::PLAYING;
+    auto liveBefore=product.private_installed_output_identity();
+    auto liveAfter=product.private_installed_output_identity();
+    QVERIFY(liveBefore);
+    QVERIFY(liveAfter);
+    auto consumedProof=bind_private_terminal_consumed_output(
+        *liveBefore.value(),consumed,*liveAfter.value());
+    QVERIFY(consumedProof);
+    QCOMPARE(consumedProof.value()->realizationId,core::RealizationId{7200});
+    QCOMPARE(consumedProof.value()->firstTerminalFrame,std::int64_t{160});
+    QCOMPARE(consumedProof.value()->lastTerminalFrameExclusive,std::int64_t{172});
+    QVERIFY(consumedProof.value()->owner==candidates.staged());
+    auto wrongId=consumed;
+    wrongId.slices[0].realizationId=core::RealizationId{7199};
+    QVERIFY(!bind_private_terminal_consumed_output(
+        *liveBefore.value(),wrongId,*liveAfter.value()));
+    auto gap=consumed;
+    gap.slices[0].kind=platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN;
+    QVERIFY(!bind_private_terminal_consumed_output(
+        *liveBefore.value(),gap,*liveAfter.value()));
+    auto tail=consumed;
+    tail.processedWatermarkExclusive=13;
+    QVERIFY(!bind_private_terminal_consumed_output(
+        *liveBefore.value(),tail,*liveAfter.value()));
+    auto badFrame=consumed;
+    badFrame.slices[0].sourceEnd=481;
+    QVERIFY(!bind_private_terminal_consumed_output(
+        *liveBefore.value(),badFrame,*liveAfter.value()));
+    auto inventedSrc=consumed;
+    inventedSrc.reason=platform::windows::WindowsConsumedGapReason::UNPROVEN_SRC;
+    QVERIFY(!bind_private_terminal_consumed_output(
+        *liveBefore.value(),inventedSrc,*liveAfter.value()));
+    auto interrupted=*liveAfter.value();
+    ++interrupted.playback.seekSerial;
+    QVERIFY(!bind_private_terminal_consumed_output(
+        *liveBefore.value(),consumed,interrupted));
+    QVERIFY(transport.set_loop_source_range(loop));
+    auto loopIdentity=product.private_installed_output_identity();
+    QVERIFY(loopIdentity);
+    QVERIFY(!bind_private_terminal_consumed_output(
+        *loopIdentity.value(),consumed,*loopIdentity.value()));
+    auto loopProven=consumed;
+    loopProven.slices[0].sourceBegin=11;
+    loopProven.slices[0].sourceEnd=23; // loop ends at OUTPUT frame 22
+    loopProven.slices[0].loopTraversalProven=true;
+    QVERIFY(!bind_private_terminal_consumed_output(
+        *loopIdentity.value(),loopProven,*loopIdentity.value()));
+    loopProven.slices[0].sourceEnd=22;
+    loopProven.slices[0].outputEnd=11;
+    loopProven.processedWatermarkExclusive=11;
+    auto loopEvidence=bind_private_terminal_consumed_output(
+        *loopIdentity.value(),loopProven,*loopIdentity.value());
+    QVERIFY(loopEvidence);
+    QCOMPARE(loopEvidence.value()->lastTerminalFrameExclusive,std::int64_t{22});
+    device.state=core::PlaybackState::STOPPED;
+
     auto sourceView=transport.source_display_snapshot();
     QVERIFY(sourceView);
     QCOMPARE(sourceView.value()->position.value(),std::int64_t{147});
