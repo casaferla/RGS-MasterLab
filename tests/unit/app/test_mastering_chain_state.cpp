@@ -3,6 +3,7 @@
 #include "terminal_candidate_gate.hpp"
 #include "terminal_playback_frame_map.hpp"
 #include "terminal_source_control_bridge.hpp"
+#include "terminal_audio_session_gate.hpp"
 #include "../platform/fake_playback_service.hpp"
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
@@ -961,6 +962,111 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
         QCOMPARE(playback.loop,std::optional{*mappedLoop.value()});
         control.value()->detach();
         QVERIFY(!control.value()->seek_source(core::FrameIndex{5}));
+
+        // The next gate binds a REAL private terminal session to an
+        // independently issued candidate ID, never to Manual PROCESSED.
+        if(src) {
+            FakePlaybackService manualAudible;
+            manualAudible.state=core::PlaybackState::STOPPED;
+            manualAudible.duration=n;
+            manualAudible.audibleRealization=core::AudibleRealizationState{
+                core::AudibleHandoffPhase::NEW,core::RealizationId{91}};
+            int installations=0;
+            std::shared_ptr<const void> observedLifetime;
+            TerminalAudioSessionGate installer(
+                gate,manualAudible,
+                [&](audio::AudioBufferView pcmView,
+                    std::shared_ptr<const void> lifetime,
+                    core::RealizationId published) -> core::Status {
+                    ++installations;
+                    QCOMPARE(pcmView.timebase().frame_domain_id(),
+                             audio::FrameDomainId::OUTPUT_RATE);
+                    QCOMPARE(pcmView.frame_count().value(),std::int64_t{480});
+                    QCOMPARE(pcmView.format().sample_rate().value(),
+                             std::int64_t{48000});
+                    observedLifetime=lifetime;
+                    manualAudible.duration=pcmView.frame_count();
+                    manualAudible.position=core::FrameIndex{0};
+                    manualAudible.loop.reset();
+                    manualAudible.audibleRealization=core::AudibleRealizationState{
+                        core::AudibleHandoffPhase::NEW,published};
+                    return core::Status::success();
+                });
+            QVERIFY(!installer.prepare_private_session(
+                owner,owner,core::RealizationId{91},core::RealizationId{0}));
+            QVERIFY(!installer.prepare_private_session(
+                owner,owner,core::RealizationId{91},core::RealizationId{91}));
+            QCOMPARE(installations,0);
+            manualAudible.state=core::PlaybackState::PLAYING;
+            QVERIFY(!installer.prepare_private_session(
+                owner,owner,core::RealizationId{91},core::RealizationId{9100}));
+            QCOMPARE(installations,0);
+            manualAudible.state=core::PlaybackState::STOPPED;
+            QVERIFY(installer.prepare_private_session(
+                owner,owner,core::RealizationId{91},core::RealizationId{9100}));
+            QVERIFY(installer.has_session());
+            QCOMPARE(installations,1);
+            QCOMPARE(observedLifetime.get(),accepted.get());
+            QVERIFY(installer.seek_source(core::FrameIndex{300}));
+            QCOMPARE(manualAudible.position.value(),std::int64_t{327});
+            QVERIFY(installer.set_source_loop(*range.value()));
+            QCOMPARE(manualAudible.loop,std::optional{*mappedLoop.value()});
+            auto installedSnapshot=installer.source_snapshot();
+            QVERIFY(installedSnapshot);
+            QCOMPARE(installedSnapshot.value()->position.value(),
+                     std::int64_t{300});
+            QVERIFY(installer.set_source_loop(std::nullopt));
+            QVERIFY(!manualAudible.loop);
+            installer.detach();
+            QVERIFY(!installer.has_session());
+            QVERIFY(!installer.seek_source(core::FrameIndex{20}));
+
+            // Failure after a callback reports success MUST NOT clear a
+            // different audible identity acquired by another publisher.
+            manualAudible.state=core::PlaybackState::STOPPED;
+            manualAudible.duration=n;
+            manualAudible.audibleRealization=core::AudibleRealizationState{
+                core::AudibleHandoffPhase::NEW,core::RealizationId{91}};
+            TerminalAudioSessionGate wrongIdentity(
+                gate,manualAudible,
+                [&](audio::AudioBufferView, std::shared_ptr<const void>,
+                    core::RealizationId) -> core::Status {
+                    manualAudible.duration=*core::FrameCount::create(480).value();
+                    manualAudible.audibleRealization=core::AudibleRealizationState{
+                        core::AudibleHandoffPhase::NEW,core::RealizationId{9999}};
+                    return core::Status::success();
+                });
+            const auto clears=manualAudible.clearCalls;
+            QVERIFY(!wrongIdentity.prepare_private_session(
+                owner,owner,core::RealizationId{91},core::RealizationId{9101}));
+            QVERIFY(!wrongIdentity.has_session());
+            QCOMPARE(manualAudible.clearCalls,clears);
+            QCOMPARE(manualAudible.audibleRealization.realizationId,
+                     std::optional{core::RealizationId{9999}});
+
+            // A source/parameter mutation DURING the synchronous device
+            // install removes its candidate and retires only our own PCM.
+            manualAudible.state=core::PlaybackState::STOPPED;
+            manualAudible.duration=n;
+            manualAudible.audibleRealization=core::AudibleRealizationState{
+                core::AudibleHandoffPhase::NEW,core::RealizationId{91}};
+            TerminalAudioSessionGate changedMidInstall(
+                gate,manualAudible,
+                [&](audio::AudioBufferView pcmView, std::shared_ptr<const void>,
+                    core::RealizationId newId) -> core::Status {
+                    manualAudible.duration=pcmView.frame_count();
+                    manualAudible.audibleRealization=core::AudibleRealizationState{
+                        core::AudibleHandoffPhase::NEW,newId};
+                    gate.invalidate();
+                    return core::Status::success();
+                });
+            QVERIFY(!changedMidInstall.prepare_private_session(
+                owner,owner,core::RealizationId{91},core::RealizationId{9102}));
+            QVERIFY(!changedMidInstall.has_session());
+            QCOMPARE(manualAudible.clearCalls,clears+1);
+            QCOMPARE(manualAudible.state,core::PlaybackState::NO_SOURCE);
+            QVERIFY(!gate.staged());
+        }
         gate.invalidate();
         QVERIFY(!gate.staged());
     }
