@@ -309,8 +309,9 @@ ApplicationWindow {
                 ? truePeakStatic : null
             truePeakLiveViewModel: typeof truePeakLive !== "undefined"
                 ? truePeakLive : null
-            terminalLimiterViewModel: typeof terminalLimiterViewModel !== "undefined"
-                ? terminalLimiterViewModel : null
+            // The context value is captured on root. Directly reading the
+            // same-named child property here creates a QML binding loop.
+            terminalLimiterViewModel: root.appTerminalLimiterViewModel
             limiterGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
                 ? terminalPrivateGrViewModel : null
         }

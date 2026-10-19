@@ -118,6 +118,10 @@ void TerminalPrivateGrViewModel::refresh()
         constexpr qsizetype kNewPoints=208;
         if(points.size()>kNewPoints)
             points=points.mid(points.size()-kNewPoints);
+        // Save ONLY the newly proved traversal. Keeping the combined
+        // presentation here would recursively copy older epoch segments
+        // into subsequent seek/loop breaks and duplicate GR history.
+        lastProvenPoints_=points;
         QVariantMap first=points.front().toMap();
         first.insert(QStringLiteral("breakBefore"),true);
         first.insert(QStringLiteral("loopBefore"),historicalLoopMarker_);
@@ -125,9 +129,10 @@ void TerminalPrivateGrViewModel::refresh()
         QVariantList combined=historicalPrefix_;
         combined.append(points);
         points=std::move(combined);
+    } else {
+        lastProvenPoints_=points;
     }
 
-    lastProvenPoints_=points;
     if(verified_ && realization_==current.realizationId
         && generation_==current.playbackGeneration
         &&series_==points)

@@ -273,7 +273,11 @@ void TerminalPrivateGrProjectionTest::qmlPresentationFailClosed()
     provider.refresh();
     QVERIFY(provider.verified());
     bridged=provider.verified_series();
-    QVERIFY(bridged.size()>1);
+    // The second discontinuity keeps only the latest verified traversal,
+    // not the previous already-combined display history (no duplication).
+    QCOMPARE(bridged.size(),qsizetype{4});
+    QCOMPARE(bridged.front().toMap()
+        .value(QStringLiteral("frameBegin")).toLongLong(),qint64{200});
     QVERIFY(bridged.back().toMap()
         .value(QStringLiteral("breakBefore")).toBool());
     QVERIFY(bridged.back().toMap()
