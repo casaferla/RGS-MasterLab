@@ -1421,6 +1421,12 @@ void MasteringChainStateTest::terminalPrivateEndToEndRenderInstallAndRollback()
     QCOMPARE(device.duration->value(),std::int64_t{480});
     QCOMPARE(device.loop->begin().value(),std::int64_t{11});
     QCOMPARE(device.loop->end().value(),std::int64_t{22});
+    auto installed=product.private_installed_output_identity();
+    QVERIFY(installed);
+    QCOMPARE(installed.value()->realizationId,core::RealizationId{7200});
+    QCOMPARE(installed.value()->owner,candidates.staged());
+    QCOMPARE(installed.value()->playback.duration->value(),std::int64_t{480});
+    QCOMPARE(installed.value()->source.duration.value(),std::int64_t{441});
     auto sourceView=transport.source_display_snapshot();
     QVERIFY(sourceView);
     QCOMPARE(sourceView.value()->position.value(),std::int64_t{147});
@@ -1429,12 +1435,49 @@ void MasteringChainStateTest::terminalPrivateEndToEndRenderInstallAndRollback()
     QCOMPARE(installedCount,1);
     QCOMPARE(issuedCount,1);
 
+    // Continuous audibility: test both sides of Loop Region, its interior,
+    // both boundaries and EOF while PLAYING at 44.1 SOURCE / 48 OUTPUT.
+    transport.playOrResume();
+    QCOMPARE(device.state,core::PlaybackState::PLAYING);
+    for(const auto sourceFrame:{0,5,10,11,17,20,30,300,441}) {
+        QVERIFY(transport.seek_source_frame(core::FrameIndex{sourceFrame}));
+        QCOMPARE(device.position.value(),
+                 std::int64_t{(sourceFrame*160+146)/147});
+        auto observed=product.private_installed_output_identity();
+        QVERIFY(observed);
+        QCOMPARE(observed.value()->source.duration.value(),std::int64_t{441});
+        QCOMPARE(observed.value()->realizationId,core::RealizationId{7200});
+    }
+    transport.pause();
+    QCOMPARE(device.state,core::PlaybackState::PAUSED);
+    QVERIFY(product.private_installed_output_identity());
+    transport.playOrResume();
+    QCOMPARE(device.state,core::PlaybackState::PLAYING);
+    QVERIFY(transport.set_loop_source_range(std::nullopt));
+    QVERIFY(!device.loop);
+    QVERIFY(transport.set_loop_source_range(loop));
+    QCOMPARE(device.loop->begin().value(),std::int64_t{11});
+    QCOMPARE(device.loop->end().value(),std::int64_t{22});
+    transport.stop();
+    QCOMPARE(device.state,core::PlaybackState::STOPPED);
+    QVERIFY(product.private_installed_output_identity());
+
+    // Real audible handoff defeats ownership observation immediately,
+    // without touching or pretending to observe the foreign PCM.
+    device.audibleRealization=core::AudibleRealizationState{
+        core::AudibleHandoffPhase::NEW,core::RealizationId{7999}};
+    QVERIFY(!product.private_installed_output_identity());
+    device.audibleRealization=core::AudibleRealizationState{
+        core::AudibleHandoffPhase::NEW,core::RealizationId{7200}};
+    QVERIFY(product.private_installed_output_identity());
+
     auto clears=device.clearCalls;
     QVERIFY(product.cancel());
     QVERIFY(!product.private_id());
     QCOMPARE(device.clearCalls,clears+1);
     QCOMPARE(device.state,core::PlaybackState::NO_SOURCE);
     QVERIFY(!candidates.staged());
+    QVERIFY(!product.private_installed_output_identity());
     QVERIFY(product.cancel());
 
     // A Loop Region change between request and worker delivery must cancel

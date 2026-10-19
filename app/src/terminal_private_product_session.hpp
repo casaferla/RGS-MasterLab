@@ -41,6 +41,19 @@ public:
     [[nodiscard]] QString error() const {return error_;}
     [[nodiscard]] std::optional<core::RealizationId> private_id() const
     {return privateId_;}
+
+    // Private DEVICE ownership observation. This is intentionally NOT
+    // a sink-consumed sample, true-peak LIVE or gain reduction certificate.
+    // The caller must independently bind a WindowsConsumedOutputPrefix
+    // before reporting any real-time M16/M17 reading.
+    struct InstalledOutputIdentity {
+        std::shared_ptr<const TerminalCandidateGate::StagedCandidate> owner;
+        core::RealizationId realizationId;
+        core::PlaybackSnapshot playback;
+        TerminalSourceTransportPort::DisplaySnapshot source;
+    };
+    [[nodiscard]] core::Result<InstalledOutputIdentity>
+    private_installed_output_identity() const;
 signals:
     void changed();
 private:

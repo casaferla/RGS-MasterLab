@@ -82,6 +82,51 @@ core::Status TerminalPrivateProductSession::request_private(core::SampleRate rat
     return core::Status::success();
 }
 
+core::Result<TerminalPrivateProductSession::InstalledOutputIdentity>
+TerminalPrivateProductSession::private_installed_output_identity() const
+{
+    using Identity=InstalledOutputIdentity;
+    auto refused=[](const char* reason) -> core::Result<Identity> {
+        return core::Result<Identity>::failure(
+            core::Error{core::ErrorCode::InvalidState,reason});
+    };
+    if(!privateId_ || privateId_->value==0 || pending_
+       ||status_!=QStringLiteral("PRIVATE_INSTALLED")
+       ||!selected_ || !selected_() || !prepared_ || !manual_
+       ||!manualId_)
+        return refused("M17 is not a current installed PROCESSED terminal.");
+    auto candidate=candidates_->staged();
+    if(!candidate || candidate->prepared_owner!=prepared_()
+       ||candidate->rendered.manual_owner!=manual_()
+       ||candidate->original_manual_realization_id
+           !=manualId_().value_or(core::RealizationId{0}))
+        return refused("M17 immutable candidate no longer has its manual owner.");
+    const auto pcm=candidate->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    if(pcm.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||pcm.frame_count().value()<=0
+       ||pcm.format().sample_rate()!=candidate->rendered.output_rate)
+        return refused("M17 candidate lacks exact OUTPUT_RATE PCM provenance.");
+    auto audible=transport_->playback_snapshot();
+    if(!audible) return core::Result<Identity>::failure(*audible.error());
+    if(audible.value()->state==core::PlaybackState::NO_SOURCE
+       ||audible.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::NEW
+       ||audible.value()->audibleRealization.realizationId
+           !=std::optional{*privateId_}
+       ||audible.value()->duration!=std::optional{pcm.frame_count()})
+        return refused("M17 terminal is not the independently audible exact device owner.");
+    auto source=transport_->source_display_snapshot();
+    if(!source) return core::Result<Identity>::failure(*source.error());
+    if(source.value()->duration
+       !=candidate->rendered.manual_owner->view().frame_count()
+       ||source.value()->position.value()<0
+       ||source.value()->position.value()>source.value()->duration.value())
+        return refused("M17 SOURCE clock is not mapped to the full predecessor.");
+    return core::Result<Identity>::success(Identity{
+        std::move(candidate),*privateId_,*audible.value(),*source.value()});
+}
+
 core::Status TerminalPrivateProductSession::cancel()
 {
     // Withdraw transaction first: renderer.invalidate() emits changed and
