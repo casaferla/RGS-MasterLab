@@ -7,6 +7,7 @@
 #include <rgsml/core/result.hpp>
 
 #include <optional>
+#include <utility>
 
 namespace rgsml::app {
 

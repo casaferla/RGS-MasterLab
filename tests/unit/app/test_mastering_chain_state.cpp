@@ -862,6 +862,16 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
         auto sourceBefore=map.value()->output_to_source_display(core::FrameIndex{0});
         QVERIFY(sourceBefore);
         QCOMPARE(sourceBefore.value()->value(),std::int64_t{0});
+        // Cursor inverse is display-only and must not be repurposed as
+        // M16 live-sink consumption evidence.
+        auto displayInside=map.value()->output_to_source_display(
+            core::FrameIndex{src?160:147});
+        QVERIFY(displayInside);
+        QCOMPARE(displayInside.value()->value(),std::int64_t{147});
+        auto displayAfterLoop=map.value()->output_to_source_display(
+            core::FrameIndex{src?327:300});
+        QVERIFY(displayAfterLoop);
+        QCOMPARE(displayAfterLoop.value()->value(),std::int64_t{300});
         auto sourceAfter=map.value()->output_to_source_display(
             core::FrameIndex{src?480:441});
         QVERIFY(sourceAfter);
