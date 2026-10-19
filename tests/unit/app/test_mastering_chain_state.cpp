@@ -973,17 +973,18 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
                 core::AudibleHandoffPhase::NEW,core::RealizationId{91}};
             int installations=0;
             std::shared_ptr<const void> observedLifetime;
+            bool validOutputPcm=true;
             TerminalAudioSessionGate installer(
                 gate,manualAudible,
                 [&](audio::AudioBufferView pcmView,
                     std::shared_ptr<const void> lifetime,
                     core::RealizationId published) -> core::Status {
                     ++installations;
-                    QCOMPARE(pcmView.timebase().frame_domain_id(),
-                             audio::FrameDomainId::OUTPUT_RATE);
-                    QCOMPARE(pcmView.frame_count().value(),std::int64_t{480});
-                    QCOMPARE(pcmView.format().sample_rate().value(),
-                             std::int64_t{48000});
+                    validOutputPcm = validOutputPcm
+                        &&pcmView.timebase().frame_domain_id()
+                            ==audio::FrameDomainId::OUTPUT_RATE
+                        &&pcmView.frame_count().value()==480
+                        &&pcmView.format().sample_rate().value()==48000;
                     observedLifetime=lifetime;
                     manualAudible.duration=pcmView.frame_count();
                     manualAudible.position=core::FrameIndex{0};
@@ -1006,6 +1007,7 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
                 owner,owner,core::RealizationId{91},core::RealizationId{9100}));
             QVERIFY(installer.has_session());
             QCOMPARE(installations,1);
+            QVERIFY(validOutputPcm);
             QCOMPARE(observedLifetime.get(),accepted.get());
             QVERIFY(installer.seek_source(core::FrameIndex{300}));
             QCOMPARE(manualAudible.position.value(),std::int64_t{327});
