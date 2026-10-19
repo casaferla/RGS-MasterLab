@@ -846,17 +846,31 @@ Window {
         QVERIFY(!provenance->isVisible());
         for (auto* readout : {recentReadout, holdReadout, fullReadout}) {
             QVERIFY(readout->isVisible());
-            QCOMPARE(readout->height(), 84.0);
+            QCOMPARE(readout->height(), 100.0);
             QVERIFY2(readout->property("roomyLimiterReadout").toBool(),
-                "M17 readout must use deliberate breathing-room spacing");
+                "M17 readout must keep deliberate breathing-room spacing");
             auto* content = qobject_cast<QQuickItem*>(find_child_by_name(
                 readout, QStringLiteral("truePeakReadoutTextColumn")));
-            QVERIFY(content);
+            auto* detail = qobject_cast<QQuickItem*>(find_child_by_name(
+                readout, QStringLiteral("truePeakReadoutDetailText")));
+            QVERIFY(content && detail);
             const QPointF inset = content->mapToItem(readout, QPointF{});
             QVERIFY2(inset.y() >= 9.5,
                 "Readout text must remain at least 10px below the top border");
             QVERIFY2(readout->height() - inset.y() - content->height() >= 9.5,
                 "Readout text must remain at least 10px above the bottom border");
+            QVERIFY2(!detail->property("truncated").toBool(),
+                "No M17 readout description may be elided");
+            const QPointF detailPos = detail->mapToItem(readout, QPointF{});
+            QVERIFY2(detailPos.y() + detail->height()
+                    <= readout->height() - 9.5,
+                "Reflowed description must fit within the fixed readout card");
+            if (readout == fullReadout) {
+                QCOMPARE(detail->property("text").toString(),
+                    QStringLiteral("No complete, source-bound measurement"));
+                QVERIFY2(detail->property("lineCount").toInt() >= 2,
+                    "Previously truncated complete-resource description must wrap");
+            }
             if (firstReadoutHeight == 0.0)
                 firstReadoutHeight = readout->height();
             QCOMPARE(readout->height(), firstReadoutHeight);

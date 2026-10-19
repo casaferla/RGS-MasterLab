@@ -77,10 +77,10 @@ Item {
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.limiterControlsIncluded ? 84
+            Layout.preferredHeight: root.limiterControlsIncluded ? 100
                 : root.compactRail ? 68 : 108
-            Layout.maximumHeight: root.limiterControlsIncluded ? 84 : -1
-            Layout.minimumHeight: root.limiterControlsIncluded ? 84 : 66
+            Layout.maximumHeight: root.limiterControlsIncluded ? 100 : -1
+            Layout.minimumHeight: root.limiterControlsIncluded ? 100 : 66
             heading: "RECENT / LIVE TRUE PEAK"
             reading: root.liveProvider && root.liveProvider.recentAvailable
                 ? root.liveProvider.peakText : "UNAVAILABLE"
@@ -99,10 +99,10 @@ Item {
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.limiterControlsIncluded ? 84
+            Layout.preferredHeight: root.limiterControlsIncluded ? 100
                 : root.compactRail ? 68 : 108
-            Layout.maximumHeight: root.limiterControlsIncluded ? 84 : -1
-            Layout.minimumHeight: root.limiterControlsIncluded ? 84 : 66
+            Layout.maximumHeight: root.limiterControlsIncluded ? 100 : -1
+            Layout.minimumHeight: root.limiterControlsIncluded ? 100 : 66
             heading: "SHORT HOLD / 1 SECOND"
             keyColor: "#F2C66F"
             valueColor: "#F2C66F"
@@ -123,10 +123,10 @@ Item {
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.limiterControlsIncluded ? 84
+            Layout.preferredHeight: root.limiterControlsIncluded ? 100
                 : root.compactRail ? 68 : 108
-            Layout.maximumHeight: root.limiterControlsIncluded ? 84 : -1
-            Layout.minimumHeight: root.limiterControlsIncluded ? 84 : 66
+            Layout.maximumHeight: root.limiterControlsIncluded ? 100 : -1
+            Layout.minimumHeight: root.limiterControlsIncluded ? 100 : 66
             heading: "COMPLETE PROCESSED RESOURCE"
             valueColor: root.fullResourceAccent
             reading: root.hasMeasurement

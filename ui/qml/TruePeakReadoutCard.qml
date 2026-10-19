@@ -89,12 +89,17 @@ Rectangle {
             elide: Text.ElideRight
         }
         Text {
+            objectName: "truePeakReadoutDetailText"
             text: root.detail
             color: "#8AA4B3"
             font.family: "Segoe UI"
             font.pixelSize: 10
             Layout.fillWidth: true
-            elide: Text.ElideRight
+            // The combined M17 rail must reflow complete status/provenance
+            // descriptions rather than abbreviating meaningful text.
+            // Standalone M16 retains its established single-line behaviour.
+            wrapMode: root.roomyLimiterReadout ? Text.WordWrap : Text.NoWrap
+            elide: root.roomyLimiterReadout ? Text.ElideNone : Text.ElideRight
         }
     }
 }
