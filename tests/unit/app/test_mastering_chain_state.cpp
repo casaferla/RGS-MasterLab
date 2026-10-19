@@ -1499,6 +1499,76 @@ void MasteringChainStateTest::terminalPrivateEndToEndRenderInstallAndRollback()
     QCOMPARE(consumedProof.value()->firstTerminalFrame,std::int64_t{160});
     QCOMPARE(consumedProof.value()->lastTerminalFrameExclusive,std::int64_t{172});
     QVERIFY(consumedProof.value()->owner==candidates.staged());
+    // Exercise the real *private* observer protocol with a fake worker
+    // source. Device identity snapshots surround two prefix reads; generation
+    // must not change, no observer may present public limiter telemetry.
+    using Prefix=platform::windows::WindowsConsumedOutputPrefix;
+    int prefixReads=0;
+    auto observedPrivate=observe_private_terminal_consumed_output(product,
+        [&](std::optional<std::uint64_t> expected)
+            -> core::Result<Prefix> {
+            ++prefixReads;
+            if ((prefixReads==1 && expected)
+                || (prefixReads==2
+                    && expected!=std::optional<std::uint64_t>{8}))
+                return core::Result<Prefix>::failure(core::Error{
+                    core::ErrorCode::InvalidState,"Unexpected prefix generation fence."});
+            return core::Result<Prefix>::success(consumed);
+        });
+    QVERIFY(observedPrivate);
+    QCOMPARE(prefixReads,2);
+    QCOMPARE(observedPrivate.value()->consumedOutputWatermarkExclusive,
+             std::int64_t{12});
+    QVERIFY(!observe_private_terminal_consumed_output(
+        product,TerminalConsumedPrefixRead{}));
+
+    prefixReads=0;
+    auto resetWorker=observe_private_terminal_consumed_output(product,
+        [&](std::optional<std::uint64_t> expected)
+            -> core::Result<Prefix> {
+            ++prefixReads;
+            auto next=consumed;
+            if(expected) ++next.generation;
+            return core::Result<Prefix>::success(next);
+        });
+    QVERIFY(!resetWorker);
+    QCOMPARE(prefixReads,2);
+
+    prefixReads=0;
+    auto advancedNoRewind=observe_private_terminal_consumed_output(product,
+        [&](std::optional<std::uint64_t> expected)
+            -> core::Result<Prefix> {
+            ++prefixReads;
+            auto next=consumed;
+            if(expected) next.processedWatermarkExclusive=11;
+            return core::Result<Prefix>::success(next);
+        });
+    QVERIFY(!advancedNoRewind);
+    QCOMPARE(prefixReads,2);
+
+    prefixReads=0;
+    auto changedDevice=observe_private_terminal_consumed_output(product,
+        [&](std::optional<std::uint64_t> expected)
+            -> core::Result<Prefix> {
+            ++prefixReads;
+            if(expected) ++device.seekSerial;
+            return core::Result<Prefix>::success(consumed);
+        });
+    QVERIFY(!changedDevice);
+    QCOMPARE(prefixReads,2);
+    --device.seekSerial; // Restore fake owner for later independent cases.
+
+    device.state=core::PlaybackState::PAUSED;
+    prefixReads=0;
+    QVERIFY(!observe_private_terminal_consumed_output(product,
+        [&](std::optional<std::uint64_t>)
+            -> core::Result<Prefix> {
+            ++prefixReads;
+            return core::Result<Prefix>::success(consumed);
+        }));
+    QCOMPARE(prefixReads,0);
+    device.state=core::PlaybackState::PLAYING;
+
     auto wrongId=consumed;
     wrongId.slices[0].realizationId=core::RealizationId{7199};
     QVERIFY(!bind_private_terminal_consumed_output(

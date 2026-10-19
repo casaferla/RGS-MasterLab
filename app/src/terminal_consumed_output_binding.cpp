@@ -44,6 +44,42 @@ using GapReason = platform::windows::WindowsConsumedGapReason;
 } // namespace
 
 core::Result<TerminalConsumedOutputEvidence>
+observe_private_terminal_consumed_output(
+    const TerminalPrivateProductSession& product,
+    const TerminalConsumedPrefixRead& readPrefix)
+{
+    if (!readPrefix)
+        return refuse("M17 worker consumed-prefix reader is unavailable.");
+    auto before = product.private_installed_output_identity();
+    if (!before)
+        return core::Result<Evidence>::failure(*before.error());
+    if (before.value()->playback.state != core::PlaybackState::PLAYING)
+        return refuse("M17 must be playing before observing sink consumption.");
+
+    auto first = readPrefix(std::nullopt);
+    if (!first)
+        return core::Result<Evidence>::failure(*first.error());
+    if (first.value()->generation == 0)
+        return refuse("M17 initial consumed worker generation is not valid.");
+
+    // A second serialized worker read fences the generation, proving that
+    // neither observer call crossed an unrecognized playback stream reset.
+    auto second = readPrefix(first.value()->generation);
+    if (!second)
+        return core::Result<Evidence>::failure(*second.error());
+    if (second.value()->generation != first.value()->generation
+        || second.value()->processedWatermarkExclusive
+            < first.value()->processedWatermarkExclusive)
+        return refuse("M17 playback worker generation or clock changed during observation.");
+
+    auto after = product.private_installed_output_identity();
+    if (!after)
+        return core::Result<Evidence>::failure(*after.error());
+    return bind_private_terminal_consumed_output(
+        *before.value(), *second.value(), *after.value());
+}
+
+core::Result<TerminalConsumedOutputEvidence>
 bind_private_terminal_consumed_output(
     const Input& before, const Prefix& consumed, const Input& after)
 {

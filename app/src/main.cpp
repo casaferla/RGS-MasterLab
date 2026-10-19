@@ -19,6 +19,7 @@
 #include "terminal_audio_session_gate.hpp"
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
+#include "terminal_consumed_output_binding.hpp"
 #include "terminal_private_product_session.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
@@ -261,6 +262,18 @@ int main(int argc, char* argv[])
         });
     // Product-private output rate is now explicitly discoverable but no
     // automatic call or QML sonic activation takes place.
+    // Device-backed, still PRIVATE observation seam. The product owns a
+    // real Windows-worker reader, fenced by two snapshots and a generation
+    // token, but deliberately does NOT call it until a qualified policy
+    // permits terminal readings. No fake M16 LIVE or M17 GR is published.
+    [[maybe_unused]] const auto privateTerminalConsumedObserve =
+        [&privateProductSession,windowsPlayback] {
+            return rgsml::app::observe_private_terminal_consumed_output(
+                privateProductSession,
+                [windowsPlayback](std::optional<std::uint64_t> generation) {
+                    return windowsPlayback->consumed_output_prefix(generation);
+                });
+        };
     static_cast<void>(privateProductSession);
     QObject::connect(&auditionSelector,
         &rgsml::app::AuditionSourceSelector::changed,
