@@ -41,6 +41,13 @@ struct DeviceFormat final {
     bool pairedFloat32Supported,
     bool pairedPcm16Supported);
 
+// Terminal PCM is already at its output rate. Exact-format selection
+// cannot silently fall back to the 44.1/48 kHz playback SRC.
+[[nodiscard]] core::Result<DeviceFormat> select_terminal_output_device_format(
+    const audio::AudioFormat& terminalFormat,
+    bool exactFloat32Supported,
+    bool exactPcm16Supported);
+
 [[nodiscard]] core::Result<std::vector<std::byte>> encode_device_block(
     audio::AudioBufferView source,
     DeviceSampleFormat destinationFormat);

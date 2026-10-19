@@ -222,6 +222,17 @@ core::Result<DeviceFormat> select_device_format(
         "Default output supports neither the exact nor authorized paired Source rate.");
 }
 
+core::Result<DeviceFormat> select_terminal_output_device_format(
+    const audio::AudioFormat& format,
+    bool exactFloat32Supported,
+    bool exactPcm16Supported)
+{
+    // Same exact-rate capability/encoding policy as ordinary native
+    // playback; paired-rate fallbacks are forbidden on terminal M17 PCM.
+    return select_device_format(format,exactFloat32Supported,
+        exactPcm16Supported,false,false);
+}
+
 core::Result<std::vector<std::byte>> encode_device_block(
     audio::AudioBufferView source,
     DeviceSampleFormat destinationFormat)

@@ -243,6 +243,7 @@ class PlaybackSupportTest final : public QObject {
 
 private slots:
     void formatSelectionIsDeterministic();
+    void terminalFormatRejectsDeviceRateFallback();
     void floatAndPcm16GoldenConversion();
     void conversionFailuresAndChunkInvariance();
     void stateMachineAndBoundedPump();
@@ -287,6 +288,36 @@ private slots:
     void c2D18SrcLoopRecoversAtEachActuallyConsumedWrap();
     void c2D19ArmedLoopSeekBeforeInsideAfterRetainsConsumedProof();
 };
+
+
+void PlaybackSupportTest::terminalFormatRejectsDeviceRateFallback()
+{
+    const auto rate=*core::SampleRate::create(48000).value();
+    auto fmt=audio::AudioFormat::create(rate,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto nativeFloat=platform::windows::internal::select_terminal_output_device_format(
+        *fmt.value(),true,true);
+    QVERIFY(nativeFloat);
+    QCOMPARE(nativeFloat.value()->sampleRateHz,48000);
+    QCOMPARE(nativeFloat.value()->sampleFormat,DeviceSampleFormat::IEEE_F32);
+    QVERIFY(!nativeFloat.value()->srcApplied);
+    auto nativePcm=platform::windows::internal::select_terminal_output_device_format(
+        *fmt.value(),false,true);
+    QVERIFY(nativePcm);
+    QCOMPARE(nativePcm.value()->sampleFormat,DeviceSampleFormat::PCM_S16);
+    QVERIFY(!nativePcm.value()->srcApplied);
+    auto pairedOnly=platform::windows::internal::select_terminal_output_device_format(
+        *fmt.value(),false,false);
+    QVERIFY(!pairedOnly);
+    QCOMPARE(pairedOnly.error()->code(),
+             core::ErrorCode::UnsupportedOperation);
+    // The normal SOURCE transport STILL has its separate paired-rate SRC.
+    auto ordinary=platform::windows::internal::select_device_format(
+        *fmt.value(),false,false,true,true);
+    QVERIFY(ordinary);
+    QVERIFY(ordinary.value()->srcApplied);
+    QCOMPARE(ordinary.value()->sampleRateHz,44100);
+}
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
 {
