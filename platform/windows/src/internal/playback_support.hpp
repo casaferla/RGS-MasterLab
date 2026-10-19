@@ -214,6 +214,14 @@ public:
             std::nullopt,
         std::shared_ptr<const void> lifetime = nullptr,
         std::optional<core::RealizationId> realizationId = std::nullopt);
+    // Private M17 candidate-only input: no implicit SRC or SOURCE alias.
+    [[nodiscard]] core::Status install_terminal_output_pcm_candidate(
+        audio::AudioBufferView source,
+        std::unique_ptr<IPlaybackOutput> output,
+        DeviceSampleFormat sampleFormat,
+        std::shared_ptr<const void> lifetime,
+        core::RealizationId identity,
+        core::SampleRate actualDeviceRate);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr,
@@ -270,6 +278,14 @@ private:
         bool awaitingReplay{false};
     };
 
+    [[nodiscard]] core::Status install_pcm_candidate_accepted(
+        audio::AudioBufferView source,
+        std::unique_ptr<IPlaybackOutput> output,
+        DeviceSampleFormat sampleFormat,
+        std::optional<audio::PlaybackSampleRateAdapter> rateAdapter,
+        std::shared_ptr<const void> lifetime,
+        std::optional<core::RealizationId> realizationId,
+        bool terminalOutputDomain);
     [[nodiscard]] core::Status prefill();
     [[nodiscard]] core::Status pump_once();
     [[nodiscard]] std::int64_t source_to_output_frame(
@@ -299,6 +315,7 @@ private:
     std::unique_ptr<IPlaybackOutput> output_;
     std::optional<DeviceSampleFormat> sampleFormat_;
     std::optional<audio::PlaybackSampleRateAdapter> rateAdapter_;
+    bool terminalOutputDomain_{false}; // no historical M16-LIVE source proof
     core::PlaybackState state_{core::PlaybackState::NO_SOURCE};
     core::FrameIndex position_{0};
     core::FrameIndex sourceBegin_{0};

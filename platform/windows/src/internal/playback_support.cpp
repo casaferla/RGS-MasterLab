@@ -133,7 +133,7 @@ public:
         }
         if (input.value()->format() != destination.format()
             || destination.timebase().frame_domain_id()
-                != audio::FrameDomainId::SOURCE_PROCESSING_RATE) {
+                != source_.timebase().frame_domain_id()) {
             return failure<core::FrameCount>(
                 core::ErrorCode::InvalidArgument,
                 "PCM playback block metadata is incoherent.");
@@ -348,6 +348,7 @@ core::Status PlaybackEngine::install_candidate(
     output_ = std::move(output);
     sampleFormat_ = sampleFormat;
     rateAdapter_ = std::move(rateAdapter);
+    terminalOutputDomain_ = false;
     state_ = core::PlaybackState::STOPPED;
     position_ = core::FrameIndex{0};
     loop_.reset();
@@ -365,6 +366,9 @@ core::Status PlaybackEngine::handoff_pcm(
     std::shared_ptr<const void> lifetime,
     std::optional<core::RealizationId> realizationId)
 {
+    if (terminalOutputDomain_) return status_failure(
+        core::ErrorCode::InvalidState,
+        "Terminal output requires a separately qualified handoff path.");
     if (!has_source() || !output_ || !duration_ || !outputDuration_ || !sampleFormat_) {
         return status_failure(
             core::ErrorCode::InvalidState,
@@ -739,6 +743,40 @@ core::Status PlaybackEngine::install_pcm_candidate(
             "PCM playback SRC metadata is incoherent with the immutable Source view.");
     }
 
+    return install_pcm_candidate_accepted(source,std::move(output),
+        sampleFormat,std::move(rateAdapter),std::move(lifetime),
+        realizationId,false);
+}
+
+core::Status PlaybackEngine::install_terminal_output_pcm_candidate(
+    audio::AudioBufferView source,
+    std::unique_ptr<IPlaybackOutput> output,
+    DeviceSampleFormat sampleFormat,
+    std::shared_ptr<const void> lifetime,
+    core::RealizationId identity,
+    core::SampleRate actualDeviceRate)
+{
+    if (!output || !lifetime || identity.value==0
+        || source.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+        || source.absolute_start_frame().value()!=0
+        || source.frame_count().value()<=0
+        || source.format().sample_rate()!=actualDeviceRate)
+        return status_failure(core::ErrorCode::InvalidArgument,
+            "M17 terminal PCM requires owned OUTPUT_RATE with matching device "
+            "frequency and nonzero identity; no second SRC is permitted.");
+    return install_pcm_candidate_accepted(source,std::move(output),
+        sampleFormat,std::nullopt,std::move(lifetime),identity,true);
+}
+
+core::Status PlaybackEngine::install_pcm_candidate_accepted(
+    audio::AudioBufferView source,
+    std::unique_ptr<IPlaybackOutput> output,
+    DeviceSampleFormat sampleFormat,
+    std::optional<audio::PlaybackSampleRateAdapter> rateAdapter,
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId,
+    bool terminalOutputDomain)
+{
     if (output_) {
         auto stopped = output_->stop();
         if (!stopped) {
@@ -768,6 +806,7 @@ core::Status PlaybackEngine::install_pcm_candidate(
     output_ = std::move(output);
     sampleFormat_ = sampleFormat;
     rateAdapter_ = std::move(rateAdapter);
+    terminalOutputDomain_ = terminalOutputDomain;
     state_ = core::PlaybackState::STOPPED;
     position_ = sourceBegin_;
     loop_.reset();
@@ -797,6 +836,7 @@ core::Status PlaybackEngine::clear()
     output_.reset();
     sampleFormat_.reset();
     rateAdapter_.reset();
+    terminalOutputDomain_ = false;
     duration_.reset();
     outputDuration_.reset();
     loop_.reset();
@@ -1121,6 +1161,10 @@ C2CoverageProbe PlaybackEngine::c2_processed_coverage_probe(
     }
     if (c2CoverageGenerationExhausted_) {
         probe.reason = C2CoverageProbeReason::GENERATION_EXHAUSTED;
+        return probe;
+    }
+    if (terminalOutputDomain_) {
+        probe.reason=C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER;
         return probe;
     }
     if (!output_ || !source_
@@ -1536,7 +1580,9 @@ core::Status PlaybackEngine::pump_once()
         return core::Status::failure(*blockFrameCount.error());
     }
     auto blockFormat = source_format();
-    auto blockDomain = audio::FrameDomainId::SOURCE_PROCESSING_RATE;
+    auto blockDomain = terminalOutputDomain_
+        ? audio::FrameDomainId::OUTPUT_RATE
+        : audio::FrameDomainId::SOURCE_PROCESSING_RATE;
     if (rateAdapter_) {
         auto outputFormat = audio::AudioFormat::create(
             rateAdapter_->output_rate(),
@@ -1616,7 +1662,7 @@ core::Status PlaybackEngine::pump_once()
     const bool nonTraversingOutsideLoop = loop_ && !loopTraversalEligible_
         && scheduledOutputFrame_
             >= source_to_output_frame(loop_->end().value());
-    c2PendingExactMapping_ = !rateAdapter_
+    c2PendingExactMapping_ = !rateAdapter_ && !terminalOutputDomain_
         && (!loop_ || loopCandidate || nonTraversingOutsideLoop)
         && c2PendingOwner_.has_value()
         && (!pendingHandoff_ || pureNewAfterHandoff);
