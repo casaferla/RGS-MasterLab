@@ -1008,7 +1008,8 @@ void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCo
             QVERIFY(installer.has_session());
             QCOMPARE(installations,1);
             QVERIFY(validOutputPcm);
-            QCOMPARE(observedLifetime.get(),accepted.get());
+            QVERIFY(observedLifetime.get()
+                ==static_cast<const void*>(accepted.get()));
             QVERIFY(installer.seek_source(core::FrameIndex{300}));
             QCOMPARE(manualAudible.position.value(),std::int64_t{327});
             QVERIFY(installer.set_source_loop(*range.value()));
