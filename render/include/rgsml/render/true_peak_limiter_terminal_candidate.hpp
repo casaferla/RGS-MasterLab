@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string_view>
 #include <rgsml/render/render_result.hpp>
 #include <optional>
 #include <span>
@@ -113,6 +114,8 @@ struct TruePeakLimiterOwnedSourceCandidate final {
     core::SampleRate output_rate;
     core::FrameCount programme_frames;
     std::uint64_t manual_chain_revision{0};
+    bool used_candidate_src{false};
+    std::string_view src_kernel_sha256;
 };
 
 // Caller must supply the currently accepted, immutable manual owner, real
@@ -124,6 +127,22 @@ struct TruePeakLimiterOwnedSourceCandidate final {
 // authorization can be fabricated from this result.
 [[nodiscard]] core::Result<TruePeakLimiterOwnedSourceCandidate>
 render_true_peak_limiter_owned_same_rate_candidate(
+    std::shared_ptr<const RenderResult> accepted_manual_owner,
+    const dsp::ProcessingChain& manual_chain_snapshot,
+    core::FrameCount original_full_resource_frames,
+    std::uint64_t expected_manual_chain_revision,
+    core::SampleRate required_output_rate,
+    const dsp::ProcessingChain& terminal_chain,
+    std::span<const dsp::ModuleExecutionBinding> immutable_terminal_bindings,
+    const dsp::ModuleRegistry& registry,
+    core::FrameCount maximum_block_frames);
+
+// Experimental FULL-rate path: real complete SOURCE_RATE owner -> frozen
+// 44.1<->48 kHz FIR offline materialization -> exact typed M17 terminal.
+// Leaves existing strict same-rate seam unchanged, refuses unsupported pairs.
+// This is NOT authorized for audible Processed publishing or export.
+[[nodiscard]] core::Result<TruePeakLimiterOwnedSourceCandidate>
+render_true_peak_limiter_owned_output_rate_candidate(
     std::shared_ptr<const RenderResult> accepted_manual_owner,
     const dsp::ProcessingChain& manual_chain_snapshot,
     core::FrameCount original_full_resource_frames,

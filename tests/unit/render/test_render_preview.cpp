@@ -1,6 +1,7 @@
 #include "render_test_support.hpp"
 
 #include <rgsml/analysis/true_peak_measurement.hpp>
+#include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/core/checked_integer.hpp>
 #include <rgsml/core/uuid.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
@@ -2310,6 +2311,78 @@ void RenderPreviewTest::truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndS
             QCOMPARE(bits(on.value()->manual_owner->view()),sourceBits);
         }
     }
+
+
+    // Experimental 44.1->48 complete-resource case: SRC is real and
+    // verified against the frozen binary64 FIR in audio tests, but the
+    // result is still NOT a published Processed playback realization.
+    auto original441=AudioBuffer::create(
+        format(rgsml::audio::ChannelLayout::STEREO_LR,44100),
+        FrameDomainId::SOURCE_PROCESSING_RATE,FrameIndex{0},frame_count(441));
+    QVERIFY(original441);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=original441.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(int i=0;i<441;++i)
+            (*lane.value())[static_cast<std::size_t>(i)]
+                =i==0 ? (ch==0?4.0:-3.0) : (ch==0?0.25:-0.125);
+    }
+    auto r441=rgsml::render::RenderRequest::create(
+        original441.value()->view(),original441.value()->view().absolute_range(),
+        manualChain,{},block);
+    QVERIFY(r441);
+    auto pcm441=rgsml::render::render_preview(*r441.value(),*registry.value());
+    QVERIFY(pcm441);
+    auto manualOwner=std::make_shared<const rgsml::render::RenderResult>(
+        std::move(*pcm441.value()));
+    const auto originalBits=bits(manualOwner->view());
+    QVERIFY(limiterChain.value()->set_user_bypass(id,true));
+    auto resampledBypass=
+        rgsml::render::render_true_peak_limiter_owned_output_rate_candidate(
+            manualOwner,manualChain,frame_count(441),
+            manualOwner->chain_revision(),rate48000,*limiterChain.value(),
+            binding,*registry.value(),block);
+    QVERIFY2(resampledBypass,resampledBypass?""
+        :resampledBypass.error()->message().c_str());
+    QVERIFY(resampledBypass.value()->used_candidate_src);
+    QVERIFY(!resampledBypass.value()->src_kernel_sha256.empty());
+    QCOMPARE(resampledBypass.value()->output_rate.value(),48000);
+    QCOMPARE(resampledBypass.value()->terminal.checked.terminal
+        .compensated_pcm.view().frame_count().value(),std::int64_t{480});
+    QVERIFY(resampledBypass.value()->terminal.checked.terminal.bypassed);
+    QVERIFY(!resampledBypass.value()->terminal.checked.final_check.has_value());
+    auto convertedDirect=
+        rgsml::audio::materialize_full_resource_output_rate_candidate(
+            manualOwner->view(),rate48000,frame_count(17));
+    QVERIFY(convertedDirect);
+    QCOMPARE(bits(resampledBypass.value()->terminal.checked.terminal
+        .compensated_pcm.view()),bits(convertedDirect.value()->pcm.view()));
+    QVERIFY(limiterChain.value()->set_user_bypass(id,false));
+    auto resampledActive=
+        rgsml::render::render_true_peak_limiter_owned_output_rate_candidate(
+            manualOwner,manualChain,frame_count(441),
+            manualOwner->chain_revision(),rate48000,*limiterChain.value(),
+            binding,*registry.value(),block);
+    QVERIFY2(resampledActive,resampledActive?""
+        :resampledActive.error()->message().c_str());
+    QVERIFY(resampledActive.value()->used_candidate_src);
+    QVERIFY(!resampledActive.value()->terminal.checked.terminal.bypassed);
+    QVERIFY(resampledActive.value()->terminal.checked.final_check.has_value());
+    QCOMPARE(resampledActive.value()->terminal.checked.terminal
+        .applied_gain_frames.size(),std::size_t{480});
+    QCOMPARE(bits(manualOwner->view()),originalBits);
+    QCOMPARE(resampledActive.value()->manual_owner.get(),manualOwner.get());
+    QCOMPARE(resampledActive.value()->terminal.checked.terminal
+        .compensated_pcm.view().timebase().frame_domain_id(),
+        FrameDomainId::OUTPUT_RATE);
+
+    auto notSupported=
+        rgsml::render::render_true_peak_limiter_owned_output_rate_candidate(
+            manualOwner,manualChain,frame_count(441),
+            manualOwner->chain_revision(),
+            *rgsml::core::SampleRate::create(96000).value(),
+            *limiterChain.value(),binding,*registry.value(),block);
+    QVERIFY(!notSupported);
 
     // An otherwise valid source preview of only part of the programme
     // is never a final full-resource limiter input.

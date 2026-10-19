@@ -1,4 +1,5 @@
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
+#include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 
 #include <rgsml/core/error.hpp>
 
@@ -24,7 +25,7 @@ namespace {
 } // namespace
 
 core::Result<TruePeakLimiterOwnedSourceCandidate>
-render_true_peak_limiter_owned_same_rate_candidate(
+render_true_peak_limiter_owned_candidate_impl(
     std::shared_ptr<const RenderResult> manual,
     const dsp::ProcessingChain& manual_chain,
     core::FrameCount full_frames,
@@ -33,7 +34,8 @@ render_true_peak_limiter_owned_same_rate_candidate(
     const dsp::ProcessingChain& terminal_chain,
     std::span<const dsp::ModuleExecutionBinding> bindings,
     const dsp::ModuleRegistry& registry,
-    core::FrameCount block)
+    core::FrameCount block,
+    bool enable_unqualified_src)
 {
     using Candidate = TruePeakLimiterOwnedSourceCandidate;
     if (!manual) {
@@ -86,37 +88,66 @@ render_true_peak_limiter_owned_same_rate_candidate(
             core::ErrorCode::UnsupportedOperation,"M17_SOURCE_RATE_UNSUPPORTED",
             "Source/output rate is unsupported for the protected M16 verification."));
     }
-    if (in_hz!=output_rate.value()) {
+    if (!enable_unqualified_src && in_hz!=output_rate.value()) {
         return core::Result<Candidate>::failure(source_error(
             core::ErrorCode::UnsupportedOperation,"M17_OUTPUT_RATE_SRC_REQUIRED",
-            "No verified complete-resource resampler is available for this output rate."));
+            "The strict same-rate handoff cannot silently perform SRC."));
     }
-    // This is a true 1:1 materialization, NOT relabelling a source-rate
-    // buffer. The independent OUTPUT_RATE allocation keeps the full
-    // programme origin and every signed zero/subnormal bit intact.
-    auto output=audio::AudioBuffer::create(view.format(),
-        audio::FrameDomainId::OUTPUT_RATE,
-        view.absolute_start_frame(),view.frame_count());
-    if(!output)
-        return core::Result<Candidate>::failure(*output.error());
-    for(std::size_t ch=0;ch<view.format().channel_count();++ch) {
-        const auto in=view.channel(ch);
-        auto out=output.value()->mutable_view().channel(ch);
-        if(!in||!out) {
-            return core::Result<Candidate>::failure(source_error(
-                core::ErrorCode::InvalidState,"M17_MANUAL_CHANNEL_MISSING",
-                "Exact 1:1 output-rate handoff requires every channel."));
-        }
-        std::copy(in.value()->begin(),in.value()->end(),out.value()->begin());
-    }
+    if (block.value()<=0) return core::Result<Candidate>::failure(source_error(
+        core::ErrorCode::InvalidArgument,"M17_INVALID_BLOCK",
+        "Terminal renderer needs a positive block size."));
+    // Dedicated private full-resource candidate conversion owns the
+    // entire OUTPUT_RATE buffer before M17/M16 verification. No dynamic
+    // resampling takes place in the playback callback.
+    auto boundedBlock=core::FrameCount::create(std::min(
+        block.value(),audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames));
+    if(!boundedBlock)return core::Result<Candidate>::failure(*boundedBlock.error());
+    auto output=audio::materialize_full_resource_output_rate_candidate(
+        view,output_rate,*boundedBlock.value());
+    if(!output)return core::Result<Candidate>::failure(*output.error());
     auto candidate=render_true_peak_limiter_bound_terminal_candidate(
-        output.value()->view(),terminal_chain,bindings,registry,block);
+        output.value()->pcm.view(),terminal_chain,bindings,registry,block);
     if(!candidate)
         return core::Result<Candidate>::failure(*candidate.error());
     // All intermediate PCM and final verification must succeed BEFORE
     // providing a candidate; the source owner remains pinned.
     return core::Result<Candidate>::success({
         std::move(manual),std::move(*candidate.value()),
-        output_rate,full_frames,manual_revision});
+        output_rate,full_frames,manual_revision,
+        output.value()->used_src,output.value()->kernel_sha256});
+}
+
+core::Result<TruePeakLimiterOwnedSourceCandidate>
+render_true_peak_limiter_owned_same_rate_candidate(
+    std::shared_ptr<const RenderResult> manual,
+    const dsp::ProcessingChain& manual_chain,
+    core::FrameCount full_frames,
+    std::uint64_t manual_revision,
+    core::SampleRate output_rate,
+    const dsp::ProcessingChain& terminal_chain,
+    std::span<const dsp::ModuleExecutionBinding> bindings,
+    const dsp::ModuleRegistry& registry,
+    core::FrameCount block)
+{
+    return render_true_peak_limiter_owned_candidate_impl(
+        std::move(manual),manual_chain,full_frames,manual_revision,
+        output_rate,terminal_chain,bindings,registry,block,false);
+}
+
+core::Result<TruePeakLimiterOwnedSourceCandidate>
+render_true_peak_limiter_owned_output_rate_candidate(
+    std::shared_ptr<const RenderResult> manual,
+    const dsp::ProcessingChain& manual_chain,
+    core::FrameCount full_frames,
+    std::uint64_t manual_revision,
+    core::SampleRate output_rate,
+    const dsp::ProcessingChain& terminal_chain,
+    std::span<const dsp::ModuleExecutionBinding> bindings,
+    const dsp::ModuleRegistry& registry,
+    core::FrameCount block)
+{
+    return render_true_peak_limiter_owned_candidate_impl(
+        std::move(manual),manual_chain,full_frames,manual_revision,
+        output_rate,terminal_chain,bindings,registry,block,true);
 }
 } // namespace rgsml::render
