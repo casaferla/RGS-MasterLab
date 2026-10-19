@@ -727,8 +727,8 @@ Window {
         QStringLiteral("m17LimiterValidationMessage"));
     auto* rail = find_child_by_name(instance.data(),
         QStringLiteral("truePeakMeterSharedRail"));
-    auto* gr = find_child_by_name(instance.data(),
-        QStringLiteral("m17GainReductionHistory"));
+    auto* gr = qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(), QStringLiteral("m17GainReductionHistory")));
     auto* meterBay = qobject_cast<QQuickItem*>(find_child_by_name(
         instance.data(), QStringLiteral("truePeakStaticMeterBay")));
     auto* grDivider = qobject_cast<QQuickItem*>(find_child_by_name(
