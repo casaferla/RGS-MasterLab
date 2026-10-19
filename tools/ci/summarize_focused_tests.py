@@ -38,7 +38,7 @@ def main():
         # LastTest.log contains every passing test too. Restrict diagnostics
         # to the actual failed test blocks to avoid exhausting the 12 KB cap
         # on irrelevant QtTest PASS lines.
-        test_marker = re.compile(r"^\\s*\\d+/\\d+\\s+Test:\\s+(\\S+)")
+        test_marker = re.compile(r"^\s*\d+/\d+\s+Test:\s+(\S+)")
         current_test = None
         indexes = set()
         for i, line in enumerate(rows):
