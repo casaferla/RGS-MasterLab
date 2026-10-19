@@ -80,4 +80,7 @@ if(RGSML_BUILD_TESTS)
     include(CTest)
     enable_testing()
     add_subdirectory(tests)
+    # Separate M17 private-GR proof target, reusing the exact working
+    # app-test dependencies without modifying the large frozen test suite.
+    include(cmake/RgsmlTerminalPrivateGrTests.cmake)
 endif()
