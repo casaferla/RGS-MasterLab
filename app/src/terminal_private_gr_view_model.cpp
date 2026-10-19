@@ -57,9 +57,11 @@ void TerminalPrivateGrViewModel::refresh()
         QVariantMap point;
         point.insert(QStringLiteral("peakReductionDb"),
                      bucket.peakReductionDb);
-        point.insert(QStringLiteral("frameBegin"),bucket.frameBegin);
+        point.insert(QStringLiteral("frameBegin"),
+                     QVariant::fromValue(static_cast<qlonglong>(bucket.frameBegin)));
         point.insert(QStringLiteral("frameEndExclusive"),
-                     bucket.frameEndExclusive);
+                     QVariant::fromValue(static_cast<qlonglong>(
+                         bucket.frameEndExclusive)));
         points.append(point);
         cursor=bucket.frameEndExclusive;
     }
