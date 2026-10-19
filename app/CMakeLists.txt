@@ -15,6 +15,8 @@ qt_add_executable(rgsml_app
     src/stereo_ms_view_model.hpp
     src/terminal_candidate_gate.cpp
     src/terminal_candidate_gate.hpp
+    src/terminal_playback_frame_map.cpp
+    src/terminal_playback_frame_map.hpp
     src/terminal_limiter_state.cpp
     src/terminal_limiter_state.hpp
     src/terminal_limiter_view_model.cpp

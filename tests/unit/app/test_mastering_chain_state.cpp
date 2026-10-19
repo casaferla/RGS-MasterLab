@@ -1,6 +1,7 @@
 #include "mastering_chain_state.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_candidate_gate.hpp"
+#include "terminal_playback_frame_map.hpp"
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
 #include "terminal_limiter_view_model.hpp"
@@ -59,6 +60,7 @@ private slots:
     void terminalLimiterProductStateAndActualPcm();
     void limiterCeilingViewModelDraftAndValidation();
     void terminalOutputAdmissionRejectsObsoleteOwnersAndCeiling();
+    void terminalOutputFrameMapPreservesSourceLoopAndSeekCoordinates();
 };
 
 void MasteringChainStateTest::defaultTopologyAndCanonicalOrder()
@@ -780,6 +782,102 @@ void MasteringChainStateTest::terminalOutputAdmissionRejectsObsoleteOwnersAndCei
     // The snapshot is still immutable and privately owned by its consumer;
     // invalidation does not make it an audible Processed realization.
     QCOMPARE(snap->rendered.manual_owner.get(),owner.get());
+}
+
+
+
+void MasteringChainStateTest::terminalOutputFrameMapPreservesSourceLoopAndSeekCoordinates()
+{
+    auto registry=ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto manual=dsp::ProcessingChain::create(*registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manual);
+    const auto limiterId=test_instance_id("7c000000-0000-4000-8000-000000000017");
+    auto limiter=TerminalLimiterState::create_default(*registry.value(),limiterId);
+    QVERIFY(limiter);
+    const auto sourceRate=*core::SampleRate::create(44100).value();
+    const auto outputRate=*core::SampleRate::create(48000).value();
+    const auto n=*core::FrameCount::create(441).value();
+    const auto block=*core::FrameCount::create(17).value();
+    auto fmt=audio::AudioFormat::create(
+        sourceRate,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto pcm=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,core::FrameIndex{0},n);
+    QVERIFY(pcm);
+    auto job=render::RenderRequest::create(
+        pcm.value()->view(),pcm.value()->view().absolute_range(),
+        *manual.value(),{},block);
+    QVERIFY(job);
+    auto manualRendered=render::render_preview(*job.value(),*registry.value());
+    QVERIFY(manualRendered);
+    auto owner=std::make_shared<const render::RenderResult>(
+        std::move(*manualRendered.value()));
+    TerminalCandidateGate gate;
+    for(const auto rateHz:{48000,44100}) {
+        const auto target=rateHz==48000?outputRate:sourceRate;
+        auto capture=gate.capture(owner,owner,core::RealizationId{91},
+            *manual.value(),*limiter.value(),target);
+        QVERIFY(capture);
+        auto completed=render::render_true_peak_limiter_owned_output_rate_candidate(
+            owner,*manual.value(),n,manual.value()->revision(),target,
+            limiter.value()->chain(),limiter.value()->execution_bindings(),
+            *registry.value(),block);
+        QVERIFY2(completed,completed?"":completed.error()->message().c_str());
+        QVERIFY(gate.accept(*capture.value(),std::move(*completed.value()),
+            owner,owner,core::RealizationId{91},
+            *manual.value(),*limiter.value()));
+        auto accepted=gate.staged();
+        QVERIFY(accepted);
+        auto map=TerminalPlaybackFrameMap::create(*accepted);
+        QVERIFY(map);
+        const bool src=rateHz==48000;
+        QCOMPARE(map.value()->converted(),src);
+        QCOMPARE(map.value()->source_frames().value(),std::int64_t{441});
+        QCOMPARE(map.value()->output_frames().value(),
+                 std::int64_t{src?480:441});
+        for(const auto from: {0,5,10,15,20,147,300,441}) {
+            auto mapped=map.value()->source_to_output(core::FrameIndex{from});
+            QVERIFY(mapped);
+            // The exact half-open-ceil map is frozen by the playback SRC
+            // implementation. Check BEFORE / INSIDE / AFTER Loop Region.
+            const std::int64_t expected=src?(from*160+146)/147:from;
+            QCOMPARE(mapped.value()->value(),expected);
+        }
+        auto range=core::FrameRange::create(core::FrameIndex{10},
+                                            core::FrameIndex{20});
+        QVERIFY(range);
+        auto mappedLoop=map.value()->source_loop_to_output(*range.value());
+        QVERIFY(mappedLoop);
+        QCOMPARE(mappedLoop.value()->begin().value(),src?11:10);
+        QCOMPARE(mappedLoop.value()->end().value(),src?22:20);
+        auto endLoop=core::FrameRange::create(core::FrameIndex{300},
+                                              core::FrameIndex{441});
+        QVERIFY(endLoop);
+        auto mappedEnd=map.value()->source_loop_to_output(*endLoop.value());
+        QVERIFY(mappedEnd);
+        QCOMPARE(mappedEnd.value()->begin().value(),src?327:300);
+        QCOMPARE(mappedEnd.value()->end().value(),src?480:441);
+        auto sourceBefore=map.value()->output_to_source_display(core::FrameIndex{0});
+        QVERIFY(sourceBefore);
+        QCOMPARE(sourceBefore.value()->value(),std::int64_t{0});
+        auto sourceAfter=map.value()->output_to_source_display(
+            core::FrameIndex{src?480:441});
+        QVERIFY(sourceAfter);
+        QCOMPARE(sourceAfter.value()->value(),std::int64_t{441});
+        auto badSource=map.value()->source_to_output(core::FrameIndex{-1});
+        QVERIFY(!badSource);
+        QVERIFY(!map.value()->source_to_output(core::FrameIndex{442}));
+        QVERIFY(!map.value()->output_to_source_display(
+            core::FrameIndex{src?481:442}));
+        auto badLoop=core::FrameRange::create(core::FrameIndex{440},
+                                             core::FrameIndex{442});
+        QVERIFY(badLoop);
+        QVERIFY(!map.value()->source_loop_to_output(*badLoop.value()));
+        gate.invalidate();
+        QVERIFY(!gate.staged());
+    }
 }
 
 
