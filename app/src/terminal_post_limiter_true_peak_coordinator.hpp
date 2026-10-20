@@ -76,7 +76,7 @@ private:
     void poll();
     void worker_loop();
     void accept(std::uint64_t,Completion);
-    void clear(bool attempted);
+    void clear(bool attempted, QString diagnostic={});
     static QString reading(double value);
     static double normalized(double value) noexcept;
     Observer observe_;

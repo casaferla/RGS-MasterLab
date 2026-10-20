@@ -319,8 +319,19 @@ void TerminalPrivateGrProjectionTest::postLimiterMeterRejectsUnverifiedAndUsesAc
     QVERIFY(!meter.recent_available());
     QVERIFY(!meter.hold_available());
     QCOMPARE(meter.left_text(),QStringLiteral("—"));
-    QTest::qWait(110);
+    QTRY_VERIFY_WITH_TIMEOUT(meter.monitoring_attempted(),1000);
     QVERIFY(!meter.recent_available());
+    QVERIFY(meter.status_text().contains(
+        QStringLiteral("No verified Windows sink prefix.")));
+    QSignalSpy diagnosticSignals(
+        &meter,&app::TerminalPostLimiterTruePeakCoordinator::changed);
+    QVERIFY(diagnosticSignals.isValid());
+    QTest::qWait(160);
+    // Identical 50-ms failure polls must not repeatedly reset FIR, history
+    // or redraw the complete editor; the original diagnostic stays visible.
+    QCOMPARE(diagnosticSignals.size(),0);
+    QVERIFY(meter.status_text().contains(
+        QStringLiteral("No verified Windows sink prefix.")));
 
     const auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);

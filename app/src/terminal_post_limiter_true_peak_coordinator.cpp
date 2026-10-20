@@ -35,7 +35,7 @@ TerminalPostLimiterTruePeakCoordinator::~TerminalPostLimiterTruePeakCoordinator(
 
 void TerminalPostLimiterTruePeakCoordinator::invalidate(){clear(false);}
 
-void TerminalPostLimiterTruePeakCoordinator::clear(bool attempted)
+void TerminalPostLimiterTruePeakCoordinator::clear(bool attempted, QString diagnostic)
 {
     ++serial_;
     ++epoch_;
@@ -51,8 +51,9 @@ void TerminalPostLimiterTruePeakCoordinator::clear(bool attempted)
     traversal_.reset();
     wrap_.reset();
     owner_.reset();
-    status_=attempted?QStringLiteral("GAP / UNAVAILABLE")
-                     :QStringLiteral("NOT MONITORED");
+    status_=!attempted ? QStringLiteral("NOT MONITORED")
+        :diagnostic.isEmpty() ? QStringLiteral("GAP / UNAVAILABLE")
+                              :std::move(diagnostic);
     {
         std::lock_guard lock(mutex_);
         pending_.reset();
@@ -68,7 +69,16 @@ void TerminalPostLimiterTruePeakCoordinator::poll()
     }
     const auto result=observe_();
     if(!result || !result.value()->owner) {
-        if(attempted_)clear(true);
+        // First failure is an attempted observation, not "NOT MONITORED".
+        // Preserve the real bound-worker refusal reason so a missing LIVE
+        // display is diagnosable without inventing a True Peak sample.
+        const QString diagnostic = !result && result.error()
+            ? QStringLiteral("GAP / UNAVAILABLE · %1").arg(
+                QString::fromStdString(result.error()->message()))
+            : QStringLiteral("GAP / UNAVAILABLE · NO TERMINAL OWNER");
+        // Do not repaint/clear a 50-ms timer for an unchanged failure.
+        if(!attempted_ || recent_ || hold_ || status_!=diagnostic)
+            clear(true,diagnostic);
         return;
     }
     const auto& proof=*result.value();
@@ -84,7 +94,10 @@ void TerminalPostLimiterTruePeakCoordinator::poll()
        ||proof.consumedOutputWatermarkExclusive
            <proof.lastTerminalFrameExclusive-proof.firstTerminalFrame
        ||(channels!=1&&channels!=2)) {
-        if(attempted_)clear(true);
+        const auto diagnostic=QStringLiteral(
+            "GAP / UNAVAILABLE · INVALID TERMINAL CONSUMPTION EVIDENCE");
+        if(!attempted_ || recent_ || hold_ || status_!=diagnostic)
+            clear(true,diagnostic);
         return;
     }
     const bool newEpoch=!attempted_ || owner_!=proof.owner
