@@ -34,6 +34,9 @@ Item {
     property string accessibleDescription: ""
     // Optional tooltip for new slider instances; legacy DSP stays unchanged.
     property string interactionHint: ""
+    // Opt-in M15 only: expensive observed DSP graph is frozen while dragging.
+    // Other module sliders keep their established interaction semantics.
+    property bool deferResponseWhileDragging: false
 
     signal draftValueChanged(real draftVal)
     signal commitRequested(real finalVal)
@@ -113,6 +116,10 @@ Item {
         }
 
         onPressedChanged: {
+            if (internalSlider.pressed && control.deferResponseWhileDragging
+                && control.viewModel && typeof control.viewModel.setFastInteraction === "function") {
+                control.viewModel.setFastInteraction(true);
+            }
             if (!internalSlider.pressed) {
                 // Pointer release: validate + commit once
                 var finalVal = control.positionToValue(internalSlider.visualPosition);
@@ -125,6 +132,9 @@ Item {
                     }
                 }
                 control.commitRequested(finalVal);
+                if (control.deferResponseWhileDragging && control.viewModel
+                    && typeof control.viewModel.setFastInteraction === "function")
+                    control.viewModel.setFastInteraction(false);
             }
         }
 

@@ -122,6 +122,9 @@ public:
     Q_INVOKABLE bool setDraftMonoBassMode(const QString& mode);
     Q_INVOKABLE bool setDraftMonoBassCutoffHz(double value);
     Q_INVOKABLE bool setDraftLowBandWidthPercent(double value);
+    // Pointer events update only the lightweight typed draft. Expensive
+    // response-grid evaluation and QML Canvas repaint resume on release.
+    Q_INVOKABLE void setFastInteraction(bool active);
     Q_INVOKABLE bool commitDraft();
     Q_INVOKABLE void cancelDraft();
     Q_INVOKABLE void resetToDefault();
@@ -145,6 +148,7 @@ private:
     void set_error(const QString& field, const QString& message);
     void clear_error();
     void request_preview();
+    void refresh_response_cache() const;
 
     MasteringChainState* chainState_{nullptr};
     MasteringPreviewController* previewController_{nullptr};
@@ -159,6 +163,10 @@ private:
     render::AudibleStereoMsTelemetryResolver telemetryResolver_;
     QTimer telemetryTimer_;
     QTimer responseNotifyTimer_;
+    bool fastInteractionActive_{false};
+    mutable bool responseCacheDirty_{true};
+    mutable QString responseCacheStatus_;
+    mutable QVariantList responseCachePoints_;
     QString telemetryStatus_{QStringLiteral("UNAVAILABLE")};
     QString telemetryRealizationId_;
     bool telemetryActive_{false};

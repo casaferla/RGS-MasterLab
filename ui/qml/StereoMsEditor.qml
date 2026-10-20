@@ -401,6 +401,7 @@ Item {
                         viewModel: root.viewModel
                         interactionHint: "WIDTH: 0–200%. Drag the cyan handle vertically, use this slider, or type an exact number; Enter applies, Esc restores."
                         sliderInteractionHint: "WIDTH 0–200%: change the broadband Mid/Side balance. Release commits one DSP change; no mouse-wheel edits."
+                        deferResponseWhileDragging: true
                         from: 0
                         to: 200
                         stepSize: 0.5
@@ -425,6 +426,7 @@ Item {
                         fieldName: "monoBassCutoffHz"
                         interactionHint: "CUTOFF: 40–300 Hz subject to source rate. Drag the green handle horizontally or type the exact frequency; Enter applies, Esc restores."
                         sliderInteractionHint: "MONO BASS CUTOFF: select the crossover frequency, only when LR12/LR24 is effective."
+                        deferResponseWhileDragging: true
                         rawText: root.viewModel ? root.viewModel.monoBassCutoffHz.toFixed(1) : "120.0"
                         viewModel: root.viewModel
                         from: 40
@@ -451,6 +453,7 @@ Item {
                         fieldName: "lowBandWidthPercent"
                         interactionHint: "LOW WIDTH: 0–100%. Drag the yellow handle vertically or enter a value; only effective while Mono Bass is active."
                         sliderInteractionHint: "LOW WIDTH 0–100%: control low-frequency Side width without changing the independent Mid/Side gains."
+                        deferResponseWhileDragging: true
                         rawText: root.viewModel ? root.viewModel.lowBandWidthPercent.toFixed(1) : "100.0"
                         viewModel: root.viewModel
                         from: 0
@@ -493,6 +496,7 @@ Item {
                         viewModel: root.viewModel
                         interactionHint: "MID GAIN: -12 to +12 dB; edit numerically, Enter to apply, Esc to restore."
                         sliderInteractionHint: "MID GAIN: move the gain from -12 to +12 dB, measured from the zero dB center; release to commit."
+                        deferResponseWhileDragging: true
                         from: -12
                         to: 12
                         stepSize: 0.1
@@ -520,6 +524,7 @@ Item {
                         viewModel: root.viewModel
                         interactionHint: "SIDE GAIN: -24 to +12 dB; edit numerically, Enter to apply, Esc to restore."
                         sliderInteractionHint: "SIDE GAIN: move the gain from -24 to +12 dB, with zero at two-thirds along the track; release to commit."
+                        deferResponseWhileDragging: true
                         from: -24
                         to: 12
                         stepSize: 0.1

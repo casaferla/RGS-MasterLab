@@ -43,7 +43,9 @@ StereoMsViewModel::StereoMsViewModel(
     connect(&responseNotifyTimer_, &QTimer::timeout,
             this, &StereoMsViewModel::responseChanged);
     connect(this, &StereoMsViewModel::changed, this, [this] {
-        if (!responseNotifyTimer_.isActive()) responseNotifyTimer_.start();
+        responseCacheDirty_ = true;
+        if (!fastInteractionActive_ && !responseNotifyTimer_.isActive())
+            responseNotifyTimer_.start();
     });
 }
 
@@ -172,40 +174,75 @@ void StereoMsViewModel::setSignalFormat(
     emit changed();
 }
 
-QString StereoMsViewModel::width_response_status() const
+void StereoMsViewModel::refresh_response_cache() const
 {
-    if (!available()) return QStringLiteral("MODULE_UNAVAILABLE");
-    if (sourceChannelCount_ == 0) return QStringLiteral("SOURCE_UNAVAILABLE");
-    if (sourceChannelCount_ == 1) return QStringLiteral("MONO_INPUT");
-    if (bypass()) return QStringLiteral("BYPASSED");
-
+    if (!responseCacheDirty_) return;
+    // One evaluator call per accepted visual frame, rather than recomputing
+    // the same 129-point DSP grid for both QML status and points getters.
+    responseCacheDirty_ = false;
+    responseCachePoints_.clear();
+    if (!available()) {
+        responseCacheStatus_ = QStringLiteral("MODULE_UNAVAILABLE");
+        return;
+    }
+    if (sourceChannelCount_ == 0) {
+        responseCacheStatus_ = QStringLiteral("SOURCE_UNAVAILABLE");
+        return;
+    }
+    if (sourceChannelCount_ == 1) {
+        responseCacheStatus_ = QStringLiteral("MONO_INPUT");
+        return;
+    }
+    if (bypass()) {
+        responseCacheStatus_ = QStringLiteral("BYPASSED");
+        return;
+    }
     const auto* params = editing();
-    if (!params) return QStringLiteral("MODULE_UNAVAILABLE");
-    // Use only the C++ DSP response evaluator, which consumes the actual
-    // frozen crossover coefficients. QML will transform points to pixels.
+    if (!params || !(effectiveSampleRateHz_ > 0.0)) {
+        responseCacheStatus_ = QStringLiteral("RESPONSE_UNAVAILABLE");
+        return;
+    }
     const auto response = dsp::stereo_ms_width_response_grid(
         *params, effectiveSampleRateHz_);
-    return response ? QStringLiteral("READY")
-                    : QStringLiteral("RESPONSE_UNAVAILABLE");
-}
-
-QVariantList StereoMsViewModel::width_response_points() const
-{
-    QVariantList points;
-    if (width_response_status() != QStringLiteral("READY")) return points;
-    const auto* params = editing();
-    if (!params) return points;
-    const auto response = dsp::stereo_ms_width_response_grid(
-        *params, effectiveSampleRateHz_);
-    if (!response) return points;
-    points.reserve(static_cast<qsizetype>(response.value()->size()));
+    if (!response) {
+        responseCacheStatus_ = QStringLiteral("RESPONSE_UNAVAILABLE");
+        return;
+    }
+    responseCachePoints_.reserve(static_cast<qsizetype>(response.value()->size()));
     for (const auto& point : *response.value()) {
         QVariantMap item;
         item.insert(QStringLiteral("frequencyHz"), point.frequency_hz);
         item.insert(QStringLiteral("widthPercent"), point.effective_width_percent);
-        points.append(item);
+        responseCachePoints_.append(item);
     }
-    return points;
+    responseCacheStatus_ = QStringLiteral("READY");
+}
+
+QString StereoMsViewModel::width_response_status() const
+{
+    refresh_response_cache();
+    return responseCacheStatus_;
+}
+
+QVariantList StereoMsViewModel::width_response_points() const
+{
+    refresh_response_cache();
+    return responseCachePoints_;
+}
+
+void StereoMsViewModel::setFastInteraction(bool active)
+{
+    if (fastInteractionActive_ == active) return;
+    fastInteractionActive_ = active;
+    if (active) {
+        // Suppress the expensive observational response computation while a
+        // pointer is moving. The QML thumb and numeric draft remain immediate.
+        responseNotifyTimer_.stop();
+    } else if (responseCacheDirty_) {
+        // Compute the authoritative curve after release, not in the pointer
+        // event and not once for every intermediate width/crossover edit.
+        responseNotifyTimer_.start();
+    }
 }
 
 void StereoMsViewModel::set_error(const QString& field, const QString& message)

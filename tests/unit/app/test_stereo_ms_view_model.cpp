@@ -34,6 +34,7 @@ private slots:
     void modesMuteAndBypassPreserveStoredValues();
     void responsePointsRespectDraftAndActualSignalFormat();
     void responseNotificationsCoalescePointerDrags();
+    void fastPointerInteractionDefersGridAndPreviewUntilRelease();
     void canonicalControlsStageAndInvalidEntryBlocksCommit();
     void audibleTelemetryBindsAcceptedRenderAndRealPlayback();
 };
@@ -75,6 +76,61 @@ void StereoMsViewModelTest::responseNotificationsCoalescePointerDrags()
     QCOMPARE(vm.width_response_points().size(), qsizetype{129});
     QVERIFY(vm.commitDraft());
     QCOMPARE(preview.preview_generation(), std::uint64_t{1});
+}
+
+void StereoMsViewModelTest::fastPointerInteractionDefersGridAndPreviewUntilRelease()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *rgsml::core::Uuid::parse(
+        "54000000-0000-4000-8000-000000000201").value();
+    const auto defaults = dsp::StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId,
+        id("54000000-0000-4000-8000-000000000210"),
+        id("54000000-0000-4000-8000-000000000220"),
+        id("54000000-0000-4000-8000-000000000230"),
+        id("54000000-0000-4000-8000-000000000240"),
+        *defaults.value(), false);
+    QVERIFY(state);
+    MasteringPreviewController preview(state.value());
+    StereoMsViewModel vm(state.value(), &preview);
+    vm.setSignalFormat(48000.0, 2);
+    QCOMPARE(vm.width_response_status(), QStringLiteral("READY"));
+    QCOMPARE(vm.width_response_points().size(), qsizetype{129});
+    QSignalSpy fast(&vm, &StereoMsViewModel::changed);
+    QSignalSpy visual(&vm, &StereoMsViewModel::responseChanged);
+    // A real pointer gesture follows 20 different positions. The typed
+    // numeric draft changes 20 times but the expensive 129-point plot must
+    // not receive even one repaint request until release.
+    vm.setFastInteraction(true);
+    for (int i=0;i<20;++i)
+        QVERIFY(vm.setDraftWidthPercent(80.0+static_cast<double>(i)));
+    QCOMPARE(vm.draft_width_percent(), 99.0);
+    QCOMPARE(fast.size(), 20);
+    QCOMPARE(preview.preview_generation(), std::uint64_t{0});
+    QTest::qWait(120); // > 3 old 33-ms response intervals
+    QCOMPARE(visual.size(), 0);
+    // One audio commit at release; authoritative C++ response remains
+    // observational and catches up afterwards without pointer latency.
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(preview.preview_generation(), std::uint64_t{1});
+    vm.setFastInteraction(false);
+    QTRY_COMPARE_WITH_TIMEOUT(visual.size(), 1, 500);
+    QCOMPARE(vm.width_response_status(), QStringLiteral("READY"));
+    const auto points=vm.width_response_points();
+    QCOMPARE(points.size(), qsizetype{129});
+    for (const auto& entry : points)
+        QVERIFY(std::abs(entry.toMap().value(QStringLiteral("widthPercent"))
+                         .toDouble() - 99.0)<1e-8);
+    // Repeated status/points reads after one published response are stable.
+    for (int i=0;i<10;++i) {
+        QCOMPARE(vm.width_response_status(), QStringLiteral("READY"));
+        QCOMPARE(vm.width_response_points(), points);
+    }
+    QTest::qWait(100);
+    QCOMPARE(visual.size(), 1);
 }
 
 void StereoMsViewModelTest::responsePointsRespectDraftAndActualSignalFormat()

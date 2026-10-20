@@ -155,7 +155,10 @@ Rectangle {
         }
         Connections {
             target: root.viewModel
-            function onChanged() { responseCanvas.requestPaint() }
+            // The old onChanged() repaint bypassed the response timer and
+            // repainted on EVERY pointer move. Curve is observational and
+            // renders only when the authoritative response is published.
+            function onResponseChanged() { responseCanvas.requestPaint() }
         }
         Connections {
             target: root
@@ -177,15 +180,29 @@ Rectangle {
         color: root.widthHue
         border.color: "#F5F8FC"
         border.width: 2
+        property real dragStartY: 0
         x: root.frequencyX(root.maxFrequency * 0.6) - width / 2
-        y: root.responseY(root.valueNearFrequency(root.maxFrequency * 0.6)) - height / 2
+        // The handle follows the pointer locally, not the heavyweight
+        // source-bound frequency grid (which updates after release).
+        y: widthDrag.active
+            ? Math.max(root.plotY - height / 2,
+                Math.min(root.plotY + root.plotH - height / 2,
+                    dragStartY + widthDrag.translation.y))
+            : root.responseY(root.valueNearFrequency(root.maxFrequency * 0.6)) - height / 2
         DragHandler {
             id: widthDrag
             target: null
             property real startValue: 100
             onActiveChanged: {
-                if (active && root.viewModel) startValue = root.viewModel.draftWidthPercent
-                else if (!active && root.viewModel) root.viewModel.commitDraft()
+                if (active && root.viewModel) {
+                    startValue = root.viewModel.draftWidthPercent
+                    widthHandle.dragStartY = root.responseY(
+                        root.valueNearFrequency(root.maxFrequency * 0.6)) - widthHandle.height / 2
+                    root.viewModel.setFastInteraction(true)
+                } else if (!active && root.viewModel) {
+                    root.viewModel.commitDraft()
+                    root.viewModel.setFastInteraction(false)
+                }
             }
             onTranslationChanged: {
                 if (active && root.viewModel) {
@@ -197,8 +214,8 @@ Rectangle {
         }
         HoverHandler { id: widthHandleHover }
         ToolTip.text: "WIDTH: drag up/down; use the matching numeric field or slider for precision."
-        ToolTip.visible: widthDrag.active || widthHandleHover.hovered
-        ToolTip.delay: widthDrag.active ? 0 : 550
+        ToolTip.visible: !widthDrag.active && widthHandleHover.hovered
+        ToolTip.delay: 550
     }
 
     Rectangle {
@@ -211,16 +228,30 @@ Rectangle {
         color: root.cutoffHue
         border.color: "#F5F8FC"
         border.width: 2
-        x: root.frequencyX(root.viewModel ? root.viewModel.monoBassCutoffHz : 120) - width / 2
-        y: root.responseY(root.valueNearFrequency(
-            root.viewModel ? root.viewModel.monoBassCutoffHz : 120)) - height / 2
+        property real dragStartY: 0
+        x: cutoffDrag.active
+            ? Math.max(root.frequencyX(40) - width / 2,
+                Math.min(root.frequencyX(300) - width / 2,
+                    root.frequencyX(cutoffDrag.startFrequency)
+                        + cutoffDrag.translation.x - width / 2))
+            : root.frequencyX(root.viewModel ? root.viewModel.monoBassCutoffHz : 120) - width / 2
+        y: cutoffDrag.active ? dragStartY
+            : root.responseY(root.valueNearFrequency(
+                root.viewModel ? root.viewModel.monoBassCutoffHz : 120)) - height / 2
         DragHandler {
             id: cutoffDrag
             target: null
             property real startFrequency: 120
             onActiveChanged: {
-                if (active && root.viewModel) startFrequency = root.viewModel.monoBassCutoffHz
-                else if (!active && root.viewModel) root.viewModel.commitDraft()
+                if (active && root.viewModel) {
+                    startFrequency = root.viewModel.monoBassCutoffHz
+                    cutoffHandle.dragStartY = root.responseY(
+                        root.valueNearFrequency(startFrequency)) - cutoffHandle.height / 2
+                    root.viewModel.setFastInteraction(true)
+                } else if (!active && root.viewModel) {
+                    root.viewModel.commitDraft()
+                    root.viewModel.setFastInteraction(false)
+                }
             }
             onTranslationChanged: {
                 if (active && root.viewModel) {
@@ -232,8 +263,8 @@ Rectangle {
         }
         HoverHandler { id: cutoffHandleHover }
         ToolTip.text: "MONO BASS CUTOFF: drag horizontally to adjust the crossover (40–300 Hz when valid)."
-        ToolTip.visible: cutoffDrag.active || cutoffHandleHover.hovered
-        ToolTip.delay: cutoffDrag.active ? 0 : 550
+        ToolTip.visible: !cutoffDrag.active && cutoffHandleHover.hovered
+        ToolTip.delay: 550
     }
 
     Rectangle {
@@ -246,15 +277,27 @@ Rectangle {
         color: root.lowHue
         border.color: "#F5F8FC"
         border.width: 2
+        property real dragStartY: 0
         x: root.frequencyX(32) - width / 2
-        y: root.responseY(root.valueNearFrequency(32)) - height / 2
+        y: lowDrag.active
+            ? Math.max(root.plotY - height / 2,
+                Math.min(root.plotY + root.plotH - height / 2,
+                    dragStartY + lowDrag.translation.y))
+            : root.responseY(root.valueNearFrequency(32)) - height / 2
         DragHandler {
             id: lowDrag
             target: null
             property real startValue: 100
             onActiveChanged: {
-                if (active && root.viewModel) startValue = root.viewModel.lowBandWidthPercent
-                else if (!active && root.viewModel) root.viewModel.commitDraft()
+                if (active && root.viewModel) {
+                    startValue = root.viewModel.lowBandWidthPercent
+                    lowHandle.dragStartY = root.responseY(
+                        root.valueNearFrequency(32)) - lowHandle.height / 2
+                    root.viewModel.setFastInteraction(true)
+                } else if (!active && root.viewModel) {
+                    root.viewModel.commitDraft()
+                    root.viewModel.setFastInteraction(false)
+                }
             }
             onTranslationChanged: {
                 if (active && root.viewModel) {
@@ -266,8 +309,8 @@ Rectangle {
         }
         HoverHandler { id: lowHandleHover }
         ToolTip.text: "LOW WIDTH: drag vertically to control the Side contribution of the low band (0–100%)."
-        ToolTip.visible: lowDrag.active || lowHandleHover.hovered
-        ToolTip.delay: lowDrag.active ? 0 : 550
+        ToolTip.visible: !lowDrag.active && lowHandleHover.hovered
+        ToolTip.delay: 550
     }
 
     Rectangle {
