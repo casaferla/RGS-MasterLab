@@ -171,31 +171,48 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
         *core::Uuid::parse("79000000-0000-4000-8000-000000000012").value()).value();
     const auto compId = *dsp::ModuleInstanceId::from_uuid(
         *core::Uuid::parse("79000000-0000-4000-8000-000000000013").value()).value();
+    const auto stereoId = *dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("79000000-0000-4000-8000-000000000014").value()).value();
     const auto limiterId = *dsp::ModuleInstanceId::from_uuid(
         *core::Uuid::parse("79000000-0000-4000-8000-000000000017").value()).value();
-    auto manual = MasteringChainState::create_default(
-        *registry.value(),chainId,gainId,eqId,compId);
+    // Exactly the product's default FOUR manual DSPs + real terminal M17.
+    auto manual = MasteringChainState::create_product_default(
+        *registry.value(),chainId,gainId,eqId,compId,stereoId);
     QVERIFY(manual);
     auto terminal = TerminalLimiterState::create_default(*registry.value(),limiterId);
     QVERIFY(terminal);
     GainViewModel gain(manual.value());
     EqViewModel eq(manual.value());
     CompressorViewModel comp(manual.value());
+    StereoMsViewModel stereo(manual.value());
     TerminalLimiterViewModel vm(terminal.value());
     DspChainAdapterModel model(
         &gain,&eq,&comp,manual.value(),QStringLiteral("Mastering"),
-        nullptr,nullptr,true,terminal.value(),&vm);
-    QCOMPARE(manual.value()->instances().size(),std::size_t{3});
+        nullptr,&stereo,false,terminal.value(),&vm);
+    QCOMPARE(manual.value()->instances().size(),std::size_t{4});
     QCOMPARE(terminal.value()->chain().instances().size(),std::size_t{1});
     QCOMPARE(model.modules().size(),qsizetype{5});
-    auto* meter=qobject_cast<DspModuleAdapter*>(
+    const QStringList expectedKeys{
+        QStringLiteral("INPUT_GAIN"),
+        QStringLiteral("PARAMETRIC_EQ"),
+        QStringLiteral("COMPRESSOR"),
+        QStringLiteral("STEREO_MS"),
+        QStringLiteral("TRUE_PEAK_LIMITER")};
+    for (qsizetype i=0; i<model.modules().size(); ++i) {
+        auto* module=qobject_cast<DspModuleAdapter*>(
+            model.modules()[i].value<QObject*>());
+        QVERIFY(module);
+        QCOMPARE(module->editor_content_key(),expectedKeys[i]);
+        QVERIFY(module->editor_content_key()!=QStringLiteral("TRUE_PEAK_METER"));
+    }
+    auto* stereoAdapter=qobject_cast<DspModuleAdapter*>(
         model.modules()[3].value<QObject*>());
     auto* limiter=qobject_cast<DspModuleAdapter*>(
         model.modules()[4].value<QObject*>());
-    QVERIFY(meter);
-    QVERIFY(limiter);
-    QCOMPARE(meter->editor_content_key(),QStringLiteral("TRUE_PEAK_METER"));
-    QVERIFY(!meter->bypass_supported());
+    QVERIFY(stereoAdapter && limiter);
+    QVERIFY(stereoAdapter->bypass());
+    QCOMPARE(stereoAdapter->instance_id(),
+        QString::fromStdString(stereoId.to_string()));
     QCOMPARE(limiter->instance_id(),QString::fromStdString(limiterId.to_string()));
     QCOMPARE(limiter->type_id(),QStringLiteral("rgsml.dsp.true-peak-limiter"));
     QCOMPARE(limiter->editor_content_key(),QStringLiteral("TRUE_PEAK_LIMITER"));
@@ -230,7 +247,7 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     QVERIFY(limiter->bypass());
     QVERIFY(terminal.value()->bypassed());
     QVERIFY(terminal.value()->chain().revision()>oldRevision);
-    QCOMPARE(manual.value()->instances().size(),std::size_t{3});
+    QCOMPARE(manual.value()->instances().size(),std::size_t{4});
     model.selectModuleByInstanceId(limiter->instance_id());
     QCOMPARE(model.selected_index(),4);
     QCOMPARE(model.active_module(),limiter);

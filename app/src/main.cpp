@@ -398,13 +398,14 @@ int main(int argc, char* argv[])
             return target.has_value() &&
                    *target == rgsml::app::AuditionTarget::PROCESSED;
         });
-    // The adapter registers Stereo/M-S only if the current chain already
-    // contains that opt-in module. Do not alter create_default() or the
-    // accepted module order merely to make the telemetry visible.
+    // PO 2026-10-20: the M16 Meter is always available INSIDE the
+    // authentic terminal Limiter editor, even during real M17 BYPASS.
+    // Do not add the former standalone virtual M16 analysis row to the
+    // product DSP chain. Preserve its authoritative providers and math.
     rgsml::app::DspChainAdapterModel dspChainAdapterModel{
         &gainViewModel, &eqViewModel, &compressorViewModel,
         &masteringChainState, QStringLiteral("Mastering"),
-        nullptr, &stereoMsViewModel, true,
+        nullptr, &stereoMsViewModel, false,
         &terminalLimiterState, &terminalLimiterViewModel};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
