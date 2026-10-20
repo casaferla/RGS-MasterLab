@@ -138,10 +138,27 @@ jobs:
           if (Test-Path $log) { Get-Content $log }
           if ($code -ne 0) { throw "FQ_DEBUG_UI_FAILED" }
       - name: Full Debug CTest (canonical VS generator and exclusions)
+        id: fq_debug_ctest
         shell: pwsh
         run: |
           ctest --preset windows-msvc-debug --output-on-failure -LE "playback_device|ui_smoke"
           if ($LASTEXITCODE -ne 0) { throw "FQ_DEBUG_CTEST_FAILED" }
+      # Keep full runner logs local: only bounded, failure-specific CTest
+      # assertions are uploaded for diagnosis of a red official cold FQ.
+      - name: Capture bounded FQ Debug CTest diagnostics
+        if: ${{ failure() && steps.fq_debug_ctest.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          python tools/ci/summarize_focused_tests.py --ctest-dir build/windows-msvc/Testing/Temporary --output "$env:RUNNER_TEMP/rgsml-fq-debug-test-summary.txt"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_DEBUG_DIAGNOSTIC_EXTRACTION_FAILED" }
+      - name: Upload bounded FQ Debug CTest diagnostics
+        if: ${{ failure() && steps.fq_debug_ctest.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-FQ-Debug-Test-Errors-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-fq-debug-test-summary.txt
+          retention-days: 7
+          if-no-files-found: error
       - name: Clean-build Release (Ninja, timed)
         shell: pwsh
         run: |
@@ -164,10 +181,27 @@ jobs:
           if (Test-Path $log) { Get-Content $log }
           if ($code -ne 0) { throw "FQ_RELEASE_UI_FAILED" }
       - name: Full Release CTest (canonical exclusions)
+        id: fq_release_ctest
         shell: pwsh
         run: |
           ctest --test-dir build/windows-fq-ninja -C Release --output-on-failure -LE "playback_device|ui_smoke"
           if ($LASTEXITCODE -ne 0) { throw "FQ_RELEASE_CTEST_FAILED" }
+      # Keep full runner logs local: only bounded, failure-specific CTest
+      # assertions are uploaded for diagnosis of a red official cold FQ.
+      - name: Capture bounded FQ Release CTest diagnostics
+        if: ${{ failure() && steps.fq_release_ctest.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          python tools/ci/summarize_focused_tests.py --ctest-dir build/windows-fq-ninja/Testing/Temporary --output "$env:RUNNER_TEMP/rgsml-fq-release-test-summary.txt"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_RELEASE_DIAGNOSTIC_EXTRACTION_FAILED" }
+      - name: Upload bounded FQ Release CTest diagnostics
+        if: ${{ failure() && steps.fq_release_ctest.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-FQ-Release-Test-Errors-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-fq-release-test-summary.txt
+          retention-days: 7
+          if-no-files-found: error
       - name: Assert Debug/Release test inventory parity
         shell: pwsh
         run: |
