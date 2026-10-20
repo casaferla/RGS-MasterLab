@@ -386,6 +386,96 @@ void TerminalPrivateGrProjectionTest::postLimiterMeterRejectsUnverifiedAndUsesAc
     QCOMPARE(meter.left_level(),0.0);
     QTest::qWait(100);
     QVERIFY(!meter.recent_available()); // never reuse an old owner on GAP
+
+    // Independent Windows sink-prefix binding regression: a real prefix may
+    // retain an older loop traversal and a GAP before the most recent,
+    // independently proven one-to-one OUTPUT_RATE suffix. A fresh meter may
+    // use ONLY that terminal suffix, never bridge FIR/HOLD over the GAP.
+    const auto loop=core::FrameRange::create(
+        core::FrameIndex{150},core::FrameIndex{5650});
+    QVERIFY(loop);
+    core::PlaybackSnapshot playback{};
+    playback.state=core::PlaybackState::PLAYING;
+    playback.position=core::FrameIndex{5200};
+    playback.duration=*frames.value();
+    playback.loop=*loop.value();
+    playback.audibleRealization={
+        core::AudibleHandoffPhase::NEW,core::RealizationId{92}};
+    playback.loopWrapCount=1;
+    app::TerminalPrivateProductSession::InstalledOutputIdentity identity{
+        stage,core::RealizationId{92},playback,
+        app::TerminalSourceTransportPort::DisplaySnapshot{
+            core::PlaybackState::PLAYING,core::FrameIndex{5200},
+            *frames.value(),*loop.value()}};
+    namespace win=rgsml::platform::windows;
+    win::WindowsConsumedOutputPrefix prefix{};
+    prefix.generation=17;
+    prefix.retainedOutputBegin=0;
+    prefix.processedWatermarkExclusive=5600;
+    prefix.partitionRepresented=true;
+    prefix.reason=win::WindowsConsumedGapReason::UNPROVEN_LOOP;
+    prefix.count=3;
+    auto& old=prefix.slices[0];
+    old.generation=17;
+    old.outputBegin=0;
+    old.outputEnd=100;
+    old.kind=win::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    old.realizationId=core::RealizationId{92};
+    old.sourceBegin=300;
+    old.sourceEnd=400;
+    old.loopTraversalProven=true;
+    old.loopWrapCount=0; // older traversal, not valid for current FIR.
+    old.handoffPureNewProven=true;
+    auto& gap=prefix.slices[1];
+    gap.generation=17;
+    gap.outputBegin=100;
+    gap.outputEnd=200;
+    gap.kind=win::WindowsConsumedSliceKind::GAP_UNPROVEN;
+    gap.reason=win::WindowsConsumedGapReason::UNPROVEN_LOOP;
+    auto& tail=prefix.slices[2];
+    tail.generation=17;
+    tail.outputBegin=200;
+    tail.outputEnd=5600;
+    tail.kind=win::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED;
+    tail.realizationId=core::RealizationId{92};
+    tail.sourceBegin=200;
+    tail.sourceEnd=5600;
+    tail.loopTraversalProven=true;
+    tail.loopWrapCount=1;
+    tail.handoffPureNewProven=true;
+    auto verified=app::bind_private_terminal_consumed_output(
+        identity,prefix,identity);
+    QVERIFY(verified);
+    QCOMPARE(verified.value()->firstTerminalFrame,std::int64_t{200});
+    QCOMPARE(verified.value()->lastTerminalFrameExclusive,std::int64_t{5600});
+    QCOMPARE(verified.value()->loopWrapCount,std::uint64_t{1});
+    QCOMPARE(verified.value()->realizationId,core::RealizationId{92});
+    // The post-limiter FIR receives 5400 current proven frames, not the
+    // previous traversal or 100 GAP frames; enough for a genuine 100ms peak.
+    auto invalid=prefix;
+    invalid.slices[2].realizationId=core::RealizationId{93};
+    QVERIFY(!app::bind_private_terminal_consumed_output(
+        identity,invalid,identity));
+    invalid=prefix;
+    invalid.slices[2].handoffPureNewProven=false;
+    QVERIFY(!app::bind_private_terminal_consumed_output(
+        identity,invalid,identity));
+    invalid=prefix;
+    invalid.slices[2].loopWrapCount=0;
+    QVERIFY(!app::bind_private_terminal_consumed_output(
+        identity,invalid,identity));
+    invalid=prefix;
+    invalid.slices[2].kind=win::WindowsConsumedSliceKind::GAP_UNPROVEN;
+    QVERIFY(!app::bind_private_terminal_consumed_output(
+        identity,invalid,identity));
+    invalid=prefix;
+    invalid.slices[1].outputEnd=199; // torn partition, never trust suffix.
+    QVERIFY(!app::bind_private_terminal_consumed_output(
+        identity,invalid,identity));
+    auto stale=identity;
+    stale.playback.seekSerial=1;
+    QVERIFY(!app::bind_private_terminal_consumed_output(
+        identity,prefix,stale));
 }
 
 } // namespace rgsml::tests

@@ -200,52 +200,69 @@ bind_private_terminal_consumed_output(
         || consumed.reason == GapReason::ACCEPTED_LEDGER_OVERFLOW)
         return refuse("M17 sink prefix is missing, discontinuous or SRC-derived.");
 
-    // Conservative first gate: a SINGLE continuous consumed OUTPUT_RATE
-    // traversal, with no silent historical GAP, from this exact terminal ID.
-    // Later qualifications may safely add independently proven split epochs.
+    // An output generation may retain PREVIOUS loop traversals or an older
+    // GAP in its bounded C2 ledger. Those bytes are real history, but MUST
+    // NEVER be replayed as part of the CURRENT meter/FIR traversal.
+    // First verify the complete observed OUTPUT partition structurally;
+    // no lost or overlapping ledger interval may masquerade as a suffix.
     std::int64_t outputCursor = consumed.retainedOutputBegin;
-    std::int64_t terminalCursor = -1;
-    std::int64_t firstTerminalFrame = -1;
-    for (const auto& part : consumed.view()) {
-        if (part.kind != SliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED
-            || part.generation != consumed.generation
-            || part.outputBegin != outputCursor
-            || part.outputEnd <= part.outputBegin
-            || part.outputEnd > consumed.processedWatermarkExclusive
-            || part.realizationId != std::optional{before.realizationId}
-            || !part.sourceBegin || !part.sourceEnd
-            || *part.sourceBegin < 0 || *part.sourceEnd > n
-            || *part.sourceEnd <= *part.sourceBegin
-            || *part.sourceEnd - *part.sourceBegin
-                != part.outputEnd - part.outputBegin
-            || (terminalCursor >= 0 && *part.sourceBegin != terminalCursor)
-            || part.loopWrapCount != before.playback.loopWrapCount
-            || !part.handoffPureNewProven)
-            return refuse("M17 consumed chronology has a gap, foreign owner or wrong traversal.");
-
-        if (before.playback.loop) {
-            // The device, not the UI Loop checkbox, must prove the current
-            // wrap. Reject pre-wrap fragments and seeks outside the loop.
-            if (!part.loopTraversalProven
-                || *part.sourceBegin < before.playback.loop->begin().value()
-                || *part.sourceEnd > before.playback.loop->end().value())
-                return refuse("M17 active Loop Region lacks exact consumed traversal proof.");
-        } else if (part.loopTraversalProven || part.loopWrapCount != 0) {
-            return refuse("M17 stale loop traversal cannot certify a non-loop interval.");
-        }
-        if (firstTerminalFrame < 0)
-            firstTerminalFrame = *part.sourceBegin;
-        terminalCursor = *part.sourceEnd;
-        outputCursor = part.outputEnd;
+    for(const auto& part : consumed.view()) {
+        if(part.generation != consumed.generation
+           ||part.outputBegin != outputCursor
+           ||part.outputEnd <= part.outputBegin
+           ||part.outputEnd > consumed.processedWatermarkExclusive)
+            return refuse("M17 Windows consumed ledger has torn/gapped OUTPUT chronology.");
+        outputCursor=part.outputEnd;
     }
-    if (outputCursor != consumed.processedWatermarkExclusive
-        || terminalCursor <= firstTerminalFrame)
+    if(outputCursor != consumed.processedWatermarkExclusive)
         return refuse("M17 sink chronology has an unrepresented consumed tail.");
+
+    // Take only the latest adjacent, exact-owner, same-wrap, one-to-one
+    // OUTPUT_RATE suffix. The first older GAP, previous loop epoch, seek or
+    // discontinuity is a hard boundary: no FIR/HOLD context crosses it.
+    const auto parts=consumed.view();
+    std::int64_t expectedOutputEnd=consumed.processedWatermarkExclusive;
+    std::int64_t expectedSourceEnd=-1;
+    std::int64_t firstTerminalFrame=-1;
+    std::int64_t lastTerminalFrameExclusive=-1;
+    for(std::size_t index=parts.size();index>0;--index) {
+        const auto& part=parts[index-1U];
+        const bool valid=
+            part.kind==SliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            &&part.generation==consumed.generation
+            &&part.outputEnd==expectedOutputEnd
+            &&part.outputBegin<part.outputEnd
+            &&part.realizationId==std::optional{before.realizationId}
+            &&part.sourceBegin &&part.sourceEnd
+            &&*part.sourceBegin>=0 &&*part.sourceEnd<=n
+            &&*part.sourceEnd>*part.sourceBegin
+            &&*part.sourceEnd-*part.sourceBegin
+                ==part.outputEnd-part.outputBegin
+            &&(expectedSourceEnd<0 || *part.sourceEnd==expectedSourceEnd)
+            &&part.loopWrapCount==before.playback.loopWrapCount
+            &&part.handoffPureNewProven
+            &&(before.playback.loop
+               ? (part.loopTraversalProven
+                  &&*part.sourceBegin
+                    >=before.playback.loop->begin().value()
+                  &&*part.sourceEnd
+                    <=before.playback.loop->end().value())
+               : (!part.loopTraversalProven &&part.loopWrapCount==0));
+        if(!valid)break;
+        if(lastTerminalFrameExclusive<0)
+            lastTerminalFrameExclusive=*part.sourceEnd;
+        firstTerminalFrame=*part.sourceBegin;
+        expectedOutputEnd=part.outputBegin;
+        expectedSourceEnd=*part.sourceBegin;
+    }
+    if(firstTerminalFrame<0
+       ||lastTerminalFrameExclusive<=firstTerminalFrame)
+        return refuse("M17 current consumed traversal has no proven terminal suffix.");
 
     return core::Result<Evidence>::success(Evidence{
         accepted, before.realizationId, consumed.generation,
         consumed.processedWatermarkExclusive, firstTerminalFrame,
-        terminalCursor, before.playback.loopWrapCount,
+        lastTerminalFrameExclusive, before.playback.loopWrapCount,
         before.playback.seekSerial, before.playback.traversalSerial});
 }
 } // namespace rgsml::app
