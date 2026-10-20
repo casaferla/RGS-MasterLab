@@ -150,8 +150,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // its playhead during a full-programme asynchronous render.
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QCOMPARE(device->audibleRealization.realizationId,originalId);
-    QCOMPARE(vm.audio_status(),
-        QStringLiteral("RENDERING · MANUAL PLAY CONTINUES"));
+    // Authoritative M17 output is not installed yet: show a readable,
+    // time-aware pending state while manual audio continues unchanged.
+    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing audio"));
+    QVERIFY(!coordinator.device_active());
     // Simulate a progressed source cue, including one reached after a loop.
     device->position=core::FrameIndex{1600};
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),

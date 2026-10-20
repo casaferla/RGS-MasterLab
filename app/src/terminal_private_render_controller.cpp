@@ -1,6 +1,8 @@
 #include "terminal_private_render_controller.hpp"
 #include <rgsml/core/error.hpp>
 #include <QMetaObject>
+#include <QDebug>
+#include <chrono>
 #include <utility>
 namespace rgsml::app {
 TerminalPrivateRenderController::TerminalPrivateRenderController(
@@ -38,7 +40,8 @@ core::Status TerminalPrivateRenderController::request_private(core::SampleRate r
     auto block=core::FrameCount::create(4096);
     if(!block)return core::Status::failure(*block.error());
     Job job{serial_,std::move(*captured.value()),std::move(chain),
-        terminal_->chain(),terminal_->execution_bindings(),*block.value()};
+        terminal_->chain(),terminal_->execution_bindings(),*block.value(),
+        std::chrono::steady_clock::now()};
     {std::lock_guard lock(mutex_);pending_.emplace(std::move(job));}
     status_=QStringLiteral("RENDERING");error_.clear();
     cv_.notify_one();emit changed();return core::Status::success();
@@ -51,12 +54,24 @@ void TerminalPrivateRenderController::worker_loop() {
          if(stopping_)return;
          job.swap(pending_);}
         if(!job)continue;
+        const auto started=std::chrono::steady_clock::now();
         auto captured=job->capture;
         auto result=render::render_true_peak_limiter_owned_output_rate_candidate(
             captured.manual_owner,job->manualChain,
             captured.full_source_frames,captured.manual_chain_revision,
             captured.output_rate,job->terminalChain,job->bindings,
             registry_,job->block);
+        const auto finished=std::chrono::steady_clock::now();
+        const auto queueMs=std::chrono::duration_cast<
+            std::chrono::milliseconds>(started-job->enqueuedAt).count();
+        const auto renderMs=std::chrono::duration_cast<
+            std::chrono::milliseconds>(finished-started).count();
+        // One diagnostic per completed job, never per DSP frame/tick.
+        // No filenames, samples, rendering shortcuts or invented progress.
+        qInfo().nospace() << "RGS M17 render serial=" << job->serial
+            << " queue_ms=" << queueMs
+            << " render_ms=" << renderMs
+            << " result=" << (result ? "accepted_for_gate" : "failure");
         auto delivery=std::make_shared<
             core::Result<render::TruePeakLimiterOwnedSourceCandidate>>(
             std::move(result));

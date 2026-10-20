@@ -5,6 +5,8 @@
 #include "terminal_limiter_view_model.hpp"
 #include "playback_transport_view_model.hpp"
 #include <QObject>
+#include <QElapsedTimer>
+#include <QTimer>
 #include <optional>
 
 namespace rgsml::app {
@@ -27,6 +29,7 @@ private:
     void deactivate(bool keepActiveIntent);
     void finish_activation();
     void commit_ready_output();
+    void update_render_elapsed();
     void fail_closed(const QString&);
     void resume_previous_state();
     TerminalLimiterState* state_;
@@ -38,5 +41,7 @@ private:
     bool transitioning_{false};
     bool deviceActive_{false};
     bool handoffStarted_{false};
+    QElapsedTimer renderElapsed_;
+    QTimer renderHeartbeat_;
 };
 } // namespace rgsml::app

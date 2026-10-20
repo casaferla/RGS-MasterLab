@@ -5,6 +5,7 @@
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 #include <QObject>
 #include <QString>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -44,6 +45,7 @@ private:
         dsp::ProcessingChain terminalChain;
         std::vector<dsp::ModuleExecutionBinding> bindings;
         core::FrameCount block;
+        std::chrono::steady_clock::time_point enqueuedAt;
     };
     void worker_loop();
     void complete(std::uint64_t,TerminalCandidateGate::Capture,

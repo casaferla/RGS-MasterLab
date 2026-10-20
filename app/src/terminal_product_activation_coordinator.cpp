@@ -15,6 +15,11 @@ TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
             this,&TerminalProductActivationCoordinator::private_session_changed);
     connect(selector_,&AuditionSourceSelector::changed,
             this,&TerminalProductActivationCoordinator::external_context_changed);
+    // Render latency is observational. This timer never asserts that M17
+    // owns the sink or shortens any protected FP/verification deadline.
+    renderHeartbeat_.setInterval(1000);
+    connect(&renderHeartbeat_,&QTimer::timeout,
+            this,&TerminalProductActivationCoordinator::update_render_elapsed);
 }
 
 void TerminalProductActivationCoordinator::resume_previous_state()
@@ -35,6 +40,7 @@ void TerminalProductActivationCoordinator::resume_previous_state()
 void TerminalProductActivationCoordinator::fail_closed(const QString& reason)
 {
     if(transitioning_)return;
+    renderHeartbeat_.stop();
     transitioning_=true;
     static_cast<void>(session_->cancel());
     const auto sink=transport_->playback_snapshot();
@@ -74,7 +80,12 @@ void TerminalProductActivationCoordinator::begin_activation()
     intent_=*captured.value();
     transitioning_=true;
     view_->clearAudioError();
-    view_->setAudioStatus(QStringLiteral("RENDERING · MANUAL PLAY CONTINUES"));
+    // Keep the DSP-chain summary readable and show time spent waiting for
+    // the exact accepted terminal output. During this interval the actual
+    // audio is still the original MANUAL source, never the M17 candidate.
+    view_->setAudioStatus(QStringLiteral("Preparing audio"));
+    renderElapsed_.start();
+    renderHeartbeat_.start();
     // Keep current MANUAL audio and its playhead running during offline M17
     // output-rate preparation. Only the accepted final handoff may stop it.
     auto submitted=session_->request_private_for_device(true);
@@ -82,6 +93,18 @@ void TerminalProductActivationCoordinator::begin_activation()
     if(!submitted)
         fail_closed(QStringLiteral("M17 audio preparation was refused: %1")
                         .arg(QString::fromStdString(submitted.error()->message())));
+}
+
+void TerminalProductActivationCoordinator::update_render_elapsed()
+{
+    if (!intent_ || !renderElapsed_.isValid() || deviceActive_
+        || state_->bypassed()) {
+        renderHeartbeat_.stop();
+        return;
+    }
+    // No percentage is fabricated: we know elapsed wall-clock time only.
+    const auto seconds=renderElapsed_.elapsed()/1000;
+    view_->setAudioStatus(QStringLiteral("Preparing · %1s").arg(seconds));
 }
 
 void TerminalProductActivationCoordinator::commit_ready_output()
@@ -153,6 +176,7 @@ void TerminalProductActivationCoordinator::commit_ready_output()
 void TerminalProductActivationCoordinator::finish_activation()
 {
     if(transitioning_||!intent_||state_->bypassed())return;
+    renderHeartbeat_.stop();
     auto accepted=session_->private_installed_output_identity();
     if(!accepted || selector_->processed_realization_snapshot()
             !=intent_->manualOwner
@@ -192,6 +216,7 @@ void TerminalProductActivationCoordinator::finish_activation()
 void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
 {
     if(transitioning_)return;
+    renderHeartbeat_.stop();
     transitioning_=true;
     const bool hadActiveOutput=deviceActive_;
     if(intent_ && deviceActive_) {
