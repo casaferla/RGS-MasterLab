@@ -5,6 +5,7 @@
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 #include <QObject>
 #include <QString>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
@@ -58,7 +59,10 @@ private:
     ManualChain chain_;
     dsp::ModuleRegistry registry_{
         *dsp::ModuleRegistry::create_dsp_package_v1().value()};
+    // Only the UI thread increments serial_; the worker reads the atomic
+    // mirror to cancel stale jobs at canonical block boundaries.
     std::uint64_t serial_{0};
+    std::atomic<std::uint64_t> activeSerial_{0};
     std::uint64_t staleDiscarded_{0};
     QString status_{QStringLiteral("IDLE")};
     QString error_;

@@ -35,9 +35,16 @@ render_true_peak_limiter_owned_candidate_impl(
     std::span<const dsp::ModuleExecutionBinding> bindings,
     const dsp::ModuleRegistry& registry,
     core::FrameCount block,
-    bool enable_unqualified_src)
+    bool enable_unqualified_src,
+    const TerminalRenderCancel& cancelled)
 {
     using Candidate = TruePeakLimiterOwnedSourceCandidate;
+    const auto cancelledResult=[] {
+        return core::Result<Candidate>::failure(source_error(
+            core::ErrorCode::InvalidState,"M17_RENDER_CANCELLED",
+            "Stale terminal candidate was retired without publication."));
+    };
+    if (cancelled && cancelled()) return cancelledResult();
     if (!manual) {
         return core::Result<Candidate>::failure(source_error(
             core::ErrorCode::InvalidState,"M17_MANUAL_OWNER_MISSING",
@@ -105,10 +112,12 @@ render_true_peak_limiter_owned_candidate_impl(
     auto output=audio::materialize_full_resource_output_rate_candidate(
         view,output_rate,*boundedBlock.value());
     if(!output)return core::Result<Candidate>::failure(*output.error());
+    if(cancelled && cancelled()) return cancelledResult();
     auto candidate=render_true_peak_limiter_bound_terminal_candidate(
-        output.value()->pcm.view(),terminal_chain,bindings,registry,block);
+        output.value()->pcm.view(),terminal_chain,bindings,registry,block,cancelled);
     if(!candidate)
         return core::Result<Candidate>::failure(*candidate.error());
+    if(cancelled && cancelled()) return cancelledResult();
     // All intermediate PCM and final verification must succeed BEFORE
     // providing a candidate; the source owner remains pinned.
     return core::Result<Candidate>::success({
@@ -127,11 +136,12 @@ render_true_peak_limiter_owned_same_rate_candidate(
     const dsp::ProcessingChain& terminal_chain,
     std::span<const dsp::ModuleExecutionBinding> bindings,
     const dsp::ModuleRegistry& registry,
-    core::FrameCount block)
+    core::FrameCount block,
+    const TerminalRenderCancel& cancelled)
 {
     return render_true_peak_limiter_owned_candidate_impl(
         std::move(manual),manual_chain,full_frames,manual_revision,
-        output_rate,terminal_chain,bindings,registry,block,false);
+        output_rate,terminal_chain,bindings,registry,block,false,cancelled);
 }
 
 core::Result<TruePeakLimiterOwnedSourceCandidate>
@@ -144,11 +154,12 @@ render_true_peak_limiter_owned_output_rate_candidate(
     const dsp::ProcessingChain& terminal_chain,
     std::span<const dsp::ModuleExecutionBinding> bindings,
     const dsp::ModuleRegistry& registry,
-    core::FrameCount block)
+    core::FrameCount block,
+    const TerminalRenderCancel& cancelled)
 {
     return render_true_peak_limiter_owned_candidate_impl(
         std::move(manual),manual_chain,full_frames,manual_revision,
-        output_rate,terminal_chain,bindings,registry,block,true);
+        output_rate,terminal_chain,bindings,registry,block,true,cancelled);
 }
 
 core::Result<TruePeakLimiterFinalMasterCandidate>

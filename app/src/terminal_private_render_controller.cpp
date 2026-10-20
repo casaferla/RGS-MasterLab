@@ -13,12 +13,16 @@ TerminalPrivateRenderController::TerminalPrivateRenderController(
       id_(std::move(id)),chain_(std::move(chain)),
       worker_([this]{worker_loop();}) {}
 TerminalPrivateRenderController::~TerminalPrivateRenderController() {
+    // Cancel an in-flight resource before joining; never wait for a retired
+    // entire 12s or 3min M17 render if a block boundary can stop it.
+    activeSerial_.fetch_add(1,std::memory_order_release);
     { std::lock_guard lock(mutex_);stopping_=true;pending_.reset(); }
     cv_.notify_all();
     if(worker_.joinable())worker_.join();
 }
 void TerminalPrivateRenderController::invalidate() {
     ++serial_;
+    activeSerial_.store(serial_,std::memory_order_release);
     gate_->invalidate();
     {std::lock_guard lock(mutex_);pending_.reset();}
     status_=QStringLiteral("IDLE");error_.clear();emit changed();
@@ -56,11 +60,16 @@ void TerminalPrivateRenderController::worker_loop() {
         if(!job)continue;
         const auto started=std::chrono::steady_clock::now();
         auto captured=job->capture;
+        // The predicate never touches Qt, DSP state or floating-point data;
+        // it only observes the serial of this immutable private job.
+        const render::TerminalRenderCancel cancelled=[this,serial=job->serial] {
+            return activeSerial_.load(std::memory_order_acquire)!=serial;
+        };
         auto result=render::render_true_peak_limiter_owned_output_rate_candidate(
             captured.manual_owner,job->manualChain,
             captured.full_source_frames,captured.manual_chain_revision,
             captured.output_rate,job->terminalChain,job->bindings,
-            registry_,job->block);
+            registry_,job->block,cancelled);
         const auto finished=std::chrono::steady_clock::now();
         const auto queueMs=std::chrono::duration_cast<
             std::chrono::milliseconds>(started-job->enqueuedAt).count();

@@ -10,6 +10,7 @@
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string_view>
 #include <rgsml/render/render_result.hpp>
@@ -18,6 +19,9 @@
 #include <vector>
 
 namespace rgsml::render {
+// A stale whole-programme terminal candidate is discarded at block boundaries.
+// This predicate never changes M17 FP math or permits partial PCM publication.
+using TerminalRenderCancel = std::function<bool()>;
 
 // UNQUALIFIED M17 terminal-render integration seam, intentionally separate
 // from SOURCE_PROCESSING_RATE Render Preview. Caller must already own a full,
@@ -45,7 +49,8 @@ render_true_peak_limiter_terminal_candidate(
     dsp::TruePeakLimiterParameters parameters,
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames,
-    bool bypassed);
+    bool bypassed,
+    const TerminalRenderCancel& cancelled = {});
 
  // A measurement is NOT official qualification, irrespective of numeric peak.
  // It is attached only to an ACTIVE, final M17 output-rate candidate.
@@ -76,7 +81,8 @@ render_true_peak_limiter_terminal_candidate(
      dsp::TruePeakLimiterParameters parameters,
      const dsp::ModuleRegistry& registry,
      core::FrameCount maximum_block_frames,
-     bool bypassed);
+     bool bypassed,
+    const TerminalRenderCancel& cancelled = {});
 
  
 // Tested but UNQUALIFIED bridge from the actual terminal-chain INSTANCE
@@ -99,7 +105,8 @@ render_true_peak_limiter_bound_terminal_candidate(
     const dsp::ProcessingChain& terminal_chain,
     std::span<const dsp::ModuleExecutionBinding> immutable_bindings,
     const dsp::ModuleRegistry& registry,
-    core::FrameCount maximum_block_frames);
+    core::FrameCount maximum_block_frames,
+    const TerminalRenderCancel& cancelled = {});
 
 
 // First identity-preserving candidate handoff from a complete, OWNED,
@@ -135,7 +142,8 @@ render_true_peak_limiter_owned_same_rate_candidate(
     const dsp::ProcessingChain& terminal_chain,
     std::span<const dsp::ModuleExecutionBinding> immutable_terminal_bindings,
     const dsp::ModuleRegistry& registry,
-    core::FrameCount maximum_block_frames);
+    core::FrameCount maximum_block_frames,
+    const TerminalRenderCancel& cancelled = {});
 
 // Experimental FULL-rate path: real complete SOURCE_RATE owner -> frozen
 // 44.1<->48 kHz FIR offline materialization -> exact typed M17 terminal.
@@ -151,7 +159,8 @@ render_true_peak_limiter_owned_output_rate_candidate(
     const dsp::ProcessingChain& terminal_chain,
     std::span<const dsp::ModuleExecutionBinding> immutable_terminal_bindings,
     const dsp::ModuleRegistry& registry,
-    core::FrameCount maximum_block_frames);
+    core::FrameCount maximum_block_frames,
+    const TerminalRenderCancel& cancelled = {});
 
 
 // UNQUALIFIED FINAL-MASTER rate contract, independent of the Windows device.

@@ -15,12 +15,15 @@
 #include <rgsml/core/uuid.hpp>
 #include <QTest>
 #include <memory>
+#include <bit>
+#include <cstdint>
 
 namespace rgsml::tests {
 class TerminalActivationIntegrationTest final:public QObject {
     Q_OBJECT
 private slots:
     void audibleOnBypassRestoresExactManualSourceAndLoop();
+    void staleM17TerminalJobCancelsWithoutPublishingPcm();
 };
 
 void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSourceAndLoop()
@@ -267,6 +270,64 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!audioGate.has_session());
     QVERIFY(!candidates.staged());
 }
+void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()
+{
+    // This is a product-render boundary test: the protected per-block M17
+    // process and its strict FP recurrence are untouched.
+    using namespace rgsml;
+    const auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto params=dsp::TruePeakLimiterParameters::create(-12.0);
+    const auto rate=core::SampleRate::create(44100);
+    const auto block=core::FrameCount::create(64);
+    const auto frames=core::FrameCount::create(320);
+    QVERIFY(registry && params && rate && block && frames);
+    const auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto input=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(input);
+    std::size_t polls=0;
+    const render::TerminalRenderCancel cancelled=[&] {
+        return ++polls>=3;
+    };
+    const auto aborted=render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*params.value(),*registry.value(),
+        *block.value(),false,cancelled);
+    QVERIFY(!aborted);
+    QVERIFY(aborted.error());
+    // An abandoned candidate cannot return even a partial owned PCM/GR.
+    QVERIFY(std::string_view{aborted.error()->message()} ==
+        std::string_view{
+            "Stale terminal render was cancelled before complete publication."});
+    QCOMPARE(polls,std::size_t{3});
+
+    // A live, never-cancelled job remains binary64 bit-identical with the
+    // previous no-callback render across both real stereo output lanes.
+    const auto baseline=render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*params.value(),*registry.value(),
+        *block.value(),false);
+    const render::TerminalRenderCancel never=[] {return false;};
+    const auto live=render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*params.value(),*registry.value(),
+        *block.value(),false,never);
+    QVERIFY(baseline && live);
+    QCOMPARE(baseline.value()->applied_gain_frames.size(),std::size_t{320});
+    QCOMPARE(live.value()->applied_gain_frames.size(),std::size_t{320});
+    const auto a=baseline.value()->compensated_pcm.view();
+    const auto b=live.value()->compensated_pcm.view();
+    for (std::size_t ch=0;ch<2;++ch) {
+        const auto ca=a.channel(ch);
+        const auto cb=b.channel(ch);
+        QVERIFY(ca && cb);
+        QCOMPARE(ca.value()->size(),cb.value()->size());
+        for (std::size_t i=0;i<ca.value()->size();++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>((*ca.value())[i]),
+                     std::bit_cast<std::uint64_t>((*cb.value())[i]));
+    }
+}
+
 } // namespace rgsml::tests
 QTEST_GUILESS_MAIN(rgsml::tests::TerminalActivationIntegrationTest)
 #include "test_terminal_product_activation.moc"

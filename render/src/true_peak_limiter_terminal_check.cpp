@@ -35,15 +35,25 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     dsp::TruePeakLimiterParameters params,
     const dsp::ModuleRegistry& registry,
     core::FrameCount max_block,
-    bool bypassed)
+    bool bypassed,
+    const TerminalRenderCancel& cancelled)
 {
     // Materialize into a private owned candidate. Never publish partial
     // PCM/GR or silently change a source-rate timebase.
     auto rendered=render_true_peak_limiter_terminal_candidate(
-        source,params,registry,max_block,bypassed);
+        source,params,registry,max_block,bypassed,cancelled);
     if(!rendered)
         return Result<TruePeakLimiterCheckedCandidate>::failure(*rendered.error());
 
+    const auto wasCancelled=[&] {
+        return cancelled && cancelled();
+    };
+    const auto cancelFailure=[] {
+        return Result<TruePeakLimiterCheckedCandidate>::failure(
+            verification_error(ErrorCode::InvalidState,"M17_RENDER_CANCELLED",
+                "Stale terminal render was cancelled before M16 verification."));
+    };
+    if(wasCancelled()) return cancelFailure();
     if(bypassed) {
         // Inactive means NO verification pass, no added latency, no global
         // gain, and no artificial GR; even over-Ceiling source remains raw.
@@ -63,6 +73,7 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     // Only the M16 production complete-resource meter owns the true-peak
     // estimate. These numeric readings are SUPPORTED_UNQUALIFIED until
     // official exact-SHA Gate G and Windows physical tests close.
+    if(wasCancelled()) return cancelFailure();
     auto measured=analysis::measure_true_peak_full_resource(pcm);
     if(!measured)
         return Result<TruePeakLimiterCheckedCandidate>::failure(*measured.error());
@@ -73,6 +84,7 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
                 "M17_VERIFICATION_UNSUPPORTED_M16",
                 "M16 has no supported true-peak evidence for this resource."));
     }
+    if(wasCancelled()) return cancelFailure();
     const auto before=measured.value()->global_linear_peak();
     const auto ceiling=std::pow(10.0,params.ceiling_db_tp()/20.0);
     if(!std::isfinite(before) || before<0.0
@@ -106,6 +118,7 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     if(!staging)
         return Result<TruePeakLimiterCheckedCandidate>::failure(*staging.error());
     for(std::size_t ch=0;ch<pcm.view().format().channel_count();++ch) {
+        if(wasCancelled()) return cancelFailure();
         const auto src=pcm.view().channel(ch);
         auto dst=staging.value()->mutable_view().channel(ch);
         if(!src||!dst)
@@ -124,6 +137,7 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
         }
     }
 
+    if(wasCancelled()) return cancelFailure();
     const auto remeasured=analysis::measure_true_peak_full_resource(*staging.value());
     if(!remeasured)
         return Result<TruePeakLimiterCheckedCandidate>::failure(*remeasured.error());
@@ -140,6 +154,7 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     evidence.global_trim_gain=gain;
     evidence.trim_used=true;
     evidence.qualification_status=remeasured.value()->qualification_status();
+    if(wasCancelled()) return cancelFailure();
     rendered.value()->compensated_pcm=std::move(*staging.value());
     return Result<TruePeakLimiterCheckedCandidate>::success({
         std::move(*rendered.value()),evidence});

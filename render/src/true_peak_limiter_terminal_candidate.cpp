@@ -48,8 +48,15 @@ render_true_peak_limiter_terminal_candidate(
     dsp::TruePeakLimiterParameters params,
     const dsp::ModuleRegistry& registry,
     FrameCount max_block,
-    bool bypassed)
+    bool bypassed,
+    const TerminalRenderCancel& cancelled)
 {
+    const auto interrupted=[]() {
+        return Result<TruePeakLimiterTerminalCandidate>::failure(candidate_error(
+            ErrorCode::InvalidState,"M17_RENDER_CANCELLED",
+            "Stale terminal render was cancelled before complete publication."));
+    };
+    if (cancelled && cancelled()) return interrupted();
     if (input.timebase().frame_domain_id() != audio::FrameDomainId::OUTPUT_RATE
         || input.frame_count().value() <= 0 || max_block.value() <= 0) {
         return Result<TruePeakLimiterTerminalCandidate>::failure(candidate_error(
@@ -149,6 +156,9 @@ render_true_peak_limiter_terminal_candidate(
             return Result<TruePeakLimiterTerminalCandidate>::failure(*prepared.error());
         limiter->set_applied_gain_sink(&record_applied_gain, &gain);
         for (std::int64_t pos=0; pos<count;) {
+            // No cancellation or math changes INSIDE an accepted DSP block.
+            // Even if one is retired, no partly rendered PCM can escape.
+            if (cancelled && cancelled()) return interrupted();
             const auto part = std::min(max_block.value(), count-pos);
             const auto begin = origin+pos;
             const auto size = *FrameCount::create(part).value();
@@ -166,6 +176,7 @@ render_true_peak_limiter_terminal_candidate(
             pos += part;
         }
         for (std::int64_t emitted=0;emitted<d;) {
+            if (cancelled && cancelled()) return interrupted();
             const auto part=std::min(max_block.value(),d-emitted);
             const auto begin=*outputEnd.value()+emitted;
             const auto size=*FrameCount::create(part).value();
@@ -205,6 +216,7 @@ render_true_peak_limiter_terminal_candidate(
             std::copy(src.value()->begin()+d,
                 src.value()->begin()+d+count, dst.value()->begin());
         }
+        if (cancelled && cancelled()) return interrupted();
         // This result is deliberately PRE-VERIFICATION-TRIM and cannot be
         // exposed to audition/export or labelled final True Peak safe.
         return Result<TruePeakLimiterTerminalCandidate>::success({
