@@ -505,5 +505,7 @@ void StereoMsViewModelTest::modesMuteAndBypassPreserveStoredValues()
 }  // namespace
 }  // namespace rgsml::tests
 
-QTEST_APPLESS_MAIN(rgsml::tests::StereoMsViewModelTest)
+// Qt's coalesced response timer requires QCoreApplication's event loop.
+// QTEST_APPLESS_MAIN intentionally provides none and cannot test timers.
+QTEST_GUILESS_MAIN(rgsml::tests::StereoMsViewModelTest)
 #include "test_stereo_ms_view_model.moc"
