@@ -176,6 +176,84 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!product.private_id());
     QVERIFY(!candidates.staged());
     QVERIFY(!audioGate.has_session());
+
+    // PAUSED is not STOPPED: ON must reconstruct PAUSED after installing
+    // exact new OUTPUT_RATE PCM, and BYPASS must restore PAUSED manual PCM.
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{2600}));
+    transport.pause();
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    vm.setBypass(false);
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    auto pausedTerminalId=device->audibleRealization.realizationId;
+    QVERIFY(pausedTerminalId);
+    QVERIFY(pausedTerminalId!=originalId);
+    QVERIFY(pausedTerminalId!=terminalId);
+    auto pausedPosition=transport.source_display_snapshot();
+    QVERIFY(pausedPosition);
+    QVERIFY(pausedPosition.value()->position.value()>=2599);
+    QVERIFY(pausedPosition.value()->position.value()<=2601);
+    // An accepted Ceiling change must retire and rerender the whole
+    // exact-owned terminal PCM while preserving the PAUSED state.
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-6.0));
+    QVERIFY(vm.commitDraft());
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QVERIFY(device->audibleRealization.realizationId!=pausedTerminalId);
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{3100}));
+    vm.setBypass(true);
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QCOMPARE(device->position,core::FrameIndex{3100});
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!product.private_id());
+    QVERIFY(!candidates.staged());
+
+    // STOPPED activation must not unexpectedly start playback; BYPASS
+    // retains SOURCE cue, current Loop Region and canonical manual owner.
+    transport.stop();
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{800}));
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    vm.setBypass(false);
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    auto outputPosition=transport.source_display_snapshot();
+    QVERIFY(outputPosition);
+    QVERIFY(outputPosition.value()->position.value()>=799);
+    QVERIFY(outputPosition.value()->position.value()<=801);
+    vm.setBypass(true);
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->position,core::FrameIndex{800});
+    QCOMPARE(device->loop,std::optional{*region.value()});
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!audioGate.has_session());
+
+    // Device rate discovery failure MUST preserve the original PCM and
+    // visibly revert the module to BYPASS without invented ACTIVE data.
+    product.set_preferred_output_rate_probe(
+        [](audio::ChannelLayout)->core::Result<core::SampleRate> {
+            return core::Result<core::SampleRate>::failure(core::Error{
+                core::ErrorCode::UnsupportedOperation,
+                "Synthetic audition rate-probe failure."});
+        });
+    vm.setBypass(false);
+    QVERIFY(limiter.value()->bypassed());
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(device->position,core::FrameIndex{800});
+    QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
+    QVERIFY(!vm.validation_message().isEmpty());
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QVERIFY(!candidates.staged());
 }
 } // namespace rgsml::tests
 QTEST_GUILESS_MAIN(rgsml::tests::TerminalActivationIntegrationTest)
