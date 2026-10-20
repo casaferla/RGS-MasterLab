@@ -42,8 +42,8 @@ class StereoMsViewModel final : public QObject {
     Q_PROPERTY(quint64 previewGeneration READ preview_generation NOTIFY changed)
     Q_PROPERTY(QString previewStatus READ preview_status NOTIFY changed)
     Q_PROPERTY(QString previewError READ preview_error NOTIFY changed)
-    Q_PROPERTY(QVariantList widthResponsePoints READ width_response_points NOTIFY changed)
-    Q_PROPERTY(QString widthResponseStatus READ width_response_status NOTIFY changed)
+    Q_PROPERTY(QVariantList widthResponsePoints READ width_response_points NOTIFY responseChanged)
+    Q_PROPERTY(QString widthResponseStatus READ width_response_status NOTIFY responseChanged)
     Q_PROPERTY(QString telemetryStatus READ telemetry_status NOTIFY telemetryChanged)
     Q_PROPERTY(bool telemetryActive READ telemetry_active NOTIFY telemetryChanged)
     Q_PROPERTY(bool telemetryGap READ telemetry_gap NOTIFY telemetryChanged)
@@ -131,6 +131,9 @@ public:
 
 signals:
     void changed();
+    // Expensive 129-point response rendering is coalesced at 30 Hz;
+    // numeric controls and drag handles still use immediate changed().
+    void responseChanged();
     void telemetryChanged();
 
 private:
@@ -155,6 +158,7 @@ private:
     AuditionProcessedProvider auditionProcessedProvider_;
     render::AudibleStereoMsTelemetryResolver telemetryResolver_;
     QTimer telemetryTimer_;
+    QTimer responseNotifyTimer_;
     QString telemetryStatus_{QStringLiteral("UNAVAILABLE")};
     QString telemetryRealizationId_;
     bool telemetryActive_{false};

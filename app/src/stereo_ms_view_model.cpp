@@ -34,6 +34,17 @@ StereoMsViewModel::StereoMsViewModel(
     connect(&telemetryTimer_, &QTimer::timeout,
             this, &StereoMsViewModel::refreshTelemetry);
     telemetryTimer_.setInterval(33);
+    // The accepted DSP draft updates immediately for every pointer move.
+    // Only observational frequency-response property notifications are
+    // coalesced: never synchronously recompute the full 129-point graph
+    // for every mouse event. The real DSP Preview still commits on release.
+    responseNotifyTimer_.setInterval(33);
+    responseNotifyTimer_.setSingleShot(true);
+    connect(&responseNotifyTimer_, &QTimer::timeout,
+            this, &StereoMsViewModel::responseChanged);
+    connect(this, &StereoMsViewModel::changed, this, [this] {
+        if (!responseNotifyTimer_.isActive()) responseNotifyTimer_.start();
+    });
 }
 
 const dsp::StereoMsParameters* StereoMsViewModel::committed() const noexcept

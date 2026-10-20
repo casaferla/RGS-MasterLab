@@ -7,6 +7,7 @@
 #include "../render/render_test_support.hpp"
 
 #include <QtTest/QTest>
+#include <QSignalSpy>
 
 #include <cmath>
 #include <limits>
@@ -32,10 +33,49 @@ private slots:
     void draftsAreTransactionalAndCommitOnce();
     void modesMuteAndBypassPreserveStoredValues();
     void responsePointsRespectDraftAndActualSignalFormat();
+    void responseNotificationsCoalescePointerDrags();
     void canonicalControlsStageAndInvalidEntryBlocksCommit();
     void audibleTelemetryBindsAcceptedRenderAndRealPlayback();
 };
 
+
+void StereoMsViewModelTest::responseNotificationsCoalescePointerDrags()
+{
+    auto registry = rgsml::dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *rgsml::core::Uuid::parse(
+        "54000000-0000-4000-8000-000000000101").value();
+    const auto gainId = id("54000000-0000-4000-8000-000000000110");
+    const auto eqId = id("54000000-0000-4000-8000-000000000120");
+    const auto compId = id("54000000-0000-4000-8000-000000000130");
+    const auto stereoId = id("54000000-0000-4000-8000-000000000140");
+    const auto defaults = dsp::StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId, gainId, eqId, compId,
+        stereoId, *defaults.value(), false);
+    QVERIFY(state);
+    MasteringPreviewController preview(state.value());
+    StereoMsViewModel vm(state.value(), &preview);
+    vm.setSignalFormat(48000.0, 2);
+    QSignalSpy fast(&vm, &StereoMsViewModel::changed);
+    QSignalSpy response(&vm, &StereoMsViewModel::responseChanged);
+    for (int i=0; i<20; ++i)
+        QVERIFY(vm.setDraftWidthPercent(80.0+static_cast<double>(i)));
+    // Every drag step must update the numeric/draft immediately, but no
+    // synchronous full-response repaint is issued for each pointer event.
+    QCOMPARE(fast.size(), 20);
+    QCOMPARE(response.size(), 0);
+    QCOMPARE(vm.draft_width_percent(), 99.0);
+    QCOMPARE(preview.preview_generation(), std::uint64_t{0});
+    QTRY_COMPARE_WITH_TIMEOUT(response.size(), 1, 500);
+    QTest::qWait(75);
+    QCOMPARE(response.size(), 1);
+    QCOMPARE(vm.width_response_status(), QStringLiteral("READY"));
+    QCOMPARE(vm.width_response_points().size(), qsizetype{129});
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(preview.preview_generation(), std::uint64_t{1});
+}
 
 void StereoMsViewModelTest::responsePointsRespectDraftAndActualSignalFormat()
 {
