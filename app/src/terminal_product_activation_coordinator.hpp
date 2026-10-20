@@ -26,6 +26,7 @@ private:
     void begin_activation();
     void deactivate(bool keepActiveIntent);
     void finish_activation();
+    void commit_ready_output();
     void fail_closed(const QString&);
     void resume_previous_state();
     TerminalLimiterState* state_;
@@ -36,5 +37,6 @@ private:
     std::optional<AuditionSourceSelector::TerminalActivationIntent> intent_;
     bool transitioning_{false};
     bool deviceActive_{false};
+    bool handoffStarted_{false};
 };
 } // namespace rgsml::app

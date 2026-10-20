@@ -44,11 +44,13 @@ void TerminalProductActivationCoordinator::fail_closed(const QString& reason)
             intent_->manualOwner,intent_->manualId,intent_->sourceCue));
     }
     const auto restored=transport_->playback_snapshot();
-    if(intent_ && restored
+    // Background render failure does not require restoring transport:
+    // a playing or paused MANUAL PCM was never stopped.
+    if(intent_ && (handoffStarted_||deviceActive_) && restored
        &&restored.value()->audibleRealization.realizationId
-           ==std::optional{intent_->manualId}
+            ==std::optional{intent_->manualId}
        &&restored.value()->audibleRealization.phase
-           ==core::AudibleHandoffPhase::NEW)
+            ==core::AudibleHandoffPhase::NEW)
         resume_previous_state();
     static_cast<void>(state_->set_user_bypass(true));
     view_->refreshFromAuthority();
@@ -56,6 +58,7 @@ void TerminalProductActivationCoordinator::fail_closed(const QString& reason)
     view_->setAudioStatus(QStringLiteral("ERROR · BYPASS"));
     intent_.reset();
     deviceActive_=false;
+    handoffStarted_=false;
     transitioning_=false;
 }
 
@@ -71,42 +74,80 @@ void TerminalProductActivationCoordinator::begin_activation()
     intent_=*captured.value();
     transitioning_=true;
     view_->clearAudioError();
-    view_->setAudioStatus(QStringLiteral("RENDERING · AUDITION ONLY"));
-    if(intent_->previousPlaybackState!=core::PlaybackState::STOPPED)
-        transport_->stop();
-    auto stopped=transport_->playback_snapshot();
-    if(!stopped || stopped.value()->state!=core::PlaybackState::STOPPED
-       ||stopped.value()->audibleRealization.realizationId
-           !=std::optional{intent_->manualId}
-       ||stopped.value()->audibleRealization.phase
-           !=core::AudibleHandoffPhase::NEW
-       ||stopped.value()->duration
-           !=std::optional{intent_->manualOwner->view().frame_count()}) {
-        transitioning_=false;
-        fail_closed(QStringLiteral("M17 could not safely stop the manual source."));
-        return;
-    }
-    // stop() resets the cursor. Restore SOURCE coordinates before the
-    // owned terminal publisher captures the stopped manual transport.
-    auto sought=transport_->seek_source_frame(intent_->sourceCue);
-    if(!sought) {
-        transitioning_=false;
-        fail_closed(QStringLiteral("M17 cannot restore the SOURCE cue."));
-        return;
-    }
-    const auto current=transport_->source_display_snapshot();
-    if(!current || current.value()->position!=intent_->sourceCue
-       ||current.value()->loop!=intent_->sourceLoop) {
-        transitioning_=false;
-        fail_closed(QStringLiteral("M17 source position or Loop Region changed."));
-        return;
-    }
-    // DEVICE rate is audition-only; the independent final-master rate must
-    // never be silently inferred from it.
-    auto submitted=session_->request_private_for_device();
+    view_->setAudioStatus(QStringLiteral("RENDERING · MANUAL PLAY CONTINUES"));
+    // Keep current MANUAL audio and its playhead running during offline M17
+    // output-rate preparation. Only the accepted final handoff may stop it.
+    auto submitted=session_->request_private_for_device(true);
     transitioning_=false;
     if(!submitted)
-        fail_closed(QStringLiteral("M17 audio preparation was refused."));
+        fail_closed(QStringLiteral("M17 audio preparation was refused: %1")
+                        .arg(QString::fromStdString(submitted.error()->message())));
+}
+
+void TerminalProductActivationCoordinator::commit_ready_output()
+{
+    if(transitioning_||!intent_||state_->bypassed())return;
+    const auto before=transport_->playback_snapshot();
+    const auto source=transport_->source_display_snapshot();
+    const auto after=transport_->playback_snapshot();
+    const bool stable=before && source && after
+        &&before.value()->state==after.value()->state
+        &&before.value()->audibleRealization==after.value()->audibleRealization
+        &&before.value()->audibleRealization.phase==core::AudibleHandoffPhase::NEW
+        &&before.value()->audibleRealization.realizationId
+            ==std::optional{intent_->manualId}
+        &&before.value()->duration
+            ==std::optional{intent_->manualOwner->view().frame_count()}
+        &&before.value()->loop==after.value()->loop
+        &&before.value()->seekSerial==after.value()->seekSerial
+        &&before.value()->traversalSerial==after.value()->traversalSerial
+        &&before.value()->loopWrapCount==after.value()->loopWrapCount
+        &&source.value()->state==before.value()->state
+        &&source.value()->loop==intent_->sourceLoop
+        &&source.value()->duration==intent_->manualOwner->view().frame_count()
+        &&source.value()->position.value()>=0
+        &&source.value()->position.value()<=source.value()->duration.value();
+    if(!stable) {
+        fail_closed(QStringLiteral("M17 handoff lost exact MANUAL source ownership."));
+        return;
+    }
+    // Latest SOURCE cue and user play/pause/stop state, possibly after loop
+    // wraps while rendering, supersede the initial activation snapshot.
+    intent_->sourceCue=source.value()->position;
+    intent_->previousPlaybackState=source.value()->state;
+    transitioning_=true;
+    handoffStarted_=true;
+    if(source.value()->state!=core::PlaybackState::STOPPED)
+        transport_->stop();
+    const auto stopped=transport_->playback_snapshot();
+    if(!stopped || stopped.value()->state!=core::PlaybackState::STOPPED
+       ||stopped.value()->audibleRealization.realizationId
+            !=std::optional{intent_->manualId}
+       ||stopped.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||stopped.value()->duration
+            !=std::optional{intent_->manualOwner->view().frame_count()}) {
+        transitioning_=false;
+        fail_closed(QStringLiteral("M17 could not stop the exact manual owner."));
+        return;
+    }
+    const auto sought=transport_->seek_source_frame(intent_->sourceCue);
+    const auto current=transport_->source_display_snapshot();
+    if(!sought || !current
+       ||current.value()->position!=intent_->sourceCue
+       ||current.value()->loop!=intent_->sourceLoop) {
+        transitioning_=false;
+        fail_closed(QStringLiteral("M17 could not restore the source cue/loop."));
+        return;
+    }
+    const auto installed=session_->install_ready_private();
+    transitioning_=false;
+    if(!installed) {
+        fail_closed(QStringLiteral("M17 accepted render install failed: %1")
+                        .arg(QString::fromStdString(installed.error()->message())));
+        return;
+    }
+    finish_activation();
 }
 
 void TerminalProductActivationCoordinator::finish_activation()
@@ -144,6 +185,7 @@ void TerminalProductActivationCoordinator::finish_activation()
         return;
     }
     view_->setAudioStatus(QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
+    handoffStarted_=false;
     transitioning_=false;
 }
 
@@ -151,6 +193,7 @@ void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
 {
     if(transitioning_)return;
     transitioning_=true;
+    const bool hadActiveOutput=deviceActive_;
     if(intent_ && deviceActive_) {
         const auto installed=session_->private_installed_output_identity();
         if(installed) {
@@ -175,9 +218,10 @@ void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
             return;
         }
     }
-    if(intent_)resume_previous_state();
+    if(intent_ && hadActiveOutput)resume_previous_state();
     intent_.reset();
     deviceActive_=false;
+    handoffStarted_=false;
     view_->setAudioStatus(QStringLiteral("BYPASS · MANUAL PROCESSED"));
     transitioning_=false;
     if(keepActiveIntent)begin_activation();
@@ -199,11 +243,15 @@ void TerminalProductActivationCoordinator::private_session_changed()
 {
     if(transitioning_||!intent_)return;
     const auto status=session_->status();
-    if(status==QStringLiteral("PRIVATE_INSTALLED"))
+    if(status==QStringLiteral("READY_TO_INSTALL"))
+        commit_ready_output();
+    else if(status==QStringLiteral("PRIVATE_INSTALLED"))
         finish_activation();
     else if(status==QStringLiteral("ERROR")||status==QStringLiteral("STALE")
             ||status==QStringLiteral("IDLE"))
-        fail_closed(QStringLiteral("M17 terminal session became unavailable."));
+        fail_closed(session_->error().isEmpty()
+            ? QStringLiteral("M17 terminal session unavailable (%1).").arg(status)
+            : QStringLiteral("M17 terminal session failed: %1").arg(session_->error()));
 }
 
 void TerminalProductActivationCoordinator::external_context_changed()

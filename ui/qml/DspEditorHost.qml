@@ -18,8 +18,13 @@ Rectangle {
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
     property var terminalPostLimiterTruePeak: null
+    // ACTIVE is a user's REQUEST until independently owned OUTPUT_RATE PCM
+    // is installed. During full-programme M17 preparation the audible
+    // predecessor is still MANUAL: keep showing its truthful M16 Meter.
+    // Never display empty post-limiter telemetry merely due to the ON bit.
     readonly property bool terminalOn: root.terminalLimiterViewModel
         && !root.terminalLimiterViewModel.bypass
+        && root.terminalLimiterViewModel.audioStatus === "ACTIVE · AUDITION UNQUALIFIED"
     readonly property var truePeakCurrentLive: terminalOn
         ? root.terminalPostLimiterTruePeak : root.truePeakLiveViewModel
     readonly property var truePeakCurrentStatic: terminalOn

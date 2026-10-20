@@ -33,13 +33,17 @@ public:
         Snapshot prepared,Snapshot manual,ManualId manualId,
         Loop sourceLoop,Selected selected,QObject* parent=nullptr);
 
-    [[nodiscard]] core::Status request_private(core::SampleRate outputRate);
+    // An opt-in deferred request renders while the MANUAL PCM keeps playing.
+    // Only an explicit conductor handoff may publish the accepted terminal.
+    [[nodiscard]] core::Status request_private(core::SampleRate outputRate,
+                                               bool deferred=false);
     // Explicit opt-in, still product-private: probe device format on its
     // owner thread, capture exact whole-manual format, then request render.
     // No Q_INVOKABLE and no automatic/UI activation.
     void set_preferred_output_rate_probe(RateProbe probe)
     { rateProbe_=std::move(probe); }
-    [[nodiscard]] core::Status request_private_for_device();
+    [[nodiscard]] core::Status request_private_for_device(bool deferred=false);
+    [[nodiscard]] core::Status install_ready_private();
     [[nodiscard]] core::Status cancel();
     // Changes to a Loop Region cancel pending handoffs but do not stop
     // an already installed SOURCE-mapped session: its own live loop
@@ -71,8 +75,10 @@ private:
         core::RealizationId manualId;
         std::optional<core::FrameRange> loop;
         core::SampleRate outputRate;
+        bool deferred{false};
     };
     void on_renderer_changed();
+    [[nodiscard]] core::Status install_accepted_candidate();
     void failed(const core::Error& error);
     void stale();
     TerminalPrivateRenderController* renderer_;

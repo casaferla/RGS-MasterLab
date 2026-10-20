@@ -146,6 +146,14 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(limiter.value()->bypassed());
     QCOMPARE(vm.audio_status(),QStringLiteral("BYPASS"));
     vm.setBypass(false);
+    // Preparing the terminal must not stop the MANUAL playback or freeze
+    // its playhead during a full-programme asynchronous render.
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("RENDERING · MANUAL PLAY CONTINUES"));
+    // Simulate a progressed source cue, including one reached after a loop.
+    device->position=core::FrameIndex{1600};
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
     QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
@@ -167,7 +175,7 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
-    QCOMPARE(device->position,core::FrameIndex{1450});
+    QCOMPARE(device->position,core::FrameIndex{1600});
     QCOMPARE(device->duration,*frames.value());
     QCOMPARE(device->loop,std::optional{*region.value()});
     QCOMPARE(selector.processed_realization_snapshot(),original);
@@ -183,6 +191,8 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     transport.pause();
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
     vm.setBypass(false);
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
     QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);

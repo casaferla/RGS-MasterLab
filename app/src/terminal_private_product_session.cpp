@@ -38,7 +38,8 @@ void TerminalPrivateProductSession::stale() {
     emit changed();
 }
 
-core::Status TerminalPrivateProductSession::request_private(core::SampleRate rate)
+core::Status TerminalPrivateProductSession::request_private(core::SampleRate rate,
+                                                           bool deferred)
 {
     if(pending_ || privateId_)
         return core::Status::failure(rejected(
@@ -54,7 +55,9 @@ core::Status TerminalPrivateProductSession::request_private(core::SampleRate rat
             "Private M17 requires a published manual predecessor."));
     auto snapshot=transport_->playback_snapshot();
     if(!snapshot) return core::Status::failure(*snapshot.error());
-    if(snapshot.value()->state!=core::PlaybackState::STOPPED
+    if((snapshot.value()->state!=core::PlaybackState::STOPPED
+        &&(!deferred || (snapshot.value()->state!=core::PlaybackState::PLAYING
+                      &&snapshot.value()->state!=core::PlaybackState::PAUSED)))
        ||snapshot.value()->audibleRealization.phase
            !=core::AudibleHandoffPhase::NEW
        ||snapshot.value()->audibleRealization.realizationId!=manualId
@@ -69,7 +72,7 @@ core::Status TerminalPrivateProductSession::request_private(core::SampleRate rat
             "M17 SOURCE loop lies outside the full manual programme."));
     // request_private internally invalidates the gate, then emits RENDERING;
     // pending ownership is captured before any queued worker completion.
-    pending_.emplace(Pending{prepared,manual,*manualId,loop,rate});
+    pending_.emplace(Pending{prepared,manual,*manualId,loop,rate,deferred});
     privateId_.reset();
     status_=QStringLiteral("RENDERING");
     error_.clear();
@@ -82,7 +85,7 @@ core::Status TerminalPrivateProductSession::request_private(core::SampleRate rat
     return core::Status::success();
 }
 
-core::Status TerminalPrivateProductSession::request_private_for_device()
+core::Status TerminalPrivateProductSession::request_private_for_device(bool deferred)
 {
     if(!rateProbe_ || !selected_ || !selected_() || !manual_)
         return core::Status::failure(rejected(
@@ -99,7 +102,7 @@ core::Status TerminalPrivateProductSession::request_private_for_device()
             "M17 manual owner or audition target changed during device probe."));
     // request_private rechecks stopped audible ownership and Loop Region;
     // device install independently rechecks the exact rate and channel format.
-    return request_private(*rate.value());
+    return request_private(*rate.value(),deferred);
 }
 
 core::Result<TerminalPrivateProductSession::InstalledOutputIdentity>
@@ -180,6 +183,30 @@ void TerminalPrivateProductSession::on_renderer_changed()
     }
     if(state==QStringLiteral("STALE")) {stale();return;}
     if(state!=QStringLiteral("READY_PRIVATE"))return;
+    if(pending_->deferred) {
+        // The MANUAL sink continues playing until accepted OUTPUT_RATE
+        // audio is ready. Only its conductor may perform the handoff.
+        status_=QStringLiteral("READY_TO_INSTALL");
+        emit changed();
+        return;
+    }
+    static_cast<void>(install_accepted_candidate());
+}
+
+core::Status TerminalPrivateProductSession::install_ready_private()
+{
+    if(!pending_ || !pending_->deferred
+       ||status_!=QStringLiteral("READY_TO_INSTALL")
+       ||renderer_->status()!=QStringLiteral("READY_PRIVATE"))
+        return core::Status::failure(rejected(
+            "M17 deferred installation has no exact accepted output candidate."));
+    return install_accepted_candidate();
+}
+
+core::Status TerminalPrivateProductSession::install_accepted_candidate()
+{
+    if(!pending_)return core::Status::failure(rejected(
+        "M17 cannot install without captured owners."));
     const Pending authority=*pending_;
     // No user-visible publication if input, target or Loop Region changed
     // while the worker calculated its OUTPUT_RATE candidate.
@@ -189,7 +216,8 @@ void TerminalPrivateProductSession::on_renderer_changed()
        ||sourceLoop_()!=authority.loop) {
         renderer_->invalidate();
         stale();
-        return;
+        return core::Status::failure(rejected(
+            "M17 deferred source/target/Loop ownership changed."));
     }
     auto accepted=candidates_->staged();
     if(!accepted || accepted->prepared_owner!=authority.prepared
@@ -198,19 +226,23 @@ void TerminalPrivateProductSession::on_renderer_changed()
        ||accepted->rendered.output_rate!=authority.outputRate) {
         renderer_->invalidate();
         stale();
-        return;
+        return core::Status::failure(rejected(
+            "M17 accepted OUTPUT_RATE candidate changed before installation."));
     }
-    pending_.reset();
+    // The publisher and audio gate still independently verify STOPPED,
+    // immutable MANUAL ownership before installing any output-rate PCM.
     auto installed=publisher_->install_private(authority.prepared,
         authority.manual,authority.manualId,authority.loop);
     if(!installed) {
         failed(*installed.error());
         renderer_->invalidate();
-        return;
+        return core::Status::failure(*installed.error());
     }
+    pending_.reset();
     privateId_=*installed.value();
     status_=QStringLiteral("PRIVATE_INSTALLED");
     error_.clear();
     emit changed();
+    return core::Status::success();
 }
 } // namespace rgsml::app
