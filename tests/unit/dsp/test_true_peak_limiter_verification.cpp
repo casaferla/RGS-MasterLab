@@ -5,8 +5,13 @@
 #include <rgsml/core/frame_time.hpp>
 
 #include <QtTest/QTest>
+#include <QDebug>
 
 #include <bit>
+#include <chrono>
+#include <cstdlib>
+#include <fstream>
+#include <numbers>
 #include <vector>
 #include <algorithm>
 #include <utility>
@@ -175,6 +180,7 @@ private slots:
     void failedVerificationNeverMutatesResourceAcrossSixRates();
     void fullResourceSixRateChunkMatrixRemainsBitIdentical();
     void fullResourceResumeGatesAreBitwiseIdentical();
+    void boundedActualM17CostProbe();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
 {
@@ -786,6 +792,64 @@ void TruePeakLimiterVerificationTest::fullResourceResumeGatesAreBitwiseIdentical
                         }
                     }
                 }
+    }
+}
+
+void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
+{
+    // MEASUREMENT ONLY: exact production M17 DSP module via the already
+    // established test renderer, then exact M16 full-resource measurement.
+    // This does not change the frozen recurrence or enforce timing budgets.
+    // N=1024 intentionally keeps Windows/Linux Focused CI bounded; never
+    // launch the 12-second, 7-billion-event case inside normal CTest.
+    const char* summaryPath=std::getenv("GITHUB_STEP_SUMMARY");
+    if(summaryPath) {
+        std::ofstream summary(summaryPath,std::ios::app);
+        if(summary) summary
+            << "\n### M17 bounded CPU profile (diagnostic only)\n\n"
+            << "Source: synthetic 1024-frame stereo signal, actual DSP module. "
+               "Durations are runner-specific and NOT FQ/physical audio PASS.\n\n"
+            << "| Sample rate | Ceiling | M17 + test renderer | M16 full measurement |\n"
+            << "|---|---:|---:|---:|\n";
+    }
+    constexpr int n=1024;
+    constexpr double pi=std::numbers::pi_v<double>;
+    const std::array<std::size_t,1> chunks{1024};
+    for(const int fs:{44100,48000}) {
+        auto input=buffer(fs,true,n);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto lane=input.mutable_view().channel(ch);
+            QVERIFY(lane);
+            for(int i=0;i<n;++i) {
+                const double t=static_cast<double>(i)/static_cast<double>(fs);
+                (*lane.value())[static_cast<std::size_t>(i)]=
+                    0.70*std::sin(2.0*pi*(ch==0?991.0:1301.0)*t)
+                    +0.15*std::sin(2.0*pi*(ch==0?2351.0:1783.0)*t+0.25);
+            }
+        }
+        for(const double ceiling:{-1.0,-6.0,-12.0}) {
+            const auto start=std::chrono::steady_clock::now();
+            const auto processed=renderRealM17(input,ceiling,chunks);
+            const auto dspEnd=std::chrono::steady_clock::now();
+            QVERIFY(processed.has_value());
+            const auto measured=analysis::measure_true_peak_full_resource(
+                *processed);
+            const auto m16End=std::chrono::steady_clock::now();
+            QVERIFY(measured);
+            const auto dspUs=std::chrono::duration_cast<
+                std::chrono::microseconds>(dspEnd-start).count();
+            const auto meterUs=std::chrono::duration_cast<
+                std::chrono::microseconds>(m16End-dspEnd).count();
+            qInfo().nospace()<<"RGS M17 CPU probe Fs="<<fs
+                <<" ceiling="<<ceiling<<" M17_us="<<dspUs
+                <<" M16_us="<<meterUs<<" frames="<<n;
+            if(summaryPath) {
+                std::ofstream summary(summaryPath,std::ios::app);
+                if(summary)summary<<"| "<<fs<<" Hz | "<<ceiling
+                    <<" dBTP | "<<dspUs/1000.0<<" ms | "
+                    <<meterUs/1000.0<<" ms |\n";
+            }
+        }
     }
 }
 
