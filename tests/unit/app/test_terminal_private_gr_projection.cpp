@@ -15,6 +15,7 @@
 #include <QSignalSpy>
 #include <cmath>
 #include <memory>
+#include <string>
 
 namespace rgsml::tests {
 class TerminalPrivateGrProjectionTest final : public QObject {
