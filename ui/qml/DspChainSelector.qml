@@ -27,7 +27,28 @@ Rectangle {
         if (state.startsWith("Preparing ·")) return state
         if (state.startsWith("Preparing") || state.startsWith("RENDERING"))
             return "Preparing audio"
-        if (state.startsWith("BYPASS")) return "Manual audio"
+        if (state.startsWith("BYPASS")) return "Meter · Bypass"
+        return state
+    }
+
+    // Preserve immutable M17 DSP identity. Explain the distinction between
+    // ON intent and an authenticated, audible post-limiter installation in
+    // the existing stationary-hover tooltip; do not overload the narrow row.
+    function stateHint(moduleAdapter) {
+        if (!moduleAdapter) return ""
+        const state = moduleAdapter.stateText || ""
+        if (moduleAdapter.editorContentKey !== "TRUE_PEAK_LIMITER")
+            return state
+        if (state.startsWith("Preparing") || state.startsWith("RENDERING"))
+            return state + " · Elapsed preparation time, not a countdown. "
+                + "The current Meter still observes MANUAL PROCESSED audio; "
+                + "Ceiling is not yet applied to what you hear."
+        if (state.startsWith("ACTIVE"))
+            return state + " · Limiter output installed. Live True Peak "
+                + "comes from verified post-limiter audio when available."
+        if (state.startsWith("BYPASS"))
+            return state + " · Meter observes MANUAL PROCESSED audio; "
+                + "no Limiter processing is applied."
         return state
     }
 
@@ -240,8 +261,7 @@ Rectangle {
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
                                 visible: true
-                                ToolTip.text: rowItem.moduleAdapter
-                                    ? rowItem.moduleAdapter.stateText : ""
+                                ToolTip.text: root.stateHint(rowItem.moduleAdapter)
                                 ToolTip.visible: chainStateTooltipDwell.ready
                                 ToolTip.delay: 0
                                 StudioTooltipDwell {
