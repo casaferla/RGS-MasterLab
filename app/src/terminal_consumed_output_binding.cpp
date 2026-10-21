@@ -30,8 +30,13 @@ using GapReason = platform::windows::WindowsConsumedGapReason;
         && before.owner == after.owner
         && before.realizationId.value != 0
         && before.realizationId == after.realizationId
-        && a.state == core::PlaybackState::PLAYING
-        && b.state == core::PlaybackState::PLAYING
+        // The Windows worker supports both PLAYING and PAUSED sink clocks.
+        // PAUSED may expose ONLY already independently consumed frames,
+        // not future queued PCM. Do not bridge PLAYING -> PAUSED during the
+        // observation: the two serialized reads must fence a stable state.
+        && (a.state == core::PlaybackState::PLAYING
+            || a.state == core::PlaybackState::PAUSED)
+        && b.state == a.state
         && a.audibleRealization == b.audibleRealization
         && a.audibleRealization.phase == core::AudibleHandoffPhase::NEW
         && a.audibleRealization.realizationId
@@ -138,8 +143,9 @@ observe_private_terminal_consumed_output(
     auto before = product.private_installed_output_identity();
     if (!before)
         return core::Result<Evidence>::failure(*before.error());
-    if (before.value()->playback.state != core::PlaybackState::PLAYING)
-        return refuse("M17 must be playing before observing sink consumption.");
+    if (before.value()->playback.state != core::PlaybackState::PLAYING
+        && before.value()->playback.state != core::PlaybackState::PAUSED)
+        return refuse("M17 sink consumption requires PLAYING or PAUSED terminal ownership.");
 
     auto first = readPrefix(std::nullopt);
     if (!first)

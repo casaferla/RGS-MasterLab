@@ -530,6 +530,20 @@ void PlaybackSupportTest::c2D20TerminalSinkConsumedExactOwnerAndNegativeEpochs()
     QVERIFY(projected.slices[0].handoffPureNewProven);
     QVERIFY(!projected.certifiedForLiveTruePeak);
     QVERIFY(!projected.srcRealizationId);
+    // A real suspended sink retains exactly the proven previously
+    // consumed watermark, never advances from merely enqueued bytes.
+    QVERIFY(engine.pause());
+    const auto pausedPrefix=engine.c2_consumed_prefix();
+    QCOMPARE(pausedPrefix.generation,consumed.generation);
+    QCOMPARE(pausedPrefix.processedWatermarkExclusive,
+             consumed.processedWatermarkExclusive);
+    QVERIFY(pausedPrefix.partitionRepresented);
+    QCOMPARE(pausedPrefix.size,consumed.size);
+    QCOMPARE(pausedPrefix.view().front().realizationId,
+             std::optional{core::RealizationId{9020}});
+    QCOMPARE(pausedPrefix.view().front().sourceEnd,
+             std::optional<std::int64_t>{100});
+    QVERIFY(!pausedPrefix.certifiedForLiveTruePeak);
     QCOMPARE(engine.c2_processed_coverage_probe().reason,
              Reason::MISSING_CHRONOLOGICAL_LEDGER);
     QVERIFY(!engine.c2_processed_coverage_probe().completeThroughWatermark);

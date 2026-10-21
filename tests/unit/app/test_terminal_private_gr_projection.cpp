@@ -582,6 +582,34 @@ void TerminalPrivateGrProjectionTest::postLimiterMeterRejectsUnverifiedAndUsesAc
     QCOMPARE(verified.value()->lastTerminalFrameExclusive,std::int64_t{5600});
     QCOMPARE(verified.value()->loopWrapCount,std::uint64_t{1});
     QCOMPARE(verified.value()->realizationId,core::RealizationId{92});
+
+    // PAUSED does not revoke the exact authenticated sink prefix: it freezes
+    // previously consumed PCM without producing a fictitious new sample.
+    // PLAYING->PAUSED observed mid-read, STOPPED, and mismatched SOURCE
+    // owners remain explicitly refused by the same epoch guard.
+    auto paused=identity;
+    paused.playback.state=core::PlaybackState::PAUSED;
+    paused.source.state=core::PlaybackState::PAUSED;
+    const auto pausedProof=app::bind_private_terminal_consumed_output(
+        paused,prefix,paused);
+    QVERIFY(pausedProof);
+    QCOMPARE(pausedProof.value()->playbackGeneration,verified.value()->playbackGeneration);
+    QCOMPARE(pausedProof.value()->consumedOutputWatermarkExclusive,
+             verified.value()->consumedOutputWatermarkExclusive);
+    QCOMPARE(pausedProof.value()->firstTerminalFrame,
+             verified.value()->firstTerminalFrame);
+    QCOMPARE(pausedProof.value()->lastTerminalFrameExclusive,
+             verified.value()->lastTerminalFrameExclusive);
+    QVERIFY(!app::bind_private_terminal_consumed_output(
+        identity,prefix,paused)); // state transition must recapture
+    QVERIFY(!app::bind_private_terminal_consumed_output(
+        paused,prefix,identity));
+    auto stopped=paused;
+    stopped.playback.state=core::PlaybackState::STOPPED;
+    stopped.source.state=core::PlaybackState::STOPPED;
+    QVERIFY(!app::bind_private_terminal_consumed_output(
+        stopped,prefix,stopped));
+
     // The post-limiter FIR receives 5400 current proven frames, not the
     // previous traversal or 100 GAP frames; enough for a genuine 100ms peak.
     // Distinct diagnostic classes must remain equally fail-closed. A
