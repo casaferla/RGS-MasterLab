@@ -579,10 +579,26 @@ void StereoMsViewModel::refreshTelemetry()
     const QString realizationId = id
         ? QString::number(id->value) : QString{};
 
-    QVariantList buckets;
     const auto& history = telemetryResolver_.density_history();
-    buckets.reserve(static_cast<qsizetype>(history.size()));
-    for (const auto& b : history) {
+    // Compare authentic completed grid data in C++ before marshalling its
+    // 1089-cell arrays into QVariant objects for the GUI.
+    const bool sameDensity = history.size() == displayedDensityHistory_.size()
+        && std::equal(history.begin(), history.end(),
+            displayedDensityHistory_.begin(),
+            [](const render::StereoMsDensityBucket& a,
+               const render::StereoMsDensityBucket& b) {
+                return a.begin_frame == b.begin_frame
+                    && a.end_frame == b.end_frame
+                    && a.frame_count == b.frame_count
+                    && a.valid_frame_count == b.valid_frame_count
+                    && a.zero_vector_count == b.zero_vector_count
+                    && a.overflow_count == b.overflow_count
+                    && a.occupancy == b.occupancy;
+            });
+    QVariantList buckets;
+    if (!sameDensity) {
+        buckets.reserve(static_cast<qsizetype>(history.size()));
+        for (const auto& b : history) {
         QVariantMap item;
         item.insert(QStringLiteral("beginFrame"), static_cast<qlonglong>(b.begin_frame));
         item.insert(QStringLiteral("endFrame"), static_cast<qlonglong>(b.end_frame));
@@ -594,7 +610,8 @@ void StereoMsViewModel::refreshTelemetry()
         occupancy.reserve(static_cast<qsizetype>(b.occupancy.size()));
         for (const auto n : b.occupancy) occupancy.append(static_cast<qulonglong>(n));
         item.insert(QStringLiteral("occupancy"), occupancy);
-        buckets.append(item);
+            buckets.append(item);
+        }
     }
 
     QVariantMap correlation;
@@ -621,15 +638,23 @@ void StereoMsViewModel::refreshTelemetry()
         sideLow.insert(QStringLiteral("before"), window->rms_before);
         sideLow.insert(QStringLiteral("after"), window->rms_after);
     }
+    // Density only notifies the cloud when actual sink-heard Grid33 evidence
+    // changes. Correlation and transport-status updates stay independent.
+    const bool densityChanged = !sameDensity
+        && telemetryDensityBuckets_ != buckets;
+    if (!sameDensity) displayedDensityHistory_ = history;
     if (telemetryStatus_ != status || telemetryActive_ != active ||
         telemetryGap_ != gap || telemetryRealizationId_ != realizationId ||
-        telemetryDensityBuckets_ != buckets ||
+        densityChanged ||
         telemetryCorrelation_ != correlation || telemetrySideLow_ != sideLow) {
         telemetryStatus_ = std::move(status);
         telemetryActive_ = active;
         telemetryGap_ = gap;
         telemetryRealizationId_ = realizationId;
-        telemetryDensityBuckets_ = std::move(buckets);
+        if (densityChanged) {
+            telemetryDensityBuckets_ = std::move(buckets);
+            emit telemetryDensityChanged();
+        }
         telemetryCorrelation_ = std::move(correlation);
         telemetrySideLow_ = std::move(sideLow);
         emit telemetryChanged();

@@ -264,6 +264,8 @@ void StereoMsViewModelTest::audibleTelemetryBindsAcceptedRenderAndRealPlayback()
     snapshot.audibleRealization.phase = core::AudibleHandoffPhase::NEW;
     snapshot.audibleRealization.realizationId = oldId;
     bool processed = true;
+    QSignalSpy densitySignals(&vm,&StereoMsViewModel::telemetryDensityChanged);
+    QVERIFY(densitySignals.isValid());
     vm.setTelemetryProviders([&] { return accepted; },
         [&] { return core::Result<core::PlaybackSnapshot>::success(snapshot); },
         [&] { return processed; });
@@ -276,6 +278,11 @@ void StereoMsViewModelTest::audibleTelemetryBindsAcceptedRenderAndRealPlayback()
     snapshot.position = core::FrameIndex{2500};
     vm.refreshTelemetry();
     QCOMPARE(vm.telemetry_density_buckets().size(), 1);
+    QCOMPARE(densitySignals.size(),1);
+    // Repeated polls of the same heard cursor cannot repeatedly notify
+    // the goniometer or marshal its unchanged occupancy matrix.
+    for (int i=0;i<20;++i) vm.refreshTelemetry();
+    QCOMPARE(densitySignals.size(),1);
     const auto first = vm.telemetry_density_buckets().front().toMap();
     QCOMPARE(first.value(QStringLiteral("beginFrame")).toLongLong(), qlonglong{0});
     QCOMPARE(first.value(QStringLiteral("endFrame")).toLongLong(), qlonglong{2400});
@@ -296,6 +303,9 @@ void StereoMsViewModelTest::audibleTelemetryBindsAcceptedRenderAndRealPlayback()
     QCOMPARE(vm.telemetry_status(), QStringLiteral("TRANSITION"));
     QVERIFY(!vm.telemetry_active());
     QVERIFY(vm.telemetry_density_buckets().empty());
+    QCOMPARE(densitySignals.size(),2);
+    vm.refreshTelemetry();
+    QCOMPARE(densitySignals.size(),2);
     QVERIFY(vm.telemetry_correlation().isEmpty());
 
     snapshot.audibleRealization.phase = core::AudibleHandoffPhase::NEW;

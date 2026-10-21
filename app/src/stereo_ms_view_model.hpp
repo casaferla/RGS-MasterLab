@@ -48,7 +48,8 @@ class StereoMsViewModel final : public QObject {
     Q_PROPERTY(bool telemetryActive READ telemetry_active NOTIFY telemetryChanged)
     Q_PROPERTY(bool telemetryGap READ telemetry_gap NOTIFY telemetryChanged)
     Q_PROPERTY(QString telemetryRealizationId READ telemetry_realization_id NOTIFY telemetryChanged)
-    Q_PROPERTY(QVariantList telemetryDensityBuckets READ telemetry_density_buckets NOTIFY telemetryChanged)
+    // Density has its own notifier: no Canvas repaint for status-only polls.
+    Q_PROPERTY(QVariantList telemetryDensityBuckets READ telemetry_density_buckets NOTIFY telemetryDensityChanged)
     Q_PROPERTY(QVariantMap telemetryCorrelation READ telemetry_correlation NOTIFY telemetryChanged)
     Q_PROPERTY(QVariantMap telemetrySideLow READ telemetry_side_low NOTIFY telemetryChanged)
 
@@ -138,6 +139,7 @@ signals:
     // numeric controls and drag handles still use immediate changed().
     void responseChanged();
     void telemetryChanged();
+    void telemetryDensityChanged();
 
 private:
     [[nodiscard]] const dsp::StereoMsParameters* committed() const noexcept;
@@ -172,6 +174,9 @@ private:
     bool telemetryActive_{false};
     bool telemetryGap_{false};
     QVariantList telemetryDensityBuckets_;
+    // Raw sink-heard resolver history retained to avoid 6*1089 QVariant
+    // conversions on unchanged polls; does not alter audio/identity checks.
+    std::vector<render::StereoMsDensityBucket> displayedDensityHistory_;
     QVariantMap telemetryCorrelation_;
     QVariantMap telemetrySideLow_;
 };
