@@ -1032,6 +1032,47 @@ Window {
         QVERIFY(state->setProperty("bypass", true));
         QCoreApplication::processEvents();
     }
+
+    // The production Main may give M17 ~420px instead of the previous
+    // isolated fixture's 548px. Exercise BOTH compact two-column layouts,
+    // including actual lane/GR/rail containment: do not merely assert the
+    // screenshot was saved while children extend outside its viewport.
+    for (const QSize size : {QSize{1184, 560}, QSize{1440, 620}}) {
+        captureSurface->setWidth(size.width());
+        captureSurface->setHeight(size.height());
+        window->resize(size);
+        QTest::qWait(120);
+        QCoreApplication::processEvents();
+        QVERIFY2(editor->height() >= 420.0 && editor->height() <= 480.0,
+            "Compact M17 test must exercise the REAL reduced editor range");
+        QVERIFY2(lowerControls->height() < 198.0,
+            "M17 lower band must shrink before overflowing smaller Main");
+        for (auto* card : {recentReadout,holdReadout,fullReadout}) {
+            QVERIFY2(card->height() < 100.0 && card->height() >= 68.0,
+                "M17 compact readouts must shrink continuously");
+            const QPointF top = card->mapToItem(rail, QPointF{});
+            QVERIFY2(top.y() >= 0.0
+                && top.y() + card->height() <= rail->height() - 8.0,
+                "M17 readout must remain within reduced-height rail");
+        }
+        const QPointF bottomLane = meterLeftLane->mapToItem(
+            meterBay, QPointF{0.0, meterLeftLane->height()});
+        const QPointF dividerTop = grDivider->mapToItem(
+            meterBay, QPointF{});
+        QVERIFY2(bottomLane.y() + 1.0 <= dividerTop.y(),
+            "M17 meter lane must not overlap the GR separator");
+        QVERIFY2(check_item_contained_in_ancestor(grPlot, gr)
+            && check_item_contained_in_ancestor(lowerControls, rail)
+            && check_item_contained_in_ancestor(ceilingCard, lowerControls),
+            "M17 two-column layout must remain internally contained");
+        QVERIFY2(gr->height() == lowerControls->height(),
+            "GR and Ceiling/Trim lower bands must remain aligned");
+        const QString dimension = QString::number(size.width())
+            + "x" + QString::number(size.height());
+        QVERIFY2(captureCandidate(size,
+            QStringLiteral("m17_compact_two_column_") + dimension + ".png"),
+            "Compact M17 native Qt evidence must be captured");
+    }
     window->close();
 }
 
