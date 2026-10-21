@@ -1202,8 +1202,11 @@ C2CoverageProbe PlaybackEngine::c2_processed_coverage_probe(
         probe.reason = C2CoverageProbeReason::GENERATION_EXHAUSTED;
         return probe;
     }
-    if (terminalOutputDomain_) {
-        probe.reason=C2CoverageProbeReason::MISSING_CHRONOLOGICAL_LEDGER;
+    // A terminal is allowed to expose its real sink-consumed clock and
+    // owner-stamped OUTPUT_RATE ledger, but this is NOT a LIVE TP certificate.
+    // Never treat an impossible second SRC as exact terminal provenance.
+    if (terminalOutputDomain_ && rateAdapter_) {
+        probe.reason = C2CoverageProbeReason::UNPROVEN_SRC;
         return probe;
     }
     if (!output_ || !source_
@@ -1701,14 +1704,29 @@ core::Status PlaybackEngine::pump_once()
     const bool nonTraversingOutsideLoop = loop_ && !loopTraversalEligible_
         && scheduledOutputFrame_
             >= source_to_output_frame(loop_->end().value());
-    c2PendingExactMapping_ = !rateAdapter_ && !terminalOutputDomain_
+    // Unlike SOURCE handoff, a terminal is installed only as separately
+    // owned, exact-device-rate OUTPUT_RATE PCM after stopping the old sink.
+    // No terminal handoff is supported: any unexpected pending handoff,
+    // absent owner or wrong decoded domain remains an unproven GAP.
+    const bool freshExactTerminal = terminalOutputDomain_
+        && !rateAdapter_ && !pendingHandoff_
+        && c2PendingOwner_.has_value()
+        && sourceBegin_.value() == 0
+        && blockDomain == audio::FrameDomainId::OUTPUT_RATE
+        && blockAbsoluteStart.value() >= 0
+        && blockFormat.sample_rate() == source_format().sample_rate();
+    c2PendingExactMapping_ = !rateAdapter_
+        && (!terminalOutputDomain_ || freshExactTerminal)
         && (!loop_ || loopCandidate || nonTraversingOutsideLoop)
         && c2PendingOwner_.has_value()
         && (!pendingHandoff_ || pureNewAfterHandoff);
     c2PendingLoopTraversalProven_ = c2PendingExactMapping_
         && loopCandidate;
+    // Initial terminal installation has no legacy pendingHandoffPureNew:
+    // the fresh owner is proven by the distinct sink install and epoch.
+    // Do not confer that status on an ordinary SOURCE direct playback.
     c2PendingHandoffPureNew_ = c2PendingExactMapping_
-        && pureNewAfterHandoff;
+        && (pureNewAfterHandoff || freshExactTerminal);
     c2PendingGapReason_ = pendingHandoff_
         ? C2CoverageProbeReason::UNPROVEN_HANDOFF
         : rateAdapter_ ? C2CoverageProbeReason::UNPROVEN_SRC
