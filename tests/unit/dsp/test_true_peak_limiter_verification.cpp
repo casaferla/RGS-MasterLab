@@ -2,6 +2,8 @@
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/dsp/module_descriptor.hpp>
+#include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 #include <rgsml/core/frame_time.hpp>
 
 #include <QtTest/QTest>
@@ -181,6 +183,7 @@ private slots:
     void fullResourceSixRateChunkMatrixRemainsBitIdentical();
     void fullResourceResumeGatesAreBitwiseIdentical();
     void boundedActualM17CostProbe();
+    void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
 {
@@ -792,6 +795,63 @@ void TruePeakLimiterVerificationTest::fullResourceResumeGatesAreBitwiseIdentical
                         }
                     }
                 }
+    }
+}
+
+
+void TruePeakLimiterVerificationTest::optionalPhaseInstrumentationIsNonInvasive()
+{
+    // The production checked-candidate renderer emits per-STAGE wall-time
+    // diagnostics only. It may not affect PCM, GR, final M16 evidence, or
+    // turn any bypass meter into an illicit Ceiling certificate.
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto params=dsp::TruePeakLimiterParameters::create(-1.0);
+    auto block=core::FrameCount::create(64);
+    QVERIFY(registry && params && block);
+    auto input=buffer(44100,true,257);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=input.mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(int i=0;i<257;++i)
+            (*lane.value())[static_cast<std::size_t>(i)]
+                =0.12*std::sin(2.0*std::numbers::pi_v<double>*(ch?1301.0:991.0)
+                    *static_cast<double>(i)/44100.0);
+    }
+    for(const bool bypassed:{true,false}) {
+        render::TerminalRenderStageTimings stages{};
+        const auto instrumented=render::render_true_peak_limiter_checked_candidate(
+            input.view(),*params.value(),*registry.value(),*block.value(),
+            bypassed,{},&stages);
+        const auto uninstrumented=render::render_true_peak_limiter_checked_candidate(
+            input.view(),*params.value(),*registry.value(),*block.value(),
+            bypassed);
+        QVERIFY(instrumented && uninstrumented);
+        QVERIFY(stages.m17_core_us>=0);
+        QCOMPARE(stages.src_us,std::int64_t{-1});
+        QCOMPARE(stages.verification_trim_us,std::int64_t{-1});
+        QCOMPARE(stages.m16_secondary_us,std::int64_t{-1});
+        if(bypassed) {
+            QCOMPARE(stages.m16_primary_us,std::int64_t{-1});
+            QVERIFY(!instrumented.value()->final_check);
+        } else {
+            QVERIFY(stages.m16_primary_us>=0);
+            QVERIFY(instrumented.value()->final_check.has_value());
+        }
+        QCOMPARE(instrumented.value()->final_check.has_value(),
+            uninstrumented.value()->final_check.has_value());
+        const auto lhs=instrumented.value()->terminal.compensated_pcm.view();
+        const auto rhs=uninstrumented.value()->terminal.compensated_pcm.view();
+        QCOMPARE(lhs.frame_count(),rhs.frame_count());
+        for(std::size_t ch=0;ch<2;++ch) {
+            const auto x=lhs.channel(ch);
+            const auto y=rhs.channel(ch);
+            QVERIFY(x && y);
+            for(std::size_t i=0;i<x.value()->size();++i)
+                QCOMPARE(std::bit_cast<std::uint64_t>((*x.value())[i]),
+                    std::bit_cast<std::uint64_t>((*y.value())[i]));
+        }
+        QCOMPARE(instrumented.value()->terminal.applied_gain_frames.size(),
+            uninstrumented.value()->terminal.applied_gain_frames.size());
     }
 }
 
