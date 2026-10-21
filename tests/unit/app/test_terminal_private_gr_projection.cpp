@@ -119,6 +119,53 @@ void TerminalPrivateGrProjectionTest::gainWitnessRateMatrix()
         stage,core::RealizationId{44},9,outputHz/100,0,outputHz/100,0};
     const auto history=app::project_private_terminal_gr(proof);
     QVERIFY(history);
+    // Production-style observation always authenticates the sink first,
+    // but memoizes the CPU-heavy GR projection only for the EXACT SAME
+    // output owner, worker generation, interval and watermark.
+    std::optional<app::TerminalConsumedOutputEvidence> observed=proof;
+    int sourceChecks=0;
+    app::TerminalPrivateGrViewModel liveView{
+        [&]()->core::Result<app::TerminalConsumedOutputEvidence> {
+            ++sourceChecks;
+            if(!observed)return core::Result<
+                app::TerminalConsumedOutputEvidence>::failure(
+                    core::Error{core::ErrorCode::InvalidState,
+                        "Simulated revoked Windows output owner."});
+            return core::Result<app::TerminalConsumedOutputEvidence>::success(
+                *observed);
+        }};
+    QSignalSpy liveChanged(&liveView,&app::TerminalPrivateGrViewModel::changed);
+    QVERIFY(liveChanged.isValid());
+    liveView.refresh();
+    QVERIFY(liveView.verified());
+    QCOMPARE(sourceChecks,1);
+    QCOMPARE(liveChanged.size(),1);
+    const auto initialPoints=liveView.verified_series();
+    liveView.refresh();
+    QCOMPARE(sourceChecks,2); // Authenticated again, never skipped.
+    QCOMPARE(liveChanged.size(),1); // No duplicate GR projection/repaint.
+    QCOMPARE(liveView.verified_series(),initialPoints);
+    observed->lastTerminalFrameExclusive-=1;
+    observed->consumedOutputWatermarkExclusive-=1;
+    liveView.refresh();
+    QCOMPARE(sourceChecks,3);
+    QCOMPARE(liveChanged.size(),2);
+    QVERIFY(liveView.verified());
+    observed.reset();
+    liveView.refresh();
+    QCOMPARE(sourceChecks,4);
+    QVERIFY(!liveView.verified());
+    QVERIFY(liveView.verified_series().isEmpty());
+    observed=proof; // Same old key cannot survive a failed device read.
+    liveView.refresh();
+    QCOMPARE(sourceChecks,5);
+    QVERIFY(liveView.verified());
+    QCOMPARE(liveChanged.size(),4);
+    liveView.invalidate();
+    QVERIFY(!liveView.verified());
+    liveView.refresh();
+    QCOMPARE(sourceChecks,6);
+    QVERIFY(liveView.verified());
     QCOMPARE(history.value()->realizationId,core::RealizationId{44});
     QCOMPARE(history.value()->consumedFrameBegin,std::int64_t{0});
     QCOMPARE(history.value()->consumedFrameEndExclusive,

@@ -11,9 +11,10 @@
 namespace rgsml::app {
 
 // Read-only M17 UI boundary. There is no Q_INVOKABLE that can assert
-// verification. Production MUST provide observe_private_terminal_gr()
-// with a real serialized WindowsConsumedOutputPrefix reader. Synthetic
-// observers are permitted only in the corresponding test fixture.
+// verification. Production MUST provide authenticated consumed-output
+// evidence through observe_private_terminal_consumed_output(), backed by
+// serialized Windows worker prefix reads. Synthetic observer data is
+// permitted only in the corresponding test fixture.
 // Even a verified private observation does NOT qualify DAC output or WAV.
 class TerminalPrivateGrViewModel final : public QObject {
     Q_OBJECT
@@ -23,9 +24,16 @@ class TerminalPrivateGrViewModel final : public QObject {
 public:
     using Observation =
         std::function<core::Result<TerminalPrivateGrSeries>()>;
+    // Production uses the authoritative two-read Windows owner/clock
+    // witness directly. Only the expensive gain projection is memoized;
+    // an unchanged timestamp NEVER bypasses independent device evidence.
+    using EvidenceObservation =
+        std::function<core::Result<TerminalConsumedOutputEvidence>()>;
 
     explicit TerminalPrivateGrViewModel(
         Observation observe,QObject* parent=nullptr);
+    explicit TerminalPrivateGrViewModel(
+        EvidenceObservation observe,QObject* parent=nullptr);
 
     [[nodiscard]] bool verified() const noexcept { return verified_; }
     [[nodiscard]] QVariantList verified_series() const { return series_; }
@@ -51,7 +59,16 @@ private:
     // previously VERIFIED trace can bridge to the next verified same-owner
     // traversal. Explicit product invalidation discards it permanently.
     void suspend_unverified();
+    struct EvidenceKey final {
+        std::shared_ptr<const TerminalCandidateGate::StagedCandidate> owner;
+        core::RealizationId realizationId;
+        std::uint64_t generation,wrap,seek,traversal;
+        std::int64_t watermark,begin,end;
+        [[nodiscard]] bool operator==(const EvidenceKey&) const = default;
+    };
     Observation observe_;
+    EvidenceObservation observeEvidence_;
+    std::optional<EvidenceKey> lastEvidence_;
     bool verified_{false};
     QVariantList series_;
     QString status_{QStringLiteral("UNAVAILABLE_NO_VERIFIED_GR")};

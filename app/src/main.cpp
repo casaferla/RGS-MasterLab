@@ -271,7 +271,7 @@ int main(int argc, char* argv[])
     // absent private sink ownership remains UNAVAILABLE (never fake zero).
     rgsml::app::TerminalPrivateGrViewModel terminalPrivateGrViewModel{
         [&privateProductSession,windowsPlayback] {
-            return rgsml::app::observe_private_terminal_gr(
+            return rgsml::app::observe_private_terminal_consumed_output(
                 privateProductSession,
                 [windowsPlayback](std::optional<std::uint64_t> generation) {
                     return windowsPlayback->consumed_output_prefix(generation);

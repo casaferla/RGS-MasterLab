@@ -11,9 +11,14 @@ TerminalPrivateGrViewModel::TerminalPrivateGrViewModel(
     Observation observe,QObject* parent)
     :QObject(parent),observe_(std::move(observe))
 {}
+TerminalPrivateGrViewModel::TerminalPrivateGrViewModel(
+    EvidenceObservation observe,QObject* parent)
+    :QObject(parent),observeEvidence_(std::move(observe))
+{}
 
 void TerminalPrivateGrViewModel::suspend_unverified()
 {
+    lastEvidence_.reset(); // Never reuse projected gains after ANY failed read.
     // No stale GR is ever rendered while Windows cannot prove consumption.
     if(!verified_ && series_.isEmpty()
         &&status_==QStringLiteral("UNAVAILABLE_NO_VERIFIED_GR"))
@@ -38,10 +43,31 @@ void TerminalPrivateGrViewModel::invalidate()
 
 void TerminalPrivateGrViewModel::refresh()
 {
-    if(!observe_) {suspend_unverified();return;}
-    const auto next=observe_();
-    if(!next) {suspend_unverified();return;}
-    const auto& witnessed=*next.value();
+    std::optional<TerminalPrivateGrSeries> sample;
+    std::optional<EvidenceKey> acceptedKey;
+    if(observeEvidence_) {
+        // Every tick repeats BOTH serialized Windows reads and the owner /
+        // epoch / gap guards. A stable PAUSED watermark avoids ONLY the
+        // full-rate applied-gain scan and the QML repaint.
+        const auto evidence=observeEvidence_();
+        if(!evidence) {suspend_unverified();return;}
+        const auto& p=*evidence.value();
+        EvidenceKey key{p.owner,p.realizationId,p.playbackGeneration,
+            p.loopWrapCount,p.seekSerial,p.traversalSerial,
+            p.consumedOutputWatermarkExclusive,p.firstTerminalFrame,
+            p.lastTerminalFrameExclusive};
+        if(verified_ && lastEvidence_ && *lastEvidence_==key)return;
+        const auto projected=project_private_terminal_gr(p);
+        if(!projected) {suspend_unverified();return;}
+        sample.emplace(*projected.value());
+        acceptedKey.emplace(std::move(key));
+    } else {
+        if(!observe_) {suspend_unverified();return;}
+        const auto next=observe_();
+        if(!next) {suspend_unverified();return;}
+        sample.emplace(*next.value());
+    }
+    const auto& witnessed=*sample;
     if(witnessed.realizationId.value==0
         ||witnessed.playbackGeneration==0
         ||witnessed.consumedFrameBegin<0
@@ -135,13 +161,18 @@ void TerminalPrivateGrViewModel::refresh()
 
     if(verified_ && realization_==current.realizationId
         && generation_==current.playbackGeneration
-        &&series_==points)
+        &&series_==points) {
+        // An advancing but unchanged peak can still have a newer,
+        // independently validated worker watermark. Cache that exact key.
+        lastEvidence_=std::move(acceptedKey);
         return;
+    }
     series_=std::move(points);
     verified_=true;
     realization_=current.realizationId;
     generation_=current.playbackGeneration;
     status_=QStringLiteral("PRIVATE_SINK_CONSUMED_GR_UNQUALIFIED");
+    lastEvidence_=std::move(acceptedKey);
     emit changed();
 }
 
