@@ -46,6 +46,16 @@ Item {
             spacing: control.compact ? 6 : 8
 
             Rectangle {
+                id: numericEntryCard
+                property bool hintReady: false
+                function resetHintDwell() {
+                    hintReady = false
+                    numericHintDelay.stop()
+                    if (fieldHover.hovered && !input.activeFocus
+                            && (control.validationTooltip.length > 0
+                                || control.interactionHint.length > 0))
+                        numericHintDelay.start()
+                }
                 width: control.fieldWidth
                 height: control.compact ? 24 : 28
                 radius: 4
@@ -74,13 +84,25 @@ Item {
 
                 HoverHandler {
                     id: fieldHover
+                    onHoveredChanged: numericEntryCard.resetHintDwell()
+                    onPointChanged: numericEntryCard.resetHintDwell()
+                }
+                Timer {
+                    id: numericHintDelay
+                    interval: 1000
+                    repeat: false
+                    onTriggered: numericEntryCard.hintReady = fieldHover.hovered
+                        && !input.activeFocus
                 }
 
                 ToolTip.text: control.validationTooltip.length > 0
                     ? control.validationTooltip : control.interactionHint
-                ToolTip.visible: (control.validationTooltip.length > 0
-                    || control.interactionHint.length > 0) && fieldHover.hovered
-                ToolTip.delay: 550
+                // Hints never cover an input that is being edited.
+                ToolTip.visible: numericEntryCard.hintReady
+                    && fieldHover.hovered && !input.activeFocus
+                    && (control.validationTooltip.length > 0
+                        || control.interactionHint.length > 0)
+                ToolTip.delay: 0
 
                 TextInput {
                     id: input
@@ -127,6 +149,7 @@ Item {
                     }
 
                     onActiveFocusChanged: {
+                        numericEntryCard.resetHintDwell()
                         if (!activeFocus && control.viewModel) {
                             control.viewModel.commitDraft()
                         }

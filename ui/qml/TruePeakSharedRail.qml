@@ -205,14 +205,31 @@ Item {
                 objectName: "m17CeilingCard"
                 Layout.fillWidth: true
                 opacity: root.limiterBypassed ? 0.5 : 1.0
-                HoverHandler { id: ceilingCardHover }
-                ToolTip.text: root.limiterBypassed
-                    ? "True Peak Ceiling is retained, but cannot be edited while bypassed."
-                    : !root.limiterSonicControlsEnabled
-                        ? "Ceiling edit unavailable until the production limiter is connected."
-                        : "Set the maximum output True Peak from -12.0 to 0.0 dBTP."
-                ToolTip.visible: ceilingCardHover.hovered
-                ToolTip.delay: 550
+                // An outer-card hint must not obscure the editable CEILING.
+                // The field and slider provide their own stationary hints.
+                property bool bypassHintReady: false
+                function resetBypassHint() {
+                    bypassHintReady = false
+                    bypassHintDelay.stop()
+                    if (root.limiterBypassed && ceilingCardHover.hovered)
+                        bypassHintDelay.start()
+                }
+                HoverHandler {
+                    id: ceilingCardHover
+                    onHoveredChanged: ceilingCard.resetBypassHint()
+                    onPointChanged: ceilingCard.resetBypassHint()
+                }
+                Timer {
+                    id: bypassHintDelay
+                    interval: 1000
+                    repeat: false
+                    onTriggered: ceilingCard.bypassHintReady =
+                        root.limiterBypassed && ceilingCardHover.hovered
+                }
+                ToolTip.text: "True Peak Ceiling is retained, but cannot be edited while bypassed."
+                ToolTip.visible: root.limiterBypassed && bypassHintReady
+                    && ceilingCardHover.hovered
+                ToolTip.delay: 0
                 Layout.minimumHeight: 100
                 Layout.preferredHeight: 100
                 radius: 6
@@ -276,10 +293,27 @@ Item {
                     }
                     Text {
                         objectName: "m17TrimProvenanceStatus"
-                        HoverHandler { id: trimStatusHover }
+                        property bool trimHintReady: false
+                        function resetTrimHint() {
+                            trimHintReady = false
+                            trimHintDelay.stop()
+                            if (trimStatusHover.hovered)
+                                trimHintDelay.start()
+                        }
+                        HoverHandler {
+                            id: trimStatusHover
+                            onHoveredChanged: parent.resetTrimHint()
+                            onPointChanged: parent.resetTrimHint()
+                        }
+                        Timer {
+                            id: trimHintDelay
+                            interval: 1000
+                            repeat: false
+                            onTriggered: parent.trimHintReady = trimStatusHover.hovered
+                        }
                         ToolTip.text: "Verification Trim is a distinct measured observation, not an adjustable sonic control. Status remains unavailable until verified."
-                        ToolTip.visible: trimStatusHover.hovered
-                        ToolTip.delay: 550
+                        ToolTip.visible: trimHintReady && trimStatusHover.hovered
+                        ToolTip.delay: 0
                         text: "UNAVAILABLE · NOT VERIFIED"
                         color: "#B3C9D9"
                         font.family: "Segoe UI"

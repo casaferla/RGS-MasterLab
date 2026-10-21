@@ -16,12 +16,29 @@ Rectangle {
     // M17 two-column only: keep extra breathing room around each readout.
     // Standalone M16 card dimensions and padding are not changed.
     property bool roomyLimiterReadout: false
-    HoverHandler { id: readoutHover }
+    property bool hintReady: false
+    function resetHintDwell() {
+        hintReady = false
+        readoutHintDelay.stop()
+        if (root.detailTooltipEnabled && readoutHover.hovered)
+            readoutHintDelay.start()
+    }
+    HoverHandler {
+        id: readoutHover
+        onHoveredChanged: root.resetHintDwell()
+        onPointChanged: root.resetHintDwell()
+    }
+    Timer {
+        id: readoutHintDelay
+        interval: 1000
+        repeat: false
+        onTriggered: root.hintReady = root.detailTooltipEnabled && readoutHover.hovered
+    }
     ToolTip.text: root.heading + "\n" + root.reading + "\n" + root.detail
         + (root.additionalTooltip.length > 0
             ? "\nMEASUREMENT / PROVENANCE\n" + root.additionalTooltip : "")
-    ToolTip.visible: root.detailTooltipEnabled && readoutHover.hovered
-    ToolTip.delay: 550
+    ToolTip.visible: root.detailTooltipEnabled && hintReady && readoutHover.hovered
+    ToolTip.delay: 0
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     property color valueColor: "#E9F7FF"

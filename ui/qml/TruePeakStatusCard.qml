@@ -10,12 +10,29 @@ Rectangle {
     property string identity: "NO PUBLISHED REALIZATION"
     property string formatLabel: "—"
     property bool detailTooltipEnabled: false
-    HoverHandler { id: provenanceHover }
+    property bool hintReady: false
+    function resetHintDwell() {
+        hintReady = false
+        provenanceHintDelay.stop()
+        if (root.detailTooltipEnabled && provenanceHover.hovered)
+            provenanceHintDelay.start()
+    }
+    HoverHandler {
+        id: provenanceHover
+        onHoveredChanged: root.resetHintDwell()
+        onPointChanged: root.resetHintDwell()
+    }
+    Timer {
+        id: provenanceHintDelay
+        interval: 1000
+        repeat: false
+        onTriggered: root.hintReady = root.detailTooltipEnabled && provenanceHover.hovered
+    }
     ToolTip.text: "MEASUREMENT / PROVENANCE\n"
         + root.stateLabel + "\n" + root.qualification + "\n"
         + root.identity + "\n" + root.formatLabel
-    ToolTip.visible: root.detailTooltipEnabled && provenanceHover.hovered
-    ToolTip.delay: 550
+    ToolTip.visible: root.detailTooltipEnabled && hintReady && provenanceHover.hovered
+    ToolTip.delay: 0
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     implicitHeight: 112
