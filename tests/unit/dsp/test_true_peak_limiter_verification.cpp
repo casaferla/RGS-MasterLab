@@ -804,6 +804,13 @@ void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
     // launch the 12-second, 7-billion-event case inside normal CTest.
     // Qt environment lookup is portable under strict MSVC /WX (no C4996).
     const auto summaryPath=qEnvironmentVariable("GITHUB_STEP_SUMMARY").toStdString();
+    // Bounded machine-readable timings, separate from full workflow logs.
+    const auto probePath=qEnvironmentVariable("RGS_M17_CPU_PROBE_FILE").toStdString();
+    if(!probePath.empty()) {
+        std::ofstream probe(probePath,std::ios::trunc);
+        QVERIFY2(probe.good(),"M17 CPU probe artifact could not be opened");
+        probe<<"sample_rate_hz,ceiling_dbtp,m17_renderer_us,m16_meter_us,frames\n";
+    }
     if(!summaryPath.empty()) {
         std::ofstream summary(summaryPath,std::ios::app);
         if(summary) summary
@@ -844,6 +851,12 @@ void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
             qInfo().nospace()<<"RGS M17 CPU probe Fs="<<fs
                 <<" ceiling="<<ceiling<<" M17_us="<<dspUs
                 <<" M16_us="<<meterUs<<" frames="<<n;
+            if(!probePath.empty()) {
+                std::ofstream probe(probePath,std::ios::app);
+                QVERIFY2(probe.good(),"M17 CPU probe append failed");
+                probe<<fs<<','<<ceiling<<','<<dspUs<<','
+                    <<meterUs<<','<<n<<'\n';
+            }
             if(!summaryPath.empty()) {
                 std::ofstream summary(summaryPath,std::ios::app);
                 if(summary)summary<<"| "<<fs<<" Hz | "<<ceiling
