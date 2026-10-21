@@ -335,7 +335,11 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(limiter.value()->bypassed());
     QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
     QVERIFY(vm.validation_message().contains(
-        QStringLiteral("selected, accepted full PROCESSED manual")));
+        QStringLiteral("requires PROCESSED audition target")));
+    // The full preflight reason must be carried to the product's visible
+    // error footer without granting terminal source or meter ownership.
+    QVERIFY(vm.validation_message().startsWith(
+        QStringLiteral("M17 activation refused: ")));
     QVERIFY(!coordinator.device_active());
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
