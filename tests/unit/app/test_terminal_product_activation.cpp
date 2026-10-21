@@ -399,7 +399,9 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(limiter.value()->bypassed());
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
-    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+    // Two Gain revisions have superseded updatedManualId: the physical
+    // manual owner after the negative rate-probe must be the SECOND one.
+    QCOMPARE(device->audibleRealization.realizationId,secondManualId);
     QCOMPARE(device->position,currentManualCue);
     QCOMPARE(device->loop,currentManualLoop);
     QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
