@@ -866,6 +866,10 @@ Window {
                     <= readout->height() - 9.5,
                 "Reflowed description must fit within the fixed readout card");
             if (readout == fullReadout) {
+                // The M17 compact card names its upstream scope but the
+                // accepted two-line empty detail must remain layout-safe.
+                QCOMPARE(fullReadout->property("heading").toString(),
+                    QStringLiteral("COMPLETE PRE-LIMITER TP"));
                 QCOMPARE(detail->property("text").toString(),
                     QStringLiteral("No complete, source-bound measurement"));
                 QVERIFY2(detail->property("lineCount").toInt() >= 2,
