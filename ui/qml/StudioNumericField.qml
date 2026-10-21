@@ -46,16 +46,6 @@ Item {
             spacing: control.compact ? 6 : 8
 
             Rectangle {
-                id: numericEntryCard
-                property bool hintReady: false
-                function resetHintDwell() {
-                    hintReady = false
-                    numericHintDelay.stop()
-                    if (fieldHover.hovered && !input.activeFocus
-                            && (control.validationTooltip.length > 0
-                                || control.interactionHint.length > 0))
-                        numericHintDelay.start()
-                }
                 width: control.fieldWidth
                 height: control.compact ? 24 : 28
                 radius: 4
@@ -82,26 +72,16 @@ Item {
                     onClicked: input.forceActiveFocus()
                 }
 
-                HoverHandler {
-                    id: fieldHover
-                    onHoveredChanged: numericEntryCard.resetHintDwell()
-                    onPointChanged: numericEntryCard.resetHintDwell()
+                StudioTooltipDwell {
+                    id: numericTooltipDwell
+                    anchors.fill: parent
+                    canShow: control.validationTooltip.length > 0
+                        || control.interactionHint.length > 0
+                    interacting: input.activeFocus
                 }
-                Timer {
-                    id: numericHintDelay
-                    interval: 1000
-                    repeat: false
-                    onTriggered: numericEntryCard.hintReady = fieldHover.hovered
-                        && !input.activeFocus
-                }
-
                 ToolTip.text: control.validationTooltip.length > 0
                     ? control.validationTooltip : control.interactionHint
-                // Hints never cover an input that is being edited.
-                ToolTip.visible: numericEntryCard.hintReady
-                    && fieldHover.hovered && !input.activeFocus
-                    && (control.validationTooltip.length > 0
-                        || control.interactionHint.length > 0)
+                ToolTip.visible: numericTooltipDwell.ready
                 ToolTip.delay: 0
 
                 TextInput {
@@ -149,7 +129,6 @@ Item {
                     }
 
                     onActiveFocusChanged: {
-                        numericEntryCard.resetHintDwell()
                         if (!activeFocus && control.viewModel) {
                             control.viewModel.commitDraft()
                         }

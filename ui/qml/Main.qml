@@ -1121,8 +1121,12 @@ ApplicationWindow {
                     elide: Text.ElideRight
                     HoverHandler { id: globalStatusHover }
                     ToolTip.text: root.statusText
-                    ToolTip.visible: globalStatusHover.hovered && root.statusText.length > 0
-                    ToolTip.delay: 450
+                    ToolTip.visible: (globalStatusHover.hovered && root.statusText.length > 0) && stationaryTooltipDwell1.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: stationaryTooltipDwell1
+                        anchors.fill: parent
+                    }
                     Accessible.name: root.statusText
                     Accessible.description: root.statusSeverity + ": " + root.statusText
                 }

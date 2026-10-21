@@ -62,8 +62,12 @@ Item {
                 // representability interval behind Text.ElideRight.
                 HoverHandler { id: validationFeedbackHover }
                 ToolTip.text: validationFeedbackText.text
-                ToolTip.visible: validationFeedbackHover.hovered && validationFeedbackText.text.length > 0
-                ToolTip.delay: 450
+                ToolTip.visible: (validationFeedbackHover.hovered && validationFeedbackText.text.length > 0) && stationaryTooltipDwell1.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell1
+                    anchors.fill: parent
+                }
                 Accessible.name: validationFeedbackText.text
             }
             StudioButton {
@@ -73,8 +77,12 @@ Item {
                 enabled: root.viewModel && root.viewModel.available
                 accentColor: root.seaGreen
                 ToolTip.text: "Restore all Stereo/M-S parameters to defaults. This does not change the module bypass state."
-                ToolTip.visible: hovered
-                ToolTip.delay: 550
+                ToolTip.visible: (hovered) && stationaryTooltipDwell2.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell2
+                    anchors.fill: parent
+                }
                 onClicked: if (root.viewModel) root.viewModel.resetToDefault()
                 Accessible.name: "Reset Stereo M/S parameters"
             }
@@ -103,8 +111,12 @@ Item {
                 objectName: "stereoMsDynamicWell"
                 HoverHandler { id: stereoDynamicHover }
                 ToolTip.text: "Actual post-M/S output density (M vertical, S horizontal), measured correlation and low-frequency Side energy. This is observation only; dragging the cloud does not edit audio."
-                ToolTip.visible: stereoDynamicHover.hovered
-                ToolTip.delay: 550
+                ToolTip.visible: (stereoDynamicHover.hovered) && stationaryTooltipDwell3.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell3
+                    anchors.fill: parent
+                }
                 Layout.minimumWidth: 210
                 Layout.preferredWidth: Math.min(330, Math.max(210, visualWells.height - 8))
                 Layout.maximumWidth: 350
@@ -305,8 +317,12 @@ Item {
                     objectName: "stereoMsTelemetryStatus"
                     HoverHandler { id: stereoTelemetryHover }
                     ToolTip.text: "Telemetric state reflects real published and audible post-M/S data. Unavailable, paused or bypassed readings must not be presented as live measurements."
-                    ToolTip.visible: stereoTelemetryHover.hovered
-                    ToolTip.delay: 550
+                    ToolTip.visible: (stereoTelemetryHover.hovered) && stationaryTooltipDwell4.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: stationaryTooltipDwell4
+                        anchors.fill: parent
+                    }
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.bottom: telemetryRow.top
                     anchors.bottomMargin: 9
@@ -333,8 +349,12 @@ Item {
                         objectName: "stereoMsCorrelationReadout"
                         HoverHandler { id: stereoCorrHover }
                         ToolTip.text: "Observed L/R correlation for verified post-M/S output. Undefined or missing measurements display --, not an invented zero."
-                        ToolTip.visible: stereoCorrHover.hovered
-                        ToolTip.delay: 550
+                        ToolTip.visible: (stereoCorrHover.hovered) && stationaryTooltipDwell5.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: stationaryTooltipDwell5
+                            anchors.fill: parent
+                        }
                         readonly property var metric: root.viewModel
                             ? root.viewModel.telemetryCorrelation : ({})
                         text: metric.valid === true && metric.value !== undefined
@@ -349,8 +369,12 @@ Item {
                         objectName: "stereoMsSideLowReadout"
                         HoverHandler { id: stereoSideLowHover }
                         ToolTip.text: "Observed low-frequency Side energy, before / after the Low Width operation. Only verified output-stage values are shown."
-                        ToolTip.visible: stereoSideLowHover.hovered
-                        ToolTip.delay: 550
+                        ToolTip.visible: (stereoSideLowHover.hovered) && stationaryTooltipDwell6.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: stationaryTooltipDwell6
+                            anchors.fill: parent
+                        }
                         readonly property var metric: root.viewModel
                             ? root.viewModel.telemetrySideLow : ({})
                         text: metric.before !== undefined && metric.after !== undefined
@@ -571,8 +595,12 @@ Item {
                                         : modelData === "LR12"
                                             ? "Use the 12 dB/oct Linkwitz-Riley Mono Bass crossover."
                                             : "Use the 24 dB/oct Linkwitz-Riley Mono Bass crossover."
-                                    ToolTip.visible: hovered
-                                    ToolTip.delay: 550
+                                    ToolTip.visible: (hovered) && stationaryTooltipDwell7.ready
+                                    ToolTip.delay: 0
+                                    StudioTooltipDwell {
+                                        id: stationaryTooltipDwell7
+                                        anchors.fill: parent
+                                    }
                                     enabled: root.viewModel && root.viewModel.spatialControlsEffective
                                     onClicked: if (root.viewModel
                                             && root.viewModel.setDraftMonoBassMode(modelData))
@@ -590,8 +618,12 @@ Item {
                         accentColor: root.seaGreen
                         useFamilyAccent: true
                         ToolTip.text: "Mute the Side component while preserving the stored Mid/Side gain parameters. The resulting stereo collapses toward Mid only."
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 550
+                        ToolTip.visible: (hovered) && stationaryTooltipDwell8.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: stationaryTooltipDwell8
+                            anchors.fill: parent
+                        }
                         checked: root.viewModel ? root.viewModel.sideMuted : false
                         enabled: root.viewModel && root.viewModel.spatialControlsEffective
                         onClicked: {

@@ -192,8 +192,12 @@ Item {
                                 font.weight: Font.Bold
                                 HoverHandler { id: grStatusHover }
                                 ToolTip.text: "The grid is a reference, not an observed gain-reduction series. Verified applied limiter gain and sink-consumed OUTPUT identity are required before drawing GR."
-                                ToolTip.visible: grStatusHover.hovered
-                                ToolTip.delay: 550
+                                ToolTip.visible: (grStatusHover.hovered) && stationaryTooltipDwell1.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: stationaryTooltipDwell1
+                                    anchors.fill: parent
+                                }
                             }
                         }
                         TruePeakGrHistoryGraph {

@@ -78,34 +78,16 @@ Item {
         enabled: control.enabled
         activeFocusOnTab: true
         hoverEnabled: true
-        // A tooltip requires 1000 ms of *stationary* hover. Movement or a
-        // drag invalidates the dwell immediately, including a visible hint.
-        property bool hintReady: false
-        function resetHintDwell() {
-            hintReady = false
-            sliderHintDelay.stop()
-            if (sliderHintHover.hovered && enabled && !pressed
-                    && control.interactionHint.length > 0)
-                sliderHintDelay.start()
-        }
-        HoverHandler {
-            id: sliderHintHover
-            onHoveredChanged: internalSlider.resetHintDwell()
-            onPointChanged: internalSlider.resetHintDwell()
-        }
-        Timer {
-            id: sliderHintDelay
-            interval: 1000
-            repeat: false
-            onTriggered: internalSlider.hintReady = sliderHintHover.hovered
-                && internalSlider.enabled && !internalSlider.pressed
+        // Same stationary-hover policy as every other DSP hint.
+        StudioTooltipDwell {
+            id: sliderTooltipDwell
+            anchors.fill: parent
+            canShow: control.interactionHint.length > 0
+            interacting: internalSlider.pressed
         }
         ToolTip.text: control.interactionHint
-        ToolTip.visible: hintReady && sliderHintHover.hovered && enabled
-            && !pressed && control.interactionHint.length > 0
-        // The stationary timer is the entire delay; do not apply two delays.
+        ToolTip.visible: sliderTooltipDwell.ready
         ToolTip.delay: 0
-        onEnabledChanged: resetHintDwell()
 
         value: control.valueToPosition(control.value)
 
@@ -141,7 +123,6 @@ Item {
         }
 
         onPressedChanged: {
-            internalSlider.resetHintDwell()
             if (internalSlider.pressed && control.deferResponseWhileDragging
                 && control.viewModel && typeof control.viewModel.setFastInteraction === "function") {
                 control.viewModel.setFastInteraction(true);

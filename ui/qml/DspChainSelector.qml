@@ -176,7 +176,12 @@ Rectangle {
                             ToolTip.text: rowItem.isDefaultState
                                 ? (rowItem.moduleAdapter ? (rowItem.moduleAdapter.displayName + " Default") : "Default")
                                 : (rowItem.moduleAdapter ? ("Manual Non-Default " + rowItem.moduleAdapter.displayName) : "Manual Non-Default")
-                            ToolTip.visible: ledMouse.containsMouse
+                            ToolTip.visible: (ledMouse.containsMouse) && stationaryTooltipDwell1.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: stationaryTooltipDwell1
+                                anchors.fill: parent
+                            }
 
                             MouseArea {
                                 id: ledMouse

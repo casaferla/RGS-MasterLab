@@ -82,6 +82,11 @@ jobs:
         run: |
           python tools/qualification/ui/verify_minor_fix_g3.py
 
+      # Cross-DSP tooltip policy: QML source evidence, not a manual UI gate.
+      - name: Global stationary tooltip policy (Linux)
+        run: |
+          python tools/qualification/ui/verify_stationary_tooltips.py
+
       - name: Build Focused DSP Targets
         run: |
           cmake --build build-linux --target \

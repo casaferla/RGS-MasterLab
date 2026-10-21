@@ -23,6 +23,7 @@ qt_add_qml_module(rgsml_ui
         qml/StudioNumericField.qml
         qml/StudioNumericSliderPair.qml
         qml/StudioParameterSlider.qml
+        qml/StudioTooltipDwell.qml
         qml/StudioSegmentButton.qml
         qml/StudioToggle.qml
         qml/TruePeakMeterEditor.qml

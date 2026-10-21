@@ -214,8 +214,13 @@ Rectangle {
         }
         HoverHandler { id: widthHandleHover }
         ToolTip.text: "WIDTH: drag up/down; use the matching numeric field or slider for precision."
-        ToolTip.visible: !widthDrag.active && widthHandleHover.hovered
-        ToolTip.delay: 550
+        ToolTip.visible: (!widthDrag.active && widthHandleHover.hovered) && stationaryTooltipDwell1.ready
+        ToolTip.delay: 0
+        StudioTooltipDwell {
+            id: stationaryTooltipDwell1
+            anchors.fill: parent
+            interacting: widthDrag.active
+        }
     }
 
     Rectangle {
@@ -263,8 +268,13 @@ Rectangle {
         }
         HoverHandler { id: cutoffHandleHover }
         ToolTip.text: "MONO BASS CUTOFF: drag horizontally to adjust the crossover (40–300 Hz when valid)."
-        ToolTip.visible: !cutoffDrag.active && cutoffHandleHover.hovered
-        ToolTip.delay: 550
+        ToolTip.visible: (!cutoffDrag.active && cutoffHandleHover.hovered) && stationaryTooltipDwell2.ready
+        ToolTip.delay: 0
+        StudioTooltipDwell {
+            id: stationaryTooltipDwell2
+            anchors.fill: parent
+            interacting: cutoffDrag.active
+        }
     }
 
     Rectangle {
@@ -309,8 +319,13 @@ Rectangle {
         }
         HoverHandler { id: lowHandleHover }
         ToolTip.text: "LOW WIDTH: drag vertically to control the Side contribution of the low band (0–100%)."
-        ToolTip.visible: !lowDrag.active && lowHandleHover.hovered
-        ToolTip.delay: 550
+        ToolTip.visible: (!lowDrag.active && lowHandleHover.hovered) && stationaryTooltipDwell3.ready
+        ToolTip.delay: 0
+        StudioTooltipDwell {
+            id: stationaryTooltipDwell3
+            anchors.fill: parent
+            interacting: lowDrag.active
+        }
     }
 
     Rectangle {

@@ -59,7 +59,12 @@ Item {
                 onClicked: if (root.viewModel) root.viewModel.resetToDefault()
                 Accessible.name: "Reset Input Gain to 0.0 dB"
                 ToolTip.text: "Reset gain to canonical 0.0 dB"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell1.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell1
+                    anchors.fill: parent
+                }
             }
         }
 
@@ -332,8 +337,12 @@ Item {
                             }
 
                             ToolTip.text: gainInput.interactionHint
-                            ToolTip.visible: gainInputHover.hovered
-                            ToolTip.delay: 550
+                            ToolTip.visible: (gainInputHover.hovered) && stationaryTooltipDwell2.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: stationaryTooltipDwell2
+                                anchors.fill: parent
+                            }
 
                             // Treat typed text as a local draft. Committing on
                             // every keystroke would both reformat partial input

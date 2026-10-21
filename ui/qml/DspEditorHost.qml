@@ -196,7 +196,12 @@ Rectangle {
                     onClicked: if (root.activeModule) root.activeModule.undo()
                     Accessible.name: "Undo edit"
                     ToolTip.text: "Undo last edit (Ctrl+Z)"
-                    ToolTip.visible: hovered
+                    ToolTip.visible: (hovered) && stationaryTooltipDwell1.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: stationaryTooltipDwell1
+                        anchors.fill: parent
+                    }
                     Shortcut {
                         sequences: [ StandardKey.Undo ]
                         enabled: root.activeModule ? (root.activeModule.historySupported && root.activeModule.canUndo) : false
@@ -214,7 +219,12 @@ Rectangle {
                     onClicked: if (root.activeModule) root.activeModule.redo()
                     Accessible.name: "Redo edit"
                     ToolTip.text: "Redo last edit (Ctrl+Y)"
-                    ToolTip.visible: hovered
+                    ToolTip.visible: (hovered) && stationaryTooltipDwell2.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: stationaryTooltipDwell2
+                        anchors.fill: parent
+                    }
                     Shortcut {
                         sequences: [ StandardKey.Redo ]
                         enabled: root.activeModule ? (root.activeModule.historySupported && root.activeModule.canRedo) : false
@@ -247,7 +257,12 @@ Rectangle {
                     ToolTip.text: root.isLimiterEditor && !enabled
                         ? "True Peak Limiter processing is pending verified OUTPUT_RATE routing"
                         : "Activate module processing"
-                    ToolTip.visible: hovered
+                    ToolTip.visible: (hovered) && stationaryTooltipDwell3.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: stationaryTooltipDwell3
+                        anchors.fill: parent
+                    }
                 }
 
                 StudioButton {
@@ -263,7 +278,12 @@ Rectangle {
                     onClicked: if (root.activeModule) root.activeModule.setBypass(true)
                     Accessible.name: "Bypass"
                     ToolTip.text: "Bypass module processing"
-                    ToolTip.visible: hovered
+                    ToolTip.visible: (hovered) && stationaryTooltipDwell4.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: stationaryTooltipDwell4
+                        anchors.fill: parent
+                    }
                 }
             }
         }

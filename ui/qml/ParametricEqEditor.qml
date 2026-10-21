@@ -71,7 +71,12 @@ Rectangle {
                 onClicked: if (root.viewModel) root.viewModel.resetToFlat()
                 Accessible.name: "Reset EQ to Flat"
                 ToolTip.text: "Reset all EQ parameters to Flat baseline"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell1.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell1
+                    anchors.fill: parent
+                }
             }
 
             StudioButton {
@@ -93,7 +98,12 @@ Rectangle {
                 }
                 Accessible.name: "Toggle Overall combined response curve"
                 ToolTip.text: "Show or hide the combined total response curve of all active EQ bands"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell2.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell2
+                    anchors.fill: parent
+                }
             }
 
             StudioButton {
@@ -115,7 +125,12 @@ Rectangle {
                 }
                 Accessible.name: "Toggle Live Spectrum display"
                 ToolTip.text: "Show or hide the real-time Live Spectrum overlay"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell3.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell3
+                    anchors.fill: parent
+                }
             }
 
             Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: "#2C5A78" }
@@ -129,7 +144,12 @@ Rectangle {
                 onClicked: if (root.viewModel) root.viewModel.addBand()
                 Accessible.name: "Add Band"
                 ToolTip.text: "Add a new EQ band"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell4.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell4
+                    anchors.fill: parent
+                }
             }
 
             StudioButton {
@@ -141,7 +161,12 @@ Rectangle {
                 onClicked: if (root.viewModel) root.viewModel.removeSelectedBand()
                 Accessible.name: "Remove Band"
                 ToolTip.text: "Remove the selected EQ band"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell5.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell5
+                    anchors.fill: parent
+                }
             }
         }
 
@@ -188,7 +213,12 @@ Rectangle {
 
                         Accessible.name: "Band " + (index + 1) + " " + filterType.replace("_", " ") + (isEnabledBand ? "" : " (disabled)")
                         ToolTip.text: "Select Band " + (index + 1) + " (" + filterType.replace("_", " ") + ", " + routingType + ")"
-                        ToolTip.visible: hovered
+                        ToolTip.visible: (hovered) && stationaryTooltipDwell6.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: stationaryTooltipDwell6
+                            anchors.fill: parent
+                        }
                     }
                 }
 
@@ -239,7 +269,12 @@ Rectangle {
                     elide: Text.ElideRight
     
                     ToolTip.text: text
-                    ToolTip.visible: messageMouseArea.containsMouse && text.length > 0
+                    ToolTip.visible: (messageMouseArea.containsMouse && text.length > 0) && stationaryTooltipDwell7.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: stationaryTooltipDwell7
+                        anchors.fill: parent
+                    }
     
                     Accessible.name: text
                     Accessible.description: text
@@ -317,7 +352,12 @@ Rectangle {
                                     onClicked: if (root.viewModel) root.viewModel.setFilter(modelData.token)
                                     Accessible.name: "Filter type " + modelData.label
                                     ToolTip.text: "Set filter type to " + modelData.label
-                                    ToolTip.visible: hovered
+                                    ToolTip.visible: (hovered) && stationaryTooltipDwell8.ready
+                                    ToolTip.delay: 0
+                                    StudioTooltipDwell {
+                                        id: stationaryTooltipDwell8
+                                        anchors.fill: parent
+                                    }
                                 }
                             }
                         }
@@ -364,7 +404,12 @@ Rectangle {
                                     onClicked: if (root.viewModel) root.viewModel.setRouting(modelData.token)
                                     Accessible.name: "Routing " + modelData.label
                                     ToolTip.text: "Set channel routing to " + modelData.label
-                                    ToolTip.visible: hovered
+                                    ToolTip.visible: (hovered) && stationaryTooltipDwell9.ready
+                                    ToolTip.delay: 0
+                                    StudioTooltipDwell {
+                                        id: stationaryTooltipDwell9
+                                        anchors.fill: parent
+                                    }
                                 }
                             }
                         }
@@ -555,7 +600,12 @@ Rectangle {
                                             }
                                             Accessible.name: "Slope " + modelData + " dB per octave"
                                             ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
-                                            ToolTip.visible: hovered
+                                            ToolTip.visible: (hovered) && stationaryTooltipDwell10.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: stationaryTooltipDwell10
+                                                anchors.fill: parent
+                                            }
                                         }
                                     }
                                 }
@@ -580,7 +630,12 @@ Rectangle {
                                             }
                                             Accessible.name: "Slope " + modelData + " dB per octave"
                                             ToolTip.text: "Set filter slope to " + modelData + " dB/octave"
-                                            ToolTip.visible: hovered
+                                            ToolTip.visible: (hovered) && stationaryTooltipDwell11.ready
+                                            ToolTip.delay: 0
+                                            StudioTooltipDwell {
+                                                id: stationaryTooltipDwell11
+                                                anchors.fill: parent
+                                            }
                                         }
                                     }
                                 }

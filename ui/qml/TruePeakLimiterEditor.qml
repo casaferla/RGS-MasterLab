@@ -82,8 +82,12 @@ Item {
             elide: Text.ElideRight
             HoverHandler { id: validationHover }
             ToolTip.text: validationText.text
-            ToolTip.visible: validationHover.hovered && validationText.text.length > 0
-            ToolTip.delay: 450
+            ToolTip.visible: (validationHover.hovered && validationText.text.length > 0) && stationaryTooltipDwell1.ready
+            ToolTip.delay: 0
+            StudioTooltipDwell {
+                id: stationaryTooltipDwell1
+                anchors.fill: parent
+            }
             Accessible.name: validationText.text
             Accessible.description: validationText.text
         }

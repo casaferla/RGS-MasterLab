@@ -53,7 +53,12 @@ Item {
                 onClicked: if (root.viewModel) root.viewModel.resetToDefault()
                 Accessible.name: "Reset Compressor to default parameters"
                 ToolTip.text: "Reset compressor to canonical M13 defaults"
-                ToolTip.visible: hovered
+                ToolTip.visible: (hovered) && stationaryTooltipDwell1.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: stationaryTooltipDwell1
+                    anchors.fill: parent
+                }
             }
         }
 
