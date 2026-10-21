@@ -181,24 +181,32 @@ bind_private_terminal_consumed_output(
 
     // A Qt playback output candidate remains unqualified even when its
     // owner-stamped actual consumed chronology can be checked.
-    if (consumed.certifiedForLiveTruePeak
-        || !consumed.partitionRepresented
+    // Preserve the EXACT established fail-closed predicate. Partition its
+    // refusal reasons so a real Windows witness can distinguish missing or
+    // torn worker chronology from an actual device SRC mismatch. No extra
+    // source is admitted, no worker samples are synthesized, and no
+    // authorization is implied by a diagnostic string.
+    if (consumed.srcRealizationId
+        || consumed.srcRetiredSourceBegin || consumed.srcRetiredSourceEnd
+        || consumed.srcInputRateHz != 0 || consumed.srcOutputRateHz != 0
+        || consumed.reason == GapReason::UNPROVEN_SRC)
+        return refuse("M17 sink prefix is SRC-derived; terminal playback requires an exact-rate output.");
+    if (!consumed.partitionRepresented
         || consumed.count == 0 || consumed.count > Prefix::kMaxSlices
         || consumed.generation == 0
         || consumed.retainedOutputBegin < 0
-        || consumed.processedWatermarkExclusive <= consumed.retainedOutputBegin
-        || consumed.srcRealizationId
-        || consumed.srcRetiredSourceBegin || consumed.srcRetiredSourceEnd
-        || consumed.srcInputRateHz != 0 || consumed.srcOutputRateHz != 0
-        || consumed.reason == GapReason::UNPROVEN_SRC
-        || consumed.reason == GapReason::NOT_MONITORED
+        || consumed.processedWatermarkExclusive <= consumed.retainedOutputBegin)
+        return refuse("M17 sink prefix has no complete consumed OUTPUT partition.");
+    if (consumed.certifiedForLiveTruePeak)
+        return refuse("M17 sink prefix has unexpected LIVE certification.");
+    if (consumed.reason == GapReason::NOT_MONITORED
         || consumed.reason == GapReason::STALE_GENERATION
         || consumed.reason == GapReason::GENERATION_EXHAUSTED
         || consumed.reason == GapReason::CLOCK_BEFORE_BASELINE
         || consumed.reason == GapReason::CLOCK_AHEAD_OF_GENERATED
         || consumed.reason == GapReason::CLOCK_AHEAD_OF_ACCEPTED
         || consumed.reason == GapReason::ACCEPTED_LEDGER_OVERFLOW)
-        return refuse("M17 sink prefix is missing, discontinuous or SRC-derived.");
+        return refuse("M17 sink prefix has unverified worker clock or ledger epoch.");
 
     // An output generation may retain PREVIOUS loop traversals or an older
     // GAP in its bounded C2 ledger. Those bytes are real history, but MUST

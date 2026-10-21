@@ -463,6 +463,31 @@ void TerminalPrivateGrProjectionTest::postLimiterMeterRejectsUnverifiedAndUsesAc
     QCOMPARE(verified.value()->realizationId,core::RealizationId{92});
     // The post-limiter FIR receives 5400 current proven frames, not the
     // previous traversal or 100 GAP frames; enough for a genuine 100ms peak.
+    // Distinct diagnostic classes must remain equally fail-closed. A
+    // reported SRC mismatch is not interchangeable with a missing device
+    // chronology (particularly for a 44.1k source and 48k audition device).
+    auto missing=prefix;
+    missing.partitionRepresented=false;
+    const auto missingResult=app::bind_private_terminal_consumed_output(
+        identity,missing,identity);
+    QVERIFY(!missingResult);
+    QVERIFY(missingResult.error()->message().find(
+        "no complete consumed OUTPUT partition")!=std::string::npos);
+    auto srcDerived=prefix;
+    srcDerived.srcInputRateHz=44100;
+    srcDerived.srcOutputRateHz=48000;
+    const auto srcResult=app::bind_private_terminal_consumed_output(
+        identity,srcDerived,identity);
+    QVERIFY(!srcResult);
+    QVERIFY(srcResult.error()->message().find("SRC-derived")
+        !=std::string::npos);
+    auto staleClock=prefix;
+    staleClock.reason=win::WindowsConsumedGapReason::STALE_GENERATION;
+    const auto staleClockResult=app::bind_private_terminal_consumed_output(
+        identity,staleClock,identity);
+    QVERIFY(!staleClockResult);
+    QVERIFY(staleClockResult.error()->message().find("worker clock")
+        !=std::string::npos);
     auto invalid=prefix;
     invalid.slices[2].realizationId=core::RealizationId{93};
     QVERIFY(!app::bind_private_terminal_consumed_output(
