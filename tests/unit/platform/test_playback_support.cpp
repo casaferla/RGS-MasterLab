@@ -463,9 +463,11 @@ void PlaybackSupportTest::terminalOutputCandidateNoSecondSrcAndLiveWitnessFailCl
         QVERIFY(observed->queue().size()>=4U);
         QCOMPARE(read_i16(observed->queue(),0U),
                  static_cast<std::int16_t>(seekFrame));
+        // A loop remains explicitly unproven even though the terminal
+        // now retains a real output-consumed ledger. No LIVE TP is granted.
         QCOMPARE(engine.c2_processed_coverage_probe().reason,
                  platform::windows::internal::C2CoverageProbeReason
-                     ::MISSING_CHRONOLOGICAL_LEDGER);
+                     ::UNPROVEN_LOOP);
         QVERIFY(engine.stop());
     }
     QVERIFY(engine.clear());
