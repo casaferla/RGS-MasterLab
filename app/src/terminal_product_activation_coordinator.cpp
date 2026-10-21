@@ -75,8 +75,15 @@ void TerminalProductActivationCoordinator::begin_activation()
     if(transitioning_||intent_)return;
     auto captured=selector_->capture_terminal_activation_intent();
     if(!captured) {
-        fail_closed(QStringLiteral(
-            "M17 activation needs the exact selected PROCESSED source."));
+        // Preserve the precise, SOURCE-owned capture refusal. A failed
+        // published owner, device realization, unstable clock or stale Loop
+        // has a different remediation; the old generic string obscured
+        // the real Windows failure after an upstream Input Gain edit.
+        // NEVER retry or publish M17 on a rejected capture.
+        fail_closed(QStringLiteral("M17 activation refused: %1")
+            .arg(captured.error()
+                ? QString::fromStdString(captured.error()->message())
+                : QStringLiteral("unknown source ownership failure")));
         return;
     }
     intent_=*captured.value();

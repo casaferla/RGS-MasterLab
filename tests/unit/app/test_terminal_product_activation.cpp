@@ -326,6 +326,19 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
     QVERIFY(!candidates.staged());
+
+    // A stale/incorrect audition target must still fail closed, but tell
+    // the operator which exact activation preflight guard refused it.
+    // No automatic retries or invented terminal owner are permitted.
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    vm.setBypass(false);
+    QVERIFY(limiter.value()->bypassed());
+    QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
+    QVERIFY(vm.validation_message().contains(
+        QStringLiteral("selected, accepted full PROCESSED manual")));
+    QVERIFY(!coordinator.device_active());
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
 }
 void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()
 {
