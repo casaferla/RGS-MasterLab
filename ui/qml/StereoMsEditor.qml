@@ -231,20 +231,24 @@ Item {
                                 const x = (binX + 0.5) * side
                                 const y = (32 - binY + 0.5) * side
                                 const density = Math.log(1 + count)
-                                const coreAlpha = Math.min(0.94,
-                                    0.22 + 0.105 * density)
-                                const shoulderAlpha = Math.min(0.60,
-                                    0.13 + 0.078 * density)
-                                const haloAlpha = Math.min(0.22,
-                                    0.024 + 0.034 * density)
+                                // More legible real sink-heard density on
+                                // dark screens. Same monotone count law,
+                                // same occupied cells/Canvas pass: brighter
+                                // pigment ONLY, no invented signal particles.
+                                const coreAlpha = Math.min(0.98,
+                                    0.38 + 0.132 * density)
+                                const shoulderAlpha = Math.min(0.74,
+                                    0.21 + 0.100 * density)
+                                const haloAlpha = Math.min(0.32,
+                                    0.055 + 0.054 * density)
                                 const pigment = ctx.createRadialGradient(
                                     x, y, 0, x, y, haloRadius)
                                 pigment.addColorStop(0,
-                                    "rgba(137,217,193," + coreAlpha + ")")
+                                    "rgba(172,249,220," + coreAlpha + ")")
                                 pigment.addColorStop(0.24,
-                                    "rgba(74,154,136," + shoulderAlpha + ")")
+                                    "rgba(99,209,178," + shoulderAlpha + ")")
                                 pigment.addColorStop(0.63,
-                                    "rgba(74,154,136," + haloAlpha + ")")
+                                    "rgba(84,176,151," + haloAlpha + ")")
                                 pigment.addColorStop(1,
                                     "rgba(74,154,136,0)")
                                 ctx.fillStyle = pigment
