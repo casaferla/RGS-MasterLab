@@ -377,9 +377,46 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!limiter.value()->bypassed());
     QCOMPARE(vm.audio_status(),
         QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
+    // Burst of TWO new Input Gain edits before Qt can deliver the older
+    // preview result: only the final new MANUAL owner may be published.
+    // Active intent survives both invalidations, and a stale candidate
+    // cannot revive the previous terminal owner after the second request.
+    const auto secondTerminalId=device->audibleRealization.realizationId;
+    auto gainUpFast=dsp::GainParameters::create(+6.0);
+    auto gainDownFast=dsp::GainParameters::create(-6.0);
+    QVERIFY(gainUpFast&&gainDownFast);
+    QVERIFY(upstream.value()->set_gain_parameters(*gainUpFast.value()));
+    preview.request_preview();
+    QCOMPARE(preview.preview_status(),QStringLiteral("RENDERING"));
+    QVERIFY(!coordinator.device_active());
+    QVERIFY(!limiter.value()->bypassed());
+    QVERIFY(upstream.value()->set_gain_parameters(*gainDownFast.value()));
+    preview.request_preview();
+    QCOMPARE(preview.preview_status(),QStringLiteral("RENDERING"));
+    QVERIFY(!coordinator.device_active());
+    QVERIFY(!limiter.value()->bypassed());
+    QCOMPARE(device->audibleRealization.realizationId,secondManualId);
+    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing manual audio"));
+    QTRY_COMPARE_WITH_TIMEOUT(preview.preview_status(),
+        QStringLiteral("READY"),12000);
+    const auto finalManualId=selector.processed_realization_id();
+    QVERIFY(finalManualId);
+    QVERIFY(finalManualId!=secondManualId);
+    const auto finalManual=selector.processed_realization_snapshot();
+    QVERIFY(finalManual);
+    const auto finalLane=finalManual->view().channel(0);
+    QVERIFY(finalLane);
+    QVERIFY((*finalLane.value())[0]!=(*secondLane.value())[0]);
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
+    QVERIFY(device->audibleRealization.realizationId!=secondTerminalId);
+    QVERIFY(!limiter.value()->bypassed());
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
     vm.setBypass(true);
     QVERIFY(limiter.value()->bypassed());
-    QCOMPARE(device->audibleRealization.realizationId,secondManualId);
+    QCOMPARE(device->audibleRealization.realizationId,finalManualId);
     // The newly published MANUAL owner may have a newer SOURCE cue than
     // the old 800-frame snapshot. The negative rate-probe branch must
     // preserve the CURRENT exact owner and cursor, not the stale cue.
@@ -399,9 +436,9 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(limiter.value()->bypassed());
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
-    // Two Gain revisions have superseded updatedManualId: the physical
-    // manual owner after the negative rate-probe must be the SECOND one.
-    QCOMPARE(device->audibleRealization.realizationId,secondManualId);
+    // Burst edits superseded both earlier Gain owners. Even a negative
+    // rate probe must retain the latest exactly published MANUAL owner.
+    QCOMPARE(device->audibleRealization.realizationId,finalManualId);
     QCOMPARE(device->position,currentManualCue);
     QCOMPARE(device->loop,currentManualLoop);
     QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
