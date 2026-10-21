@@ -65,11 +65,12 @@ void TerminalPrivateRenderController::worker_loop() {
         const render::TerminalRenderCancel cancelled=[this,serial=job->serial] {
             return activeSerial_.load(std::memory_order_acquire)!=serial;
         };
+        render::TerminalRenderStageTimings stages{};
         auto result=render::render_true_peak_limiter_owned_output_rate_candidate(
             captured.manual_owner,job->manualChain,
             captured.full_source_frames,captured.manual_chain_revision,
             captured.output_rate,job->terminalChain,job->bindings,
-            registry_,job->block,cancelled);
+            registry_,job->block,cancelled,&stages);
         const auto finished=std::chrono::steady_clock::now();
         const auto queueMs=std::chrono::duration_cast<
             std::chrono::milliseconds>(started-job->enqueuedAt).count();
@@ -80,6 +81,11 @@ void TerminalPrivateRenderController::worker_loop() {
         qInfo().nospace() << "RGS M17 render serial=" << job->serial
             << " queue_ms=" << queueMs
             << " render_ms=" << renderMs
+            << " src_us=" << stages.src_us
+            << " m17_core_us=" << stages.m17_core_us
+            << " m16_primary_us=" << stages.m16_primary_us
+            << " trim_us=" << stages.verification_trim_us
+            << " m16_secondary_us=" << stages.m16_secondary_us
             << " result=" << (result ? "accepted_for_gate" : "failure");
         auto delivery=std::make_shared<
             core::Result<render::TruePeakLimiterOwnedSourceCandidate>>(

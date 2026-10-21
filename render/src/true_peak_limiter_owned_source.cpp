@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <chrono>
 #include <cstdint>
 #include <string_view>
 #include <utility>
@@ -40,6 +41,9 @@ render_true_peak_limiter_owned_candidate_impl(
     TerminalRenderStageTimings* stage_timings)
 {
     using Candidate = TruePeakLimiterOwnedSourceCandidate;
+    // Whole-programme stage diagnostics are captured on the worker thread.
+    // No per-frame clocks, logger calls or floating-point/audio mutations.
+    if (stage_timings) *stage_timings = {};
     const auto cancelledResult=[] {
         return core::Result<Candidate>::failure(source_error(
             core::ErrorCode::InvalidState,"M17_RENDER_CANCELLED",
@@ -110,8 +114,13 @@ render_true_peak_limiter_owned_candidate_impl(
     auto boundedBlock=core::FrameCount::create(std::min(
         block.value(),audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames));
     if(!boundedBlock)return core::Result<Candidate>::failure(*boundedBlock.error());
+    const auto src_started=std::chrono::steady_clock::now();
     auto output=audio::materialize_full_resource_output_rate_candidate(
         view,output_rate,*boundedBlock.value());
+    if(stage_timings)
+        stage_timings->src_us=std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now()-src_started).count();
     if(!output)return core::Result<Candidate>::failure(*output.error());
     if(cancelled && cancelled()) return cancelledResult();
     auto candidate=render_true_peak_limiter_bound_terminal_candidate(

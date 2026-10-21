@@ -4,6 +4,7 @@
 #include <rgsml/core/error.hpp>
 
 #include <cmath>
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <utility>
@@ -39,12 +40,15 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     const TerminalRenderCancel& cancelled,
     TerminalRenderStageTimings* stage_timings)
 {
-    // This optional sidecar is diagnostic-only, never a condition of acceptance.
-    static_cast<void>(stage_timings);
-    // Materialize into a private owned candidate. Never publish partial
-    // PCM/GR or silently change a source-rate timebase.
+    // No clock call inside the high-frequency DSP controller. These
+    // boundaries measure complete real production stages, even on failures.
+    const auto m17_started=std::chrono::steady_clock::now();
     auto rendered=render_true_peak_limiter_terminal_candidate(
         source,params,registry,max_block,bypassed,cancelled);
+    if(stage_timings)
+        stage_timings->m17_core_us=std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now()-m17_started).count();
     if(!rendered)
         return Result<TruePeakLimiterCheckedCandidate>::failure(*rendered.error());
 
@@ -77,7 +81,12 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     // estimate. These numeric readings are SUPPORTED_UNQUALIFIED until
     // official exact-SHA Gate G and Windows physical tests close.
     if(wasCancelled()) return cancelFailure();
+    const auto m16_started=std::chrono::steady_clock::now();
     auto measured=analysis::measure_true_peak_full_resource(pcm);
+    if(stage_timings)
+        stage_timings->m16_primary_us=std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now()-m16_started).count();
     if(!measured)
         return Result<TruePeakLimiterCheckedCandidate>::failure(*measured.error());
     if(measured.value()->qualification_status()
@@ -115,6 +124,7 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     // before remeasurement. One common scalar for ALL channels and frames,
     // so stereo balance and the original applied-gain witness are preserved.
     // Witness remains BASE LIMITER gain, not the post-verification trim.
+    const auto trim_started=std::chrono::steady_clock::now();
     auto staging=audio::AudioBuffer::create(pcm.view().format(),
         audio::FrameDomainId::OUTPUT_RATE,
         pcm.view().absolute_start_frame(),pcm.view().frame_count());
@@ -140,8 +150,17 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
         }
     }
 
+    if(stage_timings)
+        stage_timings->verification_trim_us=std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now()-trim_started).count();
     if(wasCancelled()) return cancelFailure();
+    const auto recheck_started=std::chrono::steady_clock::now();
     const auto remeasured=analysis::measure_true_peak_full_resource(*staging.value());
+    if(stage_timings)
+        stage_timings->m16_secondary_us=std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                std::chrono::steady_clock::now()-recheck_started).count();
     if(!remeasured)
         return Result<TruePeakLimiterCheckedCandidate>::failure(*remeasured.error());
     const auto after=remeasured.value()->global_linear_peak();
