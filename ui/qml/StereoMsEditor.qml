@@ -178,34 +178,43 @@ Item {
                         // audition targets cannot display this frozen cloud.
                         readonly property bool displayHistory: telemetryLive
                             || telemetryPaused
-                        readonly property int occupiedCells: {
-                            if (!displayHistory || !heardBuckets || heardBuckets.length === 0)
-                                return 0
-                            let occupied = 0
-                            for (let i = 0; i < 1089; ++i) {
-                                let count = 0
-                                for (let j = 0; j < heardBuckets.length; ++j) {
-                                    const bucket = heardBuckets[j]
-                                    if (!bucket || !bucket.occupancy
-                                            || bucket.occupancy.length !== 1089)
-                                        continue
-                                    let contribution = Number(bucket.occupancy[i])
+                        // Accumulate the *same* completed, sink-heard Grid33
+                        // buckets once on a telemetry change. The previous
+                        // occupiedCells binding and Canvas painter each scanned
+                        // every bucket/cell separately on the UI thread.
+                        // This is presentation caching, not a DSP conversion.
+                        readonly property var densitySnapshot: {
+                            const totals = []
+                            for (let i = 0; i < 1089; ++i) totals.push(0)
+                            if (!displayHistory || !heardBuckets
+                                    || heardBuckets.length === 0)
+                                return { counts: totals, occupied: 0 }
+                            for (let j = 0; j < heardBuckets.length; ++j) {
+                                const bucket = heardBuckets[j]
+                                if (!bucket || !bucket.occupancy
+                                        || bucket.occupancy.length !== 1089)
+                                    continue
+                                const zeros = Number(bucket.zeroVectorCount)
+                                for (let i = 0; i < 1089; ++i) {
+                                    let n = Number(bucket.occupancy[i])
                                     if (i === 544)
-                                        contribution = Math.max(0, contribution
-                                            - Number(bucket.zeroVectorCount))
-                                    count += Math.max(0, contribution)
+                                        n = Math.max(0, n - zeros)
+                                    totals[i] += Math.max(0, n)
                                 }
-                                if (count > 0) ++occupied
                             }
-                            return occupied
+                            let occupied = 0
+                            for (let i = 0; i < 1089; ++i)
+                                if (totals[i] > 0) ++occupied
+                            return { counts: totals, occupied: occupied }
                         }
+                        readonly property int occupiedCells: densitySnapshot.occupied
                         visible: displayHistory && occupiedCells > 0
                         opacity: telemetryPaused ? 0.42 : 1.0
                         renderTarget: Canvas.Image
                         onPaint: {
                             const ctx = getContext("2d")
                             ctx.clearRect(0, 0, width, height)
-                            if (!cloud.visible || !cloud.heardBuckets) return
+                            if (!cloud.visible || !cloud.densitySnapshot) return
                             // Each dot is a measured Grid33 cell with a soft
                             // Sea Green radial falloff (material density,
                             // not a new interpolated audio point).
@@ -213,17 +222,9 @@ Item {
                             // synthetic particles or persistence animation.
                             const side = Math.min(width, height) / 33
                             const haloRadius = side * 0.68
+                            const counts = cloud.densitySnapshot.counts
                             for (let i = 0; i < 1089; ++i) {
-                                let count = 0
-                                for (let j = 0; j < cloud.heardBuckets.length; ++j) {
-                                    const b = cloud.heardBuckets[j]
-                                    if (!b || !b.occupancy || b.occupancy.length !== 1089)
-                                        continue
-                                    let n = Number(b.occupancy[i])
-                                    if (i === 544)
-                                        n = Math.max(0, n - Number(b.zeroVectorCount))
-                                    count += Math.max(0, n)
-                                }
+                                const count = counts[i]
                                 if (count <= 0) continue
                                 const binX = i % 33
                                 const binY = Math.floor(i / 33)
