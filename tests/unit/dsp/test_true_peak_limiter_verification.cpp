@@ -802,8 +802,9 @@ void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
     // This does not change the frozen recurrence or enforce timing budgets.
     // N=1024 intentionally keeps Windows/Linux Focused CI bounded; never
     // launch the 12-second, 7-billion-event case inside normal CTest.
-    const char* summaryPath=std::getenv("GITHUB_STEP_SUMMARY");
-    if(summaryPath) {
+    // Qt environment lookup is portable under strict MSVC /WX (no C4996).
+    const auto summaryPath=qEnvironmentVariable("GITHUB_STEP_SUMMARY").toStdString();
+    if(!summaryPath.empty()) {
         std::ofstream summary(summaryPath,std::ios::app);
         if(summary) summary
             << "\n### M17 bounded CPU profile (diagnostic only)\n\n"
@@ -843,7 +844,7 @@ void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
             qInfo().nospace()<<"RGS M17 CPU probe Fs="<<fs
                 <<" ceiling="<<ceiling<<" M17_us="<<dspUs
                 <<" M16_us="<<meterUs<<" frames="<<n;
-            if(summaryPath) {
+            if(!summaryPath.empty()) {
                 std::ofstream summary(summaryPath,std::ios::app);
                 if(summary)summary<<"| "<<fs<<" Hz | "<<ceiling
                     <<" dBTP | "<<dspUs/1000.0<<" ms | "
