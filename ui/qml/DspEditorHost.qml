@@ -237,6 +237,26 @@ Rectangle {
                     visible: true
                 }
 
+                // M17 uses the same top-right Reset affordance as other DSP
+                // editors. It only changes Ceiling; BYPASS and layout stay put.
+                StudioButton {
+                    objectName: "m17ResetToDefaultButton"
+                    text: "Reset to Default"
+                    minimumControlWidth: 140
+                    visible: root.isLimiterEditor
+                    enabled: root.isLimiterEditor && root.activeModule
+                        && root.activeModule.resetSupported
+                    onClicked: if (root.activeModule) root.activeModule.resetToDefault()
+                    Accessible.name: "Reset True Peak Limiter Ceiling to -1.0 dBTP"
+                    ToolTip.text: "Restore Ceiling to -1.0 dBTP without changing Active or Bypass"
+                    ToolTip.visible: hovered && m17ResetTooltipDwell.ready
+                    ToolTip.delay: 0
+                    StudioTooltipDwell {
+                        id: m17ResetTooltipDwell
+                        anchors.fill: parent
+                    }
+                }
+
                 StudioButton {
                     id: abActiveButton
                     objectName: "abButtonActive"

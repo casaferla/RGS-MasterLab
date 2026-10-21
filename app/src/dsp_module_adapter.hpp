@@ -287,7 +287,7 @@ public:
     [[nodiscard]] bool history_supported() const noexcept override { return false; }
     [[nodiscard]] bool can_undo() const noexcept override { return false; }
     [[nodiscard]] bool can_redo() const noexcept override { return false; }
-    [[nodiscard]] bool reset_supported() const noexcept override { return false; }
+    [[nodiscard]] bool reset_supported() const noexcept override { return vm_!=nullptr; }
     [[nodiscard]] QString editor_content_key() const override
     { return QStringLiteral("TRUE_PEAK_LIMITER"); }
     [[nodiscard]] QString live_change_policy() const override
@@ -305,7 +305,7 @@ public:
     void setBypass(bool value) override { if(vm_)vm_->setBypass(value); }
     void undo() override {}
     void redo() override {}
-    void resetToDefault() override {}
+    void resetToDefault() override { if(vm_)vm_->resetToDefault(); }
 private:
     TerminalLimiterState* state_{nullptr};
     TerminalLimiterViewModel* vm_{nullptr};

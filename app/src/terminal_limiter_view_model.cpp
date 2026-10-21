@@ -112,6 +112,37 @@ void TerminalLimiterViewModel::cancelDraft()
     emit changed();
 }
 
+void TerminalLimiterViewModel::resetToDefault()
+{
+    if(!state_)return;
+    // Use the same DSP constructor/authority as ordinary accepted edits.
+    const auto defaults=dsp::TruePeakLimiterParameters::create_default();
+    if(!defaults) {
+        set_validation(QStringLiteral("True Peak Limiter defaults unavailable"));
+        return;
+    }
+    const double ceiling=defaults.value()->ceiling_db_tp();
+    if(state_->parameters().ceiling_db_tp()==ceiling) {
+        // Reset also cancels any invalid, uncommitted edit.
+        draftCeilingDbTp_=ceiling;
+        clear_validation();
+        emit changed();
+        return;
+    }
+    auto applied=state_->set_ceiling_db_tp(ceiling);
+    if(!applied) {
+        set_validation(QStringLiteral("True Peak Limiter reset failed"));
+        return;
+    }
+    draftCeilingDbTp_=ceiling;
+    clear_validation();
+    emit changed();
+    // Preserve BYPASS/ON. An ON reset rerenders through the same accepted
+    // coordinator path as a normal ceiling commit; no-op never rerenders.
+    if(stateChanged_)stateChanged_();
+    emit acceptedStateChanged();
+}
+
 void TerminalLimiterViewModel::setBypass(bool value)
 {
     if(!state_||state_->bypassed()==value)return;

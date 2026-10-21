@@ -223,7 +223,7 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     QVERIFY(limiter->bypass());
     QVERIFY(limiter->bypass_supported());
     QVERIFY(!limiter->preview_supported());
-    QVERIFY(!limiter->reset_supported());
+    QVERIFY(limiter->reset_supported());
     QVERIFY(!limiter->can_undo());
     QVERIFY(!limiter->can_redo());
     QCOMPARE(vm.ceiling_db_tp(),-1.0);
@@ -239,9 +239,39 @@ void DspModuleAdapterTest::testRealTerminalLimiterInInventoryButNotAudible()
     QCOMPARE(vm.audio_status(),QStringLiteral("BYPASS"));
     vm.setAudioStatus(QStringLiteral("RENDERING · AUDITION ONLY"));
     QCOMPARE(limiter->state_text(),vm.audio_status());
-    limiter->setBypass(true);
+
+    // ON: a changed Ceiling reset is one accepted edit/rerender request.
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-6.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(limiter->configuration_state(),QStringLiteral("Manual"));
     QCOMPARE(commits.size(),2);
+    const auto revisionBeforeReset=terminal.value()->parameter_revision();
     limiter->resetToDefault();
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(terminal.value()->parameter_revision(),revisionBeforeReset+1);
+    QVERIFY(!limiter->bypass());
+    QCOMPARE(limiter->configuration_state(),QStringLiteral("Default"));
+    QCOMPARE(commits.size(),3);
+    limiter->resetToDefault();
+    QCOMPARE(commits.size(),3); // No-op must not request rendering.
+
+    limiter->setBypass(true);
+    QCOMPARE(commits.size(),4);
+    // BYP: reset is still available, and cannot silently activate M17.
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-8.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(commits.size(),5);
+    limiter->resetToDefault();
+    QCOMPARE(commits.size(),6);
+    QVERIFY(limiter->bypass());
+    QCOMPARE(terminal.value()->parameters().ceiling_db_tp(),-1.0);
+    QVERIFY(!vm.setDraftFieldText(QStringLiteral("ceilingDbTp"),
+        QStringLiteral("not-a-number")));
+    QVERIFY(!vm.validation_message().isEmpty());
+    limiter->resetToDefault(); // Also cancels an invalid uncommitted draft.
+    QCOMPARE(vm.validation_message(),QString{});
+    QCOMPARE(vm.draft_ceiling_db_tp(),-1.0);
+    QCOMPARE(commits.size(),6);
     limiter->undo();
     limiter->redo();
     QVERIFY(limiter->bypass());

@@ -46,6 +46,8 @@ public:
     Q_INVOKABLE bool setDraftFieldText(const QString& field, const QString& text);
     Q_INVOKABLE bool commitDraft();
     Q_INVOKABLE void cancelDraft();
+    // Canonical -1.0 dBTP default, independent of user bypass.
+    Q_INVOKABLE void resetToDefault();
     Q_INVOKABLE void setBypass(bool bypass);
     Q_INVOKABLE void refreshFromAuthority();
     // Fail-closed device/PCM transition error in the existing fixed footer.
