@@ -41,6 +41,8 @@ void TerminalProductActivationCoordinator::fail_closed(const QString& reason)
 {
     if(transitioning_)return;
     renderHeartbeat_.stop();
+    waitingForManualPreview_=false;
+    manualPreviewInProgress_=false;
     transitioning_=true;
     static_cast<void>(session_->cancel());
     const auto sink=transport_->playback_snapshot();
@@ -256,11 +258,71 @@ void TerminalProductActivationCoordinator::limiter_accepted()
 {
     if(transitioning_)return;
     if(state_->bypassed()) {
+        waitingForManualPreview_=false;
         deactivate(false);
+    } else if(manualPreviewInProgress_) {
+        // Accepted Ceiling/ON during a new MANUAL render must not borrow
+        // the predecessor: retain Active intent for the next exact owner.
+        waitingForManualPreview_=true;
+        view_->setAudioStatus(QStringLiteral("Preparing manual audio"));
     } else if(intent_) {
         deactivate(true); // Committed Ceiling change: rerender the whole PCM.
     } else {
         begin_activation();
+    }
+}
+
+void TerminalProductActivationCoordinator::manual_preview_changed(
+    const QString& previewStatus)
+{
+    if(previewStatus==QStringLiteral("RENDERING")) {
+        manualPreviewInProgress_=true;
+        if(state_->bypassed()||transitioning_||waitingForManualPreview_)return;
+        // Retire any installed terminal BEFORE set_processed_realization()
+        // attempts a SOURCE handoff. The previous accepted MANUAL audio is
+        // restored exactly; no stale M17 session can obstruct its successor.
+        if(intent_)deactivate(false);
+        if(state_->bypassed())return; // A real retirement failure stays closed.
+        waitingForManualPreview_=true;
+        view_->clearAudioError();
+        view_->setAudioStatus(QStringLiteral("Preparing manual audio"));
+        return;
+    }
+    if(previewStatus==QStringLiteral("READY")) {
+        manualPreviewInProgress_=false;
+        if(!waitingForManualPreview_)return;
+        waitingForManualPreview_=false;
+        if(!state_->bypassed())begin_activation();
+        return;
+    }
+    if(previewStatus==QStringLiteral("ERROR")
+       ||previewStatus==QStringLiteral("IDLE")) {
+        manualPreviewInProgress_=false;
+        if(waitingForManualPreview_&&!state_->bypassed()) {
+            waitingForManualPreview_=false;
+            fail_closed(QStringLiteral(
+                "M17 manual preparation failed or was invalidated."));
+        }
+    }
+}
+
+void TerminalProductActivationCoordinator::loop_context_changed()
+{
+    if(transitioning_||!intent_||state_->bypassed())return;
+    const auto source=transport_->source_display_snapshot();
+    if(!source) {
+        fail_closed(QStringLiteral("M17 Loop Region owner unavailable."));
+        return;
+    }
+    if(source.value()->loop==intent_->sourceLoop)return;
+    if(deviceActive_) {
+        // Installed OUTPUT_RATE PCM represents the whole programme; the
+        // live SOURCE transport already applied this Loop Region change.
+        intent_->sourceLoop=source.value()->loop;
+    } else {
+        // The pending job captured a different loop/owner. Cancel it and
+        // request a fresh exact candidate while preserving the Active bit.
+        deactivate(true);
     }
 }
 

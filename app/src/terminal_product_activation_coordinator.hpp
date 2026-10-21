@@ -21,6 +21,10 @@ public:
         AuditionSourceSelector&,PlaybackTransportViewModel&,
         TerminalPrivateProductSession&,QObject* parent=nullptr);
     [[nodiscard]] bool device_active() const noexcept {return deviceActive_;}
+    // Keep Active user intent across ordinary accepted MANUAL rerenders and
+    // SOURCE Loop Region edits; never claim terminal PCM during preparation.
+    void manual_preview_changed(const QString& previewStatus);
+    void loop_context_changed();
 private:
     void limiter_accepted();
     void private_session_changed();
@@ -41,6 +45,8 @@ private:
     bool transitioning_{false};
     bool deviceActive_{false};
     bool handoffStarted_{false};
+    bool manualPreviewInProgress_{false};
+    bool waitingForManualPreview_{false};
     QElapsedTimer renderElapsed_;
     QTimer renderHeartbeat_;
 };

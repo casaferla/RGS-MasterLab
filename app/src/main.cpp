@@ -304,22 +304,20 @@ int main(int argc, char* argv[])
     rgsml::app::TerminalProductActivationCoordinator terminalProductActivation{
         terminalLimiterState,terminalLimiterViewModel,auditionSelector,
         playbackTransport,privateProductSession};
-    QObject::connect(&auditionSelector,
-        &rgsml::app::AuditionSourceSelector::changed,
-        &privateProductSession,
-        [&privateProductSession] {
-            static_cast<void>(privateProductSession.cancel());
-        });
+    // Ordinary manual-preview updates are not terminal AUDIO errors. The
+    // conductor retires a live terminal before publication of a new MANUAL
+    // owner; the old blanket cancel-on-changed caused ERROR/BYPASS instead.
     QObject::connect(&previewController,
         &rgsml::app::MasteringPreviewController::changed,
-        &privateProductSession,
-        [&privateProductSession] {
-            static_cast<void>(privateProductSession.cancel());
+        &terminalProductActivation,
+        [&previewController,&terminalProductActivation] {
+            terminalProductActivation.manual_preview_changed(
+                previewController.preview_status());
         });
     QObject::connect(&auditionRegion,
         &rgsml::app::AuditionRegionViewModel::changed,
-        &privateProductSession,
-        &rgsml::app::TerminalPrivateProductSession::cancel_pending_on_region_change);
+        &terminalProductActivation,
+        &rgsml::app::TerminalProductActivationCoordinator::loop_context_changed);
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
     rgsml::app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};

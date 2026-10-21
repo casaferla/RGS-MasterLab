@@ -80,13 +80,26 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
                 core::AudibleHandoffPhase::NEW,id};
             return core::Status::success();
         });
+    // Manual replacement uses a separate no-terminal SOURCE handoff seam.
+    transport.set_pcm_handoff_handler(
+        [device](audio::AudioBufferView view,
+            std::shared_ptr<const void> lease,
+            std::optional<core::RealizationId> id)->core::Status {
+            if(!lease)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"Missing successor MANUAL lease."});
+            device->state=core::PlaybackState::STOPPED;
+            device->position=view.absolute_start_frame();
+            device->duration=view.frame_count();
+            device->loop.reset();
+            device->audibleRealization={core::AudibleHandoffPhase::NEW,id};
+            return core::Status::success();
+        });
     app::AuditionSourceSelector selector{&transport};
     const auto region=core::FrameRange::create(
         core::FrameIndex{500},core::FrameIndex{3500});
     QVERIFY(region);
-    selector.set_source_loop_provider([&]{
-        return std::optional{*region.value()};
-    });
+    std::optional<core::FrameRange> desiredLoop=*region.value();
+    selector.set_source_loop_provider([&]{return desiredLoop;});
     QVERIFY(selector.set_prepared_realization(renderManual()));
     QVERIFY(selector.set_processed_realization(renderManual()));
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
@@ -137,7 +150,7 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         [&selector]{return selector.prepared_realization_snapshot();},
         [&selector]{return selector.processed_realization_snapshot();},
         [&selector]{return selector.processed_realization_id();},
-        [&]{return std::optional{*region.value()};},
+        [&]{return desiredLoop;},
         [&selector]{return selector.active_target()
             ==app::AuditionTarget::PROCESSED;}};
     product.set_preferred_output_rate_probe(
@@ -250,6 +263,43 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     QVERIFY(!audioGate.has_session());
 
+    // Valid upstream manual rebuilds must keep the user's Active intent.
+    // The old terminal is retired BEFORE publishing the new SOURCE owner;
+    // no ERROR/BYPASS transition is legitimate in this ordinary path.
+    vm.setBypass(false);
+    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
+    coordinator.manual_preview_changed(QStringLiteral("RENDERING"));
+    QVERIFY(!limiter.value()->bypassed());
+    QVERIFY(!coordinator.device_active());
+    QVERIFY(!product.private_id());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing manual audio"));
+    QVERIFY(selector.set_processed_realization(renderManual()));
+    const auto updatedManualId=selector.processed_realization_id();
+    QVERIFY(updatedManualId);
+    QVERIFY(updatedManualId!=originalId);
+    coordinator.manual_preview_changed(QStringLiteral("READY"));
+    // A region edit while the new M17 candidate is still pending may
+    // invalidate only that candidate, not the requested Active state.
+    const auto shiftedRegion=core::FrameRange::create(
+        core::FrameIndex{700},core::FrameIndex{3300});
+    QVERIFY(shiftedRegion);
+    desiredLoop=*shiftedRegion.value();
+    QVERIFY(transport.set_loop_source_range(desiredLoop));
+    coordinator.loop_context_changed();
+    QVERIFY(!limiter.value()->bypassed());
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
+    const auto shiftedSource=transport.source_display_snapshot();
+    QVERIFY(shiftedSource);
+    QCOMPARE(shiftedSource.value()->loop,desiredLoop);
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
+    vm.setBypass(true);
+    QVERIFY(limiter.value()->bypassed());
+    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+
     // Device rate discovery failure MUST preserve the original PCM and
     // visibly revert the module to BYPASS without invented ACTIVE data.
     product.set_preferred_output_rate_probe(
@@ -262,7 +312,7 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(limiter.value()->bypassed());
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
-    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
     QCOMPARE(device->position,core::FrameIndex{800});
     QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
     QVERIFY(!vm.validation_message().isEmpty());
