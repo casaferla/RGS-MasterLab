@@ -234,6 +234,7 @@ void StereoMsViewModel::setFastInteraction(bool active)
 {
     if (fastInteractionActive_ == active) return;
     fastInteractionActive_ = active;
+    emit fastInteractionChanged();
     if (active) {
         // Suppress the expensive observational response computation while a
         // pointer is moving. The QML thumb and numeric draft remain immediate.

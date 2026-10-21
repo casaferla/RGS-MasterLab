@@ -101,10 +101,16 @@ void StereoMsViewModelTest::fastPointerInteractionDefersGridAndPreviewUntilRelea
     QCOMPARE(vm.width_response_points().size(), qsizetype{129});
     QSignalSpy fast(&vm, &StereoMsViewModel::changed);
     QSignalSpy visual(&vm, &StereoMsViewModel::responseChanged);
+    QSignalSpy gesture(&vm, &StereoMsViewModel::fastInteractionChanged);
+    QVERIFY(gesture.isValid());
     // A real pointer gesture follows 20 different positions. The typed
     // numeric draft changes 20 times but the expensive 129-point plot must
     // not receive even one repaint request until release.
     vm.setFastInteraction(true);
+    QVERIFY(vm.fast_interaction_active());
+    QCOMPARE(gesture.size(), 1);
+    vm.setFastInteraction(true); // repeated drag sample is silent
+    QCOMPARE(gesture.size(), 1);
     for (int i=0;i<20;++i)
         QVERIFY(vm.setDraftWidthPercent(80.0+static_cast<double>(i)));
     QCOMPARE(vm.draft_width_percent(), 99.0);
@@ -122,6 +128,8 @@ void StereoMsViewModelTest::fastPointerInteractionDefersGridAndPreviewUntilRelea
     QVERIFY(vm.commitDraft());
     QCOMPARE(preview.preview_generation(), std::uint64_t{1});
     vm.setFastInteraction(false);
+    QVERIFY(!vm.fast_interaction_active());
+    QCOMPARE(gesture.size(), 2);
     QTRY_COMPARE_WITH_TIMEOUT(visual.size(), 1, 500);
     QCOMPARE(vm.width_response_status(), QStringLiteral("READY"));
     const auto points=vm.width_response_points();

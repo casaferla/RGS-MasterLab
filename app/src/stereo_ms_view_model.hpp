@@ -45,6 +45,9 @@ class StereoMsViewModel final : public QObject {
     Q_PROPERTY(QString previewError READ preview_error NOTIFY changed)
     Q_PROPERTY(QVariantList widthResponsePoints READ width_response_points NOTIFY responseChanged)
     Q_PROPERTY(QString widthResponseStatus READ width_response_status NOTIFY responseChanged)
+    // Lightweight presentation state: grey/dash the last published curve
+    // while controls move, without recomputing 129 backend points.
+    Q_PROPERTY(bool fastInteractionActive READ fast_interaction_active NOTIFY fastInteractionChanged)
     Q_PROPERTY(QString telemetryStatus READ telemetry_status NOTIFY telemetryChanged)
     Q_PROPERTY(bool telemetryActive READ telemetry_active NOTIFY telemetryChanged)
     Q_PROPERTY(bool telemetryGap READ telemetry_gap NOTIFY telemetryChanged)
@@ -126,6 +129,7 @@ public:
     Q_INVOKABLE bool setDraftLowBandWidthPercent(double value);
     // Pointer events update only the lightweight typed draft. Expensive
     // response-grid evaluation and QML Canvas repaint resume on release.
+    [[nodiscard]] bool fast_interaction_active() const noexcept { return fastInteractionActive_; }
     Q_INVOKABLE void setFastInteraction(bool active);
     Q_INVOKABLE bool commitDraft();
     Q_INVOKABLE void cancelDraft();
@@ -139,6 +143,7 @@ signals:
     // Expensive 129-point response rendering is coalesced at 30 Hz;
     // numeric controls and drag handles still use immediate changed().
     void responseChanged();
+    void fastInteractionChanged();
     void telemetryChanged();
     void telemetryDensityChanged();
 
