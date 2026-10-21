@@ -223,7 +223,7 @@ Rectangle {
             }
         }
         HoverHandler { id: widthHandleHover }
-        ToolTip.text: "WIDTH: drag up/down; use the matching numeric field or slider for precision."
+        ToolTip.text: "WIDTH: drag up/down; the frozen dashed curve catches up on release. Exact 0% mutes Side; some positive widths are not representable at fixed common gain and retain the last valid value."
         ToolTip.visible: (!widthDrag.active && widthHandleHover.hovered) && stationaryTooltipDwell1.ready
         ToolTip.delay: 0
         StudioTooltipDwell {

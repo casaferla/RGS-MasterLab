@@ -430,8 +430,8 @@ Item {
                         fieldName: "widthPercent"
                         rawText: root.viewModel ? root.viewModel.draftWidthPercent.toFixed(1) : "100.0"
                         viewModel: root.viewModel
-                        interactionHint: "WIDTH: 0–200%. Drag the cyan handle vertically, use this slider, or type an exact number; Enter applies, Esc restores."
-                        sliderInteractionHint: "WIDTH 0–200%: change the broadband Mid/Side balance. Release commits one DSP change; no mouse-wheel edits."
+                        interactionHint: "WIDTH: 0–200%. Drag vertically or type an exact value; 0% mutes Side. The smallest legal positive Width depends on the current Mid/Side gains. During a drag, unreachable intermediate values retain the last valid value."
+                        sliderInteractionHint: "WIDTH 0–200%: preserve the common Mid/Side gain. Unreachable positive values during drag are ignored, not clamped; 0% exactly mutes Side. Release commits the last valid value."
                         deferResponseWhileDragging: true
                         from: 0
                         to: 200
