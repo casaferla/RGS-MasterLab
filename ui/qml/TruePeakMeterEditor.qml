@@ -21,7 +21,13 @@ Item {
     property var limiterViewModel: null
     // The entire lower band is fixed. In this combined layout,
     // GR and Ceiling+Verification Trim use the SAME 198px height.
-    readonly property int lowerControlBandHeight: 100 + 92 + 6
+    // Canonical 548px M17 editor retains its accepted 198px lower band.
+    // In the real minimum-height Main window the editor may receive ~420px,
+    // unlike the isolated 548px UI fixture. Compress VERTICALLY only:
+    // no column count switch, clipping, scrolling or hidden sonic controls.
+    readonly property int lowerControlBandHeight: root.showLimiterControls
+        ? Math.min(198, Math.max(145, Math.round(height * 0.365)))
+        : 198
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     // The large channel bars are LIVE-only: a whole-resource future maximum
@@ -87,10 +93,12 @@ Item {
                         TruePeakStaticLane {
                             objectName: "truePeakLeftLane"
                             Layout.fillHeight: true
+                            Layout.minimumHeight: root.compactForLimiter ? 140 : 270
                             Layout.preferredWidth: root.compactForLimiter ? 117 : 135
                             channelName: root.isMono ? "C" : "L"
                             useFamilyAccent: root.useFamilyAccent
                             familyAccent: root.familyAccent
+                            compactVertical: root.compactForLimiter
                             // Same BYP Meter L/R palette even when surrounding
                             // M17 editor/chrome is Dynamics Copper.
                             preserveMeterBarPalette: root.showLimiterControls
@@ -109,11 +117,13 @@ Item {
                         TruePeakStaticLane {
                             objectName: "truePeakRightLane"
                             Layout.fillHeight: true
+                            Layout.minimumHeight: root.compactForLimiter ? 140 : 270
                             Layout.preferredWidth: root.compactForLimiter ? 117 : 135
                             visible: !root.isMono
                             channelName: "R"
                             useFamilyAccent: root.useFamilyAccent
                             familyAccent: root.familyAccent
+                            compactVertical: root.compactForLimiter
                             // Same BYP Meter L/R palette even when surrounding
                             // M17 editor/chrome is Dynamics Copper.
                             preserveMeterBarPalette: root.showLimiterControls

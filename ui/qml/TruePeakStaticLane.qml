@@ -20,6 +20,10 @@ Rectangle {
     // in BYP and ON. M17 frame/control accents remain Dynamics Copper in ON;
     // real >0 dBTP keeps its independent coral alert semantics.
     property bool preserveMeterBarPalette: false
+    // M17 can shrink the same two physical L/R lanes when a real Main
+    // window has less height than the legacy isolated 548px capture.
+    // M16 keeps its original 120px minimum scale track and layout.
+    property bool compactVertical: false
     radius: 7
     color: "#091C2B"
     border.color: root.useFamilyAccent ? root.familyAccent : "#24425A"
@@ -63,7 +67,7 @@ Rectangle {
         Item {
             Layout.fillHeight: true
             Layout.fillWidth: true
-            Layout.minimumHeight: 120
+            Layout.minimumHeight: root.compactVertical ? 75 : 120
             Rectangle {
                 id: track
                 objectName: "truePeakTrack"
