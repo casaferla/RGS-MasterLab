@@ -16,6 +16,10 @@ Rectangle {
     property string meterKind: "FULL RESOURCE"
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
+    // The shared M17 Meter bar always uses the Meter/Analysis fill, BOTH
+    // in BYP and ON. M17 frame/control accents remain Dynamics Copper in ON;
+    // real >0 dBTP keeps its independent coral alert semantics.
+    property bool preserveMeterBarPalette: false
     radius: 7
     color: "#091C2B"
     border.color: root.useFamilyAccent ? root.familyAccent : "#24425A"
@@ -94,11 +98,13 @@ Rectangle {
                         GradientStop {
                             position: 0.0
                             color: root.aboveDigitalZero ? "#F27683"
+                                : root.preserveMeterBarPalette ? "#6CBCCF"
                                 : root.useFamilyAccent ? root.familyAccent : "#9BBED2"
                         }
                         GradientStop {
                             position: 1.0
                             color: root.aboveDigitalZero ? "#B64A53"
+                                : root.preserveMeterBarPalette ? Qt.darker("#6CBCCF", 1.35)
                                 : root.useFamilyAccent ? Qt.darker(root.familyAccent, 1.35) : "#527B9F"
                         }
                     }

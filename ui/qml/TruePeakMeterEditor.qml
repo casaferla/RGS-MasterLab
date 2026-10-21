@@ -81,6 +81,9 @@ Item {
                             channelName: root.isMono ? "C" : "L"
                             useFamilyAccent: root.useFamilyAccent
                             familyAccent: root.familyAccent
+                            // Same BYP Meter L/R palette even when surrounding
+                            // M17 editor/chrome is Dynamics Copper.
+                            preserveMeterBarPalette: root.showLimiterControls
                             reading: root.liveAvailable
                                 ? root.liveProvider.leftText : "—"
                             available: root.liveAvailable
@@ -101,6 +104,9 @@ Item {
                             channelName: "R"
                             useFamilyAccent: root.useFamilyAccent
                             familyAccent: root.familyAccent
+                            // Same BYP Meter L/R palette even when surrounding
+                            // M17 editor/chrome is Dynamics Copper.
+                            preserveMeterBarPalette: root.showLimiterControls
                             reading: root.liveAvailable
                                 && root.measuredChannels === 2
                                 ? root.liveProvider.rightText : "—"
