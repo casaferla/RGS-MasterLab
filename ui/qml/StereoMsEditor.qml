@@ -254,7 +254,13 @@ Item {
                         }
                         Connections {
                             target: root.viewModel
-                            function onTelemetryChanged() { cloud.requestPaint() }
+                            // The full UI status/metrics may update without
+                            // new Grid33 evidence. Repaint only on the dedicated
+                            // heard-density notification; visibility/size have
+                            // their own handlers below.
+                            function onTelemetryDensityChanged() {
+                                cloud.requestPaint()
+                            }
                         }
                         onWidthChanged: requestPaint()
                         onHeightChanged: requestPaint()
