@@ -141,13 +141,12 @@ Item {
             valueColor: root.fullResourceAccent
             reading: root.hasMeasurement
                 ? root.measurementProvider.peakText : "—"
+            // Same bounded text width as the accepted 100px M17 card.
+            // PRE-LIMITER scope is explicit in heading and full tooltip;
+            // long provisional status strings must not overflow the card.
             detail: root.hasMeasurement
                 ? "Peak channel: " + root.measurementProvider.channelText
-                    + (root.limiterControlsIncluded
-                        ? " · before Limiter, not final output" : "")
-                : root.limiterControlsIncluded
-                    ? "No complete pre-limiter measurement; NOT post-Limiter verification"
-                    : "No complete, source-bound measurement"
+                : "No complete, source-bound measurement"
             available: root.hasMeasurement
         }
         TruePeakStatusCard {
