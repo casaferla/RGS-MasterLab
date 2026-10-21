@@ -372,6 +372,20 @@ bool StereoMsViewModel::setDraftWidthPercent(double value)
     if (!p) return false;
     const auto result = dsp::stereo_ms_edit_width_preserving_common_gain(*p, value);
     if (!result) {
+        // A pointer can cross the legal gap between exact Side mute (0%)
+        // and the minimum positive fixed-common-gain Width. The validated
+        // last draft remains authoritative: never paint it red for a DIFFERENT
+        // transient pointer coordinate. Never clamp, commit or change audio.
+        // Exact numeric entry (no fast interaction) still reports the full
+        // error with its canonical representable bounds.
+        if (fastInteractionActive_ && std::isfinite(value)
+            && value >= 0.0) {
+            if (validationField_ == QStringLiteral("widthPercent")) {
+                clear_error();
+                emit changed();
+            }
+            return false;
+        }
         // The editor's normal 0..200% slider range is not the hard DSP
         // domain. On a finite, positive unrepresentable request, expose
         // the true fixed-common-gain interval derived by the canonical DSP

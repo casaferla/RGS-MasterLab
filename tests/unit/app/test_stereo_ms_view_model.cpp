@@ -30,6 +30,7 @@ class StereoMsViewModelTest final : public QObject {
 private slots:
     void optInOnlyAndExactWidthMacro();
     void rangeOver200AndUnrepresentableEditsRemainAtomic();
+    void widthPointerGapKeepsLegalDraftAndNumericStrict();
     void draftsAreTransactionalAndCommitOnce();
     void modesMuteAndBypassPreserveStoredValues();
     void responsePointsRespectDraftAndActualSignalFormat();
@@ -486,6 +487,55 @@ void StereoMsViewModelTest::rangeOver200AndUnrepresentableEditsRemainAtomic()
     vm.cancelDraft();
     QVERIFY(vm.validation_message().isEmpty());
     QCOMPARE(*state.value()->stereo_ms_parameters(), *narrow.value());
+}
+
+void StereoMsViewModelTest::widthPointerGapKeepsLegalDraftAndNumericStrict()
+{
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chainId = *core::Uuid::parse(
+        "58000000-0000-4000-8000-000000000001").value();
+    const auto ms = id("58000000-0000-4000-8000-000000000040");
+    // Common gain +9 => legal strictly positive Width begins at ~50.1187%.
+    const auto gains = dsp::StereoMsParameters::create(
+        9.0, 9.0, false, dsp::MonoBassMode::LR24, 120.0, 35.0);
+    QVERIFY(gains);
+    auto state = MasteringChainState::create_with_stereo_ms(
+        *registry.value(), chainId,
+        id("58000000-0000-4000-8000-000000000010"),
+        id("58000000-0000-4000-8000-000000000020"),
+        id("58000000-0000-4000-8000-000000000030"),
+        ms, *gains.value(), false);
+    QVERIFY(state);
+    MasteringPreviewController preview(state.value());
+    StereoMsViewModel vm(state.value(), &preview);
+    vm.setSignalFormat(48000.0, 2);
+    QCOMPARE(vm.draft_width_percent(), 100.0);
+    vm.setFastInteraction(true);
+    QVERIFY(!vm.setDraftWidthPercent(25.0));
+    QVERIFY(vm.validation_message().isEmpty());
+    QCOMPARE(vm.draft_width_percent(), 100.0);
+    QCOMPARE(preview.preview_generation(), std::uint64_t{0});
+    // Exact 0% is a legal Side-mute endpoint, not a graph-drawing failure.
+    QVERIFY(vm.setDraftWidthPercent(0.0));
+    QCOMPARE(vm.draft_width_percent(), 0.0);
+    QVERIFY(!vm.setDraftWidthPercent(20.0));
+    QCOMPARE(vm.draft_width_percent(), 0.0);
+    QVERIFY(vm.validation_message().isEmpty());
+    QVERIFY(vm.commitDraft());
+    vm.setFastInteraction(false);
+    QCOMPARE(preview.preview_generation(), std::uint64_t{1});
+    QVERIFY(state.value()->stereo_ms_parameters()->side_muted());
+    QVERIFY(vm.validation_message().isEmpty());
+    // Ordinary typed nonrepresentable input MUST remain visibly invalid and
+    // must not modify the accepted common gain, mute bit or sonic Preview.
+    QVERIFY(!vm.setDraftWidthPercent(25.0));
+    QCOMPARE(vm.validation_field(), QStringLiteral("widthPercent"));
+    QVERIFY(vm.validation_message().contains(QStringLiteral("50.1187")));
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(preview.preview_generation(), std::uint64_t{1});
+    vm.cancelDraft();
+    QVERIFY(vm.validation_message().isEmpty());
 }
 
 void StereoMsViewModelTest::draftsAreTransactionalAndCommitOnce()
