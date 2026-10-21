@@ -132,13 +132,22 @@ Item {
                 : root.compactRail ? 68 : 108
             Layout.maximumHeight: root.limiterControlsIncluded ? 100 : -1
             Layout.minimumHeight: root.limiterControlsIncluded ? 100 : 66
-            heading: "COMPLETE PROCESSED RESOURCE"
+            // The complete-source M16 analysis does NOT become a complete
+            // post-M17 peak certificate when Ceiling changes. Keep it
+            // independent from verified post-limiter RECENT/HOLD evidence.
+            heading: root.limiterControlsIncluded
+                ? "COMPLETE PRE-LIMITER TP"
+                : "COMPLETE PROCESSED RESOURCE"
             valueColor: root.fullResourceAccent
             reading: root.hasMeasurement
                 ? root.measurementProvider.peakText : "—"
             detail: root.hasMeasurement
                 ? "Peak channel: " + root.measurementProvider.channelText
-                : "No complete, source-bound measurement"
+                    + (root.limiterControlsIncluded
+                        ? " · before Limiter, not final output" : "")
+                : root.limiterControlsIncluded
+                    ? "No complete pre-limiter measurement; NOT post-Limiter verification"
+                    : "No complete, source-bound measurement"
             available: root.hasMeasurement
         }
         TruePeakStatusCard {

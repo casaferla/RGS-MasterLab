@@ -38,6 +38,16 @@ Item {
         && liveProvider.channelCount > 0 ? liveProvider.channelCount
         : root.hasMeasurement ? root.measurementProvider.measuredChannelCount : 0
     readonly property bool isMono: root.measuredChannels === 1
+    // Read only the canonical installed-audio status. While the user has
+    // requested ON but the candidate is Preparing, this editor still meters
+    // MANUAL pre-limiter PCM; never relabel it as final post-limiter audio.
+    readonly property bool postLimiterInstalled: root.showLimiterControls
+        && root.limiterViewModel
+        && root.limiterViewModel.audioStatus === "ACTIVE · AUDITION UNQUALIFIED"
+    readonly property string liveScopeHeading: !root.showLimiterControls
+        ? "LIVE PROCESSED TRUE PEAK"
+        : root.postLimiterInstalled ? "LIVE POST-LIMITER TRUE PEAK"
+        : "LIVE PRE-LIMITER TRUE PEAK"
 
     // Canonical minimum window is a fully visible editor, never a scroller.
     // The Qt layout itself distributes the available pixel height.
@@ -62,7 +72,7 @@ Item {
                     anchors.margins: 9
                     spacing: 5
                     Text {
-                        text: "LIVE PROCESSED TRUE PEAK"
+                        text: root.liveScopeHeading
                         color: root.useFamilyAccent ? root.familyAccent : "#B3C9D9"
                         font.family: "Segoe UI"
                         font.pixelSize: 11
