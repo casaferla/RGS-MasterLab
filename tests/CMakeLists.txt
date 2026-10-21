@@ -786,6 +786,13 @@ foreach(m17_test IN ITEMS parameters core checkpoint verification)
         target_link_libraries("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
             PRIVATE rgsml_analysis)
     endif()
+    if(m17_test STREQUAL "verification")
+        # The optional stage-timing regression invokes the actual terminal
+        # candidate renderer. Link ONLY its test executable to render;
+        # never introduce production rgsml_dsp -> rgsml_render coupling.
+        target_link_libraries("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+            PRIVATE rgsml_render)
+    endif()
     # Detector signed-grid tests share the protected M16 strict arithmetic
     # requirement; source-file-scoped flags, no global DSP semantic changes.
     if(MSVC)
