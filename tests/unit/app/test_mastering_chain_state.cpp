@@ -1558,7 +1558,39 @@ void MasteringChainStateTest::terminalPrivateEndToEndRenderInstallAndRollback()
     QCOMPARE(prefixReads,2);
     --device.seekSerial; // Restore fake owner for later independent cases.
 
+    // A PAUSED terminal retains only the already consumed immutable
+    // OUTPUT_RATE prefix. Its sink clock is independently bounded by the
+    // worker ledger, and neither a new sample nor LIVE TP is invented.
     device.state=core::PlaybackState::PAUSED;
+    prefixReads=0;
+    auto pausedPrivate=observe_private_terminal_consumed_output(product,
+        [&](std::optional<std::uint64_t>)
+            -> core::Result<Prefix> {
+            ++prefixReads;
+            return core::Result<Prefix>::success(consumed);
+        });
+    QVERIFY(pausedPrivate);
+    QCOMPARE(prefixReads,2);
+    QCOMPARE(pausedPrivate.value()->realizationId,core::RealizationId{7200});
+    QCOMPARE(pausedPrivate.value()->consumedOutputWatermarkExclusive,
+             std::int64_t{12});
+    QCOMPARE(pausedPrivate.value()->firstTerminalFrame,std::int64_t{160});
+    QCOMPARE(pausedPrivate.value()->lastTerminalFrameExclusive,std::int64_t{172});
+
+    // A PLAYING/PAUSED transition between the two fenced worker reads
+    // invalidates the observation; no stale HOLD/GR context survives it.
+    prefixReads=0;
+    auto switchedState=observe_private_terminal_consumed_output(product,
+        [&](std::optional<std::uint64_t> expected)
+            -> core::Result<Prefix> {
+            ++prefixReads;
+            if(expected)device.state=core::PlaybackState::PLAYING;
+            return core::Result<Prefix>::success(consumed);
+        });
+    QVERIFY(!switchedState);
+    QCOMPARE(prefixReads,2);
+    // STOPPED is still rejected before any worker read.
+    device.state=core::PlaybackState::STOPPED;
     prefixReads=0;
     QVERIFY(!observe_private_terminal_consumed_output(product,
         [&](std::optional<std::uint64_t>)
