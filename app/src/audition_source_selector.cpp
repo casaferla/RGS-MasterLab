@@ -135,10 +135,17 @@ AuditionSourceSelector::capture_terminal_activation_intent() const
         return core::Result<I>::failure(core::Error{
             core::ErrorCode::InvalidState,message});
     };
-    if(!playback_ || activeTarget_!=AuditionTarget::PROCESSED
-       ||!prepared_ || !processed_ || !processedRealizationId_
-       ||processedRealizationId_->value==0)
-        return refused("M17 activation needs selected, accepted full PROCESSED manual.");
+    // Distinguish target state from published manual availability. Both
+    // are required and neither is permission to borrow an old device
+    // realization. The coordinator will surface this precise diagnostic,
+    // while every later SOURCE and sink-ownership guard remains unchanged.
+    if (!playback_)
+        return refused("M17 activation has no playback transport.");
+    if (activeTarget_ != AuditionTarget::PROCESSED)
+        return refused("M17 activation requires PROCESSED audition target.");
+    if (!prepared_ || !processed_ || !processedRealizationId_
+        || processedRealizationId_->value == 0)
+        return refused("M17 activation has no accepted complete PROCESSED manual owner.");
     const auto& manual=*processed_;
     const auto range=manual.render_window();
     if(range.begin().value()!=0
