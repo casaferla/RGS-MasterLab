@@ -14,6 +14,10 @@ Rectangle {
     readonly property color cutoffHue: "#2FD98F"
     readonly property color lowHue: "#FFD84A"
     readonly property bool ready: viewModel && viewModel.widthResponseStatus === "READY"
+    // Both graph handles and all five sliders use the shared ViewModel
+    // fast-interaction boundary. The last verified curve is intentionally
+    // frozen until release: dashed/faded is a visual DRAFT cue, not audio.
+    readonly property bool curvePending: !!viewModel && viewModel.fastInteractionActive
     readonly property var responsePoints: ready ? viewModel.widthResponsePoints : []
     readonly property real minFrequency: 20
     readonly property real maxFrequency: responsePoints.length > 1
@@ -137,6 +141,8 @@ Rectangle {
         objectName: "stereoMsResponseCurve"
         anchors.fill: parent
         visible: root.ready
+        // Opacity is a cheap scenegraph operation, not a curve recompute.
+        opacity: root.curvePending ? 0.38 : 1.0
         onPaint: {
             const ctx = getContext("2d")
             ctx.clearRect(0, 0, width, height)
@@ -151,6 +157,7 @@ Rectangle {
             }
             ctx.strokeStyle = "#64D2B4"
             ctx.lineWidth = 2
+            ctx.setLineDash(root.curvePending ? [7, 5] : [])
             ctx.stroke()
         }
         Connections {
@@ -165,6 +172,9 @@ Rectangle {
             function onWidthChanged() { responseCanvas.requestPaint() }
             function onHeightChanged() { responseCanvas.requestPaint() }
             function onReadyChanged() { responseCanvas.requestPaint() }
+            // One repaint at gesture start/end changes only line style.
+            // NEVER reconnect this to the per-pointer changed() signal.
+            function onCurvePendingChanged() { responseCanvas.requestPaint() }
         }
     }
 
