@@ -49,10 +49,32 @@ def main():
                 current_test = match.group(1)
             if (not failed_tests or current_test in failed_tests) and PAT.search(line):
                 indexes.update(range(max(0, i - 2), min(len(rows), i + 4)))
-        for i in sorted(indexes)[:95]:
+        # CTest's failed QtTest may have no PAT-matching assertion at all
+        # (e.g. an early process abort). Always retain a bounded, *only*
+        # failing-test block, not the entire LastTest.log. This uses the
+        # local runner copy; external log retrieval is never needed.
+        failing_blocks = set()
+        if failed_tests:
+            boundaries = []
+            active_name = None
+            active_start = 0
+            for i, line in enumerate(rows):
+                m = test_marker.match(line)
+                if m and m.group(1) != active_name:
+                    if active_name is not None:
+                        boundaries.append((active_name, active_start, i))
+                    active_name = m.group(1)
+                    active_start = i
+            if active_name is not None:
+                boundaries.append((active_name, active_start, len(rows)))
+            for name, begin, end in boundaries:
+                if name in failed_tests:
+                    # At most the first 55 lines per explicitly failed test.
+                    failing_blocks.update(range(begin, min(end, begin + 55)))
+        for i in sorted(indexes | failing_blocks)[:110]:
             result.append(f"L{i + 1}: {rows[i][:190]}")
-        if not indexes:
-            result.append("No assertion pattern found in failed CTest test blocks.")
+        if not indexes and not failing_blocks:
+            result.append("No assertion pattern or failed-test block found.")
     else:
         result.append("Local CTest LastTest.log unavailable.")
     # Qt UI smoke runs DIRECTLY before CTest. If it fails, no CTest
