@@ -420,7 +420,7 @@ void TerminalPrivateGrProjectionTest::postLimiterMeterRejectsUnverifiedAndUsesAc
     QVERIFY(limiter);
     QVERIFY(limiter.value()->set_user_bypass(false));
     const auto rate=core::SampleRate::create(48000);
-    const auto frames=core::FrameCount::create(5760); // 120 ms
+    const auto frames=core::FrameCount::create(52800); // 1.1s; first proof only 120ms
     const auto block=core::FrameCount::create(257);
     QVERIFY(rate && frames && block);
     const auto format=audio::AudioFormat::create(
@@ -433,7 +433,7 @@ void TerminalPrivateGrProjectionTest::postLimiterMeterRejectsUnverifiedAndUsesAc
     for(std::size_t channel=0;channel<2;++channel) {
         const auto lane=pcm.value()->mutable_view().channel(channel);
         QVERIFY(lane);
-        for(std::size_t i=0;i<5760;++i)
+        for(std::size_t i=0;i<52800;++i)
             (*lane.value())[i]=channel==0 ? 0.72 : -0.57;
     }
     const auto requested=render::RenderRequest::create(
@@ -473,6 +473,44 @@ void TerminalPrivateGrProjectionTest::postLimiterMeterRejectsUnverifiedAndUsesAc
     QCOMPARE(stableSinkSignals.size(),0);
     QVERIFY(meter.recent_available());
     QCOMPARE(meter.channel_count(),2);
+    // The same independently owned terminal must prove a FULL one-second
+    // uninterrupted consumed history before HOLD becomes available.
+    // Advance in <=500ms increments so the bounded worker cannot
+    // legitimately discard backlog as unproven FIR context.
+    for(const std::int64_t end : {19000,39000,52800}) {
+        const auto beforeSignals=stableSinkSignals.size();
+        proof->consumedOutputWatermarkExclusive=end;
+        proof->lastTerminalFrameExclusive=end;
+        QTRY_VERIFY_WITH_TIMEOUT(
+            stableSinkSignals.size()>beforeSignals,5000);
+        QVERIFY(meter.recent_available());
+        if(end<48000) QVERIFY(!meter.hold_available());
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(meter.hold_available(),5000);
+    QVERIFY(meter.hold_text()!=QStringLiteral("UNAVAILABLE"));
+    QVERIFY(meter.left_hold_level()>=0.0);
+    QVERIFY(meter.right_hold_level()>=0.0);
+    const auto signalsAtHold=stableSinkSignals.size();
+    QTest::qWait(160);
+    QCOMPARE(stableSinkSignals.size(),signalsAtHold);
+    QVERIFY(meter.hold_available()); // PAUSED: no re-FIR or false expiry
+
+    // A new seek/output generation has no inherited one-second HOLD.
+    // The consumed tail can be recent only after fresh FIR support; the
+    // previous epoch's hold must disappear even on the same immutable PCM.
+    proof->playbackGeneration=18;
+    proof->firstTerminalFrame=50000;
+    proof->lastTerminalFrameExclusive=52800;
+    // Wait for the new epoch's off-thread FIR completion, not merely
+    // the synchronous clear signal emitted at the start of the poll.
+    QTRY_VERIFY_WITH_TIMEOUT(
+        meter.status_text().startsWith(QStringLiteral("PARTIAL")),5000);
+    QVERIFY(stableSinkSignals.size()>signalsAtHold);
+    QVERIFY(!meter.hold_available());
+    const auto afterResetSignals=stableSinkSignals.size();
+    QTest::qWait(140);
+    QCOMPARE(stableSinkSignals.size(),afterResetSignals);
+    QVERIFY(!meter.hold_available());
     proof.reset();
     QTRY_VERIFY_WITH_TIMEOUT(!meter.recent_available(),3000);
     QVERIFY(!meter.hold_available());
