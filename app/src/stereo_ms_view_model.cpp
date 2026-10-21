@@ -599,17 +599,24 @@ void StereoMsViewModel::refreshTelemetry()
     if (!sameDensity) {
         buckets.reserve(static_cast<qsizetype>(history.size()));
         for (const auto& b : history) {
-        QVariantMap item;
-        item.insert(QStringLiteral("beginFrame"), static_cast<qlonglong>(b.begin_frame));
-        item.insert(QStringLiteral("endFrame"), static_cast<qlonglong>(b.end_frame));
-        item.insert(QStringLiteral("frameCount"), static_cast<qulonglong>(b.frame_count));
-        item.insert(QStringLiteral("validFrameCount"), static_cast<qulonglong>(b.valid_frame_count));
-        item.insert(QStringLiteral("zeroVectorCount"), static_cast<qulonglong>(b.zero_vector_count));
-        item.insert(QStringLiteral("overflowCount"), static_cast<qulonglong>(b.overflow_count));
-        QVariantList occupancy;
-        occupancy.reserve(static_cast<qsizetype>(b.occupancy.size()));
-        for (const auto n : b.occupancy) occupancy.append(static_cast<qulonglong>(n));
-        item.insert(QStringLiteral("occupancy"), occupancy);
+            QVariantMap item;
+            item.insert(QStringLiteral("beginFrame"),
+                        static_cast<qlonglong>(b.begin_frame));
+            item.insert(QStringLiteral("endFrame"),
+                        static_cast<qlonglong>(b.end_frame));
+            item.insert(QStringLiteral("frameCount"),
+                        static_cast<qulonglong>(b.frame_count));
+            item.insert(QStringLiteral("validFrameCount"),
+                        static_cast<qulonglong>(b.valid_frame_count));
+            item.insert(QStringLiteral("zeroVectorCount"),
+                        static_cast<qulonglong>(b.zero_vector_count));
+            item.insert(QStringLiteral("overflowCount"),
+                        static_cast<qulonglong>(b.overflow_count));
+            QVariantList occupancy;
+            occupancy.reserve(static_cast<qsizetype>(b.occupancy.size()));
+            for (const auto n : b.occupancy)
+                occupancy.append(static_cast<qulonglong>(n));
+            item.insert(QStringLiteral("occupancy"), occupancy);
             buckets.append(item);
         }
     }

@@ -17,6 +17,7 @@
 #include <optional>
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace rgsml::app {
 
