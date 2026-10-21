@@ -23,6 +23,7 @@ class TerminalPrivateGrProjectionTest final : public QObject {
 private slots:
     void gainWitnessRateMatrix_data();
     void gainWitnessRateMatrix();
+    void gainWitnessProjectionBoundedTail();
     void qmlPresentationFailClosed();
     void postLimiterMeterRejectsUnverifiedAndUsesActualOutputPcm();
 };
@@ -169,6 +170,78 @@ void TerminalPrivateGrProjectionTest::gainWitnessRateMatrix()
     auto bypProof=proof;
     bypProof.owner=bypStage;
     QVERIFY(!app::project_private_terminal_gr(bypProof));
+}
+
+
+void TerminalPrivateGrProjectionTest::gainWitnessProjectionBoundedTail()
+{
+    using namespace rgsml;
+    const auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chain=dsp::ProcessingChain::create(*registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(chain);
+    const auto instance=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("7f000000-0000-4000-8000-000000000127").value());
+    QVERIFY(instance);
+    auto limiter=app::TerminalLimiterState::create_default(
+        *registry.value(),*instance.value());
+    QVERIFY(limiter);
+    QVERIFY(limiter.value()->set_user_bypass(false));
+    const auto rate=core::SampleRate::create(48000);
+    const auto count=core::FrameCount::create(48017); // > one-second GUI tail
+    const auto block=core::FrameCount::create(1024);
+    QVERIFY(rate&&count&&block);
+    const auto format=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto source=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*count.value());
+    QVERIFY(source);
+    for(std::size_t channel=0;channel<2;++channel) {
+        auto lane=source.value()->mutable_view().channel(channel);
+        QVERIFY(lane);
+        for(std::size_t i=0;i<48017;++i)
+            (*lane.value())[i]=(i==0 ? 3.0 : 0.125)
+                *(channel==0 ? 1.0 : -1.0);
+    }
+    const auto request=render::RenderRequest::create(
+        source.value()->view(),source.value()->view().absolute_range(),
+        *chain.value(),{},*block.value());
+    QVERIFY(request);
+    auto manual=render::render_preview(*request.value(),*registry.value());
+    QVERIFY(manual);
+    auto owner=std::make_shared<const render::RenderResult>(
+        std::move(*manual.value()));
+    auto rendered=render::render_true_peak_limiter_owned_output_rate_candidate(
+        owner,*chain.value(),*count.value(),chain.value()->revision(),
+        *rate.value(),limiter.value()->chain(),
+        limiter.value()->execution_bindings(),*registry.value(),*block.value());
+    QVERIFY(rendered);
+    const auto stage=std::make_shared<const app::TerminalCandidateGate::StagedCandidate>(
+        app::TerminalCandidateGate::StagedCandidate{
+            std::move(*rendered.value()),core::RealizationId{101},owner});
+    const app::TerminalConsumedOutputEvidence proof{
+        stage,core::RealizationId{102},17,48017,0,48017,0};
+    const auto history=app::project_private_terminal_gr(proof);
+    QVERIFY(history);
+    // Bounded GUI work and real terminal-frame indices, not a remapped
+    // fabricated zero-origin tail. The sound/render still covers 48017 frames.
+    QCOMPARE(history.value()->consumedFrameBegin,std::int64_t{17});
+    QCOMPARE(history.value()->consumedFrameEndExclusive,std::int64_t{48017});
+    QVERIFY(history.value()->buckets.size()<=256);
+    QCOMPARE(history.value()->buckets.front().frameBegin,std::int64_t{17});
+    QCOMPARE(history.value()->buckets.back().frameEndExclusive,
+             std::int64_t{48017});
+    auto narrow=proof;
+    narrow.firstTerminalFrame=47900;
+    const auto narrowHistory=app::project_private_terminal_gr(narrow);
+    QVERIFY(narrowHistory);
+    QCOMPARE(narrowHistory.value()->consumedFrameBegin,std::int64_t{47900});
+    QCOMPARE(narrowHistory.value()->consumedFrameEndExclusive,
+             std::int64_t{48017});
+    QCOMPARE(narrowHistory.value()->buckets.size(),std::size_t{117});
 }
 
 void TerminalPrivateGrProjectionTest::qmlPresentationFailClosed()

@@ -74,8 +74,15 @@ project_private_terminal_gr(const TerminalConsumedOutputEvidence& proof)
        ||proof.lastTerminalFrameExclusive>n
        ||proof.firstTerminalFrame>=proof.lastTerminalFrameExclusive)
         return reject("M17 active gain witness is missing or out of bounds.");
-    const auto begin=proof.firstTerminalFrame;
+    // GR is painted on the GUI control plane on frequent transport ticks.
+    // Scanning the entire consumed programme on each tick is quadratic in
+    // playback duration. Display only the latest one second of CONTIGUOUS
+    // independently consumed gain; the first earlier gap and every owner
+    // guard above remain authoritative. No gain or PCM is recalculated.
     const auto end=proof.lastTerminalFrameExclusive;
+    const auto maximumHistoryFrames=output.output_rate.value();
+    const auto begin=std::max(
+        proof.firstTerminalFrame,end-maximumHistoryFrames);
     const auto length=end-begin;
     constexpr std::int64_t kMaxBuckets=256;
     const auto width=1+(length-1)/kMaxBuckets;

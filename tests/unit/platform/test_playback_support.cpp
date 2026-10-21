@@ -513,6 +513,23 @@ void PlaybackSupportTest::c2D20TerminalSinkConsumedExactOwnerAndNegativeEpochs()
              std::optional{core::RealizationId{9020}});
     QVERIFY(consumed.view().front().handoffPureNewProven);
     QVERIFY(!consumed.certifiedForLiveTruePeak);
+    // The actual Windows worker projection must preserve the same
+    // OUTPUT_RATE chronology. A prefix produced by this service is still
+    // NOT a certified LIVE True Peak measurement.
+    const auto projected=platform::windows::internal::project_c2_prefix(consumed);
+    QCOMPARE(projected.generation,consumed.generation);
+    QCOMPARE(projected.processedWatermarkExclusive,std::int64_t{100});
+    QVERIFY(projected.partitionRepresented);
+    QCOMPARE(projected.count,std::size_t{1});
+    QCOMPARE(projected.slices[0].kind,
+             platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(projected.slices[0].realizationId,
+             std::optional{core::RealizationId{9020}});
+    QCOMPARE(projected.slices[0].sourceBegin,std::optional<std::int64_t>{0});
+    QCOMPARE(projected.slices[0].sourceEnd,std::optional<std::int64_t>{100});
+    QVERIFY(projected.slices[0].handoffPureNewProven);
+    QVERIFY(!projected.certifiedForLiveTruePeak);
+    QVERIFY(!projected.srcRealizationId);
     QCOMPARE(engine.c2_processed_coverage_probe().reason,
              Reason::MISSING_CHRONOLOGICAL_LEDGER);
     QVERIFY(!engine.c2_processed_coverage_probe().completeThroughWatermark);
@@ -560,6 +577,14 @@ void PlaybackSupportTest::c2D20TerminalSinkConsumedExactOwnerAndNegativeEpochs()
     QCOMPARE(looping.view().front().kind, Kind::GAP_UNPROVEN);
     QCOMPARE(looping.view().front().reason, Reason::UNPROVEN_LOOP);
     QVERIFY(!looping.certifiedForLiveTruePeak);
+    const auto loopProjection=
+        platform::windows::internal::project_c2_prefix(looping);
+    QCOMPARE(loopProjection.count,std::size_t{1});
+    QCOMPARE(loopProjection.slices[0].kind,
+             platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN);
+    QCOMPARE(loopProjection.slices[0].reason,
+             platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP);
+    QVERIFY(!loopProjection.certifiedForLiveTruePeak);
 }
 
 void PlaybackSupportTest::adaptedTimelineUsesAbsoluteRateMapping()
