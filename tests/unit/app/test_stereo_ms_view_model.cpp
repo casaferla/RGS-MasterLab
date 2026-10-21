@@ -109,6 +109,11 @@ void StereoMsViewModelTest::fastPointerInteractionDefersGridAndPreviewUntilRelea
         QVERIFY(vm.setDraftWidthPercent(80.0+static_cast<double>(i)));
     QCOMPARE(vm.draft_width_percent(), 99.0);
     QCOMPARE(fast.size(), 20);
+    // Identical sampled coordinates must not trigger extra QML refreshes,
+    // but remain valid and never generate a new preview.
+    QVERIFY(vm.setDraftWidthPercent(99.0));
+    QVERIFY(vm.setDraftMidGainDb(vm.mid_gain_db()));
+    QCOMPARE(fast.size(), 20);
     QCOMPARE(preview.preview_generation(), std::uint64_t{0});
     QTest::qWait(120); // > 3 old 33-ms response intervals
     QCOMPARE(visual.size(), 0);

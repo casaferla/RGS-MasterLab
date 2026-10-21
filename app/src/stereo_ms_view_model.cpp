@@ -272,6 +272,13 @@ bool StereoMsViewModel::stage(
         set_error(field, QString::fromStdString(candidate.error()->message()));
         return false;
     }
+    // Repeated identical slider coordinates are not a new visual draft.
+    // Avoid re-evaluating every numeric/control binding for an unchanged
+    // value; real errors still need to be cleared by the accepted input.
+    if (validationMessage_.isEmpty()) {
+        const auto* current = editing();
+        if (current && *current == *candidate.value()) return true;
+    }
     draft_ = *candidate.value();
     clear_error();
     emit changed();
@@ -382,6 +389,12 @@ bool StereoMsViewModel::setDraftWidthPercent(double value)
             : QString::fromStdString(result.error()->message());
         set_error(QStringLiteral("widthPercent"), reason);
         return false;
+    }
+    // Drag handlers can repeat a coordinate at high pointer sample rates.
+    // A duplicate must not cause a full QML editor refresh.
+    if (validationMessage_.isEmpty()) {
+        const auto* current = editing();
+        if (current && *current == *result.value()) return true;
     }
     draft_ = *result.value();
     clear_error();
