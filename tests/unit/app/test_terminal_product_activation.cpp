@@ -299,8 +299,14 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     vm.setBypass(true);
     QVERIFY(limiter.value()->bypassed());
     QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+    // The newly published MANUAL owner may have a newer SOURCE cue than
+    // the old 800-frame snapshot. The negative rate-probe branch must
+    // preserve the CURRENT exact owner and cursor, not the stale cue.
+    const auto currentManualCue=device->position;
+    const auto currentManualLoop=device->loop;
+    QCOMPARE(currentManualLoop,desiredLoop);
 
-    // Device rate discovery failure MUST preserve the original PCM and
+    // Device rate discovery failure MUST preserve the current MANUAL PCM and
     // visibly revert the module to BYPASS without invented ACTIVE data.
     product.set_preferred_output_rate_probe(
         [](audio::ChannelLayout)->core::Result<core::SampleRate> {
@@ -313,7 +319,8 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
-    QCOMPARE(device->position,core::FrameIndex{800});
+    QCOMPARE(device->position,currentManualCue);
+    QCOMPARE(device->loop,currentManualLoop);
     QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
     QVERIFY(!vm.validation_message().isEmpty());
     QVERIFY(!product.private_id());
