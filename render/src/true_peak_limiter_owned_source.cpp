@@ -36,7 +36,8 @@ render_true_peak_limiter_owned_candidate_impl(
     const dsp::ModuleRegistry& registry,
     core::FrameCount block,
     bool enable_unqualified_src,
-    const TerminalRenderCancel& cancelled)
+    const TerminalRenderCancel& cancelled,
+    TerminalRenderStageTimings* stage_timings)
 {
     using Candidate = TruePeakLimiterOwnedSourceCandidate;
     const auto cancelledResult=[] {
@@ -114,7 +115,7 @@ render_true_peak_limiter_owned_candidate_impl(
     if(!output)return core::Result<Candidate>::failure(*output.error());
     if(cancelled && cancelled()) return cancelledResult();
     auto candidate=render_true_peak_limiter_bound_terminal_candidate(
-        output.value()->pcm.view(),terminal_chain,bindings,registry,block,cancelled);
+        output.value()->pcm.view(),terminal_chain,bindings,registry,block,cancelled,stage_timings);
     if(!candidate)
         return core::Result<Candidate>::failure(*candidate.error());
     if(cancelled && cancelled()) return cancelledResult();
@@ -137,11 +138,13 @@ render_true_peak_limiter_owned_same_rate_candidate(
     std::span<const dsp::ModuleExecutionBinding> bindings,
     const dsp::ModuleRegistry& registry,
     core::FrameCount block,
-    const TerminalRenderCancel& cancelled)
+    const TerminalRenderCancel& cancelled,
+    TerminalRenderStageTimings* stage_timings)
 {
     return render_true_peak_limiter_owned_candidate_impl(
         std::move(manual),manual_chain,full_frames,manual_revision,
-        output_rate,terminal_chain,bindings,registry,block,false,cancelled);
+        output_rate,terminal_chain,bindings,registry,block,false,cancelled,
+        stage_timings);
 }
 
 core::Result<TruePeakLimiterOwnedSourceCandidate>
@@ -155,11 +158,13 @@ render_true_peak_limiter_owned_output_rate_candidate(
     std::span<const dsp::ModuleExecutionBinding> bindings,
     const dsp::ModuleRegistry& registry,
     core::FrameCount block,
-    const TerminalRenderCancel& cancelled)
+    const TerminalRenderCancel& cancelled,
+    TerminalRenderStageTimings* stage_timings)
 {
     return render_true_peak_limiter_owned_candidate_impl(
         std::move(manual),manual_chain,full_frames,manual_revision,
-        output_rate,terminal_chain,bindings,registry,block,true,cancelled);
+        output_rate,terminal_chain,bindings,registry,block,true,cancelled,
+        stage_timings);
 }
 
 core::Result<TruePeakLimiterFinalMasterCandidate>

@@ -36,8 +36,11 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     const dsp::ModuleRegistry& registry,
     core::FrameCount max_block,
     bool bypassed,
-    const TerminalRenderCancel& cancelled)
+    const TerminalRenderCancel& cancelled,
+    TerminalRenderStageTimings* stage_timings)
 {
+    // This optional sidecar is diagnostic-only, never a condition of acceptance.
+    static_cast<void>(stage_timings);
     // Materialize into a private owned candidate. Never publish partial
     // PCM/GR or silently change a source-rate timebase.
     auto rendered=render_true_peak_limiter_terminal_candidate(

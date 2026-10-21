@@ -23,6 +23,16 @@ namespace rgsml::render {
 // This predicate never changes M17 FP math or permits partial PCM publication.
 using TerminalRenderCancel = std::function<bool()>;
 
+// An optional one-job diagnostic sidecar, never read by M17 or the verifier.
+// Microseconds; -1 means the stage was not attempted (e.g. no trim).
+struct TerminalRenderStageTimings final {
+    std::int64_t src_us{-1};
+    std::int64_t m17_core_us{-1};
+    std::int64_t m16_primary_us{-1};
+    std::int64_t verification_trim_us{-1};
+    std::int64_t m16_secondary_us{-1};
+};
+
 // UNQUALIFIED M17 terminal-render integration seam, intentionally separate
 // from SOURCE_PROCESSING_RATE Render Preview. Caller must already own a full,
 // contiguous OUTPUT_RATE resource. This low-level entrypoint does NOT
@@ -82,7 +92,8 @@ render_true_peak_limiter_terminal_candidate(
      const dsp::ModuleRegistry& registry,
      core::FrameCount maximum_block_frames,
      bool bypassed,
-    const TerminalRenderCancel& cancelled = {});
+    const TerminalRenderCancel& cancelled = {},
+    TerminalRenderStageTimings* stage_timings = nullptr);
 
  
 // Tested but UNQUALIFIED bridge from the actual terminal-chain INSTANCE
@@ -106,7 +117,8 @@ render_true_peak_limiter_bound_terminal_candidate(
     std::span<const dsp::ModuleExecutionBinding> immutable_bindings,
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames,
-    const TerminalRenderCancel& cancelled = {});
+    const TerminalRenderCancel& cancelled = {},
+    TerminalRenderStageTimings* stage_timings = nullptr);
 
 
 // First identity-preserving candidate handoff from a complete, OWNED,
@@ -143,7 +155,8 @@ render_true_peak_limiter_owned_same_rate_candidate(
     std::span<const dsp::ModuleExecutionBinding> immutable_terminal_bindings,
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames,
-    const TerminalRenderCancel& cancelled = {});
+    const TerminalRenderCancel& cancelled = {},
+    TerminalRenderStageTimings* stage_timings = nullptr);
 
 // Experimental FULL-rate path: real complete SOURCE_RATE owner -> frozen
 // 44.1<->48 kHz FIR offline materialization -> exact typed M17 terminal.
@@ -160,7 +173,8 @@ render_true_peak_limiter_owned_output_rate_candidate(
     std::span<const dsp::ModuleExecutionBinding> immutable_terminal_bindings,
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames,
-    const TerminalRenderCancel& cancelled = {});
+    const TerminalRenderCancel& cancelled = {},
+    TerminalRenderStageTimings* stage_timings = nullptr);
 
 
 // UNQUALIFIED FINAL-MASTER rate contract, independent of the Windows device.
