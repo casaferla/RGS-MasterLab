@@ -17,6 +17,14 @@ Item {
     property bool limiterSonicControlsEnabled: false
     property var limiterViewModel: null
     property int lowerControlBandHeight: 198
+    // Continuous vertical fit into actual Main workspace. All canonical
+    // >=548px heights remain byte-identical to the accepted M17 layout.
+    readonly property int m17ReadoutHeight: Math.min(100, Math.max(68,
+        Math.floor((height - lowerControlBandHeight - 44) / 3)))
+    readonly property int m17CeilingHeight: Math.min(100, Math.max(70,
+        Math.round(70 + (lowerControlBandHeight - 145) * 30 / 53)))
+    readonly property int m17TrimHeight:
+        lowerControlBandHeight - m17CeilingHeight - 6
     readonly property string provenanceDetails: root.measurementProvider
         ? root.measurementProvider.stateText + "\n"
             + root.measurementProvider.qualificationText + "\n"
@@ -82,10 +90,10 @@ Item {
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.limiterControlsIncluded ? 100
+            Layout.preferredHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight
                 : root.compactRail ? 68 : 108
-            Layout.maximumHeight: root.limiterControlsIncluded ? 100 : -1
-            Layout.minimumHeight: root.limiterControlsIncluded ? 100 : 66
+            Layout.maximumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : -1
+            Layout.minimumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : 66
             heading: "RECENT / LIVE TRUE PEAK"
             reading: root.liveProvider && root.liveProvider.recentAvailable
                 ? root.liveProvider.peakText : "UNAVAILABLE"
@@ -104,10 +112,10 @@ Item {
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.limiterControlsIncluded ? 100
+            Layout.preferredHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight
                 : root.compactRail ? 68 : 108
-            Layout.maximumHeight: root.limiterControlsIncluded ? 100 : -1
-            Layout.minimumHeight: root.limiterControlsIncluded ? 100 : 66
+            Layout.maximumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : -1
+            Layout.minimumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : 66
             heading: "SHORT HOLD / 1 SECOND"
             keyColor: "#F2C66F"
             valueColor: "#F2C66F"
@@ -128,10 +136,10 @@ Item {
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.limiterControlsIncluded ? 100
+            Layout.preferredHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight
                 : root.compactRail ? 68 : 108
-            Layout.maximumHeight: root.limiterControlsIncluded ? 100 : -1
-            Layout.minimumHeight: root.limiterControlsIncluded ? 100 : 66
+            Layout.maximumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : -1
+            Layout.minimumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : 66
             // The complete-source M16 analysis does NOT become a complete
             // post-M17 peak certificate when Ceiling changes. Keep it
             // independent from verified post-limiter RECENT/HOLD evidence.
@@ -223,8 +231,8 @@ Item {
                 ToolTip.text: "True Peak Ceiling is retained, but cannot be edited while bypassed."
                 ToolTip.visible: ceilingCardTooltipDwell.ready
                 ToolTip.delay: 0
-                Layout.minimumHeight: 100
-                Layout.preferredHeight: 100
+                Layout.minimumHeight: root.m17CeilingHeight
+                Layout.preferredHeight: root.m17CeilingHeight
                 radius: 6
                 color: "#10273A"
                 border.color: root.familyAccent
@@ -267,8 +275,8 @@ Item {
             Rectangle {
                 objectName: "m17VerificationTrim"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 92
-                Layout.minimumHeight: 92
+                Layout.preferredHeight: root.m17TrimHeight
+                Layout.minimumHeight: root.m17TrimHeight
                 radius: 6
                 color: "#081521"
                 border.color: root.familyAccent
