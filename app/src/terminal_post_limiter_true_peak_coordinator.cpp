@@ -51,6 +51,9 @@ void TerminalPostLimiterTruePeakCoordinator::clear(bool attempted, QString diagn
     traversal_.reset();
     wrap_.reset();
     owner_.reset();
+    scheduledOutputWatermark_.reset();
+    scheduledFirstTerminalFrame_.reset();
+    scheduledLastTerminalFrame_.reset();
     status_=!attempted ? QStringLiteral("NOT MONITORED")
         :diagnostic.isEmpty() ? QStringLiteral("GAP / UNAVAILABLE")
                               :std::move(diagnostic);
@@ -116,6 +119,20 @@ void TerminalPostLimiterTruePeakCoordinator::poll()
         wrap_=proof.loopWrapCount;
         channels_=channels;
     }
+    // A paused sink repeats the same authenticated owner/generation/suffix
+    // every 50 ms. Observe and validate it as before, but do not launch
+    // duplicate FIR work or repaint for a numerically unchanged snapshot.
+    // Any new output watermark, seek/traversal, or suffix reset is processed.
+    if(scheduledOutputWatermark_
+        ==std::optional{proof.consumedOutputWatermarkExclusive}
+       &&scheduledFirstTerminalFrame_
+        ==std::optional{proof.firstTerminalFrame}
+       &&scheduledLastTerminalFrame_
+        ==std::optional{proof.lastTerminalFrameExclusive})
+        return;
+    scheduledOutputWatermark_=proof.consumedOutputWatermarkExclusive;
+    scheduledFirstTerminalFrame_=proof.firstTerminalFrame;
+    scheduledLastTerminalFrame_=proof.lastTerminalFrameExclusive;
     const auto serial=++serial_;
     {
         std::lock_guard lock(mutex_);

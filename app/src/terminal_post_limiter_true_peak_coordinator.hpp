@@ -88,6 +88,11 @@ private:
     std::uint64_t serial_{0},epoch_{0};
     std::optional<core::RealizationId> id_;
     std::optional<std::uint64_t> generation_,seek_,traversal_,wrap_;
+    // GUI-only FIR scheduling cache, scoped to the exact checked epoch.
+    // clear() invalidates it on GAP, seek, wrap or device owner retirement.
+    std::optional<std::int64_t> scheduledOutputWatermark_;
+    std::optional<std::int64_t> scheduledFirstTerminalFrame_;
+    std::optional<std::int64_t> scheduledLastTerminalFrame_;
     std::shared_ptr<const TerminalCandidateGate::StagedCandidate> owner_;
     std::mutex mutex_;
     std::condition_variable cv_;

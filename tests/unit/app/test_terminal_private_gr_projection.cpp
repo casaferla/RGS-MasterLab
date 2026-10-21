@@ -464,6 +464,15 @@ void TerminalPrivateGrProjectionTest::postLimiterMeterRejectsUnverifiedAndUsesAc
     QVERIFY(meter.left_text()!=QStringLiteral("—"));
     QVERIFY(meter.right_text()!=QStringLiteral("—"));
     QVERIFY(!meter.hold_available()); // 120 ms does not prove 1s hold.
+    QSignalSpy stableSinkSignals(
+        &meter,&app::TerminalPostLimiterTruePeakCoordinator::changed);
+    QVERIFY(stableSinkSignals.isValid());
+    QTest::qWait(180);
+    // An unchanged but still authenticated consumed prefix (e.g. PAUSED)
+    // must not continuously re-run M16 FIR or redraw the editor.
+    QCOMPARE(stableSinkSignals.size(),0);
+    QVERIFY(meter.recent_available());
+    QCOMPARE(meter.channel_count(),2);
     proof.reset();
     QTRY_VERIFY_WITH_TIMEOUT(!meter.recent_available(),3000);
     QVERIFY(!meter.hold_available());
