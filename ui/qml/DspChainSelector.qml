@@ -14,6 +14,23 @@ Rectangle {
     property var gainViewModel: null
     property var eqViewModel: null
 
+    // Fit the fixed-width chain row without truncating semantic words.
+    // Diagnostic/ownership detail stays in the stationary-hover tooltip;
+    // this is presentation only and never changes the real M17 state.
+    function readableState(moduleAdapter) {
+        if (!moduleAdapter) return ""
+        const state = moduleAdapter.stateText || ""
+        if (moduleAdapter.editorContentKey !== "TRUE_PEAK_LIMITER")
+            return state
+        if (state.startsWith("ERROR")) return "Error · Bypass"
+        if (state.startsWith("ACTIVE")) return "Limiter active"
+        if (state.startsWith("Preparing ·")) return state
+        if (state.startsWith("Preparing") || state.startsWith("RENDERING"))
+            return "Preparing audio"
+        if (state.startsWith("BYPASS")) return "Manual audio"
+        return state
+    }
+
     // Generic active row lookup for host Escape/focus management
     readonly property Item activeRow: {
         var idx = root.adapterModel ? root.adapterModel.selectedIndex : root.selectedIndex
@@ -213,12 +230,26 @@ Rectangle {
                                 Layout.fillWidth: true
                                 Layout.minimumWidth: 0
                                 Layout.alignment: Qt.AlignLeft
-                                elide: Text.ElideRight
-                                text: rowItem.moduleAdapter ? rowItem.moduleAdapter.stateText : ""
+                                // Never show an ellipsis in the chain state.
+                                // A concise human label fits the canonical
+                                // 164px column; diagnostics remain discoverable.
+                                wrapMode: Text.WordWrap
+                                elide: Text.ElideNone
+                                text: root.readableState(rowItem.moduleAdapter)
                                 color: "#7A8E9E"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
                                 visible: true
+                                ToolTip.text: rowItem.moduleAdapter
+                                    ? rowItem.moduleAdapter.stateText : ""
+                                ToolTip.visible: chainStateTooltipDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: chainStateTooltipDwell
+                                    anchors.fill: parent
+                                    canShow: !!rowItem.moduleAdapter
+                                        && rowItem.moduleAdapter.stateText.length > 0
+                                }
                             }
                         }
 
