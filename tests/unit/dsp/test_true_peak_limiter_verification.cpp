@@ -1,4 +1,5 @@
 #include "../../oracles/true_peak_limiter/core_test_support.hpp"
+#include "internal/true_peak_limiter_state.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/dsp/module_descriptor.hpp>
@@ -183,6 +184,7 @@ private slots:
     void fullResourceSixRateChunkMatrixRemainsBitIdentical();
     void fullResourceResumeGatesAreBitwiseIdentical();
     void boundedActualM17CostProbe();
+    void boundedLookaheadMemoizationProbe();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -1008,6 +1010,140 @@ void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
                 if(summary)summary<<"| "<<fs<<" Hz | "<<ceiling
                     <<" dBTP | "<<fineUs/1000.0<<" ms | "
                     <<coarseUs/1000.0<<" ms | "<<ratio<<"x |\n";
+            }
+        }
+    }
+}
+
+
+void TruePeakLimiterVerificationTest::boundedLookaheadMemoizationProbe()
+{
+    // EXPERIMENTAL TEST ONLY. The M17 controller is unmodified. Compare the
+    // original per-event demand_db/log10 + Hann/cos attack-floor scan against
+    // a cache of the SAME binary64 expressions, in the SAME event order.
+    // Identity of attack floors is necessary, not sufficient, for any
+    // future production qualification. Nothing here renders PCM.
+    const auto outPath=qEnvironmentVariable(
+        "RGS_M17_LOOKAHEAD_PROBE_FILE").toStdString();
+    if(!outPath.empty()) {
+        std::ofstream csv(outPath,std::ios::trunc);
+        QVERIFY2(csv.good(),"M17 lookahead probe artifact cannot be created");
+        csv<<"sample_rate_hz,ceiling_dbtp,controller_ticks,"
+              "evaluated_future_events,original_us,memoized_us,"
+              "ratio_original_over_memoized,attack_floor_bitwise\n";
+    }
+    const auto summaryPath=qEnvironmentVariable("GITHUB_STEP_SUMMARY").toStdString();
+    if(!summaryPath.empty()) {
+        std::ofstream summary(summaryPath,std::ios::app);
+        if(summary)summary
+            << "\n### M17 frozen-controller lookahead memoization experiment "
+               "(TEST ONLY)\n\n"
+            << "128 consecutive controller ticks, dense synthetic event stream. "
+               "Original log10+cos expression versus a cache of the same "
+               "expressions, unchanged event order. These are attack floors, "
+               "NOT a proposed DSP implementation or full PCM oracle.\n\n"
+            << "| Fs | Ceiling | Original | Memoized incl. setup | Ratio | "
+               "Binary64 identical |\n"
+            << "|---|---:|---:|---:|---:|:---:|\n";
+    }
+
+    constexpr std::int64_t ticksToProbe=128;
+    constexpr double pi=std::numbers::pi_v<double>;
+    for(const std::int64_t fs:{44100,48000}) {
+        for(const double ceilingDb:{-1.0,-6.0,-12.0}) {
+            const auto control=dsp::internal::TruePeakLimiterControllerState::create(
+                fs,ceilingDb);
+            QVERIFY(control);
+            const auto horizon=control.value()->lookahead_ticks();
+            QVERIFY(horizon>0);
+            const double ceilingLinear=std::pow(10.0,ceilingDb/20.0);
+            const auto demand=[ceilingLinear](double peak) {
+                return peak>ceilingLinear
+                    ? 20.0*std::log10(peak/ceilingLinear) : +0.0;
+            };
+            // One event at every physical 8x tick: an upper-density stress
+            // envelope, not an assumption about typical detector output.
+            const auto end=horizon+ticksToProbe;
+            std::vector<double> peaks(static_cast<std::size_t>(end+1));
+            for(std::int64_t tick=0;tick<=end;++tick)
+                peaks[static_cast<std::size_t>(tick)]=
+                    0.20+static_cast<double>((tick*37+11)%107)/100.0;
+
+            std::vector<double> original;
+            std::vector<double> memoized;
+            original.reserve(static_cast<std::size_t>(ticksToProbe));
+            memoized.reserve(static_cast<std::size_t>(ticksToProbe));
+            std::int64_t evaluations=0;
+            const auto start=std::chrono::steady_clock::now();
+            for(std::int64_t m=0;m<ticksToProbe;++m) {
+                double attack=demand(peaks[static_cast<std::size_t>(m)]);
+                for(std::int64_t tick=m+1;tick<=m+horizon;++tick) {
+                    ++evaluations;
+                    const double required=demand(peaks[static_cast<std::size_t>(tick)]);
+                    if(required>0.0) {
+                        const double distance=static_cast<double>(tick-m);
+                        const double weight=0.5*(1.0+std::cos(
+                            pi*distance/static_cast<double>(horizon)));
+                        attack=std::max(attack,required*weight);
+                    }
+                }
+                original.push_back(attack);
+            }
+            const auto baselineEnd=std::chrono::steady_clock::now();
+
+            // Setup time is INCLUDED in the cached candidate's timing.
+            const auto cacheStart=std::chrono::steady_clock::now();
+            std::vector<double> cachedDemands(peaks.size());
+            for(std::size_t i=0;i<peaks.size();++i)
+                cachedDemands[i]=demand(peaks[i]);
+            std::vector<double> cachedWeights(static_cast<std::size_t>(horizon+1));
+            for(std::int64_t lag=1;lag<=horizon;++lag) {
+                const double distance=static_cast<double>(lag);
+                cachedWeights[static_cast<std::size_t>(lag)]=
+                    0.5*(1.0+std::cos(
+                        pi*distance/static_cast<double>(horizon)));
+            }
+            for(std::int64_t m=0;m<ticksToProbe;++m) {
+                double attack=cachedDemands[static_cast<std::size_t>(m)];
+                for(std::int64_t tick=m+1;tick<=m+horizon;++tick) {
+                    const double required=
+                        cachedDemands[static_cast<std::size_t>(tick)];
+                    if(required>0.0) {
+                        const auto lag=static_cast<std::size_t>(tick-m);
+                        attack=std::max(attack,
+                            required*cachedWeights[lag]);
+                    }
+                }
+                memoized.push_back(attack);
+            }
+            const auto cachedEnd=std::chrono::steady_clock::now();
+            QCOMPARE(original.size(),memoized.size());
+            for(std::size_t m=0;m<original.size();++m)
+                QCOMPARE(std::bit_cast<std::uint64_t>(original[m]),
+                         std::bit_cast<std::uint64_t>(memoized[m]));
+            const auto originalUs=std::chrono::duration_cast<
+                std::chrono::microseconds>(baselineEnd-start).count();
+            const auto cachedUs=std::chrono::duration_cast<
+                std::chrono::microseconds>(cachedEnd-cacheStart).count();
+            const double ratio=cachedUs>0
+                ? static_cast<double>(originalUs)/static_cast<double>(cachedUs)
+                : 0.0;
+            qInfo().nospace()<<"RGS M17 TEST-ONLY lookahead Fs="<<fs
+                <<" ceiling="<<ceilingDb<<" ticks="<<ticksToProbe
+                <<" events="<<evaluations<<" original_us="<<originalUs
+                <<" cached_us="<<cachedUs<<" ratio="<<ratio;
+            if(!outPath.empty()) {
+                std::ofstream csv(outPath,std::ios::app);
+                QVERIFY2(csv.good(),"M17 lookahead probe append failed");
+                csv<<fs<<','<<ceilingDb<<','<<ticksToProbe<<','
+                    <<evaluations<<','<<originalUs<<','<<cachedUs
+                    <<','<<ratio<<",PASS\n";
+            }
+            if(!summaryPath.empty()) {
+                std::ofstream summary(summaryPath,std::ios::app);
+                if(summary)summary<<"| "<<fs<<" | "<<ceilingDb<<" dBTP | "
+                    <<originalUs/1000.0<<" ms | "<<cachedUs/1000.0
+                    <<" ms | "<<ratio<<"x | YES |\n";
             }
         }
     }
