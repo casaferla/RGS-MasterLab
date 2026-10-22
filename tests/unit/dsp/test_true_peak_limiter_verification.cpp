@@ -1161,7 +1161,7 @@ void TruePeakLimiterVerificationTest::boundedLookaheadMemoizationProbe()
 void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
 {
     using Event=dsp::internal::LimiterDetectorEvent;
-    constexpr int frames=320;
+    // Bound test-only input to the certified horizon even at 192kHz.
     constexpr int testedTicks=128;
     constexpr double pi=std::numbers::pi_v<double>;
     struct Window {
@@ -1182,7 +1182,10 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
               "memoized_us,bounded_us,ratio_original_over_bounded,"
               "ratio_memoized_over_bounded,groups_checked,"
               "visited_events,skipped_events,attack_floor_bitwise,"
-              "controller_attack_floor_bitwise\n";
+              "controller_attack_floor_bitwise,adaptive_us,"
+              "ratio_original_over_adaptive,ratio_bounded_over_adaptive,"
+              "adaptive_bound_windows,adaptive_fallback_windows,"
+              "adaptive_attack_floor_bitwise\n";
     }
     const auto summaryPath=qEnvironmentVariable(
         "GITHUB_STEP_SUMMARY").toStdString();
@@ -1190,7 +1193,8 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
         std::ofstream summary(summaryPath,std::ios::app);
         if(summary)summary
             << "\n### M17 REAL detector lookahead experiment (TEST ONLY)\n\n"
-            << "320 stereo input frames; 128 measured controller ticks; "
+            << "Rate-dependent stereo input (at least 320 frames); "
+               "128 controller ticks; six rates and four profiles; "
                "genuine M17 4x + FIR16 detector. The reference controller "
                "is advanced normally; candidate attack-floor scans never "
                "modify production state. Setup is included in cached time. "
@@ -1200,20 +1204,23 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                "Bitwise attack-floor | Controller oracle |\n"
             << "|---|---:|---|---:|---:|---:|---:|---:|:---:|:---:|\n";
     }
-    for(const std::int64_t fs:{44100,48000}) {
+    for(const std::int64_t fs:{44100,48000,88200,96000,176400,192000}) {
         for(const double ceilingDb:{-1.0,-6.0,-12.0}) {
             const auto reference=dsp::internal::
                 TruePeakLimiterControllerState::create(fs,ceilingDb);
             QVERIFY(reference);
             const auto horizon=reference.value()->lookahead_ticks();
+            const int frames=std::max(320,static_cast<int>(
+                (horizon+testedTicks+80)/8));
             const auto linearCeiling=std::pow(10.0,ceilingDb/20.0);
             const auto demand=[linearCeiling](const double peak) {
                 return peak>linearCeiling
                     ? 20.0*std::log10(peak/linearCeiling) : +0.0;
             };
-            for(int profile=0;profile<3;++profile) {
+            for(int profile=0;profile<4;++profile) {
                 const char* profileName=profile==0?"quiet":
-                    (profile==1?"impulse_sparse":"music_like_dense");
+                    (profile==1?"impulse_sparse":
+                     profile==2?"music_like_dense":"mixed_transients");
                 dsp::internal::TruePeakLimiterDetectorState detector{2};
                 std::vector<Event> events;
                 events.reserve(frames*8U);
@@ -1241,6 +1248,12 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                             +0.37*std::sin(2.0*pi*2351.0*t+0.25);
                         right=0.95*std::sin(2.0*pi*1301.0*t)
                             -0.32*std::sin(2.0*pi*1783.0*t+0.41);
+                    } else if(profile==3) {
+                        // Signed FIR cancellations and varying peak density.
+                        left=0.38*std::sin(2.0*pi*599.0*t)
+                            +(frame%11==0?1.32:-0.11);
+                        right=0.43*std::sin(2.0*pi*877.0*t)
+                            +(frame%13==0?-1.27:0.07);
                     }
                     auto quarters=detector.push_programme_frame(left,right);
                     QVERIFY(quarters);
@@ -1430,6 +1443,112 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                 const double ratio=memoUs>0
                     ? static_cast<double>(baselineUs)/static_cast<double>(memoUs)
                     : 0.0;
+
+                // TEST ONLY, no change to frozen controller. Build bound
+                // structures only for dense detector windows. Fallback
+                // executes the same ordered floating-point expressions as
+                // the original without allocation or precomputation.
+                constexpr std::size_t kAdaptiveMinEvents=64U;
+                const auto adaptiveStart=std::chrono::steady_clock::now();
+                const bool adaptiveBound=maxPerHorizon>=kAdaptiveMinEvents;
+                std::vector<double> adaptive;
+                adaptive.reserve(windows.size());
+                if(!adaptiveBound) {
+                    for(const auto& window:windows) {
+                        double attack=demand(window.current);
+                        for(std::size_t index=window.first;
+                            index<window.last;++index) {
+                            const double required=demand(events[index].peak);
+                            if(required>0.0) {
+                                const double delta=static_cast<double>(
+                                    events[index].tick-window.tick);
+                                const double weight=0.5*(1.0+std::cos(
+                                    std::numbers::pi_v<double>*delta/
+                                    static_cast<double>(horizon)));
+                                attack=std::max(attack,required*weight);
+                            }
+                        }
+                        adaptive.push_back(attack);
+                    }
+                } else {
+                    // Include full cache setup, not the previous test's
+                    // precomputation or controller state.
+                    std::vector<double> adaptiveDemand(events.size());
+                    for(std::size_t i=0;i<events.size();++i)
+                        adaptiveDemand[i]=demand(events[i].peak);
+                    std::vector<double> adaptiveWeight(
+                        static_cast<std::size_t>(horizon+1));
+                    for(std::int64_t lag=1;lag<=horizon;++lag) {
+                        const double delta=static_cast<double>(lag);
+                        adaptiveWeight[static_cast<std::size_t>(lag)]=
+                            0.5*(1.0+std::cos(
+                                std::numbers::pi_v<double>*delta/
+                                static_cast<double>(horizon)));
+                    }
+                    std::vector<double> adaptiveSuffix(
+                        static_cast<std::size_t>(horizon+2),+0.0);
+                    for(std::int64_t lag=horizon;lag>=1;--lag) {
+                        const auto offset=static_cast<std::size_t>(lag);
+                        adaptiveSuffix[offset]=std::max(
+                            adaptiveSuffix[offset+1],adaptiveWeight[offset]);
+                    }
+                    std::vector<double> adaptiveMaximum(
+                        (events.size()+kBoundGroup-1)/kBoundGroup,+0.0);
+                    for(std::size_t i=0;i<events.size();++i)
+                        adaptiveMaximum[i/kBoundGroup]=std::max(
+                            adaptiveMaximum[i/kBoundGroup],
+                            adaptiveDemand[i]);
+                    for(const auto& window:windows) {
+                        double attack=demand(window.current);
+                        std::size_t adaptiveIndex=window.first;
+                        while(adaptiveIndex<window.last) {
+                            const auto group=adaptiveIndex/kBoundGroup;
+                            const auto stop=std::min(window.last,
+                                (group+1)*kBoundGroup);
+                            const auto offset=static_cast<std::size_t>(
+                                events[adaptiveIndex].tick-window.tick);
+                            const double upper=adaptiveMaximum[group]
+                                *adaptiveSuffix[offset];
+                            if(upper<attack) {
+                                adaptiveIndex=stop;
+                                continue;
+                            }
+                            for(;adaptiveIndex<stop;++adaptiveIndex) {
+                                const double required=
+                                    adaptiveDemand[adaptiveIndex];
+                                if(required>0.0) {
+                                    const auto delta=static_cast<std::size_t>(
+                                        events[adaptiveIndex].tick-window.tick);
+                                    attack=std::max(attack,
+                                        required*adaptiveWeight[delta]);
+                                }
+                            }
+                        }
+                        adaptive.push_back(attack);
+                    }
+                }
+                const auto adaptiveEnd=std::chrono::steady_clock::now();
+                QCOMPARE(adaptive.size(),original.size());
+                for(std::size_t i=0;i<original.size();++i)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(original[i]),
+                             std::bit_cast<std::uint64_t>(adaptive[i]));
+                const auto adaptiveUs=std::chrono::duration_cast<
+                    std::chrono::microseconds>(
+                        adaptiveEnd-adaptiveStart).count();
+                const double adaptiveRatio=adaptiveUs>0
+                    ? static_cast<double>(baselineUs)
+                        /static_cast<double>(adaptiveUs) : 0.0;
+                const double boundAdaptiveRatio=adaptiveUs>0
+                    ? static_cast<double>(boundUs)
+                        /static_cast<double>(adaptiveUs) : 0.0;
+                qInfo().nospace()<<"RGS M17 adaptive Fs="<<fs
+                    <<" ceiling="<<ceilingDb<<" profile="<<profileName
+                    <<" adaptive_us="<<adaptiveUs
+                    <<" original_ratio="<<adaptiveRatio
+                    <<" bound_ratio="<<boundAdaptiveRatio
+                    <<" bound_windows="<<(adaptiveBound?testedTicks:0)
+                    <<" fallback_windows="<<(adaptiveBound?0:testedTicks)
+                    <<" attack_floor_bitwise=PASS";
                 const double boundRatio=boundUs>0
                     ? static_cast<double>(baselineUs)/static_cast<double>(boundUs)
                     : 0.0;
@@ -1451,7 +1570,11 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                         <<testedTicks<<','<<events.size()<<','<<evaluated<<','
                         <<baselineUs<<','<<memoUs<<','<<boundUs<<','
                         <<boundRatio<<','<<memoBoundRatio<<','<<checked
-                        <<','<<visited<<','<<skipped<<",PASS,PASS\n";
+                        <<','<<visited<<','<<skipped<<",PASS,PASS,"
+                        <<adaptiveUs<<','<<adaptiveRatio<<','
+                        <<boundAdaptiveRatio<<','
+                        <<(adaptiveBound?testedTicks:0)<<','
+                        <<(adaptiveBound?0:testedTicks)<<",PASS\n";
                 }
                 qInfo().nospace()<<"RGS M17 detector lookahead Fs="<<fs
                     <<" ceiling="<<ceilingDb<<" profile="<<profileName
