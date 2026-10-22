@@ -114,3 +114,36 @@ end-to-end wall-time benchmark, or checkpoint schema qualification.
 The paired test uses real IModule time versus a different experimental
 harness; no whole-Prepare speedup inference is permitted. Passing CI
 does not authorize production integration or merging this PR.
+
+## Longer resource / end-to-end experimental output comparison
+
+CI #667 Windows+Linux SUCCESS: 12/12 PCM bitwise comparisons, 64
+certified 64-frame batches per 4096-frame input, real signed detector
+feeding candidate incrementally without a global detector event vector.
+Peak detector and selector retained events are 1396..4841 per cache,
+below the independent 32768 limits. This is a cache-only boundedness
+claim, not a full application memory qualification.
+
+Next isolated benchmark renders complete PCM *buffers* from the same
+generated source via two alternative processing paths:
+- Frozen real M17 IModule renderer (nonuniform physical streaming blocks,
+  actual D-frame algorithmic delay and drain).
+- Unregistered streaming detector + bounded rolling selector + frozen
+  controller, with nonuniform experimental batches, controller snapshot
+  reconstitution every third batch and a full output buffer.
+
+The measured interval includes each implementation's processing and
+output-buffer production. It excludes source generation, post-render
+bitwise comparison and final M16 verification. All output samples must
+match the frozen IModule bit for bit. Report 32768 frames at 48k and
+8192 frames at 192k, both mono/stereo at -6dBTP. The 192k sample is
+intentionally short to avoid overloading Focused CI.
+
+**This is not the product Prepare benchmark.** The candidate is an
+internal test-only renderer and has no disk WAV IO, project state,
+UI, M16 final verification, user cancel, production checkpoint schema,
+or real Prepare transaction. Timings are preliminary, single-run and
+platform-specific. They must not be projected linearly to music-length
+resource latency or used to authorize replacing M17. Stage 2 will
+require a reproducible same-workload offline Prepare qualification,
+including post-render M16 checks, memory and disk IO.

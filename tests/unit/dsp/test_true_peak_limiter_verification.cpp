@@ -192,6 +192,7 @@ private slots:
     void experimentalIsolatedSelectorMatchesFrozenControllerAndPcm();
     void experimentalRollingBoundedBatchPcmOracle();
     void experimentalLiveDetectorBoundedPcmOracle();
+    void experimentalLongResourceRenderBenchmark();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -2451,6 +2452,205 @@ void TruePeakLimiterVerificationTest::experimentalLiveDetectorBoundedPcmOracle()
                     <<Feeder::kMaxRetained<<','<<Rolling::kMaxBatchEvents
                     <<",PASS,PASS,PASS,PASS,PASS,"
                     <<candidateNs<<','<<referenceNs<<'\n';
+            }
+        }
+    }
+}
+
+
+void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
+{
+    using Controller=dsp::internal::TruePeakLimiterControllerState;
+    using Feeder=dsp::internal::experimental::M17BoundedDetectorFeed;
+    using Rolling=dsp::internal::experimental::M17RollingBatchSelector;
+    constexpr double ceiling=-6.0;
+    constexpr double pi=std::numbers::pi_v<double>;
+    const auto csvPath=qEnvironmentVariable(
+        "RGS_M17_LONG_RENDER_PROBE_FILE").toStdString();
+    if(!csvPath.empty()) {
+        std::ofstream csv(csvPath,std::ios::trunc);
+        QVERIFY2(csv.good(),"M17 long render CSV creation failed");
+        csv<<"sample_rate_hz,channels,ceiling_dbtp,frames,"
+              "reference_imodule_render_ns,experimental_render_ns,"
+              "ratio_reference_over_experimental,output_pcm_bitwise,"
+              "detector_cache_high_water,selector_cache_high_water,"
+              "detector_event_cap,selector_event_cap,batches,"
+              "source_frames_consumed,final_detector_drained,"
+              "checkpoint_snapshots_restored,experimental_final_m16_checked\n";
+    }
+    for(const int fs:{48000,192000}) {
+        for(const bool stereo:{false,true}) {
+            const int nFrames=fs==48000?32768:8192;
+            auto source=buffer(fs,stereo,nFrames);
+            const auto fmt=source.view().format();
+            for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                auto dst=source.mutable_view().channel(ch);
+                QVERIFY(dst);
+                for(int n=0;n<nFrames;++n) {
+                    const double t=static_cast<double>(n)/fs;
+                    double sample=(ch==0?1.0:-1.0)*
+                        (0.84*std::sin(2.0*pi*701.0*t)
+                        +0.32*std::sin(2.0*pi*2803.0*t+0.37));
+                    if(n%223==0)sample+=ch==0?1.21:-1.16;
+                    if(n>=nFrames/4 && n<nFrames/3)sample=+0.0;
+                    if(n>=3*nFrames/4 && n<7*nFrames/8)sample=+0.0;
+                    (*dst.value())[static_cast<std::size_t>(n)]=sample;
+                }
+            }
+            const std::array<std::size_t,4> realChunks{31,127,19,251};
+            const auto originalStart=std::chrono::steady_clock::now();
+            auto original=renderRealM17(source,ceiling,realChunks);
+            const auto originalEnd=std::chrono::steady_clock::now();
+            QVERIFY2(original.has_value(),
+                "Long-form frozen M17 IModule render failed");
+
+            struct Metrics final {
+                std::size_t detectorPeak{0};
+                std::size_t selectorPeak{0};
+                std::size_t batches{0};
+                std::size_t checkpointRestores{0};
+                std::uint64_t consumed{0};
+                bool drained{false};
+            } metrics{};
+            const auto candidateRender=[&]()
+                ->std::optional<audio::AudioBuffer> {
+                auto feeder=Feeder::create(fs,ceiling,stereo?2U:1U);
+                auto rolling=Rolling::create(fs,ceiling);
+                auto ctr=Controller::create(fs,ceiling);
+                if(!feeder || !rolling || !ctr)return std::nullopt;
+                auto prepared=buffer(fs,stereo,nFrames);
+                const auto horizon=ctr.value()->lookahead_ticks();
+                const std::array<int,4> partitions{64,31,113,257};
+                std::size_t chunk=0;
+                int sourceCursor=0;
+                for(int begin=0;begin<nFrames;) {
+                    const int stop=std::min(nFrames,
+                        begin+partitions[chunk++%partitions.size()]);
+                    const std::int64_t firstTick=begin==0
+                        ?-62:8*(begin-1)+1;
+                    const std::int64_t lastTick=8*(stop-1);
+                    const std::int64_t deadline=lastTick+horizon;
+                    feeder->discard_before(firstTick);
+                    while(!feeder->drained()
+                        && feeder->coverage_tick()<deadline) {
+                        if(sourceCursor<nFrames) {
+                            const auto first=source.view().channel(0);
+                            const auto second=stereo
+                                ?source.view().channel(1):first;
+                            if(!first||!second)return std::nullopt;
+                            const auto left=(*first.value())[
+                                static_cast<std::size_t>(sourceCursor)];
+                            const auto right=stereo?(*second.value())[
+                                static_cast<std::size_t>(sourceCursor)]:+0.0;
+                            if(!feeder->push(left,right))return std::nullopt;
+                            ++sourceCursor;
+                        } else if(!feeder->drain()) {
+                            return std::nullopt;
+                        }
+                    }
+                    const auto events=feeder->batch(firstTick,lastTick,horizon);
+                    if(!rolling->load(events,firstTick,lastTick,
+                        feeder->coverage_tick(),feeder->drained()))
+                        return std::nullopt;
+                    if((chunk%3U)==0U) {
+                        // Resume at the current certified controller tick;
+                        // this is not serialized M17 IModule checkpoint I/O.
+                        auto restored=Controller::create(fs,ceiling);
+                        if(!restored
+                            || !restored.value()->restore(
+                                ctr.value()->snapshot()))
+                            return std::nullopt;
+                        ctr=std::move(restored);
+                        ++metrics.checkpointRestores;
+                    }
+                    for(int n=begin;n<stop;++n) {
+                        double gain=1.0;
+                        for(std::int64_t tick=n==0?-62:8*(n-1)+1;
+                            tick<=8*n;++tick) {
+                            const double current=feeder->peak_at(tick);
+                            const auto choice=rolling->choose(tick,current);
+                            if(!choice)return std::nullopt;
+                            const auto& winningEvent=choice->future_event;
+                            const auto future=winningEvent
+                                ?std::span<const dsp::internal::LimiterDetectorEvent>{
+                                    &*winningEvent,1}
+                                :std::span<const dsp::internal::LimiterDetectorEvent>{};
+                            auto step=ctr.value()->advance(current,future);
+                            if(!step)return std::nullopt;
+                            if(tick==8*n)gain=step.value()->gain;
+                        }
+                        for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                            const auto input=source.view().channel(ch);
+                            const auto output=prepared.mutable_view().channel(ch);
+                            if(!input||!output)return std::nullopt;
+                            const double raw=(*input.value())[
+                                static_cast<std::size_t>(n)];
+                            (*output.value())[static_cast<std::size_t>(n)]=
+                                gain==1.0?raw:raw*gain;
+                        }
+                    }
+                    begin=stop;
+                }
+                if(sourceCursor!=nFrames || !feeder->drained()
+                    || rolling->next_tick()!=8*(nFrames-1)+1
+                    || ctr.value()->next_tick()!=rolling->next_tick()
+                    || feeder->high_water_events()>Feeder::kMaxRetained
+                    || rolling->high_water_events()>Rolling::kMaxBatchEvents)
+                    return std::nullopt;
+                metrics.detectorPeak=feeder->high_water_events();
+                metrics.selectorPeak=rolling->high_water_events();
+                metrics.batches=rolling->batches();
+                metrics.consumed=feeder->frames();
+                metrics.drained=feeder->drained();
+                return std::move(prepared);
+            };
+            const auto candidateStart=std::chrono::steady_clock::now();
+            auto accelerated=candidateRender();
+            const auto candidateEnd=std::chrono::steady_clock::now();
+            QVERIFY2(accelerated.has_value(),
+                "Bounded candidate rendering failed");
+            QVERIFY(metrics.drained);
+            QVERIFY(metrics.checkpointRestores>0);
+            QCOMPARE(metrics.consumed,std::uint64_t{static_cast<std::uint64_t>(
+                nFrames)});
+            for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                const auto baseline=original->view().channel(ch);
+                const auto candidate=accelerated->view().channel(ch);
+                QVERIFY(baseline && candidate);
+                QCOMPARE(baseline.value()->size(),candidate.value()->size());
+                for(int n=0;n<nFrames;++n) {
+                    const auto pos=static_cast<std::size_t>(n);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        (*baseline.value())[pos]),
+                        std::bit_cast<std::uint64_t>(
+                            (*candidate.value())[pos]));
+                }
+            }
+            const auto originalNs=std::chrono::duration_cast<
+                std::chrono::nanoseconds>(originalEnd-originalStart).count();
+            const auto candidateNs=std::chrono::duration_cast<
+                std::chrono::nanoseconds>(candidateEnd-candidateStart).count();
+            const double ratio=candidateNs>0
+                ?static_cast<double>(originalNs)/candidateNs:0.0;
+            qInfo().nospace()<<"M17 longer isolated render Fs="<<fs
+                <<" stereo="<<stereo<<" frames="<<nFrames
+                <<" original_ns="<<originalNs
+                <<" candidate_ns="<<candidateNs
+                <<" ratio="<<ratio
+                <<" detector_high_water="<<metrics.detectorPeak
+                <<" selector_high_water="<<metrics.selectorPeak
+                <<" batches="<<metrics.batches
+                <<" pcm_bitwise=PASS; final_M16_not_run";
+            if(!csvPath.empty()) {
+                std::ofstream csv(csvPath,std::ios::app);
+                QVERIFY2(csv.good(),"M17 long render CSV append failed");
+                csv<<fs<<','<<(stereo?2:1)<<','<<ceiling<<','
+                    <<nFrames<<','<<originalNs<<','<<candidateNs<<','
+                    <<ratio<<",PASS,"
+                    <<metrics.detectorPeak<<','<<metrics.selectorPeak<<','
+                    <<Feeder::kMaxRetained<<','<<Rolling::kMaxBatchEvents
+                    <<','<<metrics.batches<<','<<metrics.consumed
+                    <<",PASS,"<<metrics.checkpointRestores<<",NO\n";
             }
         }
     }
