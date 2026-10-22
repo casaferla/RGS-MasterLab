@@ -1194,7 +1194,7 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
         if(summary)summary
             << "\n### M17 REAL detector lookahead experiment (TEST ONLY)\n\n"
             << "Rate-dependent stereo input (at least 320 frames); "
-               "128 controller ticks; six rates and five profiles; "
+               "128 controller ticks (256 for peak-then-quiet); six rates and five profiles; "
                "genuine M17 4x + FIR16 detector. The reference controller "
                "is advanced normally; candidate attack-floor scans never "
                "modify production state. Setup is included in cached time. "
@@ -1211,7 +1211,7 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
             QVERIFY(reference);
             const auto horizon=reference.value()->lookahead_ticks();
             const int frames=std::max(320,static_cast<int>(
-                (horizon+testedTicks+80)/8));
+                (horizon+testedTicks+208)/8));
             const auto linearCeiling=std::pow(10.0,ceilingDb/20.0);
             const auto demand=[linearCeiling](const double peak) {
                 return peak>linearCeiling
@@ -1222,6 +1222,9 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                     (profile==1?"impulse_sparse":
                      profile==2?"music_like_dense":
                      profile==3?"mixed_transients":"peak_then_quiet");
+                // Explicitly outlive the early transient's entire
+                // detector/lookahead overlap to exercise both paths.
+                const int profileTicks=profile==4?256:testedTicks;
                 dsp::internal::TruePeakLimiterDetectorState detector{2};
                 std::vector<Event> events;
                 events.reserve(frames*8U);
@@ -1266,13 +1269,13 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                         QVERIFY(accept(quarter.midpoint));
                     }
                 }
-                QVERIFY(lastValidTick>=-62+(testedTicks-1)+horizon);
+                QVERIFY(lastValidTick>=-62+(profileTicks-1)+horizon);
                 std::vector<Window> windows;
-                windows.reserve(testedTicks);
+                windows.reserve(profileTicks);
                 std::size_t cursor=0;
                 std::int64_t evaluated=0;
                 std::size_t maxPerHorizon=0;
-                for(int i=0;i<testedTicks;++i) {
+                for(int i=0;i<profileTicks;++i) {
                     const std::int64_t m=-62+i;
                     while(cursor<events.size() && events[cursor].tick<m)
                         ++cursor;
@@ -1328,7 +1331,7 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                              std::bit_cast<std::uint64_t>(original[i]));
                 }
                 QCOMPARE(controller.value()->next_tick(),
-                         std::int64_t{-62+testedTicks});
+                         std::int64_t{-62+profileTicks});
 
                 // Same exact binary64 expressions, precomputed once; cache
                 // construction IS INCLUDED in the candidate wall time.
@@ -1556,7 +1559,15 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                 }
                 const auto adaptiveEnd=std::chrono::steady_clock::now();
                 QCOMPARE(boundWindowCount+directWindowCount,
-                         std::int64_t{testedTicks});
+                         std::int64_t{profileTicks});
+                // A passing bitwise check with 256 windows is insufficient
+                // unless the local density decision actually switches.
+                if(profile==4) {
+                    QVERIFY2(boundWindowCount>0,
+                        "Peak-then-quiet never selected bounded scan");
+                    QVERIFY2(directWindowCount>0,
+                        "Peak-then-quiet never returned to direct scan");
+                }
                 QCOMPARE(adaptive.size(),original.size());
                 for(std::size_t i=0;i<original.size();++i)
                     QCOMPARE(std::bit_cast<std::uint64_t>(original[i]),
@@ -1596,7 +1607,7 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                     std::ofstream csv(boundsPath,std::ios::app);
                     QVERIFY2(csv.good(),"M17 bound probe append failed");
                     csv<<profileName<<','<<fs<<','<<ceilingDb<<','
-                        <<testedTicks<<','<<events.size()<<','<<evaluated<<','
+                        <<profileTicks<<','<<events.size()<<','<<evaluated<<','
                         <<baselineUs<<','<<memoUs<<','<<boundUs<<','
                         <<boundRatio<<','<<memoBoundRatio<<','<<checked
                         <<','<<visited<<','<<skipped<<",PASS,PASS,"
@@ -1617,7 +1628,7 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                     std::ofstream csv(artifact,std::ios::app);
                     QVERIFY2(csv.good(),"M17 real detector probe append failed");
                     csv<<"detector_"<<profileName<<','<<fs<<','<<ceilingDb<<','
-                        <<testedTicks<<','<<evaluated<<','<<baselineUs<<','
+                        <<profileTicks<<','<<evaluated<<','<<baselineUs<<','
                         <<memoUs<<','<<ratio<<",PASS,"
                         <<validCount<<','<<events.size()<<','
                         <<maxPerHorizon<<",PASS\n";
