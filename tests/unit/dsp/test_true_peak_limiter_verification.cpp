@@ -925,6 +925,77 @@ void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
             }
         }
     }
+
+    // Phase-1 performance diagnostic: isolate block/transactional overhead
+    // from the frozen controller's dense lookahead workload. This is NOT an
+    // algorithm switch or a timing acceptance gate. Both partitions must
+    // produce the identical binary64 PCM at the same difficult Ceiling.
+    //
+    // 2048 frames keeps Focused CI bounded, independently of test runner.
+    // In particular, never extrapolate this micro-probe into a real-time
+    // certification or a full-track completion promise.
+    constexpr std::int64_t profileFrames=2048;
+    const std::array<std::size_t,1> fineBlocks{128};
+    const std::array<std::size_t,1> coarseBlocks{2048};
+    if(!summaryPath.empty()) {
+        std::ofstream summary(summaryPath,std::ios::app);
+        if(summary)summary
+            << "\n### M17 block partition diagnostic (test-only)\n\n"
+            << "2048 frames stereo; identical samples with 128- and "
+               "2048-frame processing partitions. No DSP math edits; "
+               "runner-specific timings only.\n\n"
+            << "| Rate | Ceiling | 128-frame blocks | 2048-frame blocks | "
+               "Fine/coarse cost ratio |\n"
+            << "|---|---:|---:|---:|---:|\n";
+    }
+    for(const int fs : {44100,48000}) {
+        auto input=buffer(fs,true,static_cast<int>(profileFrames));
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto lane=input.mutable_view().channel(ch);
+            QVERIFY(lane);
+            for(std::int64_t frame=0;frame<profileFrames;++frame) {
+                const double time=static_cast<double>(frame)
+                    /static_cast<double>(fs);
+                (*lane.value())[static_cast<std::size_t>(frame)]=
+                    0.70*std::sin(2.0*pi*(ch==0?991.0:1301.0)*time)
+                    +0.15*std::sin(2.0*pi*(ch==0?2351.0:1783.0)*time+0.25);
+            }
+        }
+        for(const double ceiling : {-1.0,-12.0}) {
+            const auto started=std::chrono::steady_clock::now();
+            const auto fine=renderRealM17(input,ceiling,fineBlocks);
+            const auto mid=std::chrono::steady_clock::now();
+            const auto coarse=renderRealM17(input,ceiling,coarseBlocks);
+            const auto finished=std::chrono::steady_clock::now();
+            QVERIFY(fine.has_value() && coarse.has_value());
+            const auto fineUs=std::chrono::duration_cast<
+                std::chrono::microseconds>(mid-started).count();
+            const auto coarseUs=std::chrono::duration_cast<
+                std::chrono::microseconds>(finished-mid).count();
+            const auto a=fine->view(),b=coarse->view();
+            QCOMPARE(a.frame_count(),b.frame_count());
+            for(std::size_t ch=0;ch<2;++ch) {
+                auto lhs=a.channel(ch),rhs=b.channel(ch);
+                QVERIFY(lhs && rhs);
+                QCOMPARE(lhs.value()->size(),rhs.value()->size());
+                for(std::size_t frame=0;frame<lhs.value()->size();++frame)
+                    QCOMPARE(std::bit_cast<std::uint64_t>((*lhs.value())[frame]),
+                             std::bit_cast<std::uint64_t>((*rhs.value())[frame]));
+            }
+            const double ratio=coarseUs>0
+                ?static_cast<double>(fineUs)/static_cast<double>(coarseUs)
+                :0.0;
+            qInfo().nospace()<<"RGS M17 block_partition Fs="<<fs
+                <<" ceiling="<<ceiling<<" fine_us="<<fineUs
+                <<" coarse_us="<<coarseUs<<" ratio="<<ratio;
+            if(!summaryPath.empty()) {
+                std::ofstream summary(summaryPath,std::ios::app);
+                if(summary)summary<<"| "<<fs<<" Hz | "<<ceiling
+                    <<" dBTP | "<<fineUs/1000.0<<" ms | "
+                    <<coarseUs/1000.0<<" ms | "<<ratio<<"x |\n";
+            }
+        }
+    }
 }
 
 } // namespace
