@@ -1172,6 +1172,18 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
     };
     const auto artifact=qEnvironmentVariable(
         "RGS_M17_LOOKAHEAD_PROBE_FILE").toStdString();
+    const auto boundsPath=qEnvironmentVariable(
+        "RGS_M17_BOUND_PROBE_FILE").toStdString();
+    if(!boundsPath.empty()) {
+        std::ofstream csv(boundsPath,std::ios::trunc);
+        QVERIFY2(csv.good(),"M17 bound probe artifact cannot be created");
+        csv<<"profile,sample_rate_hz,ceiling_dbtp,controller_ticks,"
+              "active_detector_events,future_evaluations,original_us,"
+              "memoized_us,bounded_us,ratio_original_over_bounded,"
+              "ratio_memoized_over_bounded,groups_checked,"
+              "visited_events,skipped_events,attack_floor_bitwise,"
+              "controller_attack_floor_bitwise\n";
+    }
     const auto summaryPath=qEnvironmentVariable(
         "GITHUB_STEP_SUMMARY").toStdString();
     if(!summaryPath.empty()) {
@@ -1336,6 +1348,81 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                 for(std::size_t i=0;i<original.size();++i)
                     QCOMPARE(std::bit_cast<std::uint64_t>(original[i]),
                              std::bit_cast<std::uint64_t>(memoized[i]));
+                // TEST ONLY: certified conservative upper envelope.
+                // A 32-event group can be skipped only if even its maximum
+                // demand multiplied by the maximum actual cached Hann weight
+                // over ALL remaining lags is STRICTLY below attack.
+                // Superset group maxima and suffix maxima are intentionally
+                // conservative, not heuristic. Binary64 multiplication of
+                // finite nonnegative inputs is monotone in both operands.
+                // Surviving events retain ORIGINAL ascending order and FP ops.
+                constexpr std::size_t kBoundGroup=32U;
+                const auto boundStart=std::chrono::steady_clock::now();
+                std::vector<double> boundDemands(events.size());
+                for(std::size_t i=0;i<events.size();++i)
+                    boundDemands[i]=demand(events[i].peak);
+                std::vector<double> boundWeights(
+                    static_cast<std::size_t>(horizon+1));
+                for(std::int64_t lag=1;lag<=horizon;++lag) {
+                    const double d=static_cast<double>(lag);
+                    boundWeights[static_cast<std::size_t>(lag)]=
+                        0.5*(1.0+std::cos(
+                            std::numbers::pi_v<double>*d/
+                            static_cast<double>(horizon)));
+                }
+                std::vector<double> suffixMaximum(
+                    static_cast<std::size_t>(horizon+2),+0.0);
+                for(std::int64_t lag=horizon;lag>=1;--lag) {
+                    const auto idx=static_cast<std::size_t>(lag);
+                    suffixMaximum[idx]=std::max(
+                        suffixMaximum[idx+1],boundWeights[idx]);
+                }
+                std::vector<double> groupMaximum(
+                    (events.size()+kBoundGroup-1)/kBoundGroup,+0.0);
+                for(std::size_t i=0;i<boundDemands.size();++i)
+                    groupMaximum[i/kBoundGroup]=std::max(
+                        groupMaximum[i/kBoundGroup],boundDemands[i]);
+                std::int64_t visited=0,skipped=0,checked=0;
+                std::vector<double> bounded;
+                bounded.reserve(windows.size());
+                for(const auto& window:windows) {
+                    double attack=demand(window.current);
+                    std::size_t cursor=window.first;
+                    while(cursor<window.last) {
+                        const auto group=cursor/kBoundGroup;
+                        const auto end=std::min(window.last,
+                            (group+1)*kBoundGroup);
+                        const auto lag=static_cast<std::size_t>(
+                            events[cursor].tick-window.tick);
+                        const double upper=groupMaximum[group]
+                            *suffixMaximum[lag];
+                        ++checked;
+                        if(upper<attack) {
+                            skipped+=static_cast<std::int64_t>(end-cursor);
+                            cursor=end;
+                            continue;
+                        }
+                        for(;cursor<end;++cursor) {
+                            ++visited;
+                            const double required=boundDemands[cursor];
+                            if(required>0.0) {
+                                const auto d=static_cast<std::size_t>(
+                                    events[cursor].tick-window.tick);
+                                attack=std::max(attack,
+                                    required*boundWeights[d]);
+                            }
+                        }
+                    }
+                    bounded.push_back(attack);
+                }
+                const auto boundEnd=std::chrono::steady_clock::now();
+                QCOMPARE(visited+skipped,evaluated);
+                QCOMPARE(bounded.size(),original.size());
+                for(std::size_t i=0;i<original.size();++i)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(original[i]),
+                             std::bit_cast<std::uint64_t>(bounded[i]));
+                const auto boundUs=std::chrono::duration_cast<
+                    std::chrono::microseconds>(boundEnd-boundStart).count();
                 const auto baselineUs=std::chrono::duration_cast<
                     std::chrono::microseconds>(originalEnd-originalStart).count();
                 const auto memoUs=std::chrono::duration_cast<
@@ -1343,6 +1430,29 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                 const double ratio=memoUs>0
                     ? static_cast<double>(baselineUs)/static_cast<double>(memoUs)
                     : 0.0;
+                const double boundRatio=boundUs>0
+                    ? static_cast<double>(baselineUs)/static_cast<double>(boundUs)
+                    : 0.0;
+                const double memoBoundRatio=boundUs>0
+                    ? static_cast<double>(memoUs)/static_cast<double>(boundUs)
+                    : 0.0;
+                qInfo().nospace()<<"RGS M17 group_bound Fs="<<fs
+                    <<" ceiling="<<ceilingDb<<" profile="<<profileName
+                    <<" future_evaluations="<<evaluated
+                    <<" groups_checked="<<checked<<" visited="<<visited
+                    <<" skipped="<<skipped<<" bounded_us="<<boundUs
+                    <<" ratio_original_over_bounded="<<boundRatio
+                    <<" ratio_memoized_over_bounded="<<memoBoundRatio
+                    <<" floor_bitwise=PASS";
+                if(!boundsPath.empty()) {
+                    std::ofstream csv(boundsPath,std::ios::app);
+                    QVERIFY2(csv.good(),"M17 bound probe append failed");
+                    csv<<profileName<<','<<fs<<','<<ceilingDb<<','
+                        <<testedTicks<<','<<events.size()<<','<<evaluated<<','
+                        <<baselineUs<<','<<memoUs<<','<<boundUs<<','
+                        <<boundRatio<<','<<memoBoundRatio<<','<<checked
+                        <<','<<visited<<','<<skipped<<",PASS,PASS\n";
+                }
                 qInfo().nospace()<<"RGS M17 detector lookahead Fs="<<fs
                     <<" ceiling="<<ceilingDb<<" profile="<<profileName
                     <<" active_events="<<events.size()
