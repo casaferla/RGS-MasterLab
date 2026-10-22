@@ -1387,27 +1387,27 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                 bounded.reserve(windows.size());
                 for(const auto& window:windows) {
                     double attack=demand(window.current);
-                    std::size_t cursor=window.first;
-                    while(cursor<window.last) {
-                        const auto group=cursor/kBoundGroup;
+                    std::size_t scanIndex=window.first;
+                    while(scanIndex<window.last) {
+                        const auto group=scanIndex/kBoundGroup;
                         const auto end=std::min(window.last,
                             (group+1)*kBoundGroup);
                         const auto lag=static_cast<std::size_t>(
-                            events[cursor].tick-window.tick);
+                            events[scanIndex].tick-window.tick);
                         const double upper=groupMaximum[group]
                             *suffixMaximum[lag];
                         ++checked;
                         if(upper<attack) {
-                            skipped+=static_cast<std::int64_t>(end-cursor);
-                            cursor=end;
+                            skipped+=static_cast<std::int64_t>(end-scanIndex);
+                            scanIndex=end;
                             continue;
                         }
-                        for(;cursor<end;++cursor) {
+                        for(;scanIndex<end;++scanIndex) {
                             ++visited;
-                            const double required=boundDemands[cursor];
+                            const double required=boundDemands[scanIndex];
                             if(required>0.0) {
                                 const auto d=static_cast<std::size_t>(
-                                    events[cursor].tick-window.tick);
+                                    events[scanIndex].tick-window.tick);
                                 attack=std::max(attack,
                                     required*boundWeights[d]);
                             }
