@@ -327,7 +327,12 @@ Rectangle {
                 onClicked: root.terminalLimiterViewModel.requestPrepare()
                 Accessible.name: "Prepare offline true peak limiter"
                 ToolTip.text: "Render and verify the full master; Play never starts this job."
-                ToolTip.visible: hovered
+                ToolTip.visible: hovered && m17PrepareTooltipDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: m17PrepareTooltipDwell
+                    anchors.fill: parent
+                }
             }
             StudioButton {
                 objectName: "m17CancelPreparationButton"
