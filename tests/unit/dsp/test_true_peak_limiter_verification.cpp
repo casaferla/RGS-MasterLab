@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <numbers>
+#include <numeric>
 #include <vector>
 #include <algorithm>
 #include <utility>
@@ -193,6 +194,7 @@ private slots:
     void experimentalRollingBoundedBatchPcmOracle();
     void experimentalLiveDetectorBoundedPcmOracle();
     void experimentalLongResourceRenderBenchmark();
+    void experimental64FrameRealtimeQuantumProbe();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -2720,6 +2722,186 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
         }
     }
     QCOMPARE(matrixCaseCount,std::size_t{48});
+}
+
+
+void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
+{
+    using Controller=dsp::internal::TruePeakLimiterControllerState;
+    using Feeder=dsp::internal::experimental::M17BoundedDetectorFeed;
+    using Rolling=dsp::internal::experimental::M17RollingBatchSelector;
+    constexpr int kQuantum=64;
+    constexpr double pi=std::numbers::pi_v<double>;
+    const auto csvPath=qEnvironmentVariable(
+        "RGS_M17_QUANTUM_PROBE_FILE").toStdString();
+    if(!csvPath.empty()) {
+        std::ofstream csv(csvPath,std::ios::trunc);
+        QVERIFY2(csv.good(),"M17 isolated quantum CSV creation failed");
+        csv<<"sample_rate_hz,channels,ceiling_dbtp,frames,"
+              "quantum_frames,quantum_count,quantum_budget_ns,"
+              "mean_quantum_ns,p99_quantum_ns,max_quantum_ns,"
+              "first_quantum_ns,over_budget_quanta,"
+              "mean_steady_ns,p99_steady_ns,max_steady_ns,"
+              "over_budget_steady,detector_event_high_water,"
+              "selector_event_high_water,pcm_bitwise,detector_drained,"
+              "frozen_reference_render_ns,real_time_qualified\n";
+    }
+    for(const int fs:{48000,192000}) {
+        for(const bool stereo:{false,true}) {
+            for(const double ceiling:{-6.0,-12.0}) {
+                const int nFrames=fs==48000?4096:8192;
+                auto source=buffer(fs,stereo,nFrames);
+                const auto fmt=source.view().format();
+                for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                    auto lane=source.mutable_view().channel(ch);
+                    QVERIFY(lane);
+                    for(int n=0;n<nFrames;++n) {
+                        const double t=static_cast<double>(n)/fs;
+                        double sample=(ch==0?1.0:-1.0)*
+                            (0.95*std::sin(2.0*pi*941.0*t)
+                             +0.43*std::sin(2.0*pi*2707.0*t+0.19));
+                        if(n%91==0)sample+=ch==0?1.22:-1.15;
+                        if(n>=nFrames/3 && n<nFrames/2)sample=+0.0;
+                        (*lane.value())[static_cast<std::size_t>(n)]=sample;
+                    }
+                }
+                const std::array<std::size_t,3> chunks{29,127,37};
+                const auto refStart=std::chrono::steady_clock::now();
+                const auto frozen=renderRealM17(source,ceiling,chunks);
+                const auto refEnd=std::chrono::steady_clock::now();
+                QVERIFY2(frozen.has_value(),"frozen M17 quantum oracle unavailable");
+
+                auto feeder=Feeder::create(fs,ceiling,stereo?2U:1U);
+                auto rolling=Rolling::create(fs,ceiling);
+                auto controller=Controller::create(fs,ceiling);
+                QVERIFY(feeder && rolling && controller);
+                const auto horizon=controller.value()->lookahead_ticks();
+                const auto budgetNs=std::int64_t{1'000'000'000}
+                    *kQuantum/fs;
+                std::size_t feedPosition=0;
+                auto prepared=buffer(fs,stereo,nFrames);
+                std::vector<std::int64_t> quantumNs;
+                quantumNs.reserve(static_cast<std::size_t>(nFrames/kQuantum));
+                for(int start=0;start<nFrames;start+=kQuantum) {
+                    const auto began=std::chrono::steady_clock::now();
+                    const auto first=start==0?-62:8*(start-1)+1;
+                    const auto last=8*(start+kQuantum-1);
+                    const auto deadline=last+horizon;
+                    feeder->discard_before(first);
+                    while(!feeder->drained()
+                          && feeder->coverage_tick()<deadline) {
+                        if(feedPosition<static_cast<std::size_t>(nFrames)) {
+                            const auto left=source.view().channel(0);
+                            const auto right=stereo
+                                ?source.view().channel(1):left;
+                            QVERIFY(left && right);
+                            const auto l=(*left.value())[feedPosition];
+                            const auto r=stereo
+                                ?(*right.value())[feedPosition]:+0.0;
+                            QVERIFY2(feeder->push(l,r),
+                                "Signed detector failed during quantum probe");
+                            ++feedPosition;
+                        } else {
+                            QVERIFY(feeder->drain());
+                        }
+                    }
+                    const auto events=feeder->batch(first,last,horizon);
+                    QVERIFY2(rolling->load(events,first,last,
+                        feeder->coverage_tick(),feeder->drained()),
+                        "Unproven M17 quantum failed to load");
+                    for(int n=start;n<start+kQuantum;++n) {
+                        double gain=1.0;
+                        for(std::int64_t tick=n==0?-62:8*(n-1)+1;
+                            tick<=8*n;++tick) {
+                            const auto current=feeder->peak_at(tick);
+                            auto chosen=rolling->choose(tick,current);
+                            QVERIFY(chosen);
+                            const auto& winner=chosen->future_event;
+                            const auto future=winner
+                                ?std::span<const dsp::internal::LimiterDetectorEvent>{
+                                    &*winner,1}
+                                :std::span<const dsp::internal::LimiterDetectorEvent>{};
+                            auto step=controller.value()->advance(
+                                current,future);
+                            QVERIFY(step);
+                            if(tick==8*n)gain=step.value()->gain;
+                        }
+                        for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                            const auto input=source.view().channel(ch);
+                            const auto output=prepared.mutable_view().channel(ch);
+                            QVERIFY(input && output);
+                            const auto raw=(*input.value())[
+                                static_cast<std::size_t>(n)];
+                            (*output.value())[static_cast<std::size_t>(n)]=
+                                gain==1.0?raw:raw*gain;
+                        }
+                    }
+                    const auto ended=std::chrono::steady_clock::now();
+                    quantumNs.push_back(std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(ended-began).count());
+                }
+                QCOMPARE(feedPosition,static_cast<std::size_t>(nFrames));
+                QCOMPARE(controller.value()->next_tick(),
+                         std::int64_t{8*(nFrames-1)+1});
+                QCOMPARE(rolling->next_tick(),
+                         controller.value()->next_tick());
+                QVERIFY(feeder->drained());
+                QVERIFY(feeder->high_water_events()<=Feeder::kMaxRetained);
+                QVERIFY(rolling->high_water_events()<=Rolling::kMaxBatchEvents);
+                for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                    const auto input=frozen->view().channel(ch);
+                    const auto output=prepared.view().channel(ch);
+                    QVERIFY(input && output);
+                    QCOMPARE(input.value()->size(),output.value()->size());
+                    for(std::size_t n=0;n<input.value()->size();++n)
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                                     (*input.value())[n]),
+                                 std::bit_cast<std::uint64_t>(
+                                     (*output.value())[n]));
+                }
+                QVERIFY(quantumNs.size()>=64U);
+                const auto summary=[&](std::vector<std::int64_t> measured) {
+                    std::sort(measured.begin(),measured.end());
+                    const auto total=std::accumulate(
+                        measured.begin(),measured.end(),std::int64_t{0});
+                    const auto p99idx=static_cast<std::size_t>(
+                        0.99*static_cast<double>(measured.size()-1));
+                    const auto over=std::count_if(measured.begin(),measured.end(),
+                        [&](std::int64_t v){return v>budgetNs;});
+                    return std::array<std::int64_t,4>{
+                        total/static_cast<std::int64_t>(measured.size()),
+                        measured[p99idx],measured.back(),over};
+                };
+                const auto all=summary(quantumNs);
+                const std::vector<std::int64_t> steady(
+                    quantumNs.begin()+4,quantumNs.end()-4);
+                const auto sustained=summary(steady);
+                const auto baselineNs=std::chrono::duration_cast<
+                    std::chrono::nanoseconds>(refEnd-refStart).count();
+                qInfo().nospace()<<"M17 isolated 64-frame quantum fs="<<fs
+                    <<" ch="<<(stereo?2:1)<<" ceiling="<<ceiling
+                    <<" budget_ns="<<budgetNs<<" mean_ns="<<all[0]
+                    <<" p99_ns="<<all[1]<<" worst_ns="<<all[2]
+                    <<" over="<<all[3]<<"/"<<quantumNs.size()
+                    <<" steady_p99_ns="<<sustained[1]
+                    <<" steady_over="<<sustained[3]
+                    <<" PCM_bitwise=PASS; real_time_qualified=NO";
+                if(!csvPath.empty()) {
+                    std::ofstream csv(csvPath,std::ios::app);
+                    QVERIFY2(csv.good(),"M17 quantum diagnostic append failed");
+                    csv<<fs<<','<<(stereo?2:1)<<','<<ceiling<<','
+                       <<nFrames<<','<<kQuantum<<','<<quantumNs.size()<<','
+                       <<budgetNs<<','<<all[0]<<','<<all[1]<<','<<all[2]<<','
+                       <<quantumNs.front()<<','<<all[3]<<','
+                       <<sustained[0]<<','<<sustained[1]<<','<<sustained[2]
+                       <<','<<sustained[3]<<','
+                       <<feeder->high_water_events()<<','
+                       <<rolling->high_water_events()<<",PASS,PASS,"
+                       <<baselineNs<<",NO\n";
+                }
+            }
+        }
+    }
 }
 
 } // namespace

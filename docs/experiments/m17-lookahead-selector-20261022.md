@@ -196,3 +196,38 @@ A dedicated correction changes the *long-render* loop explicitly to
 0/-1/-6/-12 dBTP and asserts exactly **48** executed matrix scenarios.
 This catches future omissions even if the workflow reports SUCCESS.
 This is test-only work; the frozen M17 DSP and PR #54 remain unchanged.
+
+## Verified full matrix and next 64-frame quantum falsification
+
+CI #671 succeeded Windows/Linux at commit 10cc93d4, and the actual
+LongRender CSV artifacts each contain **48 records**: 6 rates,
+mono/stereo and four ceilings 0/-1/-6/-12 dBTP. Every record reports
+exact untrimmed PCM, actual M16 final check, matched M16 outcome and
+bit-identical PCM after verification (48/48 PASS on each OS).
+Detector EOS, cache caps and checkpoint-restored control all passed.
+Highest retained detector/selector cache occupancy was 7644 events
+of 32768 each. This closes the initial cross-rate synthetic
+functional equivalence matrix, NOT production qualification.
+
+The apparent acceleration is not a realtime safety bound:
+at 192 kHz, 8192 source frames correspond to only ~42.7ms of audio.
+The synthetic candidate's Linux output-buffer time on a -6dBTP case
+was ~0.41-0.43 seconds, greater than input audio duration, even
+though it far outperformed the original frozen M17 IModule.
+
+The next *separate test-only* falsification uses exact 64-frame
+quanta at 48/192kHz, mono/stereo, -6/-12dBTP (8 cases).
+Per-quantum clock intervals include detector prefeed, lookahead cache
+rebuild, frozen controller and final PCM writes, with true original
+IModule PCM bit identity required. Report mean, p99, worst case,
+cold first quantum, over-budget count and a steady-state subset
+excluding 4 initial and final quanta; 64/Fs is the provisional
+quantum budget (1.333ms at 48k, 0.333ms at 192k).
+A deadline miss is **reported, not hidden**, and is not a CI test
+failure: the test measures feasibility rather than requiring success.
+
+**NOT realtime certification:** GitHub hosted runner scheduling,
+thermal changes, Qt test harness, bulk source buffers, no actual
+audio-device callback or full product M17/Prepare stack prevent any
+hard latency guarantee. The reported windows are experimental
+feasibility evidence only. No production backend is modified.
