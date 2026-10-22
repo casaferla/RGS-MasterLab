@@ -187,15 +187,24 @@ Item {
                         objectName: "m17GainReductionHistory"
                         visible: root.showLimiterGrHistory
                         Layout.fillWidth: true
-                        // Intrinsic height exactly follows Compressor
-                        // GR ribbon: 10px header + 2px spacing + 54px
-                        // single linked-lane Canvas. Never consume surplus
-                        // vertical space: the L/R meter RowLayout does.
-                        Layout.minimumHeight: 70
-                        Layout.preferredHeight: 70
-                        Layout.maximumHeight: 70
+                        // The WHOLE lower bay must align with M17's two
+                        // right-hand control cards, including at minimum
+                        // window height. Only the GRAPH is the Compressor's
+                        // fixed 54px: a flexible upper clearance keeps
+                        // the waveform low and leaves extra growth to L/R.
+                        Layout.minimumHeight: root.showLimiterControls
+                            ? root.lowerControlBandHeight : implicitHeight
+                        Layout.preferredHeight: root.showLimiterControls
+                            ? root.lowerControlBandHeight : implicitHeight
+                        Layout.maximumHeight: root.showLimiterControls
+                            ? root.lowerControlBandHeight : implicitHeight
                         spacing: 2
                         opacity: root.limiterBypassed ? 0.5 : 1.0
+                        Item {
+                            Layout.fillHeight: root.showLimiterControls
+                            Layout.minimumHeight: 0
+                            Layout.preferredHeight: 0
+                        }
                         RowLayout {
                             Layout.fillWidth: true
                             Text {

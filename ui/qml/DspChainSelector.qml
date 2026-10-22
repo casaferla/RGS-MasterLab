@@ -13,6 +13,8 @@ Rectangle {
     property int selectedIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
+    // Delegate lifecycle invalidates all original-index row handles.
+    property int rowGeneration: 0
 
     // Fit the fixed-width chain row without truncating semantic words.
     // Diagnostic/ownership detail stays in the stationary-hover tooltip;
@@ -83,12 +85,24 @@ Rectangle {
         var terminalIdx = root.terminalModuleIndices.indexOf(idx)
         return terminalIdx >= 0 ? terminalRepeater.itemAt(terminalIdx) : null
     }
-    readonly property Item activeRow: root.rowAt(
-        root.adapterModel ? root.adapterModel.selectedIndex : root.selectedIndex)
-
-    // Explicit focus targets retained for existing smoke assertions
-    readonly property Item inputGainRow: root.rowAt(0)
-    readonly property Item parametricEqRow: root.rowAt(1)
+    // itemAt() has no reactive notifier. Every delegate-creation/removal
+    // advances rowGeneration so offscreen/visible LayoutItemProxy instances
+    // cannot retain an initially null handle at unchanged model length.
+    readonly property Item activeRow: {
+        const generation = root.rowGeneration
+        return generation >= 0 ? root.rowAt(
+            root.adapterModel ? root.adapterModel.selectedIndex : root.selectedIndex)
+            : null
+    }
+    // Exact original adapter indices are preserved across both Repeaters.
+    readonly property Item inputGainRow: {
+        const generation = root.rowGeneration
+        return generation >= 0 ? root.rowAt(0) : null
+    }
+    readonly property Item parametricEqRow: {
+        const generation = root.rowGeneration
+        return generation >= 0 ? root.rowAt(1) : null
+    }
 
     color: "#0B1622"
     border.color: "#1E354A"
@@ -136,6 +150,8 @@ Rectangle {
                 id: rowRepeater
                 model: root.liveModuleIndices
                 delegate: chainRowDelegate
+                onItemAdded: root.rowGeneration += 1
+                onItemRemoved: root.rowGeneration += 1
             }
         }
     }
@@ -191,6 +207,8 @@ Rectangle {
                 id: terminalRepeater
                 model: root.terminalModuleIndices
                 delegate: chainRowDelegate
+                onItemAdded: root.rowGeneration += 1
+                onItemRemoved: root.rowGeneration += 1
             }
         }
     }

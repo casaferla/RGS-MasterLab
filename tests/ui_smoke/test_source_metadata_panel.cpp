@@ -894,8 +894,10 @@ Window {
             lowerControls->mapToItem(editor, QPointF{}).y() + lowerControls->height()
             - gr->mapToItem(editor, QPointF{}).y() - gr->height()) <= 1.0,
             "GR and the two Limiter cards must occupy one aligned lower band");
-        QVERIFY2(grPlot->height() >= compressorGrCanvas->height(),
-            "The fixed lower GR band grows to align with the two Limiter cards");
+        QCOMPARE(grPlot->height(), compressorGrCanvas->height());
+        QCOMPARE(grPlot->height(), 54.0); // Exact Compressor history height.
+        // The enclosing GR bay (not the canvas) matches the lower
+        // Ceiling/Trim card band on every tested editor height.
         QVERIFY2(meterLeftLane->height() > lastMeterLaneHeight,
             "Surplus vertical height must grow the LIVE L/R meters, not GR");
         lastMeterLaneHeight = meterLeftLane->height();
