@@ -1849,8 +1849,14 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
                             snap.next_tick);
                     }
                 }
+                // m=-62..0 gives 63 initial ticks, then 8 per
+                // following frame. For N frames: 63+8*(N-1)=8*N+55.
+                QCOMPARE(candidate.value()->next_tick(),
+                         std::int64_t{8*(nFrames-1)+1});
+                QCOMPARE(oracle.value()->next_tick(),
+                         candidate.value()->next_tick());
                 QCOMPARE(boundedTicks+directTicks,
-                    std::size_t{8*nFrames+63});
+                         std::size_t{8*nFrames+55});
                 const auto cacheMicros=std::chrono::duration_cast<
                     std::chrono::microseconds>(cacheEnd-cacheStart).count();
                 qInfo().nospace()<<"M17 isolated-accelerator fs="<<fs
