@@ -7,10 +7,16 @@ Rectangle {
     objectName: "dspWorkspace"
 
     property var adapterModel: null
+    property bool errorsInGlobalStatusBar: false
     property int selectedModuleIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
     property var spectrumViewModel: null
+    property var truePeakStaticViewModel: null
+    property var truePeakLiveViewModel: null
+    property var terminalPostLimiterTruePeak: null
+    property var terminalLimiterViewModel: null
+    property var limiterGrProvider: null
 
     // Backward-compatibility alias so code referencing workspace.viewModel sets/gets eqViewModel
     property alias viewModel: root.eqViewModel
@@ -52,7 +58,13 @@ Rectangle {
             adapterModel: root.adapterModel
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
+            errorsInGlobalStatusBar: root.errorsInGlobalStatusBar
             spectrumViewModel: root.spectrumViewModel
+            truePeakStaticViewModel: root.truePeakStaticViewModel
+            truePeakLiveViewModel: root.truePeakLiveViewModel
+            terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
+            terminalLimiterViewModel: root.terminalLimiterViewModel
+            limiterGrProvider: root.limiterGrProvider
             activeChainRow: realChainSelector.activeRow
         }
     }

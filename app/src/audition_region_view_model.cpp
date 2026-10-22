@@ -255,7 +255,7 @@ core::Status AuditionRegionViewModel::set_region(core::FrameRange candidate)
             publish_error(*failure.error());
             return failure;
         }
-        const auto beforeLoopUpdate = playback_->playback_snapshot();
+        const auto beforeLoopUpdate = playback_->source_display_snapshot();
         if (!beforeLoopUpdate) {
             publish_error(*beforeLoopUpdate.error());
             return core::Status::failure(*beforeLoopUpdate.error());
@@ -335,7 +335,7 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
     }
     std::optional<core::FrameIndex> positionBeforeLoopUpdate;
     if (enabled) {
-        const auto snapshot = playback_->playback_snapshot();
+        const auto snapshot = playback_->source_display_snapshot();
         if (!snapshot) {
             publish_error(*snapshot.error());
             return core::Status::failure(*snapshot.error());

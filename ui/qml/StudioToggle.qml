@@ -6,6 +6,9 @@ CheckBox {
 
     implicitWidth: label.implicitWidth + 12 + 40
     implicitHeight: 32
+    // M15 opt-in theme; legacy StudioToggle keeps its original cyan.
+    property color accentColor: "#00C8FF"
+    property bool useFamilyAccent: false
     activeFocusOnTab: true
     hoverEnabled: true
     spacing: 12
@@ -36,16 +39,20 @@ CheckBox {
             radius: 13
             color: "transparent"
             border.width: control.activeFocus ? 2 : 0
-            border.color: "#00C8FF"
+            border.color: control.accentColor
         }
         Rectangle {
             anchors.centerIn: parent
             width: 40
             height: 22
             radius: 11
-            color: control.checked ? "#005A6B" : "#1A2A36"
+            color: control.checked
+                ? (control.useFamilyAccent ? Qt.alpha(control.accentColor, 0.34) : "#005A6B")
+                : "#1A2A36"
             border.width: 1
-            border.color: control.hovered ? "#3A566B" : "#2A3F4F"
+            border.color: control.hovered
+                ? (control.useFamilyAccent ? control.accentColor : "#3A566B")
+                : "#2A3F4F"
             opacity: control.enabled ? 1.0 : 0.4
             Rectangle {
                 width: 16

@@ -6,6 +6,9 @@
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/module_parameter_codec.hpp>
 #include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/render/compressor_telemetry_collector.hpp>
+#include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/render_result.hpp>
 
 #include <QtTest/QTest>
 
@@ -45,6 +48,7 @@ private slots:
     void finalizeEosShortSourceCases();
     void sonicFingerprintAndCheckpointRejection();
     void unifiedKernelBitIdentity();
+    void telemetryOraclesAndInvariance();
 };
 
 void CompressorTest::parametersValidationAndBounds()
@@ -942,6 +946,472 @@ void CompressorTest::unifiedKernelBitIdentity()
 
     // Audio output must be 100% bit-identical!
     QCOMPARE(bits(out_normal.value()->view()), bits(out_diag.value()->view()));
+}
+
+namespace {
+class TestTelemetrySink final : public ICompressorTelemetrySink {
+public:
+    void push_frame_telemetry(std::int64_t absolute_frame, const CompressorFrameTelemetry& frame) noexcept override {
+        frames.push_back(frame);
+        frame_indices.push_back(absolute_frame);
+    }
+    std::vector<CompressorFrameTelemetry> frames;
+    std::vector<std::int64_t> frame_indices;
+};
+}  // namespace
+
+void CompressorTest::telemetryOraclesAndInvariance()
+{
+    auto registry = ModuleRegistry::create_dsp_package_v1();
+    const auto& desc = registry.value()->find_descriptor("rgsml.dsp.compressor").value()->get();
+
+    // Test A: Applied-GR Oracle (9 dB target)
+    // PEAK, Threshold = -24 dBFS, Ratio = 4:1, Knee = 0 dB
+    // Input sample = 0.251188643150958 (-12 dBFS)
+    // target GR = (-12 - (-24)) * (1 - 1/4) = 12 * 0.75 = 9.0 dB
+    auto paramsA = *CompressorParameters::create(
+        CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+        -24.0, 4.0, 0.0, 0.1, 1000.0, 50.0, 0.0, 100.0, 0.0).value();
+    auto modA = std::move(*CompressorModule::create(desc, paramsA).value());
+
+    const DspProcessSpec spec48k{format(rgsml::audio::ChannelLayout::MONO_C, 48000), rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE, frame_count(10000)};
+    QVERIFY(modA->prepare(spec48k));
+
+    TestTelemetrySink sinkA;
+    modA->set_telemetry_sink(&sinkA);
+
+    // Feed 5000 frames of -12 dBFS input so reduction reaches steady 9 dB
+    std::vector<double> inA_smp(5000U, 0.251188643150958);
+    auto inA = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inA_smp);
+    auto outA = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inA_smp);
+    QVERIFY(modA->process(inA.value()->view(), outA.value()->mutable_view(), DspProcessContext{frame_range(0, 5000), true, false}));
+
+    QVERIFY(!sinkA.frames.empty());
+    const double steadyGR = sinkA.frames.back().applied_reduction_db_ch0;
+    QVERIFY(std::abs(steadyGR - 9.0) < 1e-4);
+
+    // Test B: Attack ballistics after 1440 updates @ 48 kHz (Attack = 30 ms)
+    // Starting from 0 dB, target = 9.0 dB
+    auto paramsB = *CompressorParameters::create(
+        CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+        -24.0, 4.0, 0.0, 30.0, 1000.0, 50.0, 0.0, 100.0, 0.0).value();
+    auto modB = std::move(*CompressorModule::create(desc, paramsB).value());
+    QVERIFY(modB->prepare(spec48k));
+
+    TestTelemetrySink sinkB;
+    modB->set_telemetry_sink(&sinkB);
+
+    std::vector<double> inB_smp(1440U, 0.251188643150958);
+    auto inB = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inB_smp);
+    auto outB = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inB_smp);
+    QVERIFY(modB->process(inB.value()->view(), outB.value()->mutable_view(), DspProcessContext{frame_range(0, 1440), true, false}));
+
+    QCOMPARE(sinkB.frames.size(), 1440U);
+    const double attackGR = sinkB.frames.back().applied_reduction_db_ch0;
+    QVERIFY(std::abs(attackGR - 5.689085029456885) < 1e-4);
+
+    // Test C: Release ballistics after 9600 updates @ 48 kHz (Release = 200 ms)
+    // Starting from 9 dB, target = 0 dB
+    auto paramsC = *CompressorParameters::create(
+        CompressorDetectorMode::PEAK, CompressorChannelLink::LINKED_MAX,
+        -24.0, 4.0, 0.0, 0.1, 200.0, 50.0, 0.0, 100.0, 0.0).value();
+    auto modC = std::move(*CompressorModule::create(desc, paramsC).value());
+    QVERIFY(modC->prepare(spec48k));
+
+    TestTelemetrySink sinkC_steady;
+    modC->set_telemetry_sink(&sinkC_steady);
+    QVERIFY(modC->process(inA.value()->view(), outA.value()->mutable_view(), DspProcessContext{frame_range(0, 5000), true, false}));
+
+    TestTelemetrySink sinkC;
+    modC->set_telemetry_sink(&sinkC);
+
+    std::vector<double> inC_smp(9600U, 0.0);
+    auto inC = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 5000, inC_smp);
+    auto outC = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 5000, inC_smp);
+    QVERIFY(modC->process(inC.value()->view(), outC.value()->mutable_view(), DspProcessContext{frame_range(5000, 14600), false, false}));
+
+    const double releaseGR = sinkC.frames.back().applied_reduction_db_ch0;
+    QVERIFY(std::abs(releaseGR - 3.310914970543439) < 1e-4);
+
+    // Test Telemetry ON vs OFF bit-identical audio output
+    auto mod_off = std::move(*CompressorModule::create(desc, paramsA).value());
+    auto mod_on = std::move(*CompressorModule::create(desc, paramsA).value());
+    QVERIFY(mod_off->prepare(spec48k));
+    QVERIFY(mod_on->prepare(spec48k));
+
+    TestTelemetrySink dummySink;
+    mod_on->set_telemetry_sink(&dummySink);
+
+    auto out_off = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inA_smp);
+    auto out_on = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, inA_smp);
+
+    QVERIFY(mod_off->process(inA.value()->view(), out_off.value()->mutable_view(), DspProcessContext{frame_range(0, 5000), true, false}));
+    QVERIFY(mod_on->process(inA.value()->view(), out_on.value()->mutable_view(), DspProcessContext{frame_range(0, 5000), true, false}));
+
+    QCOMPARE(bits(out_off.value()->view()), bits(out_on.value()->view()));
+
+    // Test D: Bucket impulse (240 frames @ 48 kHz = 5 ms bucket)
+    // One frame = 12 dB GR, all others = 0 dB
+    // Expect: peak = 12 dB, mean = 12 / 240 = 0.05 dB, attenuatedFrameCount = 1, peak offset retained.
+    const auto dummyUuid = *rgsml::core::Uuid::parse("11111111-1111-1111-1111-111111111111").value();
+    const auto dummyInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(dummyUuid).value();
+    rgsml::render::CompressorTelemetryCollector impulseCollector{
+        0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+    };
+
+    impulseCollector.push_frame_telemetry(0, CompressorFrameTelemetry{12.0, 12.0, std::pow(10.0, -12.0/20.0), std::pow(10.0, -12.0/20.0)});
+    for (std::int64_t f = 1; f < 240; ++f) {
+        impulseCollector.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+    }
+
+    auto sidecarD = impulseCollector.build_sidecar();
+    QVERIFY(sidecarD.valid);
+    QCOMPARE(sidecarD.channel_lanes.size(), 1U);
+    QCOMPARE(sidecarD.channel_lanes[0].buckets.size(), 1U);
+
+    const auto& bucketD = sidecarD.channel_lanes[0].buckets[0];
+    QCOMPARE(bucketD.peak_reduction_db, 12.0);
+    QCOMPARE(bucketD.mean_reduction_db, 0.05); // 12.0 / 240 = 0.05 dB
+    QCOMPARE(bucketD.attenuated_frame_count, 1U);
+    QCOMPARE(bucketD.peak_offset_frames, 0U);
+
+    // Test E: 44.1 kHz cadence verification (alternating 220 / 221 frame buckets)
+    {
+        rgsml::render::CompressorTelemetryCollector collector44k{
+            0, 882, 44100, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        for (std::int64_t f = 0; f < 882; ++f) {
+            collector44k.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        }
+        auto sidecar44k = collector44k.build_sidecar();
+        QVERIFY(sidecar44k.valid);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets.size(), 4U);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[0].frame_count, 220U);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[0].begin_frame, 0);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[0].end_frame, 220);
+
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[1].frame_count, 221U);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[1].begin_frame, 220);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[1].end_frame, 441);
+
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[2].frame_count, 220U);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[2].begin_frame, 441);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[2].end_frame, 661);
+
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[3].frame_count, 221U);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[3].begin_frame, 661);
+        QCOMPARE(sidecar44k.channel_lanes[0].buckets[3].end_frame, 882);
+
+        // Verify exact observation accumulation per bucket (e.g. 220 frames in B0, 221 in B1, etc.)
+        rgsml::render::CompressorTelemetryCollector impulse44k{
+            0, 882, 44100, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        // Place impulse exactly at frame 220 (first frame of Bucket 1)
+        const double g12_44k = std::pow(10.0, -12.0 / 20.0);
+        for (std::int64_t f = 0; f < 882; ++f) {
+            if (f == 220) {
+                impulse44k.push_frame_telemetry(f, CompressorFrameTelemetry{12.0, 12.0, g12_44k, g12_44k});
+            } else {
+                impulse44k.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+            }
+        }
+        auto sidecarImp44k = impulse44k.build_sidecar();
+        QVERIFY(sidecarImp44k.valid);
+        QCOMPARE(sidecarImp44k.channel_lanes[0].buckets[0].peak_reduction_db, 0.0);
+        QCOMPARE(sidecarImp44k.channel_lanes[0].buckets[1].peak_reduction_db, 12.0);
+        QCOMPARE(sidecarImp44k.channel_lanes[0].buckets[1].peak_offset_frames, 0U); // 220 - 220 = 0 offset in Bucket 1!
+    }
+
+    // Test F: Partial edge buckets (first and last partial intervals)
+    {
+        // First partial bucket: start at frame 10, total 200 frames @ 48 kHz
+        rgsml::render::CompressorTelemetryCollector partialFirst{
+            10, 200, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        const double g12 = std::pow(10.0, -12.0 / 20.0);
+        partialFirst.push_frame_telemetry(10, CompressorFrameTelemetry{12.0, 12.0, g12, g12});
+        for (std::int64_t f = 11; f < 210; ++f) {
+            partialFirst.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        }
+        auto sidecarFirst = partialFirst.build_sidecar();
+        QVERIFY(sidecarFirst.valid);
+        QCOMPARE(sidecarFirst.channel_lanes[0].buckets.size(), 1U);
+        const auto& bFirst = sidecarFirst.channel_lanes[0].buckets[0];
+        QCOMPARE(bFirst.begin_frame, 10);
+        QCOMPARE(bFirst.end_frame, 210);
+        QCOMPARE(bFirst.frame_count, 200U);
+        QCOMPARE(bFirst.peak_offset_frames, 0U); // 10 - 10 = 0 offset relative to bucket.begin_frame
+
+        // Last partial bucket: start at 0, total 250 frames @ 48 kHz -> bucket 0 [0, 240), bucket 1 [240, 250)
+        rgsml::render::CompressorTelemetryCollector partialLast{
+            0, 250, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        for (std::int64_t f = 0; f < 250; ++f) {
+            partialLast.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        }
+        auto sidecarLast = partialLast.build_sidecar();
+        QVERIFY(sidecarLast.valid);
+        QCOMPARE(sidecarLast.channel_lanes[0].buckets.size(), 2U);
+        QCOMPARE(sidecarLast.channel_lanes[0].buckets[0].frame_count, 240U);
+        QCOMPARE(sidecarLast.channel_lanes[0].buckets[1].frame_count, 10U);
+        QCOMPARE(sidecarLast.channel_lanes[0].buckets[1].begin_frame, 240);
+        QCOMPARE(sidecarLast.channel_lanes[0].buckets[1].end_frame, 250);
+    }
+
+    // Test G: Mandatory Frame Coverage (before start, at end, after end, out of order, duplicate, gap, incomplete)
+    {
+        const auto testMalformedFrame = [&](std::int64_t badFrame) {
+            rgsml::render::CompressorTelemetryCollector col{
+                10, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+            };
+            if (badFrame == 10) { // duplicate
+                col.push_frame_telemetry(10, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+                col.push_frame_telemetry(10, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+            } else {
+                col.push_frame_telemetry(badFrame, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+            }
+            auto sc = col.build_sidecar();
+            QVERIFY(!sc.valid);
+            QCOMPARE(sc.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+        };
+
+        testMalformedFrame(9);   // before declared start (10)
+        testMalformedFrame(250); // at declared end (250)
+        testMalformedFrame(251); // after declared end
+        testMalformedFrame(15);  // gap/skipped frame (expected 10)
+        testMalformedFrame(10);  // duplicate frame
+
+        // Out-of-order frame
+        rgsml::render::CompressorTelemetryCollector oooCol{
+            0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        oooCol.push_frame_telemetry(0, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        oooCol.push_frame_telemetry(2, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        oooCol.push_frame_telemetry(1, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        auto scOoo = oooCol.build_sidecar();
+        QVERIFY(!scOoo.valid);
+        QCOMPARE(scOoo.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+        // Incomplete final coverage
+        rgsml::render::CompressorTelemetryCollector incCol{
+            0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        for (std::int64_t f = 0; f < 200; ++f) {
+            incCol.push_frame_telemetry(f, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+        }
+        auto scInc = incCol.build_sidecar();
+        QVERIFY(!scInc.valid);
+        QCOMPARE(scInc.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+    }
+
+    // Test H: Mandatory Observation Domain & Contradiction checks
+    {
+        const double nan_v = std::numeric_limits<double>::quiet_NaN();
+        const double pos_inf = std::numeric_limits<double>::infinity();
+
+        const auto testInvalidObs = [&](double red_db, double gain_lin) {
+            rgsml::render::CompressorTelemetryCollector col{
+                0, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+            };
+            col.push_frame_telemetry(0, CompressorFrameTelemetry{red_db, red_db, gain_lin, gain_lin});
+            auto sc = col.build_sidecar();
+            QVERIFY(!sc.valid);
+            QCOMPARE(sc.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+        };
+
+        testInvalidObs(nan_v, 1.0);     // NaN reduction
+        testInvalidObs(pos_inf, 1.0);   // +inf reduction
+        testInvalidObs(-1.0, 1.0);      // negative reduction
+        testInvalidObs(0.0, nan_v);     // NaN gain
+        testInvalidObs(0.0, pos_inf);   // +inf gain
+        testInvalidObs(0.0, 0.0);       // gain == 0
+        testInvalidObs(0.0, -0.5);      // negative gain
+        testInvalidObs(0.0, 1.1);       // gain > 1.0
+        testInvalidObs(6.0, 1.0);       // contradiction: 6 dB reduction but gain = 1.0
+        testInvalidObs(0.0, 0.5);       // contradiction: 0 dB reduction but gain = 0.5
+    }
+
+    // Test I: LINKED_MAX and LINKED_MEAN completeness (equal vs divergent L/R)
+    {
+        const double g6 = std::pow(10.0, -6.0 / 20.0);
+
+        // LINKED_MAX - equal L/R -> 1 valid lane
+        rgsml::render::CompressorTelemetryCollector maxEqual{
+            0, 240, 48000, rgsml::audio::ChannelLayout::STEREO_LR, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        for (std::int64_t f = 0; f < 240; ++f) {
+            maxEqual.push_frame_telemetry(f, CompressorFrameTelemetry{6.0, 6.0, g6, g6});
+        }
+        auto scMaxEq = maxEqual.build_sidecar();
+        QVERIFY(scMaxEq.valid);
+        QCOMPARE(scMaxEq.channel_lanes.size(), 1U);
+
+        // LINKED_MAX - divergent L/R -> UNAVAILABLE
+        rgsml::render::CompressorTelemetryCollector maxDiv{
+            0, 240, 48000, rgsml::audio::ChannelLayout::STEREO_LR, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        for (std::int64_t f = 0; f < 240; ++f) {
+            maxDiv.push_frame_telemetry(f, CompressorFrameTelemetry{6.0, 0.0, g6, 1.0});
+        }
+        auto scMaxDiv = maxDiv.build_sidecar();
+        QVERIFY(!scMaxDiv.valid);
+        QCOMPARE(scMaxDiv.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+        // LINKED_MEAN - equal L/R -> 1 valid lane
+        rgsml::render::CompressorTelemetryCollector meanEqual{
+            0, 240, 48000, rgsml::audio::ChannelLayout::STEREO_LR, CompressorChannelLink::LINKED_MEAN, dummyInstanceId, 1
+        };
+        for (std::int64_t f = 0; f < 240; ++f) {
+            meanEqual.push_frame_telemetry(f, CompressorFrameTelemetry{6.0, 6.0, g6, g6});
+        }
+        auto scMeanEq = meanEqual.build_sidecar();
+        QVERIFY(scMeanEq.valid);
+        QCOMPARE(scMeanEq.channel_lanes.size(), 1U);
+
+        // LINKED_MEAN - divergent L/R -> UNAVAILABLE
+        rgsml::render::CompressorTelemetryCollector meanDiv{
+            0, 240, 48000, rgsml::audio::ChannelLayout::STEREO_LR, CompressorChannelLink::LINKED_MEAN, dummyInstanceId, 1
+        };
+        for (std::int64_t f = 0; f < 240; ++f) {
+            meanDiv.push_frame_telemetry(f, CompressorFrameTelemetry{6.0, 3.0, g6, std::pow(10.0, -3.0 / 20.0)});
+        }
+        auto scMeanDiv = meanDiv.build_sidecar();
+        QVERIFY(!scMeanDiv.valid);
+        QCOMPARE(scMeanDiv.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+    }
+
+    // Test J: DUAL_MONO complete payload assertion for both independent lanes
+    {
+        rgsml::render::CompressorTelemetryCollector dualCol{
+            0, 240, 48000, rgsml::audio::ChannelLayout::STEREO_LR, CompressorChannelLink::DUAL_MONO, dummyInstanceId, 1
+        };
+        const double g6 = std::pow(10.0, -6.0 / 20.0);
+        const double g3 = std::pow(10.0, -3.0 / 20.0);
+        for (std::int64_t f = 0; f < 240; ++f) {
+            dualCol.push_frame_telemetry(f, CompressorFrameTelemetry{6.0, 3.0, g6, g3});
+        }
+        auto scDual = dualCol.build_sidecar();
+        QVERIFY(scDual.valid);
+        QCOMPARE(scDual.channel_lanes.size(), 2U);
+
+        // Assert ALL payload fields for Lane 0 (L)
+        const auto& b0 = scDual.channel_lanes[0].buckets[0];
+        QCOMPARE(b0.begin_frame, 0);
+        QCOMPARE(b0.end_frame, 240);
+        QCOMPARE(b0.frame_count, 240U);
+        QCOMPARE(b0.end_reduction_db, 6.0);
+        QCOMPARE(b0.mean_reduction_db, 6.0);
+        QCOMPARE(b0.peak_reduction_db, 6.0);
+        QCOMPARE(b0.peak_offset_frames, 0U);
+        QCOMPARE(b0.attenuated_frame_count, 240U);
+
+        // Assert ALL payload fields for Lane 1 (R)
+        const auto& b1 = scDual.channel_lanes[1].buckets[0];
+        QCOMPARE(b1.begin_frame, 0);
+        QCOMPARE(b1.end_frame, 240);
+        QCOMPARE(b1.frame_count, 240U);
+        QCOMPARE(b1.end_reduction_db, 3.0);
+        QCOMPARE(b1.mean_reduction_db, 3.0);
+        QCOMPARE(b1.peak_reduction_db, 3.0);
+        QCOMPARE(b1.peak_offset_frames, 0U);
+        QCOMPARE(b1.attenuated_frame_count, 240U);
+    }
+
+    // Test K: Strict activity semantics (linearGain < 1.0 ONLY)
+    {
+        rgsml::render::CompressorTelemetryCollector actCol{
+            0, 2, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        // Frame 0: gain = 0.99999999999999 (< 1.0) -> attenuated
+        const double tinyGain = 0.99999999999999;
+        const double tinyRed = -20.0 * std::log10(tinyGain);
+        actCol.push_frame_telemetry(0, CompressorFrameTelemetry{tinyRed, tinyRed, tinyGain, tinyGain});
+
+        // Frame 1: gain = 1.0 (== 1.0) -> NOT attenuated
+        actCol.push_frame_telemetry(1, CompressorFrameTelemetry{0.0, 0.0, 1.0, 1.0});
+
+        auto scAct = actCol.build_sidecar();
+        QVERIFY(scAct.valid);
+        QCOMPARE(scAct.channel_lanes[0].buckets[0].attenuated_frame_count, 1U);
+    }
+
+    // Test L: Memory hard-limit (>128 MiB) & Checked arithmetic fail-closed
+    {
+        rgsml::render::CompressorTelemetryCollector hugeCol{
+            0, 1000000000, 48000, rgsml::audio::ChannelLayout::STEREO_LR, CompressorChannelLink::DUAL_MONO, dummyInstanceId, 1
+        };
+        auto scHuge = hugeCol.build_sidecar();
+        QVERIFY(!scHuge.valid);
+        QCOMPARE(scHuge.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+
+        // Test integer overflow in start_frame * 200
+        rgsml::render::CompressorTelemetryCollector overflowCol{
+            std::numeric_limits<std::int64_t>::max() / 10, 240, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        auto scOverflow = overflowCol.build_sidecar();
+        QVERIFY(!scOverflow.valid);
+        QCOMPARE(scOverflow.status, rgsml::render::CompressorTelemetryStatus::UNAVAILABLE);
+    }
+
+    // Block-partition invariance: test process partitions 1, 7, 31, 64, 127, 256, 511, 1024, 4096
+    const std::array partitions{1, 7, 31, 64, 127, 256, 511, 1024, 4096};
+    std::vector<double> longInput(4096U, 0.5);
+
+    auto mod_mono_ref = std::move(*CompressorModule::create(desc, paramsA).value());
+    QVERIFY(mod_mono_ref->prepare(spec48k));
+
+    rgsml::render::CompressorTelemetryCollector refCollector{
+        0, 4096, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+    };
+    mod_mono_ref->set_telemetry_sink(&refCollector);
+
+    auto in_long = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, longInput);
+    auto out_mono_ref = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, longInput);
+    QVERIFY(mod_mono_ref->process(in_long.value()->view(), out_mono_ref.value()->mutable_view(), DspProcessContext{frame_range(0, 4096), true, false}));
+    const auto ref_bits_partition = bits(out_mono_ref.value()->view());
+    const auto ref_sidecar = refCollector.build_sidecar();
+    QVERIFY(ref_sidecar.valid);
+
+    for (const int p_size : partitions) {
+        auto mod_p = std::move(*CompressorModule::create(desc, paramsA).value());
+        QVERIFY(mod_p->prepare(spec48k));
+
+        rgsml::render::CompressorTelemetryCollector pCollector{
+            0, 4096, 48000, rgsml::audio::ChannelLayout::MONO_C, CompressorChannelLink::LINKED_MAX, dummyInstanceId, 1
+        };
+        mod_p->set_telemetry_sink(&pCollector);
+
+        auto out_p = make_buffer(rgsml::audio::ChannelLayout::MONO_C, 0, longInput);
+        int cursor = 0;
+        while (cursor < 4096) {
+            const int current_p = std::min(p_size, 4096 - cursor);
+            auto in_p_sub = in_long.value()->view().subview(rgsml::core::FrameIndex{cursor}, frame_count(current_p));
+            auto out_p_sub = out_p.value()->mutable_view().subview(rgsml::core::FrameIndex{cursor}, frame_count(current_p));
+            QVERIFY(mod_p->process(*in_p_sub.value(), *out_p_sub.value(), DspProcessContext{frame_range(cursor, cursor + current_p), cursor == 0, false}));
+            cursor += current_p;
+        }
+
+        QCOMPARE(bits(out_p.value()->view()), ref_bits_partition);
+
+        const auto p_sidecar = pCollector.build_sidecar();
+        QVERIFY(p_sidecar.valid);
+        QCOMPARE(p_sidecar.channel_lanes.size(), ref_sidecar.channel_lanes.size());
+        QCOMPARE(p_sidecar.channel_lanes[0].buckets.size(), ref_sidecar.channel_lanes[0].buckets.size());
+
+        for (std::size_t b = 0; b < ref_sidecar.channel_lanes[0].buckets.size(); ++b) {
+            const auto& bRef = ref_sidecar.channel_lanes[0].buckets[b];
+            const auto& bP = p_sidecar.channel_lanes[0].buckets[b];
+            QCOMPARE(bP.begin_frame, bRef.begin_frame);
+            QCOMPARE(bP.end_frame, bRef.end_frame);
+            QCOMPARE(bP.frame_count, bRef.frame_count);
+            QCOMPARE(bP.end_reduction_db, bRef.end_reduction_db);
+            QCOMPARE(bP.mean_reduction_db, bRef.mean_reduction_db);
+            QCOMPARE(bP.peak_reduction_db, bRef.peak_reduction_db);
+            QCOMPARE(bP.peak_offset_frames, bRef.peak_offset_frames);
+            QCOMPARE(bP.attenuated_frame_count, bRef.attenuated_frame_count);
+            QCOMPARE(bP.valid, bRef.valid);
+        }
+    }
 }
 
 }  // namespace
