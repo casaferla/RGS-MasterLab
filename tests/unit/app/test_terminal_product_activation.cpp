@@ -465,11 +465,12 @@ void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublish
         QVERIFY(ca && cb && cc);
         QCOMPARE(ca.value()->size(),cb.value()->size());
         QCOMPARE(ca.value()->size(),cc.value()->size());
-        for (std::size_t i=0;i<ca.value()->size();++i)
+        for (std::size_t i=0;i<ca.value()->size();++i) {
             QCOMPARE(std::bit_cast<std::uint64_t>((*ca.value())[i]),
                      std::bit_cast<std::uint64_t>((*cb.value())[i]));
             QCOMPARE(std::bit_cast<std::uint64_t>((*ca.value())[i]),
                      std::bit_cast<std::uint64_t>((*cc.value())[i]));
+        }
     }
 }
 
