@@ -13,6 +13,12 @@ TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
             this,&TerminalProductActivationCoordinator::limiter_accepted);
     connect(session_,&TerminalPrivateProductSession::changed,
             this,&TerminalProductActivationCoordinator::private_session_changed);
+    connect(view_,&TerminalLimiterViewModel::prepareRequested,
+            this,&TerminalProductActivationCoordinator::prepare_requested);
+    connect(view_,&TerminalLimiterViewModel::cancelRequested,
+            this,&TerminalProductActivationCoordinator::cancel_requested);
+    connect(view_,&TerminalLimiterViewModel::previewRequested,
+            this,&TerminalProductActivationCoordinator::preview_requested);
     connect(selector_,&AuditionSourceSelector::changed,
             this,&TerminalProductActivationCoordinator::external_context_changed);
     // Render latency is observational. This timer never asserts that M17
@@ -67,12 +73,18 @@ void TerminalProductActivationCoordinator::fail_closed(const QString& reason)
     intent_.reset();
     deviceActive_=false;
     handoffStarted_=false;
+    readyToPreview_=false;
     transitioning_=false;
 }
 
 void TerminalProductActivationCoordinator::begin_activation()
 {
-    if(transitioning_||intent_)return;
+    if(transitioning_||intent_||state_->bypassed())return;
+    if(manualPreviewInProgress_) {
+        view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+        return;
+    }
+    readyToPreview_=false;
     auto captured=selector_->capture_terminal_activation_intent();
     if(!captured) {
         // Preserve the precise, SOURCE-owned capture refusal. A failed
@@ -104,6 +116,29 @@ void TerminalProductActivationCoordinator::begin_activation()
                         .arg(QString::fromStdString(submitted.error()->message())));
 }
 
+void TerminalProductActivationCoordinator::prepare_requested()
+{
+    // No user Play / Active operation may prepare the whole master.
+    if(!state_->bypassed() && !intent_)begin_activation();
+}
+
+void TerminalProductActivationCoordinator::cancel_requested()
+{
+    if(transitioning_)return;
+    if(intent_)deactivate(false);
+    else if(!state_->bypassed()) {
+        readyToPreview_=false;
+        view_->clearAudioError();
+        view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+    }
+}
+
+void TerminalProductActivationCoordinator::preview_requested()
+{
+    if(readyToPreview_ && intent_ && !state_->bypassed())
+        commit_ready_output();
+}
+
 void TerminalProductActivationCoordinator::update_render_elapsed()
 {
     if (!intent_ || !renderElapsed_.isValid() || deviceActive_
@@ -118,7 +153,8 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
 
 void TerminalProductActivationCoordinator::commit_ready_output()
 {
-    if(transitioning_||!intent_||state_->bypassed())return;
+    if(transitioning_||!readyToPreview_||!intent_||state_->bypassed())return;
+    readyToPreview_=false;
     const auto before=transport_->playback_snapshot();
     const auto source=transport_->source_display_snapshot();
     const auto after=transport_->playback_snapshot();
@@ -218,6 +254,7 @@ void TerminalProductActivationCoordinator::finish_activation()
         return;
     }
     view_->setAudioStatus(QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
+    readyToPreview_=false;
     handoffStarted_=false;
     transitioning_=false;
 }
@@ -256,9 +293,12 @@ void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
     intent_.reset();
     deviceActive_=false;
     handoffStarted_=false;
-    view_->setAudioStatus(QStringLiteral("BYPASS · MANUAL PROCESSED"));
+    readyToPreview_=false;
+    view_->setAudioStatus(state_->bypassed()
+        ? QStringLiteral("BYPASS · MANUAL PROCESSED")
+        : QStringLiteral("NEEDS PREPARATION"));
     transitioning_=false;
-    if(keepActiveIntent)begin_activation();
+    static_cast<void>(keepActiveIntent); // No auto-reprepare.
 }
 
 void TerminalProductActivationCoordinator::limiter_accepted()
@@ -267,15 +307,13 @@ void TerminalProductActivationCoordinator::limiter_accepted()
     if(state_->bypassed()) {
         waitingForManualPreview_=false;
         deactivate(false);
-    } else if(manualPreviewInProgress_) {
-        // Accepted Ceiling/ON during a new MANUAL render must not borrow
-        // the predecessor: retain Active intent for the next exact owner.
-        waitingForManualPreview_=true;
-        view_->setAudioStatus(QStringLiteral("Preparing manual audio"));
-    } else if(intent_) {
-        deactivate(true); // Committed Ceiling change: rerender the whole PCM.
     } else {
-        begin_activation();
+        // Arming ON or committing Ceiling invalidates any old finalization,
+        // and NEVER queues an implicit full-resource render.
+        if(intent_)deactivate(false);
+        waitingForManualPreview_=manualPreviewInProgress_;
+        view_->clearAudioError();
+        view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
     }
 }
 
@@ -284,32 +322,21 @@ void TerminalProductActivationCoordinator::manual_preview_changed(
 {
     if(previewStatus==QStringLiteral("RENDERING")) {
         manualPreviewInProgress_=true;
-        if(state_->bypassed()||transitioning_||waitingForManualPreview_)return;
-        // Retire any installed terminal BEFORE set_processed_realization()
-        // attempts a SOURCE handoff. The previous accepted MANUAL audio is
-        // restored exactly; no stale M17 session can obstruct its successor.
+        if(state_->bypassed()||transitioning_)return;
+        // Retire installed/READY terminal BEFORE upstream publication.
         if(intent_)deactivate(false);
-        if(state_->bypassed())return; // A real retirement failure stays closed.
+        if(state_->bypassed())return;
         waitingForManualPreview_=true;
         view_->clearAudioError();
-        view_->setAudioStatus(QStringLiteral("Preparing manual audio"));
-        return;
-    }
-    if(previewStatus==QStringLiteral("READY")) {
+        view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+    } else if(previewStatus==QStringLiteral("READY")
+              ||previewStatus==QStringLiteral("ERROR")
+              ||previewStatus==QStringLiteral("IDLE")) {
         manualPreviewInProgress_=false;
-        if(!waitingForManualPreview_)return;
         waitingForManualPreview_=false;
-        if(!state_->bypassed())begin_activation();
-        return;
-    }
-    if(previewStatus==QStringLiteral("ERROR")
-       ||previewStatus==QStringLiteral("IDLE")) {
-        manualPreviewInProgress_=false;
-        if(waitingForManualPreview_&&!state_->bypassed()) {
-            waitingForManualPreview_=false;
-            fail_closed(QStringLiteral(
-                "M17 manual preparation failed or was invalidated."));
-        }
+        // Upstream completion never triggers Prepare.
+        if(!state_->bypassed()&&!intent_)
+            view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
     }
 }
 
@@ -329,7 +356,7 @@ void TerminalProductActivationCoordinator::loop_context_changed()
     } else {
         // The pending job captured a different loop/owner. Cancel it and
         // request a fresh exact candidate while preserving the Active bit.
-        deactivate(true);
+        deactivate(false);
     }
 }
 
@@ -337,15 +364,21 @@ void TerminalProductActivationCoordinator::private_session_changed()
 {
     if(transitioning_||!intent_)return;
     const auto status=session_->status();
-    if(status==QStringLiteral("READY_TO_INSTALL"))
-        commit_ready_output();
-    else if(status==QStringLiteral("PRIVATE_INSTALLED"))
+    if(status==QStringLiteral("READY_TO_INSTALL")) {
+        // Full programme remains private until explicit Preview Prepared.
+        readyToPreview_=true;
+        renderHeartbeat_.stop();
+        view_->setAudioStatus(QStringLiteral("READY · PREVIEW AVAILABLE"));
+    } else if(status==QStringLiteral("PRIVATE_INSTALLED")) {
         finish_activation();
-    else if(status==QStringLiteral("ERROR")||status==QStringLiteral("STALE")
-            ||status==QStringLiteral("IDLE"))
+    } else if(status==QStringLiteral("STALE")
+              ||status==QStringLiteral("IDLE")) {
+        deactivate(false);
+    } else if(status==QStringLiteral("ERROR")) {
         fail_closed(session_->error().isEmpty()
-            ? QStringLiteral("M17 terminal session unavailable (%1).").arg(status)
+            ? QStringLiteral("M17 terminal session failed.")
             : QStringLiteral("M17 terminal session failed: %1").arg(session_->error()));
+    }
 }
 
 void TerminalProductActivationCoordinator::external_context_changed()
@@ -356,7 +389,11 @@ void TerminalProductActivationCoordinator::external_context_changed()
     if(selector_->processed_realization_snapshot()!=intent_->manualOwner
        ||selector_->processed_realization_id()
            !=std::optional{intent_->manualId}
-       ||selector_->active_target()!=AuditionTarget::PROCESSED)
-        fail_closed(QStringLiteral("M17 source/target changed."));
+       ||selector_->active_target()!=AuditionTarget::PROCESSED) {
+        if(deviceActive_)
+            fail_closed(QStringLiteral("M17 installed source/target changed."));
+        else
+            deactivate(false); // Private stale candidate is not an error.
+    }
 }
 } // namespace rgsml::app

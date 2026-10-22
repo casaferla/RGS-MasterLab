@@ -309,6 +309,59 @@ Rectangle {
         }
 
         // Active Editor Content Area
+        // M17 explicit offline action: controls do not borrow transport Play.
+        RowLayout {
+            objectName: "m17ExplicitPreparationControls"
+            visible: root.isLimiterEditor
+            Layout.fillWidth: true
+            Layout.preferredHeight: 34
+            spacing: 8
+            StudioButton {
+                objectName: "m17PrepareButton"
+                text: "Prepare"
+                minimumControlWidth: 86
+                accentColor: "#C4774A"
+                enabled: root.terminalLimiterViewModel
+                    && !root.terminalLimiterViewModel.bypass
+                    && root.terminalLimiterViewModel.audioStatus.startsWith("NEEDS PREPARATION")
+                onClicked: root.terminalLimiterViewModel.requestPrepare()
+                Accessible.name: "Prepare offline true peak limiter"
+                ToolTip.text: "Render and verify the full master; Play never starts this job."
+                ToolTip.visible: hovered
+            }
+            StudioButton {
+                objectName: "m17CancelPreparationButton"
+                text: "Cancel"
+                minimumControlWidth: 80
+                enabled: root.terminalLimiterViewModel
+                    && !root.terminalLimiterViewModel.bypass
+                    && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
+                        || root.terminalLimiterViewModel.audioStatus.startsWith("READY"))
+                onClicked: root.terminalLimiterViewModel.cancelPreparation()
+                Accessible.name: "Cancel offline limiter preparation"
+            }
+            StudioButton {
+                objectName: "m17PreviewPreparedButton"
+                text: "Preview Prepared"
+                minimumControlWidth: 130
+                accentColor: "#C4774A"
+                enabled: root.terminalLimiterViewModel
+                    && !root.terminalLimiterViewModel.bypass
+                    && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
+                onClicked: root.terminalLimiterViewModel.previewPrepared()
+                Accessible.name: "Preview verified limiter audio"
+            }
+            Text {
+                Layout.fillWidth: true
+                font.family: "Segoe UI"
+                font.pixelSize: 11
+                color: "#B6CADA"
+                elide: Text.ElideRight
+                text: root.terminalLimiterViewModel
+                    ? root.terminalLimiterViewModel.audioStatus : "UNAVAILABLE"
+            }
+        }
+
         InputGainEditor {
             showLocalValidation: !root.errorsInGlobalStatusBar
             id: inputGainEditor

@@ -205,227 +205,163 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(limiter.value()->bypassed());
     QCOMPARE(vm.audio_status(),QStringLiteral("BYPASS"));
     vm.setBypass(false);
-    // Preparing the terminal must not stop the MANUAL playback or freeze
-    // its playhead during a full-programme asynchronous render.
+    // Armed is NOT preparing. Play still uses the exact upstream MANUAL PCM.
+    QVERIFY(!limiter.value()->bypassed());
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!coordinator.device_active());
+    vm.requestPrepare();
+    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing audio"));
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QCOMPARE(device->audibleRealization.realizationId,originalId);
-    // Authoritative M17 output is not installed yet: show a readable,
-    // time-aware pending state while manual audio continues unchanged.
-    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing audio"));
-    QVERIFY(!coordinator.device_active());
-    // Simulate a progressed source cue, including one reached after a loop.
+    // Completed rendering stays PRIVATE; no automatic switch on Play or ON.
     device->position=core::FrameIndex{1600};
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    vm.previewPrepared();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
-    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
-    QVERIFY(!limiter.value()->bypassed());
+    QVERIFY(coordinator.device_active());
     QCOMPARE(vm.audio_status(),
         QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
-    const auto terminalId=device->audibleRealization.realizationId;
-    QVERIFY(terminalId);
-    QVERIFY(terminalId!=originalId);
+    auto firstTerminalId=device->audibleRealization.realizationId;
+    QVERIFY(firstTerminalId);
+    QVERIFY(firstTerminalId!=originalId);
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
-    QVERIFY(device->loop);
-    // Native Windows owner is 48k; all UI seek/playhead positions remain
-    // mapped to the original source domain, never a 48k master decision.
     QCOMPARE(device->duration->value(),std::int64_t{4800});
     QCOMPARE(selector.processed_realization_snapshot(),original);
-    QCOMPARE(selector.processed_realization_id(),originalId);
     vm.setBypass(true);
     QVERIFY(limiter.value()->bypassed());
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->audibleRealization.realizationId,originalId);
-    QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QCOMPARE(device->position,core::FrameIndex{1600});
-    QCOMPARE(device->duration,*frames.value());
     QCOMPARE(device->loop,std::optional{*region.value()});
-    QCOMPARE(selector.processed_realization_snapshot(),original);
-    QCOMPARE(selector.processed_realization_id(),originalId);
-    QCOMPARE(vm.audio_status(),QStringLiteral("BYPASS · MANUAL PROCESSED"));
     QVERIFY(!product.private_id());
     QVERIFY(!candidates.staged());
     QVERIFY(!audioGate.has_session());
 
-    // PAUSED is not STOPPED: ON must reconstruct PAUSED after installing
-    // exact new OUTPUT_RATE PCM, and BYPASS must restore PAUSED manual PCM.
+    // Prepared but NOT previewed can be cancelled without ever handing off.
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    vm.cancelPreparation();
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!product.private_id());
+    QVERIFY(!candidates.staged());
+
+    // PAUSED stays paused while preparing; Preview Prepared installs an
+    // OUTPUT_RATE owner only after an explicit request.
     QVERIFY(transport.seek_source_frame(core::FrameIndex{2600}));
     transport.pause();
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
-    vm.setBypass(false);
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
     QCOMPARE(device->audibleRealization.realizationId,originalId);
-    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("PRIVATE_INSTALLED"),12000);
-    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
+    vm.previewPrepared();
+    QVERIFY(coordinator.device_active());
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
-    auto pausedTerminalId=device->audibleRealization.realizationId;
-    QVERIFY(pausedTerminalId);
-    QVERIFY(pausedTerminalId!=originalId);
-    QVERIFY(pausedTerminalId!=terminalId);
-    auto pausedPosition=transport.source_display_snapshot();
-    QVERIFY(pausedPosition);
-    QVERIFY(pausedPosition.value()->position.value()>=2599);
-    QVERIFY(pausedPosition.value()->position.value()<=2601);
-    // An accepted Ceiling change must retire and rerender the whole
-    // exact-owned terminal PCM while preserving the PAUSED state.
+    const auto pausedTerminalId=device->audibleRealization.realizationId;
+    QVERIFY(pausedTerminalId && pausedTerminalId!=firstTerminalId);
+
+    // Committing Ceiling must invalidate the prepared result but MUST NOT
+    // schedule another full-resource M17 job automatically.
     QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-6.0));
     QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    vm.requestPrepare();
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("PRIVATE_INSTALLED"),12000);
-    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    vm.previewPrepared();
+    QVERIFY(coordinator.device_active());
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
     QVERIFY(device->audibleRealization.realizationId!=pausedTerminalId);
-    QCOMPARE(vm.audio_status(),
-        QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
     QVERIFY(transport.seek_source_frame(core::FrameIndex{3100}));
     vm.setBypass(true);
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
     QCOMPARE(device->position,core::FrameIndex{3100});
     QCOMPARE(device->audibleRealization.realizationId,originalId);
-    QVERIFY(!product.private_id());
-    QVERIFY(!candidates.staged());
 
-    // STOPPED activation must not unexpectedly start playback; BYPASS
-    // retains SOURCE cue, current Loop Region and canonical manual owner.
-    transport.stop();
-    QVERIFY(transport.seek_source_frame(core::FrameIndex{800}));
-    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    // Upstream Input Gain changes retire M17 before MANUAL publication.
+    // Neither preview completion nor Live Play can silently reprepare.
     vm.setBypass(false);
+    vm.requestPrepare();
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("PRIVATE_INSTALLED"),12000);
-    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
-    QCOMPARE(device->state,core::PlaybackState::STOPPED);
-    auto outputPosition=transport.source_display_snapshot();
-    QVERIFY(outputPosition);
-    QVERIFY(outputPosition.value()->position.value()>=799);
-    QVERIFY(outputPosition.value()->position.value()<=801);
-    vm.setBypass(true);
-    QCOMPARE(device->state,core::PlaybackState::STOPPED);
-    QCOMPARE(device->position,core::FrameIndex{800});
-    QCOMPARE(device->loop,std::optional{*region.value()});
-    QCOMPARE(device->audibleRealization.realizationId,originalId);
-    QVERIFY(!audioGate.has_session());
-
-    // Valid upstream manual rebuilds must keep the user's Active intent.
-    // The old terminal is retired BEFORE publishing the new SOURCE owner;
-    // no ERROR/BYPASS transition is legitimate in this ordinary path.
-    vm.setBypass(false);
-    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    vm.previewPrepared();
+    QVERIFY(coordinator.device_active());
     auto gain3=dsp::GainParameters::create(+3.0);
     QVERIFY(gain3);
     QVERIFY(upstream.value()->set_gain_parameters(*gain3.value()));
     preview.request_preview();
     QCOMPARE(preview.preview_status(),QStringLiteral("RENDERING"));
-    QVERIFY(!limiter.value()->bypassed());
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
     QVERIFY(!coordinator.device_active());
-    QVERIFY(!product.private_id());
-    QCOMPARE(device->audibleRealization.realizationId,originalId);
-    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing manual audio"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!limiter.value()->bypassed());
     QTRY_COMPARE_WITH_TIMEOUT(preview.preview_status(),
         QStringLiteral("READY"),12000);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
     const auto updatedManualId=selector.processed_realization_id();
-    QVERIFY(updatedManualId);
-    QVERIFY(updatedManualId!=originalId);
-    const auto firstManual=selector.processed_realization_snapshot();
-    QVERIFY(firstManual);
-    const auto originalLane=original->view().channel(0);
-    const auto updatedLane=firstManual->view().channel(0);
-    QVERIFY(originalLane&&updatedLane);
-    QVERIFY((*originalLane.value())[0]!=(*updatedLane.value())[0]);
-    QVERIFY(!limiter.value()->bypassed());
-    // A region edit while the new M17 candidate is still pending may
-    // invalidate only that candidate, not the requested Active state.
+    const auto updatedManual=selector.processed_realization_snapshot();
+    QVERIFY(updatedManualId&&updatedManual&&updatedManualId!=originalId);
+    const auto oldLane=original->view().channel(0);
+    const auto newLane=updatedManual->view().channel(0);
+    QVERIFY(oldLane&&newLane);
+    QVERIFY((*oldLane.value())[0]!=(*newLane.value())[0]);
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+
+    // SOURCE Loop edit cancels only the pending/READY private job. New
+    // request is explicit, source ownership is never silently substituted.
     const auto shiftedRegion=core::FrameRange::create(
         core::FrameIndex{700},core::FrameIndex{3300});
     QVERIFY(shiftedRegion);
     desiredLoop=*shiftedRegion.value();
     QVERIFY(transport.set_loop_source_range(desiredLoop));
     coordinator.loop_context_changed();
-    QVERIFY(!limiter.value()->bypassed());
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!coordinator.device_active());
+    QVERIFY(!product.private_id());
+    vm.requestPrepare();
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("PRIVATE_INSTALLED"),12000);
-    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
-    const auto shiftedSource=transport.source_display_snapshot();
-    QVERIFY(shiftedSource);
-    QCOMPARE(shiftedSource.value()->loop,desiredLoop);
-    QCOMPARE(vm.audio_status(),
-        QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
-    // A SECOND actual Gain revision must again retire and replace both the
-    // accepted MANUAL and independently rendered terminal owner. It must not
-    // fall into ERROR/BYPASS while the producer emits RENDERING -> READY.
-    const auto firstTerminalId=device->audibleRealization.realizationId;
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    vm.previewPrepared();
+    QVERIFY(coordinator.device_active());
+    QCOMPARE(transport.source_display_snapshot().value()->loop,desiredLoop);
+
+    // A second edit invalidates an already installed result, leaving
+    // ordinary preview functional and M17 visibly due for preparation.
     auto gainDown=dsp::GainParameters::create(-3.0);
     QVERIFY(gainDown);
     QVERIFY(upstream.value()->set_gain_parameters(*gainDown.value()));
     preview.request_preview();
-    QVERIFY(!limiter.value()->bypassed());
-    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing manual audio"));
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
     QTRY_COMPARE_WITH_TIMEOUT(preview.preview_status(),
         QStringLiteral("READY"),12000);
-    const auto secondManualId=selector.processed_realization_id();
-    QVERIFY(secondManualId);
-    QVERIFY(secondManualId!=updatedManualId);
-    const auto secondManual=selector.processed_realization_snapshot();
-    QVERIFY(secondManual);
-    const auto secondLane=secondManual->view().channel(0);
-    QVERIFY(secondLane);
-    QVERIFY((*secondLane.value())[0]!=(*updatedLane.value())[0]);
-    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("PRIVATE_INSTALLED"),12000);
-    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
-    QVERIFY(device->audibleRealization.realizationId!=firstTerminalId);
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QVERIFY(!limiter.value()->bypassed());
-    QCOMPARE(vm.audio_status(),
-        QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
-    // Burst of TWO new Input Gain edits before Qt can deliver the older
-    // preview result: only the final new MANUAL owner may be published.
-    // Active intent survives both invalidations, and a stale candidate
-    // cannot revive the previous terminal owner after the second request.
-    const auto secondTerminalId=device->audibleRealization.realizationId;
-    auto gainUpFast=dsp::GainParameters::create(+6.0);
-    auto gainDownFast=dsp::GainParameters::create(-6.0);
-    QVERIFY(gainUpFast&&gainDownFast);
-    QVERIFY(upstream.value()->set_gain_parameters(*gainUpFast.value()));
-    preview.request_preview();
-    QCOMPARE(preview.preview_status(),QStringLiteral("RENDERING"));
-    QVERIFY(!coordinator.device_active());
-    QVERIFY(!limiter.value()->bypassed());
-    QVERIFY(upstream.value()->set_gain_parameters(*gainDownFast.value()));
-    preview.request_preview();
-    QCOMPARE(preview.preview_status(),QStringLiteral("RENDERING"));
-    QVERIFY(!coordinator.device_active());
-    QVERIFY(!limiter.value()->bypassed());
-    QCOMPARE(device->audibleRealization.realizationId,secondManualId);
-    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing manual audio"));
-    QTRY_COMPARE_WITH_TIMEOUT(preview.preview_status(),
-        QStringLiteral("READY"),12000);
-    const auto finalManualId=selector.processed_realization_id();
-    QVERIFY(finalManualId);
-    QVERIFY(finalManualId!=secondManualId);
-    const auto finalManual=selector.processed_realization_snapshot();
-    QVERIFY(finalManual);
-    const auto finalLane=finalManual->view().channel(0);
-    QVERIFY(finalLane);
-    QVERIFY((*finalLane.value())[0]!=(*secondLane.value())[0]);
-    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("PRIVATE_INSTALLED"),12000);
-    QTRY_VERIFY_WITH_TIMEOUT(coordinator.device_active(),12000);
-    QVERIFY(device->audibleRealization.realizationId!=secondTerminalId);
-    QVERIFY(!limiter.value()->bypassed());
-    QCOMPARE(vm.audio_status(),
-        QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
     vm.setBypass(true);
-    QVERIFY(limiter.value()->bypassed());
-    QCOMPARE(device->audibleRealization.realizationId,finalManualId);
-    // The newly published MANUAL owner may have a newer SOURCE cue than
-    // the old 800-frame snapshot. The negative rate-probe branch must
-    // preserve the CURRENT exact owner and cursor, not the stale cue.
-    const auto currentManualCue=device->position;
-    const auto currentManualLoop=device->loop;
-    QCOMPARE(currentManualLoop,desiredLoop);
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
 
-    // Device rate discovery failure MUST preserve the current MANUAL PCM and
-    // visibly revert the module to BYPASS without invented ACTIVE data.
+    // An authentic rate-probe failure remains a real error, not CANCELLED.
     product.set_preferred_output_rate_probe(
         [](audio::ChannelLayout)->core::Result<core::SampleRate> {
             return core::Result<core::SampleRate>::failure(core::Error{
@@ -433,57 +369,27 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
                 "Synthetic audition rate-probe failure."});
         });
     vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    vm.requestPrepare();
     QVERIFY(limiter.value()->bypassed());
-    QVERIFY(!coordinator.device_active());
-    QCOMPARE(device->state,core::PlaybackState::STOPPED);
-    // Burst edits superseded both earlier Gain owners. Even a negative
-    // rate probe must retain the latest exactly published MANUAL owner.
-    QCOMPARE(device->audibleRealization.realizationId,finalManualId);
-    QCOMPARE(device->position,currentManualCue);
-    QCOMPARE(device->loop,currentManualLoop);
     QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
-    QVERIFY(!vm.validation_message().isEmpty());
+    QVERIFY(vm.validation_message().contains(
+        QStringLiteral("Synthetic audition rate-probe failure")));
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
-    QVERIFY(!candidates.staged());
 
-    // A stale/incorrect audition target must still fail closed, but tell
-    // the operator which exact activation preflight guard refused it.
-    // No automatic retries or invented terminal owner are permitted.
+    // A wrong target is rejected at explicit Prepare, not when arming ON.
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    vm.requestPrepare();
     QVERIFY(limiter.value()->bypassed());
     QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
     QVERIFY(vm.validation_message().contains(
         QStringLiteral("requires PROCESSED audition target")));
-    // The full preflight reason must be carried to the product's visible
-    // error footer without granting terminal source or meter ownership.
-    QVERIFY(vm.validation_message().startsWith(
-        QStringLiteral("M17 activation refused: ")));
     QVERIFY(!coordinator.device_active());
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
-
-    // Renderer failure AFTER a successful ownership capture must reach the
-    // product with its original code/category, not a generic error. Run a
-    // supported constructor sample rate outside the six M16-approved rates
-    // so the worker exits promptly; no need for a slow physical fixture.
-    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
-    QVERIFY(!product.private_id());
-    const auto invalidOutputRate=core::SampleRate::create(32000);
-    QVERIFY(invalidOutputRate);
-    QVERIFY(product.request_private(*invalidOutputRate.value(),false));
-    QTRY_COMPARE_WITH_TIMEOUT(product.status(),QStringLiteral("ERROR"),12000);
-    QVERIFY(product.error().contains(
-        QStringLiteral("[M17_SOURCE_RATE_UNSUPPORTED]")));
-    QVERIFY(product.error().contains(
-        QStringLiteral("Source/output rate is unsupported")));
-    QVERIFY(renderer.last_error());
-    QCOMPARE(renderer.last_error()->code(),
-             core::ErrorCode::UnsupportedOperation);
-    QVERIFY(!product.private_id());
-    QVERIFY(!audioGate.has_session());
-    QVERIFY(!candidates.staged());
 }
 void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()
 {

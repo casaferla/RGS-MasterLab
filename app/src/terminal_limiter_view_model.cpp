@@ -158,6 +158,28 @@ void TerminalLimiterViewModel::setBypass(bool value)
     emit acceptedStateChanged();
 }
 
+void TerminalLimiterViewModel::requestPrepare()
+{
+    if(state_ && !state_->bypassed()
+        && audioStatus_.startsWith(QStringLiteral("NEEDS PREPARATION")))
+        emit prepareRequested();
+}
+
+void TerminalLimiterViewModel::cancelPreparation()
+{
+    if(state_ && !state_->bypassed()
+        && (audioStatus_.startsWith(QStringLiteral("Preparing"))
+            ||audioStatus_.startsWith(QStringLiteral("READY"))))
+        emit cancelRequested();
+}
+
+void TerminalLimiterViewModel::previewPrepared()
+{
+    if(state_ && !state_->bypassed()
+        && audioStatus_.startsWith(QStringLiteral("READY")))
+        emit previewRequested();
+}
+
 void TerminalLimiterViewModel::setAudioStatus(const QString& value)
 {
     if(audioStatus_==value)return;

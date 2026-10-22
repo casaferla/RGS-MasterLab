@@ -30,6 +30,9 @@ private:
     void private_session_changed();
     void external_context_changed();
     void begin_activation();
+    void prepare_requested();
+    void cancel_requested();
+    void preview_requested();
     void deactivate(bool keepActiveIntent);
     void finish_activation();
     void commit_ready_output();
@@ -45,6 +48,7 @@ private:
     bool transitioning_{false};
     bool deviceActive_{false};
     bool handoffStarted_{false};
+    bool readyToPreview_{false};
     bool manualPreviewInProgress_{false};
     bool waitingForManualPreview_{false};
     QElapsedTimer renderElapsed_;

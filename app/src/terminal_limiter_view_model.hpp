@@ -49,6 +49,9 @@ public:
     // Canonical -1.0 dBTP default, independent of user bypass.
     Q_INVOKABLE void resetToDefault();
     Q_INVOKABLE void setBypass(bool bypass);
+    Q_INVOKABLE void requestPrepare();
+    Q_INVOKABLE void cancelPreparation();
+    Q_INVOKABLE void previewPrepared();
     Q_INVOKABLE void refreshFromAuthority();
     // Fail-closed device/PCM transition error in the existing fixed footer.
     // Never replace the typed Ceiling range error with a fictitious success.
@@ -62,6 +65,9 @@ signals:
     // Semantic state is committed by TerminalLimiterState. Never emitted
     // for a draft, failed validation, no-op or refresh.
     void acceptedStateChanged();
+    void prepareRequested();
+    void cancelRequested();
+    void previewRequested();
 
 private:
     void set_validation(const QString& message);
