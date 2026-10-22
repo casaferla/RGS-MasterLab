@@ -259,7 +259,7 @@ profiles under the unchanged `PR Focused CI` workflow:
   It runs for every other PR branch, including the production PR #54,
   without any regression coverage change. On experimental PR #55,
   explicitly include the string `[m17-extended]` in the HEAD commit
-  message to request a fully comprehensive CI when the experiment
+  **subject line**, not merely its body to request a fully comprehensive CI when the experiment
   warrants it. This is an engineering trigger, not a PO gate.
 
 The original M17 detector/controller, product renderer, factory,
@@ -275,3 +275,13 @@ not shorten the product PR #54, which retains its full prescribed
 regression tests. Any future proposal to change the real product
 CI matrix requires a separate reviewed decision and proof that
 mandatory safety gates are not lost.
+
+## Profile-trigger correction (2026-10-22)
+
+The first profile-switch commit described the extended marker inside
+its own commit body, inadvertently matching the original whole-message
+search and causing CI #673 to exercise the full suite. The correction
+matches the HEAD commit **subject only** (Git `%s`), ensuring that
+documentation or body references cannot accidentally enable the
+extended path. Subsequent runs show the mode in the select-profile
+step; treat that visible mode as the authoritative test-scope record.

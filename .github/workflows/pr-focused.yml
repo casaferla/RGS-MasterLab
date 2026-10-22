@@ -160,7 +160,7 @@ jobs:
       - name: Select isolated M17 CI profile (PR55 only)
         shell: bash
         run: |
-          if [[ "${GITHUB_HEAD_REF:-}" == "experimental/m17-lookahead-selector-isolated-20261022" ]] && ! git log -1 --format=%B | grep -Fq '[m17-extended]'; then
+          if [[ "${GITHUB_HEAD_REF:-}" == "experimental/m17-lookahead-selector-isolated-20261022" ]] && ! git log -1 --format=%s | grep -Fq '[m17-extended]'; then
             echo "RGS_M17_CI_MODE=fast" >> "$GITHUB_ENV"
             echo "M17 experiment: FAST; full verifier/checkpoint deferred."
           else
@@ -541,7 +541,7 @@ jobs:
       - name: Select isolated M17 CI profile (PR55 only)
         shell: bash
         run: |
-          if [[ "${GITHUB_HEAD_REF:-}" == "experimental/m17-lookahead-selector-isolated-20261022" ]] && ! git log -1 --format=%B | grep -Fq '[m17-extended]'; then
+          if [[ "${GITHUB_HEAD_REF:-}" == "experimental/m17-lookahead-selector-isolated-20261022" ]] && ! git log -1 --format=%s | grep -Fq '[m17-extended]'; then
             echo "RGS_M17_CI_MODE=fast" >> "$GITHUB_ENV"
             echo "M17 experiment: FAST; full verifier/checkpoint deferred."
           else
