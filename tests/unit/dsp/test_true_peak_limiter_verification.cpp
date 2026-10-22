@@ -1681,7 +1681,7 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
 
     for(const int fs:{44100,48000,88200,96000,176400,192000}) {
         for(const bool stereo:{false,true}) {
-            for(const double ceiling:{-1.0,-6.0,-12.0}) {
+            for(const double ceiling:{0.0,-1.0,-6.0,-12.0}) {
                 auto source=buffer(fs,stereo,nFrames);
                 for(std::size_t ch=0;ch<source.view().format().channel_count();
                     ++ch) {
@@ -2479,9 +2479,10 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
               "m16_reference_ns,m16_experimental_ns,m16_outcome,"
               "m16_post_pcm_bitwise\n";
     }
+    std::size_t matrixCaseCount=0;
     for(const int fs:{44100,48000,88200,96000,176400,192000}) {
         for(const bool stereo:{false,true}) {
-            for(const double ceiling:{-1.0,-6.0,-12.0}) {
+            for(const double ceiling:{0.0,-1.0,-6.0,-12.0}) {
             // Keep legacy long 48k/-6 probe, bounded budget on others.
             const int nFrames=fs==48000 && ceiling==-6.0 ? 32768
                 : (fs==192000 ? 8192 : 4096);
@@ -2714,9 +2715,11 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
                     <<(refChecked?"PASS":"MATCHING_REJECTION")
                     <<",PASS\n";
             }
+                ++matrixCaseCount;
             }
         }
     }
+    QCOMPARE(matrixCaseCount,std::size_t{48});
 }
 
 } // namespace

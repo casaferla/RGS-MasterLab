@@ -183,3 +183,16 @@ the frozen M17 code remain explicitly not authorized. The actual
 product offline Prepare, deterministic repeated/paired timings,
 representative multi-second WAV programmes, SRC, cancellation, disk
 IO and full pipeline RAM still require a separate approval/gate.
+
+## CI #670 exact-artifact review: 36, not 48 (correction)
+
+CI #670 Windows artifact contains **36** long-render scenarios:
+six Fs, mono/stereo, Ceiling -1/-6/-12 dBTP. All 36 are
+PCM-bitwise PASS before/after the M16 verifier, with M16 outcome PASS.
+The planned 0 dBTP boundary did not execute because an earlier test
+function, not the long-render matrix, received the loop edit.
+
+A dedicated correction changes the *long-render* loop explicitly to
+0/-1/-6/-12 dBTP and asserts exactly **48** executed matrix scenarios.
+This catches future omissions even if the workflow reports SUCCESS.
+This is test-only work; the frozen M17 DSP and PR #54 remain unchanged.
