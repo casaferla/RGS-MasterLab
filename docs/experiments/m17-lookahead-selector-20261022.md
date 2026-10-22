@@ -437,3 +437,32 @@ This intentionally excludes whole product Prepare, SRC, disk IO, full
 length music, repeated timings and genuine host callback scheduling.
 It is a comparative research diagnostic, not an RT certification.
 The product M17 controller/PR54/main remain untouched.
+
+
+## #678 verdict: lazy control math is insufficient in the whole 64-frame pipeline
+
+CI #678 on 301fad95, Windows/Linux SUCCESS, included 16 full
+integrated FROZEN-vs-LAZY rows per OS (8 scenarios, both controllers)
+and the full 48-case end-to-end PCM/M16 verified suite per OS.
+All 16 integrated rows independently PASS PCM bitwise against the
+real frozen IModule and drained the detector. At 192 kHz, FROZEN/
+LAZY mean quantum durations were nearly indistinguishable: the
+four paired scenario ratios on Windows were 0.990, 0.996, 0.998
+and 1.001; on Linux 1.003, 1.002, 0.989 and 1.001.
+This falsifies the notion that skipping unused controller exp/pow
+alone is a sufficient solution to real-time operation. Preserve
+the positive numerical equality evidence but stop treating the
+lazy optimization as the leading real-time candidate.
+
+Next [m17-extended] investigation: separate the two code regions
+previously combined under the name 'controller cost': actual lookahead
+selector choice (rolling cache query) and controller advance (frozen
+or lazy control recurrence). Capture per-quantum accumulated selector,
+advance and all-other wall times (mean/p99/worst) on eight
+48/192k mono/stereo ceiling -6/-12 scenarios, with both controllers
+in the same test. Preserve exact IModule PCM equality, M16 postcheck
+and memory caps. The additional timing reads **change benchmark
+overhead**, so resulting absolute 64-frame times MUST NOT be directly
+compared to uninstrumented #678 to claim improvements/regressions,
+nor used for realtime qualification. They determine which operation
+deserves the next algorithmic proof. No production code changes.
