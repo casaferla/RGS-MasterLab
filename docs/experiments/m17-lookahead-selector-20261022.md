@@ -399,3 +399,41 @@ not equivalence for every possible binary64 input. Full future
 integration would require a separate PO decision, adversarial states,
 checkpoint ABI coverage, no-alloc real-time proof, native live-path
 metrics and hard-gated complete qualification.
+
+
+## CI #677: confirmed exact lazy controller, integrated next step
+
+CI #677 Windows/Linux SUCCESS at 4a116e37. Both Lazy CSV artifacts
+contain 48/48 successful cases for six supported Fs, mono/stereo,
+Ceiling 0/-1/-6/-12. Every controller field, checkpoint/restart state
+and actual frozen IModule PCM sample matches bit-for-bit. The private
+controller skips some unused release exp and reuses exact equal-gain
+pow results; **this is not yet proof of realtime**.
+
+The median unpaired per-scenario isolated controller speedup is about
+1.28x Windows, 1.04x Linux; at 192 kHz median is 1.30x Windows and
+1.05x Linux. The brevity of many tests (384 frames, one case 2560)
+overrepresents startup/hold: on many higher-rate cases 100% of release
+exponentials are skipped. Full-track release pressure and scheduler
+effects remain unproved. The raw timing is from one paired hosted
+runner pass, not a deterministic benchmark.
+
+The next single [m17-extended] experiment directly compares complete
+64-frame output pipeline paths over the same synthetic full input:
+- Real signed bounded detector feed and validated rolling batch cache,
+  with the original frozen controller;
+- The **same independent signed detector/cache** and test-only lazy
+  controller, retaining the original output domain/PCM and timing.
+
+The two paths are executed sequentially on each runner with
+sample-rate-alternated order, never concurrently. All final PCM bits
+must match the genuine frozen IModule, independent of the other path;
+detector EOS, output size, event cache caps, and exactly one immutable
+Hann table build remain mandatory. Each path emits per-quantum mean,
+p99, worst and missed deadlines against 64/Fs, plus full elapsed
+nanoseconds and lazy exp/pow skip counters. Four synthetic configurations
+at 48k and four at 192k, mono/stereo, -6/-12dBTP, 4096/8192 frames.
+This intentionally excludes whole product Prepare, SRC, disk IO, full
+length music, repeated timings and genuine host callback scheduling.
+It is a comparative research diagnostic, not an RT certification.
+The product M17 controller/PR54/main remain untouched.

@@ -197,6 +197,7 @@ private slots:
     void experimentalLongResourceRenderBenchmark();
     void experimental64FrameRealtimeQuantumProbe();
     void experimentalLazyControllerBitwiseOracle();
+    void experimentalIntegratedLazyQuantumBenchmark();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -3165,6 +3166,199 @@ void TruePeakLimiterVerificationTest::experimentalLazyControllerBitwiseOracle()
         }
     }
     QCOMPARE(scenarios,std::size_t{48});
+}
+
+
+void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark()
+{
+    using Reference=dsp::internal::TruePeakLimiterControllerState;
+    using Lazy=dsp::internal::experimental::M17LazyController;
+    using Event=dsp::internal::LimiterDetectorEvent;
+    using Feeder=dsp::internal::experimental::M17BoundedDetectorFeed;
+    using Rolling=dsp::internal::experimental::M17RollingBatchSelector;
+    constexpr int kQuantum=64;
+    constexpr double pi=std::numbers::pi_v<double>;
+    const auto csvPath=qEnvironmentVariable(
+        "RGS_M17_INTEGRATED_LAZY_PROBE_FILE").toStdString();
+    if(!csvPath.empty()) {
+        std::ofstream csv(csvPath,std::ios::trunc);
+        QVERIFY2(csv.good(),"M17 integrated lazy CSV creation failed");
+        csv<<"sample_rate_hz,channels,ceiling_dbtp,frames,controller_type,"
+              "quantum_frames,quantum_count,quantum_budget_ns,"
+              "mean_quantum_ns,p99_quantum_ns,max_quantum_ns,"
+              "missed_quantum_count,total_render_ns,source_frames_consumed,"
+              "detector_cache_high_water,selector_cache_high_water,"
+              "hann_weight_build_count,release_exp_skipped,"
+              "release_exp_evaluated,gain_pow_reused,"
+              "pcm_imodule_bitwise,detector_drained,qualified_realtime\n";
+    }
+    std::size_t scenarios=0;
+    for(const int fs:{48000,192000}) {
+        for(const bool stereo:{false,true}) {
+            for(const double ceiling:{-6.0,-12.0}) {
+                const int nFrames=fs==48000?4096:8192;
+                auto source=buffer(fs,stereo,nFrames);
+                const auto fmt=source.view().format();
+                for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                    auto lane=source.mutable_view().channel(ch);
+                    QVERIFY(lane);
+                    for(int n=0;n<nFrames;++n) {
+                        const double t=static_cast<double>(n)/fs;
+                        double sample=(ch==0?1.0:-1.0)*
+                            (0.95*std::sin(2.0*pi*941.0*t)
+                             +0.43*std::sin(2.0*pi*2707.0*t+0.19));
+                        if(n%91==0)sample+=ch==0?1.22:-1.15;
+                        if(n>=nFrames/3 && n<nFrames/2)sample=+0.0;
+                        (*lane.value())[static_cast<std::size_t>(n)]=sample;
+                    }
+                }
+                const std::array<std::size_t,3> chunks{29,127,37};
+                const auto frozen=renderRealM17(source,ceiling,chunks);
+                QVERIFY2(frozen.has_value(),
+                    "Frozen IModule full-PCM oracle unavailable");
+                const auto budgetNs=std::int64_t{1'000'000'000}
+                    *kQuantum/fs;
+                // Alternate measurement order between sample rates.
+                // No simultaneous tasks: compare the same input on one runner.
+                for(int order=0;order<2;++order) {
+                    const bool lazyMode=(order==((fs==192000)?0:1));
+                    auto feeder=Feeder::create(fs,ceiling,stereo?2U:1U);
+                    auto rolling=Rolling::create(fs,ceiling);
+                    auto reference=Reference::create(fs,ceiling);
+                    auto alternative=Lazy::create(fs,ceiling);
+                    QVERIFY(feeder && rolling && reference && alternative);
+                    const auto horizon=reference.value()->lookahead_ticks();
+                    QCOMPARE(horizon,alternative->lookahead_ticks());
+                    std::size_t feedPosition=0;
+                    auto prepared=buffer(fs,stereo,nFrames);
+                    std::vector<std::int64_t> quantumNs;
+                    quantumNs.reserve(static_cast<std::size_t>(nFrames/kQuantum));
+                    const auto totalStart=std::chrono::steady_clock::now();
+                    for(int start=0;start<nFrames;start+=kQuantum) {
+                        const auto quantumStart=std::chrono::steady_clock::now();
+                        const auto first=start==0?-62:8*(start-1)+1;
+                        const auto last=8*(start+kQuantum-1);
+                        const auto deadline=last+horizon;
+                        feeder->discard_before(first);
+                        while(!feeder->drained()
+                              && feeder->coverage_tick()<deadline) {
+                            if(feedPosition<static_cast<std::size_t>(nFrames)) {
+                                const auto left=source.view().channel(0);
+                                const auto right=stereo
+                                    ?source.view().channel(1):left;
+                                QVERIFY(left && right);
+                                const auto l=(*left.value())[feedPosition];
+                                const auto r=stereo
+                                    ?(*right.value())[feedPosition]:+0.0;
+                                QVERIFY(feeder->push(l,r));
+                                ++feedPosition;
+                            } else {
+                                QVERIFY(feeder->drain());
+                            }
+                        }
+                        const auto events=feeder->batch(first,last,horizon);
+                        QVERIFY2(rolling->load(events,first,last,
+                            feeder->coverage_tick(),feeder->drained()),
+                            "Lookahead batch was not physically certified");
+                        for(int n=start;n<start+kQuantum;++n) {
+                            double gain=1.0;
+                            for(std::int64_t tick=n==0?-62:8*(n-1)+1;
+                                tick<=8*n;++tick) {
+                                const auto current=feeder->peak_at(tick);
+                                const auto chosen=rolling->choose(tick,current);
+                                QVERIFY(chosen);
+                                const auto& winner=chosen->future_event;
+                                const auto future=winner
+                                    ?std::span<const Event>{&*winner,1}
+                                    :std::span<const Event>{};
+                                const auto step=lazyMode
+                                    ?alternative->advance(current,future)
+                                    :reference.value()->advance(current,future);
+                                QVERIFY(step);
+                                if(tick==8*n)gain=step.value()->gain;
+                            }
+                            for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                                const auto input=source.view().channel(ch);
+                                const auto output=prepared.mutable_view().channel(ch);
+                                QVERIFY(input && output);
+                                const auto raw=(*input.value())[
+                                    static_cast<std::size_t>(n)];
+                                (*output.value())[static_cast<std::size_t>(n)]=
+                                    gain==1.0?raw:raw*gain;
+                            }
+                        }
+                        quantumNs.push_back(std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now()-quantumStart)
+                                    .count());
+                    }
+                    const auto totalNs=std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now()-totalStart)
+                                .count();
+                    QCOMPARE(feedPosition,static_cast<std::size_t>(nFrames));
+                    const auto lastTick=std::int64_t{8*(nFrames-1)+1};
+                    QCOMPARE(rolling->next_tick(),lastTick);
+                    if(lazyMode)QCOMPARE(alternative->next_tick(),lastTick);
+                    else QCOMPARE(reference.value()->next_tick(),lastTick);
+                    QCOMPARE(rolling->weight_build_count(),std::size_t{1});
+                    QVERIFY(feeder->drained());
+                    QVERIFY(feeder->high_water_events()<=Feeder::kMaxRetained);
+                    QVERIFY(rolling->high_water_events()<=Rolling::kMaxBatchEvents);
+                    for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                        const auto actual=prepared.view().channel(ch);
+                        const auto expected=frozen->view().channel(ch);
+                        QVERIFY(actual && expected);
+                        QCOMPARE(actual.value()->size(),expected.value()->size());
+                        for(std::size_t n=0;n<actual.value()->size();++n)
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                         (*actual.value())[n]),
+                                     std::bit_cast<std::uint64_t>(
+                                         (*expected.value())[n]));
+                    }
+                    std::sort(quantumNs.begin(),quantumNs.end());
+                    QCOMPARE(quantumNs.size(),
+                        static_cast<std::size_t>(nFrames/kQuantum));
+                    const auto p99Index=static_cast<std::size_t>(
+                        0.99*static_cast<double>(quantumNs.size()-1));
+                    const auto meanNs=std::accumulate(quantumNs.begin(),
+                        quantumNs.end(),std::int64_t{0})/
+                        static_cast<std::int64_t>(quantumNs.size());
+                    const auto p99Ns=quantumNs[p99Index];
+                    const auto worstNs=quantumNs.back();
+                    const auto misses=std::count_if(
+                        quantumNs.begin(),quantumNs.end(),
+                        [&](std::int64_t ns){return ns>budgetNs;});
+                    const auto counters=alternative->counters();
+                    qInfo().nospace()<<"M17 integrated lazy quantum fs="<<fs
+                        <<" ch="<<(stereo?2:1)<<" ceiling="<<ceiling
+                        <<" engine="<<(lazyMode?"LAZY":"FROZEN")
+                        <<" mean_ns="<<meanNs<<" p99_ns="<<p99Ns
+                        <<" worst_ns="<<worstNs<<" missed="<<misses
+                        <<"/"<<quantumNs.size()<<" pcm_bitwise=PASS"
+                        <<" realtime_qualified=NO";
+                    if(!csvPath.empty()) {
+                        std::ofstream csv(csvPath,std::ios::app);
+                        QVERIFY2(csv.good(),"M17 integrated lazy CSV append failed");
+                        csv<<fs<<','<<(stereo?2:1)<<','<<ceiling<<','
+                            <<nFrames<<','<<(lazyMode?"LAZY":"FROZEN")<<','
+                            <<kQuantum<<','<<quantumNs.size()<<','<<budgetNs<<','
+                            <<meanNs<<','<<p99Ns<<','<<worstNs<<','
+                            <<misses<<','<<totalNs<<','<<feedPosition<<','
+                            <<feeder->high_water_events()<<','
+                            <<rolling->high_water_events()<<','
+                            <<rolling->weight_build_count()<<','
+                            <<(lazyMode?counters.release_exp_skipped:0)<<','
+                            <<(lazyMode?counters.release_exp_evaluated:0)<<','
+                            <<(lazyMode?counters.gain_pow_reused:0)
+                            <<",PASS,PASS,NO\n";
+                    }
+                }
+                ++scenarios;
+            }
+        }
+    }
+    QCOMPARE(scenarios,std::size_t{8});
 }
 
 } // namespace

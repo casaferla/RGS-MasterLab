@@ -180,6 +180,7 @@ jobs:
           RGS_M17_LONG_RENDER_PROBE_FILE: ${{ runner.temp }}/rgs-m17-long-render-linux.csv
           RGS_M17_QUANTUM_PROBE_FILE: ${{ runner.temp }}/rgs-m17-quantum-linux.csv
           RGS_M17_LAZY_CONTROL_PROBE_FILE: ${{ runner.temp }}/rgs-m17-lazy-linux.csv
+          RGS_M17_INTEGRATED_LAZY_PROBE_FILE: ${{ runner.temp }}/rgs-m17-integrated-lazy-linux.csv
         run: |
           extra_ctest_args=()
           if [[ "$RGS_M17_CI_MODE" == "fast" ]]; then
@@ -279,6 +280,15 @@ jobs:
         with:
           name: RGS-M17-Lazy-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/rgs-m17-lazy-linux.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload isolated M17 integrated lazy quantum (Linux)
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-IntegratedLazy-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-integrated-lazy-linux.csv
           retention-days: 7
           if-no-files-found: error
 
@@ -572,6 +582,7 @@ jobs:
           RGS_M17_LONG_RENDER_PROBE_FILE: ${{ runner.temp }}/rgs-m17-long-render-windows.csv
           RGS_M17_QUANTUM_PROBE_FILE: ${{ runner.temp }}/rgs-m17-quantum-windows.csv
           RGS_M17_LAZY_CONTROL_PROBE_FILE: ${{ runner.temp }}/rgs-m17-lazy-windows.csv
+          RGS_M17_INTEGRATED_LAZY_PROBE_FILE: ${{ runner.temp }}/rgs-m17-integrated-lazy-windows.csv
         run: |
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
           $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
@@ -712,6 +723,15 @@ jobs:
         with:
           name: RGS-M17-Lazy-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/rgs-m17-lazy-windows.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload isolated M17 integrated lazy quantum (Windows)
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-IntegratedLazy-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-integrated-lazy-windows.csv
           retention-days: 7
           if-no-files-found: error
 
