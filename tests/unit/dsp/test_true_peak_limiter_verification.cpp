@@ -1667,12 +1667,16 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
               "active_detector_events,reference_controller_us,"
               "candidate_select_and_controller_us,selector_setup_us,"
               "bounded_ticks,direct_ticks,events_examined,events_skipped,"
-              "full_pcm_bitwise,controller_fields_bitwise,checkpoint_state_bitwise\n";
+              "full_pcm_bitwise,controller_fields_bitwise,checkpoint_state_bitwise,"
+              "reference_controller_ns,candidate_select_and_controller_ns,"
+              "rolling_select_and_controller_ns,rolling_setup_ns,"
+              "rolling_batches,rolling_pcm_bitwise,"
+              "rolling_controller_bitwise,rolling_checkpoint_bitwise\n";
     }
 
     for(const int fs:{44100,48000,88200,96000,176400,192000}) {
         for(const bool stereo:{false,true}) {
-            for(const double ceiling:{-1.0,-12.0}) {
+            for(const double ceiling:{-1.0,-6.0,-12.0}) {
                 auto source=buffer(fs,stereo,nFrames);
                 for(std::size_t ch=0;ch<source.view().format().channel_count();
                     ++ch) {
@@ -1733,7 +1737,10 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
                 auto selection=Selector::create(fs,ceiling);
                 auto oracle=Controller::create(fs,ceiling);
                 auto candidate=Controller::create(fs,ceiling);
-                QVERIFY(selection && oracle && candidate);
+                auto rollingController=Controller::create(fs,ceiling);
+                auto rollingSelection=Selector::create(fs,ceiling);
+                QVERIFY(selection && oracle && candidate
+                    && rollingController && rollingSelection);
                 const auto cacheStart=std::chrono::steady_clock::now();
                 QVERIFY(selection->prepare(events));
                 const auto cacheEnd=std::chrono::steady_clock::now();
@@ -1750,9 +1757,60 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
 
                 std::size_t search=0,boundedTicks=0,directTicks=0;
                 std::size_t visited=0,skipped=0;
-                std::int64_t referenceMicros=0,candidateMicros=0;
+                std::int64_t referenceNanos=0,candidateNanos=0;
+                std::int64_t rollingNanos=0,rollingSetupNanos=0;
+                std::size_t rollingBatches=0;
                 for(int n=0;n<nFrames;++n) {
+                    if(n==0 || n==47 || n==110) {
+                        // Independent complete lookahead, rebuilt every
+                        // asymmetric PCM chunk. The previous cache is
+                        // replaced, never appended across resource history.
+                        if(n!=0) {
+                            const auto snapshot=rollingController.value()->snapshot();
+                            const auto original=oracle.value()->snapshot();
+                            QCOMPARE(snapshot.next_tick,original.next_tick);
+                            QCOMPARE(snapshot.hold_remaining,original.hold_remaining);
+                            QCOMPARE(std::bit_cast<std::uint64_t>(snapshot.density),
+                                     std::bit_cast<std::uint64_t>(original.density));
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                snapshot.previous_reduction_db),
+                                std::bit_cast<std::uint64_t>(
+                                    original.previous_reduction_db));
+                            auto newController=Controller::create(fs,ceiling);
+                            QVERIFY(newController);
+                            QVERIFY(newController.value()->restore(snapshot));
+                            rollingController=std::move(newController);
+                        }
+                        const auto firstTick=n==0?-62:8*(n-1)+1;
+                        const auto lastFrame=n==0?46:(n==47?109:nFrames-1);
+                        const auto finalTick=8*lastFrame
+                            +oracle.value()->lookahead_ticks();
+                        const auto first=std::lower_bound(
+                            events.begin(),events.end(),firstTick,
+                            [](const Event& ev,std::int64_t tick) {
+                                return ev.tick<tick;
+                            });
+                        const auto last=std::upper_bound(
+                            first,events.end(),finalTick,
+                            [](std::int64_t tick,const Event& ev) {
+                                return tick<ev.tick;
+                            });
+                        const std::span<const Event> batch=first==last
+                            ?std::span<const Event>{}
+                            :std::span<const Event>{
+                                &*first,static_cast<std::size_t>(last-first)};
+                        const auto setupStart=std::chrono::steady_clock::now();
+                        QVERIFY(rollingSelection->prepare(batch));
+                        const auto setupEnd=std::chrono::steady_clock::now();
+                        rollingSetupNanos+=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(
+                                setupEnd-setupStart).count();
+                        QCOMPARE(rollingSelection->cached_event_count(),
+                                 batch.size());
+                        ++rollingBatches;
+                    }
                     double frameGain=1.0;
+                    double rollingFrameGain=1.0;
                     for(std::int64_t m=n==0?-62:8*(n-1)+1;
                         m<=8*n;++m) {
                         while(search<events.size()&&events[search].tick<m)
@@ -1783,16 +1841,48 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
                             current,minimal);
                         const auto c=std::chrono::steady_clock::now();
                         QVERIFY(acceleratedStep);
-                        referenceMicros+=std::chrono::duration_cast<
-                            std::chrono::microseconds>(b-a).count();
-                        candidateMicros+=std::chrono::duration_cast<
-                            std::chrono::microseconds>(c-b).count();
+                        auto rollingChoice=rollingSelection->choose(m,current);
+                        QVERIFY(rollingChoice);
+                        const auto& rollingEvent=rollingChoice->future_event;
+                        const auto rollingSpan=rollingEvent
+                            ?std::span<const Event>{&*rollingEvent,1}
+                            :std::span<const Event>{};
+                        auto rollingStep=rollingController.value()->advance(
+                            current,rollingSpan);
+                        const auto d=std::chrono::steady_clock::now();
+                        QVERIFY(rollingStep);
+                        // Individual submicrosecond ticks must not be
+                        // truncated to 0 us on fast Windows builds.
+                        referenceNanos+=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(b-a).count();
+                        candidateNanos+=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(c-b).count();
+                        rollingNanos+=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(d-c).count();
                         boundedTicks+=choice->bounded?1U:0U;
                         directTicks+=choice->bounded?0U:1U;
                         visited+=choice->visited;
                         skipped+=choice->skipped;
                         const auto& original=*referenceStep.value();
                         const auto& optimized=*acceleratedStep.value();
+                        const auto& rolling=*rollingStep.value();
+                        QCOMPARE(original.tick,rolling.tick);
+                        QCOMPARE(original.hold_remaining,rolling.hold_remaining);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.attack_floor_db),
+                            std::bit_cast<std::uint64_t>(rolling.attack_floor_db));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.reduction_db),
+                            std::bit_cast<std::uint64_t>(rolling.reduction_db));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.gain),
+                            std::bit_cast<std::uint64_t>(rolling.gain));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.density),
+                            std::bit_cast<std::uint64_t>(rolling.density));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.release_ms),
+                            std::bit_cast<std::uint64_t>(rolling.release_ms));
                         QCOMPARE(original.tick,optimized.tick);
                         QCOMPARE(original.hold_remaining,optimized.hold_remaining);
                         QCOMPARE(std::bit_cast<std::uint64_t>(
@@ -1816,7 +1906,10 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
                         QCOMPARE(std::bit_cast<std::uint64_t>(
                             original.gain),
                             std::bit_cast<std::uint64_t>(optimized.gain));
-                        if(m==8*n)frameGain=optimized.gain;
+                        if(m==8*n) {
+                            frameGain=optimized.gain;
+                            rollingFrameGain=rolling.gain;
+                        }
                     }
                     for(std::size_t ch=0;
                         ch<source.view().format().channel_count();++ch) {
@@ -1828,6 +1921,11 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
                         const double predicted=frameGain==1.0
                             ?pcm:pcm*frameGain;
                         QCOMPARE(std::bit_cast<std::uint64_t>(predicted),
+                            std::bit_cast<std::uint64_t>(
+                                (*output.value())[static_cast<std::size_t>(n)]));
+                        const double rollingPredicted=rollingFrameGain==1.0
+                            ?pcm:pcm*rollingFrameGain;
+                        QCOMPARE(std::bit_cast<std::uint64_t>(rollingPredicted),
                             std::bit_cast<std::uint64_t>(
                                 (*output.value())[static_cast<std::size_t>(n)]));
                     }
@@ -1855,15 +1953,25 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
                          std::int64_t{8*(nFrames-1)+1});
                 QCOMPARE(oracle.value()->next_tick(),
                          candidate.value()->next_tick());
+                QCOMPARE(rollingController.value()->next_tick(),
+                         oracle.value()->next_tick());
+                QCOMPARE(rollingBatches,std::size_t{3});
                 QCOMPARE(boundedTicks+directTicks,
                          std::size_t{8*nFrames+55});
                 const auto cacheMicros=std::chrono::duration_cast<
                     std::chrono::microseconds>(cacheEnd-cacheStart).count();
+                // Reporting only: preserving nanosecond sums avoids
+                // platform-dependent microsecond truncation per tick.
+                const double referenceMicros=referenceNanos/1000.0;
+                const double candidateMicros=candidateNanos/1000.0;
+                const double rollingMicros=rollingNanos/1000.0;
                 qInfo().nospace()<<"M17 isolated-accelerator fs="<<fs
                     <<" stereo="<<stereo<<" ceiling="<<ceiling
                     <<" frames="<<nFrames<<" events="<<events.size()
                     <<" reference_controller_us="<<referenceMicros
                     <<" candidate_us="<<candidateMicros
+                    <<" rolling_us="<<rollingMicros
+                    <<" rolling_setup_us="<<rollingSetupNanos/1000.0
                     <<" setup_us="<<cacheMicros
                     <<" bounded_ticks="<<boundedTicks
                     <<" direct_ticks="<<directTicks
@@ -1877,7 +1985,10 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
                         <<referenceMicros<<','<<candidateMicros<<','
                         <<cacheMicros<<','<<boundedTicks<<','
                         <<directTicks<<','<<visited<<','<<skipped
-                        <<",PASS,PASS,PASS\n";
+                        <<",PASS,PASS,PASS,"
+                        <<referenceNanos<<','<<candidateNanos<<','
+                        <<rollingNanos<<','<<rollingSetupNanos<<','
+                        <<rollingBatches<<",PASS,PASS,PASS\n";
                 }
             }
         }

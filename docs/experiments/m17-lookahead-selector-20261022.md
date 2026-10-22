@@ -31,3 +31,21 @@ checkpoint schema or registered DSP module is permitted.
 This branch remains separated from PR #54. The PO must explicitly approve
 any future production integration, following a measured full-Prepare
 comparison and test-based falsification. CI green is not such an approval.
+
+## Follow-up experiment (PO-authorized diagnostic, not implementation)
+
+CI #664 passed 24 mono/stereo, six-rate, -1/-12 dBTP cases with bitwise
+PCM and frozen-controller field/snapshot checks. The Windows per-tick
+microsecond timings in that report may undercount calls shorter than 1 us.
+No Windows speedup inference is permitted from those old timings.
+
+Next comparison adds -6 dBTP (36 total cases), nanosecond accumulation
+for untruncated timing, and a separate three-batch selector whose cache
+is rebuilt for frame ranges [0,47), [47,110), and [110,192).
+The controller snapshot is restored at each batch boundary; its output
+PCM, control state and clock must match the original IModule exactly.
+
+The batch test is not a completed streaming scheduler: detector events
+are collected offline before building each bounded selector. It does
+NOT qualify memory consumption or throughput for long tracks, direct
+disk rendering, the real Prepare command, or the final M16 verifier.
