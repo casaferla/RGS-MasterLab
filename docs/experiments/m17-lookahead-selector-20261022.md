@@ -49,3 +49,33 @@ The batch test is not a completed streaming scheduler: detector events
 are collected offline before building each bounded selector. It does
 NOT qualify memory consumption or throughput for long tracks, direct
 disk rendering, the real Prepare command, or the final M16 verifier.
+
+
+## Bounded rolling batch prototype — qualification boundary
+
+This next isolated test adds an **unregistered**, separate
+`M17RollingBatchSelector` coordinator. It accepts only contiguous
+controller-tick batches, requires caller-supplied detector coverage
+(or a completed detector drain), checks event order, and rejects
+batch inputs larger than 32768 active events before replacing its
+cache. A failed load must leave its accepted batch untouched.
+
+The 1536-frame, six-rate, mono/stereo PCM oracle is the real
+frozen M17 IModule rendered with uneven input blocks; the isolated
+candidate feeds selected original events to a separate original
+frozen controller, then bit-compares all emitted PCM. A controller
+snapshot is restored at the frame 768 batch boundary. Test reports
+the peak event-cache occupancy and asserts 24 successful 64-frame
+batch transitions per case. The error scenarios include incomplete
+future lookahead, oversized batches, and a non-contiguous tick
+origin.
+
+**IMPORTANT LIMITATION:** To isolate scheduler semantics, this
+test harness stores the complete detector event stream to form
+each batch. Thus, `high_water_cached_events <= 32768` proves only
+the memory bound inside this isolated selector; it is not a
+source-independent bound on the complete processing pipeline.
+Likewise timings comparing the genuine IModule and this test runner
+are not directly comparable since they encompass different work.
+No production source, module registry, checkpoint schema, actual
+Prepare, output-rate contract or M16 verifier was changed.

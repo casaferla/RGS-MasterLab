@@ -1,6 +1,7 @@
 #include "../../oracles/true_peak_limiter/core_test_support.hpp"
 #include "internal/true_peak_limiter_state.hpp"
 #include "internal/experimental/true_peak_limiter_selector.hpp"
+#include "internal/experimental/true_peak_limiter_rolling_scheduler.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/dsp/module_descriptor.hpp>
@@ -188,6 +189,7 @@ private slots:
     void boundedLookaheadMemoizationProbe();
     void detectorSourcedLookaheadMemoizationProbe();
     void experimentalIsolatedSelectorMatchesFrozenControllerAndPcm();
+    void experimentalRollingBoundedBatchPcmOracle();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -1990,6 +1992,251 @@ experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
                         <<rollingNanos<<','<<rollingSetupNanos<<','
                         <<rollingBatches<<",PASS,PASS,PASS\n";
                 }
+            }
+        }
+    }
+}
+
+
+void TruePeakLimiterVerificationTest::experimentalRollingBoundedBatchPcmOracle()
+{
+    using Event=dsp::internal::LimiterDetectorEvent;
+    using Detector=dsp::internal::TruePeakLimiterDetectorState;
+    using Controller=dsp::internal::TruePeakLimiterControllerState;
+    using Rolling=dsp::internal::experimental::M17RollingBatchSelector;
+    constexpr int kFrames=1536;
+    constexpr int kBatchFrames=64;
+    constexpr double kCeiling=-6.0;
+    constexpr double pi=std::numbers::pi_v<double>;
+
+    const auto csvPath=qEnvironmentVariable(
+        "RGS_M17_ROLLING_PROBE_FILE").toStdString();
+    if(!csvPath.empty()) {
+        std::ofstream csv(csvPath,std::ios::trunc);
+        QVERIFY2(csv.good(),"M17 rolling experiment artifact unavailable");
+        csv<<"sample_rate_hz,channels,ceiling_dbtp,frames,all_active_events,"
+              "batches,high_water_cached_events,cache_cap,"
+              "rejected_incomplete_horizon,rejected_oversize,"
+              "rejected_gap,rolling_pcm_bitwise,restored_state_bitwise,"
+              "candidate_loop_ns,reference_render_ns\n";
+    }
+
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const bool stereo:{false,true}) {
+            auto source=buffer(fs,stereo,kFrames);
+            const auto fmt=source.view().format();
+            for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                auto lane=source.mutable_view().channel(ch);
+                QVERIFY(lane);
+                for(int n=0;n<kFrames;++n) {
+                    const double t=static_cast<double>(n)/fs;
+                    double sample=(ch==0?1.0:-1.0)*
+                        (0.91*std::sin(2.0*pi*797.0*t)
+                        +0.34*std::sin(2.0*pi*2171.0*t+0.13));
+                    if(n%97==0)sample+=ch==0?1.14:-1.16;
+                    if(n>=433 && n<673)sample=+0.0;
+                    if(n>=1041 && n<1150)sample=+0.0;
+                    (*lane.value())[static_cast<std::size_t>(n)]=sample;
+                }
+            }
+
+            const std::array<std::size_t,4> chunks{31,127,19,251};
+            const auto referenceStart=std::chrono::steady_clock::now();
+            const auto pcm=renderRealM17(source,kCeiling,chunks);
+            const auto referenceEnd=std::chrono::steady_clock::now();
+            QVERIFY2(pcm.has_value(),"frozen M17 large PCM oracle failed");
+
+            Detector detector(stereo?2U:1U);
+            const double linear=std::pow(10.0,kCeiling/20.0);
+            std::vector<Event> allEvents;
+            allEvents.reserve(static_cast<std::size_t>(kFrames*8+118));
+            std::int64_t detectorCovered=-63;
+            const auto accept=[&](const Event& e) {
+                if(!e.valid)return true;
+                if(e.tick<=detectorCovered || !std::isfinite(e.peak)
+                    || e.peak<0.0)return false;
+                detectorCovered=e.tick;
+                if(e.peak>linear)allEvents.push_back(e);
+                return true;
+            };
+            for(int n=0;n<kFrames;++n) {
+                const auto l=source.view().channel(0);
+                const auto r=stereo?source.view().channel(1):l;
+                QVERIFY(l&&r);
+                const auto left=(*l.value())[static_cast<std::size_t>(n)];
+                const auto right=stereo
+                    ?(*r.value())[static_cast<std::size_t>(n)] : +0.0;
+                auto q=detector.push_programme_frame(left,right);
+                QVERIFY(q);
+                for(const auto& quarter:*q.value()) {
+                    QVERIFY(accept(quarter.preceding_anchor));
+                    QVERIFY(accept(quarter.midpoint));
+                }
+            }
+            const auto tail=detector.finalize_detector();
+            QVERIFY(tail);
+            for(const auto& quarter:*tail.value()) {
+                QVERIFY(accept(quarter.preceding_anchor));
+                QVERIFY(accept(quarter.midpoint));
+            }
+            QVERIFY(detector.finalized());
+
+            auto rolling=Rolling::create(fs,kCeiling);
+            auto controller=Controller::create(fs,kCeiling);
+            QVERIFY(rolling && controller);
+            const auto horizon=controller.value()->lookahead_ticks();
+            QVERIFY(horizon>0);
+
+            // First test intentionally incomplete lookahead certification:
+            // a caller may not infer unseen future events from an empty span.
+            const std::span<const Event> empty{};
+            QVERIFY(!rolling->load(empty,-62,8*(kBatchFrames-1),
+                8*(kBatchFrames-1)+horizon-1,false));
+            QCOMPARE(rolling->batches(),std::size_t{0});
+            QCOMPARE(rolling->next_tick(),std::int64_t{-62});
+
+            // Cannot accept event storage above the explicit per-batch cap.
+            std::vector<Event> over(Rolling::kMaxBatchEvents+1U);
+            for(std::size_t i=0;i<over.size();++i)
+                over[i]=Event{static_cast<std::int64_t>(i),
+                    1.0,true};
+            QVERIFY(!rolling->load(over,-62,8*(kBatchFrames-1),
+                detectorCovered,true));
+            QCOMPARE(rolling->batches(),std::size_t{0});
+            over.clear();
+            over.shrink_to_fit();
+
+            // Product DSP remains the reference. The test runner holds
+            // full offline detector events; ONLY the experimental selector
+            // cache has a hard per-batch bound. This is not streaming
+            // detector RAM qualification.
+            std::size_t eventCursor=0;
+            bool restoredState=false;
+            const auto candidateStart=std::chrono::steady_clock::now();
+            for(int startFrame=0;startFrame<kFrames;startFrame+=kBatchFrames) {
+                const int lastFrame=std::min(kFrames,startFrame+kBatchFrames)-1;
+                const std::int64_t firstM=startFrame==0
+                    ?-62:8*(startFrame-1)+1;
+                const std::int64_t lastM=8*lastFrame;
+                const std::int64_t cutoff=lastM+horizon;
+                const auto begin=std::lower_bound(
+                    allEvents.begin(),allEvents.end(),firstM,
+                    [](const Event& e,std::int64_t tick) {
+                        return e.tick<tick;
+                    });
+                const auto finish=std::upper_bound(
+                    begin,allEvents.end(),cutoff,
+                    [](std::int64_t tick,const Event& e) {
+                        return tick<e.tick;
+                    });
+                const std::span<const Event> batch=begin==finish
+                    ?std::span<const Event>{}
+                    :std::span<const Event>{
+                        &*begin,static_cast<std::size_t>(finish-begin)};
+                QVERIFY2(rolling->load(batch,firstM,lastM,
+                    detectorCovered,true),
+                    "Certified rolling window unexpectedly rejected");
+                QCOMPARE(rolling->cached_events(),batch.size());
+                QVERIFY(rolling->cached_events()<=Rolling::kMaxBatchEvents);
+
+                // Gap must be rejected transactionally; keep the live
+                // accepted cache and the expected clock unchanged.
+                const auto beforeEvents=rolling->cached_events();
+                const auto beforeTick=rolling->next_tick();
+                const auto beforeBatches=rolling->batches();
+                QVERIFY(!rolling->load(empty,firstM+1,lastM,
+                    detectorCovered,true));
+                QCOMPARE(rolling->cached_events(),beforeEvents);
+                QCOMPARE(rolling->next_tick(),beforeTick);
+                QCOMPARE(rolling->batches(),beforeBatches);
+
+                if(startFrame==768) {
+                    // Independent frozen controller restore at a batch
+                    // boundary, not a DSP checkpoint serialization test.
+                    const auto snap=controller.value()->snapshot();
+                    auto restored=Controller::create(fs,kCeiling);
+                    QVERIFY(restored);
+                    QVERIFY(restored.value()->restore(snap));
+                    QCOMPARE(restored.value()->snapshot().next_tick,
+                        controller.value()->next_tick());
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        restored.value()->snapshot().density),
+                        std::bit_cast<std::uint64_t>(snap.density));
+                    controller=std::move(restored);
+                    restoredState=true;
+                }
+
+                for(int n=startFrame;n<=lastFrame;++n) {
+                    double applied=1.0;
+                    for(std::int64_t m=n==0?-62:8*(n-1)+1;
+                        m<=8*n;++m) {
+                        while(eventCursor<allEvents.size()
+                            && allEvents[eventCursor].tick<m)
+                            ++eventCursor;
+                        const bool currentEvent=eventCursor<allEvents.size()
+                            && allEvents[eventCursor].tick==m;
+                        const double current=currentEvent
+                            ?allEvents[eventCursor].peak:+0.0;
+                        auto choice=rolling->choose(m,current);
+                        QVERIFY(choice);
+                        const auto& winner=choice->future_event;
+                        const auto selected=winner
+                            ?std::span<const Event>{&*winner,1}
+                            :std::span<const Event>{};
+                        auto step=controller.value()->advance(current,selected);
+                        QVERIFY(step);
+                        QCOMPARE(step.value()->tick,m);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            step.value()->attack_floor_db),
+                            std::bit_cast<std::uint64_t>(
+                                choice->attack_floor_db));
+                        if(m==8*n)applied=step.value()->gain;
+                    }
+                    for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                        const auto src=source.view().channel(ch);
+                        const auto dst=pcm->view().channel(ch);
+                        QVERIFY(src&&dst);
+                        const double input=(*src.value())[
+                            static_cast<std::size_t>(n)];
+                        const double expected=applied==1.0
+                            ?input:input*applied;
+                        QCOMPARE(std::bit_cast<std::uint64_t>(expected),
+                            std::bit_cast<std::uint64_t>(
+                                (*dst.value())[static_cast<std::size_t>(n)]));
+                    }
+                }
+            }
+            const auto candidateEnd=std::chrono::steady_clock::now();
+            QCOMPARE(rolling->next_tick(),std::int64_t{8*(kFrames-1)+1});
+            QCOMPARE(controller.value()->next_tick(),rolling->next_tick());
+            QCOMPARE(rolling->batches(),
+                std::size_t{kFrames/kBatchFrames});
+            QVERIFY(restoredState);
+            QVERIFY(rolling->high_water_events()<=Rolling::kMaxBatchEvents);
+
+            const auto candidateNs=std::chrono::duration_cast<
+                std::chrono::nanoseconds>(
+                    candidateEnd-candidateStart).count();
+            const auto originalNs=std::chrono::duration_cast<
+                std::chrono::nanoseconds>(
+                    referenceEnd-referenceStart).count();
+            qInfo().nospace()<<"M17 rolling bounded PCM Fs="<<fs
+                <<" channels="<<(stereo?2:1)<<" frames="<<kFrames
+                <<" event_total="<<allEvents.size()
+                <<" batches="<<rolling->batches()
+                <<" high_water="<<rolling->high_water_events()
+                <<" candidate_ns="<<candidateNs
+                <<" original_imodule_ns="<<originalNs
+                <<" pcm_bitwise=PASS controller_snapshot=PASS";
+            if(!csvPath.empty()) {
+                std::ofstream csv(csvPath,std::ios::app);
+                QVERIFY2(csv.good(),"rolling test CSV append failed");
+                csv<<fs<<','<<(stereo?2:1)<<','<<kCeiling<<','
+                    <<kFrames<<','<<allEvents.size()<<','
+                    <<rolling->batches()<<','<<rolling->high_water_events()
+                    <<','<<Rolling::kMaxBatchEvents
+                    <<",PASS,PASS,PASS,PASS,PASS,"
+                    <<candidateNs<<','<<originalNs<<'\n';
             }
         }
     }
