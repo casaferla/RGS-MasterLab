@@ -62,11 +62,11 @@ public:
             prior=event.tick;
         }
 
-        // Copy-on-success selector.prepare ensures failed batches preserve
-        // accepted events and all current query state.
-        auto updated=selector_;
-        if(!updated.prepare(complete_events))return false;
-        selector_=std::move(updated);
+        // selector.prepare validates the entire event span before it
+        // builds replacements and commits only completed temporary caches.
+        // A second deep copy of the OLD accepted cache is unnecessary
+        // and can dominate a short 64-frame offline batch.
+        if(!selector_.prepare(complete_events))return false;
         accepted_=true;
         batch_last_tick_=last_m;
         batch_coverage_tick_=coverage_tick;
@@ -94,6 +94,9 @@ public:
     }
     [[nodiscard]] std::size_t high_water_events() const noexcept {
         return peak_events_;
+    }
+    [[nodiscard]] std::size_t weight_build_count() const noexcept {
+        return selector_.weight_build_count();
     }
     [[nodiscard]] std::size_t batches() const noexcept {return batches_;}
     [[nodiscard]] std::int64_t next_tick() const noexcept {return next_tick_;}

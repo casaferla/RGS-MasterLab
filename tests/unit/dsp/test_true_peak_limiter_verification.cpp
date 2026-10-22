@@ -2748,7 +2748,8 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
               "mean_detector_ns,p99_detector_ns,max_detector_ns,"
               "mean_cache_ns,p99_cache_ns,max_cache_ns,"
               "mean_control_ns,p99_control_ns,max_control_ns,"
-              "mean_pcm_store_ns,p99_pcm_store_ns,max_pcm_store_ns\n";
+              "mean_pcm_store_ns,p99_pcm_store_ns,max_pcm_store_ns,"
+              "hann_weight_build_count\n";
     }
     for(const int fs:{48000,192000}) {
         for(const bool stereo:{false,true}) {
@@ -2871,6 +2872,9 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
                 QVERIFY(feeder->drained());
                 QVERIFY(feeder->high_water_events()<=Feeder::kMaxRetained);
                 QVERIFY(rolling->high_water_events()<=Rolling::kMaxBatchEvents);
+                // The immutable exact-Hann weights must be constructed
+                // once and reused across all 64-frame batches.
+                QCOMPARE(rolling->weight_build_count(),std::size_t{1});
                 for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
                     const auto input=frozen->view().channel(ch);
                     const auto output=prepared.view().channel(ch);
@@ -2932,7 +2936,8 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
                        <<detectorStats[0]<<','<<detectorStats[1]<<','<<detectorStats[2]<<','
                        <<cacheStats[0]<<','<<cacheStats[1]<<','<<cacheStats[2]<<','
                        <<controlStats[0]<<','<<controlStats[1]<<','<<controlStats[2]<<','
-                       <<pcmStats[0]<<','<<pcmStats[1]<<','<<pcmStats[2]<<'\n';
+                       <<pcmStats[0]<<','<<pcmStats[1]<<','<<pcmStats[2]<<','
+                       <<rolling->weight_build_count()<<'\n';
                 }
             }
         }

@@ -314,3 +314,40 @@ latency certificates. Preserve the exact PCM oracle, both cache caps
 and the all-rate functional verification regression. The commit
 subject requests [m17-extended] once so Linux and Windows upload the
 complete M17 quantum artifacts. Return to FAST for later routine edits.
+
+
+## CI #675 stage decomposition and targeted exact cache reuse
+
+CI #675 at b8f065fd succeeded on both Windows and Linux in EXTENDED
+mode. All eight 48k/192k mono/stereo, -6/-12 dBTP synthetic cases
+passed bitwise PCM, finite detector drain and cache caps.
+
+At 192k, quantum 64-frame budget = 333333 ns. The eight-case
+cross-platform diagnostic shows that the most expensive stages are
+the frozen controller tick recurrence and rolling lookahead cache
+preparation. Windows mean controller costs 331..401 us per quantum,
+cache 205..260 us; Linux controller 2584..2968 us, cache 711..906 us.
+The total stage clocks are diagnostic, not additive realtime
+certificates. Every Linux 192k quantum missed the budget; Windows
+missed 122/128 or 121/128 per case.
+
+**Falsifiable experiment**: the exact Hann weights and suffix upper
+bounds depend ONLY on the frozen sample-rate-derived lookahead length.
+The existing selector rebuilt them and evaluated many cosines on
+every single 64-frame rolling cache load. Retain those *identical*
+binary64 weight values within the private experimental selector
+instance, computing once on its first dense batch. The rolling
+scheduler previously copied the entire accepted selector before
+calling its already-transactional `prepare`; avoid that redundant
+copy, still validating all incoming events and staging new vectors
+before committing the cache. The transactional invalid-load tests
+remain active. Add an assertion that 64/128 successive quanta each
+reuse the same single Hann table construction count = 1.
+
+These changes do NOT modify the frozen detector, controller (including
+exp/pow release and gain), FIR, user-visible processing chain, factory,
+output rate, checkpoint or source PCM. They must produce the exact
+same binary64 PCM on the full original 48-scenario M17/M16 suite,
+longer resource and quantum oracles. Use one EXTENDED focused CI
+to compare stage costs after reuse; if any bits differ the experiment
+is falsified, not accepted. Shared hosted runner times can vary.

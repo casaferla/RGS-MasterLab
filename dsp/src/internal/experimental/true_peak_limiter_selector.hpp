@@ -70,18 +70,25 @@ public:
             demands.reserve(events.size());
             for (const auto& event : events)
                 demands.push_back(demand_db(event.peak));
-            weights.resize(static_cast<std::size_t>(horizon_+1));
-            for (std::int64_t lag=1;lag<=horizon_;++lag) {
-                const double distance = static_cast<double>(lag);
-                weights[static_cast<std::size_t>(lag)] =
-                    0.5*(1.0+std::cos(
-                        std::numbers::pi_v<double>*distance/
-                        static_cast<double>(horizon_)));
-            }
-            suffix.resize(static_cast<std::size_t>(horizon_+2), +0.0);
-            for (std::int64_t lag=horizon_;lag>=1;--lag) {
-                const auto offset=static_cast<std::size_t>(lag);
-                suffix[offset]=std::max(suffix[offset+1],weights[offset]);
+            // Hann and suffix weights depend ONLY on frozen lookahead
+            // H and binary64 arithmetic: retain them across 64-frame
+            // batches. Construct them once using the SAME expression,
+            // including identical evaluation order, then publish only
+            // after the incoming detector events validate successfully.
+            if(weights_.empty()) {
+                weights.resize(static_cast<std::size_t>(horizon_+1));
+                for (std::int64_t lag=1;lag<=horizon_;++lag) {
+                    const double distance = static_cast<double>(lag);
+                    weights[static_cast<std::size_t>(lag)] =
+                        0.5*(1.0+std::cos(
+                            std::numbers::pi_v<double>*distance/
+                            static_cast<double>(horizon_)));
+                }
+                suffix.resize(static_cast<std::size_t>(horizon_+2), +0.0);
+                for (std::int64_t lag=horizon_;lag>=1;--lag) {
+                    const auto offset=static_cast<std::size_t>(lag);
+                    suffix[offset]=std::max(suffix[offset+1],weights[offset]);
+                }
             }
             group.resize((events.size()+kGroup-1U)/kGroup,+0.0);
             for (std::size_t i=0;i<events.size();++i)
@@ -90,8 +97,11 @@ public:
 
         events_=std::move(events);
         demands_=std::move(demands);
-        weights_=std::move(weights);
-        suffix_=std::move(suffix);
+        if(!weights.empty()) {
+            weights_=std::move(weights);
+            suffix_=std::move(suffix);
+            ++weight_build_count_;
+        }
         group_=std::move(group);
         return true;
     }
@@ -167,6 +177,9 @@ public:
     [[nodiscard]] std::size_t cached_event_count() const noexcept {
         return events_.size();
     }
+    [[nodiscard]] std::size_t weight_build_count() const noexcept {
+        return weight_build_count_;
+    }
 
 private:
     M17LookaheadSelector(std::int64_t horizon, double ceiling) noexcept
@@ -183,6 +196,7 @@ private:
     std::vector<double> weights_;
     std::vector<double> suffix_;
     std::vector<double> group_;
+    std::size_t weight_build_count_{0};
 };
 
 } // namespace rgsml::dsp::internal::experimental
