@@ -157,6 +157,7 @@ jobs:
       - name: Run Focused DSP Tests
         env:
           RGS_M17_CPU_PROBE_FILE: ${{ runner.temp }}/rgs-m17-cpu-linux.csv
+          RGS_M17_PARTITION_PROBE_FILE: ${{ runner.temp }}/rgs-m17-partition-linux.csv
         run: |
           ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_terminal_private_gr_projection_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_playback_src_tests|rgsml_playback_engine_portable_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_)" --output-on-failure
 
@@ -166,6 +167,16 @@ jobs:
         with:
           name: RGS-M17-CPU-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/rgs-m17-cpu-linux.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      # Six non-gating Windows/Linux-comparable rows, no complete job logs.
+      - name: Upload bounded M17 block partition probe (Linux)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-Partition-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-partition-linux.csv
           retention-days: 7
           if-no-files-found: error
 
@@ -436,6 +447,7 @@ jobs:
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
           RGS_M17_CPU_PROBE_FILE: ${{ runner.temp }}/rgs-m17-cpu-windows.csv
+          RGS_M17_PARTITION_PROBE_FILE: ${{ runner.temp }}/rgs-m17-partition-windows.csv
         run: |
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
           $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
@@ -485,6 +497,15 @@ jobs:
         with:
           name: RGS-M17-CPU-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/rgs-m17-cpu-windows.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload bounded M17 block partition probe (Windows)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-Partition-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-partition-windows.csv
           retention-days: 7
           if-no-files-found: error
 

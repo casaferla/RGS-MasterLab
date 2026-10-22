@@ -937,6 +937,14 @@ void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
     constexpr std::int64_t profileFrames=2048;
     const std::array<std::size_t,1> fineBlocks{128};
     const std::array<std::size_t,1> coarseBlocks{2048};
+    const auto partitionPath=qEnvironmentVariable(
+        "RGS_M17_PARTITION_PROBE_FILE").toStdString();
+    if(!partitionPath.empty()) {
+        std::ofstream probe(partitionPath,std::ios::trunc);
+        QVERIFY2(probe.good(),"M17 partition probe artifact cannot be opened");
+        probe<<"sample_rate_hz,ceiling_dbtp,frames,fine_block_frames,"
+                "coarse_block_frames,fine_us,coarse_us,ratio_fine_over_coarse\n";
+    }
     if(!summaryPath.empty()) {
         std::ofstream summary(summaryPath,std::ios::app);
         if(summary)summary
@@ -961,7 +969,7 @@ void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
                     +0.15*std::sin(2.0*pi*(ch==0?2351.0:1783.0)*time+0.25);
             }
         }
-        for(const double ceiling : {-1.0,-12.0}) {
+        for(const double ceiling : {-1.0,-6.0,-12.0}) {
             const auto started=std::chrono::steady_clock::now();
             const auto fine=renderRealM17(input,ceiling,fineBlocks);
             const auto mid=std::chrono::steady_clock::now();
@@ -988,6 +996,13 @@ void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
             qInfo().nospace()<<"RGS M17 block_partition Fs="<<fs
                 <<" ceiling="<<ceiling<<" fine_us="<<fineUs
                 <<" coarse_us="<<coarseUs<<" ratio="<<ratio;
+            if(!partitionPath.empty()) {
+                std::ofstream probe(partitionPath,std::ios::app);
+                QVERIFY2(probe.good(),"M17 partition probe append failed");
+                probe<<fs<<','<<ceiling<<','<<profileFrames<<','
+                    <<fineBlocks[0]<<','<<coarseBlocks[0]<<','
+                    <<fineUs<<','<<coarseUs<<','<<ratio<<'\n';
+            }
             if(!summaryPath.empty()) {
                 std::ofstream summary(summaryPath,std::ios::app);
                 if(summary)summary<<"| "<<fs<<" Hz | "<<ceiling
