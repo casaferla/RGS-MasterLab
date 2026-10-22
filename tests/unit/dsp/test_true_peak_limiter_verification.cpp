@@ -185,6 +185,7 @@ private slots:
     void fullResourceResumeGatesAreBitwiseIdentical();
     void boundedActualM17CostProbe();
     void boundedLookaheadMemoizationProbe();
+    void detectorSourcedLookaheadMemoizationProbe();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -1028,9 +1029,11 @@ void TruePeakLimiterVerificationTest::boundedLookaheadMemoizationProbe()
     if(!outPath.empty()) {
         std::ofstream csv(outPath,std::ios::trunc);
         QVERIFY2(csv.good(),"M17 lookahead probe artifact cannot be created");
-        csv<<"sample_rate_hz,ceiling_dbtp,controller_ticks,"
+        csv<<"profile,sample_rate_hz,ceiling_dbtp,controller_ticks,"
               "evaluated_future_events,original_us,memoized_us,"
-              "ratio_original_over_memoized,attack_floor_bitwise\n";
+              "ratio_original_over_memoized,attack_floor_bitwise,"
+              "valid_detector_events,active_detector_events,"
+              "max_events_per_horizon,controller_attack_floor_bitwise\n";
     }
     const auto summaryPath=qEnvironmentVariable("GITHUB_STEP_SUMMARY").toStdString();
     if(!summaryPath.empty()) {
@@ -1135,15 +1138,236 @@ void TruePeakLimiterVerificationTest::boundedLookaheadMemoizationProbe()
             if(!outPath.empty()) {
                 std::ofstream csv(outPath,std::ios::app);
                 QVERIFY2(csv.good(),"M17 lookahead probe append failed");
-                csv<<fs<<','<<ceilingDb<<','<<ticksToProbe<<','
+                csv<<"synthetic_8x,"<<fs<<','<<ceilingDb<<','<<ticksToProbe<<','
                     <<evaluations<<','<<originalUs<<','<<cachedUs
-                    <<','<<ratio<<",PASS\n";
+                    <<','<<ratio<<",PASS,,,,\n";
             }
             if(!summaryPath.empty()) {
                 std::ofstream summary(summaryPath,std::ios::app);
                 if(summary)summary<<"| "<<fs<<" | "<<ceilingDb<<" dBTP | "
                     <<originalUs/1000.0<<" ms | "<<cachedUs/1000.0
                     <<" ms | "<<ratio<<"x | YES |\n";
+            }
+        }
+    }
+}
+
+
+// TEST ONLY: feed the very same signed 4x+midpoint detector used by M17.
+// The reference is the unmodified controller.advance(), not an approximate
+// mathematical model. A quiet, impulse-sparse, and dense source distinguish
+// event geometry from an artificial one-event-per-tick upper-density envelope.
+// All ratios are diagnostic, not realtime/FQ gates. No product DSP is changed.
+void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
+{
+    using Event=dsp::internal::LimiterDetectorEvent;
+    constexpr int frames=320;
+    constexpr int testedTicks=128;
+    constexpr double pi=std::numbers::pi_v<double>;
+    struct Window {
+        std::int64_t tick{0};
+        std::size_t first{0};
+        std::size_t last{0};
+        double current{0.0};
+    };
+    const auto artifact=qEnvironmentVariable(
+        "RGS_M17_LOOKAHEAD_PROBE_FILE").toStdString();
+    const auto summaryPath=qEnvironmentVariable(
+        "GITHUB_STEP_SUMMARY").toStdString();
+    if(!summaryPath.empty()) {
+        std::ofstream summary(summaryPath,std::ios::app);
+        if(summary)summary
+            << "\n### M17 REAL detector lookahead experiment (TEST ONLY)\n\n"
+            << "320 stereo input frames; 128 measured controller ticks; "
+               "genuine M17 4x + FIR16 detector. The reference controller "
+               "is advanced normally; candidate attack-floor scans never "
+               "modify production state. Setup is included in cached time. "
+               "This is NOT a PCM/render speedup or qualification.\n\n"
+            << "| Fs | Ceiling | Input | Above-ceiling events | "
+               "Future evaluations | Original | Cached | Ratio | "
+               "Bitwise attack-floor | Controller oracle |\n"
+            << "|---|---:|---|---:|---:|---:|---:|---:|:---:|:---:|\n";
+    }
+    for(const std::int64_t fs:{44100,48000}) {
+        for(const double ceilingDb:{-1.0,-6.0,-12.0}) {
+            const auto reference=dsp::internal::
+                TruePeakLimiterControllerState::create(fs,ceilingDb);
+            QVERIFY(reference);
+            const auto horizon=reference.value()->lookahead_ticks();
+            const auto linearCeiling=std::pow(10.0,ceilingDb/20.0);
+            const auto demand=[linearCeiling](const double peak) {
+                return peak>linearCeiling
+                    ? 20.0*std::log10(peak/linearCeiling) : +0.0;
+            };
+            for(int profile=0;profile<3;++profile) {
+                const char* profileName=profile==0?"quiet":
+                    (profile==1?"impulse_sparse":"music_like_dense");
+                dsp::internal::TruePeakLimiterDetectorState detector{2};
+                std::vector<Event> events;
+                events.reserve(frames*8U);
+                std::int64_t lastValidTick=std::numeric_limits<std::int64_t>::min();
+                std::int64_t validCount=0;
+                const auto accept=[&](const Event& event) {
+                    if(!event.valid)return true;
+                    if(event.tick<=lastValidTick
+                       || !std::isfinite(event.peak) || event.peak<0.0)
+                        return false;
+                    lastValidTick=event.tick;
+                    ++validCount;
+                    if(event.peak>linearCeiling)events.push_back(event);
+                    return true;
+                };
+                for(int frame=0;frame<frames;++frame) {
+                    const double t=static_cast<double>(frame)/
+                        static_cast<double>(fs);
+                    double left=+0.0,right=+0.0;
+                    if(profile==1 && frame==41) {
+                        left=1.25;
+                        right=-1.20;
+                    } else if(profile==2) {
+                        left=0.91*std::sin(2.0*pi*991.0*t)
+                            +0.37*std::sin(2.0*pi*2351.0*t+0.25);
+                        right=0.95*std::sin(2.0*pi*1301.0*t)
+                            -0.32*std::sin(2.0*pi*1783.0*t+0.41);
+                    }
+                    auto quarters=detector.push_programme_frame(left,right);
+                    QVERIFY(quarters);
+                    for(const auto& quarter:*quarters.value()) {
+                        QVERIFY(accept(quarter.preceding_anchor));
+                        QVERIFY(accept(quarter.midpoint));
+                    }
+                }
+                QVERIFY(lastValidTick>=-62+(testedTicks-1)+horizon);
+                std::vector<Window> windows;
+                windows.reserve(testedTicks);
+                std::size_t cursor=0;
+                std::int64_t evaluated=0;
+                std::size_t maxPerHorizon=0;
+                for(int i=0;i<testedTicks;++i) {
+                    const std::int64_t m=-62+i;
+                    while(cursor<events.size() && events[cursor].tick<m)
+                        ++cursor;
+                    const bool currentIsEvent=
+                        cursor<events.size() && events[cursor].tick==m;
+                    const std::size_t first=cursor+(currentIsEvent?1U:0U);
+                    std::size_t last=first;
+                    while(last<events.size()
+                          && events[last].tick<=m+horizon)++last;
+                    windows.push_back(Window{m,first,last,currentIsEvent
+                        ? events[cursor].peak : +0.0});
+                    const auto count=last-first;
+                    maxPerHorizon=std::max(maxPerHorizon,count);
+                    evaluated+=static_cast<std::int64_t>(count);
+                }
+
+                // Reference expression and ascending event order, timed.
+                std::vector<double> original;
+                original.reserve(windows.size());
+                const auto originalStart=std::chrono::steady_clock::now();
+                for(const auto& window:windows) {
+                    double attack=demand(window.current);
+                    for(std::size_t idx=window.first;idx<window.last;++idx) {
+                        const double required=demand(events[idx].peak);
+                        if(required>0.0) {
+                            const double d=static_cast<double>(
+                                events[idx].tick-window.tick);
+                            const double weight=0.5*(1.0+std::cos(
+                                std::numbers::pi_v<double>*d/
+                                static_cast<double>(horizon)));
+                            attack=std::max(attack,required*weight);
+                        }
+                    }
+                    original.push_back(attack);
+                }
+                const auto originalEnd=std::chrono::steady_clock::now();
+
+                // Independently validate against the REAL frozen controller.
+                auto controller=dsp::internal::
+                    TruePeakLimiterControllerState::create(fs,ceilingDb);
+                QVERIFY(controller);
+                for(std::size_t i=0;i<windows.size();++i) {
+                    const auto& window=windows[i];
+                    const std::span<const Event> future=window.first==window.last
+                        ? std::span<const Event>{}
+                        : std::span<const Event>{events.data()+window.first,
+                                                window.last-window.first};
+                    auto result=controller.value()->advance(window.current,future);
+                    QVERIFY(result);
+                    QCOMPARE(result.value()->tick,window.tick);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                                 result.value()->attack_floor_db),
+                             std::bit_cast<std::uint64_t>(original[i]));
+                }
+                QCOMPARE(controller.value()->next_tick(),
+                         std::int64_t{-62+testedTicks});
+
+                // Same exact binary64 expressions, precomputed once; cache
+                // construction IS INCLUDED in the candidate wall time.
+                const auto cacheStart=std::chrono::steady_clock::now();
+                std::vector<double> cachedDemands(events.size());
+                for(std::size_t i=0;i<events.size();++i)
+                    cachedDemands[i]=demand(events[i].peak);
+                std::vector<double> cachedWeights(
+                    static_cast<std::size_t>(horizon+1));
+                for(std::int64_t lag=1;lag<=horizon;++lag) {
+                    const double distance=static_cast<double>(lag);
+                    cachedWeights[static_cast<std::size_t>(lag)]=
+                        0.5*(1.0+std::cos(
+                            std::numbers::pi_v<double>*distance/
+                            static_cast<double>(horizon)));
+                }
+                std::vector<double> memoized;
+                memoized.reserve(windows.size());
+                for(const auto& window:windows) {
+                    double attack=demand(window.current);
+                    for(std::size_t idx=window.first;idx<window.last;++idx) {
+                        const double required=cachedDemands[idx];
+                        if(required>0.0) {
+                            const auto lag=static_cast<std::size_t>(
+                                events[idx].tick-window.tick);
+                            attack=std::max(attack,
+                                required*cachedWeights[lag]);
+                        }
+                    }
+                    memoized.push_back(attack);
+                }
+                const auto cacheEnd=std::chrono::steady_clock::now();
+                QCOMPARE(memoized.size(),original.size());
+                for(std::size_t i=0;i<original.size();++i)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(original[i]),
+                             std::bit_cast<std::uint64_t>(memoized[i]));
+                const auto baselineUs=std::chrono::duration_cast<
+                    std::chrono::microseconds>(originalEnd-originalStart).count();
+                const auto memoUs=std::chrono::duration_cast<
+                    std::chrono::microseconds>(cacheEnd-cacheStart).count();
+                const double ratio=memoUs>0
+                    ? static_cast<double>(baselineUs)/static_cast<double>(memoUs)
+                    : 0.0;
+                qInfo().nospace()<<"RGS M17 detector lookahead Fs="<<fs
+                    <<" ceiling="<<ceilingDb<<" profile="<<profileName
+                    <<" active_events="<<events.size()
+                    <<" future_evaluations="<<evaluated
+                    <<" max_horizon="<<maxPerHorizon
+                    <<" original_us="<<baselineUs
+                    <<" memoized_us="<<memoUs<<" ratio="<<ratio
+                    <<" attack_floor_bitwise=PASS controller_oracle=PASS";
+                if(!artifact.empty()) {
+                    std::ofstream csv(artifact,std::ios::app);
+                    QVERIFY2(csv.good(),"M17 real detector probe append failed");
+                    csv<<"detector_"<<profileName<<','<<fs<<','<<ceilingDb<<','
+                        <<testedTicks<<','<<evaluated<<','<<baselineUs<<','
+                        <<memoUs<<','<<ratio<<",PASS,"
+                        <<validCount<<','<<events.size()<<','
+                        <<maxPerHorizon<<",PASS\n";
+                }
+                if(!summaryPath.empty()) {
+                    std::ofstream summary(summaryPath,std::ios::app);
+                    if(summary)summary<<"| "<<fs<<" | "<<ceilingDb
+                        <<" | "<<profileName<<" | "<<events.size()
+                        <<" | "<<evaluated<<" | "<<baselineUs/1000.0
+                        <<" ms | "<<memoUs/1000.0<<" ms | "<<ratio
+                        <<"x | PASS | PASS |\n";
+                }
             }
         }
     }
