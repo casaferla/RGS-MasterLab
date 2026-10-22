@@ -49,7 +49,8 @@ render_true_peak_limiter_terminal_candidate(
     const dsp::ModuleRegistry& registry,
     FrameCount max_block,
     bool bypassed,
-    const TerminalRenderCancel& cancelled)
+    const TerminalRenderCancel& cancelled,
+    const TerminalRenderProgressSink& progress)
 {
     const auto interrupted=[]() {
         return Result<TruePeakLimiterTerminalCandidate>::failure(candidate_error(
@@ -174,6 +175,9 @@ render_true_peak_limiter_terminal_candidate(
             if (!processed)
                 return Result<TruePeakLimiterTerminalCandidate>::failure(*processed.error());
             pos += part;
+            // A bounded, post-block observation, no changes inside DSP.
+            if(progress)progress({TerminalRenderProgressPhase::M17_CORE,
+                                  pos,count});
         }
         for (std::int64_t emitted=0;emitted<d;) {
             if (cancelled && cancelled()) return interrupted();

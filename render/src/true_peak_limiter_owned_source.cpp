@@ -43,7 +43,17 @@ render_true_peak_limiter_owned_candidate_impl(
     using Candidate = TruePeakLimiterOwnedSourceCandidate;
     // Whole-programme stage diagnostics are captured on the worker thread.
     // No per-frame clocks, logger calls or floating-point/audio mutations.
-    if (stage_timings) *stage_timings = {};
+    if(stage_timings) {
+        // Reset measured durations without losing the caller's observer.
+        auto observer=std::move(stage_timings->progress);
+        *stage_timings = {};
+        stage_timings->progress=std::move(observer);
+    }
+    const auto report=[&](TerminalRenderProgressPhase phase,
+                          std::int64_t done=0,std::int64_t total=0) {
+        if(stage_timings && stage_timings->progress)
+            stage_timings->progress({phase,done,total});
+    };
     const auto cancelledResult=[] {
         return core::Result<Candidate>::failure(source_error(
             core::ErrorCode::InvalidState,"M17_RENDER_CANCELLED",
@@ -114,6 +124,7 @@ render_true_peak_limiter_owned_candidate_impl(
     auto boundedBlock=core::FrameCount::create(std::min(
         block.value(),audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames));
     if(!boundedBlock)return core::Result<Candidate>::failure(*boundedBlock.error());
+    report(TerminalRenderProgressPhase::SRC);
     const auto src_started=std::chrono::steady_clock::now();
     auto output=audio::materialize_full_resource_output_rate_candidate(
         view,output_rate,*boundedBlock.value());
@@ -123,11 +134,14 @@ render_true_peak_limiter_owned_candidate_impl(
                 std::chrono::steady_clock::now()-src_started).count();
     if(!output)return core::Result<Candidate>::failure(*output.error());
     if(cancelled && cancelled()) return cancelledResult();
+    report(TerminalRenderProgressPhase::M17_CORE,0,
+           output.value()->pcm.view().frame_count().value());
     auto candidate=render_true_peak_limiter_bound_terminal_candidate(
         output.value()->pcm.view(),terminal_chain,bindings,registry,block,cancelled,stage_timings);
     if(!candidate)
         return core::Result<Candidate>::failure(*candidate.error());
     if(cancelled && cancelled()) return cancelledResult();
+    report(TerminalRenderProgressPhase::FINISHING);
     // All intermediate PCM and final verification must succeed BEFORE
     // providing a candidate; the source owner remains pinned.
     return core::Result<Candidate>::success({

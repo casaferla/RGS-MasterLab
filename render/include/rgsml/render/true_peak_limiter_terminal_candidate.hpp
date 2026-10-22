@@ -23,6 +23,21 @@ namespace rgsml::render {
 // This predicate never changes M17 FP math or permits partial PCM publication.
 using TerminalRenderCancel = std::function<bool()>;
 
+// Passive, unqualified observer of complete rendering stages. M17 block
+// progress has a genuine frame denominator. Other stages are indeterminate.
+// Never a DSP signal, a safety measurement or a publication certificate.
+enum class TerminalRenderProgressPhase : std::uint8_t {
+    IDLE=0, SRC=1, M17_CORE=2, M16_PRIMARY=3,
+    VERIFICATION_TRIM=4, M16_SECONDARY=5, FINISHING=6
+};
+struct TerminalRenderProgress {
+    TerminalRenderProgressPhase phase{TerminalRenderProgressPhase::IDLE};
+    std::int64_t processed_frames{0};
+    std::int64_t total_frames{0};
+};
+using TerminalRenderProgressSink =
+    std::function<void(TerminalRenderProgress)>;
+
 // An optional one-job diagnostic sidecar, never read by M17 or the verifier.
 // Microseconds; -1 means the stage was not attempted (e.g. no trim).
 struct TerminalRenderStageTimings final {
@@ -31,6 +46,8 @@ struct TerminalRenderStageTimings final {
     std::int64_t m16_primary_us{-1};
     std::int64_t verification_trim_us{-1};
     std::int64_t m16_secondary_us{-1};
+    // An optional observation sidecar, never used in float-point processing.
+    TerminalRenderProgressSink progress;
 };
 
 // UNQUALIFIED M17 terminal-render integration seam, intentionally separate
@@ -60,7 +77,8 @@ render_true_peak_limiter_terminal_candidate(
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames,
     bool bypassed,
-    const TerminalRenderCancel& cancelled = {});
+    const TerminalRenderCancel& cancelled = {},
+    const TerminalRenderProgressSink& progress = {});
 
  // A measurement is NOT official qualification, irrespective of numeric peak.
  // It is attached only to an ACTIVE, final M17 output-rate candidate.

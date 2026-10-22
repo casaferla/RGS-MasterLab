@@ -20,6 +20,10 @@ class TerminalLimiterViewModel final : public QObject {
     Q_PROPERTY(double draftCeilingDbTp READ draft_ceiling_db_tp NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
     Q_PROPERTY(QString audioStatus READ audio_status NOTIFY changed)
+    Q_PROPERTY(QString preparationStage READ preparation_stage NOTIFY changed)
+    Q_PROPERTY(double preparationFraction READ preparation_fraction NOTIFY changed)
+    Q_PROPERTY(bool preparationDeterminate READ preparation_determinate NOTIFY changed)
+    Q_PROPERTY(QString preparationEta READ preparation_eta NOTIFY changed)
     Q_PROPERTY(QString validationField READ validation_field NOTIFY changed)
     Q_PROPERTY(QString validationMessage READ validation_message NOTIFY changed)
 public:
@@ -35,6 +39,10 @@ public:
     [[nodiscard]] double draft_ceiling_db_tp() const noexcept;
     [[nodiscard]] bool bypass() const noexcept;
     [[nodiscard]] QString audio_status() const {return audioStatus_;}
+    [[nodiscard]] QString preparation_stage() const {return preparationStage_;}
+    [[nodiscard]] double preparation_fraction() const noexcept {return preparationFraction_;}
+    [[nodiscard]] bool preparation_determinate() const noexcept {return preparationDeterminate_;}
+    [[nodiscard]] QString preparation_eta() const {return preparationEta_;}
     [[nodiscard]] QString validation_field() const { return validationField_; }
     [[nodiscard]] QString validation_message() const { return validationMessage_; }
 
@@ -57,6 +65,9 @@ public:
     // Never replace the typed Ceiling range error with a fictitious success.
     void reportAudioError(const QString& message);
     void setAudioStatus(const QString& value);
+    void setPreparationProgress(const QString& stage,double fraction,
+                                bool determinate,const QString& eta = {});
+    void clearPreparationProgress();
     void clearAudioError();
 
 signals:
@@ -78,6 +89,10 @@ private:
     QString validationMessage_;
     AcceptedStateChange stateChanged_;
     QString audioStatus_{QStringLiteral("BYPASS")};
+    QString preparationStage_;
+    double preparationFraction_{0.0};
+    bool preparationDeterminate_{false};
+    QString preparationEta_;
 };
 
 } // namespace rgsml::app

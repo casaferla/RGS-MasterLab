@@ -52,6 +52,8 @@ private:
     bool manualPreviewInProgress_{false};
     bool waitingForManualPreview_{false};
     QElapsedTimer renderElapsed_;
+    QElapsedTimer corePhaseElapsed_;
+    bool corePhaseObserved_{false};
     QTimer renderHeartbeat_;
 };
 } // namespace rgsml::app

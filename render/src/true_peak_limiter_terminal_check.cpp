@@ -44,7 +44,8 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     // boundaries measure complete real production stages, even on failures.
     const auto m17_started=std::chrono::steady_clock::now();
     auto rendered=render_true_peak_limiter_terminal_candidate(
-        source,params,registry,max_block,bypassed,cancelled);
+        source,params,registry,max_block,bypassed,cancelled,
+        stage_timings ? stage_timings->progress : TerminalRenderProgressSink{});
     if(stage_timings)
         stage_timings->m17_core_us=std::chrono::duration_cast<
             std::chrono::microseconds>(
@@ -81,6 +82,8 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     // estimate. These numeric readings are SUPPORTED_UNQUALIFIED until
     // official exact-SHA Gate G and Windows physical tests close.
     if(wasCancelled()) return cancelFailure();
+    if(stage_timings && stage_timings->progress)
+        stage_timings->progress({TerminalRenderProgressPhase::M16_PRIMARY});
     const auto m16_started=std::chrono::steady_clock::now();
     auto measured=analysis::measure_true_peak_full_resource(pcm);
     if(stage_timings)
@@ -124,6 +127,8 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     // before remeasurement. One common scalar for ALL channels and frames,
     // so stereo balance and the original applied-gain witness are preserved.
     // Witness remains BASE LIMITER gain, not the post-verification trim.
+    if(stage_timings && stage_timings->progress)
+        stage_timings->progress({TerminalRenderProgressPhase::VERIFICATION_TRIM});
     const auto trim_started=std::chrono::steady_clock::now();
     auto staging=audio::AudioBuffer::create(pcm.view().format(),
         audio::FrameDomainId::OUTPUT_RATE,
@@ -155,6 +160,8 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
             std::chrono::microseconds>(
                 std::chrono::steady_clock::now()-trim_started).count();
     if(wasCancelled()) return cancelFailure();
+    if(stage_timings && stage_timings->progress)
+        stage_timings->progress({TerminalRenderProgressPhase::M16_SECONDARY});
     const auto recheck_started=std::chrono::steady_clock::now();
     const auto remeasured=analysis::measure_true_peak_full_resource(*staging.value());
     if(stage_timings)

@@ -40,6 +40,14 @@ public:
     [[nodiscard]] std::optional<core::Error> last_error() const
     { return lastError_; }
     [[nodiscard]] std::uint64_t stale_discarded() const noexcept {return staleDiscarded_;}
+    // Lock-free GUI-thread observation; worker reports only complete
+    // post-block counters, never partial audio publication.
+    [[nodiscard]] render::TerminalRenderProgress progress() const noexcept {
+        const auto phase=progressPhase_.load(std::memory_order_acquire);
+        return {static_cast<render::TerminalRenderProgressPhase>(phase),
+            progressFrames_.load(std::memory_order_relaxed),
+            progressTotal_.load(std::memory_order_relaxed)};
+    }
 signals:
     void changed();
 private:
@@ -67,6 +75,9 @@ private:
     // mirror to cancel stale jobs at canonical block boundaries.
     std::uint64_t serial_{0};
     std::atomic<std::uint64_t> activeSerial_{0};
+    std::atomic<std::uint8_t> progressPhase_{0};
+    std::atomic<std::int64_t> progressFrames_{0};
+    std::atomic<std::int64_t> progressTotal_{0};
     std::uint64_t staleDiscarded_{0};
     QString status_{QStringLiteral("IDLE")};
     QString error_;

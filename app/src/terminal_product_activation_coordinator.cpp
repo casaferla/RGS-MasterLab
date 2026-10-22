@@ -1,5 +1,7 @@
 #include "terminal_product_activation_coordinator.hpp"
 #include <rgsml/core/error.hpp>
+#include <algorithm>
+#include <cmath>
 
 namespace rgsml::app {
 TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
@@ -47,6 +49,8 @@ void TerminalProductActivationCoordinator::fail_closed(const QString& reason)
 {
     if(transitioning_)return;
     renderHeartbeat_.stop();
+    corePhaseObserved_=false;
+    view_->clearPreparationProgress();
     waitingForManualPreview_=false;
     manualPreviewInProgress_=false;
     transitioning_=true;
@@ -105,6 +109,8 @@ void TerminalProductActivationCoordinator::begin_activation()
     // the exact accepted terminal output. During this interval the actual
     // audio is still the original MANUAL source, never the M17 candidate.
     view_->setAudioStatus(QStringLiteral("Preparing audio"));
+    view_->setPreparationProgress(QStringLiteral("QUEUED"),0.0,false);
+    corePhaseObserved_=false;
     renderElapsed_.start();
     renderHeartbeat_.start();
     // Keep current MANUAL audio and its playhead running during offline M17
@@ -146,7 +152,55 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
         renderHeartbeat_.stop();
         return;
     }
-    // No percentage is fabricated: we know elapsed wall-clock time only.
+    const auto progress=session_->render_progress();
+    using Phase=render::TerminalRenderProgressPhase;
+    QString stage=QStringLiteral("QUEUED");
+    double fraction=0.0;
+    bool determinate=false;
+    QString eta;
+    switch(progress.phase) {
+    case Phase::SRC:
+        stage=QStringLiteral("Output-rate conversion");break;
+    case Phase::M17_CORE:
+        stage=QStringLiteral("M17 DSP · processed frames");
+        if(progress.total_frames>0 && progress.processed_frames>=0
+           &&progress.processed_frames<=progress.total_frames) {
+            // THIS IS THE CORE STAGE, not a whole-programme percentage.
+            // 100% is reserved for gate-accepted READY, after all checks.
+            fraction=std::min(0.99,
+                static_cast<double>(progress.processed_frames)
+                /static_cast<double>(progress.total_frames));
+            determinate=true;
+            if(!corePhaseObserved_) {
+                corePhaseObserved_=true;
+                corePhaseElapsed_.start();
+            }
+            if(corePhaseElapsed_.elapsed()>=5000
+               &&progress.processed_frames>0
+               &&progress.processed_frames<progress.total_frames) {
+                const auto remaining=static_cast<double>(corePhaseElapsed_.elapsed())
+                    *(static_cast<double>(progress.total_frames-
+                       progress.processed_frames)
+                      /static_cast<double>(progress.processed_frames));
+                if(std::isfinite(remaining)&&remaining>=0.0&&remaining<36000000.0)
+                    eta=QStringLiteral("M17 stage ~%1s remaining")
+                            .arg(static_cast<qint64>(remaining/1000));
+            }
+        }
+        break;
+    case Phase::M16_PRIMARY:
+        stage=QStringLiteral("M16 primary True Peak verification");break;
+    case Phase::VERIFICATION_TRIM:
+        stage=QStringLiteral("Verification Trim");break;
+    case Phase::M16_SECONDARY:
+        stage=QStringLiteral("M16 secondary True Peak verification");break;
+    case Phase::FINISHING:
+        stage=QStringLiteral("Checking publication ownership");break;
+    case Phase::IDLE:break;
+    }
+    // All other stages have no honest frame denominator yet. Show an
+    // indeterminate bar with stage text, never a guessed total ETA.
+    view_->setPreparationProgress(stage,fraction,determinate,eta);
     const auto seconds=renderElapsed_.elapsed()/1000;
     view_->setAudioStatus(QStringLiteral("Preparing · %1s").arg(seconds));
 }
@@ -294,6 +348,8 @@ void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
     deviceActive_=false;
     handoffStarted_=false;
     readyToPreview_=false;
+    corePhaseObserved_=false;
+    view_->clearPreparationProgress();
     view_->setAudioStatus(state_->bypassed()
         ? QStringLiteral("BYPASS · MANUAL PROCESSED")
         : QStringLiteral("NEEDS PREPARATION"));
@@ -368,6 +424,10 @@ void TerminalProductActivationCoordinator::private_session_changed()
         // Full programme remains private until explicit Preview Prepared.
         readyToPreview_=true;
         renderHeartbeat_.stop();
+        // 100% belongs to successful product-gate acceptance, not a
+        // reported M17 last block or an unverified worker result.
+        view_->setPreparationProgress(
+            QStringLiteral("Verified candidate ready"),1.0,true);
         view_->setAudioStatus(QStringLiteral("READY · PREVIEW AVAILABLE"));
     } else if(status==QStringLiteral("PRIVATE_INSTALLED")) {
         finish_activation();

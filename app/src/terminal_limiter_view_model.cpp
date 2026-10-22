@@ -2,6 +2,7 @@
 
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
+#include <algorithm>
 #include <utility>
 
 namespace rgsml::app {
@@ -178,6 +179,26 @@ void TerminalLimiterViewModel::previewPrepared()
     if(state_ && !state_->bypassed()
         && audioStatus_.startsWith(QStringLiteral("READY")))
         emit previewRequested();
+}
+
+void TerminalLimiterViewModel::setPreparationProgress(
+    const QString& stage,double fraction,bool determinate,const QString& eta)
+{
+    // Only trusted coordinator code can supply progress; arbitrary QML
+    // cannot fabricate a readiness percentage.
+    const double bounded=std::clamp(fraction,0.0,1.0);
+    if(stage==preparationStage_&&bounded==preparationFraction_
+       &&determinate==preparationDeterminate_&&eta==preparationEta_)return;
+    preparationStage_=stage;
+    preparationFraction_=bounded;
+    preparationDeterminate_=determinate;
+    preparationEta_=eta;
+    emit changed();
+}
+
+void TerminalLimiterViewModel::clearPreparationProgress()
+{
+    setPreparationProgress({},0.0,false);
 }
 
 void TerminalLimiterViewModel::setAudioStatus(const QString& value)

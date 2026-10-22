@@ -23,6 +23,9 @@ TerminalPrivateRenderController::~TerminalPrivateRenderController() {
 void TerminalPrivateRenderController::invalidate() {
     ++serial_;
     activeSerial_.store(serial_,std::memory_order_release);
+    progressPhase_.store(0,std::memory_order_release);
+    progressFrames_.store(0,std::memory_order_relaxed);
+    progressTotal_.store(0,std::memory_order_relaxed);
     gate_->invalidate();
     {std::lock_guard lock(mutex_);pending_.reset();}
     status_=QStringLiteral("IDLE");error_.clear();lastError_.reset();emit changed();
@@ -67,6 +70,19 @@ void TerminalPrivateRenderController::worker_loop() {
             return activeSerial_.load(std::memory_order_acquire)!=serial;
         };
         render::TerminalRenderStageTimings stages{};
+        stages.progress=[this,serial=job->serial](
+            render::TerminalRenderProgress observation) {
+            if(activeSerial_.load(std::memory_order_acquire)!=serial)
+                return;
+            // A passive atomic sidecar; no QObject/QML work on worker thread.
+            // Phase is published last, so a new stage has current counters.
+            progressFrames_.store(observation.processed_frames,
+                                  std::memory_order_relaxed);
+            progressTotal_.store(observation.total_frames,
+                                 std::memory_order_relaxed);
+            progressPhase_.store(static_cast<std::uint8_t>(observation.phase),
+                                 std::memory_order_release);
+        };
         auto result=render::render_true_peak_limiter_owned_output_rate_candidate(
             captured.manual_owner,job->manualChain,
             captured.full_source_frames,captured.manual_chain_revision,

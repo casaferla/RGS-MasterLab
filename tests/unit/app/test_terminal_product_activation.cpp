@@ -18,6 +18,7 @@
 #include <memory>
 #include <bit>
 #include <cstdint>
+#include <vector>
 
 namespace rgsml::tests {
 class TerminalActivationIntegrationTest final:public QObject {
@@ -220,6 +221,9 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("READY_TO_INSTALL"),12000);
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(vm.preparation_fraction(),1.0);
+    QVERIFY(vm.preparation_determinate());
+    QCOMPARE(vm.preparation_stage(),QStringLiteral("Verified candidate ready"));
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     vm.previewPrepared();
@@ -252,6 +256,9 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         QStringLiteral("READY_TO_INSTALL"),12000);
     vm.cancelPreparation();
     QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(vm.preparation_fraction(),0.0);
+    QVERIFY(!vm.preparation_determinate());
+    QVERIFY(vm.preparation_stage().isEmpty());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     QVERIFY(!product.private_id());
@@ -434,18 +441,35 @@ void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublish
         input.value()->view(),*params.value(),*registry.value(),
         *block.value(),false,never);
     QVERIFY(baseline && live);
+    // Passive per-block counter is exact and MUST NOT perturb frozen M17 PCM.
+    std::vector<render::TerminalRenderProgress> observed;
+    const auto recorded=render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*params.value(),*registry.value(),
+        *block.value(),false,never,[&](auto p) {observed.push_back(p);});
+    QVERIFY(recorded);
+    QCOMPARE(observed.size(),std::size_t{5});
+    for(std::size_t i=0;i<observed.size();++i) {
+        QCOMPARE(observed[i].phase,render::TerminalRenderProgressPhase::M17_CORE);
+        QCOMPARE(observed[i].processed_frames,static_cast<std::int64_t>((i+1)*64));
+        QCOMPARE(observed[i].total_frames,std::int64_t{320});
+    }
     QCOMPARE(baseline.value()->applied_gain_frames.size(),std::size_t{320});
     QCOMPARE(live.value()->applied_gain_frames.size(),std::size_t{320});
     const auto a=baseline.value()->compensated_pcm.view();
     const auto b=live.value()->compensated_pcm.view();
+    const auto observedPcm=recorded.value()->compensated_pcm.view();
     for (std::size_t ch=0;ch<2;++ch) {
         const auto ca=a.channel(ch);
         const auto cb=b.channel(ch);
-        QVERIFY(ca && cb);
+        const auto cc=observedPcm.channel(ch);
+        QVERIFY(ca && cb && cc);
         QCOMPARE(ca.value()->size(),cb.value()->size());
+        QCOMPARE(ca.value()->size(),cc.value()->size());
         for (std::size_t i=0;i<ca.value()->size();++i)
             QCOMPARE(std::bit_cast<std::uint64_t>((*ca.value())[i]),
                      std::bit_cast<std::uint64_t>((*cb.value())[i]));
+            QCOMPARE(std::bit_cast<std::uint64_t>((*ca.value())[i]),
+                     std::bit_cast<std::uint64_t>((*cc.value())[i]));
     }
 }
 

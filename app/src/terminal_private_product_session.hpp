@@ -51,6 +51,9 @@ public:
     void cancel_pending_on_region_change();
     [[nodiscard]] QString status() const {return status_;}
     [[nodiscard]] QString error() const {return error_;}
+    [[nodiscard]] render::TerminalRenderProgress render_progress() const noexcept {
+        return renderer_->progress();
+    }
     [[nodiscard]] std::optional<core::RealizationId> private_id() const
     {return privateId_;}
 

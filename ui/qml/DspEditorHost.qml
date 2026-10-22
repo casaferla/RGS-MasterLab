@@ -367,7 +367,56 @@ Rectangle {
             }
         }
 
-        InputGainEditor {
+                // Genuine M17 stage-level progress. Indeterminate while SRC/M16
+        // lack trustworthy frame counters; M17 fraction is ONLY its DSP
+        // block count. Full 100% is reported after READY gate acceptance.
+        ColumnLayout {
+            objectName: "m17PreparationProgressRegion"
+            visible: root.isLimiterEditor && root.terminalLimiterViewModel
+                && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
+                    || root.terminalLimiterViewModel.audioStatus.startsWith("READY"))
+            Layout.fillWidth: true
+            Layout.preferredHeight: 32
+            spacing: 2
+            ProgressBar {
+                objectName: "m17PreparationProgressBar"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 12
+                from: 0
+                to: 1
+                value: root.terminalLimiterViewModel
+                    ? root.terminalLimiterViewModel.preparationFraction : 0
+                indeterminate: root.terminalLimiterViewModel
+                    ? !root.terminalLimiterViewModel.preparationDeterminate : true
+                Accessible.name: "Offline limiter preparation progress"
+            }
+            Text {
+                objectName: "m17PreparationProgressLabel"
+                Layout.fillWidth: true
+                font.family: "Segoe UI"
+                font.pixelSize: 10
+                color: "#A1B5C9"
+                text: {
+                    const v=root.terminalLimiterViewModel
+                    if(!v) return "PREPARATION UNAVAILABLE"
+                    const pct=v.preparationDeterminate
+                        ? " · " + Math.floor(v.preparationFraction*100) + "%"
+                        : " · measuring"
+                    return v.preparationStage + pct
+                        + (v.preparationEta.length ? " · " + v.preparationEta : "")
+                }
+                elide: Text.ElideRight
+                ToolTip.text: text
+                ToolTip.visible: m17ProgressDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: m17ProgressDwell
+                    anchors.fill: parent
+                }
+            }
+        }
+
+InputGainEditor {
             showLocalValidation: !root.errorsInGlobalStatusBar
             id: inputGainEditor
             objectName: "inputGainEditor"
