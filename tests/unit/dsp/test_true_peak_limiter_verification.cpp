@@ -2,6 +2,7 @@
 #include "internal/true_peak_limiter_state.hpp"
 #include "internal/experimental/true_peak_limiter_selector.hpp"
 #include "internal/experimental/true_peak_limiter_rolling_scheduler.hpp"
+#include "internal/experimental/true_peak_limiter_lazy_controller.hpp"
 #include "internal/experimental/true_peak_limiter_bounded_detector_feed.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
@@ -195,6 +196,7 @@ private slots:
     void experimentalLiveDetectorBoundedPcmOracle();
     void experimentalLongResourceRenderBenchmark();
     void experimental64FrameRealtimeQuantumProbe();
+    void experimentalLazyControllerBitwiseOracle();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -2942,6 +2944,227 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
             }
         }
     }
+}
+
+
+void TruePeakLimiterVerificationTest::experimentalLazyControllerBitwiseOracle()
+{
+    using Event=dsp::internal::LimiterDetectorEvent;
+    using Detector=dsp::internal::TruePeakLimiterDetectorState;
+    using Reference=dsp::internal::TruePeakLimiterControllerState;
+    using Lazy=dsp::internal::experimental::M17LazyController;
+    using Selector=dsp::internal::experimental::M17LookaheadSelector;
+    constexpr double pi=std::numbers::pi_v<double>;
+    const auto csvPath=qEnvironmentVariable(
+        "RGS_M17_LAZY_CONTROL_PROBE_FILE").toStdString();
+    if(!csvPath.empty()) {
+        std::ofstream csv(csvPath,std::ios::trunc);
+        QVERIFY2(csv.good(),"M17 lazy controller CSV creation failed");
+        csv<<"sample_rate_hz,channels,ceiling_dbtp,frames,"
+              "controller_ticks,release_exp_skipped,"
+              "release_exp_evaluated,gain_pow_reused,gain_pow_evaluated,"
+              "reference_controller_ns,lazy_controller_ns,"
+              "state_fields_bitwise,pcm_imodule_bitwise,checkpoint_resume_bitwise\n";
+    }
+
+    std::size_t scenarios=0;
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const bool stereo:{false,true}) {
+            for(const double ceiling:{0.0,-1.0,-6.0,-12.0}) {
+                const int nFrames=fs==192000 && stereo && ceiling==-6.0
+                    ?2560:384;
+                auto source=buffer(fs,stereo,nFrames);
+                const auto fmt=source.view().format();
+                for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                    auto samples=source.mutable_view().channel(ch);
+                    QVERIFY(samples);
+                    for(int n=0;n<nFrames;++n) {
+                        const double t=static_cast<double>(n)/fs;
+                        double v=+0.0;
+                        if(n<48 || (n>=160 && n<184)
+                            || (n>=nFrames-20 && n<nFrames-6)) {
+                            v=(ch==0?1.0:-1.0)*
+                                (0.88*std::sin(2.0*pi*929.0*t)
+                                 +0.47*std::sin(2.0*pi*3137.0*t+0.31));
+                            if(n%11==0)v+=ch==0?1.16:-1.13;
+                        }
+                        (*samples.value())[static_cast<std::size_t>(n)]=v;
+                    }
+                }
+                const std::array<std::size_t,4> chunks{17,64,31,113};
+                const auto truePcm=renderRealM17(source,ceiling,chunks);
+                QVERIFY2(truePcm.has_value(),
+                    "frozen M17 PCM unavailable for lazy controller oracle");
+
+                auto real=Reference::create(fs,ceiling);
+                auto lazy=Lazy::create(fs,ceiling);
+                auto selector=Selector::create(fs,ceiling);
+                QVERIFY(real && lazy && selector);
+                Detector detector(stereo?2U:1U);
+                const double linear=std::pow(10.0,ceiling/20.0);
+                std::vector<Event> events;
+                events.reserve(static_cast<std::size_t>(8*nFrames+118));
+                std::int64_t covered=std::numeric_limits<std::int64_t>::min();
+                const auto accept=[&](const Event& event) {
+                    if(!event.valid)return true;
+                    if(event.tick<=covered
+                        || !std::isfinite(event.peak)
+                        || event.peak<0.0)return false;
+                    covered=event.tick;
+                    if(event.peak>linear)events.push_back(event);
+                    return true;
+                };
+                for(int n=0;n<nFrames;++n) {
+                    const auto left=source.view().channel(0);
+                    const auto right=stereo?source.view().channel(1):left;
+                    QVERIFY(left && right);
+                    const double l=(*left.value())[static_cast<std::size_t>(n)];
+                    const double r=stereo?(*right.value())[
+                        static_cast<std::size_t>(n)]:+0.0;
+                    auto quarters=detector.push_programme_frame(l,r);
+                    QVERIFY(quarters);
+                    for(const auto& quarter:*quarters.value()) {
+                        QVERIFY(accept(quarter.preceding_anchor));
+                        QVERIFY(accept(quarter.midpoint));
+                    }
+                }
+                const auto tail=detector.finalize_detector();
+                QVERIFY(tail);
+                for(const auto& quarter:*tail.value()) {
+                    QVERIFY(accept(quarter.preceding_anchor));
+                    QVERIFY(accept(quarter.midpoint));
+                }
+                QVERIFY(selector->prepare(events));
+                std::size_t cursor=0;
+                std::int64_t originalNs=0,lazyNs=0;
+                Lazy::Counters priorCounters{};
+                bool restored=false;
+                for(int n=0;n<nFrames;++n) {
+                    if(n==nFrames/2) {
+                        const auto frozenState=real.value()->snapshot();
+                        const auto lazyState=lazy->snapshot();
+                        const auto partial=lazy->counters();
+                        priorCounters.ticks+=partial.ticks;
+                        priorCounters.release_exp_evaluated+=
+                            partial.release_exp_evaluated;
+                        priorCounters.release_exp_skipped+=
+                            partial.release_exp_skipped;
+                        priorCounters.gain_pow_evaluated+=
+                            partial.gain_pow_evaluated;
+                        priorCounters.gain_pow_reused+=
+                            partial.gain_pow_reused;
+                        QCOMPARE(frozenState.next_tick,lazyState.next_tick);
+                        QCOMPARE(frozenState.hold_remaining,
+                                 lazyState.hold_remaining);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            frozenState.density),
+                            std::bit_cast<std::uint64_t>(lazyState.density));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            frozenState.previous_reduction_db),
+                            std::bit_cast<std::uint64_t>(
+                                lazyState.previous_reduction_db));
+                        auto resumedReal=Reference::create(fs,ceiling);
+                        auto resumedLazy=Lazy::create(fs,ceiling);
+                        QVERIFY(resumedReal && resumedLazy);
+                        QVERIFY(resumedReal.value()->restore(frozenState));
+                        QVERIFY(resumedLazy->restore(lazyState));
+                        real=std::move(resumedReal);
+                        lazy=std::move(resumedLazy);
+                        restored=true;
+                    }
+                    double frameGain=1.0;
+                    for(std::int64_t m=n==0?-62:8*(n-1)+1;
+                        m<=8*n;++m) {
+                        while(cursor<events.size()&&events[cursor].tick<m)
+                            ++cursor;
+                        const bool currentEvent=cursor<events.size()
+                            && events[cursor].tick==m;
+                        const double current=currentEvent
+                            ?events[cursor].peak:+0.0;
+                        const auto selected=selector->choose(m,current);
+                        QVERIFY(selected);
+                        const auto& winner=selected->future_event;
+                        const auto future=winner
+                            ?std::span<const Event>{&*winner,1}
+                            :std::span<const Event>{};
+                        const auto t0=std::chrono::steady_clock::now();
+                        const auto referenceStep=real.value()->advance(
+                            current,future);
+                        const auto t1=std::chrono::steady_clock::now();
+                        const auto lazyStep=lazy->advance(current,future);
+                        const auto t2=std::chrono::steady_clock::now();
+                        QVERIFY(referenceStep && lazyStep);
+                        originalNs+=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(t1-t0).count();
+                        lazyNs+=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(t2-t1).count();
+                        const auto& a=*referenceStep.value();
+                        const auto& b=*lazyStep.value();
+                        QCOMPARE(a.tick,b.tick);
+                        QCOMPARE(a.hold_remaining,b.hold_remaining);
+                        for(const auto& pair:{
+                            std::pair<double,double>{a.required_db,b.required_db},
+                            {a.attack_floor_db,b.attack_floor_db},
+                            {a.reduction_db,b.reduction_db},
+                            {a.gain,b.gain},
+                            {a.density,b.density},
+                            {a.release_ms,b.release_ms}}) {
+                            QCOMPARE(std::bit_cast<std::uint64_t>(pair.first),
+                                     std::bit_cast<std::uint64_t>(pair.second));
+                        }
+                        if(m==8*n)frameGain=b.gain;
+                    }
+                    for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                        const auto input=source.view().channel(ch);
+                        const auto expected=truePcm->view().channel(ch);
+                        QVERIFY(input && expected);
+                        const auto value=(*input.value())[
+                            static_cast<std::size_t>(n)];
+                        const auto actual=frameGain==1.0
+                            ?value:value*frameGain;
+                        QCOMPARE(std::bit_cast<std::uint64_t>(actual),
+                            std::bit_cast<std::uint64_t>(
+                                (*expected.value())[static_cast<std::size_t>(n)]));
+                    }
+                }
+                QCOMPARE(real.value()->next_tick(),lazy->next_tick());
+                auto counters=lazy->counters();
+                counters.ticks+=priorCounters.ticks;
+                counters.release_exp_evaluated+=
+                    priorCounters.release_exp_evaluated;
+                counters.release_exp_skipped+=
+                    priorCounters.release_exp_skipped;
+                counters.gain_pow_evaluated+=priorCounters.gain_pow_evaluated;
+                counters.gain_pow_reused+=priorCounters.gain_pow_reused;
+                QCOMPARE(counters.ticks,
+                    std::uint64_t{static_cast<std::uint64_t>(8*nFrames+55)});
+                QVERIFY(counters.release_exp_skipped>0);
+                QVERIFY(counters.gain_pow_reused>0);
+                QVERIFY(restored);
+                ++scenarios;
+                qInfo().nospace()<<"M17 isolated lazy-controller fs="<<fs
+                    <<" channels="<<(stereo?2:1)
+                    <<" ceiling="<<ceiling<<" frames="<<nFrames
+                    <<" frozen_ns="<<originalNs<<" lazy_ns="<<lazyNs
+                    <<" release_exp_skipped="<<counters.release_exp_skipped
+                    <<" release_exp_evaluated="<<counters.release_exp_evaluated
+                    <<" pow_reused="<<counters.gain_pow_reused
+                    <<" state_pcm_bitwise=PASS";
+                if(!csvPath.empty()) {
+                    std::ofstream csv(csvPath,std::ios::app);
+                    QVERIFY2(csv.good(),"M17 lazy-controller CSV append failed");
+                    csv<<fs<<','<<(stereo?2:1)<<','<<ceiling<<','
+                        <<nFrames<<','<<counters.ticks<<','
+                        <<counters.release_exp_skipped<<','
+                        <<counters.release_exp_evaluated<<','
+                        <<counters.gain_pow_reused<<','
+                        <<counters.gain_pow_evaluated<<','
+                        <<originalNs<<','<<lazyNs<<",PASS,PASS,PASS\n";
+                }
+            }
+        }
+    }
+    QCOMPARE(scenarios,std::size_t{48});
 }
 
 } // namespace

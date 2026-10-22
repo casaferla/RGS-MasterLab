@@ -351,3 +351,51 @@ same binary64 PCM on the full original 48-scenario M17/M16 suite,
 longer resource and quantum oracles. Use one EXTENDED focused CI
 to compare stage costs after reuse; if any bits differ the experiment
 is falsified, not accepted. Shared hosted runner times can vary.
+
+
+## CI #676 result; isolated lazy scalar-controller falsification
+
+CI #676 is Windows/Linux SUCCESS on aa4206fc, with 48/48
+long-render and real M16 post-resource bitwise PCM oracles PASS on
+both systems. At 192kHz, exact Hann precompute and removal of a
+redundant selector deep copy reduced cache cost by about 51–62%
+(Windows) and 38–43% (Linux); end-to-end 64-frame quantum means fell
+by about 16–22% (Windows) and 10–12% (Linux). The one-time table
+construction assertion passed all 8 quantum cases on each platform.
+
+The frozen reference controller's per-tick transcendental math is now
+the dominant isolated budget cost. New private test-only
+`M17LazyController` reproduces the signed-event attack lookahead,
+required level, density, tau, attack/hold/release branch, reduction
+and binary64 gain **with the exact original expression order**.
+It experiments with *only* two control-flow redundancies:
+
+- Original always evaluates the release `std::exp` on attack/hold
+  paths even though no release candidate is read. The alternative
+  computes the identical exponential only when the release branch
+  is taken, preserving the release coefficient formula bit for bit.
+- Original evaluates `std::pow(10,-applied/20)` for each nonzero
+  applied reduction. The alternative reuses the previously computed
+  binary64 gain if and only if the current `applied` bit-level
+  reduction is identical to the previous one. A controller checkpoint
+  restore invalidates this private memo and forces recomputation.
+
+The 48-scenario bitwise-oracle test includes all six sample rates,
+mono/stereo, Ceiling 0/-1/-6/-12 dBTP, selected original signed
+detector events, both controllers stepped identically at 8 Fs, every
+numeric output field compared by binary64 bits, actual frozen IModule
+PCM for every emitted frame, and a midway controller restore.
+It includes a 2560-frame 192k stereo case to exercise more of the
+hold/release history. Collect raw controller timing and counts of
+release `exp` evaluations avoided / gain `pow` evaluations reused.
+Do not turn timing measurements from interleaved paired execution into
+a hard real-time claim.
+
+This is a **different isolated controller implementation**, not a
+patch to the production controller. If it differs by a single bit,
+the experiment is falsified; production M17 remains ACCEPTED_FROZEN.
+Even a green 48-scenario result only supports the tested conditions,
+not equivalence for every possible binary64 input. Full future
+integration would require a separate PO decision, adversarial states,
+checkpoint ABI coverage, no-alloc real-time proof, native live-path
+metrics and hard-gated complete qualification.
