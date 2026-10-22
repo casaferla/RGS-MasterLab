@@ -2602,7 +2602,7 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
                 metrics.batches=rolling->batches();
                 metrics.consumed=feeder->frames();
                 metrics.drained=feeder->drained();
-                return std::move(prepared);
+                return prepared;
             };
             const auto candidateStart=std::chrono::steady_clock::now();
             auto accelerated=candidateRender();
