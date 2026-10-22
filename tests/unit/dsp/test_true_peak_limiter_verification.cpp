@@ -2,6 +2,7 @@
 #include "internal/true_peak_limiter_state.hpp"
 #include "internal/experimental/true_peak_limiter_selector.hpp"
 #include "internal/experimental/true_peak_limiter_rolling_scheduler.hpp"
+#include "internal/experimental/true_peak_limiter_bounded_detector_feed.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/dsp/module_descriptor.hpp>
@@ -190,6 +191,7 @@ private slots:
     void detectorSourcedLookaheadMemoizationProbe();
     void experimentalIsolatedSelectorMatchesFrozenControllerAndPcm();
     void experimentalRollingBoundedBatchPcmOracle();
+    void experimentalLiveDetectorBoundedPcmOracle();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -2237,6 +2239,218 @@ void TruePeakLimiterVerificationTest::experimentalRollingBoundedBatchPcmOracle()
                     <<','<<Rolling::kMaxBatchEvents
                     <<",PASS,PASS,PASS,PASS,PASS,"
                     <<candidateNs<<','<<originalNs<<'\n';
+            }
+        }
+    }
+}
+
+
+void TruePeakLimiterVerificationTest::experimentalLiveDetectorBoundedPcmOracle()
+{
+    using Controller=dsp::internal::TruePeakLimiterControllerState;
+    using Rolling=dsp::internal::experimental::M17RollingBatchSelector;
+    using Feeder=dsp::internal::experimental::M17BoundedDetectorFeed;
+    constexpr int kFrames=4096;
+    constexpr int kBatchFrames=64;
+    constexpr double kCeiling=-6.0;
+    constexpr double pi=std::numbers::pi_v<double>;
+    const auto csvPath=qEnvironmentVariable(
+        "RGS_M17_FEEDER_PROBE_FILE").toStdString();
+    if(!csvPath.empty()) {
+        std::ofstream csv(csvPath,std::ios::trunc);
+        QVERIFY2(csv.good(),"bounded detector feed CSV creation failed");
+        csv<<"sample_rate_hz,channels,ceiling_dbtp,frames,batches,"
+              "source_frames_consumed,detector_active_events_total,"
+              "detector_cache_high_water,selector_cache_high_water,"
+              "detector_event_cap,selector_event_cap,"
+              "rejected_nonfinite_without_mutation,rejected_gap,"
+              "detector_drained,pcm_bitwise,checkpoint_state_bitwise,"
+              "candidate_processing_ns,real_imodule_render_ns\n";
+    }
+
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const bool stereo:{false,true}) {
+            auto source=buffer(fs,stereo,kFrames);
+            const auto fmt=source.view().format();
+            for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                auto lane=source.mutable_view().channel(ch);
+                QVERIFY(lane);
+                for(int n=0;n<kFrames;++n) {
+                    const double t=static_cast<double>(n)/fs;
+                    double v=(ch==0?1.0:-1.0)*
+                        (0.89*std::sin(2.0*pi*739.0*t)
+                         +0.37*std::sin(2.0*pi*2939.0*t+0.15));
+                    if(n%137==0)v+=ch==0?1.16:-1.13;
+                    if(n>=897 && n<1409)v=+0.0;
+                    if(n>=2901 && n<3264)v=+0.0;
+                    (*lane.value())[static_cast<std::size_t>(n)]=v;
+                }
+            }
+
+            const std::array<std::size_t,5> chunks{43,191,27,97,509};
+            const auto referenceStart=std::chrono::steady_clock::now();
+            const auto pcm=renderRealM17(source,kCeiling,chunks);
+            const auto referenceEnd=std::chrono::steady_clock::now();
+            QVERIFY2(pcm.has_value(),"frozen M17 PCM reference unavailable");
+
+            auto feeder=Feeder::create(fs,kCeiling,stereo?2U:1U);
+            auto scheduler=Rolling::create(fs,kCeiling);
+            auto controller=Controller::create(fs,kCeiling);
+            QVERIFY(feeder && scheduler && controller);
+            const auto horizon=controller.value()->lookahead_ticks();
+            QVERIFY(horizon>0);
+            const auto startState=feeder->coverage_tick();
+            const auto nan=std::numeric_limits<double>::quiet_NaN();
+            QVERIFY(!feeder->push(nan,0.0));
+            QCOMPARE(feeder->coverage_tick(),startState);
+            QCOMPARE(feeder->frames(),std::uint64_t{0});
+            QCOMPARE(feeder->retained_count(),std::size_t{0});
+            QVERIFY(!feeder->drain());
+
+            // No global detector-event vector exists in this test path.
+            // Each batch is certified by an incrementally fed signed FIR
+            // detector and only its retained future events are cached.
+            std::size_t inputFrame=0;
+            bool restoredState=false;
+            const auto candidateStart=std::chrono::steady_clock::now();
+            for(int startFrame=0;startFrame<kFrames;
+                startFrame+=kBatchFrames) {
+                const int lastFrame=std::min(kFrames,startFrame+kBatchFrames)-1;
+                const std::int64_t firstM=startFrame==0
+                    ?-62:8*(startFrame-1)+1;
+                const std::int64_t lastM=8*lastFrame;
+                const std::int64_t deadline=lastM+horizon;
+                feeder->discard_before(firstM);
+
+                while(!feeder->drained()
+                    && feeder->coverage_tick()<deadline) {
+                    if(inputFrame<kFrames) {
+                        const auto l=source.view().channel(0);
+                        const auto r=stereo?source.view().channel(1):l;
+                        QVERIFY(l&&r);
+                        const auto left=(*l.value())[
+                            static_cast<std::size_t>(inputFrame)];
+                        const auto right=stereo?(*r.value())[
+                            static_cast<std::size_t>(inputFrame)]:+0.0;
+                        QVERIFY2(feeder->push(left,right),
+                            "bounded detector feed refused valid frame");
+                        ++inputFrame;
+                    } else {
+                        QVERIFY2(feeder->drain(),
+                            "bounded detector feed EOS drain refused");
+                    }
+                }
+                QVERIFY(feeder->drained()
+                    ||feeder->coverage_tick()>=deadline);
+                QVERIFY(feeder->retained_count()<=Feeder::kMaxRetained);
+                const auto events=feeder->batch(firstM,lastM,horizon);
+                QVERIFY2(scheduler->load(events,firstM,lastM,
+                    feeder->coverage_tick(),feeder->drained()),
+                    "rolling scheduler rejected certified detector stream");
+                QCOMPARE(scheduler->cached_events(),events.size());
+                QVERIFY(scheduler->cached_events()<=Rolling::kMaxBatchEvents);
+
+                // Non-contiguous origin must not advance scheduler state.
+                const auto beforeCount=scheduler->cached_events();
+                const auto beforeBatches=scheduler->batches();
+                const auto beforeTick=scheduler->next_tick();
+                QVERIFY(!scheduler->load({},firstM+1,lastM,
+                    feeder->coverage_tick(),feeder->drained()));
+                QCOMPARE(scheduler->cached_events(),beforeCount);
+                QCOMPARE(scheduler->batches(),beforeBatches);
+                QCOMPARE(scheduler->next_tick(),beforeTick);
+
+                if(startFrame==kFrames/2) {
+                    const auto state=controller.value()->snapshot();
+                    auto restored=Controller::create(fs,kCeiling);
+                    QVERIFY(restored);
+                    QVERIFY(restored.value()->restore(state));
+                    QCOMPARE(restored.value()->snapshot().next_tick,
+                        controller.value()->next_tick());
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        restored.value()->snapshot().density),
+                        std::bit_cast<std::uint64_t>(state.density));
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        restored.value()->snapshot().previous_reduction_db),
+                        std::bit_cast<std::uint64_t>(
+                            state.previous_reduction_db));
+                    controller=std::move(restored);
+                    restoredState=true;
+                }
+
+                for(int n=startFrame;n<=lastFrame;++n) {
+                    double appliedGain=1.0;
+                    for(std::int64_t m=n==0?-62:8*(n-1)+1;
+                        m<=8*n;++m) {
+                        const double current=feeder->peak_at(m);
+                        auto choice=scheduler->choose(m,current);
+                        QVERIFY(choice);
+                        const auto& selected=choice->future_event;
+                        const auto future=selected
+                            ?std::span<const dsp::internal::LimiterDetectorEvent>{
+                                &*selected,1}
+                            :std::span<const dsp::internal::LimiterDetectorEvent>{};
+                        auto step=controller.value()->advance(current,future);
+                        QVERIFY(step);
+                        QCOMPARE(step.value()->tick,m);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            step.value()->attack_floor_db),
+                            std::bit_cast<std::uint64_t>(
+                                choice->attack_floor_db));
+                        if(m==8*n)appliedGain=step.value()->gain;
+                    }
+                    for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                        const auto input=source.view().channel(ch);
+                        const auto output=pcm->view().channel(ch);
+                        QVERIFY(input&&output);
+                        const double raw=(*input.value())[
+                            static_cast<std::size_t>(n)];
+                        const double predicted=appliedGain==1.0
+                            ?raw:raw*appliedGain;
+                        QCOMPARE(std::bit_cast<std::uint64_t>(predicted),
+                            std::bit_cast<std::uint64_t>(
+                                (*output.value())[static_cast<std::size_t>(n)]));
+                    }
+                }
+            }
+            const auto candidateEnd=std::chrono::steady_clock::now();
+            QCOMPARE(inputFrame,std::size_t{kFrames});
+            QCOMPARE(feeder->frames(),std::uint64_t{kFrames});
+            QVERIFY(feeder->drained());
+            QCOMPARE(scheduler->batches(),std::size_t{kFrames/kBatchFrames});
+            QCOMPARE(scheduler->next_tick(),
+                std::int64_t{8*(kFrames-1)+1});
+            QCOMPARE(controller.value()->next_tick(),scheduler->next_tick());
+            QVERIFY(restoredState);
+            QVERIFY(feeder->high_water_events()<=Feeder::kMaxRetained);
+            QVERIFY(scheduler->high_water_events()<=Rolling::kMaxBatchEvents);
+            const auto candidateNs=std::chrono::duration_cast<
+                std::chrono::nanoseconds>(
+                    candidateEnd-candidateStart).count();
+            const auto referenceNs=std::chrono::duration_cast<
+                std::chrono::nanoseconds>(
+                    referenceEnd-referenceStart).count();
+            qInfo().nospace()<<"M17 bounded detector feed fs="<<fs
+                <<" channels="<<(stereo?2:1)
+                <<" consumed="<<feeder->frames()
+                <<" batches="<<scheduler->batches()
+                <<" total_active="<<feeder->total_active_events()
+                <<" detector_high_water="<<feeder->high_water_events()
+                <<" selector_high_water="<<scheduler->high_water_events()
+                <<" candidate_ns="<<candidateNs
+                <<" reference_ns="<<referenceNs
+                <<" pcm_bitwise=PASS";
+            if(!csvPath.empty()) {
+                std::ofstream csv(csvPath,std::ios::app);
+                QVERIFY2(csv.good(),"M17 bounded feeder CSV append failed");
+                csv<<fs<<','<<(stereo?2:1)<<','<<kCeiling<<','
+                    <<kFrames<<','<<scheduler->batches()<<','
+                    <<feeder->frames()<<','<<feeder->total_active_events()<<','
+                    <<feeder->high_water_events()<<','
+                    <<scheduler->high_water_events()<<','
+                    <<Feeder::kMaxRetained<<','<<Rolling::kMaxBatchEvents
+                    <<",PASS,PASS,PASS,PASS,PASS,"
+                    <<candidateNs<<','<<referenceNs<<'\n';
             }
         }
     }

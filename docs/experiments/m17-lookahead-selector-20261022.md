@@ -79,3 +79,38 @@ Likewise timings comparing the genuine IModule and this test runner
 are not directly comparable since they encompass different work.
 No production source, module registry, checkpoint schema, actual
 Prepare, output-rate contract or M16 verifier was changed.
+
+
+## Incremental bounded detector input — next isolated falsification
+
+The preceding CI #666 is double-green on 1536 frames, six rates and
+mono/stereo, with all 24 rolling batches per case and high-water active
+selector events 1465..4292 versus a cap of 32768. However, its test
+keeps a *complete* list of signed detector events and therefore does
+not prove bounded resource-event memory.
+
+The next test consumes source PCM one frame at a time using the actual
+frozen signed ITU4x/FIR16 detector. The new unregistered
+`M17BoundedDetectorFeed` retains at most **32768 active events** and
+discards only events before the earliest upcoming controller tick.
+The separate rolling selector keeps its own independent 32768-event
+batch cache. A small, verified input frame advances the detector;
+its event append is transactional with respect to invalid PCM and
+cap overflow. Incomplete lookahead must be proven by the physical
+detector coverage tick or successful final drain before loading a
+controller batch. The controller never guesses future event ticks.
+
+The 4096-frame test on all six Fs in mono/stereo at -6 dBTP creates
+64 contiguous 64-frame batches, restores controller state halfway
+through and bit-compares every PCM sample to the frozen M17 IModule,
+including startup, signed intersample events, long silence, EOS and
+discontinuous-input rejection. Neither an entire detector-event list
+nor a full-resource peak cache exists in this **candidate test path**.
+
+**Scope limits:** The test still owns a 4096-frame PCM input buffer and
+an independent reference PCM buffer; it is NOT yet a memory bound for
+the complete DAW offline Prepare pipeline, a 20-second WAV test, an
+end-to-end wall-time benchmark, or checkpoint schema qualification.
+The paired test uses real IModule time versus a different experimental
+harness; no whole-Prepare speedup inference is permitted. Passing CI
+does not authorize production integration or merging this PR.
