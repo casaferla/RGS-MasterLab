@@ -35,6 +35,10 @@ public:
     void invalidate();
     [[nodiscard]] QString status() const {return status_;}
     [[nodiscard]] QString error() const {return error_;}
+    // Preserve the original renderer category and code for accurate
+    // worker -> session -> product diagnostics; text is not an oracle.
+    [[nodiscard]] std::optional<core::Error> last_error() const
+    { return lastError_; }
     [[nodiscard]] std::uint64_t stale_discarded() const noexcept {return staleDiscarded_;}
 signals:
     void changed();
@@ -66,6 +70,7 @@ private:
     std::uint64_t staleDiscarded_{0};
     QString status_{QStringLiteral("IDLE")};
     QString error_;
+    std::optional<core::Error> lastError_;
     std::mutex mutex_;
     std::condition_variable cv_;
     std::optional<Job> pending_;

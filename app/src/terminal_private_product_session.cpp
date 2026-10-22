@@ -29,6 +29,13 @@ void TerminalPrivateProductSession::failed(const core::Error& error) {
     pending_.reset();
     status_=QStringLiteral("ERROR");
     error_=QString::fromStdString(error.message());
+    for(const auto& detail:error.details()) {
+        if(detail.key=="category" && !detail.value.empty()) {
+            error_=QStringLiteral("[%1] %2")
+                .arg(QString::fromStdString(detail.value),error_);
+            break;
+        }
+    }
     emit changed();
 }
 void TerminalPrivateProductSession::stale() {
@@ -178,7 +185,12 @@ void TerminalPrivateProductSession::on_renderer_changed()
     if(!pending_)return;
     const QString state=renderer_->status();
     if(state==QStringLiteral("ERROR")) {
-        failed(rejected("M17 private renderer returned an error."));
+        // Never erase the diagnostic after a minutes-long Windows render:
+        // e.g. M16 post-trim failure and verification-guard exceedance
+        // are actionable, and categorically different from stale owners.
+        auto reason=renderer_->last_error();
+        failed(reason ? *reason
+            : rejected("M17 private renderer returned no diagnostic."));
         return;
     }
     if(state==QStringLiteral("STALE")) {stale();return;}

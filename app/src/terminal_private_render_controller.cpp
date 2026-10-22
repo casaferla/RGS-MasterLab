@@ -25,7 +25,7 @@ void TerminalPrivateRenderController::invalidate() {
     activeSerial_.store(serial_,std::memory_order_release);
     gate_->invalidate();
     {std::lock_guard lock(mutex_);pending_.reset();}
-    status_=QStringLiteral("IDLE");error_.clear();emit changed();
+    status_=QStringLiteral("IDLE");error_.clear();lastError_.reset();emit changed();
 }
 core::Status TerminalPrivateRenderController::request_private(core::SampleRate rate) {
     invalidate();
@@ -37,7 +37,8 @@ core::Status TerminalPrivateRenderController::request_private(core::SampleRate r
     auto captured=gate_->capture(prepared,manual,id,chain,*terminal_,rate);
     if(!captured) {
         status_=QStringLiteral("ERROR");
-        error_=QString::fromStdString(captured.error()->message());
+        lastError_=*captured.error();
+        error_=QString::fromStdString(lastError_->message());
         emit changed();
         return core::Status::failure(*captured.error());
     }
@@ -109,9 +110,12 @@ void TerminalPrivateRenderController::complete(
     if(!outcome||!*outcome) {
         gate_->invalidate();
         status_=QStringLiteral("ERROR");
-        error_=outcome&&outcome->error()
-            ?QString::fromStdString(outcome->error()->message())
-            :QStringLiteral("M17 private rendering returned no output.");
+        lastError_=outcome&&outcome->error()
+            ?std::optional<core::Error>{*outcome->error()}
+            :std::optional<core::Error>{core::Error{
+                core::ErrorCode::InvalidState,
+                "M17 private rendering returned no output."}};
+        error_=QString::fromStdString(lastError_->message());
         emit changed();return;
     }
     auto chain=chain_();
@@ -121,6 +125,6 @@ void TerminalPrivateRenderController::complete(
         ++staleDiscarded_;
         status_=QStringLiteral("STALE");error_.clear();emit changed();return;
     }
-    status_=QStringLiteral("READY_PRIVATE");error_.clear();emit changed();
+    status_=QStringLiteral("READY_PRIVATE");error_.clear();lastError_.reset();emit changed();
 }
 } // namespace rgsml::app

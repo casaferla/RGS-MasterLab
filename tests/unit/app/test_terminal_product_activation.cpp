@@ -463,6 +463,27 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!coordinator.device_active());
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
+
+    // Renderer failure AFTER a successful ownership capture must reach the
+    // product with its original code/category, not a generic error. Run a
+    // supported constructor sample rate outside the six M16-approved rates
+    // so the worker exits promptly; no need for a slow physical fixture.
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QVERIFY(!product.private_id());
+    const auto invalidOutputRate=core::SampleRate::create(32000);
+    QVERIFY(invalidOutputRate);
+    QVERIFY(product.request_private(*invalidOutputRate.value(),false));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),QStringLiteral("ERROR"),12000);
+    QVERIFY(product.error().contains(
+        QStringLiteral("[M17_SOURCE_RATE_UNSUPPORTED]")));
+    QVERIFY(product.error().contains(
+        QStringLiteral("Source/output rate is unsupported")));
+    QVERIFY(renderer.last_error());
+    QCOMPARE(renderer.last_error()->code(),
+             core::ErrorCode::UnsupportedOperation);
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QVERIFY(!candidates.staged());
 }
 void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()
 {
