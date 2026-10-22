@@ -818,6 +818,26 @@ foreach(m17_test IN ITEMS parameters core checkpoint verification)
         "rgsml_dsp_true_peak_limiter_${m17_test}_tests")
 endforeach()
 
+# PO 2026-10-22: FAST TEST SIGNAL, only used on isolated experimental M17
+# PR lane. The existing full M17 verification/checkpoint CTests remain
+# unmodified and authoritative for an extended run. This selective QtTest
+# invocation never substitutes for those full tests in product PRs or gates.
+add_test(
+    NAME rgsml_m17_isolated_fast_verification_tests
+    COMMAND rgsml_dsp_true_peak_limiter_verification_tests
+        exactBinary64TrimThreshold
+        genuineM16WholeResourceQuietAndFalsifiableHot
+        rejectWrongCeilingAndPropagateM16Failures
+        actualM16ReverificationUsesOneGlobalStereoScalar
+        shortAndSplitEosDoesNotCreatePhantomPcm
+        inactiveBypassIsZeroLatencyBitCopyAboveCeilingSixRates
+        optionalPhaseInstrumentationIsNonInvasive
+)
+set_tests_properties(rgsml_m17_isolated_fast_verification_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;m17;experimental_fast;not_full_qualification"
+)
+
 qt_add_executable(rgsml_stereo_ms_crossover_runtime_tests
     unit/dsp/test_stereo_ms_crossover_runtime.cpp
 )

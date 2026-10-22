@@ -231,3 +231,47 @@ thermal changes, Qt test harness, bulk source buffers, no actual
 audio-device callback or full product M17/Prepare stack prevent any
 hard latency guarantee. The reported windows are experimental
 feasibility evidence only. No production backend is modified.
+
+
+## Fast feedback vs extended Focused CI — experimental branch only
+
+The #672 Linux logs show **55 CTest entries, 811.02 seconds** total
+test time; verification alone took 450.28 s and checkpoint 169.72 s.
+Windows ran 59 tests in 382.04 s, with verification 138.73 s and
+checkpoint 53.62 s. Ninja/sccache accelerates compilation, not CTest.
+
+The PR #55 experimental branch now distinguishes two clearly labelled
+profiles under the unchanged `PR Focused CI` workflow:
+
+* **FAST** is the automatic profile for only the exact GitHub head ref
+  `experimental/m17-lookahead-selector-isolated-20261022`.
+  It runs every normal selected focused CTest EXCEPT the full M17
+  verification and checkpoint executables, with at most two parallel
+  workers for non-extended tests. It then invokes seven named smoke
+  functions from the genuine verification test binary, covering
+  exact binary64 guard, M16 measurement/error handling, common
+  stereo verification, basic end-of-stream and bypass semantics.
+  Full M17 diagnostic CSV artifacts are not uploaded in this profile.
+  Its green means **fast experimental feedback only**, not full
+  tested/qualified M17.
+* **EXTENDED** is the original, serial, exact full CTest command,
+  retaining M17 verification and checkpoint and every CSV artifact.
+  It runs for every other PR branch, including the production PR #54,
+  without any regression coverage change. On experimental PR #55,
+  explicitly include the string `[m17-extended]` in the HEAD commit
+  message to request a fully comprehensive CI when the experiment
+  warrants it. This is an engineering trigger, not a PO gate.
+
+The original M17 detector/controller, product renderer, factory,
+checkpoint and all production/UI code remain untouched. Changes are
+limited to test registration, the experimental branch's CI workflow
+and this document, all on Draft PR #55. This opt-in fast route must
+never be mistaken for a merge qualification. PR #55 remains DO NOT
+MERGE, and no Gate M/L or Full Qualification has been performed.
+
+**Critical observation:** This refactor reduces repeated costly
+experimental diagnostic loops only for the isolated branch. It does
+not shorten the product PR #54, which retains its full prescribed
+regression tests. Any future proposal to change the real product
+CI matrix requires a separate reviewed decision and proof that
+mandatory safety gates are not lost.

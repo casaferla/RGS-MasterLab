@@ -154,6 +154,20 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      # Experimental PR #55 ONLY: product PRs always run full regressions.
+      # A commit with [m17-extended] forces the original complete CTest run.
+      # FAST is a feedback signal, never a production qualification gate.
+      - name: Select isolated M17 CI profile (PR55 only)
+        shell: bash
+        run: |
+          if [[ "${GITHUB_HEAD_REF:-}" == "experimental/m17-lookahead-selector-isolated-20261022" ]] && ! git log -1 --format=%B | grep -Fq '[m17-extended]'; then
+            echo "RGS_M17_CI_MODE=fast" >> "$GITHUB_ENV"
+            echo "M17 experiment: FAST; full verifier/checkpoint deferred."
+          else
+            echo "RGS_M17_CI_MODE=extended" >> "$GITHUB_ENV"
+            echo "M17 experiment: COMPLETE original focused regressions."
+          fi
+
       - name: Run Focused DSP Tests
         env:
           RGS_M17_CPU_PROBE_FILE: ${{ runner.temp }}/rgs-m17-cpu-linux.csv
@@ -166,10 +180,17 @@ jobs:
           RGS_M17_LONG_RENDER_PROBE_FILE: ${{ runner.temp }}/rgs-m17-long-render-linux.csv
           RGS_M17_QUANTUM_PROBE_FILE: ${{ runner.temp }}/rgs-m17-quantum-linux.csv
         run: |
-          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_terminal_private_gr_projection_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_playback_src_tests|rgsml_playback_engine_portable_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_)" --output-on-failure
+          extra_ctest_args=()
+          if [[ "$RGS_M17_CI_MODE" == "fast" ]]; then
+            extra_ctest_args=(-E '^rgsml_dsp_true_peak_limiter_(checkpoint|verification)_tests$' --parallel 2)
+          fi
+          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_terminal_private_gr_projection_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_playback_src_tests|rgsml_playback_engine_portable_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_)" "${extra_ctest_args[@]}" --output-on-failure
+          if [[ "$RGS_M17_CI_MODE" == "fast" ]]; then
+            ctest --test-dir build-linux -R '^rgsml_m17_isolated_fast_verification_tests$' --output-on-failure
+          fi
 
       - name: Upload bounded M17 CPU probe (Linux)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-CPU-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -179,7 +200,7 @@ jobs:
 
       # Six non-gating Windows/Linux-comparable rows, no complete job logs.
       - name: Upload bounded M17 block partition probe (Linux)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Partition-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -188,7 +209,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload bounded M17 lookahead cache experiment (Linux)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Lookahead-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -197,7 +218,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload bounded M17 group-bound experiment (Linux)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Bound-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -207,7 +228,7 @@ jobs:
 
       # Isolated M17 selector prototype: test-only PCM/controller evidence.
       - name: Upload M17 isolated accelerator diagnostics (Linux)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Experiment-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -216,7 +237,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload M17 bounded rolling batch experiment (Linux)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Rolling-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -225,7 +246,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload M17 bounded detector feeder experiment (Linux)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Feeder-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -234,7 +255,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload M17 comparative experimental render (Linux)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-LongRender-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -243,7 +264,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload isolated M17 64-frame quantum observations (Linux)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Quantum-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -514,6 +535,20 @@ jobs:
               exit $exitCode
           }
 
+      # Experimental PR #55 ONLY: product PRs always run full regressions.
+      # A commit with [m17-extended] forces the original complete CTest run.
+      # FAST is a feedback signal, never a production qualification gate.
+      - name: Select isolated M17 CI profile (PR55 only)
+        shell: bash
+        run: |
+          if [[ "${GITHUB_HEAD_REF:-}" == "experimental/m17-lookahead-selector-isolated-20261022" ]] && ! git log -1 --format=%B | grep -Fq '[m17-extended]'; then
+            echo "RGS_M17_CI_MODE=fast" >> "$GITHUB_ENV"
+            echo "M17 experiment: FAST; full verifier/checkpoint deferred."
+          else
+            echo "RGS_M17_CI_MODE=extended" >> "$GITHUB_ENV"
+            echo "M17 experiment: COMPLETE original focused regressions."
+          fi
+
       - name: Run Focused DSP Tests (Release)
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
@@ -529,7 +564,16 @@ jobs:
         run: |
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
           $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
-          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_terminal_private_gr_projection_tests|rgsml_terminal_product_activation_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_playback_support_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_)" --output-on-failure --verbose
+          $extraCtestArgs = @()
+          if ($env:RGS_M17_CI_MODE -eq "fast") {
+            $extraCtestArgs = @("-E", '^rgsml_dsp_true_peak_limiter_(checkpoint|verification)_tests$', "--parallel", "2")
+          }
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_terminal_private_gr_projection_tests|rgsml_terminal_product_activation_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_playback_support_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_)" @extraCtestArgs --output-on-failure --verbose
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:RGS_M17_CI_MODE -eq "fast") {
+            ctest --test-dir build/windows-ninja-cache -C Release -R '^rgsml_m17_isolated_fast_verification_tests$' --output-on-failure
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       # Scoped failure-only probe: never request entire GitHub job logs.
       # QtTest can abort before CTest emits an assertion; retain the exact
@@ -570,7 +614,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload bounded M17 CPU probe (Windows)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-CPU-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -579,7 +623,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload bounded M17 block partition probe (Windows)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Partition-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -588,7 +632,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload bounded M17 lookahead cache experiment (Windows)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Lookahead-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -597,7 +641,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload bounded M17 group-bound experiment (Windows)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Bound-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -607,7 +651,7 @@ jobs:
 
       # Isolated M17 selector prototype: test-only PCM/controller evidence.
       - name: Upload M17 isolated accelerator diagnostics (Windows)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Experiment-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -616,7 +660,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload M17 bounded rolling batch experiment (Windows)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Rolling-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -625,7 +669,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload M17 bounded detector feeder experiment (Windows)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Feeder-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -634,7 +678,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload M17 comparative experimental render (Windows)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-LongRender-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -643,7 +687,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload isolated M17 64-frame quantum observations (Windows)
-        if: success()
+        if: success() && env.RGS_M17_CI_MODE != 'fast'
         uses: actions/upload-artifact@v4
         with:
           name: RGS-M17-Quantum-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
