@@ -22,6 +22,8 @@ Rectangle {
         const state = moduleAdapter.stateText || ""
         if (moduleAdapter.editorContentKey !== "TRUE_PEAK_LIMITER")
             return state
+        if (state.startsWith("NEEDS PREPARATION")) return "Needs preparation"
+        if (state.startsWith("READY")) return "Ready · Preview"
         if (state.startsWith("ERROR")) return "Error · Bypass"
         if (state.startsWith("ACTIVE")) return "Limiter active"
         if (state.startsWith("Preparing ·")) return state
@@ -118,10 +120,13 @@ Rectangle {
                     id: rowItem
                     objectName: "dspChainRow_" + index
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 52
+                    Layout.preferredHeight: isFinalization ? 74 : 52
                     radius: 4
 
                     readonly property var moduleAdapter: modelData
+                    // M17 is terminal finalization, never another real-time DSP.
+                    readonly property bool isFinalization: moduleAdapter
+                        && moduleAdapter.editorContentKey === "TRUE_PEAK_LIMITER"
                     readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === index)
                     readonly property bool isDefaultState: moduleAdapter ? (moduleAdapter.configurationState === "Default") : true
                     readonly property bool isBypassed: moduleAdapter ? (moduleAdapter.bypassSupported && moduleAdapter.bypass) : false
@@ -132,6 +137,28 @@ Rectangle {
                     border.width: 1
 
                     activeFocusOnTab: true
+
+                    Rectangle {
+                        objectName: "m17OfflineFinalizationSeparator"
+                        visible: rowItem.isFinalization
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 22
+                        color: "#16283A"
+                        border.color: "#35516A"
+                        border.width: 1
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.leftMargin: 8
+                            text: "FINALIZATION · OFFLINE"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                            color: "#C4774A"
+                        }
+                    }
 
                     MouseArea {
                         id: rowMouse
@@ -186,6 +213,7 @@ Rectangle {
                         anchors.left: parent.left
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
+                        anchors.topMargin: rowItem.isFinalization ? 22 : 0
                         width: 3
                         radius: 1
                         color: rowItem.moduleAdapter ? rowItem.moduleAdapter.familyAccent : "#00C8FF"
@@ -197,6 +225,7 @@ Rectangle {
                         // minimum while preserving fixed LED/BYP/error slots.
                         anchors.leftMargin: 7
                         anchors.rightMargin: 4
+                        anchors.topMargin: rowItem.isFinalization ? 22 : 0
                         spacing: 2
 
                         // Configuration Indicator LED

@@ -396,14 +396,14 @@ int main(int argc, char* argv[])
             return target.has_value() &&
                    *target == rgsml::app::AuditionTarget::PROCESSED;
         });
-    // PO 2026-10-20: the M16 Meter is always available INSIDE the
-    // authentic terminal Limiter editor, even during real M17 BYPASS.
-    // Do not add the former standalone virtual M16 analysis row to the
-    // product DSP chain. Preserve its authoritative providers and math.
+    // PO 2026-10-22: restore standalone REAL-TIME M16 ANALYSIS entry.
+    // It is NOT a ProcessingChain DSP and modifies no PCM. M17 is a
+    // distinct MASTER/TERMINAL finalization row, below the LIVE chain.
+    // This supersedes ONLY the former shared-editor UI presentation.
     rgsml::app::DspChainAdapterModel dspChainAdapterModel{
         &gainViewModel, &eqViewModel, &compressorViewModel,
         &masteringChainState, QStringLiteral("Mastering"),
-        nullptr, &stereoMsViewModel, false,
+        nullptr, &stereoMsViewModel, true,
         &terminalLimiterState, &terminalLimiterViewModel};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
