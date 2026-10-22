@@ -54,18 +54,40 @@ Rectangle {
         return state
     }
 
-    // Generic active row lookup for host Escape/focus management
-    readonly property Item activeRow: {
-        var idx = root.adapterModel ? root.adapterModel.selectedIndex : root.selectedIndex
-        if (idx >= 0 && idx < rowRepeater.count) {
-            return rowRepeater.itemAt(idx)
-        }
+    // M16 is an analysis-only LIVE row. M17 and future real Dither adapters
+    // form a separate, anchored-bottom finalization group.
+    readonly property var chainModules: adapterModel ? adapterModel.modules : []
+    function isTerminal(module) {
+        return !!module && (module.editorContentKey === "TRUE_PEAK_LIMITER"
+            || module.editorContentKey === "DITHER"
+            || module.typeId === "rgsml.dsp.dither")
+    }
+    readonly property var liveModules: chainModules.filter(function(m) {
+        return !root.isTerminal(m)
+    })
+    readonly property var terminalModules: chainModules.filter(function(m) {
+        return root.isTerminal(m)
+    })
+    function moduleIndex(module) {
+        for (var i=0; i<root.chainModules.length; ++i)
+            if (root.chainModules[i] === module) return i
+        return -1
+    }
+    function rowAt(idx) {
+        if (idx<0 || idx>=root.chainModules.length) return null
+        var target=root.chainModules[idx]
+        for (var i=0; i<root.liveModules.length; ++i)
+            if (root.liveModules[i] === target) return rowRepeater.itemAt(i)
+        for (var j=0; j<root.terminalModules.length; ++j)
+            if (root.terminalModules[j] === target) return terminalRepeater.itemAt(j)
         return null
     }
+    readonly property Item activeRow: root.rowAt(
+        root.adapterModel ? root.adapterModel.selectedIndex : root.selectedIndex)
 
     // Explicit focus targets retained for existing smoke assertions
-    readonly property Item inputGainRow: rowRepeater.count > 0 ? rowRepeater.itemAt(0) : null
-    readonly property Item parametricEqRow: rowRepeater.count > 1 ? rowRepeater.itemAt(1) : null
+    readonly property Item inputGainRow: root.rowAt(0)
+    readonly property Item parametricEqRow: root.rowAt(1)
 
     color: "#0B1622"
     border.color: "#1E354A"
@@ -100,34 +122,93 @@ Rectangle {
     ScrollView {
         id: chainScrollView
         anchors.top: chainHeader.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: finalizationDock.visible ? finalizationDock.top : parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 4
         clip: true
-
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
-
         ColumnLayout {
             width: chainScrollView.availableWidth
             spacing: 4
-
             Repeater {
                 id: rowRepeater
-                model: root.adapterModel ? root.adapterModel.modules : null
+                model: root.liveModules
+                delegate: chainRowDelegate
+            }
+        }
+    }
 
-                delegate: Rectangle {
+    // Terminal DSPs remain VISIBLE at the bottom while only the LIVE
+    // chain scrolls above. Dither is not synthesized as a placeholder.
+    Rectangle {
+        id: finalizationDock
+        objectName: "dspTerminalFinalizationDock"
+        visible: root.terminalModules.length > 0
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 4
+        height: visible ? 34 + root.terminalModules.length * 52
+            + Math.max(0, root.terminalModules.length - 1) * 4 : 0
+        radius: 4
+        color: "#0C1A28"
+        border.width: 1
+        border.color: "#365069"
+
+        Rectangle {
+            id: finalizationDivider
+            objectName: "dspFinalizationDivider"
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 2
+            color: "#C4774A"
+        }
+        Text {
+            objectName: "dspFinalizationHeading"
+            anchors.left: parent.left
+            anchors.top: finalizationDivider.bottom
+            anchors.leftMargin: 8
+            anchors.topMargin: 5
+            text: "FINALIZATION · OFFLINE"
+            font.family: "Segoe UI"
+            font.pixelSize: 9
+            font.weight: Font.DemiBold
+            color: "#C4774A"
+        }
+        ColumnLayout {
+            id: terminalStack
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 4
+            anchors.rightMargin: 4
+            anchors.bottomMargin: 4
+            spacing: 4
+            Repeater {
+                id: terminalRepeater
+                model: root.terminalModules
+                delegate: chainRowDelegate
+            }
+        }
+    }
+
+    // Reuse the same LED, focus, state, tooltip and navigation grammar
+    // for both groups; original chain indexes remain authoritative.
+    Component {
+        id: chainRowDelegate
+                Rectangle {
                     id: rowItem
-                    objectName: "dspChainRow_" + index
+                    objectName: "dspChainRow_" + rowItem.modelIndex
                     Layout.fillWidth: true
-                    Layout.preferredHeight: isFinalization ? 74 : 52
+                    Layout.preferredHeight: 52
                     radius: 4
 
                     readonly property var moduleAdapter: modelData
-                    // M17 is terminal finalization, never another real-time DSP.
-                    readonly property bool isFinalization: moduleAdapter
-                        && moduleAdapter.editorContentKey === "TRUE_PEAK_LIMITER"
-                    readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === index)
+                    readonly property int modelIndex: root.moduleIndex(moduleAdapter)
+                    readonly property bool isFinalization: root.isTerminal(moduleAdapter)
+                    readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === rowItem.modelIndex)
                     readonly property bool isDefaultState: moduleAdapter ? (moduleAdapter.configurationState === "Default") : true
                     readonly property bool isBypassed: moduleAdapter ? (moduleAdapter.bypassSupported && moduleAdapter.bypass) : false
                     readonly property bool hasError: moduleAdapter ? moduleAdapter.hasError : false
@@ -138,28 +219,6 @@ Rectangle {
 
                     activeFocusOnTab: true
 
-                    Rectangle {
-                        objectName: "m17OfflineFinalizationSeparator"
-                        visible: rowItem.isFinalization
-                        anchors.top: parent.top
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        height: 22
-                        color: "#16283A"
-                        border.color: "#35516A"
-                        border.width: 1
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.left
-                            anchors.leftMargin: 8
-                            text: "FINALIZATION · OFFLINE"
-                            font.family: "Segoe UI"
-                            font.pixelSize: 9
-                            font.weight: Font.DemiBold
-                            color: "#C4774A"
-                        }
-                    }
-
                     MouseArea {
                         id: rowMouse
                         anchors.fill: parent
@@ -168,7 +227,7 @@ Rectangle {
                             if (root.adapterModel && moduleAdapter) {
                                 root.adapterModel.selectModuleByInstanceId(moduleAdapter.instanceId)
                             } else {
-                                root.selectedIndex = index
+                                root.selectedIndex = rowItem.modelIndex
                             }
                             rowItem.forceActiveFocus()
                         }
@@ -179,27 +238,27 @@ Rectangle {
                             if (root.adapterModel && moduleAdapter) {
                                 root.adapterModel.selectModuleByInstanceId(moduleAdapter.instanceId)
                             } else {
-                                root.selectedIndex = index
+                                root.selectedIndex = rowItem.modelIndex
                             }
                             event.accepted = true
                         } else if (event.key === Qt.Key_Down) {
-                            if (index + 1 < rowRepeater.count) {
-                                var nextItem = rowRepeater.itemAt(index + 1)
+                            if (rowItem.modelIndex + 1 < root.chainModules.length) {
+                                var nextItem = root.rowAt(rowItem.modelIndex + 1)
                                 if (nextItem && nextItem.moduleAdapter && root.adapterModel) {
                                     root.adapterModel.selectModuleByInstanceId(nextItem.moduleAdapter.instanceId)
                                 } else {
-                                    root.selectedIndex = index + 1
+                                    root.selectedIndex = rowItem.modelIndex + 1
                                 }
                                 if (nextItem) nextItem.forceActiveFocus()
                                 event.accepted = true
                             }
                         } else if (event.key === Qt.Key_Up) {
-                            if (index > 0) {
-                                var prevItem = rowRepeater.itemAt(index - 1)
+                            if (rowItem.modelIndex > 0) {
+                                var prevItem = root.rowAt(rowItem.modelIndex - 1)
                                 if (prevItem && prevItem.moduleAdapter && root.adapterModel) {
                                     root.adapterModel.selectModuleByInstanceId(prevItem.moduleAdapter.instanceId)
                                 } else {
-                                    root.selectedIndex = index - 1
+                                    root.selectedIndex = rowItem.modelIndex - 1
                                 }
                                 if (prevItem) prevItem.forceActiveFocus()
                                 event.accepted = true
@@ -213,7 +272,6 @@ Rectangle {
                         anchors.left: parent.left
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
-                        anchors.topMargin: rowItem.isFinalization ? 22 : 0
                         width: 3
                         radius: 1
                         color: rowItem.moduleAdapter ? rowItem.moduleAdapter.familyAccent : "#00C8FF"
@@ -225,12 +283,11 @@ Rectangle {
                         // minimum while preserving fixed LED/BYP/error slots.
                         anchors.leftMargin: 7
                         anchors.rightMargin: 4
-                        anchors.topMargin: rowItem.isFinalization ? 22 : 0
                         spacing: 2
 
                         // Configuration Indicator LED
                         Rectangle {
-                            objectName: "dspChainConfigLed_" + index
+                            objectName: "dspChainConfigLed_" + rowItem.modelIndex
                             Layout.minimumWidth: 8
                             Layout.preferredWidth: 8
                             Layout.maximumWidth: 8
@@ -263,7 +320,7 @@ Rectangle {
                             spacing: 2
 
                             Text {
-                                objectName: "dspChainModuleTitle_" + index
+                                objectName: "dspChainModuleTitle_" + rowItem.modelIndex
                                 Layout.fillWidth: true
                                 Layout.minimumWidth: 0
                                 Layout.alignment: Qt.AlignLeft
@@ -276,7 +333,7 @@ Rectangle {
                             }
 
                             Text {
-                                objectName: "dspChainStateText_" + index
+                                objectName: "dspChainStateText_" + rowItem.modelIndex
                                 Layout.fillWidth: true
                                 Layout.minimumWidth: 0
                                 Layout.alignment: Qt.AlignLeft
@@ -310,7 +367,7 @@ Rectangle {
                             Layout.preferredHeight: 16
 
                             Rectangle {
-                                objectName: "dspChainBypassBadge_" + index
+                                objectName: "dspChainBypassBadge_" + rowItem.modelIndex
                                 visible: rowItem.isBypassed
                                 anchors.fill: parent
                                 radius: 3
@@ -338,7 +395,7 @@ Rectangle {
                             Layout.preferredHeight: 8
 
                             Rectangle {
-                                objectName: "dspChainErrorBadge_" + index
+                                objectName: "dspChainErrorBadge_" + rowItem.modelIndex
                                 anchors.fill: parent
                                 visible: rowItem.hasError
                                 radius: 4
@@ -347,7 +404,5 @@ Rectangle {
                         }
                     }
                 }
-            }
-        }
     }
 }

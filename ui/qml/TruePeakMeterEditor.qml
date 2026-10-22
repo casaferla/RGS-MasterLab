@@ -25,8 +25,12 @@ Item {
     // In the real minimum-height Main window the editor may receive ~420px,
     // unlike the isolated 548px UI fixture. Compress VERTICALLY only:
     // no column count switch, clipping, scrolling or hidden sonic controls.
+    // Preserve 198px at the canonical 548px editor, but do not force
+    // readout cards outside the short physical Main window. This is
+    // vertical-only compression; stereo L/R meter gets all spare height.
     readonly property int lowerControlBandHeight: root.showLimiterControls
-        ? Math.min(198, Math.max(145, Math.round(height * 0.365)))
+        ? (height < 420 ? Math.max(132, Math.round(height * 0.36))
+            : Math.min(198, Math.max(145, Math.round(height * 0.365))))
         : 198
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
@@ -187,12 +191,9 @@ Item {
                         // GR ribbon: 10px header + 2px spacing + 54px
                         // single linked-lane Canvas. Never consume surplus
                         // vertical space: the L/R meter RowLayout does.
-                        Layout.minimumHeight: root.showLimiterControls
-                            ? root.lowerControlBandHeight : implicitHeight
-                        Layout.preferredHeight: root.showLimiterControls
-                            ? root.lowerControlBandHeight : implicitHeight
-                        Layout.maximumHeight: root.showLimiterControls
-                            ? root.lowerControlBandHeight : implicitHeight
+                        Layout.minimumHeight: 70
+                        Layout.preferredHeight: 70
+                        Layout.maximumHeight: 70
                         spacing: 2
                         opacity: root.limiterBypassed ? 0.5 : 1.0
                         RowLayout {
@@ -229,12 +230,12 @@ Item {
                         TruePeakGrHistoryGraph {
                             id: grHistoryGraph
                             Layout.fillWidth: true
-                            Layout.fillHeight: root.showLimiterControls
-                            Layout.minimumHeight: implicitHeight
-                            Layout.preferredHeight: root.showLimiterControls
-                                ? -1 : implicitHeight
-                            Layout.maximumHeight: root.showLimiterControls
-                                ? -1 : implicitHeight
+                            // Fixed single linked 54px GR lane, just like
+                            // Compressor. Never stretch with window height.
+                            Layout.fillHeight: false
+                            Layout.minimumHeight: 54
+                            Layout.preferredHeight: 54
+                            Layout.maximumHeight: 54
                             familyAccent: root.familyAccent
                             backendVerified: root.limiterGrProvider
                                 ? root.limiterGrProvider.verified : false

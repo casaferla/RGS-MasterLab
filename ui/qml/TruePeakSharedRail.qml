@@ -19,7 +19,7 @@ Item {
     property int lowerControlBandHeight: 198
     // Continuous vertical fit into actual Main workspace. All canonical
     // >=548px heights remain byte-identical to the accepted M17 layout.
-    readonly property int m17ReadoutHeight: Math.min(100, Math.max(68,
+    readonly property int m17ReadoutHeight: Math.min(100, Math.max(56,
         Math.floor((height - lowerControlBandHeight - 44) / 3)))
     readonly property int m17CeilingHeight: Math.min(100, Math.max(70,
         Math.round(70 + (lowerControlBandHeight - 145) * 30 / 53)))
