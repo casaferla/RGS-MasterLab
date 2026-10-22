@@ -62,25 +62,26 @@ Rectangle {
             || module.editorContentKey === "DITHER"
             || module.typeId === "rgsml.dsp.dither")
     }
-    readonly property var liveModules: chainModules.filter(function(m) {
-        return !root.isTerminal(m)
-    })
-    readonly property var terminalModules: chainModules.filter(function(m) {
-        return root.isTerminal(m)
-    })
-    function moduleIndex(module) {
-        for (var i=0; i<root.chainModules.length; ++i)
-            if (root.chainModules[i] === module) return i
-        return -1
+    // Stable numeric original-chain indices, not QVariant/QObject JS-wrapper
+    // identity comparisons. Both Repeaters retain the same adapter authority.
+    readonly property var liveModuleIndices: {
+        var out = []
+        for (var i = 0; i < root.chainModules.length; ++i)
+            if (!root.isTerminal(root.chainModules[i])) out.push(i)
+        return out
+    }
+    readonly property var terminalModuleIndices: {
+        var out = []
+        for (var i = 0; i < root.chainModules.length; ++i)
+            if (root.isTerminal(root.chainModules[i])) out.push(i)
+        return out
     }
     function rowAt(idx) {
-        if (idx<0 || idx>=root.chainModules.length) return null
-        var target=root.chainModules[idx]
-        for (var i=0; i<root.liveModules.length; ++i)
-            if (root.liveModules[i] === target) return rowRepeater.itemAt(i)
-        for (var j=0; j<root.terminalModules.length; ++j)
-            if (root.terminalModules[j] === target) return terminalRepeater.itemAt(j)
-        return null
+        if (idx < 0 || idx >= root.chainModules.length) return null
+        var liveIdx = root.liveModuleIndices.indexOf(idx)
+        if (liveIdx >= 0) return rowRepeater.itemAt(liveIdx)
+        var terminalIdx = root.terminalModuleIndices.indexOf(idx)
+        return terminalIdx >= 0 ? terminalRepeater.itemAt(terminalIdx) : null
     }
     readonly property Item activeRow: root.rowAt(
         root.adapterModel ? root.adapterModel.selectedIndex : root.selectedIndex)
@@ -133,7 +134,7 @@ Rectangle {
             spacing: 4
             Repeater {
                 id: rowRepeater
-                model: root.liveModules
+                model: root.liveModuleIndices
                 delegate: chainRowDelegate
             }
         }
@@ -144,13 +145,13 @@ Rectangle {
     Rectangle {
         id: finalizationDock
         objectName: "dspTerminalFinalizationDock"
-        visible: root.terminalModules.length > 0
+        visible: root.terminalModuleIndices.length > 0
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 4
-        height: visible ? 34 + root.terminalModules.length * 52
-            + Math.max(0, root.terminalModules.length - 1) * 4 : 0
+        height: visible ? 34 + root.terminalModuleIndices.length * 52
+            + Math.max(0, root.terminalModuleIndices.length - 1) * 4 : 0
         radius: 4
         color: "#0C1A28"
         border.width: 1
@@ -188,7 +189,7 @@ Rectangle {
             spacing: 4
             Repeater {
                 id: terminalRepeater
-                model: root.terminalModules
+                model: root.terminalModuleIndices
                 delegate: chainRowDelegate
             }
         }
@@ -205,8 +206,10 @@ Rectangle {
                     Layout.preferredHeight: 52
                     radius: 4
 
-                    readonly property var moduleAdapter: modelData
-                    readonly property int modelIndex: root.moduleIndex(moduleAdapter)
+                    readonly property int modelIndex: modelData
+                    readonly property var moduleAdapter: (rowItem.modelIndex >= 0
+                        && rowItem.modelIndex < root.chainModules.length)
+                        ? root.chainModules[rowItem.modelIndex] : null
                     readonly property bool isFinalization: root.isTerminal(moduleAdapter)
                     readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === rowItem.modelIndex)
                     readonly property bool isDefaultState: moduleAdapter ? (moduleAdapter.configurationState === "Default") : true
