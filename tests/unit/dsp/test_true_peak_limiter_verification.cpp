@@ -1,5 +1,6 @@
 #include "../../oracles/true_peak_limiter/core_test_support.hpp"
 #include "internal/true_peak_limiter_state.hpp"
+#include "internal/experimental/true_peak_limiter_selector.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/dsp/module_descriptor.hpp>
@@ -186,6 +187,7 @@ private slots:
     void boundedActualM17CostProbe();
     void boundedLookaheadMemoizationProbe();
     void detectorSourcedLookaheadMemoizationProbe();
+    void experimentalIsolatedSelectorMatchesFrozenControllerAndPcm();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -1640,6 +1642,236 @@ void TruePeakLimiterVerificationTest::detectorSourcedLookaheadMemoizationProbe()
                         <<" | "<<evaluated<<" | "<<baselineUs/1000.0
                         <<" ms | "<<memoUs/1000.0<<" ms | "<<ratio
                         <<"x | PASS | PASS |\n";
+                }
+            }
+        }
+    }
+}
+
+
+void TruePeakLimiterVerificationTest::
+experimentalIsolatedSelectorMatchesFrozenControllerAndPcm()
+{
+    using Event=dsp::internal::LimiterDetectorEvent;
+    using Detector=dsp::internal::TruePeakLimiterDetectorState;
+    using Controller=dsp::internal::TruePeakLimiterControllerState;
+    using Selector=dsp::internal::experimental::M17LookaheadSelector;
+    constexpr int nFrames=192;
+    constexpr double pi=std::numbers::pi_v<double>;
+    const auto csvPath=qEnvironmentVariable(
+        "RGS_M17_EXPERIMENT_PROBE_FILE").toStdString();
+    if(!csvPath.empty()) {
+        std::ofstream csv(csvPath,std::ios::trunc);
+        QVERIFY2(csv.good(),"experimental M17 PCM report unavailable");
+        csv<<"sample_rate_hz,channels,ceiling_dbtp,frames,"
+              "active_detector_events,reference_controller_us,"
+              "candidate_select_and_controller_us,selector_setup_us,"
+              "bounded_ticks,direct_ticks,events_examined,events_skipped,"
+              "full_pcm_bitwise,controller_fields_bitwise,checkpoint_state_bitwise\n";
+    }
+
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const bool stereo:{false,true}) {
+            for(const double ceiling:{-1.0,-12.0}) {
+                auto source=buffer(fs,stereo,nFrames);
+                for(std::size_t ch=0;ch<source.view().format().channel_count();
+                    ++ch) {
+                    auto lane=source.mutable_view().channel(ch);
+                    QVERIFY(lane);
+                    for(int n=0;n<nFrames;++n) {
+                        const double t=static_cast<double>(n)/fs;
+                        double sample=(ch==0?1.0:-1.0)*
+                            (0.84*std::sin(2.0*pi*1061.0*t)
+                             +0.39*std::sin(2.0*pi*3477.0*t+0.23));
+                        if(n%29==0)sample+=ch==0?1.18:-1.12;
+                        if(n>=109 && n<165)sample=+0.0;
+                        (*lane.value())[static_cast<std::size_t>(n)]=sample;
+                    }
+                }
+
+                // Authoritative PCM oracle: the actual frozen M17 IModule,
+                // with nonuniform streaming chunks and physical D drain.
+                const std::array<std::size_t,3> chunks{47,63,82};
+                const auto referencePcm=renderRealM17(source,ceiling,chunks);
+                QVERIFY2(referencePcm.has_value(),
+                    "frozen M17 real-module PCM render failed");
+
+                const auto linear=std::pow(10.0,ceiling/20.0);
+                Detector detector(stereo?2U:1U);
+                std::vector<Event> events;
+                events.reserve(static_cast<std::size_t>(nFrames*8+118));
+                std::int64_t lastTick=std::numeric_limits<std::int64_t>::min();
+                const auto accept=[&](const Event& e) {
+                    if(!e.valid)return true;
+                    if(e.tick<=lastTick||!std::isfinite(e.peak)
+                        ||e.peak<0.0)return false;
+                    lastTick=e.tick;
+                    if(e.peak>linear)events.push_back(e);
+                    return true;
+                };
+                for(int n=0;n<nFrames;++n) {
+                    const auto l=source.view().channel(0);
+                    const auto r=stereo?source.view().channel(1):l;
+                    QVERIFY(l&&r);
+                    const auto left=(*l.value())[static_cast<std::size_t>(n)];
+                    const auto right=stereo
+                        ?(*r.value())[static_cast<std::size_t>(n)] : +0.0;
+                    auto quarters=detector.push_programme_frame(left,right);
+                    QVERIFY(quarters);
+                    for(const auto& q:*quarters.value()) {
+                        QVERIFY(accept(q.preceding_anchor));
+                        QVERIFY(accept(q.midpoint));
+                    }
+                }
+                auto tail=detector.finalize_detector();
+                QVERIFY(tail);
+                for(const auto& q:*tail.value()) {
+                    QVERIFY(accept(q.preceding_anchor));
+                    QVERIFY(accept(q.midpoint));
+                }
+
+                auto selection=Selector::create(fs,ceiling);
+                auto oracle=Controller::create(fs,ceiling);
+                auto candidate=Controller::create(fs,ceiling);
+                QVERIFY(selection && oracle && candidate);
+                const auto cacheStart=std::chrono::steady_clock::now();
+                QVERIFY(selection->prepare(events));
+                const auto cacheEnd=std::chrono::steady_clock::now();
+                QCOMPARE(selection->cached_event_count(),events.size());
+
+                // Invalid input must never replace an accepted event cache.
+                if(fs==44100 && !stereo && ceiling==-1.0) {
+                    const std::array<Event,2> invalid{{
+                        Event{15,1.3,true},Event{14,1.4,true}
+                    }};
+                    QVERIFY(!selection->prepare(invalid));
+                    QCOMPARE(selection->cached_event_count(),events.size());
+                }
+
+                std::size_t search=0,boundedTicks=0,directTicks=0;
+                std::size_t visited=0,skipped=0;
+                std::int64_t referenceMicros=0,candidateMicros=0;
+                for(int n=0;n<nFrames;++n) {
+                    double frameGain=1.0;
+                    for(std::int64_t m=n==0?-62:8*(n-1)+1;
+                        m<=8*n;++m) {
+                        while(search<events.size()&&events[search].tick<m)
+                            ++search;
+                        const bool onTick=search<events.size()
+                            && events[search].tick==m;
+                        const double current=onTick?events[search].peak:+0.0;
+                        const auto first=search+(onTick?1U:0U);
+                        auto last=first;
+                        const auto deadline=m+oracle.value()->lookahead_ticks();
+                        while(last<events.size()
+                            && events[last].tick<=deadline)++last;
+                        const std::span<const Event> full=first==last
+                            ?std::span<const Event>{}
+                            :std::span<const Event>{events.data()+first,last-first};
+
+                        const auto a=std::chrono::steady_clock::now();
+                        auto referenceStep=oracle.value()->advance(current,full);
+                        const auto b=std::chrono::steady_clock::now();
+                        QVERIFY(referenceStep);
+                        auto choice=selection->choose(m,current);
+                        QVERIFY(choice);
+                        const auto& selected=choice->future_event;
+                        const auto minimal=selected
+                            ?std::span<const Event>{&*selected,1}
+                            :std::span<const Event>{};
+                        auto acceleratedStep=candidate.value()->advance(
+                            current,minimal);
+                        const auto c=std::chrono::steady_clock::now();
+                        QVERIFY(acceleratedStep);
+                        referenceMicros+=std::chrono::duration_cast<
+                            std::chrono::microseconds>(b-a).count();
+                        candidateMicros+=std::chrono::duration_cast<
+                            std::chrono::microseconds>(c-b).count();
+                        boundedTicks+=choice->bounded?1U:0U;
+                        directTicks+=choice->bounded?0U:1U;
+                        visited+=choice->visited;
+                        skipped+=choice->skipped;
+                        const auto& original=*referenceStep.value();
+                        const auto& optimized=*acceleratedStep.value();
+                        QCOMPARE(original.tick,optimized.tick);
+                        QCOMPARE(original.hold_remaining,optimized.hold_remaining);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.required_db),
+                            std::bit_cast<std::uint64_t>(optimized.required_db));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.attack_floor_db),
+                            std::bit_cast<std::uint64_t>(optimized.attack_floor_db));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            choice->attack_floor_db),
+                            std::bit_cast<std::uint64_t>(original.attack_floor_db));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.reduction_db),
+                            std::bit_cast<std::uint64_t>(optimized.reduction_db));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.density),
+                            std::bit_cast<std::uint64_t>(optimized.density));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.release_ms),
+                            std::bit_cast<std::uint64_t>(optimized.release_ms));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            original.gain),
+                            std::bit_cast<std::uint64_t>(optimized.gain));
+                        if(m==8*n)frameGain=optimized.gain;
+                    }
+                    for(std::size_t ch=0;
+                        ch<source.view().format().channel_count();++ch) {
+                        const auto original=source.view().channel(ch);
+                        const auto output=referencePcm->view().channel(ch);
+                        QVERIFY(original&&output);
+                        const double pcm=(*original.value())[
+                            static_cast<std::size_t>(n)];
+                        const double predicted=frameGain==1.0
+                            ?pcm:pcm*frameGain;
+                        QCOMPARE(std::bit_cast<std::uint64_t>(predicted),
+                            std::bit_cast<std::uint64_t>(
+                                (*output.value())[static_cast<std::size_t>(n)]));
+                    }
+                    if(n==nFrames/2) {
+                        const auto snap=candidate.value()->snapshot();
+                        const auto refSnap=oracle.value()->snapshot();
+                        QCOMPARE(snap.next_tick,refSnap.next_tick);
+                        QCOMPARE(snap.hold_remaining,refSnap.hold_remaining);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(snap.density),
+                            std::bit_cast<std::uint64_t>(refSnap.density));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            snap.previous_reduction_db),
+                            std::bit_cast<std::uint64_t>(
+                                refSnap.previous_reduction_db));
+                        auto restored=Controller::create(fs,ceiling);
+                        QVERIFY(restored);
+                        QVERIFY(restored.value()->restore(snap));
+                        QCOMPARE(restored.value()->snapshot().next_tick,
+                            snap.next_tick);
+                    }
+                }
+                QCOMPARE(boundedTicks+directTicks,
+                    std::size_t{8*nFrames+63});
+                const auto cacheMicros=std::chrono::duration_cast<
+                    std::chrono::microseconds>(cacheEnd-cacheStart).count();
+                qInfo().nospace()<<"M17 isolated-accelerator fs="<<fs
+                    <<" stereo="<<stereo<<" ceiling="<<ceiling
+                    <<" frames="<<nFrames<<" events="<<events.size()
+                    <<" reference_controller_us="<<referenceMicros
+                    <<" candidate_us="<<candidateMicros
+                    <<" setup_us="<<cacheMicros
+                    <<" bounded_ticks="<<boundedTicks
+                    <<" direct_ticks="<<directTicks
+                    <<" visited="<<visited<<" skipped="<<skipped
+                    <<" controller_and_pcm_bitwise=PASS";
+                if(!csvPath.empty()) {
+                    std::ofstream csv(csvPath,std::ios::app);
+                    QVERIFY2(csv.good(),"experimental M17 report append failed");
+                    csv<<fs<<','<<(stereo?2:1)<<','<<ceiling<<','
+                        <<nFrames<<','<<events.size()<<','
+                        <<referenceMicros<<','<<candidateMicros<<','
+                        <<cacheMicros<<','<<boundedTicks<<','
+                        <<directTicks<<','<<visited<<','<<skipped
+                        <<",PASS,PASS,PASS\n";
                 }
             }
         }
