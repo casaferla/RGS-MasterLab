@@ -905,7 +905,7 @@ void TruePeakLimiterVerificationTest::boundedActualM17CostProbe()
                     +0.15*std::sin(2.0*pi*(ch==0?2351.0:1783.0)*t+0.25);
             }
         }
-        for(const double ceiling:{-1.0,-6.0,-12.0}) {
+        for(const double ceiling:{0.0,-1.0,-6.0,-12.0}) {
             const auto start=std::chrono::steady_clock::now();
             const auto processed=renderRealM17(input,ceiling,chunks);
             const auto dspEnd=std::chrono::steady_clock::now();
@@ -2463,7 +2463,6 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
     using Controller=dsp::internal::TruePeakLimiterControllerState;
     using Feeder=dsp::internal::experimental::M17BoundedDetectorFeed;
     using Rolling=dsp::internal::experimental::M17RollingBatchSelector;
-    constexpr double ceiling=-6.0;
     constexpr double pi=std::numbers::pi_v<double>;
     const auto csvPath=qEnvironmentVariable(
         "RGS_M17_LONG_RENDER_PROBE_FILE").toStdString();
@@ -2476,11 +2475,16 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
               "detector_cache_high_water,selector_cache_high_water,"
               "detector_event_cap,selector_event_cap,batches,"
               "source_frames_consumed,final_detector_drained,"
-              "checkpoint_snapshots_restored,experimental_final_m16_checked\n";
+              "checkpoint_snapshots_restored,experimental_final_m16_checked,"
+              "m16_reference_ns,m16_experimental_ns,m16_outcome,"
+              "m16_post_pcm_bitwise\n";
     }
-    for(const int fs:{48000,192000}) {
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
         for(const bool stereo:{false,true}) {
-            const int nFrames=fs==48000?32768:8192;
+            for(const double ceiling:{-1.0,-6.0,-12.0}) {
+            // Keep legacy long 48k/-6 probe, bounded budget on others.
+            const int nFrames=fs==48000 && ceiling==-6.0 ? 32768
+                : (fs==192000 ? 8192 : 4096);
             auto source=buffer(fs,stereo,nFrames);
             const auto fmt=source.view().format();
             for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
@@ -2626,6 +2630,58 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
                             (*candidate.value())[pos]));
                 }
             }
+            // Real frozen M16 authority and guarded global trim are
+            // evaluated independently AFTER the untrimmed PCM oracle.
+            const auto m16ReferenceStart=std::chrono::steady_clock::now();
+            const auto refChecked=m17_verifier::verify_full_resource(
+                *original,ceiling);
+            const auto m16ReferenceEnd=std::chrono::steady_clock::now();
+            const auto m16CandidateStart=std::chrono::steady_clock::now();
+            const auto candidateChecked=m17_verifier::verify_full_resource(
+                *accelerated,ceiling);
+            const auto m16CandidateEnd=std::chrono::steady_clock::now();
+            QCOMPARE(static_cast<bool>(refChecked),
+                     static_cast<bool>(candidateChecked));
+            if(refChecked) {
+                QCOMPARE(refChecked.value()->trim_used,
+                         candidateChecked.value()->trim_used);
+                QCOMPARE(refChecked.value()->status,
+                         candidateChecked.value()->status);
+                for(const auto& compare:{
+                    std::pair<double,double>{
+                        refChecked.value()->before_peak,
+                        candidateChecked.value()->before_peak},
+                    {refChecked.value()->after_peak,
+                     candidateChecked.value()->after_peak},
+                    {refChecked.value()->global_trim_gain,
+                     candidateChecked.value()->global_trim_gain}}) {
+                    QCOMPARE(std::bit_cast<std::uint64_t>(compare.first),
+                             std::bit_cast<std::uint64_t>(compare.second));
+                }
+            } else {
+                QCOMPARE(category(*refChecked.error()),
+                         category(*candidateChecked.error()));
+            }
+            // Also verify the final PCM AFTER M16: one common stereo
+            // gain or a matching fail-closed unmodified candidate.
+            for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                const auto baseline=original->view().channel(ch);
+                const auto candidate=accelerated->view().channel(ch);
+                QVERIFY(baseline && candidate);
+                for(int n=0;n<nFrames;++n) {
+                    const auto pos=static_cast<std::size_t>(n);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        (*baseline.value())[pos]),
+                        std::bit_cast<std::uint64_t>(
+                            (*candidate.value())[pos]));
+                }
+            }
+            const auto m16ReferenceNs=std::chrono::duration_cast<
+                std::chrono::nanoseconds>(
+                    m16ReferenceEnd-m16ReferenceStart).count();
+            const auto m16CandidateNs=std::chrono::duration_cast<
+                std::chrono::nanoseconds>(
+                    m16CandidateEnd-m16CandidateStart).count();
             const auto originalNs=std::chrono::duration_cast<
                 std::chrono::nanoseconds>(originalEnd-originalStart).count();
             const auto candidateNs=std::chrono::duration_cast<
@@ -2640,7 +2696,10 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
                 <<" detector_high_water="<<metrics.detectorPeak
                 <<" selector_high_water="<<metrics.selectorPeak
                 <<" batches="<<metrics.batches
-                <<" pcm_bitwise=PASS; final_M16_not_run";
+                <<" m16_check="<<(refChecked?"PASS":"MATCHING_REJECTION")
+                <<" m16_reference_ns="<<m16ReferenceNs
+                <<" m16_experimental_ns="<<m16CandidateNs
+                <<" pcm_before_after_m16_bitwise=PASS";
             if(!csvPath.empty()) {
                 std::ofstream csv(csvPath,std::ios::app);
                 QVERIFY2(csv.good(),"M17 long render CSV append failed");
@@ -2650,7 +2709,11 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
                     <<metrics.detectorPeak<<','<<metrics.selectorPeak<<','
                     <<Feeder::kMaxRetained<<','<<Rolling::kMaxBatchEvents
                     <<','<<metrics.batches<<','<<metrics.consumed
-                    <<",PASS,"<<metrics.checkpointRestores<<",NO\n";
+                    <<",PASS,"<<metrics.checkpointRestores<<",YES,"
+                    <<m16ReferenceNs<<','<<m16CandidateNs<<','
+                    <<(refChecked?"PASS":"MATCHING_REJECTION")
+                    <<",PASS\n";
+            }
             }
         }
     }

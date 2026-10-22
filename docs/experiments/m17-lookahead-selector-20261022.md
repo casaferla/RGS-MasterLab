@@ -147,3 +147,39 @@ platform-specific. They must not be projected linearly to music-length
 resource latency or used to authorize replacing M17. Stage 2 will
 require a reproducible same-workload offline Prepare qualification,
 including post-render M16 checks, memory and disk IO.
+
+## CI #669 result and consolidated regression matrix
+
+CI #669 succeeded Windows+Linux. Four longer synthetic render cases per
+platform matched all original M17 IModule PCM bits (48k mono/stereo
+32768 frames and 192k mono/stereo 8192 frames, -6 dBTP). Each bounded
+cache remained within 32768 events, completed detector EOS drain, and
+restored the original controller snapshot at multiple batch boundaries.
+
+Measured ratios of baseline frozen IModule buffer production over the
+unregistered experimental alternate renderer were Windows 32.8..39.6x
+(48k) and 71.2..79.1x (192k), Linux 13.8..15.3x (48k) and 28.3..30.0x
+(192k). These are *single-run preliminary synthetic buffer-render*
+ratios across different implementations, not qualified realtime speedups,
+not real Prepare performance and not extrapolatable to long music tracks.
+
+To reduce unnecessary CI churn, the next single consolidated focused
+lot combines the six sample rates (44.1/48/88.2/96/176.4/192k),
+mono/stereo and four Ceiling settings (0/-1/-6/-12 dBTP) in one 48-case
+matrix. The 48k/-6 cases retain the 32768-frame stress length;
+192k remains at 8192 frames, all others at 4096 to bound CI runtime.
+
+The test compares original and candidate PCM bit-for-bit both *before*
+and *after* invoking the real M16 test verifier, including a guarded
+single global trim if M16 deems it necessary. A matching rejection
+from M16 is recorded explicitly rather than silently mislabelled a
+successful final verified resource. Controller snapshots, physical
+end-of-stream, event cache caps and exact output size remain oracles.
+M16 durations are recorded separately from M17 output-buffer timing.
+
+This completes the current isolated synthetic proof matrix only.
+Production integration, FQ, gate M/L, export/publication and altering
+the frozen M17 code remain explicitly not authorized. The actual
+product offline Prepare, deterministic repeated/paired timings,
+representative multi-second WAV programmes, SRC, cancellation, disk
+IO and full pipeline RAM still require a separate approval/gate.
