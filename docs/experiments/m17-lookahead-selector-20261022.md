@@ -285,3 +285,32 @@ matches the HEAD commit **subject only** (Git `%s`), ensuring that
 documentation or body references cannot accidentally enable the
 extended path. Subsequent runs show the mode in the select-profile
 step; treat that visible mode as the authoritative test-scope record.
+
+
+## CI #674 FAST verification and targeted stage attribution
+
+CI #674 (commit d9cce578) is double-green, with the log explicitly
+confirming FAST profile selection. Linux CTest fell from 811.02 seconds
+(CI #672, complete 55 tests) to 91.61 + 0.19 seconds
+(53 ordinary tests plus one selected M17 smoke). Windows fell from
+382.04 seconds (59 complete tests) to 144.51 + 0.13 seconds
+(57 ordinary tests plus one M17 smoke). These are *test-step*
+durations, not whole job durations; runner variance applies.
+Original full M17 checkpoint/verification remains required when a
+complete diagnostic/FQ-equivalent signal is actually sought.
+
+The next extended experiment does not change the frozen M17 math.
+It decomposes each 64-frame quantum into:
+1. incremental signed detector feeding and stale event discard,
+2. rolling cache selection/preparation,
+3. unchanged frozen controller tick advances,
+4. final PCM lane writes.
+
+Report per-case mean, p99 and maximum of each stage separately while
+retaining the original outer quantum mean, p99, worst case and budget
+miss counts. Per-frame clocks introduce instrumentation overhead;
+component sums are diagnostic hypotheses rather than hard realtime
+latency certificates. Preserve the exact PCM oracle, both cache caps
+and the all-rate functional verification regression. The commit
+subject requests [m17-extended] once so Linux and Windows upload the
+complete M17 quantum artifacts. Return to FAST for later routine edits.

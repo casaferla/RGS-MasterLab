@@ -2744,7 +2744,11 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
               "mean_steady_ns,p99_steady_ns,max_steady_ns,"
               "over_budget_steady,detector_event_high_water,"
               "selector_event_high_water,pcm_bitwise,detector_drained,"
-              "frozen_reference_render_ns,real_time_qualified\n";
+              "frozen_reference_render_ns,real_time_qualified,"
+              "mean_detector_ns,p99_detector_ns,max_detector_ns,"
+              "mean_cache_ns,p99_cache_ns,max_cache_ns,"
+              "mean_control_ns,p99_control_ns,max_control_ns,"
+              "mean_pcm_store_ns,p99_pcm_store_ns,max_pcm_store_ns\n";
     }
     for(const int fs:{48000,192000}) {
         for(const bool stereo:{false,true}) {
@@ -2782,6 +2786,7 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
                 auto prepared=buffer(fs,stereo,nFrames);
                 std::vector<std::int64_t> quantumNs;
                 quantumNs.reserve(static_cast<std::size_t>(nFrames/kQuantum));
+                std::vector<std::int64_t> detectorNs,cacheNs,controlNs,pcmNs;
                 for(int start=0;start<nFrames;start+=kQuantum) {
                     const auto began=std::chrono::steady_clock::now();
                     const auto first=start==0?-62:8*(start-1)+1;
@@ -2805,11 +2810,15 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
                             QVERIFY(feeder->drain());
                         }
                     }
+                    const auto afterDetector=std::chrono::steady_clock::now();
                     const auto events=feeder->batch(first,last,horizon);
                     QVERIFY2(rolling->load(events,first,last,
                         feeder->coverage_tick(),feeder->drained()),
                         "Unproven M17 quantum failed to load");
+                    const auto afterCache=std::chrono::steady_clock::now();
+                    std::int64_t blockControlNs=0,blockPcmNs=0;
                     for(int n=start;n<start+kQuantum;++n) {
+                        const auto frameBegin=std::chrono::steady_clock::now();
                         double gain=1.0;
                         for(std::int64_t tick=n==0?-62:8*(n-1)+1;
                             tick<=8*n;++tick) {
@@ -2826,6 +2835,10 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
                             QVERIFY(step);
                             if(tick==8*n)gain=step.value()->gain;
                         }
+                        const auto frameControlEnd=std::chrono::steady_clock::now();
+                        blockControlNs+=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(
+                                frameControlEnd-frameBegin).count();
                         for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
                             const auto input=source.view().channel(ch);
                             const auto output=prepared.mutable_view().channel(ch);
@@ -2835,8 +2848,18 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
                             (*output.value())[static_cast<std::size_t>(n)]=
                                 gain==1.0?raw:raw*gain;
                         }
+                        blockPcmNs+=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now()
+                                -frameControlEnd).count();
                     }
                     const auto ended=std::chrono::steady_clock::now();
+                    detectorNs.push_back(std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(afterDetector-began).count());
+                    cacheNs.push_back(std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(afterCache-afterDetector).count());
+                    controlNs.push_back(blockControlNs);
+                    pcmNs.push_back(blockPcmNs);
                     quantumNs.push_back(std::chrono::duration_cast<
                         std::chrono::nanoseconds>(ended-began).count());
                 }
@@ -2876,6 +2899,10 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
                 const std::vector<std::int64_t> steady(
                     quantumNs.begin()+4,quantumNs.end()-4);
                 const auto sustained=summary(steady);
+                const auto detectorStats=summary(detectorNs);
+                const auto cacheStats=summary(cacheNs);
+                const auto controlStats=summary(controlNs);
+                const auto pcmStats=summary(pcmNs);
                 const auto baselineNs=std::chrono::duration_cast<
                     std::chrono::nanoseconds>(refEnd-refStart).count();
                 qInfo().nospace()<<"M17 isolated 64-frame quantum fs="<<fs
@@ -2885,6 +2912,10 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
                     <<" over="<<all[3]<<"/"<<quantumNs.size()
                     <<" steady_p99_ns="<<sustained[1]
                     <<" steady_over="<<sustained[3]
+                    <<" mean_detector_ns="<<detectorStats[0]
+                    <<" mean_cache_ns="<<cacheStats[0]
+                    <<" mean_controller_ns="<<controlStats[0]
+                    <<" mean_pcm_ns="<<pcmStats[0]
                     <<" PCM_bitwise=PASS; real_time_qualified=NO";
                 if(!csvPath.empty()) {
                     std::ofstream csv(csvPath,std::ios::app);
@@ -2897,7 +2928,11 @@ void TruePeakLimiterVerificationTest::experimental64FrameRealtimeQuantumProbe()
                        <<','<<sustained[3]<<','
                        <<feeder->high_water_events()<<','
                        <<rolling->high_water_events()<<",PASS,PASS,"
-                       <<baselineNs<<",NO\n";
+                       <<baselineNs<<",NO,"
+                       <<detectorStats[0]<<','<<detectorStats[1]<<','<<detectorStats[2]<<','
+                       <<cacheStats[0]<<','<<cacheStats[1]<<','<<cacheStats[2]<<','
+                       <<controlStats[0]<<','<<controlStats[1]<<','<<controlStats[2]<<','
+                       <<pcmStats[0]<<','<<pcmStats[1]<<','<<pcmStats[2]<<'\n';
                 }
             }
         }
