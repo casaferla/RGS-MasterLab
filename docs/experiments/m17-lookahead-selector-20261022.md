@@ -466,3 +466,44 @@ overhead**, so resulting absolute 64-frame times MUST NOT be directly
 compared to uninstrumented #678 to claim improvements/regressions,
 nor used for realtime qualification. They determine which operation
 deserves the next algorithmic proof. No production code changes.
+
+
+## #679 EXTENDED result and the exact FAST/EXTENDED/FQ boundary
+
+CI #679 at 88502f34: Windows/Linux both SUCCESS, complete Focused
+profile confirmed by runner logs (Linux: 55 CTests, 403.06 s;
+Windows: 59 CTests, 434.76 s). All full extended M17 verification,
+checkpoint, PCM reference comparisons and M16 postverification ran.
+**EXTENDED means the complete *Focused CI*, not PO-controlled Full
+Qualification.** FAST applies ONLY to the exact experimental PR55
+branch, when the latest commit *subject* lacks [m17-extended]:
+full M17 verification/checkpoint CTests are deferred and an explicit
+selection of short M17 QtTest cases is run instead. All non-PR55
+branches retain complete original Focused behavior. The experimental
+source and full M17 maths remain unqualified and must not merge.
+
+The #679 full-quantum integrated attribution separates previously
+conflated selector and recurrence costs. At 192kHz, across 4 FROZEN
+scenarios, averages of the observed per-scenario proportions:
+- Windows: rolling future lookahead selection 49.6%, frozen controller
+  recurrence 11.6%, detector/cache/PCM and other timing 38.8%.
+- Linux: selector 62.6%, controller 4.9%, other 32.4%.
+The temporal instrumentation itself perturbs wall duration: compare
+stage attribution, NOT absolute quantum time vs uninstrumented #678.
+64-frame hard-real-time still not established. Do not invest more
+isolated effort in lazy release exp/pow as the leading bottleneck.
+
+Next **FAST-only diagnostic**: one selected QtTest slot separately
+exercises the experimental group-bound selector on deterministic
+9000-event, 256-query sparse/dense windows at 48/192kHz. Record
+exact numbers of events visited and skipped by its certified group
+upper bounds and compare *every* selection and weighted attack-floor
+bit-for-bit with an independent brute-force all-events Hann oracle.
+Those synthetic events deliberately include sub-Ceiling events to
+probe skipped zero-demand groups; do not treat the visit ratio as a
+measurement of actual bounded detector streams, real music, or CPU
+performance. Publish a small SelectorWork CSV artifact on this branch.
+This ordinary diagnostic change shall use FAST (no
+[m17-extended] commit subject), unlike algorithm modifications
+requiring the full extended PCM/M16 oracles. If FAST fails or the
+mathematical bound is falsified, correct and rerun before proceeding.

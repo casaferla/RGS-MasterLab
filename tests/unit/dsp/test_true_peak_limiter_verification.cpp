@@ -198,6 +198,7 @@ private slots:
     void experimental64FrameRealtimeQuantumProbe();
     void experimentalLazyControllerBitwiseOracle();
     void experimentalIntegratedLazyQuantumBenchmark();
+    void experimentalSelectorWorkProfileFast();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -3405,6 +3406,120 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
         }
     }
     QCOMPARE(scenarios,std::size_t{8});
+}
+
+
+void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
+{
+    using Event=dsp::internal::LimiterDetectorEvent;
+    using Selector=dsp::internal::experimental::M17LookaheadSelector;
+    using Frozen=dsp::internal::TruePeakLimiterControllerState;
+    constexpr double pi=std::numbers::pi_v<double>;
+    const auto path=qEnvironmentVariable(
+        "RGS_M17_SELECTOR_WORK_PROBE_FILE").toStdString();
+    if(!path.empty()) {
+        std::ofstream csv(path,std::ios::trunc);
+        QVERIFY2(csv.good(),"M17 selector FAST CSV creation failed");
+        csv<<"sample_rate_hz,ceiling_dbtp,pattern,query_ticks,"
+              "event_count,events_in_horizon,events_visited,events_skipped,"
+              "visit_percent,selector_weight_builds,exact_attack_floor,"
+              "exact_selected_event,exact_bounds\n";
+    }
+    std::size_t cases=0;
+    for(const int fs:{48000,192000}) {
+        constexpr double ceiling=-6.0;
+        const double threshold=std::pow(10.0,ceiling/20.0);
+        const auto reference=Frozen::create(fs,ceiling);
+        QVERIFY(reference);
+        const auto horizon=reference.value()->lookahead_ticks();
+        for(const bool dense:{false,true}) {
+            // Two deterministic patterns: sparse transient clusters and
+            // continuously hot signal, both with realistic active-event
+            // density and the same mathematical upper-bound requirement.
+            std::vector<Event> events;
+            events.reserve(9000);
+            for(std::int64_t tick=1;tick<=9000;++tick) {
+                const double peak=dense
+                    ?(tick%7==0?1.18:0.61+0.01*static_cast<double>(tick%11))
+                    :(tick%257==0?1.37:0.17+0.01*static_cast<double>(tick%5));
+                events.push_back(Event{tick,peak,true});
+            }
+            auto selector=Selector::create(fs,ceiling);
+            QVERIFY(selector);
+            QVERIFY(selector->prepare(events));
+            QCOMPARE(selector->weight_build_count(),std::size_t{1});
+            std::uint64_t visited=0,skipped=0,inWindow=0;
+            for(std::int64_t m=0;m<256;++m) {
+                const double current=(m%51==0)?0.93:0.0;
+                const auto result=selector->choose(m,current);
+                QVERIFY(result);
+                QVERIFY(result->bounded);
+                visited+=result->visited;
+                skipped+=result->skipped;
+                const auto begin=std::upper_bound(events.begin(),events.end(),
+                    m,[](std::int64_t t,const Event& e){return t<e.tick;});
+                const auto end=std::upper_bound(begin,events.end(),
+                    m+horizon,
+                    [](std::int64_t t,const Event& e){return t<e.tick;});
+                const auto n=static_cast<std::uint64_t>(end-begin);
+                inWindow+=n;
+                QCOMPARE(static_cast<std::uint64_t>(
+                    result->visited+result->skipped),n);
+                // Independent O(L) oracle: the frozen unweighted
+                // demand and exact binary64 cosine are recomputed for
+                // EVERY valid future event. The grouped selector may
+                // skip only with a provably safe upper bound.
+                double floor=current>threshold
+                    ?20.0*std::log10(current/threshold):+0.0;
+                std::optional<Event> expected;
+                for(auto event=begin;event!=end;++event) {
+                    const double demand=event->peak>threshold
+                        ?20.0*std::log10(event->peak/threshold):+0.0;
+                    if(demand>0.0) {
+                        const double d=static_cast<double>(event->tick-m);
+                        const double w=0.5*(1.0+std::cos(
+                            pi*d/static_cast<double>(horizon)));
+                        const double weighted=demand*w;
+                        if(weighted>floor) {
+                            floor=weighted;
+                            expected=*event;
+                        }
+                    }
+                }
+                QCOMPARE(std::bit_cast<std::uint64_t>(
+                    result->attack_floor_db),
+                    std::bit_cast<std::uint64_t>(floor));
+                QCOMPARE(result->future_event.has_value(),
+                         expected.has_value());
+                if(expected) {
+                    QCOMPARE(result->future_event->tick,expected->tick);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        result->future_event->peak),
+                        std::bit_cast<std::uint64_t>(expected->peak));
+                }
+            }
+            QVERIFY(visited>0);
+            QCOMPARE(visited+skipped,inWindow);
+            const double pct=100.0*static_cast<double>(visited)/
+                static_cast<double>(inWindow);
+            qInfo().nospace()<<"M17 selector FAST work fs="<<fs
+                <<" pattern="<<(dense?"dense":"sparse")
+                <<" visited="<<visited<<" skipped="<<skipped
+                <<" visit_percent="<<pct<<" exact_oracle=PASS";
+            if(!path.empty()) {
+                std::ofstream csv(path,std::ios::app);
+                QVERIFY2(csv.good(),"M17 selector FAST CSV append failed");
+                csv<<fs<<','<<ceiling<<','
+                    <<(dense?"dense":"sparse")<<",256,"
+                    <<events.size()<<','<<inWindow<<','<<visited<<','
+                    <<skipped<<','<<pct<<','
+                    <<selector->weight_build_count()
+                    <<",PASS,PASS,PASS\n";
+            }
+            ++cases;
+        }
+    }
+    QCOMPARE(cases,std::size_t{4});
 }
 
 } // namespace
