@@ -3939,25 +3939,42 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                     QVERIFY(nextEvents.size()<=Selector::kMaxBatchEvents);
                     auto full=Selector::create(fs,ceiling);
                     QVERIFY(full);
-                    const auto incStart=std::chrono::steady_clock::now();
-                    const bool incReady=selector->prepare(nextEvents);
-                    const auto incStop=std::chrono::steady_clock::now();
-                    const auto fullStart=std::chrono::steady_clock::now();
-                    const bool fullReady=full->prepare_full_recompute_for_test(
-                        nextEvents);
-                    const auto fullStop=std::chrono::steady_clock::now();
-                    QVERIFY(incReady);
-                    QVERIFY(fullReady);
+                    // The candidate already prepared eventSpan twice.
+                    // Start the reference from an identically WARM cache,
+                    // so its timed next prepare excludes first Hann setup.
+                    QVERIFY(full->prepare_full_recompute_for_test(eventSpan));
+                    QVERIFY(full->prepare_full_recompute_for_test(eventSpan));
+                    QCOMPARE(full->weight_build_count(),
+                             selector->weight_build_count());
+                    QCOMPARE(full->weight_build_count(),std::size_t{1});
+                    const bool incrementalFirst=
+                        (fs/100+static_cast<int>(channels)
+                         +static_cast<int>(-ceiling)+(dense?1:0))%2==0;
+                    const auto timedPrepare=[&](bool useIncremental) {
+                        const auto begin=std::chrono::steady_clock::now();
+                        const bool ready=useIncremental
+                            ?selector->prepare(nextEvents)
+                            :full->prepare_full_recompute_for_test(nextEvents);
+                        const auto end=std::chrono::steady_clock::now();
+                        return std::pair{ready,std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(end-begin).count()};
+                    };
+                    const auto firstTimed=timedPrepare(incrementalFirst);
+                    const auto secondTimed=timedPrepare(!incrementalFirst);
+                    const auto& incTimed=incrementalFirst
+                        ?firstTimed:secondTimed;
+                    const auto& fullTimed=incrementalFirst
+                        ?secondTimed:firstTimed;
+                    QVERIFY(incTimed.first);
+                    QVERIFY(fullTimed.first);
+                    const auto incrementalNs=incTimed.second;
+                    const auto recomputeNs=fullTimed.second;
                     QCOMPARE(selector->reused_demands_last_prepare()
                              +selector->computed_demands_last_prepare(),
                              nextEvents.size());
                     QCOMPARE(full->reused_demands_last_prepare(),std::size_t{0});
                     QCOMPARE(full->computed_demands_last_prepare(),
                              nextEvents.size());
-                    const auto incrementalNs=std::chrono::duration_cast<
-                        std::chrono::nanoseconds>(incStop-incStart).count();
-                    const auto recomputeNs=std::chrono::duration_cast<
-                        std::chrono::nanoseconds>(fullStop-fullStart).count();
                     for(std::int64_t tick=nextFirst;tick<nextFirst+16;++tick) {
                         const auto current=feeder->peak_at(tick);
                         const auto incrementalChoice=selector->choose(tick,current);
@@ -3977,6 +3994,50 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                                 std::bit_cast<std::uint64_t>(
                                     recomputedChoice->future_event->peak));
                         }
+                        // Fresh brute-force, strict binary64 Hann over
+                        // ALL physically certified signed detector events
+                        // in this NEXT batch; independent of both caches.
+                        const auto begin=std::upper_bound(nextEvents.begin(),
+                            nextEvents.end(),tick,
+                            [](std::int64_t x,const Event& e){
+                                return x<e.tick;
+                            });
+                        const auto end=std::upper_bound(begin,
+                            nextEvents.end(),tick+horizon,
+                            [](std::int64_t x,const Event& e){
+                                return x<e.tick;
+                            });
+                        double brute=current>linear
+                            ?20.0*std::log10(current/linear):+0.0;
+                        std::optional<Event> bruteWinner;
+                        for(auto it=begin;it!=end;++it) {
+                            const double demand=it->peak>linear
+                                ?20.0*std::log10(it->peak/linear):+0.0;
+                            if(demand>0.0) {
+                                const double delta=
+                                    static_cast<double>(it->tick-tick);
+                                const double weight=0.5*(1.0+std::cos(
+                                    pi*delta/static_cast<double>(horizon)));
+                                const double weighted=demand*weight;
+                                if(weighted>brute) {
+                                    brute=weighted;
+                                    bruteWinner=*it;
+                                }
+                            }
+                        }
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            incrementalChoice->attack_floor_db),
+                            std::bit_cast<std::uint64_t>(brute));
+                        QCOMPARE(incrementalChoice->future_event.has_value(),
+                                 bruteWinner.has_value());
+                        if(bruteWinner) {
+                            QCOMPARE(incrementalChoice->future_event->tick,
+                                     bruteWinner->tick);
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                incrementalChoice->future_event->peak),
+                                std::bit_cast<std::uint64_t>(
+                                    bruteWinner->peak));
+                        }
                     }
                     qInfo().nospace()<<"M17 adjacent-batch demand fs="<<fs
                         <<" channels="<<channels<<" ceiling="<<ceiling
@@ -3984,8 +4045,9 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         <<" reused="<<selector->reused_demands_last_prepare()
                         <<" recomputed="<<selector->computed_demands_last_prepare()
                         <<" warm_incremental_ns="<<incrementalNs
-                        <<" full_recompute_ns="<<recomputeNs
-                        <<" exact_pair=PASS";
+                        <<" warm_recompute_ns="<<recomputeNs
+                        <<" incremental_measured_first="<<incrementalFirst
+                        <<" next_window_oracle=PASS exact_pair=PASS";
                     if(!outputPath.empty()) {
                         std::ofstream csv(outputPath,std::ios::app);
                         QVERIFY2(csv.good(),
@@ -3996,7 +4058,8 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                             <<selector->reused_demands_last_prepare()<<','
                             <<selector->computed_demands_last_prepare()<<','
                             <<incrementalNs<<','<<recomputeNs
-                            <<",PASS\n";
+                            <<",PASS,"<<(incrementalFirst?"INCREMENTAL_FIRST":
+                                "FULL_FIRST")<<",WARM_BOTH,BRUTE_HANN_PASS\n";
                     }
                     ++cases;
                 }

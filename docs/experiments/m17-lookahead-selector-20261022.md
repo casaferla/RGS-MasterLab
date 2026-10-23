@@ -736,3 +736,30 @@ continues to qualify the earlier 128-tick window.
 The algorithm change triggers full EXTENDED Focused CI including the
 true M17 IModule PCM, six sample rates, M16, EOS and checkpoint gates.
 No frozen production M17, PR54/main, UI, FQ, merge or R1 substitution.
+
+
+## #691 FAST: Fair warm-cache paired demand reuse benchmark
+
+CI #690 Windows/Linux EXTENDED SUCCESS. In 48 detector-derived
+adjacent batches, 73,094 / 91,303 event-demand records (80.06%)
+matched exact tick+binary64 peak and were reused. No M17 frozen
+PCM/M16 mismatch was observed. The prior experimental timing,
+however, compared a WARM incremental selector against a newly
+created COLD full-recompute selector. Previous speedup ratios
+therefore confounded cached Hann initialization with log10 reuse.
+Do not interpret them as the incremental demand speedup.
+
+This FAST-only test correction initializes the full-recompute baseline
+with the same certified prior eventSpan twice as the candidate, and
+asserts both built Hann weights exactly once. Only THEN it times
+the next contiguous 64-frame batch. Execution order is rotated
+between scenarios by a deterministic parity rule. The resulting
+`incremental` CSV rows mark benchmark order, WARM_BOTH and the new
+independent next-window all-event strict binary64 Hann winner oracle
+(16 fresh controller ticks per case), in addition to peer equality.
+No selector implementation, PCM, controller, detector, registry,
+L4, R1 protector, PR54 or main code changes.
+
+Runner noise, single-sample prep timing, and absent callback overhead
+still prohibit any claim of hard realtime. Future runtime change
+requires EXTENDED Focused CI. This test/docs-only refinement uses FAST.
