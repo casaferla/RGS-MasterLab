@@ -188,6 +188,7 @@ private slots:
     void failedVerificationNeverMutatesResourceAcrossSixRates();
     void fullResourceSixRateChunkMatrixRemainsBitIdentical();
     void fullResourceResumeGatesAreBitwiseIdentical();
+    void productionPrepareStageTimingBaseline();
     void boundedActualM17CostProbe();
     void boundedLookaheadMemoizationProbe();
     void detectorSourcedLookaheadMemoizationProbe();
@@ -869,6 +870,84 @@ void TruePeakLimiterVerificationTest::optionalPhaseInstrumentationIsNonInvasive(
         }
         QCOMPARE(instrumented.value()->terminal.applied_gain_frames.size(),
             uninstrumented.value()->terminal.applied_gain_frames.size());
+    }
+}
+
+
+void TruePeakLimiterVerificationTest::productionPrepareStageTimingBaseline()
+{
+    // The REAL production checked-candidate path, including full-resource
+    // M16 and any global trim/reverification. This is a bounded INPUT
+    // already in OUTPUT_RATE; SRC, queue, UI and device handoff are excluded.
+    // This must not be extrapolated to 20-second/track Prepare wall time.
+    // Instrumentation is outside the DSP sample loop.
+    const auto path=qEnvironmentVariable(
+        "RGS_M17_PREPARE_BASELINE_PROBE_FILE").toStdString();
+    if(!path.empty()) {
+        std::ofstream csv(path,std::ios::trunc);
+        QVERIFY2(csv.good(),"M17 prepare baseline CSV creation failed");
+        csv<<"fs_hz,channels,ceiling_dbtp,frames,audio_duration_us,"
+              "wall_total_us,src_us,m17_core_us,m16_primary_us,"
+              "verification_trim_us,m16_secondary_us,"
+              "full_m16_verified,source_domain,measurement_scope\n";
+    }
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto maxBlock=core::FrameCount::create(2048);
+    QVERIFY(registry && maxBlock);
+    constexpr double pi=std::numbers::pi_v<double>;
+    for(const int fs:{48000,192000}) {
+        for(const int frames:{512,1536}) {
+            auto pcm=buffer(fs,true,frames);
+            for(std::size_t ch=0;ch<2;++ch) {
+                auto lane=pcm.mutable_view().channel(ch);
+                QVERIFY(lane);
+                for(int i=0;i<frames;++i) {
+                    const double time=static_cast<double>(i)/fs;
+                    (*lane.value())[static_cast<std::size_t>(i)]=
+                        0.70*std::sin(2.0*pi*(ch==0?991.0:1301.0)*time)
+                        +0.15*std::sin(2.0*pi*(ch==0?2351.0:1783.0)*
+                            time+0.25);
+                }
+            }
+            for(const double ceiling:{-1.0,-12.0}) {
+                const auto params=dsp::TruePeakLimiterParameters::create(
+                    ceiling);
+                QVERIFY(params);
+                render::TerminalRenderStageTimings stage{};
+                const auto begin=std::chrono::steady_clock::now();
+                const auto result=
+                    render::render_true_peak_limiter_checked_candidate(
+                        pcm.view(),*params.value(),*registry.value(),
+                        *maxBlock.value(),false,{},&stage);
+                const auto end=std::chrono::steady_clock::now();
+                const auto wallUs=std::chrono::duration_cast<
+                    std::chrono::microseconds>(end-begin).count();
+                QVERIFY2(result.has_value(),
+                    "Production checked terminal renderer rejected a baseline");
+                QVERIFY(result.value()->final_check.has_value());
+                QCOMPARE(stage.src_us,std::int64_t{-1});
+                QVERIFY(stage.m17_core_us>=0);
+                QVERIFY(stage.m16_primary_us>=0);
+                const auto audioUs=std::int64_t{1000000}*frames/fs;
+                qInfo().nospace()<<"M17 actual checked prepare proxy fs="
+                    <<fs<<" frames="<<frames<<" ceiling="<<ceiling
+                    <<" wall_us="<<wallUs<<" m17_us="<<stage.m17_core_us
+                    <<" m16_us="<<stage.m16_primary_us
+                    <<" trim_us="<<stage.verification_trim_us
+                    <<" m16_recheck_us="<<stage.m16_secondary_us
+                    <<" verified=PASS SRC_NOT_IN_SCOPE";
+                if(!path.empty()) {
+                    std::ofstream csv(path,std::ios::app);
+                    QVERIFY2(csv.good(),"M17 prepare baseline CSV append failed");
+                    csv<<fs<<",2,"<<ceiling<<','<<frames<<','<<audioUs
+                        <<','<<wallUs<<','<<stage.src_us
+                        <<','<<stage.m17_core_us<<','<<stage.m16_primary_us
+                        <<','<<stage.verification_trim_us<<','
+                        <<stage.m16_secondary_us
+                        <<",PASS,OUTPUT_RATE,SHORT_PRODUCTION_STAGE_PROXY\n";
+                }
+            }
+        }
     }
 }
 
