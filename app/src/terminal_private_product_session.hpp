@@ -54,6 +54,22 @@ public:
     [[nodiscard]] render::TerminalRenderProgress render_progress() const noexcept {
         return renderer_->progress();
     }
+    // Passive inspection only: no user opt-in, device audio or WAV.
+    [[nodiscard]] std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+    measured_candidate() const {
+        if(status_!=QStringLiteral("MEASURED_NONCONFORMING_READY")
+           ||!pending_||!selected_||!selected_()
+           ||!prepared_||!manual_||!manualId_||!sourceLoop_)
+            return {};
+        auto evidence=candidates_->staged_measured();
+        if(!evidence ||evidence->prepared_owner!=prepared_()
+           ||evidence->rendered.manual_owner!=manual_()
+           ||evidence->original_manual_realization_id
+               !=manualId_().value_or(core::RealizationId{0})
+           ||sourceLoop_()!=pending_->loop)
+            return {};
+        return evidence;
+    }
     [[nodiscard]] std::optional<core::RealizationId> private_id() const
     {return privateId_;}
 

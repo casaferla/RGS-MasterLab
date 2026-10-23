@@ -459,6 +459,24 @@ void TerminalProductActivationCoordinator::private_session_changed()
         view_->setPreparationProgress(
             QStringLiteral("Verified candidate ready"),1.0,true);
         view_->setAudioStatus(QStringLiteral("READY · PREVIEW AVAILABLE"));
+    } else if(status==QStringLiteral("MEASURED_NONCONFORMING_READY")) {
+        readyToPreview_=false;
+        renderHeartbeat_.stop();
+        auto measured=session_->measured_candidate();
+        if(!measured) {
+            fail_closed(QStringLiteral("M17 measured result lost exact source ownership."));
+            return;
+        }
+        const auto& evidence=measured->rendered.terminal;
+        const double peak=20.0*std::log10(evidence.measured_linear_peak);
+        // Honest, current and non-verifiable-as-success: true measured peak,
+        // no automatic playback and no verified READY declaration.
+        view_->setPreparationProgress(
+            QStringLiteral("Measured PCM retained · Ceiling not met"),0.99,false);
+        view_->setAudioStatus(
+            QStringLiteral("NON-CONFORMING · %1 dBTP (target %2)")
+                .arg(QString::number(peak,'f',2))
+                .arg(QString::number(evidence.requested_ceiling_db_tp,'f',2)));
     } else if(status==QStringLiteral("PRIVATE_INSTALLED")) {
         finish_activation();
     } else if(status==QStringLiteral("STALE")

@@ -194,6 +194,25 @@ void TerminalPrivateProductSession::on_renderer_changed()
         return;
     }
     if(state==QStringLiteral("STALE")) {stale();return;}
+    if(state==QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")) {
+        // Keep owner and PCM intact, but never invoke verified install.
+        auto evidence=candidates_->staged_measured();
+        if(!selected_()||prepared_()!=pending_->prepared
+           ||manual_()!=pending_->manual
+           ||manualId_()!=std::optional{pending_->manualId}
+           ||sourceLoop_()!=pending_->loop
+           ||!evidence||evidence->prepared_owner!=pending_->prepared
+           ||evidence->rendered.manual_owner!=pending_->manual
+           ||evidence->original_manual_realization_id!=pending_->manualId) {
+            renderer_->invalidate();
+            stale();
+            return;
+        }
+        status_=QStringLiteral("MEASURED_NONCONFORMING_READY");
+        error_.clear();
+        emit changed();
+        return;
+    }
     if(state!=QStringLiteral("READY_PRIVATE"))return;
     if(pending_->deferred) {
         // The MANUAL sink continues playing until accepted OUTPUT_RATE
