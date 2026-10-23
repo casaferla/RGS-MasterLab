@@ -36,6 +36,11 @@ Item {
     property color familyAccent: "#6CBCCF"
     readonly property bool hasMeasurement: measurementProvider
         ? measurementProvider.hasMeasurement : false
+    readonly property bool hasMeasuredCeilingMiss:
+        root.limiterControlsIncluded && root.limiterViewModel
+        && typeof root.limiterViewModel.nonconformingPeakText === "string"
+        && root.limiterViewModel.nonconformingPeakText.length > 0
+        && root.limiterViewModel.audioStatus.indexOf("NON-CONFORMING") >= 0
     implicitWidth: 316
     implicitHeight: 330
     readonly property bool compactRail: framedForLimiter || height < 530
@@ -138,19 +143,27 @@ Item {
             // The complete-source M16 analysis does NOT become a complete
             // post-M17 peak certificate when Ceiling changes. Keep it
             // independent from verified post-limiter RECENT/HOLD evidence.
-            heading: root.limiterControlsIncluded
-                ? "COMPLETE PRE-LIMITER TP"
-                : "COMPLETE PROCESSED RESOURCE"
-            valueColor: root.fullResourceAccent
-            reading: root.hasMeasurement
-                ? root.measurementProvider.peakText : "—"
+            heading: root.hasMeasuredCeilingMiss
+                ? "COMPLETE POST-LIMITER TP · NON-CONFORMING"
+                : root.limiterControlsIncluded
+                    ? "COMPLETE PRE-LIMITER TP"
+                    : "COMPLETE PROCESSED RESOURCE"
+            valueColor: root.hasMeasuredCeilingMiss ? "#F27683"
+                : root.fullResourceAccent
+            reading: root.hasMeasuredCeilingMiss
+                ? root.limiterViewModel.nonconformingPeakText
+                : root.hasMeasurement
+                    ? root.measurementProvider.peakText : "—"
             // Same bounded text width as the accepted 100px M17 card.
             // PRE-LIMITER scope is explicit in heading and full tooltip;
             // long provisional status strings must not overflow the card.
-            detail: root.hasMeasurement
-                ? "Peak channel: " + root.measurementProvider.channelText
-                : "No complete, source-bound measurement"
-            available: root.hasMeasurement
+            detail: root.hasMeasuredCeilingMiss
+                ? "Target: " + root.limiterViewModel.nonconformingTargetText
+                    + " · M16 measured OUTPUT_RATE PCM, NOT verified"
+                : root.hasMeasurement
+                    ? "Peak channel: " + root.measurementProvider.channelText
+                    : "No complete, source-bound measurement"
+            available: root.hasMeasuredCeilingMiss || root.hasMeasurement
         }
         TruePeakStatusCard {
             objectName: "truePeakProvenanceCard"
