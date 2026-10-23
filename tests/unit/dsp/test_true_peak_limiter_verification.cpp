@@ -3196,7 +3196,11 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
               "mean_selector_ns,p99_selector_ns,max_selector_ns,"
               "mean_controller_advance_ns,p99_controller_advance_ns,"
               "max_controller_advance_ns,"
-              "mean_other_ns,p99_other_ns,max_other_ns\n";
+              "mean_other_ns,p99_other_ns,max_other_ns,"
+              "mean_detector_feed_ns,p99_detector_feed_ns,max_detector_feed_ns,"
+              "mean_event_batch_ns,p99_event_batch_ns,max_event_batch_ns,"
+              "mean_selector_load_ns,p99_selector_load_ns,max_selector_load_ns,"
+              "mean_unattributed_ns,p99_unattributed_ns,max_unattributed_ns\n";
     }
     std::size_t scenarios=0;
     for(const int fs:{48000,192000}) {
@@ -3243,9 +3247,14 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                     // increases quantum time. The original controller and
                     // detector mathematics remain identical.
                     std::vector<std::int64_t> selectorNs,advanceNs,otherNs;
+                    std::vector<std::int64_t> feedNs,batchNs,loadNs,residualNs;
                     selectorNs.reserve(quantumNs.capacity());
                     advanceNs.reserve(quantumNs.capacity());
                     otherNs.reserve(quantumNs.capacity());
+                    feedNs.reserve(quantumNs.capacity());
+                    batchNs.reserve(quantumNs.capacity());
+                    loadNs.reserve(quantumNs.capacity());
+                    residualNs.reserve(quantumNs.capacity());
                     const auto totalStart=std::chrono::steady_clock::now();
                     for(int start=0;start<nFrames;start+=kQuantum) {
                         const auto quantumStart=std::chrono::steady_clock::now();
@@ -3253,6 +3262,7 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                         const auto first=start==0?-62:8*(start-1)+1;
                         const auto last=8*(start+kQuantum-1);
                         const auto deadline=last+horizon;
+                        const auto feedStart=std::chrono::steady_clock::now();
                         feeder->discard_before(first);
                         while(!feeder->drained()
                               && feeder->coverage_tick()<deadline) {
@@ -3270,10 +3280,22 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                                 QVERIFY(feeder->drain());
                             }
                         }
+                        const auto feedStop=std::chrono::steady_clock::now();
+                        const auto batchStart=std::chrono::steady_clock::now();
                         const auto events=feeder->batch(first,last,horizon);
-                        QVERIFY2(rolling->load(events,first,last,
-                            feeder->coverage_tick(),feeder->drained()),
+                        const auto batchStop=std::chrono::steady_clock::now();
+                        const auto loadStart=std::chrono::steady_clock::now();
+                        const bool loadSucceeded=rolling->load(events,first,last,
+                            feeder->coverage_tick(),feeder->drained());
+                        const auto loadStop=std::chrono::steady_clock::now();
+                        QVERIFY2(loadSucceeded,
                             "Lookahead batch was not physically certified");
+                        const auto feedCostNs=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(feedStop-feedStart).count();
+                        const auto batchCostNs=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(batchStop-batchStart).count();
+                        const auto loadCostNs=std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(loadStop-loadStart).count();
                         for(int n=start;n<start+kQuantum;++n) {
                             double gain=1.0;
                             for(std::int64_t tick=n==0?-62:8*(n-1)+1;
@@ -3315,12 +3337,18 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                             std::chrono::nanoseconds>(
                                 std::chrono::steady_clock::now()-quantumStart)
                                     .count();
-                        QVERIFY2(quantumElapsed>=chooseCostNs+advanceCostNs,
-                            "M17 stage durations exceed outer quantum observation");
+                        const auto measured=chooseCostNs+advanceCostNs
+                            +feedCostNs+batchCostNs+loadCostNs;
+                        QVERIFY2(quantumElapsed>=measured,
+                            "M17 measured stages exceed outer quantum observation");
                         quantumNs.push_back(quantumElapsed);
                         selectorNs.push_back(chooseCostNs);
                         advanceNs.push_back(advanceCostNs);
                         otherNs.push_back(quantumElapsed-chooseCostNs-advanceCostNs);
+                        feedNs.push_back(feedCostNs);
+                        batchNs.push_back(batchCostNs);
+                        loadNs.push_back(loadCostNs);
+                        residualNs.push_back(quantumElapsed-measured);
                     }
                     const auto totalNs=std::chrono::duration_cast<
                         std::chrono::nanoseconds>(
@@ -3370,6 +3398,10 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                     const auto selectStats=stageStats(selectorNs);
                     const auto advanceStats=stageStats(advanceNs);
                     const auto otherStats=stageStats(otherNs);
+                    const auto feedStats=stageStats(feedNs);
+                    const auto batchStats=stageStats(batchNs);
+                    const auto loadStats=stageStats(loadNs);
+                    const auto residualStats=stageStats(residualNs);
                     const auto counters=alternative->counters();
                     qInfo().nospace()<<"M17 integrated lazy quantum fs="<<fs
                         <<" ch="<<(stereo?2:1)<<" ceiling="<<ceiling
@@ -3380,6 +3412,10 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                         <<" mean_selector_ns="<<selectStats[0]
                         <<" mean_advance_ns="<<advanceStats[0]
                         <<" mean_other_ns="<<otherStats[0]
+                        <<" mean_detector_feed_ns="<<feedStats[0]
+                        <<" mean_event_batch_ns="<<batchStats[0]
+                        <<" mean_selector_load_ns="<<loadStats[0]
+                        <<" mean_unattributed_ns="<<residualStats[0]
                         <<" pcm_bitwise=PASS realtime_qualified=NO";
                     if(!csvPath.empty()) {
                         std::ofstream csv(csvPath,std::ios::app);
@@ -3398,7 +3434,11 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                             <<",PASS,PASS,NO,"
                             <<selectStats[0]<<','<<selectStats[1]<<','<<selectStats[2]<<','
                             <<advanceStats[0]<<','<<advanceStats[1]<<','<<advanceStats[2]<<','
-                            <<otherStats[0]<<','<<otherStats[1]<<','<<otherStats[2]
+                            <<otherStats[0]<<','<<otherStats[1]<<','<<otherStats[2]<<','
+                            <<feedStats[0]<<','<<feedStats[1]<<','<<feedStats[2]<<','
+                            <<batchStats[0]<<','<<batchStats[1]<<','<<batchStats[2]<<','
+                            <<loadStats[0]<<','<<loadStats[1]<<','<<loadStats[2]<<','
+                            <<residualStats[0]<<','<<residualStats[1]<<','<<residualStats[2]
                             <<'\n';
                     }
                 }

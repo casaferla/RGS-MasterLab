@@ -794,3 +794,37 @@ without confusing them with end-to-end callback timing.
 As runtime selector code changed, execute full EXTENDED Focused CI
 on Windows/Linux (real PCM, M16, six rates, stereo, EOS/checkpoint).
 No frozen M17, main/PR54, R1 protector, UI, FQ or merge.
+
+
+## #693 EXTENDED: Integrated 64-frame stage decomposition
+
+CI #692 Windows/Linux EXTENDED SUCCESS with real IModule PCM/M16 and
+checkpoint/EOS exactness. Across 48 detector-sourced paired selector
+batches, reusable scratch buffers vs fresh allocations gained only
+1.017x median Windows, 1.026x median Linux, with 28/48 and 34/48 wins,
+and mixed dense 192kHz results. This is insufficient to claim hard RT.
+The existing integrated lazy-quantum observer at 192kHz still misses
+the 333.33 microsecond 64-frame budget. For instance #692 Windows
+192kHz LAZY mean per quantum ranged 424.7..540.6 microseconds; Linux
+ranged 2237.8..2610.7 microseconds. Instrumented CI runners are not
+audio-realtime hosts and these measurements are diagnostic only.
+
+This test-only change adds separate bounded stage durations to the
+existing 48/192kHz mono/stereo, two-ceiling, FROZEN/LAZY integrated
+64-frame quantum observer. Stage clocks surround: detector feed and
+discard, certified event batch extraction, selector.load (including
+prepare and group aggregation). Existing select and controller advance
+per-tick clocks stay unchanged. The new residual is total quantum minus
+all five measured stages and includes PCM writes, peak_at, test checks,
+timer overhead and remaining bookkeeping. The old 'other' aggregation
+remains for backwards comparison. Per-scenario mean/p99/max clocks are
+written as 12 new CSV columns to IntegratedLazy Windows/Linux artifacts.
+
+The added instrumentation is test-only and does NOT change the
+selector, frozen M17 backend, RGS PCM, exact arithmetic, or module
+registry. We deliberately invoke EXTENDED Focused CI because its
+isolated FAST profile does not execute integrated lazy-quantum
+diagnostics and FULL targeted verification is required to collect
+the evidence. EXTENDED is not Full Qualification, and no gate
+state, PR54/main, UI or LANE B R1 is modified. Do not make any hard
+realtime claims from these extra timing probes.
