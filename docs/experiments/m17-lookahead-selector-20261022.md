@@ -828,3 +828,51 @@ diagnostics and FULL targeted verification is required to collect
 the evidence. EXTENDED is not Full Qualification, and no gate
 state, PR54/main, UI or LANE B R1 is modified. Do not make any hard
 realtime claims from these extra timing probes.
+
+
+## #694 EXTENDED: Bounded final feasibility sprint (CI #694–#697)
+
+PO checkpoint after CI #693: the exploratory optimization loop is
+now limited to an explicit four-CI evidence and decision sequence,
+with at most one reserved corrective CI for a red build/test. This
+is a planned decision horizon, NOT a guarantee of achieving 192kHz
+hard realtime by a fixed number of commits. Production substitution,
+relaxing six-rate/neutrality constraints or changing UI would require
+a separate PO decision.
+
+- CI #694 (this commit): test-only, 64-frame integrated diagnostics
+  for per-quantum active detector events and selector visit/skip work.
+  It adds mean/p99/max active event, visit and skip counts, plus total
+  conservative 512- and 256-event blocks skipped and visit percentage
+  to both Windows and Linux CSV. All observations use the already
+  actual signed-detector, certified lookahead and bit-exact IModule
+  PCM-versus-frozen oracle. No new runtime selector algorithm.
+- CI #695: at most ONE bounded, falsifiable exact selector change
+  selected from #694 work distribution. Same-run integrated 48/192kHz
+  A/B timing must support whole-quantum gain on BOTH runners, not just
+  synthetic microbenches; if unjustified, replace this with a NO-CHANGE
+  decision gate rather than constructing speculative variants.
+- CI #696: independent repeated integrated and p99/worst evidence,
+  strict binary64/PCM/M16 and six-rate/mono/stereo guard. Reject a
+  regression in any protected oracle or a merely noisy one-host gain.
+- CI #697: publish a provisional GO / further directed research /
+  STOP-and-offline-fallback technical recommendation. A go/no-go to
+  replace frozen M17 remains exclusively PO-authorized and requires
+  separate Full Qualification and product gates.
+
+Current #693 measured integrated LAZY at 192kHz 64 frames:
+Windows mean quantum 425908–537764 ns, p99 555300–819200 ns;
+Linux mean 2834985–3355787 ns, p99 3802314–4782267 ns.
+Hard deadline is 333333 ns. The instrumented CI runners are
+NOT hard realtime audio machines; their high latency is diagnostic,
+not proof of general impossibility. Dominant Windows mean cost
+is selector choice 173095–195594 ns; selector load
+76575–104632 ns; detector/feed 68673–130138 ns;
+controller 62539–63390 ns. At 48kHz/64 frame the
+budget is 1333333 ns, and Windows meets these limited hosted
+scenario means. None of this is a hard RT qualification.
+
+Any #695 runtime algorithm change MUST use EXTENDED Focused CI;
+#694 uses EXTENDED to execute integrated profiling (omitted by
+the FAST test profile). No FQ, merges, main or PR54 changes,
+no UI change, no protector R1 and no reopening C4.

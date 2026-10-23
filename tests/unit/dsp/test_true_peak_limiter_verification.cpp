@@ -3200,7 +3200,12 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
               "mean_detector_feed_ns,p99_detector_feed_ns,max_detector_feed_ns,"
               "mean_event_batch_ns,p99_event_batch_ns,max_event_batch_ns,"
               "mean_selector_load_ns,p99_selector_load_ns,max_selector_load_ns,"
-              "mean_unattributed_ns,p99_unattributed_ns,max_unattributed_ns\n";
+              "mean_unattributed_ns,p99_unattributed_ns,max_unattributed_ns,"
+              "mean_active_events,p99_active_events,max_active_events,"
+              "mean_events_visited,p99_events_visited,max_events_visited,"
+              "mean_events_skipped,p99_events_skipped,max_events_skipped,"
+              "total_superblocks_skipped,total_halfblocks_skipped,"
+              "selector_visited_percent\n";
     }
     std::size_t scenarios=0;
     for(const int fs:{48000,192000}) {
@@ -3248,6 +3253,10 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                     // detector mathematics remain identical.
                     std::vector<std::int64_t> selectorNs,advanceNs,otherNs;
                     std::vector<std::int64_t> feedNs,batchNs,loadNs,residualNs;
+                    std::vector<std::int64_t> activeEventsNs,visitedEventsNs;
+                    std::vector<std::int64_t> skippedEventsNs;
+                    std::uint64_t totalSuperSkipped=0,totalHalfSkipped=0;
+                    std::uint64_t totalVisited=0,totalSkipped=0;
                     selectorNs.reserve(quantumNs.capacity());
                     advanceNs.reserve(quantumNs.capacity());
                     otherNs.reserve(quantumNs.capacity());
@@ -3255,10 +3264,14 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                     batchNs.reserve(quantumNs.capacity());
                     loadNs.reserve(quantumNs.capacity());
                     residualNs.reserve(quantumNs.capacity());
+                    activeEventsNs.reserve(quantumNs.capacity());
+                    visitedEventsNs.reserve(quantumNs.capacity());
+                    skippedEventsNs.reserve(quantumNs.capacity());
                     const auto totalStart=std::chrono::steady_clock::now();
                     for(int start=0;start<nFrames;start+=kQuantum) {
                         const auto quantumStart=std::chrono::steady_clock::now();
                         std::int64_t chooseCostNs=0,advanceCostNs=0;
+                        std::uint64_t blockVisited=0,blockSkipped=0;
                         const auto first=start==0?-62:8*(start-1)+1;
                         const auto last=8*(start+kQuantum-1);
                         const auto deadline=last+horizon;
@@ -3283,6 +3296,7 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                         const auto feedStop=std::chrono::steady_clock::now();
                         const auto batchStart=std::chrono::steady_clock::now();
                         const auto events=feeder->batch(first,last,horizon);
+                        const auto activeCount=events.size();
                         const auto batchStop=std::chrono::steady_clock::now();
                         const auto loadStart=std::chrono::steady_clock::now();
                         const bool loadSucceeded=rolling->load(events,first,last,
@@ -3305,6 +3319,10 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                                 const auto chosen=rolling->choose(tick,current);
                                 const auto chooseStop=std::chrono::steady_clock::now();
                                 QVERIFY(chosen);
+                                blockVisited+=chosen->visited;
+                                blockSkipped+=chosen->skipped;
+                                totalSuperSkipped+=chosen->skipped_superblocks;
+                                totalHalfSkipped+=chosen->skipped_halfblocks;
                                 chooseCostNs+=std::chrono::duration_cast<
                                     std::chrono::nanoseconds>(
                                         chooseStop-chooseStart).count();
@@ -3349,6 +3367,14 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                         batchNs.push_back(batchCostNs);
                         loadNs.push_back(loadCostNs);
                         residualNs.push_back(quantumElapsed-measured);
+                        activeEventsNs.push_back(
+                            static_cast<std::int64_t>(activeCount));
+                        visitedEventsNs.push_back(
+                            static_cast<std::int64_t>(blockVisited));
+                        skippedEventsNs.push_back(
+                            static_cast<std::int64_t>(blockSkipped));
+                        totalVisited+=blockVisited;
+                        totalSkipped+=blockSkipped;
                     }
                     const auto totalNs=std::chrono::duration_cast<
                         std::chrono::nanoseconds>(
@@ -3402,6 +3428,13 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                     const auto batchStats=stageStats(batchNs);
                     const auto loadStats=stageStats(loadNs);
                     const auto residualStats=stageStats(residualNs);
+                    const auto activeStats=stageStats(activeEventsNs);
+                    const auto visitedStats=stageStats(visitedEventsNs);
+                    const auto skippedStats=stageStats(skippedEventsNs);
+                    const double visitPercent=totalVisited+totalSkipped>0
+                        ?100.0*static_cast<double>(totalVisited)/
+                            static_cast<double>(totalVisited+totalSkipped)
+                        :0.0;
                     const auto counters=alternative->counters();
                     qInfo().nospace()<<"M17 integrated lazy quantum fs="<<fs
                         <<" ch="<<(stereo?2:1)<<" ceiling="<<ceiling
@@ -3416,6 +3449,10 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                         <<" mean_event_batch_ns="<<batchStats[0]
                         <<" mean_selector_load_ns="<<loadStats[0]
                         <<" mean_unattributed_ns="<<residualStats[0]
+                        <<" mean_active_events="<<activeStats[0]
+                        <<" mean_visited_events="<<visitedStats[0]
+                        <<" mean_skipped_events="<<skippedStats[0]
+                        <<" visited_pct="<<visitPercent
                         <<" pcm_bitwise=PASS realtime_qualified=NO";
                     if(!csvPath.empty()) {
                         std::ofstream csv(csvPath,std::ios::app);
@@ -3438,8 +3475,12 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                             <<feedStats[0]<<','<<feedStats[1]<<','<<feedStats[2]<<','
                             <<batchStats[0]<<','<<batchStats[1]<<','<<batchStats[2]<<','
                             <<loadStats[0]<<','<<loadStats[1]<<','<<loadStats[2]<<','
-                            <<residualStats[0]<<','<<residualStats[1]<<','<<residualStats[2]
-                            <<'\n';
+                            <<residualStats[0]<<','<<residualStats[1]<<','<<residualStats[2]<<','
+                            <<activeStats[0]<<','<<activeStats[1]<<','<<activeStats[2]<<','
+                            <<visitedStats[0]<<','<<visitedStats[1]<<','<<visitedStats[2]<<','
+                            <<skippedStats[0]<<','<<skippedStats[1]<<','<<skippedStats[2]<<','
+                            <<totalSuperSkipped<<','<<totalHalfSkipped<<','
+                            <<visitPercent<<'\n';
                     }
                 }
                 ++scenarios;
