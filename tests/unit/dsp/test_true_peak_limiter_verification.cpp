@@ -2563,15 +2563,24 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
               "source_frames_consumed,final_detector_drained,"
               "checkpoint_snapshots_restored,experimental_final_m16_checked,"
               "m16_reference_ns,m16_experimental_ns,m16_outcome,"
-              "m16_post_pcm_bitwise\n";
+              "m16_post_pcm_bitwise,probe_class,production_checked_wall_ns,"
+              "production_m17_core_ns,production_m16_primary_ns,"
+              "production_trim_ns,production_m16_secondary_ns,"
+              "production_vs_candidate_checked_ratio,production_checked_pcm_exact\n";
     }
     std::size_t matrixCaseCount=0;
     for(const int fs:{44100,48000,88200,96000,176400,192000}) {
         for(const bool stereo:{false,true}) {
             for(const double ceiling:{0.0,-1.0,-6.0,-12.0}) {
-            // Keep legacy long 48k/-6 probe, bounded budget on others.
-            const int nFrames=fs==48000 && ceiling==-6.0 ? 32768
-                : (fs==192000 ? 8192 : 4096);
+            // Preserve all 48 legacy controls. Add EIGHT strictly paired
+            // Prepare-proxy cases on real OUTPUT_RATE PCM, without SRC.
+            for(const int probeFrames:{0,512,1536}) {
+            if(probeFrames!=0 && (fs!=48000 && fs!=192000
+                || !stereo || (ceiling!=-1.0 && ceiling!=-12.0)))
+                continue;
+            const int nFrames=probeFrames!=0?probeFrames:
+                (fs==48000 && ceiling==-6.0 ? 32768
+                 : (fs==192000 ? 8192 : 4096));
             auto source=buffer(fs,stereo,nFrames);
             const auto fmt=source.view().format();
             for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
@@ -2698,6 +2707,58 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
             const auto candidateStart=std::chrono::steady_clock::now();
             auto accelerated=candidateRender();
             const auto candidateEnd=std::chrono::steady_clock::now();
+            std::int64_t productionNs=-1;
+            std::int64_t prodM17Ns=-1,prodM16Ns=-1,prodTrimNs=-1,
+                prodM16SecondNs=-1;
+            bool productionPcmExact=false;
+            // Same PCM, same Ceiling, same Fs, SAME host. This exercise
+            // executes the real checked renderer, including its M16 and
+            // possible global trim; it does not install the candidate.
+            if(probeFrames!=0) {
+                auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+                auto params=dsp::TruePeakLimiterParameters::create(ceiling);
+                auto maxBlock=core::FrameCount::create(2048);
+                QVERIFY(registry && params && maxBlock);
+                render::TerminalRenderStageTimings stages{};
+                const auto prodStart=std::chrono::steady_clock::now();
+                auto checked=render::render_true_peak_limiter_checked_candidate(
+                    source.view(),*params.value(),*registry.value(),
+                    *maxBlock.value(),false,{},&stages);
+                const auto prodStop=std::chrono::steady_clock::now();
+                QVERIFY2(checked.has_value(),
+                    "Real checked Prepare candidate failed paired sample");
+                QVERIFY(checked.value()->final_check.has_value());
+                productionNs=std::chrono::duration_cast<
+                    std::chrono::nanoseconds>(prodStop-prodStart).count();
+                prodM17Ns=stages.m17_core_us*1000;
+                prodM16Ns=stages.m16_primary_us*1000;
+                prodTrimNs=stages.verification_trim_us<0?-1
+                    :stages.verification_trim_us*1000;
+                prodM16SecondNs=stages.m16_secondary_us<0?-1
+                    :stages.m16_secondary_us*1000;
+                const auto prodPcm=
+                    checked.value()->terminal.compensated_pcm.view();
+                QCOMPARE(prodPcm.frame_count(),source.view().frame_count());
+                productionPcmExact=true;
+                for(std::size_t ch=0;ch<fmt.channel_count();++ch) {
+                    const auto product=prodPcm.channel(ch);
+                    const auto oracle=original->view().channel(ch);
+                    QVERIFY(product && oracle);
+                    for(int n=0;n<nFrames;++n) {
+                        const auto idx=static_cast<std::size_t>(n);
+                        if(std::bit_cast<std::uint64_t>(
+                            (*product.value())[idx])!=
+                           std::bit_cast<std::uint64_t>(
+                            (*oracle.value())[idx]))
+                            productionPcmExact=false;
+                    }
+                }
+                // The checked product may apply a legal global trim. It
+                // must never be misreported as an untrimmed PCM mismatch.
+                if(prodTrimNs<0)
+                    QVERIFY2(productionPcmExact,
+                        "Product checked PCM differs from original IModule");
+            }
             QVERIFY2(accelerated.has_value(),
                 "Bounded candidate rendering failed");
             QVERIFY(metrics.drained);
@@ -2786,7 +2847,16 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
                 <<" m16_check="<<(refChecked?"PASS":"MATCHING_REJECTION")
                 <<" m16_reference_ns="<<m16ReferenceNs
                 <<" m16_experimental_ns="<<m16CandidateNs
-                <<" pcm_before_after_m16_bitwise=PASS";
+                <<" pcm_before_after_m16_bitwise=PASS"
+                <<" paired_production_ns="<<productionNs
+                <<" prod_vs_experimental_core_ratio="
+                <<(productionNs>0 ?
+                    static_cast<double>(productionNs)/
+                    static_cast<double>(
+                        std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(
+                            candidateEnd-candidateStart).count()
+                        +m16CandidateNs) : 0.0);
             if(!csvPath.empty()) {
                 std::ofstream csv(csvPath,std::ios::app);
                 QVERIFY2(csv.good(),"M17 long render CSV append failed");
@@ -2799,13 +2869,23 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
                     <<",PASS,"<<metrics.checkpointRestores<<",YES,"
                     <<m16ReferenceNs<<','<<m16CandidateNs<<','
                     <<(refChecked?"PASS":"MATCHING_REJECTION")
-                    <<",PASS\n";
+                    <<",PASS,"
+                    <<(probeFrames==0?"LEGACY":"PREPARE_PROXY")<<','
+                    <<productionNs<<','<<prodM17Ns<<','<<prodM16Ns<<','
+                    <<prodTrimNs<<','<<prodM16SecondNs<<','
+                    <<(productionNs>0 && candidateNs+m16CandidateNs>0
+                        ?static_cast<double>(productionNs)/
+                         static_cast<double>(candidateNs+m16CandidateNs)
+                        :0.0)<<','
+                    <<(probeFrames==0?"N_A":(productionPcmExact?"PASS":"TRIMMED"))
+                    <<'\n';
             }
                 ++matrixCaseCount;
+            } // original reference + paired Prepare-proxy fixtures
             }
         }
     }
-    QCOMPARE(matrixCaseCount,std::size_t{48});
+    QCOMPARE(matrixCaseCount,std::size_t{56});
 }
 
 

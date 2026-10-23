@@ -22,3 +22,43 @@ Official PO source: https://docs.google.com/document/d/18uFEzMGeK3KPmotcYb5yzocP
 Decision checkpoints: G0 baseline first; G1 quantitative same-host A/B; G2 runtime improvement with exact PCM and complete M16; G3 independent mathematical feasibility/counterexample and buffering model. No speculative production prefetch, no immediate rollout, no fake realtime claim.
 
 CI classification for #698: [m17-extended] is necessary to run production checked-candidate verification (FAST mode excludes it). Changes are test/workflow/docs ONLY. No M17 frozen math, PR54 product branch, main, M16 DSP, UI or C4/R1. PR55 remains DRAFT and unmerged. Full Qualification and Gate M/L remain PO-owned.
+
+## CI #699 — Product checked Prepare vs accelerated candidate, same-host A/B
+
+CI #698 EXTENDED passed Windows/Linux. The *actual product checked
+renderer* short INPUT=OUTPUT_RATE fixtures (512/1536 stereo frames)
+verified M16 and recorded M17 DSP core, M16 primary, optional trim
+and optional recheck. At 192kHz/1536frames/-12dBTP, Windows real
+checked wall=1.297s (M17 core=1.296s); Linux=3.211s (M17 core=3.209s).
+These are *8ms of audio*, not 20s or a full song. No SRC or UI/queue
+was included. On the separate same-source experimental 8192-frame
+tests, Windows 192kHz stereo -12dBTP reference-vs-accelerated
+core=131.547x and Linux=50.010x; both had PCM bitwise PASS and
+M16 outcome PASS. These isolated core ratios are NOT the user's
+Prepare speedup and must not be marketed as such.
+
+#699 adds eight identical-waveform input/ceiling/rate cases to the
+existing M17 long-resource A/B function: stereo 48/192kHz, -1/-12dBTP,
+512/1536 OUTPUT_RATE frames, plus the existing 48 legacy controls.
+Each short case executes on the SAME CI host:
+1. The frozen original IModule as the PCM reference;
+2. The bounded experimental detector/selector/controller candidate;
+3. The ACTUAL product render_true_peak_limiter_checked_candidate,
+   including production M16 true-peak measurement and possible
+   verification trim/recheck.
+4. The independent full-resource M16 verifier for original/experiment.
+
+New artifact columns record product wall, product per-stage timings,
+a carefully labelled ratio product verified wall /
+(experimental *core* + independently timed M16 verification),
+and the exact product PCM-vs-IModule comparison whenever production
+trim is absent. This ratio is a **research potential**, not an installed
+Prepare acceleration; candidate still lacks production checked
+renderer, SRC, queue/worker, ownership and FQ. If a global trim
+actually occurs, the product checked result is labelled TRIMMED,
+not falsely claimed bitwise unchanged.
+
+This test/docs-only commit must use EXTENDED so that both real
+verification suites and entire experiment execute. Maintain
+Single Writer/SHA-CAS, PR54 and main unchanged, frozen math unchanged,
+no UI, no new FQ, no rollout, no C4/R1.
