@@ -151,6 +151,18 @@ Item {
                         Item { Layout.fillWidth: true }
                     }
 
+                    // Deliberately the SAME visual grammar as Compressor:
+                    // one continuous dark well, full-width horizontal rule,
+                    // then GR HISTORY label/state and an unframed Canvas.
+                    // The rule is a divider, not an extra boxed DSP card.
+                    Rectangle {
+                        objectName: "m17GainReductionDivider"
+                        visible: true
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
+                        Layout.minimumHeight: 1
+                        color: Qt.alpha(root.familyAccent, 0.45)
+                    }
                     // M16: authoritative provenance in the SAME lower-band
                     // height where M17 shows authentic gain reduction.
                     TruePeakStatusCard {
@@ -168,18 +180,6 @@ Item {
                             ? root.measurementProvider.realizationText : "NO PUBLISHED REALIZATION"
                         formatLabel: root.measurementProvider
                             ? root.measurementProvider.sampleRateText : "—"
-                    }
-                    // Deliberately the SAME visual grammar as Compressor:
-                    // one continuous dark well, full-width horizontal rule,
-                    // then GR HISTORY label/state and an unframed Canvas.
-                    // The rule is a divider, not an extra boxed DSP card.
-                    Rectangle {
-                        objectName: "m17GainReductionDivider"
-                        visible: root.showLimiterGrHistory
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 1
-                        Layout.minimumHeight: 1
-                        color: Qt.alpha(root.familyAccent, 0.45)
                     }
                     ColumnLayout {
                         id: grHistory
