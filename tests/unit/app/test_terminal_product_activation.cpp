@@ -440,6 +440,48 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     vm.setBypass(false);
     QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
 
+    // Cancel only an ACTIVE preparation; the stale worker must never
+    // publish a candidate after cancellation or replace the MANUAL sink.
+    vm.requestPrepare();
+    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing audio"));
+    vm.cancelPreparation();
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!product.private_id());
+    QVERIFY(!candidates.staged());
+    QTest::qWait(75); // Let an already-running worker attempt stale delivery.
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+
+    // A SOURCE seek during a minute-long Prepare is NOT a new PCM owner:
+    // the completed handoff must use the latest live source cue and loop.
+    // This is preparation/cue safety, NOT yet cached MANUAL/M17 A/B.
+    vm.requestPrepare();
+    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing audio"));
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{2200}));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(transport.source_display_snapshot().value()->position,
+             core::FrameIndex{2200});
+    vm.previewPrepared();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QVERIFY(coordinator.device_active());
+    QCOMPARE(transport.source_display_snapshot().value()->loop,
+             std::optional{*region.value()});
+    vm.setBypass(true);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(device->position,core::FrameIndex{2200});
+    QCOMPARE(device->loop,std::optional{*region.value()});
+    QVERIFY(!product.private_id());
+    QVERIFY(!candidates.staged());
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+
     // PAUSED stays paused while preparing; Preview Prepared installs an
     // OUTPUT_RATE owner only after an explicit request.
     QVERIFY(transport.seek_source_frame(core::FrameIndex{2600}));
