@@ -84,25 +84,42 @@ def main():
         if args.qt_smoke_log.is_file():
             rows = args.qt_smoke_log.read_text(
                 encoding="utf-8", errors="replace").splitlines()
-            qt_pattern = re.compile(
-                r"FAIL!|QFATAL|QWARN|Loc:|Actual|Expected|"
-                r"ASSERT|Exception|Fatal error|Unable to assign|"
-                r"ReferenceError|TypeError|QQmlComponent: Component is not ready",
+            # Qt -v2 prints hundreds of harmless QWARN/INFO lines before
+            # the *actual* QtTest FAIL! line on Windows virtual displays.
+            # Failures MUST come FIRST, independently of file position.
+            # Never upload/read the complete runner-local QtTest log.
+            fatal = re.compile(
+                r"FAIL!|QFATAL|ASSERT|Fatal error|QQmlComponent: Component is not ready",
                 re.IGNORECASE)
-            indexes = set()
-            for i, line in enumerate(rows):
-                if qt_pattern.search(line):
-                    indexes.update(range(i, min(i + 3, len(rows))))
-            shown = 0
-            for i in sorted(indexes):
-                # Context helps locate a failure, but never copy PASS spam.
-                if rows[i].lstrip().startswith("PASS"):
+            related = re.compile(
+                r"Loc:|Actual|Expected|ReferenceError|TypeError|Unable to assign",
+                re.IGNORECASE)
+            warn = re.compile(r"QWARN", re.IGNORECASE)
+            focus = [i for i, line in enumerate(rows) if fatal.search(line)]
+            failure_lines = set()
+            for i in focus[:8]:
+                failure_lines.update(range(max(0, i - 1), min(len(rows), i + 5)))
+            # Limit to 20 priority lines (incl. relevant adjacent Loc and
+            # Expected), and only 5 warnings when no failure was captured.
+            priority = [i for i in sorted(failure_lines)
+                        if not rows[i].lstrip().startswith("PASS")]
+            priority.extend(i for i, line in enumerate(rows)
+                            if related.search(line)
+                            and not rows[i].lstrip().startswith("PASS")
+                            and i not in failure_lines)
+            seen = set()
+            for i in priority:
+                if i in seen or len(seen) >= 24:
                     continue
+                seen.add(i)
                 result.append(f"QT{i + 1}: {rows[i][:190]}")
-                shown += 1
-                if shown >= 35:
-                    break
-            if not indexes:
+            if not focus:
+                for i, line in enumerate(rows):
+                    if warn.search(line):
+                        result.append(f"QT{i + 1}: {line[:190]}")
+                        if sum(1 for s in result if s.startswith("QT")) >= 5:
+                            break
+            if not focus and not any(s.startswith("QT") for s in result):
                 result.append("No QtTest failure-pattern lines found.")
         else:
             result.append("Direct Qt UI smoke local log unavailable.")

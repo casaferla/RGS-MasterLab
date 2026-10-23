@@ -40,6 +40,21 @@ def main() -> None:
         assert "unrelated success" not in result, "unfiltered PASS data leaked"
         assert "Local CTest LastTest.log unavailable." in result
         assert "Direct Qt UI smoke — RUNNER FILTERED" in result
+        # Reproduce #714's actual symptom: hundreds of early QWARN/INFO
+        # matches hid the one useful FAIL! in the old first-35 filter.
+        qt.write_text(
+            ("QWARN : UiSmoke::noise() window geometry warning\\n" * 140)
+            + ("INFO : UiSmoke::noise() QVERIFY(control)\\n" * 40)
+            + "FAIL!  : UiSmoke::m16m17Parity() Compared values are not the same.\\n"
+            + "   Actual (a): QRectF(1,2,3,4)\\n"
+            + "   Expected (b): QRectF(5,6,7,8)\\n"
+            + "   Loc: [test_source_metadata_panel.cpp(3000)]\\n",
+            encoding="utf-8",
+        )
+        late = run_summary(temp, qt)
+        assert "FAIL!" in late and "m16m17Parity" in late
+        assert "Actual" in late and "Expected" in late and "Loc:" in late
+        assert late.count("QWARN") == 0, "Warnings outranked fatal assertion"
         missing = run_summary(temp, temp / "not-present.txt")
         assert "Direct Qt UI smoke local log unavailable." in missing
         assert "FAIL!" not in missing

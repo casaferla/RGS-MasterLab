@@ -455,7 +455,14 @@ jobs:
           & build/windows-ninja-cache/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
           $exitCode = $LASTEXITCODE
           if (Test-Path $log) {
-              Get-Content $log
+              # Never print the whole QtTest log to GitHub Actions. Keep
+              # high-priority FAIL!/QFATAL assertions (max 8) on the runner;
+              # the failure-only artifact is generated independently later.
+              $critical = @(Select-String -Path $log -Pattern 'FAIL!', 'QFATAL', 'ASSERT', 'Fatal error' | Select-Object -First 8)
+              foreach ($hit in $critical) {
+                  Write-Host ("QT_SMOKE_CRITICAL_LINE_{0}: {1}" -f $hit.LineNumber, $hit.Line.Substring(0, [Math]::Min(200, $hit.Line.Length)))
+              }
+              if ($critical.Count -eq 0) { Write-Host "QT_SMOKE_NO_CRITICAL_ASSERTION" }
           } else {
               Write-Host "M12B_SMOKE_LOG_NOT_CREATED"
           }
