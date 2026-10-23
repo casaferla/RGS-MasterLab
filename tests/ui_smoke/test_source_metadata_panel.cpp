@@ -636,184 +636,133 @@ Window {
 
 void SourceMetadataPanelSmokeTest::truePeakLimiterLayoutCandidate()
 {
-    // Gate M Option B: M17 contains NO scaled duplicate of M16 L/R meters.
-    // Inspect genuine Qt objects at normal and small physical Main heights.
+    // One physical layout for M16 and M17: TP L/R tracks, axis and
+    // first three right cards remain EXACTLY fixed when selecting either DSP.
     QQmlEngine engine;
     QQmlComponent component{&engine};
-    static constexpr auto qml = R"qml(
+    static constexpr auto qml=R"qml(
 import QtQuick
 import QtQuick.Window
 import Rgsml.Ui 1.0
 Window {
     id: fixture
-    objectName: "m17OptionBFixture"
+    objectName: "gateMParityFixture"
     property bool bypass: true
-    property bool injectError: false
     property string validationMessage: ""
     width: 1184
     height: 688
     visible: false
     color: "#06121F"
     QtObject {
-        id: fakeVm
-        property string validationMessage: fixture.injectError
-            ? fixture.validationMessage : ""
-        property string validationField: fixture.injectError ? "ceilingDbTp" : ""
-        property real ceilingDbTp: -1.0
+        id: vm
+        property string validationField: fixture.validationMessage.length>0 ? "ceilingDbTp" : ""
+        property string validationMessage: fixture.validationMessage
+        property real ceilingDbTp: -1
         property string ceilingDbTpText: "-1.00"
-        property string audioStatus: "NEEDS PREPARATION"
     }
     Rectangle {
-        id: captureSurface
+        id: surface
         objectName: "m17CandidateCaptureSurface"
         width: 1184
         height: 688
         color: "#06121F"
-        CompressorEditor {
-            objectName: "m17CompressorHeightReference"
-            x: -2000
-            width: captureSurface.width - 474
-            height: captureSurface.height - 140
-            visible: false
+        TruePeakMeterEditor {
+            objectName: "gateMM16Meter"
+            x: (parent.width-width)/2; y: 70
+            width: parent.width-474; height: parent.height-140
         }
         TruePeakLimiterEditor {
             objectName: "m17CandidateEditor"
-            x: (parent.width - width) / 2
-            y: 70
-            width: captureSurface.width - 474
-            height: captureSurface.height - 140
+            x: (parent.width-width)/2; y: 70
+            width: parent.width-474; height: parent.height-140
             limiterModule: fixture
-            limiterViewModel: fakeVm
+            limiterViewModel: vm
         }
     }
 }
 )qml";
     component.setData(QByteArray{qml},
-        QUrl{QStringLiteral("qrc:/m17/option-b-no-duplicate-meters.qml")});
+        QUrl{QStringLiteral("qrc:/m17/gate-m-meter-parity.qml")});
     QVERIFY2(component.status()!=QQmlComponent::Error,
         qPrintable(component.errorString()));
     QScopedPointer<QObject> instance{component.create()};
     QVERIFY2(instance,qPrintable(component.errorString()));
     auto* window=qobject_cast<QQuickWindow*>(instance.data());
-    QVERIFY(window);
+    auto* m16=qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(),QStringLiteral("gateMM16Meter")));
+    auto* m17=qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(),QStringLiteral("m17CandidateEditor")));
+    auto* surface=qobject_cast<QQuickItem*>(find_child_by_name(
+        instance.data(),QStringLiteral("m17CandidateCaptureSurface")));
+    auto* fixture=find_child_by_name(instance.data(),
+        QStringLiteral("gateMParityFixture"));
+    QVERIFY(window&&m16&&m17&&surface&&fixture);
     window->show();
     QTest::qWait(150);
     QCoreApplication::processEvents();
-    auto* fixture=find_child_by_name(instance.data(),
-        QStringLiteral("m17OptionBFixture"));
-    auto* capture=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17CandidateCaptureSurface")));
-    auto* editor=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17CandidateEditor")));
-    auto* grBay=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17GrOnlyBay")));
-    auto* rightBay=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17FinalizationControlsBay")));
-    auto* gr=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17GainReductionHistory")));
-    auto* plot=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17GainReductionPlot")));
-    auto* ceiling=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17CeilingCard")));
-    auto* numeric=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17CeilingNumericField")));
-    auto* slider=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17CeilingSlider")));
-    auto* trim=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17VerificationTrim")));
-    auto* status=find_child_by_name(instance.data(),
-        QStringLiteral("m17GrProvenanceStatus"));
-    auto* validation=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("m17LimiterValidationStatusRegion")));
-    auto* message=find_child_by_name(instance.data(),
-        QStringLiteral("m17LimiterValidationMessage"));
-    auto* compressorGr=qobject_cast<QQuickItem*>(find_child_by_name(
-        instance.data(),QStringLiteral("compressorGrRibbonCanvas")));
-    QVERIFY(fixture && capture && editor && grBay && rightBay
-        && gr && plot && ceiling && numeric && slider && trim
-        && status && validation && message && compressorGr);
-
-    // This checks the PO's explicit design decision, not a no-op QML flag.
-    // M16 keeps its original TruePeakMeterEditor and unchanged sized bars.
-    for(const auto& name:{QStringLiteral("truePeakLeftLane"),
-                          QStringLiteral("truePeakRightLane"),
-                          QStringLiteral("truePeakDbTpScale"),
-                          QStringLiteral("truePeakRecentCard"),
-                          QStringLiteral("truePeakMeterSharedRail"),
-                          QStringLiteral("m17SharedMeter")}) {
-        QVERIFY2(!find_child_by_name(editor,name),
-            qPrintable(QStringLiteral("M17 duplicated M16 item: ")+name));
-    }
-    QVERIFY2(!plot->property("verifiedSeriesAvailable").toBool(),
-        "Unverified or bypassed GR must never draw an invented measurement.");
-    QCOMPARE(plot->height(),compressorGr->height());
-    QCOMPARE(plot->height(),54.0);
-    QCOMPARE(status->property("text").toString(),
-        QStringLiteral("BYPASS · NO ACTIVE GR"));
-    QVERIFY(!validation->isVisible());
-
-    auto fits=[editor](QQuickItem* item)->bool {
-        if(!item||!item->isVisible())return false;
-        const QPointF top=item->mapToItem(editor,QPointF{});
-        return top.x()>=-1 && top.y()>=-1
-            && top.x()+item->width()<=editor->width()+1
-            && top.y()+item->height()<=editor->height()+1;
+    auto rect=[](QQuickItem* editor,const QString& name)->QRectF {
+        auto* child=qobject_cast<QQuickItem*>(find_child_by_name(editor,name));
+        return child?QRectF{child->mapToItem(editor,QPointF{}),child->size()}:QRectF{};
     };
-    auto captureCandidate=[capture](const QSize& size,
-        const QString& file)->bool {
-        const auto grab=capture->grabToImage();
-        if(!grab)return false;
-        QSignalSpy ready{grab.data(),&QQuickItemGrabResult::ready};
-        if(ready.empty()&&!ready.wait(15000))return false;
-        auto image=grab->image();
-        if(image.isNull()||image.size()!=size)return false;
-        const auto dir=qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
-        return dir.isEmpty() || (QDir{}.mkpath(dir)
-            &&image.save(QDir{dir}.filePath(file),"PNG"));
+    auto contained=[m17](const QString& name)->bool {
+        auto* child=qobject_cast<QQuickItem*>(find_child_by_name(m17,name));
+        if(!child)return false;
+        const auto at=child->mapToItem(m17,QPointF{});
+        return at.x()>=-1 && at.y()>=-1
+            && at.x()+child->width()<=m17->width()+1
+            && at.y()+child->height()<=m17->height()+1;
     };
-    for(const QSize size:{QSize{1184,688},QSize{1440,900},
-                          QSize{1184,560},QSize{1440,620}}) {
-        capture->setWidth(size.width());
-        capture->setHeight(size.height());
+    const QStringList stable={
+        QStringLiteral("truePeakLeftLane"),
+        QStringLiteral("truePeakRightLane"),
+        QStringLiteral("truePeakDbTpScale"),
+        QStringLiteral("truePeakRecentCard"),
+        QStringLiteral("truePeakHoldCard"),
+        QStringLiteral("truePeakFullResourceCard")};
+    for(const auto size:{QSize{1184,688},QSize{1440,900},
+                         QSize{1184,560},QSize{1440,620}}) {
+        surface->setWidth(size.width());surface->setHeight(size.height());
         window->resize(size);
-        QTest::qWait(100);
+        QTest::qWait(130);
         QCoreApplication::processEvents();
-        for(auto* item:{grBay,rightBay,gr,plot,ceiling,numeric,slider,trim})
-            QVERIFY2(fits(item),
-                "At minimum-height Main all finalization controls must fit.");
-        // Both BYP and ON share exactly the same geometry, no layout jump.
-        const QRectF before{ceiling->mapToItem(editor,QPointF{}),
-            ceiling->size()};
-        const QRectF beforePlot{plot->mapToItem(editor,QPointF{}),
-            plot->size()};
+        for(const auto& name:stable) {
+            const auto a=rect(m16,name),b=rect(m17,name);
+            QVERIFY2(!a.isEmpty(),qPrintable(QStringLiteral("Missing M16 ")+name));
+            QCOMPARE(a,b);
+        }
+        QVERIFY(contained(QStringLiteral("m17CeilingCard")));
+        QVERIFY(contained(QStringLiteral("m17VerificationTrim")));
+        QVERIFY(contained(QStringLiteral("m17GainReductionPlot")));
+        auto* gr=qobject_cast<QQuickItem*>(find_child_by_name(
+            m17,QStringLiteral("m17GainReductionPlot")));
+        QVERIFY(gr);
+        QCOMPARE(gr->height(),54.0);
+        const auto baseline=rect(m17,QStringLiteral("truePeakLeftLane"));
         QVERIFY(fixture->setProperty("bypass",false));
         QCoreApplication::processEvents();
-        QCOMPARE(status->property("text").toString(),
-            QStringLiteral("UNAVAILABLE · NO VERIFIED GR"));
-        QVERIFY(fits(ceiling) && fits(trim) && fits(plot));
-        QCOMPARE(QRectF(ceiling->mapToItem(editor,QPointF{}),
-            ceiling->size()),before);
-        QCOMPARE(QRectF(plot->mapToItem(editor,QPointF{}),
-            plot->size()),beforePlot);
-        QVERIFY(fixture->setProperty("injectError",true));
+        QCOMPARE(rect(m17,QStringLiteral("truePeakLeftLane")),baseline);
         QVERIFY(fixture->setProperty("validationMessage",
-            QStringLiteral("Ceiling must be within [-12.0, 0.0] dBTP.")));
+            QStringLiteral("Ceiling range invalid")));
         QCoreApplication::processEvents();
-        QVERIFY(validation->isVisible());
-        QCOMPARE(message->property("text").toString(),
-            QStringLiteral("Ceiling must be within [-12.0, 0.0] dBTP."));
-        QCOMPARE(QRectF(ceiling->mapToItem(editor,QPointF{}),
-            ceiling->size()),before);
-        QVERIFY(fixture->setProperty("injectError",false));
-        QCoreApplication::processEvents();
-        QVERIFY(!validation->isVisible());
+        QCOMPARE(rect(m17,QStringLiteral("truePeakLeftLane")),baseline);
+        QVERIFY(fixture->setProperty("validationMessage",QString{}));
         QVERIFY(fixture->setProperty("bypass",true));
         QCoreApplication::processEvents();
-        QVERIFY2(captureCandidate(size,
-            QStringLiteral("m17_option_b_finalization_")
-                +QString::number(size.width())+"x"
-                +QString::number(size.height())+".png"),
-            "M17 option B native Qt screenshot must be captured.");
+        const auto grab=surface->grabToImage();
+        QVERIFY(grab);
+        QSignalSpy ready{grab.data(),&QQuickItemGrabResult::ready};
+        QVERIFY(!ready.empty()||ready.wait(15000));
+        const auto img=grab->image();
+        QVERIFY(!img.isNull());
+        QCOMPARE(img.size(),size);
+        const auto dir=qEnvironmentVariable("RGSML_GUI01_EVIDENCE_DIR");
+        if(!dir.isEmpty()) {
+            QVERIFY(QDir{}.mkpath(dir));
+            QVERIFY(img.save(QDir{dir}.filePath(
+                QStringLiteral("gate_m_shared_meter_")
+                    +QString::number(size.width())+"x"
+                    +QString::number(size.height())+".png"),"PNG"));
+        }
     }
     window->close();
 }

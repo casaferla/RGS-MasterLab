@@ -31,7 +31,7 @@ Item {
             + root.measurementProvider.realizationText + "\n"
             + root.measurementProvider.sampleRateText
         : "NO SOURCE\nNO QUALIFIED MEASUREMENT\nNO PUBLISHED REALIZATION\n—"
-    property bool showProvenanceTooltips: framedForLimiter
+    property bool showProvenanceTooltips: true
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     readonly property bool hasMeasurement: measurementProvider
@@ -45,7 +45,7 @@ Item {
     Rectangle {
         objectName: "truePeakSharedRailFrame"
         anchors.fill: parent
-        visible: root.framedForLimiter
+        visible: true
         radius: 8
         color: "#0A1C2D"
         border.color: root.familyAccent
@@ -59,30 +59,28 @@ Item {
         objectName: "truePeakSharedRailContents"
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: root.framedForLimiter ? parent.top : undefined
-        anchors.bottom: root.framedForLimiter ? parent.bottom : undefined
-        anchors.verticalCenter: root.framedForLimiter ? undefined : parent.verticalCenter
-        anchors.margins: root.limiterControlsIncluded ? 9
-            : root.framedForLimiter ? 8 : 0
-        height: root.framedForLimiter ? undefined : implicitHeight
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.verticalCenter: undefined
+        anchors.margins: 8
+        height: undefined
         // M17 lower band (198px) + three 100px reflow cards must fit the
         // 548px minimum editor height with TWO nonzero centering springs.
         // Six outer gaps at 4px fit; at 6px they exhaust the min-height
         // free space. Keep the standalone M16 spacing untouched.
-        spacing: root.limiterControlsIncluded ? 4
-            : root.framedForLimiter ? 6 : root.compactRail ? 3 : 10
+        spacing: 4
         // This upper spacer and its lower twin share extra height equally.
         Item {
             objectName: "m17ReadoutUpperSpacer"
-            visible: root.limiterControlsIncluded
-            Layout.fillHeight: root.limiterControlsIncluded
+            visible: false
+            Layout.fillHeight: false
             Layout.preferredHeight: 0
             Layout.minimumHeight: 0
         }
 
         TruePeakReadoutCard {
             objectName: "truePeakRecentCard"
-            roomyLimiterReadout: root.limiterControlsIncluded
+            roomyLimiterReadout: true
             additionalTooltip: root.limiterControlsIncluded
                 ? root.provenanceDetails : ""
             detailTooltipEnabled: root.showProvenanceTooltips
@@ -90,10 +88,9 @@ Item {
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight
-                : root.compactRail ? 68 : 108
-            Layout.maximumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : -1
-            Layout.minimumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : 66
+            Layout.preferredHeight: root.m17ReadoutHeight
+            Layout.maximumHeight: root.m17ReadoutHeight
+            Layout.minimumHeight: root.m17ReadoutHeight
             heading: "RECENT / LIVE TRUE PEAK"
             reading: root.liveProvider && root.liveProvider.recentAvailable
                 ? root.liveProvider.peakText : "UNAVAILABLE"
@@ -104,7 +101,7 @@ Item {
         }
         TruePeakReadoutCard {
             objectName: "truePeakHoldCard"
-            roomyLimiterReadout: root.limiterControlsIncluded
+            roomyLimiterReadout: true
             additionalTooltip: root.limiterControlsIncluded
                 ? root.provenanceDetails : ""
             detailTooltipEnabled: root.showProvenanceTooltips
@@ -112,10 +109,9 @@ Item {
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight
-                : root.compactRail ? 68 : 108
-            Layout.maximumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : -1
-            Layout.minimumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : 66
+            Layout.preferredHeight: root.m17ReadoutHeight
+            Layout.maximumHeight: root.m17ReadoutHeight
+            Layout.minimumHeight: root.m17ReadoutHeight
             heading: "SHORT HOLD / 1 SECOND"
             keyColor: "#F2C66F"
             valueColor: "#F2C66F"
@@ -128,7 +124,7 @@ Item {
         }
         TruePeakReadoutCard {
             objectName: "truePeakFullResourceCard"
-            roomyLimiterReadout: root.limiterControlsIncluded
+            roomyLimiterReadout: true
             additionalTooltip: root.limiterControlsIncluded
                 ? root.provenanceDetails : ""
             detailTooltipEnabled: root.showProvenanceTooltips
@@ -136,10 +132,9 @@ Item {
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
-            Layout.preferredHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight
-                : root.compactRail ? 68 : 108
-            Layout.maximumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : -1
-            Layout.minimumHeight: root.limiterControlsIncluded ? root.m17ReadoutHeight : 66
+            Layout.preferredHeight: root.m17ReadoutHeight
+            Layout.maximumHeight: root.m17ReadoutHeight
+            Layout.minimumHeight: root.m17ReadoutHeight
             // The complete-source M16 analysis does NOT become a complete
             // post-M17 peak certificate when Ceiling changes. Keep it
             // independent from verified post-limiter RECENT/HOLD evidence.
@@ -159,7 +154,7 @@ Item {
         }
         TruePeakStatusCard {
             objectName: "truePeakProvenanceCard"
-            visible: !root.limiterControlsIncluded
+            visible: false
             detailTooltipEnabled: root.showProvenanceTooltips
             Layout.fillHeight: root.framedForLimiter && !root.limiterControlsIncluded
             useFamilyAccent: root.useFamilyAccent
@@ -178,24 +173,11 @@ Item {
             formatLabel: root.measurementProvider
                 ? root.measurementProvider.sampleRateText : "—"
         }
-        Text {
-            visible: !root.limiterControlsIncluded
-            text: "RECENT requires exact sink-consumed PROCESSED ownership. "
-                + "Unproven SRC/handoff or loop boundary = UNAVAILABLE; verified loop interior = LIVE. Gate G OPEN."
-            color: "#91A8B7"
-            font.family: "Segoe UI"
-            font.pixelSize: 10
-            wrapMode: Text.WordWrap
-            // Keep the provenance note visibly below the card at
-            // canonical minimum height without resizing the card itself.
-            Layout.topMargin: root.framedForLimiter ? 1 : root.compactRail ? 8 : 10
-            Layout.fillWidth: true
-        }
         // A second spring centers all three readouts IN THE UPPER AREA.
         Item {
             objectName: "m17ReadoutLowerSpacer"
-            visible: root.limiterControlsIncluded
-            Layout.fillHeight: root.limiterControlsIncluded
+            visible: false
+            Layout.fillHeight: false
             Layout.preferredHeight: 0
             Layout.minimumHeight: 0
         }
@@ -278,8 +260,8 @@ Item {
                 Layout.preferredHeight: root.m17TrimHeight
                 Layout.minimumHeight: root.m17TrimHeight
                 radius: 6
-                color: "#081521"
-                border.color: root.familyAccent
+                color: "transparent"
+                border.width: 0
                 opacity: root.limiterBypassed ? 0.5 : 1.0
                 ColumnLayout {
                     anchors.fill: parent

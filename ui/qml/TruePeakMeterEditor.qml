@@ -10,7 +10,7 @@ Item {
     property var measurementProvider: null
     property var liveProvider: null
     // M17 opts into compact and family theme; M16 defaults remain unchanged.
-    property bool compactForLimiter: false
+    property bool compactForLimiter: true
     // M17 only: Compressor-like GR ribbon in the left meter well. The
     // standalone M16 Meter keeps its original uninterrupted geometry.
     property bool showLimiterGrHistory: false
@@ -28,10 +28,9 @@ Item {
     // Preserve 198px at the canonical 548px editor, but do not force
     // readout cards outside the short physical Main window. This is
     // vertical-only compression; stereo L/R meter gets all spare height.
-    readonly property int lowerControlBandHeight: root.showLimiterControls
-        ? (height < 420 ? Math.max(132, Math.round(height * 0.36))
-            : Math.min(198, Math.max(145, Math.round(height * 0.365))))
-        : 198
+    readonly property int lowerControlBandHeight: height < 420
+        ? Math.max(132, Math.round(height * 0.36))
+        : Math.min(198, Math.max(145, Math.round(height * 0.365)))
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     // The large channel bars are LIVE-only: a whole-resource future maximum
@@ -64,13 +63,13 @@ Item {
     RowLayout {
         objectName: "truePeakContentLayout"
         anchors.fill: parent
-        spacing: root.compactForLimiter ? 8 : 10
+        spacing: 10
 
             Rectangle {
                 id: meterBay
                 objectName: "truePeakStaticMeterBay"
                 Layout.fillWidth: true
-                Layout.minimumWidth: root.compactForLimiter ? 270 : 340
+                Layout.minimumWidth: 270
                 Layout.fillHeight: true
                 radius: 8
                 color: "#0A1C2D"
@@ -92,17 +91,17 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        spacing: root.compactForLimiter ? 6 : 12
+                        spacing: 12
                         Item { Layout.fillWidth: true }
                         TruePeakStaticLane {
                             objectName: "truePeakLeftLane"
                             Layout.fillHeight: true
-                            Layout.minimumHeight: root.compactForLimiter ? 140 : 270
-                            Layout.preferredWidth: root.compactForLimiter ? 117 : 135
+                            Layout.minimumHeight: 140
+                            Layout.preferredWidth: 117
                             channelName: root.isMono ? "C" : "L"
                             useFamilyAccent: root.useFamilyAccent
                             familyAccent: root.familyAccent
-                            compactVertical: root.compactForLimiter
+                            compactVertical: true
                             // Same BYP Meter L/R palette even when surrounding
                             // M17 editor/chrome is Dynamics Copper.
                             preserveMeterBarPalette: root.showLimiterControls
@@ -121,13 +120,13 @@ Item {
                         TruePeakStaticLane {
                             objectName: "truePeakRightLane"
                             Layout.fillHeight: true
-                            Layout.minimumHeight: root.compactForLimiter ? 140 : 270
-                            Layout.preferredWidth: root.compactForLimiter ? 117 : 135
+                            Layout.minimumHeight: 140
+                            Layout.preferredWidth: 117
                             visible: !root.isMono
                             channelName: "R"
                             useFamilyAccent: root.useFamilyAccent
                             familyAccent: root.familyAccent
-                            compactVertical: root.compactForLimiter
+                            compactVertical: true
                             // Same BYP Meter L/R palette even when surrounding
                             // M17 editor/chrome is Dynamics Copper.
                             preserveMeterBarPalette: root.showLimiterControls
@@ -151,25 +150,25 @@ Item {
                         }
                         Item { Layout.fillWidth: true }
                     }
-                    Text {
-                        text: "Coral fill > 0 dBTP · amber = 1 s HOLD · grey = 0 dBTP reference (not Ceiling)"
-                        color: "#8EAAB9"
-                        font.family: "Segoe UI"
-                        font.pixelSize: 10
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                    }
-                    Text {
-                        text: root.liveProvider && root.liveProvider.monitoringAttempted
-                            ? "RECENT 100 ms · " + root.liveProvider.statusText
-                            : "RECENT 100 ms · NOT MONITORED"
-                        color: "#8EAAB9"
-                        font.family: "Segoe UI"
-                        font.pixelSize: 10
-                        Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
-                    }
 
+                    // M16: authoritative provenance in the SAME lower-band
+                    // height where M17 shows authentic gain reduction.
+                    TruePeakStatusCard {
+                        objectName: "truePeakProvenanceCard"
+                        visible: !root.showLimiterControls
+                        Layout.fillWidth: true
+                        Layout.minimumHeight: root.showLimiterControls ? 0 : root.lowerControlBandHeight
+                        Layout.preferredHeight: root.showLimiterControls ? 0 : root.lowerControlBandHeight
+                        Layout.maximumHeight: root.showLimiterControls ? 0 : root.lowerControlBandHeight
+                        stateLabel: root.measurementProvider
+                            ? root.measurementProvider.stateText : "NO SOURCE"
+                        qualification: root.measurementProvider
+                            ? root.measurementProvider.qualificationText : "NO QUALIFIED MEASUREMENT"
+                        identity: root.measurementProvider
+                            ? root.measurementProvider.realizationText : "NO PUBLISHED REALIZATION"
+                        formatLabel: root.measurementProvider
+                            ? root.measurementProvider.sampleRateText : "—"
+                    }
                     // Deliberately the SAME visual grammar as Compressor:
                     // one continuous dark well, full-width horizontal rule,
                     // then GR HISTORY label/state and an unframed Canvas.
@@ -192,12 +191,9 @@ Item {
                         // window height. Only the GRAPH is the Compressor's
                         // fixed 54px: a flexible upper clearance keeps
                         // the waveform low and leaves extra growth to L/R.
-                        Layout.minimumHeight: root.showLimiterControls
-                            ? root.lowerControlBandHeight : implicitHeight
-                        Layout.preferredHeight: root.showLimiterControls
-                            ? root.lowerControlBandHeight : implicitHeight
-                        Layout.maximumHeight: root.showLimiterControls
-                            ? root.lowerControlBandHeight : implicitHeight
+                        Layout.minimumHeight: root.showLimiterGrHistory ? root.lowerControlBandHeight : 0
+                        Layout.preferredHeight: root.showLimiterGrHistory ? root.lowerControlBandHeight : 0
+                        Layout.maximumHeight: root.showLimiterGrHistory ? root.lowerControlBandHeight : 0
                         spacing: 2
                         opacity: root.limiterBypassed ? 0.5 : 1.0
                         Item {
@@ -259,15 +255,15 @@ Item {
             TruePeakSharedRail {
                 id: rail
                 objectName: "truePeakMeterSharedRail"
-                Layout.minimumWidth: root.compactForLimiter ? 225 : 278
-                Layout.preferredWidth: root.compactForLimiter ? 225 : 318
-                Layout.maximumWidth: root.compactForLimiter ? 240 : 330
+                Layout.minimumWidth: 225
+                Layout.preferredWidth: 240
+                Layout.maximumWidth: 260
                 Layout.fillHeight: true
                 measurementProvider: root.measurementProvider
                 liveProvider: root.liveProvider
                 useFamilyAccent: root.useFamilyAccent
                 familyAccent: root.familyAccent
-                framedForLimiter: root.compactForLimiter
+                framedForLimiter: true
                 limiterControlsIncluded: root.showLimiterControls
                 limiterViewModel: root.limiterViewModel
                 limiterBypassed: root.limiterBypassed
