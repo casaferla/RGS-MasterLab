@@ -3427,7 +3427,7 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
               "super_mean_ns,super_p99_ns,super_max_ns,"
               "half_mean_ns,half_p99_ns,half_max_ns,"
               "paired_speed_ratio,half_over_super_ratio,exact_paired,"
-              "exact_attack_floor,
+              "exact_attack_floor,"
               "exact_selected_event,exact_bounds\n";
     }
     std::size_t cases=0;
