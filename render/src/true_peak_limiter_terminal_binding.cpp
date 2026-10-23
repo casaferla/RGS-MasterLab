@@ -25,7 +25,8 @@ render_true_peak_limiter_bound_terminal_candidate(
     const dsp::ModuleRegistry& registry,
     core::FrameCount block_size,
     const TerminalRenderCancel& cancelled,
-    TerminalRenderStageTimings* stage_timings)
+    TerminalRenderStageTimings* stage_timings,
+    bool use_experimental_offline_accelerator)
 {
     // Mandatory exact terminal placement. A MANUAL Gain/EQ/Compressor/M15
     // chain can never masquerade as the last OUTPUT_RATE DSP segment.
@@ -62,7 +63,7 @@ render_true_peak_limiter_bound_terminal_candidate(
     const auto bypass = !instance.active();
     auto checked = render_true_peak_limiter_checked_candidate(
         input, *params, registry, block_size, bypass, cancelled,
-        stage_timings);
+        stage_timings,use_experimental_offline_accelerator);
     if (!checked) {
         return core::Result<TruePeakLimiterBoundTerminalCandidate>::failure(
             *checked.error());

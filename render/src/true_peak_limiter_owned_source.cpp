@@ -38,7 +38,8 @@ render_true_peak_limiter_owned_candidate_impl(
     core::FrameCount block,
     bool enable_unqualified_src,
     const TerminalRenderCancel& cancelled,
-    TerminalRenderStageTimings* stage_timings)
+    TerminalRenderStageTimings* stage_timings,
+    bool use_experimental_offline_accelerator)
 {
     using Candidate = TruePeakLimiterOwnedSourceCandidate;
     // Whole-programme stage diagnostics are captured on the worker thread.
@@ -137,7 +138,8 @@ render_true_peak_limiter_owned_candidate_impl(
     report(TerminalRenderProgressPhase::M17_CORE,0,
            output.value()->pcm.view().frame_count().value());
     auto candidate=render_true_peak_limiter_bound_terminal_candidate(
-        output.value()->pcm.view(),terminal_chain,bindings,registry,block,cancelled,stage_timings);
+        output.value()->pcm.view(),terminal_chain,bindings,registry,block,
+        cancelled,stage_timings,use_experimental_offline_accelerator);
     if(!candidate)
         return core::Result<Candidate>::failure(*candidate.error());
     if(cancelled && cancelled()) return cancelledResult();
@@ -162,12 +164,13 @@ render_true_peak_limiter_owned_same_rate_candidate(
     const dsp::ModuleRegistry& registry,
     core::FrameCount block,
     const TerminalRenderCancel& cancelled,
-    TerminalRenderStageTimings* stage_timings)
+    TerminalRenderStageTimings* stage_timings,
+    bool use_experimental_offline_accelerator)
 {
     return render_true_peak_limiter_owned_candidate_impl(
         std::move(manual),manual_chain,full_frames,manual_revision,
         output_rate,terminal_chain,bindings,registry,block,false,cancelled,
-        stage_timings);
+        stage_timings,use_experimental_offline_accelerator);
 }
 
 core::Result<TruePeakLimiterOwnedSourceCandidate>
@@ -182,12 +185,13 @@ render_true_peak_limiter_owned_output_rate_candidate(
     const dsp::ModuleRegistry& registry,
     core::FrameCount block,
     const TerminalRenderCancel& cancelled,
-    TerminalRenderStageTimings* stage_timings)
+    TerminalRenderStageTimings* stage_timings,
+    bool use_experimental_offline_accelerator)
 {
     return render_true_peak_limiter_owned_candidate_impl(
         std::move(manual),manual_chain,full_frames,manual_revision,
         output_rate,terminal_chain,bindings,registry,block,true,cancelled,
-        stage_timings);
+        stage_timings,use_experimental_offline_accelerator);
 }
 
 core::Result<TruePeakLimiterFinalMasterCandidate>

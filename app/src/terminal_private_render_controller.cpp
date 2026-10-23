@@ -87,7 +87,7 @@ void TerminalPrivateRenderController::worker_loop() {
             captured.manual_owner,job->manualChain,
             captured.full_source_frames,captured.manual_chain_revision,
             captured.output_rate,job->terminalChain,job->bindings,
-            registry_,job->block,cancelled,&stages);
+            registry_,job->block,cancelled,&stages,true);
         const auto finished=std::chrono::steady_clock::now();
         const auto queueMs=std::chrono::duration_cast<
             std::chrono::milliseconds>(started-job->enqueuedAt).count();

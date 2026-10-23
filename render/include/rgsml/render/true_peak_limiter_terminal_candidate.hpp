@@ -78,7 +78,8 @@ render_true_peak_limiter_terminal_candidate(
     core::FrameCount maximum_block_frames,
     bool bypassed,
     const TerminalRenderCancel& cancelled = {},
-    const TerminalRenderProgressSink& progress = {});
+    const TerminalRenderProgressSink& progress = {},
+    bool use_experimental_offline_accelerator = false);
 
  // A measurement is NOT official qualification, irrespective of numeric peak.
  // It is attached only to an ACTIVE, final M17 output-rate candidate.
@@ -111,7 +112,8 @@ render_true_peak_limiter_terminal_candidate(
      core::FrameCount maximum_block_frames,
      bool bypassed,
     const TerminalRenderCancel& cancelled = {},
-    TerminalRenderStageTimings* stage_timings = nullptr);
+    TerminalRenderStageTimings* stage_timings = nullptr,
+    bool use_experimental_offline_accelerator = false);
 
  
 // Tested but UNQUALIFIED bridge from the actual terminal-chain INSTANCE
@@ -136,7 +138,8 @@ render_true_peak_limiter_bound_terminal_candidate(
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames,
     const TerminalRenderCancel& cancelled = {},
-    TerminalRenderStageTimings* stage_timings = nullptr);
+    TerminalRenderStageTimings* stage_timings = nullptr,
+    bool use_experimental_offline_accelerator = false);
 
 
 // First identity-preserving candidate handoff from a complete, OWNED,
@@ -174,7 +177,8 @@ render_true_peak_limiter_owned_same_rate_candidate(
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames,
     const TerminalRenderCancel& cancelled = {},
-    TerminalRenderStageTimings* stage_timings = nullptr);
+    TerminalRenderStageTimings* stage_timings = nullptr,
+    bool use_experimental_offline_accelerator = false);
 
 // Experimental FULL-rate path: real complete SOURCE_RATE owner -> frozen
 // 44.1<->48 kHz FIR offline materialization -> exact typed M17 terminal.
@@ -192,7 +196,8 @@ render_true_peak_limiter_owned_output_rate_candidate(
     const dsp::ModuleRegistry& registry,
     core::FrameCount maximum_block_frames,
     const TerminalRenderCancel& cancelled = {},
-    TerminalRenderStageTimings* stage_timings = nullptr);
+    TerminalRenderStageTimings* stage_timings = nullptr,
+    bool use_experimental_offline_accelerator = false);
 
 
 // UNQUALIFIED FINAL-MASTER rate contract, independent of the Windows device.

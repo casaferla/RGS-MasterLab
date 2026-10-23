@@ -38,14 +38,16 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     core::FrameCount max_block,
     bool bypassed,
     const TerminalRenderCancel& cancelled,
-    TerminalRenderStageTimings* stage_timings)
+    TerminalRenderStageTimings* stage_timings,
+    bool use_experimental_offline_accelerator)
 {
     // No clock call inside the high-frequency DSP controller. These
     // boundaries measure complete real production stages, even on failures.
     const auto m17_started=std::chrono::steady_clock::now();
     auto rendered=render_true_peak_limiter_terminal_candidate(
         source,params,registry,max_block,bypassed,cancelled,
-        stage_timings ? stage_timings->progress : TerminalRenderProgressSink{});
+        stage_timings ? stage_timings->progress : TerminalRenderProgressSink{},
+        use_experimental_offline_accelerator);
     if(stage_timings)
         stage_timings->m17_core_us=std::chrono::duration_cast<
             std::chrono::microseconds>(

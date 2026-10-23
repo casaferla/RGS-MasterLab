@@ -3,6 +3,7 @@
 #include <rgsml/core/checked_integer.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/dsp/imodule.hpp>
+#include <rgsml/dsp/true_peak_limiter_offline_experimental.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -50,7 +51,8 @@ render_true_peak_limiter_terminal_candidate(
     FrameCount max_block,
     bool bypassed,
     const TerminalRenderCancel& cancelled,
-    const TerminalRenderProgressSink& progress)
+    const TerminalRenderProgressSink& progress,
+    bool use_experimental_offline_accelerator)
 {
     const auto interrupted=[]() {
         return Result<TruePeakLimiterTerminalCandidate>::failure(candidate_error(
@@ -136,6 +138,29 @@ render_true_peak_limiter_terminal_candidate(
                 ErrorCode::UnsupportedOperation, "M17_TERMINAL_LATENCY_CONTRACT",
                 "Terminal M17 must have an exact causal D-frame EOS drain."));
 
+        // Opt-in ONLY from explicit offline Prepare. The authentic typed
+        // factory/descriptor and D-frame requirements have been validated.
+        // The common renderer still demands full-resource M16 certification.
+        if(use_experimental_offline_accelerator) {
+            auto accelerated=dsp::render_m17_experimental_offline(
+                input,params,cancelled,
+                [&](std::int64_t done,std::int64_t total) {
+                    if(progress)progress({TerminalRenderProgressPhase::M17_CORE,
+                                          done,total});
+                });
+            if(!accelerated)
+                return Result<TruePeakLimiterTerminalCandidate>::failure(
+                    *accelerated.error());
+            if(accelerated.value()->delay_frames!=d
+                ||accelerated.value()->gain_frames.size()!=static_cast<std::size_t>(count))
+                return Result<TruePeakLimiterTerminalCandidate>::failure(
+                    candidate_error(ErrorCode::InvalidState,
+                        "M17_EXPERIMENTAL_OFFLINE_CONTRACT_MISMATCH",
+                        "Offline M17 candidate violated frozen output shape."));
+            return Result<TruePeakLimiterTerminalCandidate>::success({
+                std::move(accelerated.value()->pcm),
+                std::move(accelerated.value()->gain_frames),d,false});
+        }
         const auto rawCount = core::checked_add(count, d);
         if (!rawCount)
             return Result<TruePeakLimiterTerminalCandidate>::failure(*rawCount.error());
