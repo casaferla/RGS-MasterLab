@@ -177,6 +177,7 @@ private slots:
     void rejectWrongCeilingAndPropagateM16Failures();
     void actualM16ReverificationUsesOneGlobalStereoScalar();
     void renderedM17FullResourceMeasuredAndVerifiedByM16();
+    void acceleratedOfflinePrepareMatchesFrozenCheckedRenderer();
     void shortAndSplitEosDoesNotCreatePhantomPcm();
     void inactiveBypassIsZeroLatencyBitCopyAboveCeilingSixRates();
     void bypassAndEnabledLimiterAreObservablyDistinct();
@@ -386,6 +387,91 @@ void TruePeakLimiterVerificationTest::renderedM17FullResourceMeasuredAndVerified
                 }
     }
 }
+void TruePeakLimiterVerificationTest::acceleratedOfflinePrepareMatchesFrozenCheckedRenderer()
+{
+    // Same real production checked-candidate path and SAME final M16
+    // verification. Only this opt-in offline implementation is different.
+    // A mismatch is a hard regression: never publish the candidate.
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto block=core::FrameCount::create(2048);
+    QVERIFY(registry && block);
+    constexpr double pi=std::numbers::pi_v<double>;
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const bool stereo:{false,true}) {
+            constexpr int frames=768;
+            auto source=buffer(fs,stereo,frames);
+            for(std::size_t ch=0;ch<source.view().format().channel_count();++ch) {
+                auto lane=source.mutable_view().channel(ch);
+                QVERIFY(lane);
+                for(int n=0;n<frames;++n) {
+                    const double time=static_cast<double>(n)/fs;
+                    double sample=(ch==0?1.0:-1.0)*
+                        (0.84*std::sin(2.0*pi*701.0*time)
+                        +0.32*std::sin(2.0*pi*2803.0*time+0.37));
+                    if(n%223==0)sample+=ch==0?1.21:-1.16;
+                    if(n>=frames/4 && n<frames/3)sample=+0.0;
+                    if(n>=3*frames/4 && n<7*frames/8)sample=+0.0;
+                    (*lane.value())[static_cast<std::size_t>(n)]=sample;
+                }
+            }
+            for(const double ceiling:{-1.0,-12.0}) {
+                const auto params=dsp::TruePeakLimiterParameters::create(ceiling);
+                QVERIFY(params);
+                auto baseline=render::render_true_peak_limiter_checked_candidate(
+                    source.view(),*params.value(),*registry.value(),
+                    *block.value(),false,{},nullptr,false);
+                auto accelerated=render::render_true_peak_limiter_checked_candidate(
+                    source.view(),*params.value(),*registry.value(),
+                    *block.value(),false,{},nullptr,true);
+                QVERIFY2(baseline.has_value(),
+                    "Original exact M17 Prepare reference rejected input.");
+                QVERIFY2(accelerated.has_value(),
+                    "Accelerated offline Prepare rejected reference input.");
+                QVERIFY(baseline.value()->final_check.has_value());
+                QVERIFY(accelerated.value()->final_check.has_value());
+                const auto a=baseline.value()->terminal.compensated_pcm.view();
+                const auto b=accelerated.value()->terminal.compensated_pcm.view();
+                QCOMPARE(a.frame_count(),b.frame_count());
+                QCOMPARE(a.absolute_start_frame(),b.absolute_start_frame());
+                QCOMPARE(baseline.value()->terminal.algorithmic_latency_frames,
+                         accelerated.value()->terminal.algorithmic_latency_frames);
+                const auto& ga=baseline.value()->terminal.applied_gain_frames;
+                const auto& gb=accelerated.value()->terminal.applied_gain_frames;
+                QCOMPARE(ga.size(),static_cast<std::size_t>(frames));
+                QCOMPARE(gb.size(),ga.size());
+                for(int n=0;n<frames;++n) {
+                    const auto index=static_cast<std::size_t>(n);
+                    QCOMPARE(ga[index].programme_frame,gb[index].programme_frame);
+                    QCOMPARE(ga[index].raw_output_frame,gb[index].raw_output_frame);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(ga[index].gain),
+                        std::bit_cast<std::uint64_t>(gb[index].gain));
+                    QCOMPARE(std::bit_cast<std::uint64_t>(ga[index].reduction_db),
+                        std::bit_cast<std::uint64_t>(gb[index].reduction_db));
+                    for(std::size_t ch=0;ch<a.format().channel_count();++ch) {
+                        auto laneA=a.channel(ch);
+                        auto laneB=b.channel(ch);
+                        QVERIFY(laneA && laneB);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            (*laneA.value())[index]),
+                            std::bit_cast<std::uint64_t>(
+                            (*laneB.value())[index]));
+                    }
+                }
+                const auto& proofA=*baseline.value()->final_check;
+                const auto& proofB=*accelerated.value()->final_check;
+                QCOMPARE(proofA.trim_used,proofB.trim_used);
+                QCOMPARE(proofA.qualification_status,proofB.qualification_status);
+                QCOMPARE(std::bit_cast<std::uint64_t>(proofA.before_linear_peak),
+                    std::bit_cast<std::uint64_t>(proofB.before_linear_peak));
+                QCOMPARE(std::bit_cast<std::uint64_t>(proofA.after_linear_peak),
+                    std::bit_cast<std::uint64_t>(proofB.after_linear_peak));
+                QCOMPARE(std::bit_cast<std::uint64_t>(proofA.global_trim_gain),
+                    std::bit_cast<std::uint64_t>(proofB.global_trim_gain));
+            }
+        }
+    }
+}
+
 void TruePeakLimiterVerificationTest::shortAndSplitEosDoesNotCreatePhantomPcm()
 {
     // End-of-stream and compensated output are chunk-independent even when
