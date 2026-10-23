@@ -20,6 +20,8 @@ class TerminalLimiterViewModel final : public QObject {
     Q_PROPERTY(double draftCeilingDbTp READ draft_ceiling_db_tp NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
     Q_PROPERTY(QString audioStatus READ audio_status NOTIFY changed)
+    Q_PROPERTY(QString nonconformingPeakText READ nonconforming_peak_text NOTIFY changed)
+    Q_PROPERTY(QString nonconformingTargetText READ nonconforming_target_text NOTIFY changed)
     Q_PROPERTY(QString preparationStage READ preparation_stage NOTIFY changed)
     Q_PROPERTY(double preparationFraction READ preparation_fraction NOTIFY changed)
     Q_PROPERTY(bool preparationDeterminate READ preparation_determinate NOTIFY changed)
@@ -39,6 +41,8 @@ public:
     [[nodiscard]] double draft_ceiling_db_tp() const noexcept;
     [[nodiscard]] bool bypass() const noexcept;
     [[nodiscard]] QString audio_status() const {return audioStatus_;}
+    [[nodiscard]] QString nonconforming_peak_text() const {return nonconformingPeakText_;}
+    [[nodiscard]] QString nonconforming_target_text() const {return nonconformingTargetText_;}
     [[nodiscard]] QString preparation_stage() const {return preparationStage_;}
     [[nodiscard]] double preparation_fraction() const noexcept {return preparationFraction_;}
     [[nodiscard]] bool preparation_determinate() const noexcept {return preparationDeterminate_;}
@@ -65,6 +69,7 @@ public:
     // Fail-closed device/PCM transition error in the existing fixed footer.
     // Never replace the typed Ceiling range error with a fictitious success.
     void reportAudioError(const QString& message);
+    void setNonconformingObservation(double measured_db_tp,double target_db_tp);
     void setAudioStatus(const QString& value);
     void setPreparationProgress(const QString& stage,double fraction,
                                 bool determinate,const QString& eta = {});
@@ -91,6 +96,8 @@ private:
     QString validationMessage_;
     AcceptedStateChange stateChanged_;
     QString audioStatus_{QStringLiteral("BYPASS")};
+    QString nonconformingPeakText_;
+    QString nonconformingTargetText_;
     QString preparationStage_;
     double preparationFraction_{0.0};
     bool preparationDeterminate_{false};

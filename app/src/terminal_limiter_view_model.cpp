@@ -181,6 +181,16 @@ void TerminalLimiterViewModel::previewPrepared()
         emit previewRequested();
 }
 
+void TerminalLimiterViewModel::setNonconformingObservation(
+    double measuredDbTp,double targetDbTp)
+{
+    nonconformingPeakText_=QString::number(measuredDbTp,'f',2)
+        +QStringLiteral(" dBTP");
+    nonconformingTargetText_=QString::number(targetDbTp,'f',2)
+        +QStringLiteral(" dBTP");
+    emit changed();
+}
+
 void TerminalLimiterViewModel::previewNonconforming()
 {
     // A distinct affirmative action is mandatory for failed Ceiling.

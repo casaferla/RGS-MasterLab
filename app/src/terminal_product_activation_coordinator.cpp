@@ -537,6 +537,8 @@ void TerminalProductActivationCoordinator::private_session_changed()
         const double peak=20.0*std::log10(evidence.measured_linear_peak);
         // Honest, current and non-verifiable-as-success: true measured peak,
         // no automatic playback and no verified READY declaration.
+        view_->setNonconformingObservation(
+            peak,evidence.requested_ceiling_db_tp);
         view_->setPreparationProgress(
             QStringLiteral("Measured PCM retained · Ceiling not met"),0.99,false);
         view_->setAudioStatus(
