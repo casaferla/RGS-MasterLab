@@ -119,3 +119,34 @@ only. No PR54 or frozen M17 production code is modified.
 Do not promise a few seconds of whole-song preparation without
 a bounded full-resource worker+SRC+M16 benchmark on physical Windows.
 #701 is EXTENDED by design and retains all previous exact checks.
+
+
+## CI #701 — Scope correction required, algorithm unaffected
+
+Run #701: https://github.com/casaferla/RGS-MasterLab/actions/runs/39972021506.
+Windows SUCCESS, full 68-case CSV with bitwise PCM PASS and independent
+M16 outcome PASS in all 12 new long-input Prepare-proxy cases. At 8192
+frames, Windows ratios of production checked wall /
+(experimental core + independently timed M16):
+44.1k -12dBTP = **34.37x**; 48k -12 = **40.64x**;
+192k -12 = **111.36x**. All are potential speedups for
+experimental OUTPUT_RATE-only short proxies, not product Prepare
+full-song completion times. No verified physical 20-second WAV FQ.
+
+Linux failed the **QtTest 300,000ms per-function timeout** inside
+experimentalLongResourceRenderBenchmark(), not due to PCM mismatch,
+M16 ceiling failure or build error. The 12 long additional cases
+were bundled with the 56 previously passing tests in one QtTest function,
+so their cumulative cost exceeded the runner test budget.
+
+CI #702 restores the verified 48 legacy + 8 original short proxy
+cases and retains ONLY four extra severe-ceiling boundary probes:
+44.1 and 192kHz stereo, -12dBTP, at 4096/8192 frames.
+Total 60 cases, no changes to core, detector, controller, input
+waveform, M16 verifier, output, CI timeout or floating point.
+If this still exceeds 300s, split or separately gate diagnostic
+matrices rather than raise timeouts or weaken DSP oracles. Upon
+#702 green the next phase is Product Owner authorised, isolated
+production integration of the exact accelerated maths followed by
+Focused regression and manual Windows FQ. No more speculative
+algorithm micro-optimisation first.

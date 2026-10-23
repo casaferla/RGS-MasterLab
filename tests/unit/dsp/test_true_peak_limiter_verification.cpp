@@ -2583,7 +2583,7 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
                 && fs!=48000 && fs!=192000)
                 continue;
             if((probeFrames==4096 || probeFrames==8192)
-                && fs!=44100 && fs!=48000 && fs!=192000)
+                && (fs!=44100 && fs!=192000 || ceiling!=-12.0))
                 continue;
             const int nFrames=probeFrames!=0?probeFrames:
                 (fs==48000 && ceiling==-6.0 ? 32768
@@ -2892,7 +2892,7 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
             }
         }
     }
-    QCOMPARE(matrixCaseCount,std::size_t{68});
+    QCOMPARE(matrixCaseCount,std::size_t{60});
 }
 
 
