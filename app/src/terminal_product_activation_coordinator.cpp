@@ -230,7 +230,37 @@ void TerminalProductActivationCoordinator::commit_ready_output()
         &&source.value()->position.value()>=0
         &&source.value()->position.value()<=source.value()->duration.value();
     if(!stable) {
-        fail_closed(QStringLiteral("M17 handoff lost exact MANUAL source ownership."));
+        // Diagnostic only: preserve ALL frozen fail-closed ownership checks.
+        // Distinguish a changed MANUAL owner from a playhead/loop race
+        // after a long Prepare, without logging user PCM or full job logs.
+        QString category;
+        if(!before || !source || !after)
+            category=QStringLiteral("M17_HANDOFF_SNAPSHOT_UNAVAILABLE");
+        else if(before.value()->state!=after.value()->state
+                ||before.value()->audibleRealization
+                    !=after.value()->audibleRealization
+                ||before.value()->seekSerial!=after.value()->seekSerial
+                ||before.value()->traversalSerial!=after.value()->traversalSerial
+                ||before.value()->loopWrapCount!=after.value()->loopWrapCount)
+            category=QStringLiteral("M17_HANDOFF_TRANSPORT_RACE");
+        else if(before.value()->audibleRealization.phase
+                    !=core::AudibleHandoffPhase::NEW
+                ||before.value()->audibleRealization.realizationId
+                    !=std::optional{intent_->manualId}
+                ||before.value()->duration
+                    !=std::optional{intent_->manualOwner->view().frame_count()})
+            category=QStringLiteral("M17_HANDOFF_MANUAL_OWNER_CHANGED");
+        else if(before.value()->loop!=after.value()->loop
+                ||source.value()->loop!=intent_->sourceLoop)
+            category=QStringLiteral("M17_HANDOFF_LOOP_CHANGED");
+        else if(source.value()->state!=before.value()->state
+                ||source.value()->duration
+                    !=intent_->manualOwner->view().frame_count())
+            category=QStringLiteral("M17_HANDOFF_SOURCE_CLOCK_MISMATCH");
+        else
+            category=QStringLiteral("M17_HANDOFF_SOURCE_POSITION_INVALID");
+        fail_closed(QStringLiteral("%1: manual audition ownership could not be verified.")
+            .arg(category));
         return;
     }
     // Latest SOURCE cue and user play/pause/stop state, possibly after loop
