@@ -4,11 +4,14 @@
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/realization_identity.hpp>
 #include <rgsml/core/result.hpp>
 #include <rgsml/dsp/compressor_parameters.hpp>
 #include <rgsml/dsp/module_instance.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_parameters.hpp>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -23,6 +26,168 @@ namespace rgsml::render {
 
 class RenderRequest;
 class RenderResult;
+
+struct CompressorTelemetryBucket final {
+    double end_reduction_db{0.0};
+    double mean_reduction_db{0.0};
+    double peak_reduction_db{0.0};
+    std::uint32_t peak_offset_frames{0};
+    std::uint32_t attenuated_frame_count{0};
+    std::int64_t begin_frame{0};
+    std::int64_t end_frame{0};
+    std::uint32_t frame_count{0};
+    bool valid{true};
+    rgsml::dsp::ModuleInstanceId module_instance_id;
+    std::optional<rgsml::core::RealizationId> realization_id{std::nullopt};
+
+    explicit CompressorTelemetryBucket(
+        rgsml::dsp::ModuleInstanceId id,
+        std::optional<rgsml::core::RealizationId> real_id = std::nullopt) noexcept
+        : module_instance_id(id), realization_id(real_id) {}
+
+    friend bool operator==(
+        const CompressorTelemetryBucket&,
+        const CompressorTelemetryBucket&) = default;
+};
+
+struct CompressorTelemetryLane final {
+    std::vector<CompressorTelemetryBucket> buckets;
+
+    friend bool operator==(
+        const CompressorTelemetryLane&,
+        const CompressorTelemetryLane&) = default;
+};
+
+enum class CompressorTelemetryStatus : std::uint8_t {
+    OK,
+    BYPASS,
+    NOT_AUDITIONED,
+    UNAVAILABLE,
+};
+
+struct CompressorTelemetrySidecar final {
+    bool valid{true};
+    CompressorTelemetryStatus status{CompressorTelemetryStatus::OK};
+    rgsml::audio::ChannelLayout channel_layout{rgsml::audio::ChannelLayout::STEREO_LR};
+    std::uint32_t sample_rate_hz{44100};
+    rgsml::dsp::ModuleInstanceId module_instance_id;
+    std::uint64_t chain_revision{0};
+    std::optional<rgsml::core::RealizationId> realization_id{std::nullopt};
+    std::vector<CompressorTelemetryLane> channel_lanes;
+
+    explicit CompressorTelemetrySidecar(
+        rgsml::dsp::ModuleInstanceId id,
+        std::optional<rgsml::core::RealizationId> real_id = std::nullopt) noexcept
+        : module_instance_id(id), realization_id(real_id) {}
+
+    friend bool operator==(
+        const CompressorTelemetrySidecar&,
+        const CompressorTelemetrySidecar&) = default;
+};
+
+// B4a is a bounded, exact PCM excerpt from the output of the named M/S
+// stage, BEFORE later DSP nodes. A partial excerpt is never full-window
+// correlation/density evidence, and is not yet proof of current audition.
+enum class StereoMsStageCaptureStatus : std::uint8_t {
+    COMPLETE,
+    PARTIAL,
+    UNAVAILABLE,
+};
+
+// Canonical local correlation of one COMPLETE 400-ms output window.
+// The canonical 100-ms grid is source-timeline anchored, NOT feeder-anchored.
+enum class StereoMsCorrelationStatus : std::uint8_t {
+    COMPLETE,
+    PARTIAL,
+    UNAVAILABLE,
+};
+enum class StereoMsCorrelationWindowValidity : std::uint8_t {
+    VALID,
+    UNDEFINED_LOW_AC,
+};
+
+struct StereoMsCorrelationWindow final {
+    std::int64_t begin_frame{0};
+    std::int64_t end_frame{0};
+    StereoMsCorrelationWindowValidity validity{StereoMsCorrelationWindowValidity::UNDEFINED_LOW_AC};
+    std::optional<double> rho{std::nullopt};
+};
+
+// Purely observational RMS of TRUE Side Low branch before/after Low Width;
+// never reconstructed by a separate UI filter or a side-to-mid proxy.
+enum class StereoMsSideLowStatus : std::uint8_t {
+    COMPLETE,
+    PARTIAL,
+    UNAVAILABLE,
+};
+struct StereoMsSideLowWindow final {
+    std::int64_t begin_frame{0};
+    std::int64_t end_frame{0};
+    double rms_before{0.0};
+    double rms_after{0.0};
+};
+
+// M15 B4c1: real post-stage M/S sample OCCUPANCY. Each bin is a count
+// of actual frames (not RMS/energy). Witnesses preserve one-frame extrema.
+enum class StereoMsDensityStatus : std::uint8_t {
+    COMPLETE,
+    PARTIAL,
+    UNAVAILABLE,
+};
+enum class StereoMsDensityWitnessKind : std::uint8_t {
+    MIN_SIDE = 0,
+    MAX_SIDE = 1,
+    MIN_MID = 2,
+    MAX_MID = 3,
+    MAX_RADIUS = 4,
+    FIRST_OPPOSITE_POLARITY = 5,
+};
+
+struct StereoMsDensityWitness final {
+    std::int64_t absolute_frame{0};
+    double side{0.0};
+    double mid{0.0};
+    bool valid{false};
+};
+
+struct StereoMsDensityBucket final {
+    static constexpr std::size_t kGridSide = 33U;
+    static constexpr std::size_t kBinCount = kGridSide * kGridSide;
+    std::int64_t begin_frame{0};
+    std::int64_t end_frame{0};
+    std::uint32_t frame_count{0};
+    std::uint32_t valid_frame_count{0};
+    std::uint32_t overflow_count{0};
+    std::uint32_t zero_vector_count{0};
+    std::uint32_t invalid_count{0};
+    std::uint32_t channel_overrange_count{0};
+    std::array<std::uint32_t, kBinCount> occupancy{};
+    std::array<StereoMsDensityWitness, 6U> witnesses{};
+};
+
+struct StereoMsStageOutputSidecar final {
+    rgsml::dsp::ModuleInstanceId module_instance_id;
+    std::uint64_t chain_revision{0};
+    std::optional<rgsml::core::RealizationId> realization_id{std::nullopt};
+    rgsml::audio::ChannelLayout channel_layout{rgsml::audio::ChannelLayout::STEREO_LR};
+    std::uint32_t sample_rate_hz{0};
+    rgsml::audio::FrameDomainId frame_domain_id{rgsml::audio::FrameDomainId::SOURCE_PROCESSING_RATE};
+    StereoMsStageCaptureStatus status{StereoMsStageCaptureStatus::UNAVAILABLE};
+    std::int64_t requested_begin_frame{0};
+    std::int64_t requested_end_frame{0};
+    std::int64_t captured_begin_frame{0};
+    std::vector<std::array<double, 2>> output_lr_frames;
+    StereoMsCorrelationStatus correlation_status{StereoMsCorrelationStatus::UNAVAILABLE};
+    std::vector<StereoMsCorrelationWindow> correlation_windows;
+    StereoMsSideLowStatus side_low_status{StereoMsSideLowStatus::UNAVAILABLE};
+    std::vector<StereoMsSideLowWindow> side_low_windows;
+    StereoMsDensityStatus density_status{StereoMsDensityStatus::UNAVAILABLE};
+    std::vector<StereoMsDensityBucket> density_buckets;
+
+    explicit StereoMsStageOutputSidecar(
+        rgsml::dsp::ModuleInstanceId instance_id) noexcept
+        : module_instance_id(instance_id) {}
+};
 
 enum class ModuleExecutionDisposition : std::uint8_t {
     PROCESSED,
@@ -73,10 +238,27 @@ struct CompressorExecutionSignaturePayload final {
         const CompressorExecutionSignaturePayload&) = default;
 };
 
+// Only audio-effective Stereo/M-S parameters participate in sonic
+// execution identity. Non-effective fields must be absent (nullopt), not
+// zeroed: mono input excludes all spatial fields; Side mute dominates
+// Side gain and Mono Bass; OFF excludes crossover controls.
+struct StereoMsExecutionSignaturePayload final {
+    std::optional<double> mid_gain_db;
+    std::optional<double> side_gain_db;
+    std::optional<bool> side_muted;
+    std::optional<rgsml::dsp::MonoBassMode> mono_bass_mode;
+    std::optional<double> mono_bass_cutoff_hz;
+    std::optional<double> low_band_width_percent;
+
+    friend bool operator==(const StereoMsExecutionSignaturePayload&,
+                           const StereoMsExecutionSignaturePayload&) = default;
+};
+
 using ModuleExecutionSignaturePayload = std::variant<
     GainExecutionSignaturePayload,
     ParametricEqExecutionSignaturePayload,
-    CompressorExecutionSignaturePayload>;
+    CompressorExecutionSignaturePayload,
+    StereoMsExecutionSignaturePayload>;
 
 struct ModuleExecutionSignature final {
     rgsml::dsp::ModuleInstanceId instance_id;
@@ -106,6 +288,14 @@ public:
     [[nodiscard]] std::uint64_t chain_revision() const noexcept;
     [[nodiscard]] const std::vector<ModuleExecutionSignature>&
     signatures() const noexcept;
+    [[nodiscard]] const std::optional<CompressorTelemetrySidecar>&
+    compressor_telemetry_sidecar() const noexcept;
+    [[nodiscard]] const std::vector<StereoMsStageOutputSidecar>&
+    stereo_ms_stage_output_sidecars() const noexcept;
+    [[nodiscard]] rgsml::core::Status bind_stereo_ms_stage_output_realization_id(
+        rgsml::core::RealizationId realization_id) noexcept;
+    [[nodiscard]] rgsml::core::Status bind_compressor_telemetry_realization_id(
+        rgsml::core::RealizationId realization_id) noexcept;
 
 private:
     friend rgsml::core::Result<RenderResult> render_preview(
@@ -117,13 +307,17 @@ private:
         rgsml::core::FrameRange render_window,
         rgsml::audio::FrameDomainId frame_domain_id,
         std::uint64_t chain_revision,
-        std::vector<ModuleExecutionSignature> signatures) noexcept;
+        std::vector<ModuleExecutionSignature> signatures,
+        std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar = std::nullopt,
+        std::vector<StereoMsStageOutputSidecar> stereo_ms_stage_output_sidecars = {}) noexcept;
 
     rgsml::audio::AudioBuffer buffer_;
     rgsml::core::FrameRange render_window_;
     rgsml::audio::FrameDomainId frame_domain_id_;
     std::uint64_t chain_revision_;
     std::vector<ModuleExecutionSignature> signatures_;
+    std::optional<CompressorTelemetrySidecar> compressor_telemetry_sidecar_;
+    std::vector<StereoMsStageOutputSidecar> stereo_ms_stage_output_sidecars_;
 };
 
 }  // namespace rgsml::render
