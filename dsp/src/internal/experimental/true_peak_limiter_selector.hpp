@@ -115,7 +115,31 @@ public:
     }
 
     [[nodiscard]] std::optional<Choice>
-    choose(std::int64_t m, double current_peak) const
+    choose(std::int64_t m,double current_peak) const
+    {
+        return choose_impl<true>(m,current_peak);
+    }
+
+    // Test-only paired control: the exact former 32-event group path,
+    // sharing one immutable cache with the hierarchical candidate.
+    // Never called by the rolling renderer or registered DSP.
+    [[nodiscard]] std::optional<Choice>
+    choose_group_only_for_test(std::int64_t m,double current_peak) const
+    {
+        return choose_impl<false>(m,current_peak);
+    }
+
+    [[nodiscard]] std::size_t cached_event_count() const noexcept {
+        return events_.size();
+    }
+    [[nodiscard]] std::size_t weight_build_count() const noexcept {
+        return weight_build_count_;
+    }
+
+private:
+    template<bool SuperblockPruning>
+    [[nodiscard]] std::optional<Choice>
+    choose_impl(std::int64_t m, double current_peak) const
     {
         if (!std::isfinite(current_peak) || current_peak<0.0
             || m>std::numeric_limits<std::int64_t>::max()-horizon_)
@@ -144,6 +168,7 @@ public:
                 // peak demand is bounded by the stored maximum, and every
                 // later Hann weight by the suffix maximum at the FIRST lag.
                 // Strict '<' leaves all equality/tie ordering untouched.
+                if constexpr (SuperblockPruning) {
                 if(index%kSuperblock==0 && stop-index>=kSuperblock) {
                     const auto lag=static_cast<std::size_t>(
                         events_[index].tick-m);
@@ -155,6 +180,7 @@ public:
                         index+=kSuperblock;
                         continue;
                     }
+                }
                 }
                 const auto groupIndex=index/kGroup;
                 const auto end=std::min(stop,(groupIndex+1)*kGroup);
@@ -199,14 +225,6 @@ public:
         return choice;
     }
 
-    [[nodiscard]] std::size_t cached_event_count() const noexcept {
-        return events_.size();
-    }
-    [[nodiscard]] std::size_t weight_build_count() const noexcept {
-        return weight_build_count_;
-    }
-
-private:
     M17LookaheadSelector(std::int64_t horizon, double ceiling) noexcept
         : horizon_(horizon), ceiling_(ceiling) {}
 

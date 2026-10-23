@@ -3423,7 +3423,10 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
         csv<<"sample_rate_hz,ceiling_dbtp,pattern,query_ticks,"
               "event_count,events_in_horizon,events_visited,events_skipped,"
               "visit_percent,superblocks_skipped,selector_weight_builds,"
-              "exact_attack_floor,exact_selected_event,exact_bounds\n";
+              "group_mean_ns,group_p99_ns,group_max_ns,"
+              "super_mean_ns,super_p99_ns,super_max_ns,"
+              "paired_speed_ratio,exact_paired,exact_attack_floor,"
+              "exact_selected_event,exact_bounds\n";
     }
     std::size_t cases=0;
     for(const int fs:{48000,192000}) {
@@ -3449,10 +3452,53 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
             QVERIFY(selector->prepare(events));
             QCOMPARE(selector->weight_build_count(),std::size_t{1});
             std::uint64_t visited=0,skipped=0,inWindow=0,superSkipped=0;
+            std::vector<std::int64_t> groupTimes,superTimes;
+            groupTimes.reserve(256);
+            superTimes.reserve(256);
             for(std::int64_t m=0;m<256;++m) {
                 const double current=(m%51==0)?0.93:0.0;
-                const auto result=selector->choose(m,current);
+                // Both alternatives use the SAME prepared cache and
+                // deterministic event window. Alternate call order to
+                // reduce warm-cache and runner clock-order bias.
+                const auto timed=[&]<bool GroupOnly>() {
+                    const auto start=std::chrono::steady_clock::now();
+                    const auto choice=GroupOnly
+                        ?selector->choose_group_only_for_test(m,current)
+                        :selector->choose(m,current);
+                    const auto stop=std::chrono::steady_clock::now();
+                    const auto ns=std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(stop-start).count();
+                    return std::pair{choice,static_cast<std::int64_t>(ns)};
+                };
+                const bool legacyFirst=(m%2==0);
+                const auto first=legacyFirst?timed.template operator()<true>()
+                                            :timed.template operator()<false>();
+                const auto second=legacyFirst?timed.template operator()<false>()
+                                             :timed.template operator()<true>();
+                const auto& baseline=legacyFirst?first:second;
+                const auto& candidate=legacyFirst?second:first;
+                const auto& result=candidate.first;
                 QVERIFY(result);
+                QVERIFY(baseline.first);
+                groupTimes.push_back(baseline.second);
+                superTimes.push_back(candidate.second);
+                QCOMPARE(std::bit_cast<std::uint64_t>(
+                    result->attack_floor_db),
+                    std::bit_cast<std::uint64_t>(
+                        baseline.first->attack_floor_db));
+                QCOMPARE(result->future_event.has_value(),
+                         baseline.first->future_event.has_value());
+                if(result->future_event) {
+                    QCOMPARE(result->future_event->tick,
+                             baseline.first->future_event->tick);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        result->future_event->peak),
+                        std::bit_cast<std::uint64_t>(
+                            baseline.first->future_event->peak));
+                }
+                QCOMPARE(baseline.first->skipped_superblocks,std::size_t{0});
+                QCOMPARE(baseline.first->visited+baseline.first->skipped,
+                         result->visited+result->skipped);
                 QVERIFY(result->bounded);
                 visited+=result->visited;
                 skipped+=result->skipped;
@@ -3505,11 +3551,32 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
             QCOMPARE(visited+skipped,inWindow);
             const double pct=100.0*static_cast<double>(visited)/
                 static_cast<double>(inWindow);
+            const auto timingStats=[](std::vector<std::int64_t> samples) {
+                std::sort(samples.begin(),samples.end());
+                const auto total=std::accumulate(samples.begin(),samples.end(),
+                    std::int64_t{0});
+                const auto p99=(samples.size()*99U+99U)/100U-1U;
+                return std::array<std::int64_t,3>{
+                    total/static_cast<std::int64_t>(samples.size()),
+                    samples[p99],samples.back()};
+            };
+            const auto groupStats=timingStats(groupTimes);
+            const auto superStats=timingStats(superTimes);
+            const auto groupSum=std::accumulate(groupTimes.begin(),
+                groupTimes.end(),std::int64_t{0});
+            const auto superSum=std::accumulate(superTimes.begin(),
+                superTimes.end(),std::int64_t{0});
+            const double speedRatio=superSum>0
+                ?static_cast<double>(groupSum)/static_cast<double>(superSum)
+                :0.0;
             qInfo().nospace()<<"M17 selector FAST work fs="<<fs
                 <<" pattern="<<(dense?"dense":"sparse")
                 <<" visited="<<visited<<" skipped="<<skipped
                 <<" superblocks_skipped="<<superSkipped
-                <<" visit_percent="<<pct<<" exact_oracle=PASS";
+                <<" visit_percent="<<pct<<" paired_speed_ratio="<<speedRatio
+                <<" group_mean_ns="<<groupStats[0]
+                <<" super_mean_ns="<<superStats[0]
+                <<" exact_paired=PASS exact_oracle=PASS";
             if(!path.empty()) {
                 std::ofstream csv(path,std::ios::app);
                 QVERIFY2(csv.good(),"M17 selector FAST CSV append failed");
@@ -3517,8 +3584,10 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
                     <<(dense?"dense":"sparse")<<",256,"
                     <<events.size()<<','<<inWindow<<','<<visited<<','
                     <<skipped<<','<<pct<<','<<superSkipped<<','
-                    <<selector->weight_build_count()
-                    <<",PASS,PASS,PASS\n";
+                    <<selector->weight_build_count()<<','
+                    <<groupStats[0]<<','<<groupStats[1]<<','<<groupStats[2]<<','
+                    <<superStats[0]<<','<<superStats[1]<<','<<superStats[2]<<','
+                    <<speedRatio<<",PASS,PASS,PASS,PASS\n";
             }
             ++cases;
         }

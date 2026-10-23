@@ -529,3 +529,29 @@ checkpoint, six sample rates, channel configurations and EOS remain
 obligatory. This is a *candidate hypothesis*, not a claimed speedup;
 no improvement is asserted until paired CPU/quantum timing with p99 and
 max is available. No frozen M17 or production code is modified.
+
+
+## #682 FAST paired selector measurement (same-run A/B)
+
+The preceding #681 EXTENDED Windows/Linux succeeded with exact 6-rate
+PCM/M16 and frozen-controller oracles. The deterministic work CSV
+recorded 640/3584 complete 512-event superblocks skipped per 256-query
+case at 48/192 kHz, with identical visited-event counts and exact
+selection results to the prior group-only path. Cross-run timing
+comparison remains noisy and **192k/64-frame realtime is NOT proven**.
+
+Next test-only diagnostic compiles the prior 32-event grouped traversal
+and the new 512-event superblock traversal from a single templated
+selector implementation. The production-facing experimental `choose()`
+continues to select the superblock path; the explicit
+`choose_group_only_for_test()` is *never called by the renderer*.
+The same prepared cache and 256 deterministic queries are timed with
+alternating A/B order; both results must agree bit-for-bit with each
+other and with the independent all-event binary64 Hann oracle. Each
+platform exports separate mean/p99/max selector nanoseconds and
+paired speed ratio for sparse/dense 48/192k. This instrumented,
+synthetic, short-run comparison is exploratory, not an audio-thread
+benchmark, an end-to-end realtime claim, or FQ. Test-only FAST is used
+because the result returned by `choose()` is structurally unchanged;
+full Focused EXTENDED remains required for any subsequent runtime
+algorithm changes. No production M17, PR54 or main changes.
