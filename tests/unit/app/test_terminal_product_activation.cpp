@@ -411,21 +411,34 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!candidates.staged());
     QVERIFY(!audioGate.has_session());
 
-    // Prepared but NOT previewed can be cancelled without ever handing off.
+    // READY is already completed and MUST survive Cancel: no discarded
+    // minute-long M17 work and no silent terminal handoff. A user can
+    // preview the exact staged PCM after this no-op, then bypass explicitly.
     vm.setBypass(false);
     QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
     vm.requestPrepare();
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("READY_TO_INSTALL"),12000);
     vm.cancelPreparation();
-    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
-    QCOMPARE(vm.preparation_fraction(),0.0);
-    QVERIFY(!vm.preparation_determinate());
-    QVERIFY(vm.preparation_stage().isEmpty());
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(vm.preparation_fraction(),1.0);
+    QVERIFY(vm.preparation_determinate());
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!product.private_id());
+    QVERIFY(candidates.staged());
+    vm.previewPrepared();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QVERIFY(coordinator.device_active());
+    vm.setBypass(true);
+    QVERIFY(limiter.value()->bypassed());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     QVERIFY(!product.private_id());
     QVERIFY(!candidates.staged());
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
 
     // PAUSED stays paused while preparing; Preview Prepared installs an
     // OUTPUT_RATE owner only after an explicit request.
