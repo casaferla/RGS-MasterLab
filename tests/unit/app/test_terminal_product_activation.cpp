@@ -15,6 +15,7 @@
 #include <rgsml/render/render_request.hpp>
 #include <rgsml/core/uuid.hpp>
 #include <QTest>
+#include <QSignalSpy>
 #include <memory>
 #include <bit>
 #include <cstdint>
@@ -27,7 +28,47 @@ private slots:
     void audibleOnBypassRestoresExactManualSourceAndLoop();
     void finalMasterAt192kNeverBecomesDeviceRate48k();
     void staleM17TerminalJobCancelsWithoutPublishingPcm();
+    void nonconformingPreviewRequiresSeparateExplicitConsent();
 };
+
+
+void TerminalActivationIntegrationTest::
+nonconformingPreviewRequiresSeparateExplicitConsent()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto instance=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000517").value());
+    QVERIFY(instance);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*instance.value());
+    QVERIFY(state);
+    app::TerminalLimiterViewModel vm{state.value()};
+    QSignalSpy unsafe{&vm,
+        &app::TerminalLimiterViewModel::previewNonconformingRequested};
+    QSignalSpy verified{&vm,
+        &app::TerminalLimiterViewModel::previewRequested};
+    QVERIFY(unsafe.isValid()&&verified.isValid());
+    vm.setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+    vm.previewNonconforming();
+    QCOMPARE(unsafe.count(),0);
+    QVERIFY(state.value()->set_user_bypass(false));
+    vm.setAudioStatus(QStringLiteral(
+        "NON-CONFORMING · -11.76 dBTP (target -12.00)"));
+    vm.setNonconformingObservation(-11.76,-12.0);
+    QCOMPARE(vm.nonconforming_peak_text(),
+        QStringLiteral("-11.76 dBTP"));
+    QCOMPARE(vm.nonconforming_target_text(),
+        QStringLiteral("-12.00 dBTP"));
+    QCOMPARE(unsafe.count(),0); // Status publication NEVER auto-auditions.
+    vm.previewPrepared();
+    QCOMPARE(verified.count(),0); // Not a verified READY candidate.
+    vm.previewNonconforming();
+    QCOMPARE(unsafe.count(),1); // Explicit action only.
+    QVERIFY(state.value()->set_user_bypass(true));
+    vm.previewNonconforming();
+    QCOMPARE(unsafe.count(),1); // No audition from Bypass.
+}
 
 void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate48k()
 {
