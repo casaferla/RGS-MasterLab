@@ -32,6 +32,11 @@ public:
         TerminalCandidateGate& gate,
         core::IAudioPlaybackService& playback,
         core::RealizationId terminal_id);
+    // Separate opt-in nonconforming audition: never flags audio VERIFIED.
+    [[nodiscard]] static core::Result<TerminalSourceControlBridge> create_measured(
+        TerminalCandidateGate& gate,
+        core::IAudioPlaybackService& playback,
+        core::RealizationId terminal_id);
 
     // SOURCE frames are mapped only after a fresh identity/ownership check.
     [[nodiscard]] core::Status seek_source(core::FrameIndex source_position);
@@ -52,12 +57,21 @@ private:
       : gate_(gate),playback_(playback),accepted_(std::move(owner)),
         map_(std::move(map)),terminalId_(terminal_id) {}
 
+    TerminalSourceControlBridge(
+        TerminalCandidateGate* gate,
+        core::IAudioPlaybackService* playback,
+        std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate> owner,
+        TerminalPlaybackFrameMap map,core::RealizationId terminal_id) noexcept
+      : gate_(gate),playback_(playback),measured_(std::move(owner)),
+        map_(std::move(map)),terminalId_(terminal_id) {}
+
     [[nodiscard]] core::Result<core::PlaybackSnapshot>
     checked_output_snapshot() const;
 
     TerminalCandidateGate* gate_{nullptr};
     core::IAudioPlaybackService* playback_{nullptr};
     std::shared_ptr<const TerminalCandidateGate::StagedCandidate> accepted_;
+    std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate> measured_;
     TerminalPlaybackFrameMap map_;
     core::RealizationId terminalId_;
     std::optional<core::FrameRange> sourceLoop_;

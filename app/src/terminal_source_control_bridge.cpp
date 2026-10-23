@@ -35,11 +35,34 @@ TerminalSourceControlBridge::create(
     return core::Result<TerminalSourceControlBridge>::success(std::move(result));
 }
 
+core::Result<TerminalSourceControlBridge>
+TerminalSourceControlBridge::create_measured(
+    TerminalCandidateGate& gate,core::IAudioPlaybackService& playback,
+    core::RealizationId terminalId)
+{
+    auto owner=gate.staged_measured();
+    if(!owner||terminalId.value==0
+       ||terminalId==owner->original_manual_realization_id)
+        return core::Result<TerminalSourceControlBridge>::failure(denied(
+            "M17_MEASURED_SOURCE_CONTROL_UNPUBLISHED",
+            "Nonconforming audio needs explicit separate playback identity."));
+    auto map=TerminalPlaybackFrameMap::create_measured(*owner);
+    if(!map)return core::Result<TerminalSourceControlBridge>::failure(*map.error());
+    TerminalSourceControlBridge result{
+        &gate,&playback,std::move(owner),std::move(*map.value()),terminalId};
+    auto current=result.checked_output_snapshot();
+    if(!current)return core::Result<TerminalSourceControlBridge>::failure(
+        *current.error());
+    return core::Result<TerminalSourceControlBridge>::success(std::move(result));
+}
+
 core::Result<core::PlaybackSnapshot>
 TerminalSourceControlBridge::checked_output_snapshot() const
 {
-    if(!active_ || !gate_ || !playback_ || !accepted_
-       ||gate_->staged()!=accepted_)
+    if(!active_ || !gate_ || !playback_
+       || (measured_
+           ? gate_->staged_measured()!=measured_
+           : !accepted_||gate_->staged()!=accepted_))
         return core::Result<core::PlaybackSnapshot>::failure(denied(
             "M17_SOURCE_CONTROL_STALE_OWNER",
             "Terminal source-control candidate was invalidated or superseded."));

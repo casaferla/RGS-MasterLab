@@ -21,6 +21,8 @@ public:
     // original RenderResult owner, never from an arbitrary sample-rate pair.
     [[nodiscard]] static core::Result<TerminalPlaybackFrameMap> create(
         const TerminalCandidateGate::StagedCandidate& accepted);
+    [[nodiscard]] static core::Result<TerminalPlaybackFrameMap> create_measured(
+        const TerminalCandidateGate::StagedMeasuredCandidate& measured);
 
     [[nodiscard]] core::SampleRate source_rate() const noexcept
     { return sourceRate_; }

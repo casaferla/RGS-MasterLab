@@ -72,6 +72,63 @@ core::Result<TerminalPlaybackFrameMap> TerminalPlaybackFrameMap::create(
         std::move(*adapter.value())});
 }
 
+core::Result<TerminalPlaybackFrameMap> TerminalPlaybackFrameMap::create_measured(
+    const TerminalCandidateGate::StagedMeasuredCandidate& accepted)
+{
+    using Map=TerminalPlaybackFrameMap;
+    const auto& output=accepted.rendered.terminal.terminal
+        .compensated_pcm.view();
+    const auto& provenance=accepted.rendered;
+    if(!accepted.prepared_owner || !provenance.manual_owner
+       ||accepted.original_manual_realization_id.value==0
+       ||provenance.manual_owner->frame_domain_id()
+           !=audio::FrameDomainId::SOURCE_PROCESSING_RATE
+       ||output.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||provenance.manual_owner->view().absolute_start_frame().value()!=0
+       ||output.absolute_start_frame().value()!=0
+       ||provenance.programme_frames.value()<=0
+       ||provenance.programme_frames!=provenance.manual_owner->view().frame_count()
+       ||provenance.output_rate!=output.format().sample_rate()
+       ||provenance.manual_owner->view().format().channel_layout()
+           !=output.format().channel_layout()) {
+        return invalid<Map>(core::ErrorCode::InvalidState,
+            "M17_FRAME_MAP_UNOWNED_SOURCE",
+            "Terminal frame map requires an accepted complete origin with output-rate PCM.");
+    }
+    const auto sourceRate=provenance.manual_owner->view().format().sample_rate();
+    const auto outputRate=provenance.output_rate;
+    const auto sourceFrames=provenance.programme_frames;
+    const auto outputFrames=output.frame_count();
+    const bool converted=sourceRate!=outputRate;
+    if(converted!=provenance.used_candidate_src)
+        return invalid<Map>(core::ErrorCode::InvalidState,
+            "M17_FRAME_MAP_SRC_MISMATCH",
+            "Terminal source/output frequency provenance is inconsistent.");
+    if(!converted) {
+        if(sourceFrames!=outputFrames
+           ||!provenance.src_kernel_sha256.empty())
+            return invalid<Map>(core::ErrorCode::InvalidState,
+                "M17_FRAME_MAP_IDENTITY_MISMATCH",
+                "No-SRC terminal output must retain the exact SOURCE frame count.");
+        return core::Result<Map>::success(Map{
+            sourceRate,outputRate,sourceFrames,outputFrames,std::nullopt});
+    }
+    auto adapter=audio::PlaybackSampleRateAdapter::create(
+        audio::PlaybackRateSpec{sourceRate,outputRate,
+            output.format().channel_layout(),sourceFrames});
+    if(!adapter)
+        return core::Result<Map>::failure(*adapter.error());
+    if(adapter.value()->output_frame_count()!=outputFrames
+       ||provenance.src_kernel_sha256!=adapter.value()->kernel_sha256()) {
+        return invalid<Map>(core::ErrorCode::InvalidState,
+            "M17_FRAME_MAP_KERNEL_OR_LENGTH_STALE",
+            "Terminal PCM frame length or FIR kernel differs from accepted provenance.");
+    }
+    return core::Result<Map>::success(Map{
+        sourceRate,outputRate,sourceFrames,outputFrames,
+        std::move(*adapter.value())});
+}
+
 core::Result<core::FrameIndex>
 TerminalPlaybackFrameMap::source_to_output(core::FrameIndex frame) const
 {
