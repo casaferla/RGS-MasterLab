@@ -174,6 +174,7 @@ class TruePeakLimiterVerificationTest final : public QObject {
     Q_OBJECT
 private slots:
     void exactBinary64TrimThreshold();
+    void measuredNonconformanceIsDistinctFromVerifiedAndFatalError();
     void genuineM16WholeResourceQuietAndFalsifiableHot();
     void rejectWrongCeilingAndPropagateM16Failures();
     void actualM16ReverificationUsesOneGlobalStereoScalar();
@@ -270,6 +271,66 @@ isolatedCalibratorRunsRealAcceleratedM17AndM16WithoutDevice()
         QVERIFY(!refused);
         // A real calibration estimate MUST NOT masquerade as an SRC or
         // whole-Render estimate for the incompatible source/target pair.
+    }
+}
+
+
+void TruePeakLimiterVerificationTest::
+measuredNonconformanceIsDistinctFromVerifiedAndFatalError()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto block=core::FrameCount::create(256);
+    auto p=dsp::TruePeakLimiterParameters::create(-12.0);
+    QVERIFY(registry&&block&&p);
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        auto samples=buffer(fs,true,512);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto lane=samples.mutable_view().channel(ch);
+            QVERIFY(lane);
+            for(std::size_t i=0;i<lane.value()->size();++i)
+                (*lane.value())[i]=(i%73==0?3.0:(i%7==0?-0.78:0.35))
+                    *(ch==0?1.0:-0.8);
+        }
+        auto result=render::render_true_peak_limiter_checked_or_measured_candidate(
+            samples.view(),*p.value(),*registry.value(),*block.value(),false,
+            {},nullptr,true);
+        QVERIFY2(result,result.error()?result.error()->message().c_str():
+            "Measured outcome must be tagged and physically real");
+        if(const auto* verified=std::get_if<
+                render::TruePeakLimiterCheckedCandidate>(result.value())) {
+            QVERIFY(verified->final_check.has_value());
+            const auto checked=analysis::measure_true_peak_full_resource(
+                verified->terminal.compensated_pcm);
+            QVERIFY(checked);
+            QVERIFY(checked.value()->global_linear_peak()<=
+                std::pow(10.0,-12.0/20.0));
+        } else {
+            const auto& nc=std::get<
+                render::TruePeakLimiterMeasuredNonconformingCandidate>(
+                    *result.value());
+            QVERIFY(!nc.terminal.bypassed);
+            QCOMPARE(nc.requested_ceiling_db_tp,-12.0);
+            QVERIFY(std::isfinite(nc.measured_linear_peak));
+            QVERIFY(nc.measured_linear_peak>nc.ceiling_linear);
+            QCOMPARE(nc.measurement_status,
+                analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+            const auto check=analysis::measure_true_peak_full_resource(
+                nc.terminal.compensated_pcm);
+            QVERIFY(check);
+            QCOMPARE(check.value()->global_linear_peak(),
+                nc.measured_linear_peak);
+        }
+        auto bypass=render::render_true_peak_limiter_checked_or_measured_candidate(
+            samples.view(),*p.value(),*registry.value(),*block.value(),true);
+        QVERIFY(bypass);
+        QVERIFY(std::holds_alternative<render::TruePeakLimiterCheckedCandidate>(
+            *bypass.value()));
+        auto lane=samples.mutable_view().channel(0);
+        QVERIFY(lane);
+        (*lane.value())[6]=std::numeric_limits<double>::quiet_NaN();
+        auto invalid=render::render_true_peak_limiter_checked_or_measured_candidate(
+            samples.view(),*p.value(),*registry.value(),*block.value(),false);
+        QVERIFY(!invalid);
     }
 }
 

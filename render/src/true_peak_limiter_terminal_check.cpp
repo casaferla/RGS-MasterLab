@@ -40,8 +40,10 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     bool bypassed,
     const TerminalRenderCancel& cancelled,
     TerminalRenderStageTimings* stage_timings,
-    bool use_experimental_offline_accelerator)
+    bool use_experimental_offline_accelerator,
+    std::optional<TruePeakLimiterMeasuredNonconformingCandidate>* nonconforming_out)
 {
+    if(nonconforming_out)nonconforming_out->reset();
     // No clock call inside the high-frequency DSP controller. These
     // boundaries measure complete real production stages, even on failures.
     const auto m17_started=std::chrono::steady_clock::now();
@@ -125,6 +127,14 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     const auto gain=std::nextafter(ceiling/before,0.0);
     if(stage_timings)stage_timings->verification_trim_gain=gain;
     if(!allowed_gain(gain)) {
+        if(nonconforming_out && !wasCancelled() && before>ceiling) {
+            // No trim beyond the frozen 0.10dB bound. Preserve the actual
+            // original complete M17 PCM and M16 measurement separately.
+            *nonconforming_out=TruePeakLimiterMeasuredNonconformingCandidate{
+                std::move(*rendered.value()),params.ceiling_db_tp(),
+                ceiling,before,M17NonconformingReason::TRIM_GUARD_EXCEEDED,
+                measured.value()->qualification_status()};
+        }
         return Result<TruePeakLimiterCheckedCandidate>::failure(
             verification_error(ErrorCode::InvalidState,
                 "LIMITER_VERIFICATION_GUARD_EXCEEDED",
@@ -195,6 +205,18 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     if(!std::isfinite(after) || after<0 || after>ceiling
         || remeasured.value()->qualification_status()
             ==analysis::TruePeakQualificationStatus::UNSUPPORTED) {
+        if(nonconforming_out && !wasCancelled()
+           && std::isfinite(after) && after>ceiling
+           && remeasured.value()->qualification_status()
+               !=analysis::TruePeakQualificationStatus::UNSUPPORTED) {
+            // Retain only the PCM M16 just remeasured, never stale PCM or
+            // a measurement obtained before the verification trim.
+            rendered.value()->compensated_pcm=std::move(*staging.value());
+            *nonconforming_out=TruePeakLimiterMeasuredNonconformingCandidate{
+                std::move(*rendered.value()),params.ceiling_db_tp(),ceiling,
+                after,M17NonconformingReason::POST_TRIM_ABOVE_CEILING,
+                remeasured.value()->qualification_status()};
+        }
         return Result<TruePeakLimiterCheckedCandidate>::failure(
             verification_error(ErrorCode::InvalidState,
                 "M17_VERIFICATION_POST_TRIM_UNSAFE",
@@ -208,5 +230,28 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     rendered.value()->compensated_pcm=std::move(*staging.value());
     return Result<TruePeakLimiterCheckedCandidate>::success({
         std::move(*rendered.value()),evidence});
+}
+
+Result<TruePeakLimiterMeasuredOutcome>
+render_true_peak_limiter_checked_or_measured_candidate(
+    audio::AudioBufferView source,dsp::TruePeakLimiterParameters params,
+    const dsp::ModuleRegistry& registry,core::FrameCount block,bool bypassed,
+    const TerminalRenderCancel& cancelled,TerminalRenderStageTimings* stages,
+    bool accelerate)
+{
+    std::optional<TruePeakLimiterMeasuredNonconformingCandidate> recovered;
+    auto strict=render_true_peak_limiter_checked_candidate(source,params,
+        registry,block,bypassed,cancelled,stages,accelerate,&recovered);
+    if(strict)
+        return Result<TruePeakLimiterMeasuredOutcome>::success(
+            TruePeakLimiterMeasuredOutcome{
+                std::in_place_type<TruePeakLimiterCheckedCandidate>,
+                std::move(*strict.value())});
+    if(recovered)
+        return Result<TruePeakLimiterMeasuredOutcome>::success(
+            TruePeakLimiterMeasuredOutcome{
+                std::in_place_type<TruePeakLimiterMeasuredNonconformingCandidate>,
+                std::move(*recovered)});
+    return Result<TruePeakLimiterMeasuredOutcome>::failure(*strict.error());
 }
 } // namespace rgsml::render

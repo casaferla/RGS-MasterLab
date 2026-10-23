@@ -17,6 +17,7 @@
 #include <optional>
 #include <span>
 #include <vector>
+#include <variant>
 
 namespace rgsml::render {
 // A stale whole-programme terminal candidate is discarded at block boundaries.
@@ -107,6 +108,31 @@ render_true_peak_limiter_terminal_candidate(
      std::optional<TruePeakLimiterFinalCheck> final_check;
  };
 
+
+ // Experimental PO-approved NONCONFORMING recovery type. It carries
+ // a finite, full-resource M16-measured PCM, not a Ceiling certificate.
+ // A later exact-owner + explicit-consent gate is still REQUIRED before
+ // device audition or WAV export. Never label it verified or auto-publish.
+ enum class M17NonconformingReason : std::uint8_t {
+     TRIM_GUARD_EXCEEDED=1, POST_TRIM_ABOVE_CEILING=2
+ };
+ struct TruePeakLimiterMeasuredNonconformingCandidate final {
+     TruePeakLimiterTerminalCandidate terminal;
+     double requested_ceiling_db_tp{0.0};
+     double ceiling_linear{0.0};
+     double measured_linear_peak{0.0};
+     M17NonconformingReason reason{M17NonconformingReason::TRIM_GUARD_EXCEEDED};
+     analysis::TruePeakQualificationStatus measurement_status{
+         analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED};
+ };
+ using TruePeakLimiterMeasuredOutcome = std::variant<
+     TruePeakLimiterCheckedCandidate,
+     TruePeakLimiterMeasuredNonconformingCandidate>;
+
+ // Canonical strict entrypoint still FAILS on out-of-ceiling audio.
+ // Optional sink is reset first, populated ONLY on finite supported M16
+ // measurement and only for the two expressly recoverable failure cases.
+
  // UNQUALIFIED, candidate-only complete realization path. Produces no
  // publishable PROCESSED/export audio: owner and UI integration gates remain.
  // Active requires REAL M16 full-resource final measurement and at most one
@@ -122,7 +148,22 @@ render_true_peak_limiter_terminal_candidate(
      bool bypassed,
     const TerminalRenderCancel& cancelled = {},
     TerminalRenderStageTimings* stage_timings = nullptr,
-    bool use_experimental_offline_accelerator = false);
+    bool use_experimental_offline_accelerator = false,
+    std::optional<TruePeakLimiterMeasuredNonconformingCandidate>*
+        nonconforming_out = nullptr);
+
+ // The tagged outcome is not a product realization, source owner, auditor,
+ // playback publication, final master or export artifact. Explicit opt-in.
+ [[nodiscard]] core::Result<TruePeakLimiterMeasuredOutcome>
+ render_true_peak_limiter_checked_or_measured_candidate(
+     audio::AudioBufferView full_output_rate_source,
+     dsp::TruePeakLimiterParameters parameters,
+     const dsp::ModuleRegistry& registry,
+     core::FrameCount maximum_block_frames,
+     bool bypassed,
+     const TerminalRenderCancel& cancelled = {},
+     TerminalRenderStageTimings* stage_timings = nullptr,
+     bool use_experimental_offline_accelerator = false);
 
  
 // Tested but UNQUALIFIED bridge from the actual terminal-chain INSTANCE
