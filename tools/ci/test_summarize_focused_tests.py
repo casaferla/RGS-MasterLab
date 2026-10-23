@@ -43,12 +43,12 @@ def main() -> None:
         # Reproduce #714's actual symptom: hundreds of early QWARN/INFO
         # matches hid the one useful FAIL! in the old first-35 filter.
         qt.write_text(
-            ("QWARN : UiSmoke::noise() window geometry warning\\n" * 140)
-            + ("INFO : UiSmoke::noise() QVERIFY(control)\\n" * 40)
-            + "FAIL!  : UiSmoke::m16m17Parity() Compared values are not the same.\\n"
-            + "   Actual (a): QRectF(1,2,3,4)\\n"
-            + "   Expected (b): QRectF(5,6,7,8)\\n"
-            + "   Loc: [test_source_metadata_panel.cpp(3000)]\\n",
+            ("QWARN : UiSmoke::noise() window geometry warning\n" * 140)
+            + ("INFO : UiSmoke::noise() QVERIFY(control)\n" * 40)
+            + "FAIL!  : UiSmoke::m16m17Parity() Compared values are not the same.\n"
+            + "   Actual (a): QRectF(1,2,3,4)\n"
+            + "   Expected (b): QRectF(5,6,7,8)\n"
+            + "   Loc: [test_source_metadata_panel.cpp(3000)]\n",
             encoding="utf-8",
         )
         late = run_summary(temp, qt)
