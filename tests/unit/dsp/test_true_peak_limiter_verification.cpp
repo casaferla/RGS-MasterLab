@@ -2572,11 +2572,18 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
     for(const int fs:{44100,48000,88200,96000,176400,192000}) {
         for(const bool stereo:{false,true}) {
             for(const double ceiling:{0.0,-1.0,-6.0,-12.0}) {
-            // Preserve all 48 legacy controls. Add EIGHT strictly paired
-            // Prepare-proxy cases on real OUTPUT_RATE PCM, without SRC.
-            for(const int probeFrames:{0,512,1536}) {
-            if(probeFrames!=0 && ((fs!=48000 && fs!=192000)
-                || !stereo || (ceiling!=-1.0 && ceiling!=-12.0)))
+            // Keep all original controls and eight verified short proxies.
+            // Extend ONLY to 44.1/48/192 kHz and 4096/8192 frames at
+            // -1/-12 dBTP stereo, preserving strict same-source comparison.
+            for(const int probeFrames:{0,512,1536,4096,8192}) {
+            if(probeFrames!=0 && (!stereo
+                || (ceiling!=-1.0 && ceiling!=-12.0)))
+                continue;
+            if((probeFrames==512 || probeFrames==1536)
+                && fs!=48000 && fs!=192000)
+                continue;
+            if((probeFrames==4096 || probeFrames==8192)
+                && fs!=44100 && fs!=48000 && fs!=192000)
                 continue;
             const int nFrames=probeFrames!=0?probeFrames:
                 (fs==48000 && ceiling==-6.0 ? 32768
@@ -2885,7 +2892,7 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
             }
         }
     }
-    QCOMPARE(matrixCaseCount,std::size_t{56});
+    QCOMPARE(matrixCaseCount,std::size_t{68});
 }
 
 

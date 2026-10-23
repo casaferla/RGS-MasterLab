@@ -62,3 +62,60 @@ This test/docs-only commit must use EXTENDED so that both real
 verification suites and entire experiment execute. Maintain
 Single Writer/SHA-CAS, PR54 and main unchanged, frozen math unchanged,
 no UI, no new FQ, no rollout, no C4/R1.
+
+
+## CI #700 — Provenance and measured paired Prepare potential (EXTENDED PASS)
+
+Run: https://github.com/casaferla/RGS-MasterLab/actions/runs/39968935196
+SHA: 95c4a89501a4d02320c664bd972cb19eb8a7f235.
+Windows and Linux completed SUCCESS; original product and
+experimental M17 PCM matched bit-for-bit on the paired cases
+where no global trim occurred. Both independent M16 outcomes
+matched and returned PASS in all eight paired rows per platform.
+
+**Measured same-host, same-source ratios of the production checked
+wall time to (experimental core + separately measured M16)**,
+NOT measured user-facing Prepare speedups:
+
+| Fs / Ceiling | Windows 512 | Windows 1536 | Linux 512 | Linux 1536 |
+|---|---:|---:|---:|---:|
+| 48 kHz / -1 dBTP | 9.06x | 11.32x | 5.61x | 6.74x |
+| 48 kHz / -12 dBTP | 30.39x | **37.16x** | 17.80x | 21.52x |
+| 192 kHz / -1 dBTP | 14.22x | 22.97x | 8.60x | 12.45x |
+| 192 kHz / -12 dBTP | 37.50x | **81.95x** | 21.75x | **41.92x** |
+
+Absolute Windows checked renderer wall for the paired 1536
+sample source: 48 kHz -12 = 314.287 ms; 192 kHz -12 = 888.257 ms.
+Linux: 48k -12=928.321 ms; 192k -12=2634.428 ms.
+
+M17 DSP dominates product verified wall at severe -12 ceiling,
+whereas M16 is at most a few milliseconds on these short inputs.
+Other real Prepare costs SRC, worker queue, CPU scheduling,
+I/O/Qt publication and the full-duration verification remain excluded.
+Since 1536 frames are just 32ms at 48k or 8ms at 192k,
+ratios cannot be extrapolated to three minutes of source audio.
+A naive 180s/132=1.36s scenario is purely conditional, not measured.
+
+## CI #701 — Three-rate scale-up / 44.1k failure-risk boundary
+
+Preserve the 48 legacy full-rate short experiments and 8 initial
+product-checked Prepare-proxy cases (#700). Add 12 higher-workload
+same-source, same-host checked product/experimental pairs:
+Fs {44.1k,48k,192k}, stereo, Ceiling {-1,-12},
+frame counts {4096,8192}. All use the genuine production
+M17+M16 complete verify path, exact frozen IModule PCM,
+independent candidate M16 and original binary64 oracle. Total
+68 matrix cases and existing EXTENDED tests, with bounded
+GitHub Actions CSV evidence both hosts.
+
+WHY 44.1k: actual Windows FQ #75 observed ~3 minutes and then
+ERROR-BYPASS at Ceiling -12 on ~20s WAV. A successful 8192-frame
+fixture cannot clear that physical bug; a failure isolates a
+reproducible production verification case for diagnosis. Do not
+silently interpret this CI as a 20-second FQ.
+
+This is NOT 20 seconds of audio; it is a scale sensitivity test
+only. No PR54 or frozen M17 production code is modified.
+Do not promise a few seconds of whole-song preparation without
+a bounded full-resource worker+SRC+M16 benchmark on physical Windows.
+#701 is EXTENDED by design and retains all previous exact checks.
