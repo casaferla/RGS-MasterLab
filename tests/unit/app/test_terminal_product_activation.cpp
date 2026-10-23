@@ -387,6 +387,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(vm.preparation_fraction(),1.0);
     QVERIFY(vm.preparation_determinate());
     QCOMPARE(vm.preparation_stage(),QStringLiteral("Verified candidate ready"));
+    const auto initialPreparedPcm=candidates.staged();
+    QVERIFY(initialPreparedPcm);
+    QSignalSpy renderChanges{&renderer,&app::TerminalPrivateRenderController::changed};
+    QVERIFY(renderChanges.isValid());
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     vm.previewPrepared();
@@ -410,14 +414,19 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!product.private_id());
     QVERIFY(candidates.staged()); // Retained, NEVER audible on Bypass.
     QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(renderer.status(),QStringLiteral("READY_PRIVATE"));
     QVERIFY(!audioGate.has_session());
 
     // READY is already completed and MUST survive Cancel: no discarded
     // minute-long M17 work and no silent terminal handoff. A user can
     // preview the exact staged PCM after this no-op, then bypass explicitly.
+    const int renderingEventsBeforeRearm=renderChanges.count();
     vm.setBypass(false);
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(renderChanges.count(),renderingEventsBeforeRearm);
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     vm.cancelPreparation();
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
@@ -431,6 +440,7 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
     QVERIFY(coordinator.device_active());
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
     vm.setBypass(true);
     QVERIFY(limiter.value()->bypassed());
     QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));

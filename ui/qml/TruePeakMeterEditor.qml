@@ -50,11 +50,20 @@ Item {
     // Read only the canonical installed-audio status. While the user has
     // requested ON but the candidate is Preparing, this editor still meters
     // MANUAL pre-limiter PCM; never relabel it as final post-limiter audio.
+    readonly property bool nonconformingAudition: root.showLimiterControls
+        && root.limiterViewModel
+        && root.limiterViewModel.audioStatus === "ACTIVE · NON-CONFORMING AUDITION"
     readonly property bool postLimiterInstalled: root.showLimiterControls
         && root.limiterViewModel
-        && root.limiterViewModel.audioStatus === "ACTIVE · AUDITION UNQUALIFIED"
+        && (root.limiterViewModel.audioStatus === "ACTIVE · AUDITION UNQUALIFIED"
+            || root.nonconformingAudition)
+    // NON-CONFORMING audio is actually playing, but the current consumed-
+    // output M16 observer admits VERIFIED-only private ownership. Refuse
+    // fake pre-limiter LIVE readings and label the unavailable scope.
     readonly property string liveScopeHeading: !root.showLimiterControls
         ? "LIVE PROCESSED TRUE PEAK"
+        : root.nonconformingAudition
+            ? "POST-LIMITER LIVE TP · NOT CERTIFIED"
         : root.postLimiterInstalled ? "LIVE POST-LIMITER TRUE PEAK"
         : "LIVE PRE-LIMITER TRUE PEAK"
 

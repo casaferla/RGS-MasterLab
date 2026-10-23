@@ -36,6 +36,9 @@ Item {
     property color familyAccent: "#6CBCCF"
     readonly property bool hasMeasurement: measurementProvider
         ? measurementProvider.hasMeasurement : false
+    readonly property bool nonconformingAudition: root.limiterControlsIncluded
+        && root.limiterViewModel
+        && root.limiterViewModel.audioStatus === "ACTIVE · NON-CONFORMING AUDITION"
     readonly property bool hasMeasuredCeilingMiss:
         root.limiterControlsIncluded && root.limiterViewModel
         && typeof root.limiterViewModel.nonconformingPeakText === "string"
@@ -99,9 +102,11 @@ Item {
             heading: "RECENT / LIVE TRUE PEAK"
             reading: root.liveProvider && root.liveProvider.recentAvailable
                 ? root.liveProvider.peakText : "UNAVAILABLE"
-            detail: root.liveProvider && root.liveProvider.monitoringAttempted
-                ? root.liveProvider.statusText
-                : "NOT MONITORED · select PROCESSED and press Play"
+            detail: root.nonconformingAudition
+                ? "NON-CONFORMING PCM · LIVE NOT CERTIFIED"
+                : root.liveProvider && root.liveProvider.monitoringAttempted
+                    ? root.liveProvider.statusText
+                    : "NOT MONITORED · select PROCESSED and press Play"
             available: root.liveProvider ? root.liveProvider.recentAvailable : false
         }
         TruePeakReadoutCard {
@@ -122,9 +127,11 @@ Item {
             valueColor: "#F2C66F"
             reading: root.liveProvider && root.liveProvider.holdAvailable
                 ? root.liveProvider.holdText : "UNAVAILABLE"
-            detail: root.liveProvider && root.liveProvider.monitoringAttempted
-                ? "Max over the last fully covered 1 s of PROCESSED"
-                : "NOT MONITORED"
+            detail: root.nonconformingAudition
+                ? "NON-CONFORMING PCM · LIVE NOT CERTIFIED"
+                : root.liveProvider && root.liveProvider.monitoringAttempted
+                    ? "Max over the last fully covered 1 s of PROCESSED"
+                    : "NOT MONITORED"
             available: root.liveProvider ? root.liveProvider.holdAvailable : false
         }
         TruePeakReadoutCard {

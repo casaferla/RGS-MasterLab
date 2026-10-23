@@ -25,10 +25,18 @@ Rectangle {
     readonly property bool terminalOn: root.terminalLimiterViewModel
         && !root.terminalLimiterViewModel.bypass
         && root.terminalLimiterViewModel.audioStatus === "ACTIVE · AUDITION UNQUALIFIED"
+    // Preview Anyway installs real M17 PCM, but ONLY the measured full-
+    // resource overshoot is available. The verified-only Windows consumed
+    // meter cannot certify this separate nonconforming audio identity.
+    // Never misrepresent the live PRE-LIMITER M16 stream as this PCM.
+    readonly property bool terminalNonconformingAudible: root.terminalLimiterViewModel
+        && !root.terminalLimiterViewModel.bypass
+        && root.terminalLimiterViewModel.audioStatus === "ACTIVE · NON-CONFORMING AUDITION"
     readonly property var truePeakCurrentLive: terminalOn
-        ? root.terminalPostLimiterTruePeak : root.truePeakLiveViewModel
+        ? root.terminalPostLimiterTruePeak
+        : root.terminalNonconformingAudible ? null : root.truePeakLiveViewModel
     readonly property var truePeakCurrentStatic: terminalOn
-        ? null : root.truePeakStaticViewModel
+        || root.terminalNonconformingAudible ? null : root.truePeakStaticViewModel
     property var terminalLimiterViewModel: null
     property var limiterGrProvider: null
     property Item activeChainRow: null
