@@ -62,7 +62,8 @@ private:
     };
     void worker_loop();
     void complete(std::uint64_t,TerminalCandidateGate::Capture,
-        std::shared_ptr<core::Result<render::TruePeakLimiterOwnedSourceCandidate>>);
+        std::shared_ptr<core::Result<render::TruePeakLimiterOwnedSourceCandidate>>,
+        std::shared_ptr<std::optional<render::TruePeakLimiterOwnedMeasuredNonconformingCandidate>>);
     TerminalCandidateGate* gate_;
     TerminalLimiterState* terminal_;
     Snapshot prepared_;

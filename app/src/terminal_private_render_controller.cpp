@@ -83,11 +83,12 @@ void TerminalPrivateRenderController::worker_loop() {
             progressPhase_.store(static_cast<std::uint8_t>(observation.phase),
                                  std::memory_order_release);
         };
+        std::optional<render::TruePeakLimiterOwnedMeasuredNonconformingCandidate> recovered;
         auto result=render::render_true_peak_limiter_owned_output_rate_candidate(
             captured.manual_owner,job->manualChain,
             captured.full_source_frames,captured.manual_chain_revision,
             captured.output_rate,job->terminalChain,job->bindings,
-            registry_,job->block,cancelled,&stages,true);
+            registry_,job->block,cancelled,&stages,true,&recovered);
         const auto finished=std::chrono::steady_clock::now();
         const auto queueMs=std::chrono::duration_cast<
             std::chrono::milliseconds>(started-job->enqueuedAt).count();
@@ -124,15 +125,19 @@ void TerminalPrivateRenderController::worker_loop() {
         auto delivery=std::make_shared<
             core::Result<render::TruePeakLimiterOwnedSourceCandidate>>(
             std::move(result));
+        auto retained=std::make_shared<std::optional<
+            render::TruePeakLimiterOwnedMeasuredNonconformingCandidate>>(
+                std::move(recovered));
         static_cast<void>(QMetaObject::invokeMethod(
-            this,[this,serial=job->serial,captured,delivery] {
-                complete(serial,captured,delivery);
+            this,[this,serial=job->serial,captured,delivery,retained] {
+                complete(serial,captured,delivery,retained);
             },Qt::QueuedConnection));
     }
 }
 void TerminalPrivateRenderController::complete(
     std::uint64_t serial,TerminalCandidateGate::Capture captured,
-    std::shared_ptr<core::Result<render::TruePeakLimiterOwnedSourceCandidate>> outcome)
+    std::shared_ptr<core::Result<render::TruePeakLimiterOwnedSourceCandidate>> outcome,
+    std::shared_ptr<std::optional<render::TruePeakLimiterOwnedMeasuredNonconformingCandidate>> recovered)
 {
     if(serial!=serial_||!prepared_||!manual_||!id_||!chain_
        ||prepared_()!=captured.prepared_owner
@@ -141,6 +146,22 @@ void TerminalPrivateRenderController::complete(
         ++staleDiscarded_;return;
     }
     if(!outcome||!*outcome) {
+        if(recovered&&recovered->has_value()&&chain_) {
+            auto accepted=gate_->accept_measured(captured,
+                std::move(**recovered),prepared_(),manual_(),id_(),chain_(),
+                *terminal_);
+            if(accepted) {
+                // Store the real measured PCM, but do not install into the
+                // verified-only publisher, issue RealizationId, or export.
+                status_=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE");
+                error_.clear();
+                lastError_=outcome&&outcome->error()
+                    ?std::optional<core::Error>{*outcome->error()}
+                    :std::nullopt;
+                emit changed();
+                return;
+            }
+        }
         gate_->invalidate();
         status_=QStringLiteral("ERROR");
         lastError_=outcome&&outcome->error()
