@@ -671,3 +671,34 @@ This changes PR55's isolated selector and therefore mandates full
 EXTENDED Focused CI for real IModule PCM/M16 exactness, all six sample
 rates, mono/stereo, ceiling, EOS and checkpoint. No change to product
 M17 frozen, PR54/main, UI, FQ, LANE B protector or merge.
+
+
+## #688 FAST: Certified selector cache construction versus selection
+
+CI #687 EXTENDED Windows and Linux both SUCCESS; PCM/M16 six-rate oracle,
+checkpoint, signed detector EOS and the sparse exact binary64 old-vs-new
+selection checks remain PASS. On real detector events with 1..63 retained
+active records, old repeated cosine/log10 selection vs cached Hann/log10
+showed a median 6.90x Windows and 2.39x Linux selector-only advantage
+across eight qualifying scenarios per platform, with strongly varying
+system clock granularity and no end-to-end realtime assertion.
+
+The next test-only FAST diagnostic adds same-event preparation cost to
+48 detector-sourced scenarios, without changing the experimental selector.
+It separately times a first/cold prepare() (includes Hann table creation),
+a second/warm prepare() on exactly the same validated event batch, and
+the total 128 controller tick calls to choose() after preparation.
+A warm/preparation-over-selection ratio distinguishes per-batch cache
+rebuilding from repeated choice traversal. New columns are appended to
+the existing SelectorWork CSV for all detector-based rows; the original
+invented-event rows have zero/not-applicable entries.
+
+These preparation measurements deliberately use ONE 128-tick certified
+window and do not model the repeated advancing 64-frame output quantum.
+One cold and one warm sample per case is subject to allocator, CI-runner
+jitter, and timer granularity; treat results as a bottleneck screen,
+not as a precise throughput claim. The independent strict binary64 Hann
+winner and attack-floor oracle remains unchanged and mandatory.
+Fast Focused CI is adequate because only tests and experiment notes
+change; future implementation change again mandates EXTENDED.
+No R1 replacement, frozen M17 change, PR54/main, FQ, UI, or merge.

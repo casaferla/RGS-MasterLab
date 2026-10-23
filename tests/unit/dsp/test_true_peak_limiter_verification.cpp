@@ -3432,7 +3432,9 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
               "exact_selected_event,exact_bounds,"
               "sparse_legacy_mean_ns,sparse_legacy_p99_ns,sparse_legacy_max_ns,"
               "sparse_cached_mean_ns,sparse_cached_p99_ns,sparse_cached_max_ns,"
-              "sparse_legacy_over_cached_ratio\n";
+              "sparse_legacy_over_cached_ratio,"
+              "prepare_cold_ns,prepare_warm_ns,select_128ticks_ns,"
+              "warm_prepare_over_select_ratio\n";
     }
     std::size_t cases=0;
     for(const int fs:{48000,192000}) {
@@ -3630,7 +3632,7 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
                     <<superStats[0]<<','<<superStats[1]<<','<<superStats[2]<<','
                     <<halfStats[0]<<','<<halfStats[1]<<','<<halfStats[2]<<','
                     <<speedRatio<<','<<halfVsSuper
-                    <<",PASS,PASS,PASS,PASS,0,0,0,0,0,0,0\n";
+                    <<",PASS,PASS,PASS,PASS,0,0,0,0,0,0,0,0,0,0,0\n";
             }
             ++cases;
         }
@@ -3683,8 +3685,25 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                     QVERIFY(eventSpan.size()<=Selector::kMaxBatchEvents);
                     auto selector=Selector::create(fs,ceiling);
                     QVERIFY(selector);
-                    QVERIFY(selector->prepare(eventSpan));
+                    const auto coldStarted=std::chrono::steady_clock::now();
+                    const bool coldPrepared=selector->prepare(eventSpan);
+                    const auto coldFinished=std::chrono::steady_clock::now();
+                    QVERIFY(coldPrepared);
                     QCOMPARE(selector->cached_event_count(),eventSpan.size());
+                    // Warm repeat on the SAME certified events, after Hann
+                    // weights are initialized. The second prepare must not
+                    // change observable selector output or weight count.
+                    const auto warmStarted=std::chrono::steady_clock::now();
+                    const bool warmPrepared=selector->prepare(eventSpan);
+                    const auto warmFinished=std::chrono::steady_clock::now();
+                    QVERIFY(warmPrepared);
+                    QCOMPARE(selector->cached_event_count(),eventSpan.size());
+                    const auto coldPrepNs=std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(
+                            coldFinished-coldStarted).count();
+                    const auto warmPrepNs=std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(
+                            warmFinished-warmStarted).count();
                     std::vector<std::int64_t> grouped,super,half;
                     std::vector<std::int64_t> directCosine,cachedSparsePair;
                     grouped.reserve(128);
@@ -3844,6 +3863,9 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         super.end(),std::int64_t{0});
                     const auto cSum=std::accumulate(half.begin(),
                         half.end(),std::int64_t{0});
+                    const double warmPrepareOverSelect=cSum>0
+                        ?static_cast<double>(warmPrepNs)/
+                            static_cast<double>(cSum):0.0;
                     const double baseRatio=bSum>0
                         ?static_cast<double>(aSum)/static_cast<double>(bSum):0.0;
                     const double halfRatio=cSum>0
@@ -3870,6 +3892,10 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         <<" 512_over_group="<<baseRatio
                         <<" 256_over_512="<<halfRatio
                         <<" sparse_hann_cache_speedup="<<sparseCacheSpeed
+                        <<" prep_cold_ns="<<coldPrepNs
+                        <<" prep_warm_ns="<<warmPrepNs
+                        <<" choose_128ticks_ns="<<cSum
+                        <<" warm_prepare_over_choose="<<warmPrepareOverSelect
                         <<" exact_pcm_controller_unmodified=YES";
                     if(!outputPath.empty()) {
                         std::ofstream csv(outputPath,std::ios::app);
@@ -3891,7 +3917,9 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                            <<sparseOldStats[0]<<','<<sparseOldStats[1]<<','
                            <<sparseOldStats[2]<<','<<sparseNewStats[0]<<','
                            <<sparseNewStats[1]<<','<<sparseNewStats[2]<<','
-                           <<sparseCacheSpeed<<'\n';
+                           <<sparseCacheSpeed<<','
+                           <<coldPrepNs<<','<<warmPrepNs<<','<<cSum<<','
+                           <<warmPrepareOverSelect<<'\n';
                         if(sparseCache) {
                             qInfo().nospace()
                                 <<"M17 original-cosine vs cached Hann, fs="<<fs
