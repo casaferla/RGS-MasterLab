@@ -10,6 +10,7 @@ add_library(rgsml_dsp STATIC
     src/stereo_ms_parameters.cpp
     src/true_peak_limiter_parameters.cpp
     src/true_peak_limiter_module.cpp
+    src/true_peak_limiter_offline_experimental.cpp
     src/stereo_ms_width.cpp
     src/stereo_ms_width_response.cpp
     src/stereo_ms_module.cpp
@@ -34,6 +35,15 @@ target_link_libraries(rgsml_dsp
     PRIVATE
         rgsml_vendor_json
 )
+
+# The offline candidate follows exactly the protected binary64 policy.
+if(MSVC)
+    set_source_files_properties(src/true_peak_limiter_offline_experimental.cpp
+        PROPERTIES COMPILE_OPTIONS "/fp:strict")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    set_source_files_properties(src/true_peak_limiter_offline_experimental.cpp
+        PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
+endif()
 
 set_property(TARGET rgsml_dsp PROPERTY RGSML_DEPENDENCY_LAYER DSP)
 rgsml_apply_project_warnings(rgsml_dsp)
