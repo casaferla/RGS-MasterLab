@@ -33,6 +33,12 @@ public:
         std::shared_ptr<const render::RenderResult> manual,
         std::optional<core::RealizationId> manualId,
         std::optional<core::FrameRange> sourceLoop);
+    // Only explicit user opt-in; never returns a VERIFIED terminal status.
+    [[nodiscard]] core::Result<core::RealizationId> install_measured_private(
+        std::shared_ptr<const render::RenderResult> prepared,
+        std::shared_ptr<const render::RenderResult> manual,
+        std::optional<core::RealizationId> manualId,
+        std::optional<core::FrameRange> sourceLoop);
     // Withdraw precisely owned OUTPUT_RATE device audio before a staged
     // candidate is invalidated. Never clear any later audible owner.
     [[nodiscard]] core::Status revoke_private();

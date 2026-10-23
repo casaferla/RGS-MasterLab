@@ -44,6 +44,8 @@ public:
     { rateProbe_=std::move(probe); }
     [[nodiscard]] core::Status request_private_for_device(bool deferred=false);
     [[nodiscard]] core::Status install_ready_private();
+    // Explicitly requested by the NON-CONFORMING preview button only.
+    [[nodiscard]] core::Status install_measured_private();
     [[nodiscard]] core::Status cancel();
     // Changes to a Loop Region cancel pending handoffs but do not stop
     // an already installed SOURCE-mapped session: its own live loop

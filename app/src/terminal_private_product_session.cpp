@@ -234,6 +234,42 @@ core::Status TerminalPrivateProductSession::install_ready_private()
     return install_accepted_candidate();
 }
 
+core::Status TerminalPrivateProductSession::install_measured_private()
+{
+    if(!pending_||!pending_->deferred
+       ||status_!=QStringLiteral("MEASURED_NONCONFORMING_READY")
+       ||renderer_->status()!=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE"))
+        return core::Status::failure(rejected(
+            "M17 nonconforming preview was not explicitly available."));
+    const Pending authority=*pending_;
+    if(!selected_()||prepared_()!=authority.prepared
+       ||manual_()!=authority.manual
+       ||manualId_()!=std::optional{authority.manualId}
+       ||sourceLoop_()!=authority.loop) {
+        renderer_->invalidate();
+        stale();
+        return core::Status::failure(rejected(
+            "Nonconforming preview source, owner or loop changed."));
+    }
+    const auto held=measured_candidate();
+    if(!held||held->rendered.output_rate!=authority.outputRate)
+        return core::Status::failure(rejected(
+            "No current measured nonconforming output-rate PCM."));
+    auto installed=publisher_->install_measured_private(
+        authority.prepared,authority.manual,authority.manualId,authority.loop);
+    if(!installed) {
+        failed(*installed.error());
+        renderer_->invalidate();
+        return core::Status::failure(*installed.error());
+    }
+    pending_.reset();
+    privateId_=*installed.value();
+    status_=QStringLiteral("NONCONFORMING_INSTALLED");
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
 core::Status TerminalPrivateProductSession::install_accepted_candidate()
 {
     if(!pending_)return core::Status::failure(rejected(
