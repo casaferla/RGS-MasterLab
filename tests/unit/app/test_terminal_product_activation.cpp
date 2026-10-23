@@ -105,6 +105,25 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         manual->chain_revision(),*deviceRate.value(),
         limiter.value()->chain(),bindings,*registry.value(),*block.value());
     QVERIFY(!differentMaster);
+
+    // The optional recovery seam preserves real upstream ownership and never
+    // invents a non-conforming result when the verified master is valid.
+    std::optional<render::TruePeakLimiterOwnedMeasuredNonconformingCandidate>
+        recovered;
+    auto diagnostic=render::render_true_peak_limiter_owned_output_rate_candidate(
+        manual,*manualChain.value(),*frames.value(),manual->chain_revision(),
+        *sourceRate.value(),limiter.value()->chain(),bindings,
+        *registry.value(),*block.value(),{},nullptr,true,&recovered);
+    QVERIFY(diagnostic);
+    QVERIFY(!recovered);
+    // A rate-pair unsupported upstream must stay non-recoverable, even
+    // when a caller explicitly asks for an optional PCM recovery.
+    auto invalidSrc=render::render_true_peak_limiter_owned_output_rate_candidate(
+        manual,*manualChain.value(),*frames.value(),manual->chain_revision(),
+        *deviceRate.value(),limiter.value()->chain(),bindings,
+        *registry.value(),*block.value(),{},nullptr,true,&recovered);
+    QVERIFY(!invalidSrc);
+    QVERIFY(!recovered);
 }
 
 void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSourceAndLoop()

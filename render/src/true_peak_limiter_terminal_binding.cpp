@@ -26,8 +26,10 @@ render_true_peak_limiter_bound_terminal_candidate(
     core::FrameCount block_size,
     const TerminalRenderCancel& cancelled,
     TerminalRenderStageTimings* stage_timings,
-    bool use_experimental_offline_accelerator)
+    bool use_experimental_offline_accelerator,
+    std::optional<TruePeakLimiterMeasuredNonconformingCandidate>* nonconforming_out)
 {
+    if(nonconforming_out)nonconforming_out->reset();
     // Mandatory exact terminal placement. A MANUAL Gain/EQ/Compressor/M15
     // chain can never masquerade as the last OUTPUT_RATE DSP segment.
     if (chain.context().stage != dsp::ProcessingStage::MASTER
@@ -63,7 +65,7 @@ render_true_peak_limiter_bound_terminal_candidate(
     const auto bypass = !instance.active();
     auto checked = render_true_peak_limiter_checked_candidate(
         input, *params, registry, block_size, bypass, cancelled,
-        stage_timings,use_experimental_offline_accelerator);
+        stage_timings,use_experimental_offline_accelerator,nonconforming_out);
     if (!checked) {
         return core::Result<TruePeakLimiterBoundTerminalCandidate>::failure(
             *checked.error());

@@ -40,8 +40,10 @@ render_true_peak_limiter_owned_candidate_impl(
     bool enable_unqualified_src,
     const TerminalRenderCancel& cancelled,
     TerminalRenderStageTimings* stage_timings,
-    bool use_experimental_offline_accelerator)
+    bool use_experimental_offline_accelerator,
+    std::optional<TruePeakLimiterOwnedMeasuredNonconformingCandidate>* nonconforming_out)
 {
+    if(nonconforming_out)nonconforming_out->reset();
     using Candidate = TruePeakLimiterOwnedSourceCandidate;
     // Whole-programme stage diagnostics are captured on the worker thread.
     // No per-frame clocks, logger calls or floating-point/audio mutations.
@@ -138,11 +140,27 @@ render_true_peak_limiter_owned_candidate_impl(
     if(cancelled && cancelled()) return cancelledResult();
     report(TerminalRenderProgressPhase::M17_CORE,0,
            output.value()->pcm.view().frame_count().value());
+    std::optional<TruePeakLimiterMeasuredNonconformingCandidate> measured;
     auto candidate=render_true_peak_limiter_bound_terminal_candidate(
         output.value()->pcm.view(),terminal_chain,bindings,registry,block,
-        cancelled,stage_timings,use_experimental_offline_accelerator);
-    if(!candidate)
+        cancelled,stage_timings,use_experimental_offline_accelerator,
+        nonconforming_out ? &measured : nullptr);
+    if(!candidate) {
+        if(nonconforming_out && measured && !(cancelled && cancelled())) {
+            // The terminal-bound call already required the authentic
+            // instance and typed parameters; all upstream Manual owner and
+            // rate guards passed. NO audition identity is created.
+            const auto modules=terminal_chain.instances();
+            if(modules.size()==1) {
+                *nonconforming_out=TruePeakLimiterOwnedMeasuredNonconformingCandidate{
+                    std::move(manual),std::move(*measured),
+                    modules[0].instance_id(),terminal_chain.revision(),
+                    output_rate,full_frames,manual_revision,
+                    output.value()->used_src,output.value()->kernel_sha256};
+            }
+        }
         return core::Result<Candidate>::failure(*candidate.error());
+    }
     if(cancelled && cancelled()) return cancelledResult();
     report(TerminalRenderProgressPhase::FINISHING);
     // All intermediate PCM and final verification must succeed BEFORE
@@ -171,7 +189,7 @@ render_true_peak_limiter_owned_same_rate_candidate(
     return render_true_peak_limiter_owned_candidate_impl(
         std::move(manual),manual_chain,full_frames,manual_revision,
         output_rate,terminal_chain,bindings,registry,block,false,cancelled,
-        stage_timings,use_experimental_offline_accelerator);
+        stage_timings,use_experimental_offline_accelerator,nullptr);
 }
 
 core::Result<TruePeakLimiterOwnedSourceCandidate>
@@ -187,12 +205,13 @@ render_true_peak_limiter_owned_output_rate_candidate(
     core::FrameCount block,
     const TerminalRenderCancel& cancelled,
     TerminalRenderStageTimings* stage_timings,
-    bool use_experimental_offline_accelerator)
+    bool use_experimental_offline_accelerator,
+    std::optional<TruePeakLimiterOwnedMeasuredNonconformingCandidate>* nonconforming_out)
 {
     return render_true_peak_limiter_owned_candidate_impl(
         std::move(manual),manual_chain,full_frames,manual_revision,
         output_rate,terminal_chain,bindings,registry,block,true,cancelled,
-        stage_timings,use_experimental_offline_accelerator);
+        stage_timings,use_experimental_offline_accelerator,nonconforming_out);
 }
 
 core::Result<FinalMasterOutputRatePlan>

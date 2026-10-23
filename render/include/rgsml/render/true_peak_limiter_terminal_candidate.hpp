@@ -189,7 +189,9 @@ render_true_peak_limiter_bound_terminal_candidate(
     core::FrameCount maximum_block_frames,
     const TerminalRenderCancel& cancelled = {},
     TerminalRenderStageTimings* stage_timings = nullptr,
-    bool use_experimental_offline_accelerator = false);
+    bool use_experimental_offline_accelerator = false,
+    std::optional<TruePeakLimiterMeasuredNonconformingCandidate>*
+        nonconforming_out = nullptr);
 
 
 // First identity-preserving candidate handoff from a complete, OWNED,
@@ -201,6 +203,20 @@ render_true_peak_limiter_bound_terminal_candidate(
 struct TruePeakLimiterOwnedSourceCandidate final {
     std::shared_ptr<const RenderResult> manual_owner;
     TruePeakLimiterBoundTerminalCandidate terminal;
+    core::SampleRate output_rate;
+    core::FrameCount programme_frames;
+    std::uint64_t manual_chain_revision{0};
+    bool used_candidate_src{false};
+    std::string_view src_kernel_sha256;
+};
+
+// No unqualified audio can use the verified output route. The exact full
+// upstream MANUAL owner is pinned until a later separately consented gate.
+struct TruePeakLimiterOwnedMeasuredNonconformingCandidate final {
+    std::shared_ptr<const RenderResult> manual_owner;
+    TruePeakLimiterMeasuredNonconformingCandidate terminal;
+    dsp::ModuleInstanceId limiter_instance_id;
+    std::uint64_t terminal_chain_revision{0};
     core::SampleRate output_rate;
     core::FrameCount programme_frames;
     std::uint64_t manual_chain_revision{0};
@@ -247,7 +263,9 @@ render_true_peak_limiter_owned_output_rate_candidate(
     core::FrameCount maximum_block_frames,
     const TerminalRenderCancel& cancelled = {},
     TerminalRenderStageTimings* stage_timings = nullptr,
-    bool use_experimental_offline_accelerator = false);
+    bool use_experimental_offline_accelerator = false,
+    std::optional<TruePeakLimiterOwnedMeasuredNonconformingCandidate>*
+        nonconforming_out = nullptr);
 
 
 // Approved six-rate FINAL MASTER target plan, independent of audition hardware.
