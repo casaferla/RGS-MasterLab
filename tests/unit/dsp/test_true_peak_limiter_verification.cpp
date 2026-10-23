@@ -3837,6 +3837,19 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         const auto& b=measures[1].first;
                         const auto& c=measures[2].first;
                         QVERIFY(a && b && c);
+                        const auto cursor=selector->choose_monotone(m,current);
+                        QVERIFY(cursor);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(cursor->attack_floor_db),
+                                 std::bit_cast<std::uint64_t>(c->attack_floor_db));
+                        QCOMPARE(cursor->future_event.has_value(),
+                                 c->future_event.has_value());
+                        QCOMPARE(cursor->visited,c->visited);
+                        QCOMPARE(cursor->skipped,c->skipped);
+                        if(c->future_event) {
+                            QCOMPARE(cursor->future_event->tick,c->future_event->tick);
+                            QCOMPARE(std::bit_cast<std::uint64_t>(cursor->future_event->peak),
+                                     std::bit_cast<std::uint64_t>(c->future_event->peak));
+                        }
                         grouped.push_back(measures[0].second);
                         super.push_back(measures[1].second);
                         half.push_back(measures[2].second);
@@ -4105,6 +4118,15 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                     for(std::int64_t tick=nextFirst;tick<nextFirst+16;++tick) {
                         const auto current=feeder->peak_at(tick);
                         const auto incrementalChoice=selector->choose(tick,current);
+                        const auto resetCursor=selector->choose_monotone(tick,current);
+                        QVERIFY(resetCursor && incrementalChoice);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(resetCursor->attack_floor_db),
+                                 std::bit_cast<std::uint64_t>(incrementalChoice->attack_floor_db));
+                        QCOMPARE(resetCursor->future_event.has_value(),
+                                 incrementalChoice->future_event.has_value());
+                        if(resetCursor->future_event)
+                            QCOMPARE(resetCursor->future_event->tick,
+                                     incrementalChoice->future_event->tick);
                         const auto recomputedChoice=full->choose(tick,current);
                         const auto scratchChoice=
                             scratchSelector->choose(tick,current);
