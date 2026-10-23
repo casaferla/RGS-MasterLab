@@ -178,6 +178,7 @@ private slots:
     void actualM16ReverificationUsesOneGlobalStereoScalar();
     void renderedM17FullResourceMeasuredAndVerifiedByM16();
     void acceleratedOfflinePrepareMatchesFrozenCheckedRenderer();
+    void finalMasterSixBySixTargetRatePlanIsDeviceIndependent();
     void shortAndSplitEosDoesNotCreatePhantomPcm();
     void inactiveBypassIsZeroLatencyBitCopyAboveCeilingSixRates();
     void bypassAndEnabledLimiterAreObservablyDistinct();
@@ -189,6 +190,47 @@ private slots:
     void detectorSourcedLookaheadMemoizationProbe();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
+void TruePeakLimiterVerificationTest::finalMasterSixBySixTargetRatePlanIsDeviceIndependent()
+{
+    // All six Project/Render targets are legitimate choices for EVERY
+    // source rate. This only proves the rate contract and exact L/M plan:
+    // non-identity SRC must still pass its separate Phase-11 product gate.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    std::size_t identity=0,converted=0;
+    for(const auto sourceHz:rates) {
+        auto sourceRate=core::SampleRate::create(sourceHz);
+        QVERIFY(sourceRate);
+        auto automatic=render::plan_final_master_output_rate(
+            *sourceRate.value());
+        QVERIFY(automatic);
+        QVERIFY(automatic.value()->source_rate==*sourceRate.value());
+        QVERIFY(automatic.value()->target_rate==*sourceRate.value());
+        QVERIFY(!automatic.value()->needs_final_output_src);
+        QCOMPARE(automatic.value()->interpolation_factor,std::uint32_t{1});
+        QCOMPARE(automatic.value()->decimation_factor,std::uint32_t{1});
+        for(const auto targetHz:rates) {
+            auto targetRate=core::SampleRate::create(targetHz);
+            QVERIFY(targetRate);
+            auto plan=render::plan_final_master_output_rate(
+                *sourceRate.value(),*targetRate.value());
+            QVERIFY(plan);
+            QVERIFY(plan.value()->source_rate==*sourceRate.value());
+            QVERIFY(plan.value()->target_rate==*targetRate.value());
+            const auto l=plan.value()->interpolation_factor;
+            const auto m=plan.value()->decimation_factor;
+            QVERIFY(l>0&&m>0);
+            QCOMPARE(std::uint64_t{l}*std::uint64_t{sourceHz},
+                     std::uint64_t{m}*std::uint64_t{targetHz});
+            QVERIFY(plan.value()->needs_final_output_src==(sourceHz!=targetHz));
+            if(sourceHz==targetHz)++identity;else ++converted;
+        }
+    }
+    QCOMPARE(identity,std::size_t{6});
+    QCOMPARE(converted,std::size_t{30});
+    // Critically, no device-rate input exists in the final master plan.
+}
+
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
 {
     const double edge=m17_verifier::kMinimumGlobalTrimGain;

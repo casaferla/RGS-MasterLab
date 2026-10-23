@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <chrono>
 #include <cstdint>
+#include <numeric>
 #include <string_view>
 #include <utility>
 
@@ -194,6 +195,32 @@ render_true_peak_limiter_owned_output_rate_candidate(
         stage_timings,use_experimental_offline_accelerator);
 }
 
+core::Result<FinalMasterOutputRatePlan>
+plan_final_master_output_rate(
+    core::SampleRate source_rate,
+    std::optional<core::SampleRate> requested_target_rate)
+{
+    const auto target_rate=requested_target_rate.value_or(source_rate);
+    const auto fin=source_rate.value();
+    const auto fout=target_rate.value();
+    if(!m16_supported_rate(fin)||!m16_supported_rate(fout))
+        return core::Result<FinalMasterOutputRatePlan>::failure(source_error(
+            core::ErrorCode::UnsupportedOperation,
+            "M17_FINAL_MASTER_TARGET_RATE_UNSUPPORTED",
+            "Final master SOURCE and TARGET must use one of the six accepted RGS rates."));
+    const auto common=std::gcd(fin,fout);
+    if(common<=0)
+        return core::Result<FinalMasterOutputRatePlan>::failure(source_error(
+            core::ErrorCode::InvalidArgument,
+            "M17_FINAL_MASTER_RATE_PLAN_INVALID",
+            "Final master rate ratio cannot be represented."));
+    return core::Result<FinalMasterOutputRatePlan>::success(
+        FinalMasterOutputRatePlan{
+            source_rate,target_rate,
+            static_cast<std::uint32_t>(fout/common),
+            static_cast<std::uint32_t>(fin/common),fin!=fout});
+}
+
 core::Result<TruePeakLimiterFinalMasterCandidate>
 render_true_peak_limiter_owned_final_master_candidate(
     std::shared_ptr<const RenderResult> manual,
@@ -213,8 +240,12 @@ render_true_peak_limiter_owned_final_master_candidate(
             "Final master rate requires a complete immutable manual owner."));
     // Final MASTER rate is explicitly requested or defaults to SOURCE.
     // Never probe or infer the Windows device rate at this boundary.
-    const auto masterRate=requested_master_rate.value_or(
-        manual->view().format().sample_rate());
+    auto plan=plan_final_master_output_rate(
+        manual->view().format().sample_rate(),requested_master_rate);
+    if(!plan)return core::Result<Final>::failure(*plan.error());
+    const auto masterRate=plan.value()->target_rate;
+    // Planning does not bypass the separate Phase-11 Final Output SRC
+    // implementation/qualification gate: unavailable pairs fail closed.
     auto rendered=render_true_peak_limiter_owned_output_rate_candidate(
         std::move(manual),manual_chain,full_frames,manual_revision,
         masterRate,terminal_chain,bindings,registry,block);

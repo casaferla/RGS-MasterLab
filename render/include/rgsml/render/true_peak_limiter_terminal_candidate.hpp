@@ -200,6 +200,23 @@ render_true_peak_limiter_owned_output_rate_candidate(
     bool use_experimental_offline_accelerator = false);
 
 
+// Approved six-rate FINAL MASTER target plan, independent of audition hardware.
+// This resolves user choice and the exact rational L/M for all 36 ordered
+// (source, target) combinations. A valid plan is NOT evidence that a
+// non-identity Final Output SRC kernel has been implemented or qualified.
+struct FinalMasterOutputRatePlan final {
+    core::SampleRate source_rate;
+    core::SampleRate target_rate;
+    std::uint32_t interpolation_factor{1};
+    std::uint32_t decimation_factor{1};
+    bool needs_final_output_src{false};
+};
+
+[[nodiscard]] core::Result<FinalMasterOutputRatePlan>
+plan_final_master_output_rate(
+    core::SampleRate source_rate,
+    std::optional<core::SampleRate> requested_target_rate = std::nullopt);
+
 // UNQUALIFIED FINAL-MASTER rate contract, independent of the Windows device.
 // No device preferred rate is consulted. If no rate is requested, the
 // original MANUAL source rate is retained; an explicit new master rate
