@@ -104,6 +104,23 @@ void TerminalPrivateRenderController::worker_loop() {
             << " trim_us=" << stages.verification_trim_us
             << " m16_secondary_us=" << stages.m16_secondary_us
             << " result=" << (result ? "accepted_for_gate" : "failure");
+        if(!result && stages.verification_ceiling_linear>0.0) {
+            // No PCM, personal audio, file path or guessed diagnosis here.
+            // This scalar-only bounded diagnostic distinguishes excess by
+            // a few binary64 ULPs from a genuine limiter/verification gap.
+            qInfo().nospace() << "RGS M17 verification serial=" << job->serial
+                << " ceiling_linear=" << QString::number(
+                    stages.verification_ceiling_linear,'g',17)
+                << " before_linear=" << QString::number(
+                    stages.verification_before_linear_peak,'g',17)
+                << " global_trim_gain=" << QString::number(
+                    stages.verification_trim_gain,'g',17)
+                << " after_linear=" << QString::number(
+                    stages.verification_after_linear_peak,'g',17)
+                << " excess_ulps=" << stages.verification_post_trim_excess_ulps
+                << " post_m16_unsupported="
+                << stages.verification_post_trim_m16_unsupported;
+        }
         auto delivery=std::make_shared<
             core::Result<render::TruePeakLimiterOwnedSourceCandidate>>(
             std::move(result));

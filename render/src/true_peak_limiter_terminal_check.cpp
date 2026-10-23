@@ -3,6 +3,7 @@
 #include <rgsml/analysis/true_peak_measurement.hpp>
 #include <rgsml/core/error.hpp>
 
+#include <bit>
 #include <cmath>
 #include <chrono>
 #include <cstdint>
@@ -104,6 +105,10 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     if(wasCancelled()) return cancelFailure();
     const auto before=measured.value()->global_linear_peak();
     const auto ceiling=std::pow(10.0,params.ceiling_db_tp()/20.0);
+    if(stage_timings) {
+        stage_timings->verification_before_linear_peak=before;
+        stage_timings->verification_ceiling_linear=ceiling;
+    }
     if(!std::isfinite(before) || before<0.0
         || !std::isfinite(ceiling) || ceiling<=0.0) {
         return Result<TruePeakLimiterCheckedCandidate>::failure(
@@ -118,6 +123,7 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
             std::move(*rendered.value()),evidence});
 
     const auto gain=std::nextafter(ceiling/before,0.0);
+    if(stage_timings)stage_timings->verification_trim_gain=gain;
     if(!allowed_gain(gain)) {
         return Result<TruePeakLimiterCheckedCandidate>::failure(
             verification_error(ErrorCode::InvalidState,
@@ -173,6 +179,19 @@ Result<TruePeakLimiterCheckedCandidate> render_true_peak_limiter_checked_candida
     if(!remeasured)
         return Result<TruePeakLimiterCheckedCandidate>::failure(*remeasured.error());
     const auto after=remeasured.value()->global_linear_peak();
+    if(stage_timings) {
+        stage_timings->verification_after_linear_peak=after;
+        stage_timings->verification_post_trim_m16_unsupported=
+            remeasured.value()->qualification_status()
+                ==analysis::TruePeakQualificationStatus::UNSUPPORTED;
+        // Positive, finite IEEE-754 binary64 values are bitwise monotonic.
+        // This reports whether the frozen ONE-step trim missed Ceiling by
+        // 1 ULP or a much larger margin; it NEVER changes acceptance.
+        if(std::isfinite(after) && after>ceiling && ceiling>0.0)
+            stage_timings->verification_post_trim_excess_ulps=
+                std::bit_cast<std::uint64_t>(after)
+                -std::bit_cast<std::uint64_t>(ceiling);
+    }
     if(!std::isfinite(after) || after<0 || after>ceiling
         || remeasured.value()->qualification_status()
             ==analysis::TruePeakQualificationStatus::UNSUPPORTED) {

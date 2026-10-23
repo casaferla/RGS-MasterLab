@@ -46,6 +46,15 @@ struct TerminalRenderStageTimings final {
     std::int64_t m16_primary_us{-1};
     std::int64_t verification_trim_us{-1};
     std::int64_t m16_secondary_us{-1};
+    // PO Gate-M diagnostic ONLY: values obtained from actual full-resource
+    // M16 measurements. -1 means the stage was not reached. They NEVER
+    // change PCM, gain, gate decisions or frozen binary64 verifier math.
+    double verification_ceiling_linear{-1.0};
+    double verification_before_linear_peak{-1.0};
+    double verification_trim_gain{-1.0};
+    double verification_after_linear_peak{-1.0};
+    std::uint64_t verification_post_trim_excess_ulps{0};
+    bool verification_post_trim_m16_unsupported{false};
     // An optional observation sidecar, never used in float-point processing.
     TerminalRenderProgressSink progress;
 };

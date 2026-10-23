@@ -1003,12 +1003,22 @@ void TruePeakLimiterVerificationTest::optionalPhaseInstrumentationIsNonInvasive(
         QCOMPARE(stages.src_us,std::int64_t{-1});
         QCOMPARE(stages.verification_trim_us,std::int64_t{-1});
         QCOMPARE(stages.m16_secondary_us,std::int64_t{-1});
+        QCOMPARE(stages.verification_trim_gain,-1.0);
+        QCOMPARE(stages.verification_after_linear_peak,-1.0);
+        QCOMPARE(stages.verification_post_trim_excess_ulps,std::uint64_t{0});
+        QVERIFY(!stages.verification_post_trim_m16_unsupported);
         if(bypassed) {
             QCOMPARE(stages.m16_primary_us,std::int64_t{-1});
+            QCOMPARE(stages.verification_ceiling_linear,-1.0);
+            QCOMPARE(stages.verification_before_linear_peak,-1.0);
             QVERIFY(!instrumented.value()->final_check);
         } else {
             QVERIFY(stages.m16_primary_us>=0);
             QVERIFY(instrumented.value()->final_check.has_value());
+            QCOMPARE(stages.verification_ceiling_linear,
+                std::pow(10.0,params.value()->ceiling_db_tp()/20.0));
+            QCOMPARE(stages.verification_before_linear_peak,
+                instrumented.value()->final_check->before_linear_peak);
         }
         QCOMPARE(instrumented.value()->final_check.has_value(),
             uninstrumented.value()->final_check.has_value());
