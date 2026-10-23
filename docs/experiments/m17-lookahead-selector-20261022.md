@@ -915,3 +915,50 @@ Because PR55 experimental selector runtime and rolling scheduler
 change, full EXTENDED Focused CI is required. Any red stops
 new optimization and triggers correction/rollback on PR55 only.
 No frozen M17, PR54/main, FQ, UI, R1, C4 or merge.
+
+
+## #696 EXTENDED: Paired selector repeatability / p99 / worst
+
+CI #695 Windows/Linux EXTENDED SUCCESS: original binary-search selector
+and exact monotone-cursor candidate produced the same frozen M17 IModule
+PCM in every 48/192 kHz quantum case. At 192kHz LAZY, 4/4 paired
+scenarios per host improved the quantum mean: Windows median
+BINARY/CURSOR 1.049x, Linux median 1.093x. Selector cost alone:
+1.16x Windows and 1.17x Linux. This is a concrete whole-quantum
+benefit, but NOT a qualified hard realtime outcome: all 192kHz
+p99 values (Windows and Linux) exceeded the 333333 ns budget.
+
+#696 adds three complete, independent repetitions per scenario of
+the already real signed detector + certified events + 64-frame
+controller + PCM verification integrated profile. Both CURSOR and
+original BINARY locator run from fresh detector, scheduler and
+controller state on identical source PCM and Ceiling; FROZEN and
+LAZY controller controls remain. The execution order is reversed
+for the middle repetition, reducing fixed measurement-order bias.
+All 48kHz and 192kHz, mono/stereo, -6/-12dBTP scenarios are
+repeated, for 96 CSV rows per CI platform; every row includes
+mean/p99/max, missed 64-frame deadlines, detailed stage timings,
+active-event and visit/skip work, and the new explicit repeat_id.
+Existing EXTENDED checks continue the separate six-Fs PCM, M16
+true peak, EOS and checkpoint tests.
+
+Decision criteria before #697: strict PCM bitwise must remain
+PASS with no uncovered sample-rate/mono/stereo regression; a
+repeatable positive paired quantum mean ratio on both platforms
+is necessary to retain CURSOR as a promising candidate. Quantify
+p99 and max/worst separately; a mean improvement is NOT realtime
+success, and one CI executor's unpinned timing is not sufficient
+to certify hard deadlines. If either platform exhibits consistent
+p99 regression, final memo must report this and cannot label
+the candidate universally better. No additional algorithm
+changes are in this #696 test/docs-only commit; EXTENDED is
+necessary to actually run integrated test profiles and six-rate
+oracles. #697 will be a decision report, not an automatic
+production substitution, full qualification or merge.
+
+PO instruction reiterated: REAL_TIME_FIRST, but if this
+candidate fails a validated realtime feasibility gate, M17 may
+be designed as a terminal module with mandatory off-line
+preparation/processing before output availability, subject
+to further PO product authorization. Do not conflate this
+with Stage 1 RESTORE/PREP.

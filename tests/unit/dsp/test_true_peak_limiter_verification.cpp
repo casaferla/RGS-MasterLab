@@ -3186,7 +3186,7 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
         std::ofstream csv(csvPath,std::ios::trunc);
         QVERIFY2(csv.good(),"M17 integrated lazy CSV creation failed");
         csv<<"sample_rate_hz,channels,ceiling_dbtp,frames,controller_type,"
-              "selector_mode,quantum_frames,quantum_count,quantum_budget_ns,"
+              "selector_mode,repeat_id,quantum_frames,quantum_count,quantum_budget_ns,"
               "mean_quantum_ns,p99_quantum_ns,max_quantum_ns,"
               "missed_quantum_count,total_render_ns,source_frames_consumed,"
               "detector_cache_high_water,selector_cache_high_water,"
@@ -3233,13 +3233,16 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                     "Frozen IModule full-PCM oracle unavailable");
                 const auto budgetNs=std::int64_t{1'000'000'000}
                     *kQuantum/fs;
-                // Alternate measurement order between sample rates.
-                // No simultaneous tasks: compare the same input on one runner.
+                // Three independent passes through each fully rebuilt
+                // detector/controller/batch state. Invert order on pass 2:
+                // same-host paired measurements are less susceptible to
+                // a consistently warmer second candidate.
+                for(int repeat=0;repeat<3;++repeat) {
                 for(int order=0;order<4;++order) {
-                    // For each controller, run both window locators on
-                    // identical PCM, with adjacent order alternation.
-                    const bool lazyMode=(order/2==((fs==192000)?0:1));
-                    const bool cursorMode=(order%2==
+                    const int effectiveOrder=repeat%2==0?order:3-order;
+                    const bool lazyMode=(effectiveOrder/2==
+                        ((fs==192000)?0:1));
+                    const bool cursorMode=(effectiveOrder%2==
                         ((fs==192000)?0:1));
                     auto feeder=Feeder::create(fs,ceiling,stereo?2U:1U);
                     auto rolling=Rolling::create(fs,ceiling);
@@ -3447,6 +3450,7 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                         <<" ch="<<(stereo?2:1)<<" ceiling="<<ceiling
                         <<" engine="<<(lazyMode?"LAZY":"FROZEN")
                         <<" selector_mode="<<(cursorMode?"CURSOR":"BINARY")
+                        <<" repeat="<<repeat
                         <<" mean_ns="<<meanNs<<" p99_ns="<<p99Ns
                         <<" worst_ns="<<worstNs<<" missed="<<misses
                         <<"/"<<quantumNs.size()
@@ -3468,7 +3472,8 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                         csv<<fs<<','<<(stereo?2:1)<<','<<ceiling<<','
                             <<nFrames<<','<<(lazyMode?"LAZY":"FROZEN")<<','
                             <<(cursorMode?"CURSOR":"BINARY")<<','
-                            <<kQuantum<<','<<quantumNs.size()<<','<<budgetNs<<','
+                            <<repeat<<','<<kQuantum<<','<<quantumNs.size()<<','
+                            <<budgetNs<<','
                             <<meanNs<<','<<p99Ns<<','<<worstNs<<','
                             <<misses<<','<<totalNs<<','<<feedPosition<<','
                             <<feeder->high_water_events()<<','
@@ -3492,6 +3497,7 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                             <<visitPercent<<'\n';
                     }
                 }
+                } // three independent repeated selector comparisons
                 ++scenarios;
             }
         }
