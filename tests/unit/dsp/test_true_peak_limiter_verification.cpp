@@ -3929,6 +3929,74 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                                 <<" exact_binary64=PASS";
                         }
                     }
+                    // After the 128-tick oracle, load an actual adjacent
+                    // 64-frame window. Compare reused and full recompute
+                    // demands from the same detector-certified events.
+                    const std::int64_t nextFirst=505;
+                    const std::int64_t nextLast=1016;
+                    const auto nextEvents=feeder->batch(
+                        nextFirst,nextLast,horizon);
+                    QVERIFY(nextEvents.size()<=Selector::kMaxBatchEvents);
+                    auto full=Selector::create(fs,ceiling);
+                    QVERIFY(full);
+                    const auto incStart=std::chrono::steady_clock::now();
+                    const bool incReady=selector->prepare(nextEvents);
+                    const auto incStop=std::chrono::steady_clock::now();
+                    const auto fullStart=std::chrono::steady_clock::now();
+                    const bool fullReady=full->prepare_full_recompute_for_test(
+                        nextEvents);
+                    const auto fullStop=std::chrono::steady_clock::now();
+                    QVERIFY(incReady);
+                    QVERIFY(fullReady);
+                    QCOMPARE(selector->reused_demands_last_prepare()
+                             +selector->computed_demands_last_prepare(),
+                             nextEvents.size());
+                    QCOMPARE(full->reused_demands_last_prepare(),std::size_t{0});
+                    QCOMPARE(full->computed_demands_last_prepare(),
+                             nextEvents.size());
+                    const auto incrementalNs=std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(incStop-incStart).count();
+                    const auto recomputeNs=std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(fullStop-fullStart).count();
+                    for(std::int64_t tick=nextFirst;tick<nextFirst+16;++tick) {
+                        const auto current=feeder->peak_at(tick);
+                        const auto a=selector->choose(tick,current);
+                        const auto b=full->choose(tick,current);
+                        QVERIFY(a && b);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            a->attack_floor_db),
+                            std::bit_cast<std::uint64_t>(
+                                b->attack_floor_db));
+                        QCOMPARE(a->future_event.has_value(),
+                                 b->future_event.has_value());
+                        if(a->future_event) {
+                            QCOMPARE(a->future_event->tick,b->future_event->tick);
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                a->future_event->peak),
+                                std::bit_cast<std::uint64_t>(
+                                    b->future_event->peak));
+                        }
+                    }
+                    qInfo().nospace()<<"M17 adjacent-batch demand fs="<<fs
+                        <<" channels="<<channels<<" ceiling="<<ceiling
+                        <<" dense="<<dense
+                        <<" reused="<<selector->reused_demands_last_prepare()
+                        <<" recomputed="<<selector->computed_demands_last_prepare()
+                        <<" warm_incremental_ns="<<incrementalNs
+                        <<" full_recompute_ns="<<recomputeNs
+                        <<" exact_pair=PASS";
+                    if(!outputPath.empty()) {
+                        std::ofstream csv(outputPath,std::ios::app);
+                        QVERIFY2(csv.good(),
+                            "M17 incremental selector CSV append failed");
+                        csv<<"incremental,"<<fs<<','<<channels<<','
+                            <<ceiling<<','<<(dense?"dense":"sparse")<<','
+                            <<nextEvents.size()<<','
+                            <<selector->reused_demands_last_prepare()<<','
+                            <<selector->computed_demands_last_prepare()<<','
+                            <<incrementalNs<<','<<recomputeNs
+                            <<",PASS\n";
+                    }
                     ++cases;
                 }
             }

@@ -702,3 +702,37 @@ winner and attack-floor oracle remains unchanged and mandatory.
 Fast Focused CI is adequate because only tests and experiment notes
 change; future implementation change again mandates EXTENDED.
 No R1 replacement, frozen M17 change, PR54/main, FQ, UI, or merge.
+
+
+## #689 EXTENDED: Incremental cached exact log10 demands
+
+CI #688 FAST Windows/Linux SUCCESS. Its detector-sourced benchmark
+showed that dense warm `prepare()` on one certified batch can exceed
+the 128-tick selector work, notably at 192kHz with 4.68x Windows and
+1.95x Linux maximum prep/selection ratio in these limited fixtures.
+This is not a callback realtime measurement.
+
+The isolated selector now reuses an immediately preceding event demand
+iff both the signed detector tick and binary64 peak bits match in two
+sorted, fully validated batch snapshots. The selector Ceiling is fixed
+over the instance lifetime. Reused demand bits were computed by the
+unchanged original `20*log10(peak/Ceiling)` routine. All new/changed
+events recompute via that same expression; no floating-point operand
+order, strict Hann winner or PCM multiply is changed. A failed batch
+never modifies the previous accepted state or reuse counters.
+
+Test-only `prepare_full_recompute_for_test()` forces the original
+per-event demand calculations. The existing 48-case FAST detector test
+(six rates, mono/stereo, two ceilings, sparse/dense) now advances from
+its initial physically certified window to the adjacent 64-frame batch.
+It measures incremental vs full-recompute preparation and compares
+the subsequent 16 selected future-event winners and binary64 attack
+floors bit-for-bit. Its short `incremental,` CSV rows are distinct
+from existing SelectorWork columns; the timing order is fixed and
+must NOT be treated as stable platform-wide throughput or an end-to-end
+realtime proof. The independent brute-force all-event Hann oracle
+continues to qualify the earlier 128-tick window.
+
+The algorithm change triggers full EXTENDED Focused CI including the
+true M17 IModule PCM, six sample rates, M16, EOS and checkpoint gates.
+No frozen production M17, PR54/main, UI, FQ, merge or R1 substitution.

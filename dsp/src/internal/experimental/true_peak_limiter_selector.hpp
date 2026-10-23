@@ -10,6 +10,7 @@
 #include "internal/true_peak_limiter_state.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -56,72 +57,22 @@ public:
 
     [[nodiscard]] bool prepare(std::span<const Event> batch)
     {
-        if (batch.size() > kMaxBatchEvents) return false;
-        std::int64_t previous = std::numeric_limits<std::int64_t>::min();
-        for (const auto& event : batch) {
-            if (!event.valid || event.tick <= previous ||
-                !std::isfinite(event.peak) || event.peak < 0.0) return false;
-            previous = event.tick;
-        }
+        return prepare_impl(batch,true);
+    }
 
-        // Construct temporaries and commit all at once. No partial state.
-        std::vector<Event> events(batch.begin(), batch.end());
-        std::vector<double> demands;
-        std::vector<double> weights;
-        std::vector<double> suffix;
-        std::vector<double> group;
-        std::vector<double> superblock;
-        std::vector<double> halfblock;
-        // Build immutable exact binary64 Hann values even for a sparse
-        // nonempty event batch. Previously <64 active events recalculated
-        // cos() for each future candidate at every controller tick.
-        // Empty batches allocate no Hann memory; a future nonempty batch
-        // constructs these weights once, after complete validation.
-        if(!events.empty() && weights_.empty()) {
-            weights.resize(static_cast<std::size_t>(horizon_+1));
-            for (std::int64_t lag=1;lag<=horizon_;++lag) {
-                const double distance = static_cast<double>(lag);
-                weights[static_cast<std::size_t>(lag)] =
-                    0.5*(1.0+std::cos(
-                        std::numbers::pi_v<double>*distance/
-                        static_cast<double>(horizon_)));
-            }
-            suffix.resize(static_cast<std::size_t>(horizon_+2), +0.0);
-            for (std::int64_t lag=horizon_;lag>=1;--lag) {
-                const auto offset=static_cast<std::size_t>(lag);
-                suffix[offset]=std::max(suffix[offset+1],weights[offset]);
-            }
-        }
-        // Exact demand is invariant for each event and the fixed
-        // Ceiling. Cache it once for sparse as well as dense batches.
-        // Identical binary64 20*log10(peak/Ceiling) with no reordering.
-        demands.reserve(events.size());
-        for (const auto& event : events)
-            demands.push_back(demand_db(event.peak));
-        if (events.size() >= kDense) {
-            group.resize((events.size()+kGroup-1U)/kGroup,+0.0);
-            superblock.resize((events.size()+kSuperblock-1U)/kSuperblock,+0.0);
-            halfblock.resize((events.size()+kHalfblock-1U)/kHalfblock,+0.0);
-            for (std::size_t i=0;i<events.size();++i) {
-                group[i/kGroup]=std::max(group[i/kGroup],demands[i]);
-                superblock[i/kSuperblock]=std::max(
-                    superblock[i/kSuperblock],demands[i]);
-                halfblock[i/kHalfblock]=std::max(
-                    halfblock[i/kHalfblock],demands[i]);
-            }
-        }
+    // Test-only full recomputation with the identical FP expression.
+    [[nodiscard]] bool prepare_full_recompute_for_test(
+        std::span<const Event> batch)
+    {
+        return prepare_impl(batch,false);
+    }
 
-        events_=std::move(events);
-        demands_=std::move(demands);
-        if(!weights.empty()) {
-            weights_=std::move(weights);
-            suffix_=std::move(suffix);
-            ++weight_build_count_;
-        }
-        group_=std::move(group);
-        superblock_=std::move(superblock);
-        halfblock_=std::move(halfblock);
-        return true;
+    [[nodiscard]] std::size_t reused_demands_last_prepare() const noexcept {
+        return last_reused_demands_;
+    }
+
+    [[nodiscard]] std::size_t computed_demands_last_prepare() const noexcept {
+        return last_computed_demands_;
     }
 
     [[nodiscard]] std::optional<Choice>
@@ -191,6 +142,97 @@ public:
     }
 
 private:
+    [[nodiscard]] bool prepare_impl(std::span<const Event> batch,bool reuse_enabled)
+    {
+        if (batch.size() > kMaxBatchEvents) return false;
+        std::int64_t previous = std::numeric_limits<std::int64_t>::min();
+        for (const auto& event : batch) {
+            if (!event.valid || event.tick <= previous ||
+                !std::isfinite(event.peak) || event.peak < 0.0) return false;
+            previous = event.tick;
+        }
+
+        // Construct temporaries and commit all at once. No partial state.
+        std::vector<Event> events(batch.begin(), batch.end());
+        std::vector<double> demands;
+        std::vector<double> weights;
+        std::vector<double> suffix;
+        std::vector<double> group;
+        std::vector<double> superblock;
+        std::vector<double> halfblock;
+        // Build immutable exact binary64 Hann values even for a sparse
+        // nonempty event batch. Previously <64 active events recalculated
+        // cos() for each future candidate at every controller tick.
+        // Empty batches allocate no Hann memory; a future nonempty batch
+        // constructs these weights once, after complete validation.
+        if(!events.empty() && weights_.empty()) {
+            weights.resize(static_cast<std::size_t>(horizon_+1));
+            for (std::int64_t lag=1;lag<=horizon_;++lag) {
+                const double distance = static_cast<double>(lag);
+                weights[static_cast<std::size_t>(lag)] =
+                    0.5*(1.0+std::cos(
+                        std::numbers::pi_v<double>*distance/
+                        static_cast<double>(horizon_)));
+            }
+            suffix.resize(static_cast<std::size_t>(horizon_+2), +0.0);
+            for (std::int64_t lag=horizon_;lag>=1;--lag) {
+                const auto offset=static_cast<std::size_t>(lag);
+                suffix[offset]=std::max(suffix[offset+1],weights[offset]);
+            }
+        }
+        // Exact demand is invariant for each event and the fixed
+        // Ceiling. Cache it once for sparse as well as dense batches.
+        // Identical binary64 20*log10(peak/Ceiling) with no reordering.
+        demands.reserve(events.size());
+        std::size_t previousIndex=0, reused=0;
+        for(const auto& event:events) {
+            if(reuse_enabled) {
+                while(previousIndex<events_.size()
+                      && events_[previousIndex].tick<event.tick)
+                    ++previousIndex;
+                if(previousIndex<events_.size()
+                   && previousIndex<demands_.size()
+                   && events_[previousIndex].tick==event.tick
+                   && std::bit_cast<std::uint64_t>(
+                       events_[previousIndex].peak)
+                     ==std::bit_cast<std::uint64_t>(event.peak)) {
+                    // Same event bits and fixed selector Ceiling: the
+                    // exact previous binary64 demand is interchangeable.
+                    demands.push_back(demands_[previousIndex]);
+                    ++reused;
+                    continue;
+                }
+            }
+            demands.push_back(demand_db(event.peak));
+        }
+        if (events.size() >= kDense) {
+            group.resize((events.size()+kGroup-1U)/kGroup,+0.0);
+            superblock.resize((events.size()+kSuperblock-1U)/kSuperblock,+0.0);
+            halfblock.resize((events.size()+kHalfblock-1U)/kHalfblock,+0.0);
+            for (std::size_t i=0;i<events.size();++i) {
+                group[i/kGroup]=std::max(group[i/kGroup],demands[i]);
+                superblock[i/kSuperblock]=std::max(
+                    superblock[i/kSuperblock],demands[i]);
+                halfblock[i/kHalfblock]=std::max(
+                    halfblock[i/kHalfblock],demands[i]);
+            }
+        }
+
+        events_=std::move(events);
+        demands_=std::move(demands);
+        if(!weights.empty()) {
+            weights_=std::move(weights);
+            suffix_=std::move(suffix);
+            ++weight_build_count_;
+        }
+        group_=std::move(group);
+        superblock_=std::move(superblock);
+        halfblock_=std::move(halfblock);
+        last_reused_demands_=reused;
+        last_computed_demands_=events_.size()-reused;
+        return true;
+    }
+
     template<bool SuperblockPruning,bool HalfblockPruning>
     [[nodiscard]] std::optional<Choice>
     choose_impl(std::int64_t m, double current_peak) const
@@ -313,6 +355,8 @@ private:
     std::vector<double> superblock_;
     std::vector<double> halfblock_;
     std::size_t weight_build_count_{0};
+    std::size_t last_reused_demands_{0};
+    std::size_t last_computed_demands_{0};
 };
 
 } // namespace rgsml::dsp::internal::experimental
