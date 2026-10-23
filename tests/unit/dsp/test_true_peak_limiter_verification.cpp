@@ -2575,7 +2575,7 @@ void TruePeakLimiterVerificationTest::experimentalLongResourceRenderBenchmark()
             // Preserve all 48 legacy controls. Add EIGHT strictly paired
             // Prepare-proxy cases on real OUTPUT_RATE PCM, without SRC.
             for(const int probeFrames:{0,512,1536}) {
-            if(probeFrames!=0 && (fs!=48000 && fs!=192000
+            if(probeFrames!=0 && ((fs!=48000 && fs!=192000)
                 || !stereo || (ceiling!=-1.0 && ceiling!=-12.0)))
                 continue;
             const int nFrames=probeFrames!=0?probeFrames:
