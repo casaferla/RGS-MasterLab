@@ -159,6 +159,7 @@ nonconformingPreviewRequiresSeparateExplicitConsent()
     vm.setNonconformingObservation(ceiling,ceiling,-12.0);
     QVERIFY(vm.nonconforming_excess_text().isEmpty());
     vm.setNonconformingObservation(over,ceiling,-12.0);
+    qInfo().noquote()<<"M17_EDGE_CASE=NONCONFORMING_EXPLICIT_CONSENT_ONLY";
     QCOMPARE(unsafe.count(),0); // Status publication NEVER auto-auditions.
     QSignalSpy cancelled{&vm,&app::TerminalLimiterViewModel::cancelRequested};
     QVERIFY(cancelled.isValid());
