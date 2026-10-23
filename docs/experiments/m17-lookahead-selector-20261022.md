@@ -763,3 +763,34 @@ L4, R1 protector, PR54 or main code changes.
 Runner noise, single-sample prep timing, and absent callback overhead
 still prohibit any claim of hard realtime. Future runtime change
 requires EXTENDED Focused CI. This test/docs-only refinement uses FAST.
+
+
+## #692 EXTENDED: Reuse bounded batch allocations (candidate)
+
+The #691 FAST paired warm-cache results showed demand-reuse speed ratio
+median 1.068x Windows and 0.895x Linux (48 detector-sourced cases),
+despite an 80% exact reusable demand fraction. The extra lookup and
+repeated allocation overhead can outweigh removing log10. This does
+NOT establish 192k/64-frame realtime.
+
+The isolated PR55 selector now holds bounded spare vectors for active
+signed events, computed demands and three-level aggregate maxima.
+All input validation finishes before any scratch mutation. Completed
+scratch state swaps into the accepted snapshot; the old snapshot is
+retained as the next scratch buffer. All old group/superblock/halfblock
+maxima are ZEROED with assign() before rebuild (plain resize would be
+incorrect). The immutable Hann weights and strict binary64 winner
+comparison are unchanged. Extra buffers increase bounded memory use:
+this is not an RT allocation-free nor overall-lifecycle memory claim.
+
+A test-only heap-fresh selector path performs the EXACT same cached
+demand reuse but allocates fresh batch arrays. The 48 detector
+fixtures compare both strategies from identical prior snapshot,
+with alternating order, exact event/winner and attack-floor
+comparisons, and the existing independent brute-force Hann oracle.
+The result appends scratch/fresh timings to incremental CSV rows
+without confusing them with end-to-end callback timing.
+
+As runtime selector code changed, execute full EXTENDED Focused CI
+on Windows/Linux (real PCM, M16, six rates, stereo, EOS/checkpoint).
+No frozen M17, main/PR54, R1 protector, UI, FQ or merge.

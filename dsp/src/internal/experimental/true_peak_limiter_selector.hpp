@@ -57,14 +57,21 @@ public:
 
     [[nodiscard]] bool prepare(std::span<const Event> batch)
     {
-        return prepare_impl(batch,true);
+        return prepare_impl(batch,true,true);
     }
 
     // Test-only full recomputation with the identical FP expression.
     [[nodiscard]] bool prepare_full_recompute_for_test(
         std::span<const Event> batch)
     {
-        return prepare_impl(batch,false);
+        return prepare_impl(batch,false,true);
+    }
+
+    // Test-only heap-fresh path with identical exact demand reuse.
+    [[nodiscard]] bool prepare_allocating_for_test(
+        std::span<const Event> batch)
+    {
+        return prepare_impl(batch,true,false);
     }
 
     [[nodiscard]] std::size_t reused_demands_last_prepare() const noexcept {
@@ -142,7 +149,8 @@ public:
     }
 
 private:
-    [[nodiscard]] bool prepare_impl(std::span<const Event> batch,bool reuse_enabled)
+    [[nodiscard]] bool prepare_impl(std::span<const Event> batch,bool reuse_enabled,
+        bool reuse_buffers)
     {
         if (batch.size() > kMaxBatchEvents) return false;
         std::int64_t previous = std::numeric_limits<std::int64_t>::min();
@@ -152,14 +160,23 @@ private:
             previous = event.tick;
         }
 
-        // Construct temporaries and commit all at once. No partial state.
-        std::vector<Event> events(batch.begin(), batch.end());
-        std::vector<double> demands;
+        // Accepted snapshot is preserved during construction. Reusing
+        // scratch vectors avoids repeated heap capacity churn; all old
+        // aggregate maxima MUST be reset before new bounds are computed.
+        std::vector<Event> freshEvents;
+        std::vector<double> freshDemands,freshGroups,freshSuperblocks,freshHalfblocks;
+        auto& events=reuse_buffers?scratch_events_:freshEvents;
+        auto& demands=reuse_buffers?scratch_demands_:freshDemands;
+        auto& group=reuse_buffers?scratch_group_:freshGroups;
+        auto& superblock=reuse_buffers?scratch_superblock_:freshSuperblocks;
+        auto& halfblock=reuse_buffers?scratch_halfblock_:freshHalfblocks;
+        events.assign(batch.begin(),batch.end());
+        demands.clear();
+        group.clear();
+        superblock.clear();
+        halfblock.clear();
         std::vector<double> weights;
         std::vector<double> suffix;
-        std::vector<double> group;
-        std::vector<double> superblock;
-        std::vector<double> halfblock;
         // Build immutable exact binary64 Hann values even for a sparse
         // nonempty event batch. Previously <64 active events recalculated
         // cos() for each future candidate at every controller tick.
@@ -206,9 +223,9 @@ private:
             demands.push_back(demand_db(event.peak));
         }
         if (events.size() >= kDense) {
-            group.resize((events.size()+kGroup-1U)/kGroup,+0.0);
-            superblock.resize((events.size()+kSuperblock-1U)/kSuperblock,+0.0);
-            halfblock.resize((events.size()+kHalfblock-1U)/kHalfblock,+0.0);
+            group.assign((events.size()+kGroup-1U)/kGroup,+0.0);
+            superblock.assign((events.size()+kSuperblock-1U)/kSuperblock,+0.0);
+            halfblock.assign((events.size()+kHalfblock-1U)/kHalfblock,+0.0);
             for (std::size_t i=0;i<events.size();++i) {
                 group[i/kGroup]=std::max(group[i/kGroup],demands[i]);
                 superblock[i/kSuperblock]=std::max(
@@ -218,16 +235,16 @@ private:
             }
         }
 
-        events_=std::move(events);
-        demands_=std::move(demands);
+        events_.swap(events);
+        demands_.swap(demands);
         if(!weights.empty()) {
             weights_=std::move(weights);
             suffix_=std::move(suffix);
             ++weight_build_count_;
         }
-        group_=std::move(group);
-        superblock_=std::move(superblock);
-        halfblock_=std::move(halfblock);
+        group_.swap(group);
+        superblock_.swap(superblock);
+        halfblock_.swap(halfblock);
         last_reused_demands_=reused;
         last_computed_demands_=events_.size()-reused;
         return true;
@@ -354,6 +371,11 @@ private:
     std::vector<double> group_;
     std::vector<double> superblock_;
     std::vector<double> halfblock_;
+    std::vector<Event> scratch_events_;
+    std::vector<double> scratch_demands_;
+    std::vector<double> scratch_group_;
+    std::vector<double> scratch_superblock_;
+    std::vector<double> scratch_halfblock_;
     std::size_t weight_build_count_{0};
     std::size_t last_reused_demands_{0};
     std::size_t last_computed_demands_{0};

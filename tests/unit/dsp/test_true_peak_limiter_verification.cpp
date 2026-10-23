@@ -3969,6 +3969,37 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                     QVERIFY(fullTimed.first);
                     const auto incrementalNs=incTimed.second;
                     const auto recomputeNs=fullTimed.second;
+                    auto scratchSelector=Selector::create(fs,ceiling);
+                    auto freshSelector=Selector::create(fs,ceiling);
+                    QVERIFY(scratchSelector && freshSelector);
+                    QVERIFY(scratchSelector->prepare(eventSpan));
+                    QVERIFY(scratchSelector->prepare(eventSpan));
+                    QVERIFY(freshSelector->prepare_allocating_for_test(eventSpan));
+                    QVERIFY(freshSelector->prepare_allocating_for_test(eventSpan));
+                    const bool scratchFirst=!incrementalFirst;
+                    const auto timedBuffers=[&](bool scratch) {
+                        const auto begin=std::chrono::steady_clock::now();
+                        const bool ready=scratch
+                            ?scratchSelector->prepare(nextEvents)
+                            :freshSelector->prepare_allocating_for_test(nextEvents);
+                        const auto end=std::chrono::steady_clock::now();
+                        return std::pair{ready,std::chrono::duration_cast<
+                            std::chrono::nanoseconds>(end-begin).count()};
+                    };
+                    const auto firstBuffers=timedBuffers(scratchFirst);
+                    const auto secondBuffers=timedBuffers(!scratchFirst);
+                    const auto& scratchTiming=scratchFirst
+                        ?firstBuffers:secondBuffers;
+                    const auto& freshTiming=scratchFirst
+                        ?secondBuffers:firstBuffers;
+                    QVERIFY(scratchTiming.first);
+                    QVERIFY(freshTiming.first);
+                    QCOMPARE(scratchSelector->reused_demands_last_prepare(),
+                             freshSelector->reused_demands_last_prepare());
+                    QCOMPARE(scratchSelector->computed_demands_last_prepare(),
+                             freshSelector->computed_demands_last_prepare());
+                    const auto scratchNs=scratchTiming.second;
+                    const auto freshNs=freshTiming.second;
                     QCOMPARE(selector->reused_demands_last_prepare()
                              +selector->computed_demands_last_prepare(),
                              nextEvents.size());
@@ -3979,7 +4010,31 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         const auto current=feeder->peak_at(tick);
                         const auto incrementalChoice=selector->choose(tick,current);
                         const auto recomputedChoice=full->choose(tick,current);
-                        QVERIFY(incrementalChoice && recomputedChoice);
+                        const auto scratchChoice=
+                            scratchSelector->choose(tick,current);
+                        const auto freshChoice=freshSelector->choose(tick,current);
+                        QVERIFY(incrementalChoice && recomputedChoice
+                            && scratchChoice && freshChoice);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            scratchChoice->attack_floor_db),
+                            std::bit_cast<std::uint64_t>(
+                                freshChoice->attack_floor_db));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(
+                            scratchChoice->attack_floor_db),
+                            std::bit_cast<std::uint64_t>(
+                                incrementalChoice->attack_floor_db));
+                        QCOMPARE(scratchChoice->future_event.has_value(),
+                                 freshChoice->future_event.has_value());
+                        QCOMPARE(scratchChoice->future_event.has_value(),
+                                 incrementalChoice->future_event.has_value());
+                        if(scratchChoice->future_event) {
+                            QCOMPARE(scratchChoice->future_event->tick,
+                                     freshChoice->future_event->tick);
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                scratchChoice->future_event->peak),
+                                std::bit_cast<std::uint64_t>(
+                                    freshChoice->future_event->peak));
+                        }
                         QCOMPARE(std::bit_cast<std::uint64_t>(
                             incrementalChoice->attack_floor_db),
                             std::bit_cast<std::uint64_t>(
@@ -4046,6 +4101,8 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         <<" recomputed="<<selector->computed_demands_last_prepare()
                         <<" warm_incremental_ns="<<incrementalNs
                         <<" warm_recompute_ns="<<recomputeNs
+                        <<" scratch_ns="<<scratchNs
+                        <<" fresh_alloc_ns="<<freshNs
                         <<" incremental_measured_first="<<incrementalFirst
                         <<" next_window_oracle=PASS exact_pair=PASS";
                     if(!outputPath.empty()) {
@@ -4059,7 +4116,10 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                             <<selector->computed_demands_last_prepare()<<','
                             <<incrementalNs<<','<<recomputeNs
                             <<",PASS,"<<(incrementalFirst?"INCREMENTAL_FIRST":
-                                "FULL_FIRST")<<",WARM_BOTH,BRUTE_HANN_PASS\n";
+                                "FULL_FIRST")<<",WARM_BOTH,BRUTE_HANN_PASS,"
+                            <<scratchNs<<','<<freshNs<<','
+                            <<(scratchFirst?"SCRATCH_FIRST":"FRESH_FIRST")
+                            <<",SCRATCH_EXACT_PASS\n";
                     }
                     ++cases;
                 }
