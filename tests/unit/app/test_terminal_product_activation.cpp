@@ -16,6 +16,7 @@
 #include <rgsml/core/uuid.hpp>
 #include <QTest>
 #include <QSignalSpy>
+#include <QDebug>
 #include <memory>
 #include <bit>
 #include <cstdint>
@@ -31,7 +32,91 @@ private slots:
     void finalMasterAt192kNeverBecomesDeviceRate48k();
     void staleM17TerminalJobCancelsWithoutPublishingPcm();
     void nonconformingPreviewRequiresSeparateExplicitConsent();
+    void rejectedCeilingCannotAlterAuthority_data();
+    void rejectedCeilingCannotAlterAuthority();
+    void unchangedCeilingLeavesRevisionAndConsentUntouched();
 };
+
+
+// Adversarial parameter-input oracle: independent data rows run even if a
+// different failure later aborts the full A/B integration scenario. No PCM,
+// filename, or hardware certificate is created by these input tests.
+void TerminalActivationIntegrationTest::rejectedCeilingCannotAlterAuthority_data()
+{
+    QTest::addColumn<double>("invalidCeiling");
+    QTest::newRow("below-minimum") << -12.01;
+    QTest::newRow("above-zero") << 0.01;
+    QTest::newRow("positive-infinity") << std::numeric_limits<double>::infinity();
+    QTest::newRow("negative-infinity") << -std::numeric_limits<double>::infinity();
+    QTest::newRow("quiet-nan") << std::numeric_limits<double>::quiet_NaN();
+}
+
+void TerminalActivationIntegrationTest::rejectedCeilingCannotAlterAuthority()
+{
+    QFETCH(double,invalidCeiling);
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000617").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(*registry.value(),*id.value());
+    QVERIFY(state);
+    app::TerminalLimiterViewModel vm{state.value()};
+    QSignalSpy accepted{&vm,&app::TerminalLimiterViewModel::acceptedStateChanged};
+    QSignalSpy unsafe{&vm,&app::TerminalLimiterViewModel::previewNonconformingRequested};
+    QVERIFY(accepted.isValid()&&unsafe.isValid());
+    const auto revision=state.value()->parameter_revision();
+    qInfo().noquote()<<"M17_EDGE_CASE=INVALID_CEILING_NO_COMMIT";
+    QVERIFY(!vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),invalidCeiling));
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(state.value()->parameter_revision(),revision);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(accepted.count(),0);
+    QCOMPARE(unsafe.count(),0);
+    vm.cancelDraft();
+    QVERIFY(vm.validation_message().isEmpty());
+    QCOMPARE(state.value()->parameter_revision(),revision);
+}
+
+void TerminalActivationIntegrationTest::unchangedCeilingLeavesRevisionAndConsentUntouched()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000618").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(*registry.value(),*id.value());
+    QVERIFY(state);
+    app::TerminalLimiterViewModel vm{state.value()};
+    QSignalSpy accepted{&vm,&app::TerminalLimiterViewModel::acceptedStateChanged};
+    QSignalSpy unverified{&vm,&app::TerminalLimiterViewModel::previewNonconformingRequested};
+    QSignalSpy verified{&vm,&app::TerminalLimiterViewModel::previewRequested};
+    QVERIFY(accepted.isValid()&&unverified.isValid()&&verified.isValid());
+    qInfo().noquote()<<"M17_EDGE_CASE=NOOP_CEILING_RESET";
+    vm.resetToDefault();
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-1.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(state.value()->parameter_revision(),std::uint64_t{0});
+    QCOMPARE(accepted.count(),0);
+    QVERIFY(state.value()->set_user_bypass(false));
+    vm.setAudioStatus(QStringLiteral("READY · PREVIEW AVAILABLE"));
+    vm.previewNonconforming(); // A verified result never grants unsafe consent.
+    QCOMPARE(unverified.count(),0);
+    vm.previewPrepared();
+    QCOMPARE(verified.count(),1);
+    vm.setAudioStatus(QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
+    vm.previewPrepared(); // No double-install by a second Preview click.
+    QCOMPARE(verified.count(),1);
+    vm.setAudioStatus(QStringLiteral("NON-CONFORMING · -11.76 dBTP"));
+    vm.previewPrepared(); // A failed Ceiling never becomes verified.
+    QCOMPARE(verified.count(),1);
+    vm.previewNonconforming();
+    QCOMPARE(unverified.count(),1);
+    QVERIFY(state.value()->set_user_bypass(true));
+    vm.previewNonconforming(); // Bypass cannot trigger unsafe audio.
+    QCOMPARE(unverified.count(),1);
+    QCOMPARE(accepted.count(),0);
+}
 
 
 void TerminalActivationIntegrationTest::
@@ -393,6 +478,18 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(renderChanges.isValid());
     QVERIFY(!coordinator.device_active());
     QCOMPARE(device->audibleRealization.realizationId,originalId);
+    qInfo().noquote()<<"M17_EDGE_CASE=READY_BYPASS_RETAINS_EXACT_PCM";
+    vm.setBypass(true);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!audioGate.has_session());
+    vm.previewPrepared();
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    vm.setBypass(false);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     vm.previewPrepared();
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
@@ -417,6 +514,29 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(candidates.staged(),initialPreparedPcm);
     QCOMPARE(renderer.status(),QStringLiteral("READY_PRIVATE"));
     QVERIFY(!audioGate.has_session());
+    // More than one A/B switch must keep the same immutable PCM but issue a
+    // new device RealizationId on every explicit terminal installation.
+    qInfo().noquote()<<"M17_EDGE_CASE=REPEATED_AB_NEW_DEVICE_IDS_NO_RERENDER";
+    auto previousTerminalId=firstTerminalId;
+    const auto renderCountBeforeCycles=renderChanges.count();
+    for(int n=0;n<3;++n) {
+        vm.setBypass(false);
+        QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+        QCOMPARE(device->audibleRealization.realizationId,originalId);
+        vm.previewPrepared();
+        QCOMPARE(product.status(),QStringLiteral("PRIVATE_INSTALLED"));
+        const auto nextId=device->audibleRealization.realizationId;
+        QVERIFY(nextId && nextId!=previousTerminalId && nextId!=originalId);
+        QCOMPARE(candidates.staged(),initialPreparedPcm);
+        previousTerminalId=nextId;
+        vm.previewPrepared(); // Never install twice on accidental double click.
+        QCOMPARE(device->audibleRealization.realizationId,nextId);
+        vm.setBypass(true);
+        QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+        QCOMPARE(device->audibleRealization.realizationId,originalId);
+        QVERIFY(!audioGate.has_session());
+    }
+    QCOMPARE(renderChanges.count(),renderCountBeforeCycles);
 
     // READY is already completed and MUST survive Cancel: no discarded
     // minute-long M17 work and no silent terminal handoff. A user can
@@ -475,9 +595,66 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("READY_TO_INSTALL"),12000);
     QCOMPARE(device->audibleRealization.realizationId,originalId);
+    // Edits to the current value must NOT lose a minute-long accepted render.
+    qInfo().noquote()<<"M17_EDGE_CASE=NOOP_CEILING_RETAINS_AB";
+    const auto currentAdmitted=candidates.staged();
+    const auto revisionBeforeNoop=limiter.value()->parameter_revision();
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-1.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(limiter.value()->parameter_revision(),revisionBeforeNoop);
+    QCOMPARE(candidates.staged(),currentAdmitted);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+
+    // A SOURCE Loop edit during bypass must not silently reuse cached
+    // output under a stale loop/map on the next ON transition.
+    qInfo().noquote()<<"M17_EDGE_CASE=LOOP_CHANGED_DURING_CACHED_BYPASS";
+    vm.setBypass(true);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    const auto movedLoop=core::FrameRange::create(
+        core::FrameIndex{600},core::FrameIndex{3400});
+    QVERIFY(movedLoop);
+    desiredLoop=*movedLoop.value();
+    QVERIFY(transport.set_loop_source_range(desiredLoop));
+    coordinator.loop_context_changed();
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    desiredLoop=*region.value();
+    QVERIFY(transport.set_loop_source_range(desiredLoop));
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+
+    // A saved PCM must not cross selection of a different audible target.
+    qInfo().noquote()<<"M17_EDGE_CASE=TARGET_CHANGE_DROPS_CACHED_PCM";
+    vm.setBypass(true);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+
     // An actual parameter edit makes the OLD A/B PCM stale.
     QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-2.0));
     QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    // Reverting to the exact original numeric Ceiling does NOT restore
+    // the old PCM: the parameter revision proves A->B->A was an edit.
+    qInfo().noquote()<<"M17_EDGE_CASE=CEILING_ROUNDTRIP_NEVER_REVIVES_PCM";
+    const auto revisionAfterChange=limiter.value()->parameter_revision();
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-1.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(limiter.value()->parameter_revision(),revisionAfterChange+1);
     QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QVERIFY(!candidates.staged());
@@ -538,6 +715,21 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
     const auto pausedTerminalId=device->audibleRealization.realizationId;
     QVERIFY(pausedTerminalId && pausedTerminalId!=firstTerminalId);
+    qInfo().noquote()<<"M17_EDGE_CASE=STOPPED_AB_TRANSPORT";
+    transport.stop();
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    vm.setBypass(true);
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    vm.setBypass(false);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    vm.previewPrepared();
+    QCOMPARE(product.status(),QStringLiteral("PRIVATE_INSTALLED"));
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    // Re-establish PAUSED for the existing Ceiling-edit regression below.
+    transport.playOrResume();
+    transport.pause();
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
 
     // Committing Ceiling must invalidate the prepared result but MUST NOT
     // schedule another full-resource M17 job automatically.
