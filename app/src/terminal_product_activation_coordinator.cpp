@@ -21,6 +21,8 @@ TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
             this,&TerminalProductActivationCoordinator::cancel_requested);
     connect(view_,&TerminalLimiterViewModel::previewRequested,
             this,&TerminalProductActivationCoordinator::preview_requested);
+    connect(view_,&TerminalLimiterViewModel::previewNonconformingRequested,
+            this,&TerminalProductActivationCoordinator::preview_nonconforming_requested);
     connect(selector_,&AuditionSourceSelector::changed,
             this,&TerminalProductActivationCoordinator::external_context_changed);
     // Render latency is observational. This timer never asserts that M17
@@ -145,6 +147,13 @@ void TerminalProductActivationCoordinator::preview_requested()
         commit_ready_output();
 }
 
+void TerminalProductActivationCoordinator::preview_nonconforming_requested()
+{
+    if(intent_ && !state_->bypassed()
+       && session_->status()==QStringLiteral("MEASURED_NONCONFORMING_READY"))
+        commit_ready_output(true);
+}
+
 void TerminalProductActivationCoordinator::update_render_elapsed()
 {
     if (!intent_ || !renderElapsed_.isValid() || deviceActive_
@@ -205,9 +214,12 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
     view_->setAudioStatus(QStringLiteral("Preparing · %1s").arg(seconds));
 }
 
-void TerminalProductActivationCoordinator::commit_ready_output()
+void TerminalProductActivationCoordinator::commit_ready_output(bool nonconforming)
 {
-    if(transitioning_||!readyToPreview_||!intent_||state_->bypassed())return;
+    if(transitioning_||!intent_||state_->bypassed()
+       ||(nonconforming
+          ? session_->status()!=QStringLiteral("MEASURED_NONCONFORMING_READY")
+          : !readyToPreview_))return;
     readyToPreview_=false;
     const auto before=transport_->playback_snapshot();
     const auto source=transport_->source_display_snapshot();
@@ -292,20 +304,64 @@ void TerminalProductActivationCoordinator::commit_ready_output()
         fail_closed(QStringLiteral("M17 could not restore the source cue/loop."));
         return;
     }
-    const auto installed=session_->install_ready_private();
+    const auto installed=nonconforming
+        ?session_->install_measured_private()
+        :session_->install_ready_private();
     transitioning_=false;
     if(!installed) {
         fail_closed(QStringLiteral("M17 accepted render install failed: %1")
                         .arg(QString::fromStdString(installed.error()->message())));
         return;
     }
-    finish_activation();
+    finish_activation(nonconforming);
 }
 
-void TerminalProductActivationCoordinator::finish_activation()
+void TerminalProductActivationCoordinator::finish_activation(bool nonconforming)
 {
     if(transitioning_||!intent_||state_->bypassed())return;
     renderHeartbeat_.stop();
+    if(nonconforming) {
+        // This is a genuinely distinct playback product state. Do NOT call
+        // the VERIFIED-owned identity observer or assert an M16 certificate.
+        const auto playback=transport_->playback_snapshot();
+        const auto source=transport_->source_display_snapshot();
+        const auto playbackId=session_->private_id();
+        if(!playback || !source || !playbackId
+           ||session_->status()!=QStringLiteral("NONCONFORMING_INSTALLED")
+           ||playback.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||playback.value()->audibleRealization.realizationId
+               !=playbackId
+           ||playback.value()->state!=core::PlaybackState::STOPPED
+           ||source.value()->loop!=intent_->sourceLoop
+           ||source.value()->duration!=intent_->manualOwner->view().frame_count()
+           ||source.value()->position.value()<0
+           ||(source.value()->position.value()>intent_->sourceCue.value()
+               ?source.value()->position.value()-intent_->sourceCue.value()
+               :intent_->sourceCue.value()-source.value()->position.value())>1) {
+            fail_closed(QStringLiteral("M17 nonconforming playback lost exact output ownership."));
+            return;
+        }
+        transitioning_=true;
+        deviceActive_=true;
+        resume_previous_state();
+        const auto after=transport_->playback_snapshot();
+        if(!after || after.value()->audibleRealization.realizationId
+              !=playbackId
+           ||(intent_->previousPlaybackState==core::PlaybackState::PLAYING
+               &&after.value()->state!=core::PlaybackState::PLAYING)
+           ||(intent_->previousPlaybackState==core::PlaybackState::PAUSED
+               &&after.value()->state!=core::PlaybackState::PAUSED)) {
+            transitioning_=false;
+            fail_closed(QStringLiteral("M17 nonconforming playback did not preserve transport."));
+            return;
+        }
+        view_->setAudioStatus(QStringLiteral("ACTIVE · NON-CONFORMING AUDITION"));
+        readyToPreview_=false;
+        handoffStarted_=false;
+        transitioning_=false;
+        return;
+    }
     auto accepted=session_->private_installed_output_identity();
     if(!accepted || selector_->processed_realization_snapshot()
             !=intent_->manualOwner
@@ -355,6 +411,16 @@ void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
             intent_->sourceCue=installed.value()->source.position;
             intent_->sourceLoop=installed.value()->source.loop;
             intent_->previousPlaybackState=installed.value()->playback.state;
+        } else if(session_->status()==QStringLiteral("NONCONFORMING_INSTALLED")) {
+            const auto playback=transport_->playback_snapshot();
+            const auto source=transport_->source_display_snapshot();
+            if(playback && source && session_->private_id()
+               &&playback.value()->audibleRealization.realizationId
+                    ==session_->private_id()) {
+                intent_->sourceCue=source.value()->position;
+                intent_->sourceLoop=source.value()->loop;
+                intent_->previousPlaybackState=source.value()->state;
+            }
         }
     }
     const auto retired=session_->cancel();

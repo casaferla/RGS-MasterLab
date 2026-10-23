@@ -60,6 +60,7 @@ public:
     Q_INVOKABLE void requestPrepare();
     Q_INVOKABLE void cancelPreparation();
     Q_INVOKABLE void previewPrepared();
+    Q_INVOKABLE void previewNonconforming();
     Q_INVOKABLE void refreshFromAuthority();
     // Fail-closed device/PCM transition error in the existing fixed footer.
     // Never replace the typed Ceiling range error with a fictitious success.
@@ -79,6 +80,7 @@ signals:
     void prepareRequested();
     void cancelRequested();
     void previewRequested();
+    void previewNonconformingRequested();
 
 private:
     void set_validation(const QString& message);

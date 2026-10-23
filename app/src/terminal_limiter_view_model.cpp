@@ -181,6 +181,15 @@ void TerminalLimiterViewModel::previewPrepared()
         emit previewRequested();
 }
 
+void TerminalLimiterViewModel::previewNonconforming()
+{
+    // A distinct affirmative action is mandatory for failed Ceiling.
+    // No auto playback or treating it as verified READY.
+    if(state_ && !state_->bypassed()
+       && audioStatus_.startsWith(QStringLiteral("NON-CONFORMING")))
+        emit previewNonconformingRequested();
+}
+
 void TerminalLimiterViewModel::setPreparationProgress(
     const QString& stage,double fraction,bool determinate,const QString& eta)
 {

@@ -347,6 +347,18 @@ Rectangle {
                 Accessible.name: "Cancel offline limiter preparation"
             }
             StudioButton {
+                objectName: "m17PreviewNonconformingButton"
+                text: "Preview Anyway"
+                minimumControlWidth: 125
+                accentColor: "#C85D56"
+                enabled: root.terminalLimiterViewModel
+                    && !root.terminalLimiterViewModel.bypass
+                    && root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
+                onClicked: root.terminalLimiterViewModel.previewNonconforming()
+                Accessible.name: "Explicit preview of measured Ceiling-nonconforming audio"
+                ToolTip.text: "Measured result exceeds requested Ceiling. Preview is unverified, only on your explicit choice."
+            }
+            StudioButton {
                 objectName: "m17PreviewPreparedButton"
                 text: "Preview Prepared"
                 minimumControlWidth: 130

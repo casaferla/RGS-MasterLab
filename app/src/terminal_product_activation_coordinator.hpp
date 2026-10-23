@@ -33,9 +33,10 @@ private:
     void prepare_requested();
     void cancel_requested();
     void preview_requested();
+    void preview_nonconforming_requested();
     void deactivate(bool keepActiveIntent);
-    void finish_activation();
-    void commit_ready_output();
+    void finish_activation(bool nonconforming=false);
+    void commit_ready_output(bool nonconforming=false);
     void update_render_elapsed();
     void fail_closed(const QString&);
     void resume_previous_state();
