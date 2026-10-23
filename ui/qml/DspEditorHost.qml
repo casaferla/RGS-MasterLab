@@ -55,7 +55,9 @@ Rectangle {
     // Board02 Editor Panel Material
     radius: 8
     color: "#0F2236"
-    border.color: root.isLimiterEditor ? root.activeFamilyAccent : "#27465F"
+    // Uniform with all other DSPs: family accent ONLY on the 2px
+    // top rule. No special all-around copper/teal pill for M17.
+    border.color: "#27465F"
     border.width: 1
 
     gradient: Gradient {

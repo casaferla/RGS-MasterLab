@@ -183,12 +183,23 @@ Item {
         }
         Rectangle {
             objectName: "m17LimiterControlsDivider"
-            visible: root.limiterControlsIncluded
+            // Fixed shared topology. M16 reserves exactly the same right-
+            // rail lower band as M17 so the first three cards never jump.
+            visible: true
             Layout.fillWidth: true
             Layout.minimumHeight: 1
             Layout.preferredHeight: 1
             Layout.maximumHeight: 1
             color: Qt.alpha(root.familyAccent, 0.45)
+        }
+        Item {
+            objectName: "m16UnusedLowerControlBand"
+            visible: !root.limiterControlsIncluded
+            Layout.fillWidth: true
+            Layout.fillHeight: false
+            Layout.minimumHeight: root.lowerControlBandHeight
+            Layout.preferredHeight: root.lowerControlBandHeight
+            Layout.maximumHeight: root.lowerControlBandHeight
         }
         ColumnLayout {
             objectName: "m17LimiterLowerControlGroup"
