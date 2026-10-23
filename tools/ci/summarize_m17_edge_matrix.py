@@ -6,9 +6,9 @@ import re
 
 TARGET = "rgsml_terminal_product_activation_tests"
 MARKER = re.compile(r"M17_EDGE_CASE=([A-Z0-9_]{3,75})")
-TEST_START = re.compile(r"^\\s*\\d+/\\d+\\s+Test:\\s+(\\S+)")
-TIME = re.compile(r"RGS M17 render serial=\\d+.*?\\bresult=\\S+")
-FAIL = re.compile(r"FAIL!|\\bTest Failed\\b|\\*\\*\\*Failed",re.IGNORECASE)
+TEST_START = re.compile(r"^\s*\d+/\d+\s+Test:\s+(\S+)")
+TIME = re.compile(r"RGS M17 render serial=\d+.*?\bresult=\S+")
+FAIL = re.compile(r"FAIL!|\bTest Failed\b|\*\*\*Failed",re.IGNORECASE)
 
 
 def collect(log: str, sha: str) -> str:
@@ -45,7 +45,7 @@ def collect(log: str, sha: str) -> str:
     result.extend("RENDER_SCALAR="+t for t in timings[-4:])
     fail_rows=[line[:180] for line in block if FAIL.search(line)]
     result.extend("FAILURE="+v for v in fail_rows[:3])
-    output="\\n".join(result)+"\\n"
+    output="\n".join(result)+"\n"
     return output.encode("utf-8")[:4096].decode("utf-8",errors="ignore")
 
 
