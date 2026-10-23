@@ -3429,7 +3429,10 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
               "half_mean_ns,half_p99_ns,half_max_ns,"
               "paired_speed_ratio,half_over_super_ratio,exact_paired,"
               "exact_attack_floor,"
-              "exact_selected_event,exact_bounds\n";
+              "exact_selected_event,exact_bounds,"
+              "sparse_legacy_mean_ns,sparse_legacy_p99_ns,sparse_legacy_max_ns,"
+              "sparse_cached_mean_ns,sparse_cached_p99_ns,sparse_cached_max_ns,"
+              "sparse_legacy_over_cached_ratio\n";
     }
     std::size_t cases=0;
     for(const int fs:{48000,192000}) {
@@ -3627,7 +3630,7 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
                     <<superStats[0]<<','<<superStats[1]<<','<<superStats[2]<<','
                     <<halfStats[0]<<','<<halfStats[1]<<','<<halfStats[2]<<','
                     <<speedRatio<<','<<halfVsSuper
-                    <<",PASS,PASS,PASS,PASS\n";
+                    <<",PASS,PASS,PASS,PASS,0,0,0,0,0,0,0\n";
             }
             ++cases;
         }
@@ -3682,11 +3685,13 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                     QVERIFY(selector);
                     QVERIFY(selector->prepare(eventSpan));
                     QCOMPARE(selector->cached_event_count(),eventSpan.size());
-                    std::vector<std::int64_t> grouped,super,half,directCosine;
+                    std::vector<std::int64_t> grouped,super,half;
+                    std::vector<std::int64_t> directCosine,cachedSparsePair;
                     grouped.reserve(128);
                     super.reserve(128);
                     half.reserve(128);
                     directCosine.reserve(128);
+                    cachedSparsePair.reserve(128);
                     const bool sparseCache=eventSpan.size()<Selector::kDense
                         && !eventSpan.empty();
                     if(!eventSpan.empty())
@@ -3721,27 +3726,47 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         super.push_back(measures[1].second);
                         half.push_back(measures[2].second);
                         if(sparseCache) {
-                            const auto started=std::chrono::steady_clock::now();
-                            const auto old=selector->
-                                choose_sparse_original_cosine_for_test(m,current);
-                            const auto elapsed=std::chrono::duration_cast<
-                                std::chrono::nanoseconds>(
-                                std::chrono::steady_clock::now()-started).count();
-                            QVERIFY(old);
-                            directCosine.push_back(
-                                static_cast<std::int64_t>(elapsed));
-                            QCOMPARE(std::bit_cast<std::uint64_t>(
-                                old->attack_floor_db),
-                                std::bit_cast<std::uint64_t>(c->attack_floor_db));
-                            QCOMPARE(old->future_event.has_value(),
-                                     c->future_event.has_value());
-                            if(old->future_event) {
-                                QCOMPARE(old->future_event->tick,
-                                         c->future_event->tick);
+                            // Extra paired A/B avoids conflating earlier
+                            // three-way group/superblock measurements.
+                            // Flip execution order for adjacent ticks.
+                            const auto sparseTimed=[&](bool oldPath) {
+                                const auto start=std::chrono::steady_clock::now();
+                                const auto choice=oldPath
+                                    ?selector->
+                                        choose_sparse_original_cosine_for_test(
+                                            m,current)
+                                    :selector->choose(m,current);
+                                const auto stop=std::chrono::steady_clock::now();
+                                return std::pair{choice,
+                                    std::chrono::duration_cast<
+                                        std::chrono::nanoseconds>(
+                                            stop-start).count()};
+                            };
+                            const bool oldFirst=((m-firstM)%2==0);
+                            const auto x=sparseTimed(oldFirst);
+                            const auto y=sparseTimed(!oldFirst);
+                            const auto& old=oldFirst?x:y;
+                            const auto& cached=oldFirst?y:x;
+                            QVERIFY(old.first);
+                            QVERIFY(cached.first);
+                            directCosine.push_back(old.second);
+                            cachedSparsePair.push_back(cached.second);
+                            for(const auto* legacyOrCached:{
+                                &old.first.value(),&cached.first.value()}) {
                                 QCOMPARE(std::bit_cast<std::uint64_t>(
-                                    old->future_event->peak),
+                                    legacyOrCached->attack_floor_db),
                                     std::bit_cast<std::uint64_t>(
-                                        c->future_event->peak));
+                                        c->attack_floor_db));
+                                QCOMPARE(legacyOrCached->future_event.has_value(),
+                                         c->future_event.has_value());
+                                if(legacyOrCached->future_event) {
+                                    QCOMPARE(legacyOrCached->future_event->tick,
+                                             c->future_event->tick);
+                                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                                        legacyOrCached->future_event->peak),
+                                        std::bit_cast<std::uint64_t>(
+                                            c->future_event->peak));
+                                }
                             }
                         }
                         QCOMPARE(std::bit_cast<std::uint64_t>(a->attack_floor_db),
@@ -3825,9 +3850,18 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         ?static_cast<double>(bSum)/static_cast<double>(cSum):0.0;
                     const auto cosineSum=std::accumulate(directCosine.begin(),
                         directCosine.end(),std::int64_t{0});
-                    const double sparseCacheSpeed=cSum>0 && sparseCache
+                    const auto cachedPairSum=std::accumulate(
+                        cachedSparsePair.begin(),cachedSparsePair.end(),
+                        std::int64_t{0});
+                    const double sparseCacheSpeed=cachedPairSum>0
                         ?static_cast<double>(cosineSum)/
-                            static_cast<double>(cSum):0.0;
+                            static_cast<double>(cachedPairSum):0.0;
+                    const auto sparseOldStats=directCosine.empty()
+                        ?std::array<std::int64_t,3>{0,0,0}
+                        :stats(directCosine);
+                    const auto sparseNewStats=cachedSparsePair.empty()
+                        ?std::array<std::int64_t,3>{0,0,0}
+                        :stats(cachedSparsePair);
                     QVERIFY(feeder->drained());
                     QCOMPARE(visit+skip,window);
                     qInfo().nospace()<<"M17 detector selector fs="<<fs
@@ -3853,7 +3887,11 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                            <<b[0]<<','<<b[1]<<','<<b[2]<<','
                            <<c[0]<<','<<c[1]<<','<<c[2]<<','
                            <<baseRatio<<','<<halfRatio
-                           <<",PASS,PASS,PASS,PASS\n";
+                           <<",PASS,PASS,PASS,PASS,"
+                           <<sparseOldStats[0]<<','<<sparseOldStats[1]<<','
+                           <<sparseOldStats[2]<<','<<sparseNewStats[0]<<','
+                           <<sparseNewStats[1]<<','<<sparseNewStats[2]<<','
+                           <<sparseCacheSpeed<<'\n';
                         if(sparseCache) {
                             qInfo().nospace()
                                 <<"M17 original-cosine vs cached Hann, fs="<<fs

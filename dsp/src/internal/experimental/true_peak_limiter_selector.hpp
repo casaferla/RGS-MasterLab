@@ -92,10 +92,13 @@ public:
                 suffix[offset]=std::max(suffix[offset+1],weights[offset]);
             }
         }
+        // Exact demand is invariant for each event and the fixed
+        // Ceiling. Cache it once for sparse as well as dense batches.
+        // Identical binary64 20*log10(peak/Ceiling) with no reordering.
+        demands.reserve(events.size());
+        for (const auto& event : events)
+            demands.push_back(demand_db(event.peak));
         if (events.size() >= kDense) {
-            demands.reserve(events.size());
-            for (const auto& event : events)
-                demands.push_back(demand_db(event.peak));
             group.resize((events.size()+kGroup-1U)/kGroup,+0.0);
             superblock.resize((events.size()+kSuperblock-1U)/kSuperblock,+0.0);
             halfblock.resize((events.size()+kHalfblock-1U)/kHalfblock,+0.0);
@@ -276,7 +279,7 @@ private:
         } else {
             for(std::size_t index=begin;index<stop;++index) {
                 ++choice.visited;
-                const auto d=demand_db(events_[index].peak);
+                const auto d=demands_[index];
                 if(d>0.0) {
                     const auto delta=static_cast<std::size_t>(
                         events_[index].tick-m);

@@ -644,3 +644,30 @@ this does not by itself prove improved full quantum or hard real-time.
 The next Focused CI is EXTENDED (full M17/M16 PCM, checkpoint, EOS, six
 rates and mono/stereo), as the isolated selector runtime changed. No
 LANE B R1 protector, frozen M17 production, PR54/main, FQ or merge.
+
+
+## #687 EXTENDED: Cache exact sparse event demands (same binary64)
+
+CI #686 completed Windows/Linux EXTENDED SUCCESS. On detector-sourced
+fixtures, 8/24 sparse cases on each platform contain 1..63 active events;
+previous work eliminated repeated Hann cosines for this path, but sparse
+choose() still recomputes the exact logarithmic demand for every future
+event on every controller tick.
+
+The isolated test selector now precomputes the same `20*log10(peak/Ceiling)`
+for EVERY prepared event, not merely batches of 64+ events. Sparse choose
+uses `demands_[index]`, computed by `demand_db()` in the original event
+order with identical FP operations. No density threshold, Hann attack
+computation, strict winner, event tick, controller, PCM gain, or checkpoint
+ABI changes. The test-only legacy sparse path recomputes both log10 and
+cosine on demand; for 1..63 detector-sourced events per batch, the test
+alternates old/new execution order, cross-checks both bit-for-bit with
+the selector result and independent all-event Hann oracle, and exports
+paired mean/p99/max and ratio in SelectorWork CSV. Diagnostic per-call
+nanoseconds exclude batch preparation and cannot establish whole-quantum
+realtime or lifecycle resource limits.
+
+This changes PR55's isolated selector and therefore mandates full
+EXTENDED Focused CI for real IModule PCM/M16 exactness, all six sample
+rates, mono/stereo, ceiling, EOS and checkpoint. No change to product
+M17 frozen, PR54/main, UI, FQ, LANE B protector or merge.
