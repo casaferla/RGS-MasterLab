@@ -612,3 +612,35 @@ neither a long musical audio benchmark nor a guarantee for 192k/64-frame
 hard realtime. No LANE B R1 protector was adopted. The independent
 R1 feasibility gate found no passing protector and has no authority to
 change the bit-identical LANE A task.
+
+    
+## #686 EXTENDED: sparse Hann one-time exact binary64 cache
+
+CI #685 FAST Windows/Linux SUCCESS: 48 detector-sourced cases,
+six sample rates × mono/stereo × {-6,-12 dBTP} × sparse/dense.
+Every 32-group / 512-event / 512+256-event selector matched independent
+all-event Hann binary64 oracle for attack floor and selected event.
+
+Across 24 detector-sourced sparse scenarios per platform, the additional
+256-event level yielded essentially neutral median A/B effects; it also
+regressed on several cases. Dense scenarios gained only modestly.
+For truly sparse *prepared* batches with fewer than 64 active events,
+the current selector still recalculates identical Hann cosines per
+future event and per tick. This is the next isolated optimization.
+
+On a nonempty batch, prepare() now constructs immutable weights (and
+suffix bounds) once if missing; empty batches do not allocate weights.
+The original binary64 cosine expression, its exact evaluation order,
+and original per-event strict '>' update order are retained. Sparse
+selection reads weights[lag] rather than recomputing the same cosine.
+All former group/superblock semantics, event coverage, detector ABI,
+frozen controller and PCM multiplication remain untouched.
+
+A test-only original sparse cosine selector independently compares the
+old and cached results bit-for-bit, including winner and attack floor,
+on actual signed detector workloads with fewer than 64 active events.
+Additional short, noisy same-run per-query timing is diagnostic only;
+this does not by itself prove improved full quantum or hard real-time.
+The next Focused CI is EXTENDED (full M17/M16 PCM, checkpoint, EOS, six
+rates and mono/stereo), as the isolated selector runtime changed. No
+LANE B R1 protector, frozen M17 production, PR54/main, FQ or merge.

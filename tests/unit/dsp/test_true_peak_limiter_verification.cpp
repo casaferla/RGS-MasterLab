@@ -3682,10 +3682,15 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                     QVERIFY(selector);
                     QVERIFY(selector->prepare(eventSpan));
                     QCOMPARE(selector->cached_event_count(),eventSpan.size());
-                    std::vector<std::int64_t> grouped,super,half;
+                    std::vector<std::int64_t> grouped,super,half,directCosine;
                     grouped.reserve(128);
                     super.reserve(128);
                     half.reserve(128);
+                    directCosine.reserve(128);
+                    const bool sparseCache=eventSpan.size()<Selector::kDense
+                        && !eventSpan.empty();
+                    if(!eventSpan.empty())
+                        QCOMPARE(selector->weight_build_count(),std::size_t{1});
                     std::uint64_t visit=0,skip=0,window=0;
                     std::uint64_t pruned512=0,pruned256=0;
                     for(std::int64_t m=firstM;m<=lastM;++m) {
@@ -3715,6 +3720,30 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         grouped.push_back(measures[0].second);
                         super.push_back(measures[1].second);
                         half.push_back(measures[2].second);
+                        if(sparseCache) {
+                            const auto started=std::chrono::steady_clock::now();
+                            const auto old=selector->
+                                choose_sparse_original_cosine_for_test(m,current);
+                            const auto elapsed=std::chrono::duration_cast<
+                                std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now()-started).count();
+                            QVERIFY(old);
+                            directCosine.push_back(
+                                static_cast<std::int64_t>(elapsed));
+                            QCOMPARE(std::bit_cast<std::uint64_t>(
+                                old->attack_floor_db),
+                                std::bit_cast<std::uint64_t>(c->attack_floor_db));
+                            QCOMPARE(old->future_event.has_value(),
+                                     c->future_event.has_value());
+                            if(old->future_event) {
+                                QCOMPARE(old->future_event->tick,
+                                         c->future_event->tick);
+                                QCOMPARE(std::bit_cast<std::uint64_t>(
+                                    old->future_event->peak),
+                                    std::bit_cast<std::uint64_t>(
+                                        c->future_event->peak));
+                            }
+                        }
                         QCOMPARE(std::bit_cast<std::uint64_t>(a->attack_floor_db),
                                  std::bit_cast<std::uint64_t>(b->attack_floor_db));
                         QCOMPARE(std::bit_cast<std::uint64_t>(a->attack_floor_db),
@@ -3794,6 +3823,11 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         ?static_cast<double>(aSum)/static_cast<double>(bSum):0.0;
                     const double halfRatio=cSum>0
                         ?static_cast<double>(bSum)/static_cast<double>(cSum):0.0;
+                    const auto cosineSum=std::accumulate(directCosine.begin(),
+                        directCosine.end(),std::int64_t{0});
+                    const double sparseCacheSpeed=cSum>0 && sparseCache
+                        ?static_cast<double>(cosineSum)/
+                            static_cast<double>(cSum):0.0;
                     QVERIFY(feeder->drained());
                     QCOMPARE(visit+skip,window);
                     qInfo().nospace()<<"M17 detector selector fs="<<fs
@@ -3801,6 +3835,7 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         <<" dense="<<dense<<" retained="<<eventSpan.size()
                         <<" 512_over_group="<<baseRatio
                         <<" 256_over_512="<<halfRatio
+                        <<" sparse_hann_cache_speedup="<<sparseCacheSpeed
                         <<" exact_pcm_controller_unmodified=YES";
                     if(!outputPath.empty()) {
                         std::ofstream csv(outputPath,std::ios::app);
@@ -3819,6 +3854,14 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                            <<c[0]<<','<<c[1]<<','<<c[2]<<','
                            <<baseRatio<<','<<halfRatio
                            <<",PASS,PASS,PASS,PASS\n";
+                        if(sparseCache) {
+                            qInfo().nospace()
+                                <<"M17 original-cosine vs cached Hann, fs="<<fs
+                                <<" channels="<<channels
+                                <<" sparse_hann_cache_speedup="
+                                <<sparseCacheSpeed
+                                <<" exact_binary64=PASS";
+                        }
                     }
                     ++cases;
                 }
