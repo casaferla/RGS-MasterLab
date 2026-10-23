@@ -3186,7 +3186,7 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
         std::ofstream csv(csvPath,std::ios::trunc);
         QVERIFY2(csv.good(),"M17 integrated lazy CSV creation failed");
         csv<<"sample_rate_hz,channels,ceiling_dbtp,frames,controller_type,"
-              "quantum_frames,quantum_count,quantum_budget_ns,"
+              "selector_mode,quantum_frames,quantum_count,quantum_budget_ns,"
               "mean_quantum_ns,p99_quantum_ns,max_quantum_ns,"
               "missed_quantum_count,total_render_ns,source_frames_consumed,"
               "detector_cache_high_water,selector_cache_high_water,"
@@ -3235,8 +3235,12 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                     *kQuantum/fs;
                 // Alternate measurement order between sample rates.
                 // No simultaneous tasks: compare the same input on one runner.
-                for(int order=0;order<2;++order) {
-                    const bool lazyMode=(order==((fs==192000)?0:1));
+                for(int order=0;order<4;++order) {
+                    // For each controller, run both window locators on
+                    // identical PCM, with adjacent order alternation.
+                    const bool lazyMode=(order/2==((fs==192000)?0:1));
+                    const bool cursorMode=(order%2==
+                        ((fs==192000)?0:1));
                     auto feeder=Feeder::create(fs,ceiling,stereo?2U:1U);
                     auto rolling=Rolling::create(fs,ceiling);
                     auto reference=Reference::create(fs,ceiling);
@@ -3316,7 +3320,10 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                                 tick<=8*n;++tick) {
                                 const auto current=feeder->peak_at(tick);
                                 const auto chooseStart=std::chrono::steady_clock::now();
-                                const auto chosen=rolling->choose(tick,current);
+                                const auto chosen=cursorMode
+                                    ?rolling->choose(tick,current)
+                                    :rolling->choose_binary_search_for_test(
+                                        tick,current);
                                 const auto chooseStop=std::chrono::steady_clock::now();
                                 QVERIFY(chosen);
                                 blockVisited+=chosen->visited;
@@ -3439,6 +3446,7 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                     qInfo().nospace()<<"M17 integrated lazy quantum fs="<<fs
                         <<" ch="<<(stereo?2:1)<<" ceiling="<<ceiling
                         <<" engine="<<(lazyMode?"LAZY":"FROZEN")
+                        <<" selector_mode="<<(cursorMode?"CURSOR":"BINARY")
                         <<" mean_ns="<<meanNs<<" p99_ns="<<p99Ns
                         <<" worst_ns="<<worstNs<<" missed="<<misses
                         <<"/"<<quantumNs.size()
@@ -3459,6 +3467,7 @@ void TruePeakLimiterVerificationTest::experimentalIntegratedLazyQuantumBenchmark
                         QVERIFY2(csv.good(),"M17 integrated lazy CSV append failed");
                         csv<<fs<<','<<(stereo?2:1)<<','<<ceiling<<','
                             <<nFrames<<','<<(lazyMode?"LAZY":"FROZEN")<<','
+                            <<(cursorMode?"CURSOR":"BINARY")<<','
                             <<kQuantum<<','<<quantumNs.size()<<','<<budgetNs<<','
                             <<meanNs<<','<<p99Ns<<','<<worstNs<<','
                             <<misses<<','<<totalNs<<','<<feedPosition<<','

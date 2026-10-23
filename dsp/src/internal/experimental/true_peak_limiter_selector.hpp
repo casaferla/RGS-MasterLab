@@ -88,6 +88,42 @@ public:
         return choose_impl<true,true>(m,current_peak);
     }
 
+    // Sequential certified ticks may reuse the two already located
+    // window boundaries instead of repeating binary upper_bound twice
+    // per tick. This changes neither Hann weighting nor event traversal.
+    // Nonsequential calls safely reinitialize by the original upper_bound.
+    [[nodiscard]] std::optional<Choice>
+    choose_monotone(std::int64_t m,double current_peak)
+    {
+        if (!std::isfinite(current_peak) || current_peak<0.0
+            || m>std::numeric_limits<std::int64_t>::max()-horizon_)
+            return std::nullopt;
+
+        if(!cursor_valid_ || cursor_tick_==
+              std::numeric_limits<std::int64_t>::max()
+              || m!=cursor_tick_+1) {
+            const auto first=std::upper_bound(events_.begin(),events_.end(),m,
+                [](std::int64_t x,const Event& e){return x<e.tick;});
+            const auto last=std::upper_bound(first,events_.end(),m+horizon_,
+                [](std::int64_t x,const Event& e){return x<e.tick;});
+            cursor_begin_=static_cast<std::size_t>(first-events_.begin());
+            cursor_stop_=static_cast<std::size_t>(last-events_.begin());
+        } else {
+            // Tick-sorted, at most a few detector events cross each
+            // boundary per tick. Strict '>' upper_bound equivalence.
+            while(cursor_begin_<events_.size()
+                  && events_[cursor_begin_].tick<=m)
+                ++cursor_begin_;
+            while(cursor_stop_<events_.size()
+                  && events_[cursor_stop_].tick<=m+horizon_)
+                ++cursor_stop_;
+        }
+        cursor_tick_=m;
+        cursor_valid_=true;
+        return choose_bounded<true,true>(
+            m,current_peak,cursor_begin_,cursor_stop_);
+    }
+
     // Test-only paired control: the exact former 32-event group path,
     // sharing one immutable cache with the hierarchical candidate.
     // Never called by the rolling renderer or registered DSP.
@@ -247,6 +283,11 @@ private:
         halfblock_.swap(halfblock);
         last_reused_demands_=reused;
         last_computed_demands_=events_.size()-reused;
+        // A newly accepted batch has new event indices, even when all
+        // signed tick/peak demand values are exactly reusable.
+        cursor_valid_=false;
+        cursor_begin_=0;
+        cursor_stop_=0;
         return true;
     }
 
@@ -267,10 +308,19 @@ private:
                 return tick<event.tick;
             });
 
-        Choice choice{};
-        choice.attack_floor_db=demand_db(current_peak);
         const auto begin=static_cast<std::size_t>(first-events_.begin());
         const auto stop=static_cast<std::size_t>(last-events_.begin());
+        return choose_bounded<SuperblockPruning,HalfblockPruning>(
+            m,current_peak,begin,stop);
+    }
+
+    template<bool SuperblockPruning,bool HalfblockPruning>
+    [[nodiscard]] std::optional<Choice>
+    choose_bounded(std::int64_t m,double current_peak,
+        std::size_t begin,std::size_t stop) const
+    {
+        Choice choice{};
+        choice.attack_floor_db=demand_db(current_peak);
         choice.bounded=stop-begin>=kDense && !demands_.empty();
 
         if (choice.bounded) {
@@ -379,6 +429,10 @@ private:
     std::size_t weight_build_count_{0};
     std::size_t last_reused_demands_{0};
     std::size_t last_computed_demands_{0};
+    std::size_t cursor_begin_{0};
+    std::size_t cursor_stop_{0};
+    std::int64_t cursor_tick_{0};
+    bool cursor_valid_{false};
 };
 
 } // namespace rgsml::dsp::internal::experimental

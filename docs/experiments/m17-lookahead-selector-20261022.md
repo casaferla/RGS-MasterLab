@@ -876,3 +876,42 @@ Any #695 runtime algorithm change MUST use EXTENDED Focused CI;
 #694 uses EXTENDED to execute integrated profiling (omitted by
 the FAST test profile). No FQ, merges, main or PR54 changes,
 no UI change, no protector R1 and no reopening C4.
+
+
+## #695 EXTENDED: Single exact monotone-window experiment
+
+CI #694 EXTENDED passed Windows and Linux with the certified
+48/192kHz 64-frame PCM-identical integrated diagnostic. For
+192kHz LAZY Windows, the selector mean ranged 122.8–140.4 us
+per quantum, with 3.68–4.69% of future detector events visited.
+The conservative hierarchy already skips >95% of events, so yet
+another group-pruning level is unlikely to solve the main cost.
+Mean overall quantum was 287.6–367.4 us on this hosted run,
+with p99 381–461 us, exceeding the 333.33 us hard budget
+in all four Windows scenarios. Linux timing exceeds it by far.
+These are instrumented CI runners, not hard realtime proof.
+
+#695 makes ONE isolated algorithmic change: scheduler-driven
+monotone window boundary tracking. The rolling scheduler already
+proves strictly consecutive controller ticks, so a cached lower
+index for tick m and upper index for m+H can advance by walking only
+events that actually crossed those boundaries. The first tick and
+any nonsequential access still use EXACT original upper_bound,
+and every successfully prepared batch resets cursors to avoid
+indices from a previous snapshot. Frozen Hann binary64 weights,
+strict winner ties, detector event order, ceiling, stereo linking,
+controller state and exact PCM multiplication are untouched.
+The original arbitrary-order choose() and a new test-only rolling
+binary-search selector remain independently callable.
+
+The real detector 48/192kHz integrated 64-frame test now executes
+BOTH CURSOR and BINARY selector modes for each FROZEN/LAZY controller
+using the same input and certified feed/batch/PCM oracle. It
+alternates mode ordering and records full quantum mean/p99/max,
+misses and the full stage attribution for each mode. This is
+the falsifiable same-run A/B. No standalone microbench result
+can substitute for a whole-quantum improvement on both platforms.
+Because PR55 experimental selector runtime and rolling scheduler
+change, full EXTENDED Focused CI is required. Any red stops
+new optimization and triggers correction/rollback on PR55 only.
+No frozen M17, PR54/main, FQ, UI, R1, C4 or merge.

@@ -83,6 +83,22 @@ public:
             || (!detector_drained_
                 && batch_coverage_tick_<tick+horizon_))
             return std::nullopt;
+        auto result=selector_.choose_monotone(tick,current_peak);
+        if(!result)return std::nullopt;
+        ++next_tick_;
+        return result;
+    }
+
+    // Test-only comparator: same complete certified events, same
+    // controller, original independent binary upper_bounds each tick.
+    [[nodiscard]] std::optional<Choice>
+    choose_binary_search_for_test(
+        std::int64_t tick,double current_peak)
+    {
+        if(!accepted_ || tick!=next_tick_ || tick>batch_last_tick_
+            || (!detector_drained_
+                && batch_coverage_tick_<tick+horizon_))
+            return std::nullopt;
         auto result=selector_.choose(tick,current_peak);
         if(!result)return std::nullopt;
         ++next_tick_;
