@@ -3960,21 +3960,22 @@ void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfile
                         std::chrono::nanoseconds>(fullStop-fullStart).count();
                     for(std::int64_t tick=nextFirst;tick<nextFirst+16;++tick) {
                         const auto current=feeder->peak_at(tick);
-                        const auto a=selector->choose(tick,current);
-                        const auto b=full->choose(tick,current);
-                        QVERIFY(a && b);
+                        const auto incrementalChoice=selector->choose(tick,current);
+                        const auto recomputedChoice=full->choose(tick,current);
+                        QVERIFY(incrementalChoice && recomputedChoice);
                         QCOMPARE(std::bit_cast<std::uint64_t>(
-                            a->attack_floor_db),
+                            incrementalChoice->attack_floor_db),
                             std::bit_cast<std::uint64_t>(
-                                b->attack_floor_db));
-                        QCOMPARE(a->future_event.has_value(),
-                                 b->future_event.has_value());
-                        if(a->future_event) {
-                            QCOMPARE(a->future_event->tick,b->future_event->tick);
+                                recomputedChoice->attack_floor_db));
+                        QCOMPARE(incrementalChoice->future_event.has_value(),
+                                 recomputedChoice->future_event.has_value());
+                        if(incrementalChoice->future_event) {
+                            QCOMPARE(incrementalChoice->future_event->tick,
+                                     recomputedChoice->future_event->tick);
                             QCOMPARE(std::bit_cast<std::uint64_t>(
-                                a->future_event->peak),
+                                incrementalChoice->future_event->peak),
                                 std::bit_cast<std::uint64_t>(
-                                    b->future_event->peak));
+                                    recomputedChoice->future_event->peak));
                         }
                     }
                     qInfo().nospace()<<"M17 adjacent-batch demand fs="<<fs
