@@ -84,7 +84,7 @@ Item {
             additionalTooltip: root.limiterControlsIncluded
                 ? root.provenanceDetails : ""
             detailTooltipEnabled: root.showProvenanceTooltips
-            Layout.fillHeight: root.framedForLimiter && !root.limiterControlsIncluded
+            Layout.fillHeight: false
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
@@ -105,7 +105,7 @@ Item {
             additionalTooltip: root.limiterControlsIncluded
                 ? root.provenanceDetails : ""
             detailTooltipEnabled: root.showProvenanceTooltips
-            Layout.fillHeight: root.framedForLimiter && !root.limiterControlsIncluded
+            Layout.fillHeight: false
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
@@ -128,7 +128,7 @@ Item {
             additionalTooltip: root.limiterControlsIncluded
                 ? root.provenanceDetails : ""
             detailTooltipEnabled: root.showProvenanceTooltips
-            Layout.fillHeight: root.framedForLimiter && !root.limiterControlsIncluded
+            Layout.fillHeight: false
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true
@@ -156,7 +156,7 @@ Item {
             objectName: "truePeakProvenanceCard"
             visible: false
             detailTooltipEnabled: root.showProvenanceTooltips
-            Layout.fillHeight: root.framedForLimiter && !root.limiterControlsIncluded
+            Layout.fillHeight: false
             useFamilyAccent: root.useFamilyAccent
             familyAccent: root.familyAccent
             Layout.fillWidth: true

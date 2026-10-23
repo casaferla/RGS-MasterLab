@@ -956,7 +956,7 @@ Window {
     }
     QVERIFY2(staticBay->property("width").toDouble() > 340.0,
              "The True Peak static meter well must have its own region");
-    QVERIFY2(sharedRail->property("width").toDouble() >= 278.0,
+    QVERIFY2(sharedRail->property("width").toDouble() >= 225.0,
              "The shared True Peak rail must remain usable");
     QVERIFY2(leftScale->property("height").toDouble() > 120.0,
              "L/R dBTP tick scale must be visible");

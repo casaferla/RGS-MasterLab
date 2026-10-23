@@ -340,8 +340,7 @@ Rectangle {
                 minimumControlWidth: 80
                 enabled: root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
-                    && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
-                        || root.terminalLimiterViewModel.audioStatus.startsWith("READY"))
+                    && root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
                 onClicked: root.terminalLimiterViewModel.cancelPreparation()
                 Accessible.name: "Cancel offline limiter preparation"
             }
@@ -372,11 +371,13 @@ Rectangle {
         // block count. Full 100% is reported after READY gate acceptance.
         ColumnLayout {
             objectName: "m17PreparationProgressRegion"
-            visible: root.isLimiterEditor && root.terminalLimiterViewModel
-                && (root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
-                    || root.terminalLimiterViewModel.audioStatus.startsWith("READY"))
+            visible: root.isLimiterEditor
+            // Reserve the full progress strip at ALL stages. A changing phase,
+            // completion or cancellation MUST NOT move editor/meter/GR content.
             Layout.fillWidth: true
+            Layout.minimumHeight: 32
             Layout.preferredHeight: 32
+            Layout.maximumHeight: 32
             spacing: 2
             ProgressBar {
                 objectName: "m17PreparationProgressBar"
@@ -388,6 +389,8 @@ Rectangle {
                     ? root.terminalLimiterViewModel.preparationFraction : 0
                 indeterminate: root.terminalLimiterViewModel
                     ? !root.terminalLimiterViewModel.preparationDeterminate : true
+                opacity: root.terminalLimiterViewModel
+                    && root.terminalLimiterViewModel.audioStatus.startsWith("Preparing") ? 1.0 : 0.22
                 Accessible.name: "Offline limiter preparation progress"
             }
             Text {
@@ -399,6 +402,9 @@ Rectangle {
                 text: {
                     const v=root.terminalLimiterViewModel
                     if(!v) return "PREPARATION UNAVAILABLE"
+                    if (!v.audioStatus.startsWith("Preparing")
+                        && !v.audioStatus.startsWith("READY"))
+                        return "Output-rate conversion · not running"
                     const pct=v.preparationDeterminate
                         ? " · " + Math.floor(v.preparationFraction*100) + "%"
                         : " · measuring"
