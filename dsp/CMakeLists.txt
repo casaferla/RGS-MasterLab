@@ -26,6 +26,10 @@ add_library(rgsml_dsp STATIC
 target_include_directories(rgsml_dsp
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
+        # The isolated M17 experimental selector headers include the frozen
+        # internal DSP state, never expose this directory to other layers.
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(rgsml_dsp
