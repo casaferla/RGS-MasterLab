@@ -39,6 +39,11 @@ public:
         std::shared_ptr<const render::RenderResult> current_manual,
         std::optional<core::RealizationId> current_manual_id,
         core::RealizationId distinct_terminal_id);
+    [[nodiscard]] core::Status prepare_measured_session(
+        std::shared_ptr<const render::RenderResult> current_prepared,
+        std::shared_ptr<const render::RenderResult> current_manual,
+        std::optional<core::RealizationId> current_manual_id,
+        core::RealizationId distinct_terminal_id);
 
     [[nodiscard]] bool has_session() const noexcept override
     { return control_.has_value(); }
@@ -72,6 +77,7 @@ private:
     DevicePrepare prepare_;
     std::optional<TerminalSourceControlBridge> control_;
     std::shared_ptr<const TerminalCandidateGate::StagedCandidate> owner_;
+    std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate> measuredOwner_;
     std::shared_ptr<const void> sessionLease_;
     std::optional<core::RealizationId> installedTerminalId_;
 };

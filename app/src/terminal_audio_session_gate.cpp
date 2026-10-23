@@ -78,6 +78,71 @@ core::Status TerminalAudioSessionGate::prepare_private_session(
     return core::Status::success();
 }
 
+core::Status TerminalAudioSessionGate::prepare_measured_session(
+    std::shared_ptr<const render::RenderResult> prepared,
+    std::shared_ptr<const render::RenderResult> manual,
+    std::optional<core::RealizationId> manualId,
+    core::RealizationId terminalId)
+{
+    // Do not orphan a still-audible old OUTPUT_RATE session or its lease.
+    if (installedTerminalId_ || control_)
+        return core::Status::failure(denied(
+            "M17_SESSION_ALREADY_INSTALLED",
+            "Retire the current terminal device owner before reinstalling."));
+    detach();
+    auto accepted=gate_->staged_measured();
+    if(!accepted || !prepared || !manual || !manualId
+       ||manualId->value==0 ||terminalId.value==0
+       ||terminalId==*manualId
+       ||accepted->original_manual_realization_id!=*manualId
+       ||accepted->prepared_owner!=prepared
+       ||accepted->rendered.manual_owner!=manual
+       ||!prepare_)
+        return core::Status::failure(denied(
+            "M17_SESSION_AUTHORITY_MISSING",
+            "The terminal installer requires a current accepted owner and distinct external ID."));
+    auto mapping=TerminalPlaybackFrameMap::create_measured(*accepted);
+    if(!mapping)
+        return core::Status::failure(*mapping.error());
+    auto before=playback_->snapshot();
+    if(!before)return core::Status::failure(*before.error());
+    if(before.value()->state!=core::PlaybackState::STOPPED
+       ||before.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::NEW
+       ||before.value()->audibleRealization.realizationId!=manualId
+       ||!before.value()->duration
+       ||*before.value()->duration!=mapping.value()->source_frames())
+        return core::Status::failure(denied(
+            "M17_SESSION_REQUIRES_STOPPED_MANUAL",
+            "A stopped audible manual PROCESSED owner is required before terminal session installation."));
+    const auto pcm=accepted->rendered.terminal.terminal
+        .compensated_pcm.view();
+    const auto installed=prepare_(pcm,accepted,terminalId);
+    if(!installed) {
+        clear_owned_failed_install(terminalId);
+        return installed;
+    }
+    // A callback may synchronously switch Source/Ceiling or an output
+    // device owner. No candidate survives such a race.
+    if(gate_->staged_measured()!=accepted) {
+        clear_owned_failed_install(terminalId);
+        return core::Status::failure(denied(
+            "M17_SESSION_STALE_DURING_INSTALL",
+            "Accepted terminal owner changed during output device installation."));
+    }
+    auto controller=TerminalSourceControlBridge::create_measured(
+        *gate_,*playback_,terminalId);
+    if(!controller) {
+        clear_owned_failed_install(terminalId);
+        return core::Status::failure(*controller.error());
+    }
+    measuredOwner_=std::move(accepted);
+    control_.emplace(std::move(*controller.value()));
+    sessionLease_ = std::make_shared<int>(0);
+    installedTerminalId_ = terminalId;
+    return core::Status::success();
+}
+
 void TerminalAudioSessionGate::clear_owned_failed_install(
     core::RealizationId attempted) noexcept
 {
@@ -127,16 +192,21 @@ void TerminalAudioSessionGate::detach() noexcept
     if(control_)control_->detach();
     control_.reset();
     owner_.reset();
+    measuredOwner_.reset();
 }
 
 core::Result<core::SampleRate> TerminalAudioSessionGate::source_rate() const
 {
     auto checked=source_snapshot();
-    if (!checked || !owner_ || !owner_->rendered.manual_owner)
+    if(!checked || (!owner_&&!measuredOwner_)
+       ||(owner_&&!owner_->rendered.manual_owner)
+       ||(measuredOwner_&&!measuredOwner_->rendered.manual_owner))
         return core::Result<core::SampleRate>::failure(denied(
             "M17_SESSION_NOT_OWNED","No authoritative terminal SOURCE rate."));
+    const auto manual=owner_ ? owner_->rendered.manual_owner
+                              : measuredOwner_->rendered.manual_owner;
     return core::Result<core::SampleRate>::success(
-        owner_->rendered.manual_owner->view().format().sample_rate());
+        manual->view().format().sample_rate());
 }
 
 core::Result<TerminalSourceTransportPort::DisplaySnapshot>
