@@ -357,6 +357,12 @@ Rectangle {
                 onClicked: root.terminalLimiterViewModel.previewNonconforming()
                 Accessible.name: "Explicit preview of measured Ceiling-nonconforming audio"
                 ToolTip.text: "Measured result exceeds requested Ceiling. Preview is unverified, only on your explicit choice."
+                ToolTip.visible: hovered && m17NonconformingDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: m17NonconformingDwell
+                    anchors.fill: parent
+                }
             }
             StudioButton {
                 objectName: "m17PreviewPreparedButton"
