@@ -13,19 +13,96 @@ Rectangle {
     property int selectedIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
+    // Delegate lifecycle invalidates all original-index row handles.
+    property int rowGeneration: 0
 
-    // Generic active row lookup for host Escape/focus management
-    readonly property Item activeRow: {
-        var idx = root.adapterModel ? root.adapterModel.selectedIndex : root.selectedIndex
-        if (idx >= 0 && idx < rowRepeater.count) {
-            return rowRepeater.itemAt(idx)
-        }
-        return null
+    // Fit the fixed-width chain row without truncating semantic words.
+    // Diagnostic/ownership detail stays in the stationary-hover tooltip;
+    // this is presentation only and never changes the real M17 state.
+    function readableState(moduleAdapter) {
+        if (!moduleAdapter) return ""
+        const state = moduleAdapter.stateText || ""
+        if (moduleAdapter.editorContentKey !== "TRUE_PEAK_LIMITER")
+            return state
+        if (state.startsWith("NEEDS PREPARATION")) return "Needs preparation"
+        if (state.startsWith("READY")) return "Ready · Preview"
+        if (state.startsWith("ERROR")) return "Error · Bypass"
+        if (state.startsWith("ACTIVE")) return "Limiter active"
+        if (state.startsWith("Preparing ·")) return state
+        if (state.startsWith("Preparing") || state.startsWith("RENDERING"))
+            return "Preparing audio"
+        if (state.startsWith("BYPASS")) return "Meter · Bypass"
+        return state
     }
 
-    // Explicit focus targets retained for existing smoke assertions
-    readonly property Item inputGainRow: rowRepeater.count > 0 ? rowRepeater.itemAt(0) : null
-    readonly property Item parametricEqRow: rowRepeater.count > 1 ? rowRepeater.itemAt(1) : null
+    // Preserve immutable M17 DSP identity. Explain the distinction between
+    // ON intent and an authenticated, audible post-limiter installation in
+    // the existing stationary-hover tooltip; do not overload the narrow row.
+    function stateHint(moduleAdapter) {
+        if (!moduleAdapter) return ""
+        const state = moduleAdapter.stateText || ""
+        if (moduleAdapter.editorContentKey !== "TRUE_PEAK_LIMITER")
+            return state
+        if (state.startsWith("Preparing") || state.startsWith("RENDERING"))
+            return state + " · Elapsed preparation time, not a countdown. "
+                + "The current Meter still observes MANUAL PROCESSED audio; "
+                + "Ceiling is not yet applied to what you hear."
+        if (state.startsWith("ACTIVE"))
+            return state + " · Limiter output installed. Live True Peak "
+                + "comes from verified post-limiter audio when available."
+        if (state.startsWith("BYPASS"))
+            return state + " · Meter observes MANUAL PROCESSED audio; "
+                + "no Limiter processing is applied."
+        return state
+    }
+
+    // M16 is an analysis-only LIVE row. M17 and future real Dither adapters
+    // form a separate, anchored-bottom finalization group.
+    readonly property var chainModules: adapterModel ? adapterModel.modules : []
+    function isTerminal(module) {
+        return !!module && (module.editorContentKey === "TRUE_PEAK_LIMITER"
+            || module.editorContentKey === "DITHER"
+            || module.typeId === "rgsml.dsp.dither")
+    }
+    // Stable numeric original-chain indices, not QVariant/QObject JS-wrapper
+    // identity comparisons. Both Repeaters retain the same adapter authority.
+    readonly property var liveModuleIndices: {
+        var out = []
+        for (var i = 0; i < root.chainModules.length; ++i)
+            if (!root.isTerminal(root.chainModules[i])) out.push(i)
+        return out
+    }
+    readonly property var terminalModuleIndices: {
+        var out = []
+        for (var i = 0; i < root.chainModules.length; ++i)
+            if (root.isTerminal(root.chainModules[i])) out.push(i)
+        return out
+    }
+    function rowAt(idx) {
+        if (idx < 0 || idx >= root.chainModules.length) return null
+        var liveIdx = root.liveModuleIndices.indexOf(idx)
+        if (liveIdx >= 0) return rowRepeater.itemAt(liveIdx)
+        var terminalIdx = root.terminalModuleIndices.indexOf(idx)
+        return terminalIdx >= 0 ? terminalRepeater.itemAt(terminalIdx) : null
+    }
+    // itemAt() has no reactive notifier. Every delegate-creation/removal
+    // advances rowGeneration so offscreen/visible LayoutItemProxy instances
+    // cannot retain an initially null handle at unchanged model length.
+    readonly property Item activeRow: {
+        const generation = root.rowGeneration
+        return generation >= 0 ? root.rowAt(
+            root.adapterModel ? root.adapterModel.selectedIndex : root.selectedIndex)
+            : null
+    }
+    // Exact original adapter indices are preserved across both Repeaters.
+    readonly property Item inputGainRow: {
+        const generation = root.rowGeneration
+        return generation >= 0 ? root.rowAt(0) : null
+    }
+    readonly property Item parametricEqRow: {
+        const generation = root.rowGeneration
+        return generation >= 0 ? root.rowAt(1) : null
+    }
 
     color: "#0B1622"
     border.color: "#1E354A"
@@ -60,33 +137,101 @@ Rectangle {
     ScrollView {
         id: chainScrollView
         anchors.top: chainHeader.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: finalizationDock.visible ? finalizationDock.top : parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 4
         clip: true
-
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
-
         ColumnLayout {
             width: chainScrollView.availableWidth
             spacing: 4
-
             Repeater {
                 id: rowRepeater
-                model: root.adapterModel ? root.adapterModel.modules : null
+                model: root.liveModuleIndices
+                delegate: chainRowDelegate
+                onItemAdded: root.rowGeneration += 1
+                onItemRemoved: root.rowGeneration += 1
+            }
+        }
+    }
 
-                delegate: Rectangle {
+    // Terminal DSPs remain VISIBLE at the bottom while only the LIVE
+    // chain scrolls above. Dither is not synthesized as a placeholder.
+    Rectangle {
+        id: finalizationDock
+        objectName: "dspTerminalFinalizationDock"
+        visible: root.terminalModuleIndices.length > 0
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 4
+        height: visible ? 34 + root.terminalModuleIndices.length * 52
+            + Math.max(0, root.terminalModuleIndices.length - 1) * 4 : 0
+        radius: 4
+        color: "#0C1A28"
+        border.width: 1
+        border.color: "#365069"
+
+        Rectangle {
+            id: finalizationDivider
+            objectName: "dspFinalizationDivider"
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 2
+            color: "#C4774A"
+        }
+        Text {
+            objectName: "dspFinalizationHeading"
+            anchors.left: parent.left
+            anchors.top: finalizationDivider.bottom
+            anchors.leftMargin: 8
+            anchors.topMargin: 5
+            text: "FINALIZATION · OFFLINE"
+            font.family: "Segoe UI"
+            font.pixelSize: 9
+            font.weight: Font.DemiBold
+            color: "#C4774A"
+        }
+        ColumnLayout {
+            id: terminalStack
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 4
+            anchors.rightMargin: 4
+            anchors.bottomMargin: 4
+            spacing: 4
+            Repeater {
+                id: terminalRepeater
+                model: root.terminalModuleIndices
+                delegate: chainRowDelegate
+                onItemAdded: root.rowGeneration += 1
+                onItemRemoved: root.rowGeneration += 1
+            }
+        }
+    }
+
+    // Reuse the same LED, focus, state, tooltip and navigation grammar
+    // for both groups; original chain indexes remain authoritative.
+    Component {
+        id: chainRowDelegate
+                Rectangle {
                     id: rowItem
-                    objectName: "dspChainRow_" + index
+                    objectName: "dspChainRow_" + rowItem.modelIndex
                     Layout.fillWidth: true
                     Layout.preferredHeight: 52
                     radius: 4
 
-                    readonly property var moduleAdapter: modelData
-                    readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === index)
+                    readonly property int modelIndex: modelData
+                    readonly property var moduleAdapter: (rowItem.modelIndex >= 0
+                        && rowItem.modelIndex < root.chainModules.length)
+                        ? root.chainModules[rowItem.modelIndex] : null
+                    readonly property bool isFinalization: root.isTerminal(moduleAdapter)
+                    readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === rowItem.modelIndex)
                     readonly property bool isDefaultState: moduleAdapter ? (moduleAdapter.configurationState === "Default") : true
-                    readonly property bool isBypassed: moduleAdapter ? moduleAdapter.bypass : false
+                    readonly property bool isBypassed: moduleAdapter ? (moduleAdapter.bypassSupported && moduleAdapter.bypass) : false
                     readonly property bool hasError: moduleAdapter ? moduleAdapter.hasError : false
 
                     color: isSelected ? "#1A324A" : (rowMouse.containsMouse ? "#122538" : "#0D1D2B")
@@ -103,7 +248,7 @@ Rectangle {
                             if (root.adapterModel && moduleAdapter) {
                                 root.adapterModel.selectModuleByInstanceId(moduleAdapter.instanceId)
                             } else {
-                                root.selectedIndex = index
+                                root.selectedIndex = rowItem.modelIndex
                             }
                             rowItem.forceActiveFocus()
                         }
@@ -114,27 +259,27 @@ Rectangle {
                             if (root.adapterModel && moduleAdapter) {
                                 root.adapterModel.selectModuleByInstanceId(moduleAdapter.instanceId)
                             } else {
-                                root.selectedIndex = index
+                                root.selectedIndex = rowItem.modelIndex
                             }
                             event.accepted = true
                         } else if (event.key === Qt.Key_Down) {
-                            if (index + 1 < rowRepeater.count) {
-                                var nextItem = rowRepeater.itemAt(index + 1)
+                            if (rowItem.modelIndex + 1 < root.chainModules.length) {
+                                var nextItem = root.rowAt(rowItem.modelIndex + 1)
                                 if (nextItem && nextItem.moduleAdapter && root.adapterModel) {
                                     root.adapterModel.selectModuleByInstanceId(nextItem.moduleAdapter.instanceId)
                                 } else {
-                                    root.selectedIndex = index + 1
+                                    root.selectedIndex = rowItem.modelIndex + 1
                                 }
                                 if (nextItem) nextItem.forceActiveFocus()
                                 event.accepted = true
                             }
                         } else if (event.key === Qt.Key_Up) {
-                            if (index > 0) {
-                                var prevItem = rowRepeater.itemAt(index - 1)
+                            if (rowItem.modelIndex > 0) {
+                                var prevItem = root.rowAt(rowItem.modelIndex - 1)
                                 if (prevItem && prevItem.moduleAdapter && root.adapterModel) {
                                     root.adapterModel.selectModuleByInstanceId(prevItem.moduleAdapter.instanceId)
                                 } else {
-                                    root.selectedIndex = index - 1
+                                    root.selectedIndex = rowItem.modelIndex - 1
                                 }
                                 if (prevItem) prevItem.forceActiveFocus()
                                 event.accepted = true
@@ -155,14 +300,18 @@ Rectangle {
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 8
-                        spacing: 6
+                        // FIX-UI-004: reclaim label width at the 164px chain
+                        // minimum while preserving fixed LED/BYP/error slots.
+                        anchors.leftMargin: 7
+                        anchors.rightMargin: 4
+                        spacing: 2
 
                         // Configuration Indicator LED
                         Rectangle {
-                            objectName: "dspChainConfigLed_" + index
+                            objectName: "dspChainConfigLed_" + rowItem.modelIndex
+                            Layout.minimumWidth: 8
                             Layout.preferredWidth: 8
+                            Layout.maximumWidth: 8
                             Layout.preferredHeight: 8
                             radius: 4
                             color: rowItem.isDefaultState ? "#273A4D" : "#00D47A"
@@ -172,7 +321,12 @@ Rectangle {
                             ToolTip.text: rowItem.isDefaultState
                                 ? (rowItem.moduleAdapter ? (rowItem.moduleAdapter.displayName + " Default") : "Default")
                                 : (rowItem.moduleAdapter ? ("Manual Non-Default " + rowItem.moduleAdapter.displayName) : "Manual Non-Default")
-                            ToolTip.visible: ledMouse.containsMouse
+                            ToolTip.visible: (ledMouse.containsMouse) && stationaryTooltipDwell1.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: stationaryTooltipDwell1
+                                anchors.fill: parent
+                            }
 
                             MouseArea {
                                 id: ledMouse
@@ -183,9 +337,14 @@ Rectangle {
 
                         ColumnLayout {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             spacing: 2
 
                             Text {
+                                objectName: "dspChainModuleTitle_" + rowItem.modelIndex
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.alignment: Qt.AlignLeft
                                 text: rowItem.moduleAdapter ? rowItem.moduleAdapter.displayName : ""
                                 color: rowItem.isSelected ? "#F5F8FC" : "#C4D4E0"
                                 font.family: "Segoe UI"
@@ -195,22 +354,41 @@ Rectangle {
                             }
 
                             Text {
-                                objectName: "dspChainStateText_" + index
-                                text: rowItem.moduleAdapter ? rowItem.moduleAdapter.stateText : ""
+                                objectName: "dspChainStateText_" + rowItem.modelIndex
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.alignment: Qt.AlignLeft
+                                // Never show an ellipsis in the chain state.
+                                // A concise human label fits the canonical
+                                // 164px column; diagnostics remain discoverable.
+                                wrapMode: Text.WordWrap
+                                elide: Text.ElideNone
+                                text: root.readableState(rowItem.moduleAdapter)
                                 color: "#7A8E9E"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
                                 visible: true
+                                ToolTip.text: root.stateHint(rowItem.moduleAdapter)
+                                ToolTip.visible: chainStateTooltipDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: chainStateTooltipDwell
+                                    anchors.fill: parent
+                                    canShow: !!rowItem.moduleAdapter
+                                        && rowItem.moduleAdapter.stateText.length > 0
+                                }
                             }
                         }
 
                         // Bypass Badge ("BYP") fixed width container to prevent title shift (UI-MINOR-03)
                         Item {
+                            Layout.minimumWidth: 28
                             Layout.preferredWidth: 28
+                            Layout.maximumWidth: 28
                             Layout.preferredHeight: 16
 
                             Rectangle {
-                                objectName: "dspChainBypassBadge_" + index
+                                objectName: "dspChainBypassBadge_" + rowItem.modelIndex
                                 visible: rowItem.isBypassed
                                 anchors.fill: parent
                                 radius: 3
@@ -229,18 +407,23 @@ Rectangle {
                             }
                         }
 
-                        // Error Indicator
-                        Rectangle {
-                            objectName: "dspChainErrorBadge_" + index
-                            visible: rowItem.hasError
+                        // Error indicator reserves its slot even when hidden.
+                        // FIX-UI-003: state/badge changes cannot move the title.
+                        Item {
+                            Layout.minimumWidth: 8
                             Layout.preferredWidth: 8
+                            Layout.maximumWidth: 8
                             Layout.preferredHeight: 8
-                            radius: 4
-                            color: "#F27683"
+
+                            Rectangle {
+                                objectName: "dspChainErrorBadge_" + rowItem.modelIndex
+                                anchors.fill: parent
+                                visible: rowItem.hasError
+                                radius: 4
+                                color: "#F27683"
+                            }
                         }
                     }
                 }
-            }
-        }
     }
 }
