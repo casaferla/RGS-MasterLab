@@ -220,8 +220,8 @@ void TruePeakLimiterVerificationTest::finalMasterSixBySixTargetRatePlanIsDeviceI
             const auto l=plan.value()->interpolation_factor;
             const auto m=plan.value()->decimation_factor;
             QVERIFY(l>0&&m>0);
-            QCOMPARE(std::uint64_t{l}*std::uint64_t{sourceHz},
-                     std::uint64_t{m}*std::uint64_t{targetHz});
+            QCOMPARE(std::uint64_t{l}*static_cast<std::uint64_t>(sourceHz),
+                     std::uint64_t{m}*static_cast<std::uint64_t>(targetHz));
             QVERIFY(plan.value()->needs_final_output_src==(sourceHz!=targetHz));
             if(sourceHz==targetHz)++identity;else ++converted;
         }
