@@ -507,3 +507,25 @@ This ordinary diagnostic change shall use FAST (no
 [m17-extended] commit subject), unlike algorithm modifications
 requiring the full extended PCM/M16 oracles. If FAST fails or the
 mathematical bound is falsified, correct and rerun before proceeding.
+
+
+## #681 two-tier bounded lookahead prototype (experimental only)
+
+A second conservative hierarchy stores one maximum exact binary64 demand
+for every aligned 512-event superblock (16 existing 32-event groups). A
+complete, aligned superblock within the **certified** lookahead may be
+skipped only when `max_demand * suffix_Hann(first_future_lag)` is
+**strictly less** than the already selected attack floor. Any incomplete
+superblock, bound equality or non-prunable block follows the existing
+32-event group / original-order event walk. This leaves the original
+Hann binary64 evaluation and strict winner tie order untouched, while
+potentially avoiding repeated 32-group bound checks for distant events.
+
+The test-only 48/192k sparse/dense independent brute-force oracle now
+counts superblocks pruned and checks per-query visit+skip conservation.
+The full [m17-extended] Focused CI is required because this changes the
+experimental selector execution path: real M17 PCM/M16 bit identity,
+checkpoint, six sample rates, channel configurations and EOS remain
+obligatory. This is a *candidate hypothesis*, not a claimed speedup;
+no improvement is asserted until paired CPU/quantum timing with p99 and
+max is available. No frozen M17 or production code is modified.

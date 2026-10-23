@@ -3422,8 +3422,8 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
         QVERIFY2(csv.good(),"M17 selector FAST CSV creation failed");
         csv<<"sample_rate_hz,ceiling_dbtp,pattern,query_ticks,"
               "event_count,events_in_horizon,events_visited,events_skipped,"
-              "visit_percent,selector_weight_builds,exact_attack_floor,"
-              "exact_selected_event,exact_bounds\n";
+              "visit_percent,superblocks_skipped,selector_weight_builds,"
+              "exact_attack_floor,exact_selected_event,exact_bounds\n";
     }
     std::size_t cases=0;
     for(const int fs:{48000,192000}) {
@@ -3448,7 +3448,7 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
             QVERIFY(selector);
             QVERIFY(selector->prepare(events));
             QCOMPARE(selector->weight_build_count(),std::size_t{1});
-            std::uint64_t visited=0,skipped=0,inWindow=0;
+            std::uint64_t visited=0,skipped=0,inWindow=0,superSkipped=0;
             for(std::int64_t m=0;m<256;++m) {
                 const double current=(m%51==0)?0.93:0.0;
                 const auto result=selector->choose(m,current);
@@ -3456,6 +3456,9 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
                 QVERIFY(result->bounded);
                 visited+=result->visited;
                 skipped+=result->skipped;
+                superSkipped+=result->skipped_superblocks;
+                QVERIFY(result->skipped_superblocks<=
+                    result->skipped/Selector::kSuperblock);
                 const auto begin=std::upper_bound(events.begin(),events.end(),
                     m,[](std::int64_t t,const Event& e){return t<e.tick;});
                 const auto end=std::upper_bound(begin,events.end(),
@@ -3505,6 +3508,7 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
             qInfo().nospace()<<"M17 selector FAST work fs="<<fs
                 <<" pattern="<<(dense?"dense":"sparse")
                 <<" visited="<<visited<<" skipped="<<skipped
+                <<" superblocks_skipped="<<superSkipped
                 <<" visit_percent="<<pct<<" exact_oracle=PASS";
             if(!path.empty()) {
                 std::ofstream csv(path,std::ios::app);
@@ -3512,7 +3516,7 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
                 csv<<fs<<','<<ceiling<<','
                     <<(dense?"dense":"sparse")<<",256,"
                     <<events.size()<<','<<inWindow<<','<<visited<<','
-                    <<skipped<<','<<pct<<','
+                    <<skipped<<','<<pct<<','<<superSkipped<<','
                     <<selector->weight_build_count()
                     <<",PASS,PASS,PASS\n";
             }

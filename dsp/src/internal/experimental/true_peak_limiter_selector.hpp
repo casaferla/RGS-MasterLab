@@ -30,6 +30,7 @@ public:
         double attack_floor_db{+0.0};
         std::size_t visited{0};
         std::size_t skipped{0};
+        std::size_t skipped_superblocks{0};
         bool bounded{false};
     };
 
@@ -38,6 +39,7 @@ public:
     static constexpr std::size_t kMaxBatchEvents = 32768U;
     static constexpr std::size_t kGroup = 32U;
     static constexpr std::size_t kDense = 64U;
+    static constexpr std::size_t kSuperblock = 16U*kGroup;
 
     [[nodiscard]] static std::optional<M17LookaheadSelector>
     create(std::int64_t sample_rate, double ceiling_db_tp)
@@ -66,6 +68,7 @@ public:
         std::vector<double> weights;
         std::vector<double> suffix;
         std::vector<double> group;
+        std::vector<double> superblock;
         if (events.size() >= kDense) {
             demands.reserve(events.size());
             for (const auto& event : events)
@@ -91,8 +94,12 @@ public:
                 }
             }
             group.resize((events.size()+kGroup-1U)/kGroup,+0.0);
-            for (std::size_t i=0;i<events.size();++i)
+            superblock.resize((events.size()+kSuperblock-1U)/kSuperblock,+0.0);
+            for (std::size_t i=0;i<events.size();++i) {
                 group[i/kGroup]=std::max(group[i/kGroup],demands[i]);
+                superblock[i/kSuperblock]=std::max(
+                    superblock[i/kSuperblock],demands[i]);
+            }
         }
 
         events_=std::move(events);
@@ -103,6 +110,7 @@ public:
             ++weight_build_count_;
         }
         group_=std::move(group);
+        superblock_=std::move(superblock);
         return true;
     }
 
@@ -131,6 +139,23 @@ public:
         if (choice.bounded) {
             std::size_t index=begin;
             while(index<stop) {
+                // Entire aligned superblocks may be skipped. All of their
+                // detector ticks are future and inside the certified horizon;
+                // peak demand is bounded by the stored maximum, and every
+                // later Hann weight by the suffix maximum at the FIRST lag.
+                // Strict '<' leaves all equality/tie ordering untouched.
+                if(index%kSuperblock==0 && stop-index>=kSuperblock) {
+                    const auto lag=static_cast<std::size_t>(
+                        events_[index].tick-m);
+                    const double upper=superblock_[index/kSuperblock]*
+                        suffix_[lag];
+                    if(upper<choice.attack_floor_db) {
+                        choice.skipped+=kSuperblock;
+                        ++choice.skipped_superblocks;
+                        index+=kSuperblock;
+                        continue;
+                    }
+                }
                 const auto groupIndex=index/kGroup;
                 const auto end=std::min(stop,(groupIndex+1)*kGroup);
                 const auto lag=static_cast<std::size_t>(events_[index].tick-m);
@@ -196,6 +221,7 @@ private:
     std::vector<double> weights_;
     std::vector<double> suffix_;
     std::vector<double> group_;
+    std::vector<double> superblock_;
     std::size_t weight_build_count_{0};
 };
 
