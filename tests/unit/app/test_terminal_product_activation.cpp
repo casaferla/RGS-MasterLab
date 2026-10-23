@@ -25,8 +25,87 @@ class TerminalActivationIntegrationTest final:public QObject {
     Q_OBJECT
 private slots:
     void audibleOnBypassRestoresExactManualSourceAndLoop();
+    void finalMasterAt192kNeverBecomesDeviceRate48k();
     void staleM17TerminalJobCancelsWithoutPublishingPcm();
 };
+
+void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate48k()
+{
+    // Product Final Master contract, NOT Windows live-playback qualification:
+    // a 48 kHz device may never override the exact user's 192 kHz master.
+    // No device is consulted by render_true_peak_limiter_owned_final_master_candidate.
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto sourceRate=core::SampleRate::create(192000);
+    const auto deviceRate=core::SampleRate::create(48000);
+    const auto frames=core::FrameCount::create(513);
+    const auto block=core::FrameCount::create(128);
+    QVERIFY(registry&&sourceRate&&deviceRate&&frames&&block);
+
+    auto manualChain=dsp::ProcessingChain::create(*registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manualChain);
+    auto fmt=audio::AudioFormat::create(*sourceRate.value(),
+        audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto source=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(source);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=source.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(std::size_t i=0;i<513;++i)
+            (*lane.value())[i]=(i%19==0 ? 0.35 : 0.14)
+                *(ch==0 ? 1.0 : -0.75);
+    }
+    auto request=render::RenderRequest::create(
+        source.value()->view(),source.value()->view().absolute_range(),
+        *manualChain.value(),{},*block.value());
+    QVERIFY(request);
+    auto rendered=render::render_preview(*request.value(),*registry.value());
+    QVERIFY(rendered);
+    auto manual=std::make_shared<const render::RenderResult>(
+        std::move(*rendered.value()));
+    auto instance=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000517").value());
+    QVERIFY(instance);
+    auto limiter=app::TerminalLimiterState::create_default(
+        *registry.value(),*instance.value());
+    QVERIFY(limiter);
+    QVERIFY(limiter.value()->set_user_bypass(false));
+    const auto bindings=limiter.value()->execution_bindings();
+
+    // Same-rate MASTER is fully independent of an audition-only device.
+    auto master=render::render_true_peak_limiter_owned_final_master_candidate(
+        manual,*manualChain.value(),*frames.value(),
+        manual->chain_revision(),*sourceRate.value(),
+        limiter.value()->chain(),bindings,*registry.value(),*block.value());
+    QVERIFY2(master,master.error()
+        ?master.error()->message().c_str():"192 kHz master failed");
+    QCOMPARE(master.value()->master_sample_rate,*sourceRate.value());
+    QCOMPARE(master.value()->output.output_rate,*sourceRate.value());
+    QVERIFY(!master.value()->output.used_candidate_src);
+    const auto& checked=master.value()->output.terminal.checked;
+    QVERIFY(checked.final_check.has_value());
+    const auto pcm=checked.terminal.compensated_pcm.view();
+    QCOMPARE(pcm.format().sample_rate(),*sourceRate.value());
+    QCOMPARE(pcm.frame_count(),*frames.value());
+    QCOMPARE(pcm.timebase().frame_domain_id(),
+        audio::FrameDomainId::OUTPUT_RATE);
+    QVERIFY(render::validate_final_master_encoding_rate(
+        *master.value(),*sourceRate.value()));
+    // Substituting the 48 kHz playback device for the encoder must fail.
+    QVERIFY(!render::validate_final_master_encoding_rate(
+        *master.value(),*deviceRate.value()));
+
+    // Until Phase-11 high-rate SRC is really implemented, 192 -> 48
+    // must fail closed rather than silently convert AFTER M17.
+    auto differentMaster=render::render_true_peak_limiter_owned_final_master_candidate(
+        manual,*manualChain.value(),*frames.value(),
+        manual->chain_revision(),*deviceRate.value(),
+        limiter.value()->chain(),bindings,*registry.value(),*block.value());
+    QVERIFY(!differentMaster);
+}
 
 void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSourceAndLoop()
 {
