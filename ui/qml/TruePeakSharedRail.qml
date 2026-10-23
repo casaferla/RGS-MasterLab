@@ -158,15 +158,8 @@ Item {
             // PRE-LIMITER scope is explicit in heading and full tooltip;
             // long provisional status strings must not overflow the card.
             detail: root.hasMeasuredCeilingMiss
-                ? "OVER " + (function() {
-                    const actual=parseFloat(root.limiterViewModel.nonconformingPeakText)
-                    const target=parseFloat(root.limiterViewModel.nonconformingTargetText)
-                    if(!Number.isFinite(actual)||!Number.isFinite(target))
-                        return "UNAVAILABLE"
-                    const excess=actual-target
-                    return excess<0.005 ? "<0.01 dB"
-                        : "+" + excess.toFixed(2) + " dB"
-                  })() + " · target " + root.limiterViewModel.nonconformingTargetText
+                ? "OVER " + root.limiterViewModel.nonconformingExcessText
+                    + " · target " + root.limiterViewModel.nonconformingTargetText
                 : root.hasMeasurement
                     ? "Peak channel: " + root.measurementProvider.channelText
                     : "No complete, source-bound measurement"

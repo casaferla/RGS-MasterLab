@@ -3,6 +3,7 @@
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace rgsml::app {
@@ -169,8 +170,7 @@ void TerminalLimiterViewModel::requestPrepare()
 void TerminalLimiterViewModel::cancelPreparation()
 {
     if(state_ && !state_->bypassed()
-        && (audioStatus_.startsWith(QStringLiteral("Preparing"))
-            ||audioStatus_.startsWith(QStringLiteral("READY"))))
+        && audioStatus_.startsWith(QStringLiteral("Preparing")))
         emit cancelRequested();
 }
 
@@ -182,12 +182,35 @@ void TerminalLimiterViewModel::previewPrepared()
 }
 
 void TerminalLimiterViewModel::setNonconformingObservation(
-    double measuredDbTp,double targetDbTp)
+    double measuredLinearPeak,double ceilingLinear,double targetDbTp)
 {
-    nonconformingPeakText_=QString::number(measuredDbTp,'f',2)
-        +QStringLiteral(" dBTP");
+    // M16's actual OUTPUT_RATE linear peak, not rounded dB readouts,
+    // determines even a one-ULP Ceiling exceedance.
+    if(!std::isfinite(measuredLinearPeak)||!std::isfinite(ceilingLinear)
+       ||!std::isfinite(targetDbTp)||ceilingLinear<=0.0
+       ||measuredLinearPeak<=ceilingLinear) {
+        nonconformingPeakText_.clear();
+        nonconformingTargetText_.clear();
+        nonconformingExcessText_.clear();
+        emit changed();
+        return;
+    }
+    const double excessDb=20.0/std::log(10.0)
+        *std::log1p((measuredLinearPeak-ceilingLinear)/ceilingLinear);
+    if(!std::isfinite(excessDb)||excessDb<=0.0) {
+        nonconformingPeakText_.clear();
+        nonconformingTargetText_.clear();
+        nonconformingExcessText_.clear();
+        emit changed();
+        return;
+    }
+    nonconformingPeakText_=QString::number(
+        20.0*std::log10(measuredLinearPeak),'f',2)+QStringLiteral(" dBTP");
     nonconformingTargetText_=QString::number(targetDbTp,'f',2)
         +QStringLiteral(" dBTP");
+    nonconformingExcessText_=excessDb<0.01
+        ?QStringLiteral("<0.01 dB")
+        :QStringLiteral("+%1 dB").arg(QString::number(excessDb,'f',2));
     emit changed();
 }
 

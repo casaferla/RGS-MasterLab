@@ -19,6 +19,8 @@
 #include <memory>
 #include <bit>
 #include <cstdint>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 namespace rgsml::tests {
@@ -55,16 +57,38 @@ nonconformingPreviewRequiresSeparateExplicitConsent()
     QVERIFY(state.value()->set_user_bypass(false));
     vm.setAudioStatus(QStringLiteral(
         "NON-CONFORMING · -11.76 dBTP (target -12.00)"));
-    vm.setNonconformingObservation(-11.76,-12.0);
+    const double ceiling=std::pow(10.0,-12.0/20.0);
+    const double over=ceiling*std::pow(10.0,0.24/20.0);
+    vm.setNonconformingObservation(over,ceiling,-12.0);
     QCOMPARE(vm.nonconforming_peak_text(),
         QStringLiteral("-11.76 dBTP"));
     QCOMPARE(vm.nonconforming_target_text(),
         QStringLiteral("-12.00 dBTP"));
+    QCOMPARE(vm.nonconforming_excess_text(),QStringLiteral("+0.24 dB"));
+    // One positive binary64 ULP must never display as +0.00 dB.
+    vm.setNonconformingObservation(
+        std::nextafter(ceiling,std::numeric_limits<double>::infinity()),
+        ceiling,-12.0);
+    QCOMPARE(vm.nonconforming_peak_text(),QStringLiteral("-12.00 dBTP"));
+    QCOMPARE(vm.nonconforming_excess_text(),QStringLiteral("<0.01 dB"));
+    vm.setNonconformingObservation(ceiling,ceiling,-12.0);
+    QVERIFY(vm.nonconforming_excess_text().isEmpty());
+    vm.setNonconformingObservation(over,ceiling,-12.0);
     QCOMPARE(unsafe.count(),0); // Status publication NEVER auto-auditions.
+    QSignalSpy cancelled{&vm,&app::TerminalLimiterViewModel::cancelRequested};
+    QVERIFY(cancelled.isValid());
+    vm.cancelPreparation();
+    QCOMPARE(cancelled.count(),0); // A retained PCM is not Preparing.
     vm.previewPrepared();
     QCOMPARE(verified.count(),0); // Not a verified READY candidate.
     vm.previewNonconforming();
     QCOMPARE(unsafe.count(),1); // Explicit action only.
+    vm.setAudioStatus(QStringLiteral("READY · PREVIEW AVAILABLE"));
+    vm.cancelPreparation();
+    QCOMPARE(cancelled.count(),0); // READY is not cancellable.
+    vm.setAudioStatus(QStringLiteral("Preparing audio"));
+    vm.cancelPreparation();
+    QCOMPARE(cancelled.count(),1); // Only active preparation can cancel.
     QVERIFY(state.value()->set_user_bypass(true));
     vm.previewNonconforming();
     QCOMPARE(unsafe.count(),1); // No audition from Bypass.
