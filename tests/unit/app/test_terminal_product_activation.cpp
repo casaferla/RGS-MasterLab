@@ -449,6 +449,32 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(candidates.staged());
     vm.setBypass(false);
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    // An A/B cache is bound to the physical OUTPUT_RATE. When the real
+    // device probe changes from 48 kHz to 44.1 kHz, neither a silent SRC
+    // nor an accidental M17 handoff is allowed, even for retained PCM.
+    vm.setBypass(true);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    product.set_preferred_output_rate_probe(
+        [sourceRate](audio::ChannelLayout)->core::Result<core::SampleRate> {
+            return core::Result<core::SampleRate>::success(*sourceRate.value());
+        });
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QVERIFY(!audioGate.has_session());
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(device->loop,std::optional{*region.value()});
+    product.set_preferred_output_rate_probe(
+        [deviceRate](audio::ChannelLayout)->core::Result<core::SampleRate> {
+            return core::Result<core::SampleRate>::success(*deviceRate.value());
+        });
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
     // An actual parameter edit makes the OLD A/B PCM stale.
     QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-2.0));
     QVERIFY(vm.commitDraft());
