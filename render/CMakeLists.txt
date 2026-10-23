@@ -9,6 +9,7 @@ add_library(rgsml_render STATIC
     src/true_peak_limiter_terminal_check.cpp
     src/true_peak_limiter_terminal_binding.cpp
     src/true_peak_limiter_owned_source.cpp
+    src/m17_offline_calibration.cpp
     src/render_result.cpp
     src/stereo_ms_execution_signature.cpp
 )

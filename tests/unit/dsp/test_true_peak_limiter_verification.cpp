@@ -5,6 +5,7 @@
 #include <rgsml/dsp/module_descriptor.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
+#include <rgsml/render/m17_offline_calibration.hpp>
 #include <rgsml/core/frame_time.hpp>
 
 #include <QtTest/QTest>
@@ -178,6 +179,7 @@ private slots:
     void actualM16ReverificationUsesOneGlobalStereoScalar();
     void renderedM17FullResourceMeasuredAndVerifiedByM16();
     void acceleratedOfflinePrepareMatchesFrozenCheckedRenderer();
+    void isolatedCalibratorRunsRealAcceleratedM17AndM16WithoutDevice();
     void finalMasterSixBySixTargetRatePlanIsDeviceIndependent();
     void shortAndSplitEosDoesNotCreatePhantomPcm();
     void inactiveBypassIsZeroLatencyBitCopyAboveCeilingSixRates();
@@ -229,6 +231,46 @@ void TruePeakLimiterVerificationTest::finalMasterSixBySixTargetRatePlanIsDeviceI
     QCOMPARE(identity,std::size_t{6});
     QCOMPARE(converted,std::size_t{30});
     // Critically, no device-rate input exists in the final master plan.
+}
+
+void TruePeakLimiterVerificationTest::
+isolatedCalibratorRunsRealAcceleratedM17AndM16WithoutDevice()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto params=dsp::TruePeakLimiterParameters::create(-1.0);
+    auto block=core::FrameCount::create(256);
+    QVERIFY(registry && params && block);
+    for(const int hz:{44100,48000,88200,96000,176400,192000}) {
+        auto rate=core::SampleRate::create(hz);
+        auto frames=core::FrameCount::create(hz/50);
+        QVERIFY(rate && frames);
+        auto measured=render::calibrate_m17_offline_once(
+            *rate.value(),audio::ChannelLayout::STEREO_LR,*params.value(),
+            render::M17CalibrationStimulus::QUIET_PROGRAMME,
+            *frames.value(),*registry.value(),*block.value());
+        QVERIFY2(measured,measured.error()
+            ?measured.error()->message().c_str():"M17 calibrator returned no verified PCM");
+        QVERIFY(measured.value()->m17_and_m16_us>0);
+        QVERIFY(measured.value()->m17_core_us>=0);
+        QVERIFY(measured.value()->m16_primary_us>=0);
+        const auto total=core::FrameCount::create(hz/2);
+        QVERIFY(total);
+        auto estimated=render::estimate_m17_m16_microseconds(
+            *measured.value(),*rate.value(),audio::ChannelLayout::STEREO_LR,
+            -1.0,render::M17CalibrationStimulus::QUIET_PROGRAMME,*total.value());
+        QVERIFY(estimated);
+        QVERIFY(*estimated.value()>=measured.value()->m17_and_m16_us);
+        auto wrongRate=core::SampleRate::create(
+            hz==192000 ? 48000 : 192000);
+        QVERIFY(wrongRate);
+        auto refused=render::estimate_m17_m16_microseconds(
+            *measured.value(),*wrongRate.value(),
+            audio::ChannelLayout::STEREO_LR,-1.0,
+            render::M17CalibrationStimulus::QUIET_PROGRAMME,*total.value());
+        QVERIFY(!refused);
+        // A real calibration estimate MUST NOT masquerade as an SRC or
+        // whole-Render estimate for the incompatible source/target pair.
+    }
 }
 
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
