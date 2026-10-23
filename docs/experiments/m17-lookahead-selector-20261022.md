@@ -583,3 +583,32 @@ M16 postverification, streaming EOS, bounded events and checkpoints.
 This is a falsifiable candidate: no speedup or 192k realtime guarantee
 until same-host timing and per-64-frame budget/p99 evidence. No frozen
 M17 DSP, PR54, staging, integration, main or LANE B code touched.
+
+
+## #685 FAST: Real detector sourced event-density oracle
+
+CI #684 Windows/Linux EXTENDED SUCCESS, including six-rate exact PCM/M16
+and checkpoint oracles. Paired 256+512 vs 512-only synthetic selector timing
+was mixed: at 192kHz sparse, Windows 0.984x and Linux 0.947x (regressions);
+at 192kHz dense, Windows 1.066x and Linux 1.076x (small gains).
+The test-only 256 block addition is not yet demonstrated to be a
+generalizable optimization. Overall audio realtime remains NOT PROVEN.
+
+To avoid further unproductive hierarchy changes, this FAST-only test
+generates source PCM in 48 deterministic cases: six output sample rates,
+mono/stereo, -6/-12 dBTP, sparse transient/dense wave inputs. It feeds
+the actual frozen signed detector via the unregistered bounded M17 feeder,
+drains EOS, and uses *active signed events* to build the same selector cache.
+For 128 contiguous controller ticks starting at m=-62 it independently
+compares all three selector paths to each other and a brute-force binary64
+Hann attack-floor and strict-tie winner oracle. Per-host paired selector
+mean/p99/max and skip coverage append to the existing SelectorWork CSV,
+with pattern prefix "detector_" distinct from previous invented-event rows.
+The existing output path, original frozen M17 implementation, checkpoint
+ABI, active registry, and product PR54 are unchanged.
+
+This exercise is a limited **test-only** source-detector workload. It is
+neither a long musical audio benchmark nor a guarantee for 192k/64-frame
+hard realtime. No LANE B R1 protector was adopted. The independent
+R1 feasibility gate found no passing protector and has no authority to
+change the bit-identical LANE A task.

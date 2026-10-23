@@ -199,6 +199,7 @@ private slots:
     void experimentalLazyControllerBitwiseOracle();
     void experimentalIntegratedLazyQuantumBenchmark();
     void experimentalSelectorWorkProfileFast();
+    void experimentalDetectorSourcedSelectorProfileFast();
     void optionalPhaseInstrumentationIsNonInvasive();
 };
 void TruePeakLimiterVerificationTest::exactBinary64TrimThreshold()
@@ -3632,6 +3633,199 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
         }
     }
     QCOMPARE(cases,std::size_t{4});
+}
+
+
+void TruePeakLimiterVerificationTest::experimentalDetectorSourcedSelectorProfileFast()
+{
+    using Event=dsp::internal::LimiterDetectorEvent;
+    using Selector=dsp::internal::experimental::M17LookaheadSelector;
+    using Feeder=dsp::internal::experimental::M17BoundedDetectorFeed;
+    using Frozen=dsp::internal::TruePeakLimiterControllerState;
+    constexpr double pi=std::numbers::pi_v<double>;
+    const auto outputPath=qEnvironmentVariable(
+        "RGS_M17_SELECTOR_WORK_PROBE_FILE").toStdString();
+    std::size_t cases=0;
+    for(const int fs:{44100,48000,88200,96000,176400,192000}) {
+        for(const std::uint32_t channels:{1U,2U}) {
+            for(const double ceiling:{-6.0,-12.0}) {
+                const double linear=std::pow(10.0,ceiling/20.0);
+                auto reference=Frozen::create(fs,ceiling);
+                QVERIFY(reference);
+                const auto horizon=reference.value()->lookahead_ticks();
+                for(const bool dense:{false,true}) {
+                    auto feeder=Feeder::create(fs,ceiling,channels);
+                    QVERIFY(feeder);
+                    // The actual frozen signed FIR detector, not invented
+                    // event ticks. Active events only, including EOS drain.
+                    const int frames=fs>=176400?2048:1536;
+                    for(int n=0;n<frames;++n) {
+                        const double left=dense
+                            ?0.92*std::sin(0.23*static_cast<double>(n))
+                             +0.76*std::sin(0.049*static_cast<double>(n))
+                            :(n%113==0?1.33:-0.03);
+                        const double right=channels==2U
+                            ?(dense
+                                ?0.85*std::sin(0.19*static_cast<double>(n)+0.13)
+                                 +0.77*std::sin(0.073*static_cast<double>(n))
+                                :(n%151==0?-1.24:0.01))
+                            :0.0;
+                        QVERIFY(feeder->push(left,right));
+                    }
+                    QVERIFY(feeder->drain());
+                    const std::int64_t firstM=-62;
+                    const std::int64_t lastM=65;
+                    const auto eventSpan=feeder->batch(
+                        firstM,lastM,horizon);
+                    QVERIFY(eventSpan.size()<=Selector::kMaxBatchEvents);
+                    auto selector=Selector::create(fs,ceiling);
+                    QVERIFY(selector);
+                    QVERIFY(selector->prepare(eventSpan));
+                    QCOMPARE(selector->cached_event_count(),eventSpan.size());
+                    std::vector<std::int64_t> grouped,super,half;
+                    grouped.reserve(128);
+                    super.reserve(128);
+                    half.reserve(128);
+                    std::uint64_t visit=0,skip=0,window=0;
+                    std::uint64_t pruned512=0,pruned256=0;
+                    for(std::int64_t m=firstM;m<=lastM;++m) {
+                        const double current=feeder->peak_at(m);
+                        const auto timed=[&](int variant) {
+                            const auto start=std::chrono::steady_clock::now();
+                            const auto choice=variant==0
+                                ?selector->choose_group_only_for_test(m,current)
+                                :variant==1
+                                    ?selector->choose_superblock_only_for_test(m,current)
+                                    :selector->choose(m,current);
+                            const auto stop=std::chrono::steady_clock::now();
+                            const auto elapsed=std::chrono::duration_cast<
+                                std::chrono::nanoseconds>(stop-start).count();
+                            return std::pair{choice,static_cast<std::int64_t>(elapsed)};
+                        };
+                        std::array<std::pair<std::optional<Selector::Choice>,
+                            std::int64_t>,3> measures{};
+                        for(int i=0;i<3;++i) {
+                            const int which=(static_cast<int>(m-firstM)%3+i)%3;
+                            measures[static_cast<std::size_t>(which)]=timed(which);
+                        }
+                        const auto& a=measures[0].first;
+                        const auto& b=measures[1].first;
+                        const auto& c=measures[2].first;
+                        QVERIFY(a && b && c);
+                        grouped.push_back(measures[0].second);
+                        super.push_back(measures[1].second);
+                        half.push_back(measures[2].second);
+                        QCOMPARE(std::bit_cast<std::uint64_t>(a->attack_floor_db),
+                                 std::bit_cast<std::uint64_t>(b->attack_floor_db));
+                        QCOMPARE(std::bit_cast<std::uint64_t>(a->attack_floor_db),
+                                 std::bit_cast<std::uint64_t>(c->attack_floor_db));
+                        QCOMPARE(a->future_event.has_value(),b->future_event.has_value());
+                        QCOMPARE(a->future_event.has_value(),c->future_event.has_value());
+                        if(a->future_event) {
+                            QCOMPARE(a->future_event->tick,b->future_event->tick);
+                            QCOMPARE(a->future_event->tick,c->future_event->tick);
+                            QCOMPARE(std::bit_cast<std::uint64_t>(a->future_event->peak),
+                                     std::bit_cast<std::uint64_t>(b->future_event->peak));
+                            QCOMPARE(std::bit_cast<std::uint64_t>(a->future_event->peak),
+                                     std::bit_cast<std::uint64_t>(c->future_event->peak));
+                        }
+                        const auto begin=std::upper_bound(eventSpan.begin(),
+                            eventSpan.end(),m,[](std::int64_t tick,const Event& e) {
+                                return tick<e.tick;
+                            });
+                        const auto end=std::upper_bound(begin,eventSpan.end(),
+                            m+horizon,[](std::int64_t tick,const Event& e) {
+                                return tick<e.tick;
+                            });
+                        const auto n=static_cast<std::size_t>(end-begin);
+                        QCOMPARE(c->visited+c->skipped,n);
+                        QCOMPARE(a->visited+a->skipped,n);
+                        QCOMPARE(b->visited+b->skipped,n);
+                        double oracle=current>linear
+                            ?20.0*std::log10(current/linear):+0.0;
+                        std::optional<Event> expected;
+                        for(auto it=begin;it!=end;++it) {
+                            const double demand=it->peak>linear
+                                ?20.0*std::log10(it->peak/linear):+0.0;
+                            if(demand>0.0) {
+                                const double lag=static_cast<double>(it->tick-m);
+                                const double hann=0.5*(1.0+std::cos(
+                                    pi*lag/static_cast<double>(horizon)));
+                                const double weighted=demand*hann;
+                                if(weighted>oracle) {
+                                    oracle=weighted;
+                                    expected=*it;
+                                }
+                            }
+                        }
+                        QCOMPARE(std::bit_cast<std::uint64_t>(c->attack_floor_db),
+                                 std::bit_cast<std::uint64_t>(oracle));
+                        QCOMPARE(c->future_event.has_value(),expected.has_value());
+                        if(expected) {
+                            QCOMPARE(c->future_event->tick,expected->tick);
+                            QCOMPARE(std::bit_cast<std::uint64_t>(c->future_event->peak),
+                                     std::bit_cast<std::uint64_t>(expected->peak));
+                        }
+                        window+=n;
+                        visit+=c->visited;
+                        skip+=c->skipped;
+                        pruned512+=c->skipped_superblocks;
+                        pruned256+=c->skipped_halfblocks;
+                    }
+                    const auto stats=[](std::vector<std::int64_t> v) {
+                        std::sort(v.begin(),v.end());
+                        const auto sum=std::accumulate(v.begin(),v.end(),
+                            std::int64_t{0});
+                        const auto p99=(v.size()*99U+99U)/100U-1U;
+                        return std::array<std::int64_t,3>{
+                            sum/static_cast<std::int64_t>(v.size()),
+                            v[p99],v.back()};
+                    };
+                    const auto a=stats(grouped);
+                    const auto b=stats(super);
+                    const auto c=stats(half);
+                    const auto aSum=std::accumulate(grouped.begin(),
+                        grouped.end(),std::int64_t{0});
+                    const auto bSum=std::accumulate(super.begin(),
+                        super.end(),std::int64_t{0});
+                    const auto cSum=std::accumulate(half.begin(),
+                        half.end(),std::int64_t{0});
+                    const double baseRatio=bSum>0
+                        ?static_cast<double>(aSum)/static_cast<double>(bSum):0.0;
+                    const double halfRatio=cSum>0
+                        ?static_cast<double>(bSum)/static_cast<double>(cSum):0.0;
+                    QVERIFY(feeder->drained());
+                    QCOMPARE(visit+skip,window);
+                    qInfo().nospace()<<"M17 detector selector fs="<<fs
+                        <<" channels="<<channels<<" ceiling="<<ceiling
+                        <<" dense="<<dense<<" retained="<<eventSpan.size()
+                        <<" 512_over_group="<<baseRatio
+                        <<" 256_over_512="<<halfRatio
+                        <<" exact_pcm_controller_unmodified=YES";
+                    if(!outputPath.empty()) {
+                        std::ofstream csv(outputPath,std::ios::app);
+                        QVERIFY2(csv.good(),"M17 detector selector CSV append failed");
+                        csv<<fs<<','<<ceiling<<','
+                           <<"detector_"<<(dense?"dense":"sparse")
+                           <<(channels==2?"_stereo":"_mono")<<",128,"
+                           <<eventSpan.size()<<','<<window<<','<<visit<<','
+                           <<skip<<','
+                           <<(window?100.0*static_cast<double>(visit)/
+                               static_cast<double>(window):0.0)<<','
+                           <<pruned512<<','<<pruned256<<','
+                           <<selector->weight_build_count()<<','
+                           <<a[0]<<','<<a[1]<<','<<a[2]<<','
+                           <<b[0]<<','<<b[1]<<','<<b[2]<<','
+                           <<c[0]<<','<<c[1]<<','<<c[2]<<','
+                           <<baseRatio<<','<<halfRatio
+                           <<",PASS,PASS,PASS,PASS\n";
+                    }
+                    ++cases;
+                }
+            }
+        }
+    }
+    QCOMPARE(cases,std::size_t{48});
 }
 
 } // namespace

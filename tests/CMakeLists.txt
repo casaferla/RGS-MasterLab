@@ -833,6 +833,7 @@ add_test(
         inactiveBypassIsZeroLatencyBitCopyAboveCeilingSixRates
         optionalPhaseInstrumentationIsNonInvasive
         experimentalSelectorWorkProfileFast
+        experimentalDetectorSourcedSelectorProfileFast
 )
 set_tests_properties(rgsml_m17_isolated_fast_verification_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
