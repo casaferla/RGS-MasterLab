@@ -555,3 +555,31 @@ benchmark, an end-to-end realtime claim, or FQ. Test-only FAST is used
 because the result returned by `choose()` is structurally unchanged;
 full Focused EXTENDED remains required for any subsequent runtime
 algorithm changes. No production M17, PR54 or main changes.
+
+
+## #683 EXTENDED: Conservative 256+512-event hierarchy
+
+CI #682 FAST Windows/Linux SUCCESS. Paired selector-only A/B exact
+winner/attack-floor checks PASS. At 192kHz the 512-event selector gained
+2.53x/2.67x on Windows and 2.36x/2.67x on Linux (sparse/dense), versus
+32-event groups on the SAME synthetic workload. The 48k sparse Windows
+case was nearly neutral (0.989x). Those timings exclude the controller,
+real detector input, overall quantum, and application audio callback.
+
+The isolated experimental candidate now first tests a complete aligned
+512-event superblock, then an aligned 256-event halfblock if applicable,
+then exact 32-event groups and original-order event inspection. Each bound
+is the exact maximum demand multiplied by the monotone conservative
+suffix-Hann upper weight at the FIRST future event. Pruning requires
+strict inequality; equality and partial blocks follow the prior path.
+The original 512-only path and 32-only path remain accessible ONLY through
+named test functions (not registry or renderer) for a three-way identical
+cache, rotated-order benchmark at 48/192k. All three results must match
+one another and an independent brute-force binary64 Hann oracle exactly.
+
+This alters the PR55 test-only selector runtime and therefore requires
+EXTENDED Focused CI for full real-IModule six-rate mono/stereo ceiling,
+M16 postverification, streaming EOS, bounded events and checkpoints.
+This is a falsifiable candidate: no speedup or 192k realtime guarantee
+until same-host timing and per-64-frame budget/p99 evidence. No frozen
+M17 DSP, PR54, staging, integration, main or LANE B code touched.

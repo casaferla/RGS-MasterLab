@@ -31,6 +31,7 @@ public:
         std::size_t visited{0};
         std::size_t skipped{0};
         std::size_t skipped_superblocks{0};
+        std::size_t skipped_halfblocks{0};
         bool bounded{false};
     };
 
@@ -40,6 +41,7 @@ public:
     static constexpr std::size_t kGroup = 32U;
     static constexpr std::size_t kDense = 64U;
     static constexpr std::size_t kSuperblock = 16U*kGroup;
+    static constexpr std::size_t kHalfblock = 8U*kGroup;
 
     [[nodiscard]] static std::optional<M17LookaheadSelector>
     create(std::int64_t sample_rate, double ceiling_db_tp)
@@ -69,6 +71,7 @@ public:
         std::vector<double> suffix;
         std::vector<double> group;
         std::vector<double> superblock;
+        std::vector<double> halfblock;
         if (events.size() >= kDense) {
             demands.reserve(events.size());
             for (const auto& event : events)
@@ -95,10 +98,13 @@ public:
             }
             group.resize((events.size()+kGroup-1U)/kGroup,+0.0);
             superblock.resize((events.size()+kSuperblock-1U)/kSuperblock,+0.0);
+            halfblock.resize((events.size()+kHalfblock-1U)/kHalfblock,+0.0);
             for (std::size_t i=0;i<events.size();++i) {
                 group[i/kGroup]=std::max(group[i/kGroup],demands[i]);
                 superblock[i/kSuperblock]=std::max(
                     superblock[i/kSuperblock],demands[i]);
+                halfblock[i/kHalfblock]=std::max(
+                    halfblock[i/kHalfblock],demands[i]);
             }
         }
 
@@ -111,13 +117,14 @@ public:
         }
         group_=std::move(group);
         superblock_=std::move(superblock);
+        halfblock_=std::move(halfblock);
         return true;
     }
 
     [[nodiscard]] std::optional<Choice>
     choose(std::int64_t m,double current_peak) const
     {
-        return choose_impl<true>(m,current_peak);
+        return choose_impl<true,true>(m,current_peak);
     }
 
     // Test-only paired control: the exact former 32-event group path,
@@ -126,7 +133,14 @@ public:
     [[nodiscard]] std::optional<Choice>
     choose_group_only_for_test(std::int64_t m,double current_peak) const
     {
-        return choose_impl<false>(m,current_peak);
+        return choose_impl<false,false>(m,current_peak);
+    }
+
+    // Mathematically exact prior 512-event-only path, for paired A/B/C.
+    [[nodiscard]] std::optional<Choice>
+    choose_superblock_only_for_test(std::int64_t m,double current_peak) const
+    {
+        return choose_impl<true,false>(m,current_peak);
     }
 
     [[nodiscard]] std::size_t cached_event_count() const noexcept {
@@ -137,7 +151,7 @@ public:
     }
 
 private:
-    template<bool SuperblockPruning>
+    template<bool SuperblockPruning,bool HalfblockPruning>
     [[nodiscard]] std::optional<Choice>
     choose_impl(std::int64_t m, double current_peak) const
     {
@@ -181,6 +195,23 @@ private:
                         continue;
                     }
                 }
+                }
+                // A 256-event fallback bounds ranges too short or too hot
+                // for a whole 512-event superblock. Exact original-order
+                // strict ties remain unchanged on every failed bound.
+                if constexpr (HalfblockPruning) {
+                    if(index%kHalfblock==0 && stop-index>=kHalfblock) {
+                        const auto lag=static_cast<std::size_t>(
+                            events_[index].tick-m);
+                        const double upper=halfblock_[index/kHalfblock]*
+                            suffix_[lag];
+                        if(upper<choice.attack_floor_db) {
+                            choice.skipped+=kHalfblock;
+                            ++choice.skipped_halfblocks;
+                            index+=kHalfblock;
+                            continue;
+                        }
+                    }
                 }
                 const auto groupIndex=index/kGroup;
                 const auto end=std::min(stop,(groupIndex+1)*kGroup);
@@ -240,6 +271,7 @@ private:
     std::vector<double> suffix_;
     std::vector<double> group_;
     std::vector<double> superblock_;
+    std::vector<double> halfblock_;
     std::size_t weight_build_count_{0};
 };
 

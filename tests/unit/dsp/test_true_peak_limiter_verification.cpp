@@ -3422,10 +3422,12 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
         QVERIFY2(csv.good(),"M17 selector FAST CSV creation failed");
         csv<<"sample_rate_hz,ceiling_dbtp,pattern,query_ticks,"
               "event_count,events_in_horizon,events_visited,events_skipped,"
-              "visit_percent,superblocks_skipped,selector_weight_builds,"
-              "group_mean_ns,group_p99_ns,group_max_ns,"
+              "visit_percent,superblocks_skipped,halfblocks_skipped,"
+              "selector_weight_builds,group_mean_ns,group_p99_ns,group_max_ns,"
               "super_mean_ns,super_p99_ns,super_max_ns,"
-              "paired_speed_ratio,exact_paired,exact_attack_floor,"
+              "half_mean_ns,half_p99_ns,half_max_ns,"
+              "paired_speed_ratio,half_over_super_ratio,exact_paired,"
+              "exact_attack_floor,
               "exact_selected_event,exact_bounds\n";
     }
     std::size_t cases=0;
@@ -3452,36 +3454,57 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
             QVERIFY(selector->prepare(events));
             QCOMPARE(selector->weight_build_count(),std::size_t{1});
             std::uint64_t visited=0,skipped=0,inWindow=0,superSkipped=0;
-            std::vector<std::int64_t> groupTimes,superTimes;
+            std::uint64_t halfSkipped=0;
+            std::vector<std::int64_t> groupTimes,superTimes,halfTimes;
             groupTimes.reserve(256);
             superTimes.reserve(256);
+            halfTimes.reserve(256);
             for(std::int64_t m=0;m<256;++m) {
                 const double current=(m%51==0)?0.93:0.0;
-                // Both alternatives use the SAME prepared cache and
-                // deterministic event window. Alternate call order to
-                // reduce warm-cache and runner clock-order bias.
-                const auto timed=[&]<bool GroupOnly>() {
-                    const auto start=std::chrono::steady_clock::now();
-                    const auto choice=GroupOnly
+                // Three variants share immutable exact binary64 caches.
+                // Rotate measurement order to distribute warm-cache bias.
+                const auto timed=[&](int variant) {
+                    const auto started=std::chrono::steady_clock::now();
+                    const auto choice=variant==0
                         ?selector->choose_group_only_for_test(m,current)
-                        :selector->choose(m,current);
-                    const auto stop=std::chrono::steady_clock::now();
-                    const auto ns=std::chrono::duration_cast<
-                        std::chrono::nanoseconds>(stop-start).count();
-                    return std::pair{choice,static_cast<std::int64_t>(ns)};
+                        :variant==1
+                            ?selector->choose_superblock_only_for_test(m,current)
+                            :selector->choose(m,current);
+                    const auto ended=std::chrono::steady_clock::now();
+                    const auto elapsed=std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(ended-started).count();
+                    return std::pair{choice,static_cast<std::int64_t>(elapsed)};
                 };
-                const bool legacyFirst=(m%2==0);
-                const auto first=legacyFirst?timed.template operator()<true>()
-                                            :timed.template operator()<false>();
-                const auto second=legacyFirst?timed.template operator()<false>()
-                                             :timed.template operator()<true>();
-                const auto& baseline=legacyFirst?first:second;
-                const auto& candidate=legacyFirst?second:first;
+                std::array<std::pair<std::optional<Selector::Choice>,
+                    std::int64_t>,3> measurements{};
+                for(int i=0;i<3;++i) {
+                    const int variant=(static_cast<int>(m%3)+i)%3;
+                    measurements[static_cast<std::size_t>(variant)]=timed(variant);
+                }
+                const auto& baseline=measurements[0];
+                const auto& former=measurements[1];
+                const auto& candidate=measurements[2];
                 const auto& result=candidate.first;
                 QVERIFY(result);
                 QVERIFY(baseline.first);
+                QVERIFY(former.first);
                 groupTimes.push_back(baseline.second);
-                superTimes.push_back(candidate.second);
+                superTimes.push_back(former.second);
+                halfTimes.push_back(candidate.second);
+                QCOMPARE(std::bit_cast<std::uint64_t>(
+                    result->attack_floor_db),
+                    std::bit_cast<std::uint64_t>(
+                        former.first->attack_floor_db));
+                QCOMPARE(result->future_event.has_value(),
+                         former.first->future_event.has_value());
+                if(result->future_event) {
+                    QCOMPARE(result->future_event->tick,
+                             former.first->future_event->tick);
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        result->future_event->peak),
+                        std::bit_cast<std::uint64_t>(
+                            former.first->future_event->peak));
+                }
                 QCOMPARE(std::bit_cast<std::uint64_t>(
                     result->attack_floor_db),
                     std::bit_cast<std::uint64_t>(
@@ -3497,14 +3520,19 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
                             baseline.first->future_event->peak));
                 }
                 QCOMPARE(baseline.first->skipped_superblocks,std::size_t{0});
+                QCOMPARE(baseline.first->skipped_halfblocks,std::size_t{0});
+                QCOMPARE(former.first->skipped_halfblocks,std::size_t{0});
                 QCOMPARE(baseline.first->visited+baseline.first->skipped,
                          result->visited+result->skipped);
                 QVERIFY(result->bounded);
                 visited+=result->visited;
                 skipped+=result->skipped;
                 superSkipped+=result->skipped_superblocks;
+                halfSkipped+=result->skipped_halfblocks;
                 QVERIFY(result->skipped_superblocks<=
                     result->skipped/Selector::kSuperblock);
+                QVERIFY(result->skipped_halfblocks<=
+                    result->skipped/Selector::kHalfblock);
                 const auto begin=std::upper_bound(events.begin(),events.end(),
                     m,[](std::int64_t t,const Event& e){return t<e.tick;});
                 const auto end=std::upper_bound(begin,events.end(),
@@ -3562,20 +3590,29 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
             };
             const auto groupStats=timingStats(groupTimes);
             const auto superStats=timingStats(superTimes);
+            const auto halfStats=timingStats(halfTimes);
             const auto groupSum=std::accumulate(groupTimes.begin(),
                 groupTimes.end(),std::int64_t{0});
             const auto superSum=std::accumulate(superTimes.begin(),
                 superTimes.end(),std::int64_t{0});
+            const auto halfSum=std::accumulate(halfTimes.begin(),
+                halfTimes.end(),std::int64_t{0});
             const double speedRatio=superSum>0
                 ?static_cast<double>(groupSum)/static_cast<double>(superSum)
+                :0.0;
+            const double halfVsSuper=halfSum>0
+                ?static_cast<double>(superSum)/static_cast<double>(halfSum)
                 :0.0;
             qInfo().nospace()<<"M17 selector FAST work fs="<<fs
                 <<" pattern="<<(dense?"dense":"sparse")
                 <<" visited="<<visited<<" skipped="<<skipped
                 <<" superblocks_skipped="<<superSkipped
+                <<" halfblocks_skipped="<<halfSkipped
                 <<" visit_percent="<<pct<<" paired_speed_ratio="<<speedRatio
+                <<" half_over_super_ratio="<<halfVsSuper
                 <<" group_mean_ns="<<groupStats[0]
                 <<" super_mean_ns="<<superStats[0]
+                <<" half_mean_ns="<<halfStats[0]
                 <<" exact_paired=PASS exact_oracle=PASS";
             if(!path.empty()) {
                 std::ofstream csv(path,std::ios::app);
@@ -3584,10 +3621,12 @@ void TruePeakLimiterVerificationTest::experimentalSelectorWorkProfileFast()
                     <<(dense?"dense":"sparse")<<",256,"
                     <<events.size()<<','<<inWindow<<','<<visited<<','
                     <<skipped<<','<<pct<<','<<superSkipped<<','
-                    <<selector->weight_build_count()<<','
+                    <<halfSkipped<<','<<selector->weight_build_count()<<','
                     <<groupStats[0]<<','<<groupStats[1]<<','<<groupStats[2]<<','
                     <<superStats[0]<<','<<superStats[1]<<','<<superStats[2]<<','
-                    <<speedRatio<<",PASS,PASS,PASS,PASS\n";
+                    <<halfStats[0]<<','<<halfStats[1]<<','<<halfStats[2]<<','
+                    <<speedRatio<<','<<halfVsSuper
+                    <<",PASS,PASS,PASS,PASS\n";
             }
             ++cases;
         }
