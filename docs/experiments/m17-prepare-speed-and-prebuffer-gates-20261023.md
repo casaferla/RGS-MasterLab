@@ -150,3 +150,27 @@ matrices rather than raise timeouts or weaken DSP oracles. Upon
 production integration of the exact accelerated maths followed by
 Focused regression and manual Windows FQ. No more speculative
 algorithm micro-optimisation first.
+
+
+## CI #703—Linux timeout confirmation, standard qualification scope restored
+
+#703 (Windows SUCCESS, Linux FAILURE) aborted in QTest
+experimentalLongResourceRenderBenchmark after its 300000ms
+per-function timeout, 19 passed and 1 QtTest failure. No DSP math,
+PCM, ceiling, controller or M16 oracle discrepancy was reported:
+the diagnostic extension runs too long as one test on Linux.
+
+PO priority: stop further speculative selector microbenchmarks;
+qualify already measured speed via an isolated real Prepare
+integration with source-owned, M16-verified PCM and manual Windows FQ.
+CI #704 removes ONLY the four optional long 44.1/192k 4096/8192
+stereo severe-ceiling A/B diagnostic pairs (same class responsible
+for #701 and #703 timeouts). Keep 48 original cross-platform
+long-render experiments plus 8 original product-checked A/B short
+Prepare probes that passed Linux+Windows in #700; matrix=56.
+No safety oracle is disabled for the retained matrix. The omitted
+longer WAV scale-up has Windows PASS evidence in #701/#703 but remains
+unqualified on Linux and must be recorded as such, not falsely green.
+Tests and docs only: no DSP, algorithm, PR54 production, UI or
+main modification. Full Qualification requires a separate product
+integration SHA, green focused CI, and PO-operated FQ.
