@@ -47,6 +47,16 @@ public:
     // Explicitly requested by the NON-CONFORMING preview button only.
     [[nodiscard]] core::Status install_measured_private();
     [[nodiscard]] core::Status cancel();
+    // Unlike cancel(), retire ONLY device ownership. Immutable accepted PCM
+    // and its M16 verification/nonconforming evidence remain PRIVATE for
+    // explicit MANUAL/M17 A/B, with new ownership and output-rate checks.
+    [[nodiscard]] core::Status suspend_for_comparison();
+    [[nodiscard]] core::Status resume_comparison();
+    [[nodiscard]] bool comparison_cached() const noexcept {
+        return status_==QStringLiteral("COMPARISON_VERIFIED")
+            ||status_==QStringLiteral("COMPARISON_NONCONFORMING");
+    }
+    [[nodiscard]] bool comparison_owners_current() const;
     // Changes to a Loop Region cancel pending handoffs but do not stop
     // an already installed SOURCE-mapped session: its own live loop
     // controller processes active Loop Region edits.
@@ -113,6 +123,10 @@ private:
     Selected selected_;
     RateProbe rateProbe_;
     std::optional<Pending> pending_;
+    // Exact immutable admission identity; never confuse an M16 failed
+    // candidate with the verified-only gate on a subsequent A/B switch.
+    std::shared_ptr<const TerminalCandidateGate::StagedCandidate> comparisonVerified_;
+    std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate> comparisonMeasured_;
     std::optional<core::RealizationId> privateId_;
     QString status_{QStringLiteral("IDLE")};
     QString error_;

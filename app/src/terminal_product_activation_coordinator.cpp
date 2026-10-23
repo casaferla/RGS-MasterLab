@@ -9,7 +9,8 @@ TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
     AuditionSourceSelector& selector,PlaybackTransportViewModel& transport,
     TerminalPrivateProductSession& session,QObject* parent)
     : QObject(parent),state_(&state),view_(&view),selector_(&selector),
-      transport_(&transport),session_(&session)
+      transport_(&transport),session_(&session),
+      lastParameterRevision_(state.parameter_revision())
 {
     connect(view_,&TerminalLimiterViewModel::acceptedStateChanged,
             this,&TerminalProductActivationCoordinator::limiter_accepted);
@@ -423,7 +424,14 @@ void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
             }
         }
     }
-    const auto retired=session_->cancel();
+    // A/B retires the private device lease but RETAINS the immutable
+    // verified or measured-nonconforming PCM for explicit re-audition.
+    // Cancel, source/parameter changes and failure still invalidate it.
+    auto retired=keepActiveIntent
+        ?session_->suspend_for_comparison()
+        :session_->cancel();
+    if(!retired && keepActiveIntent)
+        retired=session_->cancel(); // No stale comparison state on refusal.
     if(!retired) {
         transitioning_=false;
         fail_closed(QStringLiteral("M17 terminal retirement failed."));
@@ -450,23 +458,49 @@ void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
         ? QStringLiteral("BYPASS · MANUAL PROCESSED")
         : QStringLiteral("NEEDS PREPARATION"));
     transitioning_=false;
-    static_cast<void>(keepActiveIntent); // No auto-reprepare.
 }
 
 void TerminalProductActivationCoordinator::limiter_accepted()
 {
     if(transitioning_)return;
-    if(state_->bypassed()) {
-        waitingForManualPreview_=false;
-        deactivate(false);
-    } else {
-        // Arming ON or committing Ceiling invalidates any old finalization,
-        // and NEVER queues an implicit full-resource render.
+    const bool changedCeiling=state_->parameter_revision()!=lastParameterRevision_;
+    lastParameterRevision_=state_->parameter_revision();
+    if(changedCeiling) {
+        // This includes Ceiling changes made while BYPASS is selected.
+        // No A->B->A parameter revision may recover an obsolete result.
         if(intent_)deactivate(false);
+        else if(session_->comparison_cached())
+            static_cast<void>(session_->cancel());
         waitingForManualPreview_=manualPreviewInProgress_;
         view_->clearAudioError();
-        view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+        view_->setAudioStatus(state_->bypassed()
+            ? QStringLiteral("BYPASS · MANUAL PROCESSED")
+            : QStringLiteral("NEEDS PREPARATION"));
+        return;
     }
+    if(state_->bypassed()) {
+        waitingForManualPreview_=false;
+        if(intent_)deactivate(true);
+        else view_->setAudioStatus(QStringLiteral("BYPASS · MANUAL PROCESSED"));
+        return;
+    }
+    if(session_->comparison_cached()) {
+        // ON does not re-render or auto-play M17. Re-establish the exact
+        // currently audible MANUAL owner; the user must click Preview
+        // Prepared / Preview Anyway, respectively, to hear cached PCM.
+        auto captured=selector_->capture_terminal_activation_intent();
+        if(captured && session_->comparison_owners_current()) {
+            intent_=*captured.value();
+            auto resumed=session_->resume_comparison();
+            if(resumed)return; // private_session_changed publishes READY.
+            intent_.reset();
+        }
+        static_cast<void>(session_->cancel());
+    }
+    if(intent_)deactivate(false);
+    waitingForManualPreview_=manualPreviewInProgress_;
+    view_->clearAudioError();
+    view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
 }
 
 void TerminalProductActivationCoordinator::manual_preview_changed(
@@ -474,7 +508,14 @@ void TerminalProductActivationCoordinator::manual_preview_changed(
 {
     if(previewStatus==QStringLiteral("RENDERING")) {
         manualPreviewInProgress_=true;
-        if(state_->bypassed()||transitioning_)return;
+        // A fresh MANUAL render invalidates cached A/B even while bypassed.
+        // Never keep a previous PCM after changing Input Gain or DSP chain.
+        if(state_->bypassed()) {
+            if(session_->comparison_cached())
+                static_cast<void>(session_->cancel());
+            return;
+        }
+        if(transitioning_)return;
         // Retire installed/READY terminal BEFORE upstream publication.
         if(intent_)deactivate(false);
         if(state_->bypassed())return;
@@ -560,7 +601,13 @@ void TerminalProductActivationCoordinator::private_session_changed()
 
 void TerminalProductActivationCoordinator::external_context_changed()
 {
-    if(transitioning_||!intent_)return;
+    if(transitioning_)return;
+    if(!intent_) {
+        if(session_->comparison_cached()
+           &&!session_->comparison_owners_current())
+            static_cast<void>(session_->cancel());
+        return;
+    }
     // A new manual owner or selected target invalidates any terminal
     // publication without silently installing PCM over another owner.
     if(selector_->processed_realization_snapshot()!=intent_->manualOwner

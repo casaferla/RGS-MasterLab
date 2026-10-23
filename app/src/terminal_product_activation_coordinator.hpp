@@ -52,6 +52,9 @@ private:
     bool readyToPreview_{false};
     bool manualPreviewInProgress_{false};
     bool waitingForManualPreview_{false};
+    // Bypass changes the terminal ProcessingChain revision but NOT its
+    // sonic Ceiling revision. Only the latter invalidates a cached A/B PCM.
+    std::uint64_t lastParameterRevision_{0};
     QElapsedTimer renderElapsed_;
     QElapsedTimer corePhaseElapsed_;
     bool corePhaseObserved_{false};

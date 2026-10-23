@@ -157,12 +157,119 @@ TerminalPrivateProductSession::private_installed_output_identity() const
         std::move(candidate),*privateId_,*audible.value(),*source.value()});
 }
 
+bool TerminalPrivateProductSession::comparison_owners_current() const
+{
+    if(!comparison_cached()||!pending_||!selected_||!selected_()
+       ||!prepared_||!manual_||!manualId_||!sourceLoop_
+       ||prepared_()!=pending_->prepared||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId}
+       ||sourceLoop_()!=pending_->loop)
+        return false;
+    if(status_==QStringLiteral("COMPARISON_VERIFIED")) {
+        const auto stage=candidates_->staged();
+        return stage && stage==comparisonVerified_
+            && stage->prepared_owner==pending_->prepared
+            && stage->rendered.manual_owner==pending_->manual
+            && stage->original_manual_realization_id==pending_->manualId
+            && stage->rendered.output_rate==pending_->outputRate
+            && renderer_->status()==QStringLiteral("READY_PRIVATE");
+    }
+    const auto stage=candidates_->staged_measured();
+    return stage && stage==comparisonMeasured_
+        && stage->prepared_owner==pending_->prepared
+        && stage->rendered.manual_owner==pending_->manual
+        && stage->original_manual_realization_id==pending_->manualId
+        && stage->rendered.output_rate==pending_->outputRate
+        && renderer_->status()==QStringLiteral("MEASURED_NONCONFORMING_PRIVATE");
+}
+
+core::Status TerminalPrivateProductSession::suspend_for_comparison()
+{
+    const bool verified=status_==QStringLiteral("READY_TO_INSTALL")
+        ||status_==QStringLiteral("PRIVATE_INSTALLED");
+    const bool measured=status_==QStringLiteral("MEASURED_NONCONFORMING_READY")
+        ||status_==QStringLiteral("NONCONFORMING_INSTALLED");
+    if(!verified&&!measured)
+        return core::Status::failure(rejected(
+            "M17 comparison requires a finished measured PCM, not an in-flight job."));
+    auto stage=verified?candidates_->staged():nullptr;
+    auto unsafe=measured?candidates_->staged_measured():nullptr;
+    if((verified&&!stage)||(measured&&!unsafe))
+        return core::Status::failure(rejected(
+            "M17 comparison has no immutable verified/measured source candidate."));
+    const auto& prepared=verified?stage->prepared_owner:unsafe->prepared_owner;
+    const auto& manual=verified?stage->rendered.manual_owner:unsafe->rendered.manual_owner;
+    const auto id=verified?stage->original_manual_realization_id
+                          :unsafe->original_manual_realization_id;
+    const auto rate=verified?stage->rendered.output_rate
+                            :unsafe->rendered.output_rate;
+    if(!prepared_||!manual_||!manualId_||!sourceLoop_||!selected_
+       ||!selected_()||prepared_()!=prepared||manual_()!=manual
+       ||manualId_()!=std::optional{id}
+       ||(verified&&renderer_->status()!=QStringLiteral("READY_PRIVATE"))
+       ||(measured&&renderer_->status()
+            !=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")))
+        return core::Status::failure(rejected(
+            "M17 comparison source or measured candidate is no longer authoritative."));
+    const auto loop=sourceLoop_();
+    if(loop&&(loop->begin().value()<0
+        ||loop->end()>manual->view().absolute_range().end()))
+        return core::Status::failure(rejected(
+            "M17 comparison SOURCE loop is outside the complete manual programme."));
+    // Revoke device/SOURCE transport ownership, NOT the gate or renderer.
+    // The coordinator alone restores the exact MANUAL sink after retirement.
+    auto retired=publisher_->revoke_private();
+    if(!retired)return retired;
+    pending_.emplace(Pending{prepared,manual,id,loop,rate,true});
+    privateId_.reset();
+    comparisonVerified_=stage;
+    comparisonMeasured_=unsafe;
+    status_=verified?QStringLiteral("COMPARISON_VERIFIED")
+                    :QStringLiteral("COMPARISON_NONCONFORMING");
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::resume_comparison()
+{
+    if(!comparison_owners_current()||!rateProbe_)
+        return core::Status::failure(rejected(
+            "M17 comparison PCM, measured evidence or MANUAL owner became stale."));
+    // Never borrow a candidate prepared for a different physical device
+    // format. No implicit resampling and absolutely NO new full-resource job.
+    auto rate=rateProbe_(pending_->manual->view().format().channel_layout());
+    if(!rate)return core::Status::failure(*rate.error());
+    if(*rate.value()!=pending_->outputRate ||!comparison_owners_current())
+        return core::Status::failure(rejected(
+            "M17 comparison output rate or exact MANUAL authority changed."));
+    const auto playback=transport_->playback_snapshot();
+    if(!playback
+       ||playback.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||playback.value()->audibleRealization.realizationId
+            !=std::optional{pending_->manualId}
+       ||playback.value()->duration
+            !=std::optional{pending_->manual->view().frame_count()}
+       ||(playback.value()->state!=core::PlaybackState::STOPPED
+           &&playback.value()->state!=core::PlaybackState::PLAYING
+           &&playback.value()->state!=core::PlaybackState::PAUSED))
+        return core::Status::failure(rejected(
+            "M17 comparison cannot replace an unknown audible MANUAL owner."));
+    status_=comparisonVerified_?QStringLiteral("READY_TO_INSTALL")
+                              :QStringLiteral("MEASURED_NONCONFORMING_READY");
+    emit changed();
+    return core::Status::success();
+}
+
 core::Status TerminalPrivateProductSession::cancel()
 {
     // Withdraw transaction first: renderer.invalidate() emits changed and
     // must not reinterpret its own invalidation as a new acceptance.
     pending_.reset();
     privateId_.reset();
+    comparisonVerified_.reset();
+    comparisonMeasured_.reset();
     auto retired=publisher_->revoke_private();
     renderer_->invalidate();
     if(!retired) {

@@ -408,17 +408,17 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(device->position,core::FrameIndex{1600});
     QCOMPARE(device->loop,std::optional{*region.value()});
     QVERIFY(!product.private_id());
-    QVERIFY(!candidates.staged());
+    QVERIFY(candidates.staged()); // Retained, NEVER audible on Bypass.
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
     QVERIFY(!audioGate.has_session());
 
     // READY is already completed and MUST survive Cancel: no discarded
     // minute-long M17 work and no silent terminal handoff. A user can
     // preview the exact staged PCM after this no-op, then bypass explicitly.
     vm.setBypass(false);
-    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
-    vm.requestPrepare();
-    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
     vm.cancelPreparation();
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     QCOMPARE(vm.preparation_fraction(),1.0);
@@ -433,12 +433,18 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(coordinator.device_active());
     vm.setBypass(true);
     QVERIFY(limiter.value()->bypassed());
-    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     QVERIFY(!product.private_id());
-    QVERIFY(!candidates.staged());
+    QVERIFY(candidates.staged());
     vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    // An actual parameter edit makes the OLD A/B PCM stale.
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-2.0));
+    QVERIFY(vm.commitDraft());
     QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
 
     // Cancel only an ACTIVE preparation; the stale worker must never
     // publish a candidate after cancellation or replace the MANUAL sink.
@@ -478,18 +484,17 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(device->position,core::FrameIndex{2200});
     QCOMPARE(device->loop,std::optional{*region.value()});
     QVERIFY(!product.private_id());
-    QVERIFY(!candidates.staged());
+    QVERIFY(candidates.staged());
     vm.setBypass(false);
-    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
 
-    // PAUSED stays paused while preparing; Preview Prepared installs an
+    // PAUSED stays paused while re-auditioning the retained PCM; Preview Prepared installs an
     // OUTPUT_RATE owner only after an explicit request.
     QVERIFY(transport.seek_source_frame(core::FrameIndex{2600}));
     transport.pause();
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
-    vm.requestPrepare();
-    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     vm.previewPrepared();
@@ -522,9 +527,8 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // Upstream Input Gain changes retire M17 before MANUAL publication.
     // Neither preview completion nor Live Play can silently reprepare.
     vm.setBypass(false);
-    vm.requestPrepare();
-    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     vm.previewPrepared();
     QVERIFY(coordinator.device_active());
     auto gain3=dsp::GainParameters::create(+3.0);
