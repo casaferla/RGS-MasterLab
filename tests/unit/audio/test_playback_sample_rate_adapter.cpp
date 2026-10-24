@@ -113,6 +113,7 @@ private slots:
     void monitoringMasterSnapshotFailClosedAcrossSixRatePairs();
     void monitoringBorrowsMasterWithoutSourceAlias();
     void monitoring44100SixDeviceRatesRemainBlockInvariant();
+    void monitoringFullSixBySixSignalBlockInvariance();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -327,6 +328,71 @@ void PlaybackSampleRateAdapterTest::monitoringFrameMapSixRateEndpointsAndLoops()
         core::FrameIndex{1},core::FrameIndex{2});
     QVERIFY(tooSmall);
     QVERIFY(!map.value()->master_loop_to_device(*tooSmall.value()));
+}
+
+void PlaybackSampleRateAdapterTest::monitoringFullSixBySixSignalBlockInvariance()
+{
+    // 36 actual monitoring paths with a transient-rich non-DC signal.
+    // Offline processing partition must not affect PCM samples at any rate.
+    // This is NOT spectral quality, physical DAC or M16 LIVE qualification.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::int64_t N=193;
+    std::size_t verified=0;
+    for(const auto masterHz:rates) {
+        auto format=audio::AudioFormat::create(
+            rate(masterHz),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(format);
+        auto master=audio::AudioBuffer::create(
+            *format.value(),audio::FrameDomainId::OUTPUT_RATE,
+            core::FrameIndex{0},frame_count(N));
+        QVERIFY(master);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto samples=master.value()->mutable_view().channel(ch);
+            QVERIFY(samples);
+            for(std::int64_t i=0;i<N;++i) {
+                const double transient=i%37==0?-0.687:
+                    i%19==0?0.493:i%7==0?-0.217:0.131;
+                (*samples.value())[static_cast<std::size_t>(i)]=
+                    transient*(ch==0?1.0:-0.625);
+            }
+        }
+        const auto beforeLeft=channel_bits(*master.value(),0);
+        const auto beforeRight=channel_bits(*master.value(),1);
+        for(const auto deviceHz:rates) {
+            auto small=audio::materialize_monitoring_pcm_candidate(
+                master.value()->view(),rate(deviceHz),frame_count(7));
+            auto large=audio::materialize_monitoring_pcm_candidate(
+                master.value()->view(),rate(deviceHz),frame_count(257));
+            QVERIFY2(small,small?"":small.error()->message().c_str());
+            QVERIFY2(large,large?"":large.error()->message().c_str());
+            QVERIFY(audio::validate_monitoring_pcm_candidate(*small.value()));
+            QVERIFY(audio::validate_monitoring_pcm_candidate(*large.value()));
+            QCOMPARE(small.value()->immutable_master_rate.value(),masterHz);
+            QCOMPARE(large.value()->immutable_master_rate.value(),masterHz);
+            QCOMPARE(small.value()->device_rate.value(),deviceHz);
+            QCOMPARE(large.value()->device_rate.value(),deviceHz);
+            QCOMPARE(small.value()->device_src_applied,masterHz!=deviceHz);
+            QCOMPARE(large.value()->device_src_applied,masterHz!=deviceHz);
+            QCOMPARE(small.value()->device_pcm.view().frame_count(),
+                large.value()->device_pcm.view().frame_count());
+            const auto expected=(N/masterHz)*deviceHz+
+                ((N%masterHz)*deviceHz+masterHz-1)/masterHz;
+            QCOMPARE(small.value()->device_pcm.view().frame_count().value(),
+                expected);
+            for(std::size_t ch=0;ch<2;++ch) {
+                QCOMPARE(channel_bits(small.value()->device_pcm,ch),
+                         channel_bits(large.value()->device_pcm,ch));
+                if(masterHz==deviceHz)
+                    QCOMPARE(channel_bits(small.value()->device_pcm,ch),
+                             ch==0?beforeLeft:beforeRight);
+            }
+            QCOMPARE(channel_bits(*master.value(),0),beforeLeft);
+            QCOMPARE(channel_bits(*master.value(),1),beforeRight);
+            ++verified;
+        }
+    }
+    QCOMPARE(verified,std::size_t{36});
 }
 
 void PlaybackSampleRateAdapterTest::monitoring44100SixDeviceRatesRemainBlockInvariant()
