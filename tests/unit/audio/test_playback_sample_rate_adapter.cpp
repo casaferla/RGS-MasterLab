@@ -8,6 +8,8 @@
 #include <rgsml/audio/monitoring_frame_map.hpp>
 
 #include <QTest>
+#include <QDebug>
+#include <QElapsedTimer>
 
 #include <algorithm>
 #include <array>
@@ -122,6 +124,8 @@ private slots:
     void monitoringOneSecondStereoDurationAndOwnershipSmoke();
     void monitoringNonFiniteInputFailsClosedForSixRateFamilies();
     void monitoringOversizedOfflineBlockRejectsWithoutMutatingMaster();
+    void monitoringVirtualLongTrackResourceMatrix();
+    void monitoringResourcePreflightFailsOnOverflow();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -338,6 +342,97 @@ void PlaybackSampleRateAdapterTest::monitoringFrameMapSixRateEndpointsAndLoops()
     QVERIFY(!map.value()->master_loop_to_device(*tooSmall.value()));
 }
 
+void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()
+{
+    // Predict duration, owned full-track PCM footprint and experimental
+    // FIR MAC count WITHOUT allocating even one long-track sample.
+    // A projection is NOT measured process RSS or performance.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::int64_t seconds=180;
+    std::size_t checked=0;
+    for(const auto inputHz:rates) {
+        const auto inputFrames=frame_count(inputHz*seconds);
+        for(const auto deviceHz:rates) {
+            auto cost=audio::project_monitoring_pcm_resource_cost(
+                rate(inputHz),inputFrames,rate(deviceHz),
+                audio::ChannelLayout::STEREO_LR);
+            QVERIFY2(cost,cost?"":cost.error()->message().c_str());
+            QCOMPARE(cost.value()->device_frames.value(),
+                deviceHz*seconds);
+            const auto inBytes=static_cast<std::uint64_t>(
+                inputHz*seconds*2*sizeof(double));
+            const auto outBytes=static_cast<std::uint64_t>(
+                deviceHz*seconds*2*sizeof(double));
+            QCOMPARE(cost.value()->master_pcm_bytes,inBytes);
+            QCOMPARE(cost.value()->device_pcm_bytes,outBytes);
+            QCOMPARE(cost.value()->combined_pcm_bytes,inBytes+outBytes);
+            const bool rational=inputHz!=deviceHz
+                && !(inputHz==44100&&deviceHz==48000)
+                && !(inputHz==48000&&deviceHz==44100);
+            QCOMPARE(cost.value()->experimental_fir_mac_operations.has_value(),
+                     rational);
+            if(rational) {
+                const auto taps=static_cast<std::uint64_t>(
+                    std::max<std::int64_t>(128,
+                        (128*inputHz+deviceHz-1)/deviceHz));
+                const auto evenTaps=taps+(taps%2);
+                QCOMPARE(*cost.value()->experimental_fir_mac_operations,
+                    static_cast<std::uint64_t>(deviceHz*seconds)
+                        *2*evenTaps);
+            }
+            ++checked;
+        }
+    }
+    QCOMPARE(checked,std::size_t{36});
+    // A five-minute 192 -> 48 stereo monitor owns a second PCM
+    // allocation; 1,152,000,000 is a two-buffer LOWER bound in bytes.
+    auto fiveMinutes=audio::project_monitoring_pcm_resource_cost(
+        rate(192000),frame_count(192000*300),rate(48000),
+        audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fiveMinutes);
+    QCOMPARE(fiveMinutes.value()->master_pcm_bytes,
+        UINT64_C(921600000));
+    QCOMPARE(fiveMinutes.value()->device_pcm_bytes,
+        UINT64_C(230400000));
+    QCOMPARE(fiveMinutes.value()->combined_pcm_bytes,
+        UINT64_C(1152000000));
+    QVERIFY(fiveMinutes.value()->experimental_fir_mac_operations);
+    QCOMPARE(*fiveMinutes.value()->experimental_fir_mac_operations,
+        UINT64_C(14745600000));
+}
+
+void PlaybackSampleRateAdapterTest::monitoringResourcePreflightFailsOnOverflow()
+{
+    // Out-of-range virtual tracks are rejected BEFORE allocating the
+    // device-owned PCM; neither the master nor Windows playback is touched.
+    const auto maxFrames=std::numeric_limits<std::int64_t>::max();
+    auto impossibleBytes=audio::project_monitoring_pcm_resource_cost(
+        rate(192000),frame_count(maxFrames/8+1),rate(192000),
+        audio::ChannelLayout::MONO_C);
+    QVERIFY(!impossibleBytes);
+    QCOMPARE(impossibleBytes.error()->code(),core::ErrorCode::IntegerOverflow);
+    auto impossibleFrames=audio::project_monitoring_pcm_resource_cost(
+        rate(44100),frame_count(maxFrames/3),rate(192000),
+        audio::ChannelLayout::STEREO_LR);
+    QVERIFY(!impossibleFrames);
+    QCOMPARE(impossibleFrames.error()->code(),
+        core::ErrorCode::IntegerOverflow);
+    auto wrongDevice=audio::project_monitoring_pcm_resource_cost(
+        rate(48000),frame_count(48000),rate(32000),
+        audio::ChannelLayout::MONO_C);
+    QVERIFY(!wrongDevice);
+    QCOMPARE(wrongDevice.error()->code(),
+        core::ErrorCode::UnsupportedOperation);
+    auto validIdentity=audio::project_monitoring_pcm_resource_cost(
+        rate(44100),frame_count(44100),rate(44100),
+        audio::ChannelLayout::MONO_C);
+    QVERIFY(validIdentity);
+    QCOMPARE(validIdentity.value()->combined_pcm_bytes,
+        UINT64_C(705600));
+    QVERIFY(!validIdentity.value()->experimental_fir_mac_operations);
+}
+
 void PlaybackSampleRateAdapterTest::monitoringOneSecondStereoDurationAndOwnershipSmoke()
 {
     // One-second functional resource smoke, not a long-track memory/perf
@@ -367,9 +462,23 @@ void PlaybackSampleRateAdapterTest::monitoringOneSecondStereoDurationAndOwnershi
         }
         const auto originalLeft=channel_bits(*master.value(),0);
         const auto originalRight=channel_bits(*master.value(),1);
+        auto predicted=audio::project_monitoring_pcm_resource_cost(
+            rate(masterHz),frame_count(masterHz),rate(deviceHz),
+            audio::ChannelLayout::STEREO_LR);
+        QVERIFY(predicted);
+        QElapsedTimer microprofile;
+        microprofile.start();
         auto candidate=audio::materialize_monitoring_pcm_candidate(
             master.value()->view(),rate(deviceHz),frame_count(1024));
+        const auto elapsedMs=microprofile.elapsed();
         QVERIFY2(candidate,candidate?"":candidate.error()->message().c_str());
+        QCOMPARE(candidate.value()->device_pcm.view().frame_count(),
+                 predicted.value()->device_frames);
+        qInfo().noquote() << "MONITOR_MICROPROFILE_UNQUALIFIED"
+                          << masterHz << "to" << deviceHz
+                          << "frames" << deviceHz
+                          << "elapsed_ms" << elapsedMs
+                          << "min_pcm_bytes" << predicted.value()->combined_pcm_bytes;
         QVERIFY(audio::validate_monitoring_pcm_candidate(*candidate.value()));
         QCOMPARE(candidate.value()->immutable_master_frames.value(),masterHz);
         QCOMPARE(candidate.value()->immutable_master_rate.value(),masterHz);

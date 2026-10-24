@@ -8,7 +8,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <numeric>
+#include <optional>
 #include <utility>
 
 namespace rgsml::audio {
@@ -24,6 +27,84 @@ struct MonitoringPcmCandidate final {
     core::FrameCount immutable_master_frames;
     bool device_src_applied;
 };
+
+// Read-only preflight for FULL-DURATION monitoring PCM. Counts only the
+// already-owned immutable MASTER and separately materialized DEVICE buffer:
+// not peak process RSS, Qt buffers, OS audio memory or allocation latency.
+// The work estimate is only for the *experimental rational FIR*, not the
+// frozen 44.1<->48 kernels, and is not a measured duration.
+struct MonitoringPcmResourceProjection final {
+    core::FrameCount device_frames;
+    std::uint64_t master_pcm_bytes;
+    std::uint64_t device_pcm_bytes;
+    std::uint64_t combined_pcm_bytes;
+    std::optional<std::uint64_t> experimental_fir_mac_operations;
+};
+
+[[nodiscard]] inline core::Result<MonitoringPcmResourceProjection>
+project_monitoring_pcm_resource_cost(
+    core::SampleRate masterRate,core::FrameCount masterFrames,
+    core::SampleRate deviceRate,ChannelLayout layout)
+{
+    using Projection=MonitoringPcmResourceProjection;
+    const auto invalid=[](core::ErrorCode code,const char* message)
+        ->core::Result<Projection> {
+        return core::Result<Projection>::failure(core::Error{code,message});
+    };
+    const auto sourceHz=masterRate.value();
+    const auto deviceHz=deviceRate.value();
+    const auto frames=masterFrames.value();
+    if(frames<=0)
+        return invalid(core::ErrorCode::InvalidArgument,
+            "MONITOR_RESOURCE_MASTER_FRAMES_INVALID");
+    const auto plan=plan_master_monitoring_rate(masterRate,deviceRate);
+    if(!plan)return core::Result<Projection>::failure(*plan.error());
+    if(deviceHz!=44100 && deviceHz!=48000 && deviceHz!=88200
+       && deviceHz!=96000 && deviceHz!=176400 && deviceHz!=192000)
+        return invalid(core::ErrorCode::UnsupportedOperation,
+            "MONITOR_RESOURCE_DEVICE_RATE_UNSUPPORTED");
+    auto format=AudioFormat::create(masterRate,layout);
+    if(!format)return core::Result<Projection>::failure(*format.error());
+    const auto q=frames/sourceHz;
+    const auto r=frames%sourceHz;
+    const auto tail=(r*deviceHz+sourceHz-1)/sourceHz;
+    const auto maxFrames=std::numeric_limits<std::int64_t>::max();
+    if(q>(maxFrames-tail)/deviceHz)
+        return invalid(core::ErrorCode::IntegerOverflow,
+            "MONITOR_RESOURCE_DEVICE_FRAMES_OVERFLOW");
+    const auto outFrames=q*deviceHz+tail;
+    auto count=core::FrameCount::create(outFrames);
+    if(!count)return core::Result<Projection>::failure(*count.error());
+    const auto bytesPerFrame=static_cast<std::uint64_t>(
+        format.value()->channel_count()*sizeof(double));
+    const auto maxBytes=static_cast<std::uint64_t>(
+        std::numeric_limits<std::int64_t>::max());
+    if(static_cast<std::uint64_t>(frames)>maxBytes/bytesPerFrame
+       ||static_cast<std::uint64_t>(outFrames)>maxBytes/bytesPerFrame)
+        return invalid(core::ErrorCode::IntegerOverflow,
+            "MONITOR_RESOURCE_PCM_BYTES_OVERFLOW");
+    const auto masterBytes=static_cast<std::uint64_t>(frames)*bytesPerFrame;
+    const auto deviceBytes=static_cast<std::uint64_t>(outFrames)*bytesPerFrame;
+    // Each allocation respects AudioBuffer's checked signed-int64 byte
+    // ceiling; the combined two-buffer minimum fits in uint64.
+    const bool frozenPair=(sourceHz==44100 && deviceHz==48000)
+        ||(sourceHz==48000 && deviceHz==44100);
+    std::optional<std::uint64_t> macs;
+    if(sourceHz!=deviceHz && !frozenPair) {
+        // Mirrors the rational FIR's tap geometry, without allocating PCM.
+        auto taps=(128*sourceHz+deviceHz-1)/deviceHz;
+        if(taps<128)taps=128;
+        taps+=taps%2;
+        const auto channels=static_cast<std::uint64_t>(
+            format.value()->channel_count());
+        const auto perOutput=static_cast<std::uint64_t>(taps)*channels;
+        if(static_cast<std::uint64_t>(outFrames)
+            <=std::numeric_limits<std::uint64_t>::max()/perOutput)
+            macs=static_cast<std::uint64_t>(outFrames)*perOutput;
+    }
+    return core::Result<Projection>::success({
+        *count.value(),masterBytes,deviceBytes,masterBytes+deviceBytes,macs});
+}
 
 // Validate an already-materialized monitor owner before touching any hardware.
 // This proves only structural ownership/rate/duration metadata; it does not
@@ -98,6 +179,14 @@ materialize_monitoring_pcm_candidate(
        && device_hz!=96000 && device_hz!=176400 && device_hz!=192000)
         return refused(core::ErrorCode::UnsupportedOperation,
             "MONITOR_SRC_DEVICE_RATE_UNSUPPORTED: experimental converter accepts six rates.");
+
+    // Fail closed on impossible PCM byte counts before any device buffer
+    // allocation. This projection does not impose an arbitrary memory cap.
+    auto resource=project_monitoring_pcm_resource_cost(
+        master_rate,verified_master_pcm.frame_count(),observed_device_rate,
+        verified_master_pcm.format().channel_layout());
+    if(!resource)
+        return core::Result<MonitoringPcmCandidate>::failure(*resource.error());
 
     // No extra O(track duration) SRC scratch allocation. The borrowed view
     // remains OUTPUT_RATE, and only this explicit monitor entrypoint may
