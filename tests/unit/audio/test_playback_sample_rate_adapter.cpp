@@ -130,6 +130,7 @@ private slots:
     void monitoringPrepareAdviceSixMasterRatesAndHeadroom();
     void monitoringPrepareAdviceDurationRoundingAndUnknownState();
     void monitoringPrepareAdviceBudgetBoundariesAndFreshObservations();
+    void monitoringImminentAllocationUsesFreshIncrementalBudget();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -511,6 +512,89 @@ void PlaybackSampleRateAdapterTest::monitoringPrepareAdviceBudgetBoundariesAndFr
         QVERIFY(!(*after.value())[i].cpu_performance_qualified);
         QVERIFY(!(*unavailable.value())[i].cpu_performance_qualified);
     }
+}
+
+void PlaybackSampleRateAdapterTest::
+monitoringImminentAllocationUsesFreshIncrementalBudget()
+{
+    using Kind=audio::MonitoringMemoryAdviceKind;
+    using Observation=audio::MonitoringMemoryObservation;
+    constexpr std::uint64_t MiB=UINT64_C(1024)*1024;
+    // Master is already owned and charged by the OS counters. The
+    // incremental device allocation is the only NEW PCM expense.
+    const auto master=rate(192000);
+    const auto frames=frame_count(192000*180);
+    const auto first=audio::advise_imminent_monitoring_pcm_allocation(
+        master,frames,rate(48000),audio::ChannelLayout::STEREO_LR,
+        Observation{800*MiB,1024*MiB,0});
+    QVERIFY(first);
+    QCOMPARE(first.value()->resource.master_pcm_bytes,
+        UINT64_C(192000)*180*2*sizeof(double));
+    QCOMPARE(first.value()->resource.device_pcm_bytes,
+        UINT64_C(48000)*180*2*sizeof(double));
+    QCOMPARE(first.value()->kind,Kind::RECOMMENDED_MEMORY_ONLY);
+    QVERIFY(!first.value()->existing_master_counted_as_new);
+    QVERIFY(!first.value()->cpu_performance_qualified);
+    QCOMPARE(audio::classify_monitoring_memory(
+        first.value()->resource.combined_pcm_bytes,
+        Observation{800*MiB,1024*MiB,0}),
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    const auto lower=audio::advise_imminent_monitoring_pcm_allocation(
+        master,frames,rate(48000),audio::ChannelLayout::STEREO_LR,
+        Observation{600*MiB,1024*MiB,0});
+    const auto committed=audio::advise_imminent_monitoring_pcm_allocation(
+        master,frames,rate(48000),audio::ChannelLayout::STEREO_LR,
+        Observation{1024*MiB,600*MiB,0});
+    const auto reserved=audio::advise_imminent_monitoring_pcm_allocation(
+        master,frames,rate(48000),audio::ChannelLayout::STEREO_LR,
+        Observation{800*MiB,1024*MiB,256*MiB});
+    const auto missing=audio::advise_imminent_monitoring_pcm_allocation(
+        master,frames,rate(48000),audio::ChannelLayout::STEREO_LR,
+        Observation{0,1024*MiB,0});
+    QVERIFY(lower);
+    QVERIFY(committed);
+    QVERIFY(reserved);
+    QVERIFY(missing);
+    QCOMPARE(lower.value()->kind,Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    QCOMPARE(committed.value()->kind,
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    QCOMPARE(reserved.value()->kind,
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    QCOMPARE(missing.value()->kind,Kind::UNKNOWN);
+    // The allocation seam calls a caller-controlled fresh check BEFORE it
+    // materializes DEVICE PCM. No implicit CPU/permission policy is chosen.
+    auto fmt=audio::AudioFormat::create(
+        rate(48000),audio::ChannelLayout::MONO_C);
+    QVERIFY(fmt);
+    auto owned=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},
+        frame_count(48));
+    QVERIFY(owned);
+    std::size_t checks=0;
+    auto veto=audio::materialize_monitoring_pcm_candidate(
+        owned.value()->view(),rate(44100),frame_count(17),
+        [&](const audio::MonitoringPcmResourceProjection& cost)
+            ->core::Status {
+            ++checks;
+            QCOMPARE(cost.master_pcm_bytes,UINT64_C(48)*sizeof(double));
+            QVERIFY(cost.device_pcm_bytes>0);
+            return core::Status::failure(core::Error{
+                core::ErrorCode::UnsupportedOperation,
+                "MONITOR_ALLOC_PREFLIGHT_TEST_VETO"});
+        });
+    QVERIFY(!veto);
+    QCOMPARE(checks,std::size_t{1});
+    QCOMPARE(veto.error()->code(),core::ErrorCode::UnsupportedOperation);
+    auto allowed=audio::materialize_monitoring_pcm_candidate(
+        owned.value()->view(),rate(44100),frame_count(17),
+        [&](const audio::MonitoringPcmResourceProjection&) -> core::Status {
+            ++checks;
+            return core::Status::success();
+        });
+    QVERIFY(allowed);
+    QCOMPARE(checks,std::size_t{2});
+    QCOMPARE(allowed.value()->immutable_master_rate,rate(48000));
+    QCOMPARE(allowed.value()->device_rate,rate(44100));
 }
 
 void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()

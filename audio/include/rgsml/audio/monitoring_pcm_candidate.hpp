@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <numeric>
 #include <optional>
@@ -155,7 +156,9 @@ project_monitoring_pcm_resource_cost(
 materialize_monitoring_pcm_candidate(
     AudioBufferView verified_master_pcm,
     core::SampleRate observed_device_rate,
-    core::FrameCount offline_block)
+    core::FrameCount offline_block,
+    const std::function<core::Status(const MonitoringPcmResourceProjection&)>&
+        preallocation_check = {})
 {
     auto refused=[](core::ErrorCode code,const char* message)
         -> core::Result<MonitoringPcmCandidate> {
@@ -187,6 +190,16 @@ materialize_monitoring_pcm_candidate(
         verified_master_pcm.format().channel_layout());
     if(!resource)
         return core::Result<MonitoringPcmCandidate>::failure(*resource.error());
+    // Called against a fresh resource projection BEFORE the first device
+    // allocation. A future product caller may provide an OS-backed policy
+    // decision; the default legacy experimental path has no gate. This
+    // callback must not reallocate/modify the owned MASTER PCM.
+    if(preallocation_check) {
+        const auto checked=preallocation_check(*resource.value());
+        if(!checked)
+            return core::Result<MonitoringPcmCandidate>::failure(
+                *checked.error());
+    }
 
     // No extra O(track duration) SRC scratch allocation. The borrowed view
     // remains OUTPUT_RATE, and only this explicit monitor entrypoint may

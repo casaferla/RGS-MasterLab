@@ -62,6 +62,16 @@ public:
         audio::ChannelLayout layout,
         std::uint64_t otherPrepareReserveBytes=0) const;
 
+    // IMMINENT device PCM allocation, after MASTER is already resident:
+    // obtain a NEW OS memory snapshot and count only the incremental
+    // DEVICE buffer. Advice only: caller owns UX/override/block policy.
+    // This is NOT yet wired into a product Prepare allocation transaction.
+    [[nodiscard]] core::Result<audio::MonitoringPcmPreallocationAdvice>
+    advise_imminent_monitoring_pcm_allocation(
+        core::SampleRate ownedMasterRate,core::FrameCount ownedMasterFrames,
+        audio::ChannelLayout layout,
+        std::uint64_t otherPrepareReserveBytes=0) const;
+
     // EXPERIMENTAL device-monitoring seam: candidate PCM is separately owned
     // and already converted offline. Never substitute a new master rate or
     // claim M17 terminal/M16 LIVE ownership. No active UI publication.

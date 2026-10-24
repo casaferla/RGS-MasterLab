@@ -73,6 +73,37 @@ struct MonitoringRateMemoryAdvice final {
     return MonitoringMemoryAdviceKind::CAUTION_LIMITED_HEADROOM;
 }
 
+// Pre-allocation advice for the ADDITIONAL DEVICE owner after an immutable
+// MASTER buffer already exists. Windows availability already accounts for
+// the allocated master. Do not double-charge it a second time against that
+// fresh snapshot. This is an observation, never allocation permission.
+struct MonitoringPcmPreallocationAdvice final {
+    MonitoringPcmResourceProjection resource;
+    MonitoringMemoryAdviceKind kind{MonitoringMemoryAdviceKind::UNKNOWN};
+    std::uint64_t memory_headroom_after_reserve_bytes{0};
+    bool existing_master_counted_as_new{false};
+    bool cpu_performance_qualified{false};
+};
+
+[[nodiscard]] inline core::Result<MonitoringPcmPreallocationAdvice>
+advise_imminent_monitoring_pcm_allocation(
+    core::SampleRate already_owned_master_rate,
+    core::FrameCount already_owned_master_frames,
+    core::SampleRate device_rate,ChannelLayout layout,
+    MonitoringMemoryObservation freshly_observed)
+{
+    using Advice=MonitoringPcmPreallocationAdvice;
+    auto cost=project_monitoring_pcm_resource_cost(
+        already_owned_master_rate,already_owned_master_frames,
+        device_rate,layout);
+    if(!cost)return core::Result<Advice>::failure(*cost.error());
+    std::uint64_t headroom=0;
+    const auto kind=classify_monitoring_memory(
+        cost.value()->device_pcm_bytes,freshly_observed,&headroom);
+    return core::Result<Advice>::success(Advice{
+        std::move(*cost.value()),kind,headroom,false,false});
+}
+
 // All six master frequencies are assessed at the ORIGINAL SOURCE duration.
 // ceil(duration * proposed_master_rate) avoids floating-point rounding and
 // never changes or writes any source/master PCM. Each proposal is tested

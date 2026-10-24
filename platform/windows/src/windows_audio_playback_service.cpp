@@ -1396,6 +1396,37 @@ WindowsAudioPlaybackService::advise_prepare_master_rate_memory(
 #endif
 }
 
+core::Result<audio::MonitoringPcmPreallocationAdvice>
+WindowsAudioPlaybackService::advise_imminent_monitoring_pcm_allocation(
+    core::SampleRate ownedMasterRate,core::FrameCount ownedMasterFrames,
+    audio::ChannelLayout layout,
+    std::uint64_t otherPrepareReserveBytes) const
+{
+    using Advice=audio::MonitoringPcmPreallocationAdvice;
+    const auto deviceRate=preferred_monitoring_output_rate(layout);
+    if(!deviceRate)
+        return core::Result<Advice>::failure(*deviceRate.error());
+#if defined(_WIN32)
+    MEMORYSTATUSEX memory{};
+    memory.dwLength=sizeof(memory);
+    // Query at each explicit imminent-allocation call, never reuse the
+    // earlier six-rate Prepare snapshot. Failed probes remain UNKNOWN.
+    audio::MonitoringMemoryObservation fresh{
+        0,0,otherPrepareReserveBytes};
+    if(GlobalMemoryStatusEx(&memory)) {
+        fresh.available_physical_bytes=
+            static_cast<std::uint64_t>(memory.ullAvailPhys);
+        fresh.available_commit_bytes=
+            static_cast<std::uint64_t>(memory.ullAvailPageFile);
+    }
+    return audio::advise_imminent_monitoring_pcm_allocation(
+        ownedMasterRate,ownedMasterFrames,*deviceRate.value(),layout,fresh);
+#else
+    return failure<Advice>(core::ErrorCode::UnsupportedOperation,
+        "MONITOR_ALLOC_WINDOWS_MEMORY_QUERY_REQUIRED");
+#endif
+}
+
 core::Status WindowsAudioPlaybackService::prepare_monitoring_output_pcm(
     std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
 {
