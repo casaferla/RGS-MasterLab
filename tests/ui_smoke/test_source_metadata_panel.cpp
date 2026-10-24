@@ -655,7 +655,7 @@ Window {
     };
     for(const auto hostHeight:{652.0,474.0}) {
         hostItem->setHeight(hostHeight);
-        QVERIFY(fixture->setProperty("meterMode",false));
+        QVERIFY(window->setProperty("meterMode",false));
         QCoreApplication::processEvents();
         QVERIFY(actionRow->property("visible").toBool());
         const auto m17Rect=rectOnHost(editor);
@@ -677,7 +677,7 @@ Window {
             QVERIFY2(top>=-0.5 && top+label->height()<=lane->height()+0.5,
                 "M17 bottom lane label must not cross a card border");
         }
-        QVERIFY(fixture->setProperty("meterMode",true));
+        QVERIFY(window->setProperty("meterMode",true));
         QCoreApplication::processEvents();
         QVERIFY(meter->property("visible").toBool());
         QVERIFY(actionRow->property("visible").toBool());
