@@ -41,6 +41,16 @@ struct DeviceFormat final {
     bool pairedFloat32Supported,
     bool pairedPcm16Supported);
 
+// Future monitoring-only route: derive a device PCM rate from an observed
+// *preferred* Windows format, never change the M17/M18 MASTER rate. This is
+// capability selection, NOT the PCM resampler, playback install or proof of
+// a physical DAC clock. The observed preference is not a measured clock.
+[[nodiscard]] core::Result<DeviceFormat> select_monitoring_device_format(
+    const audio::AudioFormat& immutableMasterFormat,
+    int observedPreferredRateHz,
+    bool preferredFloat32Supported,
+    bool preferredPcm16Supported);
+
 // Terminal PCM is already at its output rate. Exact-format selection
 // cannot silently fall back to the 44.1/48 kHz playback SRC.
 [[nodiscard]] core::Result<DeviceFormat> select_terminal_output_device_format(

@@ -1,4 +1,5 @@
 #include "playback_support.hpp"
+#include <rgsml/audio/master_monitoring_rate_plan.hpp>
 
 #include <rgsml/audio/audio_buffer.hpp>
 
@@ -220,6 +221,43 @@ core::Result<DeviceFormat> select_device_format(
     return failure<DeviceFormat>(
         core::ErrorCode::UnsupportedOperation,
         "Default output supports neither the exact nor authorized paired Source rate.");
+}
+
+core::Result<DeviceFormat> select_monitoring_device_format(
+    const audio::AudioFormat& immutableMasterFormat,
+    int observedPreferredRateHz,
+    bool preferredFloat32Supported,
+    bool preferredPcm16Supported)
+{
+    const auto channels=immutableMasterFormat.channel_count();
+    if(channels!=1U && channels!=2U)
+        return failure<DeviceFormat>(core::ErrorCode::UnsupportedAudioLayout,
+            "Monitoring format requires canonical mono or stereo PCM.");
+    const auto deviceRate=core::SampleRate::create(observedPreferredRateHz);
+    if(!deviceRate)
+        return failure<DeviceFormat>(core::ErrorCode::UnsupportedOperation,
+            "Monitoring preferred rate is not a representable sample rate.");
+    auto plan=audio::plan_master_monitoring_rate(
+        immutableMasterFormat.sample_rate(),*deviceRate.value());
+    if(!plan)
+        return core::Result<DeviceFormat>::failure(*plan.error());
+    // Match only an explicitly probed six-rate monitoring candidate.
+    // A generic Windows format probe is not an SRC implementation.
+    if(observedPreferredRateHz!=44100 && observedPreferredRateHz!=48000
+       && observedPreferredRateHz!=88200 && observedPreferredRateHz!=96000
+       && observedPreferredRateHz!=176400 && observedPreferredRateHz!=192000)
+        return failure<DeviceFormat>(core::ErrorCode::UnsupportedOperation,
+            "MONITOR_DEVICE_RATE_UNSUPPORTED: prototype requires a six-rate device.");
+    if(preferredFloat32Supported)
+        return core::Result<DeviceFormat>::success(DeviceFormat{
+            observedPreferredRateHz,channels,DeviceSampleFormat::IEEE_F32,
+            plan.value()->monitoring_src_required});
+    if(preferredPcm16Supported)
+        return core::Result<DeviceFormat>::success(DeviceFormat{
+            observedPreferredRateHz,channels,DeviceSampleFormat::PCM_S16,
+            plan.value()->monitoring_src_required});
+    return failure<DeviceFormat>(core::ErrorCode::UnsupportedOperation,
+        "MONITOR_DEVICE_FORMAT_UNAVAILABLE: observed preference unsupported.");
 }
 
 core::Result<DeviceFormat> select_terminal_output_device_format(

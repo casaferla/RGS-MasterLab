@@ -244,6 +244,7 @@ class PlaybackSupportTest final : public QObject {
 private slots:
     void formatSelectionIsDeterministic();
     void terminalFormatRejectsDeviceRateFallback();
+    void monitoringFormatDoesNotRetargetMaster();
     void preferredTerminalRateIsExplicitAndFailClosed();
     void floatAndPcm16GoldenConversion();
     void conversionFailuresAndChunkInvariance();
@@ -319,6 +320,52 @@ void PlaybackSupportTest::terminalFormatRejectsDeviceRateFallback()
     QVERIFY(ordinary);
     QVERIFY(ordinary.value()->srcApplied);
     QCOMPARE(ordinary.value()->sampleRateHz,44100);
+}
+
+void PlaybackSupportTest::monitoringFormatDoesNotRetargetMaster()
+{
+    using platform::windows::internal::select_monitoring_device_format;
+    constexpr std::array<int,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    for(const auto masterHz:rates) {
+        auto masterRate=core::SampleRate::create(masterHz);
+        QVERIFY(masterRate);
+        auto master=audio::AudioFormat::create(
+            *masterRate.value(),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(master);
+        for(const auto observedPreferred:rates) {
+            auto preferred=select_monitoring_device_format(
+                *master.value(),observedPreferred,true,true);
+            QVERIFY2(preferred,preferred?"":preferred.error()->message().c_str());
+            QCOMPARE(preferred.value()->sampleRateHz,observedPreferred);
+            QCOMPARE(preferred.value()->channelCount,std::size_t{2});
+            QCOMPARE(preferred.value()->sampleFormat,DeviceSampleFormat::IEEE_F32);
+            QCOMPARE(preferred.value()->srcApplied,masterHz!=observedPreferred);
+            QCOMPARE(master.value()->sample_rate().value(),std::int64_t{masterHz});
+            auto pcmOnly=select_monitoring_device_format(
+                *master.value(),observedPreferred,false,true);
+            QVERIFY(pcmOnly);
+            QCOMPARE(pcmOnly.value()->sampleFormat,DeviceSampleFormat::PCM_S16);
+            QCOMPARE(pcmOnly.value()->srcApplied,masterHz!=observedPreferred);
+            QVERIFY(!select_monitoring_device_format(
+                *master.value(),observedPreferred,false,false));
+        }
+        for(const auto unsupported:{0,-1,32000,384000}) {
+            QVERIFY(!select_monitoring_device_format(
+                *master.value(),unsupported,true,true));
+        }
+    }
+    // Not the terminal selector: it MUST remain exact and reject 192 -> 48.
+    const auto hz=core::SampleRate::create(192000);
+    QVERIFY(hz);
+    auto format=audio::AudioFormat::create(
+        *hz.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto observed=select_monitoring_device_format(
+        *format.value(),48000,true,false);
+    QVERIFY(observed && observed.value()->srcApplied);
+    QVERIFY(!platform::windows::internal::select_terminal_output_device_format(
+        *format.value(),false,false));
 }
 
 void PlaybackSupportTest::preferredTerminalRateIsExplicitAndFailClosed()
