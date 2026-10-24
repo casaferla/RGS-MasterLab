@@ -30,6 +30,7 @@ class TerminalActivationIntegrationTest final:public QObject {
 private slots:
     void audibleOnBypassRestoresExactManualSourceAndLoop();
     void finalMasterAt192kNeverBecomesDeviceRate48k();
+    void privateMaster192kOn48kDeviceRemainsUninstalled();
     void staleM17TerminalJobCancelsWithoutPublishingPcm();
     void nonconformingPreviewRequiresSeparateExplicitConsent();
     void rejectedCeilingCannotAlterAuthority_data();
@@ -862,15 +863,16 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
 
-    // Independently selected 192 kHz FINAL MASTER with a synthetic 48 kHz
-    // device. This PRIVATE request must not use the device-rate probe
-    // (deliberately configured to fail above), nor publish a 192 kHz
-    // master into the 48 kHz sink.
+    // The source and selected master here are both 44.1 kHz. The
+    // deliberately failing DEVICE probe must not affect the independent
+    // master-only request, and must not publish into any audio sink.
+    // This test does NOT qualify the separate 44.1 -> 192 FIR.
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
     QVERIFY(limiter.value()->set_user_bypass(false));
-    const auto masterRate=core::SampleRate::create(192000);
+    const auto masterRate=core::SampleRate::create(44100);
+    const auto highMasterRate=core::SampleRate::create(192000);
     const auto invalidRate=core::SampleRate::create(32000);
-    QVERIFY(masterRate&&invalidRate);
+    QVERIFY(masterRate&&highMasterRate&&invalidRate);
     const auto unsupported=product.request_private_for_final_master(
         *invalidRate.value());
     QVERIFY(!unsupported);
@@ -894,7 +896,159 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QVERIFY(!candidates.staged());
     QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+
+    // The additional 44.1 -> 192 FINAL conversion still uses the
+    // experimental rational FIR, which has NO certified SHA-256. The
+    // authoritative M17 candidate gate must reject this unqualified
+    // provenance rather than treating the 192-kHz PCM as VERIFIED.
+    QVERIFY(product.request_private_for_final_master(*highMasterRate.value()));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),QStringLiteral("STALE"),12000);
+    QVERIFY(!candidates.staged());
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+    QVERIFY(product.cancel());
 }
+
+void TerminalActivationIntegrationTest::
+privateMaster192kOn48kDeviceRemainsUninstalled()
+{
+    // Separate fresh 192-kHz SOURCE fixture: the certified identity-rate
+    // master route can succeed without relying on the still-unqualified
+    // 44.1 -> 192 experimental Final Output FIR, while the independently
+    // probed 48-kHz sink must remain completely untouched.
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto masterRate=core::SampleRate::create(192000);
+    auto deviceRate=core::SampleRate::create(48000);
+    auto frames=core::FrameCount::create(1920);
+    auto block=core::FrameCount::create(128);
+    QVERIFY(registry&&masterRate&&deviceRate&&frames&&block);
+    auto chain=dsp::ProcessingChain::create(
+        *registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(chain);
+    auto format=audio::AudioFormat::create(
+        *masterRate.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto source=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(source);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=source.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(std::size_t i=0;i<1920;++i)
+            (*lane.value())[i]=(i%29==0 ? 0.22:0.08)
+                *(ch==0 ? 1.0:-0.6);
+    }
+    const auto renderSource=[&]()->render::RenderResult {
+        auto request=render::RenderRequest::create(
+            source.value()->view(),source.value()->view().absolute_range(),
+            *chain.value(),{},*block.value());
+        Q_ASSERT(request);
+        auto result=render::render_preview(
+            *request.value(),*registry.value());
+        Q_ASSERT(result);
+        return std::move(*result.value());
+    };
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* device=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    transport.set_pcm_prepare_handler(
+        [device](audio::AudioBufferView view,
+            std::shared_ptr<const void> lease,
+            std::optional<core::RealizationId> id)->core::Status {
+            if(!lease||!id||view.frame_count().value()<=0)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "Unowned MANUAL PCM in 192-kHz fixture."});
+            device->state=core::PlaybackState::STOPPED;
+            device->position=core::FrameIndex{0};
+            device->duration=view.frame_count();
+            device->loop.reset();
+            device->audibleRealization={
+                core::AudibleHandoffPhase::NEW,id};
+            return core::Status::success();
+        });
+    app::AuditionSourceSelector selector{&transport};
+    QVERIFY(selector.set_prepared_realization(renderSource()));
+    QVERIFY(selector.set_processed_realization(renderSource()));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    const auto manualId=selector.processed_realization_id();
+    QVERIFY(manualId);
+    auto limiterId=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000619").value());
+    QVERIFY(limiterId);
+    auto limiter=app::TerminalLimiterState::create_default(
+        *registry.value(),*limiterId.value());
+    QVERIFY(limiter);
+    QVERIFY(limiter.value()->set_user_bypass(false));
+    app::TerminalCandidateGate candidates;
+    std::size_t sinkInstalls=0;
+    app::TerminalAudioSessionGate audioGate{
+        candidates,*device,
+        [&sinkInstalls](audio::AudioBufferView,
+            std::shared_ptr<const void>,
+            core::RealizationId)->core::Status {
+            ++sinkInstalls;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "Master-only PCM may not reach a device sink."});
+        }};
+    app::TerminalPrivatePublicationCoordinator publisher{
+        candidates,audioGate,transport,
+        [&selector](std::shared_ptr<const render::RenderResult> prepared,
+            std::shared_ptr<const render::RenderResult> manual,
+            std::optional<core::RealizationId> id) {
+            return selector.reserve_private_terminal_realization_id(
+                prepared,manual,id);
+        }};
+    app::TerminalPrivateRenderController renderer{
+        candidates,*limiter.value(),
+        [&selector]{return selector.prepared_realization_snapshot();},
+        [&selector]{return selector.processed_realization_snapshot();},
+        [&selector]{return selector.processed_realization_id();},
+        [&chain]{return *chain.value();}};
+    app::TerminalPrivateProductSession product{
+        renderer,publisher,candidates,transport,
+        [&selector]{return selector.prepared_realization_snapshot();},
+        [&selector]{return selector.processed_realization_snapshot();},
+        [&selector]{return selector.processed_realization_id();},
+        []{return std::optional<core::FrameRange>{};},
+        [&selector]{return selector.active_target()
+            ==app::AuditionTarget::PROCESSED;}};
+    std::size_t deviceProbes=0;
+    product.set_preferred_output_rate_probe(
+        [&deviceProbes,deviceRate](audio::ChannelLayout)
+            ->core::Result<core::SampleRate> {
+            ++deviceProbes;
+            return core::Result<core::SampleRate>::success(
+                *deviceRate.value());
+        });
+    QVERIFY(product.request_private_for_final_master(*masterRate.value()));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    const auto owned=candidates.staged();
+    QVERIFY(owned);
+    QCOMPARE(owned->rendered.output_rate,*masterRate.value());
+    QVERIFY(!owned->rendered.used_candidate_src);
+    QCOMPARE(owned->rendered.terminal.checked.terminal
+        .compensated_pcm.view().format().sample_rate(),*masterRate.value());
+    QCOMPARE(deviceProbes,std::size_t{0});
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    QVERIFY(!audioGate.has_session());
+    QVERIFY(!product.private_id());
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(device->duration,*frames.value());
+    QVERIFY(!product.install_ready_private());
+    QVERIFY(!product.install_measured_private());
+    QVERIFY(product.cancel());
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+}
+
 void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()
 {
     // This is a product-render boundary test: the protected per-block M17
