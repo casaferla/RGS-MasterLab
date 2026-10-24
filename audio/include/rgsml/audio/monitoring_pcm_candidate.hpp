@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <utility>
 
 namespace rgsml::audio {
@@ -23,6 +24,45 @@ struct MonitoringPcmCandidate final {
     core::FrameCount immutable_master_frames;
     bool device_src_applied;
 };
+
+// Validate an already-materialized monitor owner before touching any hardware.
+// This proves only structural ownership/rate/duration metadata; it does not
+// qualify audio fidelity, playback continuity, M17 or live M16 measurements.
+[[nodiscard]] inline core::Status validate_monitoring_pcm_candidate(
+    const MonitoringPcmCandidate& candidate)
+{
+    auto rejected=[](const char* message)->core::Status {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidArgument,message});
+    };
+    const auto sourceHz=candidate.immutable_master_rate.value();
+    const auto deviceHz=candidate.device_rate.value();
+    const auto frames=candidate.immutable_master_frames.value();
+    auto plan=plan_master_monitoring_rate(
+        candidate.immutable_master_rate,candidate.device_rate);
+    if(!plan)return core::Status::failure(*plan.error());
+    if(deviceHz!=44100 && deviceHz!=48000 && deviceHz!=88200
+       && deviceHz!=96000 && deviceHz!=176400 && deviceHz!=192000)
+        return rejected("MONITOR_CANDIDATE_DEVICE_RATE_UNSUPPORTED");
+    const auto pcm=candidate.device_pcm.view();
+    if(pcm.timebase().frame_domain_id()!=FrameDomainId::OUTPUT_RATE
+       ||pcm.absolute_start_frame().value()!=0
+       ||pcm.frame_count().value()<=0
+       ||pcm.format().sample_rate()!=candidate.device_rate
+       ||frames<=0
+       ||candidate.device_src_applied!=plan.value()->monitoring_src_required
+       ||(pcm.format().channel_layout()!=ChannelLayout::MONO_C
+           &&pcm.format().channel_layout()!=ChannelLayout::STEREO_LR))
+        return rejected("MONITOR_CANDIDATE_PROVENANCE_MISMATCH");
+    const auto q=frames/sourceHz;
+    const auto r=frames%sourceHz;
+    const auto extra=(r*deviceHz+sourceHz-1)/sourceHz;
+    if(q>(std::numeric_limits<std::int64_t>::max()-extra)/deviceHz)
+        return rejected("MONITOR_CANDIDATE_FRAME_COUNT_OVERFLOW");
+    if(pcm.frame_count().value()!=q*deviceHz+extra)
+        return rejected("MONITOR_CANDIDATE_FRAME_COUNT_MISMATCH");
+    return core::Status::success();
+}
 
 // Prototype of the independent M17/M18 -> hardware monitoring boundary.
 // The immutable M17 PCM is borrowed read-only and never retimed or modified.
@@ -85,9 +125,13 @@ materialize_monitoring_pcm_candidate(
            !=FrameDomainId::OUTPUT_RATE)
         return refused(core::ErrorCode::InvalidState,
             "MONITOR_SRC_OUTPUT_PROVENANCE_INVALID");
-    return core::Result<MonitoringPcmCandidate>::success({
+    MonitoringPcmCandidate candidate{
         std::move(converted.value()->pcm),master_rate,observed_device_rate,
         verified_master_pcm.frame_count(),plan.value()->monitoring_src_required
-    });
+    };
+    const auto checked=validate_monitoring_pcm_candidate(candidate);
+    if(!checked)
+        return core::Result<MonitoringPcmCandidate>::failure(*checked.error());
+    return core::Result<MonitoringPcmCandidate>::success(std::move(candidate));
 }
 } // namespace rgsml::audio

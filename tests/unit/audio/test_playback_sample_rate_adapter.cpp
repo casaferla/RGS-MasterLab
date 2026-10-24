@@ -198,6 +198,7 @@ void PlaybackSampleRateAdapterTest::isolatedOfflineMonitoringPcmSixBySixMatrix()
             QCOMPARE(monitor.value()->immutable_master_frames.value(),N);
             QCOMPARE(monitor.value()->device_rate.value(),deviceHz);
             QCOMPARE(monitor.value()->device_src_applied,masterHz!=deviceHz);
+            QVERIFY(audio::validate_monitoring_pcm_candidate(*monitor.value()));
             const auto pcm=monitor.value()->device_pcm.view();
             QCOMPARE(pcm.timebase().frame_domain_id(),
                 audio::FrameDomainId::OUTPUT_RATE);
@@ -234,6 +235,27 @@ void PlaybackSampleRateAdapterTest::isolatedOfflineMonitoringPcmSixBySixMatrix()
     QVERIFY(master);
     QVERIFY(!audio::materialize_monitoring_pcm_candidate(
         master.value()->view(),rate(32000),frame_count(31)));
+    // Forged and stale device ownership never reaches Qt for installation.
+    auto stereoFormat=audio::AudioFormat::create(
+        rate(192000),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(stereoFormat);
+    auto owner=audio::AudioBuffer::create(
+        *stereoFormat.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},frame_count(193));
+    QVERIFY(owner);
+    auto valid=audio::materialize_monitoring_pcm_candidate(
+        owner.value()->view(),rate(48000),frame_count(31));
+    QVERIFY(valid);
+    auto& forged=*valid.value();
+    QVERIFY(audio::validate_monitoring_pcm_candidate(forged));
+    forged.device_src_applied=false;
+    QVERIFY(!audio::validate_monitoring_pcm_candidate(forged));
+    forged.device_src_applied=true;
+    forged.immutable_master_frames=frame_count(192);
+    QVERIFY(!audio::validate_monitoring_pcm_candidate(forged));
+    forged.immutable_master_frames=frame_count(193);
+    forged.device_rate=rate(96000);
+    QVERIFY(!audio::validate_monitoring_pcm_candidate(forged));
 }
 
 void PlaybackSampleRateAdapterTest::offlineCandidateMatchesFrozenPlaybackKernelBitwise()

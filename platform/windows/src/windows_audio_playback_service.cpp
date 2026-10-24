@@ -492,6 +492,9 @@ struct OutputCandidate final {
 [[nodiscard]] core::Result<OutputCandidate> make_monitoring_output_candidate(
     const audio::MonitoringPcmCandidate& monitor)
 {
+    const auto validation=audio::validate_monitoring_pcm_candidate(monitor);
+    if(!validation)
+        return core::Result<OutputCandidate>::failure(*validation.error());
     const auto pcm=monitor.device_pcm.view();
     auto plan=audio::plan_master_monitoring_rate(
         monitor.immutable_master_rate,monitor.device_rate);
