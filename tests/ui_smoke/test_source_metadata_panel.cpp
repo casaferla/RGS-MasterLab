@@ -690,8 +690,16 @@ Window {
                 "m16_host_compact_474px.png")),
                 "Capture M16 empty upper row with common meters aligned");
         const auto m16Rect=rectOnHost(meter);
-        QVERIFY(qAbs(m16Rect.y()-m17Rect.y())<=0.5);
-        QVERIFY(qAbs(m16Rect.height()-m17Rect.height())<=0.5);
+        const auto parityFailure=QStringLiteral(
+            "M16/M17 host physical positioning at height %1: "
+            "M16 y=%2 h=%3, M17 y=%4 h=%5")
+            .arg(hostHeight)
+            .arg(m16Rect.y()).arg(m16Rect.height())
+            .arg(m17Rect.y()).arg(m17Rect.height());
+        QVERIFY2(qAbs(m16Rect.y()-m17Rect.y())<=0.5,
+            qPrintable(parityFailure));
+        QVERIFY2(qAbs(m16Rect.height()-m17Rect.height())<=0.5,
+            qPrintable(parityFailure));
         for(const auto& laneName:{QStringLiteral("truePeakLeftLane"),
                                  QStringLiteral("truePeakRightLane")}) {
             auto* lane=qobject_cast<QQuickItem*>(find_child_by_name(meter,laneName));
@@ -746,7 +754,7 @@ Window {
         property string audioStatus: "BYPASS · MANUAL PROCESSED"
         property real preparationFraction: 0.375
         property bool preparationDeterminate: true
-        property string preparationStage: "M17 Core"
+        property string preparationStage: "True Peak Limiter · core"
         property string preparationEta: ""
     }
     Rectangle {

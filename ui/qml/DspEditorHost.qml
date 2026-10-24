@@ -119,7 +119,12 @@ Rectangle {
         RowLayout {
             objectName: "dspHostHeaderRegion"
             Layout.fillWidth: true
+            // Measuring-only M16 has no history/Bypass controls. Its
+            // narrower content must nevertheless reserve EXACTLY the M17
+            // header height in every real Main window.
+            Layout.minimumHeight: 40
             Layout.preferredHeight: 40
+            Layout.maximumHeight: 40
             spacing: 12
 
             ColumnLayout {
@@ -451,6 +456,7 @@ Rectangle {
             visible: root.activeModule
                 ? root.activeModule.editorContentKey === "TRUE_PEAK_METER" : false
             Layout.fillWidth: true
+            Layout.minimumHeight: 0
             Layout.fillHeight: true
             measurementProvider: root.truePeakCurrentStatic
             liveProvider: root.truePeakCurrentLive
@@ -464,6 +470,7 @@ Rectangle {
             objectName: "truePeakLimiterEditor"
             visible: root.isLimiterEditor
             Layout.fillWidth: true
+            Layout.minimumHeight: 0
             Layout.fillHeight: true
             limiterModule: root.isLimiterEditor ? root.activeModule : null
             // Real typed committed/draft Ceiling; still disabled by authentic
