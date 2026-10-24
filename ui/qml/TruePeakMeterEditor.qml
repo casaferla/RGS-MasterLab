@@ -19,6 +19,10 @@ Item {
     property bool limiterSonicControlsEnabled: false
     property var limiterGrProvider: null
     property var limiterViewModel: null
+    readonly property bool preparationRunning: root.showLimiterControls
+        && root.limiterViewModel
+        && typeof root.limiterViewModel.audioStatus === "string"
+        && root.limiterViewModel.audioStatus.startsWith("Preparing")
     // The entire lower band is fixed. In this combined layout,
     // GR and Ceiling+Verification Trim use the SAME 198px height.
     // Canonical 548px M17 editor retains its accepted 198px lower band.
@@ -29,7 +33,7 @@ Item {
     // readout cards outside the short physical Main window. This is
     // vertical-only compression; stereo L/R meter gets all spare height.
     readonly property int lowerControlBandHeight: height < 420
-        ? Math.max(132, Math.round(height * 0.36))
+        ? Math.max(130, Math.round(height * 0.35))
         : Math.min(198, Math.max(145, Math.round(height * 0.365)))
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
@@ -205,16 +209,15 @@ Item {
                         Layout.maximumHeight: root.showLimiterGrHistory ? root.lowerControlBandHeight : 0
                         spacing: 2
                         opacity: root.limiterBypassed ? 0.5 : 1.0
-                        Item {
-                            Layout.fillHeight: root.showLimiterControls
-                            Layout.minimumHeight: 0
-                            Layout.preferredHeight: 0
-                        }
+                        // No upper spring: GR label, status and dB scale
+                        // start at the TOP of the lower band at any height.
+                        // Spare height is kept BELOW the 54px GR curve.
                         RowLayout {
                             Layout.fillWidth: true
                             Text {
                                 objectName: "m17GrHistoryHeading"
-                                text: "GR HISTORY"
+                                text: root.preparationRunning
+                                    ? "PREPARING MASTER" : "GR HISTORY"
                                 color: "#B3C9D9"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
@@ -223,6 +226,7 @@ Item {
                             Item { Layout.fillWidth: true }
                             Text {
                                 objectName: "m17GrProvenanceStatus"
+                                visible: !root.preparationRunning
                                 text: root.limiterBypassed ? "BYPASS · NO ACTIVE GR"
                                     : grHistoryGraph.verifiedSeriesAvailable
                                         ? "VERIFIED · CONSUMED GR"
@@ -241,8 +245,52 @@ Item {
                                 }
                             }
                         }
+                        ColumnLayout {
+                            objectName: "m17PreparationProgressRegion"
+                            visible: root.preparationRunning
+                            Layout.fillWidth: true
+                            spacing: 4
+                            ProgressBar {
+                                objectName: "m17PreparationProgressBar"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 14
+                                from: 0
+                                to: 1
+                                value: root.limiterViewModel
+                                    ? root.limiterViewModel.preparationFraction : 0
+                                indeterminate: root.limiterViewModel
+                                    ? !root.limiterViewModel.preparationDeterminate : true
+                                Accessible.name: "Offline limiter preparation progress"
+                            }
+                            Text {
+                                objectName: "m17PreparationProgressLabel"
+                                Layout.fillWidth: true
+                                font.family: "Segoe UI"
+                                font.pixelSize: 10
+                                color: "#A1B5C9"
+                                text: {
+                                    const v=root.limiterViewModel
+                                    if(!v) return "PREPARATION UNAVAILABLE"
+                                    const pct=v.preparationDeterminate
+                                        ? " · " + Math.floor(v.preparationFraction*100) + "%"
+                                        : " · measuring"
+                                    return v.preparationStage + pct
+                                        + (v.preparationEta.length
+                                            ? " · " + v.preparationEta : "")
+                                }
+                                elide: Text.ElideRight
+                                ToolTip.text: text
+                                ToolTip.visible: progressDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: progressDwell
+                                    anchors.fill: parent
+                                }
+                            }
+                        }
                         TruePeakGrHistoryGraph {
                             id: grHistoryGraph
+                            visible: !root.preparationRunning
                             Layout.fillWidth: true
                             // Fixed single linked 54px GR lane, just like
                             // Compressor. Never stretch with window height.
@@ -256,6 +304,10 @@ Item {
                             verifiedHistory: root.limiterGrProvider
                                 ? root.limiterGrProvider.verifiedSeries : []
                             bypassed: root.limiterBypassed
+                        }
+                        Item {
+                            Layout.fillHeight: true
+                            Layout.minimumHeight: 0
                         }
                     }
                 }

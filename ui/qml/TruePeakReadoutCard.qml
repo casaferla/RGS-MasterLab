@@ -17,7 +17,7 @@ Rectangle {
     // Standalone M16 card dimensions and padding are not changed.
     property bool roomyLimiterReadout: false
     readonly property bool tightM17Height: root.roomyLimiterReadout
-        && root.height < 90
+        && root.height < 94
     StudioTooltipDwell {
         id: cardTooltipDwell
         anchors.fill: parent
@@ -69,17 +69,17 @@ Rectangle {
     ColumnLayout {
         objectName: "truePeakReadoutTextColumn"
         anchors.fill: parent
-        anchors.margins: root.tightM17Height ? 5
+        anchors.margins: root.tightM17Height ? 4
             : root.roomyLimiterReadout ? 10
             : root.height < 95 ? 8 : 12
-        spacing: root.tightM17Height ? 2
+        spacing: root.tightM17Height ? 1
             : root.roomyLimiterReadout ? 4
             : root.height < 95 ? 2 : 5
         Text {
             text: root.heading
             color: root.useFamilyAccent ? root.familyAccent : "#91AEC2"
             font.family: "Segoe UI"
-            font.pixelSize: root.tightM17Height ? 10 : 11
+            font.pixelSize: root.tightM17Height ? 9 : 11
             font.bold: true
             Layout.fillWidth: true
             elide: Text.ElideRight
@@ -91,7 +91,7 @@ Rectangle {
             text: root.available ? root.alignedDbtp(root.reading) : root.reading
             color: root.available ? root.valueColor : "#879CA9"
             font.family: "Consolas"
-            font.pixelSize: root.tightM17Height ? 18 : 22
+            font.pixelSize: root.tightM17Height ? 17 : 22
             font.weight: Font.DemiBold
             Layout.fillWidth: true
             elide: Text.ElideRight
@@ -106,11 +106,12 @@ Rectangle {
             // The combined M17 rail must reflow complete status/provenance
             // descriptions rather than abbreviating meaningful text.
             // Standalone M16 retains its established single-line behaviour.
-            wrapMode: root.roomyLimiterReadout ? Text.WordWrap : Text.NoWrap
+            wrapMode: root.tightM17Height ? Text.NoWrap
+                : root.roomyLimiterReadout ? Text.WordWrap : Text.NoWrap
             // At reduced actual Main height the full diagnostic remains
             // available in the parent stationary-hover tooltip. Limit only
             // the visual subordinate detail to keep measured digits visible.
-            maximumLineCount: root.tightM17Height ? 2 : 2147483647
+            maximumLineCount: root.tightM17Height ? 1 : 2147483647
             elide: root.tightM17Height ? Text.ElideRight
                 : root.roomyLimiterReadout ? Text.ElideNone : Text.ElideRight
         }

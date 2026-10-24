@@ -53,6 +53,11 @@ Rectangle {
     // Dynamics Copper when truly active; do not recolor the M16 module.
     readonly property bool isLimiterEditor: root.activeModule
         ? root.activeModule.editorContentKey === "TRUE_PEAK_LIMITER" : false
+    // M16 keeps both upper host rows as empty reserved space. M16 and
+    // M17's shared meters must occupy the exact same content rectangle.
+    readonly property bool isSharedTruePeakEditor: root.isLimiterEditor
+        || (root.activeModule
+            && root.activeModule.editorContentKey === "TRUE_PEAK_METER")
     readonly property color activeFamilyAccent: root.isLimiterEditor
         ? (root.activeModule.bypass ? "#6CBCCF" : "#C4774A")
         : (root.activeModule ? root.activeModule.familyAccent : "#262A6C9F")
@@ -322,13 +327,16 @@ Rectangle {
         // M17 explicit offline action: controls do not borrow transport Play.
         RowLayout {
             objectName: "m17ExplicitPreparationControls"
-            visible: root.isLimiterEditor
+            visible: root.isSharedTruePeakEditor
             Layout.fillWidth: true
+            Layout.minimumHeight: 34
             Layout.preferredHeight: 34
+            Layout.maximumHeight: 34
             spacing: 8
             StudioButton {
                 objectName: "m17PrepareButton"
                 text: "Prepare"
+                visible: root.isLimiterEditor
                 minimumControlWidth: 86
                 accentColor: "#C4774A"
                 enabled: root.terminalLimiterViewModel
@@ -347,6 +355,7 @@ Rectangle {
             StudioButton {
                 objectName: "m17CancelPreparationButton"
                 text: "Cancel"
+                visible: root.isLimiterEditor
                 minimumControlWidth: 80
                 enabled: root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
@@ -357,6 +366,7 @@ Rectangle {
             StudioButton {
                 objectName: "m17PreviewNonconformingButton"
                 text: "Preview Anyway"
+                visible: root.isLimiterEditor
                 minimumControlWidth: 125
                 accentColor: "#C85D56"
                 enabled: root.terminalLimiterViewModel
@@ -375,6 +385,7 @@ Rectangle {
             StudioButton {
                 objectName: "m17PreviewPreparedButton"
                 text: "Preview Prepared"
+                visible: root.isLimiterEditor
                 minimumControlWidth: 130
                 accentColor: "#C4774A"
                 enabled: root.terminalLimiterViewModel
@@ -384,6 +395,7 @@ Rectangle {
                 Accessible.name: "Preview verified limiter audio"
             }
             Text {
+                visible: root.isLimiterEditor
                 Layout.fillWidth: true
                 font.family: "Segoe UI"
                 font.pixelSize: 11
@@ -394,63 +406,11 @@ Rectangle {
             }
         }
 
-                // Genuine M17 stage-level progress. Indeterminate while SRC/M16
-        // lack trustworthy frame counters; M17 fraction is ONLY its DSP
-        // block count. Full 100% is reported after READY gate acceptance.
-        ColumnLayout {
-            objectName: "m17PreparationProgressRegion"
-            visible: root.isLimiterEditor
-            // Reserve the full progress strip at ALL stages. A changing phase,
-            // completion or cancellation MUST NOT move editor/meter/GR content.
-            Layout.fillWidth: true
-            Layout.minimumHeight: 32
-            Layout.preferredHeight: 32
-            Layout.maximumHeight: 32
-            spacing: 2
-            ProgressBar {
-                objectName: "m17PreparationProgressBar"
-                Layout.fillWidth: true
-                Layout.preferredHeight: 12
-                from: 0
-                to: 1
-                value: root.terminalLimiterViewModel
-                    ? root.terminalLimiterViewModel.preparationFraction : 0
-                indeterminate: root.terminalLimiterViewModel
-                    ? !root.terminalLimiterViewModel.preparationDeterminate : true
-                opacity: root.terminalLimiterViewModel
-                    && root.terminalLimiterViewModel.audioStatus.startsWith("Preparing") ? 1.0 : 0.22
-                Accessible.name: "Offline limiter preparation progress"
-            }
-            Text {
-                objectName: "m17PreparationProgressLabel"
-                Layout.fillWidth: true
-                font.family: "Segoe UI"
-                font.pixelSize: 10
-                color: "#A1B5C9"
-                text: {
-                    const v=root.terminalLimiterViewModel
-                    if(!v) return "PREPARATION UNAVAILABLE"
-                    if (!v.audioStatus.startsWith("Preparing")
-                        && !v.audioStatus.startsWith("READY"))
-                        return "Output-rate conversion · not running"
-                    const pct=v.preparationDeterminate
-                        ? " · " + Math.floor(v.preparationFraction*100) + "%"
-                        : " · measuring"
-                    return v.preparationStage + pct
-                        + (v.preparationEta.length ? " · " + v.preparationEta : "")
-                }
-                elide: Text.ElideRight
-                ToolTip.text: text
-                ToolTip.visible: m17ProgressDwell.ready
-                ToolTip.delay: 0
-                StudioTooltipDwell {
-                    id: m17ProgressDwell
-                    anchors.fill: parent
-                }
-            }
-        }
+        // Prepare progress lives in the shared editor's lower GR bay,
+        // not between the header and the common M16/M17 meter geometry.
+        // The empty preparation-control row remains reserved in M16.
 
-InputGainEditor {
+        InputGainEditor {
             showLocalValidation: !root.errorsInGlobalStatusBar
             id: inputGainEditor
             objectName: "inputGainEditor"

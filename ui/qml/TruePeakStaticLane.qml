@@ -176,10 +176,9 @@ Rectangle {
                         // +6 is the top endpoint: center the glyph on
                         // the actual top of the meter; do not clamp its
                         // top edge down to the track's first interior pixel.
+                        // Do not force 0 dBTP down to y>=15 at small
+                        // heights: that collides with the -12 label.
                         y: modelData === 6 ? 5 - height / 2
-                            : modelData === 0 ? Math.max(15, Math.min(
-                                parent.height - height,
-                                5 + 6 / 66 * (parent.height - 10) - height / 2))
                             : Math.max(0, Math.min(parent.height - height,
                                 5 + (6 - modelData) / 66
                                 * (parent.height - 10) - height / 2))
