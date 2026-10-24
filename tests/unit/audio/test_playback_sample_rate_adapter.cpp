@@ -571,19 +571,23 @@ monitoringImminentAllocationUsesFreshIncrementalBudget()
         frame_count(48));
     QVERIFY(owned);
     std::size_t checks=0;
+    std::uint64_t observedMasterBytes=0;
+    std::uint64_t observedDeviceBytes=0;
     auto veto=audio::materialize_monitoring_pcm_candidate(
         owned.value()->view(),rate(44100),frame_count(17),
         [&](const audio::MonitoringPcmResourceProjection& cost)
             ->core::Status {
             ++checks;
-            QCOMPARE(cost.master_pcm_bytes,UINT64_C(48)*sizeof(double));
-            QVERIFY(cost.device_pcm_bytes>0);
+            observedMasterBytes=cost.master_pcm_bytes;
+            observedDeviceBytes=cost.device_pcm_bytes;
             return core::Status::failure(core::Error{
                 core::ErrorCode::UnsupportedOperation,
                 "MONITOR_ALLOC_PREFLIGHT_TEST_VETO"});
         });
     QVERIFY(!veto);
     QCOMPARE(checks,std::size_t{1});
+    QCOMPARE(observedMasterBytes,UINT64_C(48)*sizeof(double));
+    QVERIFY(observedDeviceBytes>0);
     QCOMPARE(veto.error()->code(),core::ErrorCode::UnsupportedOperation);
     auto allowed=audio::materialize_monitoring_pcm_candidate(
         owned.value()->view(),rate(44100),frame_count(17),
