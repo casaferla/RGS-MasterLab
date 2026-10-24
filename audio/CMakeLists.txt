@@ -2,6 +2,7 @@ add_library(rgsml_audio STATIC
     src/audio_buffer.cpp
     src/audio_format.cpp
     src/playback_sample_rate_adapter.cpp
+    src/full_resource_output_rate_candidate.cpp
     src/source_resource.cpp
     src/waveform_summary.cpp
     src/wav_reader.cpp

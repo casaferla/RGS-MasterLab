@@ -1,9 +1,13 @@
 #include "playback_support.hpp"
+#include "c2_consumed_prefix_projection.hpp"
+#include "internal/true_peak_chronological_buckets.hpp"
 
 #include "../../audio_golden/wav/golden_vectors.hpp"
 #include "../audio/wav_test_support.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_frame_map.hpp>
 
 #include <QTest>
 
@@ -184,6 +188,12 @@ public:
         state_ = OutputState::ERROR;
     }
 
+    void clear_injected_error() noexcept
+    {
+        injectedError_.reset();
+        state_ = OutputState::STOPPED;
+    }
+
     const std::vector<std::byte>& history() const noexcept
     {
         return history_;
@@ -235,16 +245,312 @@ class PlaybackSupportTest final : public QObject {
 
 private slots:
     void formatSelectionIsDeterministic();
+    void terminalFormatRejectsDeviceRateFallback();
+    void monitoringFormatDoesNotRetargetMaster();
+    void isolatedMonitoringPcmPumpNeverClaimsM17OrLive();
+    void monitoringTransportPauseSeekLoopStopKeepsDeviceClockIsolated();
+    void preferredTerminalRateIsExplicitAndFailClosed();
     void floatAndPcm16GoldenConversion();
     void conversionFailuresAndChunkInvariance();
     void stateMachineAndBoundedPump();
     void adaptedTimelineUsesAbsoluteRateMapping();
+    void terminalOutputCandidateNoSecondSrcAndLiveWitnessFailClosed();
+    void c2D20TerminalSinkConsumedExactOwnerAndNegativeEpochs();
     void explicitSeekLoopStateMatrix();
     void explicitSeekLoopTraversalEofAndSrcIdentity();
     void loopCommandIsPositionNeutralAcrossStates();
+    void hotTogglePreservesQueuedPcmAndSink();
+    void hotTogglePreservesPendingHandoffProvenance();
     void partialWritesNaturalEofAndRuntimeError();
     void seamlessPcmHandoffCrossfadeAndStateMatrix();
+    void controlPlaneTraversalSeekAndLoopSerials();
+    void c2D1ProcessedWatermarkFailClosedAndGeneration();
+    void c2D1UnknownTargetHandoffAndLoopAreNotCoverage();
+    void c2D2AcceptedRunLedgerPartialWriteAndClock();
+    void c2D2AcceptedRunLedgerOldOwnerResetAndFailClosed();
+    void c2D2AcceptedRunLedgerOverflowIsSticky();
+    void c2D2SrcAcceptedRunsAreNotExactSourceCoverage();
+    void c2D3CrossfadeAppendedToOldPendingCannotInheritSource();
+    void c2D3FreshCrossfadePendingCannotInheritStaleSource();
+    void c2D4ConsumedPrefixNoFuturePartialWritesAndSeek();
+    void c2D4ConsumedPrefixSrcAndHandoffExposeGaps();
+    void c2D4ConsumedPrefixLongLoopGapIsConserved();
+    void c2D4QueryIsObservationalAcrossLoopAndSeek();
+    void c2D4PauseDoesNotAdvanceConsumedPrefix();
+    void c2D5SinkWatermarkFeedsRealNumericalRecentOnlyAfterFullBucket();
+    void c2D6WorkerProjectionPreservesConsumedWatermarkAndGap();
+    void c2D6WorkerProjectionNeverCertifiesProcessedTarget();
+    void c2D9RealSinkSeekMaintainsRelativeOutputAndAbsoluteSource();
+    void c2D10LoopOffRecoversFreshSourceWithoutRestart();
+    void c2D10Native44100IsNotInherentlyUnavailable();
+    void c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestart();
+    void c2D14LoopInternalConsumedSourceMappingAndWrapBoundary();
+    void c2D14ShortLoopRemainsUnproven();
+    void c2D14LongLoopPrunesOnlyConsumedHistory();
+    void c2D14HandoffDuringLoopRecoversPureNewPostWrap();
+    void c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed();
+    void c2D15SrcPartialAcceptedWritesRetainOnlyDiagnosticOwner();
+    void c2D16SrcRetirementTracksRealConsumedSinkClock();
+    void c2D17SrcSeekRebasesOnlyActuallyConsumedOutput();
+    void c2D18SrcLoopRecoversAtEachActuallyConsumedWrap();
+    void c2D19ArmedLoopSeekBeforeInsideAfterRetainsConsumedProof();
 };
+
+
+void PlaybackSupportTest::terminalFormatRejectsDeviceRateFallback()
+{
+    const auto rate=*core::SampleRate::create(48000).value();
+    auto fmt=audio::AudioFormat::create(rate,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto nativeFloat=platform::windows::internal::select_terminal_output_device_format(
+        *fmt.value(),true,true);
+    QVERIFY(nativeFloat);
+    QCOMPARE(nativeFloat.value()->sampleRateHz,48000);
+    QCOMPARE(nativeFloat.value()->sampleFormat,DeviceSampleFormat::IEEE_F32);
+    QVERIFY(!nativeFloat.value()->srcApplied);
+    auto nativePcm=platform::windows::internal::select_terminal_output_device_format(
+        *fmt.value(),false,true);
+    QVERIFY(nativePcm);
+    QCOMPARE(nativePcm.value()->sampleFormat,DeviceSampleFormat::PCM_S16);
+    QVERIFY(!nativePcm.value()->srcApplied);
+    auto pairedOnly=platform::windows::internal::select_terminal_output_device_format(
+        *fmt.value(),false,false);
+    QVERIFY(!pairedOnly);
+    QCOMPARE(pairedOnly.error()->code(),
+             core::ErrorCode::UnsupportedOperation);
+    // The normal SOURCE transport STILL has its separate paired-rate SRC.
+    auto ordinary=platform::windows::internal::select_device_format(
+        *fmt.value(),false,false,true,true);
+    QVERIFY(ordinary);
+    QVERIFY(ordinary.value()->srcApplied);
+    QCOMPARE(ordinary.value()->sampleRateHz,44100);
+}
+
+void PlaybackSupportTest::monitoringFormatDoesNotRetargetMaster()
+{
+    using platform::windows::internal::select_monitoring_device_format;
+    constexpr std::array<int,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    for(const auto masterHz:rates) {
+        auto masterRate=core::SampleRate::create(masterHz);
+        QVERIFY(masterRate);
+        auto master=audio::AudioFormat::create(
+            *masterRate.value(),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(master);
+        for(const auto observedPreferred:rates) {
+            auto preferred=select_monitoring_device_format(
+                *master.value(),observedPreferred,true,true);
+            QVERIFY2(preferred,preferred?"":preferred.error()->message().c_str());
+            QCOMPARE(preferred.value()->sampleRateHz,observedPreferred);
+            QCOMPARE(preferred.value()->channelCount,std::size_t{2});
+            QCOMPARE(preferred.value()->sampleFormat,DeviceSampleFormat::IEEE_F32);
+            QCOMPARE(preferred.value()->srcApplied,masterHz!=observedPreferred);
+            QCOMPARE(master.value()->sample_rate().value(),std::int64_t{masterHz});
+            auto pcmOnly=select_monitoring_device_format(
+                *master.value(),observedPreferred,false,true);
+            QVERIFY(pcmOnly);
+            QCOMPARE(pcmOnly.value()->sampleFormat,DeviceSampleFormat::PCM_S16);
+            QCOMPARE(pcmOnly.value()->srcApplied,masterHz!=observedPreferred);
+            QVERIFY(!select_monitoring_device_format(
+                *master.value(),observedPreferred,false,false));
+        }
+        for(const auto unsupported:{0,-1,32000,384000}) {
+            QVERIFY(!select_monitoring_device_format(
+                *master.value(),unsupported,true,true));
+        }
+    }
+    // Not the terminal selector: it MUST remain exact and reject 192 -> 48.
+    const auto hz=core::SampleRate::create(192000);
+    QVERIFY(hz);
+    auto format=audio::AudioFormat::create(
+        *hz.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto observed=select_monitoring_device_format(
+        *format.value(),48000,true,false);
+    QVERIFY(observed && observed.value()->srcApplied);
+    QVERIFY(!platform::windows::internal::select_terminal_output_device_format(
+        *format.value(),false,false));
+}
+
+void PlaybackSupportTest::isolatedMonitoringPcmPumpNeverClaimsM17OrLive()
+{
+    using Reason=platform::windows::internal::C2CoverageProbeReason;
+    const auto masterRate=*core::SampleRate::create(192000).value();
+    const auto deviceRate=*core::SampleRate::create(48000).value();
+    auto format=audio::AudioFormat::create(
+        masterRate,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto master=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},frame_count(192));
+    QVERIFY(master);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=master.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(double& value:*lane.value())
+            value=(ch==0?0.125:-0.0625);
+    }
+    auto candidate=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),deviceRate,frame_count(64));
+    QVERIFY2(candidate,candidate?"":candidate.error()->message().c_str());
+    auto held=std::make_shared<audio::MonitoringPcmCandidate>(
+        std::move(*candidate.value()));
+    QCOMPARE(held->immutable_master_rate,masterRate);
+    QCOMPARE(held->device_rate,deviceRate);
+    QCOMPARE(held->device_pcm.view().frame_count().value(),std::int64_t{48});
+    auto masterMap=audio::MonitoringFrameMap::create(*held);
+    QVERIFY(masterMap);
+    auto masterSeek=masterMap.value()->master_to_device(core::FrameIndex{80});
+    QVERIFY(masterSeek);
+    QCOMPARE(masterSeek.value()->value(),std::int64_t{20});
+    auto masterLoop=core::FrameRange::create(
+        core::FrameIndex{24},core::FrameIndex{120});
+    QVERIFY(masterLoop);
+    auto deviceLoop=masterMap.value()->master_loop_to_device(*masterLoop.value());
+    QVERIFY(deviceLoop);
+    QCOMPARE(deviceLoop.value()->begin().value(),std::int64_t{6});
+    QCOMPARE(deviceLoop.value()->end().value(),std::int64_t{30});
+    auto owner=std::shared_ptr<const void>(held);
+    {
+        PlaybackEngine failed;
+        auto wrongDevice=std::make_unique<FakeOutput>(4096U,4U);
+        QVERIFY(!failed.install_monitoring_output_pcm_candidate(
+            held->device_pcm.view(),std::move(wrongDevice),
+            DeviceSampleFormat::PCM_S16,owner,masterRate));
+        auto noOwner=std::make_unique<FakeOutput>(4096U,4U);
+        QVERIFY(!failed.install_monitoring_output_pcm_candidate(
+            held->device_pcm.view(),std::move(noOwner),
+            DeviceSampleFormat::PCM_S16,{},deviceRate));
+        QVERIFY(!failed.install_monitoring_output_pcm_candidate(
+            master.value()->view(),std::make_unique<FakeOutput>(4096U,4U),
+            DeviceSampleFormat::PCM_S16,owner,deviceRate));
+        QCOMPARE(failed.snapshot().value()->state,
+            core::PlaybackState::NO_SOURCE);
+    }
+    PlaybackEngine engine;
+    auto sink=std::make_unique<FakeOutput>(4096U,4U);
+    auto* observed=sink.get();
+    QVERIFY(engine.install_monitoring_output_pcm_candidate(
+        held->device_pcm.view(),std::move(sink),
+        DeviceSampleFormat::PCM_S16,owner,deviceRate));
+    const auto snap=engine.snapshot();
+    QVERIFY(snap);
+    QCOMPARE(snap.value()->duration->value(),std::int64_t{48});
+    QVERIFY(!snap.value()->audibleRealization.realizationId.has_value());
+    QVERIFY(engine.seek(*masterSeek.value()));
+    QCOMPARE(engine.snapshot().value()->position.value(),std::int64_t{20});
+    QVERIFY(engine.set_loop(*deviceLoop.value()));
+    QCOMPARE(engine.snapshot().value()->loop->begin().value(),
+        std::int64_t{6});
+    QCOMPARE(engine.snapshot().value()->loop->end().value(),
+        std::int64_t{30});
+    QVERIFY(engine.play());
+    QVERIFY(observed->queue().size()>=4U);
+    QCOMPARE(read_i16(observed->queue(),0U),std::int16_t{4096});
+    QCOMPARE(read_i16(observed->queue(),2U),std::int16_t{-2048});
+    QCOMPARE(engine.c2_processed_coverage_probe().reason,
+        Reason::NOT_MONITORED);
+    const auto coverage=engine.c2_consumed_prefix();
+    QVERIFY(!coverage.certifiedForLiveTruePeak);
+    QVERIFY(engine.stop());
+    QVERIFY(engine.seek(core::FrameIndex{12}));
+    QVERIFY(engine.play());
+    QVERIFY(observed->queue().size()>=4U);
+    QCOMPARE(engine.c2_processed_coverage_probe().reason,
+        Reason::NOT_MONITORED);
+    QCOMPARE(master.value()->view().format().sample_rate(),masterRate);
+}
+
+void PlaybackSupportTest::monitoringTransportPauseSeekLoopStopKeepsDeviceClockIsolated()
+{
+    using Reason=platform::windows::internal::C2CoverageProbeReason;
+    constexpr std::int64_t masterFrames=4800;
+    const auto masterHz=*core::SampleRate::create(192000).value();
+    const auto deviceHz=*core::SampleRate::create(48000).value();
+    auto format=audio::AudioFormat::create(masterHz,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto master=audio::AudioBuffer::create(*format.value(),
+        audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},
+        frame_count(masterFrames));
+    QVERIFY(master);
+    auto monitor=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),deviceHz,frame_count(256));
+    QVERIFY(monitor);
+    auto owned=std::make_shared<audio::MonitoringPcmCandidate>(
+        std::move(*monitor.value()));
+    auto map=audio::MonitoringFrameMap::create(*owned);
+    QVERIFY(map);
+    QCOMPARE(map.value()->device_frames().value(),std::int64_t{1200});
+    PlaybackEngine engine;
+    auto sink=std::make_unique<FakeOutput>(1024U,4U);
+    auto* output=sink.get();
+    QVERIFY(engine.install_monitoring_output_pcm_candidate(
+        owned->device_pcm.view(),std::move(sink),
+        DeviceSampleFormat::PCM_S16,
+        std::shared_ptr<const void>(owned),deviceHz));
+    auto target=map.value()->master_to_device(core::FrameIndex{800});
+    QVERIFY(target);
+    QCOMPARE(target.value()->value(),std::int64_t{200});
+    QVERIFY(engine.seek(*target.value()));
+    auto masterLoop=core::FrameRange::create(
+        core::FrameIndex{512},core::FrameIndex{4096});
+    QVERIFY(masterLoop);
+    auto deviceLoop=map.value()->master_loop_to_device(*masterLoop.value());
+    QVERIFY(deviceLoop);
+    QVERIFY(engine.set_loop(*deviceLoop.value()));
+    auto display=map.value()->project_display_snapshot(
+        *engine.snapshot().value(),*masterLoop.value());
+    QVERIFY(display);
+    QCOMPARE(display.value()->master_display_position.value(),
+        std::int64_t{800});
+    QVERIFY(display.value()->requested_master_loop.has_value());
+    QCOMPARE(*display.value()->requested_master_loop,*masterLoop.value());
+    QVERIFY(engine.play());
+    QCOMPARE(engine.snapshot().value()->state,core::PlaybackState::PLAYING);
+    QCOMPARE(engine.c2_processed_coverage_probe().reason,Reason::NOT_MONITORED);
+    QVERIFY(engine.pause());
+    QCOMPARE(engine.snapshot().value()->state,core::PlaybackState::PAUSED);
+    QVERIFY(engine.set_loop(std::nullopt));
+    QVERIFY(engine.set_loop(*deviceLoop.value()));
+    QVERIFY(engine.play());
+    QCOMPARE(engine.snapshot().value()->state,core::PlaybackState::PLAYING);
+    auto later=map.value()->master_to_device(core::FrameIndex{1200});
+    QVERIFY(later);
+    QVERIFY(engine.seek(*later.value()));
+    QCOMPARE(engine.snapshot().value()->position.value(),std::int64_t{300});
+    QCOMPARE(engine.c2_processed_coverage_probe().reason,Reason::NOT_MONITORED);
+    QVERIFY(!engine.c2_consumed_prefix().certifiedForLiveTruePeak);
+    QVERIFY(engine.stop());
+    QCOMPARE(engine.snapshot().value()->state,core::PlaybackState::STOPPED);
+    QCOMPARE(engine.snapshot().value()->position.value(),std::int64_t{0});
+    QCOMPARE(master.value()->view().format().sample_rate(),masterHz);
+    QCOMPARE(owned->device_pcm.view().format().sample_rate(),deviceHz);
+    QVERIFY(output->stopCalls>0);
+}
+
+void PlaybackSupportTest::preferredTerminalRateIsExplicitAndFailClosed()
+{
+    using platform::windows::internal::select_preferred_terminal_output_rate;
+    for(const int preferred: {44100,48000,88200,96000,176400,192000}) {
+        auto chosen=select_preferred_terminal_output_rate(
+            preferred,audio::ChannelLayout::STEREO_LR,true,true);
+        QVERIFY(chosen);
+        QCOMPARE(chosen.value()->value(),std::int64_t{preferred});
+    }
+    auto mono=select_preferred_terminal_output_rate(
+        48000,audio::ChannelLayout::MONO_C,false,true);
+    QVERIFY(mono);
+    QCOMPARE(mono.value()->value(),std::int64_t{48000});
+    for(const int unsupported: {0,-1,32000,384000}) {
+        auto invalid=select_preferred_terminal_output_rate(
+            unsupported,audio::ChannelLayout::STEREO_LR,true,true);
+        QVERIFY(!invalid);
+    }
+    QVERIFY(!select_preferred_terminal_output_rate(
+        48000,audio::ChannelLayout::STEREO_LR,false,false));
+    QVERIFY(!select_preferred_terminal_output_rate(
+        44100,audio::ChannelLayout::STEREO_LR,false,false));
+}
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
 {
@@ -285,6 +591,221 @@ void PlaybackSupportTest::formatSelectionIsDeterministic()
         *format.value(), false, false, false, false);
     QVERIFY(!unsupported);
     QCOMPARE(unsupported.error()->code(), core::ErrorCode::UnsupportedOperation);
+}
+
+
+void PlaybackSupportTest::terminalOutputCandidateNoSecondSrcAndLiveWitnessFailClosed()
+{
+    // Internal ONLY: output already materialized at device rate.
+    // Its numeric control coordinates are OUTPUT frames until an external
+    // verified source↔output frame-map is explicitly supplied.
+    const auto rate=*core::SampleRate::create(48000).value();
+    auto format=audio::AudioFormat::create(
+        rate,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto pcm=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},frame_count(480));
+    QVERIFY(pcm);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=pcm.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(std::int64_t i=0;i<480;++i)
+            (*lane.value())[static_cast<std::size_t>(i)]
+                =(ch==0?1.0:-1.0)*static_cast<double>(i)/32768.0;
+    }
+    auto owner=std::make_shared<int>(17);
+    {
+        PlaybackEngine engine;
+        auto sink=std::make_unique<FakeOutput>(64U,4U);
+        QVERIFY(!engine.install_pcm_candidate(
+            pcm.value()->view(),std::move(sink),
+            DeviceSampleFormat::PCM_S16,std::nullopt,owner,
+            core::RealizationId{17}));
+        QCOMPARE(engine.snapshot().value()->state,
+                 core::PlaybackState::NO_SOURCE);
+    }
+    {
+        PlaybackEngine engine;
+        auto sink=std::make_unique<FakeOutput>(64U,4U);
+        QVERIFY(!engine.install_terminal_output_pcm_candidate(
+            pcm.value()->view(),std::move(sink),
+            DeviceSampleFormat::PCM_S16,owner,
+            core::RealizationId{17},
+            *core::SampleRate::create(44100).value()));
+    }
+    {
+        PlaybackEngine engine;
+        auto sink=std::make_unique<FakeOutput>(64U,4U);
+        QVERIFY(!engine.install_terminal_output_pcm_candidate(
+            pcm.value()->view(),std::move(sink),
+            DeviceSampleFormat::PCM_S16,
+            std::shared_ptr<const void>{},core::RealizationId{17},rate));
+    }
+    PlaybackEngine engine;
+    auto sink=std::make_unique<FakeOutput>(64U,4U);
+    auto* observed=sink.get();
+    QVERIFY(engine.install_terminal_output_pcm_candidate(
+        pcm.value()->view(),std::move(sink),DeviceSampleFormat::PCM_S16,
+        owner,core::RealizationId{901},rate));
+    QCOMPARE(engine.snapshot().value()->duration->value(),
+             std::int64_t{480});
+    QCOMPARE(engine.snapshot().value()->audibleRealization.realizationId,
+             std::optional{core::RealizationId{901}});
+    auto historicSource=make_buffer(
+        48000,audio::ChannelLayout::STEREO_LR,480);
+    QVERIFY(!engine.handoff_pcm(
+        historicSource.view(),owner,core::RealizationId{902}));
+    QCOMPARE(engine.snapshot().value()->audibleRealization.realizationId,
+             std::optional{core::RealizationId{901}});
+
+    const auto loop=*core::FrameRange::create(
+        core::FrameIndex{11},core::FrameIndex{22}).value();
+    QVERIFY(engine.set_loop(loop));
+    for(const auto seekFrame:{5,11,17,22,30}) {
+        QVERIFY(engine.seek(core::FrameIndex{seekFrame}));
+        QCOMPARE(engine.snapshot().value()->position.value(),
+                 std::int64_t{seekFrame});
+        QVERIFY(engine.play());
+        QVERIFY(observed->queue().size()>=4U);
+        QCOMPARE(read_i16(observed->queue(),0U),
+                 static_cast<std::int16_t>(seekFrame));
+        // A loop remains explicitly unproven even though the terminal
+        // now retains a real output-consumed ledger. No LIVE TP is granted.
+        QCOMPARE(engine.c2_processed_coverage_probe().reason,
+                 platform::windows::internal::C2CoverageProbeReason
+                     ::UNPROVEN_LOOP);
+        QVERIFY(engine.stop());
+    }
+    QVERIFY(engine.clear());
+    QCOMPARE(engine.snapshot().value()->state,core::PlaybackState::NO_SOURCE);
+}
+
+
+void PlaybackSupportTest::c2D20TerminalSinkConsumedExactOwnerAndNegativeEpochs()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    const auto rate = *core::SampleRate::create(48'000).value();
+    auto format = audio::AudioFormat::create(
+        rate, audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto pcm = audio::AudioBuffer::create(
+        *format.value(), audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0}, frame_count(480));
+    QVERIFY(pcm);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(480U * 4U, 4U);
+    auto* sink = output.get();
+    const auto owner = std::make_shared<int>(20);
+    QVERIFY(engine.install_terminal_output_pcm_candidate(
+        pcm.value()->view(), std::move(output), DeviceSampleFormat::PCM_S16,
+        owner, core::RealizationId{9020}, rate));
+    // Installation and enqueuing are NOT evidence of consumption.
+    QVERIFY(engine.play());
+    const auto before = engine.c2_consumed_prefix();
+    QCOMPARE(before.processedWatermarkExclusive, std::int64_t{0});
+    QVERIFY(!before.partitionRepresented);
+    QVERIFY(!before.certifiedForLiveTruePeak);
+
+    sink->set_processed_frames(100);
+    const auto consumed = engine.c2_consumed_prefix();
+    QCOMPARE(consumed.processedWatermarkExclusive, std::int64_t{100});
+    QVERIFY(consumed.partitionRepresented);
+    QCOMPARE(consumed.size, std::size_t{1});
+    QCOMPARE(consumed.view().front().kind, Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(consumed.view().front().sourceBegin, std::optional<std::int64_t>{0});
+    QCOMPARE(consumed.view().front().sourceEnd, std::optional<std::int64_t>{100});
+    QCOMPARE(consumed.view().front().realizationId,
+             std::optional{core::RealizationId{9020}});
+    QVERIFY(consumed.view().front().handoffPureNewProven);
+    QVERIFY(!consumed.certifiedForLiveTruePeak);
+    // The actual Windows worker projection must preserve the same
+    // OUTPUT_RATE chronology. A prefix produced by this service is still
+    // NOT a certified LIVE True Peak measurement.
+    const auto projected=platform::windows::internal::project_c2_prefix(consumed);
+    QCOMPARE(projected.generation,consumed.generation);
+    QCOMPARE(projected.processedWatermarkExclusive,std::int64_t{100});
+    QVERIFY(projected.partitionRepresented);
+    QCOMPARE(projected.count,std::size_t{1});
+    QCOMPARE(projected.slices[0].kind,
+             platform::windows::WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(projected.slices[0].realizationId,
+             std::optional{core::RealizationId{9020}});
+    QCOMPARE(projected.slices[0].sourceBegin,std::optional<std::int64_t>{0});
+    QCOMPARE(projected.slices[0].sourceEnd,std::optional<std::int64_t>{100});
+    QVERIFY(projected.slices[0].handoffPureNewProven);
+    QVERIFY(!projected.certifiedForLiveTruePeak);
+    QVERIFY(!projected.srcRealizationId);
+    // A real suspended sink retains exactly the proven previously
+    // consumed watermark, never advances from merely enqueued bytes.
+    QVERIFY(engine.pause());
+    const auto pausedPrefix=engine.c2_consumed_prefix();
+    QCOMPARE(pausedPrefix.generation,consumed.generation);
+    QCOMPARE(pausedPrefix.processedWatermarkExclusive,
+             consumed.processedWatermarkExclusive);
+    QVERIFY(pausedPrefix.partitionRepresented);
+    QCOMPARE(pausedPrefix.size,consumed.size);
+    QCOMPARE(pausedPrefix.view().front().realizationId,
+             std::optional{core::RealizationId{9020}});
+    QCOMPARE(pausedPrefix.view().front().sourceEnd,
+             std::optional<std::int64_t>{100});
+    QVERIFY(!pausedPrefix.certifiedForLiveTruePeak);
+    QCOMPARE(engine.c2_processed_coverage_probe().reason,
+             Reason::MISSING_CHRONOLOGICAL_LEDGER);
+    QVERIFY(!engine.c2_processed_coverage_probe().completeThroughWatermark);
+
+    // A fabricated sink clock beyond generated bytes may never inherit
+    // the previous owner or a complete consumed interval.
+    sink->set_processed_frames(5000);
+    const auto ahead = engine.c2_consumed_prefix();
+    QCOMPARE(ahead.reason, Reason::CLOCK_AHEAD_OF_GENERATED);
+    QCOMPARE(ahead.size, std::size_t{0});
+    QVERIFY(!ahead.partitionRepresented);
+
+    // STOP / SEEK create a new generation. The old proof cannot be
+    // resurrected even when this same immutable terminal owner is reused.
+    const auto previousGeneration = consumed.generation;
+    QVERIFY(engine.stop());
+    QCOMPARE(engine.c2_consumed_prefix(previousGeneration).reason,
+             Reason::STALE_GENERATION);
+    QVERIFY(engine.seek(core::FrameIndex{50}));
+    QVERIFY(engine.play());
+    sink->set_processed_frames(16);
+    const auto sought = engine.c2_consumed_prefix();
+    QVERIFY(sought.generation != previousGeneration);
+    QVERIFY(sought.partitionRepresented);
+    QCOMPARE(sought.size, std::size_t{1});
+    QCOMPARE(sought.view().front().sourceBegin,
+             std::optional<std::int64_t>{50});
+    QCOMPARE(sought.view().front().sourceEnd,
+             std::optional<std::int64_t>{66});
+    QCOMPARE(sought.view().front().realizationId,
+             std::optional{core::RealizationId{9020}});
+    QVERIFY(sought.view().front().handoffPureNewProven);
+
+    // Tiny loops fail closed: no alleged contiguous TP/GR FIR history.
+    QVERIFY(engine.stop());
+    const auto shortLoop = *core::FrameRange::create(
+        core::FrameIndex{11}, core::FrameIndex{22}).value();
+    QVERIFY(engine.set_loop(shortLoop));
+    QVERIFY(engine.seek(core::FrameIndex{11}));
+    QVERIFY(engine.play());
+    sink->set_processed_frames(4);
+    const auto looping = engine.c2_consumed_prefix();
+    QVERIFY(looping.partitionRepresented);
+    QCOMPARE(looping.size, std::size_t{1});
+    QCOMPARE(looping.view().front().kind, Kind::GAP_UNPROVEN);
+    QCOMPARE(looping.view().front().reason, Reason::UNPROVEN_LOOP);
+    QVERIFY(!looping.certifiedForLiveTruePeak);
+    const auto loopProjection=
+        platform::windows::internal::project_c2_prefix(looping);
+    QCOMPARE(loopProjection.count,std::size_t{1});
+    QCOMPARE(loopProjection.slices[0].kind,
+             platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN);
+    QCOMPARE(loopProjection.slices[0].reason,
+             platform::windows::WindowsConsumedGapReason::UNPROVEN_LOOP);
+    QVERIFY(!loopProjection.certifiedForLiveTruePeak);
 }
 
 void PlaybackSupportTest::adaptedTimelineUsesAbsoluteRateMapping()
@@ -641,8 +1162,13 @@ void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
                     read_i16(observed->queue(), 0U),
                     static_cast<std::int16_t>(position));
             } else if (requestedState == core::PlaybackState::PAUSED) {
-                QVERIFY(observed->queue().empty());
+                // PAUSED retains already queued PCM; restarting would drop
+                // buffered samples and recreate the platform audio sink.
+                QVERIFY(!observed->queue().empty());
+                QCOMPARE(observed->startCalls, 1);
                 QVERIFY(engine.play());
+                QCOMPARE(observed->resumeCalls, 1);
+                QCOMPARE(observed->startCalls, 1);
                 QCOMPARE(engine.snapshot().value()->position.value(), position);
                 QVERIFY(observed->queue().size() >= 4U);
                 QCOMPARE(
@@ -656,6 +1182,158 @@ void PlaybackSupportTest::loopCommandIsPositionNeutralAcrossStates()
             QVERIFY(!engine.snapshot().value()->loop);
         }
     }
+}
+
+void PlaybackSupportTest::hotTogglePreservesQueuedPcmAndSink()
+{
+    // The scheduler may have generated PCM beyond the sink's bounded byte
+    // queue. Toggle must preserve both enqueued and pending PCM, even after
+    // those samples would have crossed the newly armed Loop boundary.
+    constexpr std::int64_t duration = 240;
+    constexpr std::size_t bytesPerFrame = 4U;
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(16U * bytesPerFrame, bytesPerFrame);
+    auto* observed = output.get();
+    QVERIFY(engine.install_candidate(
+        open_pcm16_stereo(indexed_stereo_codes(duration)),
+        std::move(output), DeviceSampleFormat::PCM_S16));
+    QVERIFY(engine.seek(core::FrameIndex{60}));
+    QVERIFY(engine.play());
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{40}, core::FrameIndex{80}).value();
+    const int initialStarts = observed->startCalls;
+    const int initialStops = observed->stopCalls;
+    const auto originalHistory = observed->history();
+
+    QVERIFY(engine.set_loop(loop));
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+    QCOMPARE(engine.snapshot().value()->state, core::PlaybackState::PLAYING);
+    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{60});
+    QCOMPARE(observed->history(), originalHistory);
+    // 180 pre-generated old frames remain first; only subsequent decoded
+    // frames enter the new Loop. No PCM is flushed, skipped, or duplicated.
+    constexpr std::size_t expectedFrames = 180U + 80U;
+    for (int i = 0;
+         i < 150 && observed->history().size() < expectedFrames * bytesPerFrame;
+         ++i) {
+        observed->consume_all();
+        engine.tick();
+    }
+    QVERIFY(observed->history().size() >= expectedFrames * bytesPerFrame);
+    const auto& history = observed->history();
+    for (std::size_t frame = 0; frame < expectedFrames; ++frame) {
+        const auto expected = frame < 180U
+            ? static_cast<std::int16_t>(60 + frame)
+            : static_cast<std::int16_t>(40 + ((frame - 180U) % 40U));
+        QCOMPARE(read_i16(history, frame * bytesPerFrame), expected);
+    }
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+
+    // Loop wrap telemetry reads the device counter directly, while the
+    // snapshot's position_ is updated by the owner-thread tick. Simulate the
+    // latter at each asserted audible instant (as the actual worker does).
+    observed->set_processed_frames(179);
+    engine.tick();
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
+    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{239});
+    observed->set_processed_frames(180);
+    engine.tick();
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
+    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{40});
+    observed->set_processed_frames(220);
+    engine.tick();
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{1});
+    QCOMPARE(engine.snapshot().value()->position.value(), std::int64_t{40});
+
+    // Already committed loop frames remain valid when disabling. Rapid
+    // re-arming is allowed without any device restart or queue deletion.
+    const auto queueBeforeDisable = observed->queue();
+    QVERIFY(engine.set_loop(std::nullopt));
+    QCOMPARE(observed->queue(), queueBeforeDisable);
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.set_loop(std::nullopt));
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{1});
+    QCOMPARE(engine.snapshot().value()->seekSerial, std::uint64_t{1});
+
+    // PAUSED toggles use the existing suspended sink and unchanged FIFO.
+    QVERIFY(engine.pause());
+    const auto pausedQueue = observed->queue();
+    QVERIFY(engine.set_loop(loop));
+    QCOMPARE(observed->queue(), pausedQueue);
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+    QVERIFY(engine.play());
+    QCOMPARE(observed->resumeCalls, 1);
+    QCOMPARE(observed->startCalls, initialStarts);
+    QCOMPARE(observed->stopCalls, initialStops);
+
+    // Reversing an uncommitted hot-toggle must also preserve the decoder
+    // cursor, not just the sink. Otherwise ON/OFF can falsely jump to the
+    // Loop start after an entirely prefetched Source.
+    PlaybackEngine cancelled;
+    auto cancelledOutput =
+        std::make_unique<FakeOutput>(16U * bytesPerFrame, bytesPerFrame);
+    auto* cancelledObserved = cancelledOutput.get();
+    QVERIFY(cancelled.install_candidate(
+        open_pcm16_stereo(indexed_stereo_codes(duration)),
+        std::move(cancelledOutput), DeviceSampleFormat::PCM_S16));
+    QVERIFY(cancelled.seek(core::FrameIndex{60}));
+    QVERIFY(cancelled.play());
+    const int cancelledStartBaseline = cancelledObserved->startCalls;
+    const int cancelledStopBaseline = cancelledObserved->stopCalls;
+    QVERIFY(cancelled.set_loop(loop));
+    QVERIFY(cancelled.set_loop(std::nullopt));
+    QCOMPARE(cancelledObserved->startCalls, cancelledStartBaseline);
+    QCOMPARE(cancelledObserved->stopCalls, cancelledStopBaseline);
+    for (int i = 0; i < 100
+             && cancelled.snapshot().value()->state
+                 == core::PlaybackState::PLAYING; ++i) {
+        cancelledObserved->consume_all();
+        cancelled.tick();
+    }
+    QCOMPARE(cancelled.snapshot().value()->state, core::PlaybackState::STOPPED);
+    QCOMPARE(cancelledObserved->history().size(),
+             static_cast<std::size_t>(duration - 60) * bytesPerFrame);
+    QCOMPARE(read_i16(cancelledObserved->history(), 0U),
+             static_cast<std::int16_t>(60));
+}
+
+void PlaybackSupportTest::hotTogglePreservesPendingHandoffProvenance()
+{
+    // A PCM handoff's earlier queued frames must retain their OLD identity
+    // even when a subsequent Loop toggle changes the future decode policy.
+    auto oldBuffer = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 5000);
+    auto newBuffer = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 5000);
+    constexpr core::RealizationId oldId{41};
+    constexpr core::RealizationId newId{42};
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* observed = output.get();
+    QVERIFY(engine.install_pcm_candidate(
+        oldBuffer.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr, oldId));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{0}, core::FrameIndex{3000}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    QVERIFY(engine.handoff_pcm(newBuffer.view(), nullptr, newId));
+    const auto before = engine.snapshot().value()->audibleRealization;
+    QCOMPARE(before.phase, core::AudibleHandoffPhase::OLD);
+    QCOMPARE(before.realizationId, std::optional{oldId});
+    const auto starts = observed->startCalls;
+    const auto stops = observed->stopCalls;
+    QVERIFY(engine.set_loop(std::nullopt));
+    const auto after = engine.snapshot().value()->audibleRealization;
+    QCOMPARE(after.phase, core::AudibleHandoffPhase::OLD);
+    QCOMPARE(after.realizationId, std::optional{oldId});
+    QCOMPARE(observed->startCalls, starts);
+    QCOMPARE(observed->stopCalls, stops);
 }
 
 void PlaybackSupportTest::floatAndPcm16GoldenConversion()
@@ -881,12 +1559,18 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
     auto* observed = output.get();
 
     auto lifetime1 = std::make_shared<int>(42);
+    const core::RealizationId oldRealizationId{1};
+    const core::RealizationId newRealizationId{2};
     QVERIFY(engine.install_pcm_candidate(
         oldBuf.view(),
         std::move(output),
         DeviceSampleFormat::PCM_S16,
         std::nullopt,
-        lifetime1));
+        lifetime1,
+        oldRealizationId));
+    auto initialRealization = engine.snapshot().value()->audibleRealization;
+    QCOMPARE(initialRealization.phase, core::AudibleHandoffPhase::NEW);
+    QCOMPARE(initialRealization.realizationId, std::optional{oldRealizationId});
     QVERIFY(engine.play());
     QCOMPARE(
         engine.snapshot().value()->state,
@@ -897,10 +1581,30 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
 
     const int stopCallsBeforeHandoff = observed->stopCalls;
     auto lifetime2 = std::make_shared<int>(84);
-    QVERIFY(engine.handoff_pcm(newBuf.view(), lifetime2));
+    QVERIFY(engine.handoff_pcm(newBuf.view(), lifetime2, newRealizationId));
     QCOMPARE(
         engine.snapshot().value()->state,
         core::PlaybackState::PLAYING);
+    auto beforeBoundary = engine.snapshot().value()->audibleRealization;
+    QCOMPARE(beforeBoundary.phase, core::AudibleHandoffPhase::OLD);
+    QCOMPARE(beforeBoundary.realizationId, std::optional{oldRealizationId});
+    observed->set_processed_frames(
+        static_cast<std::int64_t>(handoffBoundaryFrames));
+    auto atBoundary = engine.snapshot().value()->audibleRealization;
+    QCOMPARE(atBoundary.phase, core::AudibleHandoffPhase::TRANSITION);
+    QVERIFY(!atBoundary.realizationId.has_value());
+    observed->set_processed_frames(
+        static_cast<std::int64_t>(
+            handoffBoundaryFrames + xfadeFrames48k - 1U));
+    auto lastTransition = engine.snapshot().value()->audibleRealization;
+    QCOMPARE(lastTransition.phase, core::AudibleHandoffPhase::TRANSITION);
+    observed->set_processed_frames(
+        static_cast<std::int64_t>(
+            handoffBoundaryFrames + xfadeFrames48k));
+    auto afterBoundary = engine.snapshot().value()->audibleRealization;
+    QCOMPARE(afterBoundary.phase, core::AudibleHandoffPhase::NEW);
+    QCOMPARE(afterBoundary.realizationId, std::optional{newRealizationId});
+    observed->set_processed_frames(0);
     QCOMPARE(observed->stopCalls, stopCallsBeforeHandoff);
 
     const auto requiredHistoryBytes =
@@ -955,6 +1659,298 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         core::PlaybackState::PAUSED);
     QCOMPARE(engine.snapshot().value()->position, pausedPos);
 
+    // Test 2A: a PAUSED replacement must discard queued old audio before
+    // the new realization is published. Resume/replay must therefore begin
+    // with new-only audio, never old queued material under a NEW identity.
+    {
+        PlaybackEngine pausedReplacement;
+        auto pausedOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedPaused = pausedOutput.get();
+        QVERIFY(pausedReplacement.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(pausedOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1,
+            oldRealizationId));
+        QVERIFY(pausedReplacement.play());
+        QVERIFY(observedPaused->queued_bytes() > 0U);
+        QVERIFY(pausedReplacement.pause());
+
+        const auto historyBeforeReplacement =
+            observedPaused->history().size();
+        QVERIFY(pausedReplacement.handoff_pcm(
+            newBuf.view(), lifetime2, newRealizationId));
+        QCOMPARE(
+            pausedReplacement.snapshot().value()->state,
+            core::PlaybackState::PAUSED);
+        QCOMPARE(observedPaused->queued_bytes(), std::size_t{0});
+        const auto pausedReplacementIdentity =
+            pausedReplacement.snapshot().value()->audibleRealization;
+        QCOMPARE(
+            pausedReplacementIdentity.phase,
+            core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            pausedReplacementIdentity.realizationId,
+            std::optional{newRealizationId});
+
+        QVERIFY(pausedReplacement.play());
+        QVERIFY(observedPaused->history().size() > historyBeforeReplacement);
+        QCOMPARE(
+            read_i16(
+                observedPaused->history(),
+                historyBeforeReplacement),
+            static_cast<std::int16_t>(0));
+        const auto resumedIdentity =
+            pausedReplacement.snapshot().value()->audibleRealization;
+        QCOMPARE(resumedIdentity.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            resumedIdentity.realizationId,
+            std::optional{newRealizationId});
+    }
+
+    // Test 2B: a late output enqueue failure during PLAYING handoff must fail
+    // closed. No candidate identity or candidate audio may survive the failed
+    // handoff; replay resumes from the previously accepted realization.
+    {
+        PlaybackEngine atomicFailure;
+        auto atomicOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedAtomic = atomicOutput.get();
+        QVERIFY(atomicFailure.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(atomicOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1,
+            oldRealizationId));
+        QVERIFY(atomicFailure.play());
+
+        observedAtomic->consume_all();
+        observedAtomic->inject_error(core::Error{
+            core::ErrorCode::IoFailure,
+            "Injected late handoff enqueue failure."});
+
+        QVERIFY(!atomicFailure.handoff_pcm(
+            newBuf.view(), lifetime2, newRealizationId));
+        const auto failedSnapshot = atomicFailure.snapshot();
+        QVERIFY(failedSnapshot);
+        QCOMPARE(
+            failedSnapshot.value()->state,
+            core::PlaybackState::STOPPED);
+        QCOMPARE(
+            failedSnapshot.value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            failedSnapshot.value()->audibleRealization.realizationId,
+            std::optional{oldRealizationId});
+        QCOMPARE(observedAtomic->queued_bytes(), std::size_t{0});
+
+        observedAtomic->clear_injected_error();
+        const auto historyBeforeReplay = observedAtomic->history().size();
+        QVERIFY(atomicFailure.play());
+        QVERIFY(observedAtomic->history().size() > historyBeforeReplay);
+        QCOMPARE(
+            read_i16(
+                observedAtomic->history(),
+                historyBeforeReplay),
+            static_cast<std::int16_t>(32767));
+        const auto replayIdentity =
+            atomicFailure.snapshot().value()->audibleRealization;
+        QCOMPARE(replayIdentity.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            replayIdentity.realizationId,
+            std::optional{oldRealizationId});
+    }
+
+    // Test 2C: pausing during an already-pending handoff freezes the
+    // audible OLD/TRANSITION phase; resume continues the same progression.
+    {
+        PlaybackEngine pendingPause;
+        auto pendingOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedPending = pendingOutput.get();
+        QVERIFY(pendingPause.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(pendingOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1,
+            oldRealizationId));
+        QVERIFY(pendingPause.play());
+        QVERIFY(pendingPause.handoff_pcm(
+            newBuf.view(), lifetime2, newRealizationId));
+
+        observedPending->set_processed_frames(500);
+        QVERIFY(pendingPause.pause());
+        const auto pausedOld =
+            pendingPause.snapshot().value()->audibleRealization;
+        QCOMPARE(pausedOld.phase, core::AudibleHandoffPhase::OLD);
+        QCOMPARE(
+            pausedOld.realizationId,
+            std::optional{oldRealizationId});
+        QCOMPARE(
+            pendingPause.snapshot().value()->audibleRealization,
+            pausedOld);
+
+        QVERIFY(pendingPause.play());
+        observedPending->set_processed_frames(
+            static_cast<std::int64_t>(handoffBoundaryFrames + 100U));
+        QVERIFY(pendingPause.pause());
+        const auto pausedTransition =
+            pendingPause.snapshot().value()->audibleRealization;
+        QCOMPARE(
+            pausedTransition.phase,
+            core::AudibleHandoffPhase::TRANSITION);
+        QVERIFY(!pausedTransition.realizationId.has_value());
+        QCOMPARE(
+            pendingPause.snapshot().value()->audibleRealization,
+            pausedTransition);
+
+        QVERIFY(pendingPause.play());
+        observedPending->set_processed_frames(
+            static_cast<std::int64_t>(
+                handoffBoundaryFrames + xfadeFrames48k));
+        const auto resumedNew =
+            pendingPause.snapshot().value()->audibleRealization;
+        QCOMPARE(resumedNew.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            resumedNew.realizationId,
+            std::optional{newRealizationId});
+    }
+
+    // Test 2D: seeking while a handoff is pending discards the old queued
+    // chronology. Playback restarts from the accepted new realization.
+    {
+        PlaybackEngine pendingSeek;
+        auto seekOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedSeek = seekOutput.get();
+        QVERIFY(pendingSeek.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(seekOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1,
+            oldRealizationId));
+        QVERIFY(pendingSeek.play());
+        QVERIFY(pendingSeek.handoff_pcm(
+            newBuf.view(), lifetime2, newRealizationId));
+        QCOMPARE(
+            pendingSeek.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::OLD);
+
+        const auto historyBeforeSeek = observedSeek->history().size();
+        QVERIFY(pendingSeek.seek(core::FrameIndex{1500}));
+        QCOMPARE(
+            pendingSeek.snapshot().value()->state,
+            core::PlaybackState::PLAYING);
+        const auto afterSeek =
+            pendingSeek.snapshot().value()->audibleRealization;
+        QCOMPARE(afterSeek.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            afterSeek.realizationId,
+            std::optional{newRealizationId});
+        QVERIFY(observedSeek->history().size() > historyBeforeSeek);
+        QCOMPARE(
+            read_i16(observedSeek->history(), historyBeforeSeek),
+            static_cast<std::int16_t>(0));
+    }
+
+    // Test 2E: zero- and short-crossfade boundaries have deterministic
+    // identity semantics: zero skips TRANSITION, short remains TRANSITION
+    // for exactly the bounded output-frame interval.
+    const auto verifyShortCrossfadeIdentity = [&](
+        std::int64_t loopEndFrame,
+        std::int64_t expectedTransitionFrames) {
+        PlaybackEngine shortEngine;
+        auto shortOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        auto* observedShort = shortOutput.get();
+        QVERIFY(shortEngine.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(shortOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1,
+            oldRealizationId));
+        auto shortLoop = core::FrameRange::create(
+            core::FrameIndex{0},
+            core::FrameIndex{loopEndFrame});
+        QVERIFY(shortLoop);
+        QVERIFY(shortEngine.set_loop(*shortLoop.value()));
+        QVERIFY(shortEngine.play());
+        // FakeOutput::start() resets the backend processed-frame counter.
+        // Capture the actual post-start epoch for the audible boundary.
+        const auto deviceProcessedBaseline =
+            observedShort->processed_frames();
+        QVERIFY(shortEngine.handoff_pcm(
+            newBuf.view(), lifetime2, newRealizationId));
+
+        observedShort->set_processed_frames(
+            deviceProcessedBaseline
+            + static_cast<std::int64_t>(handoffBoundaryFrames - 1U));
+        const auto beforeShort =
+            shortEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(beforeShort.phase, core::AudibleHandoffPhase::OLD);
+        QCOMPARE(
+            beforeShort.realizationId,
+            std::optional{oldRealizationId});
+
+        observedShort->set_processed_frames(
+            deviceProcessedBaseline
+            + static_cast<std::int64_t>(handoffBoundaryFrames));
+        const auto atShortBoundary =
+            shortEngine.snapshot().value()->audibleRealization;
+        if (expectedTransitionFrames == 0) {
+            QCOMPARE(
+                atShortBoundary.phase,
+                core::AudibleHandoffPhase::NEW);
+            QCOMPARE(
+                atShortBoundary.realizationId,
+                std::optional{newRealizationId});
+            QCOMPARE(
+                atShortBoundary.handoffEndFrame,
+                std::optional<std::int64_t>{0});
+            return;
+        }
+
+        QCOMPARE(
+            atShortBoundary.phase,
+            core::AudibleHandoffPhase::TRANSITION);
+        QVERIFY(!atShortBoundary.realizationId.has_value());
+
+        observedShort->set_processed_frames(
+            deviceProcessedBaseline
+            + static_cast<std::int64_t>(
+                handoffBoundaryFrames
+                + static_cast<std::size_t>(expectedTransitionFrames - 1)));
+        QCOMPARE(
+            shortEngine.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::TRANSITION);
+
+        observedShort->set_processed_frames(
+            deviceProcessedBaseline
+            + static_cast<std::int64_t>(
+                handoffBoundaryFrames
+                + static_cast<std::size_t>(expectedTransitionFrames)));
+        const auto afterShort =
+            shortEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(afterShort.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            afterShort.realizationId,
+            std::optional{newRealizationId});
+        QCOMPARE(
+            afterShort.handoffEndFrame,
+            std::optional<std::int64_t>{0});
+    };
+
+    verifyShortCrossfadeIdentity(
+        static_cast<std::int64_t>(handoffBoundaryFrames), 0);
+    verifyShortCrossfadeIdentity(
+        static_cast<std::int64_t>(handoffBoundaryFrames + 6U), 6);
+
     // Test 3: STOPPED replacement remains STOPPED without auto-start.
     QVERIFY(engine.stop());
     QCOMPARE(
@@ -969,10 +1965,16 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
     QVERIFY(engine.play());
     auto diffRateBuf =
         make_buffer(44100, audio::ChannelLayout::STEREO_LR, totalFrames);
-    QVERIFY(!engine.handoff_pcm(diffRateBuf.view()));
+    const auto realizationBeforeFailedHandoff =
+        engine.snapshot().value()->audibleRealization;
+    QVERIFY(!engine.handoff_pcm(
+        diffRateBuf.view(), nullptr, core::RealizationId{99}));
     QCOMPARE(
         engine.snapshot().value()->state,
         core::PlaybackState::PLAYING);
+    QCOMPARE(
+        engine.snapshot().value()->audibleRealization,
+        realizationBeforeFailedHandoff);
 
     // Test 5: A non-playing EOF cue canonicalizes to range.begin() without autoplay.
     QVERIFY(engine.seek(core::FrameIndex{totalFrames}));
@@ -1067,19 +2069,43 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::move(srcOutput),
             DeviceSampleFormat::PCM_S16,
             std::move(*srcAdapter.value()),
-            lifetime1));
+            lifetime1,
+            oldRealizationId));
         QVERIFY(srcEngine.play());
         QCOMPARE(
             srcEngine.snapshot().value()->state,
             core::PlaybackState::PLAYING);
         const int stopCallsBeforeSrcHandoff = observedSrc->stopCalls;
-        QVERIFY(srcEngine.handoff_pcm(srcNew.view(), lifetime2));
+        QVERIFY(srcEngine.handoff_pcm(
+            srcNew.view(), lifetime2, newRealizationId));
         QCOMPARE(
             srcEngine.snapshot().value()->state,
             core::PlaybackState::PLAYING);
         QCOMPARE(
             observedSrc->stopCalls,
             stopCallsBeforeSrcHandoff);
+
+        const auto srcBeforeBoundary =
+            srcEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(srcBeforeBoundary.phase, core::AudibleHandoffPhase::OLD);
+        QCOMPARE(
+            srcBeforeBoundary.realizationId,
+            std::optional{oldRealizationId});
+        observedSrc->set_processed_frames(
+            static_cast<std::int64_t>(handoffBoundaryFrames));
+        QCOMPARE(
+            srcEngine.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::TRANSITION);
+        observedSrc->set_processed_frames(
+            static_cast<std::int64_t>(
+                handoffBoundaryFrames + expectedXfadeFrames));
+        const auto srcAfterBoundary =
+            srcEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(srcAfterBoundary.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            srcAfterBoundary.realizationId,
+            std::optional{newRealizationId});
+        observedSrc->set_processed_frames(0);
 
         const auto requiredBytes =
             (handoffBoundaryFrames + expectedXfadeFrames + 1U)
@@ -1123,6 +2149,25 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
     verifySrcCrossfade(44'100U, 48'000U, 720U);
     verifySrcCrossfade(48'000U, 44'100U, 662U);
 
+    // Identity-less PCM remains explicitly unavailable.
+    {
+        PlaybackEngine unavailableEngine;
+        auto unavailableOutput = std::make_unique<FakeOutput>(
+            queuedCapacityFrames * bytesPerFrame, bytesPerFrame);
+        QVERIFY(unavailableEngine.install_pcm_candidate(
+            oldBuf.view(),
+            std::move(unavailableOutput),
+            DeviceSampleFormat::PCM_S16,
+            std::nullopt,
+            lifetime1));
+        const auto unavailable =
+            unavailableEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(
+            unavailable.phase,
+            core::AudibleHandoffPhase::UNAVAILABLE);
+        QVERIFY(!unavailable.realizationId.has_value());
+    }
+
     // Test 9: an active Loop Region survives a PLAYING handoff. The
     // future-boundary crossfade occurs before the loop end, then playback
     // traverses the armed loop using only the new realization without a stop.
@@ -1151,7 +2196,8 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::move(loopOutput),
             DeviceSampleFormat::PCM_S16,
             std::nullopt,
-            lifetime1));
+            lifetime1,
+            oldRealizationId));
         auto loopRange = core::FrameRange::create(
             core::FrameIndex{0},
             core::FrameIndex{loopEndFrame});
@@ -1160,7 +2206,30 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         QVERIFY(loopEngine.play());
 
         const int stopCallsBeforeLoopHandoff = observedLoop->stopCalls;
-        QVERIFY(loopEngine.handoff_pcm(loopNew.view(), lifetime2));
+        QVERIFY(loopEngine.handoff_pcm(
+            loopNew.view(), lifetime2, newRealizationId));
+        const auto loopBeforeBoundary =
+            loopEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(loopBeforeBoundary.phase, core::AudibleHandoffPhase::OLD);
+        QCOMPARE(
+            loopBeforeBoundary.realizationId,
+            std::optional{oldRealizationId});
+        observedLoop->set_processed_frames(
+            static_cast<std::int64_t>(handoffBoundaryFrames));
+        QCOMPARE(
+            loopEngine.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::TRANSITION);
+        observedLoop->set_processed_frames(
+            static_cast<std::int64_t>(
+                handoffBoundaryFrames + xfadeFrames48k));
+        const auto loopAfterBoundary =
+            loopEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(loopAfterBoundary.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            loopAfterBoundary.realizationId,
+            std::optional{newRealizationId});
+        observedLoop->set_processed_frames(0);
+
         auto loopSnapshot = loopEngine.snapshot();
         QVERIFY(loopSnapshot);
         QCOMPARE(
@@ -1235,6 +2304,12 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
         QCOMPARE(
             loopEngine.snapshot().value()->state,
             core::PlaybackState::PLAYING);
+        const auto loopPostTraversal =
+            loopEngine.snapshot().value()->audibleRealization;
+        QCOMPARE(loopPostTraversal.phase, core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            loopPostTraversal.realizationId,
+            std::optional{newRealizationId});
     }
 
     // Test 8: if all remaining old audio is already committed through natural
@@ -1265,7 +2340,8 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             std::move(outputQueued),
             DeviceSampleFormat::PCM_S16,
             std::nullopt,
-            lifetime1));
+            lifetime1,
+            oldRealizationId));
         QVERIFY(engineQueued.play());
         const int stopCallsBeforeQueuedHandoff =
             observedQueued->stopCalls;
@@ -1278,10 +2354,17 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             initialQueueSize,
             static_cast<std::size_t>(shortFrames) * bytesPerFrame);
 
-        QVERIFY(engineQueued.handoff_pcm(newPcm.view(), lifetime2));
+        QVERIFY(engineQueued.handoff_pcm(
+            newPcm.view(), lifetime2, newRealizationId));
         QCOMPARE(
             engineQueued.snapshot().value()->state,
             core::PlaybackState::PLAYING);
+        QCOMPARE(
+            engineQueued.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::OLD);
+        QCOMPARE(
+            engineQueued.snapshot().value()->audibleRealization.realizationId,
+            std::optional{oldRealizationId});
         QCOMPARE(observedQueued->queue().size(), initialQueueSize);
         QCOMPARE(observedQueued->history().size(), initialHistorySize);
         QCOMPARE(
@@ -1297,9 +2380,18 @@ void PlaybackSupportTest::seamlessPcmHandoffCrossfadeAndStateMatrix()
             engineQueued.snapshot().value()->position.value(),
             shortFrames);
         QCOMPARE(observedQueued->history().size(), initialHistorySize);
+        QCOMPARE(
+            engineQueued.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::OLD);
 
         // The new realization is authoritative only for the next explicit play.
         QVERIFY(engineQueued.play());
+        QCOMPARE(
+            engineQueued.snapshot().value()->audibleRealization.phase,
+            core::AudibleHandoffPhase::NEW);
+        QCOMPARE(
+            engineQueued.snapshot().value()->audibleRealization.realizationId,
+            std::optional{newRealizationId});
         QVERIFY(
             observedQueued->history().size()
             >= initialHistorySize + bytesPerFrame);
@@ -1358,6 +2450,1789 @@ void PlaybackSupportTest::partialWritesNaturalEofAndRuntimeError()
     QVERIFY(!failed);
     QCOMPARE(failed.error()->code(), core::ErrorCode::IoFailure);
     QVERIFY(engine.clear());
+}
+
+void PlaybackSupportTest::controlPlaneTraversalSeekAndLoopSerials()
+{
+    PlaybackEngine engine;
+    auto initialSnap = engine.snapshot();
+    QVERIFY(initialSnap);
+    QCOMPARE(initialSnap.value()->traversalSerial, std::uint64_t{0});
+    QCOMPARE(initialSnap.value()->seekSerial, std::uint64_t{0});
+    QCOMPARE(initialSnap.value()->loopWrapCount, std::uint64_t{0});
+
+    const auto codes = indexed_stereo_codes(400);
+    auto output = std::make_unique<FakeOutput>(64U * 1024U, 4U);
+    auto* observedOutput = output.get();
+
+    QVERIFY(engine.install_candidate(
+        open_pcm16_stereo(codes),
+        std::move(output),
+        DeviceSampleFormat::PCM_S16));
+
+    // Prepare / install alone MUST NOT start traversal or change seek/loop serials
+    auto preparedSnap = engine.snapshot();
+    QVERIFY(preparedSnap);
+    QCOMPARE(preparedSnap.value()->traversalSerial, std::uint64_t{0});
+    QCOMPARE(preparedSnap.value()->seekSerial, std::uint64_t{0});
+    QCOMPARE(preparedSnap.value()->loopWrapCount, std::uint64_t{0});
+
+    // 1st PLAY starts first traversal (traversalSerial = 1)
+    QVERIFY(engine.play());
+    auto play1Snap = engine.snapshot();
+    QVERIFY(play1Snap);
+    QCOMPARE(play1Snap.value()->traversalSerial, std::uint64_t{1});
+    QCOMPARE(play1Snap.value()->seekSerial, std::uint64_t{0});
+
+    // PAUSE -> RESUME MUST NOT increment traversalSerial
+    QVERIFY(engine.pause());
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{1});
+    QVERIFY(engine.play());
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{1});
+
+    // STOP -> PLAY establishes a new traversal (traversalSerial = 2)
+    QVERIFY(engine.stop());
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{1});
+    QVERIFY(engine.play());
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{2});
+
+    // Active realization handoff MUST NOT increment traversalSerial
+    const auto buf2 = make_buffer(48000, audio::ChannelLayout::STEREO_LR, 400);
+    const core::RealizationId rid2{99};
+    QVERIFY(engine.handoff_pcm(buf2.view(), nullptr, rid2));
+    QCOMPARE(engine.snapshot().value()->traversalSerial, std::uint64_t{2});
+
+    // Successful SEEK increments seekSerial exactly once without falsely creating a traversal event
+    QVERIFY(engine.seek(core::FrameIndex{100}));
+    auto seekSnap = engine.snapshot();
+    QVERIFY(seekSnap);
+    QCOMPARE(seekSnap.value()->seekSerial, std::uint64_t{1});
+    QCOMPARE(seekSnap.value()->traversalSerial, std::uint64_t{2});
+
+    // Failed SEEK changes no serial
+    QVERIFY(!engine.seek(core::FrameIndex{-50}));
+    auto failSeekSnap = engine.snapshot();
+    QCOMPARE(failSeekSnap.value()->seekSerial, std::uint64_t{1});
+    QCOMPARE(failSeekSnap.value()->traversalSerial, std::uint64_t{2});
+
+    // A Loop hot-toggle neither restarts output nor creates a new traversal
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{50}, core::FrameIndex{150}).value();
+    QVERIFY(engine.set_loop(loop));
+    auto loopSnap = engine.snapshot();
+    QCOMPARE(loopSnap.value()->traversalSerial, std::uint64_t{2});
+    QCOMPARE(loopSnap.value()->seekSerial, std::uint64_t{1});
+
+    // loopWrapCount changes only when actual processed output crosses a loop boundary
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
+
+    // The seek at 100 prefills 300 old source frames before the toggle.
+    // Hardware processing those frames must not count speculative Loop wraps.
+    observedOutput->set_processed_frames(200);
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
+    observedOutput->set_processed_frames(300);
+    QCOMPARE(engine.snapshot().value()->loopWrapCount, std::uint64_t{0});
+    // A subsequent 200 processed frames in the new [50,150) region wrap twice.
+    observedOutput->set_processed_frames(500);
+    auto wrapSnap = engine.snapshot();
+    QCOMPARE(wrapSnap.value()->loopWrapCount, std::uint64_t{2});
+}
+
+void PlaybackSupportTest::c2D1ProcessedWatermarkFailClosedAndGeneration()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    PlaybackEngine engine;
+    const auto empty = engine.c2_processed_coverage_probe();
+    QCOMPARE(empty.generation, std::uint64_t{0});
+    QCOMPARE(empty.reason, Reason::NOT_MONITORED);
+    QVERIFY(!empty.completeThroughWatermark);
+
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 16);
+    auto output = std::make_unique<FakeOutput>(128U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(
+        pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+        std::nullopt, nullptr, core::RealizationId{401}));
+    const auto ready = engine.c2_processed_coverage_probe();
+    QCOMPARE(ready.reason, Reason::NOT_MONITORED);
+    QVERIFY(ready.generation > empty.generation);
+
+    QVERIFY(engine.play());
+    const auto active = engine.c2_processed_coverage_probe();
+    QCOMPARE(active.reason, Reason::MISSING_CHRONOLOGICAL_LEDGER);
+    QCOMPARE(active.processedWatermarkExclusive, std::int64_t{0});
+    QVERIFY(active.generatedOutputFrames >= 16);
+    QVERIFY(!active.completeThroughWatermark);
+
+    sink->consume_all();
+    const auto consumed = engine.c2_processed_coverage_probe(active.generation);
+    QCOMPARE(consumed.processedWatermarkExclusive, std::int64_t{16});
+    QCOMPARE(consumed.reason, Reason::MISSING_CHRONOLOGICAL_LEDGER);
+    QVERIFY(!consumed.completeThroughWatermark);
+
+    sink->set_processed_frames(1000);
+    const auto ahead = engine.c2_processed_coverage_probe();
+    QCOMPARE(ahead.reason, Reason::CLOCK_AHEAD_OF_GENERATED);
+    QVERIFY(!ahead.completeThroughWatermark);
+
+    QVERIFY(engine.seek(core::FrameIndex{3}));
+    const auto afterSeek = engine.c2_processed_coverage_probe();
+    QVERIFY(afterSeek.generation > consumed.generation);
+    const auto stale = engine.c2_processed_coverage_probe(consumed.generation);
+    QCOMPARE(stale.reason, Reason::STALE_GENERATION);
+    QVERIFY(!stale.completeThroughWatermark);
+}
+
+void PlaybackSupportTest::c2D1UnknownTargetHandoffAndLoopAreNotCoverage()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2000);
+    auto another = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(512U, 4U);
+    QVERIFY(engine.install_pcm_candidate(
+        pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+        std::nullopt, nullptr, core::RealizationId{402}));
+    QVERIFY(engine.play());
+    QVERIFY(engine.handoff_pcm(another.view(), nullptr, core::RealizationId{403}));
+    const auto handoff = engine.c2_processed_coverage_probe();
+    QCOMPARE(handoff.reason, Reason::UNPROVEN_HANDOFF);
+    QVERIFY(!handoff.completeThroughWatermark);
+
+    QVERIFY(engine.stop());
+    const auto afterStop = engine.c2_processed_coverage_probe();
+    QCOMPARE(afterStop.reason, Reason::NOT_MONITORED);
+    QVERIFY(afterStop.generation > handoff.generation);
+
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{100}, core::FrameIndex{300}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.seek(core::FrameIndex{100}));
+    QVERIFY(engine.play());
+    const auto looping = engine.c2_processed_coverage_probe();
+    QCOMPARE(looping.reason, Reason::UNPROVEN_LOOP);
+    QVERIFY(!looping.completeThroughWatermark);
+}
+
+void PlaybackSupportTest::c2D2AcceptedRunLedgerPartialWriteAndClock()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    // A two-byte device write may complete only half a stereo PCM16 frame.
+    // The observer must materialize only wholly accepted output frames.
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 16);
+    PlaybackEngine engine;
+    auto out = std::make_unique<FakeOutput>(12U, 4U, 2U);
+    auto* sink = out.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(out),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{501}));
+    QVERIFY(engine.play());
+    const auto initial = engine.c2_processed_coverage_probe();
+    QCOMPARE(initial.acceptedOutputFrames, std::int64_t{3});
+    QCOMPARE(initial.acceptedRunCount, std::size_t{1});
+    QVERIFY(!initial.acceptedLedgerOverflow);
+    QVERIFY(!initial.completeThroughWatermark);
+    QCOMPARE(engine.c2_accepted_output_runs().size(), std::size_t{1});
+    const auto first = engine.c2_accepted_output_runs().front();
+    QCOMPARE(first.generation, initial.generation);
+    QCOMPARE(first.outputBegin, std::int64_t{0});
+    QCOMPARE(first.outputEnd, std::int64_t{3});
+    QCOMPARE(first.sourceBegin, std::optional<std::int64_t>{0});
+    QCOMPARE(first.sourceEnd, std::optional<std::int64_t>{3});
+    QCOMPARE(first.realizationId, std::optional{core::RealizationId{501}});
+    QVERIFY(first.exactOneToOne);
+
+    sink->set_processed_frames(2);
+    const auto partial = engine.c2_processed_coverage_probe();
+    QCOMPARE(partial.processedWatermarkExclusive, std::int64_t{2});
+    QCOMPARE(partial.reason, Reason::MISSING_CHRONOLOGICAL_LEDGER);
+    QVERIFY(!partial.completeThroughWatermark);
+
+    sink->set_processed_frames(4); // fabricated sink clock beyond 3 accepted
+    const auto impossible = engine.c2_processed_coverage_probe();
+    QCOMPARE(impossible.reason, Reason::CLOCK_AHEAD_OF_ACCEPTED);
+    QVERIFY(!impossible.completeThroughWatermark);
+
+    sink->set_processed_frames(0);
+    sink->consume_all();
+    engine.tick();
+    const auto afterTick = engine.c2_processed_coverage_probe();
+    QVERIFY(afterTick.acceptedOutputFrames > initial.acceptedOutputFrames);
+    QVERIFY(!afterTick.completeThroughWatermark);
+    const auto runs = engine.c2_accepted_output_runs();
+    QCOMPARE(runs.size(), std::size_t{1}); // coalesced consecutive source runs
+    QCOMPARE(runs.front().outputBegin, std::int64_t{0});
+    QCOMPARE(runs.front().outputEnd, afterTick.acceptedOutputFrames);
+}
+
+void PlaybackSupportTest::c2D2AcceptedRunLedgerOldOwnerResetAndFailClosed()
+{
+    auto oldPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2500);
+    auto newPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2500);
+    PlaybackEngine engine;
+    auto out = std::make_unique<FakeOutput>(128U, 4U);
+    QVERIFY(engine.install_pcm_candidate(oldPcm.view(), std::move(out),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{601}));
+    QVERIFY(engine.play());
+    const auto oldRun = engine.c2_accepted_output_runs().front();
+    QCOMPARE(oldRun.realizationId, std::optional{core::RealizationId{601}});
+    QVERIFY(oldRun.exactOneToOne);
+    const auto oldGeneration = oldRun.generation;
+
+    QVERIFY(engine.handoff_pcm(newPcm.view(), nullptr, core::RealizationId{602}));
+    const auto probe = engine.c2_processed_coverage_probe();
+    QVERIFY(!probe.completeThroughWatermark);
+    // Queued OLD PCM retains its owner stamp even after candidate NEW is set.
+    QCOMPARE(engine.c2_accepted_output_runs().front().realizationId,
+        std::optional{core::RealizationId{601}});
+    QVERIFY(engine.stop());
+    QCOMPARE(engine.c2_accepted_output_runs().size(), std::size_t{0});
+    const auto afterReset = engine.c2_processed_coverage_probe(oldGeneration);
+    QCOMPARE(afterReset.reason,
+        platform::windows::internal::C2CoverageProbeReason::STALE_GENERATION);
+}
+
+void PlaybackSupportTest::c2D2AcceptedRunLedgerOverflowIsSticky()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    // Deliberately keep all enqueued output UNCONSUMED. Pruning must
+    // be forbidden even if old accepted run count reaches its 128 cap.
+    // This preserves the original sticky-overflow fail-closed oracle.
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 500'000);
+    PlaybackEngine engine;
+    auto out = std::make_unique<FakeOutput>(16U * 1024U * 1024U, 4U);
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(out),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{701}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{100}, core::FrameIndex{400}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    for (int i = 0; i < 320; ++i) {
+        QVERIFY(engine.set_loop(i % 2 == 0
+            ? std::optional{loop} : std::nullopt));
+        engine.tick(); // no sink consumption: must NOT prune
+        if (engine.c2_processed_coverage_probe().acceptedLedgerOverflow) break;
+    }
+    const auto probe = engine.c2_processed_coverage_probe();
+    QVERIFY(probe.acceptedLedgerOverflow);
+    QCOMPARE(probe.reason, Reason::ACCEPTED_LEDGER_OVERFLOW);
+    QCOMPARE(probe.acceptedRunCount, std::size_t{128});
+    QVERIFY(probe.acceptedOutputFrames > 128);
+    QVERIFY(!probe.completeThroughWatermark);
+    for (const auto& run : engine.c2_accepted_output_runs()) {
+        QCOMPARE(run.generation, probe.generation);
+    }
+    QVERIFY(engine.stop());
+    const auto cleared = engine.c2_processed_coverage_probe();
+    QVERIFY(!cleared.acceptedLedgerOverflow);
+    QCOMPARE(cleared.acceptedRunCount, std::size_t{0});
+}
+
+void PlaybackSupportTest::c2D2SrcAcceptedRunsAreNotExactSourceCoverage()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto inputRate = core::SampleRate::create(44'100);
+    auto outputRate = core::SampleRate::create(48'000);
+    QVERIFY(inputRate && outputRate);
+    auto converter = audio::PlaybackSampleRateAdapter::create(
+        audio::PlaybackRateSpec{*inputRate.value(), *outputRate.value(),
+            audio::ChannelLayout::STEREO_LR, frame_count(441)});
+    QVERIFY(converter);
+    auto pcm = make_buffer(44'100, audio::ChannelLayout::STEREO_LR, 441);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(128U, 4U);
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::move(*converter.value()),
+        nullptr, core::RealizationId{702}));
+    QVERIFY(engine.play());
+    const auto probe = engine.c2_processed_coverage_probe();
+    QCOMPARE(probe.reason, Reason::UNPROVEN_SRC);
+    QVERIFY(!probe.completeThroughWatermark);
+    QVERIFY(probe.acceptedRunCount > 0U);
+    for (const auto& run : engine.c2_accepted_output_runs()) {
+        QVERIFY(!run.exactOneToOne);
+        QVERIFY(!run.sourceBegin.has_value());
+        QVERIFY(!run.sourceEnd.has_value());
+    }
+}
+
+void PlaybackSupportTest::c2D3CrossfadeAppendedToOldPendingCannotInheritSource()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    constexpr auto oldId = core::RealizationId{801};
+    auto oldPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2500);
+    auto newPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2500);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(128U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(oldPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr, oldId));
+    QVERIFY(engine.play());
+    const auto before = engine.c2_accepted_output_runs();
+    QVERIFY(!before.empty());
+    const auto provedOld = before.front();
+    QVERIFY(provedOld.exactOneToOne);
+    QCOMPARE(provedOld.realizationId, std::optional{oldId});
+
+    // A 128-byte sink leaves unaccepted OLD bytes in pendingBytes_ when the
+    // crossfade is appended. Only the *already accepted* prefix stays exact.
+    QVERIFY(engine.handoff_pcm(newPcm.view(), nullptr, core::RealizationId{802}));
+    for (int i = 0; i < 4; ++i) {
+        sink->consume_all();
+        engine.tick();
+    }
+    const auto runs = engine.c2_accepted_output_runs();
+    QVERIFY(runs.size() > before.size());
+    QCOMPARE(runs.front().sourceBegin, provedOld.sourceBegin);
+    QCOMPARE(runs.front().sourceEnd, provedOld.sourceEnd);
+    for (std::size_t i = before.size(); i < runs.size(); ++i) {
+        QVERIFY(!runs[i].exactOneToOne);
+        QVERIFY(!runs[i].sourceBegin.has_value());
+        QVERIFY(!runs[i].sourceEnd.has_value());
+        QVERIFY(!runs[i].realizationId.has_value());
+    }
+    const auto probe = engine.c2_processed_coverage_probe();
+    QCOMPARE(probe.reason, Reason::UNPROVEN_HANDOFF);
+    QVERIFY(!probe.completeThroughWatermark);
+}
+
+void PlaybackSupportTest::c2D3FreshCrossfadePendingCannotInheritStaleSource()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto oldPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 3500);
+    auto newPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 3500);
+    PlaybackEngine engine;
+    // Exactly one 1024-frame decode block: OLD pendingBytes_ is empty after
+    // prefill, but its last c2PendingOwner_ stamp still names OLD.
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(oldPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{811}));
+    QVERIFY(engine.play());
+    const auto first = engine.c2_accepted_output_runs();
+    QCOMPARE(first.size(), std::size_t{1});
+    QVERIFY(first.front().exactOneToOne);
+    QCOMPARE(first.front().outputEnd, std::int64_t{1024});
+    QVERIFY(engine.handoff_pcm(newPcm.view(), nullptr,
+        core::RealizationId{812}));
+    sink->consume_all();
+    engine.tick();
+    const auto after = engine.c2_accepted_output_runs();
+    QVERIFY(after.size() >= std::size_t{2});
+    // A freshly encoded mixed block may not inherit the stale OLD stamp.
+    const auto& mixed = after[1];
+    QCOMPARE(mixed.outputBegin, std::int64_t{1024});
+    QVERIFY(!mixed.exactOneToOne);
+    QVERIFY(!mixed.realizationId.has_value());
+    QVERIFY(!mixed.sourceBegin.has_value());
+    QVERIFY(!mixed.sourceEnd.has_value());
+    const auto p = engine.c2_processed_coverage_probe();
+    QCOMPARE(p.reason, Reason::UNPROVEN_HANDOFF);
+    QVERIFY(!p.completeThroughWatermark);
+
+    QVERIFY(engine.stop());
+    const auto reset = engine.c2_processed_coverage_probe();
+    QVERIFY(!reset.completeThroughWatermark);
+    QCOMPARE(reset.reason, Reason::NOT_MONITORED);
+    QCOMPARE(reset.acceptedRunCount, std::size_t{0});
+}
+
+void PlaybackSupportTest::c2D4ConsumedPrefixNoFuturePartialWritesAndSeek()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 40);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(16U, 4U, 2U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{901}));
+    QVERIFY(engine.play());
+    auto empty = engine.c2_consumed_prefix();
+    QCOMPARE(empty.processedWatermarkExclusive, std::int64_t{0});
+    QCOMPARE(empty.size, std::size_t{0});
+    QVERIFY(!empty.partitionRepresented);
+    QVERIFY(!empty.certifiedForLiveTruePeak);
+
+    // The device accepted four whole frames. Do not report frame #3 as
+    // consumed merely because it was generated or is already queued.
+    sink->set_processed_frames(3);
+    const auto partial = engine.c2_consumed_prefix();
+    QCOMPARE(partial.processedWatermarkExclusive, std::int64_t{3});
+    QCOMPARE(partial.size, std::size_t{1});
+    QVERIFY(partial.partitionRepresented);
+    QCOMPARE(partial.slices[0].kind, Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(partial.slices[0].outputBegin, std::int64_t{0});
+    QCOMPARE(partial.slices[0].outputEnd, std::int64_t{3});
+    QCOMPARE(partial.slices[0].sourceBegin, std::optional<std::int64_t>{0});
+    QCOMPARE(partial.slices[0].sourceEnd, std::optional<std::int64_t>{3});
+    QVERIFY(!partial.certifiedForLiveTruePeak);
+
+    sink->set_processed_frames(5); // deliberately fabricated future clock
+    const auto impossible = engine.c2_consumed_prefix();
+    QCOMPARE(impossible.reason, Reason::CLOCK_AHEAD_OF_ACCEPTED);
+    QCOMPARE(impossible.size, std::size_t{0});
+    QVERIFY(!impossible.partitionRepresented);
+
+    QVERIFY(engine.seek(core::FrameIndex{10}));
+    const auto stale = engine.c2_consumed_prefix(partial.generation);
+    QCOMPARE(stale.reason, Reason::STALE_GENERATION);
+    QCOMPARE(stale.size, std::size_t{0});
+    const auto newEpoch = engine.c2_consumed_prefix();
+    QVERIFY(newEpoch.generation > partial.generation);
+    QVERIFY(!newEpoch.certifiedForLiveTruePeak);
+}
+
+void PlaybackSupportTest::c2D4ConsumedPrefixSrcAndHandoffExposeGaps()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto inputRate = core::SampleRate::create(44'100);
+    auto deviceRate = core::SampleRate::create(48'000);
+    QVERIFY(inputRate && deviceRate);
+    auto src = audio::PlaybackSampleRateAdapter::create(
+        audio::PlaybackRateSpec{*inputRate.value(), *deviceRate.value(),
+            audio::ChannelLayout::STEREO_LR, frame_count(600)});
+    QVERIFY(src);
+    auto pcm = make_buffer(44'100, audio::ChannelLayout::STEREO_LR, 600);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(256U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::move(*src.value()),
+        nullptr, core::RealizationId{902}));
+    QVERIFY(engine.play());
+    sink->set_processed_frames(15);
+    const auto q = engine.c2_consumed_prefix();
+    QVERIFY(q.partitionRepresented);
+    QCOMPARE(q.processedWatermarkExclusive, std::int64_t{15});
+    QCOMPARE(q.size, std::size_t{1});
+    QCOMPARE(q.slices[0].kind, Kind::GAP_UNPROVEN);
+    QCOMPARE(q.slices[0].reason, Reason::UNPROVEN_SRC);
+    QVERIFY(!q.slices[0].sourceBegin.has_value());
+    QVERIFY(!q.certifiedForLiveTruePeak);
+
+    PlaybackEngine handoff;
+    auto oldBuffer = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2600);
+    auto newBuffer = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2600);
+    auto out = std::make_unique<FakeOutput>(128U, 4U);
+    auto* watch = out.get();
+    QVERIFY(handoff.install_pcm_candidate(oldBuffer.view(), std::move(out),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{903}));
+    QVERIFY(handoff.play());
+    QVERIFY(handoff.handoff_pcm(newBuffer.view(), nullptr,
+        core::RealizationId{904}));
+    watch->consume_all();
+    handoff.tick();
+    watch->set_processed_frames(64);
+    const auto transition = handoff.c2_consumed_prefix();
+    QVERIFY(transition.partitionRepresented);
+    QVERIFY(transition.size >= std::size_t{2});
+    QCOMPARE(transition.slices[0].kind, Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(transition.slices[1].kind, Kind::GAP_UNPROVEN);
+    QCOMPARE(transition.slices[1].reason, Reason::UNPROVEN_HANDOFF);
+    QVERIFY(!transition.certifiedForLiveTruePeak);
+}
+
+void PlaybackSupportTest::c2D4ConsumedPrefixLongLoopGapIsConserved()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 32);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{905}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{0}, core::FrameIndex{1}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    for (int i = 0; i < 133; ++i) {
+        sink->consume_all();
+        engine.tick();
+    }
+    const auto probe = engine.c2_processed_coverage_probe();
+    QVERIFY(!probe.acceptedLedgerOverflow);
+    QCOMPARE(probe.acceptedRunCount, std::size_t{1});
+    const auto partition = engine.c2_consumed_prefix();
+    QVERIFY(partition.partitionRepresented);
+    QCOMPARE(partition.processedWatermarkExclusive, probe.processedWatermarkExclusive);
+    QCOMPARE(partition.size, std::size_t{1});
+    QCOMPARE(partition.slices[0].kind, Kind::GAP_UNPROVEN);
+    QCOMPARE(partition.slices[0].outputEnd, probe.processedWatermarkExclusive);
+    QVERIFY(partition.slices[0].outputEnd > partition.slices[0].outputBegin);
+    QVERIFY(!partition.certifiedForLiveTruePeak);
+    auto expected = std::int64_t{0};
+    for (const auto& slice : partition.view()) {
+        QCOMPARE(slice.outputBegin, expected);
+        QVERIFY(slice.outputEnd > slice.outputBegin);
+        expected = slice.outputEnd;
+    }
+    QCOMPARE(expected, probe.processedWatermarkExclusive);
+}
+
+void PlaybackSupportTest::c2D4QueryIsObservationalAcrossLoopAndSeek()
+{
+    // Independent replay oracle: querying C2 metadata does not alter PCM
+    // bytes, queue scheduling, hot loop toggles, seek, or sink consumption.
+    auto audioSource = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 3000);
+    auto view = audioSource.mutable_view();
+    for (std::size_t ch = 0; ch < 2; ++ch) {
+        const auto values = view.channel(ch);
+        QVERIFY(values);
+        for (std::size_t n = 0; n < values.value()->size(); ++n) {
+            (*values.value())[n] = (ch == 0 ? 1.0 : -1.0)
+                * static_cast<double>(n % 31U) / 64.0;
+        }
+    }
+    const auto exercise = [&](bool observe) {
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(64U, 4U, 7U);
+        auto* sink = output.get();
+        auto ok = engine.install_pcm_candidate(audioSource.view(),
+            std::move(output), DeviceSampleFormat::PCM_S16,
+            std::nullopt, nullptr, core::RealizationId{1001});
+        if (!ok) return std::vector<std::byte>{};
+        ok = engine.play();
+        if (!ok) return std::vector<std::byte>{};
+        const auto loop = core::FrameRange::create(
+            core::FrameIndex{100}, core::FrameIndex{140});
+        for (int i = 0; i < 52; ++i) {
+            if (i == 5 && loop) {
+                ok = engine.set_loop(*loop.value());
+                if (!ok) return std::vector<std::byte>{};
+            }
+            if (i == 17) {
+                ok = engine.set_loop(std::nullopt);
+                if (!ok) return std::vector<std::byte>{};
+            }
+            if (i == 31) {
+                ok = engine.seek(core::FrameIndex{300});
+                if (!ok) return std::vector<std::byte>{};
+            }
+            sink->consume_all();
+            engine.tick();
+            if (observe) {
+                const auto prefix = engine.c2_consumed_prefix();
+                if (prefix.certifiedForLiveTruePeak) {
+                    return std::vector<std::byte>{}; // fail the outer parity oracle
+                }
+            }
+        }
+        return sink->history();
+    };
+    const auto noObservation = exercise(false);
+    const auto withObservation = exercise(true);
+    QVERIFY(!noObservation.empty());
+    QCOMPARE(withObservation, noObservation);
+}
+
+void PlaybackSupportTest::c2D4PauseDoesNotAdvanceConsumedPrefix()
+{
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 1000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(256U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1002}));
+    QVERIFY(engine.play());
+    sink->set_processed_frames(20);
+    const auto before = engine.c2_consumed_prefix();
+    QVERIFY(before.partitionRepresented);
+    QCOMPARE(before.processedWatermarkExclusive, std::int64_t{20});
+    QVERIFY(engine.pause());
+    engine.tick();
+    const auto frozen = engine.c2_consumed_prefix(before.generation);
+    QCOMPARE(frozen.processedWatermarkExclusive, before.processedWatermarkExclusive);
+    QCOMPARE(frozen.size, before.size);
+    QCOMPARE(frozen.slices[0].sourceEnd, before.slices[0].sourceEnd);
+    QVERIFY(!frozen.certifiedForLiveTruePeak);
+    QVERIFY(engine.play());
+    const auto resumed = engine.c2_consumed_prefix(before.generation);
+    QCOMPARE(resumed.processedWatermarkExclusive, std::int64_t{20});
+    QVERIFY(!resumed.certifiedForLiveTruePeak);
+}
+
+void PlaybackSupportTest::c2D5SinkWatermarkFeedsRealNumericalRecentOnlyAfterFullBucket()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using analysis::internal::ChronologicalTruePeakBuckets;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 5500);
+    auto writable = pcm.mutable_view();
+    const auto l = writable.channel(0);
+    const auto r = writable.channel(1);
+    QVERIFY(l && r);
+    std::fill(l.value()->begin(), l.value()->end(), 0.0);
+    std::fill(r.value()->begin(), r.value()->end(), 0.0);
+    // A 1-frame spike between timer polls is never skipped when consumption
+    // is replayed from the owner-stamped, sink-capped prefix.
+    (*l.value())[4 * 480 + 29] = 0.9;
+    (*r.value())[4 * 480 + 29] = -0.45;
+    PlaybackEngine engine;
+    auto out = std::make_unique<FakeOutput>(384U, 4U);
+    auto* sink = out.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(out),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1101}));
+    auto numeric = ChronologicalTruePeakBuckets::create(48'000, 2);
+    QVERIFY(numeric);
+    auto accumulator = std::move(*numeric.value());
+    QVERIFY(engine.play());
+    std::int64_t fed = 0;
+    int iteration = 0;
+    // Device processes just 96 frames per iteration; coarse UI polls could
+    // miss the spike if we relied on cursor differences or rendered values.
+    for (; iteration < 80 && fed < 4800; ++iteration) {
+        sink->consume_all();
+        engine.tick();
+        const auto prefix = engine.c2_consumed_prefix();
+        QVERIFY(prefix.partitionRepresented);
+        QVERIFY(!prefix.certifiedForLiveTruePeak);
+        QVERIFY(prefix.processedWatermarkExclusive >= fed);
+        const auto parts = prefix.view();
+        QCOMPARE(parts.size(), std::size_t{1});
+        QCOMPARE(parts.front().kind, Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+        QCOMPARE(parts.front().realizationId,
+            std::optional{core::RealizationId{1101}});
+        QVERIFY(parts.front().sourceBegin && parts.front().sourceEnd);
+        // This TEST knows the immutable buffer owner and source identity.
+        // Production must NOT use a mere candidate without separate proof.
+        const auto end = *parts.front().sourceEnd;
+        for (; fed < end; ++fed) {
+            const std::array<double, 2> sample{
+                (*l.value())[static_cast<std::size_t>(fed)],
+                (*r.value())[static_cast<std::size_t>(fed)]};
+            QVERIFY(accumulator.consume_frame(sample, true));
+        }
+        const auto evidence = accumulator.snapshot();
+        if (fed < 4800) {
+            QVERIFY(!evidence.recent100msComplete);
+        }
+    }
+    QCOMPARE(fed, std::int64_t{4800});
+    const auto observed = accumulator.snapshot();
+    QVERIFY(observed.recent100msComplete);
+    QVERIFY(!observed.shortHold1sComplete);
+    QCOMPARE(observed.consumedSourceFrames, std::int64_t{4800});
+    QCOMPARE(observed.lastCompleteBucketEnd, std::int64_t{4800});
+    QVERIFY(observed.recentLinearPeak[0] > 0.85);
+    QVERIFY(observed.recentLinearPeak[1] > 0.42);
+    // The observer intentionally does not publish LIVE: the required
+    // provenance/target/chain revision is *not* bound by this test adapter.
+    QCOMPARE(engine.c2_consumed_prefix().certifiedForLiveTruePeak, false);
+}
+
+void PlaybackSupportTest::c2D6WorkerProjectionPreservesConsumedWatermarkAndGap()
+{
+    using platform::windows::internal::project_c2_prefix;
+    using platform::windows::WindowsConsumedSliceKind;
+    using platform::windows::WindowsConsumedGapReason;
+
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2600);
+    auto replacement = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 2600);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(128U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1201}));
+    QVERIFY(engine.play());
+    auto initial = project_c2_prefix(engine.c2_consumed_prefix());
+    QVERIFY(!initial.certifiedForLiveTruePeak);
+    QCOMPARE(initial.count, std::size_t{0});
+    QVERIFY(!initial.partitionRepresented);
+    const auto gen = initial.generation;
+    QVERIFY(engine.handoff_pcm(replacement.view(), nullptr,
+        core::RealizationId{1202}));
+    sink->consume_all();
+    engine.tick();
+    sink->set_processed_frames(64);
+    const auto actual = project_c2_prefix(engine.c2_consumed_prefix(gen));
+    QVERIFY(actual.partitionRepresented);
+    QCOMPARE(actual.processedWatermarkExclusive, std::int64_t{64});
+    QCOMPARE(actual.count, std::size_t{2});
+    QCOMPARE(actual.slices[0].kind,
+        WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(actual.slices[0].realizationId,
+        std::optional{core::RealizationId{1201}});
+    QCOMPARE(actual.slices[1].kind,
+        WindowsConsumedSliceKind::GAP_UNPROVEN);
+    QCOMPARE(actual.slices[1].reason,
+        WindowsConsumedGapReason::UNPROVEN_HANDOFF);
+    QVERIFY(!actual.slices[1].realizationId);
+    QVERIFY(!actual.slices[1].sourceBegin);
+    QVERIFY(!actual.slices[1].sourceEnd);
+    QVERIFY(!actual.certifiedForLiveTruePeak);
+}
+
+void PlaybackSupportTest::c2D6WorkerProjectionNeverCertifiesProcessedTarget()
+{
+    using platform::windows::internal::project_c2_prefix;
+    using platform::windows::WindowsConsumedGapReason;
+    using platform::windows::WindowsConsumedSliceKind;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::MONO_C, 1000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(128U, 2U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1301}));
+    QVERIFY(engine.play());
+    sink->set_processed_frames(5);
+    auto valid = project_c2_prefix(engine.c2_consumed_prefix());
+    QVERIFY(valid.partitionRepresented);
+    QCOMPARE(valid.count, std::size_t{1});
+    QCOMPARE(valid.slices[0].kind,
+        WindowsConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(valid.slices[0].sourceEnd, std::optional<std::int64_t>{5});
+    QVERIFY(!valid.certifiedForLiveTruePeak);
+    sink->set_processed_frames(500);
+    const auto invalidClock = project_c2_prefix(engine.c2_consumed_prefix());
+    QCOMPARE(invalidClock.reason,
+        WindowsConsumedGapReason::CLOCK_AHEAD_OF_ACCEPTED);
+    QVERIFY(!invalidClock.partitionRepresented);
+    QVERIFY(!invalidClock.certifiedForLiveTruePeak);
+    QVERIFY(engine.seek(core::FrameIndex{50}));
+    const auto stale = project_c2_prefix(
+        engine.c2_consumed_prefix(valid.generation));
+    QCOMPARE(stale.reason, WindowsConsumedGapReason::STALE_GENERATION);
+    QVERIFY(!stale.partitionRepresented);
+    QVERIFY(!stale.certifiedForLiveTruePeak);
+}
+
+
+void PlaybackSupportTest::c2D9RealSinkSeekMaintainsRelativeOutputAndAbsoluteSource()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 30'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(384U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1601}));
+    QVERIFY(engine.play());
+    sink->set_processed_frames(40);
+    const auto first = engine.c2_consumed_prefix();
+    QVERIFY(first.partitionRepresented);
+    QCOMPARE(first.size, std::size_t{1});
+    QCOMPARE(first.slices[0].sourceBegin, std::optional<std::int64_t>{0});
+    QCOMPARE(first.slices[0].sourceEnd, std::optional<std::int64_t>{40});
+    const auto initialGeneration = first.generation;
+
+    // A real seek restarts the backend's processed clock at zero, but the
+    // accepted PCM now starts at its ABSOLUTE SOURCE frame 4801.
+    QVERIFY(engine.seek(core::FrameIndex{4801}));
+    auto zero = engine.c2_consumed_prefix();
+    QVERIFY(zero.generation > initialGeneration);
+    QCOMPARE(zero.processedWatermarkExclusive, std::int64_t{0});
+    QVERIFY(!zero.partitionRepresented);
+    QVERIFY(!zero.certifiedForLiveTruePeak);
+    sink->set_processed_frames(31);
+    const auto afterSeek = engine.c2_consumed_prefix();
+    QCOMPARE(afterSeek.reason, Reason::MISSING_CHRONOLOGICAL_LEDGER);
+    QVERIFY(afterSeek.partitionRepresented);
+    QCOMPARE(afterSeek.processedWatermarkExclusive, std::int64_t{31});
+    QCOMPARE(afterSeek.size, std::size_t{1});
+    QCOMPARE(afterSeek.slices[0].kind, Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(afterSeek.slices[0].outputBegin, std::int64_t{0});
+    QCOMPARE(afterSeek.slices[0].outputEnd, std::int64_t{31});
+    QCOMPARE(afterSeek.slices[0].sourceBegin, std::optional<std::int64_t>{4801});
+    QCOMPARE(afterSeek.slices[0].sourceEnd, std::optional<std::int64_t>{4832});
+    QCOMPARE(afterSeek.slices[0].realizationId,
+        std::optional{core::RealizationId{1601}});
+    QVERIFY(!afterSeek.certifiedForLiveTruePeak);
+    QVERIFY(engine.seek(core::FrameIndex{9603}));
+    const auto stale = engine.c2_consumed_prefix(afterSeek.generation);
+    QCOMPARE(stale.reason, Reason::STALE_GENERATION);
+    sink->set_processed_frames(23);
+    const auto second = engine.c2_consumed_prefix();
+    QVERIFY(second.generation > afterSeek.generation);
+    QCOMPARE(second.processedWatermarkExclusive, std::int64_t{23});
+    QVERIFY(second.partitionRepresented);
+    QCOMPARE(second.size, std::size_t{1});
+    QCOMPARE(second.slices[0].sourceBegin, std::optional<std::int64_t>{9603});
+    QCOMPARE(second.slices[0].sourceEnd, std::optional<std::int64_t>{9626});
+    QVERIFY(!second.certifiedForLiveTruePeak);
+}
+
+
+void PlaybackSupportTest::c2D10LoopOffRecoversFreshSourceWithoutRestart()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 12'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(256U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1801}));
+    QVERIFY(engine.play());
+    const auto starts = sink->startCalls;
+    const auto stops = sink->stopCalls;
+    const auto loop = core::FrameRange::create(
+        core::FrameIndex{100}, core::FrameIndex{400});
+    QVERIFY(loop);
+    QVERIFY(engine.set_loop(*loop.value()));
+    bool sawLoopGap = false;
+    for (int i = 0; i < 17; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto prefix = engine.c2_consumed_prefix();
+        for (const auto& slice : prefix.view()) {
+            if (slice.kind == Kind::GAP_UNPROVEN) sawLoopGap = true;
+        }
+    }
+    QVERIFY(sawLoopGap);
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+    QVERIFY(engine.set_loop(std::nullopt));
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+    bool sawFreshDirectTail = false;
+    std::int64_t previousWatermark = 0;
+    for (int i = 0; i < 160 && !sawFreshDirectTail; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto p = engine.c2_consumed_prefix();
+        QVERIFY(!p.certifiedForLiveTruePeak);
+        QVERIFY(p.processedWatermarkExclusive >= previousWatermark);
+        previousWatermark = p.processedWatermarkExclusive;
+        if (!p.partitionRepresented || p.size < 2U) continue;
+        const auto& last = p.slices[p.size - 1U];
+        if (last.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            || last.outputEnd != p.processedWatermarkExclusive) continue;
+        bool precedingGap = false;
+        for (std::size_t k = 0; k + 1U < p.size; ++k)
+            precedingGap |= p.slices[k].kind == Kind::GAP_UNPROVEN;
+        if (!precedingGap) continue;
+        QVERIFY(p.reason == Reason::UNPROVEN_LOOP);
+        QVERIFY(last.sourceBegin);
+        QVERIFY(last.sourceEnd);
+        QCOMPARE(*last.sourceEnd - *last.sourceBegin,
+            last.outputEnd - last.outputBegin);
+        QCOMPARE(last.realizationId,
+            std::optional{core::RealizationId{1801}});
+        sawFreshDirectTail = true;
+    }
+    QVERIFY2(sawFreshDirectTail,
+        "Loop OFF must eventually yield new owner-stamped contiguous PROCESSED coverage.");
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+}
+
+void PlaybackSupportTest::c2D12HandoffRecoversConsumedPureNewSuffixWithoutRestart()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto oldPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    auto newPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(oldPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1901}));
+    QVERIFY(engine.play());
+    const int starts = sink->startCalls;
+    const int stops = sink->stopCalls;
+    QVERIFY(engine.handoff_pcm(newPcm.view(), nullptr,
+        core::RealizationId{1902}));
+    bool sawGap = false;
+    bool sawNew = false;
+    for (int i = 0; i < 45 && !sawNew; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto p = engine.c2_consumed_prefix();
+        QVERIFY(!p.certifiedForLiveTruePeak);
+        if (!p.partitionRepresented) continue;
+        for (const auto& slice : p.view())
+            sawGap |= slice.kind == Kind::GAP_UNPROVEN;
+        if (p.size < 2U) continue;
+        const auto& last = p.slices[p.size - 1U];
+        if (last.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            || last.realizationId != std::optional{core::RealizationId{1902}}
+            || last.outputEnd != p.processedWatermarkExclusive) continue;
+        QVERIFY(sawGap);
+        QCOMPARE(p.reason, Reason::UNPROVEN_HANDOFF);
+        QVERIFY(last.sourceBegin && last.sourceEnd);
+        QCOMPARE(*last.sourceEnd - *last.sourceBegin,
+                 last.outputEnd - last.outputBegin);
+        sawNew = true;
+    }
+    QVERIFY2(sawNew, "Pure NEW post-crossfade source must recover without Stop.");
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+}
+
+
+void PlaybackSupportTest::c2D14LoopInternalConsumedSourceMappingAndWrapBoundary()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{2301}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{4800}, core::FrameIndex{14400}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    const auto starts = sink->startCalls;
+    const auto stops = sink->stopCalls;
+    bool sawCandidateBeforeWrap = false;
+    bool sawCandidateAfterWrap = false;
+    bool caughtWrapBoundary = false;
+    for (int i = 0; i < 100 && !sawCandidateAfterWrap; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto snap = engine.snapshot();
+        QVERIFY(snap);
+        const auto prefix = engine.c2_consumed_prefix();
+        QVERIFY(!prefix.certifiedForLiveTruePeak);
+        QVERIFY(!engine.c2_processed_coverage_probe().completeThroughWatermark);
+        if (!prefix.partitionRepresented || prefix.size == 0U)
+            continue;
+        const auto& last = prefix.slices[prefix.size - 1U];
+        if (last.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            || last.outputEnd != prefix.processedWatermarkExclusive
+            || last.loopWrapCount != snap.value()->loopWrapCount)
+            continue;
+        QVERIFY(last.loopTraversalProven);
+        QCOMPARE(last.realizationId, std::optional{core::RealizationId{2301}});
+        QVERIFY(last.sourceBegin && last.sourceEnd);
+        QCOMPARE(*last.sourceEnd - *last.sourceBegin,
+                 last.outputEnd - last.outputBegin);
+        QVERIFY(*last.sourceBegin >= 0);
+        QVERIFY(*last.sourceEnd <= 14400);
+        QCOMPARE(prefix.reason, Reason::UNPROVEN_LOOP);
+        if (last.loopWrapCount == 0) sawCandidateBeforeWrap = true;
+        if (last.loopWrapCount >= 1) {
+            sawCandidateAfterWrap = true;
+            for (std::size_t n = 1; n < prefix.size; ++n) {
+                if (prefix.slices[n].loopWrapCount
+                    != prefix.slices[n - 1U].loopWrapCount) {
+                    QVERIFY(prefix.slices[n].sourceBegin);
+                    QVERIFY(prefix.slices[n - 1U].sourceEnd);
+                    // The adjacent OUTPUT timeline may wrap Source. Such
+                    // two traversals MUST never be fused as one FIR history.
+                    QVERIFY(*prefix.slices[n].sourceBegin
+                        != *prefix.slices[n - 1U].sourceEnd);
+                    caughtWrapBoundary = true;
+                }
+            }
+        }
+    }
+    QVERIFY(sawCandidateBeforeWrap);
+    QVERIFY(sawCandidateAfterWrap);
+    QVERIFY(caughtWrapBoundary);
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+}
+
+void PlaybackSupportTest::c2D14ShortLoopRemainsUnproven()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{2302}));
+    const auto shortLoop = *core::FrameRange::create(
+        core::FrameIndex{0}, core::FrameIndex{100}).value();
+    QVERIFY(engine.set_loop(shortLoop));
+    QVERIFY(engine.play());
+    for (int i = 0; i < 10; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto prefix = engine.c2_consumed_prefix();
+        for (const auto& s : prefix.view()) {
+            QVERIFY(s.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+            QVERIFY(!s.loopTraversalProven);
+        }
+    }
+    QVERIFY(!engine.c2_processed_coverage_probe().acceptedLedgerOverflow);
+}
+
+
+void PlaybackSupportTest::c2D14LongLoopPrunesOnlyConsumedHistory()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{2303}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{0}, core::FrameIndex{6000}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    bool pruned = false;
+    std::uint64_t lastWrap = 0;
+    for (int i = 0; i < 1500; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto snap = engine.snapshot();
+        QVERIFY(snap);
+        const auto p = engine.c2_consumed_prefix();
+        const auto probe = engine.c2_processed_coverage_probe();
+        QVERIFY(!probe.acceptedLedgerOverflow);
+        QVERIFY(probe.acceptedRunCount <= 128U);
+        if (p.processedWatermarkExclusive == 0) continue;
+        QVERIFY(p.partitionRepresented);
+        QVERIFY(p.retainedOutputBegin >= 0);
+        QVERIFY(p.retainedOutputBegin <= p.processedWatermarkExclusive);
+        auto cursor = p.retainedOutputBegin;
+        for (const auto& slice : p.view()) {
+            QCOMPARE(slice.outputBegin, cursor);
+            QVERIFY(slice.outputEnd > slice.outputBegin);
+            cursor = slice.outputEnd;
+            QCOMPARE(slice.kind, Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+        }
+        QCOMPARE(cursor, p.processedWatermarkExclusive);
+        pruned |= p.retainedOutputBegin > 0;
+        lastWrap = snap.value()->loopWrapCount;
+        if (lastWrap >= 135 && pruned && p.size > 0U
+            && p.slices[p.size - 1U].loopWrapCount >= 135) break;
+    }
+    QVERIFY2(lastWrap >= 135, "Loop monitoring must survive >128 crossings.");
+    QVERIFY(pruned);
+    const auto tail = engine.c2_consumed_prefix();
+    QVERIFY(tail.partitionRepresented);
+    QVERIFY(tail.retainedOutputBegin > 0);
+    QVERIFY(tail.size > 0U);
+    const auto& last = tail.slices[tail.size - 1U];
+    QCOMPARE(last.outputEnd, tail.processedWatermarkExclusive);
+    QVERIFY(last.loopTraversalProven);
+    QVERIFY(last.loopWrapCount >= std::uint64_t{135});
+    QCOMPARE(last.realizationId, std::optional{core::RealizationId{2303}});
+    QVERIFY(!tail.certifiedForLiveTruePeak);
+}
+
+
+void PlaybackSupportTest::c2D14HandoffDuringLoopRecoversPureNewPostWrap()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto oldPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    auto newPcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR, 48'000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(4096U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(oldPcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{2401}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{4800}, core::FrameIndex{14400}).value();
+    QVERIFY(engine.set_loop(loop));
+    QVERIFY(engine.play());
+    for (int i = 0; i < 8; ++i) {
+        sink->consume_all();
+        engine.tick();
+    }
+    const int starts = sink->startCalls;
+    const int stops = sink->stopCalls;
+    QVERIFY(engine.handoff_pcm(newPcm.view(), nullptr,
+        core::RealizationId{2402}));
+    bool sawUnprovenHandoff = false;
+    bool recoveredAfterWrap = false;
+    for (int i = 0; i < 150 && !recoveredAfterWrap; ++i) {
+        sink->consume_all();
+        engine.tick();
+        const auto prefix = engine.c2_consumed_prefix();
+        QVERIFY(!prefix.certifiedForLiveTruePeak);
+        for (const auto& slice : prefix.view()) {
+            sawUnprovenHandoff |= slice.kind == Kind::GAP_UNPROVEN
+                && slice.reason == Reason::UNPROVEN_HANDOFF;
+        }
+        if (!prefix.partitionRepresented || prefix.size == 0U)
+            continue;
+        const auto& last = prefix.slices[prefix.size - 1U];
+        if (last.kind != Kind::SOURCE_CANDIDATE_NOT_QUALIFIED
+            || !last.handoffPureNewProven
+            || !last.loopTraversalProven
+            || last.loopWrapCount < 2
+            || last.outputEnd != prefix.processedWatermarkExclusive)
+            continue;
+        QCOMPARE(prefix.reason, Reason::UNPROVEN_HANDOFF);
+        QCOMPARE(last.realizationId,
+                 std::optional{core::RealizationId{2402}});
+        QVERIFY(last.sourceBegin && last.sourceEnd);
+        QVERIFY(*last.sourceBegin >= 4800);
+        QVERIFY(*last.sourceEnd <= 14400);
+        QCOMPARE(*last.sourceEnd - *last.sourceBegin,
+                 last.outputEnd - last.outputBegin);
+        recoveredAfterWrap = true;
+    }
+    QVERIFY(sawUnprovenHandoff); // actual mixed bytes were not promoted
+    QVERIFY2(recoveredAfterWrap,
+        "Output-time handoff proof must survive Source-frame wrap to loop begin.");
+    QCOMPARE(sink->startCalls, starts);
+    QCOMPARE(sink->stopCalls, stops);
+}
+
+void PlaybackSupportTest::c2D10Native44100IsNotInherentlyUnavailable()
+{
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    auto pcm = make_buffer(44'100, audio::ChannelLayout::STEREO_LR, 3000);
+    PlaybackEngine engine;
+    auto output = std::make_unique<FakeOutput>(256U, 4U);
+    auto* sink = output.get();
+    QVERIFY(engine.install_pcm_candidate(pcm.view(), std::move(output),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{1802}));
+    QVERIFY(engine.play());
+    sink->set_processed_frames(20);
+    const auto p = engine.c2_consumed_prefix();
+    QCOMPARE(p.reason, Reason::MISSING_CHRONOLOGICAL_LEDGER);
+    QVERIFY(p.partitionRepresented);
+    QCOMPARE(p.size, std::size_t{1});
+    QCOMPARE(p.slices[0].kind, Kind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QCOMPARE(p.slices[0].sourceBegin, std::optional<std::int64_t>{0});
+    QCOMPARE(p.slices[0].sourceEnd, std::optional<std::int64_t>{20});
+    QVERIFY(!p.certifiedForLiveTruePeak);
+}
+
+void PlaybackSupportTest::c2D15SrcRetirementObserverIsNegativeOnlyAndFailsClosed()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    // A genuine FakeOutput sink clock, immutable generation-time owner, and
+    // complete output accepted ledger are all required even for a NEGATIVE
+    // no-future-FIR-dependency witness. No actual SRC LIVE claim is emitted.
+    for (const auto& pair : std::array<std::pair<std::int64_t,
+                                                std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto inputHz = pair.first;
+        const auto outputHz = pair.second;
+        auto inputRate = core::SampleRate::create(inputHz);
+        auto outputRate = core::SampleRate::create(outputHz);
+        QVERIFY(inputRate && outputRate);
+        auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(),
+                *outputRate.value(), audio::ChannelLayout::STEREO_LR,
+                frame_count(1'200)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(inputHz, audio::ChannelLayout::STEREO_LR, 1'200);
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(8'192U, 4U);
+        auto* sink = output.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'021}));
+        QVERIFY(engine.play());
+        // Nothing generated/queued is presumed actually consumed.
+        const auto before = engine.c2_src_retirement_observation();
+        QVERIFY(!before.noFutureSourcePrefixExclusive);
+        // Multiple separately encoded/accepted SRC blocks are still one
+        // immutable owner. Their merged GAP remains non-exact and source-free.
+        const auto acceptedRuns = engine.c2_accepted_output_runs();
+        QCOMPARE(acceptedRuns.size(), std::size_t{1});
+        QCOMPARE(acceptedRuns[0].realizationId,
+                 std::optional{core::RealizationId{9'021}});
+        QCOMPARE(acceptedRuns[0].gapReason, Reason::UNPROVEN_SRC);
+        QVERIFY(!acceptedRuns[0].exactOneToOne);
+        QVERIFY(!acceptedRuns[0].sourceBegin);
+        QVERIFY(!acceptedRuns[0].sourceEnd);
+        sink->set_processed_frames(400);
+        const auto observed = engine.c2_src_retirement_observation();
+        QCOMPARE(observed.reason, Reason::UNPROVEN_SRC);
+        QCOMPARE(observed.consumedOutputExclusive, std::int64_t{400});
+        QVERIFY(observed.noFutureSourcePrefixExclusive.has_value());
+        QVERIFY(*observed.noFutureSourcePrefixExclusive > 0);
+        QVERIFY(*observed.noFutureSourcePrefixExclusive <= 1'200);
+        const auto untouched = engine.c2_consumed_prefix();
+        QVERIFY(untouched.partitionRepresented);
+        QCOMPARE(untouched.slices[0].kind, Kind::GAP_UNPROVEN);
+        QCOMPARE(untouched.slices[0].reason, Reason::UNPROVEN_SRC);
+        QVERIFY(!untouched.certifiedForLiveTruePeak);
+        // The detached Windows worker projection must carry an independently
+        // bounded SRC frontier, while the original GAP stays ownerless.
+        using platform::windows::internal::project_c2_prefix;
+        const auto projected = project_c2_prefix(untouched, &observed);
+        QCOMPARE(projected.reason,
+                 platform::windows::WindowsConsumedGapReason::UNPROVEN_SRC);
+        QCOMPARE(projected.srcRetiredSourceEnd,
+                 observed.noFutureSourcePrefixExclusive);
+        QCOMPARE(projected.srcRealizationId,
+                 std::optional{core::RealizationId{9'021}});
+        QCOMPARE(projected.srcInputRateHz, inputHz);
+        QCOMPARE(projected.srcOutputRateHz, outputHz);
+        QVERIFY(!projected.certifiedForLiveTruePeak);
+        QVERIFY(!projected.slices[0].realizationId);
+        QVERIFY(!projected.slices[0].sourceBegin);
+        QVERIFY(!projected.slices[0].sourceEnd);
+        auto torn = observed;
+        ++torn.generation;
+        QVERIFY(!project_c2_prefix(untouched, &torn).srcRetiredSourceEnd);
+        torn = observed;
+        ++torn.consumedOutputExclusive;
+        QVERIFY(!project_c2_prefix(untouched, &torn).srcRetiredSourceEnd);
+        torn = observed;
+        torn.realizationId.reset();
+        QVERIFY(!project_c2_prefix(untouched, &torn).srcRetiredSourceEnd);
+        torn = observed;
+        torn.sourceRateHz = 96'000;
+        QVERIFY(!project_c2_prefix(untouched, &torn).srcRetiredSourceEnd);
+        torn = observed;
+        torn.noFutureSourcePrefixExclusive.reset();
+        QVERIFY(!project_c2_prefix(untouched, &torn).srcRetiredSourceEnd);
+        QVERIFY(!untouched.slices[0].sourceBegin);
+        QVERIFY(!untouched.slices[0].sourceEnd);
+
+        const auto stale = engine.c2_src_retirement_observation(
+            observed.generation + 1U);
+        QCOMPARE(stale.reason, Reason::STALE_GENERATION);
+        QVERIFY(!stale.noFutureSourcePrefixExclusive);
+        sink->set_processed_frames(9'999);
+        const auto ahead = engine.c2_src_retirement_observation();
+        QCOMPARE(ahead.reason, Reason::CLOCK_AHEAD_OF_GENERATED);
+        QVERIFY(!ahead.noFutureSourcePrefixExclusive);
+        sink->set_processed_frames(400);
+        QVERIFY(engine.seek(core::FrameIndex{300}));
+        const auto postSeek = engine.c2_src_retirement_observation();
+        QVERIFY(!postSeek.noFutureSourcePrefixExclusive);
+
+        // A looped replay is OBSERVABLE only within one actually consumed
+        // SRC traversal. It never upgrades the underlying OUTPUT GAP.
+        auto otherAdapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(),
+                *outputRate.value(), audio::ChannelLayout::STEREO_LR,
+                frame_count(1'200)});
+        QVERIFY(otherAdapter);
+        PlaybackEngine looping;
+        auto loopOutput = std::make_unique<FakeOutput>(8'192U, 4U);
+        auto* loopSink = loopOutput.get();
+        QVERIFY(looping.install_pcm_candidate(
+            pcm.view(), std::move(loopOutput), DeviceSampleFormat::PCM_S16,
+            std::move(*otherAdapter.value()), nullptr, core::RealizationId{9'022}));
+        auto region = core::FrameRange::create(
+            core::FrameIndex{200}, core::FrameIndex{900});
+        QVERIFY(region);
+        QVERIFY(looping.set_loop(*region.value()));
+        QVERIFY(looping.play());
+        loopSink->set_processed_frames(400);
+        const auto loopWitness = looping.c2_src_retirement_observation();
+        QVERIFY(loopWitness.noFutureSourcePrefixExclusive.has_value());
+        QVERIFY(loopWitness.loopTraversalProven);
+        QCOMPARE(loopWitness.loopWrapCount, std::uint64_t{0});
+        const auto loopGap = looping.c2_consumed_prefix();
+        const auto projectedLoop = project_c2_prefix(loopGap, &loopWitness);
+        QVERIFY(projectedLoop.srcLoopTraversalProven);
+        QCOMPARE(projectedLoop.slices[0].kind,
+                 platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN);
+        QVERIFY(!projectedLoop.certifiedForLiveTruePeak);
+    }
+}
+
+void PlaybackSupportTest::c2D15SrcPartialAcceptedWritesRetainOnlyDiagnosticOwner()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using Kind = platform::windows::internal::C2ConsumedSliceKind;
+    // Tiny output queue forces multiple independent SRC partial-write
+    // acceptances. Future-dependency retirement must use the consumed
+    // clock and a *single* immutable owner, not the UI source cursor.
+    for (const auto& pair : std::array<std::pair<std::int64_t,
+                                                std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        auto inputRate = core::SampleRate::create(pair.first);
+        auto outputRate = core::SampleRate::create(pair.second);
+        QVERIFY(inputRate && outputRate);
+        auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(),
+                *outputRate.value(), audio::ChannelLayout::STEREO_LR,
+                frame_count(1'200)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(pair.first, audio::ChannelLayout::STEREO_LR, 1'200);
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(256U, 4U);
+        auto* sink = output.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'030}));
+        QVERIFY(engine.play());
+        QCOMPARE(engine.c2_accepted_output_runs().size(), std::size_t{1});
+        QCOMPARE(engine.c2_accepted_output_runs()[0].outputEnd,
+                 std::int64_t{64});
+        auto notConsumed = engine.c2_src_retirement_observation();
+        QVERIFY(!notConsumed.noFutureSourcePrefixExclusive);
+        // A clock that jumps ahead of accepted bytes is a gap, never proof.
+        sink->set_processed_frames(128);
+        auto impossible = engine.c2_src_retirement_observation();
+        QCOMPARE(impossible.reason, Reason::CLOCK_AHEAD_OF_ACCEPTED);
+        QVERIFY(!impossible.noFutureSourcePrefixExclusive);
+        sink->set_processed_frames(0);
+        for (int i = 0; i < 8; ++i) {
+            sink->consume_all();
+            engine.tick();
+        }
+        const auto accepted = engine.c2_accepted_output_runs();
+        QVERIFY(!accepted.empty());
+        QVERIFY(accepted.front().outputEnd >= 512);
+        for (const auto& run : accepted) {
+            QCOMPARE(run.realizationId,
+                     std::optional{core::RealizationId{9'030}});
+            QCOMPARE(run.gapReason, Reason::UNPROVEN_SRC);
+            QVERIFY(!run.exactOneToOne);
+            QVERIFY(!run.sourceBegin && !run.sourceEnd);
+        }
+        const auto result = engine.c2_src_retirement_observation();
+        QCOMPARE(result.reason, Reason::UNPROVEN_SRC);
+        QVERIFY(result.noFutureSourcePrefixExclusive.has_value());
+        QVERIFY(*result.noFutureSourcePrefixExclusive > 0);
+        const auto consumed = engine.c2_consumed_prefix();
+        QVERIFY(consumed.partitionRepresented);
+        QCOMPARE(consumed.slices[0].kind, Kind::GAP_UNPROVEN);
+        QVERIFY(!consumed.certifiedForLiveTruePeak);
+        QVERIFY(!consumed.slices[0].sourceBegin);
+        QVERIFY(!consumed.slices[0].sourceEnd);
+    }
+}
+
+
+void PlaybackSupportTest::c2D16SrcRetirementTracksRealConsumedSinkClock()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    // A real PlaybackEngine + FakeOutput consumed clock, not a synthetic
+    // projection snapshot: prove forward SOURCE retirement over >1 second
+    // in both SRC directions while OUTPUT acceptance runs ahead of listening.
+    for (const auto& pair : std::array<std::pair<std::int64_t,
+                                                std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = pair.first;
+        const auto outputHz = pair.second;
+        const auto inputRate = core::SampleRate::create(sourceHz);
+        const auto outputRate = core::SampleRate::create(outputHz);
+        QVERIFY(inputRate && outputRate);
+        const auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(), *outputRate.value(),
+                audio::ChannelLayout::STEREO_LR, frame_count(2 * sourceHz)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(
+            sourceHz, audio::ChannelLayout::STEREO_LR, 2 * sourceHz);
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(4'096U, 4U);
+        auto* sink = output.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'181}));
+        QVERIFY(engine.play());
+
+        // Encoding and enqueueing a whole block cannot retire any SOURCE
+        // frame before the output device consumes at least one OUTPUT frame.
+        const auto unconsumed = engine.c2_src_retirement_observation();
+        QCOMPARE(unconsumed.consumedOutputExclusive, std::int64_t{0});
+        QVERIFY(!unconsumed.noFutureSourcePrefixExclusive);
+
+        std::int64_t lastOutput = 0;
+        std::int64_t lastRetiredSource = 0;
+        bool exceededOneSecond = false;
+        for (int block = 0; block < 128; ++block) {
+            // Consume the exact output queue, then refill from the same
+            // source owner. Production output chronology is independently
+            // recorded by the playback engine during each successful write.
+            sink->consume_all();
+            engine.tick();
+            const auto current = engine.c2_src_retirement_observation();
+            QCOMPARE(current.reason, Reason::UNPROVEN_SRC);
+            QVERIFY(current.consumedOutputExclusive > lastOutput);
+            QVERIFY(current.noFutureSourcePrefixExclusive.has_value());
+            const auto sourceEnd =
+                *current.noFutureSourcePrefixExclusive;
+            QVERIFY(sourceEnd >= lastRetiredSource);
+            QVERIFY(sourceEnd <= 2 * sourceHz);
+            const auto consumed = engine.c2_consumed_prefix();
+            QVERIFY(consumed.partitionRepresented);
+            QVERIFY(!consumed.certifiedForLiveTruePeak);
+            QCOMPARE(consumed.processedWatermarkExclusive,
+                     current.consumedOutputExclusive);
+            lastOutput = current.consumedOutputExclusive;
+            lastRetiredSource = sourceEnd;
+            if (lastOutput >= outputHz + outputHz / 10) {
+                exceededOneSecond = true;
+                break;
+            }
+        }
+        QVERIFY(exceededOneSecond);
+        // With more than 1.1 sec of physically simulated sink consumption,
+        // the strict no-future-FIR-dependency frontier must retire at least
+        // 1 sec of original SOURCE_PROCESSING_RATE samples.
+        QVERIFY(lastRetiredSource >= sourceHz);
+
+        // A new pump without sink consumption may enqueue OUTPUT samples,
+        // but must never advance the already consumed SOURCE frontier.
+        engine.tick();
+        const auto stationary = engine.c2_src_retirement_observation();
+        QCOMPARE(stationary.consumedOutputExclusive, lastOutput);
+        QCOMPARE(stationary.noFutureSourcePrefixExclusive,
+                 std::optional<std::int64_t>{lastRetiredSource});
+
+        // An impossible sink clock must fail closed instead of manufacturing
+        // extra SOURCE retirement even if the decoded track is much longer.
+        sink->set_processed_frames(lastOutput + 3'000);
+        QVERIFY(!engine.c2_src_retirement_observation()
+            .noFutureSourcePrefixExclusive);
+        sink->set_processed_frames(lastOutput);
+        const auto restored = engine.c2_src_retirement_observation();
+        QCOMPARE(restored.noFutureSourcePrefixExclusive,
+                 std::optional<std::int64_t>{lastRetiredSource});
+    }
+}
+
+
+void PlaybackSupportTest::c2D17SrcSeekRebasesOnlyActuallyConsumedOutput()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using platform::windows::internal::project_c2_prefix;
+    for (const auto& pair : std::array<std::pair<std::int64_t,
+                                                std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto inputHz = pair.first;
+        const auto outputHz = pair.second;
+        auto inputRate = core::SampleRate::create(inputHz);
+        auto outputRate = core::SampleRate::create(outputHz);
+        QVERIFY(inputRate && outputRate);
+        auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(), *outputRate.value(),
+                audio::ChannelLayout::STEREO_LR, frame_count(4 * inputHz)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(inputHz,
+            audio::ChannelLayout::STEREO_LR, 4 * inputHz);
+        PlaybackEngine engine;
+        auto output = std::make_unique<FakeOutput>(4'096U, 4U);
+        auto* sink = output.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(output), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'201}));
+        QVERIFY(engine.play());
+        const auto original = engine.c2_src_retirement_observation();
+        const auto firstGeneration = original.generation;
+
+        // Mid-play seek changes the real generation and OUTPUT absolute
+        // start; the first queued block is NOT yet audible/consumed.
+        const auto seekSource = inputHz + inputHz / 7;
+        QVERIFY(engine.seek(core::FrameIndex{seekSource}));
+        auto zero = engine.c2_src_retirement_observation();
+        QVERIFY(zero.generation > firstGeneration);
+        QCOMPARE(zero.consumedOutputExclusive, std::int64_t{0});
+        QVERIFY(!zero.noFutureSourcePrefixExclusive);
+        QVERIFY(!zero.firstSourceFrame);
+        QCOMPARE(engine.c2_src_retirement_observation(firstGeneration).reason,
+                 Reason::STALE_GENERATION);
+
+        std::int64_t lastRetired = 0;
+        for (int i = 0; i < 18; ++i) {
+            sink->consume_all();
+            engine.tick();
+            const auto watched = engine.c2_src_retirement_observation();
+            QCOMPARE(watched.reason, Reason::UNPROVEN_SRC);
+            QVERIFY(watched.firstSourceFrame.has_value());
+            QVERIFY(watched.noFutureSourcePrefixExclusive.has_value());
+            QVERIFY(*watched.firstSourceFrame >= seekSource);
+            QVERIFY(*watched.firstSourceFrame <= seekSource + 1);
+            QVERIFY(*watched.noFutureSourcePrefixExclusive
+                    > *watched.firstSourceFrame);
+            QVERIFY(*watched.noFutureSourcePrefixExclusive >= lastRetired);
+            QVERIFY(*watched.noFutureSourcePrefixExclusive <= 4 * inputHz);
+            lastRetired = *watched.noFutureSourcePrefixExclusive;
+            const auto projected = project_c2_prefix(
+                engine.c2_consumed_prefix(), &watched);
+            QVERIFY(projected.srcRetiredSourceBegin.has_value());
+            QCOMPARE(projected.srcRetiredSourceBegin,
+                     watched.firstSourceFrame);
+            QCOMPARE(projected.srcRetiredSourceEnd,
+                     watched.noFutureSourcePrefixExclusive);
+            QVERIFY(!projected.certifiedForLiveTruePeak);
+            QCOMPARE(projected.retainedOutputBegin, std::int64_t{0});
+            QCOMPARE(projected.slices[0].outputBegin, std::int64_t{0});
+            QVERIFY(!projected.slices[0].sourceBegin);
+        }
+        QVERIFY(lastRetired > seekSource + inputHz / 10);
+
+        // Seeking while stopped and pressing PLAY must reestablish another
+        // independent SOURCE origin; no earlier consumed peak may survive.
+        QVERIFY(engine.stop());
+        const auto nextSeek = inputHz / 2 + 11;
+        QVERIFY(engine.seek(core::FrameIndex{nextSeek}));
+        QVERIFY(engine.play());
+        sink->consume_all();
+        engine.tick();
+        const auto startedAgain = engine.c2_src_retirement_observation();
+        QVERIFY(startedAgain.firstSourceFrame.has_value());
+        QVERIFY(*startedAgain.firstSourceFrame >= nextSeek);
+        QVERIFY(*startedAgain.firstSourceFrame <= nextSeek + 1);
+        QVERIFY(startedAgain.noFutureSourcePrefixExclusive.has_value());
+        QVERIFY(*startedAgain.noFutureSourcePrefixExclusive
+                > *startedAgain.firstSourceFrame);
+        QVERIFY(startedAgain.generation > zero.generation);
+
+        // Loop configuration still invalidates this single traversal SRC
+        // observer; no cross-wrap values are ever published by this proof.
+        auto loop = core::FrameRange::create(
+            core::FrameIndex{inputHz / 2},
+            core::FrameIndex{inputHz});
+        QVERIFY(loop);
+        QVERIFY(engine.set_loop(*loop.value()));
+        QVERIFY(!engine.c2_src_retirement_observation()
+            .noFutureSourcePrefixExclusive);
+    }
+}
+
+
+void PlaybackSupportTest::c2D18SrcLoopRecoversAtEachActuallyConsumedWrap()
+{
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    using platform::windows::internal::project_c2_prefix;
+    for (const auto& pair :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = pair.first;
+        const auto outputHz = pair.second;
+        auto sourceRate = core::SampleRate::create(sourceHz);
+        auto sinkRate = core::SampleRate::create(outputHz);
+        QVERIFY(sourceRate && sinkRate);
+        auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*sourceRate.value(), *sinkRate.value(),
+                audio::ChannelLayout::STEREO_LR, frame_count(4 * sourceHz)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(
+            sourceHz, audio::ChannelLayout::STEREO_LR, 4 * sourceHz);
+        PlaybackEngine engine;
+        auto device = std::make_unique<FakeOutput>(16'384U, 4U);
+        auto* sink = device.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(device), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'301}));
+        auto loop = core::FrameRange::create(
+            core::FrameIndex{sourceHz}, core::FrameIndex{3 * sourceHz});
+        QVERIFY(loop);
+        QVERIFY(engine.set_loop(*loop.value()));
+        QVERIFY(engine.seek(core::FrameIndex{sourceHz}));
+        QVERIFY(engine.play());
+        const auto firstGeneration = engine.c2_consumed_prefix().generation;
+        QVERIFY(!engine.c2_src_retirement_observation()
+            .noFutureSourcePrefixExclusive);
+
+        std::int64_t lastConsumed = 0;
+        std::uint64_t maxProvenWrap = 0;
+        std::int64_t earliestAfterWrap = 0;
+        bool sawFirst = false;
+        bool sawWrapped = false;
+        for (int i = 0; i < 150; ++i) {
+            sink->consume_all();
+            engine.tick();
+            const auto consumed = engine.c2_src_retirement_observation();
+            QCOMPARE(consumed.reason, Reason::UNPROVEN_SRC);
+            QVERIFY(consumed.consumedOutputExclusive > lastConsumed);
+            lastConsumed = consumed.consumedOutputExclusive;
+            if (!consumed.noFutureSourcePrefixExclusive) continue;
+            QVERIFY(consumed.loopTraversalProven);
+            QCOMPARE(consumed.generation, firstGeneration);
+            QVERIFY(consumed.firstSourceFrame.has_value());
+            QVERIFY(*consumed.firstSourceFrame >= sourceHz);
+            QVERIFY(*consumed.firstSourceFrame <= sourceHz + 1);
+            QVERIFY(*consumed.noFutureSourcePrefixExclusive
+                    > *consumed.firstSourceFrame);
+            QVERIFY(*consumed.noFutureSourcePrefixExclusive <= 3 * sourceHz);
+            QVERIFY(consumed.loopWrapCount >= maxProvenWrap);
+            maxProvenWrap = consumed.loopWrapCount;
+            const auto projected = project_c2_prefix(
+                engine.c2_consumed_prefix(), &consumed);
+            QVERIFY(projected.srcLoopTraversalProven);
+            QCOMPARE(projected.srcLoopWrapCount, consumed.loopWrapCount);
+            QCOMPARE(projected.srcRetiredSourceBegin,
+                     consumed.firstSourceFrame);
+            QCOMPARE(projected.srcRetiredSourceEnd,
+                     consumed.noFutureSourcePrefixExclusive);
+            QCOMPARE(projected.srcConsumedOutputBegin,
+                     consumed.consumedOutputBegin);
+            QVERIFY(!projected.certifiedForLiveTruePeak);
+            // The entire SRC sink ledger is still a GAP, never 1:1 proof.
+            for (const auto& part : projected.view()) {
+                QCOMPARE(part.kind,
+                         platform::windows::WindowsConsumedSliceKind::GAP_UNPROVEN);
+                QVERIFY(!part.sourceBegin && !part.sourceEnd);
+            }
+            if (consumed.loopWrapCount == 0) {
+                sawFirst = true;
+            } else {
+                sawWrapped = true;
+                if (earliestAfterWrap == 0)
+                    earliestAfterWrap = consumed.consumedOutputBegin;
+                QVERIFY(consumed.consumedOutputBegin > 0);
+                QVERIFY(*consumed.firstSourceFrame >= sourceHz);
+                QVERIFY(consumed.consumedOutputBegin >= earliestAfterWrap);
+            }
+            if (maxProvenWrap >= 2) break;
+        }
+        QVERIFY(sawFirst);
+        QVERIFY(sawWrapped);
+        QVERIFY(maxProvenWrap >= 2);
+        QVERIFY(earliestAfterWrap > 0);
+
+        // Switching Loop Region OFF must preserve already queued PCM, and
+        // recover once a wholly consumed non-loop SRC traversal becomes
+        // audible. Until that boundary, even a true sink clock is not proof.
+        QVERIFY(engine.set_loop(std::nullopt));
+        QVERIFY(!engine.c2_src_retirement_observation()
+                    .noFutureSourcePrefixExclusive);
+        bool recoveredAfterOff = false;
+        for (int i = 0; i < 45; ++i) {
+            sink->consume_all();
+            engine.tick();
+            const auto off = engine.c2_src_retirement_observation();
+            if (off.noFutureSourcePrefixExclusive
+                && !off.loopTraversalProven) {
+                const auto projected = project_c2_prefix(
+                    engine.c2_consumed_prefix(), &off);
+                QVERIFY(projected.srcRetiredSourceEnd.has_value());
+                QVERIFY(!projected.srcLoopTraversalProven);
+                QCOMPARE(projected.srcLoopWrapCount, off.loopWrapCount);
+                recoveredAfterOff = true;
+                break;
+            }
+        }
+        QVERIFY(recoveredAfterOff);
+        // The output watermark and owner cannot masquerade as another
+        // consumed generation, even if its loop region was unchanged.
+        QCOMPARE(engine.c2_src_retirement_observation(firstGeneration + 1)
+                     .reason, Reason::STALE_GENERATION);
+        QVERIFY(!engine.c2_src_retirement_observation(firstGeneration + 1)
+                    .noFutureSourcePrefixExclusive);
+        QVERIFY(engine.stop());
+        QVERIFY(!engine.c2_src_retirement_observation()
+            .noFutureSourcePrefixExclusive);
+    }
+}
+
+
+void PlaybackSupportTest::c2D19ArmedLoopSeekBeforeInsideAfterRetainsConsumedProof()
+{
+    using platform::windows::internal::project_c2_prefix;
+    using Reason = platform::windows::internal::C2CoverageProbeReason;
+    for (const auto& pair :
+         std::array<std::pair<std::int64_t, std::int64_t>, 2>{{
+             {44'100, 48'000}, {48'000, 44'100}}}) {
+        const auto sourceHz = pair.first;
+        const auto outputHz = pair.second;
+        auto inputRate = core::SampleRate::create(sourceHz);
+        auto deviceRate = core::SampleRate::create(outputHz);
+        QVERIFY(inputRate && deviceRate);
+        auto adapter = audio::PlaybackSampleRateAdapter::create(
+            audio::PlaybackRateSpec{*inputRate.value(), *deviceRate.value(),
+                audio::ChannelLayout::STEREO_LR, frame_count(4 * sourceHz)});
+        QVERIFY(adapter);
+        auto pcm = make_buffer(sourceHz, audio::ChannelLayout::STEREO_LR,
+            4 * sourceHz);
+        PlaybackEngine engine;
+        auto device = std::make_unique<FakeOutput>(16'384U, 4U);
+        auto* sink = device.get();
+        QVERIFY(engine.install_pcm_candidate(
+            pcm.view(), std::move(device), DeviceSampleFormat::PCM_S16,
+            std::move(*adapter.value()), nullptr, core::RealizationId{9'401}));
+        const auto loop = *core::FrameRange::create(
+            core::FrameIndex{sourceHz}, core::FrameIndex{2 * sourceHz}).value();
+        QVERIFY(engine.set_loop(loop));
+        const std::array<std::int64_t, 3> seeks{
+            sourceHz / 2, sourceHz + sourceHz / 4,
+            2 * sourceHz + sourceHz / 4};
+        std::uint64_t lastGeneration = 0;
+        for (std::size_t index = 0; index < seeks.size(); ++index) {
+            QVERIFY(engine.seek(core::FrameIndex{seeks[index]}));
+            if (index == 0U) QVERIFY(engine.play());
+            const auto snapshot = engine.snapshot();
+            QVERIFY(snapshot);
+            QCOMPARE(snapshot.value()->state, core::PlaybackState::PLAYING);
+            QCOMPARE(snapshot.value()->loop, std::optional{loop});
+            QCOMPARE(snapshot.value()->position.value(), seeks[index]);
+            const auto generation = engine.c2_consumed_prefix().generation;
+            QVERIFY(generation > lastGeneration);
+            lastGeneration = generation;
+            // No generated/queued future output can prove a recent reading.
+            QVERIFY(!engine.c2_src_retirement_observation()
+                .noFutureSourcePrefixExclusive);
+            bool got = false;
+            for (int tick = 0; tick < 3; ++tick) {
+                sink->consume_all();
+                engine.tick();
+                const auto proof = engine.c2_src_retirement_observation();
+                QCOMPARE(proof.reason, Reason::UNPROVEN_SRC);
+                if (!proof.noFutureSourcePrefixExclusive) continue;
+                QVERIFY(proof.firstSourceFrame.has_value());
+                QVERIFY(*proof.firstSourceFrame >= seeks[index]);
+                QVERIFY(*proof.firstSourceFrame <= seeks[index] + 1);
+                QVERIFY(*proof.noFutureSourcePrefixExclusive
+                    > *proof.firstSourceFrame);
+                QVERIFY(*proof.noFutureSourcePrefixExclusive
+                    <= 4 * sourceHz);
+                QCOMPARE(proof.loopTraversalProven, index != 2U);
+                QCOMPARE(proof.loopWrapCount, std::uint64_t{0});
+                const auto projected = project_c2_prefix(
+                    engine.c2_consumed_prefix(), &proof);
+                QVERIFY(projected.srcRetiredSourceBegin.has_value());
+                QVERIFY(projected.srcRetiredSourceEnd.has_value());
+                QCOMPARE(projected.srcLoopTraversalProven, index != 2U);
+                QCOMPARE(projected.srcLoopWrapCount, std::uint64_t{0});
+                QVERIFY(!projected.certifiedForLiveTruePeak);
+                if (index == 2U) {
+                    // Armed loop remains in snapshot but sink consumes normal
+                    // post-region SOURCE frames. A real proof must recover.
+                    QVERIFY(*projected.srcRetiredSourceBegin
+                        >= loop.end().value());
+                }
+                got = true;
+            }
+            QVERIFY(got);
+        }
+        QVERIFY(engine.stop());
+    }
+
+    // Native 1:1 must likewise recover: an armed loop is not a traversed
+    // loop after the playhead is deliberately sought beyond its end.
+    auto pcm = make_buffer(48'000, audio::ChannelLayout::STEREO_LR,
+        4 * 48'000);
+    PlaybackEngine direct;
+    auto device = std::make_unique<FakeOutput>(16'384U, 4U);
+    auto* sink = device.get();
+    QVERIFY(direct.install_pcm_candidate(pcm.view(), std::move(device),
+        DeviceSampleFormat::PCM_S16, std::nullopt, nullptr,
+        core::RealizationId{9'402}));
+    const auto loop = *core::FrameRange::create(
+        core::FrameIndex{48'000}, core::FrameIndex{96'000}).value();
+    QVERIFY(direct.set_loop(loop));
+    QVERIFY(direct.seek(core::FrameIndex{108'000}));
+    QVERIFY(direct.play());
+    for (int tick = 0; tick < 3; ++tick) {
+        sink->consume_all();
+        direct.tick();
+    }
+    const auto observed = direct.c2_consumed_prefix();
+    QVERIFY(observed.partitionRepresented);
+    QVERIFY(observed.size >= std::size_t{1});
+    const auto& tail = observed.slices[observed.size - 1U];
+    QCOMPARE(tail.kind,
+        platform::windows::internal::C2ConsumedSliceKind::SOURCE_CANDIDATE_NOT_QUALIFIED);
+    QVERIFY(tail.sourceBegin.has_value());
+    QVERIFY(*tail.sourceBegin >= loop.end().value());
+    QVERIFY(!tail.loopTraversalProven);
+    QCOMPARE(direct.snapshot().value()->loop, std::optional{loop});
 }
 
 }  // namespace rgsml::tests

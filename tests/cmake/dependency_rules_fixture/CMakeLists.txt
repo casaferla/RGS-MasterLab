@@ -40,6 +40,26 @@ if(FIXTURE_CASE MATCHES "^(dsp_|render_)"
 endif()
 
 if(FIXTURE_CASE MATCHES "^render_")
+    # Reproduce Render's complete public ANALYSIS dependency closure. The
+    # production root registers the M16 measurement DTO and chronological
+    # source outside the frozen analysis/CMakeLists.txt; an isolated fixture
+    # must do the same before compiling/linking rgsml_render.
+    add_subdirectory("${RGSML_SOURCE_DIR}/analysis" rgsml_analysis_build)
+    target_sources(rgsml_analysis PRIVATE
+        "${RGSML_SOURCE_DIR}/analysis/src/true_peak_measurement.cpp"
+        "${RGSML_SOURCE_DIR}/analysis/src/true_peak_chronological_buckets.cpp")
+    if(MSVC)
+        set(_fixture_chrono_strict_fp "/fp:strict")
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+        set(_fixture_chrono_strict_fp "-fno-fast-math;-ffp-contract=off")
+    else()
+        message(FATAL_ERROR "Render fixture M16 chronology requires audited strict FP.")
+    endif()
+    set_source_files_properties(
+        "${RGSML_SOURCE_DIR}/analysis/src/true_peak_chronological_buckets.cpp"
+        TARGET_DIRECTORY rgsml_analysis
+        PROPERTIES COMPILE_OPTIONS "${_fixture_chrono_strict_fp}")
+    unset(_fixture_chrono_strict_fp)
     add_subdirectory("${RGSML_SOURCE_DIR}/render" rgsml_render_build)
 endif()
 

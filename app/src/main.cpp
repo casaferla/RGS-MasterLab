@@ -14,22 +14,41 @@
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
+#include "stereo_ms_view_model.hpp"
+#include "terminal_candidate_gate.hpp"
+#include "terminal_audio_session_gate.hpp"
+#include "terminal_private_publication_coordinator.hpp"
+#include "terminal_private_render_controller.hpp"
+#include "terminal_consumed_output_binding.hpp"
+#include "terminal_private_gr_view_model.hpp"
+#include "terminal_post_limiter_true_peak_coordinator.hpp"
+#include "terminal_product_activation_coordinator.hpp"
+#include "terminal_private_product_session.hpp"
+#include "terminal_limiter_state.hpp"
+#include "terminal_limiter_view_model.hpp"
+#include "true_peak_static_coordinator.hpp"
+#include "true_peak_live_coordinator.hpp"
 
 #include "waveform_presentation.hpp"
 
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include <QGuiApplication>
+#include <QIcon>
 #include <QLibraryInfo>
 #include <QUuid>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+
+#include <optional>
+#include <variant>
 #include <QTimer>
 
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 
 namespace {
 
@@ -50,6 +69,10 @@ int main(int argc, char* argv[])
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QGuiApplication application(argc, argv);
     application.setApplicationName(QStringLiteral("RGS MasterLab"));
+    // Matching icon for the Qt window/task switcher. The QML module embeds
+    // the identical approved C artwork under its resource URL.
+    application.setWindowIcon(QIcon(QStringLiteral(
+        ":/qt/qml/Rgsml/Ui/resources/RGS_ML_C_header_64.png")));
     const bool deploySmoke = application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
     if (deploySmoke) {
         qInstallMessageHandler(smokeMessageHandler);
@@ -69,14 +92,18 @@ int main(int argc, char* argv[])
     playbackTransport.set_pcm_prepare_handler(
         [windowsPlayback](
             rgsml::audio::AudioBufferView source,
-            std::shared_ptr<const void> lifetime) {
-            return windowsPlayback->prepare_pcm(source, std::move(lifetime));
+            std::shared_ptr<const void> lifetime,
+            std::optional<rgsml::core::RealizationId> realizationId) {
+            return windowsPlayback->prepare_pcm(
+                source, std::move(lifetime), realizationId);
         });
     playbackTransport.set_pcm_handoff_handler(
         [windowsPlayback](
             rgsml::audio::AudioBufferView source,
-            std::shared_ptr<const void> lifetime) {
-            return windowsPlayback->handoff_pcm(source, std::move(lifetime));
+            std::shared_ptr<const void> lifetime,
+            std::optional<rgsml::core::RealizationId> realizationId) {
+            return windowsPlayback->handoff_pcm(
+                source, std::move(lifetime), realizationId);
         });
     rgsml::ui::WaveformPresentation waveformPresentation;
     rgsml::app::AuditionRegionViewModel auditionRegion{&playbackTransport};
@@ -84,6 +111,49 @@ int main(int argc, char* argv[])
         &waveformPresentation};
     rgsml::app::SourceSelectionViewModel sourceSelection;
     rgsml::app::AuditionSourceSelector auditionSelector{&playbackTransport};
+    rgsml::app::TruePeakStaticCoordinator staticTruePeak;
+    // C2D7: audio device callback untouched; only independently bound
+    // PROCESSED sink-consumed samples reach the off-thread M16 FIR worker.
+    rgsml::app::TruePeakLiveCoordinator liveTruePeak{
+        [windowsPlayback] {
+            return windowsPlayback->consumed_output_prefix();
+        },
+        [&playbackTransport] {
+            return playbackTransport.playback_snapshot();
+        },
+        [&auditionSelector, &sourceSelection]()
+            -> std::optional<rgsml::app::TruePeakLiveSource> {
+            if (auditionSelector.active_target()
+                    != rgsml::app::AuditionTarget::PROCESSED)
+                return std::nullopt;
+            const auto render = auditionSelector.processed_realization_snapshot();
+            const auto id = auditionSelector.processed_realization_id();
+            const auto count = rgsml::core::FrameCount::create(
+                sourceSelection.frame_count());
+            const auto rate = rgsml::core::SampleRate::create(
+                sourceSelection.sample_rate_hz());
+            const int channels = sourceSelection.channel_count();
+            if (!render || !id || !count || !rate ||
+                (channels != 1 && channels != 2)) return std::nullopt;
+            return rgsml::app::TruePeakLiveSource{
+                render, *id, rgsml::app::TruePeakExpectedSource{
+                    *count.value(), *rate.value(),
+                    channels == 1 ? rgsml::audio::ChannelLayout::MONO_C
+                                  : rgsml::audio::ChannelLayout::STEREO_LR}};
+        }};
+    // Source/target/render change invalidates LIVE in the SAME Qt event,
+    // before any later worker publication or the next 50-ms observer tick.
+    QObject::connect(
+        &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
+        &liveTruePeak, &rgsml::app::TruePeakLiveCoordinator::invalidate);
+    // Publication of PROCESSED never implies that it is already audible.
+    QObject::connect(
+        &auditionSelector, &rgsml::app::AuditionSourceSelector::changed,
+        &staticTruePeak, [&auditionSelector, &staticTruePeak] {
+            staticTruePeak.processed_changed(
+                auditionSelector.processed_realization_snapshot(),
+                auditionSelector.processed_realization_id());
+        });
     auditionSelector.set_source_loop_provider([&auditionRegion] {
         return auditionRegion.loop_enabled()
             ? auditionRegion.region()
@@ -94,12 +164,78 @@ int main(int argc, char* argv[])
     const auto gainUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto eqUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto compUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+    const auto stereoMsUuid = *rgsml::core::Uuid::parse(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
+    const auto terminalLimiterUuid = *rgsml::core::Uuid::parse(
+        QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString()).value();
     const auto gainInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(gainUuid).value();
     const auto eqInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(eqUuid).value();
     const auto compInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(compUuid).value();
-    auto masteringChainStateRes = rgsml::app::MasteringChainState::create_default(
-        *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId, compInstanceId);
+    const auto stereoMsInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(stereoMsUuid).value();
+    const auto terminalLimiterInstanceId = *rgsml::dsp::ModuleInstanceId::from_uuid(
+        terminalLimiterUuid).value();
+    // Product startup: four real DSP nodes, milestone order, M15 safely
+    // bypassed. Historic saved three-node projects restore unchanged.
+    auto masteringChainStateRes = rgsml::app::MasteringChainState::create_product_default(
+        *moduleRegistry.value(), chainUuid, gainInstanceId, eqInstanceId,
+        compInstanceId, stereoMsInstanceId);
     auto masteringChainState = std::move(*masteringChainStateRes.value());
+    // M17 has its own real MASTER/TERMINAL DSP segment, distinct from
+    // manual Gain/EQ/Compressor/Stereo-M/S and the M16 analysis-only meter.
+    // The current Product audition renderer is still SOURCE_PROCESSING_RATE.
+    // Do NOT route this terminal state through Render Preview or pretend
+    // that it participates in audible PROCESSED until the output-rate
+    // resource/identity handoff is integrated and verified.
+    auto terminalLimiterStateResult =
+        rgsml::app::TerminalLimiterState::create_default(
+            *moduleRegistry.value(), terminalLimiterInstanceId);
+    if (!terminalLimiterStateResult) {
+        std::fprintf(stderr, "M17 terminal bootstrap refused: %s\n",
+                     terminalLimiterStateResult.error()->message().c_str());
+        return EXIT_FAILURE;
+    }
+    auto terminalLimiterState = std::move(*terminalLimiterStateResult.value());
+    // Real typed Ceiling VM, but no accepted-render callback until the
+    // production terminal job and its stale-result guard exist. QML editor
+    // still remains fail-closed with limiterViewModel: null at this milestone.
+    rgsml::app::TerminalLimiterViewModel terminalLimiterViewModel{
+        &terminalLimiterState};
+    // Product-owned but still PRIVATE: no terminal PCM/RealizationId is
+    // published by this gate. It will only stage future independently
+    // accepted complete OUTPUT_RATE candidates.
+    rgsml::app::TerminalCandidateGate terminalCandidateGate;
+    // The exact-rate Windows device seam is registered but cannot be
+    // invoked by the product until a separate Processed publisher allocates
+    // a unique M17 identity and authorizes an end-to-end SOURCE controller.
+    rgsml::app::TerminalAudioSessionGate terminalAudioSessionGate{
+        terminalCandidateGate,*windowsPlayback,
+        [windowsPlayback](
+            rgsml::audio::AudioBufferView pcm,
+            std::shared_ptr<const void> lifetime,
+            rgsml::core::RealizationId terminalIdentity) {
+            return windowsPlayback->prepare_terminal_output_pcm(
+                pcm,std::move(lifetime),terminalIdentity);
+        }};
+    // Product-owned but not callable from the UI yet: prepare a single
+    // transaction entrypoint that reserves the actual selector's common
+    // RealizationId namespace before installing an independently owned PCM.
+    rgsml::app::TerminalPrivatePublicationCoordinator privateTerminalPublisher{
+        terminalCandidateGate, terminalAudioSessionGate, playbackTransport,
+        [&auditionSelector](
+            std::shared_ptr<const rgsml::render::RenderResult> prepared,
+            std::shared_ptr<const rgsml::render::RenderResult> manual,
+            std::optional<rgsml::core::RealizationId> id) {
+            return auditionSelector.reserve_private_terminal_realization_id(
+                std::move(prepared),std::move(manual),id);
+        }};
+    static_cast<void>(privateTerminalPublisher);
+    // Product-private rendering worker. OUTPUT_RATE is an explicit caller
+    // parameter; no assumption about the active Windows device rate.
+    rgsml::app::TerminalPrivateRenderController privateTerminalRenderer{
+        terminalCandidateGate,terminalLimiterState,
+        [&auditionSelector] {return auditionSelector.prepared_realization_snapshot();},
+        [&auditionSelector] {return auditionSelector.processed_realization_snapshot();},
+        [&auditionSelector] {return auditionSelector.processed_realization_id();},
+        [&masteringChainState] {return masteringChainState.chain();}};
 
     rgsml::app::MasteringPreviewController previewController{
         &masteringChainState,
@@ -111,10 +247,169 @@ int main(int argc, char* argv[])
         }
     };
 
+    // All invalidations atomically revoke terminal device ownership and
+    // discard pending OUTPUT_RATE renders before any future publication.
+    // This PRIVATE session coordinator is never exposed to QML/UI yet.
+    rgsml::app::TerminalPrivateProductSession privateProductSession{
+        privateTerminalRenderer,privateTerminalPublisher,
+        terminalCandidateGate,playbackTransport,
+        [&auditionSelector] {return auditionSelector.prepared_realization_snapshot();},
+        [&auditionSelector] {return auditionSelector.processed_realization_snapshot();},
+        [&auditionSelector] {return auditionSelector.processed_realization_id();},
+        [&auditionRegion] {
+            return auditionRegion.loop_enabled()
+                ? auditionRegion.region() : std::nullopt;
+        },
+        [&auditionSelector] {
+            return auditionSelector.active_target()
+                ==rgsml::app::AuditionTarget::PROCESSED;
+        }};
+    privateProductSession.set_preferred_output_rate_probe(
+        [windowsPlayback](rgsml::audio::ChannelLayout layout) {
+            return windowsPlayback->preferred_terminal_output_rate(layout);
+        });
+    // Product-private output rate is now explicitly discoverable but no
+    // automatic call or QML sonic activation takes place.
+    // A PRIVATE read-only GR presenter. It observes actual Windows-worker
+    // consumed OUTPUT_RATE frames and their exact active M17 applied gains.
+    // No user-accessible activation/publishing is introduced by this wiring;
+    // absent private sink ownership remains UNAVAILABLE (never fake zero).
+    rgsml::app::TerminalPrivateGrViewModel terminalPrivateGrViewModel{
+        [&privateProductSession,windowsPlayback] {
+            return rgsml::app::observe_private_terminal_consumed_output(
+                privateProductSession,
+                [windowsPlayback](std::optional<std::uint64_t> generation) {
+                    return windowsPlayback->consumed_output_prefix(generation);
+                });
+        }};
+    rgsml::app::TerminalPostLimiterTruePeakCoordinator terminalPostMeter{
+        [&privateProductSession,windowsPlayback] {
+            return rgsml::app::observe_private_terminal_consumed_output(
+                privateProductSession,
+                [windowsPlayback](std::optional<std::uint64_t> generation) {
+                    return windowsPlayback->consumed_output_prefix(generation);
+                });
+        }};
+    QObject::connect(&privateProductSession,
+        &rgsml::app::TerminalPrivateProductSession::changed,
+        &terminalPostMeter,
+        &rgsml::app::TerminalPostLimiterTruePeakCoordinator::invalidate);
+    QObject::connect(&playbackTransport,
+        &rgsml::app::PlaybackTransportViewModel::playbackChanged,
+        &terminalPrivateGrViewModel,
+        &rgsml::app::TerminalPrivateGrViewModel::refresh);
+    QObject::connect(&privateProductSession,
+        &rgsml::app::TerminalPrivateProductSession::changed,
+        &terminalPrivateGrViewModel,
+        &rgsml::app::TerminalPrivateGrViewModel::invalidate);
+    // The only product ON/BYPASS conductor. The adapter calls the typed
+    // ViewModel; its accepted-state signal now drives exact-source,
+    // reversible, output-owned device installation (no modal rate prompt).
+    // Device-rate SRC applies only to audition, never to final WAV master.
+    rgsml::app::TerminalProductActivationCoordinator terminalProductActivation{
+        terminalLimiterState,terminalLimiterViewModel,auditionSelector,
+        playbackTransport,privateProductSession};
+    // Ordinary manual-preview updates are not terminal AUDIO errors. The
+    // conductor retires a live terminal before publication of a new MANUAL
+    // owner; the old blanket cancel-on-changed caused ERROR/BYPASS instead.
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &terminalProductActivation,
+        [&previewController,&terminalProductActivation] {
+            terminalProductActivation.manual_preview_changed(
+                previewController.preview_status());
+        });
+    QObject::connect(&auditionRegion,
+        &rgsml::app::AuditionRegionViewModel::changed,
+        &terminalProductActivation,
+        &rgsml::app::TerminalProductActivationCoordinator::loop_context_changed);
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
     rgsml::app::EqViewModel eqViewModel{&masteringChainState, &previewController};
     rgsml::app::CompressorViewModel compressorViewModel{&masteringChainState, &previewController};
-    rgsml::app::DspChainAdapterModel dspChainAdapterModel{&gainViewModel, &eqViewModel, &compressorViewModel, &masteringChainState};
+    compressorViewModel.setTelemetryProviders(
+        [&auditionSelector]()
+            -> std::shared_ptr<const rgsml::render::CompressorTelemetrySidecar> {
+            const auto processed =
+                auditionSelector.processed_realization_snapshot();
+            if (processed == nullptr) {
+                return {};
+            }
+            const auto& sidecar =
+                processed->compressor_telemetry_sidecar();
+            if (!sidecar.has_value() || !sidecar->valid) {
+                return {};
+            }
+            return std::shared_ptr<const rgsml::render::CompressorTelemetrySidecar>(
+                processed, &*sidecar);
+        },
+        [&playbackTransport]() {
+            return playbackTransport.playback_snapshot();
+        },
+        [&auditionSelector]() {
+            const auto target = auditionSelector.active_target();
+            if (!target.has_value()) {
+                return rgsml::render::AuditionTarget::PREPARED;
+            }
+            switch (*target) {
+            case rgsml::app::AuditionTarget::PREPARED:
+                return rgsml::render::AuditionTarget::PREPARED;
+            case rgsml::app::AuditionTarget::PROCESSED:
+                return rgsml::render::AuditionTarget::PROCESSED;
+            case rgsml::app::AuditionTarget::GOLD:
+                return rgsml::render::AuditionTarget::GOLD;
+            }
+            return rgsml::render::AuditionTarget::PREPARED;
+        },
+        [&auditionSelector, &masteringChainState]()
+            -> std::optional<rgsml::core::RealizationId> {
+            const auto accepted = auditionSelector.processed_realization_snapshot();
+            const auto id = auditionSelector.processed_realization_id();
+            if (!accepted || !id) {
+                return std::nullopt;
+            }
+            for (const auto& signature : accepted->signatures()) {
+                if (signature.instance_id == masteringChainState.compressor_instance_id() &&
+                    signature.type_id == "rgsml.dsp.compressor" &&
+                    signature.disposition ==
+                        rgsml::render::ModuleExecutionDisposition::BYPASS_IDENTITY &&
+                    std::holds_alternative<
+                        rgsml::render::CompressorExecutionSignaturePayload>(
+                            signature.payload)) {
+                    // This is a published immutable render signature; the
+                    // resolver still checks that ID is ACTUALLY audible.
+                    return id;
+                }
+            }
+            return std::nullopt;
+        });
+    // B4c2c: bind M/S observation to PUBLISHED render identity and the
+    // independent audible playback clock. Creating the observer does not
+    // opt a Stereo/M-S DSP node into legacy three-module projects.
+    rgsml::app::StereoMsViewModel stereoMsViewModel{
+        &masteringChainState, &previewController};
+    stereoMsViewModel.setTelemetryProviders(
+        [&auditionSelector]() -> rgsml::app::StereoMsViewModel::AcceptedRenderEvidence {
+            return {
+                auditionSelector.processed_realization_snapshot(),
+                auditionSelector.processed_realization_id()};
+        },
+        [&playbackTransport]() {
+            return playbackTransport.playback_snapshot();
+        },
+        [&auditionSelector]() {
+            const auto target = auditionSelector.active_target();
+            return target.has_value() &&
+                   *target == rgsml::app::AuditionTarget::PROCESSED;
+        });
+    // PO 2026-10-22: restore standalone REAL-TIME M16 ANALYSIS entry.
+    // It is NOT a ProcessingChain DSP and modifies no PCM. M17 is a
+    // distinct MASTER/TERMINAL finalization row, below the LIVE chain.
+    // This supersedes ONLY the former shared-editor UI presentation.
+    rgsml::app::DspChainAdapterModel dspChainAdapterModel{
+        &gainViewModel, &eqViewModel, &compressorViewModel,
+        &masteringChainState, QStringLiteral("Mastering"),
+        nullptr, &stereoMsViewModel, true,
+        &terminalLimiterState, &terminalLimiterViewModel};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
@@ -123,8 +418,13 @@ int main(int argc, char* argv[])
         &masteringChainState, &gainViewModel, &eqViewModel, &dspChainAdapterModel, &previewController};
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
-         &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession](
+         &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,
+         &stereoMsViewModel, &compressorViewModel,
+         &staticTruePeak, &liveTruePeak](
             const rgsml::core::ResourceReference& source) {
+            // Prevent a prior source's slow C1 and C2 work becoming current.
+            liveTruePeak.invalidate();
+            staticTruePeak.invalidate_source();
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
             const auto sampleRate = rgsml::core::SampleRate::create(
@@ -134,7 +434,24 @@ int main(int argc, char* argv[])
                     *frameCount.value(), *sampleRate.value());
             }
             const auto prepared = auditionSelector.source_committed(source);
+            if (prepared && frameCount && sampleRate) {
+                const int channelCount = sourceSelection.channel_count();
+                if (channelCount == 1 || channelCount == 2) {
+                    staticTruePeak.source_committed(
+                        source, rgsml::app::TruePeakExpectedSource{
+                            *frameCount.value(), *sampleRate.value(),
+                            channelCount == 1
+                                ? rgsml::audio::ChannelLayout::MONO_C
+                                : rgsml::audio::ChannelLayout::STEREO_LR});
+                    staticTruePeak.processed_changed(
+                        auditionSelector.processed_realization_snapshot(),
+                        auditionSelector.processed_realization_id());
+                }
+            }
             if (prepared) {
+                // New source identity: clear previous GR regardless of whether
+                // project-open is restoring existing DSP parameter values.
+                compressorViewModel.resetTelemetryForNewSource();
                 static_cast<void>(auditionSelector.switch_to(
                     rgsml::app::AuditionTarget::PREPARED));
                 if (!projectSession.is_committing_project_open()) {
@@ -143,6 +460,11 @@ int main(int argc, char* argv[])
             }
             goldSelection.sourceChanged();
             sourceWaveform.source_committed(source);
+            // Use the committed source's real format AFTER the adapter's
+            // new-source reset has invalidated prior format evidence.
+            stereoMsViewModel.setSignalFormat(
+                static_cast<double>(sourceSelection.sample_rate_hz()),
+                sourceSelection.channel_count());
         });
     waveformPresentation.set_seek_handler(
         [&auditionRegion](rgsml::core::FrameIndex position) {
@@ -198,12 +520,37 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("compressorViewModel"),
         &compressorViewModel);
+    // Read-only telemetry properties are ready for B4c3 QML; no fake
+    // visual points or default DSP activation are introduced here.
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("stereoMsViewModel"),
+        &stereoMsViewModel);
+    // Real candidate state is inspectable, but no M17 sonic adapter or
+    // UI control may activate until PROCESSED routes authentic terminal PCM.
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("terminalLimiterViewModel"),
+        &terminalLimiterViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("terminalPrivateGrViewModel"),
+        &terminalPrivateGrViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("terminalPostLimiterTruePeak"),
+        &terminalPostMeter);
     engine.rootContext()->setContextProperty(
         QStringLiteral("dspChainAdapterModel"),
         &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
+        QStringLiteral("truePeakStatic"), &staticTruePeak);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("truePeakLive"), &liveTruePeak);
+    engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"),
         &liveSpectrumViewModel);
+#ifdef RGSML_BUILD_PROVENANCE
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("buildProvenance"),
+        QStringLiteral(RGSML_BUILD_PROVENANCE));
+#endif
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

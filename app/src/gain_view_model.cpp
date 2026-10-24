@@ -54,10 +54,17 @@ double GainViewModel::gain_db() const noexcept
 
 QString GainViewModel::gain_db_text() const
 {
-    if (!validationError_.isEmpty() && !draftGainDbText_.isEmpty()) {
-        return draftGainDbText_;
-    }
+    // The prominent applied gain readout is authority-only. A rejected
+    // numeric field draft must NEVER replace an actual DSP parameter.
     return QString::number(gain_db(), 'f', 1);
+}
+
+QString GainViewModel::draft_gain_db_text() const
+{
+    // Preserve even a blank rejected draft in the SMALL input field.
+    if (!validationError_.isEmpty())
+        return draftGainDbText_;
+    return gain_db_text();
 }
 
 bool GainViewModel::bypass() const noexcept

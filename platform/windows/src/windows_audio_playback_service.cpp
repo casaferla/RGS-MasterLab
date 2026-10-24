@@ -1,9 +1,12 @@
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include "internal/playback_support.hpp"
+#include "internal/c2_consumed_prefix_projection.hpp"
 
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_frame_map.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
 #include <QAudioDevice>
@@ -453,6 +456,92 @@ struct OutputCandidate final {
     }
 }
 
+
+[[nodiscard]] core::Result<OutputCandidate> make_terminal_output_candidate(
+    const audio::AudioFormat& format)
+{
+    const auto device=QMediaDevices::defaultAudioOutput();
+    if(device.isNull()||device.mode()!=QAudioDevice::Output)
+        return failure<OutputCandidate>(core::ErrorCode::UnsupportedOperation,
+            "No default Windows audio output is available.");
+    const auto hz=format.sample_rate().value();
+    if(hz<=0||hz>std::numeric_limits<int>::max())
+        return failure<OutputCandidate>(core::ErrorCode::OutOfRange,
+            "Terminal PCM rate is not representable by Qt audio.");
+    const auto floatQt=make_format(format,static_cast<int>(hz),QAudioFormat::Float);
+    const auto pcmQt=make_format(format,static_cast<int>(hz),QAudioFormat::Int16);
+    auto selected=internal::select_terminal_output_device_format(
+        format,device.isFormatSupported(floatQt),device.isFormatSupported(pcmQt));
+    if(!selected)return core::Result<OutputCandidate>::failure(*selected.error());
+    if(selected.value()->srcApplied||selected.value()->sampleRateHz!=hz)
+        return failure<OutputCandidate>(core::ErrorCode::InvalidState,
+            "Terminal output may not undergo another device-side SRC.");
+    try{
+        return core::Result<OutputCandidate>::success(OutputCandidate{
+            std::make_unique<QtPlaybackOutput>(device,
+                selected.value()->sampleFormat==DeviceSampleFormat::IEEE_F32
+                  ?floatQt:pcmQt),
+            selected.value()->sampleFormat,std::nullopt});
+    }catch(const std::bad_alloc&){
+        return failure<OutputCandidate>(core::ErrorCode::IoFailure,
+            "Failed to allocate exact-rate terminal audio output.");
+    }
+}
+
+// The monitor sink never receives immutable master PCM. This is a Qt
+// preferred-format capability, NOT proof of the physical DAC sample clock.
+[[nodiscard]] core::Result<OutputCandidate> make_monitoring_output_candidate(
+    const audio::MonitoringPcmCandidate& monitor)
+{
+    const auto validation=audio::validate_monitoring_pcm_candidate(monitor);
+    if(!validation)
+        return core::Result<OutputCandidate>::failure(*validation.error());
+    const auto pcm=monitor.device_pcm.view();
+    auto plan=audio::plan_master_monitoring_rate(
+        monitor.immutable_master_rate,monitor.device_rate);
+    if(!plan)return core::Result<OutputCandidate>::failure(*plan.error());
+    if(pcm.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||pcm.absolute_start_frame().value()!=0
+       ||pcm.frame_count().value()<=0
+       ||monitor.immutable_master_frames.value()<=0
+       ||pcm.format().sample_rate()!=monitor.device_rate
+       ||monitor.device_src_applied!=plan.value()->monitoring_src_required)
+        return failure<OutputCandidate>(core::ErrorCode::InvalidArgument,
+            "MONITOR_CANDIDATE_RATE_OR_OWNER_INVALID");
+    const auto device=QMediaDevices::defaultAudioOutput();
+    if(device.isNull()||device.mode()!=QAudioDevice::Output)
+        return failure<OutputCandidate>(core::ErrorCode::UnsupportedOperation,
+            "MONITOR_DEVICE_UNAVAILABLE");
+    const int hz=device.preferredFormat().sampleRate();
+    if(hz!=monitor.device_rate.value())
+        return failure<OutputCandidate>(core::ErrorCode::UnsupportedOperation,
+            "MONITOR_DEVICE_RATE_CHANGED: rebuild offline monitor PCM.");
+    auto masterFmt=audio::AudioFormat::create(
+        monitor.immutable_master_rate,pcm.format().channel_layout());
+    if(!masterFmt)return core::Result<OutputCandidate>::failure(*masterFmt.error());
+    const auto qtFloat=make_format(pcm.format(),hz,QAudioFormat::Float);
+    const auto qtPcm=make_format(pcm.format(),hz,QAudioFormat::Int16);
+    auto selected=internal::select_monitoring_device_format(
+        *masterFmt.value(),hz,
+        device.isFormatSupported(qtFloat),device.isFormatSupported(qtPcm));
+    if(!selected)return core::Result<OutputCandidate>::failure(*selected.error());
+    if(selected.value()->sampleRateHz!=hz
+       ||selected.value()->srcApplied!=monitor.device_src_applied)
+        return failure<OutputCandidate>(core::ErrorCode::InvalidState,
+            "MONITOR_SINK_PROVENANCE_MISMATCH");
+    try {
+        return core::Result<OutputCandidate>::success(OutputCandidate{
+            std::make_unique<QtPlaybackOutput>(device,
+                selected.value()->sampleFormat==DeviceSampleFormat::IEEE_F32
+                    ?qtFloat:qtPcm),
+            selected.value()->sampleFormat,std::nullopt
+        });
+    }catch(const std::bad_alloc&){
+        return failure<OutputCandidate>(core::ErrorCode::IoFailure,
+            "MONITOR_SINK_ALLOCATION_FAILED");
+    }
+}
+
 class PlaybackWorker final : public QObject {
 public:
     [[nodiscard]] core::Status start()
@@ -525,12 +614,18 @@ public:
         }
         preparedSource_ = source;
         preparedPcm_.reset();
+        preparedPcmRealizationId_.reset();
+        terminalPcmPrepared_=false;
+        terminalPcmLifetime_.reset();
+        preparedMonitoring_.reset();
+        requestedMasterLoop_.reset();
         return core::Status::success();
     }
 
     [[nodiscard]] core::Status prepare_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
         auto output = make_output_candidate(
             source.format(), source.frame_count());
@@ -545,7 +640,8 @@ public:
             std::move(output.value()->output),
             output.value()->sampleFormat,
             std::move(output.value()->rateAdapter),
-            std::move(lifetime));
+            std::move(lifetime),
+            realizationId);
         if (!installed) {
             return installed;
         }
@@ -555,19 +651,123 @@ public:
         }
         preparedSource_.reset();
         preparedPcm_ = source;
+        preparedPcmRealizationId_ = realizationId;
+        terminalPcmPrepared_=false;
+        terminalPcmLifetime_.reset();
+        preparedMonitoring_.reset();
+        requestedMasterLoop_.reset();
+        return core::Status::success();
+    }
+
+
+    [[nodiscard]] core::Result<core::SampleRate>
+    preferred_terminal_output_rate(audio::ChannelLayout layout) const
+    {
+        const auto device=QMediaDevices::defaultAudioOutput();
+        if(device.isNull() || device.mode()!=QAudioDevice::Output)
+            return failure<core::SampleRate>(
+                core::ErrorCode::UnsupportedOperation,
+                "No default Windows output for M17 rate negotiation.");
+        const int hz=device.preferredFormat().sampleRate();
+        if(hz<=0)
+            return failure<core::SampleRate>(
+                core::ErrorCode::UnsupportedOperation,
+                "Default Windows output has no valid preferred sample rate.");
+        auto rate=core::SampleRate::create(hz);
+        if(!rate)
+            return core::Result<core::SampleRate>::failure(*rate.error());
+        auto fmt=audio::AudioFormat::create(*rate.value(),layout);
+        if(!fmt)
+            return core::Result<core::SampleRate>::failure(*fmt.error());
+        const auto nativeFloat=make_format(*fmt.value(),hz,QAudioFormat::Float);
+        const auto nativePcm=make_format(*fmt.value(),hz,QAudioFormat::Int16);
+        return internal::select_preferred_terminal_output_rate(
+            hz,layout,device.isFormatSupported(nativeFloat),
+            device.isFormatSupported(nativePcm));
+    }
+
+    [[nodiscard]] core::Status prepare_terminal_output_pcm(
+        audio::AudioBufferView pcm,
+        std::shared_ptr<const void> lifetime,
+        core::RealizationId identity)
+    {
+        if(!lifetime||identity.value==0
+           ||pcm.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+           ||pcm.absolute_start_frame().value()!=0
+           ||pcm.frame_count().value()<=0)
+            return status_failure(core::ErrorCode::InvalidArgument,
+                "M17 output requires owned zero-origin OUTPUT_RATE PCM.");
+        auto output=make_terminal_output_candidate(pcm.format());
+        if(!output)return core::Status::failure(*output.error());
+        if(output.value()->rateAdapter)
+            return status_failure(core::ErrorCode::InvalidState,
+                "M17 terminal PCM cannot have a second SRC.");
+        if(analyzer_)output.value()->output->attach_analyzer(analyzer_);
+        auto installed=engine_.install_terminal_output_pcm_candidate(
+            pcm,std::move(output.value()->output),
+            output.value()->sampleFormat,lifetime,identity,
+            pcm.format().sample_rate());
+        if(!installed)return installed;
+        if(analyzer_){
+            analyzer_->set_stream_generation(nextStreamGeneration_++);
+            analyzer_->invalidate_and_clear();
+        }
+        preparedSource_.reset();
+        preparedPcm_=pcm;
+        preparedPcmRealizationId_=identity;
+        terminalPcmPrepared_=true;
+        terminalPcmLifetime_=std::move(lifetime);
+        preparedMonitoring_.reset();
+        requestedMasterLoop_.reset();
+        return core::Status::success();
+    }
+
+    [[nodiscard]] core::Status prepare_monitoring_output_pcm(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
+    {
+        if(!candidate)
+            return status_failure(core::ErrorCode::InvalidArgument,
+                "MONITOR_CANDIDATE_OWNER_MISSING");
+        auto output=make_monitoring_output_candidate(*candidate);
+        if(!output)return core::Status::failure(*output.error());
+        const auto pcm=candidate->device_pcm.view();
+        if(analyzer_)output.value()->output->attach_analyzer(analyzer_);
+        auto installed=engine_.install_monitoring_output_pcm_candidate(
+            pcm,std::move(output.value()->output),
+            output.value()->sampleFormat,
+            std::shared_ptr<const void>(candidate),candidate->device_rate);
+        if(!installed)return installed;
+        if(analyzer_){
+            analyzer_->set_stream_generation(nextStreamGeneration_++);
+            analyzer_->invalidate_and_clear();
+        }
+        preparedSource_.reset();
+        preparedPcm_=pcm;
+        preparedPcmRealizationId_.reset();
+        terminalPcmPrepared_=false;
+        terminalPcmLifetime_.reset();
+        requestedMasterLoop_.reset();
+        preparedMonitoring_=std::move(candidate);
         return core::Status::success();
     }
 
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
-        auto handedOff = engine_.handoff_pcm(source, lifetime);
+        auto handedOff = engine_.handoff_pcm(
+            source, lifetime, realizationId);
         if (!handedOff) {
             return handedOff;
         }
         preparedSource_.reset();
         preparedPcm_ = source;
+        preparedPcmRealizationId_ = realizationId;
+        terminalPcmPrepared_=false;
+        terminalPcmLifetime_.reset();
+        preparedMonitoring_.reset();
+        requestedMasterLoop_.reset();
         return core::Status::success();
     }
 
@@ -577,6 +777,11 @@ public:
         if (cleared) {
             preparedSource_.reset();
             preparedPcm_.reset();
+            preparedPcmRealizationId_.reset();
+            terminalPcmPrepared_=false;
+            terminalPcmLifetime_.reset();
+        preparedMonitoring_.reset();
+        requestedMasterLoop_.reset();
         }
         return cleared;
     }
@@ -593,9 +798,21 @@ public:
             const auto preservedLoop = snapshot.value()->loop;
             const auto source = preparedSource_;
             const auto pcm = preparedPcm_;
+            const auto pcmRealizationId = preparedPcmRealizationId_;
+            const auto terminal=terminalPcmPrepared_;
+            const auto owner=terminalPcmLifetime_;
+            const auto monitoring=preparedMonitoring_;
+            const auto requestedLoop=requestedMasterLoop_;
+            if(terminal&&(!pcm||!pcmRealizationId||!owner))
+                return status_failure(core::ErrorCode::InvalidState,
+                    "Cannot reopen unowned terminal PCM.");
             auto reprepared = source
                 ? prepare(*source)
-                : prepare_pcm(*pcm);
+                : monitoring
+                  ? prepare_monitoring_output_pcm(monitoring)
+                  : terminal
+                    ? prepare_terminal_output_pcm(*pcm,owner,*pcmRealizationId)
+                    : prepare_pcm(*pcm,nullptr,pcmRealizationId);
             if (!reprepared) {
                 return reprepared;
             }
@@ -607,6 +824,7 @@ public:
             if (!looped) {
                 return looped;
             }
+            if(monitoring) requestedMasterLoop_=requestedLoop;
         }
         return engine_.play();
     }
@@ -629,6 +847,9 @@ public:
 
     [[nodiscard]] core::Status seek(core::FrameIndex position)
     {
+        if(preparedMonitoring_)
+            return status_failure(core::ErrorCode::InvalidState,
+                "MONITOR_SEEK_REQUIRES_MASTER_COORDINATES");
         if (analyzer_ != nullptr) {
             analyzer_->invalidate_and_clear();
         }
@@ -638,12 +859,82 @@ public:
     [[nodiscard]] core::Status set_loop(
         std::optional<core::FrameRange> loop)
     {
+        if(preparedMonitoring_)
+            return status_failure(core::ErrorCode::InvalidState,
+                "MONITOR_LOOP_REQUIRES_MASTER_COORDINATES");
         return engine_.set_loop(loop);
+    }
+
+    [[nodiscard]] core::Status seek_monitoring_master_frame(
+        core::FrameIndex masterFrame)
+    {
+        if(!preparedMonitoring_)
+            return status_failure(core::ErrorCode::InvalidState,
+                "MONITOR_SEEK_REQUIRES_OWNED_DEVICE_PCM");
+        auto map=audio::MonitoringFrameMap::create(*preparedMonitoring_);
+        if(!map)return core::Status::failure(*map.error());
+        auto target=map.value()->master_to_device(masterFrame);
+        if(!target)return core::Status::failure(*target.error());
+        // Do not re-clock or re-render M17. The existing monitoring sink
+        // consumes DEVICE frames only; LIVE provenance remains unqualified.
+        if(analyzer_) analyzer_->invalidate_and_clear();
+        return engine_.seek(*target.value());
+    }
+
+    [[nodiscard]] core::Status set_monitoring_master_loop(
+        std::optional<core::FrameRange> masterLoop)
+    {
+        if(!preparedMonitoring_)
+            return status_failure(core::ErrorCode::InvalidState,
+                "MONITOR_LOOP_REQUIRES_OWNED_DEVICE_PCM");
+        auto map=audio::MonitoringFrameMap::create(*preparedMonitoring_);
+        if(!map)return core::Status::failure(*map.error());
+        std::optional<core::FrameRange> mappedLoop;
+        if(masterLoop) {
+            auto mapped=map.value()->master_loop_to_device(*masterLoop);
+            if(!mapped)return core::Status::failure(*mapped.error());
+            mappedLoop=*mapped.value();
+        }
+        auto committed=engine_.set_loop(mappedLoop);
+        if(committed)requestedMasterLoop_=masterLoop;
+        return committed;
+    }
+
+
+
+    [[nodiscard]] core::Result<audio::MonitoringMasterDisplaySnapshot>
+    monitoring_master_snapshot() const
+    {
+        if(!preparedMonitoring_)
+            return core::Result<audio::MonitoringMasterDisplaySnapshot>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                    "MONITOR_SNAPSHOT_REQUIRES_OWNED_DEVICE_PCM"});
+        auto map=audio::MonitoringFrameMap::create(*preparedMonitoring_);
+        if(!map)
+            return core::Result<audio::MonitoringMasterDisplaySnapshot>::failure(
+                *map.error());
+        auto snap=engine_.snapshot();
+        if(!snap)
+            return core::Result<audio::MonitoringMasterDisplaySnapshot>::failure(
+                *snap.error());
+        return map.value()->project_display_snapshot(
+            *snap.value(),requestedMasterLoop_);
     }
 
     [[nodiscard]] core::Result<core::PlaybackSnapshot> snapshot() const
     {
         return engine_.snapshot();
+    }
+
+    [[nodiscard]] WindowsConsumedOutputPrefix consumed_output_prefix(
+        std::optional<std::uint64_t> expectedGeneration = std::nullopt) const noexcept
+    {
+        // Two owner-thread observations must match the *same* consumed
+        // generation and watermark; the projector rejects torn clocks.
+        const auto consumed = engine_.c2_consumed_prefix(expectedGeneration);
+        const auto retired = engine_.c2_src_retirement_observation(
+            expectedGeneration);
+        return internal::project_c2_prefix(consumed, &retired);
     }
 
     void attach_analyzer(rgsml::analysis::LiveSpectrumAnalyzer* analyzer)
@@ -659,6 +950,11 @@ private:
     QTimer* timer_{nullptr};
     std::optional<core::ResourceReference> preparedSource_;
     std::optional<audio::AudioBufferView> preparedPcm_;
+    std::optional<core::RealizationId> preparedPcmRealizationId_;
+    bool terminalPcmPrepared_{false};
+    std::shared_ptr<const void> terminalPcmLifetime_;
+    std::shared_ptr<const audio::MonitoringPcmCandidate> preparedMonitoring_;
+    std::optional<core::FrameRange> requestedMasterLoop_;
 };
 
 }  // namespace
@@ -704,20 +1000,69 @@ public:
 
     [[nodiscard]] core::Status prepare_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
-        return invoke_status([source, lifetime = std::move(lifetime)](PlaybackWorker& worker) mutable {
-            return worker.prepare_pcm(source, std::move(lifetime));
+        return invoke_status(
+            [source, lifetime = std::move(lifetime), realizationId](
+                PlaybackWorker& worker) mutable {
+                return worker.prepare_pcm(
+                    source, std::move(lifetime), realizationId);
+            });
+    }
+
+
+    [[nodiscard]] core::Result<core::SampleRate>
+    preferred_terminal_output_rate(audio::ChannelLayout layout) const
+    {
+        if(!ready_ || worker_==nullptr)
+            return failure<core::SampleRate>(
+                core::ErrorCode::IoFailure,"Windows audio worker is unavailable.");
+        if(QThread::currentThread()==worker_->thread())
+            return worker_->preferred_terminal_output_rate(layout);
+        std::optional<core::Result<core::SampleRate>> result;
+        const bool invoked=QMetaObject::invokeMethod(worker_,[&] {
+            result.emplace(worker_->preferred_terminal_output_rate(layout));
+        },Qt::BlockingQueuedConnection);
+        if(!invoked || !result)
+            return failure<core::SampleRate>(
+                core::ErrorCode::IoFailure,"Windows preferred-rate probe failed.");
+        return std::move(*result);
+    }
+
+    [[nodiscard]] core::Status prepare_terminal_output_pcm(
+        audio::AudioBufferView pcm,
+        std::shared_ptr<const void> lifetime,
+        core::RealizationId identity)
+    {
+        return invoke_status(
+            [pcm,lifetime=std::move(lifetime),identity](
+                PlaybackWorker& worker) mutable {
+                return worker.prepare_terminal_output_pcm(
+                    pcm,std::move(lifetime),identity);
+            });
+    }
+
+    [[nodiscard]] core::Status prepare_monitoring_output_pcm(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
+    {
+        return invoke_status([candidate=std::move(candidate)](
+            PlaybackWorker& worker) mutable {
+            return worker.prepare_monitoring_output_pcm(std::move(candidate));
         });
     }
 
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
-        std::shared_ptr<const void> lifetime = nullptr)
+        std::shared_ptr<const void> lifetime = nullptr,
+        std::optional<core::RealizationId> realizationId = std::nullopt)
     {
-        return invoke_status([source, lifetime = std::move(lifetime)](PlaybackWorker& worker) mutable {
-            return worker.handoff_pcm(source, std::move(lifetime));
-        });
+        return invoke_status(
+            [source, lifetime = std::move(lifetime), realizationId](
+                PlaybackWorker& worker) mutable {
+                return worker.handoff_pcm(
+                    source, std::move(lifetime), realizationId);
+            });
     }
 
     [[nodiscard]] core::Status clear()
@@ -763,6 +1108,43 @@ public:
         });
     }
 
+    [[nodiscard]] core::Status seek_monitoring_master_frame(
+        core::FrameIndex masterFrame)
+    {
+        return invoke_status([masterFrame](PlaybackWorker& worker) {
+            return worker.seek_monitoring_master_frame(masterFrame);
+        });
+    }
+
+    [[nodiscard]] core::Status set_monitoring_master_loop(
+        std::optional<core::FrameRange> masterLoop)
+    {
+        return invoke_status([masterLoop](PlaybackWorker& worker) {
+            return worker.set_monitoring_master_loop(masterLoop);
+        });
+    }
+
+
+
+    [[nodiscard]] core::Result<audio::MonitoringMasterDisplaySnapshot>
+    monitoring_master_snapshot() const
+    {
+        using Snapshot=audio::MonitoringMasterDisplaySnapshot;
+        if(!ready_ || worker_==nullptr)
+            return core::Result<Snapshot>::failure(core::Error{
+                core::ErrorCode::IoFailure,"MONITOR_WORKER_UNAVAILABLE"});
+        if(QThread::currentThread()==worker_->thread())
+            return worker_->monitoring_master_snapshot();
+        std::optional<core::Result<Snapshot>> reply;
+        const bool invoked=QMetaObject::invokeMethod(worker_,[&] {
+            reply.emplace(worker_->monitoring_master_snapshot());
+        },Qt::BlockingQueuedConnection);
+        if(!invoked || !reply)
+            return core::Result<Snapshot>::failure(core::Error{
+                core::ErrorCode::IoFailure,"MONITOR_SNAPSHOT_INVOKE_FAILED"});
+        return std::move(*reply);
+    }
+
     [[nodiscard]] core::Result<core::PlaybackSnapshot> snapshot() const
     {
         if (!ready_ || worker_ == nullptr) {
@@ -784,6 +1166,33 @@ public:
                 "Unable to query the Windows playback worker.");
         }
         return std::move(*result);
+    }
+
+    [[nodiscard]] core::Result<WindowsConsumedOutputPrefix>
+    consumed_output_prefix(std::optional<std::uint64_t> expectedGeneration) const
+    {
+        if (!ready_ || worker_ == nullptr) {
+            return failure<WindowsConsumedOutputPrefix>(
+                core::ErrorCode::IoFailure,
+                "The Windows playback observer worker is unavailable.");
+        }
+        if (QThread::currentThread() == worker_->thread()) {
+            return core::Result<WindowsConsumedOutputPrefix>::success(
+                worker_->consumed_output_prefix(expectedGeneration));
+        }
+        std::optional<WindowsConsumedOutputPrefix> observed;
+        const bool invoked = QMetaObject::invokeMethod(
+            worker_,
+            [&] { observed.emplace(
+                worker_->consumed_output_prefix(expectedGeneration)); },
+            Qt::BlockingQueuedConnection);
+        if (!invoked || !observed.has_value()) {
+            return failure<WindowsConsumedOutputPrefix>(
+                core::ErrorCode::IoFailure,
+                "Unable to query the Windows playback observer.");
+        }
+        return core::Result<WindowsConsumedOutputPrefix>::success(
+            std::move(*observed));
     }
 
     void attach_analyzer(analysis::LiveSpectrumAnalyzer* analyzer)
@@ -843,21 +1252,73 @@ core::Status WindowsAudioPlaybackService::prepare(
 core::Status WindowsAudioPlaybackService::prepare_pcm(
     audio::AudioBufferView source)
 {
-    return impl_->prepare_pcm(source, nullptr);
+    return impl_->prepare_pcm(source, nullptr, std::nullopt);
 }
 
 core::Status WindowsAudioPlaybackService::prepare_pcm(
     audio::AudioBufferView source,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
-    return impl_->prepare_pcm(source, std::move(lifetime));
+    return impl_->prepare_pcm(
+        source, std::move(lifetime), realizationId);
+}
+
+core::Result<core::SampleRate>
+WindowsAudioPlaybackService::preferred_terminal_output_rate(
+    audio::ChannelLayout layout) const
+{
+    return impl_->preferred_terminal_output_rate(layout);
+}
+
+core::Status WindowsAudioPlaybackService::prepare_terminal_output_pcm(
+    audio::AudioBufferView pcm,
+    std::shared_ptr<const void> lifetime,
+    core::RealizationId candidateIdentity)
+{
+    return impl_->prepare_terminal_output_pcm(
+        pcm,std::move(lifetime),candidateIdentity);
+}
+
+core::Result<core::SampleRate>
+WindowsAudioPlaybackService::preferred_monitoring_output_rate(
+    audio::ChannelLayout layout) const
+{
+    // Dedicated monitoring query; still only an advisory exact-format probe.
+    return impl_->preferred_terminal_output_rate(layout);
+}
+
+core::Status WindowsAudioPlaybackService::prepare_monitoring_output_pcm(
+    std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
+{
+    return impl_->prepare_monitoring_output_pcm(std::move(candidate));
+}
+
+core::Status WindowsAudioPlaybackService::seek_monitoring_master_frame(
+    core::FrameIndex masterFrame)
+{
+    return impl_->seek_monitoring_master_frame(masterFrame);
+}
+
+core::Status WindowsAudioPlaybackService::set_monitoring_master_loop(
+    std::optional<core::FrameRange> masterLoop)
+{
+    return impl_->set_monitoring_master_loop(masterLoop);
+}
+
+core::Result<audio::MonitoringMasterDisplaySnapshot>
+WindowsAudioPlaybackService::monitoring_master_snapshot() const
+{
+    return impl_->monitoring_master_snapshot();
 }
 
 core::Status WindowsAudioPlaybackService::handoff_pcm(
     audio::AudioBufferView source,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
-    return impl_->handoff_pcm(source, std::move(lifetime));
+    return impl_->handoff_pcm(
+        source, std::move(lifetime), realizationId);
 }
 
 core::Status WindowsAudioPlaybackService::clear()
@@ -895,6 +1356,13 @@ core::Result<core::PlaybackSnapshot>
 WindowsAudioPlaybackService::snapshot() const
 {
     return impl_->snapshot();
+}
+
+core::Result<WindowsConsumedOutputPrefix>
+WindowsAudioPlaybackService::consumed_output_prefix(
+    std::optional<std::uint64_t> expectedGeneration) const
+{
+    return impl_->consumed_output_prefix(expectedGeneration);
 }
 
 void WindowsAudioPlaybackService::attach_analyzer(
