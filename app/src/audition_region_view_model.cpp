@@ -255,7 +255,7 @@ core::Status AuditionRegionViewModel::set_region(core::FrameRange candidate)
             publish_error(*failure.error());
             return failure;
         }
-        const auto beforeLoopUpdate = playback_->playback_snapshot();
+        const auto beforeLoopUpdate = playback_->source_display_snapshot();
         if (!beforeLoopUpdate) {
             publish_error(*beforeLoopUpdate.error());
             return core::Status::failure(*beforeLoopUpdate.error());
@@ -266,7 +266,9 @@ core::Status AuditionRegionViewModel::set_region(core::FrameRange candidate)
             publish_error(*loopResult.error());
             return loopResult;
         }
+        const bool changedEffectiveLoop=region_!=std::optional{candidate};
         publish_region(candidate);
+        if(changedEffectiveLoop) emit effectiveLoopChanged();
         return reposition_if_outside(
             candidate, beforeLoopUpdate.value()->position);
     }
@@ -313,7 +315,9 @@ core::Status AuditionRegionViewModel::clear_region()
             return disabled;
         }
     }
+    const bool wasEffective=loopEnabled_ && region_.has_value();
     publish_region(std::nullopt);
+    if(wasEffective) emit effectiveLoopChanged();
     return core::Status::success();
 }
 
@@ -335,13 +339,14 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
     }
     std::optional<core::FrameIndex> positionBeforeLoopUpdate;
     if (enabled) {
-        const auto snapshot = playback_->playback_snapshot();
+        const auto snapshot = playback_->source_display_snapshot();
         if (!snapshot) {
             publish_error(*snapshot.error());
             return core::Status::failure(*snapshot.error());
         }
         positionBeforeLoopUpdate = snapshot.value()->position;
     }
+    const auto beforeEffective=loopEnabled_ ? region_ : std::nullopt;
     const auto result = playback_->set_loop_source_range(
         enabled ? region_ : std::nullopt);
     if (!result) {
@@ -350,6 +355,8 @@ core::Status AuditionRegionViewModel::set_loop_enabled(bool enabled)
     }
     loopEnabled_ = enabled;
     lastCanLoop_ = can_loop();
+    if(beforeEffective!=(enabled ? region_ : std::nullopt))
+        emit effectiveLoopChanged();
     if (enabled && positionBeforeLoopUpdate) {
         return reposition_if_outside(*region_, *positionBeforeLoopUpdate);
     }
@@ -379,6 +386,7 @@ void AuditionRegionViewModel::source_committed(
     core::FrameCount frameCount,
     core::SampleRate sampleRate)
 {
+    const bool wasEffective=loopEnabled_ && region_.has_value();
     sourceFrames_ = frameCount.value();
     sampleRate_ = sampleRate.value();
     waveformReady_ = false;
@@ -387,6 +395,7 @@ void AuditionRegionViewModel::source_committed(
     lastCanLoop_ = false;
     errorMessage_.clear();
     emit changed();
+    if(wasEffective) emit effectiveLoopChanged();
 }
 
 void AuditionRegionViewModel::set_waveform_ready(bool ready)

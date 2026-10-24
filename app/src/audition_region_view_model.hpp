@@ -85,6 +85,9 @@ public:
 
 signals:
     void changed();
+    // Only the effective playback Loop changed. Inactive region editing,
+    // waveform readiness, seek and validation must never invalidate M17.
+    void effectiveLoopChanged();
 
 private:
     struct TimeSegments final {

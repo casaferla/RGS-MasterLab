@@ -4,6 +4,7 @@
 #include <rgsml/core/audio_playback_service.hpp>
 
 #include <QTest>
+#include <QSignalSpy>
 
 #include <array>
 #include <memory>
@@ -105,6 +106,7 @@ private slots:
     void segmentedTimeLongHoursValidationAndTiesEven();
     void explicitSeekIsSingleAndPositionExactAcrossLoopStates();
     void loopTransactionsAndRepositioning();
+    void inactiveRegionEditsNeverInvalidateEffectiveLoop();
     void failureAndSourceReplacementRemainTruthful();
 };
 
@@ -311,6 +313,62 @@ void AuditionRegionViewModelTest::explicitSeekIsSingleAndPositionExactAcrossLoop
             }
         }
     }
+}
+
+void AuditionRegionViewModelTest::inactiveRegionEditsNeverInvalidateEffectiveLoop()
+{
+    auto service=std::make_unique<RegionPlaybackFake>();
+    auto* device=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    app::AuditionRegionViewModel region{&transport};
+    region.source_committed(*core::FrameCount::create(1000).value(),
+        *core::SampleRate::create(44100).value());
+    region.set_waveform_ready(true);
+    QSignalSpy effective{&region,
+        &app::AuditionRegionViewModel::effectiveLoopChanged};
+    QSignalSpy cosmetic{&region,
+        &app::AuditionRegionViewModel::changed};
+    QVERIFY(effective.isValid()&&cosmetic.isValid());
+
+    // M17 may be preparing the entire programme. A drawn, disabled
+    // Audition Region is purely an editor selection, never an audio owner.
+    QVERIFY(region.set_region(range(100,200)));
+    QVERIFY(region.set_region(range(125,250)));
+    QVERIFY(region.set_start(core::FrameIndex{140}));
+    QVERIFY(region.set_end_exclusive(core::FrameIndex{260}));
+    QVERIFY(region.seek(core::FrameIndex{155}));
+    QCOMPARE(effective.count(),0);
+    QVERIFY(cosmetic.count()>0);
+    QVERIFY(!region.loop_enabled());
+    QCOMPARE(device->setLoopCalls,0);
+    QVERIFY(!device->loop);
+
+    // True armed Loop revisions must still be routed to the M17
+    // ownership coordinator. The optional range alone is NOT this event.
+    QVERIFY(region.set_loop_enabled(true));
+    QCOMPARE(effective.count(),1);
+    QCOMPARE(device->loop,std::optional{range(140,260)});
+    QVERIFY(region.set_region(range(150,280)));
+    QCOMPARE(effective.count(),2);
+    QCOMPARE(device->loop,std::optional{range(150,280)});
+    QVERIFY(region.set_loop_enabled(false));
+    QCOMPARE(effective.count(),3);
+    QVERIFY(!device->loop);
+    QVERIFY(region.set_region(range(160,300)));
+    QCOMPARE(effective.count(),3);
+    QVERIFY(region.clear_region());
+    QCOMPARE(effective.count(),3);
+
+    // Replacing a source with an active Loop is also an effective
+    // transition. No old source ownership can leak through into M17.
+    QVERIFY(region.set_region(range(160,300)));
+    QVERIFY(region.set_loop_enabled(true));
+    QCOMPARE(effective.count(),4);
+    region.source_committed(*core::FrameCount::create(1000).value(),
+        *core::SampleRate::create(44100).value());
+    QCOMPARE(effective.count(),5);
+    QVERIFY(!region.loop_enabled());
+    QVERIFY(!region.region());
 }
 
 void AuditionRegionViewModelTest::loopTransactionsAndRepositioning()
