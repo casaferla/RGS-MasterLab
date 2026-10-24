@@ -112,6 +112,7 @@ private slots:
     void policyIdentityAndFrameMap();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
+    void finalOutputExperimentalSpectralScreenSixBySix();
     void finalMasterMonitoringCannotRetargetMasterRate();
     void isolatedOfflineMonitoringPcmSixBySixMatrix();
     void monitoringFrameMapSixRateEndpointsAndLoops();
@@ -1592,6 +1593,120 @@ void PlaybackSampleRateAdapterTest::offlineCandidateMatchesFrozenPlaybackKernelB
         QVERIFY(!partial);
         QCOMPARE(channel_bits(*pcm.value(),0).size(),std::size_t{N});
     }
+}
+
+
+void PlaybackSampleRateAdapterTest::finalOutputExperimentalSpectralScreenSixBySix()
+{
+    // Prequalification screen of the ACTUAL Final Output SOURCE -> MASTER
+    // candidate (not merely the monitoring wrapper). These bounds detect
+    // gross passband/alias failures; they are NOT a mastering-grade ripple,
+    // transition-band, true-peak, listening or physical Windows certificate.
+    // Frozen 44.1 <-> 48 kHz kernels are excluded and remain bitwise frozen.
+    constexpr double pi=3.141592653589793238462643383279502884;
+    constexpr std::array<std::int64_t,6> hz{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::array<double,3> passHz{250.0,2800.0,11800.0};
+    constexpr std::int64_t inputFrames=3072;
+    std::size_t screenedPassbands=0;
+    std::size_t screenedStopbands=0;
+    for(const auto sourceHz:hz) {
+        auto fmt=audio::AudioFormat::create(
+            rate(sourceHz),audio::ChannelLayout::MONO_C);
+        QVERIFY(fmt);
+        auto source=audio::AudioBuffer::create(
+            *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},frame_count(inputFrames));
+        QVERIFY(source);
+        auto lane=source.value()->mutable_view().channel(0);
+        QVERIFY(lane);
+        for(const auto masterHz:hz) {
+            const bool frozen=(sourceHz==44100&&masterHz==48000)
+                ||(sourceHz==48000&&masterHz==44100);
+            if(sourceHz==masterHz||frozen)continue;
+            const auto expectedFrames=
+                (inputFrames*masterHz+sourceHz-1)/sourceHz;
+            // Exclude reflected transient edges in OUTPUT coordinates,
+            // accounting for the experimental FIR's source-rate tap span.
+            const double ratio=std::max(
+                1.0,static_cast<double>(sourceHz)/masterHz);
+            auto taps=static_cast<std::int64_t>(
+                std::ceil(128.0*ratio));
+            taps+=taps%2;
+            const auto trim=std::max<std::int64_t>(
+                96,static_cast<std::int64_t>(std::ceil(
+                    0.65*static_cast<double>(taps)*masterHz/sourceHz))+16);
+            QVERIFY(expectedFrames>2*trim+64);
+            for(const auto tone:passHz) {
+                // These tones are strictly inside every output passband.
+                QVERIFY(tone<0.8*masterHz/2.0);
+                for(std::int64_t i=0;i<inputFrames;++i)
+                    (*lane.value())[static_cast<std::size_t>(i)]=
+                        0.4*std::sin(2.0*pi*tone*i/sourceHz);
+                const auto before=channel_bits(*source.value(),0);
+                auto candidate=audio::materialize_full_resource_output_rate_candidate(
+                    source.value()->view(),rate(masterHz),frame_count(127));
+                QVERIFY2(candidate,candidate?"":candidate.error()->message().c_str());
+                QVERIFY(candidate.value()->used_src);
+                QVERIFY(candidate.value()->kernel_sha256.empty());
+                QCOMPARE(candidate.value()->source_rate,rate(sourceHz));
+                QCOMPARE(candidate.value()->output_rate,rate(masterHz));
+                QCOMPARE(candidate.value()->pcm.view().frame_count().value(),
+                         expectedFrames);
+                auto samples=candidate.value()->pcm.view().channel(0);
+                QVERIFY(samples);
+                double referencePower=0.0;
+                double residualPower=0.0;
+                for(std::int64_t i=trim;i<expectedFrames-trim;++i) {
+                    const double ideal=0.4*std::sin(
+                        2.0*pi*tone*i/masterHz);
+                    const double error=(*samples.value())[
+                        static_cast<std::size_t>(i)]-ideal;
+                    referencePower+=ideal*ideal;
+                    residualPower+=error*error;
+                }
+                QVERIFY(referencePower>0.0);
+                QVERIFY2(residualPower/referencePower<0.0009,
+                    "FINAL_MASTER_RATIONAL_FIR_PASSBAND_RMS_SCREEN_FAILED");
+                QCOMPARE(channel_bits(*source.value(),0),before);
+                ++screenedPassbands;
+            }
+            if(sourceHz>masterHz) {
+                // Above target Nyquist and below original Nyquist:
+                // a pure source sine must not alias at appreciable level.
+                // Mid-stopband only; transitions are still unqualified.
+                const double stopTone=0.25*
+                    static_cast<double>(masterHz+sourceHz);
+                QVERIFY(stopTone>masterHz/2.0);
+                QVERIFY(stopTone<sourceHz/2.0);
+                for(std::int64_t i=0;i<inputFrames;++i)
+                    (*lane.value())[static_cast<std::size_t>(i)]=
+                        0.4*std::sin(2.0*pi*stopTone*i/sourceHz);
+                const auto before=channel_bits(*source.value(),0);
+                auto candidate=audio::materialize_full_resource_output_rate_candidate(
+                    source.value()->view(),rate(masterHz),frame_count(113));
+                QVERIFY2(candidate,candidate?"":candidate.error()->message().c_str());
+                QCOMPARE(candidate.value()->pcm.view().frame_count().value(),
+                         expectedFrames);
+                auto samples=candidate.value()->pcm.view().channel(0);
+                QVERIFY(samples);
+                double power=0.0;
+                for(std::int64_t i=trim;i<expectedFrames-trim;++i) {
+                    const double value=(*samples.value())[
+                        static_cast<std::size_t>(i)];
+                    power+=value*value;
+                }
+                const double rms=std::sqrt(
+                    power/static_cast<double>(expectedFrames-2*trim));
+                QVERIFY2(rms<0.4/std::sqrt(2.0)*0.03,
+                    "FINAL_MASTER_RATIONAL_FIR_STOPBAND_RMS_SCREEN_FAILED");
+                QCOMPARE(channel_bits(*source.value(),0),before);
+                ++screenedStopbands;
+            }
+        }
+    }
+    QCOMPARE(screenedPassbands,std::size_t{84}); // 28 new pairs x 3 tones
+    QCOMPARE(screenedStopbands,std::size_t{14}); // 15 down, minus frozen pair
 }
 
 void PlaybackSampleRateAdapterTest::experimentalFullResourceSixBySixRateMatrix()
