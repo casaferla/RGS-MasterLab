@@ -34,6 +34,7 @@
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include <QGuiApplication>
+#include <QIcon>
 #include <QLibraryInfo>
 #include <QUuid>
 #include <QQmlApplicationEngine>
@@ -68,6 +69,10 @@ int main(int argc, char* argv[])
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QGuiApplication application(argc, argv);
     application.setApplicationName(QStringLiteral("RGS MasterLab"));
+    // Matching icon for the Qt window/task switcher. The QML module embeds
+    // the identical approved C artwork under its resource URL.
+    application.setWindowIcon(QIcon(QStringLiteral(
+        ":/qt/qml/Rgsml/Ui/resources/RGS_ML_C_header_64.png")));
     const bool deploySmoke = application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
     if (deploySmoke) {
         qInstallMessageHandler(smokeMessageHandler);

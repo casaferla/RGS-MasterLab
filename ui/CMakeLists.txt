@@ -36,6 +36,7 @@ qt_add_qml_module(rgsml_ui
         qml/TransportButton.qml
     RESOURCES
         resources/app_icon_canonical.jpg
+        resources/RGS_ML_C_header_64.png
     SOURCES
         src/internal/waveform_geometry.cpp
         src/internal/waveform_geometry.hpp

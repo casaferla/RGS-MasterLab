@@ -75,6 +75,12 @@ set_target_properties(rgsml_app PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
+# Approved RGS–ML C branding only: embed the application Explorer/taskbar
+# icon in the Windows PE executable without replacing other metadata.
+if(WIN32)
+    target_sources(rgsml_app PRIVATE resources/rgsml_app_icon.rc)
+endif()
+
 target_include_directories(rgsml_app PRIVATE ${CMAKE_SOURCE_DIR}/analysis/src)
 
 target_link_libraries(rgsml_app

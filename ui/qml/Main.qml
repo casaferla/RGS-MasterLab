@@ -342,7 +342,7 @@ ApplicationWindow {
                     objectName: "headerAppIcon"
                     Layout.preferredWidth: 40
                     Layout.preferredHeight: 40
-                    source: "qrc:/qt/qml/Rgsml/Ui/resources/app_icon_canonical.jpg"
+                    source: "qrc:/qt/qml/Rgsml/Ui/resources/RGS_ML_C_header_64.png"
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     mipmap: true
