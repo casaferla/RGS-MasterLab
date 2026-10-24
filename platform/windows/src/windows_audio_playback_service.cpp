@@ -1,3 +1,9 @@
+// Windows SDK min/max macros break std::numeric_limits<T>::max() and
+// standard algorithms. Declare NOMINMAX before any Qt or platform header.
+#if defined(_WIN32) && !defined(NOMINMAX)
+#define NOMINMAX
+#endif
+
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include "internal/playback_support.hpp"
@@ -28,6 +34,15 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+// Third-party / previously imported SDK headers may already have installed
+// legacy macros before NOMINMAX was applied. Keep this translation unit
+// macro-free so existing playback math is unchanged.
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
 #endif
 
 #include <algorithm>
