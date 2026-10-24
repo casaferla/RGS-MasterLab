@@ -653,30 +653,44 @@ Window {
         auto* item=qobject_cast<QQuickItem*>(object);
         return item?QRectF{item->mapToItem(hostItem,QPointF{}),item->size()}:QRectF{};
     };
-    // Real Qt Text geometry, checked on both L/R for M16 and M17.
+    // Regression uses the painted Text bounds, not card or scale boxes.
+    // All visible labels share x=0. Sparse mode MUST retain 0/-24/-48;
+    // the seven-label scale returns only when Qt provides sufficient height.
     const auto tickCollision=[](QObject* mode)->QString {
         const std::array<int,7> ticks{6,0,-12,-24,-36,-48,-60};
         for(const auto& laneName:{QStringLiteral("truePeakLeftLane"),
                                  QStringLiteral("truePeakRightLane")}) {
             auto* lane=qobject_cast<QQuickItem*>(find_child_by_name(mode,laneName));
             if(!lane) return QStringLiteral("Missing lane ")+laneName;
-            auto* scale=find_child_by_name(lane,QStringLiteral("truePeakDbTpScale"));
+            auto* scale=qobject_cast<QQuickItem*>(
+                find_child_by_name(lane,QStringLiteral("truePeakDbTpScale")));
             if(!scale) return QStringLiteral("Missing scale ")+laneName;
-            std::array<QRectF,7> boxes{};
-            for(std::size_t i=0;i<ticks.size();++i) {
-                const auto name=ticks[i]==6 ? QStringLiteral("truePeakPlusSixMarker")
-                    : QStringLiteral("truePeakTick_")+QString::number(ticks[i]);
-                auto* t=qobject_cast<QQuickItem*>(find_child_by_name(scale,name));
-                if(!t) return QStringLiteral("Missing tick ")+name;
-                boxes[i]=QRectF{t->mapToItem(lane,QPointF{}),t->size()};
-                if(boxes[i].isEmpty()) return QStringLiteral("Empty glyph ")+name;
+            const bool sparse=scale->height()<165.0;
+            std::vector<std::pair<int,QRectF>> visible;
+            for(const int tick:ticks) {
+                const auto name=tick==6 ? QStringLiteral("truePeakPlusSixMarker")
+                    : QStringLiteral("truePeakTick_")+QString::number(tick);
+                auto* label=qobject_cast<QQuickItem*>(find_child_by_name(scale,name));
+                if(!label) return QStringLiteral("Missing tick ")+name;
+                const bool expected=!sparse || tick==0 || tick==-24 || tick==-48;
+                if(label->isVisible()!=expected)
+                    return QStringLiteral("Incorrect tick visibility ")+name;
+                if(qAbs(label->x())>0.25)
+                    return QStringLiteral("Horizontal misalignment ")+name;
+                if(!expected) continue;
+                const QRectF painted{label->mapToItem(lane,QPointF{}),label->size()};
+                if(painted.isEmpty())
+                    return QStringLiteral("Empty painted label ")+name;
+                visible.emplace_back(tick,painted);
             }
-            for(std::size_t i=0;i<ticks.size();++i)
-                for(std::size_t j=i+1;j<ticks.size();++j) {
-                    const QRectF overlap=boxes[i].intersected(boxes[j]);
+            for(std::size_t i=0;i<visible.size();++i)
+                for(std::size_t j=i+1;j<visible.size();++j) {
+                    const QRectF overlap=visible[i].second.intersected(
+                        visible[j].second);
                     if(overlap.width()>0.5 && overlap.height()>0.5)
                         return QStringLiteral("%1 ticks %2/%3 overlap %4x%5")
-                            .arg(laneName).arg(ticks[i]).arg(ticks[j])
+                            .arg(laneName).arg(visible[i].first)
+                            .arg(visible[j].first)
                             .arg(overlap.width()).arg(overlap.height());
                 }
         }

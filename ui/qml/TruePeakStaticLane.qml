@@ -168,18 +168,20 @@ Rectangle {
                         objectName: modelData === 6 ? "truePeakPlusSixMarker"
                             : "truePeakTick_" + modelData
                         text: modelData > 0 ? "+" + modelData : "" + modelData
-                        // Use the real glyph box, not a full-width Text cell.
+                        // At minimum host height, the +6/0 gap cannot
+                        // accommodate two painted labels. Keep zero and a
+                        // sparse 24 dB scale; restore all ticks as room grows.
+                        // Never stagger labels horizontally.
+                        readonly property bool sparseTicks: parent.height < 165
+                        visible: !sparseTicks || modelData === 0
+                            || modelData === -24 || modelData === -48
                         width: implicitWidth
-                        // +6/0 are separated by fewer pixels vertically
-                        // than the label height at the physical minimum.
-                        // Keep 0 aligned with the negatives; stagger +6.
-                        x: modelData === 6 && parent.height < 165
-                            ? Math.max(0, parent.width - width - 1) : 0
+                        x: 0
                         font.family: "Segoe UI"
                         font.pixelSize: 10
-                        font.weight: modelData === 0 ? Font.DemiBold
+                        font.weight: modelData === 0 ? Font.Bold
                                                      : Font.Normal
-                        color: modelData === 0 ? "#A4BCCB" : "#95ACBD"
+                        color: modelData === 0 ? "#DCEEF7" : "#95ACBD"
                         // +6 is the top endpoint: center the glyph on
                         // the actual top of the meter; do not clamp its
                         // top edge down to the track's first interior pixel.
