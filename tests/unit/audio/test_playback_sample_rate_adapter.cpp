@@ -4,6 +4,7 @@
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
 
 #include <QTest>
 
@@ -106,6 +107,7 @@ private slots:
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalMasterMonitoringCannotRetargetMasterRate();
+    void isolatedOfflineMonitoringPcmSixBySixMatrix();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -164,6 +166,74 @@ void PlaybackSampleRateAdapterTest::finalMasterMonitoringCannotRetargetMasterRat
     QVERIFY(invalidMaster.error());
     QCOMPARE(invalidMaster.error()->code(),
              core::ErrorCode::UnsupportedOperation);
+}
+
+void PlaybackSampleRateAdapterTest::isolatedOfflineMonitoringPcmSixBySixMatrix()
+{
+    // Integration seam only: explicitly NOT a real DAC or M16 LIVE test.
+    constexpr std::array<std::int64_t,6> supported{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::int64_t N=113;
+    for(const auto masterHz:supported) {
+        auto format=audio::AudioFormat::create(
+            rate(masterHz),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(format);
+        auto master=audio::AudioBuffer::create(*format.value(),
+            audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},frame_count(N));
+        QVERIFY(master);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto channel=master.value()->mutable_view().channel(ch);
+            QVERIFY(channel);
+            for(std::int64_t i=0;i<N;++i)
+                (*channel.value())[static_cast<std::size_t>(i)] =
+                    (i%23==0?-0.34:0.2)*(ch==0?1.0:-0.6);
+        }
+        const auto beforeL=channel_bits(*master.value(),0);
+        const auto beforeR=channel_bits(*master.value(),1);
+        for(const auto deviceHz:supported) {
+            auto monitor=audio::materialize_monitoring_pcm_candidate(
+                master.value()->view(),rate(deviceHz),frame_count(31));
+            QVERIFY2(monitor,monitor?"":monitor.error()->message().c_str());
+            QCOMPARE(monitor.value()->immutable_master_rate.value(),masterHz);
+            QCOMPARE(monitor.value()->immutable_master_frames.value(),N);
+            QCOMPARE(monitor.value()->device_rate.value(),deviceHz);
+            QCOMPARE(monitor.value()->device_src_applied,masterHz!=deviceHz);
+            const auto pcm=monitor.value()->device_pcm.view();
+            QCOMPARE(pcm.timebase().frame_domain_id(),
+                audio::FrameDomainId::OUTPUT_RATE);
+            QCOMPARE(pcm.format().sample_rate().value(),deviceHz);
+            const auto expected=(N/masterHz)*deviceHz+
+                ((N%masterHz)*deviceHz+masterHz-1)/masterHz;
+            QCOMPARE(pcm.frame_count().value(),expected);
+            for(std::size_t ch=0;ch<2;++ch) {
+                auto lane=pcm.channel(ch);
+                QVERIFY(lane);
+                for(const double x:*lane.value()) QVERIFY(std::isfinite(x));
+            }
+            if(masterHz==deviceHz) {
+                QCOMPARE(channel_bits(monitor.value()->device_pcm,0),beforeL);
+                QCOMPARE(channel_bits(monitor.value()->device_pcm,1),beforeR);
+            }
+            QCOMPARE(channel_bits(*master.value(),0),beforeL);
+            QCOMPARE(channel_bits(*master.value(),1),beforeR);
+        }
+        auto wrongDomain=audio::AudioBuffer::create(*format.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},frame_count(N));
+        QVERIFY(wrongDomain);
+        QVERIFY(!audio::materialize_monitoring_pcm_candidate(
+            wrongDomain.value()->view(),rate(48000),frame_count(31)));
+    }
+    // An arbitrary OS device rate does not silently expand the experimental
+    // monitor converter's six-rate matrix or the immutable master contract.
+    auto fmt=audio::AudioFormat::create(
+        rate(192000),audio::ChannelLayout::MONO_C);
+    QVERIFY(fmt);
+    auto master=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},frame_count(1));
+    QVERIFY(master);
+    QVERIFY(!audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),rate(32000),frame_count(31)));
 }
 
 void PlaybackSampleRateAdapterTest::offlineCandidateMatchesFrozenPlaybackKernelBitwise()
