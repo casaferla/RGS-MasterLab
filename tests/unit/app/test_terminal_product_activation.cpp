@@ -1039,7 +1039,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!audioGate.has_session());
     QVERIFY(!product.private_id());
     QCOMPARE(device->audibleRealization.realizationId,manualId);
-    QCOMPARE(device->duration,*frames.value());
+    QCOMPARE(device->duration,std::optional{*frames.value()});
     QVERIFY(!product.install_ready_private());
     QVERIFY(!product.install_measured_private());
     QVERIFY(product.cancel());
