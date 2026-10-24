@@ -15,13 +15,27 @@ qt_add_qml_module(rgsml_ui
         qml/ParametricEqEditorWindow.qml
         qml/ParametricEqGraph.qml
         qml/SegmentedTimeEditor.qml
+        qml/StereoMsEditor.qml
+        qml/StereoMsResponseGraph.qml
         qml/StudioButton.qml
         qml/StudioIcon.qml
         qml/StudioIconButton.qml
         qml/StudioNumericField.qml
+        qml/StudioNumericSliderPair.qml
+        qml/StudioParameterSlider.qml
+        qml/StudioTooltipDwell.qml
         qml/StudioSegmentButton.qml
         qml/StudioToggle.qml
+        qml/TruePeakMeterEditor.qml
+        qml/TruePeakLimiterEditor.qml
+        qml/TruePeakGrHistoryGraph.qml
+        qml/TruePeakReadoutCard.qml
+        qml/TruePeakSharedRail.qml
+        qml/TruePeakStaticLane.qml
+        qml/TruePeakStatusCard.qml
         qml/TransportButton.qml
+    RESOURCES
+        resources/app_icon_canonical.jpg
     SOURCES
         src/internal/waveform_geometry.cpp
         src/internal/waveform_geometry.hpp

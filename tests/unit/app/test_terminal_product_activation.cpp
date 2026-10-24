@@ -1,0 +1,930 @@
+#include "audition_source_selector.hpp"
+#include "playback_transport_view_model.hpp"
+#include "terminal_candidate_gate.hpp"
+#include "terminal_audio_session_gate.hpp"
+#include "terminal_private_publication_coordinator.hpp"
+#include "terminal_private_render_controller.hpp"
+#include "terminal_private_product_session.hpp"
+#include "terminal_product_activation_coordinator.hpp"
+#include "mastering_preview_controller.hpp"
+#include "terminal_limiter_view_model.hpp"
+#include "../platform/fake_playback_service.hpp"
+#include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/render/render_preview.hpp>
+#include <rgsml/render/render_request.hpp>
+#include <rgsml/core/uuid.hpp>
+#include <QTest>
+#include <QSignalSpy>
+#include <QDebug>
+#include <memory>
+#include <bit>
+#include <cstdint>
+#include <cmath>
+#include <limits>
+#include <vector>
+
+namespace rgsml::tests {
+class TerminalActivationIntegrationTest final:public QObject {
+    Q_OBJECT
+private slots:
+    void audibleOnBypassRestoresExactManualSourceAndLoop();
+    void finalMasterAt192kNeverBecomesDeviceRate48k();
+    void staleM17TerminalJobCancelsWithoutPublishingPcm();
+    void nonconformingPreviewRequiresSeparateExplicitConsent();
+    void rejectedCeilingCannotAlterAuthority_data();
+    void rejectedCeilingCannotAlterAuthority();
+    void unchangedCeilingLeavesRevisionAndConsentUntouched();
+};
+
+
+// Adversarial parameter-input oracle: independent data rows run even if a
+// different failure later aborts the full A/B integration scenario. No PCM,
+// filename, or hardware certificate is created by these input tests.
+void TerminalActivationIntegrationTest::rejectedCeilingCannotAlterAuthority_data()
+{
+    QTest::addColumn<double>("invalidCeiling");
+    QTest::newRow("below-minimum") << -12.01;
+    QTest::newRow("above-zero") << 0.01;
+    QTest::newRow("positive-infinity") << std::numeric_limits<double>::infinity();
+    QTest::newRow("negative-infinity") << -std::numeric_limits<double>::infinity();
+    QTest::newRow("quiet-nan") << std::numeric_limits<double>::quiet_NaN();
+}
+
+void TerminalActivationIntegrationTest::rejectedCeilingCannotAlterAuthority()
+{
+    QFETCH(double,invalidCeiling);
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000617").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(*registry.value(),*id.value());
+    QVERIFY(state);
+    app::TerminalLimiterViewModel vm{state.value()};
+    QSignalSpy accepted{&vm,&app::TerminalLimiterViewModel::acceptedStateChanged};
+    QSignalSpy unsafe{&vm,&app::TerminalLimiterViewModel::previewNonconformingRequested};
+    QVERIFY(accepted.isValid()&&unsafe.isValid());
+    const auto revision=state.value()->parameter_revision();
+    qInfo().noquote()<<"M17_EDGE_CASE=INVALID_CEILING_NO_COMMIT";
+    QVERIFY(!vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),invalidCeiling));
+    QVERIFY(!vm.commitDraft());
+    QCOMPARE(state.value()->parameter_revision(),revision);
+    QCOMPARE(state.value()->parameters().ceiling_db_tp(),-1.0);
+    QCOMPARE(accepted.count(),0);
+    QCOMPARE(unsafe.count(),0);
+    vm.cancelDraft();
+    QVERIFY(vm.validation_message().isEmpty());
+    QCOMPARE(state.value()->parameter_revision(),revision);
+}
+
+void TerminalActivationIntegrationTest::unchangedCeilingLeavesRevisionAndConsentUntouched()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000618").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(*registry.value(),*id.value());
+    QVERIFY(state);
+    app::TerminalLimiterViewModel vm{state.value()};
+    QSignalSpy accepted{&vm,&app::TerminalLimiterViewModel::acceptedStateChanged};
+    QSignalSpy unverified{&vm,&app::TerminalLimiterViewModel::previewNonconformingRequested};
+    QSignalSpy verified{&vm,&app::TerminalLimiterViewModel::previewRequested};
+    QVERIFY(accepted.isValid()&&unverified.isValid()&&verified.isValid());
+    qInfo().noquote()<<"M17_EDGE_CASE=NOOP_CEILING_RESET";
+    vm.resetToDefault();
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-1.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(state.value()->parameter_revision(),std::uint64_t{0});
+    QCOMPARE(accepted.count(),0);
+    QVERIFY(state.value()->set_user_bypass(false));
+    vm.setAudioStatus(QStringLiteral("READY · PREVIEW AVAILABLE"));
+    vm.previewNonconforming(); // A verified result never grants unsafe consent.
+    QCOMPARE(unverified.count(),0);
+    vm.previewPrepared();
+    QCOMPARE(verified.count(),1);
+    vm.setAudioStatus(QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
+    vm.previewPrepared(); // No double-install by a second Preview click.
+    QCOMPARE(verified.count(),1);
+    vm.setAudioStatus(QStringLiteral("NON-CONFORMING · -11.76 dBTP"));
+    vm.previewPrepared(); // A failed Ceiling never becomes verified.
+    QCOMPARE(verified.count(),1);
+    vm.previewNonconforming();
+    QCOMPARE(unverified.count(),1);
+    QVERIFY(state.value()->set_user_bypass(true));
+    vm.previewNonconforming(); // Bypass cannot trigger unsafe audio.
+    QCOMPARE(unverified.count(),1);
+    QCOMPARE(accepted.count(),0);
+}
+
+
+void TerminalActivationIntegrationTest::
+nonconformingPreviewRequiresSeparateExplicitConsent()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto instance=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000517").value());
+    QVERIFY(instance);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*instance.value());
+    QVERIFY(state);
+    app::TerminalLimiterViewModel vm{state.value()};
+    QSignalSpy unsafe{&vm,
+        &app::TerminalLimiterViewModel::previewNonconformingRequested};
+    QSignalSpy verified{&vm,
+        &app::TerminalLimiterViewModel::previewRequested};
+    QVERIFY(unsafe.isValid()&&verified.isValid());
+    vm.setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+    vm.previewNonconforming();
+    QCOMPARE(unsafe.count(),0);
+    QVERIFY(state.value()->set_user_bypass(false));
+    vm.setAudioStatus(QStringLiteral(
+        "NON-CONFORMING · -11.76 dBTP (target -12.00)"));
+    const double ceiling=std::pow(10.0,-12.0/20.0);
+    const double over=ceiling*std::pow(10.0,0.24/20.0);
+    vm.setNonconformingObservation(over,ceiling,-12.0);
+    QCOMPARE(vm.nonconforming_peak_text(),
+        QStringLiteral("-11.76 dBTP"));
+    QCOMPARE(vm.nonconforming_target_text(),
+        QStringLiteral("-12.00 dBTP"));
+    QCOMPARE(vm.nonconforming_excess_text(),QStringLiteral("+0.24 dB"));
+    // One positive binary64 ULP must never display as +0.00 dB.
+    vm.setNonconformingObservation(
+        std::nextafter(ceiling,std::numeric_limits<double>::infinity()),
+        ceiling,-12.0);
+    QCOMPARE(vm.nonconforming_peak_text(),QStringLiteral("-12.00 dBTP"));
+    QCOMPARE(vm.nonconforming_excess_text(),QStringLiteral("<0.01 dB"));
+    vm.setNonconformingObservation(ceiling,ceiling,-12.0);
+    QVERIFY(vm.nonconforming_excess_text().isEmpty());
+    vm.setNonconformingObservation(over,ceiling,-12.0);
+    qInfo().noquote()<<"M17_EDGE_CASE=NONCONFORMING_EXPLICIT_CONSENT_ONLY";
+    QCOMPARE(unsafe.count(),0); // Status publication NEVER auto-auditions.
+    QSignalSpy cancelled{&vm,&app::TerminalLimiterViewModel::cancelRequested};
+    QVERIFY(cancelled.isValid());
+    vm.cancelPreparation();
+    QCOMPARE(cancelled.count(),0); // A retained PCM is not Preparing.
+    vm.previewPrepared();
+    QCOMPARE(verified.count(),0); // Not a verified READY candidate.
+    vm.previewNonconforming();
+    QCOMPARE(unsafe.count(),1); // Explicit action only.
+    vm.setAudioStatus(QStringLiteral("READY · PREVIEW AVAILABLE"));
+    vm.cancelPreparation();
+    QCOMPARE(cancelled.count(),0); // READY is not cancellable.
+    vm.setAudioStatus(QStringLiteral("Preparing audio"));
+    vm.cancelPreparation();
+    QCOMPARE(cancelled.count(),1); // Only active preparation can cancel.
+    QVERIFY(state.value()->set_user_bypass(true));
+    vm.previewNonconforming();
+    QCOMPARE(unsafe.count(),1); // No audition from Bypass.
+}
+
+void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate48k()
+{
+    // Product Final Master contract, NOT Windows live-playback qualification:
+    // a 48 kHz device may never override the exact user's 192 kHz master.
+    // No device is consulted by render_true_peak_limiter_owned_final_master_candidate.
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto sourceRate=core::SampleRate::create(192000);
+    const auto deviceRate=core::SampleRate::create(48000);
+    const auto frames=core::FrameCount::create(513);
+    const auto block=core::FrameCount::create(128);
+    QVERIFY(registry&&sourceRate&&deviceRate&&frames&&block);
+
+    auto manualChain=dsp::ProcessingChain::create(*registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(manualChain);
+    auto fmt=audio::AudioFormat::create(*sourceRate.value(),
+        audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto source=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(source);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=source.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(std::size_t i=0;i<513;++i)
+            (*lane.value())[i]=(i%19==0 ? 0.35 : 0.14)
+                *(ch==0 ? 1.0 : -0.75);
+    }
+    auto request=render::RenderRequest::create(
+        source.value()->view(),source.value()->view().absolute_range(),
+        *manualChain.value(),{},*block.value());
+    QVERIFY(request);
+    auto rendered=render::render_preview(*request.value(),*registry.value());
+    QVERIFY(rendered);
+    auto manual=std::make_shared<const render::RenderResult>(
+        std::move(*rendered.value()));
+    auto instance=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000517").value());
+    QVERIFY(instance);
+    auto limiter=app::TerminalLimiterState::create_default(
+        *registry.value(),*instance.value());
+    QVERIFY(limiter);
+    QVERIFY(limiter.value()->set_user_bypass(false));
+    const auto bindings=limiter.value()->execution_bindings();
+
+    // Same-rate MASTER is fully independent of an audition-only device.
+    auto master=render::render_true_peak_limiter_owned_final_master_candidate(
+        manual,*manualChain.value(),*frames.value(),
+        manual->chain_revision(),*sourceRate.value(),
+        limiter.value()->chain(),bindings,*registry.value(),*block.value());
+    QVERIFY2(master,master.error()
+        ?master.error()->message().c_str():"192 kHz master failed");
+    QCOMPARE(master.value()->master_sample_rate,*sourceRate.value());
+    QCOMPARE(master.value()->output.output_rate,*sourceRate.value());
+    QVERIFY(!master.value()->output.used_candidate_src);
+    const auto& checked=master.value()->output.terminal.checked;
+    QVERIFY(checked.final_check.has_value());
+    const auto pcm=checked.terminal.compensated_pcm.view();
+    QCOMPARE(pcm.format().sample_rate(),*sourceRate.value());
+    QCOMPARE(pcm.frame_count(),*frames.value());
+    QCOMPARE(pcm.timebase().frame_domain_id(),
+        audio::FrameDomainId::OUTPUT_RATE);
+    QVERIFY(render::validate_final_master_encoding_rate(
+        *master.value(),*sourceRate.value()));
+    // Substituting the 48 kHz playback device for the encoder must fail.
+    QVERIFY(!render::validate_final_master_encoding_rate(
+        *master.value(),*deviceRate.value()));
+
+    // Until Phase-11 high-rate SRC is really implemented, 192 -> 48
+    // must fail closed rather than silently convert AFTER M17.
+    auto differentMaster=render::render_true_peak_limiter_owned_final_master_candidate(
+        manual,*manualChain.value(),*frames.value(),
+        manual->chain_revision(),*deviceRate.value(),
+        limiter.value()->chain(),bindings,*registry.value(),*block.value());
+    QVERIFY(!differentMaster);
+
+    // The optional recovery seam preserves real upstream ownership and never
+    // invents a non-conforming result when the verified master is valid.
+    std::optional<render::TruePeakLimiterOwnedMeasuredNonconformingCandidate>
+        recovered;
+    auto diagnostic=render::render_true_peak_limiter_owned_output_rate_candidate(
+        manual,*manualChain.value(),*frames.value(),manual->chain_revision(),
+        *sourceRate.value(),limiter.value()->chain(),bindings,
+        *registry.value(),*block.value(),{},nullptr,true,&recovered);
+    QVERIFY(diagnostic);
+    QVERIFY(!recovered);
+    // A rate-pair unsupported upstream must stay non-recoverable, even
+    // when a caller explicitly asks for an optional PCM recovery.
+    auto invalidSrc=render::render_true_peak_limiter_owned_output_rate_candidate(
+        manual,*manualChain.value(),*frames.value(),manual->chain_revision(),
+        *deviceRate.value(),limiter.value()->chain(),bindings,
+        *registry.value(),*block.value(),{},nullptr,true,&recovered);
+    QVERIFY(!invalidSrc);
+    QVERIFY(!recovered);
+}
+
+void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSourceAndLoop()
+{
+    using namespace rgsml;
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto chain=dsp::ProcessingChain::create(*registry.value(),
+        {dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(chain);
+    const auto previewChainId=*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000418").value();
+    const auto gainId=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("7f000000-0000-4000-8000-000000000419").value());
+    const auto eqId=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("7f000000-0000-4000-8000-000000000420").value());
+    QVERIFY(gainId&&eqId);
+    auto upstream=app::MasteringChainState::create_default(
+        *registry.value(),previewChainId,*gainId.value(),*eqId.value());
+    QVERIFY(upstream);
+    auto limiterId=dsp::ModuleInstanceId::from_uuid(
+        *core::Uuid::parse("7f000000-0000-4000-8000-000000000417").value());
+    QVERIFY(limiterId);
+    auto limiter=app::TerminalLimiterState::create_default(
+        *registry.value(),*limiterId.value());
+    QVERIFY(limiter);
+    app::TerminalLimiterViewModel vm{limiter.value()};
+    const auto sourceRate=core::SampleRate::create(44100);
+    const auto deviceRate=core::SampleRate::create(48000);
+    const auto frames=core::FrameCount::create(4410);
+    const auto block=core::FrameCount::create(257);
+    QVERIFY(sourceRate&&deviceRate&&frames&&block);
+    const auto format=audio::AudioFormat::create(
+        *sourceRate.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto source=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(source);
+    // Real non-zero PCM: an Input Gain edit must change the accepted
+    // MANUAL samples, not merely swap two identical zero-filled owners.
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=source.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(auto& sample:*lane.value())
+            sample=ch==0 ? 0.125 : -0.0625;
+    }
+    const auto renderPrepared=[&]() -> render::RenderResult {
+        auto request=render::RenderRequest::create(
+            source.value()->view(),source.value()->view().absolute_range(),
+            *chain.value(),{},*block.value());
+        Q_ASSERT(request);
+        auto output=render::render_preview(*request.value(),*registry.value());
+        Q_ASSERT(output);
+        return std::move(*output.value());
+    };
+
+    const auto renderManual=[&]() -> render::RenderResult {
+        auto request=render::RenderRequest::create(
+            source.value()->view(),source.value()->view().absolute_range(),
+            upstream.value()->chain(),upstream.value()->execution_bindings(),
+            *block.value());
+        Q_ASSERT(request);
+        auto output=render::render_preview(*request.value(),*registry.value());
+        Q_ASSERT(output);
+        return std::move(*output.value());
+    };
+
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* device=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    transport.set_pcm_prepare_handler(
+        [device](audio::AudioBufferView view,
+            std::shared_ptr<const void> lease,
+            std::optional<core::RealizationId> id)->core::Status {
+            if(!lease)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"Missing MANUAL PCM lease."});
+            device->state=core::PlaybackState::STOPPED;
+            device->position=view.absolute_start_frame();
+            device->duration=view.frame_count();
+            device->loop.reset();
+            device->audibleRealization={
+                core::AudibleHandoffPhase::NEW,id};
+            return core::Status::success();
+        });
+    // Manual replacement uses a separate no-terminal SOURCE handoff seam.
+    transport.set_pcm_handoff_handler(
+        [device](audio::AudioBufferView view,
+            std::shared_ptr<const void> lease,
+            std::optional<core::RealizationId> id)->core::Status {
+            if(!lease)return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,"Missing successor MANUAL lease."});
+            device->state=core::PlaybackState::STOPPED;
+            device->position=view.absolute_start_frame();
+            device->duration=view.frame_count();
+            device->loop.reset();
+            device->audibleRealization={core::AudibleHandoffPhase::NEW,id};
+            return core::Status::success();
+        });
+    app::AuditionSourceSelector selector{&transport};
+    const auto region=core::FrameRange::create(
+        core::FrameIndex{500},core::FrameIndex{3500});
+    QVERIFY(region);
+    std::optional<core::FrameRange> desiredLoop=*region.value();
+    selector.set_source_loop_provider([&]{return desiredLoop;});
+    QVERIFY(selector.set_prepared_realization(renderPrepared()));
+    QVERIFY(selector.set_processed_realization(renderManual()));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    const auto original=selector.processed_realization_snapshot();
+    const auto originalId=selector.processed_realization_id();
+    QVERIFY(original&&originalId);
+    QCOMPARE(device->loop,std::optional{*region.value()});
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{1450}));
+    transport.playOrResume();
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+
+    app::TerminalCandidateGate candidates;
+    app::TerminalAudioSessionGate audioGate{
+        candidates,*device,
+        [device,deviceRate](audio::AudioBufferView pcm,
+            std::shared_ptr<const void> lease,
+            core::RealizationId id)->core::Status {
+            if(!lease||id.value==0
+               ||pcm.format().sample_rate()!=*deviceRate.value()
+               ||pcm.timebase().frame_domain_id()
+                    !=audio::FrameDomainId::OUTPUT_RATE)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,"Unowned OUTPUT_RATE M17 PCM."});
+            device->state=core::PlaybackState::STOPPED;
+            device->position=core::FrameIndex{0};
+            device->duration=pcm.frame_count();
+            device->loop.reset();
+            device->audibleRealization={
+                core::AudibleHandoffPhase::NEW,id};
+            return core::Status::success();
+        }};
+    app::TerminalPrivatePublicationCoordinator publisher{
+        candidates,audioGate,transport,
+        [&selector](std::shared_ptr<const render::RenderResult> prepared,
+            std::shared_ptr<const render::RenderResult> manual,
+            std::optional<core::RealizationId> id) {
+            return selector.reserve_private_terminal_realization_id(
+                prepared,manual,id);
+        }};
+    app::TerminalPrivateRenderController renderer{
+        candidates,*limiter.value(),
+        [&selector]{return selector.prepared_realization_snapshot();},
+        [&selector]{return selector.processed_realization_snapshot();},
+        [&selector]{return selector.processed_realization_id();},
+        [&]{return upstream.value()->chain();}};
+    app::TerminalPrivateProductSession product{
+        renderer,publisher,candidates,transport,
+        [&selector]{return selector.prepared_realization_snapshot();},
+        [&selector]{return selector.processed_realization_snapshot();},
+        [&selector]{return selector.processed_realization_id();},
+        [&]{return desiredLoop;},
+        [&selector]{return selector.active_target()
+            ==app::AuditionTarget::PROCESSED;}};
+    product.set_preferred_output_rate_probe(
+        [deviceRate](audio::ChannelLayout)->core::Result<core::SampleRate>{
+            return core::Result<core::SampleRate>::success(*deviceRate.value());
+        });
+    app::TerminalProductActivationCoordinator coordinator{
+        *limiter.value(),vm,selector,transport,product};
+    // Mirror the REAL app/src/main.cpp signal hookup. The historical test
+    // manually fed RENDERING/READY and could not detect a broken preview
+    // signal, asynchronous publication or upstream gain revision.
+    app::MasteringPreviewController preview{
+        upstream.value(),
+        [&selector]{return selector.prepared_realization_snapshot();},
+        [&selector](render::RenderResult output) {
+            return selector.set_processed_realization(std::move(output));
+        }};
+    QObject::connect(&preview,&app::MasteringPreviewController::changed,
+                     &coordinator,[&preview,&coordinator] {
+        coordinator.manual_preview_changed(preview.preview_status());
+    });
+    QVERIFY(limiter.value()->bypassed());
+    QCOMPARE(vm.audio_status(),QStringLiteral("BYPASS"));
+    vm.setBypass(false);
+    // Armed is NOT preparing. Play still uses the exact upstream MANUAL PCM.
+    QVERIFY(!limiter.value()->bypassed());
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!coordinator.device_active());
+    vm.requestPrepare();
+    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing audio"));
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    // Completed rendering stays PRIVATE; no automatic switch on Play or ON.
+    device->position=core::FrameIndex{1600};
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(vm.preparation_fraction(),1.0);
+    QVERIFY(vm.preparation_determinate());
+    QCOMPARE(vm.preparation_stage(),QStringLiteral("Verified candidate ready"));
+    const auto initialPreparedPcm=candidates.staged();
+    QVERIFY(initialPreparedPcm);
+    QSignalSpy renderChanges{&renderer,&app::TerminalPrivateRenderController::changed};
+    QVERIFY(renderChanges.isValid());
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    qInfo().noquote()<<"M17_EDGE_CASE=READY_BYPASS_RETAINS_EXACT_PCM";
+    vm.setBypass(true);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!audioGate.has_session());
+    vm.previewPrepared();
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    vm.setBypass(false);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    vm.previewPrepared();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QVERIFY(coordinator.device_active());
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
+    auto firstTerminalId=device->audibleRealization.realizationId;
+    QVERIFY(firstTerminalId);
+    QVERIFY(firstTerminalId!=originalId);
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->duration->value(),std::int64_t{4800});
+    QCOMPARE(selector.processed_realization_snapshot(),original);
+    vm.setBypass(true);
+    QVERIFY(limiter.value()->bypassed());
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(device->position,core::FrameIndex{1600});
+    QCOMPARE(device->loop,std::optional{*region.value()});
+    QVERIFY(!product.private_id());
+    QVERIFY(candidates.staged()); // Retained, NEVER audible on Bypass.
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(renderer.status(),QStringLiteral("READY_PRIVATE"));
+    QVERIFY(!audioGate.has_session());
+    // More than one A/B switch must keep the same immutable PCM but issue a
+    // new device RealizationId on every explicit terminal installation.
+    qInfo().noquote()<<"M17_EDGE_CASE=REPEATED_AB_NEW_DEVICE_IDS_NO_RERENDER";
+    auto previousTerminalId=firstTerminalId;
+    const auto renderCountBeforeCycles=renderChanges.count();
+    for(int n=0;n<3;++n) {
+        vm.setBypass(false);
+        QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+        QCOMPARE(device->audibleRealization.realizationId,originalId);
+        vm.previewPrepared();
+        QCOMPARE(product.status(),QStringLiteral("PRIVATE_INSTALLED"));
+        const auto nextId=device->audibleRealization.realizationId;
+        QVERIFY(nextId && nextId!=previousTerminalId && nextId!=originalId);
+        QCOMPARE(candidates.staged(),initialPreparedPcm);
+        previousTerminalId=nextId;
+        vm.previewPrepared(); // Never install twice on accidental double click.
+        QCOMPARE(device->audibleRealization.realizationId,nextId);
+        vm.setBypass(true);
+        QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+        QCOMPARE(device->audibleRealization.realizationId,originalId);
+        QVERIFY(!audioGate.has_session());
+    }
+    QCOMPARE(renderChanges.count(),renderCountBeforeCycles);
+
+    // READY is already completed and MUST survive Cancel: no discarded
+    // minute-long M17 work and no silent terminal handoff. A user can
+    // preview the exact staged PCM after this no-op, then bypass explicitly.
+    const int renderingEventsBeforeRearm=renderChanges.count();
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(renderChanges.count(),renderingEventsBeforeRearm);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    vm.cancelPreparation();
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(vm.preparation_fraction(),1.0);
+    QVERIFY(vm.preparation_determinate());
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!product.private_id());
+    QVERIFY(candidates.staged());
+    vm.previewPrepared();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QVERIFY(coordinator.device_active());
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    vm.setBypass(true);
+    QVERIFY(limiter.value()->bypassed());
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!product.private_id());
+    QVERIFY(candidates.staged());
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    // An A/B cache is bound to the physical OUTPUT_RATE. When the real
+    // device probe changes from 48 kHz to 44.1 kHz, neither a silent SRC
+    // nor an accidental M17 handoff is allowed, even for retained PCM.
+    vm.setBypass(true);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    product.set_preferred_output_rate_probe(
+        [sourceRate](audio::ChannelLayout)->core::Result<core::SampleRate> {
+            return core::Result<core::SampleRate>::success(*sourceRate.value());
+        });
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QVERIFY(!audioGate.has_session());
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(device->loop,std::optional{*region.value()});
+    product.set_preferred_output_rate_probe(
+        [deviceRate](audio::ChannelLayout)->core::Result<core::SampleRate> {
+            return core::Result<core::SampleRate>::success(*deviceRate.value());
+        });
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    // Edits to the current value must NOT lose a minute-long accepted render.
+    qInfo().noquote()<<"M17_EDGE_CASE=NOOP_CEILING_RETAINS_AB";
+    const auto currentAdmitted=candidates.staged();
+    const auto revisionBeforeNoop=limiter.value()->parameter_revision();
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-1.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(limiter.value()->parameter_revision(),revisionBeforeNoop);
+    QCOMPARE(candidates.staged(),currentAdmitted);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+
+    // A SOURCE Loop edit during bypass must not silently reuse cached
+    // output under a stale loop/map on the next ON transition.
+    qInfo().noquote()<<"M17_EDGE_CASE=LOOP_CHANGED_DURING_CACHED_BYPASS";
+    vm.setBypass(true);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    const auto movedLoop=core::FrameRange::create(
+        core::FrameIndex{600},core::FrameIndex{3400});
+    QVERIFY(movedLoop);
+    desiredLoop=*movedLoop.value();
+    QVERIFY(transport.set_loop_source_range(desiredLoop));
+    coordinator.loop_context_changed();
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    desiredLoop=*region.value();
+    QVERIFY(transport.set_loop_source_range(desiredLoop));
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+
+    // A saved PCM must not cross selection of a different audible target.
+    qInfo().noquote()<<"M17_EDGE_CASE=TARGET_CHANGE_DROPS_CACHED_PCM";
+    vm.setBypass(true);
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+
+    // An actual parameter edit makes the OLD A/B PCM stale.
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-2.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    // Reverting to the exact original numeric Ceiling does NOT restore
+    // the old PCM: the parameter revision proves A->B->A was an edit.
+    qInfo().noquote()<<"M17_EDGE_CASE=CEILING_ROUNDTRIP_NEVER_REVIVES_PCM";
+    const auto revisionAfterChange=limiter.value()->parameter_revision();
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-1.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(limiter.value()->parameter_revision(),revisionAfterChange+1);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+
+    // Cancel only an ACTIVE preparation; the stale worker must never
+    // publish a candidate after cancellation or replace the MANUAL sink.
+    vm.requestPrepare();
+    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing audio"));
+    vm.cancelPreparation();
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!product.private_id());
+    QVERIFY(!candidates.staged());
+    QTest::qWait(75); // Let an already-running worker attempt stale delivery.
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+
+    // A SOURCE seek during a minute-long Prepare is NOT a new PCM owner:
+    // the completed handoff must use the latest live source cue and loop.
+    // This is preparation/cue safety, NOT yet cached MANUAL/M17 A/B.
+    vm.requestPrepare();
+    QCOMPARE(vm.audio_status(),QStringLiteral("Preparing audio"));
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{2200}));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(transport.source_display_snapshot().value()->position,
+             core::FrameIndex{2200});
+    vm.previewPrepared();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QVERIFY(coordinator.device_active());
+    QCOMPARE(transport.source_display_snapshot().value()->loop,
+             std::optional{*region.value()});
+    vm.setBypass(true);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(device->position,core::FrameIndex{2200});
+    QCOMPARE(device->loop,std::optional{*region.value()});
+    QVERIFY(!product.private_id());
+    QVERIFY(candidates.staged());
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+
+    // PAUSED stays paused while re-auditioning the retained PCM; Preview Prepared installs an
+    // OUTPUT_RATE owner only after an explicit request.
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{2600}));
+    transport.pause();
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    vm.previewPrepared();
+    QVERIFY(coordinator.device_active());
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    const auto pausedTerminalId=device->audibleRealization.realizationId;
+    QVERIFY(pausedTerminalId && pausedTerminalId!=firstTerminalId);
+    qInfo().noquote()<<"M17_EDGE_CASE=STOPPED_AB_TRANSPORT";
+    transport.stop();
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    vm.setBypass(true);
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    vm.setBypass(false);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    vm.previewPrepared();
+    QCOMPARE(product.status(),QStringLiteral("PRIVATE_INSTALLED"));
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    // Re-establish PAUSED for the existing Ceiling-edit regression below.
+    transport.playOrResume();
+    transport.pause();
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+
+    // Committing Ceiling must invalidate the prepared result but MUST NOT
+    // schedule another full-resource M17 job automatically.
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-6.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    vm.previewPrepared();
+    QVERIFY(coordinator.device_active());
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QVERIFY(device->audibleRealization.realizationId!=pausedTerminalId);
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{3100}));
+    vm.setBypass(true);
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QCOMPARE(device->position,core::FrameIndex{3100});
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+
+    // Upstream Input Gain changes retire M17 before MANUAL publication.
+    // Neither preview completion nor Live Play can silently reprepare.
+    vm.setBypass(false);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    vm.previewPrepared();
+    QVERIFY(coordinator.device_active());
+    auto gain3=dsp::GainParameters::create(+3.0);
+    QVERIFY(gain3);
+    QVERIFY(upstream.value()->set_gain_parameters(*gain3.value()));
+    preview.request_preview();
+    QCOMPARE(preview.preview_status(),QStringLiteral("RENDERING"));
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!limiter.value()->bypassed());
+    QTRY_COMPARE_WITH_TIMEOUT(preview.preview_status(),
+        QStringLiteral("READY"),12000);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    const auto updatedManualId=selector.processed_realization_id();
+    const auto updatedManual=selector.processed_realization_snapshot();
+    QVERIFY(updatedManualId&&updatedManual&&updatedManualId!=originalId);
+    const auto oldLane=original->view().channel(0);
+    const auto newLane=updatedManual->view().channel(0);
+    QVERIFY(oldLane&&newLane);
+    QVERIFY((*oldLane.value())[0]!=(*newLane.value())[0]);
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+
+    // SOURCE Loop edit cancels only the pending/READY private job. New
+    // request is explicit, source ownership is never silently substituted.
+    const auto shiftedRegion=core::FrameRange::create(
+        core::FrameIndex{700},core::FrameIndex{3300});
+    QVERIFY(shiftedRegion);
+    desiredLoop=*shiftedRegion.value();
+    QVERIFY(transport.set_loop_source_range(desiredLoop));
+    coordinator.loop_context_changed();
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!coordinator.device_active());
+    QVERIFY(!product.private_id());
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    vm.previewPrepared();
+    QVERIFY(coordinator.device_active());
+    QCOMPARE(transport.source_display_snapshot().value()->loop,desiredLoop);
+
+    // A second edit invalidates an already installed result, leaving
+    // ordinary preview functional and M17 visibly due for preparation.
+    auto gainDown=dsp::GainParameters::create(-3.0);
+    QVERIFY(gainDown);
+    QVERIFY(upstream.value()->set_gain_parameters(*gainDown.value()));
+    preview.request_preview();
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QTRY_COMPARE_WITH_TIMEOUT(preview.preview_status(),
+        QStringLiteral("READY"),12000);
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!limiter.value()->bypassed());
+    vm.setBypass(true);
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+
+    // An authentic rate-probe failure remains a real error, not CANCELLED.
+    product.set_preferred_output_rate_probe(
+        [](audio::ChannelLayout)->core::Result<core::SampleRate> {
+            return core::Result<core::SampleRate>::failure(core::Error{
+                core::ErrorCode::UnsupportedOperation,
+                "Synthetic audition rate-probe failure."});
+        });
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    vm.requestPrepare();
+    QVERIFY(limiter.value()->bypassed());
+    QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
+    QVERIFY(vm.validation_message().contains(
+        QStringLiteral("Synthetic audition rate-probe failure")));
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+
+    // A wrong target is rejected at explicit Prepare, not when arming ON.
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    vm.setBypass(false);
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    vm.requestPrepare();
+    QVERIFY(limiter.value()->bypassed());
+    QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
+    QVERIFY(vm.validation_message().contains(
+        QStringLiteral("requires PROCESSED audition target")));
+    QVERIFY(!coordinator.device_active());
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+}
+void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()
+{
+    // This is a product-render boundary test: the protected per-block M17
+    // process and its strict FP recurrence are untouched.
+    using namespace rgsml;
+    const auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto params=dsp::TruePeakLimiterParameters::create(-12.0);
+    const auto rate=core::SampleRate::create(44100);
+    const auto block=core::FrameCount::create(64);
+    const auto frames=core::FrameCount::create(320);
+    QVERIFY(registry && params && rate && block && frames);
+    const auto fmt=audio::AudioFormat::create(
+        *rate.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto input=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},*frames.value());
+    QVERIFY(input);
+    std::size_t polls=0;
+    const render::TerminalRenderCancel cancelled=[&] {
+        return ++polls>=3;
+    };
+    const auto aborted=render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*params.value(),*registry.value(),
+        *block.value(),false,cancelled);
+    QVERIFY(!aborted);
+    QVERIFY(aborted.error());
+    // An abandoned candidate cannot return even a partial owned PCM/GR.
+    QVERIFY(std::string_view{aborted.error()->message()} ==
+        std::string_view{
+            "Stale terminal render was cancelled before complete publication."});
+    QCOMPARE(polls,std::size_t{3});
+
+    // A live, never-cancelled job remains binary64 bit-identical with the
+    // previous no-callback render across both real stereo output lanes.
+    const auto baseline=render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*params.value(),*registry.value(),
+        *block.value(),false);
+    const render::TerminalRenderCancel never=[] {return false;};
+    const auto live=render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*params.value(),*registry.value(),
+        *block.value(),false,never);
+    QVERIFY(baseline && live);
+    // Passive per-block counter is exact and MUST NOT perturb frozen M17 PCM.
+    std::vector<render::TerminalRenderProgress> observed;
+    const auto recorded=render::render_true_peak_limiter_terminal_candidate(
+        input.value()->view(),*params.value(),*registry.value(),
+        *block.value(),false,never,[&](auto p) {observed.push_back(p);});
+    QVERIFY(recorded);
+    QCOMPARE(observed.size(),std::size_t{5});
+    for(std::size_t i=0;i<observed.size();++i) {
+        QCOMPARE(observed[i].phase,render::TerminalRenderProgressPhase::M17_CORE);
+        QCOMPARE(observed[i].processed_frames,static_cast<std::int64_t>((i+1)*64));
+        QCOMPARE(observed[i].total_frames,std::int64_t{320});
+    }
+    QCOMPARE(baseline.value()->applied_gain_frames.size(),std::size_t{320});
+    QCOMPARE(live.value()->applied_gain_frames.size(),std::size_t{320});
+    const auto a=baseline.value()->compensated_pcm.view();
+    const auto b=live.value()->compensated_pcm.view();
+    const auto observedPcm=recorded.value()->compensated_pcm.view();
+    for (std::size_t ch=0;ch<2;++ch) {
+        const auto ca=a.channel(ch);
+        const auto cb=b.channel(ch);
+        const auto cc=observedPcm.channel(ch);
+        QVERIFY(ca && cb && cc);
+        QCOMPARE(ca.value()->size(),cb.value()->size());
+        QCOMPARE(ca.value()->size(),cc.value()->size());
+        for (std::size_t i=0;i<ca.value()->size();++i) {
+            QCOMPARE(std::bit_cast<std::uint64_t>((*ca.value())[i]),
+                     std::bit_cast<std::uint64_t>((*cb.value())[i]));
+            QCOMPARE(std::bit_cast<std::uint64_t>((*ca.value())[i]),
+                     std::bit_cast<std::uint64_t>((*cc.value())[i]));
+        }
+    }
+}
+
+} // namespace rgsml::tests
+QTEST_GUILESS_MAIN(rgsml::tests::TerminalActivationIntegrationTest)
+#include "test_terminal_product_activation.moc"

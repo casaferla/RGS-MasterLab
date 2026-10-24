@@ -5,12 +5,22 @@
 #include <rgsml/dsp/gain_parameters.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/parametric_eq_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_parameters.hpp>
+#include <rgsml/dsp/stereo_ms_module.hpp>
+#include <rgsml/dsp/true_peak_limiter_module.hpp>
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
 
 #include <QtTest/QTest>
 
 #include <algorithm>
+#include <array>
+#include <bit>
+#include <cstdint>
+#include <cmath>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -120,11 +130,13 @@ void ModuleRegistryTest::emptyLookupAndUnavailableCatalog()
 
     auto catalog = ModuleRegistry::create_dsp_package_v1();
     QVERIFY(catalog.value() != nullptr);
-    QCOMPARE(catalog.value()->factory_count(), std::size_t{3});
+    QCOMPARE(catalog.value()->factory_count(), std::size_t{5});
     for (const auto& descriptor : catalog.value()->descriptors()) {
         const auto hasProdFactory = descriptor.type_id() == "rgsml.dsp.gain"
             || descriptor.type_id() == "rgsml.dsp.parametric-eq"
-            || descriptor.type_id() == "rgsml.dsp.compressor";
+            || descriptor.type_id() == "rgsml.dsp.compressor"
+            || descriptor.type_id() == "rgsml.dsp.stereo-ms"
+            || descriptor.type_id() == "rgsml.dsp.true-peak-limiter";
         QCOMPARE(catalog.value()->has_factory(descriptor.type_id()), hasProdFactory);
         auto module = catalog.value()->create_module(descriptor.type_id());
         if (hasProdFactory) {
@@ -137,6 +149,24 @@ void ModuleRegistryTest::emptyLookupAndUnavailableCatalog()
                 std::string_view{"MODULE_IMPLEMENTATION_UNAVAILABLE"});
         }
     }
+    // The M15 schema is real, but an implementation is not fabricated.
+    const auto stereo_desc = catalog.value()->find_descriptor("rgsml.dsp.stereo-ms");
+    QVERIFY(stereo_desc);
+    QCOMPARE(stereo_desc.value()->get().algorithm_version(),
+             std::optional<std::string_view>{"1.0.0"});
+    QCOMPARE(stereo_desc.value()->get().parameter_schema_id(),
+             std::optional<std::string_view>{
+                 "rgsml.dsp.stereo-ms.parameters/1.0.0"});
+    QVERIFY(catalog.value()->has_factory("rgsml.dsp.stereo-ms"));
+    const auto stereo_defaults = StereoMsParameters::create_default();
+    QVERIFY(stereo_defaults);
+    const ModuleParameterPayload stereo_payload{*stereo_defaults.value()};
+    const auto stereo_available = catalog.value()->create_module(
+        "rgsml.dsp.stereo-ms", stereo_payload);
+    QVERIFY(stereo_available);
+    QCOMPARE((*stereo_available.value())->descriptor().type_id(),
+             std::string_view{"rgsml.dsp.stereo-ms"});
+
     auto unknown = catalog.value()->create_module("rgsml.dsp.unknown");
     QVERIFY(unknown.error() != nullptr);
     QCOMPARE(error_category(*unknown.error()), std::string_view{"MODULE_TYPE_NOT_FOUND"});
@@ -314,6 +344,93 @@ void ModuleRegistryTest::configuredModuleCreation()
     QCOMPARE(
         (*compressor.value())->descriptor().type_id(),
         std::string_view{"rgsml.dsp.compressor"});
+
+    // Stereo/M-S must instantiate both with immutable default factory
+    // parameters and with the user's exact typed (non-default) payload.
+    const auto ms_default = catalog.value()->create_module("rgsml.dsp.stereo-ms");
+    QVERIFY(ms_default);
+    QCOMPARE((*ms_default.value())->descriptor().type_id(),
+             std::string_view{"rgsml.dsp.stereo-ms"});
+    const auto* default_ms = dynamic_cast<const StereoMsModule*>(
+        ms_default.value()->get());
+    QVERIFY(default_ms != nullptr);
+    const auto canonical_default = StereoMsParameters::create_default();
+    QVERIFY(canonical_default);
+    QVERIFY(default_ms->parameters() == *canonical_default.value());
+
+    auto ms_params = StereoMsParameters::create(
+        -3.0, 8.0, false, MonoBassMode::LR24, 300.0, 25.0);
+    QVERIFY(ms_params);
+    ModuleParameterPayload ms_payload{*ms_params.value()};
+    auto ms = catalog.value()->create_module("rgsml.dsp.stereo-ms", ms_payload);
+    QVERIFY(ms);
+    QCOMPARE((*ms.value())->descriptor().type_id(),
+             std::string_view{"rgsml.dsp.stereo-ms"});
+    const auto* configured_ms = dynamic_cast<const StereoMsModule*>(
+        ms.value()->get());
+    QVERIFY(configured_ms != nullptr);
+    QVERIFY(configured_ms->parameters() == *ms_params.value());
+
+
+    auto wrong_ms_payload =
+        catalog.value()->create_module("rgsml.dsp.stereo-ms", gain_payload);
+    QVERIFY(!wrong_ms_payload);
+    QCOMPARE(error_category(*wrong_ms_payload.error()),
+             std::string_view{"MODULE_PARAMETER_PAYLOAD_MISMATCH"});
+
+    auto ms_to_gain =
+        catalog.value()->create_module("rgsml.dsp.gain", ms_payload);
+    QVERIFY(!ms_to_gain);
+    QCOMPARE(error_category(*ms_to_gain.error()),
+             std::string_view{"MODULE_PARAMETER_PAYLOAD_MISMATCH"});
+
+    // M17 v1.0 has a REAL terminal-only module, not a placeholder or
+    // fallback that discards the exact nondefault typed Ceiling.
+    constexpr std::string_view kLimiter="rgsml.dsp.true-peak-limiter";
+    const auto limiterDescriptor=catalog.value()->find_descriptor(kLimiter);
+    QVERIFY(limiterDescriptor);
+    QCOMPARE(limiterDescriptor.value()->get().algorithm_version(),
+        std::optional<std::string_view>{"1.0.0"});
+    QCOMPARE(limiterDescriptor.value()->get().parameter_schema_id(),
+        std::optional<std::string_view>{
+            "rgsml.dsp.true-peak-limiter.parameters/1.0.0"});
+    QVERIFY(catalog.value()->has_factory(kLimiter));
+    const auto defaultLimiter=catalog.value()->create_module(kLimiter);
+    QVERIFY(defaultLimiter);
+    const auto* defaultInstance=dynamic_cast<const TruePeakLimiterModule*>(
+        defaultLimiter.value()->get());
+    QVERIFY(defaultInstance!=nullptr);
+    QCOMPARE(defaultInstance->parameters().ceiling_db_tp(),-1.0);
+
+    for(const double ceiling:{-12.0,-6.0,-1.0,
+            std::nextafter(-1.0,0.0),0.0}) {
+        const auto params=TruePeakLimiterParameters::create(ceiling);
+        QVERIFY(params);
+        const ModuleParameterPayload payload{*params.value()};
+        const auto typed=catalog.value()->create_module(kLimiter,payload);
+        QVERIFY(typed);
+        const auto* limiter=dynamic_cast<const TruePeakLimiterModule*>(
+            typed.value()->get());
+        QVERIFY(limiter!=nullptr);
+        QCOMPARE(std::bit_cast<std::uint64_t>(limiter->parameters().ceiling_db_tp()),
+            std::bit_cast<std::uint64_t>(ceiling));
+        QCOMPARE(limiter->descriptor().terminal_slot(),
+            std::optional{TerminalSlot::FINAL_TRUE_PEAK_LIMITER});
+    }
+    for(const auto& invalidPayload:
+        std::array<ModuleParameterPayload,3>{
+            gain_payload,eq_payload,ms_payload}) {
+        const auto wrong=catalog.value()->create_module(kLimiter,invalidPayload);
+        QVERIFY(!wrong);
+        QCOMPARE(error_category(*wrong.error()),
+            std::string_view{"MODULE_PARAMETER_PAYLOAD_MISMATCH"});
+    }
+    const auto wrongGain=catalog.value()->create_module(
+        "rgsml.dsp.gain",
+        ModuleParameterPayload{*TruePeakLimiterParameters::create(-6.0).value()});
+    QVERIFY(!wrongGain);
+    QCOMPARE(error_category(*wrongGain.error()),
+        std::string_view{"MODULE_PARAMETER_PAYLOAD_MISMATCH"});
 
     // Payload mismatch remains rejected deterministically.
     auto mismatch = catalog.value()->create_module("rgsml.dsp.gain", eq_payload);

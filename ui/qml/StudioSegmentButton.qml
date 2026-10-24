@@ -5,6 +5,8 @@ Button {
     id: control
 
     property bool selected: false
+    // Family fill is opt-in: no changes to Gain/EQ/Compressor selectors.
+    property bool selectedFamilyFill: false
     property string tone: "secondary"
     property color accentColor: tone === "gold" ? "#F2B632" : "#00C8FF"
     property int minimumControlWidth: 80
@@ -48,6 +50,8 @@ Button {
             color: !control.enabled ? "#66000000"
                  : control.tone === "primary" ? (control.down ? "#073344" : control.hovered ? "#0B4154" : "#0A3443")
                  : control.tone === "gold" && control.selected ? "#3B2D08"
+                 : control.selected && control.selectedFamilyFill
+                    ? Qt.alpha(control.accentColor, 0.22)
                  : control.selected ? "#0A3443"
                  : control.down ? "#26000000"
                  : control.hovered ? "#1400C8FF" : "#0E1F2E"
@@ -55,6 +59,8 @@ Button {
             border.color: !control.enabled ? "#2C5A78"
                         : control.tone === "gold" && control.selected ? "#F2B632"
                         : control.selected ? control.accentColor
+                        : control.hovered && control.selectedFamilyFill
+                            ? Qt.alpha(control.accentColor, 0.55)
                         : control.hovered ? "#5900C8FF" : "#2C5A78"
         }
     }
