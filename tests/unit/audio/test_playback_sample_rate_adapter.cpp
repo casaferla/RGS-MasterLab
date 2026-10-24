@@ -112,6 +112,7 @@ private slots:
     void monitoringFrameMapSixRateEndpointsAndLoops();
     void monitoringMasterSnapshotFailClosedAcrossSixRatePairs();
     void monitoringBorrowsMasterWithoutSourceAlias();
+    void monitoring44100SixDeviceRatesRemainBlockInvariant();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -326,6 +327,61 @@ void PlaybackSampleRateAdapterTest::monitoringFrameMapSixRateEndpointsAndLoops()
         core::FrameIndex{1},core::FrameIndex{2});
     QVERIFY(tooSmall);
     QVERIFY(!map.value()->master_loop_to_device(*tooSmall.value()));
+}
+
+void PlaybackSampleRateAdapterTest::monitoring44100SixDeviceRatesRemainBlockInvariant()
+{
+    // Actual final-master monitoring entrypoint, not generic SOURCE SRC.
+    // Different offline block sizes must never change listening PCM.
+    // Neither render has M16 LIVE/M17 terminal certification.
+    constexpr std::array<std::int64_t,6> devices{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::int64_t N=441;
+    auto format=audio::AudioFormat::create(
+        rate(44100),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto master=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},frame_count(N));
+    QVERIFY(master);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=master.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(std::int64_t i=0;i<N;++i) {
+            const double sample=i%17==0?-0.4:i%13==0?0.3:0.2;
+            (*lane.value())[static_cast<std::size_t>(i)] =
+                sample*(ch==0?1.0:-0.375);
+        }
+    }
+    const auto beforeLeft=channel_bits(*master.value(),0);
+    const auto beforeRight=channel_bits(*master.value(),1);
+    for(const auto deviceHz:devices) {
+        auto small=audio::materialize_monitoring_pcm_candidate(
+            master.value()->view(),rate(deviceHz),frame_count(7));
+        auto large=audio::materialize_monitoring_pcm_candidate(
+            master.value()->view(),rate(deviceHz),frame_count(257));
+        QVERIFY2(small,small?"":small.error()->message().c_str());
+        QVERIFY2(large,large?"":large.error()->message().c_str());
+        QVERIFY(audio::validate_monitoring_pcm_candidate(*small.value()));
+        QVERIFY(audio::validate_monitoring_pcm_candidate(*large.value()));
+        QCOMPARE(small.value()->immutable_master_rate.value(),
+            std::int64_t{44100});
+        QCOMPARE(large.value()->immutable_master_rate.value(),
+            std::int64_t{44100});
+        QCOMPARE(small.value()->immutable_master_frames.value(),N);
+        QCOMPARE(large.value()->immutable_master_frames.value(),N);
+        QCOMPARE(small.value()->device_rate.value(),deviceHz);
+        QCOMPARE(large.value()->device_rate.value(),deviceHz);
+        QCOMPARE(small.value()->device_src_applied,deviceHz!=44100);
+        QCOMPARE(large.value()->device_src_applied,deviceHz!=44100);
+        QCOMPARE(small.value()->device_pcm.view().frame_count(),
+                 large.value()->device_pcm.view().frame_count());
+        for(std::size_t ch=0;ch<2;++ch)
+            QCOMPARE(channel_bits(small.value()->device_pcm,ch),
+                     channel_bits(large.value()->device_pcm,ch));
+        QCOMPARE(channel_bits(*master.value(),0),beforeLeft);
+        QCOMPARE(channel_bits(*master.value(),1),beforeRight);
+    }
 }
 
 void PlaybackSampleRateAdapterTest::monitoringBorrowsMasterWithoutSourceAlias()
