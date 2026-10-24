@@ -20,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -247,6 +248,7 @@ private slots:
     void formatSelectionIsDeterministic();
     void terminalFormatRejectsDeviceRateFallback();
     void monitoringFormatDoesNotRetargetMaster();
+    void monitoringEndpointStartResumeRequiresSameDeviceAndRate();
     void isolatedMonitoringPcmPumpNeverClaimsM17OrLive();
     void monitoringTransportPauseSeekLoopStopKeepsDeviceClockIsolated();
     void monitoringDeviceRateSwitchIsIsolatedAndFailsClosed();
@@ -371,6 +373,38 @@ void PlaybackSupportTest::monitoringFormatDoesNotRetargetMaster()
     QVERIFY(observed && observed.value()->srcApplied);
     QVERIFY(!platform::windows::internal::select_terminal_output_device_format(
         *format.value(),false,false));
+}
+
+void PlaybackSupportTest::monitoringEndpointStartResumeRequiresSameDeviceAndRate()
+{
+    using platform::windows::internal::monitoring_endpoint_is_current;
+    constexpr std::string_view oldDevice{"Qt endpoint A"};
+    constexpr std::string_view otherDevice{"Qt endpoint B"};
+    constexpr std::string_view binaryDevice{"A\0B",3};
+    for(const int hz : {44100,48000,88200,96000,176400,192000}) {
+        QVERIFY(monitoring_endpoint_is_current(
+            oldDevice,hz,oldDevice,hz,true));
+        QVERIFY(!monitoring_endpoint_is_current(
+            oldDevice,hz,otherDevice,hz,true));
+        QVERIFY(!monitoring_endpoint_is_current(
+            oldDevice,hz,oldDevice,hz,false));
+        QVERIFY(!monitoring_endpoint_is_current(
+            {},hz,oldDevice,hz,true));
+        QVERIFY(!monitoring_endpoint_is_current(
+            oldDevice,hz,{},hz,true));
+        const int changed=hz==48000?96000:48000;
+        QVERIFY(!monitoring_endpoint_is_current(
+            oldDevice,hz,oldDevice,changed,true));
+        QVERIFY(!monitoring_endpoint_is_current(
+            oldDevice,hz,oldDevice,0,true));
+        QVERIFY(!monitoring_endpoint_is_current(
+            oldDevice,hz,oldDevice,-1,true));
+        QVERIFY(monitoring_endpoint_is_current(
+            binaryDevice,hz,std::string_view{"A\0B",3},hz,true));
+        QVERIFY(!monitoring_endpoint_is_current(
+            binaryDevice,hz,std::string_view{"A\0C",3},hz,true));
+    }
+    QVERIFY(!monitoring_endpoint_is_current(oldDevice,0,oldDevice,0,true));
 }
 
 void PlaybackSupportTest::isolatedMonitoringPcmPumpNeverClaimsM17OrLive()

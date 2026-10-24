@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace rgsml::analysis {
@@ -50,6 +51,19 @@ struct DeviceFormat final {
     int observedPreferredRateHz,
     bool preferredFloat32Supported,
     bool preferredPcm16Supported);
+
+// Private MONITOR route only: a prepared device-rate PCM may start/resume
+// only on the same opaque Windows device id, with the same preferred rate
+// and still-supported exact format. Not a physical DAC clock measurement.
+[[nodiscard]] inline bool monitoring_endpoint_is_current(
+    std::string_view preparedId,int preparedRate,
+    std::string_view currentId,int currentRate,
+    bool exactFormatStillSupported) noexcept
+{
+    return !preparedId.empty() && !currentId.empty()
+        && preparedId==currentId && preparedRate>0
+        && preparedRate==currentRate && exactFormatStillSupported;
+}
 
 // Terminal PCM is already at its output rate. Exact-format selection
 // cannot silently fall back to the 44.1/48 kHz playback SRC.

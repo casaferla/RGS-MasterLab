@@ -30,6 +30,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace rgsml::platform::windows {
@@ -172,14 +173,27 @@ private:
     rgsml::analysis::SampleEncoding encoding_{rgsml::analysis::SampleEncoding::IEEE_FLOAT32};
 };
 
+// Only the experimental monitor route pins a device across prepare/play.
+struct MonitoringEndpointLock final {
+    QByteArray deviceId;
+    int preferredRateHz;
+};
+
+[[nodiscard]] std::string_view opaque_device_id(const QByteArray& id) noexcept
+{
+    return {id.constData(),static_cast<std::size_t>(id.size())};
+}
+
 class QtPlaybackOutput final : public IPlaybackOutput {
 public:
     static constexpr qsizetype kQueueCapacityBytes = 64 * 1024;
 
-    QtPlaybackOutput(QAudioDevice device, QAudioFormat format)
+    QtPlaybackOutput(QAudioDevice device,QAudioFormat format,
+        std::optional<MonitoringEndpointLock> monitorLock=std::nullopt)
         : device_(std::move(device))
         , format_(format)
         , queue_(kQueueCapacityBytes)
+        , monitorLock_(std::move(monitorLock))
     {
     }
 
@@ -230,6 +244,9 @@ public:
                 core::ErrorCode::UnsupportedOperation,
                 "The current default output no longer supports the prepared format.");
         }
+        if(!monitor_endpoint_matches(currentDefault))
+            return status_failure(core::ErrorCode::UnsupportedOperation,
+                "MONITOR_ENDPOINT_CHANGED_BEFORE_START: regenerate device PCM.");
         device_ = currentDefault;
         try {
             sink_ = std::make_unique<QAudioSink>(device_, format_);
@@ -270,6 +287,10 @@ public:
 
     [[nodiscard]] core::Status resume() override
     {
+        if(monitorLock_ && !monitor_endpoint_matches(
+            QMediaDevices::defaultAudioOutput()))
+            return status_failure(core::ErrorCode::UnsupportedOperation,
+                "MONITOR_ENDPOINT_CHANGED_BEFORE_RESUME: regenerate device PCM.");
         if (!sink_ || sink_->state() != QtAudio::SuspendedState) {
             return status_failure(
                 core::ErrorCode::InvalidState,
@@ -354,9 +375,23 @@ public:
     }
 
 private:
+    [[nodiscard]] bool monitor_endpoint_matches(const QAudioDevice& now) const
+    {
+        if(!monitorLock_)return true;
+        if(now.isNull()||now.mode()!=QAudioDevice::Output)return false;
+        const auto nowId=now.id();
+        return internal::monitoring_endpoint_is_current(
+            opaque_device_id(monitorLock_->deviceId),
+            monitorLock_->preferredRateHz,
+            opaque_device_id(nowId),
+            now.preferredFormat().sampleRate(),
+            now.isFormatSupported(format_));
+    }
+
     QAudioDevice device_;
     QAudioFormat format_;
     BufferedAudioDevice queue_;
+    std::optional<MonitoringEndpointLock> monitorLock_;
     std::unique_ptr<QAudioSink> sink_;
 };
 
@@ -533,7 +568,8 @@ struct OutputCandidate final {
         return core::Result<OutputCandidate>::success(OutputCandidate{
             std::make_unique<QtPlaybackOutput>(device,
                 selected.value()->sampleFormat==DeviceSampleFormat::IEEE_F32
-                    ?qtFloat:qtPcm),
+                    ?qtFloat:qtPcm,
+                MonitoringEndpointLock{device.id(),hz}),
             selected.value()->sampleFormat,std::nullopt
         });
     }catch(const std::bad_alloc&){
