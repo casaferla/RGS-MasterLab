@@ -11,6 +11,9 @@
 namespace rgsml::analysis {
 class LiveSpectrumAnalyzer;
 }
+namespace rgsml::audio {
+struct MonitoringPcmCandidate;
+}
 
 namespace rgsml::platform::windows {
 
@@ -44,6 +47,13 @@ public:
         audio::AudioBufferView pcm,
         std::shared_ptr<const void> lifetime,
         core::RealizationId candidateIdentity);
+    // EXPERIMENTAL device-monitoring seam: candidate PCM is separately owned
+    // and already converted offline. Never substitute a new master rate or
+    // claim M17 terminal/M16 LIVE ownership. No active UI publication.
+    [[nodiscard]] core::Result<core::SampleRate>
+    preferred_monitoring_output_rate(audio::ChannelLayout layout) const;
+    [[nodiscard]] core::Status prepare_monitoring_output_pcm(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> candidate);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr,

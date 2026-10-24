@@ -5,6 +5,7 @@
 
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
 #include <QAudioDevice>
@@ -486,6 +487,57 @@ struct OutputCandidate final {
     }
 }
 
+// The monitor sink never receives immutable master PCM. This is a Qt
+// preferred-format capability, NOT proof of the physical DAC sample clock.
+[[nodiscard]] core::Result<OutputCandidate> make_monitoring_output_candidate(
+    const audio::MonitoringPcmCandidate& monitor)
+{
+    const auto pcm=monitor.device_pcm.view();
+    auto plan=audio::plan_master_monitoring_rate(
+        monitor.immutable_master_rate,monitor.device_rate);
+    if(!plan)return core::Result<OutputCandidate>::failure(*plan.error());
+    if(pcm.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||pcm.absolute_start_frame().value()!=0
+       ||pcm.frame_count().value()<=0
+       ||monitor.immutable_master_frames.value()<=0
+       ||pcm.format().sample_rate()!=monitor.device_rate
+       ||monitor.device_src_applied!=plan.value()->monitoring_src_required)
+        return failure<OutputCandidate>(core::ErrorCode::InvalidArgument,
+            "MONITOR_CANDIDATE_RATE_OR_OWNER_INVALID");
+    const auto device=QMediaDevices::defaultAudioOutput();
+    if(device.isNull()||device.mode()!=QAudioDevice::Output)
+        return failure<OutputCandidate>(core::ErrorCode::UnsupportedOperation,
+            "MONITOR_DEVICE_UNAVAILABLE");
+    const int hz=device.preferredFormat().sampleRate();
+    if(hz!=monitor.device_rate.value())
+        return failure<OutputCandidate>(core::ErrorCode::UnsupportedOperation,
+            "MONITOR_DEVICE_RATE_CHANGED: rebuild offline monitor PCM.");
+    auto masterFmt=audio::AudioFormat::create(
+        monitor.immutable_master_rate,pcm.format().channel_layout());
+    if(!masterFmt)return core::Result<OutputCandidate>::failure(*masterFmt.error());
+    const auto qtFloat=make_format(pcm.format(),hz,QAudioFormat::Float);
+    const auto qtPcm=make_format(pcm.format(),hz,QAudioFormat::Int16);
+    auto selected=internal::select_monitoring_device_format(
+        *masterFmt.value(),hz,
+        device.isFormatSupported(qtFloat),device.isFormatSupported(qtPcm));
+    if(!selected)return core::Result<OutputCandidate>::failure(*selected.error());
+    if(selected.value()->sampleRateHz!=hz
+       ||selected.value()->srcApplied!=monitor.device_src_applied)
+        return failure<OutputCandidate>(core::ErrorCode::InvalidState,
+            "MONITOR_SINK_PROVENANCE_MISMATCH");
+    try {
+        return core::Result<OutputCandidate>::success(OutputCandidate{
+            std::make_unique<QtPlaybackOutput>(device,
+                selected.value()->sampleFormat==DeviceSampleFormat::IEEE_F32
+                    ?qtFloat:qtPcm),
+            selected.value()->sampleFormat,std::nullopt
+        });
+    }catch(const std::bad_alloc&){
+        return failure<OutputCandidate>(core::ErrorCode::IoFailure,
+            "MONITOR_SINK_ALLOCATION_FAILED");
+    }
+}
+
 class PlaybackWorker final : public QObject {
 public:
     [[nodiscard]] core::Status start()
@@ -561,6 +613,7 @@ public:
         preparedPcmRealizationId_.reset();
         terminalPcmPrepared_=false;
         terminalPcmLifetime_.reset();
+        preparedMonitoring_.reset();
         return core::Status::success();
     }
 
@@ -596,6 +649,7 @@ public:
         preparedPcmRealizationId_ = realizationId;
         terminalPcmPrepared_=false;
         terminalPcmLifetime_.reset();
+        preparedMonitoring_.reset();
         return core::Status::success();
     }
 
@@ -657,6 +711,35 @@ public:
         preparedPcmRealizationId_=identity;
         terminalPcmPrepared_=true;
         terminalPcmLifetime_=std::move(lifetime);
+        preparedMonitoring_.reset();
+        return core::Status::success();
+    }
+
+    [[nodiscard]] core::Status prepare_monitoring_output_pcm(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
+    {
+        if(!candidate)
+            return status_failure(core::ErrorCode::InvalidArgument,
+                "MONITOR_CANDIDATE_OWNER_MISSING");
+        auto output=make_monitoring_output_candidate(*candidate);
+        if(!output)return core::Status::failure(*output.error());
+        const auto pcm=candidate->device_pcm.view();
+        if(analyzer_)output.value()->output->attach_analyzer(analyzer_);
+        auto installed=engine_.install_monitoring_output_pcm_candidate(
+            pcm,std::move(output.value()->output),
+            output.value()->sampleFormat,
+            std::shared_ptr<const void>(candidate),candidate->device_rate);
+        if(!installed)return installed;
+        if(analyzer_){
+            analyzer_->set_stream_generation(nextStreamGeneration_++);
+            analyzer_->invalidate_and_clear();
+        }
+        preparedSource_.reset();
+        preparedPcm_=pcm;
+        preparedPcmRealizationId_.reset();
+        terminalPcmPrepared_=false;
+        terminalPcmLifetime_.reset();
+        preparedMonitoring_=std::move(candidate);
         return core::Status::success();
     }
 
@@ -675,6 +758,7 @@ public:
         preparedPcmRealizationId_ = realizationId;
         terminalPcmPrepared_=false;
         terminalPcmLifetime_.reset();
+        preparedMonitoring_.reset();
         return core::Status::success();
     }
 
@@ -687,6 +771,7 @@ public:
             preparedPcmRealizationId_.reset();
             terminalPcmPrepared_=false;
             terminalPcmLifetime_.reset();
+        preparedMonitoring_.reset();
         }
         return cleared;
     }
@@ -706,14 +791,17 @@ public:
             const auto pcmRealizationId = preparedPcmRealizationId_;
             const auto terminal=terminalPcmPrepared_;
             const auto owner=terminalPcmLifetime_;
+            const auto monitoring=preparedMonitoring_;
             if(terminal&&(!pcm||!pcmRealizationId||!owner))
                 return status_failure(core::ErrorCode::InvalidState,
                     "Cannot reopen unowned terminal PCM.");
             auto reprepared = source
                 ? prepare(*source)
-                : terminal
-                  ? prepare_terminal_output_pcm(*pcm,owner,*pcmRealizationId)
-                  : prepare_pcm(*pcm,nullptr,pcmRealizationId);
+                : monitoring
+                  ? prepare_monitoring_output_pcm(monitoring)
+                  : terminal
+                    ? prepare_terminal_output_pcm(*pcm,owner,*pcmRealizationId)
+                    : prepare_pcm(*pcm,nullptr,pcmRealizationId);
             if (!reprepared) {
                 return reprepared;
             }
@@ -791,6 +879,7 @@ private:
     std::optional<core::RealizationId> preparedPcmRealizationId_;
     bool terminalPcmPrepared_{false};
     std::shared_ptr<const void> terminalPcmLifetime_;
+    std::shared_ptr<const audio::MonitoringPcmCandidate> preparedMonitoring_;
 };
 
 }  // namespace
@@ -877,6 +966,15 @@ public:
                 return worker.prepare_terminal_output_pcm(
                     pcm,std::move(lifetime),identity);
             });
+    }
+
+    [[nodiscard]] core::Status prepare_monitoring_output_pcm(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
+    {
+        return invoke_status([candidate=std::move(candidate)](
+            PlaybackWorker& worker) mutable {
+            return worker.prepare_monitoring_output_pcm(std::move(candidate));
+        });
     }
 
     [[nodiscard]] core::Status handoff_pcm(
@@ -1068,6 +1166,20 @@ core::Status WindowsAudioPlaybackService::prepare_terminal_output_pcm(
 {
     return impl_->prepare_terminal_output_pcm(
         pcm,std::move(lifetime),candidateIdentity);
+}
+
+core::Result<core::SampleRate>
+WindowsAudioPlaybackService::preferred_monitoring_output_rate(
+    audio::ChannelLayout layout) const
+{
+    // Dedicated monitoring query; still only an advisory exact-format probe.
+    return impl_->preferred_terminal_output_rate(layout);
+}
+
+core::Status WindowsAudioPlaybackService::prepare_monitoring_output_pcm(
+    std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
+{
+    return impl_->prepare_monitoring_output_pcm(std::move(candidate));
 }
 
 core::Status WindowsAudioPlaybackService::handoff_pcm(
