@@ -6,6 +6,7 @@
 #include "../audio/wav_test_support.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
 
 #include <QTest>
 
@@ -245,6 +246,7 @@ private slots:
     void formatSelectionIsDeterministic();
     void terminalFormatRejectsDeviceRateFallback();
     void monitoringFormatDoesNotRetargetMaster();
+    void isolatedMonitoringPcmPumpNeverClaimsM17OrLive();
     void preferredTerminalRateIsExplicitAndFailClosed();
     void floatAndPcm16GoldenConversion();
     void conversionFailuresAndChunkInvariance();
@@ -366,6 +368,76 @@ void PlaybackSupportTest::monitoringFormatDoesNotRetargetMaster()
     QVERIFY(observed && observed.value()->srcApplied);
     QVERIFY(!platform::windows::internal::select_terminal_output_device_format(
         *format.value(),false,false));
+}
+
+void PlaybackSupportTest::isolatedMonitoringPcmPumpNeverClaimsM17OrLive()
+{
+    using Reason=platform::windows::internal::C2CoverageProbeReason;
+    const auto masterRate=*core::SampleRate::create(192000).value();
+    const auto deviceRate=*core::SampleRate::create(48000).value();
+    auto format=audio::AudioFormat::create(
+        masterRate,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto master=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},frame_count(192));
+    QVERIFY(master);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=master.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(double& value:*lane.value())
+            value=(ch==0?0.125:-0.0625);
+    }
+    auto candidate=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),deviceRate,frame_count(64));
+    QVERIFY2(candidate,candidate?"":candidate.error()->message().c_str());
+    auto held=std::make_shared<audio::MonitoringPcmCandidate>(
+        std::move(*candidate.value()));
+    QCOMPARE(held->immutable_master_rate,masterRate);
+    QCOMPARE(held->device_rate,deviceRate);
+    QCOMPARE(held->device_pcm.view().frame_count().value(),std::int64_t{48});
+    auto owner=std::shared_ptr<const void>(held);
+    {
+        PlaybackEngine failed;
+        auto wrongDevice=std::make_unique<FakeOutput>(4096U,4U);
+        QVERIFY(!failed.install_monitoring_output_pcm_candidate(
+            held->device_pcm.view(),std::move(wrongDevice),
+            DeviceSampleFormat::PCM_S16,owner,masterRate));
+        auto noOwner=std::make_unique<FakeOutput>(4096U,4U);
+        QVERIFY(!failed.install_monitoring_output_pcm_candidate(
+            held->device_pcm.view(),std::move(noOwner),
+            DeviceSampleFormat::PCM_S16,{},deviceRate));
+        QVERIFY(!failed.install_monitoring_output_pcm_candidate(
+            master.value()->view(),std::make_unique<FakeOutput>(4096U,4U),
+            DeviceSampleFormat::PCM_S16,owner,deviceRate));
+        QCOMPARE(failed.snapshot().value()->state,
+            core::PlaybackState::NO_SOURCE);
+    }
+    PlaybackEngine engine;
+    auto sink=std::make_unique<FakeOutput>(4096U,4U);
+    auto* observed=sink.get();
+    QVERIFY(engine.install_monitoring_output_pcm_candidate(
+        held->device_pcm.view(),std::move(sink),
+        DeviceSampleFormat::PCM_S16,owner,deviceRate));
+    const auto snap=engine.snapshot();
+    QVERIFY(snap);
+    QCOMPARE(snap.value()->duration->value(),std::int64_t{48});
+    QVERIFY(!snap.value()->audibleRealization.realizationId.has_value());
+    QVERIFY(engine.play());
+    QVERIFY(observed->queue().size()>=4U);
+    QCOMPARE(read_i16(observed->queue(),0U),std::int16_t{4096});
+    QCOMPARE(read_i16(observed->queue(),2U),std::int16_t{-2048});
+    QCOMPARE(engine.c2_processed_coverage_probe().reason,
+        Reason::NOT_MONITORED);
+    const auto coverage=engine.c2_consumed_prefix();
+    QVERIFY(!coverage.certifiedForLiveTruePeak);
+    QVERIFY(engine.stop());
+    QVERIFY(engine.seek(core::FrameIndex{12}));
+    QVERIFY(engine.play());
+    QVERIFY(observed->queue().size()>=4U);
+    QCOMPARE(engine.c2_processed_coverage_probe().reason,
+        Reason::NOT_MONITORED);
+    QCOMPARE(master.value()->view().format().sample_rate(),masterRate);
 }
 
 void PlaybackSupportTest::preferredTerminalRateIsExplicitAndFailClosed()

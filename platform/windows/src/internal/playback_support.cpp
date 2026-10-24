@@ -845,6 +845,29 @@ core::Status PlaybackEngine::install_terminal_output_pcm_candidate(
         sampleFormat,std::nullopt,std::move(lifetime),identity,true);
 }
 
+core::Status PlaybackEngine::install_monitoring_output_pcm_candidate(
+    audio::AudioBufferView devicePcm,
+    std::unique_ptr<IPlaybackOutput> output,
+    DeviceSampleFormat sampleFormat,
+    std::shared_ptr<const void> lifetime,
+    core::SampleRate actualDeviceRate)
+{
+    // Intentional contrast with install_terminal_output_pcm_candidate():
+    // never admit M17's realization ID for a separately SRC-derived
+    // monitoring PCM. Existing sink-consumed C2/M16 ledgers stay GAP.
+    if(!output || !lifetime
+       ||devicePcm.timebase().frame_domain_id()
+           !=audio::FrameDomainId::OUTPUT_RATE
+       ||devicePcm.absolute_start_frame().value()!=0
+       ||devicePcm.frame_count().value()<=0
+       ||devicePcm.format().sample_rate()!=actualDeviceRate)
+        return status_failure(core::ErrorCode::InvalidArgument,
+            "Monitoring PCM requires separately owned zero-origin "
+            "OUTPUT_RATE PCM at the selected device frequency.");
+    return install_pcm_candidate_accepted(devicePcm,std::move(output),
+        sampleFormat,std::nullopt,std::move(lifetime),std::nullopt,true);
+}
+
 core::Status PlaybackEngine::install_pcm_candidate_accepted(
     audio::AudioBufferView source,
     std::unique_ptr<IPlaybackOutput> output,

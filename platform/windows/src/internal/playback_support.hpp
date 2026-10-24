@@ -246,6 +246,18 @@ public:
         std::shared_ptr<const void> lifetime,
         core::RealizationId identity,
         core::SampleRate actualDeviceRate);
+    // PROTOTYPE monitor-only OUTPUT_RATE PCM, distinct from terminal M17
+    // PCM and source-domain playback. The caller supplies a separately
+    // allocated device-rate buffer with a lifetime owner; there is NO M17
+    // realization identity and NO certified LIVE true-peak coverage.
+    // Transport coordinates are device PCM frames until a verified
+    // master-to-device frame map exists. Not exposed to UI.
+    [[nodiscard]] core::Status install_monitoring_output_pcm_candidate(
+        audio::AudioBufferView devicePcm,
+        std::unique_ptr<IPlaybackOutput> output,
+        DeviceSampleFormat sampleFormat,
+        std::shared_ptr<const void> lifetime,
+        core::SampleRate actualDeviceRate);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr,
