@@ -315,7 +315,7 @@ int main(int argc, char* argv[])
                 previewController.preview_status());
         });
     QObject::connect(&auditionRegion,
-        &rgsml::app::AuditionRegionViewModel::changed,
+        &rgsml::app::AuditionRegionViewModel::effectiveLoopChanged,
         &terminalProductActivation,
         &rgsml::app::TerminalProductActivationCoordinator::loop_context_changed);
     rgsml::app::GainViewModel gainViewModel{&masteringChainState, &previewController};
