@@ -5,12 +5,14 @@
 #include "playback_transport_view_model.hpp"
 #include <QObject>
 #include <QString>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
 
 namespace rgsml::audio {
 struct MonitoringPcmCandidate;
+struct MonitoringPcmPreallocationAdvice;
 }
 namespace rgsml::app {
 
@@ -57,6 +59,28 @@ public:
         std::shared_ptr<const audio::MonitoringPcmCandidate>>
     materialize_private_final_master_monitoring(
         const MonitoringMaterializer& materializer);
+
+    // App-to-Windows registration, without an automatic PREPARE or QML entry.
+    // The real Windows adapter probes the endpoint and OS memory AGAIN at
+    // imminent allocation; the independent caller chooses any policy.
+    // No callback or explicit decision means no PCM allocation or device sink.
+    using MonitoringPreallocationDecision = std::function<core::Status(
+        const audio::MonitoringPcmPreallocationAdvice&)>;
+    using MonitoringPreflightMaterializer = std::function<core::Result<
+        std::shared_ptr<const audio::MonitoringPcmCandidate>>(
+            audio::AudioBufferView immutableMaster,
+            core::FrameCount maximumBlockFrames,
+            std::uint64_t reservedOtherPrepareBytes,
+            const MonitoringPreallocationDecision& explicitDecision)>;
+    void set_monitoring_preflight_materializer(
+        MonitoringPreflightMaterializer materializer)
+    { monitoringPreflight_=std::move(materializer); }
+    [[nodiscard]] core::Result<
+        std::shared_ptr<const audio::MonitoringPcmCandidate>>
+    materialize_private_final_master_monitoring_with_preflight(
+        core::FrameCount maximumBlockFrames,
+        std::uint64_t reservedOtherPrepareBytes,
+        const MonitoringPreallocationDecision& explicitDecision);
     // Explicit opt-in, still product-private: probe device format on its
     // owner thread, capture exact whole-manual format, then request render.
     // No Q_INVOKABLE and no automatic/UI activation.
@@ -145,6 +169,7 @@ private:
     Loop sourceLoop_;
     Selected selected_;
     RateProbe rateProbe_;
+    MonitoringPreflightMaterializer monitoringPreflight_;
     std::optional<Pending> pending_;
     // Exact immutable admission identity; never confuse an M16 failed
     // candidate with the verified-only gate on a subsequent A/B switch.

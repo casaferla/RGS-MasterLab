@@ -1441,12 +1441,22 @@ WindowsAudioPlaybackService::materialize_monitoring_pcm_with_preflight(
         return failure<Candidate>(core::ErrorCode::InvalidArgument,
             "MONITOR_ALLOC_EXPLICIT_DECISION_REQUIRED");
 
-    // The immutable MASTER stays at its selected OUTPUT_RATE. We query the
-    // independently negotiated DEVICE rate but do not install an audio sink.
+    // Pin the observed default endpoint ID across the expensive SRC. A
+    // post-allocation check must not silently accept a different device
+    // which happens to support the same rate. The physical sink will also
+    // check the endpoint on its future explicit Prepare/Play boundary.
+    const auto firstDevice=QMediaDevices::defaultAudioOutput();
+    if(firstDevice.isNull())
+        return failure<Candidate>(core::ErrorCode::InvalidState,
+            "MONITOR_ALLOC_NO_DEFAULT_ENDPOINT");
+    const auto expectedId=firstDevice.id();
     const auto layout=alreadyOwnedMaster.format().channel_layout();
     const auto deviceRate=preferred_monitoring_output_rate(layout);
     if(!deviceRate)
         return core::Result<Candidate>::failure(*deviceRate.error());
+    if(QMediaDevices::defaultAudioOutput().id()!=expectedId)
+        return failure<Candidate>(core::ErrorCode::InvalidState,
+            "MONITOR_ALLOC_ENDPOINT_CHANGED_DURING_PROBE");
 
     auto materialized=audio::materialize_monitoring_pcm_candidate(
         alreadyOwnedMaster,*deviceRate.value(),outputBlock,
@@ -1470,6 +1480,16 @@ WindowsAudioPlaybackService::materialize_monitoring_pcm_with_preflight(
         });
     if(!materialized)
         return core::Result<Candidate>::failure(*materialized.error());
+    // A device may disappear or change during many seconds of FIR work.
+    // Do not hand a stale PCM owner to the later monitoring installer.
+    const auto finalDevice=QMediaDevices::defaultAudioOutput();
+    if(finalDevice.isNull()||finalDevice.id()!=expectedId)
+        return failure<Candidate>(core::ErrorCode::InvalidState,
+            "MONITOR_ALLOC_ENDPOINT_CHANGED_DURING_CONVERSION");
+    const auto finalRate=preferred_monitoring_output_rate(layout);
+    if(!finalRate||*finalRate.value()!=*deviceRate.value())
+        return failure<Candidate>(core::ErrorCode::InvalidState,
+            "MONITOR_ALLOC_DEVICE_RATE_CHANGED_DURING_CONVERSION");
     // Even successful DEVICE PCM construction may leave insufficient
     // heap memory to allocate the distinct candidate owner's control block.
     try {

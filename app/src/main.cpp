@@ -271,6 +271,20 @@ int main(int argc, char* argv[])
         [windowsPlayback](rgsml::audio::ChannelLayout layout) {
             return windowsPlayback->preferred_terminal_output_rate(layout);
         });
+    // Real Windows OS-backed IMMINENT monitoring allocation is connected to
+    // the verified MASTER private bridge, but NOT invoked automatically.
+    // Future explicit caller MUST supply its own memory decision. There is
+    // no silent admission, no rate retarget and no monitor sink installation.
+    privateProductSession.set_monitoring_preflight_materializer(
+        [windowsPlayback](
+            rgsml::audio::AudioBufferView immutableMaster,
+            rgsml::core::FrameCount block,
+            std::uint64_t otherReserveBytes,
+            const rgsml::app::TerminalPrivateProductSession::
+                MonitoringPreallocationDecision& decision) {
+            return windowsPlayback->materialize_monitoring_pcm_with_preflight(
+                immutableMaster,block,otherReserveBytes,decision);
+        });
     // Product-private output rate is now explicitly discoverable but no
     // automatic call or QML sonic activation takes place.
     // A PRIVATE read-only GR presenter. It observes actual Windows-worker

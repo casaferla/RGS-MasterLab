@@ -2,6 +2,7 @@
 #include <rgsml/core/error.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <new>
 #include <utility>
 
@@ -198,6 +199,35 @@ TerminalPrivateProductSession::materialize_private_final_master_monitoring(
     // Delivers ONLY a separate private DEVICE PCM owner. This function
     // never installs a sink or publishes live M16/M17 measurements.
     return result;
+}
+
+core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
+TerminalPrivateProductSession::
+materialize_private_final_master_monitoring_with_preflight(
+    core::FrameCount maximumBlockFrames,
+    std::uint64_t reservedOtherPrepareBytes,
+    const MonitoringPreallocationDecision& explicitDecision)
+{
+    using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+    if(!explicitDecision)
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "M17_MONITOR_EXPLICIT_MEMORY_DECISION_REQUIRED"});
+    // Copy the configured service seam before the synchronous user callback.
+    // Reentrant changes to the registration cannot replace an in-flight
+    // materializer. The verified-MASTER bridge independently checks owner
+    // identity both before and after this entire operation.
+    const auto preflight=monitoringPreflight_;
+    if(!preflight)
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_MONITOR_WINDOWS_PREFLIGHT_NOT_CONFIGURED"});
+    return materialize_private_final_master_monitoring(
+        [preflight,maximumBlockFrames,reservedOtherPrepareBytes,
+         &explicitDecision](audio::AudioBufferView master) {
+            return preflight(master,maximumBlockFrames,
+                             reservedOtherPrepareBytes,explicitDecision);
+        });
 }
 
 core::Status TerminalPrivateProductSession::request_private_for_device(bool deferred)

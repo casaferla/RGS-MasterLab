@@ -11,6 +11,7 @@
 #include "../platform/fake_playback_service.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
@@ -1109,6 +1110,94 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(sinkInstalls,std::size_t{0});
     QCOMPARE(deviceProbes,std::size_t{0});
     QVERIFY(!audioGate.has_session());
+
+    // The app now has the same explicit Windows preallocation registration
+    // seam as main.cpp. No registration/policy means no device PCM creation;
+    // UNKNOWN OS memory cannot be silently interpreted as permission.
+    constexpr std::uint64_t kOtherReserve=32ULL*1024*1024;
+    const auto explicitAllow=[](
+        const audio::MonitoringPcmPreallocationAdvice& observation)
+            ->core::Status {
+        if(observation.kind!=audio::MonitoringMemoryAdviceKind::UNKNOWN)
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "TEST_EXPECTED_UNKNOWN_MEMORY_OBSERVATION"});
+        return core::Status::success();
+    };
+    auto noRegistration=product
+        .materialize_private_final_master_monitoring_with_preflight(
+            *block.value(),kOtherReserve,explicitAllow);
+    QVERIFY(!noRegistration);
+    QCOMPARE(noRegistration.error()->code(),core::ErrorCode::InvalidState);
+    std::size_t windowsSeamCalls=0;
+    std::size_t explicitPolicyCalls=0;
+    product.set_monitoring_preflight_materializer(
+        [&](audio::AudioBufferView view,core::FrameCount requestedBlock,
+            std::uint64_t reserve,
+            const app::TerminalPrivateProductSession::
+                MonitoringPreallocationDecision& decision)
+            ->core::Result<
+                std::shared_ptr<const audio::MonitoringPcmCandidate>> {
+            using Result=core::Result<std::shared_ptr<
+                const audio::MonitoringPcmCandidate>>;
+            ++windowsSeamCalls;
+            if(requestedBlock!=*block.value()||reserve!=kOtherReserve)
+                return Result::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "TEST_MONITOR_WINDOWS_PREFLIGHT_PARAMETERS_CHANGED"});
+            auto advice=audio::advise_imminent_monitoring_pcm_allocation(
+                view.format().sample_rate(),view.frame_count(),
+                *deviceRate.value(),view.format().channel_layout(),
+                audio::MonitoringMemoryObservation{0,0,reserve});
+            if(!advice)return Result::failure(*advice.error());
+            const auto decided=decision(*advice.value());
+            if(!decided)return Result::failure(*decided.error());
+            return makeMonitor(view);
+        });
+    const app::TerminalPrivateProductSession::
+        MonitoringPreallocationDecision emptyDecision{};
+    auto withoutPolicy=product
+        .materialize_private_final_master_monitoring_with_preflight(
+            *block.value(),kOtherReserve,emptyDecision);
+    QVERIFY(!withoutPolicy);
+    QCOMPARE(withoutPolicy.error()->code(),core::ErrorCode::InvalidArgument);
+    QCOMPARE(windowsSeamCalls,std::size_t{0});
+    auto denied=product
+        .materialize_private_final_master_monitoring_with_preflight(
+            *block.value(),kOtherReserve,
+            [&](const audio::MonitoringPcmPreallocationAdvice& observation)
+                ->core::Status {
+                ++explicitPolicyCalls;
+                if(observation.kind!=audio::MonitoringMemoryAdviceKind::UNKNOWN)
+                    return core::Status::failure(core::Error{
+                        core::ErrorCode::InvalidState,
+                        "TEST_EXPECTED_UNKNOWN_MEMORY_OBSERVATION"});
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::UnsupportedOperation,
+                    "TEST_USER_EXPLICIT_MONITOR_MEMORY_VETO"});
+            });
+    QVERIFY(!denied);
+    QCOMPARE(denied.error()->code(),core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(explicitPolicyCalls,std::size_t{1});
+    QCOMPARE(windowsSeamCalls,std::size_t{1});
+    const auto preflightApproved=product
+        .materialize_private_final_master_monitoring_with_preflight(
+            *block.value(),kOtherReserve,
+            [&](const audio::MonitoringPcmPreallocationAdvice& advice)
+                ->core::Status {
+                ++explicitPolicyCalls;
+                return explicitAllow(advice);
+            });
+    QVERIFY(preflightApproved);
+    QCOMPARE(explicitPolicyCalls,std::size_t{2});
+    QCOMPARE(windowsSeamCalls,std::size_t{2});
+    QCOMPARE((*preflightApproved.value())->immutable_master_rate,
+             *masterRate.value());
+    QCOMPARE((*preflightApproved.value())->device_rate,*deviceRate.value());
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    QCOMPARE(deviceProbes,std::size_t{0});
+    QVERIFY(!audioGate.has_session());
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
     // A cancellation INSIDE conversion revokes the master transaction.
     // A finished device PCM from that obsolete epoch must be discarded.
     auto revoked=product.materialize_private_final_master_monitoring(
