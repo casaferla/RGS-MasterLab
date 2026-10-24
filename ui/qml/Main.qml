@@ -1106,8 +1106,13 @@ ApplicationWindow {
                                                         implicitWidth: 24
                                                         implicitHeight: 18
                                                         onClicked: prepareRateAdvisor.refresh()
+                                                        StudioTooltipDwell {
+                                                            id: prepareRefreshDwell
+                                                            anchors.fill: parent
+                                                        }
                                                         ToolTip.text: "Rivaluta la memoria e il dispositivo adesso"
-                                                        ToolTip.visible: hovered
+                                                        ToolTip.visible: prepareRefreshDwell.ready
+                                                        ToolTip.delay: 0
                                                         Accessible.name: "Rivaluta memoria per Prepare"
                                                     }
                                                 }
@@ -1152,9 +1157,13 @@ ApplicationWindow {
                                                                     font.pixelSize: 9
                                                                     elide: Text.ElideRight
                                                                     Layout.fillWidth: true
-                                                                    HoverHandler { id: adviceHover }
+                                                                    StudioTooltipDwell {
+                                                                        id: prepareAdviceDwell
+                                                                        anchors.fill: parent
+                                                                    }
                                                                     ToolTip.text: modelData.details
-                                                                    ToolTip.visible: adviceHover.hovered
+                                                                    ToolTip.visible: prepareAdviceDwell.ready
+                                                                    ToolTip.delay: 0
                                                                 }
                                                             }
                                                             Accessible.name: modelData.rateLabel + ": " + modelData.label
