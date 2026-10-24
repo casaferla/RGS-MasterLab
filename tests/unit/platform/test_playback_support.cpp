@@ -249,6 +249,7 @@ private slots:
     void monitoringFormatDoesNotRetargetMaster();
     void isolatedMonitoringPcmPumpNeverClaimsM17OrLive();
     void monitoringTransportPauseSeekLoopStopKeepsDeviceClockIsolated();
+    void monitoringDeviceRateSwitchIsIsolatedAndFailsClosed();
     void preferredTerminalRateIsExplicitAndFailClosed();
     void floatAndPcm16GoldenConversion();
     void conversionFailuresAndChunkInvariance();
@@ -526,6 +527,82 @@ void PlaybackSupportTest::monitoringTransportPauseSeekLoopStopKeepsDeviceClockIs
     QCOMPARE(master.value()->view().format().sample_rate(),masterHz);
     QCOMPARE(owned->device_pcm.view().format().sample_rate(),deviceHz);
     QVERIFY(output->stopCalls>0);
+}
+
+void PlaybackSupportTest::monitoringDeviceRateSwitchIsIsolatedAndFailsClosed()
+{
+    // Fake sinks emulate 48 kHz -> 96 kHz hardware switching without
+    // pretending a real Windows device or certifying M16 LIVE true peak.
+    const auto masterHz=*core::SampleRate::create(192000).value();
+    const auto rate48=*core::SampleRate::create(48000).value();
+    const auto rate96=*core::SampleRate::create(96000).value();
+    auto fmt=audio::AudioFormat::create(masterHz,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto master=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},
+        frame_count(768));
+    QVERIFY(master);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=master.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        for(auto& sample:*lane.value())sample=ch==0?0.125:-0.0625;
+    }
+    auto a=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),rate48,frame_count(128));
+    auto b=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),rate96,frame_count(128));
+    QVERIFY(a && b);
+    auto ownerA=std::make_shared<audio::MonitoringPcmCandidate>(
+        std::move(*a.value()));
+    auto ownerB=std::make_shared<audio::MonitoringPcmCandidate>(
+        std::move(*b.value()));
+    PlaybackEngine player;
+    auto sinkA=std::make_unique<FakeOutput>(1024U,4U);
+    QVERIFY(player.install_monitoring_output_pcm_candidate(
+        ownerA->device_pcm.view(),std::move(sinkA),
+        DeviceSampleFormat::PCM_S16,
+        std::shared_ptr<const void>(ownerA),rate48));
+    QCOMPARE(player.snapshot().value()->duration->value(),std::int64_t{192});
+    QVERIFY(player.play());
+    QCOMPARE(player.snapshot().value()->state,core::PlaybackState::PLAYING);
+    QVERIFY(!player.snapshot().value()->audibleRealization.realizationId);
+    auto snapshotBeforeRejectedSwap=player.snapshot();
+    QVERIFY(snapshotBeforeRejectedSwap);
+    QVERIFY(!player.install_monitoring_output_pcm_candidate(
+        ownerB->device_pcm.view(),std::make_unique<FakeOutput>(2048U,4U),
+        DeviceSampleFormat::PCM_S16,
+        std::shared_ptr<const void>(ownerB),rate48));
+    QVERIFY(*player.snapshot().value()==*snapshotBeforeRejectedSwap.value());
+    QVERIFY(!player.install_monitoring_output_pcm_candidate(
+        ownerB->device_pcm.view(),std::make_unique<FakeOutput>(2048U,4U),
+        DeviceSampleFormat::PCM_S16,{},rate96));
+    QVERIFY(*player.snapshot().value()==*snapshotBeforeRejectedSwap.value());
+    // Deliberately abandon old DEVICE PCM; retain independent MASTER.
+    auto sinkB=std::make_unique<FakeOutput>(2048U,4U);
+    auto* observedB=sinkB.get();
+    QVERIFY(player.install_monitoring_output_pcm_candidate(
+        ownerB->device_pcm.view(),std::move(sinkB),
+        DeviceSampleFormat::PCM_S16,
+        std::shared_ptr<const void>(ownerB),rate96));
+    QCOMPARE(player.snapshot().value()->state,core::PlaybackState::STOPPED);
+    QCOMPARE(player.snapshot().value()->duration->value(),std::int64_t{384});
+    QCOMPARE(player.snapshot().value()->position.value(),std::int64_t{0});
+    QVERIFY(!player.snapshot().value()->audibleRealization.realizationId);
+    auto newMap=audio::MonitoringFrameMap::create(*ownerB);
+    QVERIFY(newMap);
+    auto projected=newMap.value()->project_display_snapshot(
+        *player.snapshot().value(),std::nullopt);
+    QVERIFY(projected);
+    QCOMPARE(projected.value()->master_duration.value(),std::int64_t{768});
+    QCOMPARE(projected.value()->master_display_position.value(),std::int64_t{0});
+    QVERIFY(player.play());
+    QVERIFY(!observedB->queue().empty());
+    QCOMPARE(player.c2_processed_coverage_probe().reason,
+        platform::windows::internal::C2CoverageProbeReason::NOT_MONITORED);
+    QVERIFY(!player.c2_consumed_prefix().certifiedForLiveTruePeak);
+    QCOMPARE(master.value()->view().format().sample_rate(),masterHz);
+    QCOMPARE(ownerA->immutable_master_rate,masterHz);
+    QCOMPARE(ownerB->immutable_master_rate,masterHz);
 }
 
 void PlaybackSupportTest::preferredTerminalRateIsExplicitAndFailClosed()
