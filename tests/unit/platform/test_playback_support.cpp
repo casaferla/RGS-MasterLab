@@ -7,6 +7,7 @@
 
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_frame_map.hpp>
 
 #include <QTest>
 
@@ -396,6 +397,18 @@ void PlaybackSupportTest::isolatedMonitoringPcmPumpNeverClaimsM17OrLive()
     QCOMPARE(held->immutable_master_rate,masterRate);
     QCOMPARE(held->device_rate,deviceRate);
     QCOMPARE(held->device_pcm.view().frame_count().value(),std::int64_t{48});
+    auto masterMap=audio::MonitoringFrameMap::create(*held);
+    QVERIFY(masterMap);
+    auto masterSeek=masterMap.value()->master_to_device(core::FrameIndex{80});
+    QVERIFY(masterSeek);
+    QCOMPARE(masterSeek.value()->value(),std::int64_t{20});
+    auto masterLoop=core::FrameRange::create(
+        core::FrameIndex{24},core::FrameIndex{120});
+    QVERIFY(masterLoop);
+    auto deviceLoop=masterMap.value()->master_loop_to_device(*masterLoop.value());
+    QVERIFY(deviceLoop);
+    QCOMPARE(deviceLoop.value()->begin().value(),std::int64_t{6});
+    QCOMPARE(deviceLoop.value()->end().value(),std::int64_t{30});
     auto owner=std::shared_ptr<const void>(held);
     {
         PlaybackEngine failed;
@@ -423,6 +436,13 @@ void PlaybackSupportTest::isolatedMonitoringPcmPumpNeverClaimsM17OrLive()
     QVERIFY(snap);
     QCOMPARE(snap.value()->duration->value(),std::int64_t{48});
     QVERIFY(!snap.value()->audibleRealization.realizationId.has_value());
+    QVERIFY(engine.seek(*masterSeek.value()));
+    QCOMPARE(engine.snapshot().value()->position.value(),std::int64_t{20});
+    QVERIFY(engine.set_loop(*deviceLoop.value()));
+    QCOMPARE(engine.snapshot().value()->loop->begin().value(),
+        std::int64_t{6});
+    QCOMPARE(engine.snapshot().value()->loop->end().value(),
+        std::int64_t{30});
     QVERIFY(engine.play());
     QVERIFY(observed->queue().size()>=4U);
     QCOMPARE(read_i16(observed->queue(),0U),std::int16_t{4096});

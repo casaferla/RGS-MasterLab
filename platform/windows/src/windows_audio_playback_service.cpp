@@ -6,6 +6,7 @@
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include <rgsml/audio/wav_reader.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_frame_map.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
 #include <QAudioDevice>
@@ -850,6 +851,37 @@ public:
         return engine_.set_loop(loop);
     }
 
+    [[nodiscard]] core::Status seek_monitoring_master_frame(
+        core::FrameIndex masterFrame)
+    {
+        if(!preparedMonitoring_)
+            return status_failure(core::ErrorCode::InvalidState,
+                "MONITOR_SEEK_REQUIRES_OWNED_DEVICE_PCM");
+        auto map=audio::MonitoringFrameMap::create(*preparedMonitoring_);
+        if(!map)return core::Status::failure(*map.error());
+        auto target=map.value()->master_to_device(masterFrame);
+        if(!target)return core::Status::failure(*target.error());
+        // Do not re-clock or re-render M17. The existing monitoring sink
+        // consumes DEVICE frames only; LIVE provenance remains unqualified.
+        return seek(*target.value());
+    }
+
+    [[nodiscard]] core::Status set_monitoring_master_loop(
+        std::optional<core::FrameRange> masterLoop)
+    {
+        if(!preparedMonitoring_)
+            return status_failure(core::ErrorCode::InvalidState,
+                "MONITOR_LOOP_REQUIRES_OWNED_DEVICE_PCM");
+        auto map=audio::MonitoringFrameMap::create(*preparedMonitoring_);
+        if(!map)return core::Status::failure(*map.error());
+        if(!masterLoop)return set_loop(std::nullopt);
+        auto mapped=map.value()->master_loop_to_device(*masterLoop);
+        if(!mapped)return core::Status::failure(*mapped.error());
+        return set_loop(*mapped.value());
+    }
+
+
+
     [[nodiscard]] core::Result<core::PlaybackSnapshot> snapshot() const
     {
         return engine_.snapshot();
@@ -1036,6 +1068,24 @@ public:
         });
     }
 
+    [[nodiscard]] core::Status seek_monitoring_master_frame(
+        core::FrameIndex masterFrame)
+    {
+        return invoke_status([masterFrame](PlaybackWorker& worker) {
+            return worker.seek_monitoring_master_frame(masterFrame);
+        });
+    }
+
+    [[nodiscard]] core::Status set_monitoring_master_loop(
+        std::optional<core::FrameRange> masterLoop)
+    {
+        return invoke_status([masterLoop](PlaybackWorker& worker) {
+            return worker.set_monitoring_master_loop(masterLoop);
+        });
+    }
+
+
+
     [[nodiscard]] core::Result<core::PlaybackSnapshot> snapshot() const
     {
         if (!ready_ || worker_ == nullptr) {
@@ -1183,6 +1233,18 @@ core::Status WindowsAudioPlaybackService::prepare_monitoring_output_pcm(
     std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
 {
     return impl_->prepare_monitoring_output_pcm(std::move(candidate));
+}
+
+core::Status WindowsAudioPlaybackService::seek_monitoring_master_frame(
+    core::FrameIndex masterFrame)
+{
+    return impl_->seek_monitoring_master_frame(masterFrame);
+}
+
+core::Status WindowsAudioPlaybackService::set_monitoring_master_loop(
+    std::optional<core::FrameRange> masterLoop)
+{
+    return impl_->set_monitoring_master_loop(masterLoop);
 }
 
 core::Status WindowsAudioPlaybackService::handoff_pcm(

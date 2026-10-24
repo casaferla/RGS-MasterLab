@@ -54,6 +54,12 @@ public:
     preferred_monitoring_output_rate(audio::ChannelLayout layout) const;
     [[nodiscard]] core::Status prepare_monitoring_output_pcm(
         std::shared_ptr<const audio::MonitoringPcmCandidate> candidate);
+    // Monitoring-only master-coordinate controls. These are NOT the
+    // IAudioPlaybackService SOURCE frame methods nor a qualified DAC clock.
+    [[nodiscard]] core::Status seek_monitoring_master_frame(
+        core::FrameIndex masterFrame);
+    [[nodiscard]] core::Status set_monitoring_master_loop(
+        std::optional<core::FrameRange> masterLoop);
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr,
