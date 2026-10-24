@@ -656,6 +656,7 @@ Window {
     for(const auto hostHeight:{652.0,474.0}) {
         hostItem->setHeight(hostHeight);
         QVERIFY(window->setProperty("meterMode",false));
+        QTest::qWait(120); // allow QtQuick Layout polish after visibility transition
         QCoreApplication::processEvents();
         QVERIFY(actionRow->property("visible").toBool());
         if(hostHeight==474.0)
@@ -682,6 +683,7 @@ Window {
                 "M17 bottom lane label must not cross a card border");
         }
         QVERIFY(window->setProperty("meterMode",true));
+        QTest::qWait(120); // allow QtQuick Layout polish after visibility transition
         QCoreApplication::processEvents();
         QVERIFY(meter->property("visible").toBool());
         QVERIFY(actionRow->property("visible").toBool());
@@ -696,6 +698,11 @@ Window {
             .arg(hostHeight)
             .arg(m16Rect.y()).arg(m16Rect.height())
             .arg(m17Rect.y()).arg(m17Rect.height());
+        qInfo().noquote() << "RGS_M16_M17_HOST_PARITY"
+            << parityFailure
+            << "row_y=" << actionRow->property("y").toDouble()
+            << "row_h=" << actionRow->property("height").toDouble()
+            << "active_mode=" << window->property("meterMode").toBool();
         QVERIFY2(qAbs(m16Rect.y()-m17Rect.y())<=0.5,
             qPrintable(parityFailure));
         QVERIFY2(qAbs(m16Rect.height()-m17Rect.height())<=0.5,
