@@ -658,6 +658,10 @@ Window {
         QVERIFY(window->setProperty("meterMode",false));
         QCoreApplication::processEvents();
         QVERIFY(actionRow->property("visible").toBool());
+        if(hostHeight==474.0)
+            QVERIFY2(captureHost(QStringLiteral(
+                "m17_host_compact_474px.png")),
+                "Capture M17 actual host at physical minimum height");
         const auto m17Rect=rectOnHost(editor);
         std::array<QRectF,5> expected{};
         for(qsizetype i=0;i<common.size();++i) {
@@ -681,6 +685,10 @@ Window {
         QCoreApplication::processEvents();
         QVERIFY(meter->property("visible").toBool());
         QVERIFY(actionRow->property("visible").toBool());
+        if(hostHeight==474.0)
+            QVERIFY2(captureHost(QStringLiteral(
+                "m16_host_compact_474px.png")),
+                "Capture M16 empty upper row with common meters aligned");
         const auto m16Rect=rectOnHost(meter);
         QVERIFY(qAbs(m16Rect.y()-m17Rect.y())<=0.5);
         QVERIFY(qAbs(m16Rect.height()-m17Rect.height())<=0.5);
@@ -892,6 +900,33 @@ Window {
                 QStringLiteral("gate_m_shared_meter_")
                     +QString::number(size.width())+"x"
                     +QString::number(size.height())+".png"),"PNG"));
+            // Three genuine native QML states for PO screenshot review,
+            // BEFORE any new FQ or physical-audio claims.
+            if(size==QSize{1184,560}) {
+                const auto captureState=[surface,&dir](const QString& name) {
+                    const auto image=surface->grabToImage();
+                    if(!image)return false;
+                    QSignalSpy ready{image.data(),&QQuickItemGrabResult::ready};
+                    if(ready.empty()&&!ready.wait(15000))return false;
+                    return image->image().save(QDir{dir}.filePath(name),"PNG");
+                };
+                QVERIFY(captureState(QStringLiteral(
+                    "m17_compact_gr_history_1184x560.png")));
+                QVERIFY(testVm->setProperty("audioStatus",
+                    QStringLiteral("Preparing · 47s")));
+                QCoreApplication::processEvents();
+                QVERIFY(captureState(QStringLiteral(
+                    "m17_compact_preparing_in_gr_1184x560.png")));
+                QVERIFY(testVm->setProperty("audioStatus",
+                    QStringLiteral("READY · PREVIEW AVAILABLE")));
+                QCoreApplication::processEvents();
+                m17->setVisible(false);
+                QCoreApplication::processEvents();
+                QVERIFY(captureState(QStringLiteral(
+                    "m16_compact_shared_meters_1184x560.png")));
+                m17->setVisible(true);
+                QCoreApplication::processEvents();
+            }
         }
     }
     window->close();
