@@ -861,6 +861,39 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!coordinator.device_active());
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
+
+    // Independently selected 192 kHz FINAL MASTER with a synthetic 48 kHz
+    // device. This PRIVATE request must not use the device-rate probe
+    // (deliberately configured to fail above), nor publish a 192 kHz
+    // master into the 48 kHz sink.
+    QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    QVERIFY(limiter.value()->set_user_bypass(false));
+    const auto masterRate=core::SampleRate::create(192000);
+    const auto invalidRate=core::SampleRate::create(32000);
+    QVERIFY(masterRate&&invalidRate);
+    const auto unsupported=product.request_private_for_final_master(
+        *invalidRate.value());
+    QVERIFY(!unsupported);
+    QCOMPARE(unsupported.error()->code(),
+             core::ErrorCode::UnsupportedOperation);
+    QVERIFY(product.request_private_for_final_master(*masterRate.value()));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    const auto stagedMaster=candidates.staged();
+    QVERIFY(stagedMaster);
+    QCOMPARE(stagedMaster->rendered.output_rate,*masterRate.value());
+    QCOMPARE(stagedMaster->rendered.terminal.checked.terminal
+        .compensated_pcm.view().format().sample_rate(),*masterRate.value());
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QVERIFY(!coordinator.device_active());
+    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+    QVERIFY(!product.install_ready_private());
+    QVERIFY(!product.install_measured_private());
+    QVERIFY(product.cancel());
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
 }
 void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()
 {

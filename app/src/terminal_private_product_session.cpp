@@ -1,5 +1,6 @@
 #include "terminal_private_product_session.hpp"
 #include <rgsml/core/error.hpp>
+#include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <utility>
 
 namespace rgsml::app {
@@ -89,6 +90,24 @@ core::Status TerminalPrivateProductSession::request_private(core::SampleRate rat
         return submitted;
     }
     emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::request_private_for_final_master(
+    core::SampleRate selectedFinalMasterRate)
+{
+    // Pure rate validation: pass the same value twice ONLY to verify the
+    // frozen six-rate MASTER set, not as a proxy for the actual device.
+    const auto eligible=audio::plan_master_monitoring_rate(
+        selectedFinalMasterRate,selectedFinalMasterRate);
+    if(!eligible)return core::Status::failure(*eligible.error());
+    // The normal snapshot/ticket/owner/cancel checks are reused, but
+    // publication is intentionally never armed on the master-only path.
+    auto submitted=request_private(selectedFinalMasterRate,true);
+    if(!submitted)return submitted;
+    if(!pending_)return core::Status::failure(rejected(
+        "M17 private master submission lost its pending owner."));
+    pending_->masterOnly=true;
     return core::Status::success();
 }
 
@@ -315,12 +334,21 @@ void TerminalPrivateProductSession::on_renderer_changed()
             stale();
             return;
         }
-        status_=QStringLiteral("MEASURED_NONCONFORMING_READY");
+        status_=pending_->masterOnly
+            ?QStringLiteral("MASTER_MEASURED_NONCONFORMING_PRIVATE")
+            :QStringLiteral("MEASURED_NONCONFORMING_READY");
         error_.clear();
         emit changed();
         return;
     }
     if(state!=QStringLiteral("READY_PRIVATE"))return;
+    if(pending_->masterOnly) {
+        // Master-rate rendering is complete and M16 checked. This is NOT
+        // audition-ready: no device SRC, SOURCE transport or sink ownership.
+        status_=QStringLiteral("MASTER_READY_MONITOR_PENDING");
+        emit changed();
+        return;
+    }
     if(pending_->deferred) {
         // The MANUAL sink continues playing until accepted OUTPUT_RATE
         // audio is ready. Only its conductor may perform the handoff.

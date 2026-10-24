@@ -37,6 +37,13 @@ public:
     // Only an explicit conductor handoff may publish the accepted terminal.
     [[nodiscard]] core::Status request_private(core::SampleRate outputRate,
                                                bool deferred=false);
+    // The chosen FINAL MASTER rate is provided by a future authoritative
+    // render setting, NEVER probed from the hardware. This method creates a
+    // purely private OUTPUT_RATE candidate: it cannot install a sink or
+    // expose an M16 LIVE identity until qualified Monitoring SRC is wired.
+    // It deliberately has no Q_INVOKABLE or UI callback at this milestone.
+    [[nodiscard]] core::Status request_private_for_final_master(
+        core::SampleRate selectedFinalMasterRate);
     // Explicit opt-in, still product-private: probe device format on its
     // owner thread, capture exact whole-manual format, then request render.
     // No Q_INVOKABLE and no automatic/UI activation.
@@ -107,6 +114,7 @@ private:
         std::optional<core::FrameRange> loop;
         core::SampleRate outputRate;
         bool deferred{false};
+        bool masterOnly{false};
     };
     void on_renderer_changed();
     [[nodiscard]] core::Status install_accepted_candidate();
