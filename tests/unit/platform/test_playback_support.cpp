@@ -20,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -430,6 +431,31 @@ void PlaybackSupportTest::isolatedMonitoringPcmPumpNeverClaimsM17OrLive()
     QVERIFY2(candidate,candidate?"":candidate.error()->message().c_str());
     auto held=std::make_shared<audio::MonitoringPcmCandidate>(
         std::move(*candidate.value()));
+    // A raw offline monitoring candidate has no Windows endpoint ticket.
+    // Installation through the actual Windows wrapper must reject it.
+    using platform::windows::internal::monitoring_candidate_matches_endpoint;
+    constexpr std::string_view endpoint{"WASAPI-A"};
+    constexpr std::string_view changedEndpoint{"WASAPI-B"};
+    QVERIFY(held->windows_prepared_endpoint_id.empty());
+    QVERIFY(!monitoring_candidate_matches_endpoint(
+        *held,endpoint,48000,true));
+    // Simulate Windows' successful OS preflight + exact-device binding.
+    held->windows_prepared_endpoint_id=std::string(endpoint);
+    QVERIFY(monitoring_candidate_matches_endpoint(
+        *held,endpoint,48000,true));
+    QVERIFY(!monitoring_candidate_matches_endpoint(
+        *held,changedEndpoint,48000,true)); // SAME RATE, DIFFERENT DEVICE
+    QVERIFY(!monitoring_candidate_matches_endpoint(
+        *held,endpoint,44100,true));
+    QVERIFY(!monitoring_candidate_matches_endpoint(
+        *held,endpoint,48000,false));
+    // Preserve full binary identities rather than truncating at embedded NUL.
+    held->windows_prepared_endpoint_id=std::string{"A\0B",3};
+    QVERIFY(monitoring_candidate_matches_endpoint(
+        *held,std::string_view{"A\0B",3},48000,true));
+    QVERIFY(!monitoring_candidate_matches_endpoint(
+        *held,std::string_view{"A\0C",3},48000,true));
+    held->windows_prepared_endpoint_id=std::string(endpoint);
     QCOMPARE(held->immutable_master_rate,masterRate);
     QCOMPARE(held->device_rate,deviceRate);
     QCOMPARE(held->device_pcm.view().frame_count().value(),std::int64_t{48});

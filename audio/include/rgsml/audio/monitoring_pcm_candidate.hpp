@@ -13,6 +13,7 @@
 #include <limits>
 #include <numeric>
 #include <new>
+#include <string>
 #include <optional>
 #include <utility>
 
@@ -28,6 +29,12 @@ struct MonitoringPcmCandidate final {
     core::SampleRate device_rate;
     core::FrameCount immutable_master_frames;
     bool device_src_applied;
+    // Windows-only opaque DEFAULT ENDPOINT identity captured after final
+    // device-rate SRC preflight. Empty in portable, sink-free candidates.
+    // The Windows installer refuses an empty or changed identity even if
+    // another device happens to have the same preferred sample rate.
+    // Never treat this identifier as a physical DAC clock attestation.
+    std::string windows_prepared_endpoint_id{};
 };
 
 // Read-only preflight for FULL-DURATION monitoring PCM. Counts only the

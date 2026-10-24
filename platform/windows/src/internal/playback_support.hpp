@@ -2,6 +2,7 @@
 
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/audio/audio_format.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
 #include <rgsml/audio/wav_reader.hpp>
 #include <rgsml/core/audio_playback_service.hpp>
@@ -63,6 +64,22 @@ struct DeviceFormat final {
     return !preparedId.empty() && !currentId.empty()
         && preparedId==currentId && preparedRate>0
         && preparedRate==currentRate && exactFormatStillSupported;
+}
+
+// The Windows MONITOR installer must bind the produced device PCM to
+// the precise endpoint observed at its last preflight; device sample rate
+// equality alone is insufficient (two endpoints may both advertise 48 kHz).
+// Portable internal PlaybackEngine smoke tests intentionally have no token.
+[[nodiscard]] inline bool monitoring_candidate_matches_endpoint(
+    const audio::MonitoringPcmCandidate& candidate,
+    std::string_view currentDeviceId,
+    int currentPreferredRate,
+    bool exactFormatStillSupported) noexcept
+{
+    return monitoring_endpoint_is_current(
+        candidate.windows_prepared_endpoint_id,
+        static_cast<int>(candidate.device_rate.value()),
+        currentDeviceId,currentPreferredRate,exactFormatStillSupported);
 }
 
 // Terminal PCM is already at its output rate. Exact-format selection

@@ -601,6 +601,14 @@ struct OutputCandidate final {
        ||selected.value()->srcApplied!=monitor.device_src_applied)
         return failure<OutputCandidate>(core::ErrorCode::InvalidState,
             "MONITOR_SINK_PROVENANCE_MISMATCH");
+    const auto& selectedQt=
+        selected.value()->sampleFormat==DeviceSampleFormat::IEEE_F32
+            ?qtFloat:qtPcm;
+    if(!internal::monitoring_candidate_matches_endpoint(
+        monitor,opaque_device_id(device.id()),hz,
+        device.isFormatSupported(selectedQt)))
+        return failure<OutputCandidate>(core::ErrorCode::InvalidState,
+            "MONITOR_SINK_ENDPOINT_TICKET_MISSING_OR_STALE");
     try {
         return core::Result<OutputCandidate>::success(OutputCandidate{
             std::make_unique<QtPlaybackOutput>(device,
@@ -1490,12 +1498,22 @@ WindowsAudioPlaybackService::materialize_monitoring_pcm_with_preflight(
     if(!finalRate||*finalRate.value()!=*deviceRate.value())
         return failure<Candidate>(core::ErrorCode::InvalidState,
             "MONITOR_ALLOC_DEVICE_RATE_CHANGED_DURING_CONVERSION");
-    // Even successful DEVICE PCM construction may leave insufficient
-    // heap memory to allocate the distinct candidate owner's control block.
+    // Carry the exact opaque default-endpoint ID into the candidate owner
+    // until the later explicit Windows sink installation. ID and rate must
+    // still be valid then, even if another default device offers 48 kHz.
+    // QByteArray device IDs may contain NUL bytes: never use a C-string.
+    // Even successful DEVICE PCM construction may leave insufficient heap
+    // memory to allocate the distinct owner and endpoint token.
     try {
+        auto owner=std::move(*materialized.value());
+        owner.windows_prepared_endpoint_id.assign(
+            expectedId.constData(),static_cast<std::size_t>(expectedId.size()));
+        if(owner.windows_prepared_endpoint_id.empty())
+            return failure<Candidate>(core::ErrorCode::InvalidState,
+                "MONITOR_ALLOC_DEFAULT_ENDPOINT_ID_MISSING");
         return core::Result<Candidate>::success(
             std::make_shared<const audio::MonitoringPcmCandidate>(
-                std::move(*materialized.value())));
+                std::move(owner)));
     } catch(const std::bad_alloc&) {
         return failure<Candidate>(core::ErrorCode::IoFailure,
             "MONITOR_CANDIDATE_OWNER_OUT_OF_MEMORY");
