@@ -341,7 +341,7 @@ void AuditionRegionViewModelTest::inactiveRegionEditsNeverInvalidateEffectiveLoo
     QVERIFY(cosmetic.count()>0);
     QVERIFY(!region.loop_enabled());
     QCOMPARE(device->setLoopCalls,0);
-    QCOMPARE(device->loop,std::nullopt);
+    QVERIFY(!device->loop);
 
     // True armed Loop revisions must still be routed to the M17
     // ownership coordinator. The optional range alone is NOT this event.
@@ -353,7 +353,7 @@ void AuditionRegionViewModelTest::inactiveRegionEditsNeverInvalidateEffectiveLoo
     QCOMPARE(device->loop,std::optional{range(150,280)});
     QVERIFY(region.set_loop_enabled(false));
     QCOMPARE(effective.count(),3);
-    QCOMPARE(device->loop,std::nullopt);
+    QVERIFY(!device->loop);
     QVERIFY(region.set_region(range(160,300)));
     QCOMPARE(effective.count(),3);
     QVERIFY(region.clear_region());
