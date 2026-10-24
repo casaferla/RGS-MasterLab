@@ -3,6 +3,7 @@
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/audio/audio_format.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
 #include <rgsml/audio/wav_reader.hpp>
 #include <rgsml/core/audio_playback_service.hpp>
@@ -99,7 +100,34 @@ struct DeviceFormat final {
             expected->device_pcm.view().frame_count()};
 }
 
-// Terminal PCM is already at its output rate. Exact-format selection
+// PRIVATE monitor commands must not be issued on an alien anonymous sink.
+// Check current pointer identity and snapshot state before any Windows
+// worker-side Play/Pause/Seek/Loop/Stop command executes.
+[[nodiscard]] inline bool monitoring_transport_command_is_authorized(
+    const std::shared_ptr<const audio::MonitoringPcmCandidate>& expected,
+    const std::shared_ptr<const audio::MonitoringPcmCandidate>& installed,
+    const core::PlaybackSnapshot& observed,
+    platform::windows::MonitoringTransportAction action) noexcept
+{
+    if(!monitoring_prepared_owner_is_current(expected,installed,observed))
+        return false;
+    switch(action) {
+    case platform::windows::MonitoringTransportAction::PLAY:
+        return observed.state==core::PlaybackState::STOPPED
+            ||observed.state==core::PlaybackState::PAUSED;
+    case platform::windows::MonitoringTransportAction::PAUSE:
+        return observed.state==core::PlaybackState::PLAYING;
+    case platform::windows::MonitoringTransportAction::STOP:
+    case platform::windows::MonitoringTransportAction::SEEK_MASTER:
+    case platform::windows::MonitoringTransportAction::SET_MASTER_LOOP:
+        return observed.state==core::PlaybackState::STOPPED
+            ||observed.state==core::PlaybackState::PLAYING
+            ||observed.state==core::PlaybackState::PAUSED;
+    }
+    return false;
+}
+
+// Terminal PCM is already at its output rate.
 // cannot silently fall back to the 44.1/48 kHz playback SRC.
 [[nodiscard]] core::Result<DeviceFormat> select_terminal_output_device_format(
     const audio::AudioFormat& terminalFormat,

@@ -21,6 +21,18 @@ struct MonitoringPcmCandidate;
 
 namespace rgsml::platform::windows {
 
+// PRIVATE monitor commands use MASTER coordinates; one explicit operation
+// includes owner checking on the Windows audio worker thread. These are not
+// SOURCE commands and never grant M17 RealizationId/M16 LIVE authority.
+enum class MonitoringTransportAction {
+    PLAY,PAUSE,STOP,SEEK_MASTER,SET_MASTER_LOOP
+};
+struct MonitoringTransportRequest {
+    MonitoringTransportAction action{MonitoringTransportAction::STOP};
+    core::FrameIndex master_frame{0};
+    std::optional<core::FrameRange> master_loop;
+};
+
 // Windows owner-thread adapter for the frozen playback control-plane port.
 // Qt Multimedia and native device state are hidden in the implementation.
 class WindowsAudioPlaybackService final : public core::IAudioPlaybackService {
@@ -101,6 +113,14 @@ public:
         std::shared_ptr<const audio::MonitoringPcmCandidate> expected) const;
     [[nodiscard]] core::Status retire_monitoring_output_if_owned(
         std::shared_ptr<const audio::MonitoringPcmCandidate> expected);
+    // Exact owner check and command are serialized in ONE worker action.
+    // An unowned/changed sink is never manipulated even at the same rate.
+    [[nodiscard]] core::Status control_monitoring_output_if_owned(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> expected,
+        MonitoringTransportRequest command);
+    [[nodiscard]] core::Result<audio::MonitoringMasterDisplaySnapshot>
+    monitoring_master_snapshot_if_owned(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> expected) const;
     // Monitoring-only master-coordinate controls. These are NOT the
     // IAudioPlaybackService SOURCE frame methods nor a qualified DAC clock.
     [[nodiscard]] core::Status seek_monitoring_master_frame(

@@ -251,6 +251,7 @@ private slots:
     void monitoringFormatDoesNotRetargetMaster();
     void monitoringEndpointStartResumeRequiresSameDeviceAndRate();
     void monitoringExactOwnerRetirementNeverClearsAlienSink();
+    void monitoringCommandAuthorizesOnlyExactOwnerAndState();
     void isolatedMonitoringPcmPumpNeverClaimsM17OrLive();
     void monitoringTransportPauseSeekLoopStopKeepsDeviceClockIsolated();
     void monitoringDeviceRateSwitchIsIsolatedAndFailsClosed();
@@ -479,6 +480,91 @@ void PlaybackSupportTest::monitoringExactOwnerRetirementNeverClearsAlienSink()
     QVERIFY(!monitoring_prepared_owner_is_current(
         owned,owned,*retired.value()));
     QCOMPARE(retired.value()->state,core::PlaybackState::NO_SOURCE);
+}
+
+
+void PlaybackSupportTest::monitoringCommandAuthorizesOnlyExactOwnerAndState()
+{
+    using namespace rgsml;
+    using platform::windows::MonitoringTransportAction;
+    using platform::windows::internal::
+        monitoring_transport_command_is_authorized;
+    const auto masterHz=*core::SampleRate::create(192000).value();
+    const auto deviceHz=*core::SampleRate::create(48000).value();
+    auto fmt=audio::AudioFormat::create(
+        masterHz,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto master=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},frame_count(1920));
+    QVERIFY(master);
+    auto monitor=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),deviceHz,frame_count(64));
+    auto unrelated=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),deviceHz,frame_count(64));
+    QVERIFY(monitor&&unrelated);
+    auto owned=std::make_shared<const audio::MonitoringPcmCandidate>(
+        std::move(*monitor.value()));
+    auto alien=std::make_shared<const audio::MonitoringPcmCandidate>(
+        std::move(*unrelated.value()));
+    PlaybackEngine engine;
+    auto fake=std::make_unique<FakeOutput>(1024U,4U);
+    QVERIFY(engine.install_monitoring_output_pcm_candidate(
+        owned->device_pcm.view(),std::move(fake),
+        DeviceSampleFormat::PCM_S16,std::shared_ptr<const void>(owned),
+        deviceHz));
+    const auto permitted=[&](MonitoringTransportAction operation) {
+        auto snap=engine.snapshot();
+        Q_ASSERT(snap);
+        return monitoring_transport_command_is_authorized(
+            owned,owned,*snap.value(),operation);
+    };
+    const auto denied=[&](MonitoringTransportAction operation) {
+        auto snap=engine.snapshot();
+        Q_ASSERT(snap);
+        return monitoring_transport_command_is_authorized(
+            alien,owned,*snap.value(),operation);
+    };
+    for(const auto op:{
+            MonitoringTransportAction::PLAY,
+            MonitoringTransportAction::PAUSE,
+            MonitoringTransportAction::STOP,
+            MonitoringTransportAction::SEEK_MASTER,
+            MonitoringTransportAction::SET_MASTER_LOOP})
+        QVERIFY(!denied(op));
+    QVERIFY(permitted(MonitoringTransportAction::PLAY));
+    QVERIFY(!permitted(MonitoringTransportAction::PAUSE));
+    QVERIFY(permitted(MonitoringTransportAction::SEEK_MASTER));
+    QVERIFY(permitted(MonitoringTransportAction::SET_MASTER_LOOP));
+    // Real device-frame mapping is already tested separately. Here verify
+    // rejection occurs BEFORE dispatch, even if both sources are anonymous.
+    auto map=audio::MonitoringFrameMap::create(*owned);
+    QVERIFY(map);
+    auto target=map.value()->master_to_device(core::FrameIndex{800});
+    QVERIFY(target);
+    if(permitted(MonitoringTransportAction::SEEK_MASTER))
+        QVERIFY(engine.seek(*target.value()));
+    QCOMPARE(engine.snapshot().value()->position.value(),std::int64_t{200});
+    QVERIFY(engine.play());
+    QVERIFY(!permitted(MonitoringTransportAction::PLAY));
+    QVERIFY(permitted(MonitoringTransportAction::PAUSE));
+    QVERIFY(permitted(MonitoringTransportAction::STOP));
+    QVERIFY(engine.pause());
+    QVERIFY(permitted(MonitoringTransportAction::PLAY));
+    QVERIFY(!permitted(MonitoringTransportAction::PAUSE));
+    QVERIFY(engine.stop());
+    QVERIFY(engine.clear());
+    for(const auto op:{
+            MonitoringTransportAction::PLAY,
+            MonitoringTransportAction::PAUSE,
+            MonitoringTransportAction::STOP,
+            MonitoringTransportAction::SEEK_MASTER,
+            MonitoringTransportAction::SET_MASTER_LOOP}) {
+        auto snap=engine.snapshot();
+        QVERIFY(snap);
+        QVERIFY(!monitoring_transport_command_is_authorized(
+            owned,owned,*snap.value(),op));
+    }
 }
 
 void PlaybackSupportTest::isolatedMonitoringPcmPumpNeverClaimsM17OrLive()
