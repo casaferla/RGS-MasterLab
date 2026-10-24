@@ -202,6 +202,7 @@ Rectangle {
             elide: Text.ElideRight
         }
         Text {
+            objectName: "truePeakLaneState"
             text: root.available ? root.meterKind : "NO MEASUREMENT"
             font.family: "Segoe UI"
             font.pixelSize: 9

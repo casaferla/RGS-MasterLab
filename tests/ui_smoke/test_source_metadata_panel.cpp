@@ -666,6 +666,17 @@ Window {
             expected[static_cast<std::size_t>(i)]=rectOnHost(child);
             QVERIFY(!expected[static_cast<std::size_t>(i)].isEmpty());
         }
+        for(const auto& laneName:{QStringLiteral("truePeakLeftLane"),
+                                 QStringLiteral("truePeakRightLane")}) {
+            auto* lane=qobject_cast<QQuickItem*>(find_child_by_name(editor,laneName));
+            QVERIFY(lane);
+            auto* label=qobject_cast<QQuickItem*>(find_child_by_name(
+                lane,QStringLiteral("truePeakLaneState")));
+            QVERIFY(label);
+            const auto top=label->mapToItem(lane,QPointF{}).y();
+            QVERIFY2(top>=-0.5 && top+label->height()<=lane->height()+0.5,
+                "M17 bottom lane label must not cross a card border");
+        }
         QVERIFY(fixture->setProperty("meterMode",true));
         QCoreApplication::processEvents();
         QVERIFY(meter->property("visible").toBool());
@@ -673,6 +684,17 @@ Window {
         const auto m16Rect=rectOnHost(meter);
         QVERIFY(qAbs(m16Rect.y()-m17Rect.y())<=0.5);
         QVERIFY(qAbs(m16Rect.height()-m17Rect.height())<=0.5);
+        for(const auto& laneName:{QStringLiteral("truePeakLeftLane"),
+                                 QStringLiteral("truePeakRightLane")}) {
+            auto* lane=qobject_cast<QQuickItem*>(find_child_by_name(meter,laneName));
+            QVERIFY(lane);
+            auto* label=qobject_cast<QQuickItem*>(find_child_by_name(
+                lane,QStringLiteral("truePeakLaneState")));
+            QVERIFY(label);
+            const auto top=label->mapToItem(lane,QPointF{}).y();
+            QVERIFY2(top>=-0.5 && top+label->height()<=lane->height()+0.5,
+                "M16 bottom lane label must not cross a card border");
+        }
         for(qsizetype i=0;i<common.size();++i) {
             auto* child=find_child_by_name(meter,common[i]);
             QVERIFY(child);
@@ -833,6 +855,19 @@ Window {
         QVERIFY(!preparation->property("visible").toBool());
         QCOMPARE(rect(m17,QStringLiteral("truePeakLeftLane")),baseline);
         QCOMPARE(rect(m17,QStringLiteral("truePeakRecentCard")),recent);
+        for(const auto& cardName:{
+                QStringLiteral("truePeakRecentCard"),
+                QStringLiteral("truePeakHoldCard"),
+                QStringLiteral("truePeakFullResourceCard")}) {
+            auto* card=qobject_cast<QQuickItem*>(find_child_by_name(m17,cardName));
+            QVERIFY(card);
+            auto* text=qobject_cast<QQuickItem*>(find_child_by_name(
+                card,QStringLiteral("truePeakReadoutDetailText")));
+            QVERIFY(text);
+            const auto y=text->mapToItem(card,QPointF{}).y();
+            QVERIFY2(y>=-0.5&&y+text->height()<=card->height()+0.5,
+                "Short M17 readout detail must remain inside the card");
+        }
         QVERIFY(fixture->setProperty("bypass",false));
         QCoreApplication::processEvents();
         QCOMPARE(rect(m17,QStringLiteral("truePeakLeftLane")),baseline);
