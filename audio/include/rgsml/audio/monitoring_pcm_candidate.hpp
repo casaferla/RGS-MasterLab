@@ -66,10 +66,10 @@ struct MonitoringPcmCandidate final {
 
 // Prototype of the independent M17/M18 -> hardware monitoring boundary.
 // The immutable M17 PCM is borrowed read-only and never retimed or modified.
-// Reuses the offline candidate SRC in a separate SOURCE-domain scratch owner:
-// no reinterpretation of OUTPUT_RATE as SOURCE_RATE and no second M17 render.
-// This deliberately allocates a full scratch PCM; performance, cancellation,
-// device handoff, loop scheduling and LIVE provenance are NOT qualified.
+// Uses a separate, explicitly OUTPUT_RATE-domain offline SRC entrypoint.
+// The immutable M17 master is only read, with no SOURCE-domain alias or
+// full-resource SOURCE scratch clone. Playback/output, cancellation,
+// performance and M16 LIVE provenance remain unqualified.
 [[nodiscard]] inline core::Result<MonitoringPcmCandidate>
 materialize_monitoring_pcm_candidate(
     AudioBufferView verified_master_pcm,
@@ -99,24 +99,11 @@ materialize_monitoring_pcm_candidate(
         return refused(core::ErrorCode::UnsupportedOperation,
             "MONITOR_SRC_DEVICE_RATE_UNSUPPORTED: experimental converter accepts six rates.");
 
-    // Make the domain conversion explicit with a separate scratch allocation.
-    // A copied SOURCE_PROCESSING_RATE view is for the offline SRC API only,
-    // never for publication as a real audio Source or a verified master.
-    auto scratch=AudioBuffer::create(verified_master_pcm.format(),
-        FrameDomainId::SOURCE_PROCESSING_RATE,core::FrameIndex{0},
-        verified_master_pcm.frame_count());
-    if(!scratch)
-        return core::Result<MonitoringPcmCandidate>::failure(*scratch.error());
-    for(std::size_t ch=0;ch<verified_master_pcm.format().channel_count();++ch) {
-        auto from=verified_master_pcm.channel(ch);
-        auto to=scratch.value()->mutable_view().channel(ch);
-        if(!from||!to)
-            return refused(core::ErrorCode::InvalidState,
-                "MONITOR_SRC_CHANNEL_MISSING");
-        std::copy(from.value()->begin(),from.value()->end(),to.value()->begin());
-    }
-    auto converted=materialize_full_resource_output_rate_candidate(
-        scratch.value()->view(),observed_device_rate,offline_block);
+    // No extra O(track duration) SRC scratch allocation. The borrowed view
+    // remains OUTPUT_RATE, and only this explicit monitor entrypoint may
+    // consume it as the immutable input to a separate device-rate PCM.
+    auto converted=materialize_output_master_monitoring_rate_candidate(
+        verified_master_pcm,observed_device_rate,offline_block);
     if(!converted)
         return core::Result<MonitoringPcmCandidate>::failure(*converted.error());
     if(converted.value()->pcm.view().format().sample_rate()

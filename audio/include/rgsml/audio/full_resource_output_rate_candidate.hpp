@@ -34,4 +34,14 @@ materialize_full_resource_output_rate_candidate(
     core::SampleRate required_output_rate,
     core::FrameCount maximum_output_block_frames);
 
+// Borrow-only monitoring entrypoint: identical offline SRC numerical path,
+// but requires an immutable OUTPUT_RATE master domain instead of SOURCE.
+// Does not allocate a full SOURCE scratch clone; the input is never changed.
+// Separate from final-master rendering / M16/M17 certification.
+[[nodiscard]] core::Result<FullResourceOutputRateCandidate>
+materialize_output_master_monitoring_rate_candidate(
+    AudioBufferView immutable_output_master_pcm,
+    core::SampleRate required_device_rate,
+    core::FrameCount maximum_output_block_frames);
+
 } // namespace rgsml::audio

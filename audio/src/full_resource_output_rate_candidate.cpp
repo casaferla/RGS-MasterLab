@@ -188,12 +188,14 @@ experimental_rational_output_rate(AudioBufferView input,
 }
 } // namespace
 
-core::Result<FullResourceOutputRateCandidate>
-materialize_full_resource_output_rate_candidate(
-    AudioBufferView input, core::SampleRate output_rate, core::FrameCount block)
+namespace {
+[[nodiscard]] core::Result<FullResourceOutputRateCandidate>
+materialize_full_resource_output_rate_candidate_impl(
+    AudioBufferView input,core::SampleRate output_rate,
+    core::FrameCount block,FrameDomainId requiredInputDomain)
 {
     using Candidate=FullResourceOutputRateCandidate;
-    if(input.timebase().frame_domain_id()!=FrameDomainId::SOURCE_PROCESSING_RATE
+    if(input.timebase().frame_domain_id()!=requiredInputDomain
        || input.absolute_start_frame().value()!=0
        || input.frame_count().value()<=0
        || block.value()<=0
@@ -269,5 +271,22 @@ materialize_full_resource_output_rate_candidate(
     return core::Result<Candidate>::success({
         std::move(*dest.value()),input.format().sample_rate(),output_rate,
         input.frame_count(),true,adapter.value()->kernel_sha256()});
+}
+} // namespace
+
+core::Result<FullResourceOutputRateCandidate>
+materialize_full_resource_output_rate_candidate(
+    AudioBufferView input,core::SampleRate output_rate,core::FrameCount block)
+{
+    return materialize_full_resource_output_rate_candidate_impl(
+        input,output_rate,block,FrameDomainId::SOURCE_PROCESSING_RATE);
+}
+
+core::Result<FullResourceOutputRateCandidate>
+materialize_output_master_monitoring_rate_candidate(
+    AudioBufferView master,core::SampleRate deviceRate,core::FrameCount block)
+{
+    return materialize_full_resource_output_rate_candidate_impl(
+        master,deviceRate,block,FrameDomainId::OUTPUT_RATE);
 }
 } // namespace rgsml::audio

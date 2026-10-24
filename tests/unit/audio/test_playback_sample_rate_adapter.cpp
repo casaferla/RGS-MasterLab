@@ -110,6 +110,7 @@ private slots:
     void finalMasterMonitoringCannotRetargetMasterRate();
     void isolatedOfflineMonitoringPcmSixBySixMatrix();
     void monitoringFrameMapSixRateEndpointsAndLoops();
+    void monitoringBorrowsMasterWithoutSourceAlias();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -324,6 +325,64 @@ void PlaybackSampleRateAdapterTest::monitoringFrameMapSixRateEndpointsAndLoops()
         core::FrameIndex{1},core::FrameIndex{2});
     QVERIFY(tooSmall);
     QVERIFY(!map.value()->master_loop_to_device(*tooSmall.value()));
+}
+
+void PlaybackSampleRateAdapterTest::monitoringBorrowsMasterWithoutSourceAlias()
+{
+    // Compare the new borrowed OUTPUT-domain path bitwise against the
+    // historical SOURCE scratch path. Frozen 44.1/48 FIR stays identical.
+    // No real-time, spectral or Windows device qualification is inferred.
+    constexpr std::array<std::pair<std::int64_t,std::int64_t>,4> pairs{{
+        {44100,48000},{48000,44100},{192000,48000},{96000,96000}
+    }};
+    constexpr std::int64_t N=193;
+    for(const auto [masterHz,deviceHz]:pairs) {
+        auto fmt=audio::AudioFormat::create(
+            rate(masterHz),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(fmt);
+        auto master=audio::AudioBuffer::create(*fmt.value(),
+            audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},
+            frame_count(N));
+        auto source=audio::AudioBuffer::create(*fmt.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE,core::FrameIndex{0},
+            frame_count(N));
+        QVERIFY(master && source);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto out=master.value()->mutable_view().channel(ch);
+            auto scratch=source.value()->mutable_view().channel(ch);
+            QVERIFY(out && scratch);
+            for(std::int64_t i=0;i<N;++i) {
+                const double x=(i%19==0?-0.817:0.21)*(ch==0?1.0:-0.5);
+                (*out.value())[static_cast<std::size_t>(i)]=x;
+                (*scratch.value())[static_cast<std::size_t>(i)]=x;
+            }
+        }
+        const auto beforeL=channel_bits(*master.value(),0);
+        const auto beforeR=channel_bits(*master.value(),1);
+        auto expected=audio::materialize_full_resource_output_rate_candidate(
+            source.value()->view(),rate(deviceHz),frame_count(17));
+        QVERIFY(expected);
+        auto direct=audio::materialize_output_master_monitoring_rate_candidate(
+            master.value()->view(),rate(deviceHz),frame_count(17));
+        QVERIFY(direct);
+        QCOMPARE(channel_bits(direct.value()->pcm,0),
+            channel_bits(expected.value()->pcm,0));
+        QCOMPARE(channel_bits(direct.value()->pcm,1),
+            channel_bits(expected.value()->pcm,1));
+        QCOMPARE(channel_bits(*master.value(),0),beforeL);
+        QCOMPARE(channel_bits(*master.value(),1),beforeR);
+        QVERIFY(!audio::materialize_full_resource_output_rate_candidate(
+            master.value()->view(),rate(deviceHz),frame_count(17)));
+        QVERIFY(!audio::materialize_output_master_monitoring_rate_candidate(
+            source.value()->view(),rate(deviceHz),frame_count(17)));
+        auto owned=audio::materialize_monitoring_pcm_candidate(
+            master.value()->view(),rate(deviceHz),frame_count(17));
+        QVERIFY(owned);
+        QCOMPARE(channel_bits(owned.value()->device_pcm,0),
+            channel_bits(expected.value()->pcm,0));
+        QCOMPARE(channel_bits(owned.value()->device_pcm,1),
+            channel_bits(expected.value()->pcm,1));
+    }
 }
 
 void PlaybackSampleRateAdapterTest::offlineCandidateMatchesFrozenPlaybackKernelBitwise()
