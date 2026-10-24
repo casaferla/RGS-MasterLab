@@ -415,11 +415,11 @@ void PlaybackSampleRateAdapterTest::monitoringPrepareAdviceSixMasterRatesAndHead
     QVERIFY(identity);
     QCOMPARE(identity.value()->experimental_fir_scratch_bytes,UINT64_C(0));
     QCOMPARE(audio::classify_monitoring_projected_memory(
-        *identity,threshold,false),
+        *identity.value(),threshold,false),
         audio::classify_monitoring_memory(
             identity.value()->combined_pcm_bytes,threshold));
     // A synthetic overflow must never wrap into a small, green footprint.
-    auto overflow=projected.value().value();
+    auto overflow=*projected.value();
     overflow.combined_pcm_bytes=std::numeric_limits<std::uint64_t>::max();
     std::uint64_t overflowHeadroom=123;
     QCOMPARE(audio::classify_monitoring_projected_memory(
