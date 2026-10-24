@@ -2,6 +2,7 @@
 #include "internal/true_peak_limiter_state.hpp"
 
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <rgsml/dsp/module_descriptor.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
@@ -182,6 +183,7 @@ private slots:
     void acceleratedOfflinePrepareMatchesFrozenCheckedRenderer();
     void isolatedCalibratorRunsRealAcceleratedM17AndM16WithoutDevice();
     void finalMasterSixBySixTargetRatePlanIsDeviceIndependent();
+    void finalMasterPlanAndMonitoringRateComposeWithoutDeviceRetarget();
     void shortAndSplitEosDoesNotCreatePhantomPcm();
     void inactiveBypassIsZeroLatencyBitCopyAboveCeilingSixRates();
     void bypassAndEnabledLimiterAreObservablyDistinct();
@@ -232,6 +234,57 @@ void TruePeakLimiterVerificationTest::finalMasterSixBySixTargetRatePlanIsDeviceI
     QCOMPARE(identity,std::size_t{6});
     QCOMPARE(converted,std::size_t{30});
     // Critically, no device-rate input exists in the final master plan.
+}
+
+void TruePeakLimiterVerificationTest::
+finalMasterPlanAndMonitoringRateComposeWithoutDeviceRetarget()
+{
+    // Test the actual Final Master M17 planner AND the independent
+    // monitoring route together. Three clock domains must not collapse
+    // into the Windows device clock. This is contract evidence only:
+    // it does NOT assert that all SRC kernels have been implemented.
+    constexpr std::array<std::int64_t,6> masterRates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::array<std::int64_t,8> deviceRates{
+        32000,44100,48000,88200,96000,176400,192000,384000};
+    std::size_t tested=0,requiresMasterSrc=0,requiresMonitorSrc=0;
+    for(const auto sourceHz:masterRates) {
+        const auto sourceRate=core::SampleRate::create(sourceHz);
+        QVERIFY(sourceRate);
+        for(const auto masterHz:masterRates) {
+            const auto masterRate=core::SampleRate::create(masterHz);
+            QVERIFY(masterRate);
+            const auto finalPlan=render::plan_final_master_output_rate(
+                *sourceRate.value(),*masterRate.value());
+            QVERIFY(finalPlan);
+            QCOMPARE(finalPlan.value()->target_rate.value(),masterHz);
+            for(const auto deviceHz:deviceRates) {
+                const auto deviceRate=core::SampleRate::create(deviceHz);
+                QVERIFY(deviceRate);
+                const auto monitoring=audio::plan_master_monitoring_rate(
+                    finalPlan.value()->target_rate,*deviceRate.value());
+                QVERIFY(monitoring);
+                QCOMPARE(monitoring.value()->final_master_rate.value(),masterHz);
+                QCOMPARE(monitoring.value()->physical_device_rate.value(),
+                         deviceHz);
+                QCOMPARE(monitoring.value()->monitoring_src_required,
+                         masterHz!=deviceHz);
+                QCOMPARE(monitoring.value()->can_install_master_pcm_directly,
+                         masterHz==deviceHz);
+                QCOMPARE(finalPlan.value()->needs_final_output_src,
+                         sourceHz!=masterHz);
+                // No device-rate observation can change the independent
+                // source -> final target plan used by M17/M18.
+                QCOMPARE(finalPlan.value()->target_rate.value(),masterHz);
+                if(sourceHz!=masterHz)++requiresMasterSrc;
+                if(masterHz!=deviceHz)++requiresMonitorSrc;
+                ++tested;
+            }
+        }
+    }
+    QCOMPARE(tested,std::size_t{288});
+    QCOMPARE(requiresMasterSrc,std::size_t{240});
+    QCOMPARE(requiresMonitorSrc,std::size_t{252});
 }
 
 void TruePeakLimiterVerificationTest::
