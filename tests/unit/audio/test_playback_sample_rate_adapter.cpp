@@ -3,6 +3,7 @@
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
+#include <rgsml/audio/master_monitoring_rate_plan.hpp>
 
 #include <QTest>
 
@@ -103,6 +104,7 @@ class PlaybackSampleRateAdapterTest final : public QObject {
 private slots:
     void policyIdentityAndFrameMap();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
+    void finalMasterMonitoringCannotRetargetMasterRate();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -113,6 +115,55 @@ private slots:
     void noFutureDependencyPrefixAgainstIndependentOracle();
 };
 
+
+void PlaybackSampleRateAdapterTest::finalMasterMonitoringCannotRetargetMasterRate()
+{
+    // This is a non-audible CONTRACT test, not a 192->48 SRC claim.
+    // M17/M18 master identity is selected separately from any physical
+    // output device. A mismatched device must NOT trigger direct install.
+    constexpr std::array<std::int64_t, 6> masters{
+        44100, 48000, 88200, 96000, 176400, 192000
+    };
+    constexpr std::array<std::int64_t, 8> devices{
+        32000, 44100, 48000, 88200, 96000, 176400, 192000, 384000
+    };
+    std::size_t direct=0,needsSrc=0;
+    for(const auto masterHz:masters) {
+        for(const auto deviceHz:devices) {
+            const auto master=rate(masterHz);
+            const auto device=rate(deviceHz);
+            auto routed=audio::plan_master_monitoring_rate(master,device);
+            QVERIFY(routed);
+            QCOMPARE(routed.value()->final_master_rate,master);
+            QCOMPARE(routed.value()->physical_device_rate,device);
+            const auto exact=masterHz==deviceHz;
+            QCOMPARE(routed.value()->can_install_master_pcm_directly,exact);
+            QCOMPARE(routed.value()->monitoring_src_required,!exact);
+            if(exact)++direct;
+            else ++needsSrc;
+        }
+    }
+    QCOMPARE(direct,std::size_t{6});
+    QCOMPARE(needsSrc,std::size_t{42});
+    // In particular a 192 kHz master + 48 kHz soundcard remains a
+    // 192 kHz MASTER. Realtime monitoring SRC must be implemented
+    // separately before it can be played on that device.
+    const auto at192=audio::plan_master_monitoring_rate(
+        rate(192000),rate(48000));
+    QVERIFY(at192);
+    QCOMPARE(at192.value()->final_master_rate.value(),std::int64_t{192000});
+    QVERIFY(at192.value()->monitoring_src_required);
+    QVERIFY(!at192.value()->can_install_master_pcm_directly);
+
+    // A physical interface may support rates outside the six exported
+    // master rates; this does not expand M17/M18 master-rate eligibility.
+    auto invalidMaster=audio::plan_master_monitoring_rate(
+        rate(32000),rate(32000));
+    QVERIFY(!invalidMaster);
+    QVERIFY(invalidMaster.error());
+    QCOMPARE(invalidMaster.error()->code(),
+             core::ErrorCode::UnsupportedOperation);
+}
 
 void PlaybackSampleRateAdapterTest::offlineCandidateMatchesFrozenPlaybackKernelBitwise()
 {
