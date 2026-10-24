@@ -1427,6 +1427,56 @@ WindowsAudioPlaybackService::advise_imminent_monitoring_pcm_allocation(
 #endif
 }
 
+core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
+WindowsAudioPlaybackService::materialize_monitoring_pcm_with_preflight(
+    audio::AudioBufferView alreadyOwnedMaster,
+    core::FrameCount outputBlock,
+    std::uint64_t otherPrepareReserveBytes,
+    const std::function<core::Status(
+        const audio::MonitoringPcmPreallocationAdvice&)>&
+        explicitDecision) const
+{
+    using Candidate=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+    if(!explicitDecision)
+        return failure<Candidate>(core::ErrorCode::InvalidArgument,
+            "MONITOR_ALLOC_EXPLICIT_DECISION_REQUIRED");
+
+    // The immutable MASTER stays at its selected OUTPUT_RATE. We query the
+    // independently negotiated DEVICE rate but do not install an audio sink.
+    const auto layout=alreadyOwnedMaster.format().channel_layout();
+    const auto deviceRate=preferred_monitoring_output_rate(layout);
+    if(!deviceRate)
+        return core::Result<Candidate>::failure(*deviceRate.error());
+
+    auto materialized=audio::materialize_monitoring_pcm_candidate(
+        alreadyOwnedMaster,*deviceRate.value(),outputBlock,
+        [this,alreadyOwnedMaster,deviceRate=*deviceRate.value(),
+         otherPrepareReserveBytes,&explicitDecision](
+            const audio::MonitoringPcmResourceProjection& projected)
+            ->core::Status {
+            // This callback executes AFTER the cheap resource projection
+            // but BEFORE materialize_output_master_monitoring_rate_candidate
+            // can allocate the full device-rate buffer.
+            const auto fresh=advise_imminent_monitoring_pcm_allocation(
+                alreadyOwnedMaster.format().sample_rate(),
+                alreadyOwnedMaster.frame_count(),
+                alreadyOwnedMaster.format().channel_layout(),
+                otherPrepareReserveBytes);
+            if(!fresh)return core::Status::failure(*fresh.error());
+            const auto coherent=audio::validate_imminent_monitoring_preallocation(
+                *fresh.value(),deviceRate,projected);
+            if(!coherent)return coherent;
+            // UNKNOWN / CAUTION / DISCOURAGED are an explicit caller policy,
+            // not a silent product-wide veto added by an experimental seam.
+            return explicitDecision(*fresh.value());
+        });
+    if(!materialized)
+        return core::Result<Candidate>::failure(*materialized.error());
+    return core::Result<Candidate>::success(
+        std::make_shared<const audio::MonitoringPcmCandidate>(
+            std::move(*materialized.value())));
+}
+
 core::Status WindowsAudioPlaybackService::prepare_monitoring_output_pcm(
     std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
 {

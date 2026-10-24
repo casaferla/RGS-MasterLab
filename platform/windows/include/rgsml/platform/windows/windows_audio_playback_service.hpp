@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -71,6 +72,21 @@ public:
         core::SampleRate ownedMasterRate,core::FrameCount ownedMasterFrames,
         audio::ChannelLayout layout,
         std::uint64_t otherPrepareReserveBytes=0) const;
+
+    // Isolated monitor PREPARE seam, NOT a product rendering transaction.
+    // An explicit caller-provided decision receives a fresh OS-backed
+    // incremental-DEVICE budget check immediately before buffer allocation;
+    // no automatic hard veto, rate change, or M17/M16 publication.
+    // No decision callback = no materialization.
+    [[nodiscard]] core::Result<
+        std::shared_ptr<const audio::MonitoringPcmCandidate>>
+    materialize_monitoring_pcm_with_preflight(
+        audio::AudioBufferView alreadyOwnedMaster,
+        core::FrameCount outputBlock,
+        std::uint64_t otherPrepareReserveBytes,
+        const std::function<core::Status(
+            const audio::MonitoringPcmPreallocationAdvice&)>&
+            explicitDecision) const;
 
     // EXPERIMENTAL device-monitoring seam: candidate PCM is separately owned
     // and already converted offline. Never substitute a new master rate or

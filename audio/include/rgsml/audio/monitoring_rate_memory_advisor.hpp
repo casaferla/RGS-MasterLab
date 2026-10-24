@@ -78,6 +78,7 @@ struct MonitoringRateMemoryAdvice final {
 // the allocated master. Do not double-charge it a second time against that
 // fresh snapshot. This is an observation, never allocation permission.
 struct MonitoringPcmPreallocationAdvice final {
+    core::SampleRate observed_device_rate;
     MonitoringPcmResourceProjection resource;
     MonitoringMemoryAdviceKind kind{MonitoringMemoryAdviceKind::UNKNOWN};
     std::uint64_t memory_headroom_after_reserve_bytes{0};
@@ -101,7 +102,28 @@ advise_imminent_monitoring_pcm_allocation(
     const auto kind=classify_monitoring_memory(
         cost.value()->device_pcm_bytes,freshly_observed,&headroom);
     return core::Result<Advice>::success(Advice{
-        std::move(*cost.value()),kind,headroom,false,false});
+        device_rate,std::move(*cost.value()),kind,headroom,false,false});
+}
+
+// The memory sample must describe the exact DEVICE allocation about to be
+// performed. A second hardware probe may report a different endpoint rate.
+// Reject mismatched geometry before any expensive PCM device-buffer allocation;
+// there is no implicit device-rate retargeting or retry under another rate.
+[[nodiscard]] inline core::Status
+validate_imminent_monitoring_preallocation(
+    const MonitoringPcmPreallocationAdvice& observed,
+    core::SampleRate expected_device_rate,
+    const MonitoringPcmResourceProjection& planned)
+{
+    if(observed.observed_device_rate!=expected_device_rate
+       ||observed.resource.master_pcm_bytes!=planned.master_pcm_bytes
+       ||observed.resource.device_pcm_bytes!=planned.device_pcm_bytes
+       ||observed.resource.device_frames.value()!=planned.device_frames.value()
+       ||observed.resource.combined_pcm_bytes!=planned.combined_pcm_bytes)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "MONITOR_ALLOC_PREFLIGHT_DEVICE_OR_RESOURCE_CHANGED"});
+    return core::Status::success();
 }
 
 // All six master frequencies are assessed at the ORIGINAL SOURCE duration.

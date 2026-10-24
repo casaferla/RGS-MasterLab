@@ -533,6 +533,19 @@ monitoringImminentAllocationUsesFreshIncrementalBudget()
     QCOMPARE(first.value()->resource.device_pcm_bytes,
         UINT64_C(48000)*180*2*sizeof(double));
     QCOMPARE(first.value()->kind,Kind::RECOMMENDED_MEMORY_ONLY);
+    QCOMPARE(first.value()->observed_device_rate,rate(48000));
+    QVERIFY(audio::validate_imminent_monitoring_preallocation(
+        *first.value(),rate(48000),first.value()->resource));
+    auto wrongRate=audio::validate_imminent_monitoring_preallocation(
+        *first.value(),rate(44100),first.value()->resource);
+    QVERIFY(!wrongRate);
+    QCOMPARE(wrongRate.error()->code(),core::ErrorCode::InvalidState);
+    auto changedResource=first.value()->resource;
+    changedResource.device_pcm_bytes+=sizeof(double);
+    auto wrongProjection=audio::validate_imminent_monitoring_preallocation(
+        *first.value(),rate(48000),changedResource);
+    QVERIFY(!wrongProjection);
+    QCOMPARE(wrongProjection.error()->code(),core::ErrorCode::InvalidState);
     QVERIFY(!first.value()->existing_master_counted_as_new);
     QVERIFY(!first.value()->cpu_performance_qualified);
     QCOMPARE(audio::classify_monitoring_memory(
