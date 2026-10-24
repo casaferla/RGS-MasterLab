@@ -1463,12 +1463,10 @@ WindowsAudioPlaybackService::materialize_monitoring_pcm_with_preflight(
                 alreadyOwnedMaster.format().channel_layout(),
                 otherPrepareReserveBytes);
             if(!fresh)return core::Status::failure(*fresh.error());
-            const auto coherent=audio::validate_imminent_monitoring_preallocation(
-                *fresh.value(),deviceRate,projected);
-            if(!coherent)return coherent;
-            // UNKNOWN / CAUTION / DISCOURAGED are an explicit caller policy,
-            // not a silent product-wide veto added by an experimental seam.
-            return explicitDecision(*fresh.value());
+            // Validate the fresh DEVICE/resource identity before invoking
+            // the explicit caller's policy, even for UNKNOWN memory.
+            return audio::evaluate_imminent_monitoring_preallocation(
+                *fresh.value(),deviceRate,projected,explicitDecision);
         });
     if(!materialized)
         return core::Result<Candidate>::failure(*materialized.error());

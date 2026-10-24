@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <cstddef>
 #include <limits>
 #include <utility>
@@ -148,6 +149,28 @@ validate_imminent_monitoring_preallocation(
             core::ErrorCode::InvalidState,
             "MONITOR_ALLOC_PREFLIGHT_DEVICE_OR_RESOURCE_CHANGED"});
     return core::Status::success();
+}
+
+// Contract shared by Windows and portable unit tests: an explicit policy
+// must decide from the fresh, coherent observation. The preflight NEVER
+// silently turns UNKNOWN/CAUTION/DISCOURAGED into permission or veto.
+// Inconsistent endpoint/resource identity must not invoke user policy.
+[[nodiscard]] inline core::Status
+evaluate_imminent_monitoring_preallocation(
+    const MonitoringPcmPreallocationAdvice& observed,
+    core::SampleRate expected_device_rate,
+    const MonitoringPcmResourceProjection& planned,
+    const std::function<core::Status(
+        const MonitoringPcmPreallocationAdvice&)>& explicit_decision)
+{
+    if(!explicit_decision)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "MONITOR_ALLOC_EXPLICIT_DECISION_REQUIRED"});
+    const auto coherent=validate_imminent_monitoring_preallocation(
+        observed,expected_device_rate,planned);
+    if(!coherent)return coherent;
+    return explicit_decision(observed);
 }
 
 // All six master frequencies are assessed at the ORIGINAL SOURCE duration.

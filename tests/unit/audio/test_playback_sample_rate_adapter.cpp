@@ -132,6 +132,7 @@ private slots:
     void monitoringPrepareAdviceDurationRoundingAndUnknownState();
     void monitoringPrepareAdviceBudgetBoundariesAndFreshObservations();
     void monitoringImminentAllocationUsesFreshIncrementalBudget();
+    void monitoringExplicitPreallocationDecisionContract();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -677,6 +678,104 @@ monitoringImminentAllocationUsesFreshIncrementalBudget()
     QCOMPARE(QString::fromStdString(oom.error()->message()),
         QStringLiteral("MONITOR_ALLOC_PREFLIGHT_OUT_OF_MEMORY"));
     QCOMPARE(channel_bits(*owned.value(),0),beforeBits);
+}
+
+void PlaybackSampleRateAdapterTest::
+monitoringExplicitPreallocationDecisionContract()
+{
+    using Advice=audio::MonitoringPcmPreallocationAdvice;
+    using Kind=audio::MonitoringMemoryAdviceKind;
+    using Observation=audio::MonitoringMemoryObservation;
+    constexpr std::uint64_t MiB=UINT64_C(1024)*1024;
+    const auto master=rate(192000);
+    const auto frames=frame_count(192000);
+    const auto device=rate(48000);
+    const auto layout=audio::ChannelLayout::STEREO_LR;
+    const auto recommendation=audio::advise_imminent_monitoring_pcm_allocation(
+        master,frames,device,layout,
+        Observation{UINT64_C(4)*1024*MiB,UINT64_C(4)*1024*MiB,0});
+    QVERIFY(recommendation);
+    QCOMPARE(recommendation.value()->kind,Kind::RECOMMENDED_MEMORY_ONLY);
+    const auto plan=recommendation.value()->resource;
+    std::size_t callbackCount=0;
+    const std::function<core::Status(const Advice&)> noDecision{};
+    const auto missing=audio::evaluate_imminent_monitoring_preallocation(
+        *recommendation.value(),device,plan,noDecision);
+    QVERIFY(!missing);
+    QCOMPARE(missing.error()->code(),core::ErrorCode::InvalidArgument);
+
+    // The exact same projection is mandatory: neither a retargeted
+    // device nor a new FIR scratch size may reach the policy callback.
+    const auto accept=[&](const Advice&)->core::Status {
+        ++callbackCount;
+        return core::Status::success();
+    };
+    const auto otherDevice=audio::evaluate_imminent_monitoring_preallocation(
+        *recommendation.value(),rate(44100),plan,accept);
+    QVERIFY(!otherDevice);
+    QCOMPARE(otherDevice.error()->code(),core::ErrorCode::InvalidState);
+    auto changed=plan;
+    changed.experimental_fir_scratch_bytes+=sizeof(double);
+    const auto otherScratch=audio::evaluate_imminent_monitoring_preallocation(
+        *recommendation.value(),device,changed,accept);
+    QVERIFY(!otherScratch);
+    QCOMPARE(otherScratch.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(callbackCount,std::size_t{0});
+
+    const auto accepted=audio::evaluate_imminent_monitoring_preallocation(
+        *recommendation.value(),device,plan,accept);
+    QVERIFY(accepted);
+    QCOMPARE(callbackCount,std::size_t{1});
+
+    // A policy rejection is propagated unchanged; it cannot be turned
+    // into a successful allocation by the experimental Windows seam.
+    const auto deny=[&](const Advice&)->core::Status {
+        ++callbackCount;
+        return core::Status::failure(core::Error{
+            core::ErrorCode::UnsupportedOperation,
+            "MONITOR_ALLOC_POLICY_TEST_REFUSED"});
+    };
+    const auto rejected=audio::evaluate_imminent_monitoring_preallocation(
+        *recommendation.value(),device,plan,deny);
+    QVERIFY(!rejected);
+    QCOMPARE(rejected.error()->code(),core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(callbackCount,std::size_t{2});
+
+    const auto needed=plan.device_pcm_bytes
+        +plan.experimental_fir_scratch_bytes;
+    constexpr std::uint64_t reserve=UINT64_C(512)*MiB;
+    const auto caution=audio::advise_imminent_monitoring_pcm_allocation(
+        master,frames,device,layout,
+        Observation{reserve+needed,reserve+needed,0});
+    const auto discouraged=audio::advise_imminent_monitoring_pcm_allocation(
+        master,frames,device,layout,
+        Observation{reserve,reserve,0});
+    const auto unknown=audio::advise_imminent_monitoring_pcm_allocation(
+        master,frames,device,layout,
+        Observation{0,reserve+needed,0});
+    QVERIFY(caution);
+    QVERIFY(discouraged);
+    QVERIFY(unknown);
+    QCOMPARE(caution.value()->kind,Kind::CAUTION_LIMITED_HEADROOM);
+    QCOMPARE(discouraged.value()->kind,
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    QCOMPARE(unknown.value()->kind,Kind::UNKNOWN);
+    // All three states must be seen by the explicit decision. No hidden
+    // fail-open, false recommendation, or hard veto is inferred here.
+    for(const auto* observed:{caution.value(),discouraged.value(),
+                              unknown.value()}) {
+        Kind forwarded=Kind::RECOMMENDED_MEMORY_ONLY;
+        const auto checked=audio::evaluate_imminent_monitoring_preallocation(
+            *observed,device,plan,[&](const Advice& input)->core::Status {
+                forwarded=input.kind;
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::UnsupportedOperation,
+                    "MONITOR_ALLOC_POLICY_EXPLICIT_HOLD"});
+            });
+        QVERIFY(!checked);
+        QCOMPARE(checked.error()->code(),core::ErrorCode::UnsupportedOperation);
+        QCOMPARE(forwarded,observed->kind);
+    }
 }
 
 void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()
