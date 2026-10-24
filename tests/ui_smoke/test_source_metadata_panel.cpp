@@ -47,6 +47,7 @@
 #include <QWindow>
 #include <QWheelEvent>
 
+#include <array>
 #include <cmath>
 #include <memory>
 #include <optional>
@@ -533,15 +534,18 @@ Window {
     height: 688
     visible: false
     color: "#06121F"
+    property bool meterMode: false
     QtObject {
         id: limiter
         objectName: "m17FixtureLimiter"
-        property string editorContentKey: "TRUE_PEAK_LIMITER"
-        property string displayName: "True Peak Limiter"
+        property string editorContentKey: fixtureWindow.meterMode
+            ? "TRUE_PEAK_METER" : "TRUE_PEAK_LIMITER"
+        property string displayName: fixtureWindow.meterMode
+            ? "True Peak Meter" : "True Peak Limiter"
         property string workspaceContextLabel: "Mastering · UI fixture"
         property string familyAccent: "#C4774A"
         property bool bypass: true
-        property bool bypassSupported: true
+        property bool bypassSupported: !fixtureWindow.meterMode
         property bool historySupported: false
         property bool previewSupported: false
         property bool canUndo: false
@@ -631,6 +635,55 @@ Window {
     QVERIFY2(captureHost(QStringLiteral("m17_host_family_on_1184x688.png")),
         "Native M17 DSP host ON screenshot must be captured");
     QVERIFY(checkTheme(true, QStringLiteral("#6CBCCF")));
+    // Test the real HOST topology in full and minimum-height windows.
+    // M16 has blank header/action space and exactly overlaps M17 meters.
+    auto* hostItem=qobject_cast<QQuickItem*>(host);
+    auto* meter=find_child_by_name(root.data(),
+        QStringLiteral("truePeakMeterEditor"));
+    auto* actionRow=find_child_by_name(root.data(),
+        QStringLiteral("m17ExplicitPreparationControls"));
+    QVERIFY(hostItem&&meter&&actionRow);
+    const QStringList common{
+        QStringLiteral("truePeakLeftLane"),
+        QStringLiteral("truePeakRightLane"),
+        QStringLiteral("truePeakRecentCard"),
+        QStringLiteral("truePeakHoldCard"),
+        QStringLiteral("truePeakFullResourceCard")};
+    const auto rectOnHost=[hostItem](QObject* object)->QRectF {
+        auto* item=qobject_cast<QQuickItem*>(object);
+        return item?QRectF{item->mapToItem(hostItem,QPointF{}),item->size()}:QRectF{};
+    };
+    for(const auto hostHeight:{652.0,474.0}) {
+        hostItem->setHeight(hostHeight);
+        QVERIFY(fixture->setProperty("meterMode",false));
+        QCoreApplication::processEvents();
+        QVERIFY(actionRow->property("visible").toBool());
+        const auto m17Rect=rectOnHost(editor);
+        std::array<QRectF,5> expected{};
+        for(qsizetype i=0;i<common.size();++i) {
+            auto* child=find_child_by_name(editor,common[i]);
+            QVERIFY(child);
+            expected[static_cast<std::size_t>(i)]=rectOnHost(child);
+            QVERIFY(!expected[static_cast<std::size_t>(i)].isEmpty());
+        }
+        QVERIFY(fixture->setProperty("meterMode",true));
+        QCoreApplication::processEvents();
+        QVERIFY(meter->property("visible").toBool());
+        QVERIFY(actionRow->property("visible").toBool());
+        const auto m16Rect=rectOnHost(meter);
+        QVERIFY(qAbs(m16Rect.y()-m17Rect.y())<=0.5);
+        QVERIFY(qAbs(m16Rect.height()-m17Rect.height())<=0.5);
+        for(qsizetype i=0;i<common.size();++i) {
+            auto* child=find_child_by_name(meter,common[i]);
+            QVERIFY(child);
+            const auto actual=rectOnHost(child);
+            const auto expectedRect=expected[static_cast<std::size_t>(i)];
+            QVERIFY2(qAbs(actual.y()-expectedRect.y())<=0.5
+                && qAbs(actual.x()-expectedRect.x())<=0.5
+                && qAbs(actual.height()-expectedRect.height())<=0.5,
+                qPrintable(QStringLiteral("M16/M17 shared geometry: ")+common[i]));
+        }
+    }
     window->close();
 }
 
@@ -655,10 +708,16 @@ Window {
     color: "#06121F"
     QtObject {
         id: vm
+        objectName: "m17TestVm"
         property string validationField: fixture.validationMessage.length>0 ? "ceilingDbTp" : ""
         property string validationMessage: fixture.validationMessage
         property real ceilingDbTp: -1
         property string ceilingDbTpText: "-1.00"
+        property string audioStatus: "BYPASS · MANUAL PROCESSED"
+        property real preparationFraction: 0.375
+        property bool preparationDeterminate: true
+        property string preparationStage: "M17 Core"
+        property string preparationEta: ""
     }
     Rectangle {
         id: surface
@@ -696,7 +755,9 @@ Window {
         instance.data(),QStringLiteral("m17CandidateCaptureSurface")));
     auto* fixture=find_child_by_name(instance.data(),
         QStringLiteral("gateMParityFixture"));
-    QVERIFY(window&&m16&&m17&&surface&&fixture);
+    auto* testVm=find_child_by_name(instance.data(),
+        QStringLiteral("m17TestVm"));
+    QVERIFY(window&&m16&&m17&&surface&&fixture&&testVm);
     window->show();
     QTest::qWait(150);
     QCoreApplication::processEvents();
@@ -737,7 +798,41 @@ Window {
             m17,QStringLiteral("m17GainReductionPlot")));
         QVERIFY(gr);
         QCOMPARE(gr->height(),54.0);
+        auto* band=qobject_cast<QQuickItem*>(find_child_by_name(
+            m17,QStringLiteral("m17GainReductionHistory")));
+        auto* heading=qobject_cast<QQuickItem*>(find_child_by_name(
+            m17,QStringLiteral("m17GrHistoryHeading")));
+        auto* status=qobject_cast<QQuickItem*>(find_child_by_name(
+            m17,QStringLiteral("m17GrProvenanceStatus")));
+        auto* preparation=qobject_cast<QQuickItem*>(find_child_by_name(
+            m17,QStringLiteral("m17PreparationProgressRegion")));
+        QVERIFY(band&&heading&&status&&preparation);
+        QCOMPARE(heading->property("text").toString(),QStringLiteral("GR HISTORY"));
+        QVERIFY2(heading->mapToItem(band,QPointF{}).y()<=8.0,
+            "GR title must occupy top of its band");
+        QVERIFY2(gr->mapToItem(band,QPointF{}).y()<40.0,
+            "GR graph must remain at top, not hidden below empty space");
         const auto baseline=rect(m17,QStringLiteral("truePeakLeftLane"));
+        const auto recent=rect(m17,QStringLiteral("truePeakRecentCard"));
+        QVERIFY(fixture->setProperty("bypass",false));
+        QVERIFY(testVm->setProperty("audioStatus",QStringLiteral("Preparing · M17")));
+        QCoreApplication::processEvents();
+        QCOMPARE(heading->property("text").toString(),
+            QStringLiteral("PREPARING MASTER"));
+        QVERIFY(!status->property("visible").toBool());
+        QVERIFY(!gr->property("visible").toBool());
+        QVERIFY(preparation->property("visible").toBool());
+        QVERIFY(contained(QStringLiteral("m17PreparationProgressBar")));
+        QCOMPARE(rect(m17,QStringLiteral("truePeakLeftLane")),baseline);
+        QCOMPARE(rect(m17,QStringLiteral("truePeakRecentCard")),recent);
+        QVERIFY(testVm->setProperty("audioStatus",
+            QStringLiteral("READY · PREVIEW AVAILABLE")));
+        QCoreApplication::processEvents();
+        QCOMPARE(heading->property("text").toString(),QStringLiteral("GR HISTORY"));
+        QVERIFY(gr->property("visible").toBool());
+        QVERIFY(!preparation->property("visible").toBool());
+        QCOMPARE(rect(m17,QStringLiteral("truePeakLeftLane")),baseline);
+        QCOMPARE(rect(m17,QStringLiteral("truePeakRecentCard")),recent);
         QVERIFY(fixture->setProperty("bypass",false));
         QCoreApplication::processEvents();
         QCOMPARE(rect(m17,QStringLiteral("truePeakLeftLane")),baseline);
