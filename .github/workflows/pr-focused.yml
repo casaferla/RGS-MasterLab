@@ -14,8 +14,10 @@ jobs:
     name: Linux Portable DSP Guard
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout exact PR head (B2b qualification provenance)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,7 +31,7 @@ jobs:
 
       - name: Install Qt 6.8.3 via aqtinstall
         run: |
-          pip install aqtinstall
+          pip install "aqtinstall==3.3.0" "py7zr==1.1.0"
           python -m aqt install-qt linux desktop 6.8.3 linux_gcc_64 -m qtmultimedia
 
       - name: Configure CMake (Portable DSP)
@@ -37,7 +39,53 @@ jobs:
           cmake -B build-linux -G Ninja \
             -DCMAKE_PREFIX_PATH="${{ github.workspace }}/6.8.3/gcc_64" \
             -DRGSML_BUILD_TESTS=ON \
-            -DRGSML_WARNINGS_AS_ERRORS=ON
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DRGSML_WARNINGS_AS_ERRORS=ON \
+            -DRGSML_PROVENANCE_TYPE=PR \
+            -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} \
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} \
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }}
+
+      # B2f: inspect Ninja's true compile command for each production object.
+      - name: Verify Linux True Peak scoped strict FP flags
+        run: |
+          python tools/qualification/true_peak/verify_fp_build_flags.py \
+            --platform linux --build-dir build-linux \
+            --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' \
+            --run-id '${{ github.run_id }}' \
+            --output "${RUNNER_TEMP}/B2f_linux_fp_compile_attestation.json"
+
+      # B2i: protected code blobs and negative product qualification transitions.
+      # No extra maths/DSP change; the result MUST remain UNQUALIFIED.
+      - name: M16 B2i Gate G conservative evidence guard (Linux)
+        run: |
+          python tools/qualification/true_peak/verify_gate_g_evidence.py \
+            --matrix tools/qualification/true_peak/b2g_gate_g_coverage_matrix.json \
+            --expected-head '${{ github.event.pull_request.head.sha || github.sha }}' \
+            --output "${RUNNER_TEMP}/B2i_linux_evidence_guard.json"
+
+      # B3: exact locked CMake blob + explicit nonqualifying adapter binding.
+      - name: M16 B3 CMake blob-lock and adapter boundary (Linux)
+        run: |
+          python tools/qualification/true_peak/verify_b3_adapter_boundary.py
+
+      # Minor Fix G1: QML source-only contract; physical visual gate is separate.
+      - name: Minor Fix G1 Compressor QML static regression (Linux)
+        run: |
+          python tools/qualification/ui/verify_compressor_minor_fix_g1.py
+
+      - name: Minor Fix G2 GR identity and lane topology contract (Linux)
+        run: |
+          python tools/qualification/ui/verify_compressor_minor_fix_g2.py
+
+      - name: Minor Fix G3 UI static guard (Linux)
+        run: |
+          python tools/qualification/ui/verify_minor_fix_g3.py
+
+      # Cross-DSP tooltip policy: QML source evidence, not a manual UI gate.
+      - name: Global stationary tooltip policy (Linux)
+        run: |
+          python tools/qualification/ui/verify_stationary_tooltips.py
 
       - name: Build Focused DSP Targets
         run: |
@@ -47,6 +95,29 @@ jobs:
             rgsml_dsp_processing_chain_tests \
             rgsml_dsp_structural_integration_tests \
             rgsml_gain_tests \
+            rgsml_true_peak_itu4x_coefficients_tests \
+            rgsml_true_peak_itu4x_channel_stream_tests \
+            rgsml_true_peak_full_resource_tests \
+            rgsml_true_peak_measurement_tests \
+            rgsml_true_peak_static_binding_tests \
+            rgsml_true_peak_gate_g_edge_tests \
+            rgsml_true_peak_chunk_invariance_tests \
+            rgsml_true_peak_b2b_probe \
+            rgsml_stereo_ms_parameters_tests \
+            rgsml_stereo_ms_module_tests \
+            rgsml_stereo_ms_crossover_tests \
+            rgsml_stereo_ms_crossover_runtime_tests \
+            rgsml_stereo_ms_module_streaming_tests \
+            rgsml_stereo_ms_checkpoint_tests \
+            rgsml_stereo_ms_independent_math_tests \
+            rgsml_stereo_ms_long_resume_tests \
+            rgsml_stereo_ms_gate_g_spatial_evidence_tests \
+            rgsml_stereo_ms_no_alloc_tests \
+            rgsml_stereo_ms_width_tests \
+            rgsml_stereo_ms_width_response_tests \
+            rgsml_stereo_ms_signature_tests \
+            rgsml_stereo_ms_view_model_tests \
+            rgsml_stereo_ms_audible_resolver_tests \
             rgsml_gain_golden_tests \
             rgsml_compressor_tests \
             rgsml_compressor_gate_g_tests \
@@ -58,45 +129,269 @@ jobs:
             rgsml_eq_view_model_tests \
             rgsml_gain_view_model_tests \
             rgsml_compressor_view_model_tests \
+            rgsml_mastering_chain_state_tests \
+            rgsml_terminal_private_gr_projection_tests \
             rgsml_mastering_preview_controller_tests \
             rgsml_dsp_module_adapter_tests \
-            rgsml_render_preview_tests
+            rgsml_render_preview_tests \
+            rgsml_playback_src_tests \
+            rgsml_playback_engine_portable_tests \
+            > "$RUNNER_TEMP/rgsml-focused-linux-build.log" 2>&1
+          echo "FOCUSED_BUILD_LINUX_SUCCESS"
+
+      - name: Capture bounded Linux compiler errors
+        if: failure()
+        run: |
+          python tools/ci/summarize_focused_build.py --input "$RUNNER_TEMP/rgsml-focused-linux-build.log" --output "$RUNNER_TEMP/rgsml-focused-linux-summary.txt" --platform linux
+          cat "$RUNNER_TEMP/rgsml-focused-linux-summary.txt"
+
+      - name: Attach bounded Linux compile diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Focused-Errors-Linux-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-focused-linux-summary.txt
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Run Focused DSP Tests
+        env:
+          RGS_M17_CPU_PROBE_FILE: ${{ runner.temp }}/rgs-m17-cpu-linux.csv
+          RGS_M17_PARTITION_PROBE_FILE: ${{ runner.temp }}/rgs-m17-partition-linux.csv
+          RGS_M17_LOOKAHEAD_PROBE_FILE: ${{ runner.temp }}/rgs-m17-lookahead-linux.csv
+          RGS_M17_BOUND_PROBE_FILE: ${{ runner.temp }}/rgs-m17-bound-linux.csv
         run: |
-          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|toolchain_manifest_)" --output-on-failure
+          ctest --test-dir build-linux -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_terminal_private_gr_projection_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_playback_src_tests|rgsml_playback_engine_portable_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_)" --output-on-failure
+
+      - name: Upload bounded M17 CPU probe (Linux)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-CPU-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-cpu-linux.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      # Six non-gating Windows/Linux-comparable rows, no complete job logs.
+      - name: Upload bounded M17 block partition probe (Linux)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-Partition-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-partition-linux.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload bounded M17 lookahead cache experiment (Linux)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-Lookahead-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-lookahead-linux.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload bounded M17 group-bound experiment (Linux)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-Bound-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-bound-linux.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      # Failure-only diagnostics filtered ON RUNNER; never transfer full logs.
+      - name: Capture bounded Linux failing-test assertions
+        if: failure()
+        run: |
+          python tools/ci/summarize_focused_tests.py --ctest-dir build-linux/Testing/Temporary --output "$RUNNER_TEMP/rgsml-focused-linux-test-summary.txt"
+      - name: Attach bounded Linux test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Focused-Test-Errors-Linux-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-focused-linux-test-summary.txt
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload Linux FP compile attestation (no audio)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M16-B2f-Linux-FP-Attestation-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/B2f_linux_fp_compile_attestation.json
+          retention-days: 7
+          if-no-files-found: error
 
   windows-focused-dsp:
     name: Windows Focused DSP
     runs-on: windows-2022
     env:
       RGSML_QT_ROOT: ${{ github.workspace }}/6.8.3/msvc2022_64
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_VERSION: "rgsml-msvc2022-qt683-strict-ninja-v1"
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "true"
     steps:
-      - name: Checkout repository
+      - name: Checkout exact PR head (B2b qualification provenance)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Enter VS2022 x64 toolchain for Ninja/MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Install Qt 6.8.3 via aqtinstall
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: "v0.16.0"
+
+      - name: Expose GHA cache runtime credentials
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Install Qt 6.8.3 and Ninja
         run: |
-          pip install aqtinstall
+          python -m pip install --disable-pip-version-check "aqtinstall==3.3.0" "py7zr==1.1.0" ninja
+          if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_TOOL_INSTALL_FAILED' }
           python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia
+          if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_QT_INSTALL_FAILED' }
+          ninja --version
 
-      - name: Configure CMake (Windows MSVC)
+      # Preserve the original M16 B2f attestation source unchanged: configure
+      # Visual Studio only to inspect source-scoped .vcxproj, NEVER MSBuild.
+      - name: Configure Visual Studio only for frozen M16 B2f evidence
         run: |
-          cmake --preset windows-msvc
+          cmake --preset windows-msvc `
+            -DRGSML_PROVENANCE_TYPE=PR `
+            -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} `
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }}
+          if ($LASTEXITCODE -ne 0) { throw 'VS_B2F_CONFIGURATION_FAILED' }
 
-      - name: Build Focused DSP Targets (Release)
+      # Product CI now compiles with Microsoft cl.exe, Ninja Multi-Config and
+      # sccache; Visual Studio generator above is evidence-only.
+      - name: Configure canonical Windows MSVC with Ninja Multi-Config
+        shell: pwsh
         run: |
-          cmake --build build/windows-msvc --config Release --target `
+          $ErrorActionPreference = 'Stop'
+          cmake -S . -B build/windows-ninja-cache -G "Ninja Multi-Config" `
+            -DCMAKE_CONFIGURATION_TYPES=Release `
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
+            -DCMAKE_POLICY_DEFAULT_CMP0141=NEW `
+            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DRGSML_BUILD_TESTS=ON `
+            -DRGSML_WARNINGS_AS_ERRORS=ON `
+            -DRGSML_PROVENANCE_TYPE=PR `
+            -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} `
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }} `
+            -DRGSML_QT_ROOT="$env:RGSML_QT_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'NINJA_MSVC_CONFIGURATION_FAILED' }
+
+      # B2f: assert source-scoped strict FP in generated MSBuild project.
+      - name: Verify Windows True Peak scoped strict FP flags
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/qualification/true_peak/verify_fp_build_flags.py --platform windows --build-dir build/windows-msvc --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --run-id '${{ github.run_id }}' --output "$env:RUNNER_TEMP\B2f_windows_fp_compile_attestation.json"
+          if ($LASTEXITCODE -ne 0) { throw 'B2F_WINDOWS_SOURCE_FP_FLAG_CHECK_FAILED' }
+
+      # Additional fail-closed source-scoped evidence from the REAL Ninja
+      # compiler command; not a replacement for frozen M16 B2f attestation.
+      - name: Verify effective Ninja strict-FP compilation flags (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $commands = Get-Content build/windows-ninja-cache/compile_commands.json -Raw | ConvertFrom-Json
+          foreach ($source in @('true_peak_itu4x_channel_stream.cpp', 'true_peak_full_resource.cpp', 'true_peak_limiter_module.cpp')) {
+            $match = @($commands | Where-Object { $_.file.Replace([char]92,[char]47).EndsWith("/" + $source, [System.StringComparison]::OrdinalIgnoreCase) })
+            if ($match.Count -ne 1) { throw "NINJA_STRICT_FP_MISSING_OR_DUPLICATED: $source count=$($match.Count)" }
+            $command = [string]$match[0].command
+            if ($command -notmatch '(?i)(?<!\w)/fp:strict(?![\w-])' -or
+                $command -match '(?i)/fp:(fast|contract)\b') {
+              throw "NINJA_STRICT_FP_FLAGS_INVALID: $source"
+            }
+            Write-Host "NINJA_SCOPED_STRICT_FP_CONFIRMED: $source"
+          }
+
+      # B2i: independent negative falsification guard for status evidence.
+      - name: M16 B2i Gate G conservative evidence guard (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/qualification/true_peak/verify_gate_g_evidence.py --matrix tools/qualification/true_peak/b2g_gate_g_coverage_matrix.json --expected-head '${{ github.event.pull_request.head.sha || github.sha }}' --output "$env:RUNNER_TEMP\B2i_windows_evidence_guard.json"
+          if ($LASTEXITCODE -ne 0) { throw 'B2I_GATE_G_PROVENANCE_AND_STATUS_RECONCILIATION_FAILED' }
+
+      - name: M16 B3 CMake blob-lock and adapter boundary (Windows)
+        shell: pwsh
+        run: |
+          python tools/qualification/true_peak/verify_b3_adapter_boundary.py
+          if ($LASTEXITCODE -ne 0) { throw 'B3_CMAKE_SOURCE_BOUNDARY_REGRESSION' }
+
+      # Minor Fix G1: additional QML source contract (not a visual substitute).
+      - name: Minor Fix G1 Compressor QML static regression (Windows)
+        shell: pwsh
+        run: |
+          python tools/qualification/ui/verify_compressor_minor_fix_g1.py
+          if ($LASTEXITCODE -ne 0) { throw 'MINOR_FIX_G1_STATIC_QML_REGRESSION' }
+
+      - name: Minor Fix G2 GR identity and lane topology contract (Windows)
+        shell: pwsh
+        run: |
+          python tools/qualification/ui/verify_compressor_minor_fix_g2.py
+          if ($LASTEXITCODE -ne 0) { throw 'MINOR_FIX_G2_STATIC_PROVENANCE_REGRESSION' }
+
+      - name: Minor Fix G3 UI static guard (Windows)
+        shell: pwsh
+        run: |
+          python tools/qualification/ui/verify_minor_fix_g3.py
+          if ($LASTEXITCODE -ne 0) { throw 'MINOR_FIX_G3_STATIC_UI_REGRESSION' }
+
+      - name: Build Focused DSP Targets (Release) — Ninja + sccache
+        run: |
+          sccache --zero-stats
+          $buildTimer = [System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build build/windows-ninja-cache --config Release --parallel 4 --target `
             rgsml_dsp_module_descriptor_tests `
             rgsml_dsp_module_registry_tests `
             rgsml_dsp_processing_chain_tests `
             rgsml_dsp_structural_integration_tests `
             rgsml_gain_tests `
+            rgsml_true_peak_itu4x_coefficients_tests `
+            rgsml_true_peak_itu4x_channel_stream_tests `
+            rgsml_true_peak_full_resource_tests `
+            rgsml_true_peak_measurement_tests `
+            rgsml_true_peak_static_binding_tests `
+            rgsml_true_peak_gate_g_edge_tests `
+            rgsml_true_peak_chunk_invariance_tests `
+            rgsml_true_peak_b2b_probe `
+            rgsml_stereo_ms_parameters_tests `
+            rgsml_stereo_ms_module_tests `
+            rgsml_stereo_ms_crossover_tests `
+            rgsml_stereo_ms_crossover_runtime_tests `
+            rgsml_stereo_ms_module_streaming_tests `
+            rgsml_stereo_ms_checkpoint_tests `
+            rgsml_stereo_ms_independent_math_tests `
+            rgsml_stereo_ms_long_resume_tests `
+            rgsml_stereo_ms_gate_g_spatial_evidence_tests `
+            rgsml_stereo_ms_no_alloc_tests `
+            rgsml_stereo_ms_width_tests `
+            rgsml_stereo_ms_width_response_tests `
+            rgsml_stereo_ms_signature_tests `
+            rgsml_stereo_ms_view_model_tests `
+            rgsml_stereo_ms_audible_resolver_tests `
             rgsml_gain_golden_tests `
             rgsml_compressor_tests `
             rgsml_compressor_gate_g_tests `
@@ -109,12 +404,46 @@ jobs:
             rgsml_eq_view_model_tests `
             rgsml_gain_view_model_tests `
             rgsml_compressor_view_model_tests `
+            rgsml_mastering_chain_state_tests `
+            rgsml_terminal_private_gr_projection_tests `
+            rgsml_terminal_product_activation_tests `
             rgsml_mastering_preview_controller_tests `
             rgsml_dsp_module_adapter_tests `
             rgsml_render_preview_tests `
             rgsml_audition_source_selector_tests `
+            rgsml_playback_src_tests `
+            rgsml_playback_support_tests `
             rgsml_source_metadata_panel_smoke `
-            rgsml_project_session_tests
+            rgsml_project_session_tests `
+            rgsml_app *> "$env:RUNNER_TEMP/rgsml-focused-windows-build.log"
+          $buildExit = $LASTEXITCODE
+          $buildTimer.Stop()
+          if ($buildExit -ne 0) { throw "NINJA_FOCUSED_BUILD_FAILED_$buildExit" }
+          Write-Host "WINDOWS_NINJA_COMPILE_SECONDS=$([math]::Round($buildTimer.Elapsed.TotalSeconds,1))"
+          sccache --show-stats
+          if ($LASTEXITCODE -ne 0) { throw 'SCCACHE_STATISTICS_UNAVAILABLE' }
+
+      - name: Capture bounded Windows compiler errors
+        if: failure()
+        shell: pwsh
+        run: |
+          python tools/ci/summarize_focused_build.py --input "$env:RUNNER_TEMP/rgsml-focused-windows-build.log" --output "$env:RUNNER_TEMP/rgsml-focused-windows-summary.txt" --platform windows
+          if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_DIAGNOSTIC_EXTRACTION_FAILED' }
+          Get-Content "$env:RUNNER_TEMP/rgsml-focused-windows-summary.txt"
+
+      - name: Attach bounded Windows compile diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Focused-Errors-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-focused-windows-summary.txt
+          retention-days: 7
+          if-no-files-found: error
+
+      # Pure-Python regression: ensure direct QtTest failure reports are
+      # bounded and never upload the full UI smoke or GitHub job logs.
+      - name: Verify runner-filtered Qt smoke diagnostics
+        run: python tools/ci/test_summarize_focused_tests.py
 
       - name: Run Windows UI Smoke Diagnostic
         env:
@@ -123,10 +452,17 @@ jobs:
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
           $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
           $log = "$env:GITHUB_WORKSPACE\m12b-smoke.txt"
-          & build/windows-msvc/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          & build/windows-ninja-cache/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
           $exitCode = $LASTEXITCODE
           if (Test-Path $log) {
-              Get-Content $log
+              # Never print the whole QtTest log to GitHub Actions. Keep
+              # high-priority FAIL!/QFATAL assertions (max 8) on the runner;
+              # the failure-only artifact is generated independently later.
+              $critical = @(Select-String -Path $log -Pattern 'FAIL!', 'QFATAL', 'ASSERT', 'Fatal error' | Select-Object -First 8)
+              foreach ($hit in $critical) {
+                  Write-Host ("QT_SMOKE_CRITICAL_LINE_{0}: {1}" -f $hit.LineNumber, $hit.Line.Substring(0, [Math]::Min(200, $hit.Line.Length)))
+              }
+              if ($critical.Count -eq 0) { Write-Host "QT_SMOKE_NO_CRITICAL_ASSERTION" }
           } else {
               Write-Host "M12B_SMOKE_LOG_NOT_CREATED"
           }
@@ -137,8 +473,145 @@ jobs:
       - name: Run Focused DSP Tests (Release)
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence
+          RGS_M17_CPU_PROBE_FILE: ${{ runner.temp }}/rgs-m17-cpu-windows.csv
+          RGS_M17_PARTITION_PROBE_FILE: ${{ runner.temp }}/rgs-m17-partition-windows.csv
+          RGS_M17_LOOKAHEAD_PROBE_FILE: ${{ runner.temp }}/rgs-m17-lookahead-windows.csv
+          RGS_M17_BOUND_PROBE_FILE: ${{ runner.temp }}/rgs-m17-bound-windows.csv
         run: |
-          ctest --test-dir build/windows-msvc -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|toolchain_manifest_)" --output-on-failure --verbose
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
+          ctest --test-dir build/windows-ninja-cache -C Release -R "^(rgsml_dsp_|rgsml_gain_|rgsml_true_peak_itu4x_coefficients_tests|rgsml_true_peak_itu4x_channel_stream_tests|rgsml_true_peak_full_resource_tests|rgsml_true_peak_measurement_tests|rgsml_true_peak_static_binding_tests|rgsml_true_peak_gate_g_edge_tests|rgsml_true_peak_chunk_invariance_tests|rgsml_true_peak_b2b_probe_selftest|rgsml_stereo_ms_parameters_tests|rgsml_stereo_ms_module_tests|rgsml_stereo_ms_crossover_tests|rgsml_stereo_ms_crossover_runtime_tests|rgsml_stereo_ms_module_streaming_tests|rgsml_stereo_ms_checkpoint_tests|rgsml_stereo_ms_independent_math_tests|rgsml_stereo_ms_long_resume_tests|rgsml_stereo_ms_gate_g_spatial_evidence_tests|rgsml_stereo_ms_no_alloc_tests|rgsml_stereo_ms_width_tests|rgsml_stereo_ms_width_response_tests|rgsml_stereo_ms_signature_tests|rgsml_stereo_ms_view_model_tests|rgsml_stereo_ms_audible_resolver_tests|rgsml_compressor_|rgsml_module_parameter_codec_tests|rgsml_parametric_eq_|rgsml_eq_view_model_|rgsml_mastering_chain_state_tests|rgsml_terminal_private_gr_projection_tests|rgsml_terminal_product_activation_tests|rgsml_mastering_preview_controller_tests|rgsml_render_preview_tests|rgsml_audition_source_selector_tests|rgsml_source_metadata_panel_smoke|rgsml_project_session_tests|rgsml_playback_src_tests|rgsml_playback_support_tests|render_public_headers_standalone|render_dependency_rule_positive_fixture|toolchain_manifest_)" --output-on-failure --verbose
+
+      # One PR Focused CI, with a tiny Windows-only M17 product scenario
+      # report. The portable Linux DSP job remains independently authoritative;
+      # neither job is an offline FQ or Windows physical-audio qualification.
+      - name: Produce bounded M17 adversarial matrix report (Windows)
+        if: always()
+        shell: pwsh
+        run: |
+          python tools/ci/test_summarize_m17_edge_matrix.py
+          if ($LASTEXITCODE -ne 0) { throw 'M17_EDGE_MATRIX_FILTER_SELFTEST_FAILED' }
+          python tools/ci/summarize_m17_edge_matrix.py --ctest-log "build/windows-ninja-cache/Testing/Temporary/LastTest.log" --output "$env:RUNNER_TEMP/rgsml-m17-edge-matrix.txt" --sha '${{ github.event.pull_request.head.sha || github.sha }}'
+          if ($LASTEXITCODE -ne 0) { throw 'M17_EDGE_MATRIX_FILTER_FAILED' }
+
+      - name: Attach bounded M17 adversarial matrix report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-Edge-Matrix-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgsml-m17-edge-matrix.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+      # Scoped failure-only probe: never request entire GitHub job logs.
+      # QtTest can abort before CTest emits an assertion; retain the exact
+      # native process exit and at most the last 36 lines for this one test.
+      - name: Capture terminal activation crash boundary (Windows only)
+        if: failure()
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $exe = "build/windows-ninja-cache/Release/rgsml_terminal_product_activation_tests.exe"
+          $raw = "$env:RUNNER_TEMP/rgsml-terminal-activation-qt.txt"
+          $dest = "$env:RUNNER_TEMP/rgsml-terminal-activation-bounded.txt"
+          $result = [System.Collections.Generic.List[string]]::new()
+          $result.Add("RGS M17 TERMINAL ACTIVATION FAIL-ONLY DIAGNOSTIC")
+          $result.Add("No raw QtTest or GitHub workflow log is uploaded.")
+          if (Test-Path $exe) {
+            & $exe -v1 -o "$raw,txt" 2>&1 | Out-Null
+            $code = $LASTEXITCODE
+            $result.Add("PROCESS_EXIT_CODE=$code")
+            if (Test-Path $raw) {
+              $tail = @(Get-Content $raw -Tail 36 -ErrorAction SilentlyContinue)
+              foreach ($line in $tail) { $result.Add($line.Substring(0,[Math]::Min($line.Length,180))) }
+            } else {
+              $result.Add("QTTEST_FILE_NOT_CREATED")
+            }
+          } else {
+            $result.Add("TARGET_EXE_NOT_FOUND")
+          }
+          ($result -join "`n").Substring(0,[Math]::Min(($result -join "`n").Length,7000)) | Set-Content $dest -Encoding utf8
+      - name: Upload bounded M17 terminal crash diagnostic
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-Terminal-Fail-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgsml-terminal-activation-bounded.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload bounded M17 CPU probe (Windows)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-CPU-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-cpu-windows.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload bounded M17 block partition probe (Windows)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-Partition-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-partition-windows.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload bounded M17 lookahead cache experiment (Windows)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-Lookahead-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-lookahead-windows.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload bounded M17 group-bound experiment (Windows)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M17-Bound-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgs-m17-bound-windows.csv
+          retention-days: 7
+          if-no-files-found: error
+
+      # Failure-only CTest assertions filtered ON RUNNER; no raw logs uploaded.
+      - name: Capture bounded Windows failing-test assertions
+        if: failure()
+        shell: pwsh
+        run: |
+          python tools/ci/summarize_focused_tests.py --ctest-dir build/windows-ninja-cache/Testing/Temporary --output "$env:RUNNER_TEMP/rgsml-focused-windows-test-summary.txt" --qt-smoke-log "$env:GITHUB_WORKSPACE/m12b-smoke.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_TEST_DIAGNOSTIC_FAILED' }
+      - name: Attach bounded Windows test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Focused-Test-Errors-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-focused-windows-test-summary.txt
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Playback engine failure diagnostics
+        if: failure()
+        continue-on-error: true
+        run: |
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $exe = "build/windows-ninja-cache/Release/rgsml_playback_support_tests.exe"
+          if (Test-Path $exe) {
+            $log = "$env:GITHUB_WORKSPACE\playback-support-diagnostic.txt"
+            & $exe -v2 -o "$log,txt"
+            $exitCode = $LASTEXITCODE
+            if (Test-Path $log) {
+              Get-Content $log
+            } else {
+              Write-Host "PLAYBACK_DIAGNOSTIC_LOG_NOT_CREATED"
+            }
+            Write-Host "PLAYBACK_DIAGNOSTIC_EXIT_CODE=$exitCode"
+          } else {
+            Write-Host "PLAYBACK_DIAGNOSTIC_EXE_MISSING"
+          }
 
       - name: Upload Visual Evidence Artifact
         if: always()
@@ -148,4 +621,191 @@ jobs:
           path: |
             ${{ github.workspace }}\build\visual-evidence\*.png
             ${{ github.workspace }}\build\visual-evidence\*.json
+            ${{ github.workspace }}\build\visual-evidence\*.txt
+            ${{ github.workspace }}\m12b-smoke.txt
           retention-days: 7
+# B2b only. Export the EXACT-SHA C++ probe + Qt dependencies, not WAVs,
+      # and only after the Windows focused tests (including the selftest) pass.
+      - name: Package B2b Windows C++ probe (no EBU audio)
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'build/windows-ninja-cache/Release/rgsml_true_peak_b2b_probe.exe'
+          if (-not (Test-Path $source)) { throw 'B2B_PROBE_EXECUTABLE_MISSING' }
+          $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $copy = Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'
+          Copy-Item -Path $source -Destination $copy
+          # Probe links only rgsml_analysis/audio/core STATIC libraries (no Qt).
+          # CI #416 confirmed windeployqt rejects this non-Qt executable.
+          # Preserve the standalone EXE unchanged; assert no Qt6 import.
+          $exeBytes = [System.IO.File]::ReadAllBytes($copy)
+          $byteText = [System.Text.Encoding]::ASCII.GetString($exeBytes)
+          if ($byteText -match '(?i)Qt6(Core|Gui|Test|Qml|Widgets|Multimedia)\.dll') {
+            throw 'B2B_UNEXPECTED_QT_DYNAMIC_DEPENDENCY'
+          }
+          $probeHash = (Get-FileHash -Path $copy -Algorithm SHA256).Hash.ToLowerInvariant()
+          $stamp = [ordered]@{
+            kind = 'RGS_M16_B2B_CPP_PROBE_SYNTHETIC_CI_ONLY'
+            source_commit_sha = '${{ github.event.pull_request.head.sha || github.sha }}'
+            probe_exe_sha256 = $probeHash
+            workflow_run_id = '${{ github.run_id }}'
+            test_scope = 'SYNTHETIC_ONLY__OFFICIAL_EBU_WAVS_NOT_EXECUTED'
+            production_gate_g = 'NOT_EXECUTED'
+          }
+          $stamp | ConvertTo-Json | Set-Content -Path (Join-Path $dest 'B2b_build_provenance.json') -Encoding utf8
+          # B2i: provenance guard reads all six frozen production source blobs;
+          # report deliberately contains NO QUALIFIED claim.
+          $guard = Join-Path $env:RUNNER_TEMP 'B2i_windows_evidence_guard.json'
+          if (-not (Test-Path $guard)) { throw 'B2I_EVIDENCE_GUARD_MISSING' }
+          Copy-Item -Path $guard -Destination (Join-Path $dest 'B2i_windows_evidence_guard.json')
+          # Preserve numeric strict-FP configuration evidence beside the EXE.
+          $fpAttest = Join-Path $env:RUNNER_TEMP 'B2f_windows_fp_compile_attestation.json'
+          if (-not (Test-Path $fpAttest)) { throw 'B2F_FP_ATTESTATION_MISSING' }
+          Copy-Item -Path $fpAttest -Destination (Join-Path $dest 'B2f_windows_fp_compile_attestation.json')
+          Write-Host "B2B_PROBE_EXE_SHA256=$probeHash"
+
+      # B2c remains strictly qualification-only. PCM is generated in RAM and
+      # passed to the production-linked probe via a local anonymous pipe.
+      # Exact HEAD + run provenance is checked against this job's built artifact.
+      - name: M16 B2c six-rate independent C++ synthetic qualification
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/qualification/true_peak/qualify_six_rate_cpp.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'B2C_INDEPENDENT_ORACLE_SELFTEST_FAILED' }
+          $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
+          $argsB2c = @(
+            'tools/qualification/true_peak/qualify_six_rate_cpp.py',
+            '--probe', (Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'),
+            '--provenance', (Join-Path $dest 'B2b_build_provenance.json'),
+            '--expected-source-sha', '${{ github.event.pull_request.head.sha || github.sha }}',
+            '--expected-run-id', '${{ github.run_id }}'
+          )
+          $resultFile = Join-Path $dest 'B2c_six_rate_result.json'
+          python @argsB2c | Set-Content -Path $resultFile -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'B2C_SIX_RATE_CPP_COMPARISON_FAILED' }
+          $report = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+          if ($report.status -ne 'B2C_SYNTHETIC_SIX_RATE_CPP_COMPARISON_PASS' -or
+              $report.production_gate_g -ne 'NOT_COMPLETE' -or
+              $report.cases -ne 36 -or
+              $report.metamorphic_pairs -ne 12 -or
+              $report.results.Count -ne 36) {
+            throw 'B2C_SIX_RATE_RESULT_CONTRACT_FAILED'
+          }
+          Write-Host 'B2C_SYNTHETIC_SIX_RATE_CPP_COMPARISON_PASS_36_OF_36__GATE_G_OPEN'
+
+      # B2d: categorical error-path / subnormal / overflow qualification.
+      # Uses the same EXACT built C++ probe, no EBU assets or audio artifacts.
+      - name: M16 B2d extreme-FP and fail-closed C++ qualification
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/qualification/true_peak/qualify_extreme_fp_cpp.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'B2D_ORACLE_SELFTEST_FAILED' }
+          $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
+          $argsB2d = @(
+            'tools/qualification/true_peak/qualify_extreme_fp_cpp.py',
+            '--probe', (Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'),
+            '--provenance', (Join-Path $dest 'B2b_build_provenance.json'),
+            '--expected-source-sha', '${{ github.event.pull_request.head.sha || github.sha }}',
+            '--expected-run-id', '${{ github.run_id }}'
+          )
+          $resultFile = Join-Path $dest 'B2d_extreme_fp_result.json'
+          python @argsB2d | Set-Content -Path $resultFile -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'B2D_EXTREME_FP_CPP_FAILED' }
+          $report = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+          if ($report.status -ne 'B2D_EXTREME_FP_CPP_COMPARISON_PASS' -or
+              $report.production_gate_g -ne 'NOT_COMPLETE' -or
+              $report.cases -ne 27 -or
+              $report.counts.tiny -ne 4 -or
+              $report.counts.large -ne 2 -or
+              $report.counts.nonfinite -ne 18 -or
+              $report.counts.overflow -ne 1 -or
+              $report.counts.framing -ne 1 -or
+              $report.counts.unsupported -ne 1) {
+            throw 'B2D_RESULT_CONTRACT_FAILED'
+          }
+          Write-Host 'B2D_EXTREME_FP_CPP_COMPARISON_PASS_27_OF_27__GATE_G_OPEN'
+
+      # B2e high precision ideal reconstruction is a diagnostic screen ONLY.
+      # Frozen ITU QTP compares discrete FIR, NOT continuous ideal waveform.
+      - name: M16 B2e high precision ideal reconstruction screen
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install mpmath==1.3.0
+          if ($LASTEXITCODE -ne 0) { throw 'B2E_PINNED_MATH_LIB_INSTALL_FAILED' }
+          python tools/qualification/true_peak/qualify_ideal_screen_cpp.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'B2E_SINC_ORACLE_SELFTEST_FAILED' }
+          $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
+          $argsB2e = @(
+            'tools/qualification/true_peak/qualify_ideal_screen_cpp.py',
+            '--probe', (Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'),
+            '--provenance', (Join-Path $dest 'B2b_build_provenance.json'),
+            '--expected-source-sha', '${{ github.event.pull_request.head.sha || github.sha }}',
+            '--expected-run-id', '${{ github.run_id }}'
+          )
+          $resultFile = Join-Path $dest 'B2e_ideal_screen_result.json'
+          python @argsB2e | Set-Content -Path $resultFile -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'B2E_IDEAL_CPP_SCREEN_FAILED' }
+          $report = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+          if ($report.status -ne 'B2E_IDEAL_RECONSTRUCTION_SCREEN_PASS' -or
+              $report.production_gate_g -ne 'NOT_COMPLETE' -or
+              $report.cases -ne 5 -or
+              $report.results.Count -ne 5 -or
+              $report.results[0].ideal_tail_interval_certificate -ne 'NOT_EXECUTED') {
+            throw 'B2E_SCREEN_RESULT_CONTRACT_FAILED'
+          }
+          Write-Host 'B2E_IDEAL_RECONSTRUCTION_SCREEN_PASS_5_OF_5__NOT_CERTIFIED__GATE_G_OPEN'
+
+      # B2h: real-Hz, six-rate, high-precision ideal SIN/COS diagnostics.
+      # Reuses B2e mpmath install; independent exact-discrete ITU QTP.
+      - name: M16 B2h six-rate physical Hertz high resolution ideal screen
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/qualification/true_peak/qualify_six_rate_ideal_cpp.py --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'B2H_GENERATOR_AND_ITU_SELFTEST_FAILED' }
+          $dest = Join-Path $env:RUNNER_TEMP 'rgsml-b2b-probe'
+          $argsB2h = @(
+            'tools/qualification/true_peak/qualify_six_rate_ideal_cpp.py',
+            '--probe', (Join-Path $dest 'rgsml_true_peak_b2b_probe.exe'),
+            '--provenance', (Join-Path $dest 'B2b_build_provenance.json'),
+            '--expected-source-sha', '${{ github.event.pull_request.head.sha || github.sha }}',
+            '--expected-run-id', '${{ github.run_id }}'
+          )
+          $resultFile = Join-Path $dest 'B2h_six_rate_ideal_result.json'
+          python @argsB2h | Set-Content -Path $resultFile -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'B2H_SIX_RATE_IDEAL_SCREEN_FAILED' }
+          $report = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+          $rates = @($report.results | ForEach-Object { $_.rate_hz }) -join ','
+          if ($report.status -ne 'B2H_SIX_RATE_HIGH_RES_IDEAL_SCREEN_AND_DISCRETE_CPP_PASS' -or
+              $report.production_gate_g -ne 'NOT_COMPLETE' -or
+              $report.release_qualification -ne 'NOT_AUTHORIZED' -or
+              $report.full_global_continuous_ideal_certificate -ne 'NOT_EXECUTED' -or
+              $report.cases -ne 6 -or
+              $report.results.Count -ne 6 -or
+              $rates -ne '44100,48000,88200,96000,176400,192000' -or
+              @($report.results | Where-Object { $_.screen -ne 'PASS' -or
+                $_.rgs_qtp_0_01_vs_discrete_itu -ne 'PASS' -or
+                $_.ideal_tail_interval_certificate -ne 'NOT_EXECUTED' -or
+                $_.qualification_status -ne 'SUPPORTED_UNQUALIFIED' }).Count -ne 0) {
+            throw 'B2H_SIX_RATE_SCOPE_AND_NUMERIC_RESULT_CONTRACT_FAILED'
+          }
+          Write-Host 'B2H_SIX_RATE_HIRES_DIAGNOSTIC_AND_ITU_CPP_PASS_6_OF_6__GATE_G_OPEN'
+
+      - name: Upload B2b Windows C++ probe (NO EBU AUDIO)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M16-B2b-CPP-Probe-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}\rgsml-b2b-probe\
+          retention-days: 7
+          if-no-files-found: error
+

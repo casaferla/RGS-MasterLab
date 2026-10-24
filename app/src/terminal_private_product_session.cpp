@@ -1,0 +1,422 @@
+#include "terminal_private_product_session.hpp"
+#include <rgsml/core/error.hpp>
+#include <utility>
+
+namespace rgsml::app {
+namespace {
+[[nodiscard]] core::Error rejected(const char* reason) {
+    return core::Error{core::ErrorCode::InvalidState,reason};
+}
+}
+TerminalPrivateProductSession::TerminalPrivateProductSession(
+    TerminalPrivateRenderController& renderer,
+    TerminalPrivatePublicationCoordinator& publisher,
+    TerminalCandidateGate& candidates,
+    PlaybackTransportViewModel& transport,
+    Snapshot prepared,Snapshot manual,ManualId manualId,
+    Loop sourceLoop,Selected selected,QObject* parent)
+    : QObject(parent),renderer_(&renderer),publisher_(&publisher),
+      candidates_(&candidates),transport_(&transport),
+      prepared_(std::move(prepared)),manual_(std::move(manual)),
+      manualId_(std::move(manualId)),sourceLoop_(std::move(sourceLoop)),
+      selected_(std::move(selected))
+{
+    QObject::connect(renderer_,&TerminalPrivateRenderController::changed,
+                     this,&TerminalPrivateProductSession::on_renderer_changed);
+}
+
+void TerminalPrivateProductSession::failed(const core::Error& error) {
+    pending_.reset();
+    status_=QStringLiteral("ERROR");
+    error_=QString::fromStdString(error.message());
+    for(const auto& detail:error.details()) {
+        if(detail.key=="category" && !detail.value.empty()) {
+            error_=QStringLiteral("[%1] %2")
+                .arg(QString::fromStdString(detail.value),error_);
+            break;
+        }
+    }
+    emit changed();
+}
+void TerminalPrivateProductSession::stale() {
+    pending_.reset();
+    status_=QStringLiteral("STALE");
+    error_.clear();
+    emit changed();
+}
+
+core::Status TerminalPrivateProductSession::request_private(core::SampleRate rate,
+                                                           bool deferred)
+{
+    if(pending_ || privateId_)
+        return core::Status::failure(rejected(
+            "A private M17 transaction is already pending or installed."));
+    if(!prepared_||!manual_||!manualId_||!sourceLoop_||!selected_
+       ||!selected_())
+        return core::Status::failure(rejected(
+            "Private M17 requires a selected PROCESSED source."));
+    auto prepared=prepared_(),manual=manual_();
+    auto manualId=manualId_();
+    if(!prepared||!manual||!manualId||manualId->value==0)
+        return core::Status::failure(rejected(
+            "Private M17 requires a published manual predecessor."));
+    auto snapshot=transport_->playback_snapshot();
+    if(!snapshot) return core::Status::failure(*snapshot.error());
+    if((snapshot.value()->state!=core::PlaybackState::STOPPED
+        &&(!deferred || (snapshot.value()->state!=core::PlaybackState::PLAYING
+                      &&snapshot.value()->state!=core::PlaybackState::PAUSED)))
+       ||snapshot.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::NEW
+       ||snapshot.value()->audibleRealization.realizationId!=manualId
+       ||!snapshot.value()->duration
+       ||*snapshot.value()->duration!=manual->view().frame_count())
+        return core::Status::failure(rejected(
+            "M17 may render only a stopped exact audible manual predecessor."));
+    auto loop=sourceLoop_();
+    if(loop && (loop->begin().value()<0
+       ||loop->end()>manual->view().absolute_range().end()))
+        return core::Status::failure(rejected(
+            "M17 SOURCE loop lies outside the full manual programme."));
+    // request_private internally invalidates the gate, then emits RENDERING;
+    // pending ownership is captured before any queued worker completion.
+    pending_.emplace(Pending{prepared,manual,*manualId,loop,rate,deferred});
+    privateId_.reset();
+    status_=QStringLiteral("RENDERING");
+    error_.clear();
+    auto submitted=renderer_->request_private(rate);
+    if(!submitted) {
+        failed(*submitted.error());
+        return submitted;
+    }
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::request_private_for_device(bool deferred)
+{
+    if(!rateProbe_ || !selected_ || !selected_() || !manual_)
+        return core::Status::failure(rejected(
+            "No selected manual programme or real output-rate probe for M17."));
+    auto manual=manual_();
+    if(!manual || manual->view().frame_count().value()<=0
+       ||manual->frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE)
+        return core::Status::failure(rejected(
+            "M17 output-rate discovery requires complete SOURCE-domain manual PCM."));
+    auto rate=rateProbe_(manual->view().format().channel_layout());
+    if(!rate)return core::Status::failure(*rate.error());
+    if(manual_()!=manual || !selected_())
+        return core::Status::failure(rejected(
+            "M17 manual owner or audition target changed during device probe."));
+    // request_private rechecks stopped audible ownership and Loop Region;
+    // device install independently rechecks the exact rate and channel format.
+    return request_private(*rate.value(),deferred);
+}
+
+core::Result<TerminalPrivateProductSession::InstalledOutputIdentity>
+TerminalPrivateProductSession::private_installed_output_identity() const
+{
+    using Identity=InstalledOutputIdentity;
+    auto refused=[](const char* reason) -> core::Result<Identity> {
+        return core::Result<Identity>::failure(
+            core::Error{core::ErrorCode::InvalidState,reason});
+    };
+    if(!privateId_ || privateId_->value==0 || pending_
+       ||status_!=QStringLiteral("PRIVATE_INSTALLED")
+       ||!selected_ || !selected_() || !prepared_ || !manual_
+       ||!manualId_)
+        return refused("M17 is not a current installed PROCESSED terminal.");
+    auto candidate=candidates_->staged();
+    if(!candidate || candidate->prepared_owner!=prepared_()
+       ||candidate->rendered.manual_owner!=manual_()
+       ||candidate->original_manual_realization_id
+           !=manualId_().value_or(core::RealizationId{0}))
+        return refused("M17 immutable candidate no longer has its manual owner.");
+    const auto pcm=candidate->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    if(pcm.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||pcm.frame_count().value()<=0
+       ||pcm.format().sample_rate()!=candidate->rendered.output_rate)
+        return refused("M17 candidate lacks exact OUTPUT_RATE PCM provenance.");
+    auto audible=transport_->playback_snapshot();
+    if(!audible) return core::Result<Identity>::failure(*audible.error());
+    if(audible.value()->state==core::PlaybackState::NO_SOURCE
+       ||audible.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::NEW
+       ||audible.value()->audibleRealization.realizationId
+           !=std::optional{*privateId_}
+       ||audible.value()->duration!=std::optional{pcm.frame_count()})
+        return refused("M17 terminal is not the independently audible exact device owner.");
+    auto source=transport_->source_display_snapshot();
+    if(!source) return core::Result<Identity>::failure(*source.error());
+    if(source.value()->duration
+       !=candidate->rendered.manual_owner->view().frame_count()
+       ||source.value()->position.value()<0
+       ||source.value()->position.value()>source.value()->duration.value())
+        return refused("M17 SOURCE clock is not mapped to the full predecessor.");
+    return core::Result<Identity>::success(Identity{
+        std::move(candidate),*privateId_,*audible.value(),*source.value()});
+}
+
+bool TerminalPrivateProductSession::comparison_owners_current() const
+{
+    if(!comparison_cached()||!pending_||!selected_||!selected_()
+       ||!prepared_||!manual_||!manualId_||!sourceLoop_
+       ||prepared_()!=pending_->prepared||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId}
+       ||sourceLoop_()!=pending_->loop)
+        return false;
+    if(status_==QStringLiteral("COMPARISON_VERIFIED")) {
+        const auto stage=candidates_->staged();
+        return stage && stage==comparisonVerified_
+            && stage->prepared_owner==pending_->prepared
+            && stage->rendered.manual_owner==pending_->manual
+            && stage->original_manual_realization_id==pending_->manualId
+            && stage->rendered.output_rate==pending_->outputRate
+            && renderer_->status()==QStringLiteral("READY_PRIVATE");
+    }
+    const auto stage=candidates_->staged_measured();
+    return stage && stage==comparisonMeasured_
+        && stage->prepared_owner==pending_->prepared
+        && stage->rendered.manual_owner==pending_->manual
+        && stage->original_manual_realization_id==pending_->manualId
+        && stage->rendered.output_rate==pending_->outputRate
+        && renderer_->status()==QStringLiteral("MEASURED_NONCONFORMING_PRIVATE");
+}
+
+core::Status TerminalPrivateProductSession::suspend_for_comparison()
+{
+    const bool verified=status_==QStringLiteral("READY_TO_INSTALL")
+        ||status_==QStringLiteral("PRIVATE_INSTALLED");
+    const bool measured=status_==QStringLiteral("MEASURED_NONCONFORMING_READY")
+        ||status_==QStringLiteral("NONCONFORMING_INSTALLED");
+    if(!verified&&!measured)
+        return core::Status::failure(rejected(
+            "M17 comparison requires a finished measured PCM, not an in-flight job."));
+    auto stage=verified?candidates_->staged():nullptr;
+    auto unsafe=measured?candidates_->staged_measured():nullptr;
+    if((verified&&!stage)||(measured&&!unsafe))
+        return core::Status::failure(rejected(
+            "M17 comparison has no immutable verified/measured source candidate."));
+    const auto& prepared=verified?stage->prepared_owner:unsafe->prepared_owner;
+    const auto& manual=verified?stage->rendered.manual_owner:unsafe->rendered.manual_owner;
+    const auto id=verified?stage->original_manual_realization_id
+                          :unsafe->original_manual_realization_id;
+    const auto rate=verified?stage->rendered.output_rate
+                            :unsafe->rendered.output_rate;
+    if(!prepared_||!manual_||!manualId_||!sourceLoop_||!selected_
+       ||!selected_()||prepared_()!=prepared||manual_()!=manual
+       ||manualId_()!=std::optional{id}
+       ||(verified&&renderer_->status()!=QStringLiteral("READY_PRIVATE"))
+       ||(measured&&renderer_->status()
+            !=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")))
+        return core::Status::failure(rejected(
+            "M17 comparison source or measured candidate is no longer authoritative."));
+    const auto loop=sourceLoop_();
+    if(loop&&(loop->begin().value()<0
+        ||loop->end()>manual->view().absolute_range().end()))
+        return core::Status::failure(rejected(
+            "M17 comparison SOURCE loop is outside the complete manual programme."));
+    // Revoke device/SOURCE transport ownership, NOT the gate or renderer.
+    // The coordinator alone restores the exact MANUAL sink after retirement.
+    auto retired=publisher_->revoke_private();
+    if(!retired)return retired;
+    pending_.emplace(Pending{prepared,manual,id,loop,rate,true});
+    privateId_.reset();
+    comparisonVerified_=stage;
+    comparisonMeasured_=unsafe;
+    status_=verified?QStringLiteral("COMPARISON_VERIFIED")
+                    :QStringLiteral("COMPARISON_NONCONFORMING");
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::resume_comparison()
+{
+    if(!comparison_owners_current()||!rateProbe_)
+        return core::Status::failure(rejected(
+            "M17 comparison PCM, measured evidence or MANUAL owner became stale."));
+    // Never borrow a candidate prepared for a different physical device
+    // format. No implicit resampling and absolutely NO new full-resource job.
+    auto rate=rateProbe_(pending_->manual->view().format().channel_layout());
+    if(!rate)return core::Status::failure(*rate.error());
+    if(*rate.value()!=pending_->outputRate ||!comparison_owners_current())
+        return core::Status::failure(rejected(
+            "M17 comparison output rate or exact MANUAL authority changed."));
+    const auto playback=transport_->playback_snapshot();
+    if(!playback
+       ||playback.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||playback.value()->audibleRealization.realizationId
+            !=std::optional{pending_->manualId}
+       ||playback.value()->duration
+            !=std::optional{pending_->manual->view().frame_count()}
+       ||(playback.value()->state!=core::PlaybackState::STOPPED
+           &&playback.value()->state!=core::PlaybackState::PLAYING
+           &&playback.value()->state!=core::PlaybackState::PAUSED))
+        return core::Status::failure(rejected(
+            "M17 comparison cannot replace an unknown audible MANUAL owner."));
+    status_=comparisonVerified_?QStringLiteral("READY_TO_INSTALL")
+                              :QStringLiteral("MEASURED_NONCONFORMING_READY");
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::cancel()
+{
+    // Withdraw transaction first: renderer.invalidate() emits changed and
+    // must not reinterpret its own invalidation as a new acceptance.
+    pending_.reset();
+    privateId_.reset();
+    comparisonVerified_.reset();
+    comparisonMeasured_.reset();
+    auto retired=publisher_->revoke_private();
+    renderer_->invalidate();
+    if(!retired) {
+        failed(*retired.error());
+        return retired;
+    }
+    status_=QStringLiteral("IDLE");
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
+void TerminalPrivateProductSession::cancel_pending_on_region_change()
+{
+    if(pending_)static_cast<void>(cancel());
+}
+
+void TerminalPrivateProductSession::on_renderer_changed()
+{
+    if(!pending_)return;
+    const QString state=renderer_->status();
+    if(state==QStringLiteral("ERROR")) {
+        // Never erase the diagnostic after a minutes-long Windows render:
+        // e.g. M16 post-trim failure and verification-guard exceedance
+        // are actionable, and categorically different from stale owners.
+        auto reason=renderer_->last_error();
+        failed(reason ? *reason
+            : rejected("M17 private renderer returned no diagnostic."));
+        return;
+    }
+    if(state==QStringLiteral("STALE")) {stale();return;}
+    if(state==QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")) {
+        // Keep owner and PCM intact, but never invoke verified install.
+        auto evidence=candidates_->staged_measured();
+        if(!selected_()||prepared_()!=pending_->prepared
+           ||manual_()!=pending_->manual
+           ||manualId_()!=std::optional{pending_->manualId}
+           ||sourceLoop_()!=pending_->loop
+           ||!evidence||evidence->prepared_owner!=pending_->prepared
+           ||evidence->rendered.manual_owner!=pending_->manual
+           ||evidence->original_manual_realization_id!=pending_->manualId) {
+            renderer_->invalidate();
+            stale();
+            return;
+        }
+        status_=QStringLiteral("MEASURED_NONCONFORMING_READY");
+        error_.clear();
+        emit changed();
+        return;
+    }
+    if(state!=QStringLiteral("READY_PRIVATE"))return;
+    if(pending_->deferred) {
+        // The MANUAL sink continues playing until accepted OUTPUT_RATE
+        // audio is ready. Only its conductor may perform the handoff.
+        status_=QStringLiteral("READY_TO_INSTALL");
+        emit changed();
+        return;
+    }
+    static_cast<void>(install_accepted_candidate());
+}
+
+core::Status TerminalPrivateProductSession::install_ready_private()
+{
+    if(!pending_ || !pending_->deferred
+       ||status_!=QStringLiteral("READY_TO_INSTALL")
+       ||renderer_->status()!=QStringLiteral("READY_PRIVATE"))
+        return core::Status::failure(rejected(
+            "M17 deferred installation has no exact accepted output candidate."));
+    return install_accepted_candidate();
+}
+
+core::Status TerminalPrivateProductSession::install_measured_private()
+{
+    if(!pending_||!pending_->deferred
+       ||status_!=QStringLiteral("MEASURED_NONCONFORMING_READY")
+       ||renderer_->status()!=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE"))
+        return core::Status::failure(rejected(
+            "M17 nonconforming preview was not explicitly available."));
+    const Pending authority=*pending_;
+    if(!selected_()||prepared_()!=authority.prepared
+       ||manual_()!=authority.manual
+       ||manualId_()!=std::optional{authority.manualId}
+       ||sourceLoop_()!=authority.loop) {
+        renderer_->invalidate();
+        stale();
+        return core::Status::failure(rejected(
+            "Nonconforming preview source, owner or loop changed."));
+    }
+    const auto held=measured_candidate();
+    if(!held||held->rendered.output_rate!=authority.outputRate)
+        return core::Status::failure(rejected(
+            "No current measured nonconforming output-rate PCM."));
+    auto installed=publisher_->install_measured_private(
+        authority.prepared,authority.manual,authority.manualId,authority.loop);
+    if(!installed) {
+        failed(*installed.error());
+        renderer_->invalidate();
+        return core::Status::failure(*installed.error());
+    }
+    pending_.reset();
+    privateId_=*installed.value();
+    status_=QStringLiteral("NONCONFORMING_INSTALLED");
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::install_accepted_candidate()
+{
+    if(!pending_)return core::Status::failure(rejected(
+        "M17 cannot install without captured owners."));
+    const Pending authority=*pending_;
+    // No user-visible publication if input, target or Loop Region changed
+    // while the worker calculated its OUTPUT_RATE candidate.
+    if(!selected_()||prepared_()!=authority.prepared
+       ||manual_()!=authority.manual
+       ||manualId_()!=std::optional{authority.manualId}
+       ||sourceLoop_()!=authority.loop) {
+        renderer_->invalidate();
+        stale();
+        return core::Status::failure(rejected(
+            "M17 deferred source/target/Loop ownership changed."));
+    }
+    auto accepted=candidates_->staged();
+    if(!accepted || accepted->prepared_owner!=authority.prepared
+       ||accepted->rendered.manual_owner!=authority.manual
+       ||accepted->original_manual_realization_id!=authority.manualId
+       ||accepted->rendered.output_rate!=authority.outputRate) {
+        renderer_->invalidate();
+        stale();
+        return core::Status::failure(rejected(
+            "M17 accepted OUTPUT_RATE candidate changed before installation."));
+    }
+    // The publisher and audio gate still independently verify STOPPED,
+    // immutable MANUAL ownership before installing any output-rate PCM.
+    auto installed=publisher_->install_private(authority.prepared,
+        authority.manual,authority.manualId,authority.loop);
+    if(!installed) {
+        failed(*installed.error());
+        renderer_->invalidate();
+        return core::Status::failure(*installed.error());
+    }
+    pending_.reset();
+    privateId_=*installed.value();
+    status_=QStringLiteral("PRIVATE_INSTALLED");
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+} // namespace rgsml::app

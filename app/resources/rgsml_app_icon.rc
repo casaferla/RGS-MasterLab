@@ -1,0 +1,4 @@
+// RGS MasterLab C — PO-approved branding, Windows native application icon.
+// 64px ICO is a focused initial Windows resource; the full original
+// multi-frame archive remains in the PO asset ZIP for dedicated expansion.
+IDI_RGS_MASTERLAB ICON "icon_c64_single.ico"
