@@ -285,6 +285,27 @@ int main(int argc, char* argv[])
             return windowsPlayback->materialize_monitoring_pcm_with_preflight(
                 immutableMaster,block,otherReserveBytes,decision);
         });
+    // Private-only STOPPED handoff with exact conditional device retirement
+    // and MANUAL restoration via the existing selector gate. No QML entry,
+    // implicit Play/Pause, SOURCE-loop mapping or M16 LIVE certificate.
+    privateProductSession.set_private_monitor_transport(
+        [windowsPlayback](auto pcm) {
+            return windowsPlayback->prepare_monitoring_output_pcm(
+                std::move(pcm));
+        },
+        [windowsPlayback](auto pcm) {
+            return windowsPlayback->monitoring_output_is_owned(
+                std::move(pcm));
+        },
+        [windowsPlayback](auto pcm) {
+            return windowsPlayback->retire_monitoring_output_if_owned(
+                std::move(pcm));
+        },
+        [&auditionSelector](auto manual,rgsml::core::RealizationId id,
+                            rgsml::core::FrameIndex cue) {
+            return auditionSelector.restore_manual_processed_after_terminal(
+                std::move(manual),id,cue);
+        });
     // Product-private output rate is now explicitly discoverable but no
     // automatic call or QML sonic activation takes place.
     // A PRIVATE read-only GR presenter. It observes actual Windows-worker

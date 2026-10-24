@@ -81,6 +81,29 @@ public:
         core::FrameCount maximumBlockFrames,
         std::uint64_t reservedOtherPrepareBytes,
         const MonitoringPreallocationDecision& explicitDecision);
+
+    // PRIVATE ONLY: first handoff restricted to STOPPED, SOURCE cue zero,
+    // and no Loop Region. Genuine Play/Pause/Seek and LIVE are not wired.
+    // Require an exact minted M17 MASTER + separately-owned DEVICE candidate.
+    using MonitoringOwner=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+    using MonitoringInstall=std::function<core::Status(MonitoringOwner)>;
+    using MonitoringOwnership=std::function<core::Result<bool>(MonitoringOwner)>;
+    using MonitoringRetire=std::function<core::Status(MonitoringOwner)>;
+    using ManualRestore=std::function<core::Status(
+        std::shared_ptr<const render::RenderResult>,
+        core::RealizationId,core::FrameIndex)>;
+    void set_private_monitor_transport(
+        MonitoringInstall install,MonitoringOwnership owned,
+        MonitoringRetire retire,ManualRestore restore)
+    {
+        monitorInstall_=std::move(install);
+        monitorOwned_=std::move(owned);
+        monitorRetire_=std::move(retire);
+        manualRestore_=std::move(restore);
+    }
+    [[nodiscard]] core::Status install_private_monitor_stopped(
+        MonitoringOwner candidate);
+    [[nodiscard]] core::Status return_private_monitor_to_manual();
     // Explicit opt-in, still product-private: probe device format on its
     // owner thread, capture exact whole-manual format, then request render.
     // No Q_INVOKABLE and no automatic/UI activation.
@@ -170,6 +193,15 @@ private:
     Selected selected_;
     RateProbe rateProbe_;
     MonitoringPreflightMaterializer monitoringPreflight_;
+    MonitoringInstall monitorInstall_;
+    MonitoringOwnership monitorOwned_;
+    MonitoringRetire monitorRetire_;
+    ManualRestore manualRestore_;
+    MonitoringOwner approvedMonitor_;
+    std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+        approvedMonitorMaster_;
+    MonitoringOwner installedMonitor_;
+    bool monitorTransitioning_{false};
     std::optional<Pending> pending_;
     // Exact immutable admission identity; never confuse an M16 failed
     // candidate with the verified-only gate on a subsequent A/B switch.
