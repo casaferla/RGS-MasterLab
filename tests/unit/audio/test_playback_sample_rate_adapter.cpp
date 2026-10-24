@@ -336,7 +336,7 @@ void PlaybackSampleRateAdapterTest::monitoringBorrowsMasterWithoutSourceAlias()
         {44100,48000},{48000,44100},{192000,48000},{96000,96000}
     }};
     constexpr std::int64_t N=193;
-    for(const auto [masterHz,deviceHz]:pairs) {
+    for(const auto& [masterHz,deviceHz]:pairs) {
         auto fmt=audio::AudioFormat::create(
             rate(masterHz),audio::ChannelLayout::STEREO_LR);
         QVERIFY(fmt);
