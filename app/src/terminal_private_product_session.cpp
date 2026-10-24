@@ -1,6 +1,8 @@
 #include "terminal_private_product_session.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <new>
 #include <utility>
 
 namespace rgsml::app {
@@ -109,6 +111,93 @@ core::Status TerminalPrivateProductSession::request_private_for_final_master(
         "M17 private master submission lost its pending owner."));
     pending_->masterOnly=true;
     return core::Status::success();
+}
+
+std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+TerminalPrivateProductSession::current_verified_private_master() const
+{
+    if(!pending_ ||!pending_->masterOnly ||privateId_
+       ||status_!=QStringLiteral("MASTER_READY_MONITOR_PENDING")
+       ||renderer_->status()!=QStringLiteral("READY_PRIVATE")
+       ||!selected_ ||!selected_() ||!prepared_||!manual_||!manualId_
+       ||!sourceLoop_||prepared_()!=pending_->prepared
+       ||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId}
+       ||sourceLoop_()!=pending_->loop)
+        return {};
+    const auto stage=candidates_->staged();
+    if(!stage||stage->prepared_owner!=pending_->prepared
+       ||stage->rendered.manual_owner!=pending_->manual
+       ||stage->original_manual_realization_id!=pending_->manualId
+       ||stage->rendered.output_rate!=pending_->outputRate
+       ||!stage->rendered.terminal.checked.final_check)
+        return {};
+    const auto master=stage->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    if(master.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||master.absolute_start_frame().value()!=0
+       ||master.frame_count().value()<=0
+       ||master.format().sample_rate()!=pending_->outputRate
+       ||master.format().channel_layout()!=pending_->manual->view()
+           .format().channel_layout())
+        return {};
+    const auto audible=transport_->playback_snapshot();
+    if(!audible
+       ||audible.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::NEW
+       ||audible.value()->audibleRealization.realizationId
+           !=std::optional{pending_->manualId}
+       ||audible.value()->duration
+           !=std::optional{pending_->manual->view().frame_count()})
+        return {};
+    return stage;
+}
+
+core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
+TerminalPrivateProductSession::materialize_private_final_master_monitoring(
+    const MonitoringMaterializer& materializer)
+{
+    using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+    const auto refuse=[](const char* message)->core::Result<Owned> {
+        return core::Result<Owned>::failure(
+            core::Error{core::ErrorCode::InvalidState,message});
+    };
+    if(!materializer)return core::Result<Owned>::failure(core::Error{
+        core::ErrorCode::InvalidArgument,
+        "M17_MONITOR_EXPLICIT_MATERIALIZER_REQUIRED"});
+    const auto stage=current_verified_private_master();
+    if(!stage)return refuse("M17_MONITOR_VERIFIED_MASTER_NOT_CURRENT");
+    // Holding the stage preserves the immutable MASTER allocation even if
+    // a reentrant callback revokes its source transaction.
+    const auto master=stage->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    auto result=[&]()->core::Result<Owned> {
+        try {
+            return materializer(master);
+        } catch(const std::bad_alloc&) {
+            return core::Result<Owned>::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "M17_MONITOR_MATERIALIZER_OUT_OF_MEMORY"});
+        }
+    }();
+    // Fail closed AFTER an arbitrarily expensive conversion: a new source,
+    // loop, M17 identity or canceled request invalidates its entire result.
+    if(current_verified_private_master()!=stage)
+        return refuse("M17_MONITOR_MASTER_REVOKED_DURING_MATERIALIZATION");
+    if(!result)return result;
+    if(!*result.value())
+        return refuse("M17_MONITOR_DEVICE_PCM_OWNER_MISSING");
+    const auto checked=audio::validate_monitoring_pcm_candidate(
+        **result.value());
+    if(!checked)return core::Result<Owned>::failure(*checked.error());
+    if((*result.value())->immutable_master_rate!=master.format().sample_rate()
+       ||(*result.value())->immutable_master_frames!=master.frame_count()
+       ||(*result.value())->device_pcm.view().format().channel_layout()
+           !=master.format().channel_layout())
+        return refuse("M17_MONITOR_MASTER_DEVICE_PROVENANCE_MISMATCH");
+    // Delivers ONLY a separate private DEVICE PCM owner. This function
+    // never installs a sink or publishes live M16/M17 measurements.
+    return result;
 }
 
 core::Status TerminalPrivateProductSession::request_private_for_device(bool deferred)

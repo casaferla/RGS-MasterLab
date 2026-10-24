@@ -9,6 +9,9 @@
 #include <memory>
 #include <optional>
 
+namespace rgsml::audio {
+struct MonitoringPcmCandidate;
+}
 namespace rgsml::app {
 
 // Product-owned but PRIVATE orchestration: render -> accepted output candidate
@@ -44,6 +47,16 @@ public:
     // It deliberately has no Q_INVOKABLE or UI callback at this milestone.
     [[nodiscard]] core::Status request_private_for_final_master(
         core::SampleRate selectedFinalMasterRate);
+    // PRIVATE verified-master -> monitor PCM bridge. The caller explicitly
+    // supplies a materializer (e.g. Windows' fresh-device/RAM-preflight seam).
+    // No device install, new RealizationId, UI activation, or M16 LIVE claim.
+    using MonitoringMaterializer = std::function<core::Result<
+        std::shared_ptr<const audio::MonitoringPcmCandidate>>(
+            audio::AudioBufferView immutableMaster)>;
+    [[nodiscard]] core::Result<
+        std::shared_ptr<const audio::MonitoringPcmCandidate>>
+    materialize_private_final_master_monitoring(
+        const MonitoringMaterializer& materializer);
     // Explicit opt-in, still product-private: probe device format on its
     // owner thread, capture exact whole-manual format, then request render.
     // No Q_INVOKABLE and no automatic/UI activation.
@@ -118,6 +131,8 @@ private:
     };
     void on_renderer_changed();
     [[nodiscard]] core::Status install_accepted_candidate();
+    [[nodiscard]] std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+    current_verified_private_master() const;
     void failed(const core::Error& error);
     void stale();
     TerminalPrivateRenderController* renderer_;

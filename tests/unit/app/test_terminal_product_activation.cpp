@@ -10,6 +10,7 @@
 #include "terminal_limiter_view_model.hpp"
 #include "../platform/fake_playback_service.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
@@ -1047,9 +1048,92 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!product.private_id());
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(device->duration,std::optional{*frames.value()});
+    // Private M17-verified MASTER -> separately owned 48-kHz monitor PCM.
+    // Mock callback stands in for the Windows fresh-RAM-preflight seam;
+    // NO Windows sink is installed in this portable integration fixture.
+    const auto masterView=owned->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    std::vector<std::uint64_t> originalBits;
+    for(std::size_t ch=0;ch<2;++ch) {
+        const auto lane=masterView.channel(ch);
+        QVERIFY(lane);
+        for(const double sample:*lane.value())
+            originalBits.push_back(std::bit_cast<std::uint64_t>(sample));
+    }
+    std::size_t preflightCalls=0;
+    const app::TerminalPrivateProductSession::MonitoringMaterializer
+    makeMonitor=[&](audio::AudioBufferView immutable)
+        ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
+        using Result=core::Result<
+            std::shared_ptr<const audio::MonitoringPcmCandidate>>;
+        auto built=audio::materialize_monitoring_pcm_candidate(
+            immutable,*deviceRate.value(),*block.value(),
+            [&](const audio::MonitoringPcmResourceProjection& cost)
+                ->core::Status {
+                ++preflightCalls;
+                if(cost.device_frames.value()!=480
+                   ||cost.experimental_fir_scratch_bytes==0)
+                    return core::Status::failure(core::Error{
+                        core::ErrorCode::InvalidState,
+                        "M17_MONITOR_PROJECTION_CHANGED"});
+                return core::Status::success();
+            });
+        if(!built)return Result::failure(*built.error());
+        return Result::success(
+            std::make_shared<const audio::MonitoringPcmCandidate>(
+                std::move(*built.value())));
+    };
+    const app::TerminalPrivateProductSession::MonitoringMaterializer
+        emptyMaterializer{};
+    auto missing=product.materialize_private_final_master_monitoring(
+        emptyMaterializer);
+    QVERIFY(!missing);
+    QCOMPARE(missing.error()->code(),core::ErrorCode::InvalidArgument);
+    auto monitored=product.materialize_private_final_master_monitoring(
+        makeMonitor);
+    QVERIFY2(monitored,monitored?"":monitored.error()->message().c_str());
+    QCOMPARE(preflightCalls,std::size_t{1});
+    QCOMPARE((*monitored.value())->immutable_master_rate,*masterRate.value());
+    QCOMPARE((*monitored.value())->device_rate,*deviceRate.value());
+    QCOMPARE((*monitored.value())->immutable_master_frames,*frames.value());
+    QCOMPARE((*monitored.value())->device_pcm.view().frame_count().value(),
+        std::int64_t{480});
+    std::vector<std::uint64_t> afterBits;
+    for(std::size_t ch=0;ch<2;++ch) {
+        const auto lane=masterView.channel(ch);
+        QVERIFY(lane);
+        for(const double sample:*lane.value())
+            afterBits.push_back(std::bit_cast<std::uint64_t>(sample));
+    }
+    QCOMPARE(afterBits,originalBits);
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    QCOMPARE(deviceProbes,std::size_t{0});
+    QVERIFY(!audioGate.has_session());
+    // A cancellation INSIDE conversion revokes the master transaction.
+    // A finished device PCM from that obsolete epoch must be discarded.
+    auto revoked=product.materialize_private_final_master_monitoring(
+        [&](audio::AudioBufferView immutable)
+            ->core::Result<std::shared_ptr<
+                const audio::MonitoringPcmCandidate>> {
+            const auto retired=product.cancel();
+            if(!retired)return core::Result<std::shared_ptr<
+                const audio::MonitoringPcmCandidate>>::failure(
+                    *retired.error());
+            return makeMonitor(immutable);
+        });
+    QVERIFY(!revoked);
+    QCOMPARE(revoked.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QVERIFY(!product.private_id());
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    auto unavailable=product.materialize_private_final_master_monitoring(
+        makeMonitor);
+    QVERIFY(!unavailable);
+    QCOMPARE(unavailable.error()->code(),core::ErrorCode::InvalidState);
     QVERIFY(!product.install_ready_private());
     QVERIFY(!product.install_measured_private());
-    QVERIFY(product.cancel());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QVERIFY(!candidates.staged());
     QCOMPARE(sinkInstalls,std::size_t{0});
