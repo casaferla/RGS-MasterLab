@@ -619,12 +619,19 @@ void PlaybackSupportTest::monitoringDeviceRateSwitchIsIsolatedAndFailsClosed()
         core::ErrorCode::UnsupportedOperation,
         "MONITOR_ENDPOINT_CHANGED_WHILE_PLAYING"});
     player.tick();
-    QCOMPARE(player.snapshot().value()->state,core::PlaybackState::STOPPED);
+    // An output runtime fault intentionally invalidates snapshot(): its
+    // Result is an error, NOT a successful STOPPED snapshot. The former
+    // assertion dereferenced a failed Result and crashed on both runners.
+    auto stoppedAfterFault=player.snapshot();
+    QVERIFY(!stoppedAfterFault);
+    QCOMPARE(stoppedAfterFault.error()->code(),
+        core::ErrorCode::UnsupportedOperation);
     QVERIFY(observedA->queue().empty());
     QVERIFY(observedA->stopCalls>0);
     QVERIFY(!player.play());
     QVERIFY(!player.c2_consumed_prefix().certifiedForLiveTruePeak);
-    QVERIFY(!player.snapshot().value()->audibleRealization.realizationId);
+    QCOMPARE(player.c2_processed_coverage_probe().reason,
+        platform::windows::internal::C2CoverageProbeReason::NOT_MONITORED);
     // Deliberately abandon old DEVICE PCM; retain independent MASTER.
     auto sinkB=std::make_unique<FakeOutput>(2048U,4U);
     auto* observedB=sinkB.get();
