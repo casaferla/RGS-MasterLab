@@ -43,6 +43,11 @@
 #ifdef max
 #undef max
 #endif
+// The Win32 headers also define ERROR as a numeric macro, which
+// would rewrite our playback OutputState::ERROR enum into an invalid token.
+#ifdef ERROR
+#undef ERROR
+#endif
 #endif
 
 #include <algorithm>
