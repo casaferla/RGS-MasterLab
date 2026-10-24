@@ -1052,12 +1052,125 @@ ApplicationWindow {
                                             }
                                         }
 
+                                        // Read-only, actual Windows headroom guidance. This panel
+                                        // never changes MASTER OUTPUT_RATE or starts SRC/Render.
                                         Rectangle {
+                                            id: restorationControlsGroup
                                             objectName: "restorationControlsGroup"
                                             Layout.fillWidth: true
                                             Layout.fillHeight: true
-                                            color: "#142838"; border.color: "#233A4E"; radius: 4
-                                            Text { anchors.centerIn: parent; text: "RESTORATION CONTROLS (SHELL)"; color: "#586D7C"; font.pixelSize: 10; font.weight: Font.Bold }
+                                            color: "#142838"
+                                            border.color: "#233A4E"
+                                            radius: 4
+
+                                            onVisibleChanged: {
+                                                if (visible) prepareRateAdvisor.refresh()
+                                            }
+                                            Connections {
+                                                target: sourceSelection
+                                                function onSourceChanged() {
+                                                    if (restorationControlsGroup.visible
+                                                            && prepareRestorationView.visible)
+                                                        prepareRateAdvisor.refresh()
+                                                }
+                                            }
+                                            ColumnLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 4
+                                                spacing: 2
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    Layout.preferredHeight: 18
+                                                    spacing: 4
+                                                    Text {
+                                                        text: "PREPARE · SAMPLE RATE / RAM"
+                                                        color: "#A9C7D8"
+                                                        font.family: "Segoe UI"
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                    Item { Layout.fillWidth: true }
+                                                    Text {
+                                                        objectName: "prepareMemoryDeviceStatus"
+                                                        text: prepareRateAdvisor.statusText
+                                                        color: "#8FAAB9"
+                                                        font.pixelSize: 9
+                                                        elide: Text.ElideRight
+                                                        Layout.maximumWidth: 120
+                                                    }
+                                                    Button {
+                                                        objectName: "prepareMemoryRefresh"
+                                                        text: "↻"
+                                                        flat: true
+                                                        font.pixelSize: 12
+                                                        implicitWidth: 24
+                                                        implicitHeight: 18
+                                                        onClicked: prepareRateAdvisor.refresh()
+                                                        ToolTip.text: "Rivaluta la memoria e il dispositivo adesso"
+                                                        ToolTip.visible: hovered
+                                                        Accessible.name: "Rivaluta memoria per Prepare"
+                                                    }
+                                                }
+                                                GridLayout {
+                                                    Layout.fillWidth: true
+                                                    Layout.fillHeight: true
+                                                    columns: 2
+                                                    columnSpacing: 4
+                                                    rowSpacing: 2
+                                                    Repeater {
+                                                        model: prepareRateAdvisor.recommendations
+                                                        Rectangle {
+                                                            required property var modelData
+                                                            Layout.fillWidth: true
+                                                            Layout.fillHeight: true
+                                                            Layout.minimumHeight: 19
+                                                            radius: 3
+                                                            color: "#0D2130"
+                                                            border.color: modelData.kind === "recommended" ? "#3C786C"
+                                                                : modelData.kind === "caution" ? "#806A3B"
+                                                                : modelData.kind === "discouraged" ? "#82525A"
+                                                                : "#365064"
+                                                            RowLayout {
+                                                                anchors.fill: parent
+                                                                anchors.leftMargin: 4
+                                                                anchors.rightMargin: 3
+                                                                spacing: 3
+                                                                Text {
+                                                                    text: modelData.rateLabel
+                                                                    color: "#E0EBF2"
+                                                                    font.pixelSize: 9
+                                                                    font.weight: Font.DemiBold
+                                                                    Layout.preferredWidth: 56
+                                                                }
+                                                                Text {
+                                                                    id: adviceText
+                                                                    text: modelData.label
+                                                                    color: modelData.kind === "recommended" ? "#9DD8C2"
+                                                                        : modelData.kind === "caution" ? "#F2CE82"
+                                                                        : modelData.kind === "discouraged" ? "#F4A5AA"
+                                                                        : "#91AABA"
+                                                                    font.pixelSize: 9
+                                                                    elide: Text.ElideRight
+                                                                    Layout.fillWidth: true
+                                                                    HoverHandler { id: adviceHover }
+                                                                    ToolTip.text: modelData.details
+                                                                    ToolTip.visible: adviceHover.hovered
+                                                                }
+                                                            }
+                                                            Accessible.name: modelData.rateLabel + ": " + modelData.label
+                                                            Accessible.description: modelData.details
+                                                        }
+                                                    }
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    Layout.preferredHeight: 12
+                                                    text: "Stima PCM minima · CPU non qualificata · rivalutare prima di allocare"
+                                                    font.pixelSize: 8
+                                                    color: "#8FAAB9"
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
                                         }
                                     }
                                 }

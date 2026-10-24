@@ -11,6 +11,7 @@
 #include "playback_transport_view_model.hpp"
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include <rgsml/dsp/module_registry.hpp>
+#include "prepare_memory_advice_view_model.hpp"
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
@@ -110,6 +111,8 @@ int main(int argc, char* argv[])
     rgsml::app::SourceWaveformViewModel sourceWaveform{
         &waveformPresentation};
     rgsml::app::SourceSelectionViewModel sourceSelection;
+    rgsml::app::PrepareMemoryAdviceViewModel prepareRateAdvisor{
+        &sourceSelection, windowsPlayback};
     rgsml::app::AuditionSourceSelector auditionSelector{&playbackTransport};
     rgsml::app::TruePeakStaticCoordinator staticTruePeak;
     // C2D7: audio device callback untouched; only independently bound
@@ -493,6 +496,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"),
         &sourceSelection);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("prepareRateAdvisor"),
+        &prepareRateAdvisor);
     engine.rootContext()->setContextProperty(
         QStringLiteral("playbackTransport"),
         &playbackTransport);
