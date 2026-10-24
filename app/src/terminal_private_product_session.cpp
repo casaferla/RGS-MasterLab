@@ -318,9 +318,9 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
 core::Result<audio::MonitoringMasterDisplaySnapshot>
 TerminalPrivateProductSession::private_monitor_master_snapshot() const
 {
-    using Snapshot=audio::MonitoringMasterDisplaySnapshot;
-    const auto refused=[](const char* why)->core::Result<Snapshot> {
-        return core::Result<Snapshot>::failure(
+    using MonitorDisplaySnapshot=audio::MonitoringMasterDisplaySnapshot;
+    const auto refused=[](const char* why)->core::Result<MonitorDisplaySnapshot> {
+        return core::Result<MonitorDisplaySnapshot>::failure(
             core::Error{core::ErrorCode::InvalidState,why});
     };
     if(monitorTransitioning_||!installedMonitor_||!approvedMonitor_
