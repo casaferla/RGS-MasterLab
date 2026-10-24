@@ -73,6 +73,28 @@ struct MonitoringRateMemoryAdvice final {
     return MonitoringMemoryAdviceKind::CAUTION_LIMITED_HEADROOM;
 }
 
+// One budgeting decision across both Prepare-start and imminent-allocation
+// phases, including the bounded FIR coefficient/window scratch. At Prepare
+// start both PCM owners are new; at imminent allocation MASTER is resident
+// and already reflected in the fresh OS available counters. Keep the
+// two-PCM lower-bound field unchanged for caller diagnostics.
+[[nodiscard]] inline MonitoringMemoryAdviceKind
+classify_monitoring_projected_memory(
+    const MonitoringPcmResourceProjection& resource,
+    MonitoringMemoryObservation observed,
+    bool master_already_resident,
+    std::uint64_t* headroom=nullptr) noexcept
+{
+    const auto pcm=master_already_resident
+        ? resource.device_pcm_bytes:resource.combined_pcm_bytes;
+    const auto scratch=resource.experimental_fir_scratch_bytes;
+    if(scratch>std::numeric_limits<std::uint64_t>::max()-pcm) {
+        if(headroom)*headroom=0;
+        return MonitoringMemoryAdviceKind::DISCOURAGED_INSUFFICIENT_HEADROOM;
+    }
+    return classify_monitoring_memory(pcm+scratch,observed,headroom);
+}
+
 // Pre-allocation advice for the ADDITIONAL DEVICE owner after an immutable
 // MASTER buffer already exists. Windows availability already accounts for
 // the allocated master. Do not double-charge it a second time against that
@@ -99,12 +121,8 @@ advise_imminent_monitoring_pcm_allocation(
         device_rate,layout);
     if(!cost)return core::Result<Advice>::failure(*cost.error());
     std::uint64_t headroom=0;
-    // MASTER is already resident and counted by Windows. The new
-    // allocations are DEVICE PCM plus bounded rational-FIR scratch.
-    const auto incrementalBytes=cost.value()->device_pcm_bytes
-        +cost.value()->experimental_fir_scratch_bytes;
-    const auto kind=classify_monitoring_memory(
-        incrementalBytes,freshly_observed,&headroom);
+    const auto kind=classify_monitoring_projected_memory(
+        *cost.value(),freshly_observed,true,&headroom);
     return core::Result<Advice>::success(Advice{
         device_rate,std::move(*cost.value()),kind,headroom,false,false});
 }
@@ -123,7 +141,9 @@ validate_imminent_monitoring_preallocation(
        ||observed.resource.master_pcm_bytes!=planned.master_pcm_bytes
        ||observed.resource.device_pcm_bytes!=planned.device_pcm_bytes
        ||observed.resource.device_frames.value()!=planned.device_frames.value()
-       ||observed.resource.combined_pcm_bytes!=planned.combined_pcm_bytes)
+       ||observed.resource.combined_pcm_bytes!=planned.combined_pcm_bytes
+       ||observed.resource.experimental_fir_scratch_bytes
+           !=planned.experimental_fir_scratch_bytes)
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "MONITOR_ALLOC_PREFLIGHT_DEVICE_OR_RESOURCE_CHANGED"});
@@ -181,8 +201,10 @@ advise_monitoring_master_rates_for_prepare(
         if(!resource)
             return core::Result<AdviceSet>::failure(*resource.error());
         std::uint64_t headroom=0;
-        const auto advice=classify_monitoring_memory(
-            resource.value()->combined_pcm_bytes,observation,&headroom);
+        // Budget both new PCM owners AND the bounded FIR scratch, unlike
+        // imminent allocation where MASTER is already resident in RAM.
+        const auto advice=classify_monitoring_projected_memory(
+            *resource.value(),observation,false,&headroom);
         result.push_back(MonitoringRateMemoryAdvice{
             *masterRate.value(),observed_device_rate,
             *masterFrameCount.value(),std::move(*resource.value()),

@@ -60,11 +60,19 @@ constexpr std::array<std::int64_t,6> kMasterRates{
     constexpr std::uint64_t mib=UINT64_C(1024)*1024;
     const auto bytes=advice.resource.combined_pcm_bytes;
     const auto roundedMib=bytes/mib+(bytes%mib!=0 ? 1U : 0U);
-    const auto details=QStringLiteral(
-        "PCM MASTER + MONITOR minimo stimato: %1 MiB. "
-        "Il consiglio non riserva RAM, non include ogni overhead DSP/Qt "
-        "e non garantisce prestazioni CPU o audio real-time.")
+    const auto firBytes=advice.resource.experimental_fir_scratch_bytes;
+    const auto firMib=firBytes/mib+(firBytes%mib!=0 ? 1U : 0U);
+    QString details=QStringLiteral(
+        "PCM MASTER + MONITOR minimo stimato: %1 MiB. ")
         .arg(QString::number(roundedMib));
+    if(firBytes!=0) {
+        details+=QStringLiteral(
+            "Scratch FIR sperimentale per il consiglio RAM: %1 MiB. ")
+            .arg(QString::number(firMib));
+    }
+    details+=QStringLiteral(
+        "Il consiglio non riserva RAM, non include ogni overhead DSP/Qt "
+        "e non garantisce prestazioni CPU o audio real-time.");
     return row(hz,label,kind,details);
 }
 } // namespace

@@ -381,6 +381,51 @@ void PlaybackSampleRateAdapterTest::monitoringPrepareAdviceSixMasterRatesAndHead
     }
     QCOMPARE((*advice.value())[0].kind,Kind::RECOMMENDED_MEMORY_ONLY);
     QCOMPARE((*advice.value())[5].kind,Kind::CAUTION_LIMITED_HEADROOM);
+    // Initial Prepare must include experimental FIR scratch in the same
+    // budget model as the subsequent fresh preallocation assessment.
+    // Budget is deliberately set EXACTLY to the two-PCM lower bound: the
+    // old PCM-only classifier would accept it, but rational-FIR scratch
+    // makes that output genuinely too large for the reserved-safe budget.
+    constexpr std::uint64_t MiB=UINT64_C(1024)*1024;
+    const auto projected=audio::project_monitoring_pcm_resource_cost(
+        rate(192000),frame_count(192000*180),rate(48000),
+        audio::ChannelLayout::STEREO_LR);
+    QVERIFY(projected);
+    QVERIFY(projected.value()->experimental_fir_scratch_bytes>0);
+    const auto available=projected.value()->combined_pcm_bytes+512*MiB;
+    const audio::MonitoringMemoryObservation threshold{
+        available,available,0};
+    QCOMPARE(audio::classify_monitoring_memory(
+        projected.value()->combined_pcm_bytes,threshold),
+        Kind::CAUTION_LIMITED_HEADROOM);
+    QCOMPARE(audio::classify_monitoring_projected_memory(
+        *projected.value(),threshold,false),
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    auto thresholdAdvice=audio::advise_monitoring_master_rates_for_prepare(
+        rate(192000),frame_count(192000*180),rate(48000),
+        audio::ChannelLayout::STEREO_LR,threshold);
+    QVERIFY(thresholdAdvice);
+    QCOMPARE(thresholdAdvice.value()->size(),std::size_t{6});
+    QCOMPARE((*thresholdAdvice.value())[5].kind,
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    // In contrast, a same-rate owner has no new FIR scratch budget.
+    const auto identity=audio::project_monitoring_pcm_resource_cost(
+        rate(48000),frame_count(48000*180),rate(48000),
+        audio::ChannelLayout::STEREO_LR);
+    QVERIFY(identity);
+    QCOMPARE(identity.value()->experimental_fir_scratch_bytes,UINT64_C(0));
+    QCOMPARE(audio::classify_monitoring_projected_memory(
+        *identity,threshold,false),
+        audio::classify_monitoring_memory(
+            identity.value()->combined_pcm_bytes,threshold));
+    // A synthetic overflow must never wrap into a small, green footprint.
+    auto overflow=projected.value().value();
+    overflow.combined_pcm_bytes=std::numeric_limits<std::uint64_t>::max();
+    std::uint64_t overflowHeadroom=123;
+    QCOMPARE(audio::classify_monitoring_projected_memory(
+        overflow,threshold,false,&overflowHeadroom),
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    QCOMPARE(overflowHeadroom,UINT64_C(0));
     // Scarce headroom discourages high sample-rate FULL-DURATION PCM
     // without changing the selected master or claiming a CPU decision.
     auto scarce=audio::advise_monitoring_master_rates_for_prepare(
@@ -548,6 +593,12 @@ monitoringImminentAllocationUsesFreshIncrementalBudget()
         *first.value(),rate(48000),changedResource);
     QVERIFY(!wrongProjection);
     QCOMPARE(wrongProjection.error()->code(),core::ErrorCode::InvalidState);
+    changedResource=first.value()->resource;
+    ++changedResource.experimental_fir_scratch_bytes;
+    auto wrongScratch=audio::validate_imminent_monitoring_preallocation(
+        *first.value(),rate(48000),changedResource);
+    QVERIFY(!wrongScratch);
+    QCOMPARE(wrongScratch.error()->code(),core::ErrorCode::InvalidState);
     QVERIFY(!first.value()->existing_master_counted_as_new);
     QVERIFY(!first.value()->cpu_performance_qualified);
     QCOMPARE(audio::classify_monitoring_memory(
