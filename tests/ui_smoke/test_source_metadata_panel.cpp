@@ -653,6 +653,35 @@ Window {
         auto* item=qobject_cast<QQuickItem*>(object);
         return item?QRectF{item->mapToItem(hostItem,QPointF{}),item->size()}:QRectF{};
     };
+    // Real Qt Text geometry, checked on both L/R for M16 and M17.
+    const auto tickCollision=[](QObject* mode)->QString {
+        const std::array<int,7> ticks{6,0,-12,-24,-36,-48,-60};
+        for(const auto& laneName:{QStringLiteral("truePeakLeftLane"),
+                                 QStringLiteral("truePeakRightLane")}) {
+            auto* lane=qobject_cast<QQuickItem*>(find_child_by_name(mode,laneName));
+            if(!lane) return QStringLiteral("Missing lane ")+laneName;
+            auto* scale=find_child_by_name(lane,QStringLiteral("truePeakDbTpScale"));
+            if(!scale) return QStringLiteral("Missing scale ")+laneName;
+            std::array<QRectF,7> boxes{};
+            for(std::size_t i=0;i<ticks.size();++i) {
+                const auto name=ticks[i]==6 ? QStringLiteral("truePeakPlusSixMarker")
+                    : QStringLiteral("truePeakTick_")+QString::number(ticks[i]);
+                auto* t=qobject_cast<QQuickItem*>(find_child_by_name(scale,name));
+                if(!t) return QStringLiteral("Missing tick ")+name;
+                boxes[i]=QRectF{t->mapToItem(lane,QPointF{}),t->size()};
+                if(boxes[i].isEmpty()) return QStringLiteral("Empty glyph ")+name;
+            }
+            for(std::size_t i=0;i<ticks.size();++i)
+                for(std::size_t j=i+1;j<ticks.size();++j) {
+                    const QRectF overlap=boxes[i].intersected(boxes[j]);
+                    if(overlap.width()>0.5 && overlap.height()>0.5)
+                        return QStringLiteral("%1 ticks %2/%3 overlap %4x%5")
+                            .arg(laneName).arg(ticks[i]).arg(ticks[j])
+                            .arg(overlap.width()).arg(overlap.height());
+                }
+        }
+        return {};
+    };
     for(const auto hostHeight:{652.0,474.0}) {
         hostItem->setHeight(hostHeight);
         QVERIFY(window->setProperty("meterMode",false));
@@ -663,6 +692,8 @@ Window {
             QVERIFY2(captureHost(QStringLiteral(
                 "m17_host_compact_474px.png")),
                 "Capture M17 actual host at physical minimum height");
+        const auto m17TickError=tickCollision(editor);
+        QVERIFY2(m17TickError.isEmpty(),qPrintable(m17TickError));
         const auto m17Rect=rectOnHost(editor);
         std::array<QRectF,5> expected{};
         for(qsizetype i=0;i<common.size();++i) {
@@ -691,6 +722,8 @@ Window {
             QVERIFY2(captureHost(QStringLiteral(
                 "m16_host_compact_474px.png")),
                 "Capture M16 empty upper row with common meters aligned");
+        const auto m16TickError=tickCollision(meter);
+        QVERIFY2(m16TickError.isEmpty(),qPrintable(m16TickError));
         const auto m16Rect=rectOnHost(meter);
         const auto parityFailure=QStringLiteral(
             "M16/M17 host physical positioning at height %1: "

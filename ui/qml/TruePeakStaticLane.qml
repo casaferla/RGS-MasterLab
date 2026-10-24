@@ -165,9 +165,16 @@ Rectangle {
                     model: [6, 0, -12, -24, -36, -48, -60]
                     Text {
                         required property int modelData
-                        objectName: modelData === 6 ? "truePeakPlusSixMarker" : "truePeakScaleOtherMarker"
+                        objectName: modelData === 6 ? "truePeakPlusSixMarker"
+                            : "truePeakTick_" + modelData
                         text: modelData > 0 ? "+" + modelData : "" + modelData
-                        width: parent.width
+                        // Use the real glyph box, not a full-width Text cell.
+                        width: implicitWidth
+                        // +6/0 are separated by fewer pixels vertically
+                        // than the label height at the physical minimum.
+                        // Keep 0 aligned with the negatives; stagger +6.
+                        x: modelData === 6 && parent.height < 165
+                            ? Math.max(0, parent.width - width - 1) : 0
                         font.family: "Segoe UI"
                         font.pixelSize: 10
                         font.weight: modelData === 0 ? Font.DemiBold
