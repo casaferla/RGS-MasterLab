@@ -5,6 +5,7 @@
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_frame_map.hpp>
 
 #include <QTest>
 
@@ -108,6 +109,7 @@ private slots:
     void experimentalFullResourceSixBySixRateMatrix();
     void finalMasterMonitoringCannotRetargetMasterRate();
     void isolatedOfflineMonitoringPcmSixBySixMatrix();
+    void monitoringFrameMapSixRateEndpointsAndLoops();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -256,6 +258,72 @@ void PlaybackSampleRateAdapterTest::isolatedOfflineMonitoringPcmSixBySixMatrix()
     forged.immutable_master_frames=frame_count(193);
     forged.device_rate=rate(96000);
     QVERIFY(!audio::validate_monitoring_pcm_candidate(forged));
+}
+
+void PlaybackSampleRateAdapterTest::monitoringFrameMapSixRateEndpointsAndLoops()
+{
+    constexpr std::array<std::int64_t,6> six{
+        44100,48000,88200,96000,176400,192000};
+    for(const auto masterHz:six) {
+        auto format=audio::AudioFormat::create(
+            rate(masterHz),audio::ChannelLayout::MONO_C);
+        QVERIFY(format);
+        auto master=audio::AudioBuffer::create(*format.value(),
+            audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},
+            frame_count(193));
+        QVERIFY(master);
+        for(const auto deviceHz:six) {
+            auto candidate=audio::materialize_monitoring_pcm_candidate(
+                master.value()->view(),rate(deviceHz),frame_count(37));
+            QVERIFY(candidate);
+            auto map=audio::MonitoringFrameMap::create(*candidate.value());
+            QVERIFY(map);
+            QCOMPARE(map.value()->master_rate().value(),masterHz);
+            QCOMPARE(map.value()->device_rate().value(),deviceHz);
+            QCOMPARE(map.value()->master_frames().value(),std::int64_t{193});
+            QCOMPARE(map.value()->device_frames(),
+                candidate.value()->device_pcm.view().frame_count());
+            auto last=map.value()->master_to_device(core::FrameIndex{193});
+            QVERIFY(last);
+            QCOMPARE(last.value()->value(),map.value()->device_frames().value());
+            std::int64_t previous=0;
+            for(const auto f:{0,1,2,48,96,192,193}) {
+                auto index=map.value()->master_to_device(core::FrameIndex{f});
+                QVERIFY(index);
+                QVERIFY(index.value()->value()>=previous);
+                previous=index.value()->value();
+                auto inverse=map.value()->device_to_master_cursor(*index.value());
+                QVERIFY(inverse);
+                QVERIFY(inverse.value()->value()>=0);
+                QVERIFY(inverse.value()->value()<=193);
+            }
+            auto full=core::FrameRange::create(
+                core::FrameIndex{0},core::FrameIndex{193});
+            QVERIFY(full);
+            auto mappedRegion=map.value()->master_loop_to_device(*full.value());
+            QVERIFY(mappedRegion);
+            QCOMPARE(mappedRegion.value()->end().value(),
+                map.value()->device_frames().value());
+            QVERIFY(!map.value()->master_to_device(core::FrameIndex{194}));
+            QVERIFY(!map.value()->device_to_master_cursor(
+                core::FrameIndex{map.value()->device_frames().value()+1}));
+        }
+    }
+    auto fmt=audio::AudioFormat::create(rate(192000),
+        audio::ChannelLayout::MONO_C);
+    QVERIFY(fmt);
+    auto master=audio::AudioBuffer::create(*fmt.value(),
+        audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},frame_count(193));
+    QVERIFY(master);
+    auto down=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),rate(48000),frame_count(29));
+    QVERIFY(down);
+    auto map=audio::MonitoringFrameMap::create(*down.value());
+    QVERIFY(map);
+    auto tooSmall=core::FrameRange::create(
+        core::FrameIndex{1},core::FrameIndex{2});
+    QVERIFY(tooSmall);
+    QVERIFY(!map.value()->master_loop_to_device(*tooSmall.value()));
 }
 
 void PlaybackSampleRateAdapterTest::offlineCandidateMatchesFrozenPlaybackKernelBitwise()
