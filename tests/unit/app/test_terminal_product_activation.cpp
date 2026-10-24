@@ -11,6 +11,7 @@
 #include "../platform/fake_playback_service.hpp"
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_frame_map.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/render/render_preview.hpp>
@@ -1209,6 +1210,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     std::size_t monitorInstalls=0;
     std::size_t monitorRetires=0;
     std::size_t manualRestores=0;
+    std::optional<core::FrameRange> monitorMasterLoop;
     product.set_private_monitor_transport(
         [&](auto candidate)->core::Status {
             ++monitorInstalls;
@@ -1266,6 +1268,107 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!audioGate.has_session());
     QCOMPARE(sinkInstalls,std::size_t{0});
     QVERIFY(!product.install_private_monitor_stopped(privateMonitor));
+
+    // Real MASTER-frame command contract, simulated with the exact same
+    // monitoring coordinate map and fake playback engine (NO Windows DAC).
+    product.set_private_monitor_controls(
+        [&](auto owner,auto command)->core::Status {
+            if(owner!=deviceMonitor)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "TEST_MONITOR_COMMAND_WRONG_OWNER"});
+            auto map=audio::MonitoringFrameMap::create(*owner);
+            if(!map)return core::Status::failure(*map.error());
+            using Action=platform::windows::MonitoringTransportAction;
+            switch(command.action) {
+            case Action::PLAY:return device->play();
+            case Action::PAUSE:return device->pause();
+            case Action::STOP:return device->stop();
+            case Action::SEEK_MASTER: {
+                auto frame=map.value()->master_to_device(command.master_frame);
+                if(!frame)return core::Status::failure(*frame.error());
+                return device->seek(*frame.value());
+            }
+            case Action::SET_MASTER_LOOP: {
+                std::optional<core::FrameRange> mapped;
+                if(command.master_loop) {
+                    auto region=map.value()->master_loop_to_device(
+                        *command.master_loop);
+                    if(!region)return core::Status::failure(*region.error());
+                    mapped=*region.value();
+                }
+                auto status=device->set_loop(mapped);
+                if(status)monitorMasterLoop=command.master_loop;
+                return status;
+            }
+            }
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidArgument,
+                "TEST_MONITOR_UNKNOWN_COMMAND"});
+        },
+        [&](auto owner)
+            ->core::Result<audio::MonitoringMasterDisplaySnapshot> {
+            using Display=audio::MonitoringMasterDisplaySnapshot;
+            if(owner!=deviceMonitor)
+                return core::Result<Display>::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "TEST_MONITOR_DISPLAY_WRONG_OWNER"});
+            auto map=audio::MonitoringFrameMap::create(*owner);
+            if(!map)return core::Result<Display>::failure(*map.error());
+            auto playback=device->snapshot();
+            if(!playback)return core::Result<Display>::failure(*playback.error());
+            return map.value()->project_display_snapshot(
+                *playback.value(),monitorMasterLoop);
+        });
+    using Action=platform::windows::MonitoringTransportAction;
+    using Request=platform::windows::MonitoringTransportRequest;
+    auto originalDisplay=product.private_monitor_master_snapshot();
+    QVERIFY(originalDisplay);
+    QCOMPARE(originalDisplay.value()->master_rate,*masterRate.value());
+    QCOMPARE(originalDisplay.value()->device_rate,*deviceRate.value());
+    QCOMPARE(originalDisplay.value()->master_display_position.value(),
+        std::int64_t{0});
+    // Pause from STOPPED fails; the Windows worker will additionally guard
+    // the state before dispatching to its actual sink.
+    QVERIFY(!product.control_private_monitor(Request{Action::PAUSE}));
+    QVERIFY(product.control_private_monitor(
+        Request{Action::SEEK_MASTER,core::FrameIndex{800}}));
+    QCOMPARE(device->position.value(),std::int64_t{200});
+    auto region=core::FrameRange::create(
+        core::FrameIndex{256},core::FrameIndex{1536});
+    QVERIFY(region);
+    QVERIFY(product.control_private_monitor(
+        Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},
+                *region.value()}));
+    QVERIFY(device->loop);
+    QCOMPARE(device->loop->begin().value(),std::int64_t{64});
+    QCOMPARE(device->loop->end().value(),std::int64_t{384});
+    QVERIFY(product.control_private_monitor(Request{Action::PLAY}));
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QVERIFY(product.control_private_monitor(Request{Action::PAUSE}));
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    auto paused=product.private_monitor_master_snapshot();
+    QVERIFY(paused);
+    QCOMPARE(paused.value()->master_display_position.value(),
+        std::int64_t{800});
+    QCOMPARE(paused.value()->requested_master_loop,*region.value());
+    QVERIFY(product.control_private_monitor(Request{Action::PLAY}));
+    QVERIFY(product.control_private_monitor(Request{Action::STOP}));
+    QCOMPARE(device->position.value(),std::int64_t{0});
+    QVERIFY(product.control_private_monitor(
+        Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},std::nullopt}));
+    QVERIFY(product.control_private_monitor(
+        Request{Action::SEEK_MASTER,core::FrameIndex{800}}));
+    QCOMPARE(device->position.value(),std::int64_t{200});
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
+    // A differently owned, same-rate PCM may never consume our commands.
+    deviceMonitor=*monitored.value();
+    QVERIFY(!product.private_monitor_master_snapshot());
+    QVERIFY(!product.control_private_monitor(Request{Action::PLAY}));
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->position.value(),std::int64_t{200});
+    deviceMonitor=privateMonitor;
     // A second anonymous monitor at the same DEVICE rate supersedes ours.
     // The product must neither clear it nor restore a false MANUAL owner.
     deviceMonitor=*monitored.value();
@@ -1284,7 +1387,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!deviceMonitor);
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QCOMPARE(device->duration,std::optional{*frames.value()});
-    QCOMPARE(device->position,core::FrameIndex{0});
+    QCOMPARE(device->position,core::FrameIndex{800});
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
