@@ -1198,6 +1198,106 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(deviceProbes,std::size_t{0});
     QVERIFY(!audioGate.has_session());
     QCOMPARE(device->audibleRealization.realizationId,manualId);
+
+    // Private STOPPED-only M17 -> MONITOR device handoff and exact MANUAL
+    // return. The real app registers the Windows guarded owner-thread ports;
+    // here each operation is exercised against the same fake device.
+    const auto privateMonitor=*preflightApproved.value();
+    QVERIFY(!product.install_private_monitor_stopped(privateMonitor));
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    std::shared_ptr<const audio::MonitoringPcmCandidate> deviceMonitor;
+    std::size_t monitorInstalls=0;
+    std::size_t monitorRetires=0;
+    std::size_t manualRestores=0;
+    product.set_private_monitor_transport(
+        [&](auto candidate)->core::Status {
+            ++monitorInstalls;
+            deviceMonitor=candidate;
+            device->state=core::PlaybackState::STOPPED;
+            device->position=core::FrameIndex{0};
+            device->duration=candidate->device_pcm.view().frame_count();
+            device->loop.reset();
+            device->audibleRealization={};
+            return core::Status::success();
+        },
+        [&](auto candidate)->core::Result<bool> {
+            return core::Result<bool>::success(
+                candidate&&candidate==deviceMonitor
+                &&device->state!=core::PlaybackState::NO_SOURCE
+                &&device->duration==std::optional{
+                    candidate->device_pcm.view().frame_count()}
+                &&device->audibleRealization.phase
+                    ==core::AudibleHandoffPhase::UNAVAILABLE
+                &&!device->audibleRealization.realizationId);
+        },
+        [&](auto candidate)->core::Status {
+            if(candidate!=deviceMonitor
+               ||device->state==core::PlaybackState::NO_SOURCE)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "TEST_EXACT_MONITOR_OWNER_REQUIRED"});
+            ++monitorRetires;
+            deviceMonitor.reset();
+            return device->clear();
+        },
+        [&](auto manual,core::RealizationId id,core::FrameIndex cue)
+            ->core::Status {
+            ++manualRestores;
+            return selector.restore_manual_processed_after_terminal(
+                std::move(manual),id,cue);
+        });
+    // The first conversion was superseded by the latest preflight
+    // candidate. Equal rates/PCM geometry cannot reuse that older pointer.
+    QVERIFY(!product.install_private_monitor_stopped(*monitored.value()));
+    QCOMPARE(monitorInstalls,std::size_t{0});
+    device->position=core::FrameIndex{1};
+    QVERIFY(!product.install_private_monitor_stopped(privateMonitor));
+    device->position=core::FrameIndex{0};
+    QCOMPARE(monitorInstalls,std::size_t{0});
+    QVERIFY(product.install_private_monitor_stopped(privateMonitor));
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
+    QCOMPARE(monitorInstalls,std::size_t{1});
+    QCOMPARE(deviceMonitor,privateMonitor);
+    QCOMPARE(device->duration,std::optional{
+        privateMonitor->device_pcm.view().frame_count()});
+    QVERIFY(!device->audibleRealization.realizationId);
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    QVERIFY(!product.install_private_monitor_stopped(privateMonitor));
+    // A second anonymous monitor at the same DEVICE rate supersedes ours.
+    // The product must neither clear it nor restore a false MANUAL owner.
+    deviceMonitor=*monitored.value();
+    auto alienReturn=product.return_private_monitor_to_manual();
+    QVERIFY(!alienReturn);
+    QCOMPARE(monitorRetires,std::size_t{0});
+    QCOMPARE(manualRestores,std::size_t{0});
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
+    deviceMonitor=privateMonitor;
+    QVERIFY(product.return_private_monitor_to_manual());
+    QCOMPARE(monitorRetires,std::size_t{1});
+    QCOMPARE(manualRestores,std::size_t{1});
+    QCOMPARE(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"));
+    QVERIFY(!deviceMonitor);
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->duration,std::optional{*frames.value()});
+    QCOMPARE(device->position,core::FrameIndex{0});
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    std::vector<std::uint64_t> bitsAfterRoundTrip;
+    for(std::size_t ch=0;ch<2;++ch) {
+        const auto lane=masterView.channel(ch);
+        QVERIFY(lane);
+        for(const double sample:*lane.value())
+            bitsAfterRoundTrip.push_back(std::bit_cast<std::uint64_t>(sample));
+    }
+    QCOMPARE(bitsAfterRoundTrip,originalBits);
+
     // A cancellation INSIDE conversion revokes the master transaction.
     // A finished device PCM from that obsolete epoch must be discarded.
     auto revoked=product.materialize_private_final_master_monitoring(
