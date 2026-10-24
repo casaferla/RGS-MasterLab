@@ -7,6 +7,7 @@
 #include <rgsml/audio/wav_reader.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_frame_map.hpp>
+#include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 
 #include <QAudioDevice>
@@ -21,6 +22,13 @@
 #include <QObject>
 #include <QThread>
 #include <QTimer>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include <algorithm>
 #include <cstring>
@@ -1331,6 +1339,36 @@ WindowsAudioPlaybackService::preferred_monitoring_output_rate(
 {
     // Dedicated monitoring query; still only an advisory exact-format probe.
     return impl_->preferred_terminal_output_rate(layout);
+}
+
+core::Result<std::vector<audio::MonitoringRateMemoryAdvice>>
+WindowsAudioPlaybackService::advise_prepare_master_rate_memory(
+    core::SampleRate sourceRate,core::FrameCount sourceFrames,
+    audio::ChannelLayout layout,
+    std::uint64_t otherPrepareReserveBytes) const
+{
+    using Advice=std::vector<audio::MonitoringRateMemoryAdvice>;
+    // The Qt preferred-device probe is advisory: no MASTER rate changes
+    // and no implicit opening of an audio sink. Invalid or absent hardware
+    // yields NO recommendations, never guessed "green" choices.
+    const auto deviceRate=preferred_monitoring_output_rate(layout);
+    if(!deviceRate)return core::Result<Advice>::failure(*deviceRate.error());
+#if defined(_WIN32)
+    MEMORYSTATUSEX memory{};
+    memory.dwLength=sizeof(memory);
+    if(!GlobalMemoryStatusEx(&memory))
+        return failure<Advice>(core::ErrorCode::IoFailure,
+            "MONITOR_PREPARE_WINDOWS_MEMORY_QUERY_UNAVAILABLE");
+    return audio::advise_monitoring_master_rates_for_prepare(
+        sourceRate,sourceFrames,*deviceRate.value(),layout,
+        audio::MonitoringMemoryObservation{
+            static_cast<std::uint64_t>(memory.ullAvailPhys),
+            static_cast<std::uint64_t>(memory.ullAvailPageFile),
+            otherPrepareReserveBytes});
+#else
+    return failure<Advice>(core::ErrorCode::UnsupportedOperation,
+        "MONITOR_PREPARE_WINDOWS_MEMORY_QUERY_REQUIRED");
+#endif
 }
 
 core::Status WindowsAudioPlaybackService::prepare_monitoring_output_pcm(

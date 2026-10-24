@@ -5,6 +5,7 @@
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/audio/monitoring_frame_map.hpp>
 
 #include <QTest>
@@ -126,6 +127,8 @@ private slots:
     void monitoringOversizedOfflineBlockRejectsWithoutMutatingMaster();
     void monitoringVirtualLongTrackResourceMatrix();
     void monitoringResourcePreflightFailsOnOverflow();
+    void monitoringPrepareAdviceSixMasterRatesAndHeadroom();
+    void monitoringPrepareAdviceDurationRoundingAndUnknownState();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -340,6 +343,96 @@ void PlaybackSampleRateAdapterTest::monitoringFrameMapSixRateEndpointsAndLoops()
         core::FrameIndex{1},core::FrameIndex{2});
     QVERIFY(tooSmall);
     QVERIFY(!map.value()->master_loop_to_device(*tooSmall.value()));
+}
+
+void PlaybackSampleRateAdapterTest::monitoringPrepareAdviceSixMasterRatesAndHeadroom()
+{
+    using Kind=audio::MonitoringMemoryAdviceKind;
+    constexpr std::uint64_t GiB=UINT64_C(1024)*1024*1024;
+    // A 3-minute stereo source: the proposed MASTER rate must NOT be
+    // silently retimed by the 48 kHz monitoring output device.
+    const auto sourceRate=rate(48000);
+    const auto sourceFrames=frame_count(48000*180);
+    auto advice=audio::advise_monitoring_master_rates_for_prepare(
+        sourceRate,sourceFrames,rate(48000),
+        audio::ChannelLayout::STEREO_LR,
+        audio::MonitoringMemoryObservation{2*GiB,4*GiB,GiB/2});
+    QVERIFY2(advice,advice?"":advice.error()->message().c_str());
+    QCOMPARE(advice.value()->size(),std::size_t{6});
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    for(std::size_t i=0;i<rates.size();++i) {
+        const auto& item=(*advice.value())[i];
+        QCOMPARE(item.proposed_master_rate.value(),rates[i]);
+        QCOMPARE(item.observed_device_rate.value(),std::int64_t{48000});
+        QCOMPARE(item.estimated_master_frames.value(),rates[i]*180);
+        QCOMPARE(item.resource.device_frames.value(),std::int64_t{48000*180});
+        QCOMPARE(item.resource.master_pcm_bytes,
+            static_cast<std::uint64_t>(rates[i]*180*16));
+        QCOMPARE(item.resource.device_pcm_bytes,
+            static_cast<std::uint64_t>(48000*180*16));
+        QCOMPARE(item.resource.combined_pcm_bytes,
+            static_cast<std::uint64_t>((rates[i]+48000)*180*16));
+        QCOMPARE(item.memory_headroom_after_reserve_bytes,GiB);
+        QVERIFY(!item.cpu_performance_qualified);
+    }
+    QCOMPARE((*advice.value())[0].kind,Kind::RECOMMENDED_MEMORY_ONLY);
+    QCOMPARE((*advice.value())[5].kind,Kind::CAUTION_LIMITED_HEADROOM);
+    // Scarce headroom discourages high sample-rate FULL-DURATION PCM
+    // without changing the selected master or claiming a CPU decision.
+    auto scarce=audio::advise_monitoring_master_rates_for_prepare(
+        sourceRate,sourceFrames,rate(48000),
+        audio::ChannelLayout::STEREO_LR,
+        audio::MonitoringMemoryObservation{GiB,2*GiB,0});
+    QVERIFY(scarce);
+    QCOMPARE((*scarce.value())[0].kind,Kind::RECOMMENDED_MEMORY_ONLY);
+    QCOMPARE((*scarce.value())[5].kind,
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    auto fullyReserved=audio::advise_monitoring_master_rates_for_prepare(
+        sourceRate,sourceFrames,rate(48000),
+        audio::ChannelLayout::STEREO_LR,
+        audio::MonitoringMemoryObservation{GiB,2*GiB,2*GiB});
+    QVERIFY(fullyReserved);
+    for(const auto& item:*fullyReserved.value())
+        QCOMPARE(item.kind,Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+}
+
+void PlaybackSampleRateAdapterTest::monitoringPrepareAdviceDurationRoundingAndUnknownState()
+{
+    using Kind=audio::MonitoringMemoryAdviceKind;
+    auto unknown=audio::advise_monitoring_master_rates_for_prepare(
+        rate(44100),frame_count(44101),rate(48000),
+        audio::ChannelLayout::MONO_C,
+        audio::MonitoringMemoryObservation{0,0,0});
+    QVERIFY(unknown);
+    QCOMPARE(unknown.value()->size(),std::size_t{6});
+    QCOMPARE((*unknown.value())[1].estimated_master_frames.value(),
+        std::int64_t{48002});
+    QCOMPARE((*unknown.value())[5].estimated_master_frames.value(),
+        std::int64_t{192005});
+    for(const auto& item:*unknown.value()) {
+        QCOMPARE(item.kind,Kind::UNKNOWN);
+        QCOMPARE(item.memory_headroom_after_reserve_bytes,UINT64_C(0));
+        QVERIFY(!item.cpu_performance_qualified);
+    }
+    // A commit query that fails must never produce optimistic guidance.
+    auto noCommit=audio::advise_monitoring_master_rates_for_prepare(
+        rate(48000),frame_count(48000),rate(48000),
+        audio::ChannelLayout::STEREO_LR,
+        audio::MonitoringMemoryObservation{
+            UINT64_C(4)*1024*1024*1024,0,0});
+    QVERIFY(noCommit);
+    for(const auto& item:*noCommit.value())
+        QCOMPARE(item.kind,Kind::UNKNOWN);
+    auto unsupportedDevice=audio::advise_monitoring_master_rates_for_prepare(
+        rate(48000),frame_count(48000),rate(32000),
+        audio::ChannelLayout::STEREO_LR,
+        audio::MonitoringMemoryObservation{
+            UINT64_C(4)*1024*1024*1024,
+            UINT64_C(4)*1024*1024*1024,0});
+    QVERIFY(!unsupportedDevice);
+    QCOMPARE(unsupportedDevice.error()->code(),
+        core::ErrorCode::UnsupportedOperation);
 }
 
 void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()

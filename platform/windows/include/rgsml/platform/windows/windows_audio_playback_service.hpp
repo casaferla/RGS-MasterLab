@@ -2,12 +2,14 @@
 
 #include <rgsml/audio/audio_buffer_view.hpp>
 #include <rgsml/audio/monitoring_frame_map.hpp>
+#include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/core/audio_playback_service.hpp>
 #include <rgsml/platform/windows/windows_consumed_output_prefix.hpp>
 
 #include <memory>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 namespace rgsml::analysis {
 class LiveSpectrumAnalyzer;
@@ -48,6 +50,18 @@ public:
         audio::AudioBufferView pcm,
         std::shared_ptr<const void> lifetime,
         core::RealizationId candidateIdentity);
+    // Prepare-start advisory: read current Windows memory headroom and the
+    // independently negotiated monitoring-device rate. All six proposed
+    // MASTER sample rates are evaluated WITHOUT modifying the selected
+    // master, reserving memory, or declaring a CPU/hardware qualification.
+    // The caller supplies estimated other Prepare/DSP allocation bytes.
+    // Re-evaluate before costly allocations: memory availability changes.
+    [[nodiscard]] core::Result<std::vector<audio::MonitoringRateMemoryAdvice>>
+    advise_prepare_master_rate_memory(
+        core::SampleRate sourceRate,core::FrameCount sourceFrames,
+        audio::ChannelLayout layout,
+        std::uint64_t otherPrepareReserveBytes=0) const;
+
     // EXPERIMENTAL device-monitoring seam: candidate PCM is separately owned
     // and already converted offline. Never substitute a new master rate or
     // claim M17 terminal/M16 LIVE ownership. No active UI publication.
