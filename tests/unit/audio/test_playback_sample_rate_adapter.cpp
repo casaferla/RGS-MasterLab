@@ -104,6 +104,7 @@ class PlaybackSampleRateAdapterTest final : public QObject {
 private slots:
     void policyIdentityAndFrameMap();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
+    void experimentalFullResourceSixBySixRateMatrix();
     void finalMasterMonitoringCannotRetargetMasterRate();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
@@ -222,9 +223,10 @@ void PlaybackSampleRateAdapterTest::offlineCandidateMatchesFrozenPlaybackKernelB
             QCOMPARE(channel_bits(srcCandidate.value()->pcm,channel),
                      channel_bits(*pcm.value(),channel));
 
-        auto unsupported=audio::materialize_full_resource_output_rate_candidate(
+        auto candidate96=audio::materialize_full_resource_output_rate_candidate(
             pcm.value()->view(),rate(96000),frame_count(17));
-        QVERIFY(!unsupported);
+        QVERIFY(candidate96);
+        QVERIFY(candidate96.value()->used_src);
         auto overBlock=audio::materialize_full_resource_output_rate_candidate(
             pcm.value()->view(),rate(target),frame_count(1025));
         QVERIFY(!overBlock);
@@ -236,6 +238,55 @@ void PlaybackSampleRateAdapterTest::offlineCandidateMatchesFrozenPlaybackKernelB
         QVERIFY(!partial);
         QCOMPARE(channel_bits(*pcm.value(),0).size(),std::size_t{N});
     }
+}
+
+void PlaybackSampleRateAdapterTest::experimentalFullResourceSixBySixRateMatrix()
+{
+    // NONQUALIFYING functional test; spectral and physical gates pending.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::int64_t N=97;
+    std::size_t verified=0;
+    for(const auto srcHz:rates) {
+        auto format=audio::AudioFormat::create(
+            rate(srcHz),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(format);
+        auto pcm=audio::AudioBuffer::create(*format.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},frame_count(N));
+        QVERIFY(pcm);
+        auto l=pcm.value()->mutable_view().channel(0);
+        auto r=pcm.value()->mutable_view().channel(1);
+        QVERIFY(l&&r);
+        for(std::int64_t i=0;i<N;++i) {
+            (*l.value())[static_cast<std::size_t>(i)]=0.125;
+            (*r.value())[static_cast<std::size_t>(i)]=-0.25;
+        }
+        for(const auto dstHz:rates) {
+            auto a=audio::materialize_full_resource_output_rate_candidate(
+                pcm.value()->view(),rate(dstHz),frame_count(1));
+            auto b=audio::materialize_full_resource_output_rate_candidate(
+                pcm.value()->view(),rate(dstHz),frame_count(257));
+            QVERIFY2(a,a?"":a.error()->message().c_str());
+            QVERIFY2(b,b?"":b.error()->message().c_str());
+            const auto frames=(N*dstHz+srcHz-1)/srcHz;
+            QCOMPARE(a.value()->pcm.view().frame_count().value(),frames);
+            QCOMPARE(b.value()->pcm.view().frame_count().value(),frames);
+            QCOMPARE(a.value()->used_src,srcHz!=dstHz);
+            for(std::size_t ch=0;ch<2;++ch) {
+                QCOMPARE(channel_bits(a.value()->pcm,ch),
+                         channel_bits(b.value()->pcm,ch));
+                auto samples=a.value()->pcm.view().channel(ch);
+                QVERIFY(samples);
+                const double expected=ch==0?0.125:-0.25;
+                for(const double v:*samples.value())
+                    QVERIFY2(std::isfinite(v)&&std::abs(v-expected)<2e-12,
+                        "Rational SRC must preserve finite constant PCM.");
+            }
+            ++verified;
+        }
+    }
+    QCOMPARE(verified,std::size_t{36});
 }
 
 void PlaybackSampleRateAdapterTest::policyIdentityAndFrameMap()

@@ -11,8 +11,9 @@ namespace rgsml::audio {
 // Candidate-only full-resource materializer; NEVER a playback publisher.
 // This is a dedicated offline PCM client of the existing frozen 192-tap
 // kernel. The numerical playback implementation is NOT modified.
-// Only equal rates or the frozen 44.1<->48 kHz pair can be materialized.
-// Future certification must qualify SRC on actual final products.
+// Equal rates and the frozen 44.1<->48 kernels preserve existing oracles.
+// Other six-rate pairs use a separate EXPERIMENTAL rational FIR candidate:
+// fidelity, performance, cancellation and actual audio are not qualified.
 struct FullResourceOutputRateCandidate final {
     AudioBuffer pcm;
     core::SampleRate source_rate;
