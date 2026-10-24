@@ -4,6 +4,7 @@
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
 #include <rgsml/core/result.hpp>
 
+#include <functional>
 #include <string_view>
 
 namespace rgsml::audio {
@@ -14,6 +15,10 @@ namespace rgsml::audio {
 // Equal rates and the frozen 44.1<->48 kernels preserve existing oracles.
 // Other six-rate pairs use a separate EXPERIMENTAL rational FIR candidate:
 // fidelity, performance, cancellation and actual audio are not qualified.
+// A zero-side-effect caller-owned retirement check, polled at output-block
+// boundaries. On cancellation no partial output owner escapes the function.
+using FullResourceOutputRateCancel=std::function<bool()>;
+
 struct FullResourceOutputRateCandidate final {
     AudioBuffer pcm;
     core::SampleRate source_rate;
@@ -32,7 +37,8 @@ struct FullResourceOutputRateCandidate final {
 materialize_full_resource_output_rate_candidate(
     AudioBufferView full_source_pcm,
     core::SampleRate required_output_rate,
-    core::FrameCount maximum_output_block_frames);
+    core::FrameCount maximum_output_block_frames,
+    const FullResourceOutputRateCancel& cancelled = {});
 
 // Borrow-only monitoring entrypoint: identical offline SRC numerical path,
 // but requires an immutable OUTPUT_RATE master domain instead of SOURCE.
@@ -42,6 +48,7 @@ materialize_full_resource_output_rate_candidate(
 materialize_output_master_monitoring_rate_candidate(
     AudioBufferView immutable_output_master_pcm,
     core::SampleRate required_device_rate,
-    core::FrameCount maximum_output_block_frames);
+    core::FrameCount maximum_output_block_frames,
+    const FullResourceOutputRateCancel& cancelled = {});
 
 } // namespace rgsml::audio

@@ -130,13 +130,19 @@ render_true_peak_limiter_owned_candidate_impl(
     if(!boundedBlock)return core::Result<Candidate>::failure(*boundedBlock.error());
     report(TerminalRenderProgressPhase::SRC);
     const auto src_started=std::chrono::steady_clock::now();
+    // Preserve the existing serial-authoritative renderer cancellation
+    // through SOURCE -> OUTPUT SRC itself, rather than waiting for the
+    // entire track conversion to finish before the next retirement poll.
     auto output=audio::materialize_full_resource_output_rate_candidate(
-        view,output_rate,*boundedBlock.value());
+        view,output_rate,*boundedBlock.value(),cancelled);
     if(stage_timings)
         stage_timings->src_us=std::chrono::duration_cast<
             std::chrono::microseconds>(
                 std::chrono::steady_clock::now()-src_started).count();
-    if(!output)return core::Result<Candidate>::failure(*output.error());
+    if(!output) {
+        if(cancelled && cancelled())return cancelledResult();
+        return core::Result<Candidate>::failure(*output.error());
+    }
     if(cancelled && cancelled()) return cancelledResult();
     report(TerminalRenderProgressPhase::M17_CORE,0,
            output.value()->pcm.view().frame_count().value());

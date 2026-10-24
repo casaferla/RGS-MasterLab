@@ -113,6 +113,7 @@ private slots:
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
+    void fullResourceSrcCancellationAbortsBeforePublication();
     void finalMasterMonitoringCannotRetargetMasterRate();
     void isolatedOfflineMonitoringPcmSixBySixMatrix();
     void monitoringFrameMapSixRateEndpointsAndLoops();
@@ -1707,6 +1708,96 @@ void PlaybackSampleRateAdapterTest::finalOutputExperimentalSpectralScreenSixBySi
     }
     QCOMPARE(screenedPassbands,std::size_t{84}); // 28 new pairs x 3 tones
     QCOMPARE(screenedStopbands,std::size_t{14}); // 15 down, minus frozen pair
+}
+
+
+void PlaybackSampleRateAdapterTest::fullResourceSrcCancellationAbortsBeforePublication()
+{
+    // An immutable SOURCE is never replaced by an unfinished Final Output,
+    // including cancellation in a long rational FIR or a frozen 44.1/48
+    // block loop. The output remains private; no half-filled PCM escapes.
+    struct RateCase {std::int64_t source; std::int64_t target;};
+    constexpr std::array<RateCase,4> cases{{
+        {192000,48000}, // experimental downsample, 512 taps
+        {44100,192000}, // experimental upsample
+        {44100,48000},  // frozen playback kernels, unchanged FP math
+        {48000,48000}   // bit-exact identity copy with bounded checks
+    }};
+    for(const auto row:cases) {
+        auto format=audio::AudioFormat::create(
+            rate(row.source),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(format);
+        auto source=audio::AudioBuffer::create(
+            *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},frame_count(2049));
+        QVERIFY(source);
+        for(std::size_t channel=0;channel<2;++channel) {
+            auto lane=source.value()->mutable_view().channel(channel);
+            QVERIFY(lane);
+            for(std::size_t i=0;i<2049;++i)
+                (*lane.value())[i]=(i%31==0 ? -0.4 : 0.125)
+                    *(channel==0?1.0:-0.5);
+        }
+        const auto left=channel_bits(*source.value(),0);
+        const auto right=channel_bits(*source.value(),1);
+        std::size_t polls=0;
+        const audio::FullResourceOutputRateCancel before=[&] {
+            ++polls;
+            return true;
+        };
+        auto early=audio::materialize_full_resource_output_rate_candidate(
+            source.value()->view(),rate(row.target),frame_count(17),before);
+        QVERIFY(!early);
+        QCOMPARE(early.error()->code(),core::ErrorCode::InvalidState);
+        QCOMPARE(polls,std::size_t{1});
+        polls=0;
+        const audio::FullResourceOutputRateCancel during=[&] {
+            return ++polls>=5;
+        };
+        auto stopped=audio::materialize_full_resource_output_rate_candidate(
+            source.value()->view(),rate(row.target),frame_count(17),during);
+        QVERIFY(!stopped);
+        QCOMPARE(stopped.error()->code(),core::ErrorCode::InvalidState);
+        QVERIFY(polls>=std::size_t{5});
+        QCOMPARE(channel_bits(*source.value(),0),left);
+        QCOMPARE(channel_bits(*source.value(),1),right);
+
+        const audio::FullResourceOutputRateCancel never=[] {return false;};
+        auto baseline=audio::materialize_full_resource_output_rate_candidate(
+            source.value()->view(),rate(row.target),frame_count(17));
+        auto observed=audio::materialize_full_resource_output_rate_candidate(
+            source.value()->view(),rate(row.target),frame_count(17),never);
+        QVERIFY(baseline&&observed);
+        QCOMPARE(channel_bits(baseline.value()->pcm,0),
+                 channel_bits(observed.value()->pcm,0));
+        QCOMPARE(channel_bits(baseline.value()->pcm,1),
+                 channel_bits(observed.value()->pcm,1));
+        QCOMPARE(channel_bits(*source.value(),0),left);
+        QCOMPARE(channel_bits(*source.value(),1),right);
+    }
+    // Monitoring uses the same bounded SRC but borrows an immutable
+    // OUTPUT_RATE master instead of a SOURCE_PROCESSING_RATE precursor.
+    auto format=audio::AudioFormat::create(
+        rate(192000),audio::ChannelLayout::MONO_C);
+    QVERIFY(format);
+    auto master=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},frame_count(2049));
+    QVERIFY(master);
+    auto lane=master.value()->mutable_view().channel(0);
+    QVERIFY(lane);
+    std::fill(lane.value()->begin(),lane.value()->end(),0.25);
+    const auto original=channel_bits(*master.value(),0);
+    std::size_t checks=0;
+    const audio::FullResourceOutputRateCancel stop=[&]{
+        return ++checks>=5;
+    };
+    auto rejected=audio::materialize_output_master_monitoring_rate_candidate(
+        master.value()->view(),rate(48000),frame_count(17),stop);
+    QVERIFY(!rejected);
+    QCOMPARE(rejected.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(checks>=std::size_t{5});
+    QCOMPARE(channel_bits(*master.value(),0),original);
 }
 
 void PlaybackSampleRateAdapterTest::experimentalFullResourceSixBySixRateMatrix()
