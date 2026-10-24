@@ -114,6 +114,7 @@ private slots:
     void monitoringBorrowsMasterWithoutSourceAlias();
     void monitoring44100SixDeviceRatesRemainBlockInvariant();
     void monitoringFullSixBySixSignalBlockInvariance();
+    void monitoringExperimentalPassbandAndAliasScreen();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -328,6 +329,103 @@ void PlaybackSampleRateAdapterTest::monitoringFrameMapSixRateEndpointsAndLoops()
         core::FrameIndex{1},core::FrameIndex{2});
     QVERIFY(tooSmall);
     QVERIFY(!map.value()->master_loop_to_device(*tooSmall.value()));
+}
+
+void PlaybackSampleRateAdapterTest::monitoringExperimentalPassbandAndAliasScreen()
+{
+    // SCREENING ONLY: independent mathematical sine reference. This is
+    // not the spectral acceptance gate or a real-device listening test.
+    // Frozen 44.1<->48 FIR kernels are deliberately excluded.
+    constexpr double pi=3.141592653589793238462643383279502884;
+    constexpr std::int64_t N=4096;
+    constexpr std::array<std::pair<std::int64_t,std::int64_t>,6> passband{{
+        {44100,96000},{48000,88200},{88200,44100},
+        {96000,48000},{176400,96000},{192000,48000}
+    }};
+    for(const auto& [masterHz,deviceHz]:passband) {
+        auto format=audio::AudioFormat::create(
+            rate(masterHz),audio::ChannelLayout::MONO_C);
+        QVERIFY(format);
+        auto master=audio::AudioBuffer::create(*format.value(),
+            audio::FrameDomainId::OUTPUT_RATE,
+            core::FrameIndex{0},frame_count(N));
+        QVERIFY(master);
+        auto input=master.value()->mutable_view().channel(0);
+        QVERIFY(input);
+        for(std::int64_t i=0;i<N;++i)
+            (*input.value())[static_cast<std::size_t>(i)]=
+                0.4*std::sin(2.0*pi*1000.0*
+                    static_cast<double>(i)/static_cast<double>(masterHz));
+        const auto masterBits=channel_bits(*master.value(),0);
+        auto converted=audio::materialize_monitoring_pcm_candidate(
+            master.value()->view(),rate(deviceHz),frame_count(127));
+        QVERIFY2(converted,converted?"":converted.error()->message().c_str());
+        auto samples=converted.value()->device_pcm.view().channel(0);
+        QVERIFY(samples);
+        const auto outputFrames=converted.value()->device_pcm.view()
+            .frame_count().value();
+        const auto trim=std::min<std::int64_t>(128,outputFrames/8);
+        QVERIFY(outputFrames>2*trim);
+        double referencePower=0.0;
+        double residualPower=0.0;
+        for(std::int64_t i=trim;i<outputFrames-trim;++i) {
+            const auto t=static_cast<double>(i)/
+                static_cast<double>(deviceHz);
+            const double reference=0.4*std::sin(2.0*pi*1000.0*t);
+            const auto measured=(*samples.value())[static_cast<std::size_t>(i)];
+            const auto residual=measured-reference;
+            referencePower+=reference*reference;
+            residualPower+=residual*residual;
+        }
+        QVERIFY(referencePower>0.0);
+        // Coarse relative RMS error guard (<5%). Does NOT constitute
+        // flatness, THD, phase, imaging or platform audio qualification.
+        QVERIFY2(residualPower/referencePower<0.0025,
+            "EXPERIMENTAL_MONITOR_1KHZ_PASSBAND_SCREEN_FAILED");
+        QCOMPARE(channel_bits(*master.value(),0),masterBits);
+    }
+
+    constexpr std::array<std::pair<std::int64_t,std::int64_t>,2> stopband{{
+        {96000,44100},{192000,48000}
+    }};
+    for(const auto& [masterHz,deviceHz]:stopband) {
+        auto format=audio::AudioFormat::create(
+            rate(masterHz),audio::ChannelLayout::MONO_C);
+        QVERIFY(format);
+        auto master=audio::AudioBuffer::create(*format.value(),
+            audio::FrameDomainId::OUTPUT_RATE,
+            core::FrameIndex{0},frame_count(N));
+        QVERIFY(master);
+        auto input=master.value()->mutable_view().channel(0);
+        QVERIFY(input);
+        constexpr double toneHz=36000.0;
+        for(std::int64_t i=0;i<N;++i)
+            (*input.value())[static_cast<std::size_t>(i)]=
+                0.4*std::sin(2.0*pi*toneHz*
+                    static_cast<double>(i)/static_cast<double>(masterHz));
+        const auto masterBits=channel_bits(*master.value(),0);
+        auto converted=audio::materialize_monitoring_pcm_candidate(
+            master.value()->view(),rate(deviceHz),frame_count(193));
+        QVERIFY2(converted,converted?"":converted.error()->message().c_str());
+        auto samples=converted.value()->device_pcm.view().channel(0);
+        QVERIFY(samples);
+        const auto frames=converted.value()->device_pcm.view()
+            .frame_count().value();
+        const auto trim=std::min<std::int64_t>(128,frames/8);
+        QVERIFY(frames>2*trim);
+        double outputPower=0.0;
+        for(std::int64_t i=trim;i<frames-trim;++i) {
+            const auto x=(*samples.value())[static_cast<std::size_t>(i)];
+            outputPower+=x*x;
+        }
+        // Input sine RMS is 0.4/sqrt(2). Reject clearly unsuppressed
+        // stopband leakage (>2% RMS), without claiming a full alias gate.
+        const double rms=std::sqrt(
+            outputPower/static_cast<double>(frames-2*trim));
+        QVERIFY2(rms<0.4/std::sqrt(2.0)*0.02,
+            "EXPERIMENTAL_MONITOR_36KHZ_ALIAS_SCREEN_FAILED");
+        QCOMPARE(channel_bits(*master.value(),0),masterBits);
+    }
 }
 
 void PlaybackSampleRateAdapterTest::monitoringFullSixBySixSignalBlockInvariance()
