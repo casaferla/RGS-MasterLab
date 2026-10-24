@@ -167,19 +167,26 @@ Rectangle {
                         required property int modelData
                         objectName: modelData === 6 ? "truePeakPlusSixMarker" : "truePeakScaleOtherMarker"
                         text: modelData > 0 ? "+" + modelData : "" + modelData
-                        width: parent.width
+                        // In the short M16/M17 meter, +6 and 0 are only
+                        // ~6 px apart vertically. Stagger +6 to the right
+                        // instead of displacing the factual 0 dBTP marker.
+                        x: modelData === 6 && root.compactVertical
+                            && parent.height < 110 ? 12 : 0
+                        width: parent.width - x
                         font.family: "Segoe UI"
-                        font.pixelSize: 10
+                        font.pixelSize: root.compactVertical
+                            && parent.height < 110 ? 8 : 10
                         font.weight: modelData === 0 ? Font.DemiBold
                                                      : Font.Normal
                         color: modelData === 0 ? "#A4BCCB" : "#95ACBD"
-                        // +6 is the top endpoint: center the glyph on
-                        // the actual top of the meter; do not clamp its
-                        // top edge down to the track's first interior pixel.
+                        // +6 stays centered at the top endpoint. 0 stays
+                        // centered on the SAME rounded physical guide as
+                        // truePeakDigitalZeroGuide; never clamp 0 to 15 px.
                         y: modelData === 6 ? 5 - height / 2
-                            : modelData === 0 ? Math.max(15, Math.min(
+                            : modelData === 0 ? Math.max(0, Math.min(
                                 parent.height - height,
-                                5 + 6 / 66 * (parent.height - 10) - height / 2))
+                                Math.round(5 + 6 / 66
+                                    * (parent.height - 10)) - height / 2))
                             : Math.max(0, Math.min(parent.height - height,
                                 5 + (6 - modelData) / 66
                                 * (parent.height - 10) - height / 2))

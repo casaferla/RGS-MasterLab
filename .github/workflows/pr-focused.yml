@@ -87,6 +87,12 @@ jobs:
         run: |
           python tools/qualification/ui/verify_stationary_tooltips.py
 
+      # Both M16 and M17 reuse this physical scale; minimum-size source
+      # geometry is guarded, physical Windows raster remains a separate gate.
+      - name: M16 M17 zero marker compact-scale regression (Linux)
+        run: |
+          python tools/qualification/ui/verify_true_peak_min_scale_zero.py
+
       - name: Build Focused DSP Targets
         run: |
           cmake --build build-linux --target \
