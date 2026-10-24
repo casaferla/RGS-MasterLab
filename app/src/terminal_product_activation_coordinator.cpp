@@ -172,7 +172,7 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
     case Phase::SRC:
         stage=QStringLiteral("Output-rate conversion");break;
     case Phase::M17_CORE:
-        stage=QStringLiteral("M17 DSP · processed frames");
+        stage=QStringLiteral("True Peak Limiter · processed frames");
         if(progress.total_frames>0 && progress.processed_frames>=0
            &&progress.processed_frames<=progress.total_frames) {
             // THIS IS THE CORE STAGE, not a whole-programme percentage.
@@ -193,17 +193,17 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
                        progress.processed_frames)
                       /static_cast<double>(progress.processed_frames));
                 if(std::isfinite(remaining)&&remaining>=0.0&&remaining<36000000.0)
-                    eta=QStringLiteral("M17 stage ~%1s remaining")
+                    eta=QStringLiteral("TP Limiter · ~%1s remaining")
                             .arg(static_cast<qint64>(remaining/1000));
             }
         }
         break;
     case Phase::M16_PRIMARY:
-        stage=QStringLiteral("M16 primary True Peak verification");break;
+        stage=QStringLiteral("True Peak Meter · initial verification");break;
     case Phase::VERIFICATION_TRIM:
         stage=QStringLiteral("Verification Trim");break;
     case Phase::M16_SECONDARY:
-        stage=QStringLiteral("M16 secondary True Peak verification");break;
+        stage=QStringLiteral("True Peak Meter · final verification");break;
     case Phase::FINISHING:
         stage=QStringLiteral("Checking publication ownership");break;
     case Phase::IDLE:break;

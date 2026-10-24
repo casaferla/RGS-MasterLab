@@ -153,7 +153,7 @@ Item {
             // post-M17 peak certificate when Ceiling changes. Keep it
             // independent from verified post-limiter RECENT/HOLD evidence.
             heading: root.hasMeasuredCeilingMiss
-                ? "COMPLETE POST-LIMITER TP · NON-CONFORMING"
+                ? "POST-LIMITER TRUE PEAK"
                 : root.limiterControlsIncluded
                     ? "COMPLETE PRE-LIMITER TP"
                     : "COMPLETE PROCESSED RESOURCE"
@@ -167,8 +167,7 @@ Item {
             // PRE-LIMITER scope is explicit in heading and full tooltip;
             // long provisional status strings must not overflow the card.
             detail: root.hasMeasuredCeilingMiss
-                ? "OVER " + root.limiterViewModel.nonconformingExcessText
-                    + " · target " + root.limiterViewModel.nonconformingTargetText
+                ? "CEILING EXCEEDED " + root.limiterViewModel.nonconformingExcessText
                 : root.hasMeasurement
                     ? "Peak channel: " + root.measurementProvider.channelText
                     : "No complete, source-bound measurement"
