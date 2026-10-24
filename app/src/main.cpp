@@ -306,6 +306,18 @@ int main(int argc, char* argv[])
             return auditionSelector.restore_manual_processed_after_terminal(
                 std::move(manual),id,cue);
         });
+    // Monitor-specific exact owner command/snapshot: Play/Pause/Stop and
+    // MASTER-coordinate seek/loop. This is still PRIVATE, not QML visible;
+    // no LIVE measurement or device sample rate substituted for MASTER.
+    privateProductSession.set_private_monitor_controls(
+        [windowsPlayback](auto owned,auto request) {
+            return windowsPlayback->control_monitoring_output_if_owned(
+                std::move(owned),request);
+        },
+        [windowsPlayback](auto owned) {
+            return windowsPlayback->monitoring_master_snapshot_if_owned(
+                std::move(owned));
+        });
     // Product-private output rate is now explicitly discoverable but no
     // automatic call or QML sonic activation takes place.
     // A PRIVATE read-only GR presenter. It observes actual Windows-worker

@@ -3,6 +3,7 @@
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_candidate_gate.hpp"
 #include "playback_transport_view_model.hpp"
+#include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 #include <QObject>
 #include <QString>
 #include <cstdint>
@@ -104,6 +105,20 @@ public:
     [[nodiscard]] core::Status install_private_monitor_stopped(
         MonitoringOwner candidate);
     [[nodiscard]] core::Status return_private_monitor_to_manual();
+
+    // Private monitoring control plane (NOT QML); the Windows callbacks
+    // guard actual device owner and command atomically on the worker.
+    using MonitorControl=std::function<core::Status(
+        MonitoringOwner,platform::windows::MonitoringTransportRequest)>;
+    using MonitorDisplay=std::function<core::Result<
+        audio::MonitoringMasterDisplaySnapshot>(MonitoringOwner)>;
+    void set_private_monitor_controls(
+        MonitorControl control,MonitorDisplay display)
+    { monitorControl_=std::move(control);monitorDisplay_=std::move(display); }
+    [[nodiscard]] core::Status control_private_monitor(
+        platform::windows::MonitoringTransportRequest request);
+    [[nodiscard]] core::Result<audio::MonitoringMasterDisplaySnapshot>
+    private_monitor_master_snapshot() const;
     // Explicit opt-in, still product-private: probe device format on its
     // owner thread, capture exact whole-manual format, then request render.
     // No Q_INVOKABLE and no automatic/UI activation.
@@ -197,6 +212,8 @@ private:
     MonitoringOwnership monitorOwned_;
     MonitoringRetire monitorRetire_;
     ManualRestore manualRestore_;
+    MonitorControl monitorControl_;
+    MonitorDisplay monitorDisplay_;
     MonitoringOwner approvedMonitor_;
     std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
         approvedMonitorMaster_;

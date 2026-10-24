@@ -3,6 +3,8 @@
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
+#include <rgsml/audio/monitoring_frame_map.hpp>
+#include <limits>
 #include <new>
 #include <utility>
 
@@ -312,6 +314,95 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
     return core::Status::success();
 }
 
+
+core::Result<audio::MonitoringMasterDisplaySnapshot>
+TerminalPrivateProductSession::private_monitor_master_snapshot() const
+{
+    using Snapshot=audio::MonitoringMasterDisplaySnapshot;
+    const auto refused=[](const char* why)->core::Result<Snapshot> {
+        return core::Result<Snapshot>::failure(
+            core::Error{core::ErrorCode::InvalidState,why});
+    };
+    if(monitorTransitioning_||!installedMonitor_||!approvedMonitor_
+       ||installedMonitor_!=approvedMonitor_||!approvedMonitorMaster_
+       ||!monitorOwned_||!monitorDisplay_||!pending_
+       ||candidates_->staged()!=approvedMonitorMaster_
+       ||renderer_->status()!=QStringLiteral("READY_PRIVATE")
+       ||!selected_||!selected_()||!manual_||!manualId_
+       ||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId})
+        return refused("MONITOR_DISPLAY_EXACT_MASTER_AUTHORITY_REQUIRED");
+    const auto observed=monitorOwned_(installedMonitor_);
+    if(!observed||!*observed.value())
+        return refused("MONITOR_DISPLAY_EXACT_DEVICE_OWNER_REQUIRED");
+    auto display=monitorDisplay_(installedMonitor_);
+    if(!display)return display;
+    if(display.value()->master_rate!=installedMonitor_->immutable_master_rate
+       ||display.value()->device_rate!=installedMonitor_->device_rate
+       ||display.value()->master_duration!=installedMonitor_->immutable_master_frames
+       ||display.value()->device_duration
+           !=installedMonitor_->device_pcm.view().frame_count()
+       ||display.value()->master_display_position.value()<0
+       ||display.value()->master_display_position.value()
+           >display.value()->master_duration.value())
+        return refused("MONITOR_DISPLAY_MASTER_DEVICE_PROVENANCE_MISMATCH");
+    return display;
+}
+
+core::Status TerminalPrivateProductSession::control_private_monitor(
+    platform::windows::MonitoringTransportRequest command)
+{
+    if(monitorTransitioning_||!installedMonitor_||!monitorControl_)
+        return core::Status::failure(rejected(
+            "MONITOR_CONTROL_PRIVATE_OWNER_REQUIRED"));
+    const auto owner=installedMonitor_;
+    const auto before=private_monitor_master_snapshot();
+    if(!before)return core::Status::failure(*before.error());
+    // Do not allow a command to invent a new SOURCE processing history;
+    // the device-only monitor is still unqualified for LIVE TP/GR.
+    monitorTransitioning_=true;
+    const auto executed=monitorControl_(owner,command);
+    monitorTransitioning_=false;
+    if(!executed)return executed;
+    if(installedMonitor_!=owner)
+        return core::Status::failure(rejected(
+            "MONITOR_CONTROL_OWNER_REVOKED_DURING_COMMAND"));
+    const auto after=private_monitor_master_snapshot();
+    if(!after)return core::Status::failure(*after.error());
+    using Action=platform::windows::MonitoringTransportAction;
+    bool coherent=false;
+    switch(command.action) {
+    case Action::PLAY:
+        coherent=after.value()->state==core::PlaybackState::PLAYING;break;
+    case Action::PAUSE:
+        coherent=after.value()->state==core::PlaybackState::PAUSED;break;
+    case Action::STOP:
+        coherent=after.value()->state==core::PlaybackState::STOPPED
+            &&after.value()->device_position.value()==0;break;
+    case Action::SEEK_MASTER: {
+        auto map=audio::MonitoringFrameMap::create(*owner);
+        if(!map)return core::Status::failure(*map.error());
+        auto expected=map.value()->master_to_device(command.master_frame);
+        coherent=expected
+            &&after.value()->device_position==*expected.value();
+        break;
+    }
+    case Action::SET_MASTER_LOOP:
+        coherent=after.value()->requested_master_loop
+            ==command.master_loop;
+        break;
+    }
+    if(!coherent)return core::Status::failure(rejected(
+        "MONITOR_CONTROL_POST_COMMAND_DEVICE_STATE_MISMATCH"));
+    status_=after.value()->state==core::PlaybackState::PLAYING
+        ?QStringLiteral("MONITOR_PRIVATE_PLAYING")
+        :after.value()->state==core::PlaybackState::PAUSED
+            ?QStringLiteral("MONITOR_PRIVATE_PAUSED")
+            :QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED");
+    emit changed();
+    return core::Status::success();
+}
+
 core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
 {
     if(monitorTransitioning_||!installedMonitor_||!pending_
@@ -320,6 +411,31 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
             "MONITOR_RETURN_HAS_NO_EXACT_INSTALLED_OWNER"));
     const auto candidate=installedMonitor_;
     const Pending predecessor=*pending_;
+    // The Windows MONITOR snapshot is in MASTER frames, not device or
+    // SOURCE units. Convert the display cue to the original SOURCE domain
+    // with bounded integer arithmetic. A stopped monitor without the new
+    // controller retains the original legacy zero-cue return.
+    core::FrameIndex sourceCue{0};
+    if(monitorDisplay_) {
+        const auto display=private_monitor_master_snapshot();
+        if(!display)return core::Status::failure(*display.error());
+        const auto masterHz=display.value()->master_rate.value();
+        const auto sourceHz=predecessor.manual->view().format()
+            .sample_rate().value();
+        const auto masterPos=display.value()->master_display_position.value();
+        if(masterHz<=0||sourceHz<=0||masterPos<0)
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_INVALID_MASTER_SOURCE_TIMELINE"));
+        const auto q=masterPos/masterHz;
+        const auto rem=masterPos%masterHz;
+        if(q>(std::numeric_limits<std::int64_t>::max()
+                -(rem*sourceHz)/masterHz)/sourceHz)
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_SOURCE_CUE_OVERFLOW"));
+        const auto value=q*sourceHz+(rem*sourceHz)/masterHz;
+        sourceCue=core::FrameIndex{std::min(
+            value,predecessor.manual->view().frame_count().value())};
+    }
     const auto owned=monitorOwned_(candidate);
     if(!owned)return core::Status::failure(*owned.error());
     if(!*owned.value())
@@ -351,7 +467,7 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
             "MONITOR_RETURN_STALE_MANUAL_OWNER"));
     }
     const auto restored=manualRestore_(
-        predecessor.manual,predecessor.manualId,core::FrameIndex{0});
+        predecessor.manual,predecessor.manualId,sourceCue);
     if(!restored){
         monitorTransitioning_=false;
         renderer_->invalidate();
@@ -365,7 +481,8 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
        ||after.value()->audibleRealization.realizationId
            !=std::optional{predecessor.manualId}
        ||after.value()->duration
-           !=std::optional{predecessor.manual->view().frame_count()}) {
+           !=std::optional{predecessor.manual->view().frame_count()}
+       ||after.value()->position!=sourceCue) {
         monitorTransitioning_=false;
         renderer_->invalidate();
         failed(rejected("MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
