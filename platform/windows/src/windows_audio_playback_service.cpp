@@ -1376,9 +1376,14 @@ WindowsAudioPlaybackService::advise_prepare_master_rate_memory(
 #if defined(_WIN32)
     MEMORYSTATUSEX memory{};
     memory.dwLength=sizeof(memory);
-    if(!GlobalMemoryStatusEx(&memory))
-        return failure<Advice>(core::ErrorCode::IoFailure,
-            "MONITOR_PREPARE_WINDOWS_MEMORY_QUERY_UNAVAILABLE");
+    if(!GlobalMemoryStatusEx(&memory)) {
+        // No measurable OS headroom: emit six UNKNOWN proposals rather than
+        // an optimistic classification or a fabricated zero-cost budget.
+        // Only the initial, separately checked device rate is retained.
+        return audio::advise_monitoring_master_rates_for_prepare(
+            sourceRate,sourceFrames,*deviceRate.value(),layout,
+            audio::MonitoringMemoryObservation{0,0,otherPrepareReserveBytes});
+    }
     return audio::advise_monitoring_master_rates_for_prepare(
         sourceRate,sourceFrames,*deviceRate.value(),layout,
         audio::MonitoringMemoryObservation{

@@ -129,6 +129,7 @@ private slots:
     void monitoringResourcePreflightFailsOnOverflow();
     void monitoringPrepareAdviceSixMasterRatesAndHeadroom();
     void monitoringPrepareAdviceDurationRoundingAndUnknownState();
+    void monitoringPrepareAdviceBudgetBoundariesAndFreshObservations();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -433,6 +434,83 @@ void PlaybackSampleRateAdapterTest::monitoringPrepareAdviceDurationRoundingAndUn
     QVERIFY(!unsupportedDevice);
     QCOMPARE(unsupportedDevice.error()->code(),
         core::ErrorCode::UnsupportedOperation);
+}
+
+void PlaybackSampleRateAdapterTest::monitoringPrepareAdviceBudgetBoundariesAndFreshObservations()
+{
+    using Kind=audio::MonitoringMemoryAdviceKind;
+    using Observation=audio::MonitoringMemoryObservation;
+    constexpr std::uint64_t MiB=UINT64_C(1024)*1024;
+    constexpr std::uint64_t GiB=UINT64_C(1024)*1024*1024;
+    // The smaller of physical and committable headroom wins. For four GiB
+    // available, reserve 25% plus the caller's separate 512 MiB allocation.
+    const Observation measured{4*GiB,5*GiB,512*MiB};
+    std::uint64_t budget=0;
+    QCOMPARE(audio::classify_monitoring_memory(0,measured,&budget),
+        Kind::RECOMMENDED_MEMORY_ONLY);
+    QCOMPARE(budget,GiB*5/2);
+    const auto half=budget/2;
+    QCOMPARE(audio::classify_monitoring_memory(half,measured),
+        Kind::RECOMMENDED_MEMORY_ONLY);
+    QCOMPARE(audio::classify_monitoring_memory(half+1,measured),
+        Kind::CAUTION_LIMITED_HEADROOM);
+    QCOMPARE(audio::classify_monitoring_memory(budget,measured),
+        Kind::CAUTION_LIMITED_HEADROOM);
+    QCOMPARE(audio::classify_monitoring_memory(budget+1,measured),
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    // Exactly the same result when the smaller OS counter is COMMIT.
+    QCOMPARE(audio::classify_monitoring_memory(half,
+        Observation{5*GiB,4*GiB,512*MiB}),
+        Kind::RECOMMENDED_MEMORY_ONLY);
+    // Missing OS data is NOT equivalent to zero PCM use or a green choice.
+    budget=123;
+    QCOMPARE(audio::classify_monitoring_memory(1,
+        Observation{4*GiB,0,0},&budget),Kind::UNKNOWN);
+    QCOMPARE(budget,UINT64_C(0));
+    QCOMPARE(audio::classify_monitoring_memory(1,
+        Observation{0,4*GiB,0}),Kind::UNKNOWN);
+    // Underflow/overflow-safe arithmetic at the extreme reserve boundary.
+    budget=123;
+    QCOMPARE(audio::classify_monitoring_memory(1,
+        Observation{256*MiB,256*MiB,0},&budget),
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    QCOMPARE(budget,UINT64_C(0));
+    QCOMPARE(audio::classify_monitoring_memory(1,
+        Observation{std::numeric_limits<std::uint64_t>::max(),
+            std::numeric_limits<std::uint64_t>::max(),
+            std::numeric_limits<std::uint64_t>::max()}),
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+
+    // A prior Prepare recommendation must be recalculated against a fresh
+    // OS snapshot; it is NOT a resource reservation or cached admission.
+    const auto before=audio::advise_monitoring_master_rates_for_prepare(
+        rate(48000),frame_count(48000*180),rate(48000),
+        audio::ChannelLayout::STEREO_LR,Observation{4*GiB,5*GiB,0});
+    const auto after=audio::advise_monitoring_master_rates_for_prepare(
+        rate(48000),frame_count(48000*180),rate(48000),
+        audio::ChannelLayout::STEREO_LR,Observation{GiB,2*GiB,0});
+    const auto unavailable=audio::advise_monitoring_master_rates_for_prepare(
+        rate(48000),frame_count(48000*180),rate(48000),
+        audio::ChannelLayout::STEREO_LR,Observation{0,0,0});
+    QVERIFY(before);
+    QVERIFY(after);
+    QVERIFY(unavailable);
+    QCOMPARE(before.value()->size(),std::size_t{6});
+    QCOMPARE(after.value()->size(),std::size_t{6});
+    QCOMPARE(unavailable.value()->size(),std::size_t{6});
+    QCOMPARE((*before.value())[5].kind,Kind::RECOMMENDED_MEMORY_ONLY);
+    QCOMPARE((*after.value())[5].kind,
+        Kind::DISCOURAGED_INSUFFICIENT_HEADROOM);
+    for(std::size_t i=0;i<6;++i) {
+        QCOMPARE((*before.value())[i].resource.combined_pcm_bytes,
+            (*after.value())[i].resource.combined_pcm_bytes);
+        QCOMPARE((*unavailable.value())[i].kind,Kind::UNKNOWN);
+        QCOMPARE((*unavailable.value())[i].memory_headroom_after_reserve_bytes,
+            UINT64_C(0));
+        QVERIFY(!(*before.value())[i].cpu_performance_qualified);
+        QVERIFY(!(*after.value())[i].cpu_performance_qualified);
+        QVERIFY(!(*unavailable.value())[i].cpu_performance_qualified);
+    }
 }
 
 void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()
