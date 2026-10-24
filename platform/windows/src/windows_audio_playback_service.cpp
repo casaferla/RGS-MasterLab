@@ -832,6 +832,23 @@ public:
         return core::Status::success();
     }
 
+    [[nodiscard]] bool monitoring_output_is_owned(
+        const std::shared_ptr<const audio::MonitoringPcmCandidate>& expected) const
+    {
+        const auto snap=engine_.snapshot();
+        return snap && internal::monitoring_prepared_owner_is_current(
+            expected,preparedMonitoring_,*snap.value());
+    }
+
+    [[nodiscard]] core::Status retire_monitoring_output_if_owned(
+        const std::shared_ptr<const audio::MonitoringPcmCandidate>& expected)
+    {
+        if(!monitoring_output_is_owned(expected))
+            return status_failure(core::ErrorCode::InvalidState,
+                "MONITOR_RETIRE_EXACT_DEVICE_OWNER_REQUIRED");
+        return clear();
+    }
+
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr,
@@ -1130,6 +1147,34 @@ public:
         return invoke_status([candidate=std::move(candidate)](
             PlaybackWorker& worker) mutable {
             return worker.prepare_monitoring_output_pcm(std::move(candidate));
+        });
+    }
+
+    [[nodiscard]] core::Result<bool> monitoring_output_is_owned(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> expected) const
+    {
+        if(!ready_ || !worker_)
+            return failure<bool>(core::ErrorCode::IoFailure,
+                "MONITOR_WINDOWS_OWNER_WORKER_UNAVAILABLE");
+        if(QThread::currentThread()==worker_->thread())
+            return core::Result<bool>::success(
+                worker_->monitoring_output_is_owned(expected));
+        std::optional<bool> observed;
+        const bool invoked=QMetaObject::invokeMethod(worker_,[&] {
+            observed=worker_->monitoring_output_is_owned(expected);
+        },Qt::BlockingQueuedConnection);
+        if(!invoked || !observed)
+            return failure<bool>(core::ErrorCode::IoFailure,
+                "MONITOR_WINDOWS_OWNER_OBSERVATION_FAILED");
+        return core::Result<bool>::success(*observed);
+    }
+
+    [[nodiscard]] core::Status retire_monitoring_output_if_owned(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> expected)
+    {
+        return invoke_status([expected=std::move(expected)](
+            PlaybackWorker& worker) {
+            return worker.retire_monitoring_output_if_owned(expected);
         });
     }
 
@@ -1524,6 +1569,18 @@ core::Status WindowsAudioPlaybackService::prepare_monitoring_output_pcm(
     std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
 {
     return impl_->prepare_monitoring_output_pcm(std::move(candidate));
+}
+
+core::Result<bool> WindowsAudioPlaybackService::monitoring_output_is_owned(
+    std::shared_ptr<const audio::MonitoringPcmCandidate> expected) const
+{
+    return impl_->monitoring_output_is_owned(std::move(expected));
+}
+
+core::Status WindowsAudioPlaybackService::retire_monitoring_output_if_owned(
+    std::shared_ptr<const audio::MonitoringPcmCandidate> expected)
+{
+    return impl_->retire_monitoring_output_if_owned(std::move(expected));
 }
 
 core::Status WindowsAudioPlaybackService::seek_monitoring_master_frame(

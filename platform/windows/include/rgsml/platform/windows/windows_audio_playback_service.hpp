@@ -95,6 +95,12 @@ public:
     preferred_monitoring_output_rate(audio::ChannelLayout layout) const;
     [[nodiscard]] core::Status prepare_monitoring_output_pcm(
         std::shared_ptr<const audio::MonitoringPcmCandidate> candidate);
+    // Private sink ownership observation and conditional retirement.
+    // Neither method grants a new RealizationId or UI audition access.
+    [[nodiscard]] core::Result<bool> monitoring_output_is_owned(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> expected) const;
+    [[nodiscard]] core::Status retire_monitoring_output_if_owned(
+        std::shared_ptr<const audio::MonitoringPcmCandidate> expected);
     // Monitoring-only master-coordinate controls. These are NOT the
     // IAudioPlaybackService SOURCE frame methods nor a qualified DAC clock.
     [[nodiscard]] core::Status seek_monitoring_master_frame(

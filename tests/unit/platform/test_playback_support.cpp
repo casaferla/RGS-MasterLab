@@ -250,6 +250,7 @@ private slots:
     void terminalFormatRejectsDeviceRateFallback();
     void monitoringFormatDoesNotRetargetMaster();
     void monitoringEndpointStartResumeRequiresSameDeviceAndRate();
+    void monitoringExactOwnerRetirementNeverClearsAlienSink();
     void isolatedMonitoringPcmPumpNeverClaimsM17OrLive();
     void monitoringTransportPauseSeekLoopStopKeepsDeviceClockIsolated();
     void monitoringDeviceRateSwitchIsIsolatedAndFailsClosed();
@@ -406,6 +407,78 @@ void PlaybackSupportTest::monitoringEndpointStartResumeRequiresSameDeviceAndRate
             binaryDevice,hz,std::string_view{"A\0C",3},hz,true));
     }
     QVERIFY(!monitoring_endpoint_is_current(oldDevice,0,oldDevice,0,true));
+}
+
+
+void PlaybackSupportTest::monitoringExactOwnerRetirementNeverClearsAlienSink()
+{
+    using platform::windows::internal::monitoring_prepared_owner_is_current;
+    const auto masterHz=*core::SampleRate::create(192000).value();
+    const auto deviceHz=*core::SampleRate::create(48000).value();
+    auto fmt=audio::AudioFormat::create(
+        masterHz,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto master=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},frame_count(192));
+    QVERIFY(master);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto lane=master.value()->mutable_view().channel(ch);
+        QVERIFY(lane);
+        std::fill(lane.value()->begin(),lane.value()->end(),0.125);
+    }
+    auto first=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),deviceHz,frame_count(64));
+    auto second=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),deviceHz,frame_count(64));
+    QVERIFY(first&&second);
+    auto owned=std::make_shared<const audio::MonitoringPcmCandidate>(
+        std::move(*first.value()));
+    auto alien=std::make_shared<const audio::MonitoringPcmCandidate>(
+        std::move(*second.value()));
+    QVERIFY(owned!=alien);
+    PlaybackEngine engine;
+    auto vacant=engine.snapshot();
+    QVERIFY(vacant);
+    QVERIFY(!monitoring_prepared_owner_is_current(
+        owned,owned,*vacant.value()));
+    QVERIFY(engine.install_monitoring_output_pcm_candidate(
+        owned->device_pcm.view(),std::make_unique<FakeOutput>(4096U,4U),
+        DeviceSampleFormat::PCM_S16,std::shared_ptr<const void>(owned),
+        deviceHz));
+    auto prepared=engine.snapshot();
+    QVERIFY(prepared);
+    QCOMPARE(prepared.value()->state,core::PlaybackState::STOPPED);
+    QVERIFY(monitoring_prepared_owner_is_current(
+        owned,owned,*prepared.value()));
+    QVERIFY(!monitoring_prepared_owner_is_current(
+        alien,owned,*prepared.value()));
+    QVERIFY(!monitoring_prepared_owner_is_current(
+        owned,alien,*prepared.value()));
+    const std::shared_ptr<const audio::MonitoringPcmCandidate> none{};
+    QVERIFY(!monitoring_prepared_owner_is_current(
+        none,owned,*prepared.value()));
+    auto falsified=*prepared.value();
+    falsified.audibleRealization={
+        core::AudibleHandoffPhase::NEW,core::RealizationId{123},std::nullopt};
+    QVERIFY(!monitoring_prepared_owner_is_current(
+        owned,owned,falsified));
+    falsified=*prepared.value();
+    falsified.duration=frame_count(47);
+    QVERIFY(!monitoring_prepared_owner_is_current(
+        owned,owned,falsified));
+    QVERIFY(engine.play());
+    auto playing=engine.snapshot();
+    QVERIFY(playing);
+    QVERIFY(monitoring_prepared_owner_is_current(
+        owned,owned,*playing.value()));
+    QVERIFY(engine.stop());
+    QVERIFY(engine.clear());
+    auto retired=engine.snapshot();
+    QVERIFY(retired);
+    QVERIFY(!monitoring_prepared_owner_is_current(
+        owned,owned,*retired.value()));
+    QCOMPARE(retired.value()->state,core::PlaybackState::NO_SOURCE);
 }
 
 void PlaybackSupportTest::isolatedMonitoringPcmPumpNeverClaimsM17OrLive()

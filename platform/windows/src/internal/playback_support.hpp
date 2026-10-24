@@ -82,6 +82,23 @@ struct DeviceFormat final {
         currentDeviceId,currentPreferredRate,exactFormatStillSupported);
 }
 
+// An anonymous monitoring sink has no M17 RealizationId. Its only
+// revocable ownership proof is the exact retained DEVICE PCM pointer PLUS
+// the actual output's anonymous state and duration. Never retire by rate.
+[[nodiscard]] inline bool monitoring_prepared_owner_is_current(
+    const std::shared_ptr<const audio::MonitoringPcmCandidate>& expected,
+    const std::shared_ptr<const audio::MonitoringPcmCandidate>& installed,
+    const core::PlaybackSnapshot& playback) noexcept
+{
+    return expected && installed && expected==installed
+        && playback.state!=core::PlaybackState::NO_SOURCE
+        && playback.audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        && !playback.audibleRealization.realizationId
+        && playback.duration==std::optional{
+            expected->device_pcm.view().frame_count()};
+}
+
 // Terminal PCM is already at its output rate. Exact-format selection
 // cannot silently fall back to the 44.1/48 kHz playback SRC.
 [[nodiscard]] core::Result<DeviceFormat> select_terminal_output_device_format(
