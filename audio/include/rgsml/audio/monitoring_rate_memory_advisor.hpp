@@ -99,8 +99,12 @@ advise_imminent_monitoring_pcm_allocation(
         device_rate,layout);
     if(!cost)return core::Result<Advice>::failure(*cost.error());
     std::uint64_t headroom=0;
+    // MASTER is already resident and counted by Windows. The new
+    // allocations are DEVICE PCM plus bounded rational-FIR scratch.
+    const auto incrementalBytes=cost.value()->device_pcm_bytes
+        +cost.value()->experimental_fir_scratch_bytes;
     const auto kind=classify_monitoring_memory(
-        cost.value()->device_pcm_bytes,freshly_observed,&headroom);
+        incrementalBytes,freshly_observed,&headroom);
     return core::Result<Advice>::success(Advice{
         device_rate,std::move(*cost.value()),kind,headroom,false,false});
 }

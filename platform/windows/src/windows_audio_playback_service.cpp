@@ -1472,9 +1472,16 @@ WindowsAudioPlaybackService::materialize_monitoring_pcm_with_preflight(
         });
     if(!materialized)
         return core::Result<Candidate>::failure(*materialized.error());
-    return core::Result<Candidate>::success(
-        std::make_shared<const audio::MonitoringPcmCandidate>(
-            std::move(*materialized.value())));
+    // Even successful DEVICE PCM construction may leave insufficient
+    // heap memory to allocate the distinct candidate owner's control block.
+    try {
+        return core::Result<Candidate>::success(
+            std::make_shared<const audio::MonitoringPcmCandidate>(
+                std::move(*materialized.value())));
+    } catch(const std::bad_alloc&) {
+        return failure<Candidate>(core::ErrorCode::IoFailure,
+            "MONITOR_CANDIDATE_OWNER_OUT_OF_MEMORY");
+    }
 }
 
 core::Status WindowsAudioPlaybackService::prepare_monitoring_output_pcm(

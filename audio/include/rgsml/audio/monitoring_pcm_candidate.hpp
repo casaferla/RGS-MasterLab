@@ -12,6 +12,7 @@
 #include <functional>
 #include <limits>
 #include <numeric>
+#include <new>
 #include <optional>
 #include <utility>
 
@@ -40,6 +41,7 @@ struct MonitoringPcmResourceProjection final {
     std::uint64_t device_pcm_bytes;
     std::uint64_t combined_pcm_bytes;
     std::optional<std::uint64_t> experimental_fir_mac_operations;
+    std::uint64_t experimental_fir_scratch_bytes{0};
 };
 
 [[nodiscard]] inline core::Result<MonitoringPcmResourceProjection>
@@ -91,11 +93,17 @@ project_monitoring_pcm_resource_cost(
     const bool frozenPair=(sourceHz==44100 && deviceHz==48000)
         ||(sourceHz==48000 && deviceHz==44100);
     std::optional<std::uint64_t> macs;
+    std::uint64_t firScratch=0;
     if(sourceHz!=deviceHz && !frozenPair) {
         // Mirrors the rational FIR's tap geometry, without allocating PCM.
         auto taps=(128*sourceHz+deviceHz-1)/deviceHz;
         if(taps<128)taps=128;
         taps+=taps%2;
+        // Experimental FIR owns both its window and phase coefficient arrays.
+        const auto phases=static_cast<std::uint64_t>(
+            deviceHz/std::gcd(sourceHz,deviceHz));
+        firScratch=(phases+1)*static_cast<std::uint64_t>(taps)
+            *sizeof(double);
         const auto channels=static_cast<std::uint64_t>(
             format.value()->channel_count());
         const auto perOutput=static_cast<std::uint64_t>(taps)*channels;
@@ -104,7 +112,8 @@ project_monitoring_pcm_resource_cost(
             macs=static_cast<std::uint64_t>(outFrames)*perOutput;
     }
     return core::Result<Projection>::success({
-        *count.value(),masterBytes,deviceBytes,masterBytes+deviceBytes,macs});
+        *count.value(),masterBytes,deviceBytes,masterBytes+deviceBytes,
+        macs,firScratch});
 }
 
 // Validate an already-materialized monitor owner before touching any hardware.
@@ -195,17 +204,32 @@ materialize_monitoring_pcm_candidate(
     // decision; the default legacy experimental path has no gate. This
     // callback must not reallocate/modify the owned MASTER PCM.
     if(preallocation_check) {
-        const auto checked=preallocation_check(*resource.value());
-        if(!checked)
-            return core::Result<MonitoringPcmCandidate>::failure(
-                *checked.error());
+        try {
+            const auto checked=preallocation_check(*resource.value());
+            if(!checked)
+                return core::Result<MonitoringPcmCandidate>::failure(
+                    *checked.error());
+        } catch(const std::bad_alloc&) {
+            return refused(core::ErrorCode::IoFailure,
+                "MONITOR_ALLOC_PREFLIGHT_OUT_OF_MEMORY");
+        }
     }
 
     // No extra O(track duration) SRC scratch allocation. The borrowed view
     // remains OUTPUT_RATE, and only this explicit monitor entrypoint may
     // consume it as the immutable input to a separate device-rate PCM.
-    auto converted=materialize_output_master_monitoring_rate_candidate(
-        verified_master_pcm,observed_device_rate,offline_block);
+    // A snapshot cannot guarantee a later allocation. In particular,
+    // experimental FIR coefficient/window vectors may exhaust memory.
+    auto converted=[&]()->core::Result<FullResourceOutputRateCandidate> {
+        try {
+            return materialize_output_master_monitoring_rate_candidate(
+                verified_master_pcm,observed_device_rate,offline_block);
+        } catch(const std::bad_alloc&) {
+            return core::Result<FullResourceOutputRateCandidate>::failure(
+                core::Error{core::ErrorCode::IoFailure,
+                    "MONITOR_SRC_DEVICE_OR_FIR_OUT_OF_MEMORY"});
+        }
+    }();
     if(!converted)
         return core::Result<MonitoringPcmCandidate>::failure(*converted.error());
     if(converted.value()->pcm.view().format().sample_rate()

@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <new>
 #include <span>
 #include <utility>
 #include <vector>
@@ -532,6 +533,7 @@ monitoringImminentAllocationUsesFreshIncrementalBudget()
         UINT64_C(192000)*180*2*sizeof(double));
     QCOMPARE(first.value()->resource.device_pcm_bytes,
         UINT64_C(48000)*180*2*sizeof(double));
+    QVERIFY(first.value()->resource.experimental_fir_scratch_bytes>0);
     QCOMPARE(first.value()->kind,Kind::RECOMMENDED_MEMORY_ONLY);
     QCOMPARE(first.value()->observed_device_rate,rate(48000));
     QVERIFY(audio::validate_imminent_monitoring_preallocation(
@@ -612,6 +614,18 @@ monitoringImminentAllocationUsesFreshIncrementalBudget()
     QCOMPARE(checks,std::size_t{2});
     QCOMPARE(allowed.value()->immutable_master_rate,rate(48000));
     QCOMPARE(allowed.value()->device_rate,rate(44100));
+    // Deterministic fault injection: simulate an allocation error without
+    // exhausting the CI runner and prove master PCM is untouched.
+    const auto beforeBits=channel_bits(*owned.value(),0);
+    auto oom=audio::materialize_monitoring_pcm_candidate(
+        owned.value()->view(),rate(44100),frame_count(17),
+        [&](const audio::MonitoringPcmResourceProjection&)
+            ->core::Status { throw std::bad_alloc{}; });
+    QVERIFY(!oom);
+    QCOMPARE(oom.error()->code(),core::ErrorCode::IoFailure);
+    QCOMPARE(QString::fromStdString(oom.error()->message()),
+        QStringLiteral("MONITOR_ALLOC_PREFLIGHT_OUT_OF_MEMORY"));
+    QCOMPARE(channel_bits(*owned.value(),0),beforeBits);
 }
 
 void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()
@@ -652,6 +666,13 @@ void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()
                 QCOMPARE(*cost.value()->experimental_fir_mac_operations,
                     static_cast<std::uint64_t>(deviceHz*seconds)
                         *2*evenTaps);
+                const auto phases=static_cast<std::uint64_t>(
+                    deviceHz/std::gcd(inputHz,deviceHz));
+                QCOMPARE(cost.value()->experimental_fir_scratch_bytes,
+                    (phases+1)*evenTaps*sizeof(double));
+            } else {
+                QCOMPARE(cost.value()->experimental_fir_scratch_bytes,
+                    UINT64_C(0));
             }
             ++checked;
         }
