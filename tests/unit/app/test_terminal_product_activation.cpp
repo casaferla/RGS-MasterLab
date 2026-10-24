@@ -249,13 +249,23 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     QVERIFY(!render::validate_final_master_encoding_rate(
         *master.value(),*deviceRate.value()));
 
-    // Until Phase-11 high-rate SRC is really implemented, 192 -> 48
-    // must fail closed rather than silently convert AFTER M17.
+    // 192 -> 48 is now an explicitly requested OTHER FINAL MASTER,
+    // produced by PRE-terminal offline SRC; it is NOT a monitoring
+    // conversion applied after the above immutable 192-kHz M17 master.
     auto differentMaster=render::render_true_peak_limiter_owned_final_master_candidate(
         manual,*manualChain.value(),*frames.value(),
         manual->chain_revision(),*deviceRate.value(),
         limiter.value()->chain(),bindings,*registry.value(),*block.value());
-    QVERIFY(!differentMaster);
+    QVERIFY2(differentMaster,differentMaster?""
+        :differentMaster.error()->message().c_str());
+    QCOMPARE(differentMaster.value()->master_sample_rate,*deviceRate.value());
+    QCOMPARE(differentMaster.value()->output.output_rate,*deviceRate.value());
+    QVERIFY(differentMaster.value()->output.used_candidate_src);
+    QVERIFY(render::validate_final_master_encoding_rate(
+        *differentMaster.value(),*deviceRate.value()));
+    QVERIFY(!render::validate_final_master_encoding_rate(
+        *differentMaster.value(),*sourceRate.value()));
+    QCOMPARE(master.value()->master_sample_rate,*sourceRate.value());
 
     // The optional recovery seam preserves real upstream ownership and never
     // invents a non-conforming result when the verified master is valid.
@@ -267,11 +277,14 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         *registry.value(),*block.value(),{},nullptr,true,&recovered);
     QVERIFY(diagnostic);
     QVERIFY(!recovered);
-    // A rate-pair unsupported upstream must stay non-recoverable, even
-    // when a caller explicitly asks for an optional PCM recovery.
+    // Only a genuinely unsupported target remains fail-closed. A valid
+    // selected master rate (including 48 kHz) is never a failure merely
+    // because the Source PCM here happens to be 192 kHz.
+    const auto invalidRate=core::SampleRate::create(32000);
+    QVERIFY(invalidRate);
     auto invalidSrc=render::render_true_peak_limiter_owned_output_rate_candidate(
         manual,*manualChain.value(),*frames.value(),manual->chain_revision(),
-        *deviceRate.value(),limiter.value()->chain(),bindings,
+        *invalidRate.value(),limiter.value()->chain(),bindings,
         *registry.value(),*block.value(),{},nullptr,true,&recovered);
     QVERIFY(!invalidSrc);
     QVERIFY(!recovered);
