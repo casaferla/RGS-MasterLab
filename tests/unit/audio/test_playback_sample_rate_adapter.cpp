@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <span>
 #include <utility>
@@ -118,6 +119,9 @@ private slots:
     void monitoringPassbandGridSixBySixScreen();
     void monitoringExtendedStopbandScreen();
     void monitoringStereoImpulseSeparationSixBySix();
+    void monitoringOneSecondStereoDurationAndOwnershipSmoke();
+    void monitoringNonFiniteInputFailsClosedForSixRateFamilies();
+    void monitoringOversizedOfflineBlockRejectsWithoutMutatingMaster();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
     void reverseDirectionAndAbsoluteSeekInvariance();
@@ -332,6 +336,134 @@ void PlaybackSampleRateAdapterTest::monitoringFrameMapSixRateEndpointsAndLoops()
         core::FrameIndex{1},core::FrameIndex{2});
     QVERIFY(tooSmall);
     QVERIFY(!map.value()->master_loop_to_device(*tooSmall.value()));
+}
+
+void PlaybackSampleRateAdapterTest::monitoringOneSecondStereoDurationAndOwnershipSmoke()
+{
+    // One-second functional resource smoke, not a long-track memory/perf
+    // qualification. Coverage spans upsample, downsample, frozen FIR.
+    constexpr double pi=3.141592653589793238462643383279502884;
+    constexpr std::array<std::pair<std::int64_t,std::int64_t>,3> cases{{
+        {44100,192000},{192000,48000},{48000,44100}
+    }};
+    for(const auto& [masterHz,deviceHz]:cases) {
+        auto fmt=audio::AudioFormat::create(
+            rate(masterHz),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(fmt);
+        auto master=audio::AudioBuffer::create(
+            *fmt.value(),audio::FrameDomainId::OUTPUT_RATE,
+            core::FrameIndex{0},frame_count(masterHz));
+        QVERIFY(master);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto lane=master.value()->mutable_view().channel(ch);
+            QVERIFY(lane);
+            for(std::int64_t i=0;i<masterHz;++i) {
+                const auto sine=0.25*std::sin(2.0*pi*997.0*
+                    static_cast<double>(i)/static_cast<double>(masterHz));
+                const auto transient=i%9973==0?0.5:0.0;
+                (*lane.value())[static_cast<std::size_t>(i)]=
+                    (sine+transient)*(ch==0?1.0:-0.6);
+            }
+        }
+        const auto originalLeft=channel_bits(*master.value(),0);
+        const auto originalRight=channel_bits(*master.value(),1);
+        auto candidate=audio::materialize_monitoring_pcm_candidate(
+            master.value()->view(),rate(deviceHz),frame_count(1024));
+        QVERIFY2(candidate,candidate?"":candidate.error()->message().c_str());
+        QVERIFY(audio::validate_monitoring_pcm_candidate(*candidate.value()));
+        QCOMPARE(candidate.value()->immutable_master_frames.value(),masterHz);
+        QCOMPARE(candidate.value()->immutable_master_rate.value(),masterHz);
+        QCOMPARE(candidate.value()->device_rate.value(),deviceHz);
+        QCOMPARE(candidate.value()->device_pcm.view().frame_count().value(),
+            deviceHz);
+        QCOMPARE(candidate.value()->device_src_applied,masterHz!=deviceHz);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto output=candidate.value()->device_pcm.view().channel(ch);
+            QVERIFY(output);
+            for(const auto sample:*output.value()) {
+                QVERIFY(std::isfinite(sample));
+                QVERIFY2(std::abs(sample)<2.0,
+                    "MONITOR_ONE_SECOND_PCM_MAGNITUDE_UNEXPECTED");
+            }
+        }
+        QCOMPARE(channel_bits(*master.value(),0),originalLeft);
+        QCOMPARE(channel_bits(*master.value(),1),originalRight);
+    }
+}
+
+void PlaybackSampleRateAdapterTest::monitoringNonFiniteInputFailsClosedForSixRateFamilies()
+{
+    // NaN or +/-Inf in either master stereo lane must fail BEFORE routing
+    // a separately SRC'd listening PCM, even on the identity-rate path.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    const std::array<double,3> invalid{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(),
+        -std::numeric_limits<double>::infinity()
+    };
+    for(const auto masterHz:rates) {
+        auto fmt=audio::AudioFormat::create(
+            rate(masterHz),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(fmt);
+        auto master=audio::AudioBuffer::create(
+            *fmt.value(),audio::FrameDomainId::OUTPUT_RATE,
+            core::FrameIndex{0},frame_count(97));
+        QVERIFY(master);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto lane=master.value()->mutable_view().channel(ch);
+            QVERIFY(lane);
+            std::fill(lane.value()->begin(),lane.value()->end(),0.125);
+        }
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto lane=master.value()->mutable_view().channel(ch);
+            QVERIFY(lane);
+            for(const auto bad:invalid) {
+                (*lane.value())[37]=bad;
+                for(const auto deviceHz:{44100,48000,96000,192000}) {
+                    auto rejected=audio::materialize_monitoring_pcm_candidate(
+                        master.value()->view(),rate(deviceHz),frame_count(31));
+                    QVERIFY(!rejected);
+                    QCOMPARE(rejected.error()->code(),
+                        core::ErrorCode::InvalidAudioSample);
+                }
+                (*lane.value())[37]=0.125;
+            }
+        }
+    }
+}
+
+void PlaybackSampleRateAdapterTest::monitoringOversizedOfflineBlockRejectsWithoutMutatingMaster()
+{
+    // Bound every input-rate family before touching any SRC work. No
+    // partial device candidate may escape from an invalid block request.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::int64_t oversized=
+        audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames+1;
+    for(const auto masterHz:rates) {
+        auto fmt=audio::AudioFormat::create(
+            rate(masterHz),audio::ChannelLayout::MONO_C);
+        QVERIFY(fmt);
+        auto master=audio::AudioBuffer::create(
+            *fmt.value(),audio::FrameDomainId::OUTPUT_RATE,
+            core::FrameIndex{0},frame_count(129));
+        QVERIFY(master);
+        auto lane=master.value()->mutable_view().channel(0);
+        QVERIFY(lane);
+        for(std::int64_t i=0;i<129;++i)
+            (*lane.value())[static_cast<std::size_t>(i)]=
+                i%11==0?-0.5:0.25;
+        const auto before=channel_bits(*master.value(),0);
+        for(const auto deviceHz:rates) {
+            auto rejected=audio::materialize_monitoring_pcm_candidate(
+                master.value()->view(),rate(deviceHz),frame_count(oversized));
+            QVERIFY(!rejected);
+            QCOMPARE(rejected.error()->code(),
+                core::ErrorCode::InvalidArgument);
+            QCOMPARE(channel_bits(*master.value(),0),before);
+        }
+    }
 }
 
 void PlaybackSampleRateAdapterTest::monitoringPassbandGridSixBySixScreen()
