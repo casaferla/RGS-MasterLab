@@ -868,6 +868,13 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // master-only request, and must not publish into any audio sink.
     // This test does NOT qualify the separate 44.1 -> 192 FIR.
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
+    // The second Input Gain edit earlier in this fixture publishes a NEW
+    // MANUAL realization. The previous updatedManualId is now stale.
+    // Master-only Prepare must retain the exact CURRENT audible owner.
+    const auto currentManualId=selector.processed_realization_id();
+    QVERIFY(currentManualId);
+    QVERIFY(currentManualId!=updatedManualId);
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
     QVERIFY(limiter.value()->set_user_bypass(false));
     const auto masterRate=core::SampleRate::create(44100);
     const auto highMasterRate=core::SampleRate::create(192000);
@@ -889,13 +896,13 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
     QVERIFY(!coordinator.device_active());
-    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
     QVERIFY(!product.install_ready_private());
     QVERIFY(!product.install_measured_private());
     QVERIFY(product.cancel());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QVERIFY(!candidates.staged());
-    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
 
     // The additional 44.1 -> 192 FINAL conversion still uses the
     // experimental rational FIR, which has NO certified SHA-256. The
@@ -906,7 +913,7 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!candidates.staged());
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
-    QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
     QVERIFY(product.cancel());
 }
 
