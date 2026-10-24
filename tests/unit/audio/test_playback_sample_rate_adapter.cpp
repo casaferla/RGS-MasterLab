@@ -426,7 +426,11 @@ void PlaybackSampleRateAdapterTest::monitoringMasterSnapshotFailClosedAcrossSixR
             QVERIFY(!map.value()->project_display_snapshot(snapshot,std::nullopt));
             snapshot.loop.reset();
             QVERIFY(!map.value()->project_display_snapshot(snapshot,*masterLoop.value()));
-            snapshot.duration=frame_count(193+193);
+            // 386 may be a VALID device duration (e.g. 96 -> 192 kHz).
+            // Mutate the actual expected duration instead of assuming a
+            // constant is invalid across the six-by-six conversion matrix.
+            snapshot.duration=frame_count(
+                map.value()->device_frames().value()+1);
             QVERIFY(!map.value()->project_display_snapshot(snapshot,std::nullopt));
             snapshot.duration=map.value()->device_frames();
             snapshot.audibleRealization.realizationId=core::RealizationId{77};
