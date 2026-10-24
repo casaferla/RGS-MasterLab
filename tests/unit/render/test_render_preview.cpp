@@ -2376,13 +2376,21 @@ void RenderPreviewTest::truePeakLimiterOwnedManualToOutputRateMustBeCompleteAndS
         .compensated_pcm.view().timebase().frame_domain_id(),
         FrameDomainId::OUTPUT_RATE);
 
-    auto notSupported=
+    // 44.1 -> 96 kHz is a new EXPERIMENTAL offline rate pair:
+    // an old unsupported-rate assertion must not reject the accepted
+    // 36-pair functional candidate. This is NOT an M17 acoustic gate.
+    auto candidate96=
         rgsml::render::render_true_peak_limiter_owned_output_rate_candidate(
             manualOwner,manualChain,frame_count(441),
             manualOwner->chain_revision(),
             *rgsml::core::SampleRate::create(96000).value(),
             *limiterChain.value(),binding,*registry.value(),block);
-    QVERIFY(!notSupported);
+    QVERIFY2(candidate96,candidate96?"":candidate96.error()->message().c_str());
+    QVERIFY(candidate96.value()->used_candidate_src);
+    QCOMPARE(candidate96.value()->output_rate.value(),std::int64_t{96000});
+    QCOMPARE(candidate96.value()->terminal.checked.terminal
+        .compensated_pcm.view().frame_count().value(),std::int64_t{960});
+    QCOMPARE(bits(manualOwner->view()),originalBits);
 
     // An otherwise valid source preview of only part of the programme
     // is never a final full-resource limiter input.
