@@ -618,6 +618,7 @@ public:
         terminalPcmPrepared_=false;
         terminalPcmLifetime_.reset();
         preparedMonitoring_.reset();
+        requestedMasterLoop_.reset();
         return core::Status::success();
     }
 
@@ -654,6 +655,7 @@ public:
         terminalPcmPrepared_=false;
         terminalPcmLifetime_.reset();
         preparedMonitoring_.reset();
+        requestedMasterLoop_.reset();
         return core::Status::success();
     }
 
@@ -716,6 +718,7 @@ public:
         terminalPcmPrepared_=true;
         terminalPcmLifetime_=std::move(lifetime);
         preparedMonitoring_.reset();
+        requestedMasterLoop_.reset();
         return core::Status::success();
     }
 
@@ -743,6 +746,7 @@ public:
         preparedPcmRealizationId_.reset();
         terminalPcmPrepared_=false;
         terminalPcmLifetime_.reset();
+        requestedMasterLoop_.reset();
         preparedMonitoring_=std::move(candidate);
         return core::Status::success();
     }
@@ -763,6 +767,7 @@ public:
         terminalPcmPrepared_=false;
         terminalPcmLifetime_.reset();
         preparedMonitoring_.reset();
+        requestedMasterLoop_.reset();
         return core::Status::success();
     }
 
@@ -776,6 +781,7 @@ public:
             terminalPcmPrepared_=false;
             terminalPcmLifetime_.reset();
         preparedMonitoring_.reset();
+        requestedMasterLoop_.reset();
         }
         return cleared;
     }
@@ -796,6 +802,7 @@ public:
             const auto terminal=terminalPcmPrepared_;
             const auto owner=terminalPcmLifetime_;
             const auto monitoring=preparedMonitoring_;
+            const auto requestedLoop=requestedMasterLoop_;
             if(terminal&&(!pcm||!pcmRealizationId||!owner))
                 return status_failure(core::ErrorCode::InvalidState,
                     "Cannot reopen unowned terminal PCM.");
@@ -817,6 +824,7 @@ public:
             if (!looped) {
                 return looped;
             }
+            if(monitoring) requestedMasterLoop_=requestedLoop;
         }
         return engine_.play();
     }
@@ -839,6 +847,9 @@ public:
 
     [[nodiscard]] core::Status seek(core::FrameIndex position)
     {
+        if(preparedMonitoring_)
+            return status_failure(core::ErrorCode::InvalidState,
+                "MONITOR_SEEK_REQUIRES_MASTER_COORDINATES");
         if (analyzer_ != nullptr) {
             analyzer_->invalidate_and_clear();
         }
@@ -848,6 +859,9 @@ public:
     [[nodiscard]] core::Status set_loop(
         std::optional<core::FrameRange> loop)
     {
+        if(preparedMonitoring_)
+            return status_failure(core::ErrorCode::InvalidState,
+                "MONITOR_LOOP_REQUIRES_MASTER_COORDINATES");
         return engine_.set_loop(loop);
     }
 
@@ -863,7 +877,8 @@ public:
         if(!target)return core::Status::failure(*target.error());
         // Do not re-clock or re-render M17. The existing monitoring sink
         // consumes DEVICE frames only; LIVE provenance remains unqualified.
-        return seek(*target.value());
+        if(analyzer_) analyzer_->invalidate_and_clear();
+        return engine_.seek(*target.value());
     }
 
     [[nodiscard]] core::Status set_monitoring_master_loop(
@@ -874,13 +889,37 @@ public:
                 "MONITOR_LOOP_REQUIRES_OWNED_DEVICE_PCM");
         auto map=audio::MonitoringFrameMap::create(*preparedMonitoring_);
         if(!map)return core::Status::failure(*map.error());
-        if(!masterLoop)return set_loop(std::nullopt);
-        auto mapped=map.value()->master_loop_to_device(*masterLoop);
-        if(!mapped)return core::Status::failure(*mapped.error());
-        return set_loop(*mapped.value());
+        std::optional<core::FrameRange> mappedLoop;
+        if(masterLoop) {
+            auto mapped=map.value()->master_loop_to_device(*masterLoop);
+            if(!mapped)return core::Status::failure(*mapped.error());
+            mappedLoop=*mapped.value();
+        }
+        auto committed=engine_.set_loop(mappedLoop);
+        if(committed)requestedMasterLoop_=masterLoop;
+        return committed;
     }
 
 
+
+    [[nodiscard]] core::Result<audio::MonitoringMasterDisplaySnapshot>
+    monitoring_master_snapshot() const
+    {
+        if(!preparedMonitoring_)
+            return core::Result<audio::MonitoringMasterDisplaySnapshot>::failure(
+                core::Error{core::ErrorCode::InvalidState,
+                    "MONITOR_SNAPSHOT_REQUIRES_OWNED_DEVICE_PCM"});
+        auto map=audio::MonitoringFrameMap::create(*preparedMonitoring_);
+        if(!map)
+            return core::Result<audio::MonitoringMasterDisplaySnapshot>::failure(
+                *map.error());
+        auto snap=engine_.snapshot();
+        if(!snap)
+            return core::Result<audio::MonitoringMasterDisplaySnapshot>::failure(
+                *snap.error());
+        return map.value()->project_display_snapshot(
+            *snap.value(),requestedMasterLoop_);
+    }
 
     [[nodiscard]] core::Result<core::PlaybackSnapshot> snapshot() const
     {
@@ -915,6 +954,7 @@ private:
     bool terminalPcmPrepared_{false};
     std::shared_ptr<const void> terminalPcmLifetime_;
     std::shared_ptr<const audio::MonitoringPcmCandidate> preparedMonitoring_;
+    std::optional<core::FrameRange> requestedMasterLoop_;
 };
 
 }  // namespace
@@ -1086,6 +1126,25 @@ public:
 
 
 
+    [[nodiscard]] core::Result<audio::MonitoringMasterDisplaySnapshot>
+    monitoring_master_snapshot() const
+    {
+        using Snapshot=audio::MonitoringMasterDisplaySnapshot;
+        if(!ready_ || worker_==nullptr)
+            return core::Result<Snapshot>::failure(core::Error{
+                core::ErrorCode::IoFailure,"MONITOR_WORKER_UNAVAILABLE"});
+        if(QThread::currentThread()==worker_->thread())
+            return worker_->monitoring_master_snapshot();
+        std::optional<core::Result<Snapshot>> reply;
+        const bool invoked=QMetaObject::invokeMethod(worker_,[&] {
+            reply.emplace(worker_->monitoring_master_snapshot());
+        },Qt::BlockingQueuedConnection);
+        if(!invoked || !reply)
+            return core::Result<Snapshot>::failure(core::Error{
+                core::ErrorCode::IoFailure,"MONITOR_SNAPSHOT_INVOKE_FAILED"});
+        return std::move(*reply);
+    }
+
     [[nodiscard]] core::Result<core::PlaybackSnapshot> snapshot() const
     {
         if (!ready_ || worker_ == nullptr) {
@@ -1245,6 +1304,12 @@ core::Status WindowsAudioPlaybackService::set_monitoring_master_loop(
     std::optional<core::FrameRange> masterLoop)
 {
     return impl_->set_monitoring_master_loop(masterLoop);
+}
+
+core::Result<audio::MonitoringMasterDisplaySnapshot>
+WindowsAudioPlaybackService::monitoring_master_snapshot() const
+{
+    return impl_->monitoring_master_snapshot();
 }
 
 core::Status WindowsAudioPlaybackService::handoff_pcm(

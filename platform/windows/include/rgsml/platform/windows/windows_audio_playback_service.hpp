@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rgsml/audio/audio_buffer_view.hpp>
+#include <rgsml/audio/monitoring_frame_map.hpp>
 #include <rgsml/core/audio_playback_service.hpp>
 #include <rgsml/platform/windows/windows_consumed_output_prefix.hpp>
 
@@ -60,6 +61,10 @@ public:
         core::FrameIndex masterFrame);
     [[nodiscard]] core::Status set_monitoring_master_loop(
         std::optional<core::FrameRange> masterLoop);
+    // Explicit MASTER-domain display. Generic snapshot() remains DEVICE
+    // coordinates and must not be republished as master/audible proof.
+    [[nodiscard]] core::Result<audio::MonitoringMasterDisplaySnapshot>
+    monitoring_master_snapshot() const;
     [[nodiscard]] core::Status handoff_pcm(
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr,

@@ -248,6 +248,7 @@ private slots:
     void terminalFormatRejectsDeviceRateFallback();
     void monitoringFormatDoesNotRetargetMaster();
     void isolatedMonitoringPcmPumpNeverClaimsM17OrLive();
+    void monitoringTransportPauseSeekLoopStopKeepsDeviceClockIsolated();
     void preferredTerminalRateIsExplicitAndFailClosed();
     void floatAndPcm16GoldenConversion();
     void conversionFailuresAndChunkInvariance();
@@ -458,6 +459,73 @@ void PlaybackSupportTest::isolatedMonitoringPcmPumpNeverClaimsM17OrLive()
     QCOMPARE(engine.c2_processed_coverage_probe().reason,
         Reason::NOT_MONITORED);
     QCOMPARE(master.value()->view().format().sample_rate(),masterRate);
+}
+
+void PlaybackSupportTest::monitoringTransportPauseSeekLoopStopKeepsDeviceClockIsolated()
+{
+    using Reason=platform::windows::internal::C2CoverageProbeReason;
+    constexpr std::int64_t masterFrames=4800;
+    const auto masterHz=*core::SampleRate::create(192000).value();
+    const auto deviceHz=*core::SampleRate::create(48000).value();
+    auto format=audio::AudioFormat::create(masterHz,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto master=audio::AudioBuffer::create(*format.value(),
+        audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},
+        frame_count(masterFrames));
+    QVERIFY(master);
+    auto monitor=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),deviceHz,frame_count(256));
+    QVERIFY(monitor);
+    auto owned=std::make_shared<audio::MonitoringPcmCandidate>(
+        std::move(*monitor.value()));
+    auto map=audio::MonitoringFrameMap::create(*owned);
+    QVERIFY(map);
+    QCOMPARE(map.value()->device_frames().value(),std::int64_t{1200});
+    PlaybackEngine engine;
+    auto sink=std::make_unique<FakeOutput>(1024U,4U);
+    auto* output=sink.get();
+    QVERIFY(engine.install_monitoring_output_pcm_candidate(
+        owned->device_pcm.view(),std::move(sink),
+        DeviceSampleFormat::PCM_S16,
+        std::shared_ptr<const void>(owned),deviceHz));
+    auto target=map.value()->master_to_device(core::FrameIndex{800});
+    QVERIFY(target);
+    QCOMPARE(target.value()->value(),std::int64_t{200});
+    QVERIFY(engine.seek(*target.value()));
+    auto masterLoop=core::FrameRange::create(
+        core::FrameIndex{512},core::FrameIndex{4096});
+    QVERIFY(masterLoop);
+    auto deviceLoop=map.value()->master_loop_to_device(*masterLoop.value());
+    QVERIFY(deviceLoop);
+    QVERIFY(engine.set_loop(*deviceLoop.value()));
+    auto display=map.value()->project_display_snapshot(
+        *engine.snapshot().value(),*masterLoop.value());
+    QVERIFY(display);
+    QCOMPARE(display.value()->master_display_position.value(),
+        std::int64_t{800});
+    QVERIFY(display.value()->requested_master_loop.has_value());
+    QCOMPARE(*display.value()->requested_master_loop,*masterLoop.value());
+    QVERIFY(engine.play());
+    QCOMPARE(engine.snapshot().value()->state,core::PlaybackState::PLAYING);
+    QCOMPARE(engine.c2_processed_coverage_probe().reason,Reason::NOT_MONITORED);
+    QVERIFY(engine.pause());
+    QCOMPARE(engine.snapshot().value()->state,core::PlaybackState::PAUSED);
+    QVERIFY(engine.set_loop(std::nullopt));
+    QVERIFY(engine.set_loop(*deviceLoop.value()));
+    QVERIFY(engine.play());
+    QCOMPARE(engine.snapshot().value()->state,core::PlaybackState::PLAYING);
+    auto later=map.value()->master_to_device(core::FrameIndex{1200});
+    QVERIFY(later);
+    QVERIFY(engine.seek(*later.value()));
+    QCOMPARE(engine.snapshot().value()->position.value(),std::int64_t{300});
+    QCOMPARE(engine.c2_processed_coverage_probe().reason,Reason::NOT_MONITORED);
+    QVERIFY(!engine.c2_consumed_prefix().certifiedForLiveTruePeak);
+    QVERIFY(engine.stop());
+    QCOMPARE(engine.snapshot().value()->state,core::PlaybackState::STOPPED);
+    QCOMPARE(engine.snapshot().value()->position.value(),std::int64_t{0});
+    QCOMPARE(master.value()->view().format().sample_rate(),masterHz);
+    QCOMPARE(owned->device_pcm.view().format().sample_rate(),deviceHz);
+    QVERIFY(output->stopCalls>0);
 }
 
 void PlaybackSupportTest::preferredTerminalRateIsExplicitAndFailClosed()

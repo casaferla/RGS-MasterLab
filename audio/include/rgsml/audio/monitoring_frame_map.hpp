@@ -2,6 +2,7 @@
 
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/core/frame_time.hpp>
+#include <rgsml/core/audio_playback_service.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/result.hpp>
 
@@ -9,6 +10,19 @@
 #include <limits>
 
 namespace rgsml::audio {
+
+// A display/control-plane snapshot, never an audible DAC clock, M16 LIVE
+// meter reading or proof of the original terminal master realization.
+struct MonitoringMasterDisplaySnapshot final {
+    core::PlaybackState state;
+    core::FrameIndex master_display_position;
+    core::FrameCount master_duration;
+    std::optional<core::FrameRange> requested_master_loop;
+    core::FrameIndex device_position;
+    core::FrameCount device_duration;
+    core::SampleRate master_rate;
+    core::SampleRate device_rate;
+};
 
 // Pure master ↔ device listening coordinate map. Only the separately
 // SRC-derived MONITOR buffer uses these coordinates; neither M17 master PCM
@@ -88,6 +102,35 @@ public:
             return invalid<core::FrameRange>(
                 "MONITOR_FRAME_MAP_COLLAPSED_DEVICE_REGION");
         return core::FrameRange::create(*first.value(),*last.value());
+    }
+
+    [[nodiscard]] core::Result<MonitoringMasterDisplaySnapshot>
+    project_display_snapshot(
+        const core::PlaybackSnapshot& deviceSnapshot,
+        std::optional<core::FrameRange> requestedMasterLoop) const
+    {
+        using Snapshot=MonitoringMasterDisplaySnapshot;
+        if(!deviceSnapshot.duration
+           ||*deviceSnapshot.duration!=deviceFrames_
+           ||deviceSnapshot.state==core::PlaybackState::NO_SOURCE
+           ||deviceSnapshot.position.value()<0
+           ||deviceSnapshot.position.value()>deviceFrames_.value()
+           ||deviceSnapshot.audibleRealization.realizationId)
+            return invalid<Snapshot>("MONITOR_SNAPSHOT_DEVICE_PROVENANCE_INVALID");
+        if(requestedMasterLoop) {
+            auto mapped=master_loop_to_device(*requestedMasterLoop);
+            if(!mapped)return core::Result<Snapshot>::failure(*mapped.error());
+            if(!deviceSnapshot.loop||*deviceSnapshot.loop!=*mapped.value())
+                return invalid<Snapshot>("MONITOR_SNAPSHOT_LOOP_EPOCH_MISMATCH");
+        }else if(deviceSnapshot.loop) {
+            return invalid<Snapshot>("MONITOR_SNAPSHOT_UNOWNED_DEVICE_LOOP");
+        }
+        auto display=device_to_master_cursor(deviceSnapshot.position);
+        if(!display)return core::Result<Snapshot>::failure(*display.error());
+        return core::Result<Snapshot>::success({
+            deviceSnapshot.state,*display.value(),masterFrames_,
+            requestedMasterLoop,deviceSnapshot.position,deviceFrames_,
+            masterRate_,deviceRate_});
     }
 
 private:

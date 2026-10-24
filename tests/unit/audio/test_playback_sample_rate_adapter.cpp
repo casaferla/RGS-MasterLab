@@ -110,6 +110,7 @@ private slots:
     void finalMasterMonitoringCannotRetargetMasterRate();
     void isolatedOfflineMonitoringPcmSixBySixMatrix();
     void monitoringFrameMapSixRateEndpointsAndLoops();
+    void monitoringMasterSnapshotFailClosedAcrossSixRatePairs();
     void monitoringBorrowsMasterWithoutSourceAlias();
     void assetsAreFrozenAndSymmetric();
     void constantAndChunkInvariance();
@@ -382,6 +383,55 @@ void PlaybackSampleRateAdapterTest::monitoringBorrowsMasterWithoutSourceAlias()
             channel_bits(expected.value()->pcm,0));
         QCOMPARE(channel_bits(owned.value()->device_pcm,1),
             channel_bits(expected.value()->pcm,1));
+    }
+}
+
+void PlaybackSampleRateAdapterTest::monitoringMasterSnapshotFailClosedAcrossSixRatePairs()
+{
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    for(const auto src:rates) {
+        auto fmt=audio::AudioFormat::create(rate(src),audio::ChannelLayout::MONO_C);
+        QVERIFY(fmt);
+        auto master=audio::AudioBuffer::create(*fmt.value(),
+            audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},frame_count(193));
+        QVERIFY(master);
+        for(const auto dst:rates) {
+            auto candidate=audio::materialize_monitoring_pcm_candidate(
+                master.value()->view(),rate(dst),frame_count(64));
+            QVERIFY(candidate);
+            auto map=audio::MonitoringFrameMap::create(*candidate.value());
+            QVERIFY(map);
+            core::PlaybackSnapshot snapshot;
+            snapshot.state=core::PlaybackState::STOPPED;
+            snapshot.duration=map.value()->device_frames();
+            snapshot.position=core::FrameIndex{map.value()->device_frames().value()};
+            auto display=map.value()->project_display_snapshot(snapshot,std::nullopt);
+            QVERIFY(display);
+            QCOMPARE(display.value()->master_display_position.value(),
+                std::int64_t{193});
+            QCOMPARE(display.value()->master_duration.value(),std::int64_t{193});
+            QCOMPARE(display.value()->device_rate.value(),dst);
+            QCOMPARE(display.value()->master_rate.value(),src);
+            auto masterLoop=core::FrameRange::create(
+                core::FrameIndex{0},core::FrameIndex{193});
+            QVERIFY(masterLoop);
+            auto deviceLoop=map.value()->master_loop_to_device(*masterLoop.value());
+            QVERIFY(deviceLoop);
+            snapshot.loop=*deviceLoop.value();
+            auto valid=map.value()->project_display_snapshot(snapshot,*masterLoop.value());
+            QVERIFY(valid);
+            QVERIFY(valid.value()->requested_master_loop.has_value());
+            QCOMPARE(*valid.value()->requested_master_loop,*masterLoop.value());
+            QVERIFY(!map.value()->project_display_snapshot(snapshot,std::nullopt));
+            snapshot.loop.reset();
+            QVERIFY(!map.value()->project_display_snapshot(snapshot,*masterLoop.value()));
+            snapshot.duration=frame_count(193+193);
+            QVERIFY(!map.value()->project_display_snapshot(snapshot,std::nullopt));
+            snapshot.duration=map.value()->device_frames();
+            snapshot.audibleRealization.realizationId=core::RealizationId{77};
+            QVERIFY(!map.value()->project_display_snapshot(snapshot,std::nullopt));
+        }
     }
 }
 
