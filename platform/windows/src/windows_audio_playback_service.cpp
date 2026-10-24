@@ -348,6 +348,15 @@ public:
 
     [[nodiscard]] std::optional<core::Error> error() const override
     {
+        // Owner-thread PlaybackEngine::tick() queries error() BEFORE pumping
+        // more bytes. A mid-playback default-device or preferred-rate change
+        // must stop this monitoring epoch, not retarget its already-resampled
+        // PCM or claim a new M17/M16 LIVE realization. Normal SOURCE and M17
+        // terminal sinks have no monitorLock_ and keep existing behavior.
+        if(sink_ && monitorLock_
+           && !monitor_endpoint_matches(QMediaDevices::defaultAudioOutput()))
+            return core::Error{core::ErrorCode::UnsupportedOperation,
+                "MONITOR_ENDPOINT_CHANGED_WHILE_PLAYING: regenerate device PCM."};
         if (!sink_ || sink_->error() == QtAudio::NoError) {
             return std::nullopt;
         }

@@ -592,6 +592,7 @@ void PlaybackSupportTest::monitoringDeviceRateSwitchIsIsolatedAndFailsClosed()
         std::move(*b.value()));
     PlaybackEngine player;
     auto sinkA=std::make_unique<FakeOutput>(1024U,4U);
+    auto* observedA=sinkA.get();
     QVERIFY(player.install_monitoring_output_pcm_candidate(
         ownerA->device_pcm.view(),std::move(sinkA),
         DeviceSampleFormat::PCM_S16,
@@ -611,6 +612,19 @@ void PlaybackSupportTest::monitoringDeviceRateSwitchIsIsolatedAndFailsClosed()
         ownerB->device_pcm.view(),std::make_unique<FakeOutput>(2048U,4U),
         DeviceSampleFormat::PCM_S16,{},rate96));
     QVERIFY(*player.snapshot().value()==*snapshotBeforeRejectedSwap.value());
+    // A simulated in-flight endpoint loss is reported by the sink as a
+    // runtime error; the owner-thread tick stops/clears the old output and
+    // must NOT certify a new M17 realization or any M16 LIVE samples.
+    observedA->inject_error(core::Error{
+        core::ErrorCode::UnsupportedOperation,
+        "MONITOR_ENDPOINT_CHANGED_WHILE_PLAYING"});
+    player.tick();
+    QCOMPARE(player.snapshot().value()->state,core::PlaybackState::STOPPED);
+    QVERIFY(observedA->queue().empty());
+    QVERIFY(observedA->stopCalls>0);
+    QVERIFY(!player.play());
+    QVERIFY(!player.c2_consumed_prefix().certifiedForLiveTruePeak);
+    QVERIFY(!player.snapshot().value()->audibleRealization.realizationId);
     // Deliberately abandon old DEVICE PCM; retain independent MASTER.
     auto sinkB=std::make_unique<FakeOutput>(2048U,4U);
     auto* observedB=sinkB.get();
