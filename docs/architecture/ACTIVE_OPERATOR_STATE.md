@@ -84,6 +84,17 @@
 - Remaining P0 for FQ80: initial SOURCE/PROCESSED audition playback can still fail on unsupported exact or paired endpoint rates, leaving no MANUAL owner at all. This case is NOT fixed by #825's clean NO_SOURCE offline render (which still requires a preexisting accepted PROCESSED/manual identity). Need explicit and fully reviewed offline owner/provenance pipeline. MONITOR/Audition DEVICE playback and generalized multi-window semantics need physical qualification, not only green PR CI.
 - Workflow contract: staging commits first, batch, promote one candidate, let CI run; during CI update docs and investigate next task, never launch Full Qualification without PO.
 
+## PO-required draggable docking — CI #827, October 25
+- Product Owner approved native-window gesture docking as mandatory for FQ #80. Static menu-based Dock/Undock continues as fallback; separate Source-WAV file drag/drop is postponed, as is M18.
+- [#826](https://github.com/casaferla/RGS-MasterLab/actions/runs/40225427197) **FAIL Windows UI smoke, Linux PASS**. Scoped error: Main View menu `count` changed from `instantiator + 5` to `instantiator + 7` (two separators and Dock/Undock); the check was updated while preserving exact count and requiring the named command.
+- [#827](https://github.com/casaferla/RGS-MasterLab/actions/runs/40226876576) launched from PR `6a56dcb1889c3166e85df4ab83b6d59171a33e9c`; status QUEUED when recorded, verify live. Includes the #826 correction, and:
+  1. Fixed 22px grip in DspEditorHost header. A user drag beyond 32 logical px releasing outside the editor requests the unique floating window; Esc cancels.
+  2. Fixed 28px grip in DspFloatingModuleWindow header to move Qt Window and signal native-window global release. Esc returns the window to its starting coordinates and cancels drop.
+  3. Two non-reflow placeholders in Main standard/compact editor slots; release over actual logical screen-mapped dock highlights/rehomes the SAME editor object via mutually exclusive LayoutItemProxy, leaving source/chain untouched.
+  4. Native smoke asserts both grips, drop target, real Main editor QObject, re-dock over target, and drop outside preserving floated state.
+- **Known qualification limit:** QML `DragHandler` movement across a native Qt Window and mixed-DPI desktop remains unproven physically despite CI. PO FQ must test one/two monitors and 150% Windows scaling. One floating editor at a time; multi-window simultaneous float is NOT implemented.
+- Next on green: continue P0 INITIAL SOURCE/PROCESSED device-independent render authority and safe actual Device audition, then close remaining family geometry and FQ candidate. On red: bounded Windows/Linux failed-step artifact, stage one cohesive fix, then next CI; never inspect whole Actions logs.
+
 ## NEXT: cohesive package then PR promotion
 - CI #820 is launched and owns PR SHA `18992c76`. Inspect failed-step summaries / small artifacts only. If red, fix all related errors on staging and promote one candidate. If green, continue the already approved M17 P0 audio and generalized docking packages in staging without asking for another 'Vai'. Update this file on staging; never send one CI per documentation edit.
 - No FQ #80 before actual M17 44.1/48/192, MONITOR audition, fixed M16/M17 UI and common docking are plausibly functioning on the candidate. PO alone triggers FQ.
