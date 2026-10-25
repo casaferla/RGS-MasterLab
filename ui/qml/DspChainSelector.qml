@@ -23,7 +23,8 @@ Rectangle {
         if (!moduleAdapter) return ""
         const state = moduleAdapter.stateText || ""
         if (moduleAdapter.editorContentKey !== "TRUE_PEAK_LIMITER")
-            return state
+            return moduleAdapter.bypassSupported && moduleAdapter.bypass
+                ? "Bypass · " + state : state
         if (state.startsWith("NEEDS PREPARATION")) return "Needs preparation"
         if (state.startsWith("READY")) return "Ready · Preview"
         if (state.startsWith("ERROR")) return "Error · Bypass"
@@ -42,7 +43,8 @@ Rectangle {
         if (!moduleAdapter) return ""
         const state = moduleAdapter.stateText || ""
         if (moduleAdapter.editorContentKey !== "TRUE_PEAK_LIMITER")
-            return state
+            return moduleAdapter.bypassSupported && moduleAdapter.bypass
+                ? "Processing bypassed · " + state : state
         if (state.startsWith("Preparing") || state.startsWith("RENDERING"))
             return state + " · Elapsed preparation time, not a countdown. "
                 + "The current Meter still observes MANUAL PROCESSED audio; "
@@ -56,35 +58,32 @@ Rectangle {
         return state
     }
 
-    // M16 is an analysis-only LIVE row. M17 and future real Dither adapters
-    // form a separate, anchored-bottom finalization group.
+    // A SINGLE vertical list is authoritative for processing DSPs,
+    // analysis M16, terminal M17 and workflow utility MONITOR. One model
+    // index is one adapter identity; no separate Finalization fixed dock.
     readonly property var chainModules: adapterModel ? adapterModel.modules : []
-    function isTerminal(module) {
-        return !!module && (module.editorContentKey === "TRUE_PEAK_LIMITER"
-            || module.editorContentKey === "DITHER"
-            || module.typeId === "rgsml.dsp.dither")
-    }
-    // Stable numeric original-chain indices, not QVariant/QObject JS-wrapper
-    // identity comparisons. Both Repeaters retain the same adapter authority.
-    readonly property var liveModuleIndices: {
-        var out = []
-        for (var i = 0; i < root.chainModules.length; ++i)
-            if (!root.isTerminal(root.chainModules[i])) out.push(i)
-        return out
-    }
-    readonly property var terminalModuleIndices: {
-        var out = []
-        for (var i = 0; i < root.chainModules.length; ++i)
-            if (root.isTerminal(root.chainModules[i])) out.push(i)
-        return out
-    }
     function rowAt(idx) {
-        if (idx < 0 || idx >= root.chainModules.length) return null
-        var liveIdx = root.liveModuleIndices.indexOf(idx)
-        if (liveIdx >= 0) return rowRepeater.itemAt(liveIdx)
-        var terminalIdx = root.terminalModuleIndices.indexOf(idx)
-        return terminalIdx >= 0 ? terminalRepeater.itemAt(terminalIdx) : null
+        if(idx<0 ||idx>=root.chainModules.length)return null
+        return rowRepeater.itemAt(idx)
     }
+    function ensureRowVisible(idx) {
+        // Selection can precede QtQuick layout polish or delegate creation.
+        Qt.callLater(function() {
+            const row=root.rowAt(idx)
+            const flick=chainScrollView.contentItem
+            if(!row || !flick || !chainScrollView.visible)return
+            const top=row.y
+            const bottom=top+row.height
+            const pad=2
+            if(top< flick.contentY+pad)
+                flick.contentY=Math.max(0,top-pad)
+            else if(bottom>flick.contentY+flick.height-pad)
+                flick.contentY=Math.min(Math.max(0,flick.contentHeight-flick.height),
+                                        bottom-flick.height+pad)
+        })
+    }
+    onSelectedIndexChanged: ensureRowVisible(selectedIndex)
+    onRowGenerationChanged: ensureRowVisible(selectedIndex)
     // itemAt() has no reactive notifier. Every delegate-creation/removal
     // advances rowGeneration so offscreen/visible LayoutItemProxy instances
     // cannot retain an initially null handle at unchanged model length.
@@ -136,19 +135,33 @@ Rectangle {
 
     ScrollView {
         id: chainScrollView
+        objectName: "dspChainUnifiedScroll"
         anchors.top: chainHeader.bottom
-        anchors.bottom: finalizationDock.visible ? finalizationDock.top : parent.bottom
+        anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 4
         clip: true
-        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+        // Do not use availableWidth: it changes when a platform scrollbar
+        // is reserved and makes DSP labels jump at short window heights.
+        contentWidth: width
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
+            width: 3
+            z: 10
+            contentItem: Rectangle {
+                radius: 2
+                color: "#60768A"
+                opacity: parent.active ? 0.85 : 0.45
+            }
+        }
         ColumnLayout {
-            width: chainScrollView.availableWidth
+            width: chainScrollView.width
             spacing: 4
             Repeater {
                 id: rowRepeater
-                model: root.liveModuleIndices
+                model: root.chainModules.length
                 delegate: chainRowDelegate
                 onItemAdded: root.rowGeneration += 1
                 onItemRemoved: root.rowGeneration += 1
@@ -156,65 +169,7 @@ Rectangle {
         }
     }
 
-    // Terminal DSPs remain VISIBLE at the bottom while only the LIVE
-    // chain scrolls above. Dither is not synthesized as a placeholder.
-    Rectangle {
-        id: finalizationDock
-        objectName: "dspTerminalFinalizationDock"
-        visible: root.terminalModuleIndices.length > 0
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: 4
-        height: visible ? 34 + root.terminalModuleIndices.length * 52
-            + Math.max(0, root.terminalModuleIndices.length - 1) * 4 : 0
-        radius: 4
-        color: "#0C1A28"
-        border.width: 1
-        border.color: "#365069"
-
-        Rectangle {
-            id: finalizationDivider
-            objectName: "dspFinalizationDivider"
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            height: 2
-            color: "#C4774A"
-        }
-        Text {
-            objectName: "dspFinalizationHeading"
-            anchors.left: parent.left
-            anchors.top: finalizationDivider.bottom
-            anchors.leftMargin: 8
-            anchors.topMargin: 5
-            text: "FINALIZATION · OFFLINE"
-            font.family: "Segoe UI"
-            font.pixelSize: 9
-            font.weight: Font.DemiBold
-            color: "#C4774A"
-        }
-        ColumnLayout {
-            id: terminalStack
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.leftMargin: 4
-            anchors.rightMargin: 4
-            anchors.bottomMargin: 4
-            spacing: 4
-            Repeater {
-                id: terminalRepeater
-                model: root.terminalModuleIndices
-                delegate: chainRowDelegate
-                onItemAdded: root.rowGeneration += 1
-                onItemRemoved: root.rowGeneration += 1
-            }
-        }
-    }
-
-    // Reuse the same LED, focus, state, tooltip and navigation grammar
-    // for both groups; original chain indexes remain authoritative.
+    // Shared renderer for ALL module and service rows.
     Component {
         id: chainRowDelegate
                 Rectangle {
@@ -224,17 +179,21 @@ Rectangle {
                     Layout.preferredHeight: 52
                     radius: 4
 
-                    readonly property int modelIndex: modelData
+                    readonly property int modelIndex: index
                     readonly property var moduleAdapter: (rowItem.modelIndex >= 0
                         && rowItem.modelIndex < root.chainModules.length)
                         ? root.chainModules[rowItem.modelIndex] : null
-                    readonly property bool isFinalization: root.isTerminal(moduleAdapter)
                     readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === rowItem.modelIndex)
                     readonly property bool isDefaultState: moduleAdapter ? (moduleAdapter.configurationState === "Default") : true
                     readonly property bool isBypassed: moduleAdapter ? (moduleAdapter.bypassSupported && moduleAdapter.bypass) : false
                     readonly property bool hasError: moduleAdapter ? moduleAdapter.hasError : false
 
-                    color: isSelected ? "#1A324A" : (rowMouse.containsMouse ? "#122538" : "#0D1D2B")
+                    // Bypass is a ROW treatment, not a positional BYP badge.
+                    // Keep title/LED/error at fixed coordinates in every state.
+                    color: isSelected
+                        ? (isBypassed ? "#172A38" : "#1A324A")
+                        : isBypassed ? (rowMouse.containsMouse ? "#0E1C27" : "#091620")
+                        : (rowMouse.containsMouse ? "#122538" : "#0D1D2B")
                     border.color: isSelected ? "#00C8FF" : "#1A324A"
                     border.width: 1
 
@@ -296,6 +255,7 @@ Rectangle {
                         width: 3
                         radius: 1
                         color: rowItem.moduleAdapter ? rowItem.moduleAdapter.familyAccent : "#00C8FF"
+                        opacity: rowItem.isBypassed ? 0.28 : 1.0
                     }
 
                     RowLayout {
@@ -346,7 +306,8 @@ Rectangle {
                                 Layout.minimumWidth: 0
                                 Layout.alignment: Qt.AlignLeft
                                 text: rowItem.moduleAdapter ? rowItem.moduleAdapter.displayName : ""
-                                color: rowItem.isSelected ? "#F5F8FC" : "#C4D4E0"
+                                color: rowItem.isBypassed ? "#9FB1BF"
+                                    : rowItem.isSelected ? "#F5F8FC" : "#C4D4E0"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
@@ -364,7 +325,7 @@ Rectangle {
                                 wrapMode: Text.WordWrap
                                 elide: Text.ElideNone
                                 text: root.readableState(rowItem.moduleAdapter)
-                                color: "#7A8E9E"
+                                color: rowItem.isBypassed ? "#8196A8" : "#7A8E9E"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 9
                                 visible: true
@@ -376,33 +337,6 @@ Rectangle {
                                     anchors.fill: parent
                                     canShow: !!rowItem.moduleAdapter
                                         && rowItem.moduleAdapter.stateText.length > 0
-                                }
-                            }
-                        }
-
-                        // Bypass Badge ("BYP") fixed width container to prevent title shift (UI-MINOR-03)
-                        Item {
-                            Layout.minimumWidth: 28
-                            Layout.preferredWidth: 28
-                            Layout.maximumWidth: 28
-                            Layout.preferredHeight: 16
-
-                            Rectangle {
-                                objectName: "dspChainBypassBadge_" + rowItem.modelIndex
-                                visible: rowItem.isBypassed
-                                anchors.fill: parent
-                                radius: 3
-                                color: "#3A2A0D"
-                                border.color: "#F2B632"
-                                border.width: 1
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "BYP"
-                                    color: "#F2B632"
-                                    font.family: "Segoe UI"
-                                    font.pixelSize: 8
-                                    font.weight: Font.Bold
                                 }
                             }
                         }
