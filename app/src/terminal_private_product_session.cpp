@@ -87,6 +87,8 @@ core::Status TerminalPrivateProductSession::request_private_impl(
         &&snapshot.value()->audibleRealization.phase
             ==core::AudibleHandoffPhase::UNAVAILABLE
         &&!snapshot.value()->audibleRealization.realizationId
+        &&snapshot.value()->position==core::FrameIndex{0}
+        &&!snapshot.value()->duration
         &&!snapshot.value()->loop;
     const bool exactManual=snapshot.value()->audibleRealization.phase
             ==core::AudibleHandoffPhase::NEW
@@ -176,6 +178,8 @@ TerminalPrivateProductSession::current_verified_private_master() const
            ||audible.value()->audibleRealization.phase
                !=core::AudibleHandoffPhase::UNAVAILABLE
            ||audible.value()->audibleRealization.realizationId
+           ||audible.value()->position!=core::FrameIndex{0}
+           ||audible.value()->duration
            ||audible.value()->loop)
             return {};
     } else if(audible.value()->audibleRealization.phase
