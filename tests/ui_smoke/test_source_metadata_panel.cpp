@@ -515,9 +515,130 @@ private slots:
     void truePeakLimiterLayoutCandidate();
     void truePeakLimiterHostFamilyTheme();
     void genericFloatingProxyPreservesEditorIdentity();
+    void approvedSevenStudioIconSilhouettes();
 };
 
 
+
+
+void SourceMetadataPanelSmokeTest::approvedSevenStudioIconSilhouettes()
+{
+    // PO's seven ORIGINAL glyphs, not the deprecated single fader / EQ
+    // curve / compressor transfer / stereo circles / limiter cap glyphs.
+    // Real QtQuick Canvas rendering at both the 16px Chain slot and
+    // larger inspection size; gallery is auxiliary UI evidence, NOT a
+    // seven-module production Main screenshot or physical Windows FQ.
+    QQmlEngine engine;
+    QQmlComponent component{&engine};
+    static constexpr auto qml=R"qml(
+import QtQuick
+import QtQuick.Window
+import Rgsml.Ui 1.0
+Window {
+    id: gallery
+    objectName: "approvedIconGallery"
+    visible: false
+    width: 1050
+    height: 228
+    color: "#07111D"
+    readonly property var sourceIcons: [
+        { kind: "module-gain", name: "Input Gain", color: "#6F9FB3" },
+        { kind: "module-eq", name: "Parametric EQ", color: "#4E86C6" },
+        { kind: "module-compressor", name: "Compressor", color: "#C4774A" },
+        { kind: "module-stereo", name: "Stereo / M-S", color: "#4A9A88" },
+        { kind: "module-peak-meter", name: "True Peak Meter", color: "#6683A1" },
+        { kind: "module-limiter", name: "True Peak Limiter", color: "#C4774A" },
+        { kind: "module-headphones", name: "Master Audition", color: "#718092" }
+    ]
+    Repeater {
+        model: gallery.sourceIcons
+        delegate: Rectangle {
+            x: 5 + index * 149
+            y: 12
+            width: 141
+            height: 199
+            radius: 5
+            color: "#101E2B"
+            border.color: "#273748"
+            StudioIcon {
+                objectName: "approvedGlyph_16_" + index
+                x: 14
+                y: 17
+                width: 16
+                height: 16
+                kind: modelData.kind
+                strokeColor: modelData.color
+                opacity: index % 2 === 0 ? 1.0 : 0.37
+            }
+            StudioIcon {
+                objectName: "approvedGlyph_40_" + index
+                x: 48
+                y: 47
+                width: 40
+                height: 40
+                kind: modelData.kind
+                strokeColor: modelData.color
+                opacity: 1.0
+            }
+            Text {
+                x: 7; y: 108; width: 127
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                text: modelData.name
+                font.pixelSize: 12
+                color: "#DFE8F3"
+            }
+            Text {
+                x: 7; y: 164; width: 127
+                text: index % 2 === 0 ? "Manual" : "Default"
+                horizontalAlignment: Text.AlignHCenter
+                font.pixelSize: 11
+                color: "#8295A8"
+            }
+        }
+    }
+}
+)qml";
+    component.setData(QByteArray{qml},
+        QUrl{QStringLiteral("qrc:/rgsml/fq80/approved-original-seven-glyphs.qml")});
+    QVERIFY2(component.status()!=QQmlComponent::Error,
+             qPrintable(component.errorString()));
+    QScopedPointer<QObject> owned{component.create()};
+    QVERIFY2(owned,qPrintable(component.errorString()));
+    auto* window=qobject_cast<QQuickWindow*>(owned.data());
+    QVERIFY(window);
+    window->show();
+    QTRY_VERIFY_WITH_TIMEOUT(window->isVisible(),5000);
+    const std::array<QString,7> kinds{
+        QStringLiteral("module-gain"), QStringLiteral("module-eq"),
+        QStringLiteral("module-compressor"), QStringLiteral("module-stereo"),
+        QStringLiteral("module-peak-meter"), QStringLiteral("module-limiter"),
+        QStringLiteral("module-headphones")};
+    const std::array<QString,7> colors{
+        QStringLiteral("#6F9FB3"), QStringLiteral("#4E86C6"),
+        QStringLiteral("#C4774A"), QStringLiteral("#4A9A88"),
+        QStringLiteral("#6683A1"), QStringLiteral("#C4774A"),
+        QStringLiteral("#718092")};
+    for(int index=0;index<7;++index) {
+        for(const auto& pixelSize:{16,40}) {
+            const auto name=QStringLiteral("approvedGlyph_%1_%2")
+                .arg(pixelSize).arg(index);
+            auto* item=qobject_cast<QQuickItem*>(
+                find_child_by_name(owned.data(),name));
+            QVERIFY2(item,qPrintable(name));
+            QCOMPARE(item->property("kind").toString(),kinds[index]);
+            QCOMPARE(item->property("strokeColor").value<QColor>(),
+                     QColor{colors[index]});
+            QCOMPARE(item->width(),static_cast<qreal>(pixelSize));
+            QCOMPARE(item->height(),static_cast<qreal>(pixelSize));
+            QCOMPARE(item->opacity(),pixelSize==40||index%2==0?1.0:0.37);
+        }
+    }
+    QVERIFY2(capture_visual_evidence(
+        window,QStringLiteral("fq80_original_seven_glyphs_actual_qt_16_and_40.png"),
+        QSize{1050,228}),"Native Qt approved seven-icon proof");
+    window->close();
+}
 
 void SourceMetadataPanelSmokeTest::genericFloatingProxyPreservesEditorIdentity()
 {
@@ -2832,6 +2953,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
              QColor{QStringLiteral("#4E86C6")});
     QCOMPARE(chainGainIcon->width(),16.0);
     QCOMPARE(chainEqIcon->width(),16.0);
+    // Both original silhouettes use their fixed Chain slot; the glyph
+    // brightness is a configuration semantic, never a separate LED.
+    QCOMPARE(chainGainIcon->property("opacity").toDouble(),
+        dspChainRow0->property("isDefaultState").toBool() ? 0.37 : 1.0);
+    QCOMPARE(chainEqIcon->property("opacity").toDouble(),
+        dspChainRow1->property("isDefaultState").toBool() ? 0.37 : 1.0);
     const qreal eqIconXBefore = chainEqIcon->mapToItem(
         qobject_cast<QQuickItem*>(dspChainRow1),QPointF{}).x();
 
