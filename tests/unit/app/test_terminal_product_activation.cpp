@@ -1750,6 +1750,67 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(product.cancel());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QVERIFY(!candidates.staged());
+
+    // Initial SOURCE/PROCESSED device-selection failure now has one
+    // independent, product-explicit DEVICE path. No synthetic MANUAL
+    // realization may appear, before OR after physical audition.
+    bool sourceEpochCurrent=true;
+    product.set_offline_source_provenance_checker(
+        [&sourceEpochCurrent]{return sourceEpochCurrent;});
+    explicitOfflineProvenance=true;
+    injectedMonitorInstallFailure=0;
+    monitorMasterLoop.reset();
+    QVERIFY(monitorUi.requestMaster(192000));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    auto preparedOfflineDevice=
+        product.materialize_private_final_master_monitoring(makeMonitor);
+    QVERIFY(preparedOfflineDevice);
+    const auto restoreCount=manualRestores;
+    QVERIFY(!product.install_ready_private()); // never ordinary M17
+    QVERIFY(product.install_private_monitor_stopped(
+        *preparedOfflineDevice.value()));
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
+    QCOMPARE(deviceMonitor,*preparedOfflineDevice.value());
+    QCOMPARE(monitorUi.return_target_text(),
+        QStringLiteral("Close DEVICE · No MANUAL sink"));
+    QVERIFY(!device->audibleRealization.realizationId);
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QVERIFY(product.private_monitor_master_snapshot());
+    QVERIFY(product.control_private_monitor(Request{Action::PLAY}));
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QVERIFY(product.control_private_monitor(Request{Action::PAUSE}));
+    QVERIFY(!product.control_private_monitor(
+        Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},*region.value()}));
+    QVERIFY(product.control_private_monitor(Request{Action::STOP}));
+    // SOURCE provenance can expire while independently-owned PCM is active.
+    // Subsequent control fails closed; exact-owner retirement MUST STILL
+    // work and MUST NOT try to reinstall unsupported original SOURCE.
+    sourceEpochCurrent=false;
+    QVERIFY(!product.control_private_monitor(Request{Action::PLAY}));
+    QVERIFY(monitorUi.returnManual());
+    QCOMPARE(device->state,core::PlaybackState::NO_SOURCE);
+    QCOMPARE(device->audibleRealization.phase,
+             core::AudibleHandoffPhase::UNAVAILABLE);
+    QVERIFY(!device->audibleRealization.realizationId);
+    QVERIFY(!device->duration);
+    QCOMPARE(manualRestores,restoreCount);
+    QVERIFY(!deviceMonitor);
+    QVERIFY(!product.monitoring_transaction_active());
+    QVERIFY(!audioGate.has_session());
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    // A foreign successor still must not be borrowed for another offline
+    // job, even when a SOURCE lineage callback asserts 'current'.
+    sourceEpochCurrent=true;
+    device->state=core::PlaybackState::STOPPED;
+    device->audibleRealization={
+        core::AudibleHandoffPhase::NEW,core::RealizationId{0xBEEF}};
+    QVERIFY(!product.request_private_for_final_master(*masterRate.value()));
+    QCOMPARE(device->audibleRealization.realizationId,
+             std::optional{core::RealizationId{0xBEEF}});
+    QVERIFY(device->clear());
 }
 
 void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()
