@@ -513,9 +513,96 @@ private slots:
     void truePeakReadOnlyAnalysisVisualEvidence();
     void truePeakLimiterLayoutCandidate();
     void truePeakLimiterHostFamilyTheme();
+    void genericFloatingProxyPreservesEditorIdentity();
 };
 
 
+
+void SourceMetadataPanelSmokeTest::genericFloatingProxyPreservesEditorIdentity()
+{
+    // Qt 6.8 platform smoke: a single QQuickItem may only be controlled
+    // by ONE visible LayoutItemProxy at a time. Cross-window transfer must
+    // retain the very same QObject, state and instance identity.
+    QQmlEngine engine;
+    QQmlComponent component{&engine};
+    static constexpr auto qml=R"qml(
+import QtQuick
+import QtQuick.Window
+import QtQuick.Layouts
+import Rgsml.Ui 1.0
+Window {
+    id: mainWindow
+    visible: false
+    width: 640
+    height: 460
+    property bool detached: false
+
+    // A single persistent control created ONCE, never duplicated by Window.
+    Rectangle {
+        id: realEditor
+        objectName: "dockingProofRealEditor"
+        color: "#13222F"
+        property int edits: 17
+        property string instanceIdentity: "module:stable:one"
+        implicitWidth: 360
+        implicitHeight: 250
+    }
+    LayoutItemProxy {
+        id: dockProxy
+        objectName: "dockingProofDockProxy"
+        anchors.fill: parent
+        visible: !mainWindow.detached
+        target: realEditor
+    }
+    DspFloatingModuleWindow {
+        id: floatingWindow
+        objectName: "dockingProofFloatingWindow"
+        moduleInstanceId: "module:stable:one"
+        moduleTitle: "Test Module"
+        familyAccent: "#4E86C6"
+        editorTarget: realEditor
+        detached: mainWindow.detached
+        onRedockRequested: function(id) {
+            if (id === "module:stable:one")
+                mainWindow.detached = false
+        }
+    }
+}
+)qml";
+    component.setData(QByteArray{qml},
+        QUrl{QStringLiteral("qrc:/docking/cross-window-probe.qml")});
+    QVERIFY2(component.status()!=QQmlComponent::Error,
+        qPrintable(component.errorString()));
+    QScopedPointer<QObject> owned{component.create()};
+    QVERIFY2(owned,qPrintable(component.errorString()));
+    auto* dockWindow=qobject_cast<QQuickWindow*>(owned.data());
+    QVERIFY(dockWindow);
+    auto* editor=qobject_cast<QQuickItem*>(find_child_by_name(
+        owned.data(),QStringLiteral("dockingProofRealEditor")));
+    auto* floating=qobject_cast<QQuickWindow*>(find_child_by_name(
+        owned.data(),QStringLiteral("dockingProofFloatingWindow")));
+    auto* dockProxy=qobject_cast<QQuickItem*>(find_child_by_name(
+        owned.data(),QStringLiteral("dockingProofDockProxy")));
+    QVERIFY(editor && floating && dockProxy);
+    dockWindow->show();
+    QTRY_VERIFY_WITH_TIMEOUT(editor->window()==dockWindow,5000);
+    QCOMPARE(editor->property("edits").toInt(),17);
+    QCOMPARE(editor->property("instanceIdentity").toString(),
+             QStringLiteral("module:stable:one"));
+    QVERIFY(owned->setProperty("detached",true));
+    QTRY_VERIFY_WITH_TIMEOUT(floating->isVisible(),5000);
+    QTRY_VERIFY_WITH_TIMEOUT(editor->window()==floating,5000);
+    QCOMPARE(editor->property("edits").toInt(),17);
+    QVERIFY(editor->setProperty("edits",18));
+    QVERIFY(QMetaObject::invokeMethod(floating,"returnToDock"));
+    QTRY_VERIFY_WITH_TIMEOUT(!floating->isVisible(),5000);
+    QTRY_VERIFY_WITH_TIMEOUT(editor->window()==dockWindow,5000);
+    QCOMPARE(editor->property("edits").toInt(),18);
+    QCOMPARE(editor->property("instanceIdentity").toString(),
+             QStringLiteral("module:stable:one"));
+    QVERIFY(!owned->property("detached").toBool());
+    dockWindow->close();
+}
 
 void SourceMetadataPanelSmokeTest::truePeakLimiterHostFamilyTheme()
 {
