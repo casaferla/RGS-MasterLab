@@ -486,7 +486,22 @@ struct OutputCandidate final {
         pairedRate != 0
             && defaultOutput.isFormatSupported(pairedPcm16Format));
     if (!selected) {
-        return core::Result<OutputCandidate>::failure(*selected.error());
+        // Diagnostic only: source-rate rejection cannot silently retarget
+        // the MASTER or claim an offline M17/MONITOR failure. Record the
+        // REAL device preference/capability decision so 44.1/48/192 kHz
+        // user reports distinguish endpoint constraints from DSP defects.
+        const int preferredHz=defaultOutput.preferredFormat().sampleRate();
+        const std::string detail=std::string(selected.error()->message())
+            + " SOURCE=" + std::to_string(sourceRate) + " Hz"
+            + "; DEFAULT_DEVICE_PREFERRED=" + std::to_string(preferredHz) + " Hz"
+            + "; EXACT_FLOAT=" + (defaultOutput.isFormatSupported(exactFloatFormat)?"YES":"NO")
+            + "; EXACT_PCM16=" + (defaultOutput.isFormatSupported(exactPcm16Format)?"YES":"NO")
+            + "; PAIRED_FLOAT=" + (pairedRate!=0
+                &&defaultOutput.isFormatSupported(pairedFloatFormat)?"YES":"NO")
+            + "; PAIRED_PCM16=" + (pairedRate!=0
+                &&defaultOutput.isFormatSupported(pairedPcm16Format)?"YES":"NO");
+        return core::Result<OutputCandidate>::failure(
+            core::Error{selected.error()->code(),detail});
     }
     const auto qtFormat = selected.value()->sampleRateHz == sourceRate
         ? (selected.value()->sampleFormat == DeviceSampleFormat::IEEE_F32
