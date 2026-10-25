@@ -2,6 +2,8 @@
 #include "audition_source_selector.hpp"
 #include "compressor_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
+#include "terminal_limiter_state.hpp"
+#include "terminal_limiter_view_model.hpp"
 #include "true_peak_static_coordinator.hpp"
 #include "eq_view_model.hpp"
 #include "gain_view_model.hpp"
@@ -517,10 +519,139 @@ private slots:
     void truePeakLimiterHostFamilyTheme();
     void genericFloatingProxyPreservesEditorIdentity();
     void approvedSevenStudioIconSilhouettes();
+    void sevenRealAdaptersDockedChainVisualEvidence();
 };
 
 
 
+
+
+void SourceMetadataPanelSmokeTest::sevenRealAdaptersDockedChainVisualEvidence()
+{
+    // Production-equivalent seven selectable adapters: four actual MANUAL
+    // DSP instances, one analysis-only M16 row, the separate terminal M17,
+    // and the non-DSP Master Audition utility. This is a real Qt QML
+    // editor/Chain fixture, not the full Product Main and not physical FQ.
+    const auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto uid=[](const char* text) {
+        return *dsp::ModuleInstanceId::from_uuid(
+            *core::Uuid::parse(text).value()).value();
+    };
+    const auto chainId=*core::Uuid::parse(
+        "e7000000-0000-4000-8000-000000000001").value();
+    const auto gainId=uid("e7000000-0000-4000-8000-000000000010");
+    const auto eqId=uid("e7000000-0000-4000-8000-000000000020");
+    const auto compId=uid("e7000000-0000-4000-8000-000000000030");
+    const auto stereoId=uid("e7000000-0000-4000-8000-000000000040");
+    const auto terminalId=uid("e7000000-0000-4000-8000-000000000050");
+    auto manualCreated=app::MasteringChainState::create_product_default(
+        *registry.value(),chainId,gainId,eqId,compId,stereoId);
+    QVERIFY(manualCreated);
+    auto manual=std::move(*manualCreated.value());
+    app::MasteringPreviewController preview{&manual};
+    app::GainViewModel gain{&manual,&preview};
+    app::EqViewModel eq{&manual,&preview};
+    app::CompressorViewModel compressor{&manual,&preview};
+    app::StereoMsViewModel stereo{&manual,&preview};
+    auto terminalCreated=app::TerminalLimiterState::create_default(
+        *registry.value(),terminalId);
+    QVERIFY(terminalCreated);
+    auto terminal=std::move(*terminalCreated.value());
+    app::TerminalLimiterViewModel limiter{&terminal};
+    QObject masterAuditionService; // UI adapter only; NEVER a DSP stage
+    app::DspChainAdapterModel model{
+        &gain,&eq,&compressor,&manual,
+        QStringLiteral("Mastering"),nullptr,&stereo,true,
+        &terminal,&limiter,&masterAuditionService};
+    QCOMPARE(manual.module_count(),std::size_t{4});
+    QCOMPARE(terminal.chain().instances().size(),std::size_t{1});
+    QCOMPARE(model.modules().size(),qsizetype{7});
+    QCOMPARE(model.selected_index(),0);
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("productSevenChainModel"),&model);
+    QQmlComponent component{&engine};
+    static constexpr auto qml=R"qml(
+import QtQuick
+import QtQuick.Window
+import Rgsml.Ui 1.0
+Window {
+    objectName: "productSevenChainDockedQtWindow"
+    visible: false
+    width: 1184
+    height: 688
+    color: "#06121F"
+    Row {
+        anchors.fill: parent
+        anchors.margins: 8
+        spacing: 8
+        DspChainSelector {
+            id: realChain
+            objectName: "productSevenChainSelector"
+            width: 164
+            height: parent.height
+            adapterModel: productSevenChainModel
+        }
+        DspEditorHost {
+            id: realHost
+            objectName: "productSevenEditorHost"
+            width: parent.width-172
+            height: parent.height
+            adapterModel: productSevenChainModel
+            activeChainRow: realChain.activeRow
+        }
+    }
+}
+)qml";
+    component.setData(QByteArray{qml},
+        QUrl{QStringLiteral("qrc:/rgsml/fq80/seven-real-adapters-docked.qml")});
+    QVERIFY2(component.status()!=QQmlComponent::Error,
+        qPrintable(component.errorString()));
+    QScopedPointer<QObject> root{component.create()};
+    QVERIFY2(root,qPrintable(component.errorString()));
+    auto* window=qobject_cast<QQuickWindow*>(root.data());
+    auto* chain=qobject_cast<QQuickItem*>(find_child_by_name(
+        root.data(),QStringLiteral("productSevenChainSelector")));
+    auto* host=qobject_cast<QQuickItem*>(find_child_by_name(
+        root.data(),QStringLiteral("productSevenEditorHost")));
+    QVERIFY(window&&chain&&host);
+    window->show();
+    QTRY_VERIFY_WITH_TIMEOUT(!window->grabWindow().isNull(),5000);
+    QCOMPARE(chain->width(),164.0);
+
+    const std::array<QString,7> sourceKinds{
+        QStringLiteral("module-gain"),QStringLiteral("module-eq"),
+        QStringLiteral("module-compressor"),QStringLiteral("module-stereo"),
+        QStringLiteral("module-peak-meter"),QStringLiteral("module-limiter"),
+        QStringLiteral("module-headphones")};
+    for(int i=0;i<7;++i) {
+        const auto rowName=QStringLiteral("dspChainRow_%1").arg(i);
+        auto* row=qobject_cast<QQuickItem*>(
+            find_child_by_name(root.data(),rowName));
+        QVERIFY2(row,qPrintable(rowName));
+        auto* glyph=qobject_cast<QQuickItem*>(find_child_by_name(
+            row,QStringLiteral("dspChainModuleIcon_%1").arg(i)));
+        QVERIFY(glyph);
+        QCOMPARE(glyph->property("kind").toString(),sourceKinds[i]);
+        QCOMPARE(glyph->width(),16.0);
+        // Every line remains inside the same fixed 164-DIP Chain;
+        // actual native scrollbar/viewport never changes glyph identity.
+        QVERIFY(glyph->x()>=0.0);
+        QVERIFY(row->width()<=chain->width()+1.0);
+    }
+    auto* grip=qobject_cast<QQuickItem*>(find_child_by_name(
+        host,QStringLiteral("dspHostTearOffGrip")));
+    QVERIFY(grip);
+    QCOMPARE(grip->width(),22.0);
+    QVERIFY(grip->isVisible());
+    QVERIFY2(capture_visual_evidence(
+        window,
+        QStringLiteral("fq80_real_seven_adapter_chain_docked_grip_1184x688.png"),
+        QSize{1184,688}),"Real Qt full seven-adapter docked Chain evidence");
+    window->close();
+}
 
 void SourceMetadataPanelSmokeTest::approvedSevenStudioIconSilhouettes()
 {
