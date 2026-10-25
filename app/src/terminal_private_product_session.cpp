@@ -368,7 +368,7 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
             monitorTransitioning_=false;
             return core::Status::failure(*current.error());
         }
-        const bool empty=current.value()->state==core::PlaybackState::NO_SOURCE
+        const bool emptyAfterFailure=current.value()->state==core::PlaybackState::NO_SOURCE
             &&current.value()->audibleRealization.phase
                 ==core::AudibleHandoffPhase::UNAVAILABLE
             &&!current.value()->audibleRealization.realizationId;
@@ -381,12 +381,13 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
                 ==std::optional{predecessor.manualId}
             &&current.value()->duration
                 ==std::optional{predecessor.manual->view().frame_count()};
-        if((offlineOrigin&&!empty)||(!offlineOrigin&&!empty&&!original)) {
+        if((offlineOrigin&&!emptyAfterFailure)
+           ||(!offlineOrigin&&!emptyAfterFailure&&!original)) {
             monitorTransitioning_=false;
             return core::Status::failure(rejected(
                 "MONITOR_INSTALL_FAILURE_ALIEN_DEVICE_OWNER_UNTOUCHED"));
         }
-        if(empty && !offlineOrigin) {
+        if(emptyAfterFailure && !offlineOrigin) {
             if(!selected_||!selected_()||!manual_||!manualId_
                ||manual_()!=predecessor.manual
                ||manualId_()!=std::optional{predecessor.manualId}
