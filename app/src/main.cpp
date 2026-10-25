@@ -488,7 +488,7 @@ int main(int argc, char* argv[])
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,
          &stereoMsViewModel, &compressorViewModel,
-         &staticTruePeak, &liveTruePeak](
+         &staticTruePeak, &liveTruePeak, &terminalProductActivation](
             const rgsml::core::ResourceReference& source) {
             // Prevent a prior source's slow C1 and C2 work becoming current.
             liveTruePeak.invalidate();
@@ -502,6 +502,11 @@ int main(int argc, char* argv[])
                     *frameCount.value(), *sampleRate.value());
             }
             const auto prepared = auditionSelector.source_committed(source);
+            if (prepared) {
+                // New accepted SOURCE provenance may clear a stale M17
+                // audio error, never resurrect an old private/device owner.
+                terminalProductActivation.source_committed_successfully();
+            }
             if (prepared && frameCount && sampleRate) {
                 const int channelCount = sourceSelection.channel_count();
                 if (channelCount == 1 || channelCount == 2) {
