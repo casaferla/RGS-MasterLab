@@ -2362,6 +2362,27 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dspChainSelectorObj != nullptr, "dspChainSelector must exist in dspWorkspace");
     QVERIFY2(dspEditorHostObj != nullptr, "dspEditorHost must exist in dspWorkspace");
 
+    // REAL Main-window proof: the selected Input Gain editor is rehosted,
+    // never cloned. A second selected DSP returns to the existing dock.
+    auto* nativeDockedEditor=qobject_cast<QQuickItem*>(dspEditorHostObj);
+    auto* floatingModule=qobject_cast<QQuickWindow*>(
+        find_child_by_name(root,QStringLiteral("dspFloatingModuleWindow")));
+    QVERIFY2(nativeDockedEditor && floatingModule,
+        "Generic docking window must be registered in the real Main QML");
+    const auto* originalEditorIdentity=nativeDockedEditor;
+    QVERIFY(!root->property("editorDetached").toBool());
+    QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
+    QTRY_VERIFY_WITH_TIMEOUT(root->property("editorDetached").toBool(),5000);
+    QTRY_VERIFY_WITH_TIMEOUT(floatingModule->isVisible(),5000);
+    QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
+    QCOMPARE(nativeDockedEditor,originalEditorIdentity);
+    QVERIFY(!root->property("detachedModuleInstanceId").toString().isEmpty());
+    QVERIFY(QMetaObject::invokeMethod(floatingModule,"returnToDock"));
+    QTRY_VERIFY_WITH_TIMEOUT(!root->property("editorDetached").toBool(),5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!floatingModule->isVisible(),5000);
+    QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
+    QCOMPARE(nativeDockedEditor,originalEditorIdentity);
+
     // Verify Adaptive Context Workspace and visual shell placeholders exist
     QVERIFY(root->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace")) != nullptr);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("goldAutomatchView")) != nullptr);
