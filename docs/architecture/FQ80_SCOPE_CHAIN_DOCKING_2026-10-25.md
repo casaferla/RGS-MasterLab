@@ -68,3 +68,18 @@ The user rejected responsive rearrangement: **no side-by-side at large size, sta
 No family or state is identified by color alone. Distinct shape gives module identification; family hue groups related modules; bypass dims the row and glyph rather than moving controls. The pictogram hues for M16/M17 do not replace their independently frozen editor geometry/semantics. Preserve the first 16px slot when adding future modules such as M18 (Delivery/Bronze). Native 1184×688 Windows screenshot/150% gate is still required: CI green is not physical qualification.
 
 **Focus CI:** [#823](https://github.com/casaferla/RGS-MasterLab/actions/runs/40216767401) submitted PR HEAD `b218558a736fd82d000072cfea782dab876b9b6e`; status must be verified live. The promoted candidate includes the exact approved visible name, per-module glyphs, fixed-width Chain geometry and focused unit/QML static/native assertions. This document update is only on no-CI staging, to avoid an extra CI.
+
+
+## 9. Product Owner additional FQ #80 acceptance — draggable docking (2026-10-25)
+**APPROVED/REQUIRED for FQ #80, not just a prototype.** Every currently selectable editor, including Master Audition, must support the same two docking routes:
+- Deterministic `View → Dock/Undock` command and floating window Dock button as fallback/accessibility.
+- A *small fixed grip in the existing editor header*: deliberate drag outside the dock and RELEASE creates/moves the SAME editor into the one floating native Qt Window; no accidental dragging of curves/sliders/text.
+- A corresponding grip in the floating window's header: drag the window until the actual fixed central dock slot highlights; release there to re-dock. A drop outside leaves it floating. Esc during either gesture cancels without changing DSP, transport or unqualified provenance.
+- Stable dimensions of all other Main controls and the 164px Chain throughout; geometry does not adapt between side-by-side and stacked layouts. The cyan highlighted target appears only while a detached module's grip is over a qualified editor slot.
+- On a multi-monitor Windows desktop, compare QQuickItem.mapToGlobal logical desktop coordinates against floating `Window.x/y` and header-grip coordinates. DIPs/scaling 150% are test obligations; **a standard QML DropArea cannot automatically accept a moved native Qt window**, so the docking coordinator owns this explicit native-window coordinate check. Required physical test covers dual monitors and DPI scaling; tests simulating `finishDockDrag` prove the admission decision, not true native gesture quality.
+- Preserve same QObject/editor instance, visible telemetry, Qt state and selected module instanceId on repeated detach/reattach. Starting an undock is never a DSP edit and cannot trigger a render, M17 install or M16 LIVE claim.
+- **The Source WAV file drop zone is postponed**, and is entirely separate from native window docking. M18 remains postponed too.
+- Current shared-host design is one floating editor at a time. The PO approved generalized docking for every module type; simultaneous multiple detached windows are not yet accepted/proven by this shared-host implementation and must not be misrepresented as supported.
+
+## 10. Later family-indicator supersession
+PO subsequently approved one module-family pictogram **in place of**, not alongside, the old configuration LED. The 16px pictogram is dim at Default and luminous in the same family hue at Manual Non-Default. Bypass remains independent, no additional horizontal slot; 8px red error indicator remains. This supersedes earlier prose in §§1,6,8 mentioning a separate configuration LED. The pictograms and this behavior were in the #825 green candidate.
