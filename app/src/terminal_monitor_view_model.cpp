@@ -37,17 +37,17 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
 QString TerminalMonitorViewModel::status_text() const
 {
     const auto status=session_->status();
-    if(status==QStringLiteral("IDLE"))return QStringLiteral("MANUAL · MONITOR IDLE");
+    if(status==QStringLiteral("IDLE"))return QStringLiteral("MANUAL · AUDITION IDLE");
     if(status==QStringLiteral("RENDERING"))
         return QStringLiteral("PREPARING FINAL MASTER · NOT DEVICE AUDIO");
     if(status==QStringLiteral("MASTER_READY_MONITOR_PENDING"))
         return QStringLiteral("MASTER VERIFIED · DEVICE PCM NOT INSTALLED");
     if(status==QStringLiteral("MASTER_MEASURED_NONCONFORMING_PRIVATE"))
-        return QStringLiteral("MASTER NON-CONFORMING · MONITOR BLOCKED");
+        return QStringLiteral("MASTER NON-CONFORMING · AUDITION BLOCKED");
     if(status==QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"))
-        return QStringLiteral("MONITOR RECOVERY REQUIRED · OWNER CHECK");
+        return QStringLiteral("AUDITION RECOVERY REQUIRED · OWNER CHECK");
     if(status.startsWith(QStringLiteral("MONITOR_PRIVATE_")))
-        return QStringLiteral("MONITOR DEVICE PCM · UNQUALIFIED LIVE");
+        return QStringLiteral("AUDITION DEVICE PCM · UNQUALIFIED LIVE");
     return status;
 }
 
