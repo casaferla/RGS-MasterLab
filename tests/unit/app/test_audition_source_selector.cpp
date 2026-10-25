@@ -252,6 +252,7 @@ void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance
     QVERIFY(!selector.active_target());
     QVERIFY(!selector.offline_processed_selected_for_final_master());
     QVERIFY(selector.authorize_offline_processed_for_final_master());
+    QVERIFY(selector.offline_processed_provenance_current());
     QVERIFY(selector.offline_processed_selected_for_final_master());
     const auto empty=transport.playback_snapshot();
     QVERIFY(empty);
@@ -266,6 +267,7 @@ void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance
     QVERIFY(region);
     std::optional<core::FrameRange> loop=*region.value();
     selector.set_source_loop_provider([&loop] {return loop;});
+    QVERIFY(!selector.offline_processed_provenance_current());
     QVERIFY(!selector.offline_processed_selected_for_final_master());
     QVERIFY(!selector.authorize_offline_processed_for_final_master());
     loop.reset();
@@ -275,6 +277,9 @@ void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance
     device->state=core::PlaybackState::STOPPED;
     device->audibleRealization={
         core::AudibleHandoffPhase::NEW,core::RealizationId{0xAA55}};
+    // SOURCE provenance still exists, but an alien DEVICE is NEVER
+    // installable through an offline-only SOURCE authorization.
+    QVERIFY(selector.offline_processed_provenance_current());
     QVERIFY(!selector.offline_processed_selected_for_final_master());
     QVERIFY(!selector.authorize_offline_processed_for_final_master());
     // A test-controlled external device removal permits a new admission.
@@ -282,6 +287,7 @@ void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance
     QVERIFY(selector.authorize_offline_processed_for_final_master());
     // Even the same file becomes a new SOURCE epoch: old tickets are void.
     QVERIFY(selector.source_committed(reference_for(path)));
+    QVERIFY(!selector.offline_processed_provenance_current());
     QVERIFY(!selector.offline_processed_selected_for_final_master());
     QVERIFY(!selector.processed_realization_snapshot());
 }

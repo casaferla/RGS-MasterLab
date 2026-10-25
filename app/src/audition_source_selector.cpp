@@ -127,18 +127,22 @@ AuditionSourceSelector::processed_realization_id() const noexcept
     return processedRealizationId_;
 }
 
+bool AuditionSourceSelector::offline_processed_provenance_current() const
+{
+    return offlineProcessedAuthority_ && source_
+        &&!activeTarget_ &&sourceDerivedCue_==core::FrameIndex{0}
+        &&sourceEpoch_==offlineProcessedAuthority_->sourceEpoch
+        &&prepared_==offlineProcessedAuthority_->prepared
+        &&processed_==offlineProcessedAuthority_->processed
+        &&processedRealizationId_
+            ==std::optional{offlineProcessedAuthority_->manualId}
+        &&(sourceLoopProvider_?sourceLoopProvider_():std::nullopt)
+            ==offlineProcessedAuthority_->loop;
+}
+
 bool AuditionSourceSelector::offline_processed_selected_for_final_master() const
 {
-    if(!offlineProcessedAuthority_ || !source_ || !playback_
-       ||activeTarget_ || sourceDerivedCue_!=core::FrameIndex{0}
-       ||sourceEpoch_!=offlineProcessedAuthority_->sourceEpoch
-       ||prepared_!=offlineProcessedAuthority_->prepared
-       ||processed_!=offlineProcessedAuthority_->processed
-       ||processedRealizationId_
-            !=std::optional{offlineProcessedAuthority_->manualId}
-       ||(sourceLoopProvider_?sourceLoopProvider_():std::nullopt)
-            !=offlineProcessedAuthority_->loop)
-        return false;
+    if(!offline_processed_provenance_current()||!playback_)return false;
     const auto sink=playback_->playback_snapshot();
     return sink
         &&sink.value()->state==core::PlaybackState::NO_SOURCE

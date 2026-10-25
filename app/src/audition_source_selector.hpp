@@ -65,6 +65,10 @@ public:
     // activeTarget_, allocates a DEVICE identity or certifies M16 LIVE.
     [[nodiscard]] core::Status authorize_offline_processed_for_final_master();
     [[nodiscard]] bool offline_processed_selected_for_final_master() const;
+    // SOURCE/OWNER provenance only. This deliberately does NOT imply that
+    // the DEVICE is empty, owned, audible, or suitable for an install.
+    // A separate endpoint guard remains mandatory before any audio action.
+    [[nodiscard]] bool offline_processed_provenance_current() const;
 
     // Capture the one exact SOURCE/PROCESSED handoff intent BEFORE stopping
     // playback for M17. A preflight is not an activation or permission to
