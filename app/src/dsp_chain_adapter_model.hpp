@@ -36,7 +36,8 @@ public:
         StereoMsViewModel* stereoMsViewModel = nullptr,
         bool includeTruePeakAnalysis = false,
         TerminalLimiterState* terminalLimiterState = nullptr,
-        TerminalLimiterViewModel* terminalLimiterViewModel = nullptr);
+        TerminalLimiterViewModel* terminalLimiterViewModel = nullptr,
+        TerminalMonitorViewModel* terminalMonitorViewModel = nullptr);
 
     explicit DspChainAdapterModel(
         GainViewModel* gainViewModel,
@@ -73,6 +74,7 @@ private:
     bool includeTruePeakAnalysis_{false};
     TerminalLimiterState* terminalLimiterState_{nullptr};
     TerminalLimiterViewModel* terminalLimiterViewModel_{nullptr};
+    TerminalMonitorViewModel* terminalMonitorViewModel_{nullptr};
     MasteringChainState* chainState_{nullptr};
     QString workflowContext_;
 
