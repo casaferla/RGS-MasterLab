@@ -1393,8 +1393,7 @@ Window {
 
     auto* chainRow = qobject_cast<QQuickItem*>(find_child_by_name(
         created.data(), QStringLiteral("dspChainRow_3")));
-    auto* bypassBadge = qobject_cast<QQuickItem*>(find_child_by_name(
-        created.data(), QStringLiteral("dspChainBypassBadge_3")));
+
     auto* editor = qobject_cast<QQuickItem*>(find_child_by_name(
         created.data(), QStringLiteral("stereoMsEditor")));
     auto* host = qobject_cast<QQuickItem*>(find_child_by_name(
@@ -1405,11 +1404,12 @@ Window {
         created.data(), QStringLiteral("abButtonActive"));
     auto* bypassButton = find_child_by_name(
         created.data(), QStringLiteral("abButtonBypass"));
-    QVERIFY(chainRow && bypassBadge && editor && host && controls
+    QVERIFY(chainRow && editor && host && controls
         && activeButton && bypassButton);
     QVERIFY(chainRow->isVisible());
     QVERIFY(editor->isVisible());
-    QVERIFY(bypassBadge->isVisible());
+    QVERIFY(chainRow->property("isBypassed").toBool());
+    QVERIFY(!find_child_by_name(created.data(), QStringLiteral("dspChainBypassBadge_3")));
     QVERIFY(bypassButton->property("selected").toBool());
     QVERIFY(!activeButton->property("selected").toBool());
     QVERIFY(!product.stereo_ms_instance_id().has_value()
@@ -1432,7 +1432,7 @@ Window {
     bypass = product.is_bypassed(stereoId);
     QVERIFY(bypass);
     QVERIFY(!*bypass.value());
-    QVERIFY(!bypassBadge->isVisible());
+    QVERIFY(!chainRow->property("isBypassed").toBool());
     QVERIFY(activeButton->property("selected").toBool());
     QVERIFY(!bypassButton->property("selected").toBool());
     QCOMPARE(QRectF(host->mapToScene(QPointF{}), host->size()), hostBefore);
@@ -1447,7 +1447,8 @@ Window {
     bypass = product.is_bypassed(stereoId);
     QVERIFY(bypass);
     QVERIFY(*bypass.value());
-    QVERIFY(bypassBadge->isVisible());
+    QVERIFY(chainRow->property("isBypassed").toBool());
+    QVERIFY(!find_child_by_name(created.data(), QStringLiteral("dspChainBypassBadge_3")));
     QVERIFY(bypassButton->property("selected").toBool());
     QCOMPARE(product.stereo_ms_parameters(), std::optional{*defaultParameters.value()});
     QCOMPARE(product.instances()[3].instance_id(), stereoId);
@@ -2607,9 +2608,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* dspChainConfigLed0 = dspChainRow0
         ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainConfigLed_0"))
         : nullptr;
-    auto* dspChainBypassBadge0 = dspChainRow0
-        ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_0"))
-        : nullptr;
+
     auto* dspChainStateText0 = dspChainRow0
         ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainStateText_0"))
         : nullptr;
@@ -2617,9 +2616,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* dspChainConfigLed1 = dspChainRow1
         ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainConfigLed_1"))
         : nullptr;
-    auto* dspChainBypassBadge1 = dspChainRow1
-        ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainBypassBadge_1"))
-        : nullptr;
+
     auto* dspChainStateText1 = dspChainRow1
         ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainStateText_1"))
         : nullptr;
@@ -2627,7 +2624,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr && dspChainStateText0 != nullptr, "Row 0 (Input Gain) components must exist");
     QVERIFY2(dspChainRow1 != nullptr && dspChainConfigLed1 != nullptr && dspChainStateText1 != nullptr, "Row 1 (Parametric EQ) components must exist");
 
-    // FIX-UI-004: full 12px title in 164px sidebar (no badge changes).
+    // 12px title in 164px sidebar: BYP badge (and 28px spacer) removed.
     auto* chainEqTitle = qobject_cast<QQuickItem*>(
         dspChainRow1->findChild<QObject*>(
             QStringLiteral("dspChainModuleTitle_1")));
@@ -2827,12 +2824,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // Initial Gain state text & LED
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
     QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
-    QVERIFY2(!dspChainBypassBadge0->property("visible").toBool(), "Gain BYP badge must be hidden initially");
+    QVERIFY2(!dspChainRow0->property("isBypassed").toBool(), "Gain should initially process audio");
+    QVERIFY(!find_child_by_name(dspChainRow0, QStringLiteral("dspChainBypassBadge_0")));
 
     // Initial EQ state text & LED
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Flat Default"));
     QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
-    QVERIFY2(!dspChainBypassBadge1->property("visible").toBool(), "EQ BYP badge must be hidden initially");
+    QVERIFY2(!dspChainRow1->property("isBypassed").toBool(), "EQ should initially process audio");
+    QVERIFY(!find_child_by_name(dspChainRow1, QStringLiteral("dspChainBypassBadge_1")));
 
     // Input Gain Editor controls
     auto* inputGainEditor = dspEditorHostObj->findChild<QObject*>(QStringLiteral("inputGainEditor"));
@@ -3158,10 +3157,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(eqEditor->findChild<QObject*>(QStringLiteral("spectrumAnalyzer")) == nullptr, "No fake analyzer or spectrum item must exist");
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=dsp-chain-row-led-and-byp";
-    // Canonical Flat state -> config LED is dark (#273A4D), BYP badge is hidden
+    // Canonical Flat state -> config LED is dark and bypass row style is absent.
     QVERIFY2(eqViewModel.is_default(), "EQ state must be default/flat initially");
     QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
-    QVERIFY2(!dspChainBypassBadge1->property("visible").toBool(), "EQ BYP badge must be hidden initially");
+    QVERIFY2(!dspChainRow1->property("isBypassed").toBool(), "EQ should initially process audio");
+    QVERIFY(!find_child_by_name(dspChainRow1, QStringLiteral("dspChainBypassBadge_1")));
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=band-controls";
     auto* band0Btn = find_child_by_name(eqEditor, QStringLiteral("bandSelectorButton_0"));
@@ -3414,16 +3414,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(toolbarGeometry(spectrumItem), spectrumOn);
     QCOMPARE(toolbarGeometry(addItem), addOn);
 
-    // Click Bypass -> BYP badge becomes visible on EQ DSP chain row, while config LED remains unchanged
+    // Click Bypass -> row skin and subtitle change without any badge/width shift; LED stays independent.
     QVERIFY2(QMetaObject::invokeMethod(abBypassBtn, "clicked"), "Clicking abButtonBypass must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.bypass(), "eqViewModel.bypass must be true after clicking Bypass");
-    QVERIFY2(dspChainBypassBadge1->property("visible").toBool(), "dspChainBypassBadge_1 must be visible when bypassed");
+    QVERIFY2(dspChainRow1->property("isBypassed").toBool(), "EQ chain row must reflect bypass without a badge");
 
     QVERIFY2(QMetaObject::invokeMethod(abActiveBtn, "clicked"), "Clicking abButtonActive must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(!eqViewModel.bypass(), "eqViewModel.bypass must be false after clicking Active");
-    QVERIFY2(!dspChainBypassBadge1->property("visible").toBool(), "dspChainBypassBadge_1 must be hidden when active");
+    QVERIFY2(!dspChainRow1->property("isBypassed").toBool(), "EQ chain row must recover active visuals");
 
     // Reset Flat -> restores Default status -> LED turns dark #273A4D
     QVERIFY2(QMetaObject::invokeMethod(resetFlatBtn, "clicked"), "Clicking eqResetFlatButton must succeed");
