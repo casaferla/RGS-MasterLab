@@ -539,7 +539,7 @@ Window {
     id: gallery
     objectName: "approvedIconGallery"
     visible: false
-    width: 1050
+    width: 1000
     height: 228
     color: "#07111D"
     readonly property var sourceIcons: [
@@ -554,9 +554,11 @@ Window {
     Repeater {
         model: gallery.sourceIcons
         delegate: Rectangle {
-            x: 5 + index * 149
+            // All seven cards fit inside the Windows CI runner's
+            // observed ~1028 DIP maximum, without screenshot cropping.
+            x: 5 + index * 142
             y: 12
-            width: 141
+            width: 138
             height: 199
             radius: 5
             color: "#101E2B"
@@ -637,7 +639,7 @@ Window {
     }
     QVERIFY2(capture_visual_evidence(
         window,QStringLiteral("fq80_original_seven_glyphs_actual_qt_16_and_40.png"),
-        QSize{1050,228}),"Native Qt approved seven-icon proof");
+        QSize{1000,228}),"Native Qt approved seven-icon proof");
     window->close();
 }
 
