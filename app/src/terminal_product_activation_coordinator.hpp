@@ -25,6 +25,10 @@ public:
     // SOURCE Loop Region edits; never claim terminal PCM during preparation.
     void manual_preview_changed(const QString& previewStatus);
     void loop_context_changed();
+    // Called only after a newly selected SOURCE has been committed and
+    // its PREPARED owner accepted. Clear an obsolete M17 audio error only
+    // when no private DEVICE/MASTER transaction is still owned.
+    void source_committed_successfully();
 private:
     void limiter_accepted();
     void private_session_changed();
