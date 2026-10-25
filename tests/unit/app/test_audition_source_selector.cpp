@@ -139,7 +139,8 @@ void install_pcm_handler(
 
 [[nodiscard]] QString write_valid_wav(
     QTemporaryDir& directory, const QString& name, std::int64_t seed,
-    std::uint32_t sourceRate = 48'000U)
+    std::uint32_t sourceRate = 48'000U,
+    std::uint16_t channels = 1U)
 {
     using namespace wav_support;
     std::vector<std::int64_t> samples(64U);
@@ -147,7 +148,7 @@ void install_pcm_handler(
         samples[index] = (static_cast<std::int64_t>(index) + seed) % 100;
     }
     const auto bytes = make_wav(
-        1U, 16U, 1U, sourceRate, pcm_payload(samples, 16U));
+        1U, 16U, channels, sourceRate, pcm_payload(samples, 16U));
     const auto path = directory.filePath(name);
     QFile file{path};
     if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)
@@ -199,18 +200,27 @@ private slots:
 void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance_data()
 {
     QTest::addColumn<std::uint32_t>("sourceRate");
-    QTest::newRow("44k1") << std::uint32_t{44'100};
-    QTest::newRow("48k") << std::uint32_t{48'000};
-    QTest::newRow("192k") << std::uint32_t{192'000};
+    QTest::addColumn<int>("channels");
+    // A rejected physical sink must never force SRC, fake a playable
+    // realization or block the explicit offline MASTER path at ANY frozen
+    // source rate. Keep both supported layouts in the negative oracle.
+    for (auto rate : {44'100U,48'000U,88'200U,96'000U,176'400U,192'000U}) {
+        for (auto channels : {1,2}) {
+            const auto label=QStringLiteral("%1_%2ch").arg(rate).arg(channels);
+            QTest::newRow(qPrintable(label)) << rate << channels;
+        }
+    }
 }
 
 void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance()
 {
     QFETCH(std::uint32_t,sourceRate);
+    QFETCH(int,channels);
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     const auto path=write_valid_wav(
-        directory,QStringLiteral("unsupported-device-source.wav"),1,sourceRate);
+        directory,QStringLiteral("unsupported-device-source.wav"),1,sourceRate,
+        static_cast<std::uint16_t>(channels));
     QVERIFY(!path.isEmpty());
 
     auto service=std::make_unique<FakePlaybackService>();
@@ -234,6 +244,9 @@ void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance
     QVERIFY(prepared);
     QCOMPARE(prepared->view().format().sample_rate(),
              *core::SampleRate::create(sourceRate).value());
+    QCOMPARE(prepared->view().format().channel_layout(),
+        channels==1 ? audio::ChannelLayout::MONO_C
+                    : audio::ChannelLayout::STEREO_LR);
     const auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
     QVERIFY(registry);
     const auto chain=dsp::ProcessingChain::create(
