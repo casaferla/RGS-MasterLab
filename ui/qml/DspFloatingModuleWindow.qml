@@ -17,6 +17,10 @@ Window {
     property bool detached: false
 
     signal redockRequested(string moduleInstanceId)
+    signal headerDragged(real globalX, real globalY)
+    signal headerReleased(real globalX, real globalY)
+    property bool dragOverDock: false
+    property bool wasMovedByGrip: false
 
     title: moduleTitle + " — RGS MasterLab"
     visible: detached && editorTarget !== null
@@ -69,6 +73,73 @@ Window {
         height: 38
         spacing: 8
 
+        Item {
+            id: floatingGrip
+            objectName: "dspFloatingDragGrip"
+            Layout.preferredWidth: 28
+            Layout.minimumWidth: 28
+            Layout.maximumWidth: 28
+            Layout.preferredHeight: 32
+            property real lastX: 0
+            property real lastY: 0
+            property bool cancelled: false
+            Accessible.name: "Drag floating " + root.moduleTitle + " to dock area"
+            Text {
+                anchors.centerIn: parent
+                text: "⠿"
+                font.family: "Segoe UI"
+                font.pixelSize: 20
+                color: root.familyAccent
+            }
+            DragHandler {
+                id: floatingHeaderDrag
+                target: null
+                acceptedButtons: Qt.LeftButton
+                onActiveChanged: {
+                    if(active) {
+                        floatingGrip.lastX=0
+                        floatingGrip.lastY=0
+                        floatingGrip.cancelled=false
+                        root.wasMovedByGrip=false
+                    } else if(root.wasMovedByGrip && !floatingGrip.cancelled) {
+                        // Native WINDOW motion is not a QML DropArea drag:
+                        // drop permission is decided by the Main coordinator
+                        // against a globally mapped docking rectangle.
+                        root.headerReleased(root.x+root.width/2,
+                                            root.y+header.height/2)
+                    }
+                }
+                onTranslationChanged: {
+                    if(!active || floatingGrip.cancelled)return
+                    const dx=translation.x-floatingGrip.lastX
+                    const dy=translation.y-floatingGrip.lastY
+                    if(!Number.isFinite(dx)||!Number.isFinite(dy))return
+                    floatingGrip.lastX=translation.x
+                    floatingGrip.lastY=translation.y
+                    if(Math.abs(dx)+Math.abs(dy)<0.01)return
+                    root.x+=dx
+                    root.y+=dy
+                    root.wasMovedByGrip=true
+                    root.headerDragged(root.x+root.width/2,
+                                       root.y+header.height/2)
+                }
+            }
+            Shortcut {
+                sequence: "Escape"
+                enabled: floatingHeaderDrag.active
+                onActivated: {
+                    floatingGrip.cancelled=true
+                    root.headerDragged(-1,-1)
+                }
+            }
+            StudioTooltipDwell {
+                id: floatingGripDwell
+                anchors.fill: parent
+            }
+            ToolTip.text: "Drag this handle into the main editor to dock"
+            ToolTip.visible: floatingGripDwell.ready
+            ToolTip.delay: 0
+        }
         Text {
             objectName: "dspFloatingModuleTitle"
             text: root.moduleTitle
@@ -85,6 +156,28 @@ Window {
             accentColor: root.familyAccent
             onClicked: root.returnToDock()
             Accessible.name: "Return " + root.moduleTitle + " to DSP workspace"
+        }
+    }
+    Rectangle {
+        objectName: "floatingDockCandidate"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: header.bottom
+        anchors.bottom: parent.bottom
+        anchors.margins: 10
+        radius: 7
+        z: 10
+        visible: root.dragOverDock
+        color: "#1700C8FF"
+        border.width: 2
+        border.color: "#00C8FF"
+        Text {
+            anchors.centerIn: parent
+            text: "Release to dock"
+            font.family: "Segoe UI"
+            font.pixelSize: 14
+            font.weight: Font.DemiBold
+            color: "#BFEAF6"
         }
     }
     LayoutItemProxy {
