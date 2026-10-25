@@ -1687,8 +1687,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     const auto offlineMaster=candidates.staged();
     QVERIFY(offlineMaster);
     QCOMPARE(offlineMaster->rendered.output_rate,*masterRate.value());
-    QCOMPARE(offlineMaster->rendered.manual_owner,
-             selector.processed_realization_snapshot());
+    QVERIFY(offlineMaster->rendered.manual_owner
+        == selector.processed_realization_snapshot());
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
     QCOMPARE(sinkInstalls,std::size_t{0});
