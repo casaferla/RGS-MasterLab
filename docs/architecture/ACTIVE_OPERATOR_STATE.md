@@ -42,6 +42,11 @@
 - Docking general for all module types; clicking floating module in chain focuses its ONE window (does not create duplicate or reopen embedded editor).
 - Staged changes require automatic next step **during active chat**, not scheduled/background monitoring.
 
+## CI #820 / #821 — recovery update 2026-10-25
+- [#820](https://github.com/casaferla/RGS-MasterLab/actions/runs/40211524633) FAIL Windows + Linux, exclusively `Minor Fix G3 UI static guard`, which still required the abolished 28px BYP badge and old Finalization topology. Fixed guard on staging, promoted one package.
+- [#821](https://github.com/casaferla/RGS-MasterLab/actions/runs/40211765363) triggered from `6b2704fb69fe7104ecd68be8fd87cb96f2be0b46`. Linux fails `Global stationary tooltip policy` due to MONITOR memory checkbox using immediate hover. Staging fix `48af34ae76a009bca8c693eaa1030df7043d933e` now uses the frozen common StudioTooltipDwell 1000ms with matching delay. Windows #821 outcome still in flight during this update. **Do not promote another candidate until Windows step summary is known; batch all related fixes.**
+- Main implementation candidate #820 remains not physically PO-qualified; source code includes no FINALIZATION, no BYP badge; MONITOR remains horizontally side-by-side at ALL widths, no adaptive stacking. General docking is still not implemented.
+
 ## Latest staging publication (after #819 green)
 - [#820](https://github.com/casaferla/RGS-MasterLab/actions/runs/40211524633) PR head `18992c7632478fa69e73a8954a9282bd068ef929`: submitted candidate of **unified DSP Chain, MONITOR QML service editor, no Finalization dock/no BYP spacer, stable-width scrollbar, fixed side-by-side MASTER/DEVICE**, plus adapter semantics and smoke-test updates. CI was queued when dispatched; verify live status.
 - User explicitly rejects any responsive rearrangement at minimum width/height. In MONITOR, MASTER/DEVICE remain in two columns for all sizes; scroll content vertically if needed. Chain title/LED/status/error coordinates stay fixed; no width jump when scrollbar appears.
