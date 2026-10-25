@@ -549,6 +549,11 @@ void SourceMetadataPanelSmokeTest::sevenRealAdaptersDockedChainVisualEvidence()
         *registry.value(),chainId,gainId,eqId,compId,stereoId);
     QVERIFY(manualCreated);
     auto manual=std::move(*manualCreated.value());
+    // Real, validated user edits purely for ON/OFF pictogram semantics:
+    // Default=dim, non-default=bright. No SOURCE, render or audible owner.
+    auto editedGain=dsp::GainParameters::create(-3.0);
+    QVERIFY(editedGain);
+    QVERIFY(manual.set_gain_parameters(*editedGain.value()));
     app::MasteringPreviewController preview{&manual};
     app::GainViewModel gain{&manual,&preview};
     app::EqViewModel eq{&manual,&preview};
@@ -558,6 +563,7 @@ void SourceMetadataPanelSmokeTest::sevenRealAdaptersDockedChainVisualEvidence()
         *registry.value(),terminalId);
     QVERIFY(terminalCreated);
     auto terminal=std::move(*terminalCreated.value());
+    QVERIFY(terminal.set_ceiling_db_tp(-2.0));
     app::TerminalLimiterViewModel limiter{&terminal};
     QObject masterAuditionService; // UI adapter only; NEVER a DSP stage
     app::DspChainAdapterModel model{
@@ -636,6 +642,13 @@ Window {
         QVERIFY(glyph);
         QCOMPARE(glyph->property("kind").toString(),sourceKinds[i]);
         QCOMPARE(glyph->width(),16.0);
+        // Both brighter icons reflect real non-default state; M17 remains
+        // bypass-dimmed independently, and every other default stays dim.
+        const auto manualState=(i==0 || i==5);
+        QCOMPARE(row->property("isDefaultState").toBool(),!manualState);
+        QVERIFY2(glyph->opacity() >= (manualState ? 0.69 : 0.25)
+                     && glyph->opacity() <= (manualState ? 1.01 : 0.38),
+                 "Native glyph must obey Default/Manual and bypass dim");
         // Every line remains inside the same fixed 164-DIP Chain;
         // actual native scrollbar/viewport never changes glyph identity.
         QVERIFY(glyph->x()>=0.0);
