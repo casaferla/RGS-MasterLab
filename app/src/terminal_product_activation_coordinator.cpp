@@ -612,6 +612,25 @@ void TerminalProductActivationCoordinator::private_session_changed()
     }
 }
 
+void TerminalProductActivationCoordinator::source_committed_successfully()
+{
+    // A new SOURCE cannot inherit yesterday's ERROR/BYPASS diagnostic.
+    // This is presentation recovery ONLY, never a terminal render or a
+    // forged READY. Never clear a real installed/pending/private owner.
+    if(transitioning_ || intent_ || deviceActive_ || handoffStarted_
+       ||session_->monitoring_transaction_active() ||!state_->bypassed()
+       ||!selector_->prepared_realization_snapshot())
+        return;
+    const auto status=session_->status();
+    if(status!=QStringLiteral("IDLE")
+       &&status!=QStringLiteral("ERROR")
+       &&status!=QStringLiteral("STALE"))
+        return;
+    view_->clearAudioError();
+    view_->clearPreparationProgress();
+    view_->setAudioStatus(QStringLiteral("BYPASS · NEW SOURCE"));
+}
+
 void TerminalProductActivationCoordinator::external_context_changed()
 {
     // Selector signals during MANUAL restoration cannot re-enter bypass.
