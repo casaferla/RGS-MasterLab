@@ -4620,7 +4620,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(stereoMenuItem->property("text").toString().contains(
         QStringLiteral("Stereo")),
         "The fourth View entry must label the live Stereo/M-S adapter");
-    QCOMPARE(cleanupViewMenu->property("count").toInt(), 9);
+    QCOMPARE(cleanupViewMenu->property("count").toInt(),
+             viewEditorInstantiator->property("count").toInt() + 7);
     QVERIFY2(QMetaObject::invokeMethod(stereoMenuItem, "triggered"),
         "The fourth View entry must dispatch selection");
     QCoreApplication::processEvents();

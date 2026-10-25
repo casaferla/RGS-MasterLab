@@ -22,6 +22,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -137,7 +138,8 @@ void install_pcm_handler(
 }
 
 [[nodiscard]] QString write_valid_wav(
-    QTemporaryDir& directory, const QString& name, std::int64_t seed)
+    QTemporaryDir& directory, const QString& name, std::int64_t seed,
+    std::uint32_t sourceRate = 48'000U)
 {
     using namespace wav_support;
     std::vector<std::int64_t> samples(64U);
@@ -145,7 +147,7 @@ void install_pcm_handler(
         samples[index] = (static_cast<std::int64_t>(index) + seed) % 100;
     }
     const auto bytes = make_wav(
-        1U, 16U, 1U, 48'000U, pcm_payload(samples, 16U));
+        1U, 16U, 1U, sourceRate, pcm_payload(samples, 16U));
     const auto path = directory.filePath(name);
     QFile file{path};
     if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)
@@ -189,7 +191,100 @@ private slots:
     void privateTerminalReturnRestoresExactManualSourceCueAndLoop();
     void terminalActivationIntentCapturesExactPlayingAndPausedSource();
     void processedTelemetryBindsAcceptedRealizationIdentity();
+    void initialUnsupportedDeviceOfflineMasterProvenance_data();
+    void initialUnsupportedDeviceOfflineMasterProvenance();
 };
+
+
+void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance_data()
+{
+    QTest::addColumn<std::uint32_t>("sourceRate");
+    QTest::newRow("44k1") << std::uint32_t{44'100};
+    QTest::newRow("48k") << std::uint32_t{48'000};
+    QTest::newRow("192k") << std::uint32_t{192'000};
+}
+
+void AuditionSourceSelectorTest::initialUnsupportedDeviceOfflineMasterProvenance()
+{
+    QFETCH(std::uint32_t,sourceRate);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path=write_valid_wav(
+        directory,QStringLiteral("unsupported-device-source.wav"),1,sourceRate);
+    QVERIFY(!path.isEmpty());
+
+    auto service=std::make_unique<FakePlaybackService>();
+    auto* device=service.get();
+    app::PlaybackTransportViewModel transport{std::move(service)};
+    transport.set_pcm_prepare_handler(
+        [](audio::AudioBufferView,std::shared_ptr<const void>,
+           std::optional<core::RealizationId>)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::UnsupportedOperation,
+                "TEST_WINDOWS_INITIAL_SOURCE_FORMAT_REJECTED"});
+        });
+    app::AuditionSourceSelector selector{&transport};
+    selector.set_source_loop_provider([] {
+        return std::optional<core::FrameRange>{};
+    });
+    QVERIFY(selector.source_committed(reference_for(path)));
+    QVERIFY(selector.prepared_available());
+    QVERIFY(!selector.active_target());
+    const auto prepared=selector.prepared_realization_snapshot();
+    QVERIFY(prepared);
+    QCOMPARE(prepared->view().format().sample_rate(),
+             *core::SampleRate::create(sourceRate).value());
+    const auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto chain=dsp::ProcessingChain::create(
+        *registry.value(),{dsp::ProcessingStage::MASTER,dsp::ChainSegment::MANUAL});
+    QVERIFY(chain);
+    const auto request=render::RenderRequest::create(
+        prepared->view(),prepared->view().absolute_range(),
+        *chain.value(),{},*core::FrameCount::create(64).value());
+    QVERIFY(request);
+    auto output=render::render_preview(*request.value(),*registry.value());
+    QVERIFY(output);
+    QVERIFY(selector.set_processed_realization(std::move(*output.value())));
+    // The hardware rejects the INITIAL source/processed selection. No
+    // activeTarget or audible RealizationId may be fabricated to fix it.
+    QVERIFY(!selector.switch_to(app::AuditionTarget::PROCESSED));
+    QVERIFY(!selector.active_target());
+    QVERIFY(!selector.offline_processed_selected_for_final_master());
+    QVERIFY(selector.authorize_offline_processed_for_final_master());
+    QVERIFY(selector.offline_processed_selected_for_final_master());
+    const auto empty=transport.playback_snapshot();
+    QVERIFY(empty);
+    QCOMPARE(empty.value()->state,core::PlaybackState::NO_SOURCE);
+    QCOMPARE(empty.value()->audibleRealization.phase,
+             core::AudibleHandoffPhase::UNAVAILABLE);
+    QVERIFY(!empty.value()->audibleRealization.realizationId);
+    QVERIFY(!empty.value()->duration);
+
+    const auto region=core::FrameRange::create(
+        core::FrameIndex{0},core::FrameIndex{32});
+    QVERIFY(region);
+    std::optional<core::FrameRange> loop=*region.value();
+    selector.set_source_loop_provider([&loop] {return loop;});
+    QVERIFY(!selector.offline_processed_selected_for_final_master());
+    QVERIFY(!selector.authorize_offline_processed_for_final_master());
+    loop.reset();
+    QVERIFY(selector.authorize_offline_processed_for_final_master());
+
+    // Foreign ownership is never inferred to be the manual PREPARED source.
+    device->state=core::PlaybackState::STOPPED;
+    device->audibleRealization={
+        core::AudibleHandoffPhase::NEW,core::RealizationId{0xAA55}};
+    QVERIFY(!selector.offline_processed_selected_for_final_master());
+    QVERIFY(!selector.authorize_offline_processed_for_final_master());
+    // A test-controlled external device removal permits a new admission.
+    QVERIFY(device->clear());
+    QVERIFY(selector.authorize_offline_processed_for_final_master());
+    // Even the same file becomes a new SOURCE epoch: old tickets are void.
+    QVERIFY(selector.source_committed(reference_for(path)));
+    QVERIFY(!selector.offline_processed_selected_for_final_master());
+    QVERIFY(!selector.processed_realization_snapshot());
+}
 
 void AuditionSourceSelectorTest::availabilityCuesSwitchingAndFallbackAreTruthful()
 {

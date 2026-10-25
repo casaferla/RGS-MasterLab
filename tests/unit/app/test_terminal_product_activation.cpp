@@ -1716,6 +1716,36 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!audioGate.has_session());
     QVERIFY(product.cancel());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
+
+    // INITIAL DEVICE rejection differs from losing the sink after MANUAL
+    // selection. Keep accepted complete owners, but NO active audible
+    // PROCESSED target. Only an explicitly granted non-audible ticket may
+    // create a private MASTER; ordinary M17 and DEVICE install still fail.
+    QVERIFY(device->clear());
+    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    QVERIFY(device->clear());
+    QCOMPARE(selector.active_target(),
+             std::optional{app::AuditionTarget::PREPARED});
+    bool explicitOfflineProvenance=false;
+    product.set_offline_final_master_selection_checker(
+        [&explicitOfflineProvenance] {return explicitOfflineProvenance;});
+    QVERIFY(!product.request_private_for_final_master(*masterRate.value()));
+    explicitOfflineProvenance=true;
+    QVERIFY(!product.request_private(*masterRate.value(),true));
+    QVERIFY(product.request_private_for_final_master(*masterRate.value()));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    QVERIFY(candidates.staged());
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QCOMPARE(device->state,core::PlaybackState::NO_SOURCE);
+    QVERIFY(!product.install_ready_private());
+    explicitOfflineProvenance=false;
+    QVERIFY(!product.materialize_private_final_master_monitoring(makeMonitor));
+    QCOMPARE(device->state,core::PlaybackState::NO_SOURCE);
+    QVERIFY(product.cancel());
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
 }
 
 void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()
