@@ -663,6 +663,11 @@ Window {
     for(const int editorHeight : {360,420,652}) {
         host->setHeight(editorHeight);
         QVERIFY(window->setProperty("meterMode",true));
+        // QtQuick.Layouts applies geometry in the next polish/render
+        // cycle. Comparing before that cycle uses the PREVIOUS 652px M16
+        // lane against the newly resized 360px M17 lane, a false parity
+        // failure. Settle BOTH selections before measuring coordinates.
+        QTest::qWait(100);
         QCoreApplication::processEvents();
         QVERIFY(meterEditor->isVisible());
         QVERIFY(actionBand->isVisible());
@@ -677,6 +682,7 @@ Window {
         for(const auto& name:sameAnchors)
             m16Rects.append(hostRect(meterEditor,name));
         QVERIFY(window->setProperty("meterMode",false));
+        QTest::qWait(100);
         QCoreApplication::processEvents();
         QVERIFY(limiterEditor->isVisible());
         QVERIFY(actionBand->isVisible());
