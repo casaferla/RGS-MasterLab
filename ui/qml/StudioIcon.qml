@@ -67,8 +67,8 @@ Canvas {
             line(2.3, 2.5, 2.3, 15.5)
             line(2.3, 15.5, 15.7, 15.5)
         } else if (kind === "module-stereo") {
-            ctx.beginPath();ctx.ellipse(7, 9, 4.4, 6.0, 0, 0, Math.PI*2);ctx.stroke()
-            ctx.beginPath();ctx.ellipse(11, 9, 4.4, 6.0, 0, 0, Math.PI*2);ctx.stroke()
+            ctx.beginPath();ctx.arc(7, 9, 5.2, 0, Math.PI*2);ctx.stroke()
+            ctx.beginPath();ctx.arc(11, 9, 5.2, 0, Math.PI*2);ctx.stroke()
         } else if (kind === "module-peak-meter") {
             rect(2.8, 10.0, 2.2, 5.0)
             rect(7.9, 4.5, 2.2, 10.5)
