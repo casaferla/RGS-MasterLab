@@ -663,6 +663,31 @@ Window {
         window,
         QStringLiteral("fq80_real_seven_adapter_chain_docked_grip_1184x688.png"),
         QSize{1184,688}),"Real Qt full seven-adapter docked Chain evidence");
+
+    // Every real adapter must open its corresponding existing editor using
+    // ONE persistent shared host, without altering either DSP chain.
+    const std::array<QString,7> editorNames{
+        QStringLiteral("inputGainEditor"),
+        QStringLiteral("parametricEqEditor"),
+        QStringLiteral("compressorEditor"),
+        QStringLiteral("stereoMsEditor"),
+        QStringLiteral("truePeakMeterEditor"),
+        QStringLiteral("truePeakLimiterEditor"),
+        QStringLiteral("monitorEditor")};
+    const auto* hostIdentity=host;
+    for(int i=0;i<7;++i) {
+        model.setSelectedIndex(i);
+        QCOMPARE(model.selected_index(),i);
+        auto* editor=qobject_cast<QQuickItem*>(find_child_by_name(
+            host,editorNames[i]));
+        QVERIFY2(editor,qPrintable(editorNames[i]));
+        QTRY_VERIFY_WITH_TIMEOUT(editor->isVisible(),5000);
+        QCOMPARE(host,hostIdentity);
+        QCOMPARE(manual.module_count(),std::size_t{4});
+        QCOMPARE(terminal.chain().instances().size(),std::size_t{1});
+        QCOMPARE(model.modules().size(),qsizetype{7});
+    }
+    model.setSelectedIndex(0);
     window->close();
 }
 
