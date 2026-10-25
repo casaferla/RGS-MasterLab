@@ -499,6 +499,18 @@ Rectangle {
             liveProvider: root.truePeakCurrentLive
         }
 
+        // MONITOR is a selectable, persistent QML utility editor. Its
+        // controls address a separate DEVICE audition lease, never M17 DSP.
+        MonitorEditor {
+            id: monitorEditor
+            objectName: "monitorEditor"
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "MASTER_MONITOR" : false
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            monitorViewModel: root.terminalMonitorViewModel
+        }
+
         StereoMsEditor {
             showLocalValidation: !root.errorsInGlobalStatusBar
             id: stereoMsEditor
