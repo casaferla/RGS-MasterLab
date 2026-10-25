@@ -8,6 +8,7 @@ qt_add_qml_module(rgsml_ui
         qml/CompressorEditor.qml
         qml/DspChainSelector.qml
         qml/DspEditorHost.qml
+        qml/DspFloatingModuleWindow.qml
         qml/DspWorkspace.qml
         qml/InputGainEditor.qml
         qml/Main.qml
