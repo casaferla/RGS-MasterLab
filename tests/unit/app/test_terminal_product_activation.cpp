@@ -14,6 +14,8 @@
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_frame_map.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
+#include <rgsml/audio/wav_writer.hpp>
+#include <rgsml/core/resource_io.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/render/render_preview.hpp>
 #include <rgsml/render/render_request.hpp>
@@ -24,12 +26,78 @@
 #include <memory>
 #include <array>
 #include <bit>
+#include <cstddef>
+#include <span>
+#include <string>
+#include <utility>
 #include <cstdint>
 #include <cmath>
 #include <limits>
 #include <vector>
 
 namespace rgsml::tests {
+
+namespace {
+// Short, real IEEE_F64 WAV serialization into an exact in-memory RESOURCE
+// port. No disk permissions, Windows AudioSink or unapproved M18 delivery.
+struct MatrixWavBytes {std::vector<std::byte> bytes;};
+class MatrixWavSink final:public core::IResourceWriter {
+public:
+    explicit MatrixWavSink(std::shared_ptr<MatrixWavBytes> state)
+        : state_(std::move(state)),reference_(
+            *core::ResourceReference::create(
+                "test.memory","m17-rate-grid",false,true,"M17 WAV test").value()) {}
+    [[nodiscard]] const core::ResourceReference& reference() const noexcept override
+    {return reference_;}
+    [[nodiscard]] core::ResourceCapabilities capabilities() const noexcept override
+    {return core::ResourceCapabilities::create(true,true,true,true);}
+    [[nodiscard]] core::Result<std::uint64_t> position_bytes() const override
+    {return core::Result<std::uint64_t>::success(position_);}
+    [[nodiscard]] core::Result<std::size_t> write(
+        std::span<const std::byte> bytes) override {
+        if(closed_)return core::Result<std::size_t>::failure(
+            core::Error{core::ErrorCode::InvalidState,"MATRIX_WAV_CLOSED"});
+        const auto count=bytes.size();
+        const auto end=position_+count;
+        if(end>1024U*1024U)return core::Result<std::size_t>::failure(
+            core::Error{core::ErrorCode::OutOfRange,"MATRIX_WAV_TOO_LARGE"});
+        if(state_->bytes.size()<end)state_->bytes.resize(
+            static_cast<std::size_t>(end));
+        std::copy(bytes.begin(),bytes.end(),
+                  state_->bytes.begin()+static_cast<std::ptrdiff_t>(position_));
+        position_=end;
+        return core::Result<std::size_t>::success(count);
+    }
+    [[nodiscard]] core::Status seek_bytes(std::uint64_t at) override
+    {position_=at;return core::Status::success();}
+    [[nodiscard]] core::Status resize_bytes(std::uint64_t size) override {
+        if(size>1024U*1024U)return core::Status::failure(
+            core::Error{core::ErrorCode::OutOfRange,"MATRIX_WAV_TOO_LARGE"});
+        state_->bytes.resize(static_cast<std::size_t>(size));
+        if(position_>size)position_=size;
+        return core::Status::success();
+    }
+    [[nodiscard]] core::Status flush() override
+    {return core::Status::success();}
+    [[nodiscard]] core::Status close() override
+    {closed_=true;return core::Status::success();}
+private:
+    std::shared_ptr<MatrixWavBytes> state_;
+    core::ResourceReference reference_;
+    std::uint64_t position_{0};
+    bool closed_{false};
+};
+[[nodiscard]] std::uint32_t matrix_wav_u32(
+    const std::vector<std::byte>& bytes,std::size_t offset)
+{
+    std::uint32_t value=0;
+    for(std::size_t i=0;i<4;++i)
+        value|=static_cast<std::uint32_t>(
+            std::to_integer<unsigned char>(bytes[offset+i]))<<(8*i);
+    return value;
+}
+} // namespace
+
 class TerminalActivationIntegrationTest final:public QObject {
     Q_OBJECT
 private slots:
@@ -212,6 +280,7 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
     QVERIFY(limiter.value()->set_user_bypass(false));
     const auto bindings=limiter.value()->execution_bindings();
     std::size_t masterPairs=0;
+    std::size_t wavPairs=0;
     std::size_t devicePairs=0;
     for(const auto sourceHz:rates) {
         const auto sourceRate=core::SampleRate::create(sourceHz);
@@ -263,6 +332,26 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
                 audio::FrameDomainId::OUTPUT_RATE);
             QVERIFY(master.frame_count().value()>0);
             ++masterPairs;
+            // Actual WAV bytes, rather than an export-rate intention:
+            // IEEE F64 WavWriter is already implemented independently of
+            // M18's later PCM24/dither/product export UI.
+            auto wavBytes=std::make_shared<MatrixWavBytes>();
+            const audio::WavWriteSpec wavSpec{
+                master.format(),master.frame_count(),
+                audio::WavSampleFormat::IEEE_F64};
+            auto writer=audio::WavWriter::open(
+                std::make_unique<MatrixWavSink>(wavBytes),wavSpec);
+            QVERIFY(writer);
+            QVERIFY((*writer.value())->write_frames(master));
+            QVERIFY((*writer.value())->finalize());
+            QVERIFY((*writer.value())->close());
+            QVERIFY(wavBytes->bytes.size()>=58);
+            QCOMPARE(matrix_wav_u32(wavBytes->bytes,24),
+                static_cast<std::uint32_t>(finalHz));
+            QCOMPARE(matrix_wav_u32(wavBytes->bytes,54),
+                static_cast<std::uint32_t>(
+                    master.frame_count().value()*2*sizeof(double)));
+            ++wavPairs;
             if(finalHz!=sourceHz)continue;
             // 36 more genuine PCM conversions: six independently
             // prepared source-rate M17 masters versus six DEVICE rates.
@@ -295,8 +384,9 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
         }
     }
     QCOMPARE(masterPairs,std::size_t{36});
+    QCOMPARE(wavPairs,std::size_t{36});
     QCOMPARE(devicePairs,std::size_t{36});
-    qInfo().noquote()<<"M17_RATE_MATRIX=36_MASTER_PLUS_36_DEVICE_PCM";
+    qInfo().noquote()<<"M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM";
 }
 
 void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate48k()
