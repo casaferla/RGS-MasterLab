@@ -326,8 +326,7 @@ Rectangle {
                                         ? "Default settings" : "Manual non-default settings")
                                     + (rowItem.isBypassed ? " · Bypassed" : "")
                                 : "Module"
-                            ToolTip.visible: moduleSymbolHover.hovered
-                                && moduleSymbolTooltipDwell.ready
+                            ToolTip.visible: moduleSymbolHover.hovered && moduleSymbolTooltipDwell.ready
                             ToolTip.delay: 0
                             HoverHandler { id: moduleSymbolHover }
                             StudioTooltipDwell {
