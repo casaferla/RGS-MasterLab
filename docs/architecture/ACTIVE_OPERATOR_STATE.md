@@ -9,14 +9,14 @@
 - STAGING (intermediate writes ONLY): `staging/m17-monitor-preallocation-no-ci-20261024`; no open PR for staging.
 - PR branch (publish complete candidates ONLY): `experimental/m17-monitoring-pcm-isolation-20261024`.
 - PR: [#61 DRAFT](https://github.com/casaferla/RGS-MasterLab/pull/61), base `main`; NEVER merge main without PO gate.
-- At handoff writing, PR head `5be31593e67387b82b8bc51366b0d134ceaa2ee8`; after this documentation candidate is promoted, verify new PR SHA and update THIS field at next epoch on staging.
+- PR HEAD after fast-forward promotion of compact UI test + governance dossier: `7af7c0e4c881476419c71c396f79c276053dc2f0`, as verified 2026-10-25. Always live-check before a new promotion.
 - Baseline `main`: `46e917bd2adc8ff13e83c0802895afda7daf6b2a` at the time of the audit; always live-check.
 - Single-Writer Epoch applies. Before any modification compare staging/PR SHAs and relationship. Use CAS.
 
 ## Focused CI / FQ
 - Latest earlier green focused CI: [#813](https://github.com/casaferla/RGS-MasterLab/actions/runs/40205911022), Windows/Linux PASS on `33607cc05390cd99d9f4652b58d779060661cfda`.
 - [#817](https://github.com/casaferla/RGS-MasterLab/actions/runs/40207585365): PASS on `6c17846d35094a9becfceeff7891a7d25e31681f`.
-- [#818](https://github.com/casaferla/RGS-MasterLab/actions/runs/40207725757): Windows UI smoke FAIL; Linux PASS on `5be31593e67387b82b8bc51366b0d134ceaa2ee8`. Small filtered evidence `RGS-Focused-Test-Errors-Windows-818-...`: `truePeakLimiterHostFamilyTheme`, real-host common left-lane measured M16 height 293 vs M17 height 140; runtime QtQuick.Layout timing suspected, not yet proven. Other warning `prepareRateAdvisor` missing in isolated Main fixture exists. NO full logs.
+- [#819](https://github.com/casaferla/RGS-MasterLab/actions/runs/40209270431): IN PROGRESS at 2026-10-25, exact PR SHA `7af7c0e4c881476419c71c396f79c276053dc2f0`, Windows/Linux outcome not yet established. The single PR promotion included first attempt to stabilize the M16/M17 host parity fixture, and all three governance docs.\n- [#818](https://github.com/casaferla/RGS-MasterLab/actions/runs/40207725757): Windows UI smoke FAIL; Linux PASS on `5be31593e67387b82b8bc51366b0d134ceaa2ee8`. Small filtered evidence `RGS-Focused-Test-Errors-Windows-818-...`: `truePeakLimiterHostFamilyTheme`, real-host common left-lane measured M16 height 293 vs M17 height 140; runtime QtQuick.Layout timing suspected, not yet proven. Other warning `prepareRateAdvisor` missing in isolated Main fixture exists. NO full logs.
 - Staging after #818: QML host-parity test amended to settle QtQuick layout for both selected editors at constrained heights, commit `4aaeffe343d2e0c1a493058f8f43c9298f65568c`, before governance-document commits. Outcome UNKNOWN until next Focused CI.
 - Previous [FQ #79](https://github.com/casaferla/RGS-MasterLab/actions/runs/40194240301) automatic PASS on old SHA `cf868117700a48723df56af2aad841dc8a9d3dbe`; Product Owner physical review BLOCKED due M16/M17 UI regressions and M17 non-functioning at 44.1/48/192 kHz. **No new FQ until PO explicitly launches one.**
 
@@ -43,6 +43,6 @@
 - Staged changes require automatic next step **during active chat**, not scheduled/background monitoring.
 
 ## NEXT: cohesive package then PR promotion
-- Complete/verify #818 host-parity regression fix on staging, maintain mandatory CI batching. With this governance-document batch, promote one staging fast-forward candidate to PR for #819.
+- CI #819 is already started from the single completed PR promotion. Inspect only jobs/filtered artifacts. If red, stage a cohesive correction before one PR promotion; if green, continue the P0 M17 Windows source/device decoupling. Update this ACTIVE_OPERATOR_STATE on STAGING during each recovery/epoch; its PR copy may lag intentionally to avoid CI storms.
 - If #819 red, use bounded failed-step/artifact evidence; stage all related corrections before next PR promotion. If green, immediately continue the approved M17/MONITOR P0 functional-decoupling investigation and code. Never ask PO to reauthorize routine fix progression.
 - Every operational reply provides exact clickable CI URL.
