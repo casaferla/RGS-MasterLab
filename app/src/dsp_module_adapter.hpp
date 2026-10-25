@@ -7,6 +7,7 @@
 #include "stereo_ms_view_model.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
+#include "terminal_monitor_view_model.hpp"
 
 #include <QObject>
 #include <QString>
@@ -357,6 +358,67 @@ public:
     void resetToDefault() override {}
 private:
     QString workflowContext_;
+};
+
+// MONITOR is a selectable workflow/service row, NOT a sonic DSP module.
+// This adapter exists only at presentation level; it is never installed
+// in MasteringChainState, ModuleRegistry or a render ProcessingChain.
+class MonitorServiceModuleAdapter final : public DspModuleAdapter {
+public:
+    explicit MonitorServiceModuleAdapter(TerminalMonitorViewModel* vm,
+        QString context, QObject* parent=nullptr)
+      : DspModuleAdapter(parent),vm_(vm),context_(std::move(context))
+    {
+        if(vm_) connect(vm_,&TerminalMonitorViewModel::changed,
+                        this,&DspModuleAdapter::changed);
+    }
+    [[nodiscard]] QString instance_id() const override
+    { return QStringLiteral("utility:rgsml.monitor.master-device"); }
+    [[nodiscard]] QString type_id() const override
+    { return QStringLiteral("rgsml.utility.master-monitor"); }
+    [[nodiscard]] QString display_name() const override
+    { return QStringLiteral("MONITOR"); }
+    [[nodiscard]] QString workspace_context_label() const override
+    { return context_ + QStringLiteral(" · Device audition only"); }
+    [[nodiscard]] QString configuration_state() const override
+    { return QStringLiteral("Default"); }
+    [[nodiscard]] bool bypass_supported() const noexcept override { return false; }
+    [[nodiscard]] bool bypass() const noexcept override { return false; }
+    [[nodiscard]] bool preview_supported() const noexcept override { return false; }
+    [[nodiscard]] QString preview_status() const override
+    { return QStringLiteral("MONITOR_SERVICE"); }
+    [[nodiscard]] QString preview_error() const override
+    { return vm_ ? vm_->error_text() : QString{}; }
+    [[nodiscard]] bool history_supported() const noexcept override { return false; }
+    [[nodiscard]] bool can_undo() const noexcept override { return false; }
+    [[nodiscard]] bool can_redo() const noexcept override { return false; }
+    [[nodiscard]] bool reset_supported() const noexcept override { return false; }
+    [[nodiscard]] QString editor_content_key() const override
+    { return QStringLiteral("MASTER_MONITOR"); }
+    [[nodiscard]] QString live_change_policy() const override
+    { return QStringLiteral("UTILITY_DEVICE_AUDITION_NO_MASTER_MODIFICATION"); }
+    [[nodiscard]] GainViewModel* gain_view_model() const noexcept override { return nullptr; }
+    [[nodiscard]] EqViewModel* eq_view_model() const noexcept override { return nullptr; }
+    [[nodiscard]] CompressorViewModel* compressor_view_model() const noexcept override { return nullptr; }
+    [[nodiscard]] QString family_accent() const override
+    { return QStringLiteral("#718092"); }
+    [[nodiscard]] QString state_text() const override
+    {
+        if(!vm_)return QStringLiteral("Unavailable");
+        if(vm_->monitor_installed())return QStringLiteral("Device audition");
+        if(vm_->can_install())return QStringLiteral("MASTER ready");
+        if(!vm_->error_text().isEmpty())return QStringLiteral("Monitor error");
+        return QStringLiteral("Monitor idle");
+    }
+    [[nodiscard]] bool has_error() const noexcept override
+    { return vm_ && !vm_->error_text().isEmpty(); }
+    void setBypass(bool) override {}
+    void undo() override {}
+    void redo() override {}
+    void resetToDefault() override {}
+private:
+    TerminalMonitorViewModel* vm_{nullptr};
+    QString context_;
 };
 
 }  // namespace rgsml::app
