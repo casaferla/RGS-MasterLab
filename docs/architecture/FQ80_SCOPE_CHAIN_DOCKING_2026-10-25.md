@@ -52,3 +52,19 @@ For module switching while detached, distinguish **current window identity** fro
 
 ## 8. PO explicit fixed-geometry amendment — 2026-10-25
 The user rejected responsive rearrangement: **no side-by-side at large size, stacked at small size** for MONITOR or the Chain. MASTER and DEVICE keep the same horizontal relationship at every window size; do not add adaptive row/column transitions. The Chain keeps fixed 164px width and steady label coordinates whether vertical scrollbar is visible. Only the **scroll position and available empty space** may change. For cramped editor heights use scrolling inside MONITOR; do not move widgets to an alternate hierarchy. This is mandatory FQ #80 physical UI evidence at 1184×688 and Windows 150% scaling.
+
+## 8. PO-approved visible name + semantic module pictograms — 2026-10-25
+**Name:** `Master Audition` (Title Case) is the sole end-user-facing module name. The user expressly rejected `MONITOR`/ `Monitor` as a visible label. Existing internal `MASTER_MONITOR`, `TerminalMonitorViewModel`, audio state keys and ownership identifiers remain unchanged for compatibility. Tooltips and visible status messages should use Audition or Master Audition as appropriate.
+
+**Pictogram grammar:** each chain row has its own distinctive monochrome 16×16 Canvas glyph, tinted with its frozen *family* color. The previous BYP-badge slot is NOT reinstated; the 8px configuration LED and 8px error indicator remain separate and fixed. At 164px chain width no title font-size reduction, no label/LED shifting on bypass or scroll. Module pictograms:
+- Input Gain: gain fader · LEVEL/GAIN Ice Blue `#6F9FB3`
+- Parametric EQ: response curve · TONAL/FILTER Azure `#4E86C6`
+- Compressor: threshold/knee curve · DYNAMICS Copper `#C4774A`
+- Stereo / M-S: linked channels · STEREO/SPATIAL Sea Green `#4A9A88`
+- True Peak Meter: measurement bars · ANALYSIS/METERING Steel Blue `#6683A1`
+- True Peak Limiter: ceiling cap · DYNAMICS Copper `#C4774A`
+- Master Audition: headphones · WORKFLOW/UTILITY Slate `#718092`
+
+No family or state is identified by color alone. Distinct shape gives module identification; family hue groups related modules; bypass dims the row and glyph rather than moving controls. The pictogram hues for M16/M17 do not replace their independently frozen editor geometry/semantics. Preserve the first 16px slot when adding future modules such as M18 (Delivery/Bronze). Native 1184×688 Windows screenshot/150% gate is still required: CI green is not physical qualification.
+
+**Focus CI:** [#823](https://github.com/casaferla/RGS-MasterLab/actions/runs/40216767401) submitted PR HEAD `b218558a736fd82d000072cfea782dab876b9b6e`; status must be verified live. The promoted candidate includes the exact approved visible name, per-module glyphs, fixed-width Chain geometry and focused unit/QML static/native assertions. This document update is only on no-CI staging, to avoid an extra CI.
