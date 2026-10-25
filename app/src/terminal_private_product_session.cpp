@@ -416,6 +416,7 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
     // with bounded integer arithmetic. A stopped monitor without the new
     // controller retains the original legacy zero-cue return.
     core::FrameIndex sourceCue{0};
+    std::optional<core::FrameRange> reconciledSourceLoop;
     core::PlaybackState priorMonitorState=core::PlaybackState::STOPPED;
     if(monitorDisplay_) {
         const auto display=private_monitor_master_snapshot();
@@ -426,13 +427,26 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
            &&priorMonitorState!=core::PlaybackState::PAUSED)
             return core::Status::failure(rejected(
                 "MONITOR_RETURN_INVALID_TRANSPORT_STATE"));
-        // A MASTER loop created during private monitoring is NOT implicitly
-        // the SOURCE loop registered in the selector. Until a loop-owner
-        // reconciliation gate exists, never silently discard it on return.
-        if(display.value()->requested_master_loop
-           ||predecessor.loop ||(sourceLoop_&&sourceLoop_()))
+        // Verify selected SOURCE epoch BEFORE retiring the device. An
+        // explicitly supplied callback will commit only the projected loop
+        // after original MANUAL restoration, not during MONITOR playback.
+        if(predecessor.loop || (sourceLoop_&&sourceLoop_()))
             return core::Status::failure(rejected(
-                "MONITOR_RETURN_LOOP_EPOCH_NOT_RECONCILED"));
+                "MONITOR_RETURN_SOURCE_LOOP_CHANGED_DURING_MONITOR"));
+        if(display.value()->requested_master_loop) {
+            if(!sourceLoopReconcile_||!sourceLoop_)
+                return core::Status::failure(rejected(
+                    "MONITOR_RETURN_EXPLICIT_SOURCE_LOOP_TRANSACTION_REQUIRED"));
+            const auto map=audio::MonitoringFrameMap::create(*candidate);
+            if(!map)return core::Status::failure(*map.error());
+            auto projected=map.value()->master_loop_to_source(
+                *display.value()->requested_master_loop,
+                predecessor.manual->view().format().sample_rate(),
+                predecessor.manual->view().frame_count());
+            if(!projected)
+                return core::Status::failure(*projected.error());
+            reconciledSourceLoop=*projected.value();
+        }
         const auto masterHz=display.value()->master_rate.value();
         const auto sourceHz=predecessor.manual->view().format()
             .sample_rate().value();
@@ -449,6 +463,10 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         const auto value=q*sourceHz+(rem*sourceHz)/masterHz;
         sourceCue=core::FrameIndex{std::min(
             value,predecessor.manual->view().frame_count().value())};
+        if(reconciledSourceLoop
+           &&(sourceCue<reconciledSourceLoop->begin()
+              ||sourceCue>=reconciledSourceLoop->end()))
+            sourceCue=reconciledSourceLoop->begin();
     }
     const auto owned=monitorOwned_(candidate);
     if(!owned)return core::Status::failure(*owned.error());
@@ -504,6 +522,35 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         return core::Status::failure(rejected(
             "MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
     }
+    if(reconciledSourceLoop) {
+        // The callback must act on the restored original MANUAL, never on
+        // the anonymous monitor. Its SOURCE region is independently checked.
+        const auto committed=sourceLoopReconcile_(*reconciledSourceLoop);
+        if(!committed) {
+            monitorTransitioning_=false;
+            renderer_->invalidate();
+            failed(*committed.error());
+            return committed;
+        }
+        const auto region=sourceLoop_();
+        const auto loopSink=transport_->playback_snapshot();
+        if(!region||*region!=*reconciledSourceLoop
+           ||!loopSink||loopSink.value()->state!=core::PlaybackState::STOPPED
+           ||loopSink.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||loopSink.value()->audibleRealization.realizationId
+               !=std::optional{predecessor.manualId}
+           ||loopSink.value()->position!=sourceCue
+           ||loopSink.value()->duration
+               !=std::optional{predecessor.manual->view().frame_count()}
+           ||loopSink.value()->loop!=reconciledSourceLoop) {
+            monitorTransitioning_=false;
+            renderer_->invalidate();
+            failed(rejected("MONITOR_RETURN_SOURCE_LOOP_EPOCH_MISMATCH"));
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_SOURCE_LOOP_EPOCH_MISMATCH"));
+        }
+    }
     // Restore the prior Play/Pause state only after the exact original
     // MANUAL PCM and clock have been installed. A paused monitor returns
     // to PAUSED by starting the MANUAL sink then suspending the same owner.
@@ -520,7 +567,7 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
                !=std::optional{predecessor.manualId}
            ||resumed.value()->duration
                !=std::optional{predecessor.manual->view().frame_count()}
-           ||resumed.value()->loop!=predecessor.loop) {
+           ||resumed.value()->loop!=reconciledSourceLoop) {
             // Do not announce restored playback and do not clear a
             // successor. Retire only the exact MANUAL owner if still there.
             if(resumed
@@ -537,7 +584,17 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         }
     }
     monitorTransitioning_=false;
-    status_=QStringLiteral("MASTER_READY_MONITOR_PENDING");
+    if(reconciledSourceLoop) {
+        // This SOURCE loop differs from the captured M17 render epoch.
+        // Revoke the private MASTER ticket: new audition requires new render.
+        pending_.reset();
+        approvedMonitor_.reset();
+        approvedMonitorMaster_.reset();
+        status_=QStringLiteral("IDLE");
+        renderer_->invalidate();
+    } else {
+        status_=QStringLiteral("MASTER_READY_MONITOR_PENDING");
+    }
     emit changed();
     return core::Status::success();
 }

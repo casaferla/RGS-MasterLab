@@ -1019,12 +1019,16 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         [&selector]{return selector.processed_realization_snapshot();},
         [&selector]{return selector.processed_realization_id();},
         [&chain]{return *chain.value();}};
+    std::optional<core::FrameRange> selectedSourceLoop;
+    selector.set_source_loop_provider([&selectedSourceLoop] {
+        return selectedSourceLoop;
+    });
     app::TerminalPrivateProductSession product{
         renderer,publisher,candidates,transport,
         [&selector]{return selector.prepared_realization_snapshot();},
         [&selector]{return selector.processed_realization_snapshot();},
         [&selector]{return selector.processed_realization_id();},
-        []{return std::optional<core::FrameRange>{};},
+        [&selectedSourceLoop]{return selectedSourceLoop;},
         [&selector]{return selector.active_target()
             ==app::AuditionTarget::PROCESSED;}};
     std::size_t deviceProbes=0;
@@ -1510,6 +1514,50 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!candidates.staged());
     QCOMPARE(sinkInstalls,std::size_t{0});
     QCOMPARE(device->audibleRealization.realizationId,manualId);
+
+    // New verified MASTER epoch after cancellation: a MASTER loop cannot
+    // silently mutate SOURCE before the exact monitor sink is retired.
+    QVERIFY(product.request_private_for_final_master(*masterRate.value()));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    auto freshMonitor=product.materialize_private_final_master_monitoring(
+        makeMonitor);
+    QVERIFY(freshMonitor);
+    QVERIFY(product.install_private_monitor_stopped(*freshMonitor.value()));
+    QVERIFY(product.control_private_monitor(
+        Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},
+                *region.value()}));
+    QVERIFY(product.control_private_monitor(
+        Request{Action::SEEK_MASTER,core::FrameIndex{800}}));
+    std::size_t sourceLoopCommits=0;
+    QVERIFY(!product.return_private_monitor_to_manual());
+    QCOMPARE(sourceLoopCommits,std::size_t{0});
+    QCOMPARE(deviceMonitor,*freshMonitor.value());
+    // Explicit callback sees only STOPPED original MANUAL after retirement.
+    product.set_private_monitor_source_loop_reconciliation(
+        [&](core::FrameRange projected)->core::Status {
+            ++sourceLoopCommits;
+            if(deviceMonitor
+               ||device->state!=core::PlaybackState::STOPPED
+               ||device->audibleRealization.realizationId!=manualId)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "TEST_SOURCE_LOOP_BEFORE_EXACT_RETIREMENT"});
+            selectedSourceLoop=projected;
+            return transport.set_loop_source_range(projected);
+        });
+    QVERIFY(product.return_private_monitor_to_manual());
+    QCOMPARE(sourceLoopCommits,std::size_t{1});
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->position,core::FrameIndex{800});
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(device->loop,*region.value());
+    QCOMPARE(selectedSourceLoop,*region.value());
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QCOMPARE(sinkInstalls,std::size_t{0});
 }
 
 void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()

@@ -306,6 +306,20 @@ int main(int argc, char* argv[])
             return auditionSelector.restore_manual_processed_after_terminal(
                 std::move(manual),id,cue);
         });
+    // Exact monitor retirement precedes any SOURCE-region mutation.
+    // Reject a competing region instead of silently overwriting user intent.
+    privateProductSession.set_private_monitor_source_loop_reconciliation(
+        [&auditionRegion](rgsml::core::FrameRange projected) {
+            if(auditionRegion.loop_enabled()
+               ||(auditionRegion.has_region()
+                  &&auditionRegion.region()!=std::optional{projected}))
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidState,
+                    "MONITOR_SOURCE_REGION_CONFLICT"});
+            auto region=auditionRegion.set_region(projected);
+            if(!region)return region;
+            return auditionRegion.set_loop_enabled(true);
+        });
     // Monitor-specific exact owner command/snapshot: Play/Pause/Stop and
     // MASTER-coordinate seek/loop. This is still PRIVATE, not QML visible;
     // no LIVE measurement or device sample rate substituted for MASTER.

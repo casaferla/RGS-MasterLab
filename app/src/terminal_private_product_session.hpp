@@ -105,6 +105,13 @@ public:
     [[nodiscard]] core::Status install_private_monitor_stopped(
         MonitoringOwner candidate);
     [[nodiscard]] core::Status return_private_monitor_to_manual();
+    // Explicit SOURCE-loop commit only after exact monitor retirement and
+    // original MANUAL reinstallation. Never alters the monitoring sink.
+    using SourceLoopReconciliation=std::function<core::Status(
+        core::FrameRange projectedSourceRegion)>;
+    void set_private_monitor_source_loop_reconciliation(
+        SourceLoopReconciliation transaction)
+    { sourceLoopReconcile_=std::move(transaction); }
 
     // Private monitoring control plane (NOT QML); the Windows callbacks
     // guard actual device owner and command atomically on the worker.
@@ -212,6 +219,7 @@ private:
     MonitoringOwnership monitorOwned_;
     MonitoringRetire monitorRetire_;
     ManualRestore manualRestore_;
+    SourceLoopReconciliation sourceLoopReconcile_;
     MonitorControl monitorControl_;
     MonitorDisplay monitorDisplay_;
     MonitoringOwner approvedMonitor_;
