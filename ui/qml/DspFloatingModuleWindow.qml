@@ -28,9 +28,10 @@ Window {
     color: "#0B1724"
 
     function returnToDock() {
-        // This is an intent, not a second editor creation or DSP reset.
-        detached = false
-        redockRequested(moduleInstanceId)
+        // Request the SINGLE parent-owned state transition. Assigning
+        // detached here breaks its QML binding to Main.editorDetached,
+        // making a second undock silently fail.
+        if (detached) redockRequested(moduleInstanceId)
     }
     function focusExisting() {
         if (!detached) return
