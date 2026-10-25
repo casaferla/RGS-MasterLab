@@ -606,8 +606,8 @@ Window {
         root.data(), QStringLiteral("m17HostCaptureSurface")));
     auto* fixture = find_child_by_name(root.data(),
         QStringLiteral("m17FixtureLimiter"));
-    auto* host = find_child_by_name(root.data(),
-        QStringLiteral("m17HostFixture"));
+    auto* host = qobject_cast<QQuickItem*>(find_child_by_name(
+        root.data(), QStringLiteral("m17HostFixture")));
     auto* active = find_child_by_name(root.data(),
         QStringLiteral("abButtonActive"));
     auto* bypass = find_child_by_name(root.data(),
