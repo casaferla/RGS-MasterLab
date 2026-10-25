@@ -1721,8 +1721,16 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // selection. Keep accepted complete owners, but NO active audible
     // PROCESSED target. Only an explicitly granted non-audible ticket may
     // create a private MASTER; ordinary M17 and DEVICE install still fail.
-    QVERIFY(device->clear());
+    // Restore only the exact known MANUAL fixture before changing target:
+    // never clear a foreign owner via selector or mislabel it as ours.
+    device->state=core::PlaybackState::STOPPED;
+    device->position=core::FrameIndex{0};
+    device->duration=*frames.value();
+    device->loop.reset();
+    device->audibleRealization={
+        core::AudibleHandoffPhase::NEW,*manualId};
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
+    // The external test device then rejects/loses the PREPARED sink.
     QVERIFY(device->clear());
     QCOMPARE(selector.active_target(),
              std::optional{app::AuditionTarget::PREPARED});
