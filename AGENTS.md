@@ -23,6 +23,14 @@
 - **Strict Contract Enforcement**: No hidden clamp or default fallback where a frozen contract requires rejection.
 - **Preserve Unknown Project Content**: Preserve unknown project content under frozen degraded/opaque rules.
 
+## Mandatory Chat / Agent Handoff Boot — PO FROZEN 2026-10-25
+**Read before ANY GitHub write or new operational session:**
+1. [Operational handoff / single-writer / CI batching contract](docs/architecture/OPERATIONAL_HANDOFF_CONTRACT.md).
+2. [Current staging, PR, CI, FQ and pending defects](docs/architecture/ACTIVE_OPERATOR_STATE.md).
+3. Live GitHub staging/PR SHA, branch ancestry, failed-step summaries and Product Owner decisions.
+
+**Non-negotiable:** Stage *all* intermediate changes on the named `staging/*-no-ci-*` branch, with NO PR attached. Batch coherent code, tests and fixes; promote **one complete candidate** to the PR branch with a fast-forward SHA lease. The PR triggers one Focused CI per promotion. On red, stage a correction and promote a new tested candidate; on green, continue the next already-authorized work item in the current chat. NEVER push one partially done file after another to the PR. NEVER fetch complete GitHub job logs. Product Owner alone launches Full Qualification. No main merge without PO Gate. Include exact clickable CI link in every operational update. All handoffs must transmit these two canonical files and explicitly require reading them before any action.
+
 ## Development & Process Norms
 - **Task Allow-Lists**: Follow exact task allow-lists strictly.
 - **Conflict Resolution**: On authority/live-baseline conflict, stop and report; do not redesign.
