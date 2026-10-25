@@ -13,6 +13,9 @@ Rectangle {
     property int selectedIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
+    // Optional shared Main coordinator; focuses a detached editor instead of
+    // accidentally creating another one or silently swapping its content.
+    property var moduleActivationHandler: null
     // Delegate lifecycle invalidates all original-index row handles.
     property int rowGeneration: 0
 
@@ -235,22 +238,24 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: {
-                            if (root.adapterModel && moduleAdapter) {
+                            if (root.moduleActivationHandler && moduleAdapter)
+                                root.moduleActivationHandler(moduleAdapter)
+                            else if (root.adapterModel && moduleAdapter)
                                 root.adapterModel.selectModuleByInstanceId(moduleAdapter.instanceId)
-                            } else {
+                            else
                                 root.selectedIndex = rowItem.modelIndex
-                            }
                             rowItem.forceActiveFocus()
                         }
                     }
 
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
-                            if (root.adapterModel && moduleAdapter) {
+                            if (root.moduleActivationHandler && moduleAdapter)
+                                root.moduleActivationHandler(moduleAdapter)
+                            else if (root.adapterModel && moduleAdapter)
                                 root.adapterModel.selectModuleByInstanceId(moduleAdapter.instanceId)
-                            } else {
+                            else
                                 root.selectedIndex = rowItem.modelIndex
-                            }
                             event.accepted = true
                         } else if (event.key === Qt.Key_Down) {
                             if (rowItem.modelIndex + 1 < root.chainModules.length) {
