@@ -7,7 +7,6 @@
 #include "stereo_ms_view_model.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
-#include "terminal_monitor_view_model.hpp"
 
 #include <QObject>
 #include <QString>
@@ -365,12 +364,12 @@ private:
 // in MasteringChainState, ModuleRegistry or a render ProcessingChain.
 class MonitorServiceModuleAdapter final : public DspModuleAdapter {
 public:
-    explicit MonitorServiceModuleAdapter(TerminalMonitorViewModel* vm,
+    explicit MonitorServiceModuleAdapter(QObject* vm,
         QString context, QObject* parent=nullptr)
       : DspModuleAdapter(parent),vm_(vm),context_(std::move(context))
     {
-        if(vm_) connect(vm_,&TerminalMonitorViewModel::changed,
-                        this,&DspModuleAdapter::changed);
+        if(vm_) QObject::connect(vm_, SIGNAL(changed()),
+                                this, SIGNAL(changed()));
     }
     [[nodiscard]] QString instance_id() const override
     { return QStringLiteral("utility:rgsml.monitor.master-device"); }
@@ -388,7 +387,7 @@ public:
     [[nodiscard]] QString preview_status() const override
     { return QStringLiteral("MONITOR_SERVICE"); }
     [[nodiscard]] QString preview_error() const override
-    { return vm_ ? vm_->error_text() : QString{}; }
+    { return vm_ ? vm_->property("errorText").toString() : QString{}; }
     [[nodiscard]] bool history_supported() const noexcept override { return false; }
     [[nodiscard]] bool can_undo() const noexcept override { return false; }
     [[nodiscard]] bool can_redo() const noexcept override { return false; }
@@ -405,19 +404,22 @@ public:
     [[nodiscard]] QString state_text() const override
     {
         if(!vm_)return QStringLiteral("Unavailable");
-        if(vm_->monitor_installed())return QStringLiteral("Device audition");
-        if(vm_->can_install())return QStringLiteral("MASTER ready");
-        if(!vm_->error_text().isEmpty())return QStringLiteral("Monitor error");
+        if(vm_->property("monitorInstalled").toBool())
+            return QStringLiteral("Device audition");
+        if(vm_->property("canInstall").toBool())
+            return QStringLiteral("MASTER ready");
+        if(!vm_->property("errorText").toString().isEmpty())
+            return QStringLiteral("Monitor error");
         return QStringLiteral("Monitor idle");
     }
     [[nodiscard]] bool has_error() const noexcept override
-    { return vm_ && !vm_->error_text().isEmpty(); }
+    { return vm_ && !vm_->property("errorText").toString().isEmpty(); }
     void setBypass(bool) override {}
     void undo() override {}
     void redo() override {}
     void resetToDefault() override {}
 private:
-    TerminalMonitorViewModel* vm_{nullptr};
+    QObject* vm_{nullptr};
     QString context_;
 };
 
