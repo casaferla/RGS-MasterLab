@@ -1669,6 +1669,53 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QVERIFY(!device->audibleRealization.realizationId);
     QCOMPARE(sinkInstalls,std::size_t{0});
+
+    // DEVICE vanishes AFTER the SOURCE/MANUAL provenance was captured.
+    // The explicit offline FINAL MASTER may render, but audible M17 still
+    // must fail and no terminal or anonymous sink may be installed.
+    QVERIFY(product.cancel());
+    QVERIFY(device->clear());
+    QCOMPARE(device->state,core::PlaybackState::NO_SOURCE);
+    QCOMPARE(device->audibleRealization.phase,
+             core::AudibleHandoffPhase::UNAVAILABLE);
+    QVERIFY(!device->audibleRealization.realizationId);
+    QVERIFY(!product.request_private(*masterRate.value(),true));
+    QVERIFY(monitorUi.can_prepare());
+    QVERIFY(monitorUi.requestMaster(192000));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    const auto offlineMaster=candidates.staged();
+    QVERIFY(offlineMaster);
+    QCOMPARE(offlineMaster->rendered.output_rate,*masterRate.value());
+    QCOMPARE(offlineMaster->rendered.manual_owner,
+             selector.processed_realization_snapshot());
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    QCOMPARE(device->state,core::PlaybackState::NO_SOURCE);
+    // Full immutable MASTER materialization may produce private device PCM
+    // but physical DEVICE INSTALL must still reject a missing MANUAL sink.
+    auto offlineMonitor=product.materialize_private_final_master_monitoring(
+        makeMonitor);
+    QVERIFY(offlineMonitor);
+    QVERIFY(!product.install_private_monitor_stopped(*offlineMonitor.value()));
+    QVERIFY(!monitorUi.monitor_installed());
+    QVERIFY(!audioGate.has_session());
+    QCOMPARE(device->state,core::PlaybackState::NO_SOURCE);
+
+    // A later foreign device owner revokes the offline no-sink authority.
+    // Neither master materialization nor install may borrow its transport.
+    device->state=core::PlaybackState::STOPPED;
+    device->audibleRealization={
+        core::AudibleHandoffPhase::NEW,core::RealizationId{0xABCD}};
+    const auto hijacked=product.materialize_private_final_master_monitoring(
+        makeMonitor);
+    QVERIFY(!hijacked);
+    QCOMPARE(hijacked.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(!product.install_private_monitor_stopped(*offlineMonitor.value()));
+    QVERIFY(!audioGate.has_session());
+    QVERIFY(product.cancel());
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
 }
 
 void TerminalActivationIntegrationTest::staleM17TerminalJobCancelsWithoutPublishingPcm()
