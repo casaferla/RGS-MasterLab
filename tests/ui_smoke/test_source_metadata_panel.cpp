@@ -2605,24 +2605,18 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* dspChainRow1 = qvariant_cast<QObject*>(
         dspChainSelectorObj->property("parametricEqRow"));
 
-    auto* dspChainConfigLed0 = dspChainRow0
-        ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainConfigLed_0"))
-        : nullptr;
 
     auto* dspChainStateText0 = dspChainRow0
         ? dspChainRow0->findChild<QObject*>(QStringLiteral("dspChainStateText_0"))
         : nullptr;
 
-    auto* dspChainConfigLed1 = dspChainRow1
-        ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainConfigLed_1"))
-        : nullptr;
 
     auto* dspChainStateText1 = dspChainRow1
         ? dspChainRow1->findChild<QObject*>(QStringLiteral("dspChainStateText_1"))
         : nullptr;
 
-    QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr && dspChainStateText0 != nullptr, "Row 0 (Input Gain) components must exist");
-    QVERIFY2(dspChainRow1 != nullptr && dspChainConfigLed1 != nullptr && dspChainStateText1 != nullptr, "Row 1 (Parametric EQ) components must exist");
+    QVERIFY2(dspChainRow0 != nullptr && dspChainStateText0 != nullptr, "Row 0 (Input Gain) components must exist");
+    QVERIFY2(dspChainRow1 != nullptr && dspChainStateText1 != nullptr, "Row 1 (Parametric EQ) components must exist");
 
     // Icon is a stable slot independent of the active/BYP state.
     auto* chainGainIcon = qobject_cast<QQuickItem*>(
@@ -2632,7 +2626,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         dspChainRow1->findChild<QObject*>(
             QStringLiteral("dspChainModuleIcon_1")));
     QVERIFY2(chainGainIcon && chainEqIcon,
-             "Each processing module has its own stable semantic icon");
+             "One fixed semantic icon replaces the obsolete configuration LED");
+    QVERIFY(!find_child_by_name(dspChainRow0, QStringLiteral("dspChainConfigLed_0")));
+    QVERIFY(!find_child_by_name(dspChainRow1, QStringLiteral("dspChainConfigLed_1")));
     QCOMPARE(chainGainIcon->property("kind").toString(),
              QStringLiteral("module-gain"));
     QCOMPARE(chainEqIcon->property("kind").toString(),
@@ -2843,15 +2839,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(50);
     QCoreApplication::processEvents();
 
-    // Initial Gain state text & LED
+    // Initial Gain state and dim family pictogram
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
-    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QCOMPARE(chainGainIcon->opacity(), 0.37);
     QVERIFY2(!dspChainRow0->property("isBypassed").toBool(), "Gain should initially process audio");
     QVERIFY(!find_child_by_name(dspChainRow0, QStringLiteral("dspChainBypassBadge_0")));
 
-    // Initial EQ state text & LED
+    // Initial EQ state and dim family pictogram
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Flat Default"));
-    QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QCOMPARE(chainEqIcon->opacity(), 0.37);
     QVERIFY2(!dspChainRow1->property("isBypassed").toBool(), "EQ should initially process audio");
     QVERIFY(!find_child_by_name(dspChainRow1, QStringLiteral("dspChainBypassBadge_1")));
 
@@ -2928,7 +2924,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!subtreeHasExactText(inputGainEditor, QStringLiteral("GAIN STAGING")));
     QVERIFY(!subtreeHasExactText(inputGainEditor, QStringLiteral("Fixed First Mastering Stage")));
 
-    // FIX-UI-003: assert invariant chain-title/subtitle/LED geometry
+    // FIX-UI-003: assert invariant chain-title/subtitle/semantic-icon geometry
     // between Input Gain Default and a representative Manual value.
     window->resize(QSize{1184, 688});
     QTest::qWait(150);
@@ -2937,13 +2933,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         dspChainRow0->findChild<QObject*>(
             QStringLiteral("dspChainModuleTitle_0")));
     auto* chainStateItem0 = qobject_cast<QQuickItem*>(dspChainStateText0);
-    auto* chainLedItem0 = qobject_cast<QQuickItem*>(dspChainConfigLed0);
-    QVERIFY(chainRowItem0 && chainTitleItem0 && chainStateItem0 && chainLedItem0);
+    auto* chainSymbolItem0 = chainGainIcon;
+    QVERIFY(chainRowItem0 && chainTitleItem0 && chainStateItem0 && chainSymbolItem0);
     const QPointF chainTitleDefault = chainTitleItem0->mapToItem(
         chainRowItem0, QPointF{0.0, 0.0});
     const QPointF chainStateDefault = chainStateItem0->mapToItem(
         chainRowItem0, QPointF{0.0, 0.0});
-    const QPointF chainLedDefault = chainLedItem0->mapToItem(
+    const QPointF chainSymbolDefault = chainSymbolItem0->mapToItem(
         chainRowItem0, QPointF{0.0, 0.0});
     QCOMPARE(chainTitleItem0->property("text").toString(),
         QStringLiteral("Input Gain"));
@@ -2958,13 +2954,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(gainFillTracksKnob(),
              "Positive Input Gain track must end at the actual knob center");
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("+3.5 dB Manual"));
-    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
+    QCOMPARE(chainGainIcon->opacity(), 1.0);
     QCOMPARE(chainTitleItem0->mapToItem(
         chainRowItem0, QPointF{0.0, 0.0}).x(), chainTitleDefault.x());
     QCOMPARE(chainStateItem0->mapToItem(
         chainRowItem0, QPointF{0.0, 0.0}).x(), chainStateDefault.x());
-    QCOMPARE(chainLedItem0->mapToItem(
-        chainRowItem0, QPointF{0.0, 0.0}).x(), chainLedDefault.x());
+    QCOMPARE(chainSymbolItem0->mapToItem(
+        chainRowItem0, QPointF{0.0, 0.0}).x(), chainSymbolDefault.x());
     QVERIFY(capture_visual_evidence(window,
         QStringLiteral("minor_fix_003_gain_manual_1184x688.png"),
         QSize{1184, 688}));
@@ -3097,7 +3093,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(gainViewModel.gain_db(), 0.0);
     QVERIFY(gainFillTracksKnob());
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
-    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QCOMPARE(chainGainIcon->opacity(), 0.37);
     QVERIFY2(!qobject_cast<QQuickItem*>(gainValidationError)->isVisible(),
         "Gain local error display must remain suppressed after correction");
     QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
@@ -3179,9 +3175,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(eqEditor->findChild<QObject*>(QStringLiteral("spectrumAnalyzer")) == nullptr, "No fake analyzer or spectrum item must exist");
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=dsp-chain-row-led-and-byp";
-    // Canonical Flat state -> config LED is dark and bypass row style is absent.
+    // Canonical Flat state -> family symbol is dim and bypass row style is absent.
     QVERIFY2(eqViewModel.is_default(), "EQ state must be default/flat initially");
-    QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QCOMPARE(chainEqIcon->opacity(), 0.37);
     QVERIFY2(!dspChainRow1->property("isBypassed").toBool(), "EQ should initially process audio");
     QVERIFY(!find_child_by_name(dspChainRow1, QStringLiteral("dspChainBypassBadge_1")));
 
@@ -3197,13 +3193,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(!eqViewModel.can_undo(), "can_undo must be false initially for canonical Flat EQ");
     QVERIFY2(!eqViewModel.can_redo(), "can_redo must be false initially for canonical Flat EQ");
 
-    // Add band -> EQ state becomes Manual non-default -> EQ config LED (row 1) turns Green #00D47A
+    // Add band -> EQ state becomes Manual non-default -> EQ family symbol becomes vivid without changing hue
     QVERIFY2(QMetaObject::invokeMethod(addBandBtn, "clicked"), "Clicking addBandButton must succeed");
     QCoreApplication::processEvents();
     QCOMPARE(eqViewModel.band_count(), 2);
     QCOMPARE(eqViewModel.selected_index(), 1);
     QVERIFY2(!eqViewModel.is_default(), "EQ state must no longer be default after adding a band");
-    QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
+    QCOMPARE(chainEqIcon->opacity(), 1.0);
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
     QVERIFY2(dspChainStateText1->property("visible").toBool(), "Manual Edit must be visible for a non-default EQ");
     QVERIFY(gainHostUndoBtn->property("enabled").toBool());
@@ -3221,7 +3217,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(gainViewModel.gain_db(), gainBeforeEqShortcut);
 
     // Input Gain (row 0) remains dark/default and unchanged after EQ-only edit
-    QCOMPARE(dspChainConfigLed0->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QCOMPARE(chainGainIcon->opacity(), 0.37);
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
 
     // Keyboard Space activation on bandSelectorButton_0
@@ -3436,7 +3432,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(toolbarGeometry(spectrumItem), spectrumOn);
     QCOMPARE(toolbarGeometry(addItem), addOn);
 
-    // Click Bypass -> row skin and subtitle change without any badge/width shift; LED stays independent.
+    // Click Bypass -> row skin and subtitle change without any badge/width shift; manual/default icon state remains independent.
     QVERIFY2(QMetaObject::invokeMethod(abBypassBtn, "clicked"), "Clicking abButtonBypass must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.bypass(), "eqViewModel.bypass must be true after clicking Bypass");
@@ -3450,17 +3446,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(!eqViewModel.bypass(), "eqViewModel.bypass must be false after clicking Active");
     QVERIFY2(!dspChainRow1->property("isBypassed").toBool(), "EQ chain row must recover active visuals");
 
-    // Reset Flat -> restores Default status -> LED turns dark #273A4D
+    // Reset Flat -> restores Default status -> family symbol dims
     QVERIFY2(QMetaObject::invokeMethod(resetFlatBtn, "clicked"), "Clicking eqResetFlatButton must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.is_default(), "EQ state must be default/flat after Reset Flat");
-    QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#273A4D")});
+    QCOMPARE(chainEqIcon->opacity(), 0.37);
 
-    // Undo -> restores 2-band non-default state -> LED turns Green #00D47A
+    // Undo -> restores 2-band non-default state -> family symbol brightens
     QVERIFY2(QMetaObject::invokeMethod(undoBtn, "clicked"), "Clicking eqUndoButton must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(!eqViewModel.is_default(), "EQ state must be non-default after Undo");
-    QCOMPARE(dspChainConfigLed1->property("color").value<QColor>(), QColor{QStringLiteral("#00D47A")});
+    QCOMPARE(chainEqIcon->opacity(), 1.0);
 
     qInfo().noquote() << "M12C_SMOKE_PHASE=stereo-mixed-routing-and-band-colors";
     const auto visualSourceBytes = visual_wav();
