@@ -37,6 +37,7 @@
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQmlContext>
+#include <QQmlExpression>
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
@@ -2377,6 +2378,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         find_child_by_name(root,QStringLiteral("dspFloatingModuleWindow")));
     QVERIFY2(nativeDockedEditor && floatingModule,
         "Generic docking window must be registered in the real Main QML");
+    auto* dockGrip=qobject_cast<QQuickItem*>(
+        find_child_by_name(dspEditorHostObj,
+                           QStringLiteral("dspHostTearOffGrip")));
+    auto* floatingGrip=qobject_cast<QQuickItem*>(
+        find_child_by_name(root,QStringLiteral("dspFloatingDragGrip")));
+    auto* dropWell=qobject_cast<QQuickItem*>(
+        find_child_by_name(root,QStringLiteral("compactEditorDockDropZone")));
+    QVERIFY2(dockGrip && floatingGrip && dropWell,
+             "Both drag grips and the real Main fixed dock target are required");
+    QCOMPARE(dockGrip->width(),22.0);
+    QCOMPARE(floatingGrip->width(),28.0);
     const auto* originalEditorIdentity=nativeDockedEditor;
     QVERIFY(!root->property("editorDetached").toBool());
     QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
@@ -2393,6 +2405,39 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
     QVERIFY(QMetaObject::invokeMethod(root,"returnCurrentEditorToDock"));
+    QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
+    QVERIFY(nativeDockedEditor==originalEditorIdentity);
+
+    // Verify global screen-coordinate drop admission at the ACTUAL dock
+    // rather than fabricating a QML DropArea across native Qt windows.
+    QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
+    QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
+    const auto dropPoint=dropWell->mapToGlobal(
+        QPointF{dropWell->width()*0.5,dropWell->height()*0.5});
+    auto evaluateDockAction=[&](const QString& script)->QVariant {
+        QQmlExpression expression{engine.rootContext(),root,script};
+        const auto result=expression.evaluate();
+        if(expression.hasError()) {
+            qWarning().noquote()<<"Dock Qt expression:"<<expression.error().toString();
+        }
+        if(expression.hasError())return QVariant{};
+        return result;
+    };
+    const auto dockArgs=QStringLiteral("%1,%2").arg(
+        QString::number(dropPoint.x(),'f',3),
+        QString::number(dropPoint.y(),'f',3));
+    QVERIFY(evaluateDockAction(
+        QStringLiteral("pointInsideEditorDock(")+dockArgs
+            +QStringLiteral(")")).toBool());
+    evaluateDockAction(QStringLiteral("beginDockDrag(")+dockArgs
+        +QStringLiteral(")"));
+    QVERIFY(root->property("dockDropCandidate").toBool());
+    evaluateDockAction(QStringLiteral("finishDockDrag(-50,-50)"));
+    QVERIFY(root->property("editorDetached").toBool());
+    QVERIFY(!root->property("dockDropCandidate").toBool());
+    evaluateDockAction(QStringLiteral("finishDockDrag(")+dockArgs
+        +QStringLiteral(")"));
+    QTRY_VERIFY_WITH_TIMEOUT(!root->property("editorDetached").toBool(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
     QVERIFY(nativeDockedEditor==originalEditorIdentity);
 
