@@ -2413,6 +2413,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(QMetaObject::invokeMethod(root,"returnCurrentEditorToDock"));
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
     QVERIFY(nativeDockedEditor==originalEditorIdentity);
+    // Evidence MUST come from this actual Main QQuickWindow, never an
+    // illustration. Docked editor, genuine family icons and 22px grip
+    // are visible together at the PO minimum 1184x688 geometry.
+    QVERIFY(!root->property("editorDetached").toBool());
+    QVERIFY(dockGrip->isVisible());
+    QVERIFY2(capture_visual_evidence(
+        window,QStringLiteral("fq80_real_main_chain_family_icons_docked_grip_1184x688.png"),
+        QSize{1184,688}),"FQ80 real Main docked family-icon visual evidence");
 
     // Verify global screen-coordinate drop admission at the ACTUAL dock
     // rather than fabricating a QML DropArea across native Qt windows.
