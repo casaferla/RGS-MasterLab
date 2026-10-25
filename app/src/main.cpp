@@ -477,7 +477,8 @@ int main(int argc, char* argv[])
         &gainViewModel, &eqViewModel, &compressorViewModel,
         &masteringChainState, QStringLiteral("Mastering"),
         nullptr, &stereoMsViewModel, true,
-        &terminalLimiterState, &terminalLimiterViewModel};
+        &terminalLimiterState, &terminalLimiterViewModel,
+        &terminalMonitorViewModel};
 
     rgsml::app::GoldSelectionViewModel goldSelection{
         &auditionSelector};
