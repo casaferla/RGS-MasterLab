@@ -13,6 +13,7 @@ namespace rgsml::app {
 class TerminalMonitorViewModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
+    Q_PROPERTY(QString returnTargetText READ return_target_text NOTIFY changed)
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
     Q_PROPERTY(bool monitorExclusive READ monitor_exclusive NOTIFY changed)
     Q_PROPERTY(bool monitorInstalled READ monitor_installed NOTIFY changed)
@@ -29,6 +30,11 @@ public:
                              PlaybackTransportViewModel& transport,
                              QObject* parent=nullptr);
     [[nodiscard]] QString status_text() const;
+    [[nodiscard]] QString return_target_text() const {
+        return session_->monitor_returns_to_empty_source()
+            ? QStringLiteral("Close DEVICE · No MANUAL sink")
+            : QStringLiteral("Return MANUAL");
+    }
     [[nodiscard]] QString error_text() const {
         // Include asynchronous renderer rejection, not only direct UI calls.
         // A separate ordinary M17 session can fail independently of MONITOR.

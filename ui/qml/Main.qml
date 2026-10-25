@@ -372,12 +372,12 @@ ApplicationWindow {
                 Item { Layout.preferredWidth: 8 }
                 StudioButton {
                     objectName: "globalReturnFromMonitor"
-                    text: "Return MANUAL"
+                    text: root.appTerminalMonitorViewModel.returnTargetText
                     visible: root.monitorExclusive
                     enabled: root.monitorExclusive
                     minimumControlWidth: 110
                     onClicked: root.appTerminalMonitorViewModel.cancel()
-                    Accessible.name: "Return original MANUAL PCM or cancel MONITOR"
+                    Accessible.name: root.appTerminalMonitorViewModel.returnTargetText
                 }
                 Rectangle {
                     objectName: "transportTimeModule"

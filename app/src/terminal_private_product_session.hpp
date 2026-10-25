@@ -29,6 +29,7 @@ public:
     using Loop=std::function<std::optional<core::FrameRange>()>;
     using Selected=std::function<bool()>;
     using OfflineSelected=std::function<bool()>;
+    using OfflineProvenance=std::function<bool()>;
     using RateProbe=std::function<core::Result<core::SampleRate>(
         audio::ChannelLayout)>;
 
@@ -45,6 +46,16 @@ public:
     // with a clean NO_SOURCE sink. Ordinary M17 installs remain unchanged.
     void set_offline_final_master_selection_checker(OfflineSelected checker)
     { offlineSelected_=std::move(checker); }
+    // Unlike OfflineSelected, this does not assert an EMPTY endpoint;
+    // it ONLY asserts the same immutable SOURCE epoch while the exact
+    // independently-owned DEVICE PCM is installed.
+    void set_offline_source_provenance_checker(OfflineProvenance checker)
+    { offlineProvenance_=std::move(checker); }
+    [[nodiscard]] bool monitor_returns_to_empty_source() const noexcept {
+        return static_cast<bool>(installedMonitor_) && pending_
+            && pending_->offlineNoSink
+            && pending_->offlineNonAudibleSelection;
+    }
 
     // An opt-in deferred request renders while the MANUAL PCM keeps playing.
     // Only an explicit conductor handoff may publish the accepted terminal.
@@ -237,6 +248,7 @@ private:
     Loop sourceLoop_;
     Selected selected_;
     OfflineSelected offlineSelected_;
+    OfflineProvenance offlineProvenance_;
     RateProbe rateProbe_;
     MonitoringPreflightMaterializer monitoringPreflight_;
     MonitoringInstall monitorInstall_;

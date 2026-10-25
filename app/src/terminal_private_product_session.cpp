@@ -307,13 +307,37 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
            !=master.format().channel_layout())
         return core::Status::failure(rejected(
             "MONITOR_INSTALL_MASTER_PROVENANCE_MISMATCH"));
-    const auto before=transport_->playback_snapshot();
-    if(!before||before.value()->state!=core::PlaybackState::STOPPED
-       ||before.value()->position.value()!=0||before.value()->loop
-       ||pending_->loop)
-        return core::Status::failure(rejected(
-            "MONITOR_INSTALL_REQUIRES_STOPPED_ZERO_CUE_NO_LOOP"));
+    // An initial Windows SOURCE-format rejection can leave a sound
+    // complete SOURCE/MANUAL owner with NO audible MANUAL sink. It is NOT
+    // legal to invent one. Only a previously explicit, current offline
+    // provenance ticket may replace a *demonstrably empty* endpoint.
     const Pending predecessor=*pending_;
+    const bool offlineOrigin=predecessor.offlineNoSink
+        &&predecessor.offlineNonAudibleSelection;
+    const auto before=transport_->playback_snapshot();
+    if(!before||pending_->loop)
+        return core::Status::failure(rejected(
+            "MONITOR_INSTALL_INVALID_SOURCE_LOOP_OR_ENDPOINT"));
+    const bool empty=before.value()->state==core::PlaybackState::NO_SOURCE
+        &&before.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!before.value()->audibleRealization.realizationId
+        &&before.value()->position==core::FrameIndex{0}
+        &&!before.value()->duration &&!before.value()->loop;
+    const bool stopped=before.value()->state==core::PlaybackState::STOPPED
+        &&before.value()->position==core::FrameIndex{0}
+        &&!before.value()->loop
+        &&before.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::NEW
+        &&before.value()->audibleRealization.realizationId
+            ==std::optional{predecessor.manualId}
+        &&before.value()->duration
+            ==std::optional{predecessor.manual->view().frame_count()};
+    if(offlineOrigin
+        ?(!empty||!offlineProvenance_||!offlineProvenance_())
+        :!stopped)
+        return core::Status::failure(rejected(
+            "MONITOR_INSTALL_REQUIRES_EXACT_EMPTY_OR_MANUAL_PREDECESSOR"));
     monitorTransitioning_=true;
     const auto installed=monitorInstall_(candidate);
     if(!installed) {
@@ -357,12 +381,12 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
                 ==std::optional{predecessor.manualId}
             &&current.value()->duration
                 ==std::optional{predecessor.manual->view().frame_count()};
-        if(!empty&&!original) {
+        if((offlineOrigin&&!empty)||(!offlineOrigin&&!empty&&!original)) {
             monitorTransitioning_=false;
             return core::Status::failure(rejected(
                 "MONITOR_INSTALL_FAILURE_ALIEN_DEVICE_OWNER_UNTOUCHED"));
         }
-        if(empty) {
+        if(empty && !offlineOrigin) {
             if(!selected_||!selected_()||!manual_||!manualId_
                ||manual_()!=predecessor.manual
                ||manualId_()!=std::optional{predecessor.manualId}
@@ -413,7 +437,10 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
         &&pending_->manualId==predecessor.manualId
         &&pending_->outputRate==predecessor.outputRate
         &&!pending_->loop&&sourceLoop_&&!sourceLoop_()
-        &&selected_&&selected_()&&manual_&&manual_()==predecessor.manual
+        &&(offlineOrigin
+            ?(offlineProvenance_&&offlineProvenance_())
+            :(selected_&&selected_()))
+        &&manual_&&manual_()==predecessor.manual
         &&manualId_&&manualId_()==std::optional{predecessor.manualId}
         &&candidates_->staged()==masterStage
         &&renderer_->status()==QStringLiteral("READY_PRIVATE");
@@ -421,7 +448,7 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
         // Roll back only the exactly owned monitor. Never erase a successor.
         if(ownership&&*ownership.value()) {
             const auto retired=monitorRetire_(candidate);
-            if(retired&&selected_&&selected_()
+            if(retired&&!offlineOrigin&&selected_&&selected_()
                &&manual_&&manual_()==predecessor.manual
                &&manualId_&&manualId_()==std::optional{predecessor.manualId})
                 static_cast<void>(manualRestore_(
@@ -453,7 +480,10 @@ TerminalPrivateProductSession::private_monitor_master_snapshot() const
        ||!monitorOwned_||!monitorDisplay_||!pending_
        ||candidates_->staged()!=approvedMonitorMaster_
        ||renderer_->status()!=QStringLiteral("READY_PRIVATE")
-       ||!selected_||!selected_()||!manual_||!manualId_
+       ||!(pending_->offlineNonAudibleSelection
+            ?(offlineProvenance_&&offlineProvenance_())
+            :(selected_&&selected_()))
+       ||!manual_||!manualId_
        ||manual_()!=pending_->manual
        ||manualId_()!=std::optional{pending_->manualId})
         return refused("MONITOR_DISPLAY_EXACT_MASTER_AUTHORITY_REQUIRED");
@@ -483,6 +513,14 @@ core::Status TerminalPrivateProductSession::control_private_monitor(
     const auto owner=installedMonitor_;
     const auto before=private_monitor_master_snapshot();
     if(!before)return core::Status::failure(*before.error());
+    // Without a prior audible MANUAL, a MASTER Loop Region has no safe
+    // SOURCE loop to commit on return. Play/Pause/Stop/Seek remain
+    // independently owner-checked by the Windows worker.
+    if(pending_&&pending_->offlineNonAudibleSelection
+       &&command.action==platform::windows::MonitoringTransportAction::SET_MASTER_LOOP
+       &&command.master_loop)
+        return core::Status::failure(rejected(
+            "MONITOR_OFFLINE_ORIGIN_REJECTS_UNRESTORABLE_SOURCE_LOOP"));
     // Do not allow a command to invent a new SOURCE processing history;
     // the device-only monitor is still unqualified for LIVE TP/GR.
     monitorTransitioning_=true;
@@ -536,6 +574,48 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
             "MONITOR_RETURN_HAS_NO_EXACT_INSTALLED_OWNER"));
     const auto candidate=installedMonitor_;
     const Pending predecessor=*pending_;
+    if(predecessor.offlineNoSink&&predecessor.offlineNonAudibleSelection) {
+        // Offline origin has NO installed MANUAL to return to. Retire ONLY
+        // the exact anonymous monitor; never synthesize a NEW audible ID
+        // or attempt to reinstall unsupported original-rate SOURCE PCM.
+        // This recovery is allowed even if the SOURCE provenance expired.
+        const auto owned=monitorOwned_(candidate);
+        if(!owned)return core::Status::failure(*owned.error());
+        if(!*owned.value())
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_OFFLINE_ALIEN_DEVICE_UNTOUCHED"));
+        monitorTransitioning_=true;
+        const auto retired=monitorRetire_(candidate);
+        if(!retired) {
+            status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
+            monitorTransitioning_=false;
+            emit changed();
+            return retired;
+        }
+        installedMonitor_.reset();
+        const auto after=transport_->playback_snapshot();
+        if(!after||after.value()->state!=core::PlaybackState::NO_SOURCE
+           ||after.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::UNAVAILABLE
+           ||after.value()->audibleRealization.realizationId
+           ||after.value()->position!=core::FrameIndex{0}
+           ||after.value()->duration||after.value()->loop) {
+            monitorTransitioning_=false;
+            renderer_->invalidate();
+            failed(rejected("MONITOR_RETURN_OFFLINE_DID_NOT_EMPTY_DEVICE"));
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_OFFLINE_DID_NOT_EMPTY_DEVICE"));
+        }
+        pending_.reset();
+        approvedMonitor_.reset();
+        approvedMonitorMaster_.reset();
+        status_=QStringLiteral("IDLE");
+        error_.clear();
+        renderer_->invalidate();
+        monitorTransitioning_=false;
+        emit changed();
+        return core::Status::success();
+    }
     // The Windows MONITOR snapshot is in MASTER frames, not device or
     // SOURCE units. Convert the display cue to the original SOURCE domain
     // with bounded integer arithmetic. A stopped monitor without the new

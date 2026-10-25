@@ -46,8 +46,11 @@ QString TerminalMonitorViewModel::status_text() const
         return QStringLiteral("MASTER NON-CONFORMING · AUDITION BLOCKED");
     if(status==QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"))
         return QStringLiteral("AUDITION RECOVERY REQUIRED · OWNER CHECK");
-    if(status.startsWith(QStringLiteral("MONITOR_PRIVATE_")))
-        return QStringLiteral("AUDITION DEVICE PCM · UNQUALIFIED LIVE");
+    if(status.startsWith(QStringLiteral("MONITOR_PRIVATE_"))) {
+        return session_->monitor_returns_to_empty_source()
+            ?QStringLiteral("DEVICE AUDITION · NO MANUAL SINK · RETURN CLEARS DEVICE")
+            :QStringLiteral("AUDITION DEVICE PCM · UNQUALIFIED LIVE");
+    }
     return status;
 }
 

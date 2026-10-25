@@ -276,6 +276,14 @@ int main(int argc, char* argv[])
                 &&manual->chain_revision()==masteringChainState.chain().revision()
                 &&auditionSelector.offline_processed_selected_for_final_master();
         });
+    privateProductSession.set_offline_source_provenance_checker(
+        [&auditionSelector,&previewController,&masteringChainState] {
+            const auto manual=auditionSelector.processed_realization_snapshot();
+            return manual
+                &&previewController.preview_status()==QStringLiteral("READY")
+                &&manual->chain_revision()==masteringChainState.chain().revision()
+                &&auditionSelector.offline_processed_provenance_current();
+        });
     privateProductSession.set_preferred_output_rate_probe(
         [windowsPlayback](rgsml::audio::ChannelLayout layout) {
             return windowsPlayback->preferred_terminal_output_rate(layout);

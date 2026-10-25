@@ -310,7 +310,7 @@ Item {
                         Item { Layout.fillWidth: true }
                         StudioButton {
                             objectName: "monitorReturnManual"
-                            text: root.active ? "Return MANUAL" : "Cancel"
+                            text: root.active ? root.monitorViewModel.returnTargetText : "Cancel"
                             accentColor: root.slate
                             enabled: !!root.monitorViewModel
                                 && root.monitorViewModel.canDismiss
