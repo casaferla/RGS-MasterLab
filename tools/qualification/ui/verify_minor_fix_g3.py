@@ -16,13 +16,15 @@ def require(ok: bool, reason: str) -> None:
 
 require("implicitWidth: 180" in chain, "DSP Chain width changed")
 # PO 2026-10-25 supersedes the former always-reserved 28px BYP badge.
-# Configuration LED and red error slot stay at 8px; bypass is now an
-# independent dark/muted row skin with readable status text and no reflow.
+# PO: a single 16px module icon replaces the old config LED.
+# Fixed 8px error slot stays; bypass is the independent dark row skin.
 for kind in ("minimumWidth", "preferredWidth", "maximumWidth"):
     require(f"Layout.{kind}: 8" in chain,
-            "LED/error reservation changed")
+            "fixed error-slot reservation changed")
     require(f"Layout.{kind}: 28" not in chain,
             "obsolete BYP badge still reserving 28px")
+require("dspChainConfigLed_" not in chain,
+        "obsolete 8px config LED survived beside the module glyph")
 require('dspChainBypassBadge_' not in chain,
         "old BYP badge is still instantiated")
 require("isBypassed ? 0.28 : 1.0" in chain and
@@ -48,6 +50,15 @@ require('objectName: "dspChainModuleIcon_"' in chain and
         "Layout.minimumWidth: 16" in chain and
         "Layout.maximumWidth: 16" in chain,
         "fixed 16px module icon reservation missing")
+require("rowItem.isDefaultState ? 0.37 : 1.0" in chain and
+        "rowItem.isBypassed ? 0.7 : 1.0" in chain and
+        "strokeColor: root.moduleIconColor(rowItem.moduleAdapter)" in chain,
+        "single icon must convey Default/Manual by family tint intensity independently of bypass")
+require("dspChainConfigLed_0" in smoke and
+        "dspChainConfigLed_1" in smoke and
+        "QCOMPARE(chainGainIcon->opacity(), 0.37)" in smoke and
+        "QCOMPARE(chainGainIcon->opacity(), 1.0)" in smoke,
+        "native smoke must assert absent LED plus dim/vivid module icon states")
 for key,kind in (
         ("INPUT_GAIN","module-gain"),
         ("PARAMETRIC_EQ","module-eq"),
