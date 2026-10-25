@@ -854,6 +854,16 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
 
+    // A newly accepted SOURCE may clear a stale AUDIO error after a
+    // fail-closed M17 rejection. It does NOT activate, prepare, install
+    // or claim any output; no previous private owner is resurrected.
+    coordinator.source_committed_successfully();
+    QCOMPARE(vm.audio_status(),QStringLiteral("BYPASS · NEW SOURCE"));
+    QCOMPARE(vm.validation_message(),QString{});
+    QVERIFY(limiter.value()->bypassed());
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+
     // A wrong target is rejected at explicit Prepare, not when arming ON.
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     vm.setBypass(false);
