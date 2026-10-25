@@ -47,3 +47,28 @@ A new chat MUST receive:
 
 ## 5. Product and safety invariants (not superseded)
 Windows 10/11 x64 primary; Android secondary; Apple excluded. C++/Qt/QML. Single DSP core/registry. RAW/PREPARED/PROCESSED/GOLD. SOURCE/GOLD immutable. Reference Match as controller, not secondary DSP engine. M17 and MONITOR audio ownership strictly guarded. M18 final output/dither must never change the monitoring SOURCE/Master rate by accident. Manual physical FQ is a separate PO gate.
+
+
+## 6. OPERATIONAL_AUTONOMY_TOGGLES — PO approved 2026-10-25
+Text toggles are reproducible instructions, **not** any native platform switch or continuous daemon. They apply to the active interactive turn only, preserving the Single-Writer Epoch, and may be reissued in a future chat:
+```text
+AUTONOMOUS_EXECUTION = ON
+CI_MONITORING = ON
+CI_MONITORING_METHOD = LIVE_POLLING_DURING_ACTIVE_TURN
+POST_GREEN = CONTINUE_AUTHORIZED_WORK
+POST_RED = DIAGNOSE_FIX_RETRY
+RECOVERY_AUDIT = REQUIRED_BEFORE_WRITES
+SINGLE_WRITER_EPOCH = STRICT
+STAGING_INTERMEDIATE_WRITES = ON
+STAGING_CI = OFF
+PR_PROMOTION = ONE_FAST_FORWARD_PER_COMPLETE_BATCH
+PR_PROMOTION_SHA_CHECK = REQUIRED
+GITHUB_FULL_LOGS = FORBIDDEN
+GITHUB_DIAGNOSTICS = JOBS_STEPS_SMALL_EXTRACTS
+CI_LINK_IN_EVERY_OPERATIONAL_REPLY = ON
+REAL_UI_SCREENSHOT = FIRST_ELIGIBLE_CI
+MOCKUP_AS_TEST_EVIDENCE = FORBIDDEN
+FULL_QUALIFICATION = PO_AUTHORIZATION_ONLY
+MERGE_MAIN = PO_AUTHORIZATION_ONLY
+```
+Interpret `CI_MONITORING=OFF` as no repeated run polling in the current interactive turn (one final status query can still be used for safety). `AUTONOMOUS_EXECUTION=OFF` means stop after the current cohesive package and report, rather than starting another unrequested package. Neither permits bypassing frozen safety gates or queuing any automation; a ChatGPT run cannot observe GitHub once its active interactive execution has ended.
