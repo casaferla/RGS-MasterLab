@@ -2694,6 +2694,14 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(floatingGrip->window(),floatingModule);
     QCOMPARE(nativeDockedEditor,originalEditorIdentity);
     QVERIFY(!root->property("detachedModuleInstanceId").toString().isEmpty());
+    // Actual native Qt floating Window with the SAME rehosted editor,
+    // visible 28x32 grip and Dock button. Captured only with GUI
+    // evidence enabled: no new CI/workflow and no illustrative mockup.
+    QVERIFY2(capture_visual_evidence(
+        floatingModule,
+        QStringLiteral("fq80_real_main_input_gain_undocked_920x620.png"),
+        QSize{920,620}),
+        "Native undocked Main editor screenshot must be captured");
     QVERIFY(QMetaObject::invokeMethod(floatingModule,"returnToDock"));
     QTRY_VERIFY_WITH_TIMEOUT(!root->property("editorDetached").toBool(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(!floatingModule->isVisible(),5000);
