@@ -9,6 +9,7 @@ Item {
     id: root
     objectName: "masterMonitorEditor"
     property var monitorViewModel: null
+    property bool advancedNavigationExpanded: false
     readonly property color slate: "#718092"
     readonly property color fg: "#D5E2EC"
     readonly property color secondary: "#98AFC0"
@@ -27,13 +28,13 @@ Item {
         ColumnLayout {
             id: page
             width: Math.max(200,scroll.availableWidth)
-            spacing: 8
+            spacing: 6
 
             // Title/identity shares the other DSP editors' 11px section
             // grammar, dark wells and restrained family accent.
             RowLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 28
+                Layout.preferredHeight: 24
                 spacing: 8
                 Text {
                     text: "MASTER / DEVICE MONITOR"
@@ -81,15 +82,15 @@ Item {
                     objectName: "monitorMasterCard"
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
-                    Layout.preferredHeight: 148
+                    Layout.preferredHeight: 132
                     radius: 6
                     color: "#0A1C2D"
                     border.color: "#31506B"
                     border.width: 1
                     ColumnLayout {
                         anchors.fill: parent
-                        anchors.margins: 10
-                        spacing: 7
+                        anchors.margins: 7
+                        spacing: 4
                         Text {
                             text: "01  FINAL MASTER"
                             color: root.secondary
@@ -147,15 +148,15 @@ Item {
                     objectName: "monitorDeviceCard"
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
-                    Layout.preferredHeight: 148
+                    Layout.preferredHeight: 132
                     radius: 6
                     color: "#0A1C2D"
                     border.color: "#31506B"
                     border.width: 1
                     ColumnLayout {
                         anchors.fill: parent
-                        anchors.margins: 10
-                        spacing: 7
+                        anchors.margins: 7
+                        spacing: 4
                         Text {
                             text: "02  DEVICE AUDITION"
                             color: root.secondary
@@ -216,7 +217,7 @@ Item {
             Rectangle {
                 objectName: "monitorStatusWell"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 58
+                Layout.preferredHeight: 52
                 radius: 6
                 color: "#0B1D2B"
                 border.color: "#31506B"
@@ -255,7 +256,7 @@ Item {
             Rectangle {
                 objectName: "monitorTransportWell"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 82
+                Layout.preferredHeight: 72
                 radius: 6
                 color: "#0A1C2D"
                 border.color: "#31506B"
@@ -319,8 +320,33 @@ Item {
                 }
             }
 
+            // Hidden by USER intent, never by a width breakpoint. The
+            // two primary cards and the transport never change columns.
+            RowLayout {
+                objectName: "monitorAdvancedNavigationToggle"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 27
+                StudioButton {
+                    objectName: "monitorAdvancedNavigationButton"
+                    text: root.advancedNavigationExpanded
+                        ? "SEEK / LOOP  ▾" : "SEEK / LOOP  ▸"
+                    accentColor: root.slate
+                    onClicked: root.advancedNavigationExpanded
+                        = !root.advancedNavigationExpanded
+                    Accessible.name: "Show or hide secondary seek and loop commands"
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: "Secondary · MASTER-frame coordinates"
+                    color: root.secondary
+                    font.family: "Segoe UI"
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                }
+            }
             RowLayout {
                 objectName: "monitorNavigationRow"
+                visible: root.advancedNavigationExpanded
                 Layout.fillWidth: true
                 spacing: 5
                 TextField {
@@ -343,6 +369,7 @@ Item {
             }
             RowLayout {
                 objectName: "monitorLoopRow"
+                visible: root.advancedNavigationExpanded
                 Layout.fillWidth: true
                 spacing: 5
                 TextField {
@@ -380,6 +407,7 @@ Item {
             }
             Text {
                 Layout.fillWidth: true
+                visible: root.advancedNavigationExpanded
                 text: "MONITOR is an audition branch. Memory and DEVICE SRC are independently checked; final MASTER PCM is unchanged."
                 color: root.secondary
                 font.family: "Segoe UI"
