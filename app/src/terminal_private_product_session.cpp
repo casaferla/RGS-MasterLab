@@ -58,6 +58,12 @@ void TerminalPrivateProductSession::stale() {
 core::Status TerminalPrivateProductSession::request_private(core::SampleRate rate,
                                                            bool deferred)
 {
+    return request_private_impl(rate,deferred,false);
+}
+
+core::Status TerminalPrivateProductSession::request_private_impl(
+    core::SampleRate rate, bool deferred, bool masterOnly)
+{
     if(pending_ || privateId_ ||installedMonitor_ ||monitorTransitioning_)
         return core::Status::failure(rejected(
             "A private M17 transaction is already pending or installed."));
@@ -71,17 +77,29 @@ core::Status TerminalPrivateProductSession::request_private(core::SampleRate rat
         return core::Status::failure(rejected(
             "Private M17 requires a published manual predecessor."));
     auto snapshot=transport_->playback_snapshot();
-    if(!snapshot) return core::Status::failure(*snapshot.error());
-    if((snapshot.value()->state!=core::PlaybackState::STOPPED
-        &&(!deferred || (snapshot.value()->state!=core::PlaybackState::PLAYING
-                      &&snapshot.value()->state!=core::PlaybackState::PAUSED)))
-       ||snapshot.value()->audibleRealization.phase
-           !=core::AudibleHandoffPhase::NEW
-       ||snapshot.value()->audibleRealization.realizationId!=manualId
-       ||!snapshot.value()->duration
-       ||*snapshot.value()->duration!=manual->view().frame_count())
+    if(!snapshot)return core::Status::failure(*snapshot.error());
+    // ONLY a private final-master request may render without the playback
+    // device. Both a clean NO_SOURCE state and the published MANUAL
+    // predecessor must be proven; alien, stale or anonymous sinks fail.
+    // Ordinary M17 Active/Play retains the strict MANUAL audible contract.
+    const bool offlineNoSink=masterOnly
+        &&snapshot.value()->state==core::PlaybackState::NO_SOURCE
+        &&snapshot.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!snapshot.value()->audibleRealization.realizationId
+        &&!snapshot.value()->loop;
+    const bool exactManual=snapshot.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::NEW
+        &&snapshot.value()->audibleRealization.realizationId==manualId
+        &&snapshot.value()->duration
+            ==std::optional{manual->view().frame_count()}
+        &&(snapshot.value()->state==core::PlaybackState::STOPPED
+            ||(!masterOnly && deferred
+                &&(snapshot.value()->state==core::PlaybackState::PLAYING
+                    ||snapshot.value()->state==core::PlaybackState::PAUSED)));
+    if(!offlineNoSink&&!exactManual)
         return core::Status::failure(rejected(
-            "M17 may render only a stopped exact audible manual predecessor."));
+            "M17 requires exact manual DEVICE ownership; only a private MASTER may render with NO_SOURCE."));
     auto loop=sourceLoop_();
     if(loop && (loop->begin().value()<0
        ||loop->end()>manual->view().absolute_range().end()))
@@ -89,7 +107,8 @@ core::Status TerminalPrivateProductSession::request_private(core::SampleRate rat
             "M17 SOURCE loop lies outside the full manual programme."));
     // request_private internally invalidates the gate, then emits RENDERING;
     // pending ownership is captured before any queued worker completion.
-    pending_.emplace(Pending{prepared,manual,*manualId,loop,rate,deferred});
+    pending_.emplace(Pending{prepared,manual,*manualId,loop,rate,
+                             deferred,masterOnly,offlineNoSink});
     approvedMonitor_.reset();
     approvedMonitorMaster_.reset();
     privateId_.reset();
@@ -112,14 +131,11 @@ core::Status TerminalPrivateProductSession::request_private_for_final_master(
     const auto eligible=audio::plan_master_monitoring_rate(
         selectedFinalMasterRate,selectedFinalMasterRate);
     if(!eligible)return core::Status::failure(*eligible.error());
-    // The normal snapshot/ticket/owner/cancel checks are reused, but
-    // publication is intentionally never armed on the master-only path.
-    auto submitted=request_private(selectedFinalMasterRate,true);
-    if(!submitted)return submitted;
-    if(!pending_)return core::Status::failure(rejected(
-        "M17 private master submission lost its pending owner."));
-    pending_->masterOnly=true;
-    return core::Status::success();
+    // A private MASTER is a render operation, not a DEVICE installation.
+    // It can run after the output vanished, as long as immutable MANUAL
+    // provenance and the clean empty-sink snapshot both hold. Do not relax
+    // request_private() or the audible terminal handoff contract.
+    return request_private_impl(selectedFinalMasterRate,true,true);
 }
 
 std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
@@ -151,13 +167,23 @@ TerminalPrivateProductSession::current_verified_private_master() const
            .format().channel_layout())
         return {};
     const auto audible=transport_->playback_snapshot();
-    if(!audible
-       ||audible.value()->audibleRealization.phase
-           !=core::AudibleHandoffPhase::NEW
-       ||audible.value()->audibleRealization.realizationId
-           !=std::optional{pending_->manualId}
-       ||audible.value()->duration
-           !=std::optional{pending_->manual->view().frame_count()})
+    if(!audible)return {};
+    if(pending_->offlineNoSink) {
+        // An empty endpoint must remain empty until an explicit,
+        // independently checked monitoring installation. A successor
+        // source device would invalidate this private master ticket.
+        if(audible.value()->state!=core::PlaybackState::NO_SOURCE
+           ||audible.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::UNAVAILABLE
+           ||audible.value()->audibleRealization.realizationId
+           ||audible.value()->loop)
+            return {};
+    } else if(audible.value()->audibleRealization.phase
+                  !=core::AudibleHandoffPhase::NEW
+              ||audible.value()->audibleRealization.realizationId
+                  !=std::optional{pending_->manualId}
+              ||audible.value()->duration
+                  !=std::optional{pending_->manual->view().frame_count()})
         return {};
     return stage;
 }
