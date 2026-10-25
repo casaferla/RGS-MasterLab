@@ -195,6 +195,11 @@ public:
 signals:
     void changed();
 private:
+    // Offline-only submission can retain authoritative SOURCE/MANUAL
+    // ownership even when the Windows sink is NO_SOURCE. Ordinary audible
+    // M17 submissions keep their exact installed MANUAL owner requirement.
+    [[nodiscard]] core::Status request_private_impl(
+        core::SampleRate rate, bool deferred, bool masterOnly);
     struct Pending {
         std::shared_ptr<const render::RenderResult> prepared;
         std::shared_ptr<const render::RenderResult> manual;
@@ -203,6 +208,9 @@ private:
         core::SampleRate outputRate;
         bool deferred{false};
         bool masterOnly{false};
+        // Captured only when the explicit MASTER-only job began from a
+        // demonstrably empty endpoint. Not a permission to install AUDIO.
+        bool offlineNoSink{false};
     };
     void on_renderer_changed();
     [[nodiscard]] core::Status install_accepted_candidate();
