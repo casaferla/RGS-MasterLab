@@ -1432,7 +1432,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // A PLAYING monitor must yield a PLAYING original MANUAL (never a
     // freshly issued M17 identity). It may advance after resume, so
     // equality with the pre-retire cue is not a DAC-clock certificate.
-    device->stop();
+    QVERIFY(device->stop());
     QVERIFY(product.install_private_monitor_stopped(privateMonitor));
     QCOMPARE(monitorInstalls,std::size_t{3});
     QVERIFY(product.control_private_monitor(
@@ -1449,7 +1449,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!product.private_id());
     // Leave the original stopped MANUAL state for the existing
     // cancellation-inside-conversion oracle following this test.
-    device->stop();
+    QVERIFY(device->stop());
 
     // A cancellation INSIDE conversion revokes the master transaction.
     // A finished device PCM from that obsolete epoch must be discarded.
