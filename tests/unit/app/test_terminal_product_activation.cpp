@@ -1034,14 +1034,20 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     selector.set_source_loop_provider([&selectedSourceLoop] {
         return selectedSourceLoop;
     });
+    // Session-level Selected provider can independently refuse audible
+    // PROCESSED after device rejection. The real initial-source selector
+    // denial is separately tested across 44.1/48/192 kHz WAV fixtures.
+    bool productAudibleSelectionAccepted=true;
     app::TerminalPrivateProductSession product{
         renderer,publisher,candidates,transport,
         [&selector]{return selector.prepared_realization_snapshot();},
         [&selector]{return selector.processed_realization_snapshot();},
         [&selector]{return selector.processed_realization_id();},
         [&selectedSourceLoop]{return selectedSourceLoop;},
-        [&selector]{return selector.active_target()
-            ==app::AuditionTarget::PROCESSED;}};
+        [&selector,&productAudibleSelectionAccepted] {
+            return productAudibleSelectionAccepted
+                &&selector.active_target()==app::AuditionTarget::PROCESSED;
+        }};
     app::TerminalMonitorViewModel monitorUi{product,transport};
     QVERIFY(monitorUi.can_prepare());
     QVERIFY(!monitorUi.can_dismiss());
@@ -1717,23 +1723,13 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(product.cancel());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
 
-    // INITIAL DEVICE rejection differs from losing the sink after MANUAL
-    // selection. Keep accepted complete owners, but NO active audible
-    // PROCESSED target. Only an explicitly granted non-audible ticket may
-    // create a private MASTER; ordinary M17 and DEVICE install still fail.
-    // Restore only the exact known MANUAL fixture before changing target:
-    // never clear a foreign owner via selector or mislabel it as ours.
-    device->state=core::PlaybackState::STOPPED;
-    device->position=core::FrameIndex{0};
-    device->duration=*frames.value();
-    device->loop.reset();
-    device->audibleRealization={
-        core::AudibleHandoffPhase::NEW,*manualId};
-    QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
-    // The external test device then rejects/loses the PREPARED sink.
+    // Session-level analogue of INITIAL DEVICE rejection. This fixture
+    // revokes the product's Selected callback WITHOUT mutating the
+    // authoritative accepted SOURCE/MANUAL owner. The selector's actual
+    // no-active-target rejection is covered by its own WAV-rate tests.
+    // Clear the foreign test owner externally, never through the selector.
     QVERIFY(device->clear());
-    QCOMPARE(selector.active_target(),
-             std::optional{app::AuditionTarget::PREPARED});
+    productAudibleSelectionAccepted=false;
     bool explicitOfflineProvenance=false;
     product.set_offline_final_master_selection_checker(
         [&explicitOfflineProvenance] {return explicitOfflineProvenance;});

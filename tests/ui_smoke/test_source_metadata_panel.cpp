@@ -2613,9 +2613,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
             label->parent()->property("text").toString(),
             QStringLiteral("&") + menuName);
     }
+    // Qt's native window focus is asynchronous on Windows runners.
+    // The application-level F10 Shortcut requires an activated window;
+    // wait for that actual condition, then verify the real focus transfer.
+    window->raise();
+    window->requestActivate();
+    QTRY_VERIFY_WITH_TIMEOUT(window->isActive(),5000);
     QTest::keyClick(window, Qt::Key_F10);
-    QCoreApplication::processEvents();
-    QVERIFY(desktopMenu->property("activeFocus").toBool());
+    QTRY_VERIFY_WITH_TIMEOUT(
+        desktopMenu->property("activeFocus").toBool(),5000);
     QTest::keyClick(window, Qt::Key_Escape);
     QCoreApplication::processEvents();
 
