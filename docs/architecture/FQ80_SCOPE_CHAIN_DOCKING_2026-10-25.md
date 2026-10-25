@@ -40,3 +40,12 @@ For module switching while detached, distinguish **current window identity** fro
 - M16/M17 pixel geometry at minimum Windows 150%; PREPARATION GR lower bay; no clipped text.
 - M17 full immutable OUTPUT_RATE master and MONITOR device PCM prove separate rates and clocks; explicit nonconforming authorization; loss of endpoint, stale Source or new parameter/loop/owner invalidates correctly.
 - No new FQ if core functionality remains blocked, even when Focused CI is green.
+
+## 7. MONITOR editor visual concept — authoring candidate for PO review
+- Entry in the **same shared vertical DSP Chain** as other modules, immediately after M17; label `MONITOR`, muted Slate `#718092`, no fake bypass/configuration action. The UI calls all selectable editors *modules* although MONITOR is not a signal-processing DSP.
+- One independent `MonitorEditor.qml` instance in the same `DspEditorHost` and future common floating-window manager. The old `MasterMonitorPopup` is transitional and must not remain a competing user entry once the new route is qualified.
+- Reuse existing typography, 6px dark-well radius, subtle 1px borders and restrained family-accent strip; avoid full-Slate fills, oversized titles or unrelated decoration.
+- **Adaptive two-card mid band:** left `01 FINAL MASTER` (explicit six-rate Hz choice, Prepare MASTER button, immutable MASTER provenance); right `02 DEVICE AUDITION` (REAL device rate when known; independent Allocate DEVICE / Monitor, memory caution checkbox). At narrower editor widths stack vertically. Never infer an unsupported rate from the Windows preferred setting or imply that selected output equals MASTER.
+- **State/transport:** one stationary status well (IDLE / PREPARING / VERIFIED MASTER / DEVICE AUDITION / recovery/error), truthful MASTER frame counter when installed, Play/Pause/Stop/Return MANUAL; seek and LOOP subordinate. The global error bar remains the canonical app-wide alert route.
+- **Do not fabricate:** no fake waveform, no invented GR/True Peak/LUFS, no LUFS or DAC headroom value without an authoritative measurement. No controls that change MASTER or insert a DSP transform.
+- FQ #80 proof: the shared host selects MONITOR as an ordinary editor; the service does not enter ProcessingChain, undo/history/bypass or audio stage counts; never produces a second QML editor or a hidden MONITOR-specific docking implementation.
