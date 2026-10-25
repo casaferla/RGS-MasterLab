@@ -107,6 +107,8 @@ bool TerminalMonitorViewModel::requestMaster(int chosenRateHz)
         &&source.value()->audibleRealization.phase
             ==core::AudibleHandoffPhase::UNAVAILABLE
         &&!source.value()->audibleRealization.realizationId
+        &&source.value()->position==core::FrameIndex{0}
+        &&!source.value()->duration
         &&!source.value()->loop;
     if(!exactStopped&&!cleanEmpty)
         return report(reject("AUDITION_MASTER_REQUIRES_STOPPED_OR_EMPTY_DEVICE"));
