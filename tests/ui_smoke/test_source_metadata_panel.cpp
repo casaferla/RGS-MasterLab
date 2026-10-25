@@ -48,6 +48,7 @@
 #include <QWindow>
 #include <QWheelEvent>
 
+#include <array>
 #include <cmath>
 #include <memory>
 #include <optional>
