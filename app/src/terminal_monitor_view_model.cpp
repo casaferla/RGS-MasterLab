@@ -95,14 +95,21 @@ bool TerminalMonitorViewModel::requestMaster(int chosenRateHz)
     if(!can_prepare())return report(reject("MONITOR_REQUEST_REQUIRES_IDLE"));
     const auto selected=core::SampleRate::create(chosenRateHz);
     if(!selected)return report(core::Status::failure(*selected.error()));
-    // The initial UI gate is deliberately stricter than deferred rendering:
-    // installation requires exact STOPPED/zero-cue/no-SOURCE-loop ownership.
+    // Explicit MASTER-only PREPARE may run when the previous Windows sink
+    // is proven absent. DEVICE install/return have their OWN strict guards:
+    // the empty sink does not imply that monitoring is already audible.
     const auto source=transport_->playback_snapshot();
     if(!source)return report(core::Status::failure(*source.error()));
-    if(source.value()->state!=core::PlaybackState::STOPPED
-       ||source.value()->position!=core::FrameIndex{0}
-       ||source.value()->loop)
-        return report(reject("MONITOR_REQUIRES_STOPPED_ZERO_CUE_NO_LOOP"));
+    const bool exactStopped=source.value()->state==core::PlaybackState::STOPPED
+        &&source.value()->position==core::FrameIndex{0}
+        &&!source.value()->loop;
+    const bool cleanEmpty=source.value()->state==core::PlaybackState::NO_SOURCE
+        &&source.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!source.value()->audibleRealization.realizationId
+        &&!source.value()->loop;
+    if(!exactStopped&&!cleanEmpty)
+        return report(reject("AUDITION_MASTER_REQUIRES_STOPPED_OR_EMPTY_DEVICE"));
     const auto result=session_->request_private_for_final_master(*selected.value());
     if(result) {
         masterRateHz_=chosenRateHz;
