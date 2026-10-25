@@ -29,6 +29,10 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
             duration_=0;
             deviceRateHz_=0;
             transportState_=QStringLiteral("UNAVAILABLE");
+            // A canceled/returned MASTER is no longer an immutable
+            // prepared realization. Do not retain its stale UI rate.
+            if(session_->status()==QStringLiteral("IDLE"))
+                masterRateHz_=0;
         }
         emit changed();
     });

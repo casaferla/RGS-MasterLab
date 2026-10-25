@@ -135,8 +135,9 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: root.monitorViewModel
+                                && root.monitorViewModel.masterRateHz > 0
                                 ? "MASTER " + root.monitorViewModel.masterRateHz + " Hz · immutable"
-                                : "MASTER unavailable"
+                                : "No prepared MASTER"
                             color: root.secondary
                             font.pixelSize: 10
                             elide: Text.ElideRight

@@ -2027,6 +2027,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // never retain an apparently PLAYING ghost owner or borrowed rate.
     QCOMPARE(monitorUi.transport_state(),QStringLiteral("UNAVAILABLE"));
     QCOMPARE(monitorUi.device_rate_hz(),0);
+    QCOMPARE(monitorUi.master_rate_hz(),0);
     QCOMPARE(monitorUi.master_position_frames(),qint64{0});
     QCOMPARE(monitorUi.master_duration_frames(),qint64{0});
     QVERIFY(!monitorUi.monitor_installed());
