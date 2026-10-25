@@ -22,6 +22,7 @@
 #include <QSignalSpy>
 #include <QDebug>
 #include <memory>
+#include <array>
 #include <bit>
 #include <cstdint>
 #include <cmath>
@@ -34,6 +35,7 @@ class TerminalActivationIntegrationTest final:public QObject {
 private slots:
     void audibleOnBypassRestoresExactManualSourceAndLoop();
     void finalMasterAt192kNeverBecomesDeviceRate48k();
+    void sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix();
     void privateMaster192kOn48kDeviceRemainsUninstalled();
     void staleM17TerminalJobCancelsWithoutPublishingPcm();
     void nonconformingPreviewRequiresSeparateExplicitConsent();
@@ -183,6 +185,118 @@ nonconformingPreviewRequiresSeparateExplicitConsent()
     QVERIFY(state.value()->set_user_bypass(true));
     vm.previewNonconforming();
     QCOMPARE(unsafe.count(),1); // No audition from Bypass.
+}
+
+
+void TerminalActivationIntegrationTest::
+sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
+{
+    // 36 independent, genuine source-rate to M17 MASTER-rate renders.
+    // A separate set of 36 conversions makes DEVICE PCM from exact-rate
+    // verified masters. These are short non-zero PCM functional tests,
+    // NOT a hardware audition, Windows 150% screenshot, or M18 delivery.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    const auto frames=core::FrameCount::create(64);
+    const auto block=core::FrameCount::create(64);
+    QVERIFY(registry&&frames&&block);
+    const auto uuid=core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000008036");
+    QVERIFY(uuid);
+    auto instance=dsp::ModuleInstanceId::from_uuid(*uuid.value());
+    QVERIFY(instance);
+    auto limiter=app::TerminalLimiterState::create_default(
+        *registry.value(),*instance.value());
+    QVERIFY(limiter);
+    QVERIFY(limiter.value()->set_user_bypass(false));
+    const auto bindings=limiter.value()->execution_bindings();
+    std::size_t masterPairs=0;
+    std::size_t devicePairs=0;
+    for(const auto sourceHz:rates) {
+        const auto sourceRate=core::SampleRate::create(sourceHz);
+        QVERIFY(sourceRate);
+        auto manualChain=dsp::ProcessingChain::create(
+            *registry.value(),{dsp::ProcessingStage::MASTER,
+                               dsp::ChainSegment::MANUAL});
+        QVERIFY(manualChain);
+        auto format=audio::AudioFormat::create(
+            *sourceRate.value(),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(format);
+        auto source=audio::AudioBuffer::create(
+            *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},*frames.value());
+        QVERIFY(source);
+        for(std::size_t channel=0;channel<2;++channel) {
+            auto lane=source.value()->mutable_view().channel(channel);
+            QVERIFY(lane);
+            for(std::size_t i=0;i<lane.value()->size();++i)
+                (*lane.value())[i]=((i%9==0)?0.12:0.055)
+                    *(channel==0?1.0:-0.8);
+        }
+        auto request=render::RenderRequest::create(
+            source.value()->view(),source.value()->view().absolute_range(),
+            *manualChain.value(),{},*block.value());
+        QVERIFY(request);
+        auto rendered=render::render_preview(
+            *request.value(),*registry.value());
+        QVERIFY(rendered);
+        auto manual=std::make_shared<const render::RenderResult>(
+            std::move(*rendered.value()));
+        for(const auto finalHz:rates) {
+            const auto finalRate=core::SampleRate::create(finalHz);
+            QVERIFY(finalRate);
+            auto out=render::render_true_peak_limiter_owned_final_master_candidate(
+                manual,*manualChain.value(),*frames.value(),
+                manual->chain_revision(),*finalRate.value(),
+                limiter.value()->chain(),bindings,*registry.value(),*block.value());
+            QVERIFY2(out,out?"":out.error()->message().c_str());
+            QCOMPARE(out.value()->master_sample_rate,*finalRate.value());
+            QCOMPARE(out.value()->output.output_rate,*finalRate.value());
+            QCOMPARE(out.value()->output.used_candidate_src,sourceHz!=finalHz);
+            QVERIFY(render::validate_final_master_encoding_rate(
+                *out.value(),*finalRate.value()));
+            const auto master=out.value()->output.terminal.checked.terminal
+                .compensated_pcm.view();
+            QCOMPARE(master.format().sample_rate(),*finalRate.value());
+            QCOMPARE(master.timebase().frame_domain_id(),
+                audio::FrameDomainId::OUTPUT_RATE);
+            QVERIFY(master.frame_count().value()>0);
+            ++masterPairs;
+            if(finalHz!=sourceHz)continue;
+            // 36 more genuine PCM conversions: six independently
+            // prepared source-rate M17 masters versus six DEVICE rates.
+            // DEVICE allocation never mutates the MASTER output clock.
+            for(const auto deviceHz:rates) {
+                const auto deviceRate=core::SampleRate::create(deviceHz);
+                QVERIFY(deviceRate);
+                const auto plan=audio::plan_master_monitoring_rate(
+                    *finalRate.value(),*deviceRate.value());
+                QVERIFY(plan);
+                auto monitor=audio::materialize_monitoring_pcm_candidate(
+                    master,*deviceRate.value(),*block.value(),
+                    [](const audio::MonitoringPcmResourceProjection&)
+                        ->core::Status {
+                        return core::Status::success();
+                    });
+                QVERIFY2(monitor,monitor?"":monitor.error()->message().c_str());
+                QVERIFY(audio::validate_monitoring_pcm_candidate(
+                    *monitor.value()));
+                QCOMPARE(monitor.value()->immutable_master_rate,
+                         *finalRate.value());
+                QCOMPARE(monitor.value()->device_rate,*deviceRate.value());
+                QCOMPARE(monitor.value()->device_src_applied,
+                    sourceHz!=deviceHz);
+                QCOMPARE(monitor.value()->device_pcm.view().format().sample_rate(),
+                         *deviceRate.value());
+                QCOMPARE(master.format().sample_rate(),*sourceRate.value());
+                ++devicePairs;
+            }
+        }
+    }
+    QCOMPARE(masterPairs,std::size_t{36});
+    QCOMPARE(devicePairs,std::size_t{36});
+    qInfo().noquote()<<"M17_RATE_MATRIX=36_MASTER_PLUS_36_DEVICE_PCM";
 }
 
 void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate48k()
