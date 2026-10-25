@@ -54,7 +54,7 @@ void DspModuleAdapterTest::testMonitorUtilityHasNoDSPBypassOrAudioStage()
         QStringLiteral("utility:rgsml.monitor.master-device"));
     QCOMPARE(adapter.editor_content_key(),QStringLiteral("MASTER_MONITOR"));
     QCOMPARE(adapter.family_accent(),QStringLiteral("#718092"));
-    QCOMPARE(adapter.display_name(),QStringLiteral("MONITOR"));
+    QCOMPARE(adapter.display_name(),QStringLiteral("Master Audition"));
     QVERIFY(!adapter.bypass_supported());
     QVERIFY(!adapter.bypass());
     QVERIFY(!adapter.preview_supported());
