@@ -53,6 +53,14 @@
 - **Remaining work before FQ #80**: P0 M17 actual audio activation/prepare independent of unsuitable Windows output, MONITOR device installation/return tests, generalized dock/undock framework for every editor, and Main physical 1184×688 150% DPI checks. M18 deferred.
 - [FQ80 scope and fixed-geometry PO amendment](FQ80_SCOPE_CHAIN_DOCKING_2026-10-25.md).
 
+## UI checkpoint — MONITOR and unified DSP Chain, 25 October
+- Product Owner explicitly rejected responsive two-to-one-column rearrangement. MASTER and DEVICE cards stay side-by-side at every supported Main-window size; controls may become accessible via an intentional expandable SEEK/LOOP section, not a screen-size rearrangement. At minimum height show primary PREPARE / DEVICE / STATUS / PLAY / RETURN as early as possible, with vertical overflow if required.
+- Real QML `MonitorEditor.qml` is a separate, selectable service editor within the persistent DspEditorHost, sharing `TerminalMonitorViewModel` with the previous popup; it adds no DSP processing node and fabricates no live metering.
+- The DSP Chain now has one scrollable module list with M17 and MONITOR, fixed label width and no FINALIZATION fixed box or 28-px BYP badge slot. Bypass is shown via row tone plus readable text, without disturbing config LED and errors.
+- Local visual design reference: `RGS_MONITOR_schema_layout_fisso_2026-10-25.png` was created as a downloadable conversation mockup only; GitHub QML, not that image, is runtime authority.
+- [Focused CI #822](https://github.com/casaferla/RGS-MasterLab/actions/runs/40213587135) triggered by ONE PR fast-forward to `a71fec955f6ca4f4cc461c59d30de9cee4e9f792`; status QUEUED when recorded, verify live. Previous #821 Windows PASS, Linux FAIL on stationary tooltip; source-level policy correction is included in #822.
+- Next: treat CI #822 red by scoped artifact/job step only, correct on no-CI staging, promote a coherent retry. On green, move to generalized per-module docking and P0 M17/MONITOR offline DEVICE decoupling; FQ #80 remains PO-only.
+
 ## NEXT: cohesive package then PR promotion
 - CI #820 is launched and owns PR SHA `18992c76`. Inspect failed-step summaries / small artifacts only. If red, fix all related errors on staging and promote one candidate. If green, continue the already approved M17 P0 audio and generalized docking packages in staging without asking for another 'Vai'. Update this file on staging; never send one CI per documentation edit.
 - No FQ #80 before actual M17 44.1/48/192, MONITOR audition, fixed M16/M17 UI and common docking are plausibly functioning on the candidate. PO alone triggers FQ.
