@@ -72,3 +72,26 @@ FULL_QUALIFICATION = PO_AUTHORIZATION_ONLY
 MERGE_MAIN = PO_AUTHORIZATION_ONLY
 ```
 Interpret `CI_MONITORING=OFF` as no repeated run polling in the current interactive turn (one final status query can still be used for safety). `AUTONOMOUS_EXECUTION=OFF` means stop after the current cohesive package and report, rather than starting another unrequested package. Neither permits bypassing frozen safety gates or queuing any automation; a ChatGPT run cannot observe GitHub once its active interactive execution has ended.
+
+
+## 7. REQUIRED ACTIVE CI/STAGING OVERLAP — PO ACCEPTED 2026-10-25
+
+**Permanent token:** `RGS_OVERLAPPED_STAGING_PR_CI_ACTIVE_TURN_V1_20261025`  
+**RGS ContentBox / MASTER PLAN authoritative SOP addendum v1.4:** https://docs.google.com/document/d/1l3zD_CumZWwBzaPt790U3OaChDa3hvqV8HJCkSpLRz8/edit  
+**Mandatory companion:** `RGS_MasterLab_Chat_Handoff_Template_v1.1` on RGS ContentBox; read its newest append-only block before authoring the next outgoing handoff.
+
+This section supplements §§1, 3, 4 and 6, and makes their live-session concurrency semantics explicit. During ONE active ChatGPT operational turn:
+
+1. **Stage development and PR CI are intentionally overlapped.** After the already authorized complete batch is fast-forward-promoted ONCE from PR-less, CI-silent staging to the open Draft PR using its exact verified expected_sha, GitHub Actions tests the immutable promoted SHA. **While #N is running, keep implementing / testing / documenting the next authorized batch #N+1 ONLY on the no-CI staging branch.** Do not pause productive work merely because the PR CI is in progress or ask for a routine "Vai".
+2. Periodically inspect exact GitHub run, jobs and steps **during that active turn**. Work concretely on staging between polls. Avoid excessive polling, spam updates, full log downloads, background/scheduled task creation, or premature claims of PASS. Keep `TESTED_PR_SHA_N` distinct from `NEW_STAGING_SHA_N+1`. Never credit staging-only changes with the preceding CI result.
+3. On CI red use failed-step names and bounded runner-filtered diagnostics only; correct on staging, then after the old run finishes and the coherent fix batch is complete, use a **new CAS-checked single FF promotion**. On green independently verify Windows/Linux and exact SHA, then continue already-authorized work and promote the next cohesive batch when ready. Never promote a new PR head while an earlier candidate CI is unfinished. Retain Single-Writer Epoch and verify current branch ancestry / competing writes before each promotion.
+4. **Scope/limitations:** this capability depends on the chat turn actually remaining active; it does NOT mean that ChatGPT is a persistent background monitor, daemon or autonomous scheduled service. Historical 30–50 minute work sessions are observed behavior, not guaranteed runtime duration. No FQ, Gate G/L/M, freeze, or main merge without PO permission. No old instructions about hourly automations or reading entire Actions logs may override this.
+5. **Handoff propagation is mandatory and recursive.** Each outgoing handoff must carry this token, the exact literal clause below, SOP link, both full branch names and independently verified LIVE HEAD SHAs, PR #/Draft state, last completed green SHA and exact CI URL + Windows/Linux outcome, running CI if any, staged but unqualified commits, writer epoch, next authorized lot, and PO-only gates. Instruct every successor to pass the identical requirement to its own successors. No handoff is complete without these fields.
+
+**Textual operational toggles** (not platform-native switches): `AUTONOMOUS_EXECUTION=ON`, `CI_MONITORING=ON`, `STAGING_WORK_DURING_PR_CI=ON`, `CI_MONITORING_METHOD=LIVE_POLLING_DURING_ACTIVE_TURN`. PO can explicitly switch any of the first three OFF for an active turn; safety gates never change.
+
+**Verbatim required handoff clause from RGS ContentBox SOP v1.4:**
+
+«RGS_OVERLAPPED_STAGING_PR_CI_ACTIVE_TURN_V1_20261025: nella sessione attiva, dopo Recovery Audit e una sola promozione fast-forward con SHA atteso, la CI sul branch PR Draft controlla uno SHA immutabile mentre la Chat Operativa CONTINUA a sviluppare sullo staging senza PR e senza CI. Durante la CI verifica periodicamente gli stati live di run/job/step, lavorando sui lotti successivi già autorizzati, e non richiede nuovi “Vai” ordinari. Solo quando la CI precedente è conclusa e il nuovo lotto coerente è pronto, verifica gli HEAD e promuove una sola volta il candidato successivo. Nessun full log GitHub, polling programmato/background, force push, merge main o FQ senza GO. Ogni successiva chat deve trasmettere letteralmente questa clausola a tutte le proprie successive chat, insieme a SOP RGS ContentBox, branch/HEAD/PR/CI verificati e differenza fra candidato verde e staging non qualificato.»
+
+The outgoing agent MUST reproduce that clause **verbatim**, not replace it with "as before" or a token alone. Previous independent recursive handoff clauses remain required.
