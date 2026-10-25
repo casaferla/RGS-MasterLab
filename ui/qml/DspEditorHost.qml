@@ -329,9 +329,9 @@ Rectangle {
     // and ordinary terminal DSP editor remain unchanged.
     MasterMonitorPopup {
         id: monitorPopup
+        // Popup positions itself against the application overlay, not
+        // the narrow adaptive DSP editor viewport.
         monitorViewModel: root.terminalMonitorViewModel
-        x: (root.width-width)/2
-        y: (root.height-height)/2
     }
 
     // Active Editor Content Area

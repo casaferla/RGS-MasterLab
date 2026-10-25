@@ -15,6 +15,7 @@ class TerminalMonitorViewModel final : public QObject {
     Q_PROPERTY(bool monitorExclusive READ monitor_exclusive NOTIFY changed)
     Q_PROPERTY(bool monitorInstalled READ monitor_installed NOTIFY changed)
     Q_PROPERTY(bool canPrepare READ can_prepare NOTIFY changed)
+    Q_PROPERTY(bool canDismiss READ can_dismiss NOTIFY changed)
     Q_PROPERTY(bool canInstall READ can_install NOTIFY changed)
     Q_PROPERTY(int masterRateHz READ master_rate_hz NOTIFY changed)
     Q_PROPERTY(int deviceRateHz READ device_rate_hz NOTIFY changed)
@@ -26,10 +27,17 @@ public:
                              PlaybackTransportViewModel& transport,
                              QObject* parent=nullptr);
     [[nodiscard]] QString status_text() const;
-    [[nodiscard]] QString error_text() const {return error_;}
+    [[nodiscard]] QString error_text() const {
+        // Include asynchronous renderer rejection, not only direct UI calls.
+        // A separate ordinary M17 session can fail independently of MONITOR.
+        return !error_.isEmpty() ? error_
+            : (monitorRequested_ || monitor_exclusive())
+                ? session_->error() : QString{};
+    }
     [[nodiscard]] bool monitor_exclusive() const noexcept;
     [[nodiscard]] bool monitor_installed() const noexcept;
     [[nodiscard]] bool can_prepare() const noexcept;
+    [[nodiscard]] bool can_dismiss() const noexcept;
     [[nodiscard]] bool can_install() const noexcept;
     [[nodiscard]] int master_rate_hz() const noexcept {return masterRateHz_;}
     [[nodiscard]] int device_rate_hz() const noexcept {return deviceRateHz_;}
@@ -52,6 +60,7 @@ signals:
 private:
     bool report(const core::Status& result);
     bool control(platform::windows::MonitoringTransportRequest request);
+    bool monitorRequested_{false};
     TerminalPrivateProductSession* session_;
     PlaybackTransportViewModel* transport_;
     QTimer observationTimer_;

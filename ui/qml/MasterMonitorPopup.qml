@@ -8,9 +8,15 @@ Popup {
     id: root
     objectName: "m17MasterMonitorPopup"
     property var monitorViewModel: null
+    // The editor can be as narrow as a single adaptive DSP column.
+    // Place the modal in the window overlay, not at negative editor x.
+    parent: Overlay.overlay
     modal: true
     focus: true
-    width: 610
+    width: Math.min(610, parent ? Math.max(220,parent.width-24) : 610)
+    height: Math.min(implicitHeight, parent ? Math.max(180,parent.height-24) : implicitHeight)
+    x: parent ? (parent.width-width)/2 : 0
+    y: parent ? (parent.height-height)/2 : 0
     padding: 14
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: Rectangle {
@@ -18,8 +24,21 @@ Popup {
         border.color: "#56778A"
         radius: 8
     }
-    contentItem: ColumnLayout {
-        spacing: 8
+    // Keep the whole dialog accessible at minimum window size and
+    // 150% DPI; vertical and (only if necessary) horizontal scroll remain.
+    contentItem: ScrollView {
+        id: monitorScroll
+        clip: true
+        implicitWidth: monitorForm.implicitWidth
+        implicitHeight: monitorForm.implicitHeight
+        contentWidth: Math.max(580,availableWidth)
+        contentHeight: monitorForm.implicitHeight
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+        ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+        ColumnLayout {
+            id: monitorForm
+            width: Math.max(580,monitorScroll.availableWidth)
+            spacing: 8
         Text {
             Layout.fillWidth: true
             text: "EXPERIMENTAL MASTER / DEVICE MONITOR · NOT M16 LIVE"
@@ -44,14 +63,17 @@ Popup {
                 objectName: "monitorPrepareMaster"
                 text: "Prepare MASTER"
                 enabled: root.monitorViewModel && root.monitorViewModel.canPrepare
-                onClicked: root.monitorViewModel.requestMaster(Number(masterRate.currentText))
+                onClicked: {
+                    if (root.monitorViewModel.requestMaster(Number(masterRate.currentText)))
+                        allowLimited.checked = false
+                }
             }
             Item {Layout.fillWidth: true}
             StudioButton {
                 objectName: "monitorReturnManual"
                 text: root.monitorViewModel && root.monitorViewModel.monitorInstalled
                     ? "Return MANUAL" : "Cancel"
-                enabled: root.monitorViewModel && root.monitorViewModel.monitorExclusive
+                enabled: root.monitorViewModel && root.monitorViewModel.canDismiss
                 onClicked: root.monitorViewModel.cancel()
             }
         }
@@ -182,6 +204,7 @@ Popup {
             color: "#92A5B5"
             font.pixelSize: 10
             wrapMode: Text.Wrap
+        }
         }
     }
 }

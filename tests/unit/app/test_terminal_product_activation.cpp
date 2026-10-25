@@ -1034,7 +1034,19 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             ==app::AuditionTarget::PROCESSED;}};
     app::TerminalMonitorViewModel monitorUi{product,transport};
     QVERIFY(monitorUi.can_prepare());
+    QVERIFY(!monitorUi.can_dismiss());
     QVERIFY(!monitorUi.play()); // source MANUAL is never anonymous MONITOR
+    QVERIFY(monitorUi.can_dismiss());
+    QVERIFY(!monitorUi.error_text().isEmpty());
+    QVERIFY(monitorUi.cancel());
+    QVERIFY(monitorUi.error_text().isEmpty());
+    QVERIFY(!monitorUi.can_dismiss());
+    QVERIFY(!monitorUi.requestMaster(12345)); // not a frozen MASTER rate
+    QVERIFY(monitorUi.can_dismiss());
+    QVERIFY(monitorUi.can_prepare());
+    QVERIFY(monitorUi.cancel());
+    QVERIFY(monitorUi.error_text().isEmpty());
+    QVERIFY(!monitorUi.can_dismiss());
     std::size_t deviceProbes=0;
     product.set_preferred_output_rate_probe(
         [&deviceProbes,deviceRate](audio::ChannelLayout)
@@ -1047,6 +1059,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(monitorUi.monitor_exclusive());
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    QVERIFY(monitorUi.can_dismiss());
     QVERIFY(product.monitoring_transaction_active());
     const auto owned=candidates.staged();
     QVERIFY(owned);
@@ -1604,6 +1617,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(selectedSourceLoop,std::optional{*region.value()});
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QVERIFY(!product.monitoring_transaction_active());
+    QVERIFY(!monitorUi.can_dismiss());
     QVERIFY(!candidates.staged());
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());

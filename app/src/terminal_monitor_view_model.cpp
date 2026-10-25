@@ -63,6 +63,16 @@ bool TerminalMonitorViewModel::can_prepare() const noexcept
 {
     return session_->status()==QStringLiteral("IDLE") && !monitor_exclusive();
 }
+bool TerminalMonitorViewModel::can_dismiss() const noexcept
+{
+    // ERROR or STALE can outlive the private render ticket; the operator
+    // still needs an explicit reset rather than a disabled Cancel button.
+    // Reset only the MASTER request owned by this UI. A separate
+    // ordinary M17 preview must not become cancellable from MONITOR.
+    return monitor_exclusive()
+        || (monitorRequested_ && session_->status()!=QStringLiteral("IDLE"))
+        || !error_.isEmpty();
+}
 bool TerminalMonitorViewModel::can_install() const noexcept
 {
     return session_->status()==QStringLiteral("MASTER_READY_MONITOR_PENDING");
@@ -94,7 +104,10 @@ bool TerminalMonitorViewModel::requestMaster(int chosenRateHz)
        ||source.value()->loop)
         return report(reject("MONITOR_REQUIRES_STOPPED_ZERO_CUE_NO_LOOP"));
     const auto result=session_->request_private_for_final_master(*selected.value());
-    if(result)masterRateHz_=chosenRateHz;
+    if(result) {
+        masterRateHz_=chosenRateHz;
+        monitorRequested_=true;
+    }
     return report(result);
 }
 bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
@@ -130,14 +143,20 @@ bool TerminalMonitorViewModel::returnManual()
     // Clear private evidence after restoring the exact manual owner. The
     // device-rate PCM is never copied to the FINAL MASTER or SOURCE epoch.
     const auto cleared=session_->cancel();
+    if(cleared)monitorRequested_=false;
     return report(cleared);
 }
 bool TerminalMonitorViewModel::cancel()
 {
     if(monitor_installed())return returnManual();
-    if(!monitor_exclusive() && session_->status()==QStringLiteral("IDLE"))
-        return true;
-    return report(session_->cancel());
+    if(!monitor_exclusive() && (!monitorRequested_
+         || session_->status()==QStringLiteral("IDLE"))) {
+        monitorRequested_=false;
+        return report(core::Status::success());
+    }
+    const auto revoked=session_->cancel();
+    if(revoked)monitorRequested_=false;
+    return report(revoked);
 }
 bool TerminalMonitorViewModel::control(
     platform::windows::MonitoringTransportRequest request)
