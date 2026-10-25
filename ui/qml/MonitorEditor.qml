@@ -2,197 +2,381 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// One independently authored MONITOR editor, selectable from the same
-// adaptive workspace as the mastering DSP editors. MONITOR is a SERVICE:
-// it owns no ProcessingChain node, True Peak Limiter bypass or mastered PCM.
-// Window docking is provided by the generic host, never by this editor.
+// MASTER / DEVICE monitoring is a workflow utility, not an audio DSP.
+// One editor instance belongs to the common dock/undock host. All shown
+// rates, clocks and admission states come from the typed monitor ViewModel.
 Item {
     id: root
     objectName: "masterMonitorEditor"
     property var monitorViewModel: null
+    readonly property color slate: "#718092"
+    readonly property color fg: "#D5E2EC"
+    readonly property color secondary: "#98AFC0"
+    readonly property bool active: !!monitorViewModel && monitorViewModel.monitorInstalled
+    readonly property bool ready: !!monitorViewModel && monitorViewModel.canInstall
     implicitWidth: 610
     implicitHeight: 460
 
     ScrollView {
-        id: monitorScroll
+        id: scroll
         anchors.fill: parent
         clip: true
-        implicitWidth: monitorForm.implicitWidth
-        implicitHeight: monitorForm.implicitHeight
-        contentWidth: Math.max(580,availableWidth)
-        contentHeight: monitorForm.implicitHeight
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
-        ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+        contentWidth: availableWidth
         ColumnLayout {
-            id: monitorForm
-            width: Math.max(580,monitorScroll.availableWidth)
+            id: page
+            width: Math.max(200,scroll.availableWidth)
             spacing: 8
-        Text {
-            Layout.fillWidth: true
-            text: "EXPERIMENTAL MASTER / DEVICE MONITOR · NOT M16 LIVE"
-            color: "#E5EEF4"
-            font.pixelSize: 12
-            font.weight: Font.DemiBold
-            wrapMode: Text.Wrap
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 6
-            Text {text: "MASTER Hz"; color: "#B8CCD8"; font.pixelSize: 11}
-            ComboBox {
-                id: masterRate
-                objectName: "monitorMasterRateSelector"
-                model: ["44100","48000","88200","96000","176400","192000"]
-                currentIndex: 1
-                Layout.preferredWidth: 108
-                enabled: root.monitorViewModel && root.monitorViewModel.canPrepare
-            }
-            StudioButton {
-                objectName: "monitorPrepareMaster"
-                text: "Prepare MASTER"
-                enabled: root.monitorViewModel && root.monitorViewModel.canPrepare
-                onClicked: {
-                    if (root.monitorViewModel.requestMaster(Number(masterRate.currentText)))
-                        allowLimited.checked = false
+
+            // Title/identity shares the other DSP editors' 11px section
+            // grammar, dark wells and restrained family accent.
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 28
+                spacing: 8
+                Text {
+                    text: "MASTER / DEVICE MONITOR"
+                    font.family: "Segoe UI"
+                    font.pixelSize: 11
+                    font.weight: Font.Bold
+                    color: root.secondary
+                }
+                Rectangle {
+                    Layout.preferredWidth: 2
+                    Layout.preferredHeight: 15
+                    color: root.slate
+                }
+                Text {
+                    text: "LISTENING ONLY"
+                    font.family: "Segoe UI"
+                    font.pixelSize: 10
+                    color: root.secondary
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    objectName: "monitorStateHeadline"
+                    text: root.monitorViewModel
+                        ? root.monitorViewModel.transportState : "UNAVAILABLE"
+                    color: root.active ? "#B7D6DB" : root.secondary
+                    font.family: "Segoe UI"
+                    font.pixelSize: 10
+                    font.weight: Font.Bold
+                    elide: Text.ElideRight
                 }
             }
-            Item {Layout.fillWidth: true}
-            StudioButton {
-                objectName: "monitorReturnManual"
-                text: root.monitorViewModel && root.monitorViewModel.monitorInstalled
-                    ? "Return MANUAL" : "Cancel"
-                enabled: root.monitorViewModel && root.monitorViewModel.canDismiss
-                onClicked: root.monitorViewModel.cancel()
-            }
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 6
-            CheckBox {
-                id: allowLimited
-                objectName: "monitorCautionConsent"
-                text: "Permit limited headroom"
-                checked: false
-                enabled: root.monitorViewModel && root.monitorViewModel.canInstall
-            }
-            StudioButton {
-                objectName: "monitorAllocateAndInstall"
-                text: "Allocate DEVICE / Monitor"
-                enabled: root.monitorViewModel && root.monitorViewModel.canInstall
-                onClicked: root.monitorViewModel.installMonitor(allowLimited.checked)
-            }
-        }
-        Text {
-            Layout.fillWidth: true
-            text: root.monitorViewModel ? root.monitorViewModel.statusText : "UNAVAILABLE"
-            color: "#90D2E1"
-            font.pixelSize: 11
-            wrapMode: Text.Wrap
-        }
-        Text {
-            Layout.fillWidth: true
-            text: root.monitorViewModel ? root.monitorViewModel.errorText : ""
-            visible: text.length > 0
-            color: "#F27683"
-            font.pixelSize: 11
-            wrapMode: Text.Wrap
-        }
-        Text {
-            Layout.fillWidth: true
-            text: root.monitorViewModel
-                ? ("MASTER " + root.monitorViewModel.masterRateHz
-                    + " Hz / DEVICE " + root.monitorViewModel.deviceRateHz
-                    + " Hz · " + root.monitorViewModel.transportState
-                    + " · MASTER frame " + root.monitorViewModel.masterPositionFrames
-                    + " / " + root.monitorViewModel.masterDurationFrames)
-                : "MASTER and DEVICE clocks unavailable"
-            color: "#D0E0EA"
-            font.pixelSize: 11
-            wrapMode: Text.Wrap
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 6
-            StudioButton {
-                objectName: "monitorPlay"
-                text: "Play"
-                enabled: root.monitorViewModel && root.monitorViewModel.monitorInstalled
-                onClicked: root.monitorViewModel.play()
-            }
-            StudioButton {
-                objectName: "monitorPause"
-                text: "Pause"
-                enabled: root.monitorViewModel && root.monitorViewModel.monitorInstalled
-                onClicked: root.monitorViewModel.pause()
-            }
-            StudioButton {
-                objectName: "monitorStop"
-                text: "Stop"
-                enabled: root.monitorViewModel && root.monitorViewModel.monitorInstalled
-                onClicked: root.monitorViewModel.stop()
-            }
-            TextField {
-                id: seekFrame
-                objectName: "monitorSeekMasterFrame"
-                placeholderText: "MASTER frame"
-                inputMethodHints: Qt.ImhDigitsOnly
+
+            GridLayout {
+                objectName: "monitorMasterDevicePair"
                 Layout.fillWidth: true
-            }
-            StudioButton {
-                objectName: "monitorSeekCommit"
-                text: "Seek"
-                enabled: root.monitorViewModel && root.monitorViewModel.monitorInstalled
-                onClicked: {
-                    const pos = Number(seekFrame.text)
-                    if (Number.isSafeInteger(pos) && pos >= 0)
-                        root.monitorViewModel.seekMaster(pos)
+                columns: root.width >= 650 ? 2 : 1
+                columnSpacing: 8
+                rowSpacing: 8
+
+                Rectangle {
+                    objectName: "monitorMasterCard"
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.preferredHeight: 148
+                    radius: 6
+                    color: "#0A1C2D"
+                    border.color: "#31506B"
+                    border.width: 1
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 7
+                        Text {
+                            text: "01  FINAL MASTER"
+                            color: root.secondary
+                            font.family: "Segoe UI"
+                            font.pixelSize: 11
+                            font.weight: Font.Bold
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Text {
+                                text: "MASTER RATE"
+                                color: root.secondary
+                                font.pixelSize: 10
+                            }
+                            Item { Layout.fillWidth: true }
+                            ComboBox {
+                                id: masterRate
+                                objectName: "monitorMasterRateSelector"
+                                model: ["44100", "48000", "88200", "96000", "176400", "192000"]
+                                currentIndex: 1
+                                Layout.preferredWidth: 108
+                                enabled: root.monitorViewModel
+                                    && root.monitorViewModel.canPrepare
+                                Accessible.name: "Selected immutable final master sample rate"
+                            }
+                            Text { text: "Hz"; color: root.secondary; font.pixelSize: 10 }
+                        }
+                        StudioButton {
+                            objectName: "monitorPrepareMaster"
+                            text: "Prepare MASTER"
+                            Layout.fillWidth: true
+                            accentColor: root.slate
+                            enabled: !!root.monitorViewModel
+                                && root.monitorViewModel.canPrepare
+                            onClicked: {
+                                if (root.monitorViewModel.requestMaster(Number(masterRate.currentText)))
+                                    limitedConsent.checked = false
+                            }
+                            Accessible.name: "Prepare verified full master offline"
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.monitorViewModel
+                                ? "MASTER " + root.monitorViewModel.masterRateHz + " Hz · immutable"
+                                : "MASTER unavailable"
+                            color: root.secondary
+                            font.pixelSize: 10
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+
+                Rectangle {
+                    objectName: "monitorDeviceCard"
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.preferredHeight: 148
+                    radius: 6
+                    color: "#0A1C2D"
+                    border.color: "#31506B"
+                    border.width: 1
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 7
+                        Text {
+                            text: "02  DEVICE AUDITION"
+                            color: root.secondary
+                            font.family: "Segoe UI"
+                            font.pixelSize: 11
+                            font.weight: Font.Bold
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "DEVICE RATE"
+                                color: root.secondary
+                                font.pixelSize: 10
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                objectName: "monitorDeviceRate"
+                                text: root.monitorViewModel && root.monitorViewModel.deviceRateHz > 0
+                                    ? root.monitorViewModel.deviceRateHz + " Hz" : "UNAVAILABLE"
+                                color: root.fg
+                                font.family: "Segoe UI"
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                        StudioButton {
+                            objectName: "monitorAllocateAndInstall"
+                            text: "Allocate DEVICE / Monitor"
+                            Layout.fillWidth: true
+                            accentColor: root.slate
+                            enabled: !!root.monitorViewModel
+                                && root.monitorViewModel.canInstall
+                            onClicked: root.monitorViewModel.installMonitor(limitedConsent.checked)
+                            Accessible.name: "Allocate authorized device audition PCM"
+                        }
+                        CheckBox {
+                            id: limitedConsent
+                            objectName: "monitorCautionConsent"
+                            text: "Permit limited memory headroom"
+                            checked: false
+                            enabled: !!root.monitorViewModel
+                                && root.monitorViewModel.canInstall
+                            font.pixelSize: 10
+                            ToolTip.text: "Explicit consent for CAUTION only. UNKNOWN and DISCOURAGED remain refused."
+                            ToolTip.visible: hovered
+                        }
+                    }
                 }
             }
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 6
-            TextField {
-                id: loopStart
-                objectName: "monitorLoopStartFrame"
-                placeholderText: "Loop start (MASTER)"
-                inputMethodHints: Qt.ImhDigitsOnly
+
+            // Truthful, readable operational status; this is not a fake
+            // spectral display, loudness meter or verified M16 LIVE reading.
+            Rectangle {
+                objectName: "monitorStatusWell"
                 Layout.fillWidth: true
-            }
-            TextField {
-                id: loopEnd
-                objectName: "monitorLoopEndFrame"
-                placeholderText: "Loop end exclusive"
-                inputMethodHints: Qt.ImhDigitsOnly
-                Layout.fillWidth: true
-            }
-            StudioButton {
-                objectName: "monitorSetLoop"
-                text: "Loop"
-                enabled: root.monitorViewModel && root.monitorViewModel.monitorInstalled
-                onClicked: {
-                    const a = Number(loopStart.text)
-                    const b = Number(loopEnd.text)
-                    if (Number.isSafeInteger(a) && Number.isSafeInteger(b)
-                            && a >= 0 && b > a)
-                        root.monitorViewModel.setMasterLoop(a,b,true)
+                Layout.preferredHeight: 58
+                radius: 6
+                color: "#0B1D2B"
+                border.color: "#31506B"
+                border.width: 1
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 4
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.monitorViewModel
+                            ? root.monitorViewModel.statusText : "MONITOR UNAVAILABLE"
+                        color: root.fg
+                        font.family: "Segoe UI"
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.monitorViewModel
+                            ? (root.monitorViewModel.errorText.length
+                                ? root.monitorViewModel.errorText
+                                : "No device signal becomes the FINAL MASTER or M16 LIVE.")
+                            : "No authoritative monitoring owner"
+                        color: root.monitorViewModel
+                            && root.monitorViewModel.errorText.length
+                            ? "#F27683" : root.secondary
+                        font.family: "Segoe UI"
+                        font.pixelSize: 10
+                        elide: Text.ElideRight
+                    }
                 }
             }
-            StudioButton {
-                objectName: "monitorClearLoop"
-                text: "No loop"
-                enabled: root.monitorViewModel && root.monitorViewModel.monitorInstalled
-                onClicked: root.monitorViewModel.setMasterLoop(0,0,false)
+
+            Rectangle {
+                objectName: "monitorTransportWell"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 82
+                radius: 6
+                color: "#0A1C2D"
+                border.color: "#31506B"
+                border.width: 1
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 6
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "MASTER TRANSPORT"
+                            color: root.secondary
+                            font.family: "Segoe UI"
+                            font.pixelSize: 10
+                            font.weight: Font.Bold
+                        }
+                        Item { Layout.fillWidth: true }
+                        Text {
+                            text: root.monitorViewModel
+                                ? root.monitorViewModel.masterPositionFrames
+                                  + " / " + root.monitorViewModel.masterDurationFrames
+                                  + " FRAMES" : "—"
+                            color: root.secondary
+                            font.family: "Segoe UI"
+                            font.pixelSize: 10
+                            elide: Text.ElideRight
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 5
+                        StudioButton {
+                            objectName: "monitorPlay"
+                            text: "Play"
+                            enabled: root.active
+                            onClicked: root.monitorViewModel.play()
+                        }
+                        StudioButton {
+                            objectName: "monitorPause"
+                            text: "Pause"
+                            enabled: root.active
+                            onClicked: root.monitorViewModel.pause()
+                        }
+                        StudioButton {
+                            objectName: "monitorStop"
+                            text: "Stop"
+                            enabled: root.active
+                            onClicked: root.monitorViewModel.stop()
+                        }
+                        Item { Layout.fillWidth: true }
+                        StudioButton {
+                            objectName: "monitorReturnManual"
+                            text: root.active ? "Return MANUAL" : "Cancel"
+                            accentColor: root.slate
+                            enabled: !!root.monitorViewModel
+                                && root.monitorViewModel.canDismiss
+                            onClicked: root.monitorViewModel.cancel()
+                        }
+                    }
+                }
             }
-        }
-        Text {
-            Layout.fillWidth: true
-            text: "Device SRC: experimental full-track RAM; CPU/DAC not qualified. "
-                + "Normal SOURCE transport is locked during MONITOR."
-            color: "#92A5B5"
-            font.pixelSize: 10
-            wrapMode: Text.Wrap
-        }
+
+            RowLayout {
+                objectName: "monitorNavigationRow"
+                Layout.fillWidth: true
+                spacing: 5
+                TextField {
+                    id: seekFrame
+                    objectName: "monitorSeekMasterFrame"
+                    Layout.fillWidth: true
+                    placeholderText: "Seek · MASTER frame"
+                    font.pixelSize: 10
+                    inputMethodHints: Qt.ImhDigitsOnly
+                }
+                StudioButton {
+                    objectName: "monitorSeekCommit"
+                    text: "Seek"
+                    enabled: root.active
+                    onClicked: {
+                        const n=Number(seekFrame.text)
+                        if(Number.isSafeInteger(n) && n>=0)root.monitorViewModel.seekMaster(n)
+                    }
+                }
+            }
+            RowLayout {
+                objectName: "monitorLoopRow"
+                Layout.fillWidth: true
+                spacing: 5
+                TextField {
+                    id: loopStart
+                    objectName: "monitorLoopStartFrame"
+                    Layout.fillWidth: true
+                    placeholderText: "MASTER loop from"
+                    font.pixelSize: 10
+                    inputMethodHints: Qt.ImhDigitsOnly
+                }
+                TextField {
+                    id: loopEnd
+                    objectName: "monitorLoopEndFrame"
+                    Layout.fillWidth: true
+                    placeholderText: "to (exclusive)"
+                    font.pixelSize: 10
+                    inputMethodHints: Qt.ImhDigitsOnly
+                }
+                StudioButton {
+                    objectName: "monitorSetLoop"
+                    text: "Loop"
+                    enabled: root.active
+                    onClicked: {
+                        const a=Number(loopStart.text), b=Number(loopEnd.text)
+                        if(Number.isSafeInteger(a)&&Number.isSafeInteger(b)&&a>=0&&b>a)
+                            root.monitorViewModel.setMasterLoop(a,b,true)
+                    }
+                }
+                StudioButton {
+                    objectName: "monitorClearLoop"
+                    text: "No loop"
+                    enabled: root.active
+                    onClicked: root.monitorViewModel.setMasterLoop(0,0,false)
+                }
+            }
+            Text {
+                Layout.fillWidth: true
+                text: "MONITOR is an audition branch. Memory and DEVICE SRC are independently checked; final MASTER PCM is unchanged."
+                color: root.secondary
+                font.family: "Segoe UI"
+                font.pixelSize: 10
+                wrapMode: Text.WordWrap
+            }
         }
     }
 }
