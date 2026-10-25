@@ -104,6 +104,50 @@ public:
         return core::FrameRange::create(*first.value(),*last.value());
     }
 
+    // Pure, conservative MASTER -> original SOURCE loop projection for
+    // an eventual authoritative MONITOR-to-MANUAL handoff. This cannot
+    // modify the SOURCE region or device: the caller must still reconcile
+    // selected SOURCE identity and region epoch before applying it.
+    // Both half-open boundaries use ceil, as in the device loop contract.
+    [[nodiscard]] core::Result<core::FrameRange>
+    master_loop_to_source(core::FrameRange region,
+                          core::SampleRate sourceRate,
+                          core::FrameCount sourceFrames) const
+    {
+        if(sourceRate.value()<=0||sourceFrames.value()<=0
+           ||region.begin().value()<0
+           ||region.end().value()>masterFrames_.value()
+           ||region.begin()>=region.end())
+            return invalid<core::FrameRange>(
+                "MONITOR_FRAME_MAP_INVALID_SOURCE_LOOP_INPUT");
+        // Programme durations must agree within one SOURCE frame.
+        // Do not allow an unrelated SOURCE to inherit a MASTER loop.
+        const auto expected=ceil_ratio(masterFrames_.value(),
+                                       masterRate_.value(),
+                                       sourceRate.value());
+        if(!expected)
+            return invalid<core::FrameRange>(
+                "MONITOR_FRAME_MAP_SOURCE_DURATION_OVERFLOW");
+        const auto actual=sourceFrames.value();
+        const auto projected=*expected.value();
+        if((projected<actual && actual-projected>1)
+           ||(projected>actual && projected-actual>1))
+            return invalid<core::FrameRange>(
+                "MONITOR_FRAME_MAP_SOURCE_DURATION_MISMATCH");
+        const auto first=ceil_ratio(region.begin().value(),
+                                    masterRate_.value(),
+                                    sourceRate.value());
+        const auto last=ceil_ratio(region.end().value(),
+                                   masterRate_.value(),
+                                   sourceRate.value());
+        if(!first||!last||*first.value()>=*last.value()
+           ||*last.value()>actual)
+            return invalid<core::FrameRange>(
+                "MONITOR_FRAME_MAP_SOURCE_LOOP_COLLAPSED_OR_OUT_OF_RANGE");
+        return core::FrameRange::create(core::FrameIndex{*first.value()},
+                                        core::FrameIndex{*last.value()});
+    }
+
     [[nodiscard]] core::Result<MonitoringMasterDisplaySnapshot>
     project_display_snapshot(
         const core::PlaybackSnapshot& deviceSnapshot,

@@ -1343,6 +1343,36 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(device->loop);
     QCOMPARE(device->loop->begin().value(),std::int64_t{64});
     QCOMPARE(device->loop->end().value(),std::int64_t{384});
+    // Pure SOURCE-loop projection. Same-rate is exact; cross-rate uses
+    // ceil half-open boundaries. No source region or owner is mutated.
+    auto coordinateMap=audio::MonitoringFrameMap::create(*privateMonitor);
+    QVERIFY(coordinateMap);
+    auto source192=coordinateMap.value()->master_loop_to_source(
+        *region.value(),*masterRate.value(),*frames.value());
+    QVERIFY(source192);
+    QCOMPARE(source192.value()->begin().value(),std::int64_t{256});
+    QCOMPARE(source192.value()->end().value(),std::int64_t{1536});
+    auto source441Rate=core::SampleRate::create(44100);
+    auto source441Frames=core::FrameCount::create(441);
+    QVERIFY(source441Rate&&source441Frames);
+    auto source441=coordinateMap.value()->master_loop_to_source(
+        *region.value(),*source441Rate.value(),*source441Frames.value());
+    QVERIFY(source441);
+    QCOMPARE(source441.value()->begin().value(),std::int64_t{59});
+    QCOMPARE(source441.value()->end().value(),std::int64_t{353});
+    auto oneMasterFrame=core::FrameRange::create(
+        core::FrameIndex{1},core::FrameIndex{2});
+    QVERIFY(oneMasterFrame);
+    QVERIFY(!coordinateMap.value()->master_loop_to_source(
+        *oneMasterFrame.value(),*source441Rate.value(),
+        *source441Frames.value()));
+    auto wrongSourceDuration=core::FrameCount::create(900);
+    QVERIFY(wrongSourceDuration);
+    QVERIFY(!coordinateMap.value()->master_loop_to_source(
+        *region.value(),*source441Rate.value(),
+        *wrongSourceDuration.value()));
+    QCOMPARE(device->loop->begin().value(),std::int64_t{64});
+    QCOMPARE(device->loop->end().value(),std::int64_t{384});
     QVERIFY(product.control_private_monitor(Request{Action::PLAY}));
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QVERIFY(product.control_private_monitor(Request{Action::PAUSE}));
