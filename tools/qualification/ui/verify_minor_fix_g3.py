@@ -4,6 +4,7 @@ from pathlib import Path
 chain = Path("ui/qml/DspChainSelector.qml").read_text(encoding="utf-8")
 gain = Path("ui/qml/InputGainEditor.qml").read_text(encoding="utf-8")
 smoke = Path("tests/ui_smoke/test_source_metadata_panel.cpp").read_text(encoding="utf-8")
+monitor = Path("ui/qml/MonitorEditor.qml").read_text(encoding="utf-8")
 
 
 def require(ok: bool, reason: str) -> None:
@@ -41,6 +42,16 @@ require("font.pixelSize: 12" in chain and
         "title typography/fallback changed")
 require("FIX-UI-004: Parametric EQ title must not be elided" in smoke,
         "native title non-elision test missing")
+# The MONITOR family layout is deliberately NOT responsive in column count.
+# At the Windows minimum the user must see the same spatial grammar, never
+# MASTER and DEVICE magically move into a different vertical hierarchy.
+require("columns: 2" in monitor and
+        "columns: root.width" not in monitor,
+        "MONITOR MASTER / DEVICE must never reflow from two columns to one")
+require('objectName: "monitorMasterCard"' in monitor and
+        'objectName: "monitorDeviceCard"' in monitor and
+        'objectName: "monitorTransportWell"' in monitor,
+        "MONITOR family wells and transport panel are missing")
 
 require('objectName: "inputGainWheelArea"' in gain,
         "transparent full-width wheel MouseArea missing")
