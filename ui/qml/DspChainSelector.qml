@@ -291,14 +291,19 @@ Rectangle {
 
                     RowLayout {
                         anchors.fill: parent
-                        // PO: 16px semantic icon; 8px configuration LED and
-                        // 8px error slot stay fixed. No BYP 28px reservation.
+                        // PO: one 16px semantic icon REPLACES 8px config LED.
+                        // Only independent 8px error indicator remains.
                         anchors.leftMargin: 7
                         anchors.rightMargin: 4
                         spacing: 2
 
-                        // Single fixed visual slot: color = family, glyph = module.
+                        // One symbol REPLACES the previous configuration LED.
+                        // Fixed 16px glyph slot, no extra 8px dot to its right.
+                        // Family hue stays constant: DIM = Default, BRIGHT = Manual.
+                        // Bypass separately mutes the ROW while retaining the
+                        // true Default/Manual semantic and stable coordinates.
                         StudioIcon {
+                            id: moduleSymbol
                             objectName: "dspChainModuleIcon_" + rowItem.modelIndex
                             Layout.minimumWidth: 16
                             Layout.preferredWidth: 16
@@ -307,39 +312,27 @@ Rectangle {
                             Layout.preferredHeight: 16
                             Layout.maximumHeight: 16
                             kind: root.moduleIconKind(rowItem.moduleAdapter)
-                            strokeWidth: 1.65
+                            strokeWidth: rowItem.isDefaultState ? 1.65 : 2.1
                             strokeColor: root.moduleIconColor(rowItem.moduleAdapter)
-                            opacity: rowItem.isBypassed ? 0.42 : 0.95
+                            opacity: (rowItem.isDefaultState ? 0.37 : 1.0)
+                                * (rowItem.isBypassed ? 0.7 : 1.0)
                             Accessible.name: rowItem.moduleAdapter
-                                ? rowItem.moduleAdapter.displayName + " module icon" : "Module icon"
-                        }
-
-                        // Configuration Indicator LED
-                        Rectangle {
-                            objectName: "dspChainConfigLed_" + rowItem.modelIndex
-                            Layout.minimumWidth: 8
-                            Layout.preferredWidth: 8
-                            Layout.maximumWidth: 8
-                            Layout.preferredHeight: 8
-                            radius: 4
-                            color: rowItem.isDefaultState ? "#273A4D" : "#00D47A"
-                            border.color: rowItem.isDefaultState ? "#3A4D60" : "#00FF94"
-                            border.width: 1
-
-                            ToolTip.text: rowItem.isDefaultState
-                                ? (rowItem.moduleAdapter ? (rowItem.moduleAdapter.displayName + " Default") : "Default")
-                                : (rowItem.moduleAdapter ? ("Manual Non-Default " + rowItem.moduleAdapter.displayName) : "Manual Non-Default")
-                            ToolTip.visible: (ledMouse.containsMouse) && stationaryTooltipDwell1.ready
+                                ? rowItem.moduleAdapter.displayName + " · "
+                                    + (rowItem.isDefaultState ? "Default" : "Manual")
+                                : "Module icon"
+                            ToolTip.text: rowItem.moduleAdapter
+                                ? rowItem.moduleAdapter.displayName + " · "
+                                    + (rowItem.isDefaultState
+                                        ? "Default settings" : "Manual non-default settings")
+                                    + (rowItem.isBypassed ? " · Bypassed" : "")
+                                : "Module"
+                            ToolTip.visible: moduleSymbolHover.hovered
+                                && moduleSymbolTooltipDwell.ready
                             ToolTip.delay: 0
+                            HoverHandler { id: moduleSymbolHover }
                             StudioTooltipDwell {
-                                id: stationaryTooltipDwell1
+                                id: moduleSymbolTooltipDwell
                                 anchors.fill: parent
-                            }
-
-                            MouseArea {
-                                id: ledMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
                             }
                         }
 
