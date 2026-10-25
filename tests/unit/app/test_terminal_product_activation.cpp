@@ -1551,8 +1551,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QCOMPARE(device->position,core::FrameIndex{800});
     QCOMPARE(device->audibleRealization.realizationId,manualId);
-    QCOMPARE(device->loop,*region.value());
-    QCOMPARE(selectedSourceLoop,*region.value());
+    QCOMPARE(device->loop,std::optional{*region.value()});
+    QCOMPARE(selectedSourceLoop,std::optional{*region.value()});
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QVERIFY(!candidates.staged());
     QVERIFY(!product.private_id());
