@@ -14,7 +14,8 @@ RATE_GRID = re.compile(
 )
 
 
-def collect(log: str, sha: str) -> str:
+def collect(log: str, sha: str, direct_qtest: str = "",
+            direct_exit: int | None = None) -> str:
     rows=log.splitlines()
     start=None
     end=None
@@ -45,10 +46,27 @@ def collect(log: str, sha: str) -> str:
     result.extend("REACHED="+name for name in names[:48])
     # A positive rate-grid attestation is valid only after the product
     # test completed and exactly one end-of-grid marker was recorded.
-    marker_count=sum(len(RATE_GRID.findall(line)) for line in block)
+    # CTest LastTest.log sometimes omits QtTest QINFO on successful
+    # Windows runs. An independent, narrowly selected direct QtTest call
+    # writes its own LOCAL temporary file, never uploaded raw.
+    # Certify only if the entire product test passed AND that direct
+    # function returned zero, printed its one end-of-grid marker and
+    # contained its own QtTest PASS line. No inferred success.
+    direct_markers=len(RATE_GRID.findall(direct_qtest))
+    direct_pass=(
+        direct_exit==0
+        and direct_markers==1
+        and bool(re.search(
+            r"PASS\\s*:\\s*[^\\n]*sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix",
+            direct_qtest))
+        and not FAIL.search(direct_qtest)
+    )
     result.append("RATE_GRID_36_MASTER_36_WAV_36_DEVICE="+(
-        "CONFIRMED" if status=="PASS" and marker_count==1
+        "CONFIRMED" if status=="PASS" and direct_pass
         else "NOT_CONFIRMED"
+    ))
+    result.append("DIRECT_GRID_TEST="+(
+        "PASS" if direct_pass else "NOT_CONFIRMED"
     ))
     timings=[m.group(0)[:180] for line in block
              for m in TIME.finditer(line)]
@@ -64,12 +82,18 @@ def main():
     parser.add_argument("--ctest-log",type=Path,required=True)
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--sha",required=True)
+    parser.add_argument("--direct-qtest-log",type=Path)
+    parser.add_argument("--direct-exit-code",type=int)
     args=parser.parse_args()
     if not re.fullmatch(r"[0-9a-fA-F]{40}",args.sha):
         raise SystemExit("M17_EDGE_MATRIX_SHA_INVALID")
     contents=args.ctest_log.read_text(encoding="utf-8",errors="replace") \
         if args.ctest_log.is_file() else ""
-    report=collect(contents,args.sha)
+    direct=(args.direct_qtest_log.read_text(
+        encoding="utf-8",errors="replace")
+        if args.direct_qtest_log is not None
+           and args.direct_qtest_log.is_file() else "")
+    report=collect(contents,args.sha,direct,args.direct_exit_code)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(report,encoding="utf-8")
     print("M17_EDGE_MATRIX_FILTERED_BYTES",len(report.encode("utf-8")))

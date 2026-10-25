@@ -497,8 +497,21 @@ jobs:
         run: |
           python tools/ci/test_summarize_m17_edge_matrix.py
           if ($LASTEXITCODE -ne 0) { throw 'M17_EDGE_MATRIX_FILTER_SELFTEST_FAILED' }
-          python tools/ci/summarize_m17_edge_matrix.py --ctest-log "build/windows-ninja-cache/Testing/Temporary/LastTest.log" --output "$env:RUNNER_TEMP/rgsml-m17-edge-matrix.txt" --sha '${{ github.event.pull_request.head.sha || github.sha }}'
+          # Directly replay ONLY the finite 36x36 matrix QtTest function.
+          # Its raw local output is never uploaded and never requested from
+          # GitHub Actions. Exit code and one positive post-assertion marker
+          # are summarized into the bounded 4-KiB artifact.
+          $exe = "build/windows-ninja-cache/Release/rgsml_terminal_product_activation_tests.exe"
+          $rawGrid = "$env:RUNNER_TEMP/rgsml-direct-rate-grid-local.txt"
+          $gridExit = 127
+          if (Test-Path $exe) {
+            $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+            & $exe sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix -v1 -o "$rawGrid,txt" 2>&1 | Out-Null
+            $gridExit = $LASTEXITCODE
+          }
+          python tools/ci/summarize_m17_edge_matrix.py --ctest-log "build/windows-ninja-cache/Testing/Temporary/LastTest.log" --direct-qtest-log "$rawGrid" --direct-exit-code $gridExit --output "$env:RUNNER_TEMP/rgsml-m17-edge-matrix.txt" --sha '${{ github.event.pull_request.head.sha || github.sha }}'
           if ($LASTEXITCODE -ne 0) { throw 'M17_EDGE_MATRIX_FILTER_FAILED' }
+          if ($gridExit -ne 0) { throw "M17_RATE_GRID_DIRECT_TEST_FAILED_$gridExit" }
 
       - name: Attach bounded M17 adversarial matrix report
         if: always()
