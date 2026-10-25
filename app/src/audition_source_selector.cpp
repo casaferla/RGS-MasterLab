@@ -127,6 +127,65 @@ AuditionSourceSelector::processed_realization_id() const noexcept
     return processedRealizationId_;
 }
 
+bool AuditionSourceSelector::offline_processed_selected_for_final_master() const
+{
+    if(!offlineProcessedAuthority_ || !source_ || !playback_
+       ||activeTarget_ || sourceDerivedCue_!=core::FrameIndex{0}
+       ||sourceEpoch_!=offlineProcessedAuthority_->sourceEpoch
+       ||prepared_!=offlineProcessedAuthority_->prepared
+       ||processed_!=offlineProcessedAuthority_->processed
+       ||processedRealizationId_
+            !=std::optional{offlineProcessedAuthority_->manualId}
+       ||(sourceLoopProvider_?sourceLoopProvider_():std::nullopt)
+            !=offlineProcessedAuthority_->loop)
+        return false;
+    const auto sink=playback_->playback_snapshot();
+    return sink
+        &&sink.value()->state==core::PlaybackState::NO_SOURCE
+        &&sink.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!sink.value()->audibleRealization.realizationId
+        &&sink.value()->position==core::FrameIndex{0}
+        &&!sink.value()->duration &&!sink.value()->loop;
+}
+
+core::Status AuditionSourceSelector::authorize_offline_processed_for_final_master()
+{
+    offlineProcessedAuthority_.reset();
+    if(!source_ ||sourceEpoch_==0 ||activeTarget_ ||!playback_
+       ||!prepared_ ||!processed_ ||!processedRealizationId_
+       ||processedRealizationId_->value==0
+       ||sourceDerivedCue_!=core::FrameIndex{0})
+        return unavailable("OFFLINE_MASTER_REQUIRES_ACCEPTED_SOURCE_PROCESSED");
+    const auto p=prepared_->view();
+    const auto m=processed_->view();
+    if(prepared_->frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE
+       ||processed_->frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE
+       ||p.absolute_start_frame()!=core::FrameIndex{0}
+       ||m.absolute_start_frame()!=core::FrameIndex{0}
+       ||p.frame_count().value()<=0 ||p.frame_count()!=m.frame_count()
+       ||p.format()!=m.format()
+       ||prepared_->render_window()!=p.absolute_range()
+       ||processed_->render_window()!=m.absolute_range())
+        return unavailable("OFFLINE_MASTER_REQUIRES_COMPLETE_SOURCE_OWNERS");
+    // First offline admission deliberately rejects active Loop Region;
+    // the whole SOURCE programme and source cue zero must be unambiguous.
+    const auto loop=sourceLoopProvider_?sourceLoopProvider_():std::nullopt;
+    if(loop)return unavailable("OFFLINE_MASTER_REQUIRES_NO_SOURCE_LOOP");
+    const auto before=playback_->playback_snapshot();
+    if(!before)return core::Status::failure(*before.error());
+    if(before.value()->state!=core::PlaybackState::NO_SOURCE
+       ||before.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||before.value()->audibleRealization.realizationId
+       ||before.value()->position!=core::FrameIndex{0}
+       ||before.value()->duration ||before.value()->loop)
+        return unavailable("OFFLINE_MASTER_REFUSES_NONEMPTY_OR_ALIEN_DEVICE");
+    offlineProcessedAuthority_.emplace(OfflineProcessedAuthority{
+        sourceEpoch_,prepared_,processed_,*processedRealizationId_,loop});
+    return core::Status::success();
+}
+
 core::Result<AuditionSourceSelector::TerminalActivationIntent>
 AuditionSourceSelector::capture_terminal_activation_intent() const
 {
@@ -252,11 +311,15 @@ void AuditionSourceSelector::set_source_loop_provider(SourceLoopProvider provide
 core::Status AuditionSourceSelector::source_committed(
     const core::ResourceReference& source)
 {
+    offlineProcessedAuthority_.reset();
+    if(sourceEpoch_==std::numeric_limits<std::uint64_t>::max())
+        return unavailable("OFFLINE_MASTER_SOURCE_EPOCH_EXHAUSTED");
     auto cleared = playback_->stop_and_clear();
     if (!cleared) {
         fail_closed(*cleared.error());
         return cleared;
     }
+    ++sourceEpoch_;
     source_ = source;
     sourceDerivedCue_ = core::FrameIndex{0};
     prepared_.reset();
@@ -292,6 +355,7 @@ core::Status AuditionSourceSelector::source_committed(
 core::Status AuditionSourceSelector::set_prepared_realization(
     render::RenderResult realization)
 {
+    offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::PREPARED) {
         auto cleared = playback_->stop_and_clear();
         if (!cleared) {
@@ -307,6 +371,7 @@ core::Status AuditionSourceSelector::set_prepared_realization(
 core::Status AuditionSourceSelector::set_processed_realization(
     render::RenderResult realization)
 {
+    offlineProcessedAuthority_.reset();
     if (nextRealizationIdValue_
         == std::numeric_limits<std::uint64_t>::max()) {
         return core::Status::failure(core::Error{
@@ -384,6 +449,7 @@ core::Status AuditionSourceSelector::set_gold(
     core::SampleRate sampleRate,
     core::FrameCount frameCount)
 {
+    offlineProcessedAuthority_.reset();
     if (source_) {
         if (source_->same_resource_identity(reference)) {
             return unavailable("Gold must be a file distinct from Source.");
@@ -414,6 +480,7 @@ core::Status AuditionSourceSelector::set_gold(
 
 core::Status AuditionSourceSelector::clear_gold()
 {
+    offlineProcessedAuthority_.reset();
     const bool wasGold = activeTarget_ == AuditionTarget::GOLD;
     if (wasGold) {
         auto stored = store_active_cue();
@@ -446,6 +513,7 @@ core::Status AuditionSourceSelector::clear_gold()
 
 core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
 {
+    offlineProcessedAuthority_.reset();
     if ((target == AuditionTarget::PREPARED && !prepared_)
         || (target == AuditionTarget::PROCESSED && !processed_)
         || (target == AuditionTarget::GOLD && !gold_)) {

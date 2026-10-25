@@ -112,6 +112,13 @@ bool TerminalMonitorViewModel::requestMaster(int chosenRateHz)
         &&!source.value()->loop;
     if(!exactStopped&&!cleanEmpty)
         return report(reject("AUDITION_MASTER_REQUIRES_STOPPED_OR_EMPTY_DEVICE"));
+    // The actual Windows SOURCE may have been accepted and rendered
+    // offline while its INITIAL device prepare was rejected. Never fake
+    // an audible activeTarget/RealizationId to unlock the private MASTER.
+    if(cleanEmpty && offlineMasterAuthorizer_) {
+        const auto authorized=offlineMasterAuthorizer_();
+        if(!authorized)return report(authorized);
+    }
     const auto result=session_->request_private_for_final_master(*selected.value());
     if(result) {
         masterRateHz_=chosenRateHz;

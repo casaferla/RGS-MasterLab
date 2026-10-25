@@ -28,6 +28,7 @@ public:
     using ManualId=std::function<std::optional<core::RealizationId>()>;
     using Loop=std::function<std::optional<core::FrameRange>()>;
     using Selected=std::function<bool()>;
+    using OfflineSelected=std::function<bool()>;
     using RateProbe=std::function<core::Result<core::SampleRate>(
         audio::ChannelLayout)>;
 
@@ -38,6 +39,12 @@ public:
         PlaybackTransportViewModel& transport,
         Snapshot prepared,Snapshot manual,ManualId manualId,
         Loop sourceLoop,Selected selected,QObject* parent=nullptr);
+
+    // Explicit offline provenance is NEVER an audible PROCESSED target.
+    // This opt-in predicate authorizes only MASTER-only private rendering
+    // with a clean NO_SOURCE sink. Ordinary M17 installs remain unchanged.
+    void set_offline_final_master_selection_checker(OfflineSelected checker)
+    { offlineSelected_=std::move(checker); }
 
     // An opt-in deferred request renders while the MANUAL PCM keeps playing.
     // Only an explicit conductor handoff may publish the accepted terminal.
@@ -200,6 +207,7 @@ private:
     // M17 submissions keep their exact installed MANUAL owner requirement.
     [[nodiscard]] core::Status request_private_impl(
         core::SampleRate rate, bool deferred, bool masterOnly);
+    [[nodiscard]] bool current_selection_for_pending() const;
     struct Pending {
         std::shared_ptr<const render::RenderResult> prepared;
         std::shared_ptr<const render::RenderResult> manual;
@@ -211,6 +219,7 @@ private:
         // Captured only when the explicit MASTER-only job began from a
         // demonstrably empty endpoint. Not a permission to install AUDIO.
         bool offlineNoSink{false};
+        bool offlineNonAudibleSelection{false};
     };
     void on_renderer_changed();
     [[nodiscard]] core::Status install_accepted_candidate();
@@ -227,6 +236,7 @@ private:
     ManualId manualId_;
     Loop sourceLoop_;
     Selected selected_;
+    OfflineSelected offlineSelected_;
     RateProbe rateProbe_;
     MonitoringPreflightMaterializer monitoringPreflight_;
     MonitoringInstall monitorInstall_;

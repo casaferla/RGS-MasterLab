@@ -268,6 +268,14 @@ int main(int argc, char* argv[])
             return auditionSelector.active_target()
                 ==rgsml::app::AuditionTarget::PROCESSED;
         }};
+    privateProductSession.set_offline_final_master_selection_checker(
+        [&auditionSelector,&previewController,&masteringChainState] {
+            const auto manual=auditionSelector.processed_realization_snapshot();
+            return manual
+                &&previewController.preview_status()==QStringLiteral("READY")
+                &&manual->chain_revision()==masteringChainState.chain().revision()
+                &&auditionSelector.offline_processed_selected_for_final_master();
+        });
     privateProductSession.set_preferred_output_rate_probe(
         [windowsPlayback](rgsml::audio::ChannelLayout layout) {
             return windowsPlayback->preferred_terminal_output_rate(layout);
@@ -336,6 +344,21 @@ int main(int argc, char* argv[])
     // Explicit user-only Windows MASTER->DEVICE monitor, with no LIVE identity.
     rgsml::app::TerminalMonitorViewModel terminalMonitorViewModel{
         privateProductSession,playbackTransport};
+    terminalMonitorViewModel.set_offline_master_authorizer(
+        [&auditionSelector,&previewController,&masteringChainState]
+            () -> rgsml::core::Status {
+            if(auditionSelector.active_target()
+                ==rgsml::app::AuditionTarget::PROCESSED)
+                return rgsml::core::Status::success();
+            const auto manual=auditionSelector.processed_realization_snapshot();
+            if(!manual
+               ||previewController.preview_status()!=QStringLiteral("READY")
+               ||manual->chain_revision()!=masteringChainState.chain().revision())
+                return rgsml::core::Status::failure(rgsml::core::Error{
+                    rgsml::core::ErrorCode::InvalidState,
+                    "OFFLINE_MASTER_REQUIRES_CURRENT_MANUAL_CHAIN_REVISION"});
+            return auditionSelector.authorize_offline_processed_for_final_master();
+        });
     // Product-private output rate is now explicitly discoverable but no
     // automatic call or QML sonic activation takes place.
     // A PRIVATE read-only GR presenter. It observes actual Windows-worker

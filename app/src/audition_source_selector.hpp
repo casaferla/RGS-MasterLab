@@ -60,6 +60,12 @@ public:
     [[nodiscard]] std::optional<core::RealizationId>
     processed_realization_id() const noexcept;
 
+    // A user-requested, non-audible selection bound to the current SOURCE
+    // epoch and accepted complete PREPARED/PROCESSED owners. It never writes
+    // activeTarget_, allocates a DEVICE identity or certifies M16 LIVE.
+    [[nodiscard]] core::Status authorize_offline_processed_for_final_master();
+    [[nodiscard]] bool offline_processed_selected_for_final_master() const;
+
     // Capture the one exact SOURCE/PROCESSED handoff intent BEFORE stopping
     // playback for M17. A preflight is not an activation or permission to
     // publish terminal output; post-stop and post-install guards still apply.
@@ -142,6 +148,15 @@ private:
     std::optional<core::SampleRate> goldRate_;
     std::optional<core::FrameCount> goldFrames_;
     std::optional<AuditionTarget> activeTarget_;
+    struct OfflineProcessedAuthority {
+        std::uint64_t sourceEpoch;
+        std::shared_ptr<const render::RenderResult> prepared;
+        std::shared_ptr<const render::RenderResult> processed;
+        core::RealizationId manualId;
+        std::optional<core::FrameRange> loop;
+    };
+    std::uint64_t sourceEpoch_{0};
+    std::optional<OfflineProcessedAuthority> offlineProcessedAuthority_;
     core::FrameIndex sourceDerivedCue_{0};
     core::FrameIndex goldCue_{0};
     QString statusText_;

@@ -31,6 +31,13 @@ TerminalPrivateProductSession::TerminalPrivateProductSession(
                      this,&TerminalPrivateProductSession::on_renderer_changed);
 }
 
+bool TerminalPrivateProductSession::current_selection_for_pending() const
+{
+    return selected_ && (selected_()
+        || (pending_ && pending_->offlineNonAudibleSelection
+            && offlineSelected_ && offlineSelected_()));
+}
+
 void TerminalPrivateProductSession::failed(const core::Error& error) {
     approvedMonitor_.reset();
     approvedMonitorMaster_.reset();
@@ -67,10 +74,9 @@ core::Status TerminalPrivateProductSession::request_private_impl(
     if(pending_ || privateId_ ||installedMonitor_ ||monitorTransitioning_)
         return core::Status::failure(rejected(
             "A private M17 transaction is already pending or installed."));
-    if(!prepared_||!manual_||!manualId_||!sourceLoop_||!selected_
-       ||!selected_())
+    if(!prepared_||!manual_||!manualId_||!sourceLoop_||!selected_)
         return core::Status::failure(rejected(
-            "Private M17 requires a selected PROCESSED source."));
+            "Private M17 requires an authoritative PROCESSED source."));
     auto prepared=prepared_(),manual=manual_();
     auto manualId=manualId_();
     if(!prepared||!manual||!manualId||manualId->value==0)
@@ -99,6 +105,12 @@ core::Status TerminalPrivateProductSession::request_private_impl(
             ||(!masterOnly && deferred
                 &&(snapshot.value()->state==core::PlaybackState::PLAYING
                     ||snapshot.value()->state==core::PlaybackState::PAUSED)));
+    const bool audibleSelected=selected_();
+    const bool nonAudibleOfflineSelected=offlineNoSink
+        &&offlineSelected_&&offlineSelected_();
+    if(!audibleSelected&&!nonAudibleOfflineSelected)
+        return core::Status::failure(rejected(
+            "Private M17 requires a selected PROCESSED source or explicit non-audible MASTER provenance."));
     if(!offlineNoSink&&!exactManual)
         return core::Status::failure(rejected(
             "M17 requires exact manual DEVICE ownership; only a private MASTER may render with NO_SOURCE."));
@@ -110,7 +122,8 @@ core::Status TerminalPrivateProductSession::request_private_impl(
     // request_private internally invalidates the gate, then emits RENDERING;
     // pending ownership is captured before any queued worker completion.
     pending_.emplace(Pending{prepared,manual,*manualId,loop,rate,
-                             deferred,masterOnly,offlineNoSink});
+                             deferred,masterOnly,offlineNoSink,
+                             nonAudibleOfflineSelected&&!audibleSelected});
     approvedMonitor_.reset();
     approvedMonitorMaster_.reset();
     privateId_.reset();
@@ -146,7 +159,7 @@ TerminalPrivateProductSession::current_verified_private_master() const
     if(!pending_ ||!pending_->masterOnly ||privateId_
        ||status_!=QStringLiteral("MASTER_READY_MONITOR_PENDING")
        ||renderer_->status()!=QStringLiteral("READY_PRIVATE")
-       ||!selected_ ||!selected_() ||!prepared_||!manual_||!manualId_
+       ||!current_selection_for_pending() ||!prepared_||!manual_||!manualId_
        ||!sourceLoop_||prepared_()!=pending_->prepared
        ||manual_()!=pending_->manual
        ||manualId_()!=std::optional{pending_->manualId}
@@ -937,7 +950,7 @@ void TerminalPrivateProductSession::on_renderer_changed()
     if(state==QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")) {
         // Keep owner and PCM intact, but never invoke verified install.
         auto evidence=candidates_->staged_measured();
-        if(!selected_()||prepared_()!=pending_->prepared
+        if(!current_selection_for_pending()||prepared_()!=pending_->prepared
            ||manual_()!=pending_->manual
            ||manualId_()!=std::optional{pending_->manualId}
            ||sourceLoop_()!=pending_->loop

@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QTimer>
 #include <QString>
+#include <functional>
+#include <utility>
 
 // Explicit Windows-only experimental MASTER monitoring control surface.
 // DEVICE PCM never receives a terminal RealizationId or an M16 LIVE claim.
@@ -45,6 +47,11 @@ public:
     [[nodiscard]] qint64 master_duration_frames() const noexcept {return duration_;}
     [[nodiscard]] QString transport_state() const {return transportState_;}
 
+    // Optional app-owned preflight: creates an explicit offline SOURCE
+    // provenance for the user-requested MASTER-only action, not playback.
+    using OfflineMasterAuthorizer=std::function<core::Status()>;
+    void set_offline_master_authorizer(OfflineMasterAuthorizer authorizer)
+    { offlineMasterAuthorizer_=std::move(authorizer); }
     Q_INVOKABLE bool requestMaster(int chosenRateHz);
     Q_INVOKABLE bool installMonitor(bool explicitlyAllowCaution);
     Q_INVOKABLE bool returnManual();
@@ -61,6 +68,7 @@ private:
     bool report(const core::Status& result);
     bool control(platform::windows::MonitoringTransportRequest request);
     bool monitorRequested_{false};
+    OfflineMasterAuthorizer offlineMasterAuthorizer_;
     TerminalPrivateProductSession* session_;
     PlaybackTransportViewModel* transport_;
     QTimer observationTimer_;
