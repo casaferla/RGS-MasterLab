@@ -55,6 +55,47 @@ ApplicationWindow {
     // local to their owning ViewModel and never replace another DSP status.
     readonly property var statusDspModule: typeof dspChainAdapterModel !== "undefined"
         && dspChainAdapterModel ? dspChainAdapterModel.activeModule : null
+    // Single persistent editor instance. Never duplicate/reload the host
+    // when a module is detached. At most one shared host floats at a time.
+    property bool editorDetached: false
+    property string detachedModuleInstanceId: ""
+    readonly property string selectedDspInstanceId: root.statusDspModule
+        ? root.statusDspModule.instanceId : ""
+
+    function returnCurrentEditorToDock() {
+        if (!root.editorDetached) return
+        root.editorDetached = false
+        root.detachedModuleInstanceId = ""
+    }
+    function detachSelectedModule() {
+        const m = root.statusDspModule
+        if (!m || !m.instanceId || !realDspWorkspace.editorHost) return
+        if (root.editorDetached) {
+            floatingModuleWindow.focusExisting()
+            return
+        }
+        root.detachedModuleInstanceId = m.instanceId
+        root.editorDetached = true
+        Qt.callLater(function() { floatingModuleWindow.focusExisting() })
+    }
+    function activateOrFocusModule(module) {
+        if (!module || !dspChainAdapterModel) return
+        if (root.editorDetached
+            && module.instanceId === root.detachedModuleInstanceId) {
+            floatingModuleWindow.focusExisting()
+            return
+        }
+        if (root.editorDetached) root.returnCurrentEditorToDock()
+        dspChainAdapterModel.selectModuleByInstanceId(module.instanceId)
+        realDspWorkspace.editorHost.forceActiveFocus()
+    }
+    onSelectedDspInstanceIdChanged: {
+        // Chain/menu selection of a different instance returns the old
+        // editor to the same workspace before switching the persistent host.
+        if (root.editorDetached
+            && root.detachedModuleInstanceId !== root.selectedDspInstanceId)
+            root.returnCurrentEditorToDock()
+    }
     readonly property string statusDspKey: statusDspModule
         ? statusDspModule.editorContentKey : ""
     readonly property var statusDspViewModel: {
@@ -373,6 +414,7 @@ ApplicationWindow {
             id: realDspWorkspace
             objectName: "dspWorkspace"
             adapterModel: typeof dspChainAdapterModel !== "undefined" ? dspChainAdapterModel : null
+            moduleActivationHandler: function(module) { root.activateOrFocusModule(module) }
             gainViewModel: root.appGainViewModel
             eqViewModel: root.appEqViewModel
             spectrumViewModel: root.appSpectrumViewModel
@@ -388,6 +430,23 @@ ApplicationWindow {
             terminalMonitorViewModel: root.appTerminalMonitorViewModel
             limiterGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
                 ? terminalPrivateGrViewModel : null
+        }
+    }
+
+    // One Qt Window, one rehosted DspEditorHost. No extra editor QML
+    // instance or DSP-chain node is ever created by this window.
+    DspFloatingModuleWindow {
+        id: floatingModuleWindow
+        editorTarget: realDspWorkspace.editorHost
+        moduleInstanceId: root.detachedModuleInstanceId
+        moduleTitle: root.statusDspModule
+            ? root.statusDspModule.displayName : "Module"
+        familyAccent: root.statusDspModule
+            ? root.statusDspModule.familyAccent : "#718092"
+        detached: root.editorDetached
+        onRedockRequested: function(id) {
+            if (id === root.detachedModuleInstanceId)
+                root.returnCurrentEditorToDock()
         }
     }
 
@@ -495,9 +554,7 @@ ApplicationWindow {
                                     && editorKey.length > 0
                                 onTriggered: {
                                     if (enabled && editorAdapter && dspChainAdapterModel) {
-                                        dspChainAdapterModel.selectModuleByInstanceId(
-                                            editorAdapter.instanceId)
-                                        realDspWorkspace.editorHost.forceActiveFocus()
+                                        root.activateOrFocusModule(editorAdapter)
                                     }
                                 }
                             }
@@ -505,6 +562,19 @@ ApplicationWindow {
                                 desktopViewMenu.insertItem(index, object)
                             onObjectRemoved: (index, object) =>
                                 desktopViewMenu.removeItem(object)
+                        }
+                        MenuSeparator { }
+                        StudioMenuItem {
+                            objectName: "menuDockUndockSelectedModule"
+                            text: root.editorDetached ? "Dock selected module"
+                                                      : "Undock selected module"
+                            enabled: !!root.statusDspModule
+                            onTriggered: {
+                                if (root.editorDetached)
+                                    root.returnCurrentEditorToDock()
+                                else
+                                    root.detachSelectedModule()
+                            }
                         }
                         MenuSeparator { }
                         StudioMenuItem { text: "Zoom In\tCtrl++"; enabled: sourceWaveform.canNavigate; onTriggered: sourceWaveform.zoomIn() }
@@ -620,15 +690,20 @@ ApplicationWindow {
                     Layout.fillHeight: true
                 }
 
-                LayoutItemProxy {
-                    id: standardDspEditorHostProxy
-                    target: realDspWorkspace.editorHost
+                Item {
+                    id: standardEditorSlot
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.minimumWidth: 0
                     Layout.preferredWidth: 0
                     Layout.minimumHeight: 400
                     Layout.preferredHeight: 400
+                    LayoutItemProxy {
+                        id: standardDspEditorHostProxy
+                        anchors.fill: parent
+                        visible: !root.editorDetached
+                        target: realDspWorkspace.editorHost
+                    }
                 }
             }
         }
@@ -1272,16 +1347,21 @@ ApplicationWindow {
                 }
 
                 // Right DSP Editor Area (~57% width)
-                LayoutItemProxy {
-                    id: compactDspEditorHostProxy
-                    objectName: "compactBottomRight"
-                    target: realDspWorkspace.editorHost
+                Item {
+                    id: compactEditorSlot
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.minimumWidth: 0
                     Layout.preferredWidth: 0
                     Layout.minimumHeight: 300
                     Layout.preferredHeight: 300
+                    LayoutItemProxy {
+                        id: compactDspEditorHostProxy
+                        objectName: "compactBottomRight"
+                        anchors.fill: parent
+                        visible: !root.editorDetached
+                        target: realDspWorkspace.editorHost
+                    }
                 }
             }
         }
