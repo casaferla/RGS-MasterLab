@@ -58,6 +58,23 @@ Rectangle {
         return state
     }
 
+    // Shape identifies the individual module; tint conveys its family.
+    // Fixed 16px slot in the space recovered from the old 28px BYP badge;
+    // never resized or hidden with bypass / scrolling / DPI.
+    function moduleIconKind(moduleAdapter) {
+        if(!moduleAdapter)return ""
+        switch(moduleAdapter.editorContentKey) {
+        case "INPUT_GAIN": return "module-gain"
+        case "PARAMETRIC_EQ": return "module-eq"
+        case "COMPRESSOR": return "module-compressor"
+        case "STEREO_MS": return "module-stereo"
+        case "TRUE_PEAK_METER": return "module-peak-meter"
+        case "TRUE_PEAK_LIMITER": return "module-limiter"
+        case "MASTER_MONITOR": return "module-headphones"
+        default: return ""
+        }
+    }
+
     // A SINGLE vertical list is authoritative for processing DSPs,
     // analysis M16, terminal M17 and workflow utility MONITOR. One model
     // index is one adapter identity; no separate Finalization fixed dock.
@@ -260,11 +277,29 @@ Rectangle {
 
                     RowLayout {
                         anchors.fill: parent
-                        // FIX-UI-004: reclaim label width at the 164px chain
-                        // minimum while preserving fixed LED/BYP/error slots.
+                        // PO: 16px semantic icon; 8px configuration LED and
+                        // 8px error slot stay fixed. No BYP 28px reservation.
                         anchors.leftMargin: 7
                         anchors.rightMargin: 4
                         spacing: 2
+
+                        // Single fixed visual slot: color = family, glyph = module.
+                        StudioIcon {
+                            objectName: "dspChainModuleIcon_" + rowItem.modelIndex
+                            Layout.minimumWidth: 16
+                            Layout.preferredWidth: 16
+                            Layout.maximumWidth: 16
+                            Layout.minimumHeight: 16
+                            Layout.preferredHeight: 16
+                            Layout.maximumHeight: 16
+                            kind: root.moduleIconKind(rowItem.moduleAdapter)
+                            strokeWidth: 1.65
+                            strokeColor: rowItem.moduleAdapter
+                                ? rowItem.moduleAdapter.familyAccent : "#6683A1"
+                            opacity: rowItem.isBypassed ? 0.42 : 0.95
+                            Accessible.name: rowItem.moduleAdapter
+                                ? rowItem.moduleAdapter.displayName + " module icon" : "Module icon"
+                        }
 
                         // Configuration Indicator LED
                         Rectangle {
