@@ -19,6 +19,14 @@ Item {
     property bool limiterSonicControlsEnabled: false
     property var limiterGrProvider: null
     property var limiterViewModel: null
+    // The lower bay is a single stable slot: offline PREPARATION occupies
+    // it until a terminal result exists, then the authentic GR history
+    // replaces it without changing any M16/M17 meter coordinates.
+    readonly property bool limiterPreparationVisible: root.showLimiterGrHistory
+        && (!root.limiterViewModel
+            || !(root.limiterViewModel.audioStatus.startsWith("READY")
+                 || root.limiterViewModel.audioStatus.startsWith("ACTIVE")
+                 || root.limiterViewModel.audioStatus.startsWith("NON-CONFORMING")))
     // The entire lower band is fixed. In this combined layout,
     // GR and Ceiling+Verification Trim use the SAME 198px height.
     // Canonical 548px M17 editor retains its accepted 198px lower band.
@@ -214,7 +222,7 @@ Item {
                             Layout.fillWidth: true
                             Text {
                                 objectName: "m17GrHistoryHeading"
-                                text: "GR HISTORY"
+                                text: root.limiterPreparationVisible ? "PREPARATION" : "GR HISTORY"
                                 color: "#B3C9D9"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
@@ -223,7 +231,12 @@ Item {
                             Item { Layout.fillWidth: true }
                             Text {
                                 objectName: "m17GrProvenanceStatus"
-                                text: root.limiterBypassed ? "BYPASS · NO ACTIVE GR"
+                                text: root.limiterPreparationVisible
+                                    ? root.limiterBypassed ? "BYPASS · NOT RUNNING"
+                                      : root.limiterViewModel
+                                        && root.limiterViewModel.audioStatus.startsWith("Preparing")
+                                          ? "OFFLINE · IN PROGRESS" : "OFFLINE · NOT RUNNING"
+                                    : root.limiterBypassed ? "BYPASS · NO ACTIVE GR"
                                     : grHistoryGraph.verifiedSeriesAvailable
                                         ? "VERIFIED · CONSUMED GR"
                                         : "UNAVAILABLE · NO VERIFIED GR"
@@ -241,8 +254,53 @@ Item {
                                 }
                             }
                         }
+                        ColumnLayout {
+                            objectName: "m17PreparationInGrRegion"
+                            visible: root.limiterPreparationVisible
+                            Layout.fillWidth: true
+                            Layout.minimumHeight: 54
+                            Layout.preferredHeight: 54
+                            Layout.maximumHeight: 54
+                            spacing: 2
+                            ProgressBar {
+                                objectName: "m17PreparationProgressBar"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 14
+                                from: 0
+                                to: 1
+                                value: root.limiterViewModel
+                                    ? root.limiterViewModel.preparationFraction : 0
+                                indeterminate: root.limiterViewModel
+                                    && root.limiterViewModel.audioStatus.startsWith("Preparing")
+                                    && !root.limiterViewModel.preparationDeterminate
+                                opacity: root.limiterViewModel
+                                    && root.limiterViewModel.audioStatus.startsWith("Preparing")
+                                        ? 1.0 : 0.28
+                                Accessible.name: "Offline limiter preparation progress"
+                            }
+                            Text {
+                                objectName: "m17PreparationProgressLabel"
+                                Layout.fillWidth: true
+                                text: {
+                                    const v=root.limiterViewModel
+                                    if (!v) return "PREPARATION UNAVAILABLE"
+                                    if (!v.audioStatus.startsWith("Preparing"))
+                                        return v.audioStatus
+                                    const pct=v.preparationDeterminate
+                                        ? " · " + Math.floor(v.preparationFraction*100) + "%"
+                                        : " · measuring"
+                                    return v.preparationStage + pct
+                                        + (v.preparationEta.length ? " · " + v.preparationEta : "")
+                                }
+                                color: "#A1B5C9"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 10
+                                elide: Text.ElideRight
+                            }
+                        }
                         TruePeakGrHistoryGraph {
                             id: grHistoryGraph
+                            visible: !root.limiterPreparationVisible
                             Layout.fillWidth: true
                             // Fixed single linked 54px GR lane, just like
                             // Compressor. Never stretch with window height.
