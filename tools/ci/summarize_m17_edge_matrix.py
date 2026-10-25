@@ -57,7 +57,7 @@ def collect(log: str, sha: str, direct_qtest: str = "",
         direct_exit==0
         and direct_markers==1
         and bool(re.search(
-            r"PASS\\s*:\\s*[^\\n]*sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix",
+            r"PASS\s*:\s*[^\n]*sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix",
             direct_qtest))
         and not FAIL.search(direct_qtest)
     )

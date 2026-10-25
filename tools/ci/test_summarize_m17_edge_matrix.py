@@ -28,17 +28,17 @@ assert "RENDER_SCALAR=" in report
 passed=sample.replace("2/2 Test: other_test","Test Passed.\n2/2 Test: other_test")
 assert "WINDOWS_PRODUCT_TEST=PASS" in module.collect(passed,SHA)
 direct=(
-    "********* Start testing of TerminalActivationIntegrationTest *********\\n"
-    "PASS   : TerminalActivationIntegrationTest::sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()\\n"
-    "QINFO  : M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM\\n"
-    "Totals: 1 passed, 0 failed\\n"
+    "********* Start testing of TerminalActivationIntegrationTest *********\n"
+    "PASS   : TerminalActivationIntegrationTest::sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()\n"
+    "QINFO  : M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM\n"
+    "Totals: 1 passed, 0 failed\n"
 )
 assert "RATE_GRID_36_MASTER_36_WAV_36_DEVICE=CONFIRMED" in module.collect(
     passed,SHA,direct,0)
 assert "RATE_GRID_36_MASTER_36_WAV_36_DEVICE=NOT_CONFIRMED" in module.collect(
     passed,SHA,direct,1)
 assert "RATE_GRID_36_MASTER_36_WAV_36_DEVICE=NOT_CONFIRMED" in module.collect(
-    passed,SHA,direct.replace("QINFO  : M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM\\n",""),0)
+    passed,SHA,direct.replace("QINFO  : M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM\n",""),0)
 assert "DIRECT_GRID_TEST=PASS" in module.collect(passed,SHA,direct,0)
 assert "RATE_GRID_36_MASTER_36_WAV_36_DEVICE=NOT_CONFIRMED" in report
 missing=passed.replace(
