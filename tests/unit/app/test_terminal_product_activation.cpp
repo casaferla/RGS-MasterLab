@@ -2022,6 +2022,18 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QCOMPARE(monitorUi.status_text(),
         QStringLiteral("MASTER AUDITION IDLE · NO PRIVATE DEVICE PCM"));
+    // SOURCE was refused by the physical device: returning from the
+    // exclusive monitor MUST clear its readouts immediately. The UI must
+    // never retain an apparently PLAYING ghost owner or borrowed rate.
+    QCOMPARE(monitorUi.transport_state(),QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(monitorUi.device_rate_hz(),0);
+    QCOMPARE(monitorUi.master_position_frames(),qint64{0});
+    QCOMPARE(monitorUi.master_duration_frames(),qint64{0});
+    QVERIFY(!monitorUi.monitor_installed());
+    QVERIFY(!monitorUi.play());
+    QVERIFY(!monitorUi.pause());
+    QVERIFY(!monitorUi.stop());
+    QVERIFY(!device->audibleRealization.realizationId);
 
     // Fault injection: SOURCE changes in the narrow post-install
     // window while the worker DOES own the new monitor. A failure of
