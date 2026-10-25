@@ -1401,6 +1401,56 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     }
     QCOMPARE(bitsAfterRoundTrip,originalBits);
 
+    // Deliberately fail closed if MONITOR's loop cannot be reconciled with
+    // the currently selected SOURCE loop; clearing it permits safe return.
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{0}));
+    QVERIFY(product.install_private_monitor_stopped(privateMonitor));
+    QCOMPARE(monitorInstalls,std::size_t{2});
+    QVERIFY(product.control_private_monitor(
+        Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},
+                *region.value()}));
+    auto loopRefused=product.return_private_monitor_to_manual();
+    QVERIFY(!loopRefused);
+    QCOMPARE(deviceMonitor,privateMonitor);
+    QCOMPARE(monitorRetires,std::size_t{1});
+    QCOMPARE(manualRestores,std::size_t{1});
+    QVERIFY(product.control_private_monitor(
+        Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},std::nullopt}));
+    QVERIFY(product.control_private_monitor(
+        Request{Action::SEEK_MASTER,core::FrameIndex{800}}));
+    QVERIFY(product.control_private_monitor(Request{Action::PLAY}));
+    QVERIFY(product.control_private_monitor(Request{Action::PAUSE}));
+    const auto pausedSourcePosition=device->position;
+    QCOMPARE(pausedSourcePosition.value(),std::int64_t{200});
+    QVERIFY(product.return_private_monitor_to_manual());
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QCOMPARE(device->position,core::FrameIndex{800});
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(monitorRetires,std::size_t{2});
+    QCOMPARE(manualRestores,std::size_t{2});
+    QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
+    // A PLAYING monitor must yield a PLAYING original MANUAL (never a
+    // freshly issued M17 identity). It may advance after resume, so
+    // equality with the pre-retire cue is not a DAC-clock certificate.
+    device->stop();
+    QVERIFY(product.install_private_monitor_stopped(privateMonitor));
+    QCOMPARE(monitorInstalls,std::size_t{3});
+    QVERIFY(product.control_private_monitor(
+        Request{Action::SEEK_MASTER,core::FrameIndex{1024}}));
+    QVERIFY(product.control_private_monitor(Request{Action::PLAY}));
+    QVERIFY(product.return_private_monitor_to_manual());
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(device->position,core::FrameIndex{1024});
+    QCOMPARE(monitorRetires,std::size_t{3});
+    QCOMPARE(manualRestores,std::size_t{3});
+    QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    QVERIFY(!product.private_id());
+    // Leave the original stopped MANUAL state for the existing
+    // cancellation-inside-conversion oracle following this test.
+    device->stop();
+
     // A cancellation INSIDE conversion revokes the master transaction.
     // A finished device PCM from that obsolete epoch must be discarded.
     auto revoked=product.materialize_private_final_master_monitoring(

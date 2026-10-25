@@ -416,9 +416,23 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
     // with bounded integer arithmetic. A stopped monitor without the new
     // controller retains the original legacy zero-cue return.
     core::FrameIndex sourceCue{0};
+    core::PlaybackState priorMonitorState=core::PlaybackState::STOPPED;
     if(monitorDisplay_) {
         const auto display=private_monitor_master_snapshot();
         if(!display)return core::Status::failure(*display.error());
+        priorMonitorState=display.value()->state;
+        if(priorMonitorState!=core::PlaybackState::STOPPED
+           &&priorMonitorState!=core::PlaybackState::PLAYING
+           &&priorMonitorState!=core::PlaybackState::PAUSED)
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_INVALID_TRANSPORT_STATE"));
+        // A MASTER loop created during private monitoring is NOT implicitly
+        // the SOURCE loop registered in the selector. Until a loop-owner
+        // reconciliation gate exists, never silently discard it on return.
+        if(display.value()->requested_master_loop
+           ||predecessor.loop ||(sourceLoop_&&sourceLoop_()))
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_LOOP_EPOCH_NOT_RECONCILED"));
         const auto masterHz=display.value()->master_rate.value();
         const auto sourceHz=predecessor.manual->view().format()
             .sample_rate().value();
@@ -482,12 +496,45 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
            !=std::optional{predecessor.manualId}
        ||after.value()->duration
            !=std::optional{predecessor.manual->view().frame_count()}
-       ||after.value()->position!=sourceCue) {
+       ||after.value()->position!=sourceCue
+       ||after.value()->loop!=predecessor.loop) {
         monitorTransitioning_=false;
         renderer_->invalidate();
         failed(rejected("MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
         return core::Status::failure(rejected(
             "MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
+    }
+    // Restore the prior Play/Pause state only after the exact original
+    // MANUAL PCM and clock have been installed. A paused monitor returns
+    // to PAUSED by starting the MANUAL sink then suspending the same owner.
+    if(priorMonitorState!=core::PlaybackState::STOPPED) {
+        transport_->playOrResume();
+        if(priorMonitorState==core::PlaybackState::PAUSED)
+            transport_->pause();
+        const auto resumed=transport_->playback_snapshot();
+        if(!resumed
+           ||resumed.value()->state!=priorMonitorState
+           ||resumed.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||resumed.value()->audibleRealization.realizationId
+               !=std::optional{predecessor.manualId}
+           ||resumed.value()->duration
+               !=std::optional{predecessor.manual->view().frame_count()}
+           ||resumed.value()->loop!=predecessor.loop) {
+            // Do not announce restored playback and do not clear a
+            // successor. Retire only the exact MANUAL owner if still there.
+            if(resumed
+               &&resumed.value()->audibleRealization.phase
+                   ==core::AudibleHandoffPhase::NEW
+               &&resumed.value()->audibleRealization.realizationId
+                   ==std::optional{predecessor.manualId})
+                static_cast<void>(transport_->stop_and_clear());
+            monitorTransitioning_=false;
+            renderer_->invalidate();
+            failed(rejected("MONITOR_RETURN_MANUAL_TRANSPORT_NOT_RESTORED"));
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_MANUAL_TRANSPORT_NOT_RESTORED"));
+        }
     }
     monitorTransitioning_=false;
     status_=QStringLiteral("MASTER_READY_MONITOR_PENDING");
