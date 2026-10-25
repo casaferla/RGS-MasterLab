@@ -48,6 +48,10 @@ Rectangle {
                 + match[1] + "." + match[2] + "  dBTP"
     }
     implicitHeight: 108
+    // QtQuick.Layouts may allocate less than the full three-line content.
+    // Never paint subordinate text across a card border; exact detail
+    // remains discoverable in the existing stationary-hover tooltip.
+    clip: true
     radius: 7
     color: "#10273A"
     border.color: root.useFamilyAccent ? root.familyAccent : "#294459"
@@ -99,6 +103,7 @@ Rectangle {
         Text {
             objectName: "truePeakReadoutDetailText"
             text: root.detail
+            visible: !root.tightM17Height || root.height >= 78
             color: "#8AA4B3"
             font.family: "Segoe UI"
             font.pixelSize: root.tightM17Height ? 9 : 10
