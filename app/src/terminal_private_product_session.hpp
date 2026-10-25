@@ -150,6 +150,12 @@ public:
     // an already installed SOURCE-mapped session: its own live loop
     // controller processes active Loop Region edits.
     void cancel_pending_on_region_change();
+    // Interlock: MASTER-only render and anonymous monitor PCM are not
+    // terminal SOURCE audio owned by the ordinary Qt M17 conductor.
+    [[nodiscard]] bool monitoring_transaction_active() const noexcept {
+        return monitorTransitioning_ || static_cast<bool>(installedMonitor_)
+            || (pending_.has_value() && pending_->masterOnly);
+    }
     [[nodiscard]] QString status() const {return status_;}
     [[nodiscard]] QString error() const {return error_;}
     [[nodiscard]] render::TerminalRenderProgress render_progress() const noexcept {

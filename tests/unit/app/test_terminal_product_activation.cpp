@@ -1040,8 +1040,10 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 *deviceRate.value());
         });
     QVERIFY(product.request_private_for_final_master(*masterRate.value()));
+    QVERIFY(product.monitoring_transaction_active());
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    QVERIFY(product.monitoring_transaction_active());
     const auto owned=candidates.staged();
     QVERIFY(owned);
     QCOMPARE(owned->rendered.output_rate,*masterRate.value());
@@ -1530,6 +1532,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         makeMonitor);
     QVERIFY(freshMonitor);
     QVERIFY(product.install_private_monitor_stopped(*freshMonitor.value()));
+    QVERIFY(product.monitoring_transaction_active());
     QVERIFY(product.control_private_monitor(
         Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},
                 *region.value()}));
@@ -1550,6 +1553,14 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                     core::ErrorCode::InvalidState,
                     "TEST_SOURCE_LOOP_BEFORE_EXACT_RETIREMENT"});
             selectedSourceLoop=projected;
+            // Synchronous Qt AuditionRegion changed listener while
+            // monitorTransitioning_ is still active (never recurse cancel).
+            product.cancel_pending_on_region_change();
+            if(!product.monitoring_transaction_active()
+               ||product.status()!=QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"))
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "TEST_REENTRANT_REGION_EVENT_CANCELLED_MONITOR"});
             return transport.set_loop_source_range(projected);
         });
     QVERIFY(product.return_private_monitor_to_manual());
@@ -1560,6 +1571,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->loop,std::optional{*region.value()});
     QCOMPARE(selectedSourceLoop,std::optional{*region.value()});
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!product.monitoring_transaction_active());
     QVERIFY(!candidates.staged());
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());

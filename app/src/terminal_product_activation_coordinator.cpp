@@ -87,6 +87,10 @@ void TerminalProductActivationCoordinator::fail_closed(const QString& reason)
 void TerminalProductActivationCoordinator::begin_activation()
 {
     if(transitioning_||intent_||state_->bypassed())return;
+    if(session_->monitoring_transaction_active()) {
+        view_->setAudioStatus(QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
+        return;
+    }
     if(manualPreviewInProgress_) {
         view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
         return;
@@ -465,6 +469,11 @@ void TerminalProductActivationCoordinator::limiter_accepted()
     if(transitioning_)return;
     const bool changedCeiling=state_->parameter_revision()!=lastParameterRevision_;
     lastParameterRevision_=state_->parameter_revision();
+    // Never route ordinary ON/BYPASS into the separate exact MONITOR lease.
+    if(session_->monitoring_transaction_active()) {
+        view_->setAudioStatus(QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
+        return;
+    }
     if(changedCeiling) {
         // This includes Ceiling changes made while BYPASS is selected.
         // No A->B->A parameter revision may recover an obsolete result.
@@ -535,6 +544,8 @@ void TerminalProductActivationCoordinator::manual_preview_changed(
 
 void TerminalProductActivationCoordinator::loop_context_changed()
 {
+    // Loop reconciliation may synchronously emit AuditionRegion::changed.
+    if(session_->monitoring_transaction_active())return;
     if(transitioning_||!intent_||state_->bypassed())return;
     const auto source=transport_->source_display_snapshot();
     if(!source) {
@@ -555,6 +566,8 @@ void TerminalProductActivationCoordinator::loop_context_changed()
 
 void TerminalProductActivationCoordinator::private_session_changed()
 {
+    // MASTER_READY/MONITOR_* must not be consumed as normal SOURCE states.
+    if(session_->monitoring_transaction_active())return;
     if(transitioning_||!intent_)return;
     const auto status=session_->status();
     if(status==QStringLiteral("READY_TO_INSTALL")) {
@@ -601,6 +614,8 @@ void TerminalProductActivationCoordinator::private_session_changed()
 
 void TerminalProductActivationCoordinator::external_context_changed()
 {
+    // Selector signals during MANUAL restoration cannot re-enter bypass.
+    if(session_->monitoring_transaction_active())return;
     if(transitioning_)return;
     if(!intent_) {
         if(session_->comparison_cached()

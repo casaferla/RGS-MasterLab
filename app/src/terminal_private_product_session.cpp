@@ -884,6 +884,9 @@ core::Status TerminalPrivateProductSession::cancel()
 
 void TerminalPrivateProductSession::cancel_pending_on_region_change()
 {
+    // A synchronous SOURCE-region signal during exact MONITOR retirement
+    // must never re-enter cancel() and disturb the owner transaction.
+    if(monitorTransitioning_)return;
     if(pending_)static_cast<void>(cancel());
 }
 
