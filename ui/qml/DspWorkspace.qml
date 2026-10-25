@@ -16,6 +16,7 @@ Rectangle {
     property var truePeakLiveViewModel: null
     property var terminalPostLimiterTruePeak: null
     property var terminalLimiterViewModel: null
+    property var terminalMonitorViewModel: null
     property var limiterGrProvider: null
 
     // Backward-compatibility alias so code referencing workspace.viewModel sets/gets eqViewModel
@@ -64,6 +65,7 @@ Rectangle {
             truePeakLiveViewModel: root.truePeakLiveViewModel
             terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
             terminalLimiterViewModel: root.terminalLimiterViewModel
+        terminalMonitorViewModel: root.terminalMonitorViewModel
             limiterGrProvider: root.limiterGrProvider
             activeChainRow: realChainSelector.activeRow
         }

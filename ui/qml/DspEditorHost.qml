@@ -38,6 +38,7 @@ Rectangle {
     readonly property var truePeakCurrentStatic: terminalOn
         || root.terminalNonconformingAudible ? null : root.truePeakStaticViewModel
     property var terminalLimiterViewModel: null
+    property var terminalMonitorViewModel: null
     property var limiterGrProvider: null
     property Item activeChainRow: null
 
@@ -318,7 +319,16 @@ Rectangle {
             }
         }
 
-        // Active Editor Content Area
+        // Explicit isolated MASTER control popup; the shared meter geometry
+    // and ordinary terminal DSP editor remain unchanged.
+    MasterMonitorPopup {
+        id: monitorPopup
+        monitorViewModel: root.terminalMonitorViewModel
+        x: (root.width-width)/2
+        y: (root.height-height)/2
+    }
+
+    // Active Editor Content Area
         // M17 explicit offline action: controls do not borrow transport Play.
         RowLayout {
             objectName: "m17ExplicitPreparationControls"
@@ -382,6 +392,16 @@ Rectangle {
                     && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
                 onClicked: root.terminalLimiterViewModel.previewPrepared()
                 Accessible.name: "Preview verified limiter audio"
+            }
+            StudioButton {
+                objectName: "m17OpenMasterMonitor"
+                text: "MONITOR…"
+                minimumControlWidth: 90
+                accentColor: "#6CBCCF"
+                enabled: root.terminalMonitorViewModel !== null
+                    && root.terminalMonitorViewModel !== undefined
+                onClicked: monitorPopup.open()
+                Accessible.name: "Open experimental MASTER / DEVICE monitor"
             }
             Text {
                 Layout.fillWidth: true

@@ -25,6 +25,7 @@
 #include "terminal_post_limiter_true_peak_coordinator.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "terminal_private_product_session.hpp"
+#include "terminal_monitor_view_model.hpp"
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
 #include "true_peak_static_coordinator.hpp"
@@ -332,6 +333,9 @@ int main(int argc, char* argv[])
             return windowsPlayback->monitoring_master_snapshot_if_owned(
                 std::move(owned));
         });
+    // Explicit user-only Windows MASTER->DEVICE monitor, with no LIVE identity.
+    rgsml::app::TerminalMonitorViewModel terminalMonitorViewModel{
+        privateProductSession,playbackTransport};
     // Product-private output rate is now explicitly discoverable but no
     // automatic call or QML sonic activation takes place.
     // A PRIVATE read-only GR presenter. It observes actual Windows-worker
@@ -597,6 +601,9 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("terminalLimiterViewModel"),
         &terminalLimiterViewModel);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("terminalMonitorViewModel"),
+        &terminalMonitorViewModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("terminalPrivateGrViewModel"),
         &terminalPrivateGrViewModel);

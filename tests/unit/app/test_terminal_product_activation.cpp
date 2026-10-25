@@ -5,6 +5,7 @@
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
 #include "terminal_private_product_session.hpp"
+#include "terminal_monitor_view_model.hpp"
 #include "terminal_product_activation_coordinator.hpp"
 #include "mastering_preview_controller.hpp"
 #include "terminal_limiter_view_model.hpp"
@@ -1031,6 +1032,9 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         [&selectedSourceLoop]{return selectedSourceLoop;},
         [&selector]{return selector.active_target()
             ==app::AuditionTarget::PROCESSED;}};
+    app::TerminalMonitorViewModel monitorUi{product,transport};
+    QVERIFY(monitorUi.can_prepare());
+    QVERIFY(!monitorUi.play()); // source MANUAL is never anonymous MONITOR
     std::size_t deviceProbes=0;
     product.set_preferred_output_rate_probe(
         [&deviceProbes,deviceRate](audio::ChannelLayout)
@@ -1039,8 +1043,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             return core::Result<core::SampleRate>::success(
                 *deviceRate.value());
         });
-    QVERIFY(product.request_private_for_final_master(*masterRate.value()));
-    QVERIFY(product.monitoring_transaction_active());
+    QVERIFY(monitorUi.requestMaster(192000));
+    QVERIFY(monitorUi.monitor_exclusive());
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
     QVERIFY(product.monitoring_transaction_active());
@@ -1273,6 +1277,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
     QCOMPARE(monitorInstalls,std::size_t{1});
     QCOMPARE(deviceMonitor,privateMonitor);
+    QVERIFY(monitorUi.monitor_installed());
+    QVERIFY(!monitorUi.requestMaster(96000));
     QCOMPARE(device->duration,std::optional{
         privateMonitor->device_pcm.view().frame_count()});
     QVERIFY(!device->audibleRealization.realizationId);
@@ -1563,7 +1569,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                     "TEST_REENTRANT_REGION_EVENT_CANCELLED_MONITOR"});
             return transport.set_loop_source_range(projected);
         });
-    QVERIFY(product.return_private_monitor_to_manual());
+    QVERIFY(monitorUi.returnManual());
     QCOMPARE(sourceLoopCommits,std::size_t{1});
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QCOMPARE(device->position,core::FrameIndex{800});

@@ -11,6 +11,8 @@ list(FILTER _rgsml_act_b EXCLUDE REGEX "test_mastering_chain_state\\.cpp$")
 set(_rgsml_act_sources ${_rgsml_act_a} ${_rgsml_act_b}
     "${CMAKE_SOURCE_DIR}/app/src/terminal_product_activation_coordinator.cpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_product_activation_coordinator.hpp"
+    "${CMAKE_SOURCE_DIR}/app/src/terminal_monitor_view_model.cpp"
+    "${CMAKE_SOURCE_DIR}/app/src/terminal_monitor_view_model.hpp"
     # Real MasteringPreviewController signal/worker regression uses the
     # same Qt source and AUTOMOC closure as the product executable.
     "${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp"

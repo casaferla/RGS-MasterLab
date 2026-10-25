@@ -42,6 +42,10 @@ ApplicationWindow {
     readonly property var appEqViewModel: typeof eqViewModel !== "undefined" ? eqViewModel : null
     readonly property var appTerminalLimiterViewModel: typeof terminalLimiterViewModel !== "undefined"
         ? terminalLimiterViewModel : null
+    readonly property var appTerminalMonitorViewModel: typeof terminalMonitorViewModel !== "undefined"
+        ? terminalMonitorViewModel : null
+    readonly property bool monitorExclusive: root.appTerminalMonitorViewModel
+        ? root.appTerminalMonitorViewModel.monitorExclusive : false
     readonly property var appTerminalPostLimiterMeter: typeof terminalPostLimiterTruePeak !== "undefined"
         ? terminalPostLimiterTruePeak : null
     readonly property var appSpectrumViewModel: typeof liveSpectrumViewModel !== "undefined" ? liveSpectrumViewModel : null
@@ -81,6 +85,9 @@ ApplicationWindow {
     // Keep the established application-failure priority; do not allow a
     // field typo to mask a transport, project, Source or Gold failure.
     readonly property string applicationErrorText: {
+        if (root.appTerminalMonitorViewModel
+                && root.appTerminalMonitorViewModel.errorText.length > 0)
+            return root.appTerminalMonitorViewModel.errorText
         if (projectSession.errorMessage.length > 0) return projectSession.errorMessage
         if (sourceSelection.errorMessage.length > 0) return sourceSelection.errorMessage
         if (goldSelection.errorMessage.length > 0) return goldSelection.errorMessage
@@ -127,6 +134,10 @@ ApplicationWindow {
     }
 
     onClosing: function(close) {
+        if (root.monitorExclusive && !root.appTerminalMonitorViewModel.cancel()) {
+            close.accepted = false
+            return
+        }
         if (playbackTransport.canStop) playbackTransport.stop()
         close.accepted = true
         Qt.quit()
@@ -174,6 +185,7 @@ ApplicationWindow {
                 regionHandleColor: "#E6EEF0"
                 visible: sourceWaveform.ready && sourceWaveform.sourceFrameCount > 0
                 activeFocusOnTab: visible
+                enabled: !root.monitorExclusive
                 KeyNavigation.backtab: sourceOpenButton
                 KeyNavigation.tab: zoomOutButton
                 Accessible.role: Accessible.Pane
@@ -226,10 +238,19 @@ ApplicationWindow {
                 StudioIconButton { id: zoomInButton; objectName: "waveformZoomInButton"; iconKind: "zoom-in"; enabled: sourceWaveform.canNavigate && sourceWaveform.zoomPosition < 1.0; KeyNavigation.backtab: zoomControl; KeyNavigation.tab: fitSourceButton; onClicked: sourceWaveform.zoomIn(); Accessible.name: "Zoom in Source waveform" }
                 StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: sourceWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
-                TransportButton { id: stopButton; objectName: "stopButton"; compact: false; iconKind: "stop"; enabled: playbackTransport.canStop; KeyNavigation.backtab: auditionTargetSelector.lastTarget; KeyNavigation.tab: playPauseButton; onClicked: playbackTransport.stop(); Accessible.name: "Stop" }
+                TransportButton { id: stopButton; objectName: "stopButton"; compact: false; iconKind: "stop"; enabled: !root.monitorExclusive && playbackTransport.canStop; KeyNavigation.backtab: auditionTargetSelector.lastTarget; KeyNavigation.tab: playPauseButton; onClicked: playbackTransport.stop(); Accessible.name: "Stop" }
                 Item { Layout.preferredWidth: 8 }
-                TransportButton { id: playPauseButton; objectName: "playPauseButton"; compact: false; primary: true; iconKind: playbackTransport.isPlaying ? "pause" : "play"; enabled: playbackTransport.canPlay || playbackTransport.canPause; KeyNavigation.backtab: stopButton; KeyNavigation.tab: auditionStartEditor.firstField; onClicked: playbackTransport.isPlaying ? playbackTransport.pause() : playbackTransport.playOrResume(); Accessible.name: playbackTransport.isPlaying ? "Pause" : "Play" }
+                TransportButton { id: playPauseButton; objectName: "playPauseButton"; compact: false; primary: true; iconKind: playbackTransport.isPlaying ? "pause" : "play"; enabled: !root.monitorExclusive && (playbackTransport.canPlay || playbackTransport.canPause); KeyNavigation.backtab: stopButton; KeyNavigation.tab: auditionStartEditor.firstField; onClicked: playbackTransport.isPlaying ? playbackTransport.pause() : playbackTransport.playOrResume(); Accessible.name: playbackTransport.isPlaying ? "Pause" : "Play" }
                 Item { Layout.preferredWidth: 8 }
+                StudioButton {
+                    objectName: "globalReturnFromMonitor"
+                    text: "Return MANUAL"
+                    visible: root.monitorExclusive
+                    enabled: root.monitorExclusive
+                    minimumControlWidth: 110
+                    onClicked: root.appTerminalMonitorViewModel.cancel()
+                    Accessible.name: "Return original MANUAL PCM or cancel MONITOR"
+                }
                 Rectangle {
                     objectName: "transportTimeModule"
                     Layout.preferredWidth: 246
@@ -255,6 +276,7 @@ ApplicationWindow {
 
         Rectangle {
             id: realRegionPanel
+            enabled: !root.monitorExclusive
             objectName: "auditionRegionControls"
             color: "transparent"
             border.color: root.border
@@ -315,6 +337,7 @@ ApplicationWindow {
             // The context value is captured on root. Directly reading the
             // same-named child property here creates a QML binding loop.
             terminalLimiterViewModel: root.appTerminalLimiterViewModel
+            terminalMonitorViewModel: root.appTerminalMonitorViewModel
             limiterGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
                 ? terminalPrivateGrViewModel : null
         }
@@ -458,7 +481,7 @@ ApplicationWindow {
                 }
 
                 Item { Layout.fillWidth: true }
-                AuditionSourceSelector { id: auditionTargetSelector; objectName: "headerAuditionTargetSelector"; Layout.preferredWidth: implicitWidth; Layout.alignment: Qt.AlignVCenter; previousTabItem: fitSourceButton; nextTabItem: stopButton }
+                AuditionSourceSelector { id: auditionTargetSelector; enabled: !root.monitorExclusive; objectName: "headerAuditionTargetSelector"; Layout.preferredWidth: implicitWidth; Layout.alignment: Qt.AlignVCenter; previousTabItem: fitSourceButton; nextTabItem: stopButton }
             }
         }
 
@@ -612,7 +635,7 @@ ApplicationWindow {
                             }
                         }
                         StudioButton {
-                            id: sourceOpenButton; objectName: "sourceOpenButton"; text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: 110; Layout.preferredHeight: 32
+                            id: sourceOpenButton; objectName: "sourceOpenButton"; enabled: !root.monitorExclusive; text: sourceSelection.hasSource ? "Replace Source" : "Open Source"; iconKind: "folder-open"; tone: "primary"; Layout.preferredWidth: 110; Layout.preferredHeight: 32
                             KeyNavigation.backtab: clearRegionButton; KeyNavigation.tab: waveformOverview
                             onClicked: sourceDialog.open(); Accessible.name: text
                         }

@@ -11,6 +11,7 @@ qt_add_qml_module(rgsml_ui
         qml/DspWorkspace.qml
         qml/InputGainEditor.qml
         qml/Main.qml
+        qml/MasterMonitorPopup.qml
         qml/ParametricEqEditor.qml
         qml/ParametricEqEditorWindow.qml
         qml/ParametricEqGraph.qml
