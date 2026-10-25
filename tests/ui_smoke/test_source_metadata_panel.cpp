@@ -674,7 +674,7 @@ Window {
         QStringLiteral("truePeakMeterEditor"),
         QStringLiteral("truePeakLimiterEditor"),
         QStringLiteral("monitorEditor")};
-    const auto* hostIdentity=host;
+    auto* const hostIdentity=host;
     for(int i=0;i<7;++i) {
         model.setSelectedIndex(i);
         QCOMPARE(model.selected_index(),i);
