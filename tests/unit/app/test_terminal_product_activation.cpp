@@ -1152,7 +1152,10 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             using Result=core::Result<std::shared_ptr<
                 const audio::MonitoringPcmCandidate>>;
             ++windowsSeamCalls;
-            if(requestedBlock!=*block.value()||reserve!=kOtherReserve)
+            // Product UI reserves zero additional Prepare bytes; its
+            // policy still receives the independently probed OS advice.
+            if(requestedBlock!=*block.value()
+               ||(reserve!=kOtherReserve&&reserve!=0))
                 return Result::failure(core::Error{
                     core::ErrorCode::InvalidArgument,
                     "TEST_MONITOR_WINDOWS_PREFLIGHT_PARAMETERS_CHANGED"});
@@ -1205,6 +1208,12 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE((*preflightApproved.value())->immutable_master_rate,
              *masterRate.value());
     QCOMPARE((*preflightApproved.value())->device_rate,*deviceRate.value());
+    // UNKNOWN Windows memory cannot be overridden even when the user
+    // explicitly permits CAUTION. Denial MUST NOT install a device sink.
+    QVERIFY(!monitorUi.installMonitor(true));
+    QCOMPARE(monitorUi.error_text(),
+             QStringLiteral("MONITOR_MEMORY_NOT_APPROVED_OR_UNAVAILABLE"));
+    QVERIFY(monitorUi.monitor_exclusive());
     QCOMPARE(sinkInstalls,std::size_t{0});
     QCOMPARE(deviceProbes,std::size_t{0});
     QVERIFY(!audioGate.has_session());
@@ -1348,16 +1357,22 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         std::int64_t{0});
     // Pause from STOPPED fails; the Windows worker will additionally guard
     // the state before dispatching to its actual sink.
-    QVERIFY(!product.control_private_monitor(Request{Action::PAUSE}));
-    QVERIFY(product.control_private_monitor(
-        Request{Action::SEEK_MASTER,core::FrameIndex{800}}));
+    QVERIFY(!monitorUi.pause());
+    const auto rejectedPause=monitorUi.error_text();
+    QVERIFY(!rejectedPause.isEmpty());
+    monitorUi.refresh();
+    // A polling tick cannot erase a rejected user action.
+    QCOMPARE(monitorUi.error_text(),rejectedPause);
+    QVERIFY(monitorUi.seekMaster(800));
+    QCOMPARE(monitorUi.master_position_frames(),qint64{800});
+    QCOMPARE(monitorUi.master_rate_hz(),192000);
+    QCOMPARE(monitorUi.device_rate_hz(),48000);
+    QVERIFY(monitorUi.error_text().isEmpty());
     QCOMPARE(device->position.value(),std::int64_t{200});
     auto region=core::FrameRange::create(
         core::FrameIndex{256},core::FrameIndex{1536});
     QVERIFY(region);
-    QVERIFY(product.control_private_monitor(
-        Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},
-                *region.value()}));
+    QVERIFY(monitorUi.setMasterLoop(256,1536,true));
     QVERIFY(device->loop);
     QCOMPARE(device->loop->begin().value(),std::int64_t{64});
     QCOMPARE(device->loop->end().value(),std::int64_t{384});
@@ -1391,29 +1406,33 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         *wrongSourceDuration.value()));
     QCOMPARE(device->loop->begin().value(),std::int64_t{64});
     QCOMPARE(device->loop->end().value(),std::int64_t{384});
-    QVERIFY(product.control_private_monitor(Request{Action::PLAY}));
+    QVERIFY(monitorUi.play());
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
-    QVERIFY(product.control_private_monitor(Request{Action::PAUSE}));
+    QVERIFY(monitorUi.pause());
     QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QCOMPARE(monitorUi.transport_state(),QStringLiteral("PAUSED"));
     auto paused=product.private_monitor_master_snapshot();
     QVERIFY(paused);
     QCOMPARE(paused.value()->master_display_position.value(),
         std::int64_t{800});
     QCOMPARE(paused.value()->requested_master_loop,*region.value());
-    QVERIFY(product.control_private_monitor(Request{Action::PLAY}));
-    QVERIFY(product.control_private_monitor(Request{Action::STOP}));
+    QVERIFY(monitorUi.play());
+    QVERIFY(monitorUi.stop());
     QCOMPARE(device->position.value(),std::int64_t{0});
-    QVERIFY(product.control_private_monitor(
-        Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},std::nullopt}));
-    QVERIFY(product.control_private_monitor(
-        Request{Action::SEEK_MASTER,core::FrameIndex{800}}));
+    QVERIFY(monitorUi.setMasterLoop(0,0,false));
+    QVERIFY(monitorUi.seekMaster(800));
     QCOMPARE(device->position.value(),std::int64_t{200});
     QCOMPARE(product.status(),
         QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
     // A differently owned, same-rate PCM may never consume our commands.
     deviceMonitor=*monitored.value();
     QVERIFY(!product.private_monitor_master_snapshot());
-    QVERIFY(!product.control_private_monitor(Request{Action::PLAY}));
+    QVERIFY(!monitorUi.play());
+    QVERIFY(!monitorUi.cancel()); // cannot clear or adopt alien DEVICE owner
+    monitorUi.refresh();
+    QCOMPARE(monitorUi.transport_state(),QStringLiteral("UNAVAILABLE"));
+    QCOMPARE(monitorUi.device_rate_hz(),0);
+    QCOMPARE(monitorUi.master_position_frames(),qint64{0});
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QCOMPARE(device->position.value(),std::int64_t{200});
     deviceMonitor=privateMonitor;

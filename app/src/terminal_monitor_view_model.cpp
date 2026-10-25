@@ -182,6 +182,12 @@ void TerminalMonitorViewModel::refresh()
     if(!monitor_installed())return;
     const auto observed=session_->private_monitor_master_snapshot();
     if(!observed) {
+        // A lost/alien owner must not leave apparently live MASTER position
+        // or endpoint readouts from the preceding, valid device epoch.
+        position_=0;
+        duration_=0;
+        deviceRateHz_=0;
+        transportState_=QStringLiteral("UNAVAILABLE");
         error_=observed.error()
             ?QString::fromStdString(observed.error()->message())
             :QStringLiteral("MONITOR_OWNER_SNAPSHOT_UNAVAILABLE");
@@ -199,7 +205,8 @@ void TerminalMonitorViewModel::refresh()
     case core::PlaybackState::STOPPED:transportState_=QStringLiteral("STOPPED");break;
     default:transportState_=QStringLiteral("UNAVAILABLE");break;
     }
-    error_.clear();
+    // Polling an unchanged snapshot is NOT user consent to dismiss a
+    // rejected command. Only an accepted explicit command clears errors.
     emit changed();
 }
 } // namespace rgsml::app

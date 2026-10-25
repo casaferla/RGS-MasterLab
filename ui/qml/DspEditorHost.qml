@@ -18,6 +18,9 @@ Rectangle {
     property var truePeakStaticViewModel: null
     property var truePeakLiveViewModel: null
     property var terminalPostLimiterTruePeak: null
+    // The separately owned MONITOR has no RealizationId or qualified M16 LIVE.
+    readonly property bool monitorExclusive: root.terminalMonitorViewModel
+        ? root.terminalMonitorViewModel.monitorExclusive : false
     // ACTIVE is a user's REQUEST until independently owned OUTPUT_RATE PCM
     // is installed. During full-programme M17 preparation the audible
     // predecessor is still MANUAL: keep showing its truthful M16 Meter.
@@ -32,11 +35,12 @@ Rectangle {
     readonly property bool terminalNonconformingAudible: root.terminalLimiterViewModel
         && !root.terminalLimiterViewModel.bypass
         && root.terminalLimiterViewModel.audioStatus === "ACTIVE · NON-CONFORMING AUDITION"
-    readonly property var truePeakCurrentLive: terminalOn
-        ? root.terminalPostLimiterTruePeak
+    readonly property var truePeakCurrentLive: root.monitorExclusive ? null
+        : terminalOn ? root.terminalPostLimiterTruePeak
         : root.terminalNonconformingAudible ? null : root.truePeakLiveViewModel
-    readonly property var truePeakCurrentStatic: terminalOn
-        || root.terminalNonconformingAudible ? null : root.truePeakStaticViewModel
+    readonly property var truePeakCurrentStatic: root.monitorExclusive ? null
+        : terminalOn || root.terminalNonconformingAudible
+            ? null : root.truePeakStaticViewModel
     property var terminalLimiterViewModel: null
     property var terminalMonitorViewModel: null
     property var limiterGrProvider: null
@@ -255,8 +259,8 @@ Rectangle {
                     text: "Reset to Default"
                     minimumControlWidth: 140
                     visible: root.isLimiterEditor
-                    enabled: root.isLimiterEditor && root.activeModule
-                        && root.activeModule.resetSupported
+                    enabled: root.isLimiterEditor && !root.monitorExclusive
+                        && root.activeModule && root.activeModule.resetSupported
                     onClicked: if (root.activeModule) root.activeModule.resetToDefault()
                     Accessible.name: "Reset True Peak Limiter Ceiling to -1.0 dBTP"
                     ToolTip.text: "Restore Ceiling to -1.0 dBTP without changing Active or Bypass"
@@ -282,7 +286,8 @@ Rectangle {
                     // M17 exists as real BYP state but has no processed OUTPUT_RATE
                     // publisher; prevent a clickable false "Active" claim.
                     enabled: !root.isLimiterEditor
-                        || (root.activeModule && root.activeModule.bypassSupported)
+                        || (!root.monitorExclusive
+                            && root.activeModule && root.activeModule.bypassSupported)
                     onClicked: if (root.activeModule) root.activeModule.setBypass(false)
                     Accessible.name: text
                     ToolTip.text: root.isLimiterEditor && !enabled
@@ -305,7 +310,8 @@ Rectangle {
                     accentColor: root.isLimiterEditor ? root.activeFamilyAccent : "#F2B632"
                     selectedFamilyAccent: root.isLimiterEditor
                     enabled: !root.isLimiterEditor
-                        || (root.activeModule && root.activeModule.bypassSupported)
+                        || (!root.monitorExclusive
+                            && root.activeModule && root.activeModule.bypassSupported)
                     onClicked: if (root.activeModule) root.activeModule.setBypass(true)
                     Accessible.name: "Bypass"
                     ToolTip.text: "Bypass module processing"
@@ -341,7 +347,7 @@ Rectangle {
                 text: "Prepare"
                 minimumControlWidth: 86
                 accentColor: "#C4774A"
-                enabled: root.terminalLimiterViewModel
+                enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && root.terminalLimiterViewModel.audioStatus.startsWith("NEEDS PREPARATION")
                 onClicked: root.terminalLimiterViewModel.requestPrepare()
@@ -358,7 +364,7 @@ Rectangle {
                 objectName: "m17CancelPreparationButton"
                 text: "Cancel"
                 minimumControlWidth: 80
-                enabled: root.terminalLimiterViewModel
+                enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
                 onClicked: root.terminalLimiterViewModel.cancelPreparation()
@@ -369,7 +375,7 @@ Rectangle {
                 text: "Preview Anyway"
                 minimumControlWidth: 125
                 accentColor: "#C85D56"
-                enabled: root.terminalLimiterViewModel
+                enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
                 onClicked: root.terminalLimiterViewModel.previewNonconforming()
@@ -387,7 +393,7 @@ Rectangle {
                 text: "Preview Prepared"
                 minimumControlWidth: 130
                 accentColor: "#C4774A"
-                enabled: root.terminalLimiterViewModel
+                enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
                 onClicked: root.terminalLimiterViewModel.previewPrepared()
@@ -526,11 +532,12 @@ InputGainEditor {
             Layout.fillWidth: true
             Layout.fillHeight: true
             limiterModule: root.isLimiterEditor ? root.activeModule : null
+            monitorLocked: root.monitorExclusive
             // Real typed committed/draft Ceiling; still disabled by authentic
             // BYP, with no sonic Preview and no fabricated applied-GR or trim.
             limiterViewModel: root.isLimiterEditor
                 ? root.terminalLimiterViewModel : null
-            limiterGrProvider: root.isLimiterEditor
+            limiterGrProvider: root.isLimiterEditor && !root.monitorExclusive
                 ? root.limiterGrProvider : null
             measurementProvider: root.truePeakCurrentStatic
             liveProvider: root.truePeakCurrentLive

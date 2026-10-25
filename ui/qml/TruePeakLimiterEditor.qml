@@ -12,6 +12,7 @@ Item {
     property bool showLocalValidation: true
     property var limiterGrProvider: null
     property var limiterViewModel: null
+    property bool monitorLocked: false
     property var measurementProvider: null
     property var liveProvider: null
     readonly property bool bypassed: !limiterModule || limiterModule.bypass
@@ -23,7 +24,7 @@ Item {
     readonly property string validationMessage: limiterViewModel
         ? (limiterViewModel.validationMessage || "") : ""
     readonly property bool hasValidationError: validationMessage.length > 0
-    readonly property bool sonicControlsEnabled: !bypassed
+    readonly property bool sonicControlsEnabled: !bypassed && !monitorLocked
         && limiterViewModel !== null && limiterViewModel !== undefined
     implicitWidth: 710
     implicitHeight: 460
