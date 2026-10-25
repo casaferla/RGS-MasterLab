@@ -82,6 +82,8 @@ Window {
             Layout.preferredHeight: 32
             property real lastX: 0
             property real lastY: 0
+            property real startWindowX: 0
+            property real startWindowY: 0
             property bool cancelled: false
             Accessible.name: "Drag floating " + root.moduleTitle + " to dock area"
             Text {
@@ -99,14 +101,17 @@ Window {
                     if(active) {
                         floatingGrip.lastX=0
                         floatingGrip.lastY=0
+                        floatingGrip.startWindowX=root.x
+                        floatingGrip.startWindowY=root.y
                         floatingGrip.cancelled=false
                         root.wasMovedByGrip=false
                     } else if(root.wasMovedByGrip && !floatingGrip.cancelled) {
                         // Native WINDOW motion is not a QML DropArea drag:
                         // drop permission is decided by the Main coordinator
                         // against a globally mapped docking rectangle.
-                        root.headerReleased(root.x+root.width/2,
-                                            root.y+header.height/2)
+                        root.headerReleased(
+                            root.x+header.x+floatingGrip.x+floatingGrip.width/2,
+                            root.y+header.y+floatingGrip.y+floatingGrip.height/2)
                     }
                 }
                 onTranslationChanged: {
@@ -120,8 +125,9 @@ Window {
                     root.x+=dx
                     root.y+=dy
                     root.wasMovedByGrip=true
-                    root.headerDragged(root.x+root.width/2,
-                                       root.y+header.height/2)
+                    root.headerDragged(
+                        root.x+header.x+floatingGrip.x+floatingGrip.width/2,
+                        root.y+header.y+floatingGrip.y+floatingGrip.height/2)
                 }
             }
             Shortcut {
@@ -129,6 +135,8 @@ Window {
                 enabled: floatingHeaderDrag.active
                 onActivated: {
                     floatingGrip.cancelled=true
+                    root.x=floatingGrip.startWindowX
+                    root.y=floatingGrip.startWindowY
                     root.headerDragged(-1,-1)
                 }
             }
