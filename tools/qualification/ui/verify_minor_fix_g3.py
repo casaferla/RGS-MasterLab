@@ -12,10 +12,27 @@ def require(ok: bool, reason: str) -> None:
 
 
 require("implicitWidth: 180" in chain, "DSP Chain width changed")
-for px in (8, 28):
-    for kind in ("minimumWidth", "preferredWidth", "maximumWidth"):
-        require(f"Layout.{kind}: {px}" in chain,
-                "LED/BYP/error reservation changed")
+# PO 2026-10-25 supersedes the former always-reserved 28px BYP badge.
+# Configuration LED and red error slot stay at 8px; bypass is now an
+# independent dark/muted row skin with readable status text and no reflow.
+for kind in ("minimumWidth", "preferredWidth", "maximumWidth"):
+    require(f"Layout.{kind}: 8" in chain,
+            "LED/error reservation changed")
+    require(f"Layout.{kind}: 28" not in chain,
+            "obsolete BYP badge still reserving 28px")
+require('dspChainBypassBadge_' not in chain,
+        "old BYP badge is still instantiated")
+require("isBypassed ? 0.28 : 1.0" in chain and
+        '"Bypass · " + state' in chain,
+        "bypass must be visible by muted row and explicit wording")
+require('objectName: "dspChainUnifiedScroll"' in chain and
+        "finalizationDock" not in chain and
+        "terminalRepeater" not in chain,
+        "one unified scroll list required: no anchored FINALIZATION")
+require("contentWidth: width" in chain and
+        "ScrollBar.horizontal.policy: ScrollBar.AlwaysOff" in chain and
+        "width: chainScrollView.width" in chain,
+        "scrollbar must overlay without stealing row/title width")
 require("anchors.leftMargin: 7" in chain and
         "anchors.rightMargin: 4" in chain and "spacing: 2" in chain,
         "compact row margin contract changed")
