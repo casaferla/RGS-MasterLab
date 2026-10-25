@@ -37,7 +37,10 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
 QString TerminalMonitorViewModel::status_text() const
 {
     const auto status=session_->status();
-    if(status==QStringLiteral("IDLE"))return QStringLiteral("MANUAL · AUDITION IDLE");
+    // IDLE cannot attest audible MANUAL: SOURCE may have been refused
+    // initially and an offline-origin monitor may have returned NO_SOURCE.
+    if(status==QStringLiteral("IDLE"))
+        return QStringLiteral("MASTER AUDITION IDLE · NO PRIVATE DEVICE PCM");
     if(status==QStringLiteral("RENDERING"))
         return QStringLiteral("PREPARING FINAL MASTER · NOT DEVICE AUDIO");
     if(status==QStringLiteral("MASTER_READY_MONITOR_PENDING"))

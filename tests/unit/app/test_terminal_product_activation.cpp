@@ -2020,6 +2020,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!product.monitoring_transaction_active());
     QVERIFY(!audioGate.has_session());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QCOMPARE(monitorUi.status_text(),
+        QStringLiteral("MASTER AUDITION IDLE · NO PRIVATE DEVICE PCM"));
 
     // Fault injection: SOURCE changes in the narrow post-install
     // window while the worker DOES own the new monitor. A failure of
