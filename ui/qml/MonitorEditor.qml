@@ -37,7 +37,7 @@ Item {
                 Layout.preferredHeight: 24
                 spacing: 8
                 Text {
-                    text: "MASTER / DEVICE MONITOR"
+                    text: "Master Audition"
                     font.family: "Segoe UI"
                     font.pixelSize: 11
                     font.weight: Font.Bold
@@ -184,7 +184,7 @@ Item {
                         }
                         StudioButton {
                             objectName: "monitorAllocateAndInstall"
-                            text: "Allocate DEVICE / Monitor"
+                            text: "Start Device Audition"
                             Layout.fillWidth: true
                             accentColor: root.slate
                             enabled: !!root.monitorViewModel
@@ -229,7 +229,7 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         text: root.monitorViewModel
-                            ? root.monitorViewModel.statusText : "MONITOR UNAVAILABLE"
+                            ? root.monitorViewModel.statusText : "AUDITION UNAVAILABLE"
                         color: root.fg
                         font.family: "Segoe UI"
                         font.pixelSize: 11
@@ -408,7 +408,7 @@ Item {
             Text {
                 Layout.fillWidth: true
                 visible: root.advancedNavigationExpanded
-                text: "MONITOR is an audition branch. Memory and DEVICE SRC are independently checked; final MASTER PCM is unchanged."
+                text: "Master Audition is a listening branch. Memory and DEVICE SRC are independently checked; final MASTER PCM is unchanged."
                 color: root.secondary
                 font.family: "Segoe UI"
                 font.pixelSize: 10
