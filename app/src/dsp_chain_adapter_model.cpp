@@ -15,7 +15,7 @@ DspChainAdapterModel::DspChainAdapterModel(
     bool includeTruePeakAnalysis,
     TerminalLimiterState* terminalLimiterState,
     TerminalLimiterViewModel* terminalLimiterViewModel,
-    TerminalMonitorViewModel* terminalMonitorViewModel)
+    QObject* terminalMonitorViewModel)
     : QObject(parent)
     , gainViewModel_(gainViewModel)
     , eqViewModel_(eqViewModel)
