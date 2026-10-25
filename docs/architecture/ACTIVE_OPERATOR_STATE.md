@@ -61,6 +61,14 @@
 - [Focused CI #822](https://github.com/casaferla/RGS-MasterLab/actions/runs/40213587135) triggered by ONE PR fast-forward to `a71fec955f6ca4f4cc461c59d30de9cee4e9f792`; status QUEUED when recorded, verify live. Previous #821 Windows PASS, Linux FAIL on stationary tooltip; source-level policy correction is included in #822.
 - Next: treat CI #822 red by scoped artifact/job step only, correct on no-CI staging, promote a coherent retry. On green, move to generalized per-module docking and P0 M17/MONITOR offline DEVICE decoupling; FQ #80 remains PO-only.
 
+## Latest UI delivery, 2026-10-25 — CI #823
+- PO APPROVED visible name **Master Audition**. Never display plain MONITOR/Monitor as the module's user-facing name; `MASTER_MONITOR` and `TerminalMonitorViewModel` remain stable internal identifiers.
+- Each of the seven visible chain entries now has a distinct fixed **16px** QML Canvas pictogram. Hue denotes frozen family, shape denotes actual module. Master Audition uses headphones in Slate `#718092`. M16 bars use Steel Blue `#6683A1`, M17 ceiling Copper `#C4774A`; internal activation colors unchanged. Separate 8px LED and red error indicator remain.
+- [Focused CI #822](https://github.com/casaferla/RGS-MasterLab/actions/runs/40213587135) PASS Windows/Linux on `a71fec955f6ca4f4cc461c59d30de9cee4e9f792`.
+- [Focused CI #823](https://github.com/casaferla/RGS-MasterLab/actions/runs/40216767401) IN PROGRESS as this note was prepared; PR candidate `b218558a736fd82d000072cfea782dab876b9b6e`; verify live. One PR promotion bundled code + tests, not CI per icon.
+- Staging advances documentation past PR head intentionally, avoiding unnecessary CI. Re-audit refs on next chat.
+- Remaining P0: M17 offline/DEVICE dependency and physical audio playback 44.1/48/192; generalized cross-module docking; real Windows 1184×688/150% visual no-reflow Gate. No FQ until authorized by PO.
+
 ## NEXT: cohesive package then PR promotion
 - CI #820 is launched and owns PR SHA `18992c76`. Inspect failed-step summaries / small artifacts only. If red, fix all related errors on staging and promote one candidate. If green, continue the already approved M17 P0 audio and generalized docking packages in staging without asking for another 'Vai'. Update this file on staging; never send one CI per documentation edit.
 - No FQ #80 before actual M17 44.1/48/192, MONITOR audition, fixed M16/M17 UI and common docking are plausibly functioning on the candidate. PO alone triggers FQ.
