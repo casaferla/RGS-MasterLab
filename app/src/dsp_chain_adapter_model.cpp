@@ -14,7 +14,8 @@ DspChainAdapterModel::DspChainAdapterModel(
     StereoMsViewModel* stereoMsViewModel,
     bool includeTruePeakAnalysis,
     TerminalLimiterState* terminalLimiterState,
-    TerminalLimiterViewModel* terminalLimiterViewModel)
+    TerminalLimiterViewModel* terminalLimiterViewModel,
+    TerminalMonitorViewModel* terminalMonitorViewModel)
     : QObject(parent)
     , gainViewModel_(gainViewModel)
     , eqViewModel_(eqViewModel)
@@ -23,6 +24,7 @@ DspChainAdapterModel::DspChainAdapterModel(
     , includeTruePeakAnalysis_(includeTruePeakAnalysis)
     , terminalLimiterState_(terminalLimiterState)
     , terminalLimiterViewModel_(terminalLimiterViewModel)
+    , terminalMonitorViewModel_(terminalMonitorViewModel)
     , chainState_(chainState)
     , workflowContext_(std::move(workflowContext))
 {
@@ -93,6 +95,16 @@ void DspChainAdapterModel::rebuild_adapters_from_authority()
         connect(limiter.get(),&DspModuleAdapter::changed,this,
                 &DspChainAdapterModel::changed);
         moduleAdapters_.push_back(std::move(limiter));
+    }
+
+    // The utility comes after M17 in the VISUAL chain only.
+    // No ModuleRegistry/ProcessingChain insert and no audio transform.
+    if (terminalMonitorViewModel_) {
+        auto monitor=std::make_unique<MonitorServiceModuleAdapter>(
+            terminalMonitorViewModel_,workflowContext_);
+        connect(monitor.get(),&DspModuleAdapter::changed,
+                this,&DspChainAdapterModel::changed);
+        moduleAdapters_.push_back(std::move(monitor));
     }
 
     // Authoritative selection reconciliation following rehydration
