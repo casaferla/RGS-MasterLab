@@ -45,6 +45,9 @@ Rectangle {
     property var terminalMonitorViewModel: null
     property var limiterGrProvider: null
     property Item activeChainRow: null
+    // Drag is only the user's tear-off INTENT. Parent/Main owns all window
+    // creation and module identity; the live editor never clones itself.
+    signal tearOffRequested(real globalX, real globalY)
 
     // Backward-compatibility alias so code referencing host.viewModel accesses eqViewModel
     property alias viewModel: root.eqViewModel
@@ -123,6 +126,70 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 40
             spacing: 12
+
+            // Dedicated 22px grab region prevents accidental detach while
+            // adjusting DSP parameters, editing numbers or using Undo/Redo.
+            Item {
+                id: dockedDragGrip
+                objectName: "dspHostTearOffGrip"
+                Layout.preferredWidth: 22
+                Layout.minimumWidth: 22
+                Layout.maximumWidth: 22
+                Layout.preferredHeight: 30
+                property bool cancelled: false
+                property real dx: 0
+                property real dy: 0
+                property real travel: 0
+                Accessible.name: "Drag to undock " + root.moduleTitle
+                Text {
+                    anchors.centerIn: parent
+                    text: "⠿"
+                    font.family: "Segoe UI"
+                    font.pixelSize: 20
+                    color: "#92A9B9"
+                }
+                DragHandler {
+                    id: tearOffGesture
+                    target: null
+                    acceptedButtons: Qt.LeftButton
+                    onTranslationChanged: {
+                        if(!active)return
+                        dockedDragGrip.dx=translation.x
+                        dockedDragGrip.dy=translation.y
+                        dockedDragGrip.travel=Math.max(
+                            dockedDragGrip.travel,
+                            Math.hypot(translation.x,translation.y))
+                    }
+                    onActiveChanged: {
+                        if(active) {
+                            dockedDragGrip.cancelled=false
+                            dockedDragGrip.dx=0
+                            dockedDragGrip.dy=0
+                            dockedDragGrip.travel=0
+                        } else if (!dockedDragGrip.cancelled
+                                   && dockedDragGrip.travel >= 32) {
+                            const point=dockedDragGrip.mapToGlobal(
+                                Qt.point(dockedDragGrip.width/2
+                                    +dockedDragGrip.dx,
+                                    dockedDragGrip.height/2
+                                    +dockedDragGrip.dy))
+                            root.tearOffRequested(point.x,point.y)
+                        }
+                    }
+                }
+                Shortcut {
+                    sequence: "Escape"
+                    enabled: tearOffGesture.active
+                    onActivated: dockedDragGrip.cancelled=true
+                }
+                StudioTooltipDwell {
+                    id: tearOffHintDwell
+                    anchors.fill: parent
+                }
+                ToolTip.text: "Drag this grip outside the editor and release to undock"
+                ToolTip.visible: tearOffHintDwell.ready
+                ToolTip.delay: 0
+            }
 
             ColumnLayout {
                 spacing: 1
