@@ -531,6 +531,7 @@ Window {
     id: fixtureWindow
     width: 1184
     height: 688
+    property bool meterMode: false
     visible: false
     color: "#06121F"
     QtObject {
@@ -552,8 +553,25 @@ Window {
         function setBypass(value) { bypass = value }
     }
     QtObject {
+        id: meter
+        objectName: "m16FixtureMeter"
+        property string editorContentKey: "TRUE_PEAK_METER"
+        property string displayName: "True Peak Meter"
+        property string workspaceContextLabel: "Mastering · UI fixture"
+        property string familyAccent: "#6683A1"
+        property bool bypass: false
+        property bool bypassSupported: false
+        property bool historySupported: false
+        property bool previewSupported: false
+        property bool canUndo: false
+        property bool canRedo: false
+        property var gainViewModel: null
+        property var eqViewModel: null
+        property var compressorViewModel: null
+    }
+    QtObject {
         id: fixtureModel
-        property var activeModule: limiter
+        property var activeModule: fixtureWindow.meterMode ? meter : limiter
     }
     Rectangle {
         id: captureSurface
@@ -624,6 +642,55 @@ Window {
         if (!editor->property("visible").toBool()) return false;
         return true;
     };
+    // Compare both module selections in their full shared DspEditorHost,
+    // at the actually constrained Main-window editor heights.
+    auto* meterEditor = qobject_cast<QQuickItem*>(find_child_by_name(
+        host, QStringLiteral("truePeakMeterEditor")));
+    auto* limiterEditor = qobject_cast<QQuickItem*>(find_child_by_name(
+        host, QStringLiteral("truePeakLimiterEditor")));
+    auto* actionBand = qobject_cast<QQuickItem*>(find_child_by_name(
+        host, QStringLiteral("m17ExplicitPreparationControls")));
+    auto* inGrProgress = find_child_by_name(
+        limiterEditor, QStringLiteral("m17PreparationProgressBar"));
+    QVERIFY(meterEditor && limiterEditor && actionBand && inGrProgress);
+    auto hostRect = [host](QQuickItem* editor, const QString& childName)
+        -> QRectF {
+        auto* child=qobject_cast<QQuickItem*>(
+            find_child_by_name(editor,childName));
+        if(!child)return {};
+        return {child->mapToItem(host,QPointF{}),child->size()};
+    };
+    for(const int editorHeight : {360,420,652}) {
+        host->setHeight(editorHeight);
+        QVERIFY(window->setProperty("meterMode",true));
+        QCoreApplication::processEvents();
+        QVERIFY(meterEditor->isVisible());
+        QVERIFY(actionBand->isVisible());
+        QCOMPARE(actionBand->height(),34.0);
+        const QStringList sameAnchors={
+            QStringLiteral("truePeakLeftLane"),
+            QStringLiteral("truePeakRightLane"),
+            QStringLiteral("truePeakRecentCard"),
+            QStringLiteral("truePeakHoldCard"),
+            QStringLiteral("truePeakFullResourceCard")};
+        QList<QRectF> m16Rects;
+        for(const auto& name:sameAnchors)
+            m16Rects.append(hostRect(meterEditor,name));
+        QVERIFY(window->setProperty("meterMode",false));
+        QCoreApplication::processEvents();
+        QVERIFY(limiterEditor->isVisible());
+        QVERIFY(actionBand->isVisible());
+        QCOMPARE(actionBand->height(),34.0);
+        for(int i=0;i<sameAnchors.size();++i) {
+            const auto m17Rect=hostRect(limiterEditor,sameAnchors[i]);
+            QVERIFY2(!m16Rects[i].isEmpty() && !m17Rect.isEmpty(),
+                     qPrintable(sameAnchors[i]));
+            QCOMPARE(m16Rects[i],m17Rect);
+        }
+    }
+    host->setHeight(652);
+    QVERIFY(window->setProperty("meterMode",false));
+    QCoreApplication::processEvents();
     QVERIFY(checkTheme(true, QStringLiteral("#6CBCCF")));
     QVERIFY2(captureHost(QStringLiteral("m17_host_family_byp_1184x688.png")),
         "Native M17 DSP host BYP screenshot must be captured");
