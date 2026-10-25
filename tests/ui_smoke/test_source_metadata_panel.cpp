@@ -2624,6 +2624,28 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dspChainRow0 != nullptr && dspChainConfigLed0 != nullptr && dspChainStateText0 != nullptr, "Row 0 (Input Gain) components must exist");
     QVERIFY2(dspChainRow1 != nullptr && dspChainConfigLed1 != nullptr && dspChainStateText1 != nullptr, "Row 1 (Parametric EQ) components must exist");
 
+    // Icon is a stable slot independent of the active/BYP state.
+    auto* chainGainIcon = qobject_cast<QQuickItem*>(
+        dspChainRow0->findChild<QObject*>(
+            QStringLiteral("dspChainModuleIcon_0")));
+    auto* chainEqIcon = qobject_cast<QQuickItem*>(
+        dspChainRow1->findChild<QObject*>(
+            QStringLiteral("dspChainModuleIcon_1")));
+    QVERIFY2(chainGainIcon && chainEqIcon,
+             "Each processing module has its own stable semantic icon");
+    QCOMPARE(chainGainIcon->property("kind").toString(),
+             QStringLiteral("module-gain"));
+    QCOMPARE(chainEqIcon->property("kind").toString(),
+             QStringLiteral("module-eq"));
+    QCOMPARE(chainGainIcon->property("strokeColor").value<QColor>(),
+             QColor{QStringLiteral("#6F9FB3")});
+    QCOMPARE(chainEqIcon->property("strokeColor").value<QColor>(),
+             QColor{QStringLiteral("#4E86C6")});
+    QCOMPARE(chainGainIcon->width(),16.0);
+    QCOMPARE(chainEqIcon->width(),16.0);
+    const qreal eqIconXBefore = chainEqIcon->mapToItem(
+        qobject_cast<QQuickItem*>(dspChainRow1),QPointF{}).x();
+
     // 12px title in 164px sidebar: BYP badge (and 28px spacer) removed.
     auto* chainEqTitle = qobject_cast<QQuickItem*>(
         dspChainRow1->findChild<QObject*>(
@@ -3419,6 +3441,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.bypass(), "eqViewModel.bypass must be true after clicking Bypass");
     QVERIFY2(dspChainRow1->property("isBypassed").toBool(), "EQ chain row must reflect bypass without a badge");
+    QCOMPARE(chainEqIcon->width(),16.0);
+    QCOMPARE(chainEqIcon->mapToItem(
+        qobject_cast<QQuickItem*>(dspChainRow1),QPointF{}).x(),eqIconXBefore);
 
     QVERIFY2(QMetaObject::invokeMethod(abActiveBtn, "clicked"), "Clicking abButtonActive must succeed");
     QCoreApplication::processEvents();
