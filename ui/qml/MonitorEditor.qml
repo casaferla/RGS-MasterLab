@@ -69,7 +69,11 @@ Item {
             GridLayout {
                 objectName: "monitorMasterDevicePair"
                 Layout.fillWidth: true
-                columns: root.width >= 650 ? 2 : 1
+                // PO: stable geometry at EVERY window height/width.
+                // No responsive two-to-one-column jump at minimum size:
+                // each card keeps its own logical column and shrinks only
+                // its internal free space, not its position.
+                columns: 2
                 columnSpacing: 8
                 rowSpacing: 8
 
