@@ -371,7 +371,9 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
         const bool emptyAfterFailure=current.value()->state==core::PlaybackState::NO_SOURCE
             &&current.value()->audibleRealization.phase
                 ==core::AudibleHandoffPhase::UNAVAILABLE
-            &&!current.value()->audibleRealization.realizationId;
+            &&!current.value()->audibleRealization.realizationId
+            &&current.value()->position==core::FrameIndex{0}
+            &&!current.value()->duration &&!current.value()->loop;
         const bool original=current.value()->state==core::PlaybackState::STOPPED
             &&current.value()->position==core::FrameIndex{0}
             &&!current.value()->loop
@@ -449,7 +451,17 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
         // Roll back only the exactly owned monitor. Never erase a successor.
         if(ownership&&*ownership.value()) {
             const auto retired=monitorRetire_(candidate);
-            if(retired&&!offlineOrigin&&selected_&&selected_()
+            if(!retired) {
+                // Positive exact ownership + failed retirement means the
+                // DEVICE may still be active. Keep the same owner ticket
+                // available for the explicit recovery/Return action.
+                installedMonitor_=candidate;
+                status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
+                monitorTransitioning_=false;
+                emit changed();
+                return retired;
+            }
+            if(!offlineOrigin&&selected_&&selected_()
                &&manual_&&manual_()==predecessor.manual
                &&manualId_&&manualId_()==std::optional{predecessor.manualId})
                 static_cast<void>(manualRestore_(
