@@ -2388,13 +2388,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(dockGrip && floatingGrip && dropWell,
              "Both drag grips and the real Main fixed dock target are required");
     QCOMPARE(dockGrip->width(),22.0);
-    QCOMPARE(floatingGrip->width(),28.0);
+    // A hidden native QQuickWindow need not have polished its RowLayout.
+    // Assert its actual grip hitbox AFTER the real Window becomes visible.
     const auto* originalEditorIdentity=nativeDockedEditor;
     QVERIFY(!root->property("editorDetached").toBool());
     QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
     QTRY_VERIFY_WITH_TIMEOUT(root->property("editorDetached").toBool(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(floatingModule->isVisible(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
+    QTRY_COMPARE_WITH_TIMEOUT(floatingGrip->width(),28.0,5000);
+    QTRY_COMPARE_WITH_TIMEOUT(floatingGrip->height(),32.0,5000);
+    QCOMPARE(floatingGrip->window(),floatingModule);
     QCOMPARE(nativeDockedEditor,originalEditorIdentity);
     QVERIFY(!root->property("detachedModuleInstanceId").toString().isEmpty());
     QVERIFY(QMetaObject::invokeMethod(floatingModule,"returnToDock"));
@@ -2404,6 +2408,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(nativeDockedEditor==originalEditorIdentity);
     QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
+    QTRY_COMPARE_WITH_TIMEOUT(floatingGrip->width(),28.0,5000);
+    QTRY_COMPARE_WITH_TIMEOUT(floatingGrip->height(),32.0,5000);
     QVERIFY(QMetaObject::invokeMethod(root,"returnCurrentEditorToDock"));
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
     QVERIFY(nativeDockedEditor==originalEditorIdentity);

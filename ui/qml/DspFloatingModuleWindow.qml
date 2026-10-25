@@ -76,10 +76,19 @@ Window {
         Item {
             id: floatingGrip
             objectName: "dspFloatingDragGrip"
+            // Native Window visibility can precede the first RowLayout polish.
+            // Give the drag handle a real hitbox even before its first show;
+            // Layout still owns positioning when the window is displayed.
+            width: 28
+            height: 32
+            implicitWidth: 28
+            implicitHeight: 32
             Layout.preferredWidth: 28
             Layout.minimumWidth: 28
             Layout.maximumWidth: 28
             Layout.preferredHeight: 32
+            Layout.minimumHeight: 32
+            Layout.maximumHeight: 32
             property real lastX: 0
             property real lastY: 0
             property real startWindowX: 0
@@ -109,9 +118,12 @@ Window {
                         // Native WINDOW motion is not a QML DropArea drag:
                         // drop permission is decided by the Main coordinator
                         // against a globally mapped docking rectangle.
-                        root.headerReleased(
-                            root.x+header.x+floatingGrip.x+floatingGrip.width/2,
-                            root.y+header.y+floatingGrip.y+floatingGrip.height/2)
+                        // Use Qt's native window/content mapping: Window.x/y
+                        // can differ from QQuickItem screen origin under
+                        // decorated, multi-monitor or mixed-DPI desktops.
+                        const p = floatingGrip.mapToGlobal(
+                            Qt.point(floatingGrip.width / 2, floatingGrip.height / 2))
+                        root.headerReleased(p.x, p.y)
                     }
                 }
                 onTranslationChanged: {
@@ -125,9 +137,9 @@ Window {
                     root.x+=dx
                     root.y+=dy
                     root.wasMovedByGrip=true
-                    root.headerDragged(
-                        root.x+header.x+floatingGrip.x+floatingGrip.width/2,
-                        root.y+header.y+floatingGrip.y+floatingGrip.height/2)
+                    const p = floatingGrip.mapToGlobal(
+                        Qt.point(floatingGrip.width / 2, floatingGrip.height / 2))
+                    root.headerDragged(p.x, p.y)
                 }
             }
             Shortcut {
