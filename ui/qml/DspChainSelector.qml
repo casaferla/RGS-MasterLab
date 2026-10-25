@@ -75,6 +75,20 @@ Rectangle {
         }
     }
 
+    function moduleIconColor(moduleAdapter) {
+        if(!moduleAdapter)return "#6683A1"
+        // Color denotes the frozen family, not current bypass intent.
+        // M16's pre-existing cyan meter accent and M17's bypass/active
+        // title colors stay unchanged; only their pictograms use family hues.
+        if(moduleAdapter.editorContentKey === "TRUE_PEAK_METER")
+            return "#6683A1"  // ANALYSIS / METERING
+        if(moduleAdapter.editorContentKey === "TRUE_PEAK_LIMITER")
+            return "#C4774A"  // DYNAMICS
+        if(moduleAdapter.editorContentKey === "MASTER_MONITOR")
+            return "#718092"  // WORKFLOW / UTILITY
+        return moduleAdapter.familyAccent
+    }
+
     // A SINGLE vertical list is authoritative for processing DSPs,
     // analysis M16, terminal M17 and workflow utility MONITOR. One model
     // index is one adapter identity; no separate Finalization fixed dock.
@@ -294,8 +308,7 @@ Rectangle {
                             Layout.maximumHeight: 16
                             kind: root.moduleIconKind(rowItem.moduleAdapter)
                             strokeWidth: 1.65
-                            strokeColor: rowItem.moduleAdapter
-                                ? rowItem.moduleAdapter.familyAccent : "#6683A1"
+                            strokeColor: root.moduleIconColor(rowItem.moduleAdapter)
                             opacity: rowItem.isBypassed ? 0.42 : 0.95
                             Accessible.name: rowItem.moduleAdapter
                                 ? rowItem.moduleAdapter.displayName + " module icon" : "Module icon"
