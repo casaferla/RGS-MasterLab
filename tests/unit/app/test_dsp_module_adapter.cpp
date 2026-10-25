@@ -23,6 +23,7 @@ private slots:
     void testAdapterInventoryAndOrder();
     void testReadOnlyTruePeakAnalysisDoesNotEnterProcessingChain();
     void testRealTerminalLimiterInInventoryButNotAudible();
+    void testMonitorUtilityHasNoDSPBypassOrAudioStage();
     void testOptInStereoMsModuleSelection();
     void testStableInstanceIds();
     void testConfigurationStateRules();
@@ -40,6 +41,35 @@ private slots:
     void testIndependentModuleHistories();
     void testWorkflowContextLabel();
 };
+
+void DspModuleAdapterTest::testMonitorUtilityHasNoDSPBypassOrAudioStage()
+{
+    // Presentation adapters must never advertise processing controls,
+    // a sonic instance ID, editing history or a gain/limiter bridge.
+    // The null-VM case remains safe in isolated model construction.
+    MonitorServiceModuleAdapter adapter{
+        nullptr, QStringLiteral("Mastering")};
+    QCOMPARE(adapter.type_id(),QStringLiteral("rgsml.utility.master-monitor"));
+    QCOMPARE(adapter.instance_id(),
+        QStringLiteral("utility:rgsml.monitor.master-device"));
+    QCOMPARE(adapter.editor_content_key(),QStringLiteral("MASTER_MONITOR"));
+    QCOMPARE(adapter.family_accent(),QStringLiteral("#718092"));
+    QCOMPARE(adapter.display_name(),QStringLiteral("MONITOR"));
+    QVERIFY(!adapter.bypass_supported());
+    QVERIFY(!adapter.bypass());
+    QVERIFY(!adapter.preview_supported());
+    QVERIFY(!adapter.history_supported());
+    QVERIFY(!adapter.can_undo());
+    QVERIFY(!adapter.can_redo());
+    QVERIFY(!adapter.reset_supported());
+    QVERIFY(!adapter.gain_view_model());
+    QVERIFY(!adapter.eq_view_model());
+    QVERIFY(!adapter.compressor_view_model());
+    adapter.setBypass(true);
+    QVERIFY(!adapter.bypass());
+    QCOMPARE(adapter.configuration_state(),QStringLiteral("Default"));
+    QCOMPARE(adapter.state_text(),QStringLiteral("Unavailable"));
+}
 
 void DspModuleAdapterTest::testOptInStereoMsModuleSelection()
 {
