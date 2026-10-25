@@ -10,6 +10,7 @@ Rectangle {
     // Handles Chain selections consistently whether an editor is docked
     // or already floating, without allocating a duplicate DSP QML editor.
     property var moduleActivationHandler: null
+    property var tearOffHandler: null
     property bool errorsInGlobalStatusBar: false
     property int selectedModuleIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
@@ -72,6 +73,9 @@ Rectangle {
         terminalMonitorViewModel: root.terminalMonitorViewModel
             limiterGrProvider: root.limiterGrProvider
             activeChainRow: realChainSelector.activeRow
+            onTearOffRequested: function(globalX,globalY) {
+                if(root.tearOffHandler)root.tearOffHandler(globalX,globalY)
+            }
         }
     }
 }
