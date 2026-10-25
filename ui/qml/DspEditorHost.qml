@@ -327,15 +327,6 @@ Rectangle {
             }
         }
 
-        // Explicit isolated MASTER control popup; the shared meter geometry
-    // and ordinary terminal DSP editor remain unchanged.
-    MasterMonitorPopup {
-        id: monitorPopup
-        // Popup positions itself against the application overlay, not
-        // the narrow adaptive DSP editor viewport.
-        monitorViewModel: root.terminalMonitorViewModel
-    }
-
     // Active Editor Content Area
         // M17 explicit offline action: controls do not borrow transport Play.
         RowLayout {
@@ -406,17 +397,6 @@ Rectangle {
                     && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
                 onClicked: root.terminalLimiterViewModel.previewPrepared()
                 Accessible.name: "Preview verified limiter audio"
-            }
-            StudioButton {
-                visible: root.isLimiterEditor
-                objectName: "m17OpenMasterMonitor"
-                text: "MONITOR…"
-                minimumControlWidth: 90
-                accentColor: "#6CBCCF"
-                enabled: root.terminalMonitorViewModel !== null
-                    && root.terminalMonitorViewModel !== undefined
-                onClicked: monitorPopup.open()
-                Accessible.name: "Open experimental MASTER / DEVICE monitor"
             }
             Text {
                 visible: root.isLimiterEditor
