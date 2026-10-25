@@ -1142,6 +1142,10 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(noRegistration.error()->code(),core::ErrorCode::InvalidState);
     std::size_t windowsSeamCalls=0;
     std::size_t explicitPolicyCalls=0;
+    // Rendering exercises 128-frame chunks; the UI explicitly requests
+    // 4096-frame monitor conversion blocks. Both paths are intentional.
+    const auto uiMonitoringBlock=core::FrameCount::create(4096);
+    QVERIFY(uiMonitoringBlock);
     product.set_monitoring_preflight_materializer(
         [&](audio::AudioBufferView view,core::FrameCount requestedBlock,
             std::uint64_t reserve,
@@ -1152,10 +1156,13 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             using Result=core::Result<std::shared_ptr<
                 const audio::MonitoringPcmCandidate>>;
             ++windowsSeamCalls;
-            // Product UI reserves zero additional Prepare bytes; its
-            // policy still receives the independently probed OS advice.
-            if(requestedBlock!=*block.value()
-               ||(reserve!=kOtherReserve&&reserve!=0))
+            // Two exact supported callers, never arbitrary block/reserve
+            // combinations: private 128-frame fixture / explicit 4096 UI.
+            const bool fixturePolicy=requestedBlock==*block.value()
+                &&reserve==kOtherReserve;
+            const bool uiPolicy=requestedBlock==*uiMonitoringBlock.value()
+                &&reserve==0;
+            if(!fixturePolicy&&!uiPolicy)
                 return Result::failure(core::Error{
                     core::ErrorCode::InvalidArgument,
                     "TEST_MONITOR_WINDOWS_PREFLIGHT_PARAMETERS_CHANGED"});
