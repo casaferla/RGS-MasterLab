@@ -273,7 +273,89 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
     const Pending predecessor=*pending_;
     monitorTransitioning_=true;
     const auto installed=monitorInstall_(candidate);
-    if(!installed){monitorTransitioning_=false;return installed;}
+    if(!installed) {
+        // Device creation/installation can fail AFTER replacing MANUAL.
+        // An error is not proof that the original sink survived. Recover
+        // only an exactly recognized candidate or a demonstrably empty sink;
+        // never clear an alien anonymous monitor or a successor owner.
+        const auto observed=monitorOwned_(candidate);
+        if(!observed) {
+            monitorTransitioning_=false;
+            return core::Status::failure(*observed.error());
+        }
+        const auto owned=*observed.value();
+        if(owned) {
+            const auto retired=monitorRetire_(candidate);
+            if(!retired) {
+                // Exact candidate remains recoverable through the normal
+                // conditional-return entry point, not an orphaned sink.
+                installedMonitor_=candidate;
+                status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
+                monitorTransitioning_=false;
+                emit changed();
+                return retired;
+            }
+        }
+        const auto current=transport_->playback_snapshot();
+        if(!current) {
+            monitorTransitioning_=false;
+            return core::Status::failure(*current.error());
+        }
+        const bool empty=current.value()->state==core::PlaybackState::NO_SOURCE
+            &&current.value()->audibleRealization.phase
+                ==core::AudibleHandoffPhase::UNAVAILABLE
+            &&!current.value()->audibleRealization.realizationId;
+        const bool original=current.value()->state==core::PlaybackState::STOPPED
+            &&current.value()->position==core::FrameIndex{0}
+            &&!current.value()->loop
+            &&current.value()->audibleRealization.phase
+                ==core::AudibleHandoffPhase::NEW
+            &&current.value()->audibleRealization.realizationId
+                ==std::optional{predecessor.manualId}
+            &&current.value()->duration
+                ==std::optional{predecessor.manual->view().frame_count()};
+        if(!empty&&!original) {
+            monitorTransitioning_=false;
+            return core::Status::failure(rejected(
+                "MONITOR_INSTALL_FAILURE_ALIEN_DEVICE_OWNER_UNTOUCHED"));
+        }
+        if(empty) {
+            if(!selected_||!selected_()||!manual_||!manualId_
+               ||manual_()!=predecessor.manual
+               ||manualId_()!=std::optional{predecessor.manualId}
+               ||!pending_||pending_->manual!=predecessor.manual
+               ||pending_->manualId!=predecessor.manualId) {
+                monitorTransitioning_=false;
+                return core::Status::failure(rejected(
+                    "MONITOR_INSTALL_FAILURE_MANUAL_OWNER_CHANGED"));
+            }
+            const auto restored=manualRestore_(
+                predecessor.manual,predecessor.manualId,core::FrameIndex{0});
+            if(!restored) {
+                monitorTransitioning_=false;
+                failed(*restored.error());
+                return restored;
+            }
+            const auto after=transport_->playback_snapshot();
+            if(!after||after.value()->state!=core::PlaybackState::STOPPED
+               ||after.value()->position!=core::FrameIndex{0}
+               ||after.value()->loop
+               ||after.value()->audibleRealization.phase
+                   !=core::AudibleHandoffPhase::NEW
+               ||after.value()->audibleRealization.realizationId
+                   !=std::optional{predecessor.manualId}
+               ||after.value()->duration
+                   !=std::optional{predecessor.manual->view().frame_count()}) {
+                monitorTransitioning_=false;
+                failed(rejected("MONITOR_INSTALL_FAILURE_MANUAL_RESTORE_UNPROVEN"));
+                return core::Status::failure(rejected(
+                    "MONITOR_INSTALL_FAILURE_MANUAL_RESTORE_UNPROVEN"));
+            }
+        }
+        monitorTransitioning_=false;
+        // No M17 realization or LIVE provenance was ever issued.
+        return installed;
+    }
     const auto ownership=monitorOwned_(candidate);
     const auto after=transport_->playback_snapshot();
     const bool valid=ownership&&*ownership.value()&&after

@@ -1215,15 +1215,21 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     std::size_t monitorRetires=0;
     std::size_t manualRestores=0;
     std::optional<core::FrameRange> monitorMasterLoop;
+    int injectedMonitorInstallFailure=0;
     product.set_private_monitor_transport(
         [&](auto candidate)->core::Status {
             ++monitorInstalls;
-            deviceMonitor=candidate;
+            deviceMonitor=injectedMonitorInstallFailure==2
+                ?*monitored.value():candidate;
             device->state=core::PlaybackState::STOPPED;
             device->position=core::FrameIndex{0};
             device->duration=candidate->device_pcm.view().frame_count();
             device->loop.reset();
             device->audibleRealization={};
+            if(injectedMonitorInstallFailure)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "TEST_WINDOWS_INSTALL_FAILED_AFTER_DEVICE_MUTATION"});
             return core::Status::success();
         },
         [&](auto candidate)->core::Result<bool> {
@@ -1557,6 +1563,43 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!candidates.staged());
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
+    QCOMPARE(sinkInstalls,std::size_t{0});
+
+    // Fault injection: Windows install callback reports failure AFTER
+    // replacing MANUAL with the exact candidate. Recover only that owner,
+    // verify an empty device, then recover the original stopped MANUAL.
+    selectedSourceLoop.reset();
+    QVERIFY(transport.set_loop_source_range(std::nullopt));
+    QVERIFY(device->stop());
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{0}));
+    QVERIFY(product.request_private_for_final_master(*masterRate.value()));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    auto recoveryMonitor=product.materialize_private_final_master_monitoring(
+        makeMonitor);
+    QVERIFY(recoveryMonitor);
+    const auto retireCountBefore=monitorRetires;
+    const auto restoresBefore=manualRestores;
+    injectedMonitorInstallFailure=1;
+    QVERIFY(!product.install_private_monitor_stopped(*recoveryMonitor.value()));
+    QCOMPARE(monitorRetires,retireCountBefore+std::size_t{1});
+    QCOMPARE(manualRestores,restoresBefore+std::size_t{1});
+    QVERIFY(!deviceMonitor);
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->position,core::FrameIndex{0});
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(device->duration,std::optional{*frames.value()});
+    QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    // An anonymous same-rate successor is NOT the failed candidate:
+    // never retire it and never pretend to restore the old MANUAL sink.
+    injectedMonitorInstallFailure=2;
+    QVERIFY(!product.install_private_monitor_stopped(*recoveryMonitor.value()));
+    QCOMPARE(deviceMonitor,*monitored.value());
+    QCOMPARE(monitorRetires,retireCountBefore+std::size_t{1});
+    QCOMPARE(manualRestores,restoresBefore+std::size_t{1});
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QVERIFY(!device->audibleRealization.realizationId);
     QCOMPARE(sinkInstalls,std::size_t{0});
 }
 
