@@ -122,10 +122,58 @@ ApplicationWindow {
         background: Rectangle { color: menuItem.highlighted && menuItem.enabled ? "#173043" : "transparent" }
     }
 
-    FileDialog { id: sourceDialog; objectName: "sourceFileDialog"; title: "Open Source WAV"; fileMode: FileDialog.OpenFile; nameFilters: ["WAV audio (*.wav *.wave)"]; onAccepted: { if (!root.monitorExclusive) sourceSelection.selectSource(selectedFile) }; onRejected: sourceSelection.cancelSourceSelection() }
-    FileDialog { id: goldDialog; objectName: "goldFileDialog"; title: "Open Gold Reference WAV"; fileMode: FileDialog.OpenFile; nameFilters: ["WAV audio (*.wav *.wave)"]; onAccepted: { if (!root.monitorExclusive) goldSelection.selectGold(selectedFile) }; onRejected: goldSelection.cancelGoldSelection() }
-    FileDialog { id: projectOpenDialog; objectName: "projectOpenFileDialog"; title: "Open RGS MasterLab Project"; fileMode: FileDialog.OpenFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: { if (!root.monitorExclusive) projectSession.openProject(selectedFile) }; onRejected: projectSession.cancelProjectOpen() }
-    FileDialog { id: projectSaveDialog; objectName: "projectSaveFileDialog"; title: "Save RGS MasterLab Project As"; fileMode: FileDialog.SaveFile; nameFilters: ["RGS MasterLab Project (*.rgsml)"]; onAccepted: projectSession.saveProjectAs(selectedFile); onRejected: projectSession.cancelProjectSave() }
+    FileDialog {
+        id: sourceDialog
+        objectName: "sourceFileDialog"
+        title: "Open Source WAV"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["WAV audio (*.wav *.wave)"]
+        onAccepted: {
+            if (!root.monitorExclusive) {
+                sourceSelection.selectSource(selectedFile)
+            }
+        }
+        onRejected: sourceSelection.cancelSourceSelection()
+    }
+    FileDialog {
+        id: goldDialog
+        objectName: "goldFileDialog"
+        title: "Open Gold Reference WAV"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["WAV audio (*.wav *.wave)"]
+        onAccepted: {
+            if (!root.monitorExclusive) {
+                goldSelection.selectGold(selectedFile)
+            }
+        }
+        onRejected: goldSelection.cancelGoldSelection()
+    }
+    FileDialog {
+        id: projectOpenDialog
+        objectName: "projectOpenFileDialog"
+        title: "Open RGS MasterLab Project"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["RGS MasterLab Project (*.rgsml)"]
+        onAccepted: {
+            if (!root.monitorExclusive) {
+                projectSession.openProject(selectedFile)
+            }
+        }
+        onRejected: projectSession.cancelProjectOpen()
+    }
+    FileDialog {
+        id: projectSaveDialog
+        objectName: "projectSaveFileDialog"
+        title: "Save RGS MasterLab Project As"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["RGS MasterLab Project (*.rgsml)"]
+        onAccepted: {
+            if (!root.monitorExclusive) {
+                projectSession.saveProjectAs(selectedFile)
+            }
+        }
+        onRejected: projectSession.cancelProjectSave()
+    }
 
     Shortcut {
         sequence: "F10"
