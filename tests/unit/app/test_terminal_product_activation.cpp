@@ -1471,6 +1471,9 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     std::size_t manualRestores=0;
     std::optional<core::FrameRange> monitorMasterLoop;
     int injectedMonitorInstallFailure=0;
+    int injectedMonitorRetireFailure=0;
+    bool sourceEpochCurrent=true;
+    bool revokeOfflineEpochOnInstall=false;
     product.set_private_monitor_transport(
         [&](auto candidate)->core::Status {
             ++monitorInstalls;
@@ -1481,6 +1484,12 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             device->duration=candidate->device_pcm.view().frame_count();
             device->loop.reset();
             device->audibleRealization={};
+            if(revokeOfflineEpochOnInstall) {
+                // Source epoch changes exactly after the genuine owner
+                // was installed, but before the session post-check.
+                sourceEpochCurrent=false;
+                revokeOfflineEpochOnInstall=false;
+            }
             if(injectedMonitorInstallFailure)
                 return core::Status::failure(core::Error{
                     core::ErrorCode::IoFailure,
@@ -1503,6 +1512,12 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 return core::Status::failure(core::Error{
                     core::ErrorCode::InvalidState,
                     "TEST_EXACT_MONITOR_OWNER_REQUIRED"});
+            if(injectedMonitorRetireFailure>0) {
+                --injectedMonitorRetireFailure;
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "TEST_EXACT_MONITOR_RETIRE_FAILURE"});
+            }
             ++monitorRetires;
             deviceMonitor.reset();
             return device->clear();
@@ -1958,7 +1973,6 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // Initial SOURCE/PROCESSED device-selection failure now has one
     // independent, product-explicit DEVICE path. No synthetic MANUAL
     // realization may appear, before OR after physical audition.
-    bool sourceEpochCurrent=true;
     product.set_offline_source_provenance_checker(
         [&sourceEpochCurrent]{return sourceEpochCurrent;});
     explicitOfflineProvenance=true;
@@ -2005,6 +2019,35 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!product.monitoring_transaction_active());
     QVERIFY(!audioGate.has_session());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
+
+    // Fault injection: SOURCE changes in the narrow post-install
+    // window while the worker DOES own the new monitor. A failure of
+    // exact-device retirement must retain a recovery ticket. Retrying
+    // Return must retire ONLY that verified owner, not invent MANUAL.
+    sourceEpochCurrent=true;
+    explicitOfflineProvenance=true;
+    QVERIFY(product.request_private_for_final_master(*masterRate.value()));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    auto faultMonitor=product.materialize_private_final_master_monitoring(
+        makeMonitor);
+    QVERIFY(faultMonitor);
+    revokeOfflineEpochOnInstall=true;
+    injectedMonitorRetireFailure=1;
+    QVERIFY(!product.install_private_monitor_stopped(*faultMonitor.value()));
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"));
+    QCOMPARE(deviceMonitor,*faultMonitor.value());
+    QVERIFY(monitorUi.monitor_installed());
+    QCOMPARE(monitorUi.return_target_text(),
+        QStringLiteral("Close DEVICE · No MANUAL sink"));
+    QVERIFY(monitorUi.returnManual());
+    QCOMPARE(device->state,core::PlaybackState::NO_SOURCE);
+    QVERIFY(!deviceMonitor);
+    QCOMPARE(manualRestores,restoreCount);
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!product.monitoring_transaction_active());
+
     // A foreign successor still must not be borrowed for another offline
     // job, even when a SOURCE lineage callback asserts 'current'.
     sourceEpochCurrent=true;
