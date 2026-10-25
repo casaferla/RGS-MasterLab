@@ -5,6 +5,8 @@ chain = Path("ui/qml/DspChainSelector.qml").read_text(encoding="utf-8")
 gain = Path("ui/qml/InputGainEditor.qml").read_text(encoding="utf-8")
 smoke = Path("tests/ui_smoke/test_source_metadata_panel.cpp").read_text(encoding="utf-8")
 monitor = Path("ui/qml/MonitorEditor.qml").read_text(encoding="utf-8")
+icons = Path("ui/qml/StudioIcon.qml").read_text(encoding="utf-8")
+adapters = Path("app/src/dsp_module_adapter.hpp").read_text(encoding="utf-8")
 
 
 def require(ok: bool, reason: str) -> None:
@@ -40,6 +42,34 @@ require("anchors.leftMargin: 7" in chain and
 require("font.pixelSize: 12" in chain and
         "elide: Text.ElideRight" in chain,
         "title typography/fallback changed")
+# Module shape is stable (16px) and family hue is fixed despite bypass.
+# This is independently enforced alongside native gain/EQ render assertions.
+require('objectName: "dspChainModuleIcon_"' in chain and
+        "Layout.minimumWidth: 16" in chain and
+        "Layout.maximumWidth: 16" in chain,
+        "fixed 16px module icon reservation missing")
+for key,kind in (
+        ("INPUT_GAIN","module-gain"),
+        ("PARAMETRIC_EQ","module-eq"),
+        ("COMPRESSOR","module-compressor"),
+        ("STEREO_MS","module-stereo"),
+        ("TRUE_PEAK_METER","module-peak-meter"),
+        ("TRUE_PEAK_LIMITER","module-limiter"),
+        ("MASTER_MONITOR","module-headphones")):
+    require(f'case "{key}": return "{kind}"' in chain,
+            f"missing icon mapping for {key}")
+    require(f'kind === "{kind}"' in icons,
+            f"unimplemented icon drawing for {key}")
+require('return "#6683A1"' in chain and
+        'return "#C4774A"' in chain and
+        'return "#718092"' in chain,
+        "analysis/dynamics/utility icon family accents have drifted")
+require('QStringLiteral("Master Audition")' in adapters and
+        'text: "Master Audition"' in monitor,
+        "PO-approved Master Audition UI name missing")
+require('QCOMPARE(chainGainIcon->width(),16.0)' in smoke or
+        'QCOMPARE(chainGainIcon->width(), 16.0)' in smoke,
+        "native fixed-width icon smoke assertion missing")
 require("FIX-UI-004: Parametric EQ title must not be elided" in smoke,
         "native title non-elision test missing")
 # The MONITOR family layout is deliberately NOT responsive in column count.
