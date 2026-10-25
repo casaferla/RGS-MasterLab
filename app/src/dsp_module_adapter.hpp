@@ -376,7 +376,7 @@ public:
     [[nodiscard]] QString type_id() const override
     { return QStringLiteral("rgsml.utility.master-monitor"); }
     [[nodiscard]] QString display_name() const override
-    { return QStringLiteral("MONITOR"); }
+    { return QStringLiteral("Master Audition"); }
     [[nodiscard]] QString workspace_context_label() const override
     { return context_ + QStringLiteral(" · Device audition only"); }
     [[nodiscard]] QString configuration_state() const override
@@ -409,8 +409,8 @@ public:
         if(vm_->property("canInstall").toBool())
             return QStringLiteral("MASTER ready");
         if(!vm_->property("errorText").toString().isEmpty())
-            return QStringLiteral("Monitor error");
-        return QStringLiteral("Monitor idle");
+            return QStringLiteral("Audition error");
+        return QStringLiteral("Audition idle");
     }
     [[nodiscard]] bool has_error() const noexcept override
     { return vm_ && !vm_->property("errorText").toString().isEmpty(); }
