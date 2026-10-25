@@ -83,3 +83,24 @@ No family or state is identified by color alone. Distinct shape gives module ide
 
 ## 10. Later family-indicator supersession
 PO subsequently approved one module-family pictogram **in place of**, not alongside, the old configuration LED. The 16px pictogram is dim at Default and luminous in the same family hue at Manual Non-Default. Bypass remains independent, no additional horizontal slot; 8px red error indicator remains. This supersedes earlier prose in §§1,6,8 mentioning a separate configuration LED. The pictograms and this behavior were in the #825 green candidate.
+
+
+## 11. PO original seven-icon visual reference — 2026-10-25, superseding #823 shapes
+The Product Owner supplied two visual references in the operating chat. **FIRST reference is definitive for the seven existing modules**; the already-green #832 icon shapes were explicitly rejected as visually different. Implementation must follow their distinctive silhouettes, not merely approximate their accent colors. The SECOND reference is a provisional candidate gallery for future modules: no implementation or milestone authorization is implied.
+
+Frozen existing-module glyph map in the ONE `StudioIcon.qml` shared QML Canvas (18×18 optical geometry rendered in a stable 16×16 Chain slot):
+| Module | Approved first-reference silhouette | Existing icon kind |
+| --- | --- | --- |
+| Input Gain | Three **horizontal** offset mixer-slider tracks | `module-gain` |
+| Parametric EQ | Three **vertical** offset mixer-slider tracks | `module-eq` |
+| Compressor | Five rounded, graduated **audio amplitude bars** | `module-compressor` |
+| Stereo / M-S | Upward **Y-branch to two opposing arrows** | `module-stereo` |
+| True Peak Meter | Three **filled-height measurement bars** | `module-peak-meter` |
+| True Peak Limiter | **Shield with check mark** | `module-limiter` |
+| Master Audition | Rounded **headphones with separate earcups** | `module-headphones` |
+
+The previous geometry (single fader, EQ response curve, compressor transfer curve, two overlapping stereo rings, limiter ceiling curve) is superseded, not a second optional style. Preserve 7 existing family colors, module identities, 16px slot, configuration-based Default opacity 0.37 versus Manual 1.0, independent BYPASS dim multiplier 0.7, accessibility tooltip, red error indicator and no separate config LED. All UI drawing stays presentation-only; no DSP rate/process/owner code may change for an icon update.
+
+**PROVISIONAL future-icon triage** (not DSP roadmap nor implementation approval): keep DC Offset, Dehum, Gate, Expander, Imager, Mono Bass, Width, Tilt EQ, Low/High Shelf, High Pass, Low Pass, Notch, Phase, Ducker, Metering; refine Declip, Clipper, Multiband Compressor, Transient Shaper, Delay, Reverb, Limiter (legacy); redesign Saturator, Exciter, Chorus, Flanger, Vibrato. Keep names stable until the PO approves an actual future module.
+
+Evidence obligations: real Windows Main screenshot at 1184×688 with at least existing modules and exact 16px glyphs, plus 7-icon Qt Canvas real-rendered gallery at 16px and magnified scale; gallery is **not** proof that seven modules are present in the production Main. Windows physical DPI 150% and original 7-row product screenshot remain FQ gate. Never use image-generated mockups as code/evidence.
