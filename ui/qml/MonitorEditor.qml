@@ -200,7 +200,12 @@ Item {
                                 && root.monitorViewModel.canInstall
                             font.pixelSize: 10
                             ToolTip.text: "Explicit consent for CAUTION only. UNKNOWN and DISCOURAGED remain refused."
-                            ToolTip.visible: hovered
+                            ToolTip.visible: hovered && monitorMemoryConsentDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: monitorMemoryConsentDwell
+                                anchors.fill: parent
+                            }
                         }
                     }
                 }
