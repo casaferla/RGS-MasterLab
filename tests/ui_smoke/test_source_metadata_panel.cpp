@@ -2616,9 +2616,16 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(viewEditorInstantiator->property("count").toInt(),
         static_cast<int>(dspChainAdapterModel.modules().size()));
     QCOMPARE(viewEditorInstantiator->property("count").toInt(), 3);
-    // Four waveform actions and one separator follow the generated editors.
+    // Four waveform actions, two separators and one Dock/Undock command
+    // follow the generated editors; do not weaken count checking.
+    auto* dockingMenuItem = root->findChild<QObject*>(
+        QStringLiteral("menuDockUndockSelectedModule"));
+    QVERIFY2(dockingMenuItem, "View must expose generic Dock/Undock");
+    QCOMPARE(dockingMenuItem->property("text").toString(),
+             QStringLiteral("Undock selected module"));
+    QVERIFY(dockingMenuItem->property("enabled").toBool());
     QCOMPARE(cleanupViewMenu->property("count").toInt(),
-        viewEditorInstantiator->property("count").toInt() + 5);
+        viewEditorInstantiator->property("count").toInt() + 7);
 
     auto* openProjectItem = root->findChild<QObject*>(
         QStringLiteral("menuOpenProject"));
