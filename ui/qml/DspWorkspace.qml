@@ -7,6 +7,9 @@ Rectangle {
     objectName: "dspWorkspace"
 
     property var adapterModel: null
+    // Handles Chain selections consistently whether an editor is docked
+    // or already floating, without allocating a duplicate DSP QML editor.
+    property var moduleActivationHandler: null
     property bool errorsInGlobalStatusBar: false
     property int selectedModuleIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
@@ -49,6 +52,7 @@ Rectangle {
             id: realChainSelector
             objectName: "dspChainSelector"
             adapterModel: root.adapterModel
+            moduleActivationHandler: root.moduleActivationHandler
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
         }
