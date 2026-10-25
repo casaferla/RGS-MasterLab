@@ -387,6 +387,7 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
     QCOMPARE(wavPairs,std::size_t{36});
     QCOMPARE(devicePairs,std::size_t{36});
     qInfo().noquote()<<"M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM";
+    qInfo().noquote()<<"M17_EDGE_CASE=RATE_GRID_36x36_MASTER_WAV_DEVICE";
 }
 
 void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate48k()

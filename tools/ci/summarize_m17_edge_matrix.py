@@ -9,6 +9,9 @@ MARKER = re.compile(r"M17_EDGE_CASE=([A-Z0-9_]{3,75})")
 TEST_START = re.compile(r"^\s*\d+/\d+\s+Test:\s+(\S+)")
 TIME = re.compile(r"RGS M17 render serial=\d+.*?\bresult=\S+")
 FAIL = re.compile(r"FAIL!|\bTest Failed\b|\*\*\*Failed",re.IGNORECASE)
+RATE_GRID = re.compile(
+    r"M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM"
+)
 
 
 def collect(log: str, sha: str) -> str:
@@ -40,6 +43,13 @@ def collect(log: str, sha: str) -> str:
         "SCENARIOS_REACHED="+str(len(names)),
     ]
     result.extend("REACHED="+name for name in names[:48])
+    # A positive rate-grid attestation is valid only after the product
+    # test completed and exactly one end-of-grid marker was recorded.
+    marker_count=sum(len(RATE_GRID.findall(line)) for line in block)
+    result.append("RATE_GRID_36_MASTER_36_WAV_36_DEVICE="+(
+        "CONFIRMED" if status=="PASS" and marker_count==1
+        else "NOT_CONFIRMED"
+    ))
     timings=[m.group(0)[:180] for line in block
              for m in TIME.finditer(line)]
     result.extend("RENDER_SCALAR="+t for t in timings[-4:])
