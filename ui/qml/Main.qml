@@ -58,12 +58,51 @@ ApplicationWindow {
     // Single persistent editor instance. Never duplicate/reload the host
     // when a module is detached. At most one shared host floats at a time.
     property bool editorDetached: false
+    property bool dockDropCandidate: false
     property string detachedModuleInstanceId: ""
+
+    function activeDockSlot() {
+        return root.useAdaptiveDspComposition
+            ? compactEditorSlot : standardEditorSlot
+    }
+    // Qt Quick Item.mapToGlobal supplies logical screen coordinates,
+    // including mixed-DPI/secondary-monitor Qt window placement.
+    function pointInsideEditorDock(globalX,globalY) {
+        const slot=activeDockSlot()
+        if(!slot || !Number.isFinite(globalX)||!Number.isFinite(globalY))
+            return false
+        const p=slot.mapToGlobal(Qt.point(0,0))
+        return globalX>=p.x && globalX<=p.x+slot.width
+            && globalY>=p.y && globalY<=p.y+slot.height
+    }
+    function beginDockDrag(globalX,globalY) {
+        dockDropCandidate=editorDetached
+            && pointInsideEditorDock(globalX,globalY)
+        floatingModuleWindow.dragOverDock=dockDropCandidate
+    }
+    function finishDockDrag(globalX,globalY) {
+        const valid=editorDetached
+            && pointInsideEditorDock(globalX,globalY)
+        dockDropCandidate=false
+        floatingModuleWindow.dragOverDock=false
+        if(valid) returnCurrentEditorToDock()
+    }
+    function detachByGrip(globalX,globalY) {
+        if(root.editorDetached || pointInsideEditorDock(globalX,globalY))
+            return
+        // Position the existing Window near the released grip; no editor
+        // clone and no external DropArea window impersonation.
+        floatingModuleWindow.x=Math.round(globalX-24)
+        floatingModuleWindow.y=Math.round(globalY-20)
+        root.detachSelectedModule()
+    }
     readonly property string selectedDspInstanceId: root.statusDspModule
         ? root.statusDspModule.instanceId : ""
 
     function returnCurrentEditorToDock() {
         if (!root.editorDetached) return
+        root.dockDropCandidate = false
+        floatingModuleWindow.dragOverDock = false
         root.editorDetached = false
         root.detachedModuleInstanceId = ""
     }
@@ -415,6 +454,9 @@ ApplicationWindow {
             objectName: "dspWorkspace"
             adapterModel: typeof dspChainAdapterModel !== "undefined" ? dspChainAdapterModel : null
             moduleActivationHandler: function(module) { root.activateOrFocusModule(module) }
+            tearOffHandler: function(globalX,globalY) {
+                root.detachByGrip(globalX,globalY)
+            }
             gainViewModel: root.appGainViewModel
             eqViewModel: root.appEqViewModel
             spectrumViewModel: root.appSpectrumViewModel
@@ -444,6 +486,12 @@ ApplicationWindow {
         familyAccent: root.statusDspModule
             ? root.statusDspModule.familyAccent : "#718092"
         detached: root.editorDetached
+        onHeaderDragged: function(globalX,globalY) {
+            root.beginDockDrag(globalX,globalY)
+        }
+        onHeaderReleased: function(globalX,globalY) {
+            root.finishDockDrag(globalX,globalY)
+        }
         onRedockRequested: function(id) {
             if (id === root.detachedModuleInstanceId)
                 root.returnCurrentEditorToDock()
@@ -703,6 +751,27 @@ ApplicationWindow {
                         anchors.fill: parent
                         visible: !root.editorDetached
                         target: realDspWorkspace.editorHost
+                    }
+                    // Placeholder occupies exactly the same geometry with
+                    // or without a detached editor: NO unrelated reflow.
+                    Rectangle {
+                        objectName: "standardEditorDockDropZone"
+                        anchors.fill: parent
+                        visible: root.editorDetached
+                        radius: 6
+                        color: root.dockDropCandidate ? "#192D4651" : "#0B1622"
+                        border.width: root.dockDropCandidate ? 2 : 1
+                        border.color: root.dockDropCandidate ? "#00C8FF" : "#27465F"
+                        Text {
+                            anchors.centerIn: parent
+                            text: root.dockDropCandidate
+                                ? "Rilascia per agganciare"
+                                : "Trascina qui il modulo per agganciarlo"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: root.dockDropCandidate ? "#BFEAF6" : "#829DAD"
+                        }
                     }
                 }
             }
@@ -1361,6 +1430,27 @@ ApplicationWindow {
                         anchors.fill: parent
                         visible: !root.editorDetached
                         target: realDspWorkspace.editorHost
+                    }
+                    // Placeholder occupies exactly the same geometry with
+                    // or without a detached editor: NO unrelated reflow.
+                    Rectangle {
+                        objectName: "compactEditorDockDropZone"
+                        anchors.fill: parent
+                        visible: root.editorDetached
+                        radius: 6
+                        color: root.dockDropCandidate ? "#192D4651" : "#0B1622"
+                        border.width: root.dockDropCandidate ? 2 : 1
+                        border.color: root.dockDropCandidate ? "#00C8FF" : "#27465F"
+                        Text {
+                            anchors.centerIn: parent
+                            text: root.dockDropCandidate
+                                ? "Rilascia per agganciare"
+                                : "Trascina qui il modulo per agganciarlo"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: root.dockDropCandidate ? "#BFEAF6" : "#829DAD"
+                        }
                     }
                 }
             }
