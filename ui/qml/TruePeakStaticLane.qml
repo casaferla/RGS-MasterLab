@@ -25,6 +25,7 @@ Rectangle {
     // M16 keeps its original 120px minimum scale track and layout.
     property bool compactVertical: false
     radius: 7
+    clip: true
     color: "#091C2B"
     border.color: root.useFamilyAccent ? root.familyAccent : "#24425A"
     border.width: 1
@@ -48,13 +49,13 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 10
-        spacing: 4
+        anchors.margins: root.compactVertical ? 6 : 10
+        spacing: root.compactVertical ? 2 : 4
         Text {
             objectName: "truePeakChannelLabel"
             text: root.channelName
             font.family: "Segoe UI"
-            font.pixelSize: 17
+            font.pixelSize: root.compactVertical ? 15 : 17
             font.weight: Font.DemiBold
             color: "#DEEAF2"
             horizontalAlignment: Text.AlignHCenter
@@ -67,7 +68,7 @@ Rectangle {
         Item {
             Layout.fillHeight: true
             Layout.fillWidth: true
-            Layout.minimumHeight: root.compactVertical ? 75 : 120
+            Layout.minimumHeight: root.compactVertical ? 62 : 120
             Rectangle {
                 id: track
                 objectName: "truePeakTrack"
