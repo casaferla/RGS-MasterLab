@@ -601,6 +601,14 @@ Window {
     QCOMPARE(editor->property("instanceIdentity").toString(),
              QStringLiteral("module:stable:one"));
     QVERIFY(!owned->property("detached").toBool());
+    // Regression: the first redock must not sever the parent-owned QML
+    // binding. Repeated undock must again move the SAME persistent editor.
+    QVERIFY(owned->setProperty("detached",true));
+    QTRY_VERIFY_WITH_TIMEOUT(editor->window()==floating,5000);
+    QVERIFY(QMetaObject::invokeMethod(floating,"returnToDock"));
+    QTRY_VERIFY_WITH_TIMEOUT(editor->window()==dockWindow,5000);
+    QCOMPARE(editor->property("edits").toInt(),18);
+    QVERIFY(!owned->property("detached").toBool());
     dockWindow->close();
 }
 
@@ -2381,7 +2389,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTRY_VERIFY_WITH_TIMEOUT(!root->property("editorDetached").toBool(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(!floatingModule->isVisible(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
-    QCOMPARE(nativeDockedEditor,originalEditorIdentity);
+    QVERIFY(nativeDockedEditor==originalEditorIdentity);
+    QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
+    QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
+    QVERIFY(QMetaObject::invokeMethod(root,"returnCurrentEditorToDock"));
+    QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
+    QVERIFY(nativeDockedEditor==originalEditorIdentity);
 
     // Verify Adaptive Context Workspace and visual shell placeholders exist
     QVERIFY(root->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace")) != nullptr);
