@@ -2819,6 +2819,59 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!find_child_by_name(root,QStringLiteral("dspFloatingModuleTitle")));
     QVERIFY(!find_child_by_name(root,QStringLiteral("dspFloatingRedockButton")));
 
+    // PO FQ80 P0: TWO independent native floating windows at once.
+    // The first host stays the same QQuickItem while the Main selects EQ;
+    // the second native window owns a separate QML host but NO new DSP node.
+    const QString firstModuleId=root->property("selectedDspInstanceId").toString();
+    QVERIFY(!firstModuleId.isEmpty());
+    QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
+    QTRY_VERIFY_WITH_TIMEOUT(floatingModule->isVisible(),5000);
+    QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
+    dspChainAdapterModel.setSelectedIndex(1);
+    QCoreApplication::processEvents();
+    QVERIFY(!root->property("editorDetached").toBool());
+    QVERIFY(floatingModule->isVisible());
+    const QString secondModuleId=root->property("selectedDspInstanceId").toString();
+    QVERIFY(!secondModuleId.isEmpty()&&secondModuleId!=firstModuleId);
+    QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
+    QTRY_VERIFY_WITH_TIMEOUT(root->property("editorDetached").toBool(),5000);
+    QQuickWindow* secondNative=nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(([&] {
+        for(auto* candidate:root->findChildren<QQuickWindow*>()) {
+            if(candidate!=floatingModule
+                    && candidate->property("moduleInstanceId").toString()
+                        ==secondModuleId) {
+                secondNative=candidate;
+                break;
+            }
+        }
+        return secondNative!=nullptr&&secondNative->isVisible();
+    })(),5000);
+    QVERIFY(floatingModule->isVisible());
+    QVERIFY(nativeDockedEditor->window()==floatingModule);
+    QCOMPARE(dspChainAdapterModel.modules().size(),qsizetype{3});
+    // Re-selecting Gain must raise its ORIGINAL native window, NEVER dock.
+    dspChainAdapterModel.setSelectedIndex(0);
+    QCoreApplication::processEvents();
+    QVERIFY(root->property("editorDetached").toBool());
+    QCOMPARE(root->property("detachedModuleInstanceId").toString(),firstModuleId);
+    QVERIFY(floatingModule->isVisible());
+    QVERIFY(secondNative->isVisible());
+    QVERIFY(nativeDockedEditor->window()==floatingModule);
+    // Dock EQ by its OWN floating command while Gain remains floating.
+    QVERIFY(QMetaObject::invokeMethod(secondNative,"returnToDock"));
+    QTRY_COMPARE_WITH_TIMEOUT(dspChainAdapterModel.selected_index(),1,5000);
+    QVERIFY(floatingModule->isVisible());
+    QVERIFY(!root->property("editorDetached").toBool());
+    dspChainAdapterModel.setSelectedIndex(0);
+    QCoreApplication::processEvents();
+    QVERIFY(root->property("editorDetached").toBool());
+    QVERIFY(QMetaObject::invokeMethod(floatingModule,"returnToDock"));
+    QTRY_VERIFY_WITH_TIMEOUT(!floatingModule->isVisible(),5000);
+    QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
+    QCOMPARE(dspChainAdapterModel.modules().size(),qsizetype{3});
+    QVERIFY(!root->property("editorDetached").toBool());
+
     // Verify Adaptive Context Workspace and visual shell placeholders exist
     QVERIFY(root->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace")) != nullptr);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("goldAutomatchView")) != nullptr);

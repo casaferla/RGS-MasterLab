@@ -42,6 +42,7 @@ Rectangle {
     Component {
         id: extraEditorHostFactory
         DspEditorHost {
+            id: additionalEditorHost
             objectName: "dspAdditionalEditorHost"
             adapterModel: root.adapterModel
             gainViewModel: root.gainViewModel
@@ -56,7 +57,7 @@ Rectangle {
             limiterGrProvider: root.limiterGrProvider
             activeChainRow: realChainSelector.activeRow
             onDockToggleRequested: {
-                if (root.dockToggleHandler) root.dockToggleHandler(this)
+                if (root.dockToggleHandler) root.dockToggleHandler(additionalEditorHost)
             }
         }
     }
