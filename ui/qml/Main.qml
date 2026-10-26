@@ -180,6 +180,13 @@ ApplicationWindow {
         if (dspChainAdapterModel)
             dspChainAdapterModel.selectModuleByInstanceId(instanceId)
         root.updateSelectedDockState()
+        // The original shared host may be idle after an additional
+        // floating instance is redocked. Suspend its module binding so
+        // there is never a second active QML editor for the same instance.
+        if (previousDock===realDspWorkspace.editorHost
+                && previousDock!==returningHost
+                && !root.primaryDetached)
+            previousDock.suppressActiveModule=true
         if (previousDock && previousDock!==returningHost
                 && previousDock!==realDspWorkspace.editorHost
                 && !root.editorHostIsFloating(previousDock))
