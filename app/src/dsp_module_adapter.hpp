@@ -24,6 +24,7 @@ class DspModuleAdapter : public QObject {
     Q_PROPERTY(QString workspaceContextLabel READ workspace_context_label NOTIFY changed)
     Q_PROPERTY(QString configurationState READ configuration_state NOTIFY changed)
     Q_PROPERTY(bool bypassSupported READ bypass_supported NOTIFY changed)
+    Q_PROPERTY(bool nonProcessingService READ non_processing_service CONSTANT)
     Q_PROPERTY(bool bypass READ bypass WRITE setBypass NOTIFY changed)
     Q_PROPERTY(bool previewSupported READ preview_supported NOTIFY changed)
     Q_PROPERTY(QString previewStatus READ preview_status NOTIFY changed)
@@ -52,6 +53,8 @@ public:
     [[nodiscard]] virtual QString workspace_context_label() const = 0;
     [[nodiscard]] virtual QString configuration_state() const = 0;
     [[nodiscard]] virtual bool bypass_supported() const noexcept = 0;
+    // DSPs default to processing; explicit observers/utilities opt out.
+    [[nodiscard]] virtual bool non_processing_service() const noexcept { return false; }
     [[nodiscard]] virtual bool bypass() const noexcept = 0;
     [[nodiscard]] virtual bool preview_supported() const noexcept = 0;
     [[nodiscard]] virtual QString preview_status() const = 0;
@@ -330,6 +333,7 @@ public:
     [[nodiscard]] QString configuration_state() const override
         { return QStringLiteral("Default"); }
     [[nodiscard]] bool bypass_supported() const noexcept override { return false; }
+    [[nodiscard]] bool non_processing_service() const noexcept override { return true; }
     [[nodiscard]] bool bypass() const noexcept override { return false; }
     [[nodiscard]] bool preview_supported() const noexcept override { return false; }
     [[nodiscard]] QString preview_status() const override
@@ -382,6 +386,7 @@ public:
     [[nodiscard]] QString configuration_state() const override
     { return QStringLiteral("Default"); }
     [[nodiscard]] bool bypass_supported() const noexcept override { return false; }
+    [[nodiscard]] bool non_processing_service() const noexcept override { return true; }
     [[nodiscard]] bool bypass() const noexcept override { return false; }
     [[nodiscard]] bool preview_supported() const noexcept override { return false; }
     [[nodiscard]] QString preview_status() const override

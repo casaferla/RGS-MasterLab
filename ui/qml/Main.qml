@@ -790,11 +790,11 @@ ApplicationWindow {
                             onClicked: root.returnCurrentEditorToDock()
                             Accessible.name: "Dock this floating module"
                             StudioTooltipDwell {
-                                id: centerDockTooltipDwell
+                                id: standardCenterDockTooltipDwell
                                 anchors.fill: parent
                             }
                             ToolTip.text: "Dock floating module"
-                            ToolTip.visible: centerDockTooltipDwell.ready
+                            ToolTip.visible: standardCenterDockTooltipDwell.ready
                             ToolTip.delay: 0
                         }
                     }
@@ -1494,11 +1494,11 @@ ApplicationWindow {
                             onClicked: root.returnCurrentEditorToDock()
                             Accessible.name: "Dock this floating module"
                             StudioTooltipDwell {
-                                id: centerDockTooltipDwell
+                                id: compactCenterDockTooltipDwell
                                 anchors.fill: parent
                             }
                             ToolTip.text: "Dock floating module"
-                            ToolTip.visible: centerDockTooltipDwell.ready
+                            ToolTip.visible: compactCenterDockTooltipDwell.ready
                             ToolTip.delay: 0
                         }
                     }

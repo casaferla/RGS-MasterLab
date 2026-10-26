@@ -223,8 +223,7 @@ Rectangle {
                     // Bypass capability are ALWAYS lit, not fake Manual.
                     readonly property bool permanentlyLit: moduleAdapter
                         ? (!moduleAdapter.bypassSupported
-                           && (moduleAdapter.editorContentKey === "TRUE_PEAK_METER"
-                               || moduleAdapter.editorContentKey === "MASTER_MONITOR"))
+                           && moduleAdapter.nonProcessingService)
                         : false
                     readonly property bool isBypassed: moduleAdapter ? (moduleAdapter.bypassSupported && moduleAdapter.bypass) : false
                     readonly property bool hasError: moduleAdapter ? moduleAdapter.hasError : false
