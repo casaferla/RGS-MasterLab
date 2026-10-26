@@ -733,6 +733,46 @@ Window {
             qPrintable(QStringLiteral("PO no-scroll: %1 editor bottom=%2 host height=%3")
                 .arg(QString::fromLatin1(fit.editor))
                 .arg(editorBottom.y()).arg(host->height())));
+        if (fit.index==3) {
+            auto* sideToggle=qobject_cast<QQuickItem*>(find_child_by_name(
+                editor,QStringLiteral("stereoMsSideMutedToggle")));
+            QVERIFY(sideToggle&&sideToggle->isVisible());
+            QVERIFY2(check_item_contained_in_ancestor(
+                sideToggle,editor,1.5),
+                "PO no-scroll: Stereo/M-S lower Side Muted toggle is clipped");
+        }
+        if (fit.index==4) {
+            auto* bay=qobject_cast<QQuickItem*>(find_child_by_name(
+                editor,QStringLiteral("truePeakStaticMeterBay")));
+            auto* provenance=qobject_cast<QQuickItem*>(find_child_by_name(
+                bay,QStringLiteral("truePeakProvenanceCard")));
+            QVERIFY(bay&&provenance&&provenance->isVisible());
+            QVERIFY2(check_item_contained_in_ancestor(
+                provenance,bay,1.5),
+                "PO no-scroll: M16 lower provenance card is clipped");
+        }
+        if (fit.index==5) {
+            auto* ceiling=qobject_cast<QQuickItem*>(find_child_by_name(
+                editor,QStringLiteral("m17CeilingCard")));
+            auto* numericPair=qobject_cast<QQuickItem*>(find_child_by_name(
+                ceiling,QStringLiteral("m17CeilingControl")));
+            auto* trim=qobject_cast<QQuickItem*>(find_child_by_name(
+                editor,QStringLiteral("m17VerificationTrim")));
+            auto* trimStatus=qobject_cast<QQuickItem*>(find_child_by_name(
+                trim,QStringLiteral("m17TrimProvenanceStatus")));
+            QVERIFY(ceiling&&numericPair&&trim&&trimStatus);
+            QVERIFY(ceiling->isVisible()&&numericPair->isVisible());
+            QVERIFY(trim->isVisible()&&trimStatus->isVisible());
+            QVERIFY2(check_item_contained_in_ancestor(
+                numericPair,ceiling,1.5),
+                "PO no-scroll: M17 Ceiling numeric slider crosses card boundary");
+            QVERIFY2(check_item_contained_in_ancestor(
+                trimStatus,trim,1.5),
+                "PO no-scroll: M17 Verification Trim status crosses bottom boundary");
+            QVERIFY2(check_item_contained_in_ancestor(
+                trim,editor,1.5),
+                "PO no-scroll: M17 Verification Trim card outside editor");
+        }
         if (fit.index==6) {
             // The expandable SECONDARY controls must also fit at the
             // minimum: opening SEEK/LOOP cannot push its last row outside
