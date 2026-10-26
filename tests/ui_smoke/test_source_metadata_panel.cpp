@@ -650,11 +650,11 @@ Window {
         const auto alwaysLit=(i==4 || i==6);
         QCOMPARE(row->property("isDefaultState").toBool(),!manualState);
         QCOMPARE(row->property("permanentlyLit").toBool(),alwaysLit);
-        QVERIFY2(glyph->opacity() >= (alwaysLit ? 0.99
-                           : manualState ? 0.69 : 0.57)
-                     && glyph->opacity() <= (alwaysLit ? 1.01
-                           : manualState ? 1.01 : 0.59),
-                 "Native icon must honor typed meter/utility non-bypassability");
+        const auto bypassed=row->property("isBypassed").toBool();
+        const double expectedOpacity=(alwaysLit ? 1.0
+            : manualState ? 1.0 : 0.58) * (bypassed ? 0.7 : 1.0);
+        QVERIFY2(std::abs(glyph->opacity()-expectedOpacity)<0.015,
+                 "Native icon must reflect configuration, true bypass and non-processing semantics separately");
         // Every line remains inside the same fixed 164-DIP Chain;
         // actual native scrollbar/viewport never changes glyph identity.
         QVERIFY(glyph->x()>=0.0);

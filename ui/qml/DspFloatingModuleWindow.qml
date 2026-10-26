@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import QtQml.Models
 
 // No second visible row: the ONLY Dock icon stays in the SAME shared
