@@ -210,6 +210,10 @@ Item {
             // spectral display, loudness meter or verified M16 LIVE reading.
             Rectangle {
                 objectName: "monitorStatusWell"
+                // Compact editor: SEEK/LOOP replaces the secondary status
+                // panel while expanded. The primary MASTER/DEVICE pair is
+                // never collapsed or moved. No vertical scroll is allowed.
+                visible: !root.advancedNavigationExpanded || root.height >= 420
                 Layout.fillWidth: true
                 Layout.preferredHeight: root.height < 420 ? 42 : 52
                 radius: 6
@@ -249,6 +253,12 @@ Item {
 
             Rectangle {
                 objectName: "monitorTransportWell"
+                // At the minimum supported Main height, the user's
+                // explicit SEEK/LOOP expansion temporarily replaces the
+                // transport actions; collapsing restores Play/Pause/Stop.
+                // This keeps every *visible* interactive control inside
+                // the editor, without a Flickable or hidden lower region.
+                visible: !root.advancedNavigationExpanded || root.height >= 420
                 Layout.fillWidth: true
                 Layout.preferredHeight: root.height < 420 ? 62 : 72
                 radius: 6

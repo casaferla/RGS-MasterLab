@@ -733,6 +733,33 @@ Window {
             qPrintable(QStringLiteral("PO no-scroll: %1 editor bottom=%2 host height=%3")
                 .arg(QString::fromLatin1(fit.editor))
                 .arg(editorBottom.y()).arg(host->height())));
+        if (fit.index==6) {
+            // The expandable SECONDARY controls must also fit at the
+            // minimum: opening SEEK/LOOP cannot push its last row outside
+            // the editor or introduce scrolling. MASTER/DEVICE remain two
+            // columns; the status/transport wells yield compact space.
+            QVERIFY(editor->setProperty("advancedNavigationExpanded",true));
+            QTest::qWait(40);
+            QCoreApplication::processEvents();
+            auto* navigation=qobject_cast<QQuickItem*>(find_child_by_name(
+                editor,QStringLiteral("monitorNavigationRow")));
+            auto* loop=qobject_cast<QQuickItem*>(find_child_by_name(
+                editor,QStringLiteral("monitorLoopRow")));
+            auto* transport=qobject_cast<QQuickItem*>(find_child_by_name(
+                editor,QStringLiteral("monitorTransportWell")));
+            auto* pair=qobject_cast<QQuickItem*>(find_child_by_name(
+                editor,QStringLiteral("monitorMasterDevicePair")));
+            QVERIFY(navigation&&loop&&transport&&pair);
+            QVERIFY(navigation->isVisible()&&loop->isVisible());
+            QVERIFY(pair->isVisible());
+            QVERIFY(!transport->isVisible());
+            const auto expandedBottom=loop->mapToItem(editor,
+                QPointF{0.0,loop->height()}).y();
+            QVERIFY2(expandedBottom<=editor->height()+1.5,
+                qPrintable(QStringLiteral("PO SEEK/LOOP overflows: %1 > %2")
+                    .arg(expandedBottom).arg(editor->height())));
+            QVERIFY(editor->setProperty("advancedNavigationExpanded",false));
+        }
     }
     QVERIFY(!find_child_by_name(host,QStringLiteral("stereoMsViewport")));
     QVERIFY(!find_child_by_name(host,QStringLiteral("truePeakMeterViewport")));
