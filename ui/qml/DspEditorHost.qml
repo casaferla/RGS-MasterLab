@@ -118,16 +118,22 @@ Rectangle {
         }
     }
 
+    readonly property bool compactTallerEditor: root.activeModule
+        && (root.activeModule.editorContentKey === "STEREO_MS"
+            || root.activeModule.editorContentKey === "TRUE_PEAK_METER"
+            || root.activeModule.editorContentKey === "TRUE_PEAK_LIMITER"
+            || root.activeModule.editorContentKey === "MASTER_MONITOR")
+
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 8
+        anchors.margins: root.compactTallerEditor && root.height < 470 ? 8 : 12
+        spacing: root.compactTallerEditor && root.height < 470 ? 5 : 8
 
         // Host Header Strip (40 lp)
         RowLayout {
             objectName: "dspHostHeaderRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 40
+            Layout.preferredHeight: root.compactTallerEditor && root.height < 470 ? 34 : 40
             spacing: 12
 
             // Preserve the EXACT old 22px slot: the module title's X
@@ -491,65 +497,38 @@ Rectangle {
             viewModel: root.activeModule ? root.activeModule.compressorViewModel : null
         }
 
-        // Windows minimum-height physical correction: the M15/M16/M17
-        // layouts need their canonical content height. Show their lower
-        // controls by VERTICAL scrolling, never by clipping or changing
-        // the frozen horizontal structure at 1184x688 / 150% DPI.
-        Flickable {
-            id: meterViewport
-            objectName: "truePeakMeterViewport"
+        // PO 2026-10-26: every function fits in the real compact editor
+        // without vertical scrolling, clipping or changing columns.
+        TruePeakMeterEditor {
+            id: truePeakMeterEditor
+            objectName: "truePeakMeterEditor"
             visible: root.isMeterEditor
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: 0
             Layout.preferredHeight: 0
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            contentWidth: width
-            contentHeight: Math.max(height, 470)
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-            TruePeakMeterEditor {
-                id: truePeakMeterEditor
-                objectName: "truePeakMeterEditor"
-                width: meterViewport.width
-                height: meterViewport.contentHeight
-                measurementProvider: root.truePeakCurrentStatic
-                liveProvider: root.truePeakCurrentLive
-            }
+            measurementProvider: root.truePeakCurrentStatic
+            liveProvider: root.truePeakCurrentLive
         }
 
-        Flickable {
-            id: limiterViewport
-            objectName: "truePeakLimiterViewport"
+        TruePeakLimiterEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
+            id: truePeakLimiterEditor
+            objectName: "truePeakLimiterEditor"
             visible: root.isLimiterEditor
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: 0
             Layout.preferredHeight: 0
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            contentWidth: width
-            contentHeight: Math.max(height, 475)
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-            TruePeakLimiterEditor {
-                showLocalValidation: !root.errorsInGlobalStatusBar
-                id: truePeakLimiterEditor
-                objectName: "truePeakLimiterEditor"
-                width: limiterViewport.width
-                height: limiterViewport.contentHeight
-                limiterModule: root.isLimiterEditor ? root.activeModule : null
-                monitorLocked: root.monitorExclusive
-                limiterViewModel: root.isLimiterEditor
-                    ? root.terminalLimiterViewModel : null
-                limiterGrProvider: root.isLimiterEditor && !root.monitorExclusive
-                    ? root.limiterGrProvider : null
-                measurementProvider: root.truePeakCurrentStatic
-                liveProvider: root.truePeakCurrentLive
-            }
+            limiterModule: root.isLimiterEditor ? root.activeModule : null
+            monitorLocked: root.monitorExclusive
+            limiterViewModel: root.isLimiterEditor ? root.terminalLimiterViewModel : null
+            limiterGrProvider: root.isLimiterEditor && !root.monitorExclusive
+                ? root.limiterGrProvider : null
+            measurementProvider: root.truePeakCurrentStatic
+            liveProvider: root.truePeakCurrentLive
         }
 
-        // Master Audition already scrolls INTERNALLY. Remove any Layout
-        // minimum-height pressure from its 460px implicit height.
         MonitorEditor {
             id: monitorEditor
             objectName: "monitorEditor"
@@ -562,29 +541,18 @@ Rectangle {
             monitorViewModel: root.terminalMonitorViewModel
         }
 
-        Flickable {
-            id: stereoViewport
-            objectName: "stereoMsViewport"
+        StereoMsEditor {
+            showLocalValidation: !root.errorsInGlobalStatusBar
+            id: stereoMsEditor
+            objectName: "stereoMsEditor"
             visible: root.activeModule
                 ? root.activeModule.editorContentKey === "STEREO_MS" : false
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: 0
             Layout.preferredHeight: 0
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            contentWidth: width
-            contentHeight: Math.max(height, 460)
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-            StereoMsEditor {
-                showLocalValidation: !root.errorsInGlobalStatusBar
-                id: stereoMsEditor
-                objectName: "stereoMsEditor"
-                width: stereoViewport.width
-                height: stereoViewport.contentHeight
-                viewModel: root.activeModule
-                    ? root.activeModule.stereoMsViewModel : null
-            }
+            viewModel: root.activeModule
+                ? root.activeModule.stereoMsViewModel : null
         }
     }
 }

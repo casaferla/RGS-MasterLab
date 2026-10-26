@@ -37,7 +37,7 @@ Item {
     // readout cards outside the short physical Main window. This is
     // vertical-only compression; stereo L/R meter gets all spare height.
     readonly property int lowerControlBandHeight: height < 420
-        ? Math.max(132, Math.round(height * 0.36))
+        ? Math.max(102, Math.round(height * 0.35))
         : Math.min(198, Math.max(145, Math.round(height * 0.365)))
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
@@ -113,7 +113,7 @@ Item {
                         TruePeakStaticLane {
                             objectName: "truePeakLeftLane"
                             Layout.fillHeight: true
-                            Layout.minimumHeight: 140
+                            Layout.minimumHeight: root.height < 420 ? 94 : 140
                             Layout.preferredWidth: 117
                             channelName: root.isMono ? "C" : "L"
                             useFamilyAccent: root.useFamilyAccent
@@ -137,7 +137,7 @@ Item {
                         TruePeakStaticLane {
                             objectName: "truePeakRightLane"
                             Layout.fillHeight: true
-                            Layout.minimumHeight: 140
+                            Layout.minimumHeight: root.height < 420 ? 94 : 140
                             Layout.preferredWidth: 117
                             visible: !root.isMono
                             channelName: "R"
@@ -258,9 +258,9 @@ Item {
                             objectName: "m17PreparationInGrRegion"
                             visible: root.limiterPreparationVisible
                             Layout.fillWidth: true
-                            Layout.minimumHeight: 54
-                            Layout.preferredHeight: 54
-                            Layout.maximumHeight: 54
+                            Layout.minimumHeight: root.height < 420 ? 42 : 54
+                            Layout.preferredHeight: root.height < 420 ? 42 : 54
+                            Layout.maximumHeight: root.height < 420 ? 42 : 54
                             spacing: 2
                             ProgressBar {
                                 objectName: "m17PreparationProgressBar"
@@ -305,9 +305,9 @@ Item {
                             // Fixed single linked 54px GR lane, just like
                             // Compressor. Never stretch with window height.
                             Layout.fillHeight: false
-                            Layout.minimumHeight: 54
-                            Layout.preferredHeight: 54
-                            Layout.maximumHeight: 54
+                            Layout.minimumHeight: root.height < 420 ? 42 : 54
+                            Layout.preferredHeight: root.height < 420 ? 42 : 54
+                            Layout.maximumHeight: root.height < 420 ? 42 : 54
                             familyAccent: root.familyAccent
                             backendVerified: root.limiterGrProvider
                                 ? root.limiterGrProvider.verified : false

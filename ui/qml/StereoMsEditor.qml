@@ -26,11 +26,11 @@ Item {
     // observational M/S output well: its coordinates must never be stretched.
     ColumnLayout {
         anchors.fill: parent
-        spacing: 7
+        spacing: root.height < 380 ? 4 : 7
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 27
+            Layout.preferredHeight: root.height < 380 ? 23 : 27
             spacing: 8
             Text {
                 text: "SPATIAL CONTROL"
@@ -93,7 +93,7 @@ Item {
             objectName: "stereoMsVisualWells"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: 150
+            Layout.minimumHeight: root.height < 380 ? 105 : 150
             spacing: 9
 
             StereoMsResponseGraph {
@@ -403,8 +403,8 @@ Item {
         Rectangle {
             objectName: "stereoMsControlsRegion"
             Layout.fillWidth: true
-            Layout.preferredHeight: 166
-            Layout.minimumHeight: 166
+            Layout.preferredHeight: root.height < 380 ? 133 : 166
+            Layout.minimumHeight: root.height < 380 ? 133 : 166
             radius: 6
             color: "#12243F"
             border.color: "#2C5A78"
@@ -412,8 +412,8 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 9
-                spacing: 6
+                anchors.margins: root.height < 380 ? 5 : 9
+                spacing: root.height < 380 ? 3 : 6
 
                 RowLayout {
                     Layout.fillWidth: true

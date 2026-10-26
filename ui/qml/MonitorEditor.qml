@@ -18,23 +18,16 @@ Item {
     implicitWidth: 610
     implicitHeight: 460
 
-    ScrollView {
-        id: scroll
+    ColumnLayout {
+        id: page
         anchors.fill: parent
-        clip: true
-        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-        contentWidth: availableWidth
-        ColumnLayout {
-            id: page
-            width: Math.max(200,scroll.availableWidth)
-            spacing: 6
+        spacing: root.height < 420 ? 3 : 6
 
             // Title/identity shares the other DSP editors' 11px section
             // grammar, dark wells and restrained family accent.
             RowLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 24
+                Layout.preferredHeight: root.height < 420 ? 20 : 24
                 spacing: 8
                 Text {
                     text: "Master Audition"
@@ -82,7 +75,7 @@ Item {
                     objectName: "monitorMasterCard"
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
-                    Layout.preferredHeight: 132
+                    Layout.preferredHeight: root.height < 420 ? 110 : 132
                     radius: 6
                     color: "#0A1C2D"
                     border.color: "#31506B"
@@ -149,7 +142,7 @@ Item {
                     objectName: "monitorDeviceCard"
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
-                    Layout.preferredHeight: 132
+                    Layout.preferredHeight: root.height < 420 ? 110 : 132
                     radius: 6
                     color: "#0A1C2D"
                     border.color: "#31506B"
@@ -218,7 +211,7 @@ Item {
             Rectangle {
                 objectName: "monitorStatusWell"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 52
+                Layout.preferredHeight: root.height < 420 ? 42 : 52
                 radius: 6
                 color: "#0B1D2B"
                 border.color: "#31506B"
@@ -257,7 +250,7 @@ Item {
             Rectangle {
                 objectName: "monitorTransportWell"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 72
+                Layout.preferredHeight: root.height < 420 ? 62 : 72
                 radius: 6
                 color: "#0A1C2D"
                 border.color: "#31506B"
@@ -326,7 +319,7 @@ Item {
             RowLayout {
                 objectName: "monitorAdvancedNavigationToggle"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 27
+                Layout.preferredHeight: root.height < 420 ? 22 : 27
                 StudioButton {
                     objectName: "monitorAdvancedNavigationButton"
                     text: root.advancedNavigationExpanded
@@ -416,5 +409,4 @@ Item {
                 wrapMode: Text.WordWrap
             }
         }
-    }
-}
+  }

@@ -19,9 +19,11 @@ Item {
     property int lowerControlBandHeight: 198
     // Continuous vertical fit into actual Main workspace. All canonical
     // >=548px heights remain byte-identical to the accepted M17 layout.
-    readonly property int m17ReadoutHeight: Math.min(100, Math.max(56,
+    readonly property int m17ReadoutHeight: Math.min(100, Math.max(
+        height < 420 ? 42 : 56,
         Math.floor((height - lowerControlBandHeight - 44) / 3)))
-    readonly property int m17CeilingHeight: Math.min(100, Math.max(70,
+    readonly property int m17CeilingHeight: Math.min(100, Math.max(
+        height < 420 ? 52 : 70,
         Math.round(70 + (lowerControlBandHeight - 145) * 30 / 53)))
     readonly property int m17TrimHeight:
         lowerControlBandHeight - m17CeilingHeight - 6
@@ -70,7 +72,7 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.verticalCenter: undefined
-        anchors.margins: 8
+        anchors.margins: root.height < 420 ? 5 : 8
         height: undefined
         // M17 lower band (198px) + three 100px reflow cards must fit the
         // 548px minimum editor height with TWO nonzero centering springs.
