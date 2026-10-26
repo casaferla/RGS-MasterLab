@@ -2655,6 +2655,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(statusIndicator->property("height").toInt(), 8);
     QCOMPARE(statusIndicator->property("color").value<QColor>(), QColor{QStringLiteral("#00E6E6")});
     QVERIFY2(!statusBuildProvenanceLabel->property("text").toString().isEmpty(), "statusBuildProvenanceLabel text must be non-empty");
+#ifdef RGSML_BUILD_PROVENANCE
+    // The installed FQ/PR binary MUST show the exact compile-stamped
+    // provenance, not silently fall back to a misleading "DEV" label.
+    QCOMPARE(statusBuildProvenanceLabel->property("text").toString(),
+             QStringLiteral(RGSML_BUILD_PROVENANCE));
+#endif
 
     // Verify Docked DSP Architecture components exist
     auto* dspWorkspaceObj = root->findChild<QObject*>(QStringLiteral("dspWorkspace"));
@@ -2680,6 +2686,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         find_child_by_name(root,QStringLiteral("compactEditorDockDropZone")));
     QVERIFY2(dockGrip && dockToggle && dropWell,
              "Shared dock/undock button and real Main target are required");
+    auto* dockGlyph=find_child_by_name(dspEditorHostObj,
+                                     QStringLiteral("dspHostDockToggleIcon"));
+    QVERIFY(dockGlyph);
+    QCOMPARE(dockGlyph->property("kind").toString(),QStringLiteral("undock"));
     QCOMPARE(dockGrip->width(),22.0);
     // A hidden native QQuickWindow need not have polished its RowLayout.
     // Assert its actual grip hitbox AFTER the real Window becomes visible.
@@ -2692,6 +2702,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!find_child_by_name(root,QStringLiteral("dspFloatingDragGrip")));
     QCOMPARE(dockGrip->window(),floatingModule);
     QVERIFY(dockToggle->isVisible());
+    QCOMPARE(dockGlyph->property("kind").toString(),QStringLiteral("dock"));
     QCOMPARE(nativeDockedEditor,originalEditorIdentity);
     QVERIFY(!root->property("detachedModuleInstanceId").toString().isEmpty());
     // Actual native Qt floating Window with the SAME rehosted editor,
@@ -2719,6 +2730,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!root->property("editorDetached").toBool());
     QVERIFY(dockGrip->isVisible());
     QVERIFY(dockToggle->isVisible());
+    QCOMPARE(dockGlyph->property("kind").toString(),QStringLiteral("undock"));
     QVERIFY2(capture_visual_evidence(
         window,QStringLiteral("fq80_real_main_chain_family_icons_docked_grip_1184x688.png"),
         QSize{1184,688}),"FQ80 real Main docked family-icon visual evidence");
