@@ -4149,6 +4149,41 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTest::qWait(50);
     QCoreApplication::processEvents();
     QCOMPARE(window->size(), QSize(compactW, compactH));
+    // PO post-FQ80: NO vertical scrolling or hidden lower controls in
+    // M15, M16, M17 and Master Audition at the 1184x688 native minimum.
+    // Inspect the actual visible scenegraph, not an illustrative fixture.
+    QVERIFY(!find_child_by_name(root,QStringLiteral("stereoMsViewport")));
+    QVERIFY(!find_child_by_name(root,QStringLiteral("truePeakMeterViewport")));
+    QVERIFY(!find_child_by_name(root,QStringLiteral("truePeakLimiterViewport")));
+    const int originalModuleIndex=dspChainAdapterModel.selected_index();
+    struct FitCase { int index; const char* editor; const char* bottomControl; };
+    const std::array<FitCase,4> fitCases{{
+        {3,"stereoMsEditor","stereoMsControlsRegion"},
+        {4,"truePeakMeterEditor","truePeakMeterSharedRail"},
+        {5,"truePeakLimiterEditor","truePeakMeterSharedRail"},
+        {6,"monitorEditor","monitorAdvancedNavigationToggle"}
+    }};
+    for (const auto& fit:fitCases) {
+        dspChainAdapterModel.setSelectedIndex(fit.index);
+        QTest::qWait(60);
+        QCoreApplication::processEvents();
+        auto* liveEditor=qobject_cast<QQuickItem*>(find_child_by_name(
+            dspEditorHostObj,QString::fromLatin1(fit.editor)));
+        QVERIFY2(liveEditor,fit.editor);
+        QVERIFY2(liveEditor->isVisible(),fit.editor);
+        auto* lastControl=qobject_cast<QQuickItem*>(find_child_by_name(
+            liveEditor,QString::fromLatin1(fit.bottomControl)));
+        QVERIFY2(lastControl,fit.bottomControl);
+        const QPointF bottom=lastControl->mapToItem(liveEditor,
+            QPointF{0,lastControl->height()});
+        QVERIFY2(bottom.y()<=liveEditor->height()+1.5,
+            qPrintable(QStringLiteral("PO no-scroll: %1 bottom=%2 editor=%3")
+                .arg(QString::fromLatin1(fit.editor))
+                .arg(bottom.y()).arg(liveEditor->height())));
+    }
+    dspChainAdapterModel.setSelectedIndex(originalModuleIndex);
+    QTest::qWait(60);
+    QCoreApplication::processEvents();
     QCOMPARE(dspChainSelectorObj->property("width").toInt(), 164);
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
     QVERIFY2(dspChainStateText1->property("visible").toBool(),
