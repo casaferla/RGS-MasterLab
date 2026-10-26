@@ -1,5 +1,6 @@
 """Scoped G3 Qt Quick UI source guard; Windows physical Gate M remains open."""
 from pathlib import Path
+import re
 
 chain = Path("ui/qml/DspChainSelector.qml").read_text(encoding="utf-8")
 gain = Path("ui/qml/InputGainEditor.qml").read_text(encoding="utf-8")
@@ -117,4 +118,22 @@ for test in ("sendGainWheel(0.03, 120)", "sendGainWheel(0.50, 120)",
              "sendGainWheel(0.97, 120)", "sendGainWheel(0.50, 60)",
              "gainViewModel.undo();"):
     require(test in smoke, "missing native L/C/R/partial/undo test " + test)
+# PO/FQ80 supersession: no vertical editor scroller at the real Main
+# minimum. Chain scrolling is independent and expressly still allowed.
+for editor_file in ("StereoMsEditor.qml", "TruePeakMeterEditor.qml",
+                    "TruePeakLimiterEditor.qml", "MonitorEditor.qml"):
+    body = (Path("ui/qml") / editor_file).read_text(encoding="utf-8")
+    require(not re.search(r"(?m)^\\s*(?:ScrollView|Flickable|ListView)\\s*\\{", body)
+            and "ScrollBar.vertical" not in body,
+            f"{editor_file} reintroduced PO-forbidden editor scrolling")
+main_qml = Path("ui/qml/Main.qml").read_text(encoding="utf-8")
+workspace_qml = Path("ui/qml/DspWorkspace.qml").read_text(encoding="utf-8")
+host_qml = Path("ui/qml/DspEditorHost.qml").read_text(encoding="utf-8")
+require("additionalFloatingSessions" in main_qml
+        and "function dockFloatingById(instanceId)" in main_qml
+        and "function floatingWindowFor(instanceId)" in main_qml
+        and "createExtraEditorHost()" in workspace_qml
+        and "activeModuleOverride" in host_qml
+        and 'QStringLiteral("dspAdditionalEditorHost")' in smoke,
+        "multi-window native host must preserve per-instance identities")
 print("MINOR_FIX_G3_STATIC_UI_GUARD_PASS__PHYSICAL_GATE_M_OPEN")
