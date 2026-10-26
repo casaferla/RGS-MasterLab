@@ -55,80 +55,157 @@ ApplicationWindow {
     // local to their owning ViewModel and never replace another DSP status.
     readonly property var statusDspModule: typeof dspChainAdapterModel !== "undefined"
         && dspChainAdapterModel ? dspChainAdapterModel.activeModule : null
-    // Single persistent editor instance. Never duplicate/reload the host
-    // when a module is detached. At most one shared host floats at a time.
+    // The original host remains a persistent QObject and is transferred,
+    // never cloned, to the first native floating window. Later Undock
+    // freezes the current shared host and replaces only the MAIN dock
+    // host. One native window and one QML editor own each floating instance.
     property bool editorDetached: false
     property bool dockDropCandidate: false
     property string detachedModuleInstanceId: ""
+    property bool primaryDetached: false
+    property string primaryDetachedInstanceId: ""
+    property var primaryDetachedModule: null
+    property var additionalFloatingSessions: ({})
+    property var dockedEditorHost: null
 
+    readonly property string selectedDspInstanceId: root.statusDspModule
+        ? root.statusDspModule.instanceId : ""
+
+    function floatingWindowFor(instanceId) {
+        if (!instanceId) return null
+        if (root.primaryDetached && instanceId===root.primaryDetachedInstanceId)
+            return floatingModuleWindow
+        const entry=root.additionalFloatingSessions[instanceId]
+        return entry ? entry.window : null
+    }
+    function editorHostIsFloating(host) {
+        if (root.primaryDetached && host===realDspWorkspace.editorHost)
+            return true
+        const sessions=root.additionalFloatingSessions
+        for (const key in sessions) {
+            if (sessions[key].host===host) return true
+        }
+        return false
+    }
+    function updateSelectedDockState() {
+        const floating=!!root.floatingWindowFor(root.selectedDspInstanceId)
+        root.editorDetached=floating
+        root.detachedModuleInstanceId=floating ? root.selectedDspInstanceId : ""
+        if (root.dockedEditorHost)
+            root.dockedEditorHost.suppressActiveModule=floating
+    }
     function activeDockSlot() {
         return root.useAdaptiveDspComposition
             ? compactEditorSlot : standardEditorSlot
     }
-    // Qt Quick Item.mapToGlobal supplies logical screen coordinates,
-    // including mixed-DPI/secondary-monitor Qt window placement.
-    function pointInsideEditorDock(globalX,globalY) {
-        const slot=activeDockSlot()
-        if(!slot || !Number.isFinite(globalX)||!Number.isFinite(globalY))
-            return false
-        const p=slot.mapToGlobal(Qt.point(0,0))
-        return globalX>=p.x && globalX<=p.x+slot.width
-            && globalY>=p.y && globalY<=p.y+slot.height
-    }
-    function beginDockDrag(globalX,globalY) {
-        // Native window movement cannot trigger an accidental redock.
-        dockDropCandidate=false
-    }
-    function finishDockDrag(globalX,globalY) {
-        dockDropCandidate=false
-    }
-    function detachByGrip(globalX,globalY) {
-        if(root.editorDetached || pointInsideEditorDock(globalX,globalY))
-            return
-        // Position the existing Window near the released grip; no editor
-        // clone and no external DropArea window impersonation.
-        floatingModuleWindow.x=Math.round(globalX-24)
-        floatingModuleWindow.y=Math.round(globalY-20)
-        root.detachSelectedModule()
-    }
-    readonly property string selectedDspInstanceId: root.statusDspModule
-        ? root.statusDspModule.instanceId : ""
+    // Legacy drag/drop entrypoints are inert by PO decision. Windows title
+    // bars move natively; only explicit Dock/Undock buttons change state.
+    function pointInsideEditorDock(globalX,globalY) { return false }
+    function beginDockDrag(globalX,globalY) { root.dockDropCandidate=false }
+    function finishDockDrag(globalX,globalY) { root.dockDropCandidate=false }
+    function detachByGrip(globalX,globalY) { }
 
-    function returnCurrentEditorToDock() {
-        if (!root.editorDetached) return
-        root.dockDropCandidate = false
-        floatingModuleWindow.dragOverDock = false
-        root.editorDetached = false
-        root.detachedModuleInstanceId = ""
-    }
     function detachSelectedModule() {
-        const m = root.statusDspModule
-        if (!m || !m.instanceId || !realDspWorkspace.editorHost) return
-        if (root.editorDetached) {
-            floatingModuleWindow.focusExisting()
-            return
+        const module=root.statusDspModule
+        if (!module || !module.instanceId || !root.dockedEditorHost) return
+        const existing=root.floatingWindowFor(module.instanceId)
+        if (existing) { existing.focusExisting(); return }
+        // Allocate the successor dock BEFORE transferring this live editor.
+        const spare=realDspWorkspace.createExtraEditorHost()
+        if (!spare) return
+        const host=root.dockedEditorHost
+        const id=module.instanceId
+        root.editorDetached=true // no two simultaneously visible proxies
+        host.activeModuleOverride=module
+        host.suppressActiveModule=false
+        if (host===realDspWorkspace.editorHost && !root.primaryDetached) {
+            root.primaryDetachedModule=module
+            root.primaryDetachedInstanceId=id
+            root.primaryDetached=true
+        } else {
+            host.detachedWindow=true
+            const native=additionalFloatingWindowFactory.createObject(root,{
+                editorTarget:host,
+                moduleInstanceId:id,
+                moduleTitle:module.displayName,
+                familyAccent:module.familyAccent,
+                detached:true
+            })
+            if (!native) {
+                host.detachedWindow=false
+                host.activeModuleOverride=null
+                root.editorDetached=false
+                spare.destroy()
+                return
+            }
+            const next={}
+            for (const key in root.additionalFloatingSessions)
+                next[key]=root.additionalFloatingSessions[key]
+            next[id]={window:native,host:host,module:module}
+            root.additionalFloatingSessions=next
         }
-        root.detachedModuleInstanceId = m.instanceId
-        root.editorDetached = true
-        Qt.callLater(function() { floatingModuleWindow.focusExisting() })
+        root.dockedEditorHost=spare
+        root.updateSelectedDockState()
+        const floating=root.floatingWindowFor(id)
+        Qt.callLater(function() { if(floating)floating.focusExisting() })
+    }
+    function dockFloatingById(instanceId) {
+        const native=root.floatingWindowFor(instanceId)
+        if (!native) return
+        const wasPrimary=root.primaryDetached
+            && instanceId===root.primaryDetachedInstanceId
+        let returningHost=null
+        if (wasPrimary) {
+            returningHost=realDspWorkspace.editorHost
+            root.primaryDetached=false // first hide native proxy
+            root.primaryDetachedInstanceId=""
+            root.primaryDetachedModule=null
+        } else {
+            const entry=root.additionalFloatingSessions[instanceId]
+            if (!entry) return
+            returningHost=entry.host
+            const next={}
+            for (const key in root.additionalFloatingSessions)
+                if (key!==instanceId) next[key]=root.additionalFloatingSessions[key]
+            root.additionalFloatingSessions=next
+            native.detached=false
+            native.destroy()
+        }
+        const previousDock=root.dockedEditorHost
+        root.editorDetached=true
+        returningHost.detachedWindow=false
+        returningHost.activeModuleOverride=null
+        returningHost.suppressActiveModule=false
+        root.dockedEditorHost=returningHost
+        if (dspChainAdapterModel)
+            dspChainAdapterModel.selectModuleByInstanceId(instanceId)
+        root.updateSelectedDockState()
+        if (previousDock && previousDock!==returningHost
+                && previousDock!==realDspWorkspace.editorHost
+                && !root.editorHostIsFloating(previousDock))
+            previousDock.destroy()
+        Qt.callLater(function() { returningHost.forceActiveFocus() })
+    }
+    function returnCurrentEditorToDock() {
+        root.dockFloatingById(root.selectedDspInstanceId)
     }
     function activateOrFocusModule(module) {
         if (!module || !dspChainAdapterModel) return
-        if (root.editorDetached
-            && module.instanceId === root.detachedModuleInstanceId) {
-            floatingModuleWindow.focusExisting()
-            return
-        }
-        if (root.editorDetached) root.returnCurrentEditorToDock()
         dspChainAdapterModel.selectModuleByInstanceId(module.instanceId)
-        realDspWorkspace.editorHost.forceActiveFocus()
+        root.updateSelectedDockState()
+        const floating=root.floatingWindowFor(module.instanceId)
+        if (floating) floating.focusExisting()
+        else if (root.dockedEditorHost) root.dockedEditorHost.forceActiveFocus()
     }
     onSelectedDspInstanceIdChanged: {
-        // Chain/menu selection of a different instance returns the old
-        // editor to the same workspace before switching the persistent host.
-        if (root.editorDetached
-            && root.detachedModuleInstanceId !== root.selectedDspInstanceId)
-            root.returnCurrentEditorToDock()
+        // View-menu and programmatic selection must also preserve windows.
+        root.updateSelectedDockState()
+        const floating=root.floatingWindowFor(root.selectedDspInstanceId)
+        if (floating) Qt.callLater(function() { floating.focusExisting() })
+    }
+    Component.onCompleted: {
+        root.dockedEditorHost=realDspWorkspace.editorHost
+        root.updateSelectedDockState()
     }
     readonly property string statusDspKey: statusDspModule
         ? statusDspModule.editorContentKey : ""
@@ -452,10 +529,12 @@ ApplicationWindow {
             tearOffHandler: function(globalX,globalY) {
                 // Legacy gesture is no longer an active UI path.
             }
-            hostDetached: root.editorDetached
-            dockToggleHandler: function() {
-                if (root.editorDetached) root.returnCurrentEditorToDock()
-                else root.detachSelectedModule()
+            hostDetached: root.primaryDetached
+            dockToggleHandler: function(host) {
+                if (host && host.detachedWindow && host.activeModuleOverride)
+                    root.dockFloatingById(host.activeModuleOverride.instanceId)
+                else
+                    root.detachSelectedModule()
             }
             gainViewModel: root.appGainViewModel
             eqViewModel: root.appEqViewModel
@@ -475,26 +554,23 @@ ApplicationWindow {
         }
     }
 
-    // One Qt Window, one rehosted DspEditorHost. No extra editor QML
-    // instance or DSP-chain node is ever created by this window.
+    // The FIRST floating module retains the exact original Main host.
+    // Subsequent native windows are created only for other instance IDs.
     DspFloatingModuleWindow {
         id: floatingModuleWindow
         editorTarget: realDspWorkspace.editorHost
-        moduleInstanceId: root.detachedModuleInstanceId
-        moduleTitle: root.statusDspModule
-            ? root.statusDspModule.displayName : "Module"
-        familyAccent: root.statusDspModule
-            ? root.statusDspModule.familyAccent : "#718092"
-        detached: root.editorDetached
-        onHeaderDragged: function(globalX,globalY) {
-            root.beginDockDrag(globalX,globalY)
-        }
-        onHeaderReleased: function(globalX,globalY) {
-            root.finishDockDrag(globalX,globalY)
-        }
-        onRedockRequested: function(id) {
-            if (id === root.detachedModuleInstanceId)
-                root.returnCurrentEditorToDock()
+        moduleInstanceId: root.primaryDetachedInstanceId
+        moduleTitle: root.primaryDetachedModule
+            ? root.primaryDetachedModule.displayName : "Module"
+        familyAccent: root.primaryDetachedModule
+            ? root.primaryDetachedModule.familyAccent : "#718092"
+        detached: root.primaryDetached
+        onRedockRequested: function(id) { root.dockFloatingById(id) }
+    }
+    Component {
+        id: additionalFloatingWindowFactory
+        DspFloatingModuleWindow {
+            onRedockRequested: function(id) { root.dockFloatingById(id) }
         }
     }
 
@@ -750,7 +826,7 @@ ApplicationWindow {
                         id: standardDspEditorHostProxy
                         anchors.fill: parent
                         visible: !root.editorDetached
-                        target: realDspWorkspace.editorHost
+                        target: root.dockedEditorHost
                     }
                     // Placeholder occupies exactly the same geometry with
                     // or without a detached editor: NO unrelated reflow.
@@ -1454,7 +1530,7 @@ ApplicationWindow {
                         objectName: "compactBottomRight"
                         anchors.fill: parent
                         visible: !root.editorDetached
-                        target: realDspWorkspace.editorHost
+                        target: root.dockedEditorHost
                     }
                     // Placeholder occupies exactly the same geometry with
                     // or without a detached editor: NO unrelated reflow.
