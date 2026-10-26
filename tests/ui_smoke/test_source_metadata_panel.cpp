@@ -2849,14 +2849,27 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     })(),5000);
     QVERIFY(floatingModule->isVisible());
     QVERIFY(nativeDockedEditor->window()==floatingModule);
+    auto* secondEditorHost=qobject_cast<QQuickItem*>(find_child_by_name(
+        secondNative,QStringLiteral("dspAdditionalEditorHost")));
+    QVERIFY2(secondEditorHost,
+        "Second native Window must own a separate persistent editor host");
+    QTRY_VERIFY_WITH_TIMEOUT(secondEditorHost->window()==secondNative,5000);
+    auto* secondDockGlyph=find_child_by_name(secondEditorHost,
+        QStringLiteral("dspHostDockToggleIcon"));
+    QVERIFY(secondDockGlyph);
+    QCOMPARE(secondDockGlyph->property("kind").toString(),
+        QStringLiteral("dock"));
+    QVERIFY(secondEditorHost!=nativeDockedEditor);
     QCOMPARE(dspChainAdapterModel.modules().size(),qsizetype{3});
     // Re-selecting Gain must raise its ORIGINAL native window, NEVER dock.
     dspChainAdapterModel.setSelectedIndex(0);
     QCoreApplication::processEvents();
     QVERIFY(root->property("editorDetached").toBool());
     QCOMPARE(root->property("detachedModuleInstanceId").toString(),firstModuleId);
+    QVERIFY(dropWell->isVisible());
     QVERIFY(floatingModule->isVisible());
     QVERIFY(secondNative->isVisible());
+    QCOMPARE(secondEditorHost->window(),secondNative);
     QVERIFY(nativeDockedEditor->window()==floatingModule);
     // Dock EQ by its OWN floating command while Gain remains floating.
     QVERIFY(QMetaObject::invokeMethod(secondNative,"returnToDock"));
