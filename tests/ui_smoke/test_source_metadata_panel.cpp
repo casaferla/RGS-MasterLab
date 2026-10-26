@@ -5130,6 +5130,24 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QSize{1184, 688}),
         "Capture real Qt Stereo/M-S invalid-field global status");
 
+    // Windows can clamp or settle the native decorated window during
+    // evidence capture. Use its FINAL painted rectangle as the baseline
+    // for the subsequent module-selection round-trip. The earlier
+    // controlsBefore assertion still protects against validation reflow.
+    QRectF roundTripBaseline;
+    int roundTripStablePaints=0;
+    QTRY_VERIFY_WITH_TIMEOUT(([&] {
+        if (paintedWindow->grabWindow().isNull()) return false;
+        QCoreApplication::processEvents();
+        const QRectF now{msControls->mapToScene(QPointF{}),msControls->size()};
+        if (now.isEmpty()) {roundTripStablePaints=0;return false;}
+        roundTripStablePaints = now==roundTripBaseline
+            ? roundTripStablePaints+1 : 0;
+        roundTripBaseline=now;
+        return roundTripStablePaints>=2;
+    })(),5000);
+    const QSize roundTripWindowSize=window->size();
+
     // Compare the actual validation diagnostic, not the generic word
     // "Stereo": a stereo Source legitimately appears in the Ready footer.
     // A retained M15 invalid draft MUST NOT contaminate another DSP's
@@ -5157,8 +5175,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("Stereo"), Qt::CaseInsensitive));
     QVERIFY(invalidMidField->property("isInvalid").toBool());
     QCOMPARE(stereoMsViewModel.mid_gain_db(), msReadoutBefore);
-    QCOMPARE(QRectF(msControls->mapToScene(QPointF{}), msControls->size()),
-             controlsBefore);
+    QCOMPARE(window->size(),roundTripWindowSize);
+    QTRY_COMPARE_WITH_TIMEOUT(
+        QRectF(msControls->mapToScene(QPointF{}),msControls->size()),
+        roundTripBaseline,5000);
     QCOMPARE(QRectF(globalStatusBarItem->mapToScene(QPointF{}),
                      globalStatusBarItem->size()), footerBefore);
     stereoMsViewModel.cancelDraft();
@@ -5172,7 +5192,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(statusIndicator->property("color").value<QColor>(),
         QColor{QStringLiteral("#00E6E6")});
     QCOMPARE(QRectF(msControls->mapToScene(QPointF{}), msControls->size()),
-        controlsBefore);
+        roundTripBaseline);
     QCOMPARE(QRectF(globalStatusBarItem->mapToScene(QPointF{}),
         globalStatusBarItem->size()), footerBefore);
     QVERIFY2(capture_visual_evidence(window,
