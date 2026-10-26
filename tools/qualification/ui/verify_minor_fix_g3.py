@@ -123,7 +123,7 @@ for test in ("sendGainWheel(0.03, 120)", "sendGainWheel(0.50, 120)",
 for editor_file in ("StereoMsEditor.qml", "TruePeakMeterEditor.qml",
                     "TruePeakLimiterEditor.qml", "MonitorEditor.qml"):
     body = (Path("ui/qml") / editor_file).read_text(encoding="utf-8")
-    require(not re.search(r"(?m)^\\s*(?:ScrollView|Flickable|ListView)\\s*\\{", body)
+    require(not re.search(r"(?m)^\s*(?:ScrollView|Flickable|ListView)\s*\{", body)
             and "ScrollBar.vertical" not in body,
             f"{editor_file} reintroduced PO-forbidden editor scrolling")
 main_qml = Path("ui/qml/Main.qml").read_text(encoding="utf-8")
