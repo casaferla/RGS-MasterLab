@@ -31,6 +31,36 @@ Rectangle {
     property alias chainSelector: realChainSelector
     property alias editorHost: realEditorHost
 
+    // Allocate another QML HOST (not an audio module) only when the existing
+    // persistent editor has been frozen and moved to a native Window.
+    // Each detached host keeps its original QObject / draft controls while
+    // selection uses a new host. Main alone owns window/session lifetimes.
+    function createExtraEditorHost() {
+        return extraEditorHostFactory.createObject(workspaceItemPool)
+    }
+
+    Component {
+        id: extraEditorHostFactory
+        DspEditorHost {
+            objectName: "dspAdditionalEditorHost"
+            adapterModel: root.adapterModel
+            gainViewModel: root.gainViewModel
+            eqViewModel: root.eqViewModel
+            errorsInGlobalStatusBar: root.errorsInGlobalStatusBar
+            spectrumViewModel: root.spectrumViewModel
+            truePeakStaticViewModel: root.truePeakStaticViewModel
+            truePeakLiveViewModel: root.truePeakLiveViewModel
+            terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
+            terminalLimiterViewModel: root.terminalLimiterViewModel
+            terminalMonitorViewModel: root.terminalMonitorViewModel
+            limiterGrProvider: root.limiterGrProvider
+            activeChainRow: realChainSelector.activeRow
+            onDockToggleRequested: {
+                if (root.dockToggleHandler) root.dockToggleHandler(this)
+            }
+        }
+    }
+
     onSelectedModuleIndexChanged: {
         if (adapterModel && adapterModel.selectedIndex !== selectedModuleIndex) {
             adapterModel.setSelectedIndex(selectedModuleIndex)
@@ -77,7 +107,7 @@ Rectangle {
             activeChainRow: realChainSelector.activeRow
             detachedWindow: root.hostDetached
             onDockToggleRequested: {
-                if (root.dockToggleHandler) root.dockToggleHandler()
+                if (root.dockToggleHandler) root.dockToggleHandler(realEditorHost)
             }
             onTearOffRequested: function(globalX,globalY) {
                 if(root.tearOffHandler)root.tearOffHandler(globalX,globalY)

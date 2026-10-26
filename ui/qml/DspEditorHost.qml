@@ -55,7 +55,13 @@ Rectangle {
     // Backward-compatibility alias so code referencing host.viewModel accesses eqViewModel
     property alias viewModel: root.eqViewModel
 
-    readonly property var activeModule: adapterModel ? adapterModel.activeModule : null
+    // A detached host freezes ONE module adapter by instanceId; the Main
+    // dock host continues to follow selection. No DSP-chain node is cloned.
+    property var activeModuleOverride: null
+    property bool suppressActiveModule: false
+    readonly property var activeModule: root.suppressActiveModule ? null
+        : root.activeModuleOverride ? root.activeModuleOverride
+        : (adapterModel ? adapterModel.activeModule : null)
     readonly property var activeViewModel: activeModule ? (activeModule.gainViewModel ? activeModule.gainViewModel : (activeModule.eqViewModel ? activeModule.eqViewModel : activeModule.compressorViewModel)) : null
     readonly property string moduleTitle: activeModule ? activeModule.displayName : ""
     readonly property string moduleContext: activeModule ? activeModule.workspaceContextLabel : ""
