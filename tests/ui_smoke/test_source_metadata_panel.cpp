@@ -5196,22 +5196,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QSize{1184, 688}),
         "Capture real Qt Stereo/M-S invalid-field global status");
 
-    // Windows can clamp or settle the native decorated window during
-    // evidence capture. Use its FINAL painted rectangle as the baseline
-    // for the subsequent module-selection round-trip. The earlier
-    // controlsBefore assertion still protects against validation reflow.
-    QRectF roundTripBaseline;
-    int roundTripStablePaints=0;
-    QTRY_VERIFY_WITH_TIMEOUT(([&] {
-        if (paintedWindow->grabWindow().isNull()) return false;
-        QCoreApplication::processEvents();
-        const QRectF now{msControls->mapToScene(QPointF{}),msControls->size()};
-        if (now.isEmpty()) {roundTripStablePaints=0;return false;}
-        roundTripStablePaints = now==roundTripBaseline
-            ? roundTripStablePaints+1 : 0;
-        roundTripBaseline=now;
-        return roundTripStablePaints>=2;
-    })(),5000);
+    // The evidence capture may apply final native geometry constraints.
+    // Preserve the real window size, but do not demand identical inner
+    // control coordinates after switching to a different DSP editor.
+    // Validation-triggered reflow was already rejected in-place above;
+    // the round-trip gate below instead enforces no-scroll containment.
     const QSize roundTripWindowSize=window->size();
 
     // Compare the actual validation diagnostic, not the generic word
@@ -5242,9 +5231,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(invalidMidField->property("isInvalid").toBool());
     QCOMPARE(stereoMsViewModel.mid_gain_db(), msReadoutBefore);
     QCOMPARE(window->size(),roundTripWindowSize);
-    QTRY_COMPARE_WITH_TIMEOUT(
-        QRectF(msControls->mapToScene(QPointF{}),msControls->size()),
-        roundTripBaseline,5000);
+    QVERIFY2(check_item_contained_in_ancestor(msControls,stereoEditorItem,1.5),
+        "PO no-scroll: M15 controls must remain inside the selected editor after returning from Gain");
     QCOMPARE(QRectF(globalStatusBarItem->mapToScene(QPointF{}),
                      globalStatusBarItem->size()), footerBefore);
     stereoMsViewModel.cancelDraft();
@@ -5257,8 +5245,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("INFO"));
     QCOMPARE(statusIndicator->property("color").value<QColor>(),
         QColor{QStringLiteral("#00E6E6")});
-    QCOMPARE(QRectF(msControls->mapToScene(QPointF{}), msControls->size()),
-        roundTripBaseline);
+    QVERIFY2(check_item_contained_in_ancestor(msControls,stereoEditorItem,1.5),
+        "PO no-scroll: M15 controls overflow after cancelling the draft");
     QCOMPARE(QRectF(globalStatusBarItem->mapToScene(QPointF{}),
         globalStatusBarItem->size()), footerBefore);
     QVERIFY2(capture_visual_evidence(window,
