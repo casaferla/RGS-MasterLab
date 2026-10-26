@@ -76,16 +76,11 @@ ApplicationWindow {
             && globalY>=p.y && globalY<=p.y+slot.height
     }
     function beginDockDrag(globalX,globalY) {
-        dockDropCandidate=editorDetached
-            && pointInsideEditorDock(globalX,globalY)
-        floatingModuleWindow.dragOverDock=dockDropCandidate
+        // Native window movement cannot trigger an accidental redock.
+        dockDropCandidate=false
     }
     function finishDockDrag(globalX,globalY) {
-        const valid=editorDetached
-            && pointInsideEditorDock(globalX,globalY)
         dockDropCandidate=false
-        floatingModuleWindow.dragOverDock=false
-        if(valid) returnCurrentEditorToDock()
     }
     function detachByGrip(globalX,globalY) {
         if(root.editorDetached || pointInsideEditorDock(globalX,globalY))
@@ -455,7 +450,12 @@ ApplicationWindow {
             adapterModel: typeof dspChainAdapterModel !== "undefined" ? dspChainAdapterModel : null
             moduleActivationHandler: function(module) { root.activateOrFocusModule(module) }
             tearOffHandler: function(globalX,globalY) {
-                root.detachByGrip(globalX,globalY)
+                // Legacy gesture is no longer an active UI path.
+            }
+            hostDetached: root.editorDetached
+            dockToggleHandler: function() {
+                if (root.editorDetached) root.returnCurrentEditorToDock()
+                else root.detachSelectedModule()
             }
             gainViewModel: root.appGainViewModel
             eqViewModel: root.appEqViewModel
@@ -759,18 +759,43 @@ ApplicationWindow {
                         anchors.fill: parent
                         visible: root.editorDetached
                         radius: 6
-                        color: root.dockDropCandidate ? "#192D4651" : "#0B1622"
-                        border.width: root.dockDropCandidate ? 2 : 1
-                        border.color: root.dockDropCandidate ? "#00C8FF" : "#27465F"
-                        Text {
+                        color: "#0B1622"
+                        border.width: 1
+                        border.color: "#27465F"
+                        Column {
                             anchors.centerIn: parent
-                            text: root.dockDropCandidate
-                                ? "Rilascia per agganciare"
-                                : "Trascina qui il modulo per agganciarlo"
-                            font.family: "Segoe UI"
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
-                            color: root.dockDropCandidate ? "#BFEAF6" : "#829DAD"
+                            spacing: 10
+                            StudioIcon {
+                                objectName: "centerDockIcon"
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: 64
+                                height: 64
+                                kind: "dock"
+                                strokeColor: "#6CBCE2"
+                                strokeWidth: 2.2
+                            }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: "Dock"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 15
+                                font.weight: Font.DemiBold
+                                color: "#BFEAF6"
+                            }
+                        }
+                        MouseArea {
+                            objectName: "centralDockButton"
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.returnCurrentEditorToDock()
+                            Accessible.name: "Dock this floating module"
+                            StudioTooltipDwell {
+                                id: centerDockTooltipDwell
+                                anchors.fill: parent
+                            }
+                            ToolTip.text: "Dock floating module"
+                            ToolTip.visible: centerDockTooltipDwell.ready
+                            ToolTip.delay: 0
                         }
                     }
                 }
@@ -1438,18 +1463,43 @@ ApplicationWindow {
                         anchors.fill: parent
                         visible: root.editorDetached
                         radius: 6
-                        color: root.dockDropCandidate ? "#192D4651" : "#0B1622"
-                        border.width: root.dockDropCandidate ? 2 : 1
-                        border.color: root.dockDropCandidate ? "#00C8FF" : "#27465F"
-                        Text {
+                        color: "#0B1622"
+                        border.width: 1
+                        border.color: "#27465F"
+                        Column {
                             anchors.centerIn: parent
-                            text: root.dockDropCandidate
-                                ? "Rilascia per agganciare"
-                                : "Trascina qui il modulo per agganciarlo"
-                            font.family: "Segoe UI"
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
-                            color: root.dockDropCandidate ? "#BFEAF6" : "#829DAD"
+                            spacing: 10
+                            StudioIcon {
+                                objectName: "centerDockIcon"
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: 64
+                                height: 64
+                                kind: "dock"
+                                strokeColor: "#6CBCE2"
+                                strokeWidth: 2.2
+                            }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: "Dock"
+                                font.family: "Segoe UI"
+                                font.pixelSize: 15
+                                font.weight: Font.DemiBold
+                                color: "#BFEAF6"
+                            }
+                        }
+                        MouseArea {
+                            objectName: "centralDockButton"
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.returnCurrentEditorToDock()
+                            Accessible.name: "Dock this floating module"
+                            StudioTooltipDwell {
+                                id: centerDockTooltipDwell
+                                anchors.fill: parent
+                            }
+                            ToolTip.text: "Dock floating module"
+                            ToolTip.visible: centerDockTooltipDwell.ready
+                            ToolTip.delay: 0
                         }
                     }
                 }

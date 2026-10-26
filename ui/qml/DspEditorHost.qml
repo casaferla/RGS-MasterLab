@@ -48,6 +48,9 @@ Rectangle {
     // Drag is only the user's tear-off INTENT. Parent/Main owns all window
     // creation and module identity; the live editor never clones itself.
     signal tearOffRequested(real globalX, real globalY)
+    // Button replaces brittle native drag with a deterministic action.
+    property bool detachedWindow: false
+    signal dockToggleRequested()
 
     // Backward-compatibility alias so code referencing host.viewModel accesses eqViewModel
     property alias viewModel: root.eqViewModel
@@ -127,8 +130,8 @@ Rectangle {
             Layout.preferredHeight: 40
             spacing: 12
 
-            // Dedicated 22px grab region prevents accidental detach while
-            // adjusting DSP parameters, editing numbers or using Undo/Redo.
+            // Preserve the EXACT old 22px slot: the module title's X
+            // coordinate must not shift when docked/undocked.
             Item {
                 id: dockedDragGrip
                 objectName: "dspHostTearOffGrip"
@@ -136,58 +139,32 @@ Rectangle {
                 Layout.minimumWidth: 22
                 Layout.maximumWidth: 22
                 Layout.preferredHeight: 30
-                property bool cancelled: false
-                property real dx: 0
-                property real dy: 0
-                property real travel: 0
-                Accessible.name: "Drag to undock " + root.moduleTitle
-                Text {
+                StudioIcon {
+                    objectName: "dspHostDockToggleIcon"
                     anchors.centerIn: parent
-                    text: "⠿"
-                    font.family: "Segoe UI"
-                    font.pixelSize: 20
-                    color: "#92A9B9"
+                    width: 20
+                    height: 20
+                    kind: root.detachedWindow ? "dock" : "undock"
+                    strokeColor: "#77C7EA"
+                    strokeWidth: 2.0
                 }
-                DragHandler {
-                    id: tearOffGesture
-                    target: null
-                    acceptedButtons: Qt.LeftButton
-                    onTranslationChanged: {
-                        if(!active)return
-                        dockedDragGrip.dx=translation.x
-                        dockedDragGrip.dy=translation.y
-                        dockedDragGrip.travel=Math.max(
-                            dockedDragGrip.travel,
-                            Math.hypot(translation.x,translation.y))
-                    }
-                    onActiveChanged: {
-                        if(active) {
-                            dockedDragGrip.cancelled=false
-                            dockedDragGrip.dx=0
-                            dockedDragGrip.dy=0
-                            dockedDragGrip.travel=0
-                        } else if (!dockedDragGrip.cancelled
-                                   && dockedDragGrip.travel >= 32) {
-                            const point=dockedDragGrip.mapToGlobal(
-                                Qt.point(dockedDragGrip.width/2
-                                    +dockedDragGrip.dx,
-                                    dockedDragGrip.height/2
-                                    +dockedDragGrip.dy))
-                            root.tearOffRequested(point.x,point.y)
-                        }
-                    }
-                }
-                Shortcut {
-                    sequence: "Escape"
-                    enabled: tearOffGesture.active
-                    onActivated: dockedDragGrip.cancelled=true
+                MouseArea {
+                    objectName: "dspHostDockToggleButton"
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    hoverEnabled: true
+                    onClicked: root.dockToggleRequested()
+                    Accessible.name: root.detachedWindow
+                        ? "Dock module into workspace"
+                        : "Undock module to native window"
                 }
                 StudioTooltipDwell {
-                    id: tearOffHintDwell
+                    id: hostDockActionDwell
                     anchors.fill: parent
                 }
-                ToolTip.text: "Drag this grip outside the editor and release to undock"
-                ToolTip.visible: tearOffHintDwell.ready
+                ToolTip.text: root.detachedWindow
+                    ? "Dock this module" : "Undock this module"
+                ToolTip.visible: hostDockActionDwell.ready
                 ToolTip.delay: 0
             }
 

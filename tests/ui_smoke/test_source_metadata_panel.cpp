@@ -2674,12 +2674,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* dockGrip=qobject_cast<QQuickItem*>(
         find_child_by_name(dspEditorHostObj,
                            QStringLiteral("dspHostTearOffGrip")));
-    auto* floatingGrip=qobject_cast<QQuickItem*>(
-        find_child_by_name(root,QStringLiteral("dspFloatingDragGrip")));
+    auto* dockToggle=qobject_cast<QQuickItem*>(
+        find_child_by_name(root,QStringLiteral("dspHostDockToggleButton")));
     auto* dropWell=qobject_cast<QQuickItem*>(
         find_child_by_name(root,QStringLiteral("compactEditorDockDropZone")));
-    QVERIFY2(dockGrip && floatingGrip && dropWell,
-             "Both drag grips and the real Main fixed dock target are required");
+    QVERIFY2(dockGrip && dockToggle && dropWell,
+             "Shared dock/undock button and real Main target are required");
     QCOMPARE(dockGrip->width(),22.0);
     // A hidden native QQuickWindow need not have polished its RowLayout.
     // Assert its actual grip hitbox AFTER the real Window becomes visible.
@@ -2689,9 +2689,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTRY_VERIFY_WITH_TIMEOUT(root->property("editorDetached").toBool(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(floatingModule->isVisible(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
-    QTRY_COMPARE_WITH_TIMEOUT(floatingGrip->width(),28.0,5000);
-    QTRY_COMPARE_WITH_TIMEOUT(floatingGrip->height(),32.0,5000);
-    QCOMPARE(floatingGrip->window(),floatingModule);
+    QVERIFY(!find_child_by_name(root,QStringLiteral("dspFloatingDragGrip")));
+    QCOMPARE(dockGrip->window(),floatingModule);
+    QVERIFY(dockToggle->isVisible());
     QCOMPARE(nativeDockedEditor,originalEditorIdentity);
     QVERIFY(!root->property("detachedModuleInstanceId").toString().isEmpty());
     // Actual native Qt floating Window with the SAME rehosted editor,
@@ -2709,8 +2709,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(nativeDockedEditor==originalEditorIdentity);
     QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
-    QTRY_COMPARE_WITH_TIMEOUT(floatingGrip->width(),28.0,5000);
-    QTRY_COMPARE_WITH_TIMEOUT(floatingGrip->height(),32.0,5000);
+    QCOMPARE(dockGrip->window(),floatingModule);
     QVERIFY(QMetaObject::invokeMethod(root,"returnCurrentEditorToDock"));
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
     QVERIFY(nativeDockedEditor==originalEditorIdentity);
@@ -2719,42 +2718,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // are visible together at the PO minimum 1184x688 geometry.
     QVERIFY(!root->property("editorDetached").toBool());
     QVERIFY(dockGrip->isVisible());
+    QVERIFY(dockToggle->isVisible());
     QVERIFY2(capture_visual_evidence(
         window,QStringLiteral("fq80_real_main_chain_family_icons_docked_grip_1184x688.png"),
         QSize{1184,688}),"FQ80 real Main docked family-icon visual evidence");
 
-    // Verify global screen-coordinate drop admission at the ACTUAL dock
-    // rather than fabricating a QML DropArea across native Qt windows.
+    // Explicit Dock only: native window dragging cannot silently redock.
     QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
-    const auto dropPoint=dropWell->mapToGlobal(
-        QPointF{dropWell->width()*0.5,dropWell->height()*0.5});
-    auto evaluateDockAction=[&](const QString& script)->QVariant {
-        QQmlExpression expression{engine.rootContext(),root,script};
-        const auto result=expression.evaluate();
-        if(expression.hasError()) {
-            qWarning().noquote()<<"Dock Qt expression:"<<expression.error().toString();
-        }
-        if(expression.hasError())return QVariant{};
-        return result;
-    };
-    const auto dockArgs=QStringLiteral("%1,%2").arg(
-        QString::number(dropPoint.x(),'f',3),
-        QString::number(dropPoint.y(),'f',3));
-    QVERIFY(evaluateDockAction(
-        QStringLiteral("pointInsideEditorDock(")+dockArgs
-            +QStringLiteral(")")).toBool());
-    evaluateDockAction(QStringLiteral("beginDockDrag(")+dockArgs
-        +QStringLiteral(")"));
-    QVERIFY(root->property("dockDropCandidate").toBool());
-    evaluateDockAction(QStringLiteral("finishDockDrag(-50,-50)"));
-    QVERIFY(root->property("editorDetached").toBool());
     QVERIFY(!root->property("dockDropCandidate").toBool());
-    evaluateDockAction(QStringLiteral("finishDockDrag(")+dockArgs
-        +QStringLiteral(")"));
-    QTRY_VERIFY_WITH_TIMEOUT(!root->property("editorDetached").toBool(),5000);
+    QVERIFY(QMetaObject::invokeMethod(root,"returnCurrentEditorToDock"));
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
     QVERIFY(nativeDockedEditor==originalEditorIdentity);
+    QVERIFY(!find_child_by_name(root,QStringLiteral("dspFloatingModuleTitle")));
+    QVERIFY(!find_child_by_name(root,QStringLiteral("dspFloatingRedockButton")));
 
     // Verify Adaptive Context Workspace and visual shell placeholders exist
     QVERIFY(root->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace")) != nullptr);
