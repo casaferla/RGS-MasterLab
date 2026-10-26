@@ -693,6 +693,50 @@ Window {
         QCOMPARE(terminal.chain().instances().size(),std::size_t{1});
         QCOMPARE(model.modules().size(),qsizetype{7});
     }
+    // PO no-vertical-scroll gate: use the existing seven REAL adapters,
+    // including the terminal M17 and non-processing Master Audition.
+    // The independent fixture constrains the real Qt host to a compact
+    // editor-sized rectangle; it does not impersonate the full Main
+    // scenegraph or certify physical Windows 150%-DPI screenshots.
+    host->setWidth(680.0);
+    host->setHeight(338.0);
+    QCoreApplication::processEvents();
+    struct FitCase { int index; const char* editor; const char* lastControl; };
+    const std::array<FitCase,4> fitCases{{
+        {3,"stereoMsEditor","stereoMsControlsRegion"},
+        {4,"truePeakMeterEditor","truePeakMeterSharedRail"},
+        {5,"truePeakLimiterEditor","truePeakMeterSharedRail"},
+        {6,"monitorEditor","monitorAdvancedNavigationToggle"}
+    }};
+    for(const auto& fit:fitCases) {
+        model.setSelectedIndex(fit.index);
+        auto* editor=qobject_cast<QQuickItem*>(find_child_by_name(
+            host,QString::fromLatin1(fit.editor)));
+        QVERIFY2(editor,fit.editor);
+        QTRY_VERIFY_WITH_TIMEOUT(editor->isVisible(),5000);
+        QTest::qWait(40);
+        QCoreApplication::processEvents();
+        auto* last=qobject_cast<QQuickItem*>(find_child_by_name(
+            editor,QString::fromLatin1(fit.lastControl)));
+        QVERIFY2(last,fit.lastControl);
+        QVERIFY2(last->isVisible(),fit.lastControl);
+        const QPointF controlBottom=last->mapToItem(editor,
+            QPointF{0.0,last->height()});
+        const QPointF editorBottom=editor->mapToItem(host,
+            QPointF{0.0,editor->height()});
+        QVERIFY2(controlBottom.y()>=-1.5
+            && controlBottom.y()<=editor->height()+1.5,
+            qPrintable(QStringLiteral("PO no-scroll: %1 control bottom=%2 editor height=%3")
+                .arg(QString::fromLatin1(fit.editor))
+                .arg(controlBottom.y()).arg(editor->height())));
+        QVERIFY2(editorBottom.y()<=host->height()+1.5,
+            qPrintable(QStringLiteral("PO no-scroll: %1 editor bottom=%2 host height=%3")
+                .arg(QString::fromLatin1(fit.editor))
+                .arg(editorBottom.y()).arg(host->height())));
+    }
+    QVERIFY(!find_child_by_name(host,QStringLiteral("stereoMsViewport")));
+    QVERIFY(!find_child_by_name(host,QStringLiteral("truePeakMeterViewport")));
+    QVERIFY(!find_child_by_name(host,QStringLiteral("truePeakLimiterViewport")));
     model.setSelectedIndex(0);
     window->close();
 }
@@ -4155,35 +4199,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(!find_child_by_name(root,QStringLiteral("stereoMsViewport")));
     QVERIFY(!find_child_by_name(root,QStringLiteral("truePeakMeterViewport")));
     QVERIFY(!find_child_by_name(root,QStringLiteral("truePeakLimiterViewport")));
-    const int originalModuleIndex=dspChainAdapterModel.selected_index();
-    struct FitCase { int index; const char* editor; const char* bottomControl; };
-    const std::array<FitCase,4> fitCases{{
-        {3,"stereoMsEditor","stereoMsControlsRegion"},
-        {4,"truePeakMeterEditor","truePeakMeterSharedRail"},
-        {5,"truePeakLimiterEditor","truePeakMeterSharedRail"},
-        {6,"monitorEditor","monitorAdvancedNavigationToggle"}
-    }};
-    for (const auto& fit:fitCases) {
-        dspChainAdapterModel.setSelectedIndex(fit.index);
-        QTest::qWait(60);
-        QCoreApplication::processEvents();
-        auto* liveEditor=qobject_cast<QQuickItem*>(find_child_by_name(
-            dspEditorHostObj,QString::fromLatin1(fit.editor)));
-        QVERIFY2(liveEditor,fit.editor);
-        QVERIFY2(liveEditor->isVisible(),fit.editor);
-        auto* lastControl=qobject_cast<QQuickItem*>(find_child_by_name(
-            liveEditor,QString::fromLatin1(fit.bottomControl)));
-        QVERIFY2(lastControl,fit.bottomControl);
-        const QPointF bottom=lastControl->mapToItem(liveEditor,
-            QPointF{0,lastControl->height()});
-        QVERIFY2(bottom.y()<=liveEditor->height()+1.5,
-            qPrintable(QStringLiteral("PO no-scroll: %1 bottom=%2 editor=%3")
-                .arg(QString::fromLatin1(fit.editor))
-                .arg(bottom.y()).arg(liveEditor->height())));
-    }
-    dspChainAdapterModel.setSelectedIndex(originalModuleIndex);
-    QTest::qWait(60);
-    QCoreApplication::processEvents();
+    // This Main lifecycle intentionally starts with only three legacy
+    // adapters (Gain, EQ, Compressor). Stereo/M-S is opted in later,
+    // and M16/M17/Monitor are not in this test's adapter model.
+    // Checking indices 3..6 here inspects hidden, *unselected* editors
+    // and reports a false layout failure. The seven-real-adapter Qt
+    // containment check below owns the four-editor minimum-height gate.
+    QCOMPARE(dspChainAdapterModel.modules().size(),qsizetype{3});
+    QVERIFY2(dspChainAdapterModel.selected_index()<3,
+        "Only existing adapters may be selected by the Main lifecycle fixture");
     QCOMPARE(dspChainSelectorObj->property("width").toInt(), 164);
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
     QVERIFY2(dspChainStateText1->property("visible").toBool(),
