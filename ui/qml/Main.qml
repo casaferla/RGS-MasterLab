@@ -124,14 +124,14 @@ ApplicationWindow {
             root.primaryDetached=true
         } else {
             host.detachedWindow=true
-            const native=additionalFloatingWindowFactory.createObject(root,{
+            const floatingWin=additionalFloatingWindowFactory.createObject(root,{
                 editorTarget:host,
                 moduleInstanceId:id,
                 moduleTitle:module.displayName,
                 familyAccent:module.familyAccent,
                 detached:true
             })
-            if (!native) {
+            if (!floatingWin) {
                 host.detachedWindow=false
                 host.activeModuleOverride=null
                 root.editorDetached=false
@@ -141,7 +141,7 @@ ApplicationWindow {
             const next={}
             for (const key in root.additionalFloatingSessions)
                 next[key]=root.additionalFloatingSessions[key]
-            next[id]={window:native,host:host,module:module}
+            next[id]={window:floatingWin,host:host,module:module}
             root.additionalFloatingSessions=next
         }
         root.dockedEditorHost=spare
@@ -150,8 +150,8 @@ ApplicationWindow {
         Qt.callLater(function() { if(floating)floating.focusExisting() })
     }
     function dockFloatingById(instanceId) {
-        const native=root.floatingWindowFor(instanceId)
-        if (!native) return
+        const floatingWin=root.floatingWindowFor(instanceId)
+        if (!floatingWin) return
         const wasPrimary=root.primaryDetached
             && instanceId===root.primaryDetachedInstanceId
         let returningHost=null
@@ -168,8 +168,8 @@ ApplicationWindow {
             for (const key in root.additionalFloatingSessions)
                 if (key!==instanceId) next[key]=root.additionalFloatingSessions[key]
             root.additionalFloatingSessions=next
-            native.detached=false
-            native.destroy()
+            floatingWin.detached=false
+            floatingWin.destroy()
         }
         const previousDock=root.dockedEditorHost
         root.editorDetached=true
