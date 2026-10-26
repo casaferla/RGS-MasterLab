@@ -798,6 +798,12 @@ Window {
             QVERIFY2(expandedBottom<=editor->height()+1.5,
                 qPrintable(QStringLiteral("PO SEEK/LOOP overflows: %1 > %2")
                     .arg(expandedBottom).arg(editor->height())));
+            auto* advancedFooter=qobject_cast<QQuickItem*>(find_child_by_name(
+                editor,QStringLiteral("monitorAdvancedNavigationFooter")));
+            QVERIFY(advancedFooter&&advancedFooter->isVisible());
+            QVERIFY2(check_item_contained_in_ancestor(
+                advancedFooter,editor,1.5),
+                "PO no-scroll: Master Audition expanded explanatory footer is clipped");
             QVERIFY(editor->setProperty("advancedNavigationExpanded",false));
         }
     }

@@ -410,6 +410,7 @@ Item {
                 }
             }
             Text {
+                objectName: "monitorAdvancedNavigationFooter"
                 Layout.fillWidth: true
                 visible: root.advancedNavigationExpanded
                 text: "Master Audition is a listening branch. Memory and DEVICE SRC are independently checked; final MASTER PCM is unchanged."
