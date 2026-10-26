@@ -2849,10 +2849,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     })(),5000);
     QVERIFY(floatingModule->isVisible());
     QVERIFY(nativeDockedEditor->window()==floatingModule);
-    auto* secondEditorHost=qobject_cast<QQuickItem*>(find_child_by_name(
-        secondNative,QStringLiteral("dspAdditionalEditorHost")));
+    // LayoutItemProxy changes the visual parent (window()), not
+    // necessarily QObject::parent. Read the native target property
+    // directly instead of assuming findChild under QQuickWindow.
+    auto* secondEditorHost=
+        secondNative->property("editorTarget").value<QQuickItem*>();
     QVERIFY2(secondEditorHost,
         "Second native Window must own a separate persistent editor host");
+    QCOMPARE(secondEditorHost->objectName(),
+        QStringLiteral("dspAdditionalEditorHost"));
     QTRY_VERIFY_WITH_TIMEOUT(secondEditorHost->window()==secondNative,5000);
     auto* secondDockGlyph=find_child_by_name(secondEditorHost,
         QStringLiteral("dspHostDockToggleIcon"));
