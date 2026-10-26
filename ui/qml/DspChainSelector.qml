@@ -219,6 +219,13 @@ Rectangle {
                         ? root.chainModules[rowItem.modelIndex] : null
                     readonly property bool isSelected: root.adapterModel ? (root.adapterModel.selectedInstanceId === (moduleAdapter ? moduleAdapter.instanceId : "")) : (root.selectedIndex === rowItem.modelIndex)
                     readonly property bool isDefaultState: moduleAdapter ? (moduleAdapter.configurationState === "Default") : true
+                    // Non-processing analysis/utility services with no
+                    // Bypass capability are ALWAYS lit, not fake Manual.
+                    readonly property bool permanentlyLit: moduleAdapter
+                        ? (!moduleAdapter.bypassSupported
+                           && (moduleAdapter.editorContentKey === "TRUE_PEAK_METER"
+                               || moduleAdapter.editorContentKey === "MASTER_MONITOR"))
+                        : false
                     readonly property bool isBypassed: moduleAdapter ? (moduleAdapter.bypassSupported && moduleAdapter.bypass) : false
                     readonly property bool hasError: moduleAdapter ? moduleAdapter.hasError : false
 
@@ -317,9 +324,11 @@ Rectangle {
                             Layout.preferredHeight: 16
                             Layout.maximumHeight: 16
                             kind: root.moduleIconKind(rowItem.moduleAdapter)
-                            strokeWidth: rowItem.isDefaultState ? 1.65 : 2.1
+                            strokeWidth: rowItem.permanentlyLit || !rowItem.isDefaultState
+                                ? 2.1 : 1.65
                             strokeColor: root.moduleIconColor(rowItem.moduleAdapter)
-                            opacity: (rowItem.isDefaultState ? 0.37 : 1.0)
+                            opacity: (rowItem.permanentlyLit ? 1.0
+                                : rowItem.isDefaultState ? 0.58 : 1.0)
                                 * (rowItem.isBypassed ? 0.7 : 1.0)
                             Accessible.name: rowItem.moduleAdapter
                                 ? rowItem.moduleAdapter.displayName + " · "

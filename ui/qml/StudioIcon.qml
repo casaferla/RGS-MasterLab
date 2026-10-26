@@ -134,6 +134,31 @@ Canvas {
             ctx.quadraticCurveTo(12.0, 16.4, 14.9, 15.0)
             ctx.closePath()
             ctx.stroke()
+        } else if (kind === "undock" || kind === "dock") {
+            // The SAME open-window silhouette in both actions: arrow
+            // exits towards the upper right or enters towards lower left.
+            // PO-approved minimal pictogram; fits exact 18x18 Canvas.
+            ctx.save()
+            ctx.lineWidth = 2.1
+            ctx.beginPath()
+            ctx.moveTo(10.5,3.7); ctx.lineTo(3.4,3.7)
+            ctx.quadraticCurveTo(2.4,3.7,2.4,4.7)
+            ctx.lineTo(2.4,14.1)
+            ctx.quadraticCurveTo(2.4,15.2,3.5,15.2)
+            ctx.lineTo(13.2,15.2)
+            ctx.quadraticCurveTo(14.3,15.2,14.3,14.1)
+            ctx.lineTo(14.3,8.9)
+            ctx.stroke()
+            if (kind === "undock") {
+                line(8.0,9.8,16.0,1.8)
+                line(11.8,1.8,16.0,1.8)
+                line(16.0,1.8,16.0,6.0)
+            } else {
+                line(16.0,1.8,8.0,9.8)
+                line(8.0,5.6,8.0,9.8)
+                line(8.0,9.8,12.2,9.8)
+            }
+            ctx.restore()
         } else if (kind === "zoom-in" || kind === "zoom-out") {
             ctx.beginPath(); ctx.arc(7.2, 7.2, 4.7, 0, Math.PI * 2); ctx.stroke()
             line(10.7, 10.7, 15.8, 15.8)
