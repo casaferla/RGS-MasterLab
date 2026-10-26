@@ -1,3 +1,4 @@
+#include "rgsml_build_provenance.hpp"
 #include "audition_region_view_model.hpp"
 #include "audition_source_selector.hpp"
 #include "compressor_view_model.hpp"
@@ -2627,10 +2628,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("dspChainAdapterModel"), &dspChainAdapterModel);
     engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"), &liveSpectrumVM);
-#ifdef RGSML_BUILD_PROVENANCE
     engine.rootContext()->setContextProperty(
-        QStringLiteral("buildProvenance"), QStringLiteral(RGSML_BUILD_PROVENANCE));
-#endif
+        QStringLiteral("buildProvenance"),
+        rgsml::app::configured_build_provenance());
     engine.loadFromModule("Rgsml.Ui", "Main");
     QCOMPARE(engine.rootObjects().size(), 1);
 
@@ -2660,12 +2660,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(statusIndicator->property("height").toInt(), 8);
     QCOMPARE(statusIndicator->property("color").value<QColor>(), QColor{QStringLiteral("#00E6E6")});
     QVERIFY2(!statusBuildProvenanceLabel->property("text").toString().isEmpty(), "statusBuildProvenanceLabel text must be non-empty");
-#ifdef RGSML_BUILD_PROVENANCE
-    // The installed FQ/PR binary MUST show the exact compile-stamped
-    // provenance, not silently fall back to a misleading "DEV" label.
+    // Check same config-generated value that the installable Windows
+    // binary reads: missing -D flags cannot quietly yield fallback DEV.
     QCOMPARE(statusBuildProvenanceLabel->property("text").toString(),
-             QStringLiteral(RGSML_BUILD_PROVENANCE));
-#endif
+             rgsml::app::configured_build_provenance());
 
     // Verify Docked DSP Architecture components exist
     auto* dspWorkspaceObj = root->findChild<QObject*>(QStringLiteral("dspWorkspace"));

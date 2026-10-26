@@ -1,3 +1,11 @@
+# Avoid relying on fragile quoted -D compiler flags for binary identity.
+# The installable EXE must contain the actual configured FQ/PR/SHA stamp.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/rgsml_build_provenance.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/rgsml_build_provenance.hpp"
+    @ONLY
+)
 qt_add_executable(rgsml_app
     src/audition_source_selector.cpp
     src/audition_source_selector.hpp
@@ -85,7 +93,10 @@ if(WIN32)
     target_sources(rgsml_app PRIVATE resources/rgsml_app_icon.rc)
 endif()
 
-target_include_directories(rgsml_app PRIVATE ${CMAKE_SOURCE_DIR}/analysis/src)
+target_include_directories(rgsml_app PRIVATE
+    ${CMAKE_SOURCE_DIR}/analysis/src
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
 
 target_link_libraries(rgsml_app
     PRIVATE

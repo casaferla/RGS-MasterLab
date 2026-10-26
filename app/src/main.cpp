@@ -1,4 +1,5 @@
 #include "audition_region_view_model.hpp"
+#include "rgsml_build_provenance.hpp"
 #include "audition_source_selector.hpp"
 #include "compressor_view_model.hpp"
 #include "dsp_chain_adapter_model.hpp"
@@ -657,11 +658,11 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("liveSpectrumViewModel"),
         &liveSpectrumViewModel);
-#ifdef RGSML_BUILD_PROVENANCE
+    // ALWAYS publish the configured binary identity. In FQ80 the old
+    // conditional -D could omit the property and silently show "DEV".
     engine.rootContext()->setContextProperty(
         QStringLiteral("buildProvenance"),
-        QStringLiteral(RGSML_BUILD_PROVENANCE));
-#endif
+        rgsml::app::configured_build_provenance());
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

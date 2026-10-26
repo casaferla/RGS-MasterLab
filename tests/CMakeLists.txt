@@ -411,6 +411,7 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
 target_include_directories(rgsml_source_metadata_panel_smoke
     PRIVATE
         ${CMAKE_SOURCE_DIR}/app/src
+        ${CMAKE_BINARY_DIR}/app/generated
 )
 target_link_libraries(rgsml_source_metadata_panel_smoke
     PRIVATE
