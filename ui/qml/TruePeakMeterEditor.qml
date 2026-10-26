@@ -36,8 +36,12 @@ Item {
     // Preserve 198px at the canonical 548px editor, but do not force
     // readout cards outside the short physical Main window. This is
     // vertical-only compression; stereo L/R meter gets all spare height.
+    // At minimum height the rail must reserve the complete 56px
+    // numeric field+slider pair, its ceiling card padding AND the
+    // distinct read-only Verification Trim. Reducing to 102px made the
+    // two cards mathematically overlap even with no scrolling.
     readonly property int lowerControlBandHeight: height < 420
-        ? Math.max(102, Math.round(height * 0.35))
+        ? Math.max(120, Math.round(height * 0.39))
         : Math.min(198, Math.max(145, Math.round(height * 0.365)))
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"

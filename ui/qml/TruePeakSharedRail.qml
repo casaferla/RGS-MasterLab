@@ -22,9 +22,10 @@ Item {
     readonly property int m17ReadoutHeight: Math.min(100, Math.max(
         height < 420 ? 42 : 56,
         Math.floor((height - lowerControlBandHeight - 44) / 3)))
-    readonly property int m17CeilingHeight: Math.min(100, Math.max(
-        height < 420 ? 52 : 70,
-        Math.round(70 + (lowerControlBandHeight - 145) * 30 / 53)))
+    readonly property int m17CeilingHeight: height < 420
+        ? 68
+        : Math.min(100, Math.max(70,
+            Math.round(70 + (lowerControlBandHeight - 145) * 30 / 53)))
     readonly property int m17TrimHeight:
         lowerControlBandHeight - m17CeilingHeight - 6
     readonly property string provenanceDetails: root.measurementProvider
@@ -321,7 +322,11 @@ Item {
                         font.family: "Segoe UI"
                         font.pixelSize: 10
                         Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
+                        // Compact 46px Trim well cannot accommodate
+                        // a two-line status beneath its title and margins.
+                        // The full exact status remains in its dwell tooltip.
+                        wrapMode: root.height < 420 ? Text.NoWrap : Text.WordWrap
+                        elide: root.height < 420 ? Text.ElideRight : Text.ElideNone
                     }
                 }
             }
