@@ -2861,12 +2861,25 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("dock"));
     QVERIFY(secondEditorHost!=nativeDockedEditor);
     QCOMPARE(dspChainAdapterModel.modules().size(),qsizetype{3});
+    // Native Qt evidence from TWO distinct top-level windows which are
+    // simultaneously alive. A single generic proxy fixture is insufficient
+    // proof of the PO-approved multi-window behavior.
+    QVERIFY2(capture_visual_evidence(floatingModule,
+        QStringLiteral("fq80_multi_window_gain_native_920x620.png"),QSize{920,620}),
+        "Capture first real floating DSP native window");
+    QVERIFY2(capture_visual_evidence(secondNative,
+        QStringLiteral("fq80_multi_window_eq_native_920x620.png"),QSize{920,620}),
+        "Capture second real floating DSP native window");
+    QCOMPARE(dspChainAdapterModel.modules().size(),qsizetype{3});
     // Re-selecting Gain must raise its ORIGINAL native window, NEVER dock.
     dspChainAdapterModel.setSelectedIndex(0);
     QCoreApplication::processEvents();
     QVERIFY(root->property("editorDetached").toBool());
     QCOMPARE(root->property("detachedModuleInstanceId").toString(),firstModuleId);
     QVERIFY(dropWell->isVisible());
+    QVERIFY2(capture_visual_evidence(window,
+        QStringLiteral("fq80_multi_window_main_dock_well_1184x688.png"),QSize{1184,688}),
+        "Capture actual Main dock zone while two DSP native windows persist");
     QVERIFY(floatingModule->isVisible());
     QVERIFY(secondNative->isVisible());
     QCOMPARE(secondEditorHost->window(),secondNative);
