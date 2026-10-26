@@ -733,6 +733,13 @@ Window {
             qPrintable(QStringLiteral("PO no-scroll: %1 editor bottom=%2 host height=%3")
                 .arg(QString::fromLatin1(fit.editor))
                 .arg(editorBottom.y()).arg(host->height())));
+        // Genuine Qt-rendered evidence of each REAL seven-adapter editor
+        // at the 680x338 constrained host, in one native 1184x688 window.
+        // Supporting fixture only: physical Main 150% gate stays PO-owned.
+        const auto evidenceName=QStringLiteral("fq80_compact_real_%1_680x338.png")
+            .arg(QString::fromLatin1(fit.editor));
+        QVERIFY2(capture_visual_evidence(window,evidenceName,QSize{1184,688}),
+            qPrintable(QStringLiteral("Failed Qt real editor capture: ")+evidenceName));
         if (fit.index==3) {
             auto* sideToggle=qobject_cast<QQuickItem*>(find_child_by_name(
                 editor,QStringLiteral("stereoMsSideMutedToggle")));
