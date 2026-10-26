@@ -491,40 +491,65 @@ Rectangle {
             viewModel: root.activeModule ? root.activeModule.compressorViewModel : null
         }
 
-        TruePeakMeterEditor {
-            id: truePeakMeterEditor
-            objectName: "truePeakMeterEditor"
-            visible: root.activeModule
-                ? root.activeModule.editorContentKey === "TRUE_PEAK_METER" : false
+        // Windows minimum-height physical correction: the M15/M16/M17
+        // layouts need their canonical content height. Show their lower
+        // controls by VERTICAL scrolling, never by clipping or changing
+        // the frozen horizontal structure at 1184x688 / 150% DPI.
+        Flickable {
+            id: meterViewport
+            objectName: "truePeakMeterViewport"
+            visible: root.isMeterEditor
             Layout.fillWidth: true
             Layout.fillHeight: true
-            measurementProvider: root.truePeakCurrentStatic
-            liveProvider: root.truePeakCurrentLive
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            contentWidth: width
+            contentHeight: Math.max(height, 470)
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            TruePeakMeterEditor {
+                id: truePeakMeterEditor
+                objectName: "truePeakMeterEditor"
+                width: meterViewport.width
+                height: meterViewport.contentHeight
+                measurementProvider: root.truePeakCurrentStatic
+                liveProvider: root.truePeakCurrentLive
+            }
         }
 
-        // The M17 editor is reachable ONLY from a real terminal adapter;
-        // M16 retains its independent meter presentation identity.
-        TruePeakLimiterEditor {
-            showLocalValidation: !root.errorsInGlobalStatusBar
-            id: truePeakLimiterEditor
-            objectName: "truePeakLimiterEditor"
+        Flickable {
+            id: limiterViewport
+            objectName: "truePeakLimiterViewport"
             visible: root.isLimiterEditor
             Layout.fillWidth: true
             Layout.fillHeight: true
-            limiterModule: root.isLimiterEditor ? root.activeModule : null
-            monitorLocked: root.monitorExclusive
-            // Real typed committed/draft Ceiling; still disabled by authentic
-            // BYP, with no sonic Preview and no fabricated applied-GR or trim.
-            limiterViewModel: root.isLimiterEditor
-                ? root.terminalLimiterViewModel : null
-            limiterGrProvider: root.isLimiterEditor && !root.monitorExclusive
-                ? root.limiterGrProvider : null
-            measurementProvider: root.truePeakCurrentStatic
-            liveProvider: root.truePeakCurrentLive
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            contentWidth: width
+            contentHeight: Math.max(height, 475)
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            TruePeakLimiterEditor {
+                showLocalValidation: !root.errorsInGlobalStatusBar
+                id: truePeakLimiterEditor
+                objectName: "truePeakLimiterEditor"
+                width: limiterViewport.width
+                height: limiterViewport.contentHeight
+                limiterModule: root.isLimiterEditor ? root.activeModule : null
+                monitorLocked: root.monitorExclusive
+                limiterViewModel: root.isLimiterEditor
+                    ? root.terminalLimiterViewModel : null
+                limiterGrProvider: root.isLimiterEditor && !root.monitorExclusive
+                    ? root.limiterGrProvider : null
+                measurementProvider: root.truePeakCurrentStatic
+                liveProvider: root.truePeakCurrentLive
+            }
         }
 
-        // MONITOR is a selectable, persistent QML utility editor. Its
-        // controls address a separate DEVICE audition lease, never M17 DSP.
+        // Master Audition already scrolls INTERNALLY. Remove any Layout
+        // minimum-height pressure from its 460px implicit height.
         MonitorEditor {
             id: monitorEditor
             objectName: "monitorEditor"
@@ -532,17 +557,34 @@ Rectangle {
                 ? root.activeModule.editorContentKey === "MASTER_MONITOR" : false
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
             monitorViewModel: root.terminalMonitorViewModel
         }
 
-        StereoMsEditor {
-            showLocalValidation: !root.errorsInGlobalStatusBar
-            id: stereoMsEditor
-            objectName: "stereoMsEditor"
-            visible: root.activeModule ? root.activeModule.editorContentKey === "STEREO_MS" : false
+        Flickable {
+            id: stereoViewport
+            objectName: "stereoMsViewport"
+            visible: root.activeModule
+                ? root.activeModule.editorContentKey === "STEREO_MS" : false
             Layout.fillWidth: true
             Layout.fillHeight: true
-            viewModel: root.activeModule ? root.activeModule.stereoMsViewModel : null
+            Layout.minimumHeight: 0
+            Layout.preferredHeight: 0
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            contentWidth: width
+            contentHeight: Math.max(height, 460)
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            StereoMsEditor {
+                showLocalValidation: !root.errorsInGlobalStatusBar
+                id: stereoMsEditor
+                objectName: "stereoMsEditor"
+                width: stereoViewport.width
+                height: stereoViewport.contentHeight
+                viewModel: root.activeModule
+                    ? root.activeModule.stereoMsViewModel : null
+            }
         }
     }
 }
