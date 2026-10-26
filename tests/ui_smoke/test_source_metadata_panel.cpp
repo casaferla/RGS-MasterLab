@@ -642,13 +642,18 @@ Window {
         QVERIFY(glyph);
         QCOMPARE(glyph->property("kind").toString(),sourceKinds[i]);
         QCOMPARE(glyph->width(),16.0);
-        // Both brighter icons reflect real non-default state; M17 remains
-        // bypass-dimmed independently, and every other default stays dim.
+        // Non-processing M16 and Master Audition are ALWAYS lit, even
+        // with Default parameters. Real bypassable processing retains
+        // Default/Manual and a separate bypass-dim treatment.
         const auto manualState=(i==0 || i==5);
+        const auto alwaysLit=(i==4 || i==6);
         QCOMPARE(row->property("isDefaultState").toBool(),!manualState);
-        QVERIFY2(glyph->opacity() >= (manualState ? 0.69 : 0.25)
-                     && glyph->opacity() <= (manualState ? 1.01 : 0.38),
-                 "Native glyph must obey Default/Manual and bypass dim");
+        QCOMPARE(row->property("permanentlyLit").toBool(),alwaysLit);
+        QVERIFY2(glyph->opacity() >= (alwaysLit ? 0.99
+                           : manualState ? 0.69 : 0.57)
+                     && glyph->opacity() <= (alwaysLit ? 1.01
+                           : manualState ? 1.01 : 0.59),
+                 "Native icon must honor typed meter/utility non-bypassability");
         // Every line remains inside the same fixed 164-DIP Chain;
         // actual native scrollbar/viewport never changes glyph identity.
         QVERIFY(glyph->x()>=0.0);
@@ -740,7 +745,7 @@ Window {
                 height: 16
                 kind: modelData.kind
                 strokeColor: modelData.color
-                opacity: index % 2 === 0 ? 1.0 : 0.37
+                opacity: index % 2 === 0 ? 1.0 : 0.58
             }
             StudioIcon {
                 objectName: "approvedGlyph_40_" + index
@@ -803,7 +808,7 @@ Window {
                      QColor{colors[index]});
             QCOMPARE(item->width(),static_cast<qreal>(pixelSize));
             QCOMPARE(item->height(),static_cast<qreal>(pixelSize));
-            QCOMPARE(item->opacity(),pixelSize==40||index%2==0?1.0:0.37);
+            QCOMPARE(item->opacity(),pixelSize==40||index%2==0?1.0:0.58);
         }
     }
     QVERIFY2(capture_visual_evidence(
@@ -3125,9 +3130,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // Both original silhouettes use their fixed Chain slot; the glyph
     // brightness is a configuration semantic, never a separate LED.
     QCOMPARE(chainGainIcon->property("opacity").toDouble(),
-        dspChainRow0->property("isDefaultState").toBool() ? 0.37 : 1.0);
+        dspChainRow0->property("isDefaultState").toBool() ? 0.58 : 1.0);
     QCOMPARE(chainEqIcon->property("opacity").toDouble(),
-        dspChainRow1->property("isDefaultState").toBool() ? 0.37 : 1.0);
+        dspChainRow1->property("isDefaultState").toBool() ? 0.58 : 1.0);
     const qreal eqIconXBefore = chainEqIcon->mapToItem(
         qobject_cast<QQuickItem*>(dspChainRow1),QPointF{}).x();
 
@@ -3330,13 +3335,13 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
 
     // Initial Gain state and dim family pictogram
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
-    QCOMPARE(chainGainIcon->opacity(), 0.37);
+    QCOMPARE(chainGainIcon->opacity(), 0.58);
     QVERIFY2(!dspChainRow0->property("isBypassed").toBool(), "Gain should initially process audio");
     QVERIFY(!find_child_by_name(dspChainRow0, QStringLiteral("dspChainBypassBadge_0")));
 
     // Initial EQ state and dim family pictogram
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Flat Default"));
-    QCOMPARE(chainEqIcon->opacity(), 0.37);
+    QCOMPARE(chainEqIcon->opacity(), 0.58);
     QVERIFY2(!dspChainRow1->property("isBypassed").toBool(), "EQ should initially process audio");
     QVERIFY(!find_child_by_name(dspChainRow1, QStringLiteral("dspChainBypassBadge_1")));
 
@@ -3582,7 +3587,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(gainViewModel.gain_db(), 0.0);
     QVERIFY(gainFillTracksKnob());
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
-    QCOMPARE(chainGainIcon->opacity(), 0.37);
+    QCOMPARE(chainGainIcon->opacity(), 0.58);
     QVERIFY2(!qobject_cast<QQuickItem*>(gainValidationError)->isVisible(),
         "Gain local error display must remain suppressed after correction");
     QVERIFY(root->property("statusDspErrorText").toString().isEmpty());
@@ -3666,7 +3671,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     qInfo().noquote() << "M12C_SMOKE_PHASE=dsp-chain-row-led-and-byp";
     // Canonical Flat state -> family symbol is dim and bypass row style is absent.
     QVERIFY2(eqViewModel.is_default(), "EQ state must be default/flat initially");
-    QCOMPARE(chainEqIcon->opacity(), 0.37);
+    QCOMPARE(chainEqIcon->opacity(), 0.58);
     QVERIFY2(!dspChainRow1->property("isBypassed").toBool(), "EQ should initially process audio");
     QVERIFY(!find_child_by_name(dspChainRow1, QStringLiteral("dspChainBypassBadge_1")));
 
@@ -3706,7 +3711,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(gainViewModel.gain_db(), gainBeforeEqShortcut);
 
     // Input Gain (row 0) remains dark/default and unchanged after EQ-only edit
-    QCOMPARE(chainGainIcon->opacity(), 0.37);
+    QCOMPARE(chainGainIcon->opacity(), 0.58);
     QCOMPARE(dspChainStateText0->property("text").toString(), QStringLiteral("0.0 dB Default"));
 
     // Keyboard Space activation on bandSelectorButton_0
@@ -3939,7 +3944,7 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(QMetaObject::invokeMethod(resetFlatBtn, "clicked"), "Clicking eqResetFlatButton must succeed");
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.is_default(), "EQ state must be default/flat after Reset Flat");
-    QCOMPARE(chainEqIcon->opacity(), 0.37);
+    QCOMPARE(chainEqIcon->opacity(), 0.58);
 
     // Undo -> restores 2-band non-default state -> family symbol brightens
     QVERIFY2(QMetaObject::invokeMethod(undoBtn, "clicked"), "Clicking eqUndoButton must succeed");

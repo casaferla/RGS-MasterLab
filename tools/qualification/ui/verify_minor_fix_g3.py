@@ -50,15 +50,20 @@ require('objectName: "dspChainModuleIcon_"' in chain and
         "Layout.minimumWidth: 16" in chain and
         "Layout.maximumWidth: 16" in chain,
         "fixed 16px module icon reservation missing")
-require("rowItem.isDefaultState ? 0.37 : 1.0" in chain and
+# PO 2026-10-26: brighter Default, permanent lit non-processing,
+# still completely independent of sonic bypass and Manual settings.
+require("rowItem.permanentlyLit ? 1.0" in chain and
+        "rowItem.isDefaultState ? 0.58 : 1.0" in chain and
         "rowItem.isBypassed ? 0.7 : 1.0" in chain and
-        "strokeColor: root.moduleIconColor(rowItem.moduleAdapter)" in chain,
-        "single icon must convey Default/Manual by family tint intensity independently of bypass")
+        "strokeColor: root.moduleIconColor(rowItem.moduleAdapter)" in chain and
+        "nonProcessingService" in chain and
+        "Q_PROPERTY(bool nonProcessingService" in adapters,
+        "module glyph must use typed utility capability, readable Default and independent bypass")
 require("dspChainConfigLed_0" in smoke and
         "dspChainConfigLed_1" in smoke and
-        "QCOMPARE(chainGainIcon->opacity(), 0.37)" in smoke and
+        "QCOMPARE(chainGainIcon->opacity(), 0.58)" in smoke and
         "QCOMPARE(chainGainIcon->opacity(), 1.0)" in smoke,
-        "native smoke must assert absent LED plus dim/vivid module icon states")
+        "native smoke must assert absent LED plus readable/bright module icon states")
 for key,kind in (
         ("INPUT_GAIN","module-gain"),
         ("PARAMETRIC_EQ","module-eq"),
