@@ -476,6 +476,80 @@ jobs:
               exit $exitCode
           }
 
+      # The official cold FQ uses a canonical MSVC DEBUG Qt smoke,
+      # whereas the regular Focused UI smoke above is RELEASE only.
+      # Reproduce the *Debug configuration* separately using Ninja + MSVC.
+      # Do NOT compile the frozen VS-generator/B2f attestation project:
+      # it must remain configure-only; this is a diagnostic proxy, not FQ.
+      - name: Configure isolated Windows Debug UI diagnostic
+        shell: pwsh
+        run: |
+          cmake -S . -B build/windows-focused-debug-ui -G "Ninja Multi-Config" `
+            -DCMAKE_CONFIGURATION_TYPES=Debug `
+            -DCMAKE_POLICY_DEFAULT_CMP0141=NEW `
+            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded `
+            -DRGSML_BUILD_TESTS=ON `
+            -DRGSML_WARNINGS_AS_ERRORS=ON `
+            -DRGSML_PROVENANCE_TYPE=PR `
+            -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} `
+            -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }} `
+            -DRGSML_QT_ROOT="$env:RGSML_QT_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_DEBUG_UI_CONFIG_FAILED' }
+      - name: Build isolated Windows Debug UI diagnostic
+        shell: pwsh
+        run: |
+          $raw = "$env:RUNNER_TEMP/rgsml-focused-debug-ui-build.log"
+          cmake --build build/windows-focused-debug-ui --config Debug `
+            --target rgsml_source_metadata_panel_smoke --parallel 4 *> $raw
+          if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_DEBUG_UI_BUILD_FAILED' }
+      - name: Upload bounded Windows Debug UI compiler errors
+        if: failure()
+        shell: pwsh
+        run: |
+          python tools/ci/summarize_focused_build.py --input "$env:RUNNER_TEMP/rgsml-focused-debug-ui-build.log" --output "$env:RUNNER_TEMP/rgsml-focused-debug-ui-build-bounded.txt" --platform windows
+          if ($LASTEXITCODE -ne 0) { throw 'DEBUG_UI_BUILD_SUMMARY_FAILED' }
+      - name: Attach bounded Windows Debug UI compiler diagnostic
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Focused-Debug-UI-Build-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-focused-debug-ui-build-bounded.txt
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Run isolated Windows Debug Qt UI Smoke Diagnostic
+        id: focused_debug_ui_smoke
+        shell: pwsh
+        env:
+          RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\\build\\focused-debug-visual
+        run: |
+          $env:PATH = "$env:RGSML_QT_ROOT\\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\\qml"
+          $log = "$env:RUNNER_TEMP/rgsml-focused-debug-ui-smoke.txt"
+          & build/windows-focused-debug-ui/Debug/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
+          $code=$LASTEXITCODE
+          if (Test-Path $log) {
+            $critical=@(Select-String -Path $log -Pattern 'FAIL!', 'QFATAL', 'ASSERT', 'Fatal error' | Select-Object -First 8)
+            foreach ($hit in $critical) {
+              Write-Host ("DEBUG_QT_SMOKE_CRITICAL_LINE_{0}: {1}" -f $hit.LineNumber, $hit.Line.Substring(0,[Math]::Min(200,$hit.Line.Length)))
+            }
+          }
+          if ($code -ne 0) { throw "FOCUSED_DEBUG_UI_FAILED_$code" }
+      - name: Capture bounded Windows Debug UI Smoke assertions
+        if: ${{ failure() && steps.focused_debug_ui_smoke.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          python tools/ci/summarize_focused_tests.py --ctest-dir build/windows-focused-debug-ui/Testing/Temporary --qt-smoke-log "$env:RUNNER_TEMP/rgsml-focused-debug-ui-smoke.txt" --output "$env:RUNNER_TEMP/rgsml-focused-debug-ui-smoke-bounded.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'FOCUSED_DEBUG_UI_SUMMARY_FAILED' }
+      - name: Upload bounded Windows Debug UI Smoke assertions
+        if: ${{ failure() && steps.focused_debug_ui_smoke.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Focused-Debug-UI-Errors-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-focused-debug-ui-smoke-bounded.txt
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Run Focused DSP Tests (Release)
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}\build\visual-evidence

@@ -126,6 +126,7 @@ jobs:
           "FQ_DEBUG_CLEAN_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           if ($code -ne 0) { throw "FQ_DEBUG_BUILD_FAILED" }
       - name: Debug Qt UI smoke (canonical diagnostic)
+        id: fq_debug_ui_smoke
         shell: pwsh
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}/build/fq-adoption-visual-debug
@@ -135,8 +136,28 @@ jobs:
           $log="$env:GITHUB_WORKSPACE\fq-debug-ui-smoke.txt"
           & build/windows-msvc/Debug/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
           $code=$LASTEXITCODE
-          if (Test-Path $log) { Get-Content $log }
+          # Never print the complete QtTest log; retain only bounded fail markers.
+          if (Test-Path $log) {
+            $critical=@(Select-String -Path $log -Pattern 'FAIL!', 'QFATAL', 'ASSERT', 'Fatal error' | Select-Object -First 8)
+            foreach ($hit in $critical) {
+              Write-Host ("FQ_DEBUG_QT_CRITICAL_LINE_{0}: {1}" -f $hit.LineNumber, $hit.Line.Substring(0,[Math]::Min(200,$hit.Line.Length)))
+            }
+          }
           if ($code -ne 0) { throw "FQ_DEBUG_UI_FAILED" }
+      - name: Capture bounded FQ Debug UI Smoke assertions
+        if: ${{ failure() && steps.fq_debug_ui_smoke.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          python tools/ci/summarize_focused_tests.py --ctest-dir build/windows-msvc/Testing/Temporary --qt-smoke-log "$env:GITHUB_WORKSPACE\fq-debug-ui-smoke.txt" --output "$env:RUNNER_TEMP/rgsml-fq-debug-ui-bounded.txt"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_DEBUG_UI_SUMMARY_FAILED" }
+      - name: Upload bounded FQ Debug UI Smoke assertions
+        if: ${{ failure() && steps.fq_debug_ui_smoke.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-FQ-Debug-UI-Errors-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-fq-debug-ui-bounded.txt
+          retention-days: 7
+          if-no-files-found: error
       - name: Full Debug CTest (canonical VS generator and exclusions)
         id: fq_debug_ctest
         shell: pwsh
@@ -169,6 +190,7 @@ jobs:
           "FQ_RELEASE_CLEAN_BUILD_SECONDS=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           if ($code -ne 0) { throw "FQ_RELEASE_BUILD_FAILED" }
       - name: Release Qt UI smoke (canonical diagnostic)
+        id: fq_release_ui_smoke
         shell: pwsh
         env:
           RGSML_GUI01_EVIDENCE_DIR: ${{ github.workspace }}/build/fq-adoption-visual-release
@@ -178,8 +200,28 @@ jobs:
           $log="$env:GITHUB_WORKSPACE\fq-release-ui-smoke.txt"
           & build/windows-fq-ninja/Release/rgsml_source_metadata_panel_smoke.exe -v2 -o "$log,txt"
           $code=$LASTEXITCODE
-          if (Test-Path $log) { Get-Content $log }
+          # Never print the complete QtTest log; retain only bounded fail markers.
+          if (Test-Path $log) {
+            $critical=@(Select-String -Path $log -Pattern 'FAIL!', 'QFATAL', 'ASSERT', 'Fatal error' | Select-Object -First 8)
+            foreach ($hit in $critical) {
+              Write-Host ("FQ_RELEASE_QT_CRITICAL_LINE_{0}: {1}" -f $hit.LineNumber, $hit.Line.Substring(0,[Math]::Min(200,$hit.Line.Length)))
+            }
+          }
           if ($code -ne 0) { throw "FQ_RELEASE_UI_FAILED" }
+      - name: Capture bounded FQ Release UI Smoke assertions
+        if: ${{ failure() && steps.fq_release_ui_smoke.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          python tools/ci/summarize_focused_tests.py --ctest-dir build/windows-fq-ninja/Testing/Temporary --qt-smoke-log "$env:GITHUB_WORKSPACE\fq-release-ui-smoke.txt" --output "$env:RUNNER_TEMP/rgsml-fq-release-ui-bounded.txt"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_RELEASE_UI_SUMMARY_FAILED" }
+      - name: Upload bounded FQ Release UI Smoke assertions
+        if: ${{ failure() && steps.fq_release_ui_smoke.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-FQ-Release-UI-Errors-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rgsml-fq-release-ui-bounded.txt
+          retention-days: 7
+          if-no-files-found: error
       - name: Full Release CTest (canonical exclusions)
         id: fq_release_ctest
         shell: pwsh

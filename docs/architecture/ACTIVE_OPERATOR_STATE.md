@@ -1,5 +1,14 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+## FQ #82 RED — recovery diagnostic · 27 October 2026
+- Official Windows FQ #82: https://github.com/casaferla/RGS-MasterLab/actions/runs/40486176386, manually dispatched at exact candidate `360f2ecccb0948c77ce2beafa6dc2dcb8a42b23e`, FAILED at `Debug Qt UI smoke (canonical diagnostic)` after canonical VS Debug compilation SUCCESS. No artifact published for the direct-smoke failure; root code/assertion **unknown**. Do not invent a culprit. Previous #81 was cancelled with `main` SHA (not target candidate).
+- Recovery lot on PR-less no-CI staging: Focused Windows now **separately** builds and runs a Microsoft MSVC Debug Qt UI probe using Ninja, without building the canonical Visual Studio generator frozen B2f project. Failed direct QtTest output is summarized on the runner by existing `tools/ci/summarize_focused_tests.py` (<=12KB) and uploaded as a bounded artifact. Official FQ Debug AND Release smoke now publish filtered error artifacts when red, NEVER full job logs.
+- The Debug probe is indicative, **not identical** to canonical Visual Studio FQ Debug; a focused pass does not substitute the PO-only cold FQ. After focused failure, use the filtered artifact to make a targeted product/test correction on staging. No FQ dispatch or main merge is allowed from the connector.
+- Remain under Single-Writer Epoch: live SHA checks, staging-only commits, one CAS-checked FF promotion per coherent focused lot, no concurrent PR CI. Existing FQ green #80 remains immutable; physical 150% and M17/Master Audition gates OPEN. Repeat all recursive handoff obligations.
+
+---
+
+
 ## CURRENT VERIFIED STATE — 2026-10-27 · Focused #848 GREEN / Native Qt Dock evidence
 - **Qualified Focused:** https://github.com/casaferla/RGS-MasterLab/actions/runs/40462964544 = Windows PASS, Linux PASS, exact PR #61 DRAFT SHA `360f2ecccb0948c77ce2beafa6dc2dcb8a42b23e`. It supersedes #847 for focused UI but does **not** constitute a new FQ or Physical Gate M/L.
 - **Fix:** primary floating host no longer breaks QML `detachedWindow: root.hostDetached` binding when redocked. Qt smoke now checks the Dock arrow on repeated tear-offs and uses an actual MouseClick on the floating Input Gain Dock control, while a second independent EQ window persists. No new audio DSP modification.
