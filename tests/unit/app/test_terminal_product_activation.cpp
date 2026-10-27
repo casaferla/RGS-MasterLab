@@ -707,6 +707,43 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!product.borrow_verified_m17_master_for_device(
         *sourceRate.value()));
     QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
+    // Real distinct-rate DEVICE PCM from the previously completed M17
+    // master, without ever invoking another M17/M16 whole-resource job.
+    const auto offlineBlock=core::FrameCount::create(4096);
+    QVERIFY(offlineBlock);
+    std::size_t borrowedSrcCalls=0;
+    const app::TerminalPrivateProductSession::MonitoringMaterializer
+        convertedFromExisting=[&](
+            audio::AudioBufferView verifiedPcm)
+            ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
+            using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+            ++borrowedSrcCalls;
+            QCOMPARE(verifiedPcm.format().sample_rate(),*deviceRate.value());
+            auto converted=audio::materialize_monitoring_pcm_candidate(
+                verifiedPcm,*sourceRate.value(),*offlineBlock.value());
+            if(!converted)return Owned::failure(*converted.error());
+            return Owned::success(
+                std::make_shared<const audio::MonitoringPcmCandidate>(
+                    std::move(*converted.value())));
+        };
+    auto wrongMaster=product.materialize_borrowed_verified_m17_monitoring(
+        *sourceRate.value(),convertedFromExisting);
+    QVERIFY(!wrongMaster);
+    QCOMPARE(borrowedSrcCalls,std::size_t{0});
+    auto exactReuse=product.materialize_borrowed_verified_m17_monitoring(
+        *deviceRate.value(),convertedFromExisting);
+    QVERIFY2(exactReuse,exactReuse?"":exactReuse.error()->message().c_str());
+    QCOMPARE(borrowedSrcCalls,std::size_t{1});
+    QCOMPARE((*exactReuse.value())->immutable_master_rate,*deviceRate.value());
+    QCOMPARE((*exactReuse.value())->device_rate,*sourceRate.value());
+    QCOMPARE((*exactReuse.value())->immutable_master_frames.value(),
+             std::int64_t{4800});
+    QCOMPARE((*exactReuse.value())->device_pcm.view().frame_count().value(),
+             std::int64_t{4410});
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
+    QVERIFY(!product.private_id());
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
     QSignalSpy renderChanges{&renderer,&app::TerminalPrivateRenderController::changed};
     QVERIFY(renderChanges.isValid());
     QVERIFY(!coordinator.device_active());
@@ -734,6 +771,11 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // a future explicit ownership-retirement transaction is mandatory.
     QVERIFY(!product.borrow_verified_m17_master_for_device(
         *deviceRate.value()));
+    auto rejectedInstalledReuse=
+        product.materialize_borrowed_verified_m17_monitoring(
+            *deviceRate.value(),convertedFromExisting);
+    QVERIFY(!rejectedInstalledReuse);
+    QCOMPARE(borrowedSrcCalls,std::size_t{1});
     QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
     QCOMPARE(vm.audio_status(),
         QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));

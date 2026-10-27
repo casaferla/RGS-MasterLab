@@ -964,6 +964,56 @@ TerminalPrivateProductSession::borrow_verified_m17_master_for_device(
     return stage;
 }
 
+core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
+TerminalPrivateProductSession::materialize_borrowed_verified_m17_monitoring(
+    core::SampleRate selectedMasterRate,
+    const MonitoringMaterializer& materializer)
+{
+    using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+    auto refuse=[](const char* reason)->core::Result<Owned> {
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidState,reason});
+    };
+    if(!materializer)
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "M17_REUSE_EXPLICIT_MONITOR_MATERIALIZER_REQUIRED"});
+    const auto stage=borrow_verified_m17_master_for_device(selectedMasterRate);
+    if(!stage)return refuse("M17_REUSE_VERIFIED_MASTER_UNAVAILABLE");
+    const auto master=stage->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    // The existing MASTER remains borrowed with shared lifetime; no fresh
+    // full-resource M17 job and no SOURCE scratch copy is permitted here.
+    auto converted=[&]()->core::Result<Owned> {
+        try {
+            return materializer(master);
+        } catch(const std::bad_alloc&) {
+            return core::Result<Owned>::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "M17_REUSE_MONITOR_OUT_OF_MEMORY"});
+        }
+    }();
+    // An invalidating source/loop/limiter epoch during offline DEVICE SRC
+    // must discard the outcome, even if the new candidate looks well formed.
+    if(borrow_verified_m17_master_for_device(selectedMasterRate)!=stage)
+        return refuse("M17_REUSE_MASTER_REVOKED_DURING_DEVICE_SRC");
+    if(!converted)return converted;
+    if(!*converted.value())
+        return refuse("M17_REUSE_MONITOR_OWNER_MISSING");
+    const auto coherent=audio::validate_monitoring_pcm_candidate(
+        **converted.value());
+    if(!coherent)return core::Result<Owned>::failure(*coherent.error());
+    const auto& candidate=**converted.value();
+    if(candidate.immutable_master_rate!=selectedMasterRate
+       ||candidate.immutable_master_frames!=master.frame_count()
+       ||candidate.device_pcm.view().format().channel_layout()
+           !=master.format().channel_layout())
+        return refuse("M17_REUSE_MONITOR_MASTER_PROVENANCE_MISMATCH");
+    // No approvedMonitor_/installedMonitor_ mutation. The actual UI and
+    // device install still require an independently designed P0 gate.
+    return converted;
+}
+
 core::Status TerminalPrivateProductSession::suspend_for_comparison()
 {
     const bool verified=status_==QStringLiteral("READY_TO_INSTALL")
