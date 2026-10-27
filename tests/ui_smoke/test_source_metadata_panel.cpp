@@ -2870,6 +2870,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
     QCOMPARE(dockGrip->window(),floatingModule);
+    QCOMPARE(dockGlyph->property("kind").toString(),
+        QStringLiteral("dock")); // mandatory AFTER redock and re-detach
     QVERIFY(QMetaObject::invokeMethod(root,"returnCurrentEditorToDock"));
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
     QVERIFY(nativeDockedEditor==originalEditorIdentity);
@@ -2902,6 +2904,11 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(QMetaObject::invokeMethod(root,"detachSelectedModule"));
     QTRY_VERIFY_WITH_TIMEOUT(floatingModule->isVisible(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
+    // Multi-window test is the FOURTH Undock of the SAME original host.
+    // Never rely solely on the initial toggle: the previous redock must
+    // leave the icon + actual button action valid in every epoch.
+    QTRY_COMPARE_WITH_TIMEOUT(dockGlyph->property("kind").toString(),
+        QStringLiteral("dock"),5000);
     dspChainAdapterModel.setSelectedIndex(1);
     QCoreApplication::processEvents();
     QVERIFY(!root->property("editorDetached").toBool());
@@ -2964,6 +2971,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY(secondNative->isVisible());
     QCOMPARE(secondEditorHost->window(),secondNative);
     QVERIFY(nativeDockedEditor->window()==floatingModule);
+    QCOMPARE(dockGlyph->property("kind").toString(),
+        QStringLiteral("dock"));
     // Dock EQ by its OWN floating command while Gain remains floating.
     QVERIFY(QMetaObject::invokeMethod(secondNative,"returnToDock"));
     QTRY_COMPARE_WITH_TIMEOUT(dspChainAdapterModel.selected_index(),1,5000);
@@ -2972,11 +2981,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     dspChainAdapterModel.setSelectedIndex(0);
     QCoreApplication::processEvents();
     QVERIFY(root->property("editorDetached").toBool());
-    QVERIFY(QMetaObject::invokeMethod(floatingModule,"returnToDock"));
+    QTRY_COMPARE_WITH_TIMEOUT(dockGlyph->property("kind").toString(),
+        QStringLiteral("dock"),5000);
+    // PO requires a WORKING compact icon, not just a passing direct
+    // invokeMethod on the native Window's returnToDock shortcut.
+    const auto dockClickAt=dockToggle->mapToScene(QPointF{
+        dockToggle->width()/2.0,dockToggle->height()/2.0});
+    QTest::mouseClick(floatingModule,Qt::LeftButton,Qt::NoModifier,
+        dockClickAt.toPoint());
     QTRY_VERIFY_WITH_TIMEOUT(!floatingModule->isVisible(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==window,5000);
     QCOMPARE(dspChainAdapterModel.modules().size(),qsizetype{3});
     QVERIFY(!root->property("editorDetached").toBool());
+    QCOMPARE(dockGlyph->property("kind").toString(),
+        QStringLiteral("undock"));
 
     // Verify Adaptive Context Workspace and visual shell placeholders exist
     QVERIFY(root->findChild<QObject*>(QStringLiteral("adaptiveContextWorkspace")) != nullptr);

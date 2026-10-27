@@ -173,7 +173,13 @@ ApplicationWindow {
         }
         const previousDock=root.dockedEditorHost
         root.editorDetached=true
-        returningHost.detachedWindow=false
+        // The original Main host has an authored binding to
+        // workspace.hostDetached (= primaryDetached). Writing false here
+        // SEVERS that binding: the next Undock still draws an outward
+        // arrow and its header button cannot redock. Let the binding
+        // handle the primary host; only dynamic hosts need an assignment.
+        if (!wasPrimary)
+            returningHost.detachedWindow=false
         returningHost.activeModuleOverride=null
         returningHost.suppressActiveModule=false
         root.dockedEditorHost=returningHost
