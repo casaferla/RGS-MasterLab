@@ -13,6 +13,7 @@
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include "prepare_memory_advice_view_model.hpp"
+#include "master_output_rate_state.hpp"
 #include "project_session_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "source_waveform_view_model.hpp"
@@ -113,6 +114,7 @@ int main(int argc, char* argv[])
     rgsml::app::SourceWaveformViewModel sourceWaveform{
         &waveformPresentation};
     rgsml::app::SourceSelectionViewModel sourceSelection;
+    rgsml::app::MasterOutputRateState masterOutputRate;
     rgsml::app::PrepareMemoryAdviceViewModel prepareRateAdvisor{
         &sourceSelection, windowsPlayback};
     rgsml::app::AuditionSourceSelector auditionSelector{&playbackTransport};
@@ -521,13 +523,17 @@ int main(int argc, char* argv[])
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,
          &stereoMsViewModel, &compressorViewModel,
-         &staticTruePeak, &liveTruePeak, &terminalProductActivation](
+         &staticTruePeak, &liveTruePeak, &terminalProductActivation,
+         &masterOutputRate](
             const rgsml::core::ResourceReference& source) {
             // Prevent a prior source's slow C1 and C2 work becoming current.
             liveTruePeak.invalidate();
             staticTruePeak.invalidate_source();
             const auto frameCount = rgsml::core::FrameCount::create(
                 sourceSelection.frame_count());
+            // Preferred Project/Render rate only; M17 device-derived render
+            // remains unchanged until master/device ownership is integrated.
+            masterOutputRate.source_committed(sourceSelection.sample_rate_hz());
             const auto sampleRate = rgsml::core::SampleRate::create(
                 sourceSelection.sample_rate_hz());
             if (frameCount && sampleRate) {
@@ -599,6 +605,8 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("sourceSelection"),
         &sourceSelection);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("masterOutputRateState"), &masterOutputRate);
     engine.rootContext()->setContextProperty(
         QStringLiteral("prepareRateAdvisor"),
         &prepareRateAdvisor);

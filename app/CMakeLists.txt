@@ -49,6 +49,8 @@ qt_add_executable(rgsml_app
     src/terminal_limiter_state.hpp
     src/terminal_limiter_view_model.cpp
     src/terminal_limiter_view_model.hpp
+    src/master_output_rate_state.cpp
+    src/master_output_rate_state.hpp
     src/mastering_preview_controller.cpp
     src/mastering_preview_controller.hpp
     src/audition_region_view_model.cpp

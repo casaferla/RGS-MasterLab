@@ -52,6 +52,21 @@ set_tests_properties(rgsml_project_security_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "project;security")
 
+# PO M17 finalization: DEVICE-independent target rate preference contract.
+qt_add_executable(rgsml_master_output_rate_state_tests
+    unit/app/test_master_output_rate_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp)
+target_include_directories(rgsml_master_output_rate_state_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+target_link_libraries(rgsml_master_output_rate_state_tests PRIVATE Qt6::Core Qt6::Test)
+rgsml_apply_project_warnings(rgsml_master_output_rate_state_tests)
+add_test(NAME rgsml_master_output_rate_state_tests
+    COMMAND rgsml_master_output_rate_state_tests)
+set_tests_properties(rgsml_master_output_rate_state_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;project;master_rate;finalization")
+
 qt_add_executable(rgsml_project_session_tests
     integration/app/test_project_session.cpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.cpp
