@@ -1,5 +1,7 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+**Current open P0 GitHub issue for M17 single-Prepare / Master Audition:** https://github.com/casaferla/RGS-MasterLab/issues/62 — full authority and acceptance: [M17_MASTER_AUDITION_SINGLE_PREPARE_GATE.md](M17_MASTER_AUDITION_SINGLE_PREPARE_GATE.md). Must appear in EVERY outgoing handoff before M18.
+
 ## NEW P0 BLOCKER — 2026-10-27 · SINGLE M17 PREPARE / MASTER AUDITION (PO RECONFIRMED)
 - **Not forgotten at source, but previously knowingly DEFERRED until after FQ #80 before M18 (26 Oct) and not implemented:** one Project/Render TARGET_MASTER_OUTPUT_RATE selected in M17 before one authoritative Prepare; Master Audition must REUSE M17 immutable prepared MASTER and do only necessary DEVICE SRC with independent device sample rate. The two PREPAREs currently visible in FQ #83 are a product defect, not accepted behavior. Original frozen/consolidated PO decision: https://docs.google.com/document/d/13fIk06CgiPLWcaW3KAZPCUoNFN5ffh6NHlVXK1sfA_8/edit
 - **New PO physical testing FQ #83:** short WAV SOURCE 44.1 and 48 kHz both succeed M17 Prepare and Preview Prepared (limited scope); Master Audition still requires separate prepare / fails to reuse M17 preview. Thus audio Gate M/L **OPEN P0**; preserve user's report verbatim pending exact UI error. Points 1/2 remain PO CLOSED.

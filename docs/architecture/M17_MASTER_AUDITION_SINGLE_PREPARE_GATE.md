@@ -1,4 +1,6 @@
 # RGS MasterLab — P0 M17 → MASTER AUDITION SINGLE-PREPARE / MASTER RATE GATE
+
+**Tracker (OPEN BLOCKER):** https://github.com/casaferla/RGS-MasterLab/issues/62
 **Authority:** Product Owner decisions 2026-10-23 and 2026-10-26 (already agreed), recovered and elevated to mandatory OPEN integration gate 2026-10-27 after physical FQ #83 test.
 **Status:** PO APPROVED BEHAVIOR / PRODUCT NOT YET IMPLEMENTED OR PHYSICALLY QUALIFIED. This is a recovery of existing decisions, not permission to change frozen DSP algorithms or merge to main.
 
