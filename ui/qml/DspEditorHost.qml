@@ -43,6 +43,15 @@ Rectangle {
             ? null : root.truePeakStaticViewModel
     property var terminalLimiterViewModel: null
     property var terminalMonitorViewModel: null
+    // Real Project authority. Selection does not certify Final SRC/M17 PCM.
+    property var masterRateState: null
+    property var memoryAdvisor: null
+    readonly property bool m17Preparing: root.terminalLimiterViewModel
+        && root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
+    function rateLabel(hz) {
+        if (!hz || hz <= 0) return "—"
+        return (hz / 1000).toFixed(1).replace(".", ",").replace(",0", "") + " kHz"
+    }
     property var limiterGrProvider: null
     property Item activeChainRow: null
     // Drag is only the user's tear-off INTENT. Parent/Main owns all window
@@ -394,7 +403,7 @@ Rectangle {
             Layout.maximumHeight: 34
             spacing: 8
             StudioButton {
-                visible: root.isLimiterEditor
+                visible: root.isLimiterEditor && !root.m17Preparing
                 objectName: "m17PrepareButton"
                 text: "Prepare"
                 minimumControlWidth: 86
@@ -413,7 +422,7 @@ Rectangle {
                 }
             }
             StudioButton {
-                visible: root.isLimiterEditor
+                visible: root.isLimiterEditor && root.m17Preparing
                 objectName: "m17CancelPreparationButton"
                 text: "Cancel"
                 minimumControlWidth: 80
@@ -424,7 +433,7 @@ Rectangle {
                 Accessible.name: "Cancel offline limiter preparation"
             }
             StudioButton {
-                visible: root.isLimiterEditor
+                visible: root.isLimiterEditor && root.terminalLimiterViewModel && root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
                 objectName: "m17PreviewNonconformingButton"
                 text: "Preview Anyway"
                 minimumControlWidth: 125
@@ -443,7 +452,7 @@ Rectangle {
                 }
             }
             StudioButton {
-                visible: root.isLimiterEditor
+                visible: root.isLimiterEditor && root.terminalLimiterViewModel && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
                 objectName: "m17PreviewPreparedButton"
                 text: "Preview Prepared"
                 minimumControlWidth: 130
@@ -454,7 +463,33 @@ Rectangle {
                 onClicked: root.terminalLimiterViewModel.previewPrepared()
                 Accessible.name: "Preview verified limiter audio"
             }
+            StudioButton {
+                objectName: "m17RateAndTimesButton"
+                visible: root.isLimiterEditor
+                text: "Rate e tempi"
+                minimumControlWidth: 106
+                accentColor: "#C4774A"
+                onClicked: rateTimePopup.open()
+                Accessible.name: "Apri frequenze master, memoria e tempi"
+                ToolTip.text: "MASTER di progetto; tempi non ancora calibrati"
+                ToolTip.visible: hovered && rateDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell { id: rateDwell; anchors.fill: parent }
+            }
             Text {
+                objectName: "m17MasterRateSummary"
+                visible: root.isLimiterEditor
+                Layout.preferredWidth: root.width < 740 ? 132 : 178
+                elide: Text.ElideRight
+                font.family: "Segoe UI"
+                font.pixelSize: 10
+                color: "#A9D5E2"
+                text: "MASTER " + root.rateLabel(root.masterRateState
+                    ? root.masterRateState.masterRateHz : 0) + " · ETA n/d"
+                Accessible.name: text + ". Tempi non ancora disponibili."
+            }
+            Text {
+                objectName: "m17PreparationStatusText"
                 visible: root.isLimiterEditor
                 Layout.fillWidth: true
                 font.family: "Segoe UI"
@@ -559,6 +594,138 @@ Rectangle {
             Layout.preferredHeight: 0
             viewModel: root.activeModule
                 ? root.activeModule.stereoMsViewModel : null
+        }
+    }
+
+    // P0 layout trial. Genuine Project rate + RAM; ETA and SRC unavailable
+    // until their real backends and the single immutable MASTER are qualified.
+    Popup {
+        id: rateTimePopup
+        objectName: "m17RateTimePopup"
+        parent: root
+        modal: false
+        focus: true
+        padding: 0
+        width: Math.min(440, root.width - 16)
+        x: Math.max(8, root.width - width - 8)
+        y: root.height < 470 ? 42 : 52
+        height: Math.min(290, root.height - y - 8)
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: if (root.memoryAdvisor) root.memoryAdvisor.refresh()
+        background: Rectangle {
+            radius: 7
+            color: "#101F30"
+            border.color: "#5B849A"
+        }
+        contentItem: Item {
+            objectName: "m17RateTimePanel"
+            clip: true
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 3
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 24
+                    Text {
+                        text: "RATE E TEMPI · MASTER"
+                        color: "#F0F6FB"
+                        font.family: "Segoe UI"
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                    }
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        objectName: "m17RatePanelClose"
+                        text: "✕"
+                        flat: true
+                        implicitWidth: 27
+                        implicitHeight: 23
+                        onClicked: rateTimePopup.close()
+                        Accessible.name: "Chiudi Rate e tempi"
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 18
+                    color: "#F2CE82"
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                    text: "Target di progetto; Final SRC e MASTER PCM ancora P0"
+                }
+                Repeater {
+                    model: [44100, 48000, 88200, 96000, 176400, 192000]
+                    delegate: Rectangle {
+                        id: rateRow
+                        required property int index
+                        required property int modelData
+                        readonly property var advice: root.memoryAdvisor
+                            && root.memoryAdvisor.recommendations.length === 6
+                            ? root.memoryAdvisor.recommendations[index] : null
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 27
+                        radius: 3
+                        color: root.masterRateState
+                            && root.masterRateState.masterRateHz === modelData
+                            ? "#20455B" : "#142B3C"
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 3
+                            anchors.rightMargin: 5
+                            spacing: 4
+                            RadioButton {
+                                objectName: "m17MasterRateOption_" + rateRow.index
+                                text: root.rateLabel(rateRow.modelData)
+                                checked: root.masterRateState
+                                    && root.masterRateState.masterRateHz === rateRow.modelData
+                                enabled: root.masterRateState
+                                    && root.masterRateState.hasSupportedMasterRate
+                                    && !root.m17Preparing
+                                implicitWidth: 110
+                                font.pixelSize: 10
+                                onClicked: if (root.masterRateState)
+                                    root.masterRateState.choose_master_rate(rateRow.modelData)
+                                Accessible.name: "Target master " + text
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                                font.pixelSize: 10
+                                color: rateRow.advice
+                                    && rateRow.advice.kind === "discouraged"
+                                    ? "#F4A5AA" : "#B3CAD4"
+                                text: rateRow.advice ? rateRow.advice.label : "RAM non valutata"
+                            }
+                            Text {
+                                text: "ETA n/d"
+                                color: "#8AA7BA"
+                                font.pixelSize: 10
+                                Layout.preferredWidth: 53
+                            }
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 6
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        color: "#99ADBF"
+                        font.pixelSize: 9
+                        text: "Stima non disponibile · SRC da qualificare"
+                    }
+                    Button {
+                        objectName: "m17RateCalibrationButton"
+                        text: "Calibra"
+                        enabled: false
+                        implicitHeight: 25
+                        ToolTip.text: "Backend di calibrazione non ancora implementato"
+                        Accessible.name: "Calibrazione: non ancora disponibile"
+                    }
+                }
+            }
         }
     }
 }

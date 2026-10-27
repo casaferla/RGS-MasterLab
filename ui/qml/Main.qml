@@ -44,6 +44,10 @@ ApplicationWindow {
         ? terminalLimiterViewModel : null
     readonly property var appTerminalMonitorViewModel: typeof terminalMonitorViewModel !== "undefined"
         ? terminalMonitorViewModel : null
+    readonly property var appMasterRateState: typeof masterOutputRateState !== "undefined"
+        ? masterOutputRateState : null
+    readonly property var appMemoryAdvisor: typeof prepareRateAdvisor !== "undefined"
+        ? prepareRateAdvisor : null
     readonly property bool monitorExclusive: root.appTerminalMonitorViewModel
         ? root.appTerminalMonitorViewModel.monitorExclusive : false
     readonly property var appTerminalPostLimiterMeter: typeof terminalPostLimiterTruePeak !== "undefined"
@@ -562,6 +566,8 @@ ApplicationWindow {
             // same-named child property here creates a QML binding loop.
             terminalLimiterViewModel: root.appTerminalLimiterViewModel
             terminalMonitorViewModel: root.appTerminalMonitorViewModel
+            masterRateState: root.appMasterRateState
+            memoryAdvisor: root.appMemoryAdvisor
             limiterGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
                 ? terminalPrivateGrViewModel : null
         }

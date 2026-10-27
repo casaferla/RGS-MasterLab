@@ -23,6 +23,8 @@ Rectangle {
     property var terminalPostLimiterTruePeak: null
     property var terminalLimiterViewModel: null
     property var terminalMonitorViewModel: null
+    property var masterRateState: null
+    property var memoryAdvisor: null
     property var limiterGrProvider: null
 
     // Backward-compatibility alias so code referencing workspace.viewModel sets/gets eqViewModel
@@ -54,6 +56,8 @@ Rectangle {
             terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
             terminalLimiterViewModel: root.terminalLimiterViewModel
             terminalMonitorViewModel: root.terminalMonitorViewModel
+            masterRateState: root.masterRateState
+            memoryAdvisor: root.memoryAdvisor
             limiterGrProvider: root.limiterGrProvider
             activeChainRow: realChainSelector.activeRow
             onDockToggleRequested: {
@@ -104,6 +108,8 @@ Rectangle {
             terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
             terminalLimiterViewModel: root.terminalLimiterViewModel
         terminalMonitorViewModel: root.terminalMonitorViewModel
+        masterRateState: root.masterRateState
+        memoryAdvisor: root.memoryAdvisor
             limiterGrProvider: root.limiterGrProvider
             activeChainRow: realChainSelector.activeRow
             detachedWindow: root.hostDetached
