@@ -43,6 +43,14 @@ Item {
     readonly property int lowerControlBandHeight: height < 420
         ? Math.max(120, Math.round(height * 0.39))
         : Math.min(198, Math.max(145, Math.round(height * 0.365)))
+    // The M16 provenance well and M17 GR well can give up their spare
+    // blank space at the constrained 680x338 host. The right rail keeps
+    // the complete Ceiling + Verification Trim reservation. Upper L/R
+    // meter positions stay common to M16 and M17; no scroll or clipping.
+    readonly property int leftLowerVisualHeight: root.height < 300
+        ? Math.min(root.lowerControlBandHeight,
+            Math.max(94, Math.floor(root.height * 0.43)))
+        : root.lowerControlBandHeight
     property bool useFamilyAccent: false
     property color familyAccent: "#6CBCCF"
     // The large channel bars are LIVE-only: a whole-resource future maximum
@@ -190,9 +198,9 @@ Item {
                         objectName: "truePeakProvenanceCard"
                         visible: !root.showLimiterControls
                         Layout.fillWidth: true
-                        Layout.minimumHeight: root.showLimiterControls ? 0 : root.lowerControlBandHeight
-                        Layout.preferredHeight: root.showLimiterControls ? 0 : root.lowerControlBandHeight
-                        Layout.maximumHeight: root.showLimiterControls ? 0 : root.lowerControlBandHeight
+                        Layout.minimumHeight: root.showLimiterControls ? 0 : root.leftLowerVisualHeight
+                        Layout.preferredHeight: root.showLimiterControls ? 0 : root.leftLowerVisualHeight
+                        Layout.maximumHeight: root.showLimiterControls ? 0 : root.leftLowerVisualHeight
                         stateLabel: root.measurementProvider
                             ? root.measurementProvider.stateText : "NO SOURCE"
                         qualification: root.measurementProvider
@@ -212,9 +220,9 @@ Item {
                         // window height. Only the GRAPH is the Compressor's
                         // fixed 54px: a flexible upper clearance keeps
                         // the waveform low and leaves extra growth to L/R.
-                        Layout.minimumHeight: root.showLimiterGrHistory ? root.lowerControlBandHeight : 0
-                        Layout.preferredHeight: root.showLimiterGrHistory ? root.lowerControlBandHeight : 0
-                        Layout.maximumHeight: root.showLimiterGrHistory ? root.lowerControlBandHeight : 0
+                        Layout.minimumHeight: root.showLimiterGrHistory ? root.leftLowerVisualHeight : 0
+                        Layout.preferredHeight: root.showLimiterGrHistory ? root.leftLowerVisualHeight : 0
+                        Layout.maximumHeight: root.showLimiterGrHistory ? root.leftLowerVisualHeight : 0
                         spacing: 2
                         opacity: root.limiterBypassed ? 0.5 : 1.0
                         Item {

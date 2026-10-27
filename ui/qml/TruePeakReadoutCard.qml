@@ -18,6 +18,8 @@ Rectangle {
     property bool roomyLimiterReadout: false
     readonly property bool tightM17Height: root.roomyLimiterReadout
         && root.height < 90
+    readonly property bool veryTightM17Height: root.roomyLimiterReadout
+        && root.height < 38
     StudioTooltipDwell {
         id: cardTooltipDwell
         anchors.fill: parent
@@ -73,17 +75,20 @@ Rectangle {
     ColumnLayout {
         objectName: "truePeakReadoutTextColumn"
         anchors.fill: parent
-        anchors.margins: root.tightM17Height ? 5
+        anchors.margins: root.veryTightM17Height ? 3
+            : root.tightM17Height ? 5
             : root.roomyLimiterReadout ? 10
             : root.height < 95 ? 8 : 12
-        spacing: root.tightM17Height ? 2
+        spacing: root.veryTightM17Height ? 1
+            : root.tightM17Height ? 2
             : root.roomyLimiterReadout ? 4
             : root.height < 95 ? 2 : 5
         Text {
             text: root.heading
             color: root.useFamilyAccent ? root.familyAccent : "#91AEC2"
             font.family: "Segoe UI"
-            font.pixelSize: root.tightM17Height ? 10 : 11
+            font.pixelSize: root.veryTightM17Height ? 9
+                : root.tightM17Height ? 10 : 11
             font.bold: true
             Layout.fillWidth: true
             elide: Text.ElideRight
@@ -95,7 +100,8 @@ Rectangle {
             text: root.available ? root.alignedDbtp(root.reading) : root.reading
             color: root.available ? root.valueColor : "#879CA9"
             font.family: "Consolas"
-            font.pixelSize: root.tightM17Height ? 18 : 22
+            font.pixelSize: root.veryTightM17Height ? 16
+                : root.tightM17Height ? 18 : 22
             font.weight: Font.DemiBold
             Layout.fillWidth: true
             elide: Text.ElideRight
