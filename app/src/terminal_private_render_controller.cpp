@@ -84,6 +84,9 @@ void TerminalPrivateRenderController::worker_loop() {
                                  std::memory_order_release);
         };
         std::optional<render::TruePeakLimiterOwnedMeasuredNonconformingCandidate> recovered;
+        // Count only real entered M17 whole-resource executions; never a
+        // device SRC, playback restart, loop/seek or inspector refresh.
+        renderInvocationCount_.fetch_add(1,std::memory_order_release);
         auto result=render::render_true_peak_limiter_owned_output_rate_candidate(
             captured.manual_owner,job->manualChain,
             captured.full_source_frames,captured.manual_chain_revision,

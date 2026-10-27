@@ -1280,6 +1280,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(monitorUi.monitor_exclusive());
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    const auto wholeMasterRenderCalls=renderer.render_invocation_count();
+    QCOMPARE(wholeMasterRenderCalls,std::uint64_t{1});
     QVERIFY(monitorUi.can_dismiss());
     QVERIFY(product.monitoring_transaction_active());
     const auto owned=candidates.staged();
@@ -1339,6 +1341,9 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         makeMonitor);
     QVERIFY2(monitored,monitored?"":monitored.error()->message().c_str());
     QCOMPARE(preflightCalls,std::size_t{1});
+    // The MASTER->DEVICE materialization reuses the exact immutable M17
+    // result; no hidden second PREPARE is legal on monitor entry.
+    QCOMPARE(renderer.render_invocation_count(),wholeMasterRenderCalls);
     QCOMPARE((*monitored.value())->immutable_master_rate,*masterRate.value());
     QCOMPARE((*monitored.value())->device_rate,*deviceRate.value());
     QCOMPARE((*monitored.value())->immutable_master_frames,*frames.value());

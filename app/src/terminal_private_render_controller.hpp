@@ -40,6 +40,12 @@ public:
     [[nodiscard]] std::optional<core::Error> last_error() const
     { return lastError_; }
     [[nodiscard]] std::uint64_t stale_discarded() const noexcept {return staleDiscarded_;}
+    // Passive proof of actual M17 whole-resource invocation count. This is
+    // not a WAV-export certificate, GUI progress metric or audio callback.
+    // Monitor SRC/replay must NOT increment it for the same MASTER owner.
+    [[nodiscard]] std::uint64_t render_invocation_count() const noexcept {
+        return renderInvocationCount_.load(std::memory_order_acquire);
+    }
     // Lock-free GUI-thread observation; worker reports only complete
     // post-block counters, never partial audio publication.
     [[nodiscard]] render::TerminalRenderProgress progress() const noexcept {
@@ -80,6 +86,7 @@ private:
     std::atomic<std::int64_t> progressFrames_{0};
     std::atomic<std::int64_t> progressTotal_{0};
     std::uint64_t staleDiscarded_{0};
+    std::atomic<std::uint64_t> renderInvocationCount_{0};
     QString status_{QStringLiteral("IDLE")};
     QString error_;
     std::optional<core::Error> lastError_;
