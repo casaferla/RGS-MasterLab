@@ -134,6 +134,30 @@ Canvas {
             ctx.quadraticCurveTo(12.0, 16.4, 14.9, 15.0)
             ctx.closePath()
             ctx.stroke()
+        } else if (kind === "dock-large") {
+            // PO 2026-10-27: independent optical drawing for 64x64 center
+            // well, NOT an enlarged clone of the 20x20 native-window icon.
+            // The inward arrow has shorter prongs, visibly thinner strokes
+            // and positive breathing room from the surrounding square.
+            // Native small Dock/Undock kinds below MUST remain unchanged.
+            ctx.save()
+            ctx.lineWidth = strokeWidth
+            ctx.beginPath()
+            ctx.moveTo(10.5, 4.1)
+            ctx.lineTo(4.1, 4.1)
+            ctx.quadraticCurveTo(3.0, 4.1, 3.0, 5.2)
+            ctx.lineTo(3.0, 13.8)
+            ctx.quadraticCurveTo(3.0, 14.9, 4.1, 14.9)
+            ctx.lineTo(12.8, 14.9)
+            ctx.quadraticCurveTo(13.9, 14.9, 13.9, 13.8)
+            ctx.lineTo(13.9, 9.3)
+            ctx.stroke()
+            // Arrow enters the gap and ends inside the frame without
+            // resting on either the frame's right wall or its upper edge.
+            line(15.2, 2.8, 8.3, 9.7)
+            line(8.3, 6.3, 8.3, 9.7)
+            line(8.3, 9.7, 11.7, 9.7)
+            ctx.restore()
         } else if (kind === "undock" || kind === "dock") {
             // The SAME open-window silhouette in both actions: arrow
             // exits towards the upper right or enters towards lower left.

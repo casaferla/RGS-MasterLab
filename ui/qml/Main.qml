@@ -859,9 +859,9 @@ ApplicationWindow {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 width: 64
                                 height: 64
-                                kind: "dock"
+                                kind: "dock-large"
                                 strokeColor: "#6CBCE2"
-                                strokeWidth: 2.2
+                                strokeWidth: 1.5
                             }
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
@@ -1563,9 +1563,9 @@ ApplicationWindow {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 width: 64
                                 height: 64
-                                kind: "dock"
+                                kind: "dock-large"
                                 strokeColor: "#6CBCE2"
-                                strokeWidth: 2.2
+                                strokeWidth: 1.5
                             }
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter

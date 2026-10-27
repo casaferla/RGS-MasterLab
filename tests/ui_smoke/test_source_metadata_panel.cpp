@@ -2873,6 +2873,20 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(dockGrip->window(),floatingModule);
     QVERIFY(dockToggle->isVisible());
     QCOMPARE(dockGlyph->property("kind").toString(),QStringLiteral("dock"));
+    // Minor Fix: both actual Main dock wells use a separately drawn 64px
+    // pictogram. Its thinner stroke never alters the unchanged 20px icon
+    // in native floating module windows, or either Dock click target.
+    const auto centerIcons = root->findChildren<QObject*>(
+        QStringLiteral("centerDockIcon"));
+    QCOMPARE(centerIcons.size(),2);
+    for (const auto* centerIcon : centerIcons) {
+        QCOMPARE(centerIcon->property("kind").toString(),
+                 QStringLiteral("dock-large"));
+        QCOMPARE(centerIcon->property("width").toDouble(),64.0);
+        QCOMPARE(centerIcon->property("height").toDouble(),64.0);
+        QVERIFY(centerIcon->property("strokeWidth").toDouble() < 2.0);
+    }
+    QCOMPARE(dockGlyph->property("kind").toString(),QStringLiteral("dock"));
     QCOMPARE(nativeDockedEditor,originalEditorIdentity);
     QVERIFY(!root->property("detachedModuleInstanceId").toString().isEmpty());
     // Actual native Qt floating Window with the SAME rehosted editor,
