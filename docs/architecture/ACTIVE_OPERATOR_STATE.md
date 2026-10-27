@@ -1,5 +1,12 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+## PO 2026-10-27 — REACTIVATED six-rate TIME CALIBRATION and PREDICTION gate
+- User correctly recalls **previously approved** per-host calibrator and honest per-rate pre-Prepare time estimates, plus adjustment from real Prepare measurements: [Master Output Rate contract §11](https://docs.google.com/document/d/13fIk06CgiPLWcaW3KAZPCUoNFN5ffh6NHlVXK1sfA_8/edit). Important: [M17 Explicit Preparation](https://docs.google.com/document/d/18uFEzMGeK3KPmotcYb5yzocPomtz3AwcH1ti5rDMGnk/edit) **later explicitly DEFERRED PRIORITY** when M17 running ETA appeared. User now REOPENS PRIORITY with actual 96-vs-192 slow-PC use case; DO NOT erase intermediate supersession.
+- Recovered v1 requirement: on-demand local quiet/transient deterministic PCM calibration at 6 rates, real M17+M16, qualified Final SRC when applicable, medians/dispersion, stage timings, no audio callback/no automatic background calibration/no user PCM retention. Show before M17 Prepare a truthful estimated range per available TARGET_MASTER_OUTPUT_RATE; 192 without DAC192 is SUPPORTED as OFFLINE computation (device 48 handled independently for audition). During real Prepare refine ETA and retain aggregate observations per build/CPU/channel/rate/Ceiling for future estimations, not audio.
+- Existing `render/src/m17_offline_calibration.cpp` is experimental one-shot same-rate core M17+M16 only, no persistent, full pipeline time model or six-rate integrated UI. NO implementation or CI is started by this document. Single M17 shared MASTER Prepare and M17→Master Audition reuse remains **P0 OPEN / issue #62**; these estimates are linked as part of **L1-M17 + Phase11**, no invented separate milestone.
+- Full criteria, source evidence and precedence: `docs/architecture/M17_MASTER_AUDITION_SINGLE_PREPARE_GATE.md` section "RECOVERED PO PERFORMANCE-TIME ADVISOR". No CI/FQ/merge for documentation-only checkpoint; FQ #83 remains last cold green on PR #61.
+
+
 **Current open P0 GitHub issue for M17 single-Prepare / Master Audition:** https://github.com/casaferla/RGS-MasterLab/issues/62 — full authority and acceptance: [M17_MASTER_AUDITION_SINGLE_PREPARE_GATE.md](M17_MASTER_AUDITION_SINGLE_PREPARE_GATE.md). Must appear in EVERY outgoing handoff before M18.
 
 ## NEW P0 BLOCKER — 2026-10-27 · SINGLE M17 PREPARE / MASTER AUDITION (PO RECONFIRMED)

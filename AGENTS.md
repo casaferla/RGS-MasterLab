@@ -1,5 +1,8 @@
 # AGENTS.md — Normative Guidelines
 
+**2026-10-27 PO RATE-TIME REPRIORITIZATION:** Include real per-host calibration, truthful pre-Prepare ETA ranges across six real master rates, learning aggregated stage timings from actual Prepare, and strict MASTER/DEVICE rate separation within existing P0 M17+Phase11 contract. Earlier 23 Oct PO had deferred priority after observing in-progress ETA, but current 27 Oct PO revives this goal. Read `docs/architecture/M17_MASTER_AUDITION_SINGLE_PREPARE_GATE.md` for evidence and exact mandatory acceptance; never invent supported 192 SRC, ETA or hardware DAC requirement.
+
+
 **ACTIVE P0 SUPERSESSION (2026-10-27):** Before any M18 work or PO physical audio Gate M/L, implement and qualify [ONE M17 Prepare → Master Audition owner and master-rate independence](docs/architecture/M17_MASTER_AUDITION_SINGLE_PREPARE_GATE.md). FQ #83 is green but does **NOT** qualify this missing integration. Preserve original RGS ContentBox authority; never treat independent `Prepare MASTER` or device-rate-chosen terminal M17 as completed product behavior. Read latest `ACTIVE_OPERATOR_STATE.md` and `OPERATIONAL_HANDOFF_CONTRACT.md`. Do not modify frozen DSP to bypass this requirement.
 
 
