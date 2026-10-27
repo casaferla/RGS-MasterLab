@@ -39,12 +39,13 @@
 namespace rgsml::tests {
 namespace {
 
-[[nodiscard]] QString wav(QTemporaryDir& dir, const QString& name, int seed)
+[[nodiscard]] QString wav(QTemporaryDir& dir, const QString& name, int seed,
+    std::uint32_t sampleRate = 48'000U)
 {
     std::vector<std::int64_t> samples(256U);
     for (std::size_t i = 0; i < samples.size(); ++i)
         samples[i] = (static_cast<std::int64_t>(i) + seed) % 100;
-    const auto data = wav_support::make_wav(1U, 16U, 1U, 48'000U,
+    const auto data = wav_support::make_wav(1U, 16U, 1U, sampleRate,
         wav_support::pcm_payload(samples, 16U));
     const auto path = dir.filePath(name);
     QFile file{path};
@@ -187,10 +188,14 @@ void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    const auto sourcePath=wav(dir,QStringLiteral("rate-source.wav"),0);
+    const auto sourcePath=wav(dir,QStringLiteral("rate-source.wav"),0,44'100U);
+    QVERIFY(!sourcePath.isEmpty());
     Session author;
     author.source.selectSource(QUrl::fromLocalFile(sourcePath));
     app::MasterOutputRateState selected;
+    // This case specifically verifies SOURCE 44.1 -> MASTER 192, not
+    // the default 48 kHz WAV fixture used by the other Project tests.
+    QCOMPARE(author.source.sample_rate_hz(),qint64{44100});
     selected.source_committed(author.source.sample_rate_hz());
     author.project.set_master_output_rate_state(&selected);
     QCOMPARE(selected.master_rate_hz(),qint64{44100});
