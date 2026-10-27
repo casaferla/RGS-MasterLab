@@ -395,6 +395,8 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
     ui_smoke/test_source_metadata_panel.cpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
