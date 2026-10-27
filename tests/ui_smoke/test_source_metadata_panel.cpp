@@ -54,6 +54,7 @@
 #include <QWheelEvent>
 
 #include <array>
+#include <utility>
 #include <cmath>
 #include <memory>
 #include <optional>
@@ -822,7 +823,27 @@ Window {
                 QStringLiteral("m17MasterRateSummary"));
             QVERIFY(summary);
             QTRY_VERIFY_WITH_TIMEOUT(summary->property("text").toString()
-                .contains(QStringLiteral("44,1 kHz")),2000);
+                .contains(QStringLiteral("44.1 kHz")),2000);
+            // Header/values stay aligned in the three fixed columns.
+            const std::array<std::pair<QString,QString>,3> headings{{
+                {QStringLiteral("m17RateColumnHeader"),QStringLiteral("MASTER RATE")},
+                {QStringLiteral("m17MemoryColumnHeader"),QStringLiteral("MEMORY (MIN.)")},
+                {QStringLiteral("m17TimeColumnHeader"),QStringLiteral("EST. TIME")}}};
+            for(const auto& [objectName,expectedText]:headings) {
+                auto* header=find_child_by_name(host,objectName);
+                QVERIFY(header);
+                QCOMPARE(header->property("text").toString(),expectedText);
+            }
+            auto* rateTimeAction=find_child_by_name(host,
+                QStringLiteral("m17RateCalibrationButton"));
+            QVERIFY(rateTimeAction);
+            QCOMPARE(rateTimeAction->property("text").toString(),
+                QStringLiteral("CALIBRATE"));
+            auto* firstMemory=find_child_by_name(host,
+                QStringLiteral("m17RateMemory_0"));
+            QVERIFY(firstMemory);
+            QVERIFY(!firstMemory->property("text").toString().contains(
+                QStringLiteral("Memoria")));
             auto* disabledCalibration=find_child_by_name(host,
                 QStringLiteral("m17RateCalibrationButton"));
             QVERIFY(disabledCalibration);

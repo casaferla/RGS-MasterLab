@@ -50,7 +50,7 @@ Rectangle {
         && root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
     function rateLabel(hz) {
         if (!hz || hz <= 0) return "—"
-        return (hz / 1000).toFixed(1).replace(".", ",").replace(",0", "") + " kHz"
+        return (hz / 1000).toFixed(1).replace(".0", "") + " kHz"
     }
     property var limiterGrProvider: null
     property Item activeChainRow: null
@@ -466,12 +466,12 @@ Rectangle {
             StudioButton {
                 objectName: "m17RateAndTimesButton"
                 visible: root.isLimiterEditor
-                text: "Rate e tempi"
+                text: "Rate & Time"
                 minimumControlWidth: 106
-                accentColor: "#C4774A"
+                accentColor: root.activeFamilyAccent
                 onClicked: rateTimePopup.open()
-                Accessible.name: "Apri frequenze master, memoria e tempi"
-                ToolTip.text: "MASTER di progetto; tempi non ancora calibrati"
+                Accessible.name: "Open master rate, memory and estimated processing time"
+                ToolTip.text: "Select a project MASTER rate and review memory; time estimates require local calibration."
                 ToolTip.visible: hovered && rateDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell { id: rateDwell; anchors.fill: parent }
@@ -485,8 +485,8 @@ Rectangle {
                 font.pixelSize: 10
                 color: "#A9D5E2"
                 text: "MASTER " + root.rateLabel(root.masterRateState
-                    ? root.masterRateState.masterRateHz : 0) + " · ETA n/d"
-                Accessible.name: text + ". Tempi non ancora disponibili."
+                    ? root.masterRateState.masterRateHz : 0) + " · ETA N/A"
+                Accessible.name: text + ". Time estimates are not available yet."
             }
             Text {
                 objectName: "m17PreparationStatusText"
@@ -597,8 +597,9 @@ Rectangle {
         }
     }
 
-    // P0 layout trial. Genuine Project rate + RAM; ETA and SRC unavailable
-    // until their real backends and the single immutable MASTER are qualified.
+    // M17 popover uses the SAME copper/teal family rule and Studio controls
+    // as the parent editor, not a separate accent palette. Memory is a measured
+    // per-rate PCM/FIR LOWER BOUND, not peak process RSS or DSP reserve.
     Popup {
         id: rateTimePopup
         objectName: "m17RateTimePopup"
@@ -606,7 +607,7 @@ Rectangle {
         modal: false
         focus: true
         padding: 0
-        width: Math.min(440, root.width - 16)
+        width: Math.min(458, root.width - 16)
         x: Math.max(8, root.width - width - 8)
         y: root.height < 470 ? 42 : 52
         height: Math.min(290, root.height - y - 8)
@@ -622,7 +623,17 @@ Rectangle {
         background: Rectangle {
             radius: 7
             color: "#101F30"
-            border.color: "#5B849A"
+            border.color: "#27465F"
+            border.width: 1
+            // Uniform module-family top rule; do NOT make an all-copper frame.
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 1
+                height: 2
+                color: root.activeFamilyAccent
+            }
         }
         contentItem: Item {
             objectName: "m17RateTimePanel"
@@ -630,12 +641,12 @@ Rectangle {
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 8
-                spacing: 3
+                spacing: 2
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 24
+                    Layout.preferredHeight: 22
                     Text {
-                        text: "RATE E TEMPI · MASTER"
+                        text: "MASTER RATE & TIME"
                         color: "#F0F6FB"
                         font.family: "Segoe UI"
                         font.pixelSize: 12
@@ -644,21 +655,74 @@ Rectangle {
                     Item { Layout.fillWidth: true }
                     Button {
                         objectName: "m17RatePanelClose"
-                        text: "✕"
-                        flat: true
-                        implicitWidth: 27
-                        implicitHeight: 23
+                        text: "×"
+                        implicitWidth: 25
+                        implicitHeight: 22
+                        padding: 0
                         onClicked: rateTimePopup.close()
-                        Accessible.name: "Chiudi Rate e tempi"
+                        Accessible.name: "Close master rate and time panel"
+                        contentItem: Text {
+                            text: "×"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 14
+                            color: "#DDE6F3"
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            color: "#142B3C"
+                            radius: 4
+                            border.color: "#33526B"
+                        }
                     }
                 }
                 Text {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 18
+                    Layout.preferredHeight: 16
                     color: "#F2CE82"
+                    font.family: "Segoe UI"
                     font.pixelSize: 10
                     elide: Text.ElideRight
-                    text: "Target di progetto; Final SRC e MASTER PCM ancora P0"
+                    text: "Project rate only · Final SRC/MASTER integration pending"
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 16
+                    color: "#173249"
+                    radius: 3
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 3
+                        anchors.rightMargin: 5
+                        spacing: 4
+                        Text {
+                            objectName: "m17RateColumnHeader"
+                            Layout.preferredWidth: 112
+                            text: "MASTER RATE"
+                            color: "#D1E0EB"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                        }
+                        Text {
+                            objectName: "m17MemoryColumnHeader"
+                            Layout.fillWidth: true
+                            text: "MEMORY (MIN.)"
+                            color: "#D1E0EB"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                        }
+                        Text {
+                            objectName: "m17TimeColumnHeader"
+                            Layout.preferredWidth: 62
+                            text: "EST. TIME"
+                            color: "#D1E0EB"
+                            font.family: "Segoe UI"
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                        }
+                    }
                 }
                 Repeater {
                     model: [44100, 48000, 88200, 96000, 176400, 192000]
@@ -669,27 +733,28 @@ Rectangle {
                         readonly property var advice: root.memoryAdvisor
                             && root.memoryAdvisor.recommendations.length === 6
                             ? root.memoryAdvisor.recommendations[index] : null
+                        readonly property bool chosen: root.masterRateState
+                            && root.masterRateState.masterRateHz === modelData
                         Layout.fillWidth: true
                         Layout.preferredHeight: 27
                         radius: 3
-                        color: root.masterRateState
-                            && root.masterRateState.masterRateHz === modelData
-                            ? "#20455B" : "#142B3C"
+                        color: chosen ? Qt.alpha(root.activeFamilyAccent, 0.15) : "#142B3C"
+                        border.width: chosen ? 1 : 0
+                        border.color: Qt.alpha(root.activeFamilyAccent, 0.55)
                         RowLayout {
                             anchors.fill: parent
                             anchors.leftMargin: 3
                             anchors.rightMargin: 5
                             spacing: 4
                             RadioButton {
+                                id: compactRateRadio
                                 objectName: "m17MasterRateOption_" + rateRow.index
                                 text: root.rateLabel(rateRow.modelData)
-                                checked: root.masterRateState
-                                    && root.masterRateState.masterRateHz === rateRow.modelData
+                                checked: rateRow.chosen
                                 enabled: root.masterRateState
                                     && root.masterRateState.hasSupportedMasterRate
                                     && !root.m17Preparing
-                                id: compactRateRadio
-                                implicitWidth: 110
+                                implicitWidth: 112
                                 implicitHeight: 23
                                 spacing: 5
                                 indicator: Rectangle {
@@ -700,13 +765,14 @@ Rectangle {
                                     radius: 7
                                     color: "#13293B"
                                     border.width: 1
-                                    border.color: compactRateRadio.checked ? "#6CBCE2" : "#7895A9"
+                                    border.color: compactRateRadio.checked
+                                        ? root.activeFamilyAccent : "#7895A9"
                                     Rectangle {
                                         anchors.centerIn: parent
                                         width: 7
                                         height: 7
                                         radius: 4
-                                        color: "#6CBCE2"
+                                        color: root.activeFamilyAccent
                                         visible: compactRateRadio.checked
                                     }
                                 }
@@ -721,25 +787,44 @@ Rectangle {
                                 }
                                 onClicked: if (root.masterRateState)
                                     root.masterRateState.choose_master_rate(rateRow.modelData)
-                                Accessible.name: "Target master " + text
+                                Accessible.name: "Target master rate " + text
                             }
                             Text {
+                                id: rateMemoryText
+                                objectName: "m17RateMemory_" + rateRow.index
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
+                                font.family: "Segoe UI"
                                 font.pixelSize: 10
-                                color: rateRow.advice
-                                    && rateRow.advice.kind === "discouraged"
-                                    ? "#F4A5AA" : "#B3CAD4"
+                                color: rateRow.advice && rateRow.advice.kind === "discouraged"
+                                    ? "#EE9398"
+                                    : rateRow.advice && rateRow.advice.kind === "caution"
+                                      ? "#F0C87D" : "#B3CAD4"
                                 text: rateRow.advice
-                                    ? rateRow.advice.label + (rateRow.advice.minimumLabel
-                                        ? " · " + rateRow.advice.minimumLabel : "")
-                                    : "RAM non valutata"
+                                    ? (rateRow.advice.minimumLabel
+                                        ? rateRow.advice.minimumLabel + " · " : "")
+                                      + rateRow.advice.label : "Not assessed"
+                                Accessible.name: "Memory: " + text
+                                ToolTip.text: rateRow.advice
+                                    ? rateRow.advice.details
+                                    : "Memory observation is not available"
+                                ToolTip.visible: memoryHover.hovered
+                                    && memoryDwell.ready
+                                ToolTip.delay: 0
+                                HoverHandler { id: memoryHover }
+                                StudioTooltipDwell {
+                                    id: memoryDwell
+                                    anchors.fill: parent
+                                }
                             }
                             Text {
-                                text: "ETA n/d"
-                                color: "#8AA7BA"
+                                objectName: "m17RateTime_" + rateRow.index
+                                Layout.preferredWidth: 62
+                                text: "N/A"
+                                color: "#92A9BB"
+                                font.family: "Segoe UI"
                                 font.pixelSize: 10
-                                Layout.preferredWidth: 53
+                                Accessible.name: "Estimated processing time not yet calibrated"
                             }
                         }
                     }
@@ -749,28 +834,35 @@ Rectangle {
                     Layout.fillHeight: true
                     spacing: 6
                     Text {
+                        objectName: "m17RateMemorySummary"
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
-                        color: "#99ADBF"
+                        color: "#A4B9C8"
+                        font.family: "Segoe UI"
                         font.pixelSize: 9
                         text: rateTimePopup.selectedAdvice
                             && rateTimePopup.selectedAdvice.summary
                             ? rateTimePopup.selectedAdvice.summary
-                            : "RAM n/d · tempi n/d · SRC da qualificare"
+                            : "Memory N/A · Estimated time N/A · Final SRC pending"
                     }
-                    Button {
+                    StudioButton {
                         objectName: "m17RateCalibrationButton"
-                        text: "Calibra"
+                        text: "CALIBRATE"
+                        minimumControlWidth: 91
+                        contentPadding: 10
+                        accentColor: root.activeFamilyAccent
+                        selectedFamilyAccent: true
+                        selected: true
+                        showDisabledAccent: true
                         enabled: false
-                        implicitHeight: 25
-                        ToolTip.text: "Backend di calibrazione non ancora implementato"
+                        ToolTip.text: "Local calibration is not available yet"
                         ToolTip.visible: hovered && calibrationDwell.ready
                         ToolTip.delay: 0
                         StudioTooltipDwell {
                             id: calibrationDwell
                             anchors.fill: parent
                         }
-                        Accessible.name: "Calibrazione: non ancora disponibile"
+                        Accessible.name: "Calibrate processing time: not yet available"
                     }
                 }
             }

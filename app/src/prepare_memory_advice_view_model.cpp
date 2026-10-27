@@ -45,19 +45,19 @@ constexpr std::array<std::int64_t,6> kMasterRates{
     QString kind;
     switch(advice.kind) {
     case Kind::RECOMMENDED_MEMORY_ONLY:
-        label=QStringLiteral("Consigliata per memoria");
+        label=QStringLiteral("Recommended");
         kind=QStringLiteral("recommended");
         break;
     case Kind::CAUTION_LIMITED_HEADROOM:
-        label=QStringLiteral("Memoria limitata");
+        label=QStringLiteral("Limited");
         kind=QStringLiteral("caution");
         break;
     case Kind::DISCOURAGED_INSUFFICIENT_HEADROOM:
-        label=QStringLiteral("Sconsigliata");
+        label=QStringLiteral("Insufficient");
         kind=QStringLiteral("discouraged");
         break;
     case Kind::UNKNOWN:
-        label=QStringLiteral("Non valutabile");
+        label=QStringLiteral("Not assessed");
         kind=QStringLiteral("unknown");
         break;
     }
@@ -78,7 +78,7 @@ constexpr std::array<std::int64_t,6> kMasterRates{
             +QStringLiteral(" GiB");
     };
     QString details=QStringLiteral(
-        "Minimo noto MASTER + DEVICE PCM: %1 MiB; FIR scratch %2 MiB. ")
+         "Known MASTER + DEVICE PCM lower bound: %1 MiB; FIR scratch %2 MiB. ")
         .arg(QString::number(resource.combined_pcm_bytes/mib
             +(resource.combined_pcm_bytes%mib!=0 ? 1U : 0U)),
              QString::number(firBytes/mib+(firBytes%mib!=0 ? 1U : 0U)));
@@ -86,32 +86,32 @@ constexpr std::array<std::int64_t,6> kMasterRates{
     if(observed.available_physical_bytes==0
        ||observed.available_commit_bytes==0) {
         summary=QStringLiteral(
-            "RAM disponibile n/d · PCM+FIR >=%1 MiB · altri DSP/Qt n/d")
+            "Available RAM N/A · PCM+FIR >=%1 MiB · other DSP/Qt N/A")
             .arg(QString::number(roundedMib));
         details+=QStringLiteral(
-            "Memoria fisica o commit non misurabili. ");
+             "Physical or commit memory could not be observed. ");
     } else {
         const auto available=std::min(observed.available_physical_bytes,
             observed.available_commit_bytes);
         const auto safety=std::max(UINT64_C(512)*mib,available/4);
         const auto remaining=advice.memory_headroom_after_reserve_bytes;
         summary=QStringLiteral(
-            "Disp. %1 · budget %2 · PCM+FIR >=%3 MiB · extra DSP/Qt n/d")
+            "Avail. %1 · safe budget %2 · PCM+FIR >=%3 MiB · DSP/Qt N/A")
             .arg(fmtGiB(available),fmtGiB(remaining),
                  QString::number(roundedMib));
         details+=QStringLiteral(
-            "RAM fisica disponibile %1; commit disponibile %2; "
-            "riserva prudenziale %3; riserva altri Prepare/DSP contabilizzata %4; "
-            "budget utile prima dei PCM %5. ")
+             "Available physical RAM %1; available commit %2; "
+             "safety reserve %3; accounted other Prepare/DSP reserve %4; "
+             "usable budget before PCM allocations %5. ")
             .arg(fmtGiB(observed.available_physical_bytes),
                  fmtGiB(observed.available_commit_bytes),fmtGiB(safety),
                  fmtGiB(observed.reserved_other_prepare_bytes),
                  fmtGiB(remaining));
     }
     details+=QStringLiteral(
-        "Valore >= indica SOLO un limite inferiore: altri picchi SRC/M17/M16, "
-        "Qt e render/export non sono ancora misurati o sommati. "
-        "Nessuna RAM riservata e nessuna garanzia CPU/realtime.");
+         "The >= figure is ONLY a lower bound: additional SRC/M17/M16 peaks, "
+         "Qt and render/export peaks are not yet measured or summed. "
+        "No RAM is reserved; CPU/real-time performance is not guaranteed.");
     auto result=row(hz,label,kind,details);
     result[QStringLiteral("minimumLabel")]=
         QStringLiteral(">=%1 MiB").arg(QString::number(roundedMib));
@@ -126,7 +126,7 @@ PrepareMemoryAdviceViewModel::PrepareMemoryAdviceViewModel(
     QObject* parent)
     :QObject(parent),source_(source),playback_(playback)
 {
-    reset_unknown(QStringLiteral("Carica una sorgente"));
+    reset_unknown(QStringLiteral("Load a source"));
 }
 
 QVariantList PrepareMemoryAdviceViewModel::recommendations() const
@@ -145,9 +145,9 @@ void PrepareMemoryAdviceViewModel::reset_unknown(const QString& status)
     recommendations_.clear();
     for(const auto hz:kMasterRates) {
         recommendations_.append(row(hz,
-            QStringLiteral("Non valutabile"),QStringLiteral("unknown"),
-            QStringLiteral("Nessun budget di memoria verificato; "
-                "nessuna frequenza è automaticamente consigliata.")));
+            QStringLiteral("Not assessed"),QStringLiteral("unknown"),
+            QStringLiteral("No verified memory budget; "
+                "no master rate is automatically recommended.")));
     }
     emit changed();
 }
@@ -155,18 +155,18 @@ void PrepareMemoryAdviceViewModel::reset_unknown(const QString& status)
 void PrepareMemoryAdviceViewModel::refresh()
 {
     if(!source_||!source_->has_source()) {
-        reset_unknown(QStringLiteral("Carica una sorgente"));
+        reset_unknown(QStringLiteral("Load a source"));
         return;
     }
     if(!playback_) {
-        reset_unknown(QStringLiteral("Dispositivo non valutabile"));
+        reset_unknown(QStringLiteral("Device unavailable"));
         return;
     }
     const auto sourceRate=core::SampleRate::create(source_->sample_rate_hz());
     const auto sourceFrames=core::FrameCount::create(source_->frame_count());
     const auto channelCount=source_->channel_count();
     if(!sourceRate||!sourceFrames||(channelCount!=1&&channelCount!=2)) {
-        reset_unknown(QStringLiteral("Formato sorgente non valutabile"));
+        reset_unknown(QStringLiteral("Source format unavailable"));
         return;
     }
     const auto layout=channelCount==1
@@ -177,7 +177,7 @@ void PrepareMemoryAdviceViewModel::refresh()
     const auto advice=playback_->advise_prepare_master_rate_memory(
         *sourceRate.value(),*sourceFrames.value(),layout);
     if(!advice||advice.value()->size()!=kMasterRates.size()) {
-        reset_unknown(QStringLiteral("Dispositivo o memoria non valutabili"));
+        reset_unknown(QStringLiteral("Device or memory unavailable"));
         return;
     }
     QVariantList rows;
