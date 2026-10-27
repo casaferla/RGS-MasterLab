@@ -852,8 +852,7 @@ Rectangle {
                                       + rateRow.advice.label : "Not assessed"
                                 Accessible.name: "Memory: " + text
                                 ToolTip.text: interactionHint
-                                ToolTip.visible: memoryHover.hovered
-                                    && memoryDwell.ready
+                                ToolTip.visible: memoryHover.hovered && memoryDwell.ready
                                 ToolTip.delay: 0
                                 HoverHandler { id: memoryHover }
                                 StudioTooltipDwell {
