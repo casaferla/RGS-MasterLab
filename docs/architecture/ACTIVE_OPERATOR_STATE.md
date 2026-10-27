@@ -1,5 +1,16 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+## CURRENT VERIFIED STATE — 2026-10-27 · Focused #848 GREEN / Native Qt Dock evidence
+- **Qualified Focused:** https://github.com/casaferla/RGS-MasterLab/actions/runs/40462964544 = Windows PASS, Linux PASS, exact PR #61 DRAFT SHA `360f2ecccb0948c77ce2beafa6dc2dcb8a42b23e`. It supersedes #847 for focused UI but does **not** constitute a new FQ or Physical Gate M/L.
+- **Fix:** primary floating host no longer breaks QML `detachedWindow: root.hostDetached` binding when redocked. Qt smoke now checks the Dock arrow on repeated tear-offs and uses an actual MouseClick on the floating Input Gain Dock control, while a second independent EQ window persists. No new audio DSP modification.
+- **AUTHENTIC screenshot evidence:** Workflow #848 artifact `RGS-M12B-Visual-Evidence-b892bf9091d8de88563ef99ddbe08d36ce576754` (ID `12715852318`): `fq80_multi_window_main_dock_well_1184x688.png` shows center Dock icon and button, `fq80_multi_window_gain_native_920x620.png` shows the inward Dock glyph on detached Input Gain, `fq80_multi_window_eq_native_920x620.png` shows the same on detached Parametric EQ. These are actual separate native Qt Window captures from one multi-window smoke scenario, NOT a single desktop screenshot of both windows together, NOT a mockup.
+- **Build provenance in Main screenshot:** footer reads PR #61 / CI #848 / abbreviated commit. Historical FQ #80 `DEV` build is unchanged.
+- **Next physical gate still OPEN:** Windows 1184x688 150% DPI screenshots and real multiple native windows, full controls with no scrolling, M17 Prepare ceilings and actual PCM and monitoring playback including sample rate conversion. Do not claim physical success from Qt headless fixture. No FQ rerun, no main merge, no Gate M/L without explicit PO approval.
+- **Writer:** Single-Writer Epoch; at recording moment PR and staging are identical at `360f2ecc...`. This doc-only commit moves staging one SHA ahead; future operator MUST fetch new live refs and enforce CAS before any write. No routine repeated CI polling or full GitHub logs. Transmit all handoff supersessions recursively.
+
+---
+
+
 ## CURRENT VERIFIED STATE — 2026-10-27 · after Focused #847 GREEN
 
 - **Live SHA at audit:** PR #61 Draft `experimental/m17-monitoring-pcm-isolation-20261024` and staging `staging/m17-monitor-preallocation-no-ci-20261024` both point to `0ae078ed5b7d62574062c43bd5c8f16f07dedf20` before this documentation-only staging write. `main` untouched. Always refresh live refs before subsequent writes.
