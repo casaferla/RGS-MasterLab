@@ -1,5 +1,9 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+## B2 TARGETED WINDOWS TESTS staged, not published · 2026-10-27
+- Coherent B2 second stage-only commit adds `rgsml_project_session_tests` source/link for `MasterOutputRateState`, and `master_rate_save_open_and_invalid_atomic` native Qt integration (44.1 SOURCE, persist 192k preference, reopen without false degraded, second Save, invalid typed output fail-closed no SOURCE/revision mutation). This is **UNQUALIFIED** until post-#855 Focused. The test does NOT imply a 192k DSP render. PR #61 remains fixed at B1 SHA during #855; no main merge or FQ.
+ 
+
 ## M17/Phase 11 LOT B2, staging-only work while PR Focused #855 runs
 - B1 Project codec PR SHA `3c65cda46b797aa31cefe00d83c3e3bf513bac75` in Focused #855 https://github.com/casaferla/RGS-MasterLab/actions/runs/40575365010 . PR MUST remain at that exact SHA until both jobs pass; no FQ or main merge.
 - B2 ProjectSession wiring STAGED (to be followed by regression test within same CI-silent lot): canonical `output.targetMasterOutputRateHz` Save/Open via single typed Project preference, unknown independent output retained, recognized-only output not future-degraded; malformed known fields preflight BEFORE source/transport mutation. SOURCE default via existing production callback; target restored only after source adoption. No M17 DEVICE render or DSP math changed. Pending B2 Windows CTest (Save/Open/Save and atomic invalid type) before PR promotion.

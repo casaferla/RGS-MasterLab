@@ -82,6 +82,8 @@ qt_add_executable(rgsml_project_session_tests
     integration/app/test_project_session.cpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp

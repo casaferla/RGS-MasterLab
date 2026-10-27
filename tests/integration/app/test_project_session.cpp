@@ -23,6 +23,8 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
+#include "master_output_rate_state.hpp"
+#include <rgsml/project/master_output_rate_preference.hpp>
 #include <QUrl>
 
 #include <array>
@@ -159,6 +161,7 @@ class ProjectSessionTest final : public QObject {
     Q_OBJECT
 private slots:
     void source_save_open_existing_fail();
+    void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
     void missing_source_preflight_preserves_live_session();
     void clear_region_and_replace_source_save_as();
@@ -178,6 +181,69 @@ private slots:
     void stereo_ms_four_module_project_roundtrip_and_atomic_rejection();
     void product_default_stereo_ms_project_save_open_save_identity();
 };
+
+
+void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto sourcePath=wav(dir,QStringLiteral("rate-source.wav"),0);
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    app::MasterOutputRateState selected;
+    selected.source_committed(author.source.sample_rate_hz());
+    author.project.set_master_output_rate_state(&selected);
+    QCOMPARE(selected.master_rate_hz(),qint64{44100});
+    QVERIFY(selected.choose_master_rate(192000));
+    const auto path=dir.filePath(QStringLiteral("master192.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(path));
+    QCOMPARE(author.project.error_message(),QString());
+
+    auto saved=load_project(path);
+    QVERIFY(saved);
+    auto decoded=project::MasterOutputRatePreference::read(
+        saved.value()->document().output);
+    QVERIFY(decoded);
+    QVERIFY(decoded.value()->has_value());
+    QCOMPARE(decoded.value()->value(),std::int64_t{192000});
+
+    Session reopened;
+    app::MasterOutputRateState restored;
+    reopened.project.set_master_output_rate_state(&restored);
+    reopened.project.openProject(QUrl::fromLocalFile(path));
+    QCOMPARE(reopened.project.error_message(),QString());
+    QVERIFY(!reopened.project.degraded()); // recognized known output schema
+    QCOMPARE(restored.source_rate_hz(),qint64{44100});
+    QCOMPARE(restored.master_rate_hz(),qint64{192000});
+    const auto second=dir.filePath(QStringLiteral("master192-again.rgsml"));
+    reopened.project.saveProjectAs(QUrl::fromLocalFile(second));
+    QCOMPARE(reopened.project.error_message(),QString());
+    auto again=load_project(second);
+    QVERIFY(again);
+    auto recovered=project::MasterOutputRatePreference::read(
+        again.value()->document().output);
+    QVERIFY(recovered);
+    QCOMPARE(recovered.value()->value(),std::int64_t{192000});
+
+    // Known but malformed output: fail before replacing live SOURCE or
+    // even touching the rate authority revision.
+    auto malformedDoc=saved.value()->document();
+    auto badValue=project::OpaqueJsonValue::parse(
+        R"({"targetMasterOutputRateHz":"192000"})");
+    QVERIFY(badValue);
+    malformedDoc.output=*badValue.value();
+    auto malformed=project::ProjectSnapshot::create(malformedDoc);
+    QVERIFY(malformed);
+    const auto invalidPath=dir.filePath(QStringLiteral("invalid-rate.rgsml"));
+    QVERIFY(write_project(invalidPath,*malformed.value()));
+    const auto oldSource=reopened.source.source_resource()->reference().locator();
+    const auto oldRevision=restored.rate_revision();
+    reopened.project.openProject(QUrl::fromLocalFile(invalidPath));
+    QVERIFY(!reopened.project.error_message().isEmpty());
+    QCOMPARE(restored.rate_revision(),oldRevision);
+    QCOMPARE(restored.master_rate_hz(),qint64{192000});
+    QCOMPARE(reopened.source.source_resource()->reference().locator(),oldSource);
+}
 
 void ProjectSessionTest::source_save_open_existing_fail()
 {
