@@ -816,6 +816,27 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(borrowedSrcCalls,std::size_t{2});
     QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
     QCOMPARE(candidates.staged(),initialPreparedPcm);
+    // Encode WAV directly from the SAME staged immutable verified PCM
+    // used by the DEVICE SRC test. Encoding must not invoke M17 again.
+    // This is an isolated product-owner test seam, NOT yet export UI.
+    const auto immutableWavMaster=initialPreparedPcm->rendered.terminal.checked
+        .terminal.compensated_pcm.view();
+    auto reusedMasterWav=std::make_shared<MatrixWavBytes>();
+    const audio::WavWriteSpec reusedWavSpec{
+        immutableWavMaster.format(),immutableWavMaster.frame_count(),
+        audio::WavSampleFormat::IEEE_F64};
+    auto reusableWriter=audio::WavWriter::open(
+        std::make_unique<MatrixWavSink>(reusedMasterWav),reusedWavSpec);
+    QVERIFY(reusableWriter);
+    QVERIFY((*reusableWriter.value())->write_frames(immutableWavMaster));
+    QVERIFY((*reusableWriter.value())->finalize());
+    QVERIFY((*reusableWriter.value())->close());
+    QCOMPARE(matrix_wav_u32(reusedMasterWav->bytes,24),
+        std::uint32_t{48000});
+    QCOMPARE(matrix_wav_u32(reusedMasterWav->bytes,54),
+        std::uint32_t{4800*2*8});
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
     QVERIFY(!product.private_id());
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     QSignalSpy renderChanges{&renderer,&app::TerminalPrivateRenderController::changed};
