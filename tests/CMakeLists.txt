@@ -15,6 +15,17 @@ qt_add_executable(rgsml_m10_sha_tests spikes/l1_m10/test_sha256.cpp)
 
 qt_add_executable(rgsml_project_value_tests unit/project/test_project_snapshot.cpp)
 
+qt_add_executable(rgsml_master_output_rate_codec_tests
+    unit/project/test_master_output_rate_codec.cpp)
+target_link_libraries(rgsml_master_output_rate_codec_tests PRIVATE
+    rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_master_output_rate_codec_tests)
+add_test(NAME rgsml_master_output_rate_codec_tests
+    COMMAND rgsml_master_output_rate_codec_tests)
+set_tests_properties(rgsml_master_output_rate_codec_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;master_rate;finalization;codec")
+
 add_test(NAME rgsml_project_dependency_contract_tests
     COMMAND "${CMAKE_COMMAND}"
         "-DRGSML_SOURCE_DIR=${CMAKE_SOURCE_DIR}"

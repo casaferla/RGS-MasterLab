@@ -1,5 +1,11 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+## M17/Phase 11 staging lot B1: typed .rgsml output codec · 2026-10-27
+- While Focused #854 runs solely against PR SHA `1097d7a6e80bd4bc82202b3f44fa96655febc6b3`, stage an isolated **PROJECT layer**, Qt-free `MasterOutputRatePreference` codec. `output.targetMasterOutputRateHz` recognizes exactly the six master rates; old projects with absent key remain valid; unknown independent `output` keys are preserved; unsupported/malformed known rate is FAIL-CLOSED; only_known_fields distinguishes known support from future semantics.
+- Codec included in `rgsml_project` and new `rgsml_master_output_rate_codec_tests` in both Linux+Windows Focused build+CTest. **Not yet wired into ProjectSession save/open** and certainly NOT fed to M17 renderer/DEV. Next lot B2 wires SOURCE/default, .rgsml save/open atomicity, known-only degradation handling and tests; no premature M17 192k UI or Final SRC claims.
+- STAGING_ONLY, unqualified until a future post-#854 CAS PR promotion/CI. No FQ, main merge or DSP-frozen math change. Latest physical points 1/2 closed; P0 one authoritative M17 master/audition and rate/time estimates OPEN.
+
+
 ## MINOR FIX COHERENT UI STAGING (NO PR PROMOTION WHILE CI #853 RUNS) · 2026-10-27
 - PO specifically requested the backlog minor fixes be associated **as soon as practical** to ongoing M17 work, while continuing staging during CI #853. Critical Single-Writer distinction: stage changes are CI-SILENT and MUST NOT be promoted while #853 is unfinished, since PR #61 qualification SHA must remain exact. [CI #853](https://github.com/casaferla/RGS-MasterLab/actions/runs/40570413244) still in progress at staging write.
 - New directly reported non-blocking PO visual issue: the LARGE CENTER Dock pictogram is a 64×64 scaled clone of the 20×20 small native floating Dock glyph with overly thick border and arrow crowding the frame. Two actual Main layouts (standard and compact) now use separate `kind: "dock-large"` with thinner stroke 1.5 vs old hard-coded 2.1, optical inset/shorter arrow; **no change** to native window `kind: "dock"` or `undock`, 20px geometry, 64px well size, text, click target, device/audio/DSP. Native Qt UI Smoke now checks both 64px large kinds and unchanged small dock kind on REAL Main undock.
