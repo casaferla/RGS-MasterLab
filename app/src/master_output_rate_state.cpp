@@ -11,7 +11,7 @@ void MasterOutputRateState::source_cleared() noexcept {
     sourceRateHz_=0;masterRateHz_=0;++rateRevision_;emit changed();
 }
 bool MasterOutputRateState::choose_master_rate(qint64 hz) noexcept {
-    if(sourceRateHz_<=0||!supported(hz))return false;
+    if(!supported(sourceRateHz_)||!supported(hz))return false;
     if(hz==masterRateHz_)return true;
     masterRateHz_=hz;++rateRevision_;emit changed();return true;
 }

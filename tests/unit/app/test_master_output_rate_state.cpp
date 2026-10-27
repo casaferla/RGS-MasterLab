@@ -25,7 +25,12 @@ private slots:
     QCOMPARE(s.master_rate_hz(),qint64{48000});
     QCOMPARE(s.rate_revision(),old+1);
     s.source_committed(32000);QCOMPARE(s.master_rate_hz(),qint64{0});
-    QVERIFY(!s.has_supported_master_rate());QVERIFY(!s.choose_master_rate(96000));
+    QVERIFY(!s.has_supported_master_rate());
+    const auto invalidRevision=s.rate_revision();
+    QVERIFY(!s.choose_master_rate(96000)); // unsupported SOURCE cannot choose valid MASTER
+    QVERIFY(!s.choose_master_rate(32000)); // both unsupported
+    QCOMPARE(s.rate_revision(),invalidRevision);
+    QCOMPARE(s.master_rate_hz(),qint64{0});
     s.source_cleared();QCOMPARE(s.source_rate_hz(),qint64{0});
     QCOMPARE(s.master_rate_hz(),qint64{0});
  }

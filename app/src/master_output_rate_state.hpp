@@ -21,7 +21,7 @@ public:
     [[nodiscard]] qint64 source_rate_hz()const noexcept{return sourceRateHz_;}
     [[nodiscard]] qint64 master_rate_hz()const noexcept{return masterRateHz_;}
     [[nodiscard]] bool has_supported_master_rate()const noexcept {
-        return sourceRateHz_>0&&supported(masterRateHz_);
+        return supported(sourceRateHz_)&&supported(masterRateHz_);
     }
     [[nodiscard]] quint64 rate_revision()const noexcept{return rateRevision_;}
     void source_committed(qint64 sourceRateHz) noexcept;

@@ -1,5 +1,11 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+## CI #852 RED — 2026-10-27 · targeted fail-closed Master Output Rate validation
+- [Focused #852](https://github.com/casaferla/RGS-MasterLab/actions/runs/40566839808) both Linux and Windows FAILED only at `rgsml_master_output_rate_state_tests` CTest, build PASS. Bounded Linux diagnostic pinpoints `sourceChangeInvalidatesAndUnsupportedFailsClosed` line 28: after SOURCE 32000 (unsupported), `choose_master_rate(96000)` incorrectly returned true. Windows bounded output identifies the same failed target; no QtTest line content there. Product M17 adversarial matrix PASS.
+- Root cause: choose_master_rate checked sourceRateHz_>0 rather than checking sourceRateHz_ against six supported SOURCE rates. Coherent surgical fix in `master_output_rate_state.cpp` and `has_supported_master_rate()`; extend regression that unsupported SOURCE never causes revision change or qualified target, even if target is one of six.
+- No SRC/M17/M16 math modified. Device-derived M17 Prepare and independent Master Audition intentionally untouched while introducing typed Project/Render preference. Single Writer staging CAS commit then promote to PR #61 Draft; new Focused CI required, PO-only FQ, never merge main. FQ #83 historical green only.
+ 
+
 ## IN IMPLEMENTATION — M17 Finalization first coherent LOT A, 2026-10-27
 - PO authorized work, Drive Master Output Rate contract now has approved §12, RAM Advisor addendum. The third M17 Explicit Preparation Drive doc write was refused; authoritative master doc successfully updated and read back. Issue [#62](https://github.com/casaferla/RGS-MasterLab/issues/62).
 - LOT A adds new `MasterOutputRateState` typed app Project/Render rate **session preference**: all 6 Fs, initial SOURCE rate, no DEVICE probe, changing rate increments revision, each new source identity resets even same Fs, unsupported source never defaults to DEVICE 48. Wired on SOURCE commit and available as QML context but NOT YET exposed as UI and NOT CONNECTED TO M17 DSP. Tests Windows/Linux Focused build+CTest explicit. Current existing M17 Prepare and Master Audition still operationally unchanged for safety. A green CI does not qualify Project persistence, 192k offline, unique master reuse, SRC, six ETA, or UI removal. No changes to frozen math.
