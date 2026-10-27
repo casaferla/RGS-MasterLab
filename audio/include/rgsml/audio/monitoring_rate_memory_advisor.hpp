@@ -38,6 +38,9 @@ struct MonitoringRateMemoryAdvice final {
     MonitoringMemoryAdviceKind kind{MonitoringMemoryAdviceKind::UNKNOWN};
     std::uint64_t memory_headroom_after_reserve_bytes{0};
     bool cpu_performance_qualified{false}; // always false
+    // Same fresh Windows snapshot that drove the classification. Diagnostic
+    // visibility only; not a reservation or proof of the full pipeline peak.
+    MonitoringMemoryObservation memory_observation{};
 };
 
 // Budgeting policy: use the smaller of available physical and available
@@ -231,7 +234,7 @@ advise_monitoring_master_rates_for_prepare(
         result.push_back(MonitoringRateMemoryAdvice{
             *masterRate.value(),observed_device_rate,
             *masterFrameCount.value(),std::move(*resource.value()),
-            advice,headroom,false});
+            advice,headroom,false,observation});
     }
     return core::Result<AdviceSet>::success(std::move(result));
 }

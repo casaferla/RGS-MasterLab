@@ -612,6 +612,13 @@ Rectangle {
         height: Math.min(290, root.height - y - 8)
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: if (root.memoryAdvisor) root.memoryAdvisor.refresh()
+        readonly property int selectedRateIndex: root.masterRateState
+            ? [44100, 48000, 88200, 96000, 176400, 192000]
+                .indexOf(root.masterRateState.masterRateHz) : -1
+        readonly property var selectedAdvice: root.memoryAdvisor
+            && selectedRateIndex >= 0
+            && root.memoryAdvisor.recommendations.length === 6
+            ? root.memoryAdvisor.recommendations[selectedRateIndex] : null
         background: Rectangle {
             radius: 7
             color: "#101F30"
@@ -723,7 +730,10 @@ Rectangle {
                                 color: rateRow.advice
                                     && rateRow.advice.kind === "discouraged"
                                     ? "#F4A5AA" : "#B3CAD4"
-                                text: rateRow.advice ? rateRow.advice.label : "RAM non valutata"
+                                text: rateRow.advice
+                                    ? rateRow.advice.label + (rateRow.advice.minimumLabel
+                                        ? " · " + rateRow.advice.minimumLabel : "")
+                                    : "RAM non valutata"
                             }
                             Text {
                                 text: "ETA n/d"
@@ -743,7 +753,10 @@ Rectangle {
                         wrapMode: Text.WordWrap
                         color: "#99ADBF"
                         font.pixelSize: 9
-                        text: "Stima non disponibile · SRC da qualificare"
+                        text: rateTimePopup.selectedAdvice
+                            && rateTimePopup.selectedAdvice.summary
+                            ? rateTimePopup.selectedAdvice.summary
+                            : "RAM n/d · tempi n/d · SRC da qualificare"
                     }
                     Button {
                         objectName: "m17RateCalibrationButton"

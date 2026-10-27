@@ -1,3 +1,8 @@
+## CHAT 53 STAGING RAM SNAPSHOT / PEAK MINIMUM VISIBILITY · 2026-10-27
+- Focused #859 GREEN both OS at SHA `9db58140ff30eee340acd1bc5f625fd7caaaee4f`. Next test-only candidate stage SHA `835d3e707ea8845543b3e52223cf745006274c7d` promoted to Draft PR #61 by expected SHA CAS; resulting Focused #860 https://github.com/casaferla/RGS-MasterLab/actions/runs/40590356066 is IN PROGRESS at writing. Do not imply #860 green.
+- Additional NEXT LOT on CI-silent staging only: six-rate RAM advisor now carries its measured physical/commit snapshot into the view-model and shows conservative quantitative MASTER+DEVICE PCM plus bounded FIR scratch lower bound, observed available min(physical,commit), safety-reserved budget, and explicitly unavailable DSP/Qt/Final-SRC/render peak costs. UI row compact labels and selected rate summary occupy the existing popup, without inventing a full memory peak or time estimates. Portable assertions guarantee that 6 rate rows preserve the actual snapshot and UNKNOWN remains truthful. No alloc reservation; R_p remains 0 until real other-stage accounting. Further phase-max model and physical validation mandatory before claiming complete peak.
+- SINGLE WRITER: do not promote this new staging batch until #860 completes BOTH OS; no FQ, no main merge, no M18. No full GitHub logs.
+
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
 ## CHAT 53 POST #858, DURING FOCUSED #859 · 2026-10-27

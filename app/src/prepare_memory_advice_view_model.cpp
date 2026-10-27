@@ -6,8 +6,10 @@
 
 #include <QVariantMap>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 
 namespace rgsml::app {
 namespace {
@@ -29,7 +31,9 @@ constexpr std::array<std::int64_t,6> kMasterRates{
         {QStringLiteral("rateLabel"),rate_label(hz)},
         {QStringLiteral("label"),label},
         {QStringLiteral("kind"),kind},
-        {QStringLiteral("details"),details}};
+        {QStringLiteral("details"),details},
+        {QStringLiteral("minimumLabel"),QString{}},
+        {QStringLiteral("summary"),QString{}}};
 }
 
 [[nodiscard]] QVariantMap classified_row(
@@ -58,22 +62,61 @@ constexpr std::array<std::int64_t,6> kMasterRates{
         break;
     }
     constexpr std::uint64_t mib=UINT64_C(1024)*1024;
-    const auto bytes=advice.resource.combined_pcm_bytes;
-    const auto roundedMib=bytes/mib+(bytes%mib!=0 ? 1U : 0U);
-    const auto firBytes=advice.resource.experimental_fir_scratch_bytes;
-    const auto firMib=firBytes/mib+(firBytes%mib!=0 ? 1U : 0U);
+    constexpr std::uint64_t gib=mib*1024;
+    const auto& resource=advice.resource;
+    const auto& observed=advice.memory_observation;
+    const auto firBytes=resource.experimental_fir_scratch_bytes;
+    // Overflow cannot become a tiny, green memory recommendation.
+    const bool overflow=firBytes>
+        std::numeric_limits<std::uint64_t>::max()-resource.combined_pcm_bytes;
+    const auto minimumBytes=overflow
+        ? std::numeric_limits<std::uint64_t>::max()
+        : resource.combined_pcm_bytes+firBytes;
+    const auto roundedMib=minimumBytes/mib+(minimumBytes%mib!=0 ? 1U : 0U);
+    const auto fmtGiB=[gib](std::uint64_t bytes) {
+        return QString::number(static_cast<double>(bytes)/gib,'f',1)
+            +QStringLiteral(" GiB");
+    };
     QString details=QStringLiteral(
-        "PCM MASTER + MONITOR minimo stimato: %1 MiB. ")
-        .arg(QString::number(roundedMib));
-    if(firBytes!=0) {
+        "Minimo noto MASTER + DEVICE PCM: %1 MiB; FIR scratch %2 MiB. ")
+        .arg(QString::number(resource.combined_pcm_bytes/mib
+            +(resource.combined_pcm_bytes%mib!=0 ? 1U : 0U)),
+             QString::number(firBytes/mib+(firBytes%mib!=0 ? 1U : 0U)));
+    QString summary;
+    if(observed.available_physical_bytes==0
+       ||observed.available_commit_bytes==0) {
+        summary=QStringLiteral(
+            "RAM disponibile n/d · PCM+FIR >=%1 MiB · altri DSP/Qt n/d")
+            .arg(QString::number(roundedMib));
         details+=QStringLiteral(
-            "Scratch FIR sperimentale per il consiglio RAM: %1 MiB. ")
-            .arg(QString::number(firMib));
+            "Memoria fisica o commit non misurabili. ");
+    } else {
+        const auto available=std::min(observed.available_physical_bytes,
+            observed.available_commit_bytes);
+        const auto safety=std::max(UINT64_C(512)*mib,available/4);
+        const auto remaining=advice.memory_headroom_after_reserve_bytes;
+        summary=QStringLiteral(
+            "Disp. %1 · budget %2 · PCM+FIR >=%3 MiB · extra DSP/Qt n/d")
+            .arg(fmtGiB(available),fmtGiB(remaining),
+                 QString::number(roundedMib));
+        details+=QStringLiteral(
+            "RAM fisica disponibile %1; commit disponibile %2; "
+            "riserva prudenziale %3; riserva altri Prepare/DSP contabilizzata %4; "
+            "budget utile prima dei PCM %5. ")
+            .arg(fmtGiB(observed.available_physical_bytes),
+                 fmtGiB(observed.available_commit_bytes),fmtGiB(safety),
+                 fmtGiB(observed.reserved_other_prepare_bytes),
+                 fmtGiB(remaining));
     }
     details+=QStringLiteral(
-        "Il consiglio non riserva RAM, non include ogni overhead DSP/Qt "
-        "e non garantisce prestazioni CPU o audio real-time.");
-    return row(hz,label,kind,details);
+        "Valore >= indica SOLO un limite inferiore: altri picchi SRC/M17/M16, "
+        "Qt e render/export non sono ancora misurati o sommati. "
+        "Nessuna RAM riservata e nessuna garanzia CPU/realtime.");
+    auto result=row(hz,label,kind,details);
+    result[QStringLiteral("minimumLabel")]=
+        QStringLiteral(">=%1 MiB").arg(QString::number(roundedMib));
+    result[QStringLiteral("summary")]=summary;
+    return result;
 }
 } // namespace
 

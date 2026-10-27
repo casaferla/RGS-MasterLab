@@ -380,6 +380,9 @@ void PlaybackSampleRateAdapterTest::monitoringPrepareAdviceSixMasterRatesAndHead
         QCOMPARE(item.resource.combined_pcm_bytes,
             static_cast<std::uint64_t>((rates[i]+48000)*180*16));
         QCOMPARE(item.memory_headroom_after_reserve_bytes,GiB);
+        QCOMPARE(item.memory_observation.available_physical_bytes,2*GiB);
+        QCOMPARE(item.memory_observation.available_commit_bytes,4*GiB);
+        QCOMPARE(item.memory_observation.reserved_other_prepare_bytes,GiB/2);
         QVERIFY(!item.cpu_performance_qualified);
     }
     QCOMPARE((*advice.value())[0].kind,Kind::RECOMMENDED_MEMORY_ONLY);
@@ -464,6 +467,8 @@ void PlaybackSampleRateAdapterTest::monitoringPrepareAdviceDurationRoundingAndUn
     for(const auto& item:*unknown.value()) {
         QCOMPARE(item.kind,Kind::UNKNOWN);
         QCOMPARE(item.memory_headroom_after_reserve_bytes,UINT64_C(0));
+        QCOMPARE(item.memory_observation.available_physical_bytes,UINT64_C(0));
+        QCOMPARE(item.memory_observation.available_commit_bytes,UINT64_C(0));
         QVERIFY(!item.cpu_performance_qualified);
     }
     // A commit query that fails must never produce optimistic guidance.
