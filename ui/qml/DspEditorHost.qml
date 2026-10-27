@@ -661,6 +661,13 @@ Rectangle {
                         padding: 0
                         onClicked: rateTimePopup.close()
                         Accessible.name: "Close master rate and time panel"
+                        ToolTip.text: "Close the master rate and time panel."
+                        ToolTip.visible: hovered && panelCloseDwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: panelCloseDwell
+                            anchors.fill: parent
+                        }
                         contentItem: Text {
                             text: "×"
                             font.family: "Segoe UI"
@@ -698,7 +705,16 @@ Rectangle {
                         Text {
                             objectName: "m17RateColumnHeader"
                             Layout.preferredWidth: 112
+                            property string interactionHint: "Choose the project MASTER output sample rate. It is independent of the Windows audio device rate."
                             text: "MASTER RATE"
+                            HoverHandler { id: rateHeaderHover }
+                            ToolTip.text: interactionHint
+                            ToolTip.visible: rateHeaderHover.hovered && rateHeaderDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: rateHeaderDwell
+                                anchors.fill: parent
+                            }
                             color: "#D1E0EB"
                             font.family: "Segoe UI"
                             font.pixelSize: 9
@@ -707,7 +723,16 @@ Rectangle {
                         Text {
                             objectName: "m17MemoryColumnHeader"
                             Layout.fillWidth: true
+                            property string interactionHint: "Conservative minimum for the MASTER and DEVICE PCM plus FIR workspace. This is not the full peak RAM requirement."
                             text: "MEMORY (MIN.)"
+                            HoverHandler { id: memoryHeaderHover }
+                            ToolTip.text: interactionHint
+                            ToolTip.visible: memoryHeaderHover.hovered && memoryHeaderDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: memoryHeaderDwell
+                                anchors.fill: parent
+                            }
                             color: "#D1E0EB"
                             font.family: "Segoe UI"
                             font.pixelSize: 9
@@ -716,7 +741,16 @@ Rectangle {
                         Text {
                             objectName: "m17TimeColumnHeader"
                             Layout.preferredWidth: 62
+                            property string interactionHint: "Predicted offline processing duration for this master rate. N/A until real on-device calibration is available."
                             text: "EST. TIME"
+                            HoverHandler { id: timeHeaderHover }
+                            ToolTip.text: interactionHint
+                            ToolTip.visible: timeHeaderHover.hovered && timeHeaderDwell.ready
+                            ToolTip.delay: 0
+                            StudioTooltipDwell {
+                                id: timeHeaderDwell
+                                anchors.fill: parent
+                            }
                             color: "#D1E0EB"
                             font.family: "Segoe UI"
                             font.pixelSize: 9
@@ -749,7 +783,16 @@ Rectangle {
                             RadioButton {
                                 id: compactRateRadio
                                 objectName: "m17MasterRateOption_" + rateRow.index
+                                property string interactionHint: "Select " + text
+                                    + " as the project MASTER output rate. Changing this preference does not change the audio device rate. Full Final SRC integration is pending."
                                 text: root.rateLabel(rateRow.modelData)
+                                ToolTip.text: interactionHint
+                                ToolTip.visible: hovered && rateChoiceDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: rateChoiceDwell
+                                    anchors.fill: parent
+                                }
                                 checked: rateRow.chosen
                                 enabled: root.masterRateState
                                     && root.masterRateState.hasSupportedMasterRate
@@ -792,6 +835,9 @@ Rectangle {
                             Text {
                                 id: rateMemoryText
                                 objectName: "m17RateMemory_" + rateRow.index
+                                property string interactionHint: rateRow.advice
+                                    ? rateRow.advice.details
+                                    : "No Windows memory observation is available for this rate."
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                                 font.family: "Segoe UI"
@@ -805,9 +851,7 @@ Rectangle {
                                         ? rateRow.advice.minimumLabel + " · " : "")
                                       + rateRow.advice.label : "Not assessed"
                                 Accessible.name: "Memory: " + text
-                                ToolTip.text: rateRow.advice
-                                    ? rateRow.advice.details
-                                    : "Memory observation is not available"
+                                ToolTip.text: interactionHint
                                 ToolTip.visible: memoryHover.hovered
                                     && memoryDwell.ready
                                 ToolTip.delay: 0
@@ -819,8 +863,17 @@ Rectangle {
                             }
                             Text {
                                 objectName: "m17RateTime_" + rateRow.index
+                                property string interactionHint: "No estimated processing time yet: per-rate M17/M16 and Final SRC calibration has not been integrated."
                                 Layout.preferredWidth: 62
                                 text: "N/A"
+                                HoverHandler { id: etaHover }
+                                ToolTip.text: interactionHint
+                                ToolTip.visible: etaHover.hovered && etaDwell.ready
+                                ToolTip.delay: 0
+                                StudioTooltipDwell {
+                                    id: etaDwell
+                                    anchors.fill: parent
+                                }
                                 color: "#92A9BB"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
@@ -835,6 +888,15 @@ Rectangle {
                     spacing: 6
                     Text {
                         objectName: "m17RateMemorySummary"
+                        property string interactionHint: "Available memory uses the smaller of physical RAM and available commit, minus a 25% safety reserve (at least 512 MiB). PCM/FIR is a lower bound; other DSP/Qt and render peaks remain unmeasured."
+                        HoverHandler { id: memorySummaryHover }
+                        ToolTip.text: interactionHint
+                        ToolTip.visible: memorySummaryHover.hovered && memorySummaryDwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: memorySummaryDwell
+                            anchors.fill: parent
+                        }
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
                         color: "#A4B9C8"
@@ -845,24 +907,36 @@ Rectangle {
                             ? rateTimePopup.selectedAdvice.summary
                             : "Memory N/A · Estimated time N/A · Final SRC pending"
                     }
-                    StudioButton {
-                        objectName: "m17RateCalibrationButton"
-                        text: "CALIBRATE"
-                        minimumControlWidth: 91
-                        contentPadding: 10
-                        accentColor: root.activeFamilyAccent
-                        selectedFamilyAccent: true
-                        selected: true
-                        showDisabledAccent: true
-                        enabled: false
-                        ToolTip.text: "Local calibration is not available yet"
-                        ToolTip.visible: hovered && calibrationDwell.ready
+                    // The help target remains enabled for hover even though
+                    // CALIBRATE itself is genuinely disabled: no action occurs.
+                    Item {
+                        id: calibrationHelpTarget
+                        objectName: "m17RateCalibrationTooltipTarget"
+                        property string interactionHint: "CALIBRATE will measure real offline M17/M16 processing on this computer for more accurate time estimates. Not available until the calibrator is integrated."
+                        Layout.preferredWidth: calibrationButton.implicitWidth
+                        Layout.preferredHeight: calibrationButton.implicitHeight
+                        HoverHandler { id: calibrationHover }
+                        ToolTip.text: interactionHint
+                        ToolTip.visible: calibrationHover.hovered && calibrationDwell.ready
                         ToolTip.delay: 0
                         StudioTooltipDwell {
                             id: calibrationDwell
                             anchors.fill: parent
                         }
-                        Accessible.name: "Calibrate processing time: not yet available"
+                        StudioButton {
+                            id: calibrationButton
+                            objectName: "m17RateCalibrationButton"
+                            anchors.fill: parent
+                            text: "CALIBRATE"
+                            minimumControlWidth: 91
+                            contentPadding: 10
+                            accentColor: root.activeFamilyAccent
+                            selectedFamilyAccent: true
+                            selected: true
+                            showDisabledAccent: true
+                            enabled: false
+                            Accessible.name: "Calibrate processing time: not yet available"
+                        }
                     }
                 }
             }

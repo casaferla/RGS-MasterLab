@@ -848,6 +848,33 @@ Window {
                 QStringLiteral("m17RateCalibrationButton"));
             QVERIFY(disabledCalibration);
             QVERIFY(!disabledCalibration->property("enabled").toBool());
+            auto* calibHelp=find_child_by_name(host,
+                QStringLiteral("m17RateCalibrationTooltipTarget"));
+            QVERIFY(calibHelp);
+            QVERIFY(calibHelp->property("enabled").toBool());
+            QVERIFY(!calibHelp->property("interactionHint").toString()
+                .trimmed().isEmpty());
+            // Every new M17 panel column and each of its six repeated values
+            // must have a real, English interaction hint, as in M13/M15.
+            for(const auto& heading:headings) {
+                auto* label=find_child_by_name(host,heading.first);
+                QVERIFY(label);
+                QVERIFY(!label->property("interactionHint").toString()
+                    .trimmed().isEmpty());
+            }
+            for(int tipIndex=0;tipIndex<6;++tipIndex) {
+                for(const auto& prefix:{
+                    QStringLiteral("m17MasterRateOption_"),
+                    QStringLiteral("m17RateMemory_"),
+                    QStringLiteral("m17RateTime_")}) {
+                    auto* item=find_child_by_name(host,
+                        prefix+QString::number(tipIndex));
+                    QVERIFY(item);
+                    QVERIFY2(!item->property("interactionHint").toString()
+                        .trimmed().isEmpty(),
+                        "Each M17 rate/memory/time value needs a tooltip hint");
+                }
+            }
             // Compact 13 DIP selectors must not reproduce the giant native
             // Basic-style circles or clip the six 27-DIP rows at 150%.
             for(int rateIndex=0;rateIndex<6;++rateIndex) {
