@@ -476,18 +476,19 @@ jobs:
               exit $exitCode
           }
 
-      # The official cold FQ uses a canonical MSVC DEBUG Qt smoke,
-      # whereas the regular Focused UI smoke above is RELEASE only.
-      # Reproduce the *Debug configuration* separately using Ninja + MSVC.
-      # Do NOT compile the frozen VS-generator/B2f attestation project:
-      # it must remain configure-only; this is a diagnostic proxy, not FQ.
+      # The official cold FQ uses canonical Visual Studio/MSVC Debug,
+      # while the existing Focused UI smoke uses Ninja/MSVC Release.
+      # The isolated Debug probe MUST also use the Visual Studio generator:
+      # audio/playback_sample_rate_adapter.cpp has deliberate Debug /O2 and
+      # VS_SETTINGS=BasicRuntimeChecks=Default; Ninja ignores VS_SETTINGS
+      # and combines /O2 with incompatible /RTC1 (CI #849). Never weaken
+      # the frozen audio per-source optimization just to make this probe pass.
+      # Use its OWN VS build directory: the pre-existing windows-msvc B2f
+      # attestation generator stays configure-only and untouched.
       - name: Configure isolated Windows Debug UI diagnostic
         shell: pwsh
         run: |
-          cmake -S . -B build/windows-focused-debug-ui -G "Ninja Multi-Config" `
-            -DCMAKE_CONFIGURATION_TYPES=Debug `
-            -DCMAKE_POLICY_DEFAULT_CMP0141=NEW `
-            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded `
+          cmake -S . -B build/windows-focused-debug-ui -G "Visual Studio 17 2022" -A x64 `
             -DRGSML_BUILD_TESTS=ON `
             -DRGSML_WARNINGS_AS_ERRORS=ON `
             -DRGSML_PROVENANCE_TYPE=PR `

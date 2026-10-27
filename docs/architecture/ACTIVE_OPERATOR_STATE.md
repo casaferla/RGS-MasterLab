@@ -1,5 +1,14 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+## CI #849 RED — 27 October 2026, Debug smoke diagnostic generator mismatch
+- [Focused #849](https://github.com/casaferla/RGS-MasterLab/actions/runs/40491687575): Windows FAIL at `Build isolated Windows Debug UI diagnostic`, Linux PASS; canonical FQ #82 failure is still **unexplained**, because no Debug smoke executed. Bounded artifact `RGS-Focused-Debug-UI-Build-Windows-849-3d89ddc0f351936142597434e6d8104390393e15` (artifact ID 12729165074) proves `cl : Command line error D8016 : '/RTC1' and '/O2' command-line options are incompatible` on `audio/src/playback_sample_rate_adapter.cpp`. Secondary adversarial-matrix Windows failure was downstream of the earlier failed build; matrix report indicated test NOT_EXECUTED.
+- The mismatch is explained by `audio/CMakeLists.txt` frozen `/O2` Debug optimization plus `VS_SETTINGS BasicRuntimeChecks=Default`, which applies only to the Visual Studio generator, not Ninja. **No audio DSP change is authorized or necessary** for this fix.
+- Next coherent lot: isolated Focused Debug UI probe now uses its *own* canonical Visual Studio 17 2022 x64 generator directory, not frozen `build/windows-msvc` used only for B2f attestation. Keep filtered direct-Qt assertion artifacts. Complete Focused Windows+Linux CI; if Debug Qt smoke red, extract its bounded artifact before any test-code change. Product Owner alone manually dispatches a subsequent cold FQ after a green Focused and PO decision. No main merge.
+- FQ #82 exact link https://github.com/casaferla/RGS-MasterLab/actions/runs/40486176386; FQ #81 cancelled; last Focused green #848 at `360f2ecccb0948c77ce2beafa6dc2dcb8a42b23e`. Physical M17/Master Audition and Windows DPI gates remain OPEN; no full GitHub logs. Carry all recursive handoff clauses forward.
+
+---
+
+
 ## FQ #82 RED — recovery diagnostic · 27 October 2026
 - Official Windows FQ #82: https://github.com/casaferla/RGS-MasterLab/actions/runs/40486176386, manually dispatched at exact candidate `360f2ecccb0948c77ce2beafa6dc2dcb8a42b23e`, FAILED at `Debug Qt UI smoke (canonical diagnostic)` after canonical VS Debug compilation SUCCESS. No artifact published for the direct-smoke failure; root code/assertion **unknown**. Do not invent a culprit. Previous #81 was cancelled with `main` SHA (not target candidate).
 - Recovery lot on PR-less no-CI staging: Focused Windows now **separately** builds and runs a Microsoft MSVC Debug Qt UI probe using Ninja, without building the canonical Visual Studio generator frozen B2f project. Failed direct QtTest output is summarized on the runner by existing `tools/ci/summarize_focused_tests.py` (<=12KB) and uploaded as a bounded artifact. Official FQ Debug AND Release smoke now publish filtered error artifacts when red, NEVER full job logs.
