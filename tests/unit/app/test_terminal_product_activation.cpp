@@ -718,7 +718,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
             ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
             using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
             ++borrowedSrcCalls;
-            QCOMPARE(verifiedPcm.format().sample_rate(),*deviceRate.value());
+            if(verifiedPcm.format().sample_rate()!=*deviceRate.value())
+                return Owned::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M17_REUSE_TEST_WRONG_VERIFIED_PCM_RATE"});
             auto converted=audio::materialize_monitoring_pcm_candidate(
                 verifiedPcm,*sourceRate.value(),*offlineBlock.value());
             if(!converted)return Owned::failure(*converted.error());
