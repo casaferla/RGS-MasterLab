@@ -164,6 +164,13 @@ public:
             ||status_==QStringLiteral("COMPARISON_NONCONFORMING");
     }
     [[nodiscard]] bool comparison_owners_current() const;
+    // FIRST P0 PRODUCT BRIDGE: read-only borrowing of the same verified
+    // immutable M17 MASTER from a pending/retained A/B Prepare. No new M17
+    // render, DEVICE SRC, WAV export or sink/RealizationId publication.
+    // The caller MUST supply the exact selected PROJECT MASTER rate and
+    // independently guard later DEVICE allocation/transport.
+    [[nodiscard]] std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+    borrow_verified_m17_master_for_device(core::SampleRate selectedMasterRate) const;
     // Changes to a Loop Region cancel pending handoffs but do not stop
     // an already installed SOURCE-mapped session: its own live loop
     // controller processes active Loop Region edits.

@@ -698,6 +698,15 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(vm.preparation_stage(),QStringLiteral("Verified candidate ready"));
     const auto initialPreparedPcm=candidates.staged();
     QVERIFY(initialPreparedPcm);
+    // P0 bridge returns ONLY the exact currently verified MASTER at the
+    // selected PROJECT rate. DEVICE must not implicitly retarget it.
+    const auto firstRenderCount=renderer.render_invocation_count();
+    QCOMPARE(firstRenderCount,std::uint64_t{1});
+    QCOMPARE(product.borrow_verified_m17_master_for_device(
+        *deviceRate.value()),initialPreparedPcm);
+    QVERIFY(!product.borrow_verified_m17_master_for_device(
+        *sourceRate.value()));
+    QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
     QSignalSpy renderChanges{&renderer,&app::TerminalPrivateRenderController::changed};
     QVERIFY(renderChanges.isValid());
     QVERIFY(!coordinator.device_active());
@@ -706,6 +715,9 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     vm.setBypass(true);
     QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
     QCOMPARE(candidates.staged(),initialPreparedPcm);
+    QCOMPARE(product.borrow_verified_m17_master_for_device(
+        *deviceRate.value()),initialPreparedPcm);
+    QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     QVERIFY(!audioGate.has_session());
     vm.previewPrepared();
@@ -718,6 +730,11 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
     QVERIFY(coordinator.device_active());
+    // Product cannot silently borrow an already installed terminal sink;
+    // a future explicit ownership-retirement transaction is mandatory.
+    QVERIFY(!product.borrow_verified_m17_master_for_device(
+        *deviceRate.value()));
+    QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
     QCOMPARE(vm.audio_status(),
         QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
     auto firstTerminalId=device->audibleRealization.realizationId;
@@ -761,6 +778,9 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         QVERIFY(!audioGate.has_session());
     }
     QCOMPARE(renderChanges.count(),renderCountBeforeCycles);
+    QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
+    QCOMPARE(product.borrow_verified_m17_master_for_device(
+        *deviceRate.value()),initialPreparedPcm);
 
     // READY is already completed and MUST survive Cancel: no discarded
     // minute-long M17 work and no silent terminal handoff. A user can
@@ -844,6 +864,8 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QVERIFY(!candidates.staged());
+    QVERIFY(!product.borrow_verified_m17_master_for_device(
+        *deviceRate.value()));
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     desiredLoop=*region.value();
     QVERIFY(transport.set_loop_source_range(desiredLoop));

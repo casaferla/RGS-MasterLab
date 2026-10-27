@@ -908,6 +908,62 @@ bool TerminalPrivateProductSession::comparison_owners_current() const
         && renderer_->status()==QStringLiteral("MEASURED_NONCONFORMING_PRIVATE");
 }
 
+std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+TerminalPrivateProductSession::borrow_verified_m17_master_for_device(
+    core::SampleRate selectedMasterRate) const
+{
+    // A passive private ownership read, NOT a permission to play, export,
+    // claim verified LIVE/GR, or bypass the separate device-RAM preflight.
+    if((status_!=QStringLiteral("READY_TO_INSTALL")
+        &&status_!=QStringLiteral("COMPARISON_VERIFIED"))
+       ||!pending_ || pending_->masterOnly ||privateId_
+       ||installedMonitor_ ||monitorTransitioning_
+       ||renderer_->status()!=QStringLiteral("READY_PRIVATE")
+       ||pending_->outputRate!=selectedMasterRate
+       ||!current_selection_for_pending()
+       ||!prepared_||!manual_||!manualId_||!sourceLoop_
+       ||prepared_()!=pending_->prepared
+       ||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId}
+       ||sourceLoop_()!=pending_->loop)
+        return {};
+    auto stage=candidates_->staged();
+    if(!stage
+       ||(status_==QStringLiteral("COMPARISON_VERIFIED")
+           &&stage!=comparisonVerified_)
+       ||stage->prepared_owner!=pending_->prepared
+       ||stage->rendered.manual_owner!=pending_->manual
+       ||stage->original_manual_realization_id!=pending_->manualId
+       ||stage->rendered.output_rate!=selectedMasterRate
+       ||!stage->rendered.terminal.checked.final_check)
+        return {};
+    const auto master=stage->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    if(master.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||master.absolute_start_frame()!=core::FrameIndex{0}
+       ||master.frame_count().value()<=0
+       ||master.format().sample_rate()!=selectedMasterRate
+       ||master.format().channel_layout()!=pending_->manual->view()
+           .format().channel_layout())
+        return {};
+    // A pending M17 READY state still has exact original MANUAL audio.
+    // An installed M17 terminal is intentionally excluded above until its
+    // own verified-device owner release transaction is implemented.
+    const auto playback=transport_->playback_snapshot();
+    if(!playback
+       ||playback.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::NEW
+       ||playback.value()->audibleRealization.realizationId
+           !=std::optional{pending_->manualId}
+       ||playback.value()->duration
+           !=std::optional{pending_->manual->view().frame_count()}
+       ||(playback.value()->state!=core::PlaybackState::STOPPED
+           &&playback.value()->state!=core::PlaybackState::PLAYING
+           &&playback.value()->state!=core::PlaybackState::PAUSED))
+        return {};
+    return stage;
+}
+
 core::Status TerminalPrivateProductSession::suspend_for_comparison()
 {
     const bool verified=status_==QStringLiteral("READY_TO_INSTALL")
