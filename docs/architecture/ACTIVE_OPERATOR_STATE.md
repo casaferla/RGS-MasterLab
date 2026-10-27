@@ -1,5 +1,18 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+## CURRENT VERIFIED STATE — 2026-10-27 · after Focused #847 GREEN
+
+- **Live SHA at audit:** PR #61 Draft `experimental/m17-monitoring-pcm-isolation-20261024` and staging `staging/m17-monitor-preallocation-no-ci-20261024` both point to `0ae078ed5b7d62574062c43bd5c8f16f07dedf20` before this documentation-only staging write. `main` untouched. Always refresh live refs before subsequent writes.
+- **Focused CI #847:** https://github.com/casaferla/RGS-MasterLab/actions/runs/40459476447 — COMPLETED/SUCCESS, Windows PASS and Linux PASS, exact commit `0ae078ed5b7d62574062c43bd5c8f16f07dedf20`. **Focused CI #846:** https://github.com/casaferla/RGS-MasterLab/actions/runs/40457892813 — Linux PASS / Windows FAIL; bounded test identified M16 provenance well protruding from compact left bay. The following #847 fixes left-bay height, shared rail readouts, compact numeral legibility and nested containment assertions.
+- **Qt evidence actually inspected:** artifact `RGS-M12B-Visual-Evidence-6fe0b88c84c2bc61ac07e8de85d50d9e9d905f89`, ID `12714591228`, includes `fq80_compact_real_monitorEditor_680x338.png`, `...stereoMsEditor...`, `...truePeakMeterEditor...`, `...truePeakLimiterEditor...`. All four show compact lower regions in simulated 680×338 real Qt host. The Master Audition screenshot has SEEK/LOOP collapsed (expanded region was tested by Qt assertions), not a physical 150%-DPI Main screenshot.
+- **Acceptance strictly separated:** Focused CI automated GREEN; previous FQ #80 automated GREEN on historical SHA `78c2276e8d31d025738e9a8b6d4c89f3ae2b888a`; NEW candidate FQ **NOT** run. PO Windows **physical gate remains OPEN** for 1184×688 @150%, four editor readability/controls, true independent Dock/Undock windows, M17/Master Audition actual PCM/audio and 44.1–192 kHz formats, Ceilings −12 and −3.9 dBTP, device/Master rate separation, and 0 dBTP label. No main merge, FQ or Gate M/L unless PO explicitly authorizes.
+- **Writer discipline:** Single-Writer Epoch; only staging for intermediate writes, use SHA compare and CAS non-force ref update; publish a single coherent promotion to PR Draft and a single Focused CI per lot. DO NOT fetch full GitHub logs, only failed-step names plus tiny filtered diagnostic artifacts. Never introduce vertical scrolling in Stereo/M-S, M16, M17, Master Audition. Permanent recursive overlap token `RGS_OVERLAPPED_STAGING_PR_CI_ACTIVE_TURN_V1_20261025` and official operational handoff contract remain binding.
+- **Build provenance:** historic FQ80 `DEV` explained by missing configured header in that immutable build; subsequent code injects configured PR/FQ/SHA. Do not hardcode FQ80, do not claim newer build physically verified.
+- **Next action:** begin/continue PO physical Gate M/L only when PO supplies actual observations; otherwise do narrowly scoped readiness audits/prepare checklists without inventing physical results or unauthorized FQ. Follow the newest authoritative instructions before this historical handoff cache.
+
+---
+
+
 ## CURRENT OVERLAY — Chat Operativa #51 · 26 October 2026 (staging only; refresh LIVE)
 
 **Latest Product Owner authority**: `PO_FQ80_NO_VERTICAL_SCROLL_FIT_ALL_FOUR_EDITORS_20261026`. No vertical `Flickable`, `ScrollView`, clipped lower controls or Main minimum-window increase for Stereo/M-S, M16, M17, Master Audition. Physical Windows 1184×688 at 150% scaling remains unqualified; Input Gain/EQ/Compressor unaffected. M16 and non-bypassable monitoring icons permanently lit; PROCESSING vs availability must not be conflated. Dock/Undock is the single open-window + NE-outward / SW-inward arrow, with explicit buttons and no native-window drag-to-redock. All temporary floating QML headers removed.
