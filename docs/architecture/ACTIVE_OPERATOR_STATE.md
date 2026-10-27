@@ -1,5 +1,11 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+## M17/Phase 11 LOT B2, staging-only work while PR Focused #855 runs
+- B1 Project codec PR SHA `3c65cda46b797aa31cefe00d83c3e3bf513bac75` in Focused #855 https://github.com/casaferla/RGS-MasterLab/actions/runs/40575365010 . PR MUST remain at that exact SHA until both jobs pass; no FQ or main merge.
+- B2 ProjectSession wiring STAGED (to be followed by regression test within same CI-silent lot): canonical `output.targetMasterOutputRateHz` Save/Open via single typed Project preference, unknown independent output retained, recognized-only output not future-degraded; malformed known fields preflight BEFORE source/transport mutation. SOURCE default via existing production callback; target restored only after source adoption. No M17 DEVICE render or DSP math changed. Pending B2 Windows CTest (Save/Open/Save and atomic invalid type) before PR promotion.
+- #854 https://github.com/casaferla/RGS-MasterLab/actions/runs/40573002618 both jobs green on large Dock icon redraw; PO physical glyph acceptance pending. Main remains untouched.
+ 
+
 ## M17/Phase 11 staging lot B1: typed .rgsml output codec · 2026-10-27
 - While Focused #854 runs solely against PR SHA `1097d7a6e80bd4bc82202b3f44fa96655febc6b3`, stage an isolated **PROJECT layer**, Qt-free `MasterOutputRatePreference` codec. `output.targetMasterOutputRateHz` recognizes exactly the six master rates; old projects with absent key remain valid; unknown independent `output` keys are preserved; unsupported/malformed known rate is FAIL-CLOSED; only_known_fields distinguishes known support from future semantics.
 - Codec included in `rgsml_project` and new `rgsml_master_output_rate_codec_tests` in both Linux+Windows Focused build+CTest. **Not yet wired into ProjectSession save/open** and certainly NOT fed to M17 renderer/DEV. Next lot B2 wires SOURCE/default, .rgsml save/open atomicity, known-only degradation handling and tests; no premature M17 192k UI or Final SRC claims.

@@ -519,6 +519,7 @@ int main(int argc, char* argv[])
     rgsml::app::ProjectSessionViewModel projectSession{
         &sourceSelection, &goldSelection, &auditionRegion, &playbackTransport,
         &masteringChainState, &gainViewModel, &eqViewModel, &dspChainAdapterModel, &previewController};
+    projectSession.set_master_output_rate_state(&masterOutputRate);
     sourceSelection.set_source_committed_handler(
         [&sourceWaveform, &sourceSelection, &auditionRegion,
          &auditionSelector, &goldSelection, &dspChainAdapterModel, &projectSession,

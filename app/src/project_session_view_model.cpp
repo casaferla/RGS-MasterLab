@@ -7,6 +7,7 @@
 #include "gold_selection_view_model.hpp"
 #include "mastering_chain_state.hpp"
 #include "mastering_preview_controller.hpp"
+#include "master_output_rate_state.hpp"
 #include "playback_transport_view_model.hpp"
 #include "source_selection_view_model.hpp"
 
@@ -16,6 +17,7 @@
 #include <rgsml/platform/windows/windows_resource_reader.hpp>
 #include <rgsml/platform/windows/windows_resource_writer.hpp>
 #include <rgsml/project/project_repository.hpp>
+#include <rgsml/project/master_output_rate_preference.hpp>
 
 #include <QFileInfo>
 #include <QUuid>
@@ -106,7 +108,7 @@ namespace {
         doc.analyses.canonical_utf8() != "[]" || doc.plans.canonical_utf8() != "[]" ||
         doc.referenceMatch.canonical_utf8() != "{}" ||
         doc.masteringDNA.canonical_utf8() != "{}" ||
-        doc.output.canonical_utf8() != "{}" ||
+        !project::MasterOutputRatePreference::only_known_fields(doc.output) ||
         doc.derivedArtifacts.canonical_utf8() != "[]" ||
         doc.history.canonical_utf8() != "[]" ||
         doc.extensions.canonical_utf8() != "{}" ||
@@ -706,6 +708,22 @@ core::Result<project::ProjectSnapshot> ProjectSessionViewModel::current_snapshot
             *chainIt = std::move(masteringChain);
         }
     }
+    // Persistent Project/Render preference. Preserve independently unknown
+    // output keys; do not convert current playback DEVICE into master rate.
+    if (masterOutputRateState_) {
+        if (masterOutputRateState_->has_supported_master_rate()) {
+            auto updated = project::MasterOutputRatePreference::with_target(
+                doc.output, masterOutputRateState_->master_rate_hz());
+            if (!updated)
+                return core::Result<project::ProjectSnapshot>::failure(*updated.error());
+            doc.output = std::move(*updated.value());
+        } else {
+            auto persisted = project::MasterOutputRatePreference::read(doc.output);
+            if (!persisted || persisted.value()->has_value())
+                return core::Result<project::ProjectSnapshot>::failure(
+                    invalid("output.targetMasterOutputRateHz/source"));
+        }
+    }
     return project::ProjectSnapshot::create(std::move(doc), std::move(optional));
 }
 
@@ -718,10 +736,18 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     auto opened = project::ProjectRepository::open(std::move(*reader.value()));
     if (!opened) { publish_error(*opened.error()); return; }
     const auto& doc = opened.value()->document();
+    // Fail-closed preflight before transport/Source/chain mutation.
+    auto rate = project::MasterOutputRatePreference::read(doc.output);
+    if (!rate) { publish_error(*rate.error()); return; }
     auto sourceRef = external_reference(doc, doc.sourceResourceId);
     if (!sourceRef) { publish_error(*sourceRef.error()); return; }
     auto sourceCandidate = probe(*sourceRef.value());
     if (!sourceCandidate) { publish_error(*sourceCandidate.error()); return; }
+    if (rate.value()->has_value() &&
+        !MasterOutputRateState::supported(
+            sourceCandidate.value()->wav_info().audio_format().sample_rate().value())) {
+        publish_error(invalid("output.targetMasterOutputRateHz/source")); return;
+    }
     std::optional<audio::SourceResource> goldCandidate;
     std::optional<core::Uuid> goldResourceId;
     if (doc.references.activeReferenceId) {
@@ -772,6 +798,18 @@ void ProjectSessionViewModel::openProject(const QUrl& selectedFile)
     }
 
     source_->adopt_probed_source(std::move(*sourceCandidate.value()));
+    if (masterOutputRateState_) {
+        // The production SOURCE callback reset the authority on commit.
+        // Standalone ProjectSession clients may have no such callback.
+        if (masterOutputRateState_->source_rate_hz() != source_->sample_rate_hz())
+            masterOutputRateState_->source_committed(source_->sample_rate_hz());
+        if (rate.value()->has_value()) {
+            const bool accepted = masterOutputRateState_->choose_master_rate(
+                rate.value()->value());
+            Q_ASSERT(accepted);
+            Q_UNUSED(accepted);
+        }
+    }
     if (goldCandidate) {
         auto accepted = gold_->adopt_probed_gold(std::move(*goldCandidate));
         if (!accepted) {

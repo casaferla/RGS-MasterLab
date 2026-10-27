@@ -21,6 +21,7 @@ class GainViewModel;
 class EqViewModel;
 class DspChainAdapterModel;
 class MasteringPreviewController;
+class MasterOutputRateState;
 
 class ProjectSessionViewModel final : public QObject {
     Q_OBJECT
@@ -56,6 +57,9 @@ public:
                             UuidFactory uuidFactory = {},
                             QObject* parent = nullptr);
 
+    void set_master_output_rate_state(MasterOutputRateState* state) noexcept {
+        masterOutputRateState_ = state;
+    }
     [[nodiscard]] bool can_save_project() const noexcept;
     [[nodiscard]] bool is_committing_project_open() const noexcept { return isCommittingProjectOpen_; }
     [[nodiscard]] QString error_message() const { return errorMessage_; }
@@ -90,6 +94,7 @@ private:
     EqViewModel* eqViewModel_{nullptr};
     DspChainAdapterModel* adapterModel_{nullptr};
     MasteringPreviewController* previewController_{nullptr};
+    MasterOutputRateState* masterOutputRateState_{nullptr};
     UuidFactory uuidFactory_;
     bool isCommittingProjectOpen_{false};
     std::optional<project::ProjectSnapshot> opened_;
