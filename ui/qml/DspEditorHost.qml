@@ -722,6 +722,12 @@ Rectangle {
                         enabled: false
                         implicitHeight: 25
                         ToolTip.text: "Backend di calibrazione non ancora implementato"
+                        ToolTip.visible: hovered && calibrationDwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: calibrationDwell
+                            anchors.fill: parent
+                        }
                         Accessible.name: "Calibrazione: non ancora disponibile"
                     }
                 }
