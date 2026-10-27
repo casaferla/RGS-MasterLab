@@ -11,6 +11,7 @@
 #include "gold_selection_view_model.hpp"
 #include "live_spectrum_view_model.hpp"
 #include "mastering_chain_state.hpp"
+#include "master_output_rate_state.hpp"
 #include "mastering_preview_controller.hpp"
 #include "playback_transport_view_model.hpp"
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
@@ -587,6 +588,8 @@ void SourceMetadataPanelSmokeTest::sevenRealAdaptersDockedChainVisualEvidence()
     auto terminal=std::move(*terminalCreated.value());
     QVERIFY(terminal.set_ceiling_db_tp(-2.0));
     app::TerminalLimiterViewModel limiter{&terminal};
+    app::MasterOutputRateState selectedMasterRate;
+    selectedMasterRate.source_committed(44100);
     QObject masterAuditionService; // UI adapter only; NEVER a DSP stage
     app::DspChainAdapterModel model{
         &gain,&eq,&compressor,&manual,
@@ -600,6 +603,8 @@ void SourceMetadataPanelSmokeTest::sevenRealAdaptersDockedChainVisualEvidence()
     QQmlEngine engine;
     engine.rootContext()->setContextProperty(
         QStringLiteral("productSevenChainModel"),&model);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("productMasterRateState"),&selectedMasterRate);
     QQmlComponent component{&engine};
     static constexpr auto qml=R"qml(
 import QtQuick
@@ -628,6 +633,7 @@ Window {
             width: parent.width-172
             height: parent.height
             adapterModel: productSevenChainModel
+            masterRateState: productMasterRateState
             activeChainRow: realChain.activeRow
         }
     }
@@ -800,6 +806,34 @@ Window {
             QVERIFY2(check_item_contained_in_ancestor(
                 provenance,bay,1.5),
                 "PO no-scroll: M16 lower provenance card is clipped");
+        }
+        if (fit.index==5) {
+            // Real QtQuick fixture only; not the physical Main/150%-DPI Gate.
+            auto* popup=find_child_by_name(host,QStringLiteral("m17RateTimePopup"));
+            QVERIFY(popup);
+            QVERIFY(QMetaObject::invokeMethod(popup,"open"));
+            QTRY_VERIFY_WITH_TIMEOUT(popup->property("opened").toBool(),3000);
+            auto* panel=qobject_cast<QQuickItem*>(find_child_by_name(
+                host,QStringLiteral("m17RateTimePanel")));
+            QVERIFY(panel);
+            QVERIFY2(check_item_contained_in_ancestor(panel,host,1.5),
+                "Rate/ETA overlay must fit compact 680x338 host");
+            auto* summary=find_child_by_name(host,
+                QStringLiteral("m17MasterRateSummary"));
+            QVERIFY(summary);
+            QTRY_VERIFY_WITH_TIMEOUT(summary->property("text").toString()
+                .contains(QStringLiteral("44,1 kHz")),2000);
+            auto* disabledCalibration=find_child_by_name(host,
+                QStringLiteral("m17RateCalibrationButton"));
+            QVERIFY(disabledCalibration);
+            QVERIFY(!disabledCalibration->property("enabled").toBool());
+            QVERIFY2(capture_visual_evidence(window,
+                QStringLiteral("m17_rate_times_qt_fixture_1184x688.png"),
+                QSize{1184,688}),"True Qt-rendered Rate/Time UI evidence");
+            QVERIFY(selectedMasterRate.choose_master_rate(192000));
+            QTRY_VERIFY_WITH_TIMEOUT(summary->property("text").toString()
+                .contains(QStringLiteral("192 kHz")),2000);
+            QVERIFY(QMetaObject::invokeMethod(popup,"close"));
         }
         if (fit.index==5) {
             auto* ceiling=qobject_cast<QQuickItem*>(find_child_by_name(
