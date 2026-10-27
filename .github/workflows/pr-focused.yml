@@ -492,8 +492,16 @@ jobs:
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
           $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
           New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\build\visual-evidence" | Out-Null
-          & build/windows-ninja-cache/Release/RGSMasterLab.exe --rgsml-m17-ui-evidence
-          if ($LASTEXITCODE -ne 0) { throw 'M17_REAL_MAIN_QT_150_SCREENSHOT_FAILED' }
+          # WIN32_EXECUTABLE is a GUI-subsystem process. PowerShell's bare
+          # '&' may return before it has exited: its $LASTEXITCODE is NOT a
+          # trustworthy completion witness (CI #858 saved a real 1776x1032
+          # PNG but the old check still reported failure). Wait on process.
+          $process = Start-Process -FilePath "build/windows-ninja-cache/Release/RGSMasterLab.exe" -ArgumentList "--rgsml-m17-ui-evidence" -Wait -PassThru
+          Write-Host "M17_REAL_MAIN_APP_EXIT_CODE=$($process.ExitCode)"
+          if (-not (Test-Path "$env:RGSML_M17_MAIN_EVIDENCE_PATH")) {
+            throw 'M17_REAL_MAIN_QT_PNG_MISSING'
+          }
+          if ($process.ExitCode -ne 0) { throw 'M17_REAL_MAIN_QT_150_APP_FAILURE' }
 
       # The official cold FQ uses canonical Visual Studio/MSVC Debug,
       # while the existing Focused UI smoke uses Ninja/MSVC Release.

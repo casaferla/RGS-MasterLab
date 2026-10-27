@@ -681,8 +681,37 @@ Rectangle {
                                 enabled: root.masterRateState
                                     && root.masterRateState.hasSupportedMasterRate
                                     && !root.m17Preparing
+                                id: compactRateRadio
                                 implicitWidth: 110
-                                font.pixelSize: 10
+                                implicitHeight: 23
+                                spacing: 5
+                                indicator: Rectangle {
+                                    implicitWidth: 13
+                                    implicitHeight: 13
+                                    x: 1
+                                    y: (compactRateRadio.height - height) / 2
+                                    radius: 7
+                                    color: "#13293B"
+                                    border.width: 1
+                                    border.color: compactRateRadio.checked ? "#6CBCE2" : "#7895A9"
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: 7
+                                        height: 7
+                                        radius: 4
+                                        color: "#6CBCE2"
+                                        visible: compactRateRadio.checked
+                                    }
+                                }
+                                contentItem: Text {
+                                    text: compactRateRadio.text
+                                    font.family: "Segoe UI"
+                                    font.pixelSize: 10
+                                    color: compactRateRadio.enabled ? "#DDEAF2" : "#93AABD"
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: compactRateRadio.indicator.width + 7
+                                    elide: Text.ElideRight
+                                }
                                 onClicked: if (root.masterRateState)
                                     root.masterRateState.choose_master_rate(rateRow.modelData)
                                 Accessible.name: "Target master " + text
