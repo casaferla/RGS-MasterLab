@@ -827,6 +827,15 @@ Window {
                 QStringLiteral("m17RateCalibrationButton"));
             QVERIFY(disabledCalibration);
             QVERIFY(!disabledCalibration->property("enabled").toBool());
+            // Compact 13 DIP selectors must not reproduce the giant native
+            // Basic-style circles or clip the six 27-DIP rows at 150%.
+            for(int rateIndex=0;rateIndex<6;++rateIndex) {
+                auto* rateOption=qobject_cast<QQuickItem*>(find_child_by_name(
+                    host,QStringLiteral("m17MasterRateOption_%1").arg(rateIndex)));
+                QVERIFY(rateOption);
+                QVERIFY2(rateOption->height()<=27.0,
+                    "M17 rate option must fit the 27-DIP popover row");
+            }
             QVERIFY2(capture_visual_evidence(window,
                 QStringLiteral("m17_rate_times_qt_fixture_1184x688.png"),
                 QSize{1184,688}),"True Qt-rendered Rate/Time UI evidence");
