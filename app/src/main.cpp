@@ -46,6 +46,7 @@
 #include <QQuickWindow>
 #include <QImage>
 #include <QMetaObject>
+#include <cmath>
 #include <QQuickStyle>
 
 #include <optional>
