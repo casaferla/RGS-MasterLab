@@ -717,15 +717,16 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
             audio::AudioBufferView verifiedPcm)
             ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
             using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+            using Result=core::Result<Owned>;
             ++borrowedSrcCalls;
             if(verifiedPcm.format().sample_rate()!=*deviceRate.value())
-                return Owned::failure(core::Error{
+                return Result::failure(core::Error{
                     core::ErrorCode::InvalidState,
                     "M17_REUSE_TEST_WRONG_VERIFIED_PCM_RATE"});
             auto converted=audio::materialize_monitoring_pcm_candidate(
                 verifiedPcm,*sourceRate.value(),*offlineBlock.value());
-            if(!converted)return Owned::failure(*converted.error());
-            return Owned::success(
+            if(!converted)return Result::failure(*converted.error());
+            return Result::success(
                 std::make_shared<const audio::MonitoringPcmCandidate>(
                     std::move(*converted.value())));
         };
