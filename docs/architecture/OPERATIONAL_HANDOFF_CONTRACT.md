@@ -1,4 +1,7 @@
 # RGS MasterLab — OPERATING CONTRACT & HANDOFF BOOTSTRAP
+
+> **2026-10-27 mandatory Product Owner supersession — P0 M17/Master Audition BEFORE M18:** Read `docs/architecture/M17_MASTER_AUDITION_SINGLE_PREPARE_GATE.md`. The approved 23/26 October design is ONE shared immutable MASTER PCM prepared by M17 at PROJECT TARGET_MASTER_OUTPUT_RATE, Master Audition reuses it, DEVICE_RATE SRC only on listening branch. The separate `Prepare MASTER` in FQ #83 and M17's device-probed rate remain NOT ACCEPTED. FQ #83 automatic green does not close physical audio Gate M/L. Every outgoing handoff must explicitly propagate this open P0, its original [Drive authority](https://docs.google.com/document/d/13fIk06CgiPLWcaW3KAZPCUoNFN5ffh6NHlVXK1sfA_8/edit), actual failed user scenario, code seams, and precedence before M18. PO only launches Full Qualification; do NOT start M18 or merge main.
+
 **Authority:** Product Owner · **Version:** 2026-10-25 · **Status:** ACCEPTED / FROZEN for chat-operated development.
 **Applies to:** all operational ChatGPT sessions, coding agents, GitHub edits, PR/CI handoffs and replacement chats.
 **This is NOT an optional summary.** Product architecture decisions are governed by their own frozen documents.

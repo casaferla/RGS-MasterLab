@@ -1,5 +1,8 @@
 # AGENTS.md — Normative Guidelines
 
+**ACTIVE P0 SUPERSESSION (2026-10-27):** Before any M18 work or PO physical audio Gate M/L, implement and qualify [ONE M17 Prepare → Master Audition owner and master-rate independence](docs/architecture/M17_MASTER_AUDITION_SINGLE_PREPARE_GATE.md). FQ #83 is green but does **NOT** qualify this missing integration. Preserve original RGS ContentBox authority; never treat independent `Prepare MASTER` or device-rate-chosen terminal M17 as completed product behavior. Read latest `ACTIVE_OPERATOR_STATE.md` and `OPERATIONAL_HANDOFF_CONTRACT.md`. Do not modify frozen DSP to bypass this requirement.
+
+
 ## Product & Target Platforms
 - **Product**: RGS MasterLab — Reference Guided Sound — Gold Reference Mastering Environment.
 - **Primary Platform**: Windows 10/11 x64.
