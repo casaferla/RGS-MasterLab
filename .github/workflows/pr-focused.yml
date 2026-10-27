@@ -480,6 +480,21 @@ jobs:
               exit $exitCode
           }
 
+      # Actual production Qt Main capture, not an isolated component fixture.
+      # Windows runner uses explicit 150% Qt scaling; the app verifies DPR,
+      # 1184x688 logical size and the written PNG. PO physical Gate remains separate.
+      - name: Capture actual M17 Main Qt at 1184x688 and 150 percent
+        shell: pwsh
+        env:
+          QT_SCALE_FACTOR: '1.5'
+          RGSML_M17_MAIN_EVIDENCE_PATH: ${{ github.workspace }}\build\visual-evidence\m17_real_main_1184x688_dpr150.png
+        run: |
+          $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          $env:QML2_IMPORT_PATH = "$env:RGSML_QT_ROOT\qml"
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\build\visual-evidence" | Out-Null
+          & build/windows-ninja-cache/Release/RGSMasterLab.exe --rgsml-m17-ui-evidence
+          if ($LASTEXITCODE -ne 0) { throw 'M17_REAL_MAIN_QT_150_SCREENSHOT_FAILED' }
+
       # The official cold FQ uses canonical Visual Studio/MSVC Debug,
       # while the existing Focused UI smoke uses Ninja/MSVC Release.
       # The isolated Debug probe MUST also use the Visual Studio generator:

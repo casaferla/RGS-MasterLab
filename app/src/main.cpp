@@ -43,6 +43,9 @@
 #include <QUuid>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickWindow>
+#include <QImage>
+#include <QMetaObject>
 #include <QQuickStyle>
 
 #include <optional>
@@ -78,6 +81,9 @@ int main(int argc, char* argv[])
     application.setWindowIcon(QIcon(QStringLiteral(
         ":/qt/qml/Rgsml/Ui/resources/RGS_ML_C_header_64.png")));
     const bool deploySmoke = application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
+    // Opt-in CI-only REAL product Main Qt screenshot; never a user render path.
+    const bool m17MainEvidence = application.arguments().contains(
+        QStringLiteral("--rgsml-m17-ui-evidence"));
     if (deploySmoke) {
         qInstallMessageHandler(smokeMessageHandler);
     }
@@ -688,6 +694,40 @@ int main(int argc, char* argv[])
 
     if (deploySmoke && !engine.rootObjects().isEmpty()) {
         QTimer::singleShot(0, &application, &QCoreApplication::quit);
+    }
+    if (m17MainEvidence && !engine.rootObjects().isEmpty()) {
+        auto* mainWindow=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        if (!mainWindow) return EXIT_FAILURE;
+        // Open ACTUAL Main.qml at the PO logical geometry, not a QML mockup.
+        mainWindow->setWidth(1184);
+        mainWindow->setHeight(688);
+        dspChainAdapterModel.setSelectedIndex(5); // real M17 chain adapter
+        mainWindow->show();
+        QTimer::singleShot(900, &application, [mainWindow,&application] {
+            auto* popup=mainWindow->findChild<QObject*>(
+                QStringLiteral("m17RateTimePopup"));
+            if (!popup || !QMetaObject::invokeMethod(popup,"open")) {
+                std::fprintf(stderr,"M17_REAL_MAIN_POPUP_NOT_FOUND\n");
+                application.exit(EXIT_FAILURE);
+                return;
+            }
+            QTimer::singleShot(450, &application, [mainWindow,&application] {
+                const auto file=qEnvironmentVariable("RGSML_M17_MAIN_EVIDENCE_PATH");
+                const double ratio=mainWindow->devicePixelRatio();
+                const auto image=mainWindow->grabWindow();
+                const bool geometry=mainWindow->width()==1184
+                    && mainWindow->height()==688;
+                const bool dpi=std::abs(ratio-1.5)<0.051;
+                const bool saved=geometry && dpi && !file.isEmpty()
+                    && !image.isNull() && image.save(file,"PNG");
+                std::fprintf(stdout,
+                    "M17_REAL_MAIN_QT_LOGICAL=%dx%d DPR=%.3f PHYSICAL=%dx%d SAVED=%d\n",
+                    mainWindow->width(),mainWindow->height(),ratio,
+                    image.width(),image.height(),saved?1:0);
+                std::fflush(stdout);
+                application.exit(saved?EXIT_SUCCESS:EXIT_FAILURE);
+            });
+        });
     }
 
     const int result = application.exec();
