@@ -748,6 +748,28 @@ Window {
                 sideToggle,editor,1.5),
                 "PO no-scroll: Stereo/M-S lower Side Muted toggle is clipped");
         }
+        if (fit.index==4 || fit.index==5) {
+            auto* sharedRail=qobject_cast<QQuickItem*>(find_child_by_name(
+                editor,QStringLiteral("truePeakMeterSharedRail")));
+            QVERIFY(sharedRail&&sharedRail->isVisible());
+            for(const auto& readoutName:{
+                    QStringLiteral("truePeakRecentCard"),
+                    QStringLiteral("truePeakHoldCard"),
+                    QStringLiteral("truePeakFullResourceCard")}) {
+                auto* card=qobject_cast<QQuickItem*>(find_child_by_name(
+                    sharedRail,readoutName));
+                QVERIFY2(card&&card->isVisible(),qPrintable(readoutName));
+                QVERIFY2(check_item_contained_in_ancestor(
+                    card,sharedRail,1.5),
+                    qPrintable(QStringLiteral("PO no-scroll: readout card overflows: ")+readoutName));
+                auto* measured=qobject_cast<QQuickItem*>(find_child_by_name(
+                    card,QStringLiteral("truePeakNumericValueText")));
+                QVERIFY(measured&&measured->isVisible());
+                QVERIFY2(check_item_contained_in_ancestor(
+                    measured,card,1.5),
+                    qPrintable(QStringLiteral("PO no-scroll: readout digits clipped: ")+readoutName));
+            }
+        }
         if (fit.index==4) {
             auto* bay=qobject_cast<QQuickItem*>(find_child_by_name(
                 editor,QStringLiteral("truePeakStaticMeterBay")));

@@ -75,11 +75,11 @@ Rectangle {
     ColumnLayout {
         objectName: "truePeakReadoutTextColumn"
         anchors.fill: parent
-        anchors.margins: root.veryTightM17Height ? 3
+        anchors.margins: root.veryTightM17Height ? 2
             : root.tightM17Height ? 5
             : root.roomyLimiterReadout ? 10
             : root.height < 95 ? 8 : 12
-        spacing: root.veryTightM17Height ? 1
+        spacing: root.veryTightM17Height ? 0
             : root.tightM17Height ? 2
             : root.roomyLimiterReadout ? 4
             : root.height < 95 ? 2 : 5
@@ -100,7 +100,7 @@ Rectangle {
             text: root.available ? root.alignedDbtp(root.reading) : root.reading
             color: root.available ? root.valueColor : "#879CA9"
             font.family: "Consolas"
-            font.pixelSize: root.veryTightM17Height ? 16
+            font.pixelSize: root.veryTightM17Height ? 15
                 : root.tightM17Height ? 18 : 22
             font.weight: Font.DemiBold
             Layout.fillWidth: true
