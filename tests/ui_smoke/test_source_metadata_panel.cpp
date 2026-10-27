@@ -36,6 +36,7 @@
 #include <QImage>
 #include <QLibraryInfo>
 #include <QRegularExpressionValidator>
+#include <QSet>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -137,36 +138,32 @@ namespace {
     return summary_from_wav(valid_wav());
 }
 
-[[nodiscard]] QObject* find_child_by_name(QObject* parent, const QString& name)
+// A QQuickItem is commonly present in BOTH QObject::children() and
+// QQuickItem::childItems(). Recursive DFS through both without a visited set
+// revisits entire subtrees exponentially, especially for ABSENT names.
+// Under VS Debug the negative Main-window lookup hit QtTest's 300s watchdog
+// (Focused #850, location 2895). This traversal visits each QObject ONCE.
+// Reverse pushes retain the former visual-children-first lookup priority.
+[[nodiscard]] QObject* find_child_by_name(
+    QObject* parent, const QString& name, int* visitedCount = nullptr)
 {
-    if (parent == nullptr) {
-        return nullptr;
-    }
-    if (parent->objectName() == name) {
-        return parent;
-    }
-    if (auto* quickItem = qobject_cast<QQuickItem*>(parent)) {
-        for (auto* childItem : quickItem->childItems()) {
-            if (childItem == nullptr) {
-                continue;
-            }
-            if (childItem->objectName() == name) {
-                return childItem;
-            }
-            if (auto* found = find_child_by_name(childItem, name)) {
-                return found;
-            }
-        }
-    }
-    for (auto* childObj : parent->children()) {
-        if (childObj == nullptr) {
-            continue;
-        }
-        if (childObj->objectName() == name) {
-            return childObj;
-        }
-        if (auto* found = find_child_by_name(childObj, name)) {
-            return found;
+    if (visitedCount) *visitedCount = 0;
+    if (!parent) return nullptr;
+    QSet<QObject*> visited;
+    QList<QObject*> pending{parent};
+    while (!pending.isEmpty()) {
+        auto* current = pending.takeLast();
+        if (!current || visited.contains(current)) continue;
+        visited.insert(current);
+        if (visitedCount) ++*visitedCount;
+        if (current->objectName() == name) return current;
+        const auto children = current->children();
+        for (auto it = children.crbegin(); it != children.crend(); ++it)
+            pending.append(*it);
+        if (auto* quick = qobject_cast<QQuickItem*>(current)) {
+            const auto visuals = quick->childItems();
+            for (auto it = visuals.crbegin(); it != visuals.crend(); ++it)
+                pending.append(*it);
         }
     }
     return nullptr;
@@ -512,6 +509,7 @@ class SourceMetadataPanelSmokeTest final : public QObject {
     Q_OBJECT
 
 private slots:
+    void childNameLookupVisitsQObjectOnce();
     void emptyReadyErrorAndWindowLifecycle();
     void stereoMsProductDefaultDockedStartup();
     void stereoMsOptInVisualEvidence();
@@ -526,6 +524,29 @@ private slots:
 
 
 
+
+void SourceMetadataPanelSmokeTest::childNameLookupVisitsQObjectOnce()
+{
+    // Twenty nested visual children are also QObject-owned. Legacy dual
+    // recursive traversal multiplied missing-name searches exponentially.
+    QQuickItem root;
+    root.setObjectName(QStringLiteral("lookupFixtureRoot"));
+    auto* last = &root;
+    for (int index = 0; index < 20; ++index) {
+        auto* next = new QQuickItem(last);
+        next->setObjectName(QStringLiteral("lookupNode_%1").arg(index));
+        last = next;
+    }
+    int missingVisits = 0;
+    QVERIFY(find_child_by_name(
+        &root, QStringLiteral("deliberatelyAbsentObject"), &missingVisits) == nullptr);
+    QCOMPARE(missingVisits, 21);
+    int foundVisits = 0;
+    QCOMPARE(find_child_by_name(
+        &root, QStringLiteral("lookupNode_19"), &foundVisits),
+        static_cast<QObject*>(last));
+    QVERIFY(foundVisits <= 21);
+}
 
 void SourceMetadataPanelSmokeTest::sevenRealAdaptersDockedChainVisualEvidence()
 {

@@ -1,5 +1,13 @@
 # RGS MasterLab — ACTIVE OPERATOR STATE
 
+## Focused #850 RED — bounded Debug Qt fatal investigation 2026-10-27
+- Run https://github.com/casaferla/RGS-MasterLab/actions/runs/40493792676 on SHA `46f40bf3c666cc1824e484e518e8b33bbbcdbb07`: Linux PASS; Windows FAIL at `Run isolated Windows Debug Qt UI Smoke Diagnostic`. Canonical Debug compilation succeeded; bounded artifact 12729534248 reports QtTest **300010 ms watchdog** in `emptyReadyErrorAndWindowLifecycle()` at source location near line 2895. No assertion of clipping or DSP output was established. A second M17 matrix-step failure was downstream/non-authoritative.
+- Root-cause hypothesis supported by source: test-only `find_child_by_name()` recursively traversed BOTH `QQuickItem.childItems` and `QObject.children` without deduplicating shared QObject pointers. Negative-name queries immediately after the watchdog's last assertion can revisit a 20-level tree exponentially, particularly in Debug. New staging fix uses iterative visual-first DFS with a visited `QSet<QObject*>`, and adds a pure regression proving 21 unique nodes on 20 nested visual children. Test-only change; production QML/DSP untouched. **Keep QtTest watchdog at original 300000ms** so Focused #851 must prove real speedup.
+- Future FQ (manual by PO only) follows successful Focused and permission, never treat new Focused as FQ. FQ #82 RED still unqualified, Windows physical/audio gates remain open. No full GitHub job logs. Continue recursive overlap handoff obligations.
+
+---
+
+
 ## CI #849 RED — 27 October 2026, Debug smoke diagnostic generator mismatch
 - [Focused #849](https://github.com/casaferla/RGS-MasterLab/actions/runs/40491687575): Windows FAIL at `Build isolated Windows Debug UI diagnostic`, Linux PASS; canonical FQ #82 failure is still **unexplained**, because no Debug smoke executed. Bounded artifact `RGS-Focused-Debug-UI-Build-Windows-849-3d89ddc0f351936142597434e6d8104390393e15` (artifact ID 12729165074) proves `cl : Command line error D8016 : '/RTC1' and '/O2' command-line options are incompatible` on `audio/src/playback_sample_rate_adapter.cpp`. Secondary adversarial-matrix Windows failure was downstream of the earlier failed build; matrix report indicated test NOT_EXECUTED.
 - The mismatch is explained by `audio/CMakeLists.txt` frozen `/O2` Debug optimization plus `VS_SETTINGS BasicRuntimeChecks=Default`, which applies only to the Visual Studio generator, not Ninja. **No audio DSP change is authorized or necessary** for this fix.
