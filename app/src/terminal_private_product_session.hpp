@@ -179,6 +179,16 @@ public:
     materialize_borrowed_verified_m17_monitoring(
         core::SampleRate selectedMasterRate,
         const MonitoringMaterializer& materializer);
+    // The product wiring counterpart uses the SAME registered Windows
+    // pre-allocation source as MASTER-only monitoring. Fresh physical and
+    // commit memory/endpoint must be checked by that service before DEVICE
+    // PCM is allocated. No callback or policy means NO allocation.
+    [[nodiscard]] core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
+    materialize_borrowed_verified_m17_monitoring_with_preflight(
+        core::SampleRate selectedMasterRate,
+        core::FrameCount maximumBlockFrames,
+        std::uint64_t reservedOtherPrepareBytes,
+        const MonitoringPreallocationDecision& explicitDecision);
     // Changes to a Loop Region cancel pending handoffs but do not stop
     // an already installed SOURCE-mapped session: its own live loop
     // controller processes active Loop Region edits.

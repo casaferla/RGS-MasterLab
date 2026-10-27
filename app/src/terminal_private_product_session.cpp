@@ -1014,6 +1014,36 @@ TerminalPrivateProductSession::materialize_borrowed_verified_m17_monitoring(
     return converted;
 }
 
+core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
+TerminalPrivateProductSession::
+materialize_borrowed_verified_m17_monitoring_with_preflight(
+    core::SampleRate selectedMasterRate,
+    core::FrameCount maximumBlockFrames,
+    std::uint64_t reservedOtherPrepareBytes,
+    const MonitoringPreallocationDecision& explicitDecision)
+{
+    using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+    if(!explicitDecision)
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "M17_REUSE_EXPLICIT_MEMORY_DECISION_REQUIRED"});
+    const auto preflight=monitoringPreflight_;
+    if(!preflight)
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_REUSE_WINDOWS_PREFLIGHT_NOT_CONFIGURED"});
+    // Never invoke Windows/Qt memory code from an audio callback or under
+    // a DSP lock. The underlying master-identity check is repeated AFTER
+    // this potentially expensive device conversion.
+    return materialize_borrowed_verified_m17_monitoring(
+        selectedMasterRate,
+        [preflight,maximumBlockFrames,reservedOtherPrepareBytes,
+         &explicitDecision](audio::AudioBufferView master) {
+            return preflight(master,maximumBlockFrames,
+                reservedOtherPrepareBytes,explicitDecision);
+        });
+}
+
 core::Status TerminalPrivateProductSession::suspend_for_comparison()
 {
     const bool verified=status_==QStringLiteral("READY_TO_INSTALL")

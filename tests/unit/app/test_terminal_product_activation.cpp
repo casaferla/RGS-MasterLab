@@ -745,6 +745,76 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
              std::int64_t{4410});
     QCOMPARE(candidates.staged(),initialPreparedPcm);
     QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
+    // The P0 borrowed MASTER must also route through the existing Windows
+    // admission callback, including an explicit memory policy. The fake
+    // observation proves the wired contract; not physical RAM evidence.
+    constexpr std::uint64_t kBorrowedReserve=UINT64_C(32)*1024*1024;
+    const auto acceptBorrowed=[](
+        const audio::MonitoringPcmPreallocationAdvice& advice)
+        ->core::Status {
+        if(advice.kind!=audio::MonitoringMemoryAdviceKind::RECOMMENDED_MEMORY_ONLY)
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "M17_REUSE_EXPECTS_TEST_RECOMMENDED_MEMORY"});
+        return core::Status::success();
+    };
+    auto preflightMissing=product
+        .materialize_borrowed_verified_m17_monitoring_with_preflight(
+            *deviceRate.value(),*offlineBlock.value(),kBorrowedReserve,
+            acceptBorrowed);
+    QVERIFY(!preflightMissing);
+    std::size_t borrowedPreflightCalls=0;
+    std::size_t borrowedPolicyCalls=0;
+    product.set_monitoring_preflight_materializer(
+        [&](audio::AudioBufferView input,core::FrameCount requestedBlock,
+            std::uint64_t otherReserve,
+            const app::TerminalPrivateProductSession::
+                MonitoringPreallocationDecision& policy)
+            ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
+            using Result=core::Result<
+                std::shared_ptr<const audio::MonitoringPcmCandidate>>;
+            ++borrowedPreflightCalls;
+            if(requestedBlock!=*offlineBlock.value()
+               ||otherReserve!=kBorrowedReserve)
+                return Result::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M17_REUSE_TEST_PREFLIGHT_PARAMETERS_CHANGED"});
+            auto recommendation=audio::advise_imminent_monitoring_pcm_allocation(
+                input.format().sample_rate(),input.frame_count(),
+                *sourceRate.value(),input.format().channel_layout(),
+                audio::MonitoringMemoryObservation{
+                    UINT64_C(4)*1024*1024*1024,
+                    UINT64_C(5)*1024*1024*1024,
+                    otherReserve});
+            if(!recommendation)return Result::failure(*recommendation.error());
+            ++borrowedPolicyCalls;
+            const auto allowed=policy(*recommendation.value());
+            if(!allowed)return Result::failure(*allowed.error());
+            return convertedFromExisting(input);
+        });
+    auto refusedByPolicy=product
+        .materialize_borrowed_verified_m17_monitoring_with_preflight(
+            *deviceRate.value(),*offlineBlock.value(),kBorrowedReserve,
+            [](const audio::MonitoringPcmPreallocationAdvice&)->core::Status {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M17_REUSE_EXPLICIT_POLICY_REJECTS"});
+            });
+    QVERIFY(!refusedByPolicy);
+    QCOMPARE(borrowedPreflightCalls,std::size_t{1});
+    QCOMPARE(borrowedPolicyCalls,std::size_t{1});
+    QCOMPARE(borrowedSrcCalls,std::size_t{1});
+    auto allowedByPolicy=product
+        .materialize_borrowed_verified_m17_monitoring_with_preflight(
+            *deviceRate.value(),*offlineBlock.value(),kBorrowedReserve,
+            acceptBorrowed);
+    QVERIFY2(allowedByPolicy,allowedByPolicy?""
+        :allowedByPolicy.error()->message().c_str());
+    QCOMPARE(borrowedPreflightCalls,std::size_t{2});
+    QCOMPARE(borrowedPolicyCalls,std::size_t{2});
+    QCOMPARE(borrowedSrcCalls,std::size_t{2});
+    QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
+    QCOMPARE(candidates.staged(),initialPreparedPcm);
     QVERIFY(!product.private_id());
     QCOMPARE(device->audibleRealization.realizationId,originalId);
     QSignalSpy renderChanges{&renderer,&app::TerminalPrivateRenderController::changed};
@@ -778,7 +848,7 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         product.materialize_borrowed_verified_m17_monitoring(
             *deviceRate.value(),convertedFromExisting);
     QVERIFY(!rejectedInstalledReuse);
-    QCOMPARE(borrowedSrcCalls,std::size_t{1});
+    QCOMPARE(borrowedSrcCalls,std::size_t{2});
     QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
     QCOMPARE(vm.audio_status(),
         QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
