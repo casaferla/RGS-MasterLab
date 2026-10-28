@@ -426,6 +426,15 @@ int main(int argc, char* argv[])
         &rgsml::app::TerminalLimiterViewModel::prepareRequested,
         &prepareRateAdvisor,
         &rgsml::app::PrepareMemoryAdviceViewModel::cancel_calibration);
+    // Never let a disposable high-CPU microbenchmark overlap an exact
+    // DEVICE audition lease. The verified MASTER itself is untouched.
+    QObject::connect(&privateProductSession,
+        &rgsml::app::TerminalPrivateProductSession::changed,
+        &prepareRateAdvisor,
+        [&privateProductSession,&prepareRateAdvisor] {
+            if(privateProductSession.monitoring_transaction_active())
+                prepareRateAdvisor.cancel_calibration();
+        });
     masterOutputRate.set_target_selection_guard(
         [&privateProductSession]() noexcept {
             return !privateProductSession.monitoring_transaction_active();
