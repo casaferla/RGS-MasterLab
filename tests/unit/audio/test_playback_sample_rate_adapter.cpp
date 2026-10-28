@@ -4,6 +4,7 @@
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
+#include <rgsml/audio/internal/phase11_strict_scalar_reference.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/audio/monitoring_frame_map.hpp>
@@ -20,6 +21,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <new>
 #include <span>
 #include <utility>
@@ -110,6 +112,7 @@ class PlaybackSampleRateAdapterTest final : public QObject {
 
 private slots:
     void policyIdentityAndFrameMap();
+    void phase11StrictScalarReferenceSixBySixAgainstConceptualGrid();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -144,6 +147,109 @@ private slots:
     void conservativeInputDependenciesRejectInvalidRanges();
     void noFutureDependencyPrefixAgainstIndependentOracle();
 };
+
+
+void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstConceptualGrid()
+{
+    // 36 tested ordered pairs, including 30 REAL non-identity ratio GEOMETRIES.
+    // Synthetic FIR taps only; NOT frozen 14 coefficient release or product SRC.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    const std::array<double,5> source{-0.0,0.25,-0.5,0.75,0.125};
+    std::size_t checked=0,identityCount=0,filteredCount=0;
+    for(const auto fin:rates) {
+        for(const auto fout:rates) {
+            const auto common=std::gcd(fin,fout);
+            const auto L=fout/common;
+            const auto M=fin/common;
+            const auto total=(static_cast<std::int64_t>(source.size())*L+M-1)/M;
+            std::vector<std::uint64_t> bits;
+            if(fin!=fout) {
+                const auto delay=std::max(L,M);
+                bits.resize(static_cast<std::size_t>(2*delay+1),0);
+                // Symmetric dyadic fixtures: exact long-double conceptual
+                // zero-stuffed reference cannot disagree due to rounding.
+                for(const auto [offset,value]:
+                    {std::pair{std::int64_t{0},0.5},
+                     std::pair{std::int64_t{1},-0.125},
+                     std::pair{L,0.125}}) {
+                    const auto u=std::bit_cast<std::uint64_t>(value);
+                    bits[static_cast<std::size_t>(delay-offset)]=u;
+                    bits[static_cast<std::size_t>(delay+offset)]=u;
+                }
+                ++filteredCount;
+            } else {
+                ++identityCount;
+            }
+            std::vector<double> whole(static_cast<std::size_t>(total));
+            auto done=audio::internal::render_phase11_strict_scalar_reference(
+                source,std::span<double>{whole},0,L,M,bits);
+            QVERIFY2(done,done?"":done.error()->message().c_str());
+            if(fin==fout) {
+                for(std::size_t i=0;i<source.size();++i)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(whole[i]),
+                             std::bit_cast<std::uint64_t>(source[i]));
+            } else {
+                const auto D=static_cast<std::int64_t>((bits.size()-1)/2);
+                // Completely different j-ascending conceptual high-rate grid;
+                // separate from production polyphase n-ascending indexing.
+                for(std::int64_t m=0;m<total;++m) {
+                    const auto q=D+m*M;
+                    long double expected=0.0L;
+                    for(std::size_t j=0;j<bits.size();++j) {
+                        const auto high=q-static_cast<std::int64_t>(j);
+                        if(high%L!=0)continue; // inserted high-grid zero
+                        auto n=high/L;
+                        const auto period=2*static_cast<std::int64_t>(source.size());
+                        n%=period;
+                        if(n<0)n+=period;
+                        const auto sampleIndex=n<static_cast<std::int64_t>(source.size())
+                            ? n : period-1-n;
+                        expected+=static_cast<long double>(
+                            source[static_cast<std::size_t>(sampleIndex)])
+                            *static_cast<long double>(
+                                std::bit_cast<double>(bits[j]));
+                    }
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        whole[static_cast<std::size_t>(m)]),
+                        std::bit_cast<std::uint64_t>(static_cast<double>(expected)));
+                }
+            }
+            // Absolute output-phase partition invariance; no source reset or
+            // local reflection after splitting a candidate at any frame.
+            const auto split=total/2;
+            std::vector<double> partitioned(whole.size(),123.0);
+            auto first=audio::internal::render_phase11_strict_scalar_reference(
+                source,std::span<double>{partitioned}.first(
+                    static_cast<std::size_t>(split)),0,L,M,bits);
+            auto second=audio::internal::render_phase11_strict_scalar_reference(
+                source,std::span<double>{partitioned}.subspan(
+                    static_cast<std::size_t>(split)),split,L,M,bits);
+            QVERIFY(first);
+            QVERIFY(second);
+            for(std::size_t i=0;i<whole.size();++i)
+                QCOMPARE(std::bit_cast<std::uint64_t>(partitioned[i]),
+                         std::bit_cast<std::uint64_t>(whole[i]));
+            ++checked;
+        }
+    }
+    QCOMPARE(checked,std::size_t{36});
+    QCOMPARE(identityCount,std::size_t{6});
+    QCOMPARE(filteredCount,std::size_t{30});
+    // Fail closed on invalid geometry, unsupported crop and nonfinite PCM.
+    const std::array<double,2> badSource{
+        0.25,std::numeric_limits<double>::quiet_NaN()};
+    std::array<double,1> result{123.0};
+    QVERIFY(!audio::internal::render_phase11_strict_scalar_reference(
+        badSource,result,0,1,1,{}));
+    QCOMPARE(result[0],123.0);
+    QVERIFY(!audio::internal::render_phase11_strict_scalar_reference(
+        source,result,99,1,1,{}));
+    QVERIFY(!audio::internal::render_phase11_strict_scalar_reference(
+        source,result,0,0,1,{}));
+    QVERIFY(!audio::internal::render_phase11_strict_scalar_reference(
+        source,result,0,1,1,std::array<std::uint64_t,1>{0}));
+}
 
 
 void PlaybackSampleRateAdapterTest::finalMasterMonitoringCannotRetargetMasterRate()
