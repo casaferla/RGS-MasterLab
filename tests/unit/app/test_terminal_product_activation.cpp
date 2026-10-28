@@ -2538,6 +2538,15 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
              core::AudibleHandoffPhase::UNAVAILABLE);
     QVERIFY(!device->audibleRealization.realizationId);
     QVERIFY(monitorUi.can_prepare_offline()); // device-refused fallback only
+    // A non-QML caller cannot invoke the NO_SOURCE offline path without
+    // the same explicit authorization used by the real UI.
+    app::TerminalMonitorViewModel noOfflineAuthorizer{product,transport};
+    QVERIFY(noOfflineAuthorizer.can_prepare());
+    QVERIFY(!noOfflineAuthorizer.can_prepare_offline());
+    const auto renderCountBeforeUnauthorized=renderer.render_invocation_count();
+    QVERIFY(!noOfflineAuthorizer.requestMaster(192000));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QCOMPARE(renderer.render_invocation_count(),renderCountBeforeUnauthorized);
     QVERIFY(!product.request_private(*masterRate.value(),true));
     QVERIFY(monitorUi.can_prepare());
     QVERIFY(monitorUi.requestMaster(192000));

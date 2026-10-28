@@ -191,7 +191,12 @@ bool TerminalMonitorViewModel::requestMaster(int chosenRateHz)
     // The actual Windows SOURCE may have been accepted and rendered
     // offline while its INITIAL device prepare was rejected. Never fake
     // an audible activeTarget/RealizationId to unlock the private MASTER.
-    if(cleanEmpty && offlineMasterAuthorizer_) {
+    if(cleanEmpty) {
+        // UI offline fallback is an exceptional authorization path, not
+        // another way to bypass initial SOURCE/DEVICE selection. Even
+        // non-QML callers must present an explicit provenance authorizer.
+        if(!offlineMasterAuthorizer_)
+            return report(reject("MONITOR_OFFLINE_MASTER_AUTHORIZER_REQUIRED"));
         const auto authorized=offlineMasterAuthorizer_();
         if(!authorized)return report(authorized);
     }
