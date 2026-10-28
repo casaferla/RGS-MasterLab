@@ -788,6 +788,9 @@ Rectangle {
                             ? root.memoryAdvisor.recommendations[index] : null
                         readonly property bool chosen: root.masterRateState
                             && root.masterRateState.masterRateHz === modelData
+                        readonly property bool admissible: root.masterRateState
+                            && root.masterRateState.m17_candidate_rate_admissible(
+                                modelData)
                         Layout.fillWidth: true
                         Layout.preferredHeight: 27
                         radius: 3
@@ -858,18 +861,24 @@ Rectangle {
                             Text {
                                 id: rateMemoryText
                                 objectName: "m17RateMemory_" + rateRow.index
-                                property string interactionHint: rateRow.advice
-                                    ? rateRow.advice.details
+                                property string interactionHint: !rateRow.admissible
+                                    ? "Final SRC cannot currently prepare this SOURCE/MASTER pair. "
+                                        + (root.masterRateState
+                                            ? root.masterRateState.final_src_path_status(
+                                                rateRow.modelData) : "")
+                                    : rateRow.advice ? rateRow.advice.details
                                     : "No Windows memory observation is available for this rate."
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
-                                color: rateRow.advice && rateRow.advice.kind === "discouraged"
+                                color: !rateRow.admissible ? "#F0C87D"
+                                    : rateRow.advice && rateRow.advice.kind === "discouraged"
                                     ? "#EE9398"
                                     : rateRow.advice && rateRow.advice.kind === "caution"
                                       ? "#F0C87D" : "#B3CAD4"
-                                text: rateRow.advice
+                                text: !rateRow.admissible ? "Final SRC N/A"
+                                    : rateRow.advice
                                     ? (rateRow.advice.minimumLabel
                                         ? rateRow.advice.minimumLabel + " · " : "")
                                       + rateRow.advice.label : "Not assessed"
@@ -885,9 +894,7 @@ Rectangle {
                             }
                             Text {
                                 objectName: "m17RateTime_" + rateRow.index
-                                readonly property bool admissible: root.masterRateState
-                                    && root.masterRateState.m17_candidate_rate_admissible(
-                                        rateRow.modelData)
+                                readonly property bool admissible: rateRow.admissible
                                 readonly property bool matchingProfile: root.memoryAdvisor
                                     && root.memoryAdvisor.calibrationValid
                                     && root.terminalLimiterViewModel

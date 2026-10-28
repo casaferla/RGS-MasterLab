@@ -935,6 +935,11 @@ Window {
                 QStringLiteral("m17FinalSrcCandidateStatus"));
             QVERIFY(srcStatus);
             QVERIFY(selectedMasterRate.choose_master_rate(192000));
+            auto* unavailableMemory=find_child_by_name(host,
+                QStringLiteral("m17RateMemory_5"));
+            QVERIFY(unavailableMemory);
+            QTRY_VERIFY_WITH_TIMEOUT(unavailableMemory->property("text")
+                .toString().contains(QStringLiteral("Final SRC N/A")),2000);
             QTRY_VERIFY_WITH_TIMEOUT(summary->property("text").toString()
                 .contains(QStringLiteral("192 kHz")),2000);
             QTRY_VERIFY_WITH_TIMEOUT(srcStatus->property("text")
