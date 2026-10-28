@@ -54,6 +54,12 @@ jobs:
           RGSML_MPFR_FULL_SRC_SMOKE: "1"
         run: python tools/qualification/final_src/test_phase11_mpfr_ziv.py
 
+      # Sound interval coverage of continuous frequency BOXES (not mere FFT
+      # samples). This fast synthetic proof harness is NOT a 14-kernel
+      # continuum certificate, Q1-Q6 approval, or product SRC admission.
+      - name: Phase-11 Final SRC MPFR DTFT interval proof precursor (Linux)
+        run: python tools/qualification/final_src/test_mpfr_dtft_interval_preflight.py
+
       - name: Install system dependencies & Ninja
         run: |
           sudo apt-get update
