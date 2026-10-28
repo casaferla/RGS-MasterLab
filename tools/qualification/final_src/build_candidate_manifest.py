@@ -42,6 +42,7 @@ def assemble_candidate(
     generator: Callable[[int, int, int], tuple[bytes, int]] | None = None,
     max_precision: int = 1024,
     pairs: dict[tuple[int, int], tuple[int, int]] | None = None,
+    independent_screen: Callable[[bytes, int, int], dict] | None = None,
 ) -> dict:
     """Publish all requested candidate ratios as one atomic folder.
 
@@ -74,6 +75,15 @@ def assemble_candidate(
             digest = audit_rgsmsr1_structure(data, shape)
             if digest != sha256(data).hexdigest():
                 raise ContractError("candidate checksum mismatch")
+            if independent_screen is not None:
+                # Independent mpmath at 120/160 dps is a reproducibility
+                # SCREEN, not an interval proof or release checksum authority.
+                screen = independent_screen(data, fin, fout)
+                if not (screen.get("independent_precision_stable") is True
+                        and screen.get("candidate_bytes_match_both") is True
+                        and screen.get("release_qualified") is False):
+                    raise ContractError(
+                        "INDEPENDENT_NUMERICAL_SCREEN_FAILED: no candidate publication")
             name = f"RGSMSR1_L{L}_M{M}.bin"
             (temp / name).write_bytes(data)
             entries.append(dict(
@@ -81,6 +91,7 @@ def assemble_candidate(
                 bytes=len(data), candidate_sha256=digest,
                 precision_bits=first_bits, filename=name,
                 status="SAME_GENERATOR_DOUBLE_REPRODUCED_NOT_RELEASE_QUALIFIED",
+                independent_mpmath_screen_passed=(independent_screen is not None),
             ))
         complete = set(pairmap) == set(allowed)
         manifest = dict(
@@ -88,6 +99,7 @@ def assemble_candidate(
             status="CANDIDATE_NOT_RELEASE_QUALIFIED",
             complete_ratio_family=complete,
             independent_generator_verified=False,
+            independent_mpmath_screen_complete=(independent_screen is not None and complete),
             mpfr_dtft_oracle_passed=False,
             q1_q6_passed=False,
             product_admission_authorized=False,
@@ -108,13 +120,21 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True,
                         help="new empty candidate path; never a product asset directory")
     parser.add_argument("--max-precision", type=int, default=1024)
+    parser.add_argument("--screen-independent-mpmath", action="store_true",
+                        help="Require byte-identical independent 120/160-dps screen on ALL 14 real assets; still NOT release qualified")
     args = parser.parse_args()
-    manifest = assemble_candidate(args.out, max_precision=args.max_precision)
+    checker = None
+    if args.screen_independent_mpmath:
+        from independent_mpmath_crosscheck import compare_candidate
+        checker = compare_candidate
+    manifest = assemble_candidate(args.out, max_precision=args.max_precision,
+                                  independent_screen=checker)
     print(json.dumps({
         "status": manifest["status"],
         "ratios": manifest["observed_ratio_count"],
         "total_bytes": manifest["total_asset_bytes"],
         "independent_qualification": False,
+        "independent_mpmath_screen_complete": manifest["independent_mpmath_screen_complete"],
     }, sort_keys=True))
 
 
