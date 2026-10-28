@@ -104,14 +104,15 @@ bool TerminalMonitorViewModel::can_install() const noexcept
     if(status!=QStringLiteral("MASTER_READY_MONITOR_PENDING")
        &&status!=QStringLiteral("READY_TO_INSTALL"))return false;
     if(!session_->verified_master_rate_for_monitoring())return false;
-    // The existing Windows monitor transport contract installs only over
-    // the exact original MANUAL stopped at position zero, without Loop.
-    // Never enable the button prematurely over live/paused/looping PCM.
+    // A verified immutable M17 MASTER is independent of Play/Pause,
+    // source cue and Loop. Its DEVICE installation must still pass exact
+    // owner/rate/memory and mapped-transport gates inside the session.
     const auto source=transport_->playback_snapshot();
     if(!source)return false;
     return source.value()->state==core::PlaybackState::STOPPED
-        &&source.value()->position==core::FrameIndex{0}
-        &&!source.value()->loop;
+        ||source.value()->state==core::PlaybackState::PLAYING
+        ||source.value()->state==core::PlaybackState::PAUSED
+        ||source.value()->state==core::PlaybackState::NO_SOURCE;
 }
 bool TerminalMonitorViewModel::report(const core::Status& result)
 {

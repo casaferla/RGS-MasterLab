@@ -101,8 +101,11 @@ public:
         std::uint64_t reservedOtherPrepareBytes,
         const MonitoringPreallocationDecision& explicitDecision);
 
-    // PRIVATE ONLY: first handoff restricted to STOPPED, SOURCE cue zero,
-    // and no Loop Region. Genuine Play/Pause/Seek and LIVE are not wired.
+    // Private exact-owner handoff. The offline MASTER is unchanged;
+    // the DEVICE monitor receives mapped source cue/loop/play state only
+    // after an independently verified Windows PCM installation.
+    // Replacing a nonzero/playing/looped MANUAL requires the registered
+    // monitor control + exact display ports, otherwise fail closed.
     // Require an exact minted M17 MASTER + separately-owned DEVICE candidate.
     using MonitoringOwner=std::shared_ptr<const audio::MonitoringPcmCandidate>;
     using MonitoringInstall=std::function<core::Status(MonitoringOwner)>;

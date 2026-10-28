@@ -342,18 +342,54 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
     const bool offlineOrigin=predecessor.offlineNoSink
         &&predecessor.offlineNonAudibleSelection;
     const auto before=transport_->playback_snapshot();
-    if(!before||pending_->loop)
+    if(!before)return core::Status::failure(rejected(
+        "MONITOR_INSTALL_SOURCE_SNAPSHOT_UNAVAILABLE"));
+    // Map the current MANUAL transport into MASTER frames before replacing
+    // its DEVICE sink. Only the exact immutable, matched predecessor may
+    // be handed off; SOURCE loops are not DSP/render ownership changes.
+    const auto mapped=audio::MonitoringFrameMap::create(*candidate);
+    if(!mapped)return core::Status::failure(*mapped.error());
+    core::FrameIndex masterCue{0};
+    std::optional<core::FrameRange> masterLoop;
+    const auto state=before.value()->state;
+    const bool sourceClock=(state==core::PlaybackState::STOPPED
+        ||state==core::PlaybackState::PLAYING
+        ||state==core::PlaybackState::PAUSED);
+    if(sourceClock) {
+        if(before.value()->position.value()<0
+           ||before.value()->position.value()
+                >predecessor.manual->view().frame_count().value()
+           ||before.value()->loop!=predecessor.loop
+           ||!sourceLoop_||sourceLoop_()!=predecessor.loop)
+            return core::Status::failure(rejected(
+                "MONITOR_INSTALL_SOURCE_CUE_OR_LOOP_EPOCH_CHANGED"));
+        const auto hz=predecessor.manual->view().format().sample_rate();
+        const auto n=predecessor.manual->view().frame_count();
+        const auto cue=mapped.value()->source_to_master(
+            before.value()->position,hz,n);
+        if(!cue)return core::Status::failure(*cue.error());
+        masterCue=*cue.value();
+        if(predecessor.loop) {
+            auto region=mapped.value()->source_loop_to_master(
+                *predecessor.loop,hz,n);
+            if(!region)return core::Status::failure(*region.error());
+            masterLoop=*region.value();
+        }
+    }
+    const bool requiresTransport=(sourceClock
+        &&(state!=core::PlaybackState::STOPPED
+            ||masterCue!=core::FrameIndex{0}||masterLoop));
+    if(requiresTransport &&(!monitorControl_||!monitorDisplay_))
         return core::Status::failure(rejected(
-            "MONITOR_INSTALL_INVALID_SOURCE_LOOP_OR_ENDPOINT"));
+            "MONITOR_INSTALL_MAPPED_TRANSPORT_PORTS_REQUIRED"));
     const bool empty=before.value()->state==core::PlaybackState::NO_SOURCE
         &&before.value()->audibleRealization.phase
             ==core::AudibleHandoffPhase::UNAVAILABLE
         &&!before.value()->audibleRealization.realizationId
         &&before.value()->position==core::FrameIndex{0}
         &&!before.value()->duration &&!before.value()->loop;
-    const bool stopped=before.value()->state==core::PlaybackState::STOPPED
-        &&before.value()->position==core::FrameIndex{0}
-        &&!before.value()->loop
+    const bool stopped=sourceClock
+        &&before.value()->loop==predecessor.loop
         &&before.value()->audibleRealization.phase
             ==core::AudibleHandoffPhase::NEW
         &&before.value()->audibleRealization.realizationId
@@ -466,7 +502,8 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
         &&pending_->prepared==predecessor.prepared
         &&pending_->manualId==predecessor.manualId
         &&pending_->outputRate==predecessor.outputRate
-        &&!pending_->loop&&sourceLoop_&&!sourceLoop_()
+        &&pending_->loop==predecessor.loop
+        &&sourceLoop_&&sourceLoop_()==predecessor.loop
         &&(offlineOrigin
             ?(offlineProvenance_&&offlineProvenance_())
             :(selected_&&selected_()))
@@ -499,8 +536,51 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
         return core::Status::failure(rejected(
             "MONITOR_INSTALL_LOST_EXACT_STOPPED_OWNER"));
     }
+    // The Windows worker owns the new DEVICE PCM. Reapply the current
+    // SOURCE cue and loop via the separate exact-owner monitoring control
+    // seam; no second M17 job and no mutation of authoritative MASTER PCM.
+    auto seeded=core::Status::success();
+    if(requiresTransport) {
+        using Action=platform::windows::MonitoringTransportAction;
+        if(masterLoop)
+            seeded=monitorControl_(candidate,{
+                Action::SET_MASTER_LOOP,core::FrameIndex{0},masterLoop});
+        if(seeded &&masterCue!=core::FrameIndex{0})
+            seeded=monitorControl_(candidate,{
+                Action::SEEK_MASTER,masterCue,std::nullopt});
+        if(seeded &&state!=core::PlaybackState::STOPPED)
+            seeded=monitorControl_(candidate,{
+                Action::PLAY,core::FrameIndex{0},std::nullopt});
+        if(seeded &&state==core::PlaybackState::PAUSED)
+            seeded=monitorControl_(candidate,{
+                Action::PAUSE,core::FrameIndex{0},std::nullopt});
+        if(seeded) {
+            const auto display=monitorDisplay_(candidate);
+            if(!display ||display.value()->state!=state
+               ||display.value()->requested_master_loop!=masterLoop
+               ||display.value()->master_rate!=candidate->immutable_master_rate
+               ||display.value()->device_rate!=candidate->device_rate)
+                seeded=core::Status::failure(rejected(
+                    "MONITOR_INSTALL_MAPPED_TRANSPORT_POSTCHECK_FAILED"));
+        }
+    }
+    if(!seeded) {
+        // Preserve a positive exact-owner recovery ticket. An incomplete
+        // install must never be published as fully operational or clear an
+        // unrelated successor device. Return MANUAL remains explicitly
+        // available and independently validates current device ownership.
+        installedMonitor_=std::move(candidate);
+        status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
+        monitorTransitioning_=false;
+        emit changed();
+        return seeded;
+    }
     installedMonitor_=std::move(candidate);
-    status_=QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED");
+    status_=state==core::PlaybackState::PLAYING
+        ?QStringLiteral("MONITOR_PRIVATE_PLAYING")
+        :state==core::PlaybackState::PAUSED
+            ?QStringLiteral("MONITOR_PRIVATE_PAUSED")
+            :QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED");
     monitorTransitioning_=false;
     emit changed();
     return core::Status::success();
@@ -675,22 +755,42 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         // Verify selected SOURCE epoch BEFORE retiring the device. An
         // explicitly supplied callback will commit only the projected loop
         // after original MANUAL restoration, not during MONITOR playback.
-        if(predecessor.loop || (sourceLoop_&&sourceLoop_()))
+        if(!sourceLoop_||sourceLoop_()!=predecessor.loop)
             return core::Status::failure(rejected(
                 "MONITOR_RETURN_SOURCE_LOOP_CHANGED_DURING_MONITOR"));
         if(display.value()->requested_master_loop) {
-            if(!sourceLoopReconcile_||!sourceLoop_)
-                return core::Status::failure(rejected(
-                    "MONITOR_RETURN_EXPLICIT_SOURCE_LOOP_TRANSACTION_REQUIRED"));
             const auto map=audio::MonitoringFrameMap::create(*candidate);
             if(!map)return core::Status::failure(*map.error());
-            auto projected=map.value()->master_loop_to_source(
-                *display.value()->requested_master_loop,
-                predecessor.manual->view().format().sample_rate(),
-                predecessor.manual->view().frame_count());
-            if(!projected)
-                return core::Status::failure(*projected.error());
-            reconciledSourceLoop=*projected.value();
+            std::optional<core::FrameRange> inherited;
+            if(predecessor.loop) {
+                const auto original=map.value()->source_loop_to_master(
+                    *predecessor.loop,
+                    predecessor.manual->view().format().sample_rate(),
+                    predecessor.manual->view().frame_count());
+                if(!original)return core::Status::failure(*original.error());
+                inherited=*original.value();
+            }
+            // Inherited SOURCE loop must survive a no-change round trip
+            // bit-exactly, including when rational-rate ceil projection
+            // would otherwise shift its boundary by one frame.
+            if(display.value()->requested_master_loop!=inherited) {
+                // A changed loop while auditioning is audition-local when
+                // the MANUAL had a loop: return restores the exact original.
+                // On a MANUAL without a loop, the existing explicit SOURCE
+                // reconciliation transaction may adopt a new requested loop.
+                if(!predecessor.loop) {
+                    if(!sourceLoopReconcile_)
+                        return core::Status::failure(rejected(
+                            "MONITOR_RETURN_EXPLICIT_SOURCE_LOOP_TRANSACTION_REQUIRED"));
+                    const auto projected=map.value()->master_loop_to_source(
+                        *display.value()->requested_master_loop,
+                        predecessor.manual->view().format().sample_rate(),
+                        predecessor.manual->view().frame_count());
+                    if(!projected)
+                        return core::Status::failure(*projected.error());
+                    reconciledSourceLoop=*projected.value();
+                }
+            }
         }
         const auto masterHz=display.value()->master_rate.value();
         const auto sourceHz=predecessor.manual->view().format()
@@ -812,7 +912,8 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
                !=std::optional{predecessor.manualId}
            ||resumed.value()->duration
                !=std::optional{predecessor.manual->view().frame_count()}
-           ||resumed.value()->loop!=reconciledSourceLoop) {
+           ||resumed.value()->loop!=(reconciledSourceLoop
+                ?reconciledSourceLoop:predecessor.loop)) {
             // Do not announce restored playback and do not clear a
             // successor. Retire only the exact MANUAL owner if still there.
             if(resumed

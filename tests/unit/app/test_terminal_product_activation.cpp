@@ -1482,11 +1482,9 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QSignalSpy installEligibility{&monitorUi,&app::TerminalMonitorViewModel::changed};
     QVERIFY(installEligibility.isValid());
     transport.playOrResume();
-    QVERIFY(!monitorUi.can_install()); // PLAYING must not offer replace.
-    QVERIFY(installEligibility.count()>0); // QML receives the transition.
+    QVERIFY(monitorUi.can_install()); // PLAYING is a valid mapped handoff.
     transport.stop();
     QVERIFY(monitorUi.can_install());
-    QVERIFY(installEligibility.count()>1);
     const auto reusedNormal=product.materialize_private_final_master_monitoring(
         [&](audio::AudioBufferView master)
             ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
@@ -1605,7 +1603,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QVERIFY(product.verified_master_rate_for_monitoring());
-    QVERIFY(!monitorUi.can_install()); // Handoff, not Prepare, is restricted.
+    QVERIFY(monitorUi.can_install()); // PLAY/Loop are not Prepare barriers.
     QVERIFY(product.cancel());
     transport.stop();
     selectedSourceLoop.reset();
