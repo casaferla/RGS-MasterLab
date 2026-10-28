@@ -1,3 +1,10 @@
+## CHAT 55 — Phase11 strict-scalar polyphase reference, staging-only (2026-10-28)
+
+- Introduced `tools/qualification/final_src/strict_scalar_polyphase_reference.py` as **offline-only** n-ascending binary64 reference for the exact frozen `q=D+m*M`, Euclidean signed `nLo/nHi`, `j=q-nL`, endpoint-duplicated even reflection and absolute source/output crop. Each Python multiply and add is a distinct binary64 operation, with no FMA. Identity uses direct original sample bits including signed zero and subnormals.
+- `test_strict_scalar_polyphase_reference.py` compares the float n-ascending result with independent `Fraction` exact conceptual j-ascending zero-stuffed oracle, under a standard bounded sum-of-products rounding diagnostic for short finite synthetic tracks; verifies 48→96, 96→48, 44.1→48, absolute crop/whole equality, one-frame reflection, nonfinite rejection and bit-transparent identity.
+- Linux/Windows Focused CI reuse the already-existing Phase11 zero-stuffed-oracle steps and add this small independent regression; no new CI workflow. These are **synthetic Q0 candidate references**, not a C++ product implementation, MPFR full convolution oracle, locked real all-14 binary asset manifest, continuous DTFT response proof, Q1–Q6 qualification or product SRC admission.
+- While [CI #885](https://github.com/casaferla/RGS-MasterLab/actions/runs/40768552809) checks previous PR SHA `8f93e0e8db626a809713fdfac68f9db38db0447e`, these new changes are staging-only and untested by that run. Subsequent candidate requires its own Windows/Linux CI after #885 terminal green and one verified CAS.
+
 ## CHAT 55 — next exact-dyadic 14-asset optional regression lot (STAGING ONLY) · 2026-10-28
 
 - `exact_dyadic_zero_stuff_oracle.py` now iterates only prototype positions where the *conceptual zero-stuffed source grid* is nonzero: `j = (q mod L) + kL`, in increasing `j` order. This does not call/imitate product n-ascending binary64 summation; arithmetic remains exact `Fraction`. Added three-ratio literal all-tap comparison incl. endpoint reflection and crop.
