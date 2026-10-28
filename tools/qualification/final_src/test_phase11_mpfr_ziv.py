@@ -87,9 +87,17 @@ class MPFRZivBoundaryTests(unittest.TestCase):
         ratio = Ratio.make(48000, 96000)
         shape = kernel_shape(ratio)
         data, bits = generate(48000, 96000, max_precision=1024)
+        second, second_bits = generate(48000, 96000, max_precision=1024)
         self.assertIn(bits, (256, 512, 1024))
+        self.assertEqual(bits, second_bits)
+        self.assertEqual(data, second, "repeat offline RGSMSR1 generation must be bit-identical")
         self.assertEqual(len(data), shape.frozen_bytes)
         self.assertEqual(len(audit_rgsmsr1_structure(data, shape)), 64)
+        # Analytic sinc zeros must survive the WHOLE normalization and
+        # RGSMSR1 serialization as exact +0.0 binary64 coefficients.
+        for offset in (-500, -100, 100, 500):
+            at = 52 + 8 * (shape.D + offset)
+            self.assertEqual(data[at:at + 8], struct.pack("<d", 0.0))
 
 
 if __name__ == "__main__":
