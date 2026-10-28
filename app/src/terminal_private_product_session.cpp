@@ -434,8 +434,13 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
             if(state==core::PlaybackState::PAUSED)transport_->pause();
         }
         const auto finalSnapshot=transport_->playback_snapshot();
+        // PLAYING may have legitimately advanced after the exact-cue
+        // stopped restore and Play command. PAUSED/STOPPED must stay at
+        // the exact pre-install cue; the same return-MANUAL contract does
+        // not demand a frozen PLAYING sample clock after resumption.
         if(!finalSnapshot||finalSnapshot.value()->state!=state
-           ||finalSnapshot.value()->position!=before.value()->position
+           ||(state!=core::PlaybackState::PLAYING
+               &&finalSnapshot.value()->position!=before.value()->position)
            ||finalSnapshot.value()->loop!=predecessor.loop
            ||finalSnapshot.value()->audibleRealization.phase
                !=core::AudibleHandoffPhase::NEW
