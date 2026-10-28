@@ -43,6 +43,38 @@ class ExactDyadicSupplementalTests(unittest.TestCase):
                          (Fraction(1), Fraction(3)))
         assert_exact_crop_invariance((1., 2., 3.), ratio, kernel, (1, 3))
 
+    def test_fast_zero_grid_skip_matches_literal_all_taps_and_reflection(self):
+        # The optimization must remain an independent conceptual j-ascending
+        # high-rate reference, not a second polyphase/n-ascending DSP path.
+        from phase11_math_preflight import even_reflect
+        for fin, fout in ((48000, 96000), (96000, 48000), (44100, 48000)):
+            with self.subTest(fin=fin, fout=fout):
+                ratio = Ratio.make(fin, fout)
+                shape = kernel_shape(ratio)
+                taps = bytearray(8 * shape.N)
+                for offset, value in ((-ratio.L, 0.125), (-1, -0.25),
+                                      (0, 0.5), (1, -0.25),
+                                      (ratio.L, 0.125)):
+                    struct.pack_into("<d", taps, 8 * (shape.D + offset), value)
+                data = HEADER.pack(MAGIC, 1, 1, shape.L, shape.M, shape.T,
+                                   0, shape.N, shape.N, 8 * shape.N) + taps
+                _, kernel = read_locked_kernel(data, ratio,
+                                               hashlib.sha256(data).hexdigest())
+                source = (0.25, -0.5, 0.75, 1.0)
+                actual = zero_stuffed_crop(source, ratio, kernel)
+                reference = []
+                exact_source = tuple(Fraction.from_float(v) for v in source)
+                for m in range(len(actual)):
+                    q = shape.D + m * ratio.M
+                    expected = Fraction(0)
+                    for j, coeff in enumerate(kernel):
+                        if (q - j) % ratio.L == 0:
+                            index = even_reflect((q - j) // ratio.L, len(source))
+                            expected += exact_source[index] * coeff
+                    reference.append(expected)
+                self.assertEqual(actual, tuple(reference))
+                assert_exact_crop_invariance(source, ratio, kernel, (1, 3))
+
     def test_wrong_checksum_and_invented_certification_are_refused(self):
         ratio = Ratio.make(48000, 96000)
         data, digest = structural_delta_fixture(ratio, 2.0)
