@@ -895,6 +895,8 @@ Window {
         if (fit.index==6) {
             // Only M17 edits Project MASTER rate. Master Audition must
             // reflect it as read-only text, never a competing ComboBox.
+            QVERIFY(!find_child_by_name(host,
+                QStringLiteral("monitorMasterRateSelector")));
             auto* monitorRate=find_child_by_name(host,
                 QStringLiteral("monitorMasterRateSummary"));
             QVERIFY(monitorRate);
