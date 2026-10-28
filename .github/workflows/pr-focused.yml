@@ -24,6 +24,11 @@ jobs:
         with:
           python-version: '3.x'
 
+      # Phase-11 exact Q0 mathematics; does not assert MPFR assets, Q1-Q6
+      # spectral qualification or release readiness. No Qt/MPFR required.
+      - name: Phase-11 Final SRC exact Q0 preflight (Linux)
+        run: python tools/qualification/final_src/test_phase11_math_preflight.py
+
       - name: Install system dependencies & Ninja
         run: |
           sudo apt-get update
@@ -254,6 +259,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+
+      # Same integer/rational evidence independently executed on Windows.
+      - name: Phase-11 Final SRC exact Q0 preflight (Windows)
+        run: python tools/qualification/final_src/test_phase11_math_preflight.py
 
       - name: Install sccache
         uses: mozilla-actions/sccache-action@v0.0.11
