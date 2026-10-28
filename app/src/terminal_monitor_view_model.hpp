@@ -17,6 +17,7 @@ class TerminalMonitorViewModel final : public QObject {
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
     Q_PROPERTY(bool monitorExclusive READ monitor_exclusive NOTIFY changed)
     Q_PROPERTY(bool monitorInstalled READ monitor_installed NOTIFY changed)
+    Q_PROPERTY(bool monitorControllable READ monitor_controllable NOTIFY changed)
     Q_PROPERTY(bool canPrepare READ can_prepare NOTIFY changed)
     Q_PROPERTY(bool canDismiss READ can_dismiss NOTIFY changed)
     Q_PROPERTY(bool canInstall READ can_install NOTIFY changed)
@@ -44,6 +45,7 @@ public:
     }
     [[nodiscard]] bool monitor_exclusive() const noexcept;
     [[nodiscard]] bool monitor_installed() const noexcept;
+    [[nodiscard]] bool monitor_controllable() const noexcept;
     [[nodiscard]] bool can_prepare() const noexcept;
     [[nodiscard]] bool can_dismiss() const noexcept;
     [[nodiscard]] bool can_install() const noexcept;

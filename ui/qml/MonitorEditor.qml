@@ -16,6 +16,8 @@ Item {
     readonly property color fg: "#D5E2EC"
     readonly property color secondary: "#98AFC0"
     readonly property bool active: !!monitorViewModel && monitorViewModel.monitorInstalled
+    readonly property bool controlsAvailable: !!monitorViewModel
+        && monitorViewModel.monitorControllable
     readonly property bool ready: !!monitorViewModel && monitorViewModel.canInstall
     implicitWidth: 610
     implicitHeight: 460
@@ -317,19 +319,19 @@ Item {
                         StudioButton {
                             objectName: "monitorPlay"
                             text: "Play"
-                            enabled: root.active
+                            enabled: root.controlsAvailable
                             onClicked: root.monitorViewModel.play()
                         }
                         StudioButton {
                             objectName: "monitorPause"
                             text: "Pause"
-                            enabled: root.active
+                            enabled: root.controlsAvailable
                             onClicked: root.monitorViewModel.pause()
                         }
                         StudioButton {
                             objectName: "monitorStop"
                             text: "Stop"
-                            enabled: root.active
+                            enabled: root.controlsAvailable
                             onClicked: root.monitorViewModel.stop()
                         }
                         Item { Layout.fillWidth: true }
@@ -385,7 +387,7 @@ Item {
                 StudioButton {
                     objectName: "monitorSeekCommit"
                     text: "Seek"
-                    enabled: root.active
+                    enabled: root.controlsAvailable
                     onClicked: {
                         const n=Number(seekFrame.text)
                         if(Number.isSafeInteger(n) && n>=0)root.monitorViewModel.seekMaster(n)
@@ -416,7 +418,7 @@ Item {
                 StudioButton {
                     objectName: "monitorSetLoop"
                     text: "Loop"
-                    enabled: root.active
+                    enabled: root.controlsAvailable
                     onClicked: {
                         const a=Number(loopStart.text), b=Number(loopEnd.text)
                         if(Number.isSafeInteger(a)&&Number.isSafeInteger(b)&&a>=0&&b>a)
@@ -426,7 +428,7 @@ Item {
                 StudioButton {
                     objectName: "monitorClearLoop"
                     text: "No loop"
-                    enabled: root.active
+                    enabled: root.controlsAvailable
                     onClicked: root.monitorViewModel.setMasterLoop(0,0,false)
                 }
             }

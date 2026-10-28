@@ -1729,6 +1729,14 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(product.status(),
         QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"));
     QCOMPARE(monitorSinkOwner,*loopMonitor.value());
+    QVERIFY(monitorUi.monitor_installed()); // Return remains available.
+    QVERIFY(!monitorUi.monitor_controllable()); // No partial-sink controls.
+    QVERIFY(!monitorUi.play());
+    QVERIFY(!monitorUi.seekMaster(250));
+    QVERIFY(!monitorUi.setMasterLoop(200,800,true));
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->position,core::FrameIndex{0});
+    QCOMPARE(monitorSinkOwner,*loopMonitor.value());
     QVERIFY(monitorUi.returnManual());
     QVERIFY(!monitorSinkOwner);
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
@@ -1736,6 +1744,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->loop,selectedSourceLoop);
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QVERIFY(!monitorUi.monitor_controllable());
     QCOMPARE(candidates.staged(),loopStage);
     QCOMPARE(renderer.render_invocation_count(),originalRenderCount);
     QVERIFY(product.cancel());

@@ -672,6 +672,14 @@ core::Status TerminalPrivateProductSession::control_private_monitor(
     if(monitorTransitioning_||!installedMonitor_||!monitorControl_)
         return core::Status::failure(rejected(
             "MONITOR_CONTROL_PRIVATE_OWNER_REQUIRED"));
+    // A failed installation may leave an exact-owner recovery ticket but
+    // NOT a complete DEVICE transport. Only conditional Return/retirement
+    // may operate here; never expose a partial monitor for PLAY/SEEK/LOOP.
+    if(status_!=QStringLiteral("MONITOR_PRIVATE_PLAYING")
+       &&status_!=QStringLiteral("MONITOR_PRIVATE_PAUSED")
+       &&status_!=QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"))
+        return core::Status::failure(rejected(
+            "MONITOR_CONTROL_REQUIRES_COMMITTED_DEVICE_TRANSPORT"));
     const auto owner=installedMonitor_;
     const auto before=private_monitor_master_snapshot();
     if(!before)return core::Status::failure(*before.error());

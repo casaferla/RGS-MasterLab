@@ -34,7 +34,7 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
         });
     connect(session_,&TerminalPrivateProductSession::changed,this,[this] {
         lastCanInstall_=can_install();
-        if(monitor_installed()) {
+        if(monitor_controllable()) {
             if(!observationTimer_.isActive())observationTimer_.start();
         } else {
             observationTimer_.stop();
@@ -83,6 +83,16 @@ bool TerminalMonitorViewModel::monitor_exclusive() const noexcept
 bool TerminalMonitorViewModel::monitor_installed() const noexcept
 {
     return session_->status().startsWith(QStringLiteral("MONITOR_PRIVATE_"));
+}
+bool TerminalMonitorViewModel::monitor_controllable() const noexcept
+{
+    // Recovery is an installed exact-owner ticket, not operational audio.
+    // Keep Return enabled but do not offer user transport on incomplete
+    // SOURCE->MASTER->DEVICE command seeding.
+    const auto current=session_->status();
+    return current==QStringLiteral("MONITOR_PRIVATE_PLAYING")
+        ||current==QStringLiteral("MONITOR_PRIVATE_PAUSED")
+        ||current==QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED");
 }
 bool TerminalMonitorViewModel::can_prepare() const noexcept
 {
