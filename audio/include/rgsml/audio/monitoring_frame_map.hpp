@@ -104,6 +104,64 @@ public:
         return core::FrameRange::create(*first.value(),*last.value());
     }
 
+    // Pending PRODUCT monitor handoff: exact SOURCE cue/Loop Region can
+    // be mapped to this immutable MASTER and ultimately to DEVICE without
+    // requiring the user to stop playback. Pure and non-mutating: no sink
+    // handoff or realtime sample/clock claim takes place here.
+    [[nodiscard]] core::Result<core::FrameIndex> source_to_master(
+        core::FrameIndex sourceFrame,core::SampleRate sourceRate,
+        core::FrameCount sourceFrames) const
+    {
+        if(sourceRate.value()<=0||sourceFrames.value()<=0
+           ||sourceFrame.value()<0||sourceFrame.value()>sourceFrames.value())
+            return invalid<core::FrameIndex>(
+                "MONITOR_FRAME_MAP_INVALID_SOURCE_CURSOR");
+        const auto expected=ceil_ratio(masterFrames_.value(),
+            masterRate_.value(),sourceRate.value());
+        if(!expected)return core::Result<core::FrameIndex>::failure(
+            *expected.error());
+        const auto projected=*expected.value();
+        const auto actual=sourceFrames.value();
+        if((projected<actual && actual-projected>1)
+           ||(projected>actual && projected-actual>1))
+            return invalid<core::FrameIndex>(
+                "MONITOR_FRAME_MAP_SOURCE_DURATION_MISMATCH");
+        if(sourceFrame==core::FrameIndex{actual})
+            return core::Result<core::FrameIndex>::success(
+                core::FrameIndex{masterFrames_.value()});
+        const auto mapped=ceil_ratio(sourceFrame.value(),
+            sourceRate.value(),masterRate_.value());
+        if(!mapped)return core::Result<core::FrameIndex>::failure(
+            *mapped.error());
+        if(*mapped.value()>masterFrames_.value())
+            return invalid<core::FrameIndex>(
+                "MONITOR_FRAME_MAP_SOURCE_CURSOR_OUTSIDE_MASTER");
+        return core::Result<core::FrameIndex>::success(
+            core::FrameIndex{*mapped.value()});
+    }
+
+    [[nodiscard]] core::Result<core::FrameRange> source_loop_to_master(
+        core::FrameRange sourceRegion,core::SampleRate sourceRate,
+        core::FrameCount sourceFrames) const
+    {
+        if(sourceRegion.begin().value()<0
+           ||sourceRegion.end()>core::FrameIndex{sourceFrames.value()}
+           ||sourceRegion.begin()>=sourceRegion.end())
+            return invalid<core::FrameRange>(
+                "MONITOR_FRAME_MAP_INVALID_SOURCE_LOOP");
+        const auto begin=source_to_master(sourceRegion.begin(),
+            sourceRate,sourceFrames);
+        if(!begin)return core::Result<core::FrameRange>::failure(
+            *begin.error());
+        const auto end=source_to_master(sourceRegion.end(),
+            sourceRate,sourceFrames);
+        if(!end)return core::Result<core::FrameRange>::failure(*end.error());
+        if(*begin.value()>=*end.value())
+            return invalid<core::FrameRange>(
+                "MONITOR_FRAME_MAP_COLLAPSED_MASTER_LOOP");
+        return core::FrameRange::create(*begin.value(),*end.value());
+    }
+
     // Pure, conservative MASTER -> original SOURCE loop projection for
     // an eventual authoritative MONITOR-to-MANUAL handoff. This cannot
     // modify the SOURCE region or device: the caller must still reconcile

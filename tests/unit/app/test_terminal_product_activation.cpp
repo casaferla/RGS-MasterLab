@@ -2020,6 +2020,39 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(source441);
     QCOMPARE(source441.value()->begin().value(),std::int64_t{59});
     QCOMPARE(source441.value()->end().value(),std::int64_t{353});
+    // Inverse Source->Master/Device cue + Loop mapping for a future
+    // seamless playing/paused handoff; no new M17 render or PCM mutation.
+    const auto sourceCue=coordinateMap.value()->source_to_master(
+        core::FrameIndex{59},*source441Rate.value(),
+        *source441Frames.value());
+    QVERIFY(sourceCue);
+    QCOMPARE(sourceCue.value()->value(),std::int64_t{257});
+    const auto targetDevice=coordinateMap.value()->master_to_device(
+        *sourceCue.value());
+    QVERIFY(targetDevice);
+    QCOMPARE(targetDevice.value()->value(),std::int64_t{65});
+    const auto sourceLoop=core::FrameRange::create(
+        core::FrameIndex{59},core::FrameIndex{353});
+    QVERIFY(sourceLoop);
+    const auto mappedMaster=coordinateMap.value()->source_loop_to_master(
+        *sourceLoop.value(),*source441Rate.value(),
+        *source441Frames.value());
+    QVERIFY(mappedMaster);
+    QCOMPARE(mappedMaster.value()->begin().value(),std::int64_t{257});
+    QCOMPARE(mappedMaster.value()->end().value(),std::int64_t{1537});
+    const auto mappedDevice=coordinateMap.value()->master_loop_to_device(
+        *mappedMaster.value());
+    QVERIFY(mappedDevice);
+    QCOMPARE(mappedDevice.value()->begin().value(),std::int64_t{65});
+    QCOMPARE(mappedDevice.value()->end().value(),std::int64_t{385});
+    const auto sourceEnd=coordinateMap.value()->source_to_master(
+        core::FrameIndex{441},*source441Rate.value(),
+        *source441Frames.value());
+    QVERIFY(sourceEnd);
+    QCOMPARE(sourceEnd.value()->value(),std::int64_t{1920});
+    QVERIFY(!coordinateMap.value()->source_to_master(
+        core::FrameIndex{442},*source441Rate.value(),
+        *source441Frames.value()));
     auto oneMasterFrame=core::FrameRange::create(
         core::FrameIndex{1},core::FrameIndex{2});
     QVERIFY(oneMasterFrame);
