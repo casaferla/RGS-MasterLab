@@ -1678,7 +1678,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(product.install_private_monitor_stopped(*loopMonitor.value()));
     QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PLAYING"));
     QCOMPARE(device->position,core::FrameIndex{125});
-    QCOMPARE(requestedMasterLoop,*sourceRegion.value());
+    QCOMPARE(requestedMasterLoop,std::optional{*sourceRegion.value()});
     const auto expectedDeviceLoop=core::FrameRange::create(
         core::FrameIndex{30},core::FrameIndex{300});
     QVERIFY(expectedDeviceLoop);
