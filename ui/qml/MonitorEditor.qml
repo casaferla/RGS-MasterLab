@@ -104,41 +104,40 @@ Item {
                                 font.pixelSize: 10
                             }
                             Item { Layout.fillWidth: true }
-                            ComboBox {
-                                id: masterRate
-                                objectName: "monitorMasterRateSelector"
-                                model: ["44100", "48000", "88200", "96000", "176400", "192000"]
-                                readonly property var supportedRates: [44100,48000,88200,96000,176400,192000]
-                                currentIndex: root.masterRateState
-                                    ? supportedRates.indexOf(root.masterRateState.masterRateHz) : -1
-                                Layout.preferredWidth: 108
-                                enabled: !!root.monitorViewModel
-                                    && root.monitorViewModel.canPrepare
-                                    && !!root.masterRateState
+                            // Read-only projection: Project/Render is the ONE
+                            // MASTER rate authority, edited from M17 Rate/Time.
+                            // A second combo here looks like a second Prepare.
+                            Text {
+                                objectName: "monitorMasterRateSummary"
+                                Layout.preferredWidth: 148
+                                horizontalAlignment: Text.AlignRight
+                                color: root.fg
+                                font.family: "Segoe UI"
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                text: root.masterRateState
                                     && root.masterRateState.hasSupportedMasterRate
-                                onActivated: function(index) {
-                                    if (root.masterRateState
-                                        && root.monitorViewModel
-                                        && root.monitorViewModel.canPrepare)
-                                        root.masterRateState.choose_master_rate(supportedRates[index])
-                                }
-                                Accessible.name: "Project MASTER rate, shared with M17"
+                                    ? root.masterRateState.masterRateHz
+                                      + " Hz · Project" : "RATE UNAVAILABLE"
+                                Accessible.name: "Read-only project master rate from M17"
                             }
-                            Text { text: "Hz"; color: root.secondary; font.pixelSize: 10 }
                         }
+                        // An audible MANUAL uses ONLY the single M17 Prepare.
+                        // Keep the exceptional no-DEVICE pathway available
+                        // when initial SOURCE/DEVICE format was refused:
+                        // this renders an offline master without inventing a
+                        // playable MANUAL RealizationId.
                         StudioButton {
                             objectName: "monitorPrepareMaster"
-                            text: "Prepare MASTER"
+                            text: "Prepare offline · No device"
+                            visible: !!root.monitorViewModel
+                                && root.monitorViewModel.canPrepareOffline
                             Layout.fillWidth: true
                             accentColor: root.slate
-                            enabled: !!root.monitorViewModel
-                                && root.monitorViewModel.canPrepare
+                            enabled: visible
                                 && !!root.masterRateState
                                 && root.masterRateState.hasSupportedMasterRate
                             onClicked: {
-                                // Always submit the authoritative Project rate;
-                                // never use a stale local combo text or a
-                                // default 48-kHz placeholder for the DAC.
                                 if (root.monitorViewModel
                                     && root.masterRateState
                                     && root.masterRateState.hasSupportedMasterRate
@@ -146,7 +145,24 @@ Item {
                                         root.masterRateState.masterRateHz))
                                     limitedConsent.checked = false
                             }
-                            Accessible.name: "Prepare verified full master offline"
+                            Accessible.name: "Exceptional offline MASTER when no manual device is available"
+                        }
+                        Text {
+                            objectName: "monitorSinglePrepareGuidance"
+                            visible: !root.monitorViewModel
+                                || !root.monitorViewModel.canPrepareOffline
+                            Layout.fillWidth: true
+                            font.family: "Segoe UI"
+                            font.pixelSize: 10
+                            color: root.secondary
+                            elide: Text.ElideRight
+                            text: root.monitorViewModel
+                                && root.monitorViewModel.monitorInstalled
+                                ? "Shared MASTER retained · Return to MANUAL"
+                                : root.ready
+                                    ? "M17 MASTER verified · no second Prepare"
+                                    : "Use Prepare in M17 · then Start Device Audition"
+                            Accessible.name: text
                         }
                         Text {
                             Layout.fillWidth: true

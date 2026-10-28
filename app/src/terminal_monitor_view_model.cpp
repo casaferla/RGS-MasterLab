@@ -98,6 +98,22 @@ bool TerminalMonitorViewModel::can_prepare() const noexcept
 {
     return session_->status()==QStringLiteral("IDLE") && !monitor_exclusive();
 }
+bool TerminalMonitorViewModel::can_prepare_offline() const noexcept
+{
+    if(!can_prepare()||!offlineMasterAuthorizer_)return false;
+    const auto source=transport_->playback_snapshot();
+    if(!source)return false;
+    // Do not create a second Prepare on normal MANUAL playback. The
+    // exceptional source-verified but DEVICE-refused path has NO audible
+    // MANUAL sink; the explicit authorizer still checks the SOURCE epoch
+    // when the operator actually requests an offline fallback.
+    return source.value()->state==core::PlaybackState::NO_SOURCE
+        &&source.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!source.value()->audibleRealization.realizationId
+        &&source.value()->position==core::FrameIndex{0}
+        &&!source.value()->duration &&!source.value()->loop;
+}
 bool TerminalMonitorViewModel::can_dismiss() const noexcept
 {
     // ERROR or STALE can outlive the private render ticket; the operator

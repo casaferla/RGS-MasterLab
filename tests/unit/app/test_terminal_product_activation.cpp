@@ -1464,7 +1464,11 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 &&selector.active_target()==app::AuditionTarget::PROCESSED;
         }};
     app::TerminalMonitorViewModel monitorUi{product,transport};
+    monitorUi.set_offline_master_authorizer([]{
+        return core::Status::success();
+    });
     QVERIFY(monitorUi.can_prepare());
+    QVERIFY(!monitorUi.can_prepare_offline()); // normal MANUAL uses M17
     QVERIFY(!monitorUi.can_dismiss());
     // A real normal M17 READY candidate at the selected MASTER clock
     // must already be consumable by Master Audition without invoking a
@@ -2533,6 +2537,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->audibleRealization.phase,
              core::AudibleHandoffPhase::UNAVAILABLE);
     QVERIFY(!device->audibleRealization.realizationId);
+    QVERIFY(monitorUi.can_prepare_offline()); // device-refused fallback only
     QVERIFY(!product.request_private(*masterRate.value(),true));
     QVERIFY(monitorUi.can_prepare());
     QVERIFY(monitorUi.requestMaster(192000));

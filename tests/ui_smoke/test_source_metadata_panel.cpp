@@ -893,20 +893,26 @@ Window {
             QVERIFY(QMetaObject::invokeMethod(popup,"close"));
         }
         if (fit.index==6) {
-            // The Master Audition selector is a VIEW of the very same
-            // Project MASTER rate chosen in M17's Rate & Time popup.
-            // A standalone default 48-kHz combo is not allowed.
+            // Only M17 edits Project MASTER rate. Master Audition must
+            // reflect it as read-only text, never a competing ComboBox.
             auto* monitorRate=find_child_by_name(host,
-                QStringLiteral("monitorMasterRateSelector"));
+                QStringLiteral("monitorMasterRateSummary"));
             QVERIFY(monitorRate);
-            QTRY_COMPARE_WITH_TIMEOUT(
-                monitorRate->property("currentIndex").toInt(),5,2000);
+            auto* offlineButton=find_child_by_name(host,
+                QStringLiteral("monitorPrepareMaster"));
+            auto* guidance=find_child_by_name(host,
+                QStringLiteral("monitorSinglePrepareGuidance"));
+            QVERIFY(offlineButton&&guidance);
+            QVERIFY(!offlineButton->isVisible()); // null monitor: no fallback
+            QVERIFY(guidance->isVisible());
+            QTRY_VERIFY_WITH_TIMEOUT(monitorRate->property("text")
+                .toString().contains(QStringLiteral("192000 Hz")),2000);
             QVERIFY(selectedMasterRate.choose_master_rate(44100));
-            QTRY_COMPARE_WITH_TIMEOUT(
-                monitorRate->property("currentIndex").toInt(),0,2000);
+            QTRY_VERIFY_WITH_TIMEOUT(monitorRate->property("text")
+                .toString().contains(QStringLiteral("44100 Hz")),2000);
             QVERIFY(selectedMasterRate.choose_master_rate(192000));
-            QTRY_COMPARE_WITH_TIMEOUT(
-                monitorRate->property("currentIndex").toInt(),5,2000);
+            QTRY_VERIFY_WITH_TIMEOUT(monitorRate->property("text")
+                .toString().contains(QStringLiteral("192000 Hz")),2000);
         }
         if (fit.index==5) {
             auto* ceiling=qobject_cast<QQuickItem*>(find_child_by_name(
