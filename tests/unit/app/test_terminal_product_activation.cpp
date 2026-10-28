@@ -1580,6 +1580,32 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(monitorUi.cancel());
     QVERIFY(monitorUi.error_text().isEmpty());
     QVERIFY(!monitorUi.can_dismiss());
+    // OFFLINE Prepare never requires STOPPED or disabled SOURCE loop:
+    // a real 192-kHz checked MASTER may complete while MANUAL is playing
+    // inside an unchanged Loop Region. Only the unfinished handoff to a
+    // distinct DEVICE sink remains guarded by its own ownership contract.
+    const auto listeningLoop=core::FrameRange::create(
+        core::FrameIndex{120},core::FrameIndex{1300});
+    QVERIFY(listeningLoop);
+    selectedSourceLoop=*listeningLoop.value();
+    QVERIFY(transport.set_loop_source_range(selectedSourceLoop));
+    transport.playOrResume();
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    const auto preLoopPrepareCount=renderer.render_invocation_count();
+    QVERIFY(product.request_private(*masterRate.value(),true));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(renderer.render_invocation_count(),preLoopPrepareCount+1);
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QVERIFY(product.verified_master_rate_for_monitoring());
+    QVERIFY(!monitorUi.can_install()); // Handoff, not Prepare, is restricted.
+    QVERIFY(product.cancel());
+    transport.stop();
+    selectedSourceLoop.reset();
+    QVERIFY(transport.set_loop_source_range(std::nullopt));
+    QCOMPARE(device->state,core::PlaybackState::STOPPED);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
     std::size_t deviceProbes=0;
     product.set_preferred_output_rate_probe(
         [&deviceProbes,deviceRate](audio::ChannelLayout)
@@ -1593,7 +1619,11 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
     const auto wholeMasterRenderCalls=renderer.render_invocation_count();
-    QCOMPARE(wholeMasterRenderCalls,std::uint64_t{1});
+    // Two earlier explicit full-master jobs (normal READY + active Loop
+    // READY) were each counted; this distinct standalone request is third.
+    // The one-Prepare invariant is per unchanged owner/parameters/epoch,
+    // not a lifetime count across deliberately canceled preparations.
+    QCOMPARE(wholeMasterRenderCalls,preLoopPrepareCount+2);
     QVERIFY(monitorUi.can_dismiss());
     QVERIFY(product.monitoring_transaction_active());
     const auto owned=candidates.staged();
