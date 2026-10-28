@@ -65,6 +65,50 @@ class CandidateManifestLifecycle(unittest.TestCase):
             self.assertFalse(any(Path(d).iterdir()),
                              "no partial temp assets should remain after failure")
 
+    def test_all_ratio_independent_numeric_screen_is_optional_and_nonrelease(self):
+        sample = dict(list(canonical_pair_for_ratio().items())[:2])
+        observed = []
+
+        def independent_stub(data, fin, fout):
+            observed.append((fin, fout))
+            self.assertEqual(data, shape_only_fixture(fin, fout, 1024)[0])
+            return dict(independent_precision_stable=True,
+                        candidate_bytes_match_both=True,
+                        release_qualified=False)
+
+        with TemporaryDirectory() as d:
+            target = Path(d) / "screen"
+            manifest = assemble_candidate(
+                target, generator=shape_only_fixture, pairs=sample,
+                independent_screen=independent_stub)
+            self.assertEqual(len(observed), 2)
+            self.assertFalse(manifest["complete_ratio_family"])
+            self.assertFalse(manifest["independent_mpmath_screen_complete"])
+            self.assertFalse(manifest["independent_generator_verified"])
+            self.assertFalse(manifest["product_admission_authorized"])
+            self.assertTrue(all(row["independent_mpmath_screen_passed"]
+                                for row in manifest["assets"]))
+
+    def test_failed_second_independent_screen_aborts_atomic_candidate(self):
+        sample = dict(list(canonical_pair_for_ratio().items())[:2])
+        checks = 0
+
+        def independent_fails(data, fin, fout):
+            nonlocal checks
+            checks += 1
+            return dict(independent_precision_stable=True,
+                        candidate_bytes_match_both=(checks == 1),
+                        release_qualified=False)
+
+        with TemporaryDirectory() as d:
+            target = Path(d) / "refused"
+            with self.assertRaisesRegex(ContractError, "INDEPENDENT_NUMERICAL_SCREEN_FAILED"):
+                assemble_candidate(target, generator=shape_only_fixture, pairs=sample,
+                                   independent_screen=independent_fails)
+            self.assertEqual(checks, 2)
+            self.assertFalse(target.exists())
+            self.assertFalse(any(Path(d).iterdir()))
+
     def test_reject_noncanonical_pair_and_precision_before_output(self):
         with TemporaryDirectory() as d:
             target = Path(d) / "invalid"
