@@ -31,8 +31,10 @@ jobs:
 
       # Independent conceptual zero-stuffed exact-dyadic reference checks;
       # NOT the full MPFR spectral oracle or release qualification.
-      - name: Phase-11 Final SRC independent zero-stuffed oracle (Linux)
-        run: python tools/qualification/final_src/test_exact_dyadic_zero_stuff_oracle.py
+      - name: Phase-11 Final SRC exact dyadic + strict-scalar independent oracles (Linux)
+        run: |
+          python tools/qualification/final_src/test_exact_dyadic_zero_stuff_oracle.py
+          python tools/qualification/final_src/test_strict_scalar_polyphase_reference.py
 
       # Offline all-14 candidate-asset assembly is too expensive for every
       # Focused run; fast synthetic tests cover atomicity and fail-closed.
@@ -289,8 +291,10 @@ jobs:
 
       # Independent conceptual zero-stuffed exact-dyadic reference checks;
       # NOT the full MPFR spectral oracle or release qualification.
-      - name: Phase-11 Final SRC independent zero-stuffed oracle (Windows)
-        run: python tools/qualification/final_src/test_exact_dyadic_zero_stuff_oracle.py
+      - name: Phase-11 Final SRC exact dyadic + strict-scalar independent oracles (Windows)
+        run: |
+          python tools/qualification/final_src/test_exact_dyadic_zero_stuff_oracle.py
+          python tools/qualification/final_src/test_strict_scalar_polyphase_reference.py
 
       - name: Install sccache
         uses: mozilla-actions/sccache-action@v0.0.11
