@@ -45,6 +45,7 @@ def assemble_candidate(
     independent_screen: Callable[[bytes, int, int], dict] | None = None,
     dyadic_screen: Callable[[bytes, int, int], dict] | None = None,
     sampled_fft_screen: Callable[[bytes, int, int, str], dict] | None = None,
+    exact_anchor_screen: Callable[[bytes, int, int], dict] | None = None,
 ) -> dict:
     """Publish all requested candidate ratios as one atomic folder.
 
@@ -106,6 +107,18 @@ def assemble_candidate(
                             == "SAMPLED_FFT_ONLY_NOT_CERTIFIED_DTFT_OR_RELEASE"):
                     raise ContractError(
                         "SAMPLED_FFT_SCREEN_FAILED: no candidate publication")
+            anchor_evidence = None
+            if exact_anchor_screen is not None:
+                # Only H(0) and high-grid H(pi) are EXACT dyadic here;
+                # no full passband/stopband continuum can be certified.
+                anchor_evidence = exact_anchor_screen(data, fin, fout)
+                if not (anchor_evidence.get("dc_within_strong_rational_screen") is True
+                        and anchor_evidence.get(
+                            "high_grid_nyquist_within_strong_rational_screen") is True
+                        and anchor_evidence.get("full_frequency_band_proven") is False
+                        and anchor_evidence.get("release_qualified") is False):
+                    raise ContractError(
+                        "EXACT_TWO_POINT_SPECTRAL_SCREEN_FAILED: no candidate publication")
             name = f"RGSMSR1_L{L}_M{M}.bin"
             (temp / name).write_bytes(data)
             entries.append(dict(
@@ -116,6 +129,7 @@ def assemble_candidate(
                 independent_mpmath_screen_passed=(independent_screen is not None),
                 exact_dyadic_screen_passed=(dyadic_screen is not None),
                 sampled_fft_screen_passed=(sampled_fft_screen is not None),
+                exact_two_point_screen_passed=(exact_anchor_screen is not None),
                 sampled_fft_noncertifying_metrics=(
                     {key: fft_evidence[key] for key in (
                         "nfft", "frequency_step_hz",
@@ -133,6 +147,7 @@ def assemble_candidate(
             independent_mpmath_screen_complete=(independent_screen is not None and complete),
             exact_dyadic_screen_complete=(dyadic_screen is not None and complete),
             sampled_fft_screen_complete=(sampled_fft_screen is not None and complete),
+            exact_two_point_screen_complete=(exact_anchor_screen is not None and complete),
             mpfr_dtft_oracle_passed=False,
             q1_q6_passed=False,
             product_admission_authorized=False,
@@ -159,6 +174,8 @@ def main() -> None:
                         help="Real 14-asset exact dyadic finite-track/crop screen; NOT MPFR Q1 or release qualification")
     parser.add_argument("--screen-sampled-fft", action="store_true",
                         help="Reject candidates failing an optional sampled FFT passband/stopband screen for all 14 ratios; NOT certified MPFR DTFT")
+    parser.add_argument("--screen-exact-spectral-anchors", action="store_true",
+                        help="Exact rational H(0), H(pi) negative screen on 14 real assets; not continuous DTFT release proof")
     args = parser.parse_args()
     checker = None
     if args.screen_independent_mpmath:
@@ -172,10 +189,15 @@ def main() -> None:
     if args.screen_sampled_fft:
         from screen_candidate_spectral_response import screen_asset
         fft = screen_asset
+    anchor = None
+    if args.screen_exact_spectral_anchors:
+        from exact_dyadic_spectral_anchors import screen_exact_spectral_anchors
+        anchor = screen_exact_spectral_anchors
     manifest = assemble_candidate(args.out, max_precision=args.max_precision,
                                   independent_screen=checker,
                                   dyadic_screen=dyadic,
-                                  sampled_fft_screen=fft)
+                                  sampled_fft_screen=fft,
+                                  exact_anchor_screen=anchor)
     print(json.dumps({
         "status": manifest["status"],
         "ratios": manifest["observed_ratio_count"],
@@ -184,6 +206,7 @@ def main() -> None:
         "independent_mpmath_screen_complete": manifest["independent_mpmath_screen_complete"],
         "exact_dyadic_screen_complete": manifest["exact_dyadic_screen_complete"],
         "sampled_fft_screen_complete": manifest["sampled_fft_screen_complete"],
+        "exact_two_point_screen_complete": manifest["exact_two_point_screen_complete"],
     }, sort_keys=True))
 
 
