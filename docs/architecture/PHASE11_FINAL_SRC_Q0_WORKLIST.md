@@ -2,6 +2,12 @@
 
 Sampled FFT screen: `tools/qualification/final_src/screen_candidate_spectral_response.py` accepts exact candidate-manifest SHA-256 and checks 0.001 dB passband and 140 dB stopband on a sampled FFT grid. This is NOT the independent certified MPFR/DTFT response oracle and cannot authorize release.
 
+## Next staging — independent high-precision coefficient comparison (UNQUALIFIED)
+
+- `tools/qualification/final_src/independent_mpmath_crosscheck.py` independently rebuilds frozen Kaiser/I0/sinc coefficients with mpmath at 120 and 160 decimal digits. The sample 48→96-kHz candidate is compared with both computed byte streams; any mismatch fails instead of publishing a checksum. Algebraic sinc zeros are exact. This is a separate numerical algorithm from the MPFR interval engine, but the two mpmath precisions are **not** rounding-cell interval proofs.
+- Extended Linux Focused canary adds the mpmath comparison on the already-generated genuine 1,025-tap MPFR asset. Only offline Python tests consume pinned mpmath; no Windows build or product DSP dependency is added.
+- Status: **staging-only, not green at the preceding PR SHA** until its own Focused CI. No all-14 MPFR asset proof, no MPFR DTFT continuum oracle, no production manifest/release admission, no physical Windows Gate M/L.
+
 ## Subsequent staging — atomic 14-asset MPFR candidate assembly (NOT YET FOCUSED-QUALIFIED)
 
 - `tools/qualification/final_src/build_candidate_manifest.py` enumerates the 14 canonical reduced ratios from the frozen 6x6 matrix, reuses reduced-ratio kernels and invokes the offline MPFR/Ziv generator twice for each ratio. It verifies full RGSMSR1 structure, exact same-implementation binary bytes and SHA-256, then atomically publishes one **CANDIDATE_NOT_RELEASE_QUALIFIED** folder. No partial asset files are published after any failed proof/byte mismatch, and pre-existing destinations are never intentionally overwritten.
