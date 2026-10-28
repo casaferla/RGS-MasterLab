@@ -230,6 +230,25 @@ def i0_interval(x: Interval) -> Interval:
     raise ProofUnresolved("I0 proof did not reach frozen termination")
 
 
+def sinc_ratio_interval(e: Engine, pi: Interval, u: int,
+                        L: int, M: int) -> Interval:
+    """Frozen sinc with mathematically exact nonzero integer-argument zeros.
+
+    2*fc*u = 49*u / (50*max(L,M)) is a rational, not a rounded phase.
+    sin(pi*k) is EXACTLY zero for integer k. Without this special case
+    a directed MPFR sine enclosure can straddle zero at every precision;
+    a spurious tiny signed coefficient must never be emitted instead.
+    This is algebraically the frozen sinc formula, not a filter redesign.
+    """
+    if u == 0:
+        return e.fraction(Fraction(1))
+    z = Fraction(49 * u, 50 * max(L, M))
+    if z.denominator == 1:
+        return e.fraction(Fraction(0))
+    phase = pi * e.fraction(z)
+    return phase.sin() / phase
+
+
 def coefficient_bytes_at_precision(L: int, M: int, T: int,
                                    bits: int) -> bytes:
     e = Engine(bits)
@@ -245,8 +264,7 @@ def coefficient_bytes_at_precision(L: int, M: int, T: int,
         normalized = e.fraction(Fraction(u, D))
         inside = one - normalized * normalized
         window = i0_interval(beta * inside.sqrt()) / denominator
-        z = two * fc * e.fraction(Fraction(u))
-        sinc = one if u == 0 else (pi * z).sin() / (pi * z)
+        sinc = sinc_ratio_interval(e, pi, u, L, M)
         raw.append((two * fc) * sinc * window)
     # Frozen normalization: add in STRICTLY ascending prototype j order.
     acc = e.fraction(Fraction(0))
