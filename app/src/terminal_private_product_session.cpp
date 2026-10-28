@@ -1,4 +1,5 @@
 #include "terminal_private_product_session.hpp"
+#include "final_src_candidate_policy.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
@@ -82,6 +83,15 @@ core::Status TerminalPrivateProductSession::request_private_impl(
     if(!prepared||!manual||!manualId||manualId->value==0)
         return core::Status::failure(rejected(
             "Private M17 requires a published manual predecessor."));
+    // Other 28 six-rate cross-pairs have only experimental rational FIR
+    // without a certified kernel checksum. The existing candidate gate
+    // would reject them AFTER running M17/M16. Refuse BEFORE scheduling
+    // a whole-track worker. Experimental SRC tests remain independent.
+    const auto sourceRate=manual->view().format().sample_rate().value();
+    if(!m17_final_src_candidate_admissible(sourceRate,rate.value()))
+        return core::Status::failure(core::Error{
+            core::ErrorCode::UnsupportedOperation,
+            "M17_FINAL_OUTPUT_SRC_CANDIDATE_NOT_QUALIFIED"});
     auto snapshot=transport_->playback_snapshot();
     if(!snapshot)return core::Status::failure(*snapshot.error());
     // ONLY a private final-master request may render without the playback

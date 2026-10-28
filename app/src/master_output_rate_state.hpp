@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QString>
 #include <QtGlobal>
 #include <array>
 #include <functional>
@@ -45,6 +46,8 @@ public:
     void source_committed(qint64 sourceRateHz) noexcept;
     void source_cleared() noexcept;
     Q_INVOKABLE bool choose_master_rate(qint64 targetHz) noexcept;
+    Q_INVOKABLE bool m17_candidate_rate_admissible(qint64 targetHz) const noexcept;
+    Q_INVOKABLE QString final_src_path_status(qint64 targetHz) const;
 signals:
     // Only changed() represents a genuine rate/epoch revision. Separate
     // monitor admission availability MUST NEVER invalidate M17 MASTER PCM.

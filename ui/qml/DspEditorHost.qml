@@ -411,9 +411,17 @@ Rectangle {
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && root.terminalLimiterViewModel.audioStatus.startsWith("NEEDS PREPARATION")
+                    && !!root.masterRateState
+                    && root.masterRateState.m17_candidate_rate_admissible(
+                        root.masterRateState.masterRateHz)
                 onClicked: root.terminalLimiterViewModel.requestPrepare()
                 Accessible.name: "Prepare offline true peak limiter"
-                ToolTip.text: "Render and verify the full master; Play never starts this job."
+                ToolTip.text: root.masterRateState
+                    && !root.masterRateState.m17_candidate_rate_admissible(
+                        root.masterRateState.masterRateHz)
+                    ? root.masterRateState.final_src_path_status(
+                        root.masterRateState.masterRateHz)
+                    : "Render and verify the full master; Play never starts this job."
                 ToolTip.visible: hovered && m17PrepareTooltipDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
@@ -687,13 +695,21 @@ Rectangle {
                     }
                 }
                 Text {
+                    objectName: "m17FinalSrcCandidateStatus"
                     Layout.fillWidth: true
                     Layout.preferredHeight: 16
-                    color: "#F2CE82"
+                    color: root.masterRateState
+                        && root.masterRateState.m17_candidate_rate_admissible(
+                            root.masterRateState.masterRateHz)
+                        ? "#B6D6CA" : "#F2CE82"
                     font.family: "Segoe UI"
                     font.pixelSize: 10
                     elide: Text.ElideRight
-                    text: "Project rate only · Final SRC/MASTER integration pending"
+                    text: root.masterRateState
+                        ? root.masterRateState.final_src_path_status(
+                            root.masterRateState.masterRateHz)
+                        : "SOURCE / target rate unavailable"
+                    Accessible.name: text
                 }
                 Rectangle {
                     Layout.fillWidth: true
@@ -787,7 +803,11 @@ Rectangle {
                                 id: compactRateRadio
                                 objectName: "m17MasterRateOption_" + rateRow.index
                                 property string interactionHint: "Select " + text
-                                    + " as the project MASTER output rate. Changing this preference does not change the audio device rate. Full Final SRC integration is pending."
+                                    + " as Project MASTER output rate, independent of device. "
+                                    + (root.masterRateState
+                                        ? root.masterRateState.final_src_path_status(
+                                            rateRow.modelData)
+                                        : "SOURCE / target rate unavailable")
                                 text: root.rateLabel(rateRow.modelData)
                                 ToolTip.text: interactionHint
                                 ToolTip.visible: hovered && rateChoiceDwell.ready

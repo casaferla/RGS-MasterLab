@@ -887,9 +887,21 @@ Window {
             QVERIFY2(capture_visual_evidence(window,
                 QStringLiteral("m17_rate_times_qt_fixture_1184x688.png"),
                 QSize{1184,688}),"True Qt-rendered Rate/Time UI evidence");
+            auto* srcStatus=find_child_by_name(host,
+                QStringLiteral("m17FinalSrcCandidateStatus"));
+            QVERIFY(srcStatus);
             QVERIFY(selectedMasterRate.choose_master_rate(192000));
             QTRY_VERIFY_WITH_TIMEOUT(summary->property("text").toString()
                 .contains(QStringLiteral("192 kHz")),2000);
+            QTRY_VERIFY_WITH_TIMEOUT(srcStatus->property("text")
+                .toString().contains(QStringLiteral("UNQUALIFIED")),2000);
+            QVERIFY(selectedMasterRate.choose_master_rate(44100));
+            QTRY_VERIFY_WITH_TIMEOUT(srcStatus->property("text")
+                .toString().contains(QStringLiteral("IDENTITY")),2000);
+            QVERIFY(selectedMasterRate.choose_master_rate(48000));
+            QTRY_VERIFY_WITH_TIMEOUT(srcStatus->property("text")
+                .toString().contains(QStringLiteral("release pending")),2000);
+            QVERIFY(selectedMasterRate.choose_master_rate(192000));
             QVERIFY(QMetaObject::invokeMethod(popup,"close"));
         }
         if (fit.index==6) {

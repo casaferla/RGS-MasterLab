@@ -1,6 +1,7 @@
 #include "master_output_rate_state.hpp"
 #include <QSignalSpy>
 #include <QtTest>
+#include <array>
 namespace rgsml::app {
 class MasterRateTest final : public QObject {
 Q_OBJECT
@@ -17,6 +18,42 @@ private slots:
     const auto revision=s.rate_revision();
     QVERIFY(!s.choose_master_rate(384000));QCOMPARE(s.rate_revision(),revision);
     QVERIFY(s.choose_master_rate(192000));QCOMPARE(s.rate_revision(),revision);
+ }
+ void sixRateCandidateStatusHonestForAll36Pairs() {
+    MasterOutputRateState state;
+    QVERIFY(!state.m17_candidate_rate_admissible(48000));
+    QCOMPARE(state.final_src_path_status(48000),
+        QStringLiteral("SOURCE / target rate unavailable"));
+    const std::array<qint64,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    int identity=0,legacy=0,unqualified=0;
+    for(const auto from:rates) {
+        state.source_committed(from);
+        for(const auto to:rates) {
+            const bool admitted=state.m17_candidate_rate_admissible(to);
+            const auto label=state.final_src_path_status(to);
+            if(from==to) {
+                QVERIFY(admitted);
+                QVERIFY(label.contains(QStringLiteral("IDENTITY")));
+                ++identity;
+            } else if((from==44100&&to==48000)
+                   ||(from==48000&&to==44100)) {
+                QVERIFY(admitted);
+                QVERIFY(label.contains(QStringLiteral("candidate")));
+                QVERIFY(label.contains(QStringLiteral("release pending")));
+                ++legacy;
+            } else {
+                QVERIFY(!admitted);
+                QVERIFY(label.contains(QStringLiteral("UNQUALIFIED")));
+                ++unqualified;
+            }
+        }
+    }
+    QCOMPARE(identity,6);
+    QCOMPARE(legacy,2);
+    QCOMPARE(unqualified,28);
+    state.source_committed(32000);
+    QVERIFY(!state.m17_candidate_rate_admissible(192000));
  }
  void monitoringGuardNeverRetargetsOrInvalidatesMaster() {
     MasterOutputRateState s;
