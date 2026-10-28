@@ -29,6 +29,11 @@ jobs:
       - name: Phase-11 Final SRC exact Q0 preflight (Linux)
         run: python tools/qualification/final_src/test_phase11_math_preflight.py
 
+      # Offline MPFR proof-engine ABI smoke only; the full 14-asset
+      # generator is deliberately NOT run on every quick Focused CI.
+      - name: Phase-11 Final SRC MPFR interval smoke (Linux)
+        run: python tools/qualification/final_src/test_phase11_mpfr_ziv.py
+
       - name: Install system dependencies & Ninja
         run: |
           sudo apt-get update

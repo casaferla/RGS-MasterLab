@@ -42,6 +42,28 @@ Q0 preflight predicts **14 RGSMSR1 files**, **11,440,952 total bytes**
 (including 52-byte headers); largest kernel has **327,681 coefficients**.
 These are expected *sizes*, not coefficient assets or hashes.
 
+## Offline MPFR/Ziv coefficient generator candidate (next same staging batch)
+
+`tools/qualification/final_src/generate_rgsmsr1_mpfr.py` now contains a
+**separate offline-only, dynamically loaded MPFR directed-rounding interval
+implementation**, with: a full interval `sin` bound via the global 1-Lipschitz
+inequality; certified `I0` frozen first-stop predicate and omitted-tail bound;
+reconstruction of the exact Kaiser windowed-sinc recipe and strictly ascending
+normalization on each precision pass; vector-wide IEEE binary64 round-to-nearest
+cell agreement; shared symmetric bit patterns; exact 52-byte little-endian
+RGSMSR1 serialization; fail-closed 256→512→1024 precision retry, and no
+partial asset output on exhaustion. The only output is offline frozen bytes
+and an informational SHA-256 record; **no source code in the product selects
+this generator or publishes its candidate files at runtime**.
+
+`tools/qualification/final_src/test_phase11_mpfr_ziv.py` performs a small
+MPFR directed-interval/rounding smoke on Linux. A complete 1025-tap
+48→96-kHz asset generation test is **opt-in**, not a test claimed to have
+passed. No kernel SHA was inserted into a release manifest and no coefficient
+or acoustic response is asserted correct before independent reproduction.
+This candidate must pass the independent reference and multi-platform
+qualification before its exact bytes can be frozen and used for production.
+
 ## Mandatory next coherent work — DO NOT silently skip
 
 - Offline **MPFR directed-rounding / certified-interval** source evaluator:
