@@ -36,6 +36,24 @@ def _kernel_checked(ratio: Ratio, binary64_taps: tuple[float, ...]) -> None:
         raise ContractError("nonfinite prototype tap")
 
 
+def _at_checked(source: tuple[float, ...], ratio: Ratio,
+                binary64_taps: tuple[float, ...], m: int,
+                shape) -> float:
+    """One output after whole-track/kernel validation by the caller."""
+    q = shape.D + m * ratio.M
+    first = ceil_div_signed(q - (shape.N - 1), ratio.L)
+    last = floor_div_signed(q, ratio.L)
+    acc = 0.0
+    for n in range(first, last + 1):
+        j = q - n * ratio.L
+        sample = source[even_reflect(n, len(source))]
+        product = sample * binary64_taps[j]  # rounded binary64 product
+        acc = acc + product                 # separate binary64 addition
+    if not isfinite(acc):
+        raise ContractError("nonfinite strict scalar SRC output")
+    return acc
+
+
 def strict_scalar_at(source: tuple[float, ...], ratio: Ratio,
                      binary64_taps: tuple[float, ...], m: int) -> float:
     """Canonical q, nLo/nHi, signed n-ascending strict scalar law.
@@ -44,29 +62,13 @@ def strict_scalar_at(source: tuple[float, ...], ratio: Ratio,
     isolated crop. Coefficients are already rounded RGSMSR1 binary64 taps.
     """
     _source_checked(source)
-    if ratio.fin == ratio.fout:
-        if binary64_taps:
-            raise ContractError("identity cannot load a kernel")
-        if not 0 <= m < len(source):
-            raise ContractError("output frame outside full source")
-        return source[m]  # raw identity: preserves signed zero/subnormals.
     _kernel_checked(ratio, binary64_taps)
     count = ceil_div_signed(len(source) * ratio.L, ratio.M)
     if not 0 <= m < count:
         raise ContractError("output frame outside full source")
-    shape = kernel_shape(ratio)
-    q = shape.D + m * ratio.M
-    first = ceil_div_signed(q - (shape.N - 1), ratio.L)
-    last = floor_div_signed(q, ratio.L)
-    acc = 0.0
-    for n in range(first, last + 1):
-        j = q - n * ratio.L
-        sample = source[even_reflect(n, len(source))]
-        product = sample * binary64_taps[j]  # round binary64 product
-        acc = acc + product                 # separate binary64 addition
-    if not isfinite(acc):
-        raise ContractError("nonfinite strict scalar SRC output")
-    return acc
+    if ratio.fin == ratio.fout:
+        return source[m]  # raw identity: preserves signed zero/subnormals.
+    return _at_checked(source, ratio, binary64_taps, m, kernel_shape(ratio))
 
 
 def strict_scalar_crop(source: tuple[float, ...], ratio: Ratio,
@@ -81,5 +83,9 @@ def strict_scalar_crop(source: tuple[float, ...], ratio: Ratio,
     if not 0 <= start <= end <= len(source):
         raise ContractError("invalid source crop")
     begin, finish = mapped_interval(start, end, ratio)
-    return tuple(strict_scalar_at(source, ratio, binary64_taps, m)
+    if ratio.fin == ratio.fout:
+        # Identity bypass is byte-transparent even for -0.0/subnormals.
+        return source[begin:finish]
+    shape = kernel_shape(ratio)  # validate/resolve once per full crop
+    return tuple(_at_checked(source, ratio, binary64_taps, m, shape)
                  for m in range(begin, finish))
