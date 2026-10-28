@@ -1,5 +1,11 @@
 # PHASE 11 FINAL SRC — Q0 mathematical preflight and pending MPFR/Ziv work
 
+## Subsequent staging — atomic 14-asset MPFR candidate assembly (NOT YET FOCUSED-QUALIFIED)
+
+- `tools/qualification/final_src/build_candidate_manifest.py` enumerates the 14 canonical reduced ratios from the frozen 6x6 matrix, reuses reduced-ratio kernels and invokes the offline MPFR/Ziv generator twice for each ratio. It verifies full RGSMSR1 structure, exact same-implementation binary bytes and SHA-256, then atomically publishes one **CANDIDATE_NOT_RELEASE_QUALIFIED** folder. No partial asset files are published after any failed proof/byte mismatch, and pre-existing destinations are never intentionally overwritten.
+- `test_build_candidate_manifest.py` exercises a **synthetic center-delta asset**, not a real Kaiser filter: candidate marking, 14-ratio metadata, two-asset subset, divergent repeat fail-closed, destination integrity and wrong-ratio rejection. Linux Focused gains this quick life-cycle check, not the costly all-14 real generator work.
+- These files are explicitly **STAGING-ONLY until promoted after the preceding Focused run terminates**. A same-generator repeated byte match is not independent coefficient regeneration, not MPFR DTFT verification and not release authority. The candidate manifest can never be imported as a product KernelManifest without independent coefficient/response Q0–Q6 gates and PO authorization.
+
 ## 2026-10-28 exact-sinc and reproducibility follow-up (STAGING ONLY)
 
 - The offline-only MPFR interval/Ziv candidate now recognizes mathematically exact nonzero integer sinc arguments: for `u=j-D`, `z=49*u/(50*max(L,M))`; `u=0` gives sinc=1, nonzero integral `z` gives sinc=+0 exactly, all other cases use the original certified interval `sin(pi*z)/(pi*z)`. This preserves the frozen formula; it avoids permanent interval ambiguity and tiny spurious sine residuals at analytic zeros.
