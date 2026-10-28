@@ -1,5 +1,14 @@
 # PHASE 11 FINAL SRC — Q0 mathematical preflight and pending MPFR/Ziv work
 
+## 2026-10-28 exact-sinc and reproducibility follow-up (STAGING ONLY)
+
+- The offline-only MPFR interval/Ziv candidate now recognizes mathematically exact nonzero integer sinc arguments: for `u=j-D`, `z=49*u/(50*max(L,M))`; `u=0` gives sinc=1, nonzero integral `z` gives sinc=+0 exactly, all other cases use the original certified interval `sin(pi*z)/(pi*z)`. This preserves the frozen formula; it avoids permanent interval ambiguity and tiny spurious sine residuals at analytic zeros.
+- Small 256-bit MPFR tests cover all 14 distinct reduced ratios (28 positive/negative zeros), nearby nonzeros, and canonical `u=0`.
+- New opt-in full-Q0 canary now enabled **only on Linux Focused**: independently execute `generate(48000,96000)` twice for the genuine 1,025-tap `RGSMSR1` candidate, require identical precision, asset bytes, structural checksum and exact +0.0 tap bits at `u=±100,±500`. It is NOT a second independent generator; therefore a PASS proves repeatability of this same implementation, NOT cross-implementation correctness or Q1-Q6 readiness.
+- Before this candidate's own CI, all new edits are STAGING-ONLY and UNQUALIFIED. Preliminary local 14-kernel FFT spectral screening and 120/160-decimal high-precision comparison for four sample-rate directions are supporting evidence only (not certified DTFT MPFR intervals, proof of final rounding or frozen asset manifests).
+- Full 14-asset generation/second independent generator, MPFR spectral response plus conceptual zero-stuffed oracle, true cross-rate runtime, physical Windows and PO Gate M/L remain OPEN. Never widen 6+2 candidate admission or issue a release checksum on this Q0 canary alone.
+
+
 **2026-10-28 · L1-M17 prerequisite · Status: STAGING CANDIDATE / Q0 ONLY / NOT RELEASE QUALIFIED**
 
 Authority (read full originals, not the older abbreviated filename for source A):
