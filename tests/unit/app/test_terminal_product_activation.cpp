@@ -696,7 +696,7 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     QCOMPARE(vm.preparation_fraction(),1.0);
     QVERIFY(vm.preparation_determinate());
-    QCOMPARE(vm.preparation_stage(),QStringLiteral("Verified candidate ready"));
+    QCOMPARE(vm.preparation_stage(),QStringLiteral("Verified MASTER ready"));
     const auto initialPreparedPcm=candidates.staged();
     QVERIFY(initialPreparedPcm);
     // P0 bridge returns ONLY the exact currently verified MASTER at the
@@ -1566,6 +1566,12 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!monitorSinkOwner);
     QVERIFY(monitorUi.can_install());
     QVERIFY(product.cancel());
+    // The first, independently proven borrowed-monitor fixture installed
+    // real fake DEVICE callbacks. Clear them explicitly before the second
+    // fixture tests fail-closed behavior with NO transport callbacks.
+    // Otherwise the old callbacks remain valid after cancel(), and the
+    // later "must refuse missing transport" assertion is meaningless.
+    product.set_private_monitor_transport({}, {}, {}, {});
     QVERIFY(monitorUi.can_prepare());
     QVERIFY(!monitorUi.can_install());
     QVERIFY(!monitorUi.play()); // source MANUAL is never anonymous MONITOR
