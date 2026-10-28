@@ -113,6 +113,20 @@ class MPFRZivBoundaryTests(unittest.TestCase):
         whole = zero_stuffed_crop(impulse, ratio, dyadic)
         self.assertEqual(len(whole), 8)
         assert_exact_crop_invariance(impulse, ratio, dyadic, (1, 3))
+        # Same genuine MPFR-generated kernel bytes, but an independently
+        # indexed n-ascending binary64 multiply/add reference. This cross-
+        # checks product arithmetic order against exact dyadic j-ascending,
+        # not a certified MPFR/QTP release PCM expected.
+        from strict_scalar_polyphase_reference import strict_scalar_crop
+        float_kernel = tuple(float(x) for x in dyadic)
+        scalar_whole = strict_scalar_crop(impulse, ratio, float_kernel)
+        self.assertEqual(len(scalar_whole), len(whole))
+        self.assertEqual(strict_scalar_crop(impulse, ratio, float_kernel, (1, 3)),
+                         scalar_whole[2:6])
+        for scalar_sample, exact_sample in zip(scalar_whole, whole):
+            self.assertLessEqual(
+                abs(Fraction.from_float(scalar_sample) - exact_sample),
+                Fraction(1, 10 ** 12))
         constant = zero_stuffed_crop((0.25,) * 4, ratio, dyadic)
         self.assertEqual(len(constant), 8)
         for sample in constant:
