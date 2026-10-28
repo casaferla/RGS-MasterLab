@@ -6,12 +6,46 @@ import unittest
 from fractions import Fraction
 
 from generate_rgsmsr1_mpfr import (
-    Engine, ProofUnresolved, RNDN, generate, i0_interval,
+    Engine, ProofUnresolved, RNDN, generate, i0_interval, sinc_ratio_interval,
 )
 from phase11_math_preflight import Ratio, audit_rgsmsr1_structure, kernel_shape
 
 
 class MPFRZivBoundaryTests(unittest.TestCase):
+    def test_integral_rational_sinc_zeros_are_exact(self):
+        e = Engine(256)
+        pi = e.pi()
+        self.assertEqual(sinc_ratio_interval(e, pi, 0, 2, 1).double_rounding_cell(),
+                         struct.pack("<d", 1.0))
+        # ratio L/M=2/1: exact z = 49*u/100, hence +/-100*k zeros.
+        zero = struct.pack("<d", 0.0)
+        for u in (-500, -100, 100, 500):
+            self.assertEqual(sinc_ratio_interval(e, pi, u, 2, 1).double_rounding_cell(),
+                             zero)
+        self.assertNotEqual(sinc_ratio_interval(e, pi, 101, 2, 1).double_rounding_cell(),
+                            zero)
+
+    def test_analytic_sinc_zeros_all_fourteen_reduced_ratios(self):
+        from phase11_math_preflight import RATES
+        ratios = {(Ratio.make(fin, fout).L, Ratio.make(fin, fout).M)
+                  for fin in RATES for fout in RATES if fin != fout}
+        self.assertEqual(len(ratios), 14)
+        e = Engine(256)
+        pi = e.pi()
+        zero = struct.pack("<d", 0.0)
+        checked = 0
+        for L, M in sorted(ratios):
+            # Frozen z=49*u/(50*max(L,M)): the first nonzero integral z
+            # lies at u=50*max(L,M)/gcd(49,50*max(L,M)).
+            from math import gcd
+            first = 50 * max(L, M) // gcd(49, 50 * max(L, M))
+            self.assertEqual(sinc_ratio_interval(e, pi, first, L, M).double_rounding_cell(),
+                             zero)
+            self.assertEqual(sinc_ratio_interval(e, pi, -first, L, M).double_rounding_cell(),
+                             zero)
+            checked += 2
+        self.assertEqual(checked, 28)
+
     def test_real_directed_mpfr_interval_primitives(self):
         e = Engine(256)
         one = e.fraction(Fraction(1))
