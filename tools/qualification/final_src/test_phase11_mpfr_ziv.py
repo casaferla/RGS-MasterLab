@@ -99,6 +99,25 @@ class MPFRZivBoundaryTests(unittest.TestCase):
         self.assertTrue(independent["independent_precision_stable"])
         self.assertTrue(independent["candidate_bytes_match_both"])
         self.assertFalse(independent["release_qualified"])
+        # Independent conceptual ZERO-STUFFED arithmetic on actual generated
+        # MPFR candidate bytes (not the prior synthetic center-delta fixture).
+        # This digest derives from this still-unqualified candidate: it is
+        # NOT an independently frozen release KernelManifest.
+        import hashlib
+        from exact_dyadic_zero_stuff_oracle import (
+            read_locked_kernel, zero_stuffed_crop, assert_exact_crop_invariance)
+        shape2, dyadic = read_locked_kernel(
+            data, ratio, hashlib.sha256(data).hexdigest())
+        self.assertEqual(shape2.N, shape.N)
+        impulse = (0.0, 1.0, 0.0, 0.0)
+        whole = zero_stuffed_crop(impulse, ratio, dyadic)
+        self.assertEqual(len(whole), 8)
+        assert_exact_crop_invariance(impulse, ratio, dyadic, (1, 3))
+        constant = zero_stuffed_crop((0.25,) * 4, ratio, dyadic)
+        self.assertEqual(len(constant), 8)
+        for sample in constant:
+            self.assertAlmostEqual(float(sample), 0.25, places=10)
+
         self.assertEqual(len(data), shape.frozen_bytes)
         self.assertEqual(len(audit_rgsmsr1_structure(data, shape)), 64)
         # Analytic sinc zeros must survive the WHOLE normalization and
