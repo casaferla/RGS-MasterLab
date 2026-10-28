@@ -151,6 +151,66 @@ class CandidateManifestLifecycle(unittest.TestCase):
             self.assertFalse(target.exists())
             self.assertFalse(any(Path(d).iterdir()))
 
+    def test_optional_sampled_fft_evidence_is_noncertifying_and_atomic(self):
+        sample = dict(list(canonical_pair_for_ratio().items())[:2])
+        observed = []
+
+        def screen_good(data, fin, fout, digest):
+            import hashlib
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+            observed.append((fin, fout))
+            return dict(sampled_pass=True,
+                        caveat="SAMPLED_FFT_ONLY_NOT_CERTIFIED_DTFT_OR_RELEASE",
+                        nfft=1 << 19, frequency_step_hz=0.5,
+                        ripple_peak_to_peak_db=0.0002,
+                        max_passband_error_db=0.0001,
+                        sampled_stopband_attenuation_db=142.0)
+
+        with TemporaryDirectory() as d:
+            target = Path(d) / "screen"
+            manifest = assemble_candidate(
+                target, generator=shape_only_fixture, pairs=sample,
+                sampled_fft_screen=screen_good)
+            self.assertEqual(len(observed), 2)
+            self.assertFalse(manifest["sampled_fft_screen_complete"])
+            self.assertFalse(manifest["mpfr_dtft_oracle_passed"])
+            self.assertFalse(manifest["q1_q6_passed"])
+            self.assertFalse(manifest["product_admission_authorized"])
+            self.assertTrue(all(row["sampled_fft_screen_passed"]
+                                for row in manifest["assets"]))
+            self.assertEqual(
+                manifest["assets"][0]["sampled_fft_noncertifying_metrics"][
+                    "sampled_stopband_attenuation_db"], 142.0)
+
+        checks = 0
+
+        def screen_late_failure(data, fin, fout, digest):
+            nonlocal checks
+            checks += 1
+            return dict(sampled_pass=(checks == 1),
+                        caveat="SAMPLED_FFT_ONLY_NOT_CERTIFIED_DTFT_OR_RELEASE")
+
+        with TemporaryDirectory() as d:
+            target = Path(d) / "refused"
+            with self.assertRaisesRegex(
+                    ContractError, "SAMPLED_FFT_SCREEN_FAILED"):
+                assemble_candidate(
+                    target, generator=shape_only_fixture, pairs=sample,
+                    sampled_fft_screen=screen_late_failure)
+            self.assertEqual(checks, 2)
+            self.assertFalse(target.exists())
+            self.assertFalse(any(Path(d).iterdir()))
+
+        with TemporaryDirectory() as d:
+            target = Path(d) / "no_mislabeled_proof"
+            with self.assertRaisesRegex(
+                    ContractError, "SAMPLED_FFT_SCREEN_FAILED"):
+                assemble_candidate(
+                    target, generator=shape_only_fixture, pairs=sample,
+                    sampled_fft_screen=lambda *args: dict(
+                        sampled_pass=True, caveat="CERTIFIED_DTFT"))
+            self.assertFalse(target.exists())
+
     def test_reject_noncanonical_pair_and_precision_before_output(self):
         with TemporaryDirectory() as d:
             target = Path(d) / "invalid"
