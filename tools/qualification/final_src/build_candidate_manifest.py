@@ -43,6 +43,7 @@ def assemble_candidate(
     max_precision: int = 1024,
     pairs: dict[tuple[int, int], tuple[int, int]] | None = None,
     independent_screen: Callable[[bytes, int, int], dict] | None = None,
+    dyadic_screen: Callable[[bytes, int, int], dict] | None = None,
 ) -> dict:
     """Publish all requested candidate ratios as one atomic folder.
 
@@ -84,6 +85,15 @@ def assemble_candidate(
                         and screen.get("release_qualified") is False):
                     raise ContractError(
                         "INDEPENDENT_NUMERICAL_SCREEN_FAILED: no candidate publication")
+            if dyadic_screen is not None:
+                # Exact dyadic PCM arithmetic of ACTUAL generated binary64
+                # taps, independent j-ascending conceptual zero-stuffed grid.
+                # Does not prove continuous spectrum or release readiness.
+                dyadic = dyadic_screen(data, fin, fout)
+                if not (dyadic.get("exact_dyadic_crop_invariant") is True
+                        and dyadic.get("release_qualified") is False):
+                    raise ContractError(
+                        "EXACT_DYADIC_SCREEN_FAILED: no candidate publication")
             name = f"RGSMSR1_L{L}_M{M}.bin"
             (temp / name).write_bytes(data)
             entries.append(dict(
@@ -92,6 +102,7 @@ def assemble_candidate(
                 precision_bits=first_bits, filename=name,
                 status="SAME_GENERATOR_DOUBLE_REPRODUCED_NOT_RELEASE_QUALIFIED",
                 independent_mpmath_screen_passed=(independent_screen is not None),
+                exact_dyadic_screen_passed=(dyadic_screen is not None),
             ))
         complete = set(pairmap) == set(allowed)
         manifest = dict(
@@ -100,6 +111,7 @@ def assemble_candidate(
             complete_ratio_family=complete,
             independent_generator_verified=False,
             independent_mpmath_screen_complete=(independent_screen is not None and complete),
+            exact_dyadic_screen_complete=(dyadic_screen is not None and complete),
             mpfr_dtft_oracle_passed=False,
             q1_q6_passed=False,
             product_admission_authorized=False,
@@ -122,19 +134,27 @@ def main() -> None:
     parser.add_argument("--max-precision", type=int, default=1024)
     parser.add_argument("--screen-independent-mpmath", action="store_true",
                         help="Require byte-identical independent 120/160-dps screen on ALL 14 real assets; still NOT release qualified")
+    parser.add_argument("--screen-exact-dyadic", action="store_true",
+                        help="Real 14-asset exact dyadic finite-track/crop screen; NOT MPFR Q1 or release qualification")
     args = parser.parse_args()
     checker = None
     if args.screen_independent_mpmath:
         from independent_mpmath_crosscheck import compare_candidate
         checker = compare_candidate
+    dyadic = None
+    if args.screen_exact_dyadic:
+        from exact_dyadic_zero_stuff_oracle import screen_real_candidate_dyadic
+        dyadic = screen_real_candidate_dyadic
     manifest = assemble_candidate(args.out, max_precision=args.max_precision,
-                                  independent_screen=checker)
+                                  independent_screen=checker,
+                                  dyadic_screen=dyadic)
     print(json.dumps({
         "status": manifest["status"],
         "ratios": manifest["observed_ratio_count"],
         "total_bytes": manifest["total_asset_bytes"],
         "independent_qualification": False,
         "independent_mpmath_screen_complete": manifest["independent_mpmath_screen_complete"],
+        "exact_dyadic_screen_complete": manifest["exact_dyadic_screen_complete"],
     }, sort_keys=True))
 
 
