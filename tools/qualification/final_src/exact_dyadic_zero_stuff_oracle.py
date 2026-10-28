@@ -55,13 +55,15 @@ def zero_stuffed_exact_at(
     q = shape.D + m * ratio.M
     exact_input = tuple(Fraction.from_float(float(x)) for x in source_bits)
     acc = Fraction(0)
-    for j, coeff in enumerate(kernel):
-        src_grid_coordinate = q - j
-        if src_grid_coordinate % ratio.L != 0:
-            continue
-        src_index = src_grid_coordinate // ratio.L
+    # An upsampled high-rate grid is zero except at indices divisible by L.
+    # The first prototype tap with (q - j) % L == 0 is q % L.
+    # Iterating *j in ascending order* preserves this independent conceptual
+    # oracle and its exact Fraction sum, while skipping the provable zeros.
+    # This is NOT the production n-ascending binary64 convolution.
+    for j in range(q % ratio.L, len(kernel), ratio.L):
+        src_index = (q - j) // ratio.L
         index = even_reflect(src_index, len(exact_input))
-        acc += exact_input[index] * coeff
+        acc += exact_input[index] * kernel[j]
     return acc
 
 
