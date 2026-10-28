@@ -91,6 +91,14 @@ class MPFRZivBoundaryTests(unittest.TestCase):
         self.assertIn(bits, (256, 512, 1024))
         self.assertEqual(bits, second_bits)
         self.assertEqual(data, second, "repeat offline RGSMSR1 generation must be bit-identical")
+        # A genuinely separate, high-precision numerical implementation
+        # checks the exact candidate bytes at two rebuilt precisions.
+        # This is an independent CROSSCHECK, not certified MPFR/DTFT Q1.
+        from independent_mpmath_crosscheck import compare_candidate
+        independent = compare_candidate(data, 48000, 96000)
+        self.assertTrue(independent["independent_precision_stable"])
+        self.assertTrue(independent["candidate_bytes_match_both"])
+        self.assertFalse(independent["release_qualified"])
         self.assertEqual(len(data), shape.frozen_bytes)
         self.assertEqual(len(audit_rgsmsr1_structure(data, shape)), 64)
         # Analytic sinc zeros must survive the WHOLE normalization and
