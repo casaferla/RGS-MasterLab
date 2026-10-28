@@ -1,3 +1,9 @@
+## CHAT 55 — optional full-family independent numerical screen (STAGING ONLY, no CI yet) · 2026-10-28
+
+- Extended `build_candidate_manifest.py` with opt-in `--screen-independent-mpmath` for all 14 **real** MPFR candidate assets. For each ratio it calls the separate mpmath 120/160-dps reconstruction, requiring byte-identical candidate output at both precisions; a mismatch aborts the entire atomic candidate destination (no partial release/publish). The check runs **only if explicitly requested**: default candidate builder and Focused CI do not silently run expensive 14-asset work.
+- Two synthetic shape-only unit tests exercise optional screen invocation and the second-ratio failure/atomic cleanup; they **do not** constitute actual all-14 coefficient crosscheck. A complete future run sets only `independent_mpmath_screen_complete=true`; `independent_generator_verified=false`, `mpfr_dtft_oracle_passed=false`, `q1_q6_passed=false`, `product_admission_authorized=false` remain immutable.
+- Requires `mpmath` only when the optional numerical screen is used, separate from product runtime. Numerical two-precision agreement is **NOT** certified final-rounding interval proof or continuous DTFT response. No kernel release checksum is authorized, no 28 new pair admission. Staging branch only, pending next PR CAS and its own Focused outcome.
+
 # PHASE 11 FINAL SRC — Q0 mathematical preflight and pending MPFR/Ziv work
 
 Sampled FFT screen: `tools/qualification/final_src/screen_candidate_spectral_response.py` accepts exact candidate-manifest SHA-256 and checks 0.001 dB passband and 140 dB stopband on a sampled FFT grid. This is NOT the independent certified MPFR/DTFT response oracle and cannot authorize release.
