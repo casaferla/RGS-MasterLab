@@ -9,6 +9,11 @@ endif()
 list(FILTER _rgsml_act_a EXCLUDE REGEX "test_audition_source_selector\\.cpp$")
 list(FILTER _rgsml_act_b EXCLUDE REGEX "test_mastering_chain_state\\.cpp$")
 set(_rgsml_act_sources ${_rgsml_act_a} ${_rgsml_act_b}
+    # M17's coordinator now depends on the authoritative Project MASTER
+    # Q_OBJECT. Both implementation and header must participate in this
+    # executable's link/AUTOMOC closure, not just the production app.
+    "${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.cpp"
+    "${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_product_activation_coordinator.cpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_product_activation_coordinator.hpp"
     "${CMAKE_SOURCE_DIR}/app/src/terminal_monitor_view_model.cpp"
@@ -19,6 +24,17 @@ set(_rgsml_act_sources ${_rgsml_act_a} ${_rgsml_act_b}
     "${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp"
     "${CMAKE_SOURCE_DIR}/tests/unit/app/test_terminal_product_activation.cpp")
 list(REMOVE_DUPLICATES _rgsml_act_sources)
+# Avoid deferred Windows LNK2019/LNK2001 if a future test closure drops
+# the Project MASTER state. Verify both translation unit and Q_OBJECT.
+foreach(_rgsml_act_required IN ITEMS
+    "${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.cpp"
+    "${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp")
+    if(NOT _rgsml_act_required IN_LIST _rgsml_act_sources)
+        message(FATAL_ERROR
+            "M17 product activation missing Project MASTER Qt dependency: ${_rgsml_act_required}")
+    endif()
+endforeach()
+unset(_rgsml_act_required)
 qt_add_executable(rgsml_terminal_product_activation_tests
     ${_rgsml_act_sources})
 target_include_directories(rgsml_terminal_product_activation_tests
