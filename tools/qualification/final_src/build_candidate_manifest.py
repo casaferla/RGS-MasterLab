@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Offline all-ratio Phase-11 RGSMSR1 CANDIDATE asset assembler.
+
+Two reproductions by the SAME directed MPFR/Ziv generator are checked.
+This is a Q0 production worklist, NOT independent oracle/Q1-Q6 qualification.
+All assets and candidate manifest publish together atomically or not at all.
+Product runtime MUST NOT consume any result from this utility as a release
+manifest without separately approved independent coefficient and response gates.
+"""
+from __future__ import annotations
+
+import argparse
+from hashlib import sha256
+import json
+from pathlib import Path
+import struct
+import tempfile
+from typing import Callable
+
+from generate_rgsmsr1_mpfr import generate
+from phase11_math_preflight import (
+    RATES, Ratio, ContractError, audit_rgsmsr1_structure,
+    kernel_shape, plan,
+)
+
+
+def canonical_pair_for_ratio() -> dict[tuple[int, int], tuple[int, int]]:
+    result = {}
+    for fin in RATES:
+        for fout in RATES:
+            if fin != fout:
+                ratio = Ratio.make(fin, fout)
+                result.setdefault((ratio.L, ratio.M), (fin, fout))
+    if len(result) != 14:
+        raise ContractError("Phase-11 distinct reduced ratio inventory changed")
+    return dict(sorted(result.items()))
+
+
+def assemble_candidate(
+    destination: Path,
+    *,
+    generator: Callable[[int, int, int], tuple[bytes, int]] | None = None,
+    max_precision: int = 1024,
+    pairs: dict[tuple[int, int], tuple[int, int]] | None = None,
+) -> dict:
+    """Publish all requested candidate ratios as one atomic folder.
+
+    The default is the complete frozen 14-ratio family. Tests may supply a
+    SUBSET fixture; a subset is explicitly and permanently nonqualifying.
+    Only an absent destination may be written: do not overwrite prior assets.
+    """
+    if max_precision < 256:
+        raise ContractError("MPFR precision budget below 256")
+    pairmap = canonical_pair_for_ratio() if pairs is None else dict(pairs)
+    allowed = canonical_pair_for_ratio()
+    if not pairmap or any(allowed.get(key) != pair for key, pair in pairmap.items()):
+        raise ContractError("unrecognized reduced ratio or source/target pair")
+    if destination.exists():
+        raise ContractError("candidate destination already exists; never overwrite")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    backend = generator or (lambda fin, fout, bits: generate(fin, fout, max_precision=bits))
+    entries = []
+    # Temporary sibling is on same filesystem, enabling atomic final rename.
+    with tempfile.TemporaryDirectory(prefix=".rgsmsr1-unpublished-",
+                                     dir=destination.parent) as temp_name:
+        temp = Path(temp_name)
+        for (L, M), (fin, fout) in sorted(pairmap.items()):
+            ratio = Ratio.make(fin, fout)
+            shape = kernel_shape(ratio)
+            data, first_bits = backend(fin, fout, max_precision)
+            again, second_bits = backend(fin, fout, max_precision)
+            if first_bits != second_bits or data != again:
+                raise ContractError("ZIV_REPRODUCTION_MISMATCH: no candidate publication")
+            digest = audit_rgsmsr1_structure(data, shape)
+            if digest != sha256(data).hexdigest():
+                raise ContractError("candidate checksum mismatch")
+            name = f"RGSMSR1_L{L}_M{M}.bin"
+            (temp / name).write_bytes(data)
+            entries.append(dict(
+                fin=fin, fout=fout, L=L, M=M, T=shape.T, N=shape.N,
+                bytes=len(data), candidate_sha256=digest,
+                precision_bits=first_bits, filename=name,
+                status="SAME_GENERATOR_DOUBLE_REPRODUCED_NOT_RELEASE_QUALIFIED",
+            ))
+        complete = set(pairmap) == set(allowed)
+        manifest = dict(
+            schema="rgsml.phase11.RGSMSR1-candidate-manifest/1",
+            status="CANDIDATE_NOT_RELEASE_QUALIFIED",
+            complete_ratio_family=complete,
+            independent_generator_verified=False,
+            mpfr_dtft_oracle_passed=False,
+            q1_q6_passed=False,
+            product_admission_authorized=False,
+            expected_ratio_count=14, observed_ratio_count=len(entries),
+            total_asset_bytes=sum(row["bytes"] for row in entries),
+            assets=entries,
+        )
+        (temp / "CANDIDATE_MANIFEST_NOT_FOR_RELEASE.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True)+"\n",
+            encoding="utf-8",
+        )
+        temp.rename(destination)
+    return manifest
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", type=Path, required=True,
+                        help="new empty candidate path; never a product asset directory")
+    parser.add_argument("--max-precision", type=int, default=1024)
+    args = parser.parse_args()
+    manifest = assemble_candidate(args.out, max_precision=args.max_precision)
+    print(json.dumps({
+        "status": manifest["status"],
+        "ratios": manifest["observed_ratio_count"],
+        "total_bytes": manifest["total_asset_bytes"],
+        "independent_qualification": False,
+    }, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
