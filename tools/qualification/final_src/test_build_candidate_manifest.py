@@ -212,6 +212,57 @@ class CandidateManifestLifecycle(unittest.TestCase):
                         sampled_pass=True, caveat="CERTIFIED_DTFT"))
             self.assertFalse(target.exists())
 
+    def test_exact_two_point_dyadic_spectral_screen_fails_closed(self):
+        from exact_dyadic_spectral_anchors import screen_exact_spectral_anchors
+        sample = dict(list(canonical_pair_for_ratio().items())[:2])
+        # A center-delta prototype is analytically a BAD lowpass,
+        # so the REAL mathematical screen must reject it, not bless it.
+        fin, fout = next(iter(sample.values()))
+        data, _ = shape_only_fixture(fin, fout, 1024)
+        evidence = screen_exact_spectral_anchors(data, fin, fout)
+        self.assertFalse(evidence["release_qualified"])
+        self.assertFalse(evidence["full_frequency_band_proven"])
+        self.assertFalse(
+            evidence["dc_within_strong_rational_screen"]
+            and evidence["high_grid_nyquist_within_strong_rational_screen"])
+
+        def good_stub(data, fin, fout):
+            return dict(dc_within_strong_rational_screen=True,
+                        high_grid_nyquist_within_strong_rational_screen=True,
+                        full_frequency_band_proven=False,
+                        release_qualified=False)
+
+        with TemporaryDirectory() as d:
+            target = Path(d) / "two_point"
+            manifest = assemble_candidate(
+                target, generator=shape_only_fixture, pairs=sample,
+                exact_anchor_screen=good_stub)
+            self.assertFalse(manifest["exact_two_point_screen_complete"])
+            self.assertFalse(manifest["mpfr_dtft_oracle_passed"])
+            self.assertTrue(all(row["exact_two_point_screen_passed"]
+                                for row in manifest["assets"]))
+
+        checks = 0
+
+        def fail_late(data, fin, fout):
+            nonlocal checks
+            checks += 1
+            evidence = good_stub(data, fin, fout)
+            evidence["high_grid_nyquist_within_strong_rational_screen"] = (
+                checks == 1)
+            return evidence
+
+        with TemporaryDirectory() as d:
+            target = Path(d) / "refused"
+            with self.assertRaisesRegex(
+                    ContractError, "EXACT_TWO_POINT_SPECTRAL_SCREEN_FAILED"):
+                assemble_candidate(
+                    target, generator=shape_only_fixture, pairs=sample,
+                    exact_anchor_screen=fail_late)
+            self.assertEqual(checks, 2)
+            self.assertFalse(target.exists())
+            self.assertFalse(any(Path(d).iterdir()))
+
     def test_candidate_family_integrity_audit_fails_closed(self):
         from verify_candidate_family import audit_candidate_family
         sample = dict(list(canonical_pair_for_ratio().items())[:2])
