@@ -2547,6 +2547,18 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!noOfflineAuthorizer.requestMaster(192000));
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QCOMPARE(renderer.render_invocation_count(),renderCountBeforeUnauthorized);
+    app::TerminalMonitorViewModel deniedOfflineAuthorizer{product,transport};
+    deniedOfflineAuthorizer.set_offline_master_authorizer([]{
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "TEST_OFFLINE_SOURCE_EPOCH_NOT_AUTHORIZED"});
+    });
+    QVERIFY(deniedOfflineAuthorizer.can_prepare_offline());
+    QVERIFY(!deniedOfflineAuthorizer.requestMaster(192000));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QCOMPARE(renderer.render_invocation_count(),renderCountBeforeUnauthorized);
+    QCOMPARE(deniedOfflineAuthorizer.error_text(),
+        QStringLiteral("TEST_OFFLINE_SOURCE_EPOCH_NOT_AUTHORIZED"));
     QVERIFY(!product.request_private(*masterRate.value(),true));
     QVERIFY(monitorUi.can_prepare());
     QVERIFY(monitorUi.requestMaster(192000));
