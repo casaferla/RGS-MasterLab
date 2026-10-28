@@ -709,7 +709,8 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
     // Real distinct-rate DEVICE PCM from the previously completed M17
     // master, without ever invoking another M17/M16 whole-resource job.
-    const auto offlineBlock=core::FrameCount::create(4096);
+    const auto offlineBlock=core::FrameCount::create(
+        audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames);
     QVERIFY(offlineBlock);
     std::size_t borrowedSrcCalls=0;
     const app::TerminalPrivateProductSession::MonitoringMaterializer
@@ -744,6 +745,17 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
              std::int64_t{4800});
     QCOMPARE((*exactReuse.value())->device_pcm.view().frame_count().value(),
              std::int64_t{4410});
+    // A block one frame above Playback SRC's hard maximum must fail
+    // before creating DEVICE PCM; it must not invalidate this MASTER.
+    const auto oversizedBlock=core::FrameCount::create(
+        audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames+1);
+    QVERIFY(oversizedBlock);
+    auto oversized=audio::materialize_monitoring_pcm_candidate(
+        initialPreparedPcm->rendered.terminal.checked.terminal
+            .compensated_pcm.view(),
+        *sourceRate.value(),*oversizedBlock.value());
+    QVERIFY(!oversized);
+    QCOMPARE(oversized.error()->code(),core::ErrorCode::InvalidArgument);
     QCOMPARE(candidates.staged(),initialPreparedPcm);
     QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
     // The P0 borrowed MASTER must also route through the existing Windows
@@ -1540,9 +1552,10 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(noRegistration.error()->code(),core::ErrorCode::InvalidState);
     std::size_t windowsSeamCalls=0;
     std::size_t explicitPolicyCalls=0;
-    // Rendering exercises 128-frame chunks; the UI explicitly requests
-    // 4096-frame monitor conversion blocks. Both paths are intentional.
-    const auto uiMonitoringBlock=core::FrameCount::create(4096);
+    // The UI uses the strict Playback SRC limit, not the M17 renderer's
+    // independent 128-frame chunks or an invalid 4096-frame request.
+    const auto uiMonitoringBlock=core::FrameCount::create(
+        audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames);
     QVERIFY(uiMonitoringBlock);
     product.set_monitoring_preflight_materializer(
         [&](audio::AudioBufferView view,core::FrameCount requestedBlock,
@@ -1555,7 +1568,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
                 const audio::MonitoringPcmCandidate>>;
             ++windowsSeamCalls;
             // Two exact supported callers, never arbitrary block/reserve
-            // combinations: private 128-frame fixture / explicit 4096 UI.
+            // combinations: private 128-frame fixture / bounded 1024-frame UI.
             const bool fixturePolicy=requestedBlock==*block.value()
                 &&reserve==kOtherReserve;
             const bool uiPolicy=requestedBlock==*uiMonitoringBlock.value()

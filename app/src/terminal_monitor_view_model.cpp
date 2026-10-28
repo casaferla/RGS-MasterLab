@@ -1,6 +1,7 @@
 #include "terminal_monitor_view_model.hpp"
 
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
+#include <rgsml/audio/playback_sample_rate_adapter.hpp>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/frame_time.hpp>
 
@@ -139,7 +140,10 @@ bool TerminalMonitorViewModel::requestMaster(int chosenRateHz)
 bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
 {
     if(!can_install())return report(reject("MONITOR_INSTALL_REQUIRES_VERIFIED_MASTER"));
-    const auto block=core::FrameCount::create(4096);
+    // Playback SRC's hard block bound is 1024 OUTPUT_RATE frames. An
+    // oversized block made every real DEVICE allocation fail.
+    const auto block=core::FrameCount::create(
+        audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames);
     if(!block)return report(core::Status::failure(*block.error()));
     // Re-probe exact current DEVICE and Windows memory immediately before
     // allocating the full-length monitoring PCM. UNKNOWN/DISCOURAGED are
