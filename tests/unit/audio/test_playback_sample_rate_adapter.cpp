@@ -169,7 +169,7 @@ void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstC
                 bits.resize(static_cast<std::size_t>(2*delay+1),0);
                 // Symmetric dyadic fixtures: exact long-double conceptual
                 // zero-stuffed reference cannot disagree due to rounding.
-                for(const auto [offset,value]:
+                for(const auto& [offset,value]:
                     {std::pair{std::int64_t{0},0.5},
                      std::pair{std::int64_t{1},-0.125},
                      std::pair{L,0.125}}) {
