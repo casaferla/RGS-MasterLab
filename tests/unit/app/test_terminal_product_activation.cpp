@@ -1563,7 +1563,138 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QVERIFY(!monitorSinkOwner);
     QVERIFY(monitorUi.can_install());
+
+    // Product P0 dynamic handoff. With an unchanged M17 READY stage we can
+    // enter DEVICE audition at a nonzero MANUAL playhead while PLAYING or
+    // PAUSED, and return to exactly the same SOURCE cue and original ID.
+    // All monitor commands are checked against the exact DEVICE owner and
+    // operate in MASTER coordinates, never retarget M17.
+    std::optional<core::FrameRange> requestedMasterLoop;
+    product.set_private_monitor_controls(
+        [&](auto owner,auto request)->core::Status {
+            if(owner!=monitorSinkOwner)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "TEST_DYNAMIC_MONITOR_WRONG_OWNER"});
+            auto mapper=audio::MonitoringFrameMap::create(*owner);
+            if(!mapper)return core::Status::failure(*mapper.error());
+            using Action=platform::windows::MonitoringTransportAction;
+            switch(request.action) {
+            case Action::PLAY:return device->play();
+            case Action::PAUSE:return device->pause();
+            case Action::STOP:return device->stop();
+            case Action::SEEK_MASTER: {
+                auto pos=mapper.value()->master_to_device(request.master_frame);
+                if(!pos)return core::Status::failure(*pos.error());
+                return device->seek(*pos.value());
+            }
+            case Action::SET_MASTER_LOOP: {
+                std::optional<core::FrameRange> region;
+                if(request.master_loop) {
+                    const auto converted=mapper.value()->master_loop_to_device(
+                        *request.master_loop);
+                    if(!converted)return core::Status::failure(*converted.error());
+                    region=*converted.value();
+                }
+                const auto applied=device->set_loop(region);
+                if(applied)requestedMasterLoop=request.master_loop;
+                return applied;
+            }
+            }
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidArgument,"TEST_DYNAMIC_MONITOR_COMMAND"});
+        },
+        [&](auto owner)
+            ->core::Result<audio::MonitoringMasterDisplaySnapshot> {
+            using Display=audio::MonitoringMasterDisplaySnapshot;
+            if(owner!=monitorSinkOwner)
+                return core::Result<Display>::failure(core::Error{
+                    core::ErrorCode::InvalidState,"TEST_DYNAMIC_DISPLAY_OWNER"});
+            auto mapper=audio::MonitoringFrameMap::create(*owner);
+            if(!mapper)return core::Result<Display>::failure(*mapper.error());
+            const auto snap=device->snapshot();
+            if(!snap)return core::Result<Display>::failure(*snap.error());
+            return mapper.value()->project_display_snapshot(
+                *snap.value(),requestedMasterLoop);
+        });
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{800}));
+    transport.playOrResume();
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    const auto renderCountBeforeDevice=renderer.render_invocation_count();
+    QVERIFY(monitorUi.can_install());
+    QVERIFY(product.install_private_monitor_stopped(*reusedNormal.value()));
+    QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PLAYING"));
+    QCOMPARE(device->position,core::FrameIndex{200});
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(renderer.render_invocation_count(),renderCountBeforeDevice);
+    QVERIFY(monitorUi.returnManual());
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(device->position,core::FrameIndex{800});
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(renderer.render_invocation_count(),renderCountBeforeDevice);
+
+    transport.pause();
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QVERIFY(monitorUi.can_install());
+    QVERIFY(product.install_private_monitor_stopped(*reusedNormal.value()));
+    QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PAUSED"));
+    QCOMPARE(device->position,core::FrameIndex{200});
+    QVERIFY(monitorUi.returnManual());
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
+    QCOMPARE(device->position,core::FrameIndex{800});
+    QCOMPARE(renderer.render_invocation_count(),renderCountBeforeDevice);
+
+    // A loop belongs to the MANUAL transport epoch, not to the DSP render
+    // window. A new explicit Prepare after changing the loop produces one
+    // M17 checked owner; its DEVICE audition inherits and preserves the
+    // loop including on the return to SOURCE with exact half-open bounds.
+    transport.stop();
     QVERIFY(product.cancel());
+    const auto sourceRegion=core::FrameRange::create(
+        core::FrameIndex{120},core::FrameIndex{1200});
+    QVERIFY(sourceRegion);
+    selectedSourceLoop=*sourceRegion.value();
+    QVERIFY(transport.set_loop_source_range(selectedSourceLoop));
+    QVERIFY(transport.seek_source_frame(core::FrameIndex{500}));
+    transport.playOrResume();
+    QVERIFY(product.request_private(*masterRate.value(),true));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    const auto renderedWithLoop=renderer.render_invocation_count();
+    const auto loopMonitor=product.materialize_private_final_master_monitoring(
+        [&](audio::AudioBufferView master)
+            ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
+            using Owner=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+            using Result=core::Result<Owner>;
+            auto built=audio::materialize_monitoring_pcm_candidate(
+                master,*deviceRate.value(),*block.value());
+            if(!built)return Result::failure(*built.error());
+            return Result::success(std::make_shared<
+                const audio::MonitoringPcmCandidate>(std::move(*built.value())));
+        });
+    QVERIFY(loopMonitor);
+    QVERIFY(monitorUi.can_install());
+    QVERIFY(product.install_private_monitor_stopped(*loopMonitor.value()));
+    QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PLAYING"));
+    QCOMPARE(device->position,core::FrameIndex{125});
+    QCOMPARE(requestedMasterLoop,*sourceRegion.value());
+    const auto expectedDeviceLoop=core::FrameRange::create(
+        core::FrameIndex{30},core::FrameIndex{300});
+    QVERIFY(expectedDeviceLoop);
+    QCOMPARE(device->loop,std::optional{*expectedDeviceLoop.value()});
+    QCOMPARE(renderer.render_invocation_count(),renderedWithLoop);
+    QVERIFY(monitorUi.returnManual());
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->position,core::FrameIndex{500});
+    QCOMPARE(device->loop,selectedSourceLoop);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(renderer.render_invocation_count(),renderedWithLoop);
+    QVERIFY(product.cancel());
+    transport.stop();
+    selectedSourceLoop.reset();
+    QVERIFY(transport.set_loop_source_range(std::nullopt));
+    product.set_private_monitor_controls({}, {});
     // The first, independently proven borrowed-monitor fixture installed
     // real fake DEVICE callbacks. Clear them explicitly before the second
     // fixture tests fail-closed behavior with NO transport callbacks.
