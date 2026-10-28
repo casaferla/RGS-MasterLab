@@ -1497,6 +1497,66 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         *masterRate.value());
     QCOMPARE((*reusedNormal.value())->device_rate,*deviceRate.value());
     QCOMPARE(sinkInstalls,std::size_t{0});
+    // Install exactly this borrowed candidate into the fake anonymous
+    // DEVICE sink, then return to exact MANUAL without destroying M17's
+    // immutable checked PCM. No new M17 Prepare and no terminal identity.
+    std::shared_ptr<const audio::MonitoringPcmCandidate> monitorSinkOwner;
+    product.set_private_monitor_transport(
+        [device,&monitorSinkOwner](auto candidate)->core::Status {
+            if(!candidate||monitorSinkOwner)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M17_BORROWED_MONITOR_SINK_ALREADY_OWNED"});
+            monitorSinkOwner=candidate;
+            device->state=core::PlaybackState::STOPPED;
+            device->position=core::FrameIndex{0};
+            device->duration=candidate->device_pcm.view().frame_count();
+            device->loop.reset();
+            device->audibleRealization={
+                core::AudibleHandoffPhase::UNAVAILABLE,std::nullopt};
+            return core::Status::success();
+        },
+        [&monitorSinkOwner](auto candidate)->core::Result<bool> {
+            return core::Result<bool>::success(
+                monitorSinkOwner && monitorSinkOwner==candidate);
+        },
+        [device,&monitorSinkOwner](auto candidate)->core::Status {
+            if(!candidate||candidate!=monitorSinkOwner)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "M17_BORROWED_MONITOR_SINK_OWNER_MISMATCH"});
+            monitorSinkOwner.reset();
+            device->state=core::PlaybackState::NO_SOURCE;
+            device->position=core::FrameIndex{0};
+            device->duration.reset();
+            device->loop.reset();
+            device->audibleRealization={
+                core::AudibleHandoffPhase::UNAVAILABLE,std::nullopt};
+            return core::Status::success();
+        },
+        [&selector](auto manual,core::RealizationId id,
+                    core::FrameIndex cue)->core::Status {
+            return selector.restore_manual_processed_after_terminal(
+                std::move(manual),id,cue);
+        });
+    const auto normalM17Stage=candidates.staged();
+    QVERIFY(normalM17Stage);
+    QVERIFY(product.install_private_monitor_stopped(*reusedNormal.value()));
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
+    QVERIFY(monitorUi.monitor_installed());
+    QVERIFY(monitorUi.monitor_exclusive());
+    QCOMPARE(monitorSinkOwner,*reusedNormal.value());
+    QCOMPARE(candidates.staged(),normalM17Stage);
+    QCOMPARE(renderer.render_invocation_count(),beforeNormalM17+1);
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    QVERIFY(monitorUi.returnManual());
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(candidates.staged(),normalM17Stage);
+    QCOMPARE(renderer.render_invocation_count(),beforeNormalM17+1);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QVERIFY(!monitorSinkOwner);
+    QVERIFY(monitorUi.can_install());
     QVERIFY(product.cancel());
     QVERIFY(monitorUi.can_prepare());
     QVERIFY(!monitorUi.can_install());
