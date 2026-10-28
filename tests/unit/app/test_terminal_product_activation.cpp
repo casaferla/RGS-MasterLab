@@ -1569,7 +1569,23 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(candidates.staged(),normalM17Stage);
     QCOMPARE(renderer.render_invocation_count(),beforeNormalM17+1);
     QCOMPARE(sinkInstalls,std::size_t{0});
+    // End-to-end guard: the authoritative Project rate stays at the
+    // immutable DEVICE-owned MASTER until the exact Return completes.
+    app::MasterOutputRateState guardedProject;
+    guardedProject.source_committed(192000);
+    guardedProject.set_target_selection_guard([&product]() noexcept {
+        return !product.monitoring_transaction_active();
+    });
+    const auto guardedRevision=guardedProject.rate_revision();
+    QVERIFY(!guardedProject.can_edit_target());
+    QVERIFY(!guardedProject.choose_master_rate(96000));
+    QCOMPARE(guardedProject.master_rate_hz(),qint64{192000});
+    QCOMPARE(guardedProject.rate_revision(),guardedRevision);
+    QCOMPARE(renderer.render_invocation_count(),beforeNormalM17+1);
     QVERIFY(monitorUi.returnManual());
+    QVERIFY(guardedProject.can_edit_target());
+    QVERIFY(guardedProject.choose_master_rate(96000));
+    QCOMPARE(guardedProject.rate_revision(),guardedRevision+1);
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QCOMPARE(candidates.staged(),normalM17Stage);
     QCOMPARE(renderer.render_invocation_count(),beforeNormalM17+1);
