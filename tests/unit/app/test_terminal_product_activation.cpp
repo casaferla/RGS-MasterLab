@@ -1508,7 +1508,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // immutable checked PCM. No new M17 Prepare and no terminal identity.
     std::shared_ptr<const audio::MonitoringPcmCandidate> monitorSinkOwner;
     bool injectedBorrowedInstallFailure=false;
-    bool injectedBorrowedSeekFailure=false;
+    std::optional<platform::windows::MonitoringTransportAction> injectedSeedFailure;
     product.set_private_monitor_transport(
         [device,&monitorSinkOwner,&injectedBorrowedInstallFailure]
             (auto candidate)->core::Status {
@@ -1588,17 +1588,17 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             auto mapper=audio::MonitoringFrameMap::create(*owner);
             if(!mapper)return core::Status::failure(*mapper.error());
             using Action=platform::windows::MonitoringTransportAction;
+            if(injectedSeedFailure && request.action==*injectedSeedFailure) {
+                injectedSeedFailure.reset();
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "TEST_MAPPED_COMMAND_FAILED_AFTER_DEVICE_REPLACEMENT"});
+            }
             switch(request.action) {
             case Action::PLAY:return device->play();
             case Action::PAUSE:return device->pause();
             case Action::STOP:return device->stop();
             case Action::SEEK_MASTER: {
-                if(injectedBorrowedSeekFailure) {
-                    injectedBorrowedSeekFailure=false;
-                    return core::Status::failure(core::Error{
-                        core::ErrorCode::IoFailure,
-                        "TEST_SEEK_FAILED_AFTER_DEVICE_REPLACEMENT"});
-                }
                 auto pos=mapper.value()->master_to_device(request.master_frame);
                 if(!pos)return core::Status::failure(*pos.error());
                 return device->seek(*pos.value());
@@ -1720,31 +1720,53 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(renderer.render_invocation_count(),originalRenderCount);
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
 
-    // A post-install mapped SEEK failure retains an exact recovery ticket.
-    // Return uses the captured MANUAL snapshot rather than the partially
-    // seeded anonymous DEVICE state and never runs M17 a second time.
+    // Each mapped seeding step is its own DEVICE owner-thread action.
+    // A failure at SET_LOOP, SEEK or PLAY may leave partially updated
+    // anonymous PCM; only recovery Return may touch it. No manual STOP.
+    using SeedAction=platform::windows::MonitoringTransportAction;
+    for(const auto failingAction:{
+            SeedAction::SET_MASTER_LOOP,SeedAction::SEEK_MASTER,
+            SeedAction::PLAY}) {
+        requestedMasterLoop.reset();
+        injectedSeedFailure=failingAction;
+        QVERIFY(!product.install_private_monitor_stopped(*loopMonitor.value()));
+        QVERIFY(!injectedSeedFailure);
+        QCOMPARE(product.status(),
+            QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"));
+        QCOMPARE(monitorSinkOwner,*loopMonitor.value());
+        QVERIFY(monitorUi.monitor_installed()); // Return must remain available.
+        QVERIFY(!monitorUi.monitor_controllable()); // Partial sink is unsafe.
+        QVERIFY(!monitorUi.play());
+        QVERIFY(!monitorUi.seekMaster(250));
+        QVERIFY(!monitorUi.setMasterLoop(200,800,true));
+        QCOMPARE(monitorSinkOwner,*loopMonitor.value());
+        QVERIFY(monitorUi.returnManual());
+        QVERIFY(!monitorSinkOwner);
+        QCOMPARE(device->state,core::PlaybackState::PLAYING);
+        QCOMPARE(device->position,core::FrameIndex{500});
+        QCOMPARE(device->loop,selectedSourceLoop);
+        QCOMPARE(device->audibleRealization.realizationId,manualId);
+        QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+        QVERIFY(!monitorUi.monitor_controllable());
+        QCOMPARE(candidates.staged(),loopStage);
+        QCOMPARE(renderer.render_invocation_count(),originalRenderCount);
+    }
+    // PAUSE failure is reached only after successful LOOP/SEEK/PLAY seeds.
+    // Revert to the original PAUSED state rather than falsely PLAYING.
+    transport.pause();
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
     requestedMasterLoop.reset();
-    injectedBorrowedSeekFailure=true;
+    injectedSeedFailure=SeedAction::PAUSE;
     QVERIFY(!product.install_private_monitor_stopped(*loopMonitor.value()));
     QCOMPARE(product.status(),
         QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"));
-    QCOMPARE(monitorSinkOwner,*loopMonitor.value());
-    QVERIFY(monitorUi.monitor_installed()); // Return remains available.
-    QVERIFY(!monitorUi.monitor_controllable()); // No partial-sink controls.
-    QVERIFY(!monitorUi.play());
-    QVERIFY(!monitorUi.seekMaster(250));
-    QVERIFY(!monitorUi.setMasterLoop(200,800,true));
-    QCOMPARE(device->state,core::PlaybackState::STOPPED);
-    QCOMPARE(device->position,core::FrameIndex{0});
-    QCOMPARE(monitorSinkOwner,*loopMonitor.value());
+    QVERIFY(!monitorUi.monitor_controllable());
     QVERIFY(monitorUi.returnManual());
-    QVERIFY(!monitorSinkOwner);
-    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->state,core::PlaybackState::PAUSED);
     QCOMPARE(device->position,core::FrameIndex{500});
     QCOMPARE(device->loop,selectedSourceLoop);
     QCOMPARE(device->audibleRealization.realizationId,manualId);
-    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
-    QVERIFY(!monitorUi.monitor_controllable());
+    QVERIFY(!monitorSinkOwner);
     QCOMPARE(candidates.staged(),loopStage);
     QCOMPARE(renderer.render_invocation_count(),originalRenderCount);
     QVERIFY(product.cancel());
