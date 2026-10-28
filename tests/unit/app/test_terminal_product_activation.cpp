@@ -1758,8 +1758,18 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(renderer.render_invocation_count(),beforeMasterOnlyPlayingLoop+1);
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
-    QVERIFY(!monitorUi.can_install());
+    // MASTER-only offline Prepare MUST NOT reintroduce the old
+    // stopped/zero/no-loop installation restriction. Exact MANUAL
+    // playback with an unchanged loop may proceed to the independently
+    // owner-checked DEVICE handoff; no PCM/sink is installed by canInstall.
+    QVERIFY(monitorUi.can_install());
+    QCOMPARE(device->loop,selectedSourceLoop);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(renderer.render_invocation_count(),beforeMasterOnlyPlayingLoop+1);
     QVERIFY(monitorUi.cancel());
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->loop,selectedSourceLoop);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
     transport.stop();
     selectedSourceLoop.reset();
     QVERIFY(transport.set_loop_source_range(std::nullopt));
