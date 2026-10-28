@@ -194,6 +194,10 @@ public:
     // offline MASTER-only lane. Never advertise a measured nonconforming PCM.
     [[nodiscard]] std::optional<core::SampleRate>
     verified_master_rate_for_monitoring() const;
+    // Direct M17 Preview is legal only when the current Windows endpoint
+    // independently reports exactly the same rate as the checked MASTER.
+    // A mismatch is NOT an error or permission to rerender the MASTER.
+    [[nodiscard]] bool current_master_matches_device_for_preview() const;
     // Changes to a Loop Region cancel pending handoffs but do not stop
     // an already installed SOURCE-mapped session: its own live loop
     // controller processes active Loop Region edits.

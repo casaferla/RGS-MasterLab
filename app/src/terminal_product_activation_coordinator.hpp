@@ -4,6 +4,7 @@
 #include "terminal_limiter_state.hpp"
 #include "terminal_limiter_view_model.hpp"
 #include "playback_transport_view_model.hpp"
+#include "master_output_rate_state.hpp"
 #include <QObject>
 #include <QElapsedTimer>
 #include <QTimer>
@@ -21,6 +22,9 @@ public:
         AuditionSourceSelector&,PlaybackTransportViewModel&,
         TerminalPrivateProductSession&,QObject* parent=nullptr);
     [[nodiscard]] bool device_active() const noexcept {return deviceActive_;}
+    // Product-only authority: M17 Prepare targets PROJECT MASTER, never the
+    // Windows endpoint. Absent binding preserves legacy isolated fixtures.
+    void set_master_rate_state(MasterOutputRateState& masterState);
     // Keep Active user intent across ordinary accepted MANUAL rerenders and
     // SOURCE Loop Region edits; never claim terminal PCM during preparation.
     void manual_preview_changed(const QString& previewStatus);
@@ -31,6 +35,7 @@ public:
     void source_committed_successfully();
 private:
     void limiter_accepted();
+    void master_rate_changed();
     void private_session_changed();
     void external_context_changed();
     void begin_activation();
@@ -49,6 +54,7 @@ private:
     AuditionSourceSelector* selector_;
     PlaybackTransportViewModel* transport_;
     TerminalPrivateProductSession* session_;
+    MasterOutputRateState* masterRateState_{nullptr};
     std::optional<AuditionSourceSelector::TerminalActivationIntent> intent_;
     bool transitioning_{false};
     bool deviceActive_{false};

@@ -7,6 +7,7 @@
 #include "terminal_private_product_session.hpp"
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_product_activation_coordinator.hpp"
+#include "master_output_rate_state.hpp"
 #include "mastering_preview_controller.hpp"
 #include "terminal_limiter_view_model.hpp"
 #include "../platform/fake_playback_service.hpp"
@@ -1305,6 +1306,44 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!audioGate.has_session());
     QCOMPARE(device->audibleRealization.realizationId,currentManualId);
     QVERIFY(product.cancel());
+
+    // Production M17 now chooses the persisted PROJECT MASTER target,
+    // not the DAC clock. The 44.1k MASTER on a probed 48k device is
+    // checked and retained for DEVICE SRC but never directly installed.
+    app::MasterOutputRateState projectMaster;
+    projectMaster.source_committed(44100);
+    coordinator.set_master_rate_state(projectMaster);
+    product.set_preferred_output_rate_probe(
+        [deviceRate](audio::ChannelLayout)->core::Result<core::SampleRate>{
+            return core::Result<core::SampleRate>::success(*deviceRate.value());
+        });
+    vm.setBypass(true);
+    vm.setBypass(false);
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    const auto firstProjectMaster=candidates.staged();
+    QVERIFY(firstProjectMaster);
+    QCOMPARE(firstProjectMaster->rendered.output_rate,*masterRate.value());
+    QCOMPARE(vm.audio_status(),
+        QStringLiteral("MASTER VERIFIED · USE MASTER AUDITION"));
+    QVERIFY(!product.current_master_matches_device_for_preview());
+    const auto callsBeforeIgnoredPreview=renderer.render_invocation_count();
+    vm.previewPrepared(); // disallowed: project MASTER != physical DEVICE
+    QCOMPARE(renderer.render_invocation_count(),callsBeforeIgnoredPreview);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
+    // A revised Project target invalidates, it does NOT silently reprepare.
+    QVERIFY(projectMaster.choose_master_rate(48000));
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
+    vm.requestPrepare();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(candidates.staged()->rendered.output_rate,*deviceRate.value());
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    vm.setBypass(true);
 }
 
 void TerminalActivationIntegrationTest::

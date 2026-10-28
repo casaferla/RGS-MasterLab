@@ -418,6 +418,7 @@ int main(int argc, char* argv[])
     rgsml::app::TerminalProductActivationCoordinator terminalProductActivation{
         terminalLimiterState,terminalLimiterViewModel,auditionSelector,
         playbackTransport,privateProductSession};
+    terminalProductActivation.set_master_rate_state(masterOutputRate);
     // Ordinary manual-preview updates are not terminal AUDIO errors. The
     // conductor retires a live terminal before publication of a new MANUAL
     // owner; the old blanket cancel-on-changed caused ERROR/BYPASS instead.

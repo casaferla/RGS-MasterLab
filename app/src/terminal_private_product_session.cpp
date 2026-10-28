@@ -221,6 +221,17 @@ TerminalPrivateProductSession::verified_master_rate_for_monitoring() const
     return stage ? std::optional{stage->rendered.output_rate} : std::nullopt;
 }
 
+bool TerminalPrivateProductSession::current_master_matches_device_for_preview() const
+{
+    const auto stage=current_verified_private_master();
+    if(!stage||!rateProbe_||!manual_)return false;
+    const auto manual=manual_();
+    if(!manual)return false;
+    const auto rate=rateProbe_(manual->view().format().channel_layout());
+    return rate && *rate.value()==stage->rendered.output_rate
+        &&current_verified_private_master()==stage;
+}
+
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
 TerminalPrivateProductSession::materialize_private_final_master_monitoring(
     const MonitoringMaterializer& materializer)

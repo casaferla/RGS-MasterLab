@@ -33,6 +33,33 @@ TerminalProductActivationCoordinator::TerminalProductActivationCoordinator(
             this,&TerminalProductActivationCoordinator::update_render_elapsed);
 }
 
+void TerminalProductActivationCoordinator::set_master_rate_state(
+    MasterOutputRateState& masterState)
+{
+    if(masterRateState_)return; // no live multi-owner retarget.
+    masterRateState_=&masterState;
+    connect(&masterState,&MasterOutputRateState::changed,
+        this,&TerminalProductActivationCoordinator::master_rate_changed);
+}
+
+void TerminalProductActivationCoordinator::master_rate_changed()
+{
+    if(transitioning_)return;
+    if(session_->monitoring_transaction_active()) {
+        view_->setAudioStatus(QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
+        return;
+    }
+    // A changed (even A->B->A) Project rate is a NEW render epoch.
+    // Revoke only the exact current M17 candidate; never auto-prepare.
+    if(intent_)deactivate(false);
+    else if(session_->comparison_cached())
+        static_cast<void>(session_->cancel());
+    if(!state_->bypassed()) {
+        view_->clearAudioError();
+        view_->setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+    }
+}
+
 void TerminalProductActivationCoordinator::resume_previous_state()
 {
     if(!intent_)return;
@@ -122,7 +149,22 @@ void TerminalProductActivationCoordinator::begin_activation()
     renderHeartbeat_.start();
     // Keep current MANUAL audio and its playhead running during offline M17
     // output-rate preparation. Only the accepted final handoff may stop it.
-    auto submitted=session_->request_private_for_device(true);
+    core::Status submitted=core::Status::failure(core::Error{
+        core::ErrorCode::InvalidState,"M17_MASTER_RATE_NOT_INITIALIZED"});
+    if(masterRateState_) {
+        if(masterRateState_->has_supported_master_rate()) {
+            const auto selected=core::SampleRate::create(
+                masterRateState_->master_rate_hz());
+            if(selected)
+                submitted=session_->request_private(*selected.value(),true);
+            else
+                submitted=core::Status::failure(*selected.error());
+        }
+    } else {
+        // Legacy isolated integration fixtures; product always binds
+        // the Project MASTER authority at app startup.
+        submitted=session_->request_private_for_device(true);
+    }
     transitioning_=false;
     if(!submitted)
         fail_closed(QStringLiteral("M17 audio preparation was refused: %1")
@@ -571,14 +613,17 @@ void TerminalProductActivationCoordinator::private_session_changed()
     if(transitioning_||!intent_)return;
     const auto status=session_->status();
     if(status==QStringLiteral("READY_TO_INSTALL")) {
-        // Full programme remains private until explicit Preview Prepared.
-        readyToPreview_=true;
+        // The authoritative MASTER rate may be 192k on a 48k DAC. Never
+        // offer the legacy direct terminal install for an incompatible
+        // DEVICE: use Master Audition's independently preflighted SRC.
+        const bool direct=session_->current_master_matches_device_for_preview();
+        readyToPreview_=direct;
         renderHeartbeat_.stop();
-        // 100% belongs to successful product-gate acceptance, not a
-        // reported M17 last block or an unverified worker result.
         view_->setPreparationProgress(
-            QStringLiteral("Verified candidate ready"),1.0,true);
-        view_->setAudioStatus(QStringLiteral("READY · PREVIEW AVAILABLE"));
+            QStringLiteral("Verified MASTER ready"),1.0,true);
+        view_->setAudioStatus(direct
+            ?QStringLiteral("READY · PREVIEW AVAILABLE")
+            :QStringLiteral("MASTER VERIFIED · USE MASTER AUDITION"));
     } else if(status==QStringLiteral("MEASURED_NONCONFORMING_READY")) {
         readyToPreview_=false;
         renderHeartbeat_.stop();
