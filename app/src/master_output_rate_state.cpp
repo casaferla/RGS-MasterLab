@@ -5,10 +5,13 @@ void MasterOutputRateState::source_committed(qint64 hz) noexcept {
     masterRateHz_=supported(sourceRateHz_)?sourceRateHz_:0;
     ++rateRevision_; // different SOURCE identity invalidates even at same Fs
     emit changed();
+    emit selectionAvailabilityChanged();
 }
 void MasterOutputRateState::source_cleared() noexcept {
     if(sourceRateHz_==0&&masterRateHz_==0)return;
-    sourceRateHz_=0;masterRateHz_=0;++rateRevision_;emit changed();
+    sourceRateHz_=0;masterRateHz_=0;++rateRevision_;
+    emit changed();
+    emit selectionAvailabilityChanged();
 }
 bool MasterOutputRateState::choose_master_rate(qint64 hz) noexcept {
     if(!supported(sourceRateHz_)||!supported(hz))return false;

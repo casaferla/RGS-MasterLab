@@ -24,6 +24,8 @@ private slots:
     QVERIFY(s.choose_master_rate(96000));
     const auto priorRevision=s.rate_revision();
     QSignalSpy changes(&s,&MasterOutputRateState::changed);
+    QSignalSpy availability(&s,
+        &MasterOutputRateState::selectionAvailabilityChanged);
     bool monitoring=true;
     s.set_target_selection_guard([&monitoring]() noexcept {
         return !monitoring;
@@ -41,13 +43,16 @@ private slots:
     QVERIFY(s.choose_master_rate(48000));
     QCOMPARE(s.master_rate_hz(),qint64{48000});
     QCOMPARE(s.rate_revision(),priorRevision+1);
-    QVERIFY(changes.count()>=3); // guard, availability, chosen rate
+    QCOMPARE(changes.count(),1); // only genuine 192->48 change
+    QCOMPARE(availability.count(),2); // guard and monitor Return
     monitoring=true;
     s.source_committed(44100); // genuine new SOURCE always invalidates
     QCOMPARE(s.master_rate_hz(),qint64{44100});
     QCOMPARE(s.source_rate_hz(),qint64{44100});
     QVERIFY(!s.can_edit_target());
     QCOMPARE(s.rate_revision(),priorRevision+2);
+    QCOMPARE(changes.count(),2);
+    QCOMPARE(availability.count(),3);
  }
  void sourceChangeInvalidatesAndUnsupportedFailsClosed(){
     MasterOutputRateState s;s.source_committed(48000);

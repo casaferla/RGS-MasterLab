@@ -12,7 +12,7 @@ class MasterOutputRateState final : public QObject {
     Q_PROPERTY(qint64 sourceRateHz READ source_rate_hz NOTIFY changed)
     Q_PROPERTY(qint64 masterRateHz READ master_rate_hz NOTIFY changed)
     Q_PROPERTY(bool hasSupportedMasterRate READ has_supported_master_rate NOTIFY changed)
-    Q_PROPERTY(bool canEditTarget READ can_edit_target NOTIFY changed)
+    Q_PROPERTY(bool canEditTarget READ can_edit_target NOTIFY selectionAvailabilityChanged)
     Q_PROPERTY(quint64 rateRevision READ rate_revision NOTIFY changed)
 public:
     explicit MasterOutputRateState(QObject* parent=nullptr):QObject(parent){}
@@ -33,7 +33,7 @@ public:
     using TargetSelectionGuard=std::function<bool()>;
     void set_target_selection_guard(TargetSelectionGuard guard) {
         targetSelectionGuard_=std::move(guard);
-        emit changed();
+        emit selectionAvailabilityChanged();
     }
     [[nodiscard]] bool can_edit_target() const noexcept {
         return has_supported_master_rate()
@@ -41,12 +41,15 @@ public:
     }
     // Availability may change when the private monitoring lease changes,
     // without changing the Project MASTER rate/revision.
-    void refresh_selection_availability() {emit changed();}
+    void refresh_selection_availability() {emit selectionAvailabilityChanged();}
     void source_committed(qint64 sourceRateHz) noexcept;
     void source_cleared() noexcept;
     Q_INVOKABLE bool choose_master_rate(qint64 targetHz) noexcept;
 signals:
+    // Only changed() represents a genuine rate/epoch revision. Separate
+    // monitor admission availability MUST NEVER invalidate M17 MASTER PCM.
     void changed();
+    void selectionAvailabilityChanged();
 private:
     qint64 sourceRateHz_{0};
     qint64 masterRateHz_{0};
