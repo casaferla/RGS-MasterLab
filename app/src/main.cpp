@@ -419,6 +419,13 @@ int main(int argc, char* argv[])
         terminalLimiterState,terminalLimiterViewModel,auditionSelector,
         playbackTransport,privateProductSession};
     terminalProductActivation.set_master_rate_state(masterOutputRate);
+    // A real full-track M17 Prepare supersedes disposable host benchmarks.
+    // Cancel at the exact request signal, before any renderer CPU work,
+    // without touching the source/MANUAL playback identity.
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::prepareRequested,
+        &prepareRateAdvisor,
+        &rgsml::app::PrepareMemoryAdviceViewModel::cancel_calibration);
     masterOutputRate.set_target_selection_guard(
         [&privateProductSession]() noexcept {
             return !privateProductSession.monitoring_transaction_active();

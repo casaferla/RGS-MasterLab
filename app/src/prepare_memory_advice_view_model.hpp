@@ -25,6 +25,7 @@ class PrepareMemoryAdviceViewModel final : public QObject {
     Q_PROPERTY(QVariantList recommendations READ recommendations NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
     Q_PROPERTY(bool calibrationRunning READ calibration_running NOTIFY calibrationChanged)
+    Q_PROPERTY(int calibrationCompletedRates READ calibration_completed_rates NOTIFY calibrationChanged)
     Q_PROPERTY(bool calibrationValid READ calibration_valid NOTIFY calibrationChanged)
     Q_PROPERTY(double calibratedCeilingDbTp READ calibrated_ceiling_db_tp NOTIFY calibrationChanged)
     Q_PROPERTY(QVariantList dspEstimates READ dsp_estimates NOTIFY calibrationChanged)
@@ -45,6 +46,7 @@ public:
     Q_INVOKABLE bool calibrate(double ceilingDbTp);
     Q_INVOKABLE void cancel_calibration();
     [[nodiscard]] bool calibration_running() const noexcept {return calibrationRunning_;}
+    [[nodiscard]] int calibration_completed_rates() const noexcept {return completedCalibrationRates_;}
     [[nodiscard]] bool calibration_valid() const noexcept {return calibrationValid_;}
     [[nodiscard]] double calibrated_ceiling_db_tp() const noexcept {return calibratedCeiling_;}
     [[nodiscard]] QVariantList dsp_estimates() const {return dspEstimates_;}
@@ -81,6 +83,7 @@ private:
     std::uint64_t calibrationSerial_{0}; // GUI-thread only
     bool stoppingCalibration_{false};
     bool calibrationRunning_{false};
+    int completedCalibrationRates_{0};
     bool calibrationValid_{false};
     double calibratedCeiling_{0.0};
     QVariantList dspEstimates_;

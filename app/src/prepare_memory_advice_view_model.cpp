@@ -221,6 +221,7 @@ void PrepareMemoryAdviceViewModel::refresh()
 void PrepareMemoryAdviceViewModel::clear_calibration(const QString& message)
 {
     calibrationRunning_=false;
+    completedCalibrationRates_=0;
     calibrationValid_=false;
     dspEstimates_.clear();
     calibratedCeiling_=0.0;
@@ -333,6 +334,18 @@ void PrepareMemoryAdviceViewModel::calibration_loop()
                 }
                 if(valid && low>0 && high>=low)
                     completed[index]={low,high,true};
+                if(cancelled())break;
+                const auto finished=static_cast<int>(index)+1;
+                static_cast<void>(QMetaObject::invokeMethod(this,
+                    [this,serial=job->serial,finished] {
+                        if(serial!=calibrationSerial_ || !calibrationRunning_)
+                            return;
+                        completedCalibrationRates_=finished;
+                        calibrationStatus_=QStringLiteral(
+                            "M17/M16 local calibration %1/6 rates · TOTAL ETA N/A")
+                            .arg(finished);
+                        emit calibrationChanged();
+                    },Qt::QueuedConnection));
             }
         }
         if(cancelled())continue;
@@ -390,6 +403,7 @@ void PrepareMemoryAdviceViewModel::finish_calibration(
     dspEstimates_=std::move(rows);
     calibratedCeiling_=ceiling;
     calibrationRunning_=false;
+    completedCalibrationRates_=6;
     calibrationValid_=measured>0;
     calibrationStatus_=QStringLiteral(
         "%1/6 M17+M16 rate probes completed · TOTAL Prepare ETA N/A")

@@ -944,10 +944,13 @@ Rectangle {
                         color: "#A4B9C8"
                         font.family: "Segoe UI"
                         font.pixelSize: 9
-                        text: rateTimePopup.selectedAdvice
-                            && rateTimePopup.selectedAdvice.summary
-                            ? rateTimePopup.selectedAdvice.summary
-                            : "Memory N/A · Estimated time N/A · Final SRC pending"
+                        text: root.memoryAdvisor
+                            && root.memoryAdvisor.calibrationRunning
+                            ? root.memoryAdvisor.calibrationStatus
+                            : rateTimePopup.selectedAdvice
+                                && rateTimePopup.selectedAdvice.summary
+                                ? rateTimePopup.selectedAdvice.summary
+                                : "Memory N/A · Total Prepare ETA N/A"
                     }
                     // Real, explicitly triggered offline M17+M16 probes run
                     // only in a cancellable non-audio worker. The resulting

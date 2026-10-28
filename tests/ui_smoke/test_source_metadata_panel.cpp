@@ -558,9 +558,11 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
         &app::PrepareMemoryAdviceViewModel::calibrationChanged};
     QVERIFY(advisor.calibrate(-1.0));
     QVERIFY(advisor.calibration_running());
+    QCOMPARE(advisor.calibration_completed_rates(),0);
     QVERIFY(!advisor.calibration_valid()); // measurements are not forged
     advisor.cancel_calibration();
     QVERIFY(!advisor.calibration_running());
+    QCOMPARE(advisor.calibration_completed_rates(),0);
     QVERIFY(!advisor.calibration_valid());
     QVERIFY(advisor.dsp_estimates().isEmpty());
     QTest::qWait(50); // a stale worker completion must not republish
