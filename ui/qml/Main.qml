@@ -461,12 +461,14 @@ ApplicationWindow {
                 Item { Layout.preferredWidth: 8 }
                 StudioButton {
                     objectName: "globalReturnFromMonitor"
-                    text: root.appTerminalMonitorViewModel.returnTargetText
+                    text: root.appTerminalMonitorViewModel
+                        ? root.appTerminalMonitorViewModel.returnTargetText : "Return to Source"
                     visible: root.monitorExclusive
                     enabled: root.monitorExclusive
                     minimumControlWidth: 110
-                    onClicked: root.appTerminalMonitorViewModel.cancel()
-                    Accessible.name: root.appTerminalMonitorViewModel.returnTargetText
+                    onClicked: if (root.appTerminalMonitorViewModel)
+                        root.appTerminalMonitorViewModel.cancel()
+                    Accessible.name: text
                 }
                 Rectangle {
                     objectName: "transportTimeModule"
@@ -1399,14 +1401,16 @@ ApplicationWindow {
                                             radius: 4
 
                                             onVisibleChanged: {
-                                                if (visible) prepareRateAdvisor.refresh()
+                                                if (visible && root.appMemoryAdvisor)
+                                                    root.appMemoryAdvisor.refresh()
                                             }
                                             Connections {
                                                 target: sourceSelection
                                                 function onSourceChanged() {
                                                     if (restorationControlsGroup.visible
-                                                            && prepareRestorationView.visible)
-                                                        prepareRateAdvisor.refresh()
+                                                            && prepareRestorationView.visible
+                                                            && root.appMemoryAdvisor)
+                                                        root.appMemoryAdvisor.refresh()
                                                 }
                                             }
                                             ColumnLayout {
@@ -1427,7 +1431,8 @@ ApplicationWindow {
                                                     Item { Layout.fillWidth: true }
                                                     Text {
                                                         objectName: "prepareMemoryDeviceStatus"
-                                                        text: prepareRateAdvisor.statusText
+                                                        text: root.appMemoryAdvisor ? root.appMemoryAdvisor.statusText
+                                                            : "UNAVAILABLE"
                                                         color: "#8FAAB9"
                                                         font.pixelSize: 9
                                                         elide: Text.ElideRight
@@ -1440,15 +1445,17 @@ ApplicationWindow {
                                                         font.pixelSize: 12
                                                         implicitWidth: 24
                                                         implicitHeight: 18
-                                                        onClicked: prepareRateAdvisor.refresh()
+                                                        enabled: !!root.appMemoryAdvisor
+                                                        onClicked: if (root.appMemoryAdvisor)
+                                                            root.appMemoryAdvisor.refresh()
                                                         StudioTooltipDwell {
                                                             id: prepareRefreshDwell
                                                             anchors.fill: parent
                                                         }
-                                                        ToolTip.text: "Rivaluta la memoria e il dispositivo adesso"
+                                                        ToolTip.text: "Refresh available RAM and audio device information"
                                                         ToolTip.visible: prepareRefreshDwell.ready
                                                         ToolTip.delay: 0
-                                                        Accessible.name: "Rivaluta memoria per Prepare"
+                                                        Accessible.name: "Refresh Prepare memory guidance"
                                                     }
                                                 }
                                                 GridLayout {
@@ -1458,7 +1465,8 @@ ApplicationWindow {
                                                     columnSpacing: 4
                                                     rowSpacing: 2
                                                     Repeater {
-                                                        model: prepareRateAdvisor.recommendations
+                                                        model: root.appMemoryAdvisor
+                                                            ? root.appMemoryAdvisor.recommendations : []
                                                         Rectangle {
                                                             required property var modelData
                                                             Layout.fillWidth: true
@@ -1509,7 +1517,7 @@ ApplicationWindow {
                                                 Text {
                                                     Layout.fillWidth: true
                                                     Layout.preferredHeight: 12
-                                                    text: "Stima PCM minima · CPU non qualificata · rivalutare prima di allocare"
+                                                    text: "Minimum PCM estimate · CPU not qualified · refresh before allocation"
                                                     font.pixelSize: 8
                                                     color: "#8FAAB9"
                                                     elide: Text.ElideRight
