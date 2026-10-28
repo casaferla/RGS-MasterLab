@@ -327,6 +327,16 @@ target_link_libraries(rgsml_playback_src_tests
         Qt6::Test
 )
 rgsml_apply_project_warnings(rgsml_playback_src_tests)
+# The supplemental Phase-11 polyphase C++ oracle is STRICT binary64:
+# forbid FMA contraction/fast-math in BOTH OS Focused qualification runs.
+# This applies to the test TU only; the frozen playback/DSP libraries and
+# production compile oracles are NOT changed here.
+if(MSVC)
+    target_compile_options(rgsml_playback_src_tests PRIVATE /fp:strict)
+else()
+    target_compile_options(rgsml_playback_src_tests PRIVATE
+        -fno-fast-math -ffp-contract=off)
+endif()
 add_test(NAME rgsml_playback_src_tests COMMAND rgsml_playback_src_tests)
 set_tests_properties(rgsml_playback_src_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
