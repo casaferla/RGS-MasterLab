@@ -52,10 +52,12 @@ class ExactDyadicSupplementalTests(unittest.TestCase):
                 ratio = Ratio.make(fin, fout)
                 shape = kernel_shape(ratio)
                 taps = bytearray(8 * shape.N)
-                for offset, value in ((-ratio.L, 0.125), (-1, -0.25),
-                                      (0, 0.5), (1, -0.25),
-                                      (ratio.L, 0.125)):
-                    struct.pack_into("<d", taps, 8 * (shape.D + offset), value)
+                # For L=1, offset L coincides with offset 1. Assign
+                # mirrored pairs together to keep byte-exact symmetry.
+                weights = {0: 0.5, 1: -0.25, ratio.L: 0.125}
+                for offset, value in weights.items():
+                    for position in {shape.D - offset, shape.D + offset}:
+                        struct.pack_into("<d", taps, 8 * position, value)
                 data = HEADER.pack(MAGIC, 1, 1, shape.L, shape.M, shape.T,
                                    0, shape.N, shape.N, 8 * shape.N) + taps
                 _, kernel = read_locked_kernel(data, ratio,
