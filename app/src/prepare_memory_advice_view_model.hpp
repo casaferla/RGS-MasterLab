@@ -3,6 +3,13 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <array>
+#include <atomic>
+#include <condition_variable>
+#include <cstdint>
+#include <thread>
+#include <mutex>
+#include <optional>
 
 namespace rgsml::platform::windows {
 class WindowsAudioPlaybackService;
@@ -17,22 +24,68 @@ class PrepareMemoryAdviceViewModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList recommendations READ recommendations NOTIFY changed)
     Q_PROPERTY(QString statusText READ status_text NOTIFY changed)
+    Q_PROPERTY(bool calibrationRunning READ calibration_running NOTIFY calibrationChanged)
+    Q_PROPERTY(bool calibrationValid READ calibration_valid NOTIFY calibrationChanged)
+    Q_PROPERTY(double calibratedCeilingDbTp READ calibrated_ceiling_db_tp NOTIFY calibrationChanged)
+    Q_PROPERTY(QVariantList dspEstimates READ dsp_estimates NOTIFY calibrationChanged)
+    Q_PROPERTY(QString calibrationStatus READ calibration_status NOTIFY calibrationChanged)
 public:
     PrepareMemoryAdviceViewModel(
         const SourceSelectionViewModel* source,
         const platform::windows::WindowsAudioPlaybackService* playback,
         QObject* parent = nullptr);
+    ~PrepareMemoryAdviceViewModel() override;
+    PrepareMemoryAdviceViewModel(const PrepareMemoryAdviceViewModel&)=delete;
+    PrepareMemoryAdviceViewModel& operator=(const PrepareMemoryAdviceViewModel&)=delete;
     [[nodiscard]] QVariantList recommendations() const;
     [[nodiscard]] QString status_text() const;
     Q_INVOKABLE void refresh();
+    // Runs genuine accelerated M17 + full-resource M16 on bounded internal
+    // deterministic PCM in a NON-AUDIO worker. No Final SRC/DEVICE/WAV.
+    Q_INVOKABLE bool calibrate(double ceilingDbTp);
+    Q_INVOKABLE void cancel_calibration();
+    [[nodiscard]] bool calibration_running() const noexcept {return calibrationRunning_;}
+    [[nodiscard]] bool calibration_valid() const noexcept {return calibrationValid_;}
+    [[nodiscard]] double calibrated_ceiling_db_tp() const noexcept {return calibratedCeiling_;}
+    [[nodiscard]] QVariantList dsp_estimates() const {return dspEstimates_;}
+    [[nodiscard]] QString calibration_status() const {return calibrationStatus_;}
 signals:
     void changed();
+    void calibrationChanged();
 private:
+    struct CalibrationJob {
+        std::uint64_t serial;
+        std::int64_t sourceRate;
+        std::int64_t sourceFrames;
+        int channels;
+        double ceiling;
+    };
+    struct DspProbeEstimate {
+        std::int64_t lowUs{0};
+        std::int64_t highUs{0};
+        bool valid{false};
+    };
     void reset_unknown(const QString& status);
+    void calibration_loop();
+    void finish_calibration(std::uint64_t serial,double ceiling,
+        std::array<DspProbeEstimate,6> results);
+    void clear_calibration(const QString& message);
     const SourceSelectionViewModel* source_;
     const platform::windows::WindowsAudioPlaybackService* playback_;
     QVariantList recommendations_;
     QString statusText_;
+    std::mutex calibrationMutex_;
+    std::condition_variable calibrationWake_;
+    std::optional<CalibrationJob> pendingCalibration_;
+    std::atomic<std::uint64_t> activeCalibrationSerial_{0};
+    std::uint64_t calibrationSerial_{0}; // GUI-thread only
+    bool stoppingCalibration_{false};
+    bool calibrationRunning_{false};
+    bool calibrationValid_{false};
+    double calibratedCeiling_{0.0};
+    QVariantList dspEstimates_;
+    QString calibrationStatus_{QStringLiteral("No on-host calibration yet")};
+    std::jthread calibrationThread_;
 };
 
 } // namespace rgsml::app

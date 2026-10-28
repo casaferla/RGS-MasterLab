@@ -760,8 +760,8 @@ Rectangle {
                         Text {
                             objectName: "m17TimeColumnHeader"
                             Layout.preferredWidth: 62
-                            property string interactionHint: "Predicted offline processing duration for this master rate. N/A until real on-device calibration is available."
-                            text: "EST. TIME"
+                            property string interactionHint: "LOCAL M17+M16 DSP-only projected range from real offline calibration; never a total Prepare/Final SRC time. N/A if unmeasured."
+                            text: "DSP EST."
                             HoverHandler { id: timeHeaderHover }
                             ToolTip.text: interactionHint
                             ToolTip.visible: timeHeaderHover.hovered && timeHeaderDwell.ready
@@ -885,9 +885,28 @@ Rectangle {
                             }
                             Text {
                                 objectName: "m17RateTime_" + rateRow.index
-                                property string interactionHint: "No estimated processing time yet: per-rate M17/M16 and Final SRC calibration has not been integrated."
+                                readonly property bool admissible: root.masterRateState
+                                    && root.masterRateState.m17_candidate_rate_admissible(
+                                        rateRow.modelData)
+                                readonly property bool matchingProfile: root.memoryAdvisor
+                                    && root.memoryAdvisor.calibrationValid
+                                    && root.terminalLimiterViewModel
+                                    && root.memoryAdvisor.calibratedCeilingDbTp
+                                        === root.terminalLimiterViewModel.ceilingDbTp
+                                    && root.memoryAdvisor.dspEstimates.length === 6
+                                readonly property var probe: matchingProfile
+                                    ? root.memoryAdvisor.dspEstimates[rateRow.index] : null
+                                property string interactionHint: !admissible
+                                    ? "Final SRC candidate unavailable for this SOURCE/MASTER pair: "
+                                        + (root.masterRateState
+                                            ? root.masterRateState.final_src_path_status(
+                                                rateRow.modelData) : "no source")
+                                    : probe && probe.details ? probe.details
+                                    : "M17/M16 local calibration not measured at this Ceiling. Total Prepare ETA is N/A."
                                 Layout.preferredWidth: 62
-                                text: "N/A"
+                                text: !admissible ? "SRC N/A"
+                                    : probe && probe.label ? probe.label : "N/A"
+                                elide: Text.ElideRight
                                 HoverHandler { id: etaHover }
                                 ToolTip.text: interactionHint
                                 ToolTip.visible: etaHover.hovered && etaDwell.ready
@@ -896,10 +915,11 @@ Rectangle {
                                     id: etaDwell
                                     anchors.fill: parent
                                 }
-                                color: "#92A9BB"
+                                color: admissible && probe && probe.label !== "N/A"
+                                    ? "#B6D6CA" : "#92A9BB"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
-                                Accessible.name: "Estimated processing time not yet calibrated"
+                                Accessible.name: text + ". DSP estimate only; total Prepare time unavailable."
                             }
                         }
                     }
@@ -929,12 +949,16 @@ Rectangle {
                             ? rateTimePopup.selectedAdvice.summary
                             : "Memory N/A · Estimated time N/A · Final SRC pending"
                     }
-                    // The help target remains enabled for hover even though
-                    // CALIBRATE itself is genuinely disabled: no action occurs.
+                    // Real, explicitly triggered offline M17+M16 probes run
+                    // only in a cancellable non-audio worker. The resulting
+                    // DSP-only ranges NEVER certify Final SRC or total ETA.
                     Item {
                         id: calibrationHelpTarget
                         objectName: "m17RateCalibrationTooltipTarget"
-                        property string interactionHint: "CALIBRATE will measure real offline M17/M16 processing on this computer for more accurate time estimates. Not available until the calibrator is integrated."
+                        property string interactionHint: root.memoryAdvisor
+                            ? root.memoryAdvisor.calibrationStatus
+                                + ". Internal PCM only; no DEVICE, user track or WAV."
+                            : "Calibration unavailable in this fixture."
                         Layout.preferredWidth: calibrationButton.implicitWidth
                         Layout.preferredHeight: calibrationButton.implicitHeight
                         HoverHandler { id: calibrationHover }
@@ -949,15 +973,30 @@ Rectangle {
                             id: calibrationButton
                             objectName: "m17RateCalibrationButton"
                             anchors.fill: parent
-                            text: "CALIBRATE"
+                            text: root.memoryAdvisor
+                                && root.memoryAdvisor.calibrationRunning
+                                ? "CANCEL" : "CALIBRATE"
                             minimumControlWidth: 91
                             contentPadding: 10
                             accentColor: root.activeFamilyAccent
                             selectedFamilyAccent: true
                             selected: true
                             showDisabledAccent: true
-                            enabled: false
-                            Accessible.name: "Calibrate processing time: not yet available"
+                            enabled: !!root.memoryAdvisor
+                                && !!root.terminalLimiterViewModel
+                                && (root.memoryAdvisor.calibrationRunning
+                                    || root.masterRateState
+                                        && root.masterRateState.hasSupportedMasterRate)
+                                && !root.m17Preparing && !root.monitorExclusive
+                            onClicked: {
+                                if (!root.memoryAdvisor) return
+                                if (root.memoryAdvisor.calibrationRunning)
+                                    root.memoryAdvisor.cancel_calibration()
+                                else if (root.terminalLimiterViewModel)
+                                    root.memoryAdvisor.calibrate(
+                                        root.terminalLimiterViewModel.ceilingDbTp)
+                            }
+                            Accessible.name: text + " local M17/M16 only; total Prepare ETA unavailable"
                         }
                     }
                 }

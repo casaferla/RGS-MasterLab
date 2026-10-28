@@ -828,7 +828,7 @@ Window {
             const std::array<std::pair<QString,QString>,3> headings{{
                 {QStringLiteral("m17RateColumnHeader"),QStringLiteral("MASTER RATE")},
                 {QStringLiteral("m17MemoryColumnHeader"),QStringLiteral("MEMORY (MIN.)")},
-                {QStringLiteral("m17TimeColumnHeader"),QStringLiteral("EST. TIME")}}};
+                {QStringLiteral("m17TimeColumnHeader"),QStringLiteral("DSP EST.")}}};
             for(const auto& [objectName,expectedText]:headings) {
                 auto* header=find_child_by_name(host,objectName);
                 QVERIFY(header);

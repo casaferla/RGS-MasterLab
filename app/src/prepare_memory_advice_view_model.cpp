@@ -1,5 +1,13 @@
 #include "prepare_memory_advice_view_model.hpp"
 #include "source_selection_view_model.hpp"
+#include <rgsml/render/m17_offline_calibration.hpp>
+#include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
+#include <rgsml/core/frame_time.hpp>
+#include <QMetaObject>
+#include <cmath>
+#include <thread>
+#include <utility>
 
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
@@ -10,6 +18,7 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 namespace rgsml::app {
 namespace {
@@ -127,6 +136,24 @@ PrepareMemoryAdviceViewModel::PrepareMemoryAdviceViewModel(
     :QObject(parent),source_(source),playback_(playback)
 {
     reset_unknown(QStringLiteral("Load a source"));
+    connect(source_,&SourceSelectionViewModel::sourceChanged,
+        this,[this] {
+            cancel_calibration();
+            clear_calibration(QStringLiteral("SOURCE changed · calibrate again"));
+        });
+    calibrationThread_=std::jthread([this] {calibration_loop();});
+}
+
+PrepareMemoryAdviceViewModel::~PrepareMemoryAdviceViewModel()
+{
+    activeCalibrationSerial_.fetch_add(1,std::memory_order_release);
+    {
+        std::lock_guard lock(calibrationMutex_);
+        stoppingCalibration_=true;
+        pendingCalibration_.reset();
+    }
+    calibrationWake_.notify_one();
+    if(calibrationThread_.joinable())calibrationThread_.join();
 }
 
 QVariantList PrepareMemoryAdviceViewModel::recommendations() const
@@ -190,4 +217,184 @@ void PrepareMemoryAdviceViewModel::refresh()
     statusText_=QStringLiteral("DEVICE %1").arg(rate_label(deviceHz));
     emit changed();
 }
+
+void PrepareMemoryAdviceViewModel::clear_calibration(const QString& message)
+{
+    calibrationRunning_=false;
+    calibrationValid_=false;
+    dspEstimates_.clear();
+    calibratedCeiling_=0.0;
+    calibrationStatus_=message;
+    emit calibrationChanged();
+}
+
+void PrepareMemoryAdviceViewModel::cancel_calibration()
+{
+    ++calibrationSerial_;
+    activeCalibrationSerial_.store(calibrationSerial_,std::memory_order_release);
+    {
+        std::lock_guard lock(calibrationMutex_);
+        pendingCalibration_.reset();
+    }
+    if(calibrationRunning_)
+        clear_calibration(QStringLiteral("Calibration cancelled · no partial ETA"));
+}
+
+bool PrepareMemoryAdviceViewModel::calibrate(double ceiling)
+{
+    if(calibrationRunning_)return false;
+    if(!source_||!source_->has_source()
+       ||!std::isfinite(ceiling))
+        return false;
+    const auto rate=source_->sample_rate_hz();
+    const auto frames=source_->frame_count();
+    const auto channels=source_->channel_count();
+    if(std::find(kMasterRates.begin(),kMasterRates.end(),rate)
+           ==kMasterRates.end()
+       ||frames<=0 || (channels!=1&&channels!=2)
+       ||!dsp::TruePeakLimiterParameters::create(ceiling))
+        return false;
+    ++calibrationSerial_;
+    activeCalibrationSerial_.store(calibrationSerial_,std::memory_order_release);
+    {
+        std::lock_guard lock(calibrationMutex_);
+        pendingCalibration_=CalibrationJob{
+            calibrationSerial_,rate,frames,channels,ceiling};
+    }
+    clear_calibration(QStringLiteral(
+        "Measuring real M17/M16 offline · no device, track or WAV"));
+    calibrationRunning_=true;
+    emit calibrationChanged();
+    calibrationWake_.notify_one();
+    return true;
+}
+
+void PrepareMemoryAdviceViewModel::calibration_loop()
+{
+    for(;;) {
+        std::optional<CalibrationJob> job;
+        {
+            std::unique_lock lock(calibrationMutex_);
+            calibrationWake_.wait(lock,[this] {
+                return stoppingCalibration_ || pendingCalibration_.has_value();
+            });
+            if(stoppingCalibration_)return;
+            job.swap(pendingCalibration_);
+        }
+        if(!job)continue;
+        const auto cancelled=[this,serial=job->serial] {
+            return activeCalibrationSerial_.load(std::memory_order_acquire)
+                !=serial;
+        };
+        auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+        auto parameters=dsp::TruePeakLimiterParameters::create(job->ceiling);
+        auto block=core::FrameCount::create(256);
+        std::array<DspProbeEstimate,6> completed{};
+        if(registry && parameters && block) {
+            for(std::size_t index=0;index<kMasterRates.size();++index) {
+                if(cancelled())break;
+                const auto hz=kMasterRates[index];
+                auto rate=core::SampleRate::create(hz);
+                auto probe=core::FrameCount::create(hz/20); // 50ms genuine M17
+                const auto q=job->sourceFrames/job->sourceRate;
+                const auto r=job->sourceFrames%job->sourceRate;
+                const auto tail=(r*hz+job->sourceRate-1)/job->sourceRate;
+                if(q>(std::numeric_limits<std::int64_t>::max()-tail)/hz
+                   ||!rate||!probe)continue;
+                auto projected=core::FrameCount::create(q*hz+tail);
+                if(!projected)continue;
+                const auto layout=job->channels==1
+                    ?audio::ChannelLayout::MONO_C
+                    :audio::ChannelLayout::STEREO_LR;
+                std::int64_t low=std::numeric_limits<std::int64_t>::max();
+                std::int64_t high=0;
+                bool valid=true;
+                // Two deterministic programme classes, two repeated
+                // authentic M17+M16 measurements per rate. Neither transient
+                // success nor timing is silently fabricated on failure.
+                for(const auto stimulus:{
+                    render::M17CalibrationStimulus::QUIET_PROGRAMME,
+                    render::M17CalibrationStimulus::TRANSIENT_STRESS}) {
+                    for(int repeat=0;repeat<2;++repeat) {
+                        if(cancelled()){valid=false;break;}
+                        auto measured=render::calibrate_m17_offline_once(
+                            *rate.value(),layout,*parameters.value(),
+                            stimulus,*probe.value(),*registry.value(),
+                            *block.value(),cancelled);
+                        if(!measured){valid=false;break;}
+                        auto estimate=render::estimate_m17_m16_microseconds(
+                            *measured.value(),*rate.value(),layout,job->ceiling,
+                            stimulus,*projected.value());
+                        if(!estimate){valid=false;break;}
+                        low=std::min(low,*estimate.value());
+                        high=std::max(high,*estimate.value());
+                    }
+                    if(!valid)break;
+                }
+                if(valid && low>0 && high>=low)
+                    completed[index]={low,high,true};
+            }
+        }
+        if(cancelled())continue;
+        // All QObjects and QVariant presentations are GUI-thread only.
+        static_cast<void>(QMetaObject::invokeMethod(this,
+            [this,serial=job->serial,ceiling=job->ceiling,completed] {
+                finish_calibration(serial,ceiling,completed);
+            },Qt::QueuedConnection));
+    }
+}
+
+void PrepareMemoryAdviceViewModel::finish_calibration(
+    std::uint64_t serial,double ceiling,
+    std::array<DspProbeEstimate,6> results)
+{
+    if(serial!=calibrationSerial_ || !calibrationRunning_)return;
+    const auto formatDuration=[](std::int64_t us)->QString {
+        constexpr std::int64_t million=1'000'000;
+        const auto seconds=std::max<std::int64_t>(
+            1,us/million+(us%million!=0?1:0));
+        if(seconds>=3600)
+            return QStringLiteral("%1h").arg(seconds/3600);
+        if(seconds>=60)
+            return QStringLiteral("%1m").arg(seconds/60);
+        return QStringLiteral("%1s").arg(seconds);
+    };
+    QVariantList rows;
+    rows.reserve(6);
+    int measured=0;
+    for(const auto& result:results) {
+        QVariantMap row;
+        if(result.valid) {
+            ++measured;
+            const auto low=formatDuration(result.lowUs);
+            const auto high=formatDuration(result.highUs);
+            row[QStringLiteral("label")]=low==high
+                ?QStringLiteral("~%1*").arg(low)
+                :QStringLiteral("%1-%2*").arg(low,high);
+            row[QStringLiteral("details")]=QStringLiteral(
+                "LOCAL M17+M16 compute-time projection ONLY (%1 to %2); "
+                "two actual quiet + two transient 50ms probes on this CPU. "
+                "NOT total Prepare time: Final SRC, queue, allocation, "
+                "finalization and real-track effects NOT modeled. "
+                "No guaranteed duration; do not use as an export ETA.")
+                .arg(low,high);
+        } else {
+            row[QStringLiteral("label")]=QStringLiteral("N/A");
+            row[QStringLiteral("details")]=QStringLiteral(
+                "Genuine M17/M16 calibration did not produce four "
+                "complete, verified measurements at this rate. "
+                "Total Prepare estimate unavailable.");
+        }
+        rows.append(row);
+    }
+    dspEstimates_=std::move(rows);
+    calibratedCeiling_=ceiling;
+    calibrationRunning_=false;
+    calibrationValid_=measured>0;
+    calibrationStatus_=QStringLiteral(
+        "%1/6 M17+M16 rate probes completed · TOTAL Prepare ETA N/A")
+        .arg(measured);
+    emit calibrationChanged();
+}
+
 } // namespace rgsml::app
