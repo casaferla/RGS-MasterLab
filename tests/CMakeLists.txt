@@ -393,6 +393,8 @@ set_tests_properties(rgsml_source_selection_tests PROPERTIES
 
 qt_add_executable(rgsml_source_metadata_panel_smoke
     ui_smoke/test_source_metadata_panel.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/prepare_memory_advice_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/prepare_memory_advice_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.cpp

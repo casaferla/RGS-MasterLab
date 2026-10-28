@@ -20,6 +20,7 @@
 #include <rgsml/render/render_request.hpp>
 #include "../unit/render/render_test_support.hpp"
 #include "project_session_view_model.hpp"
+#include "prepare_memory_advice_view_model.hpp"
 #include "source_selection_view_model.hpp"
 #include "stereo_ms_view_model.hpp"
 #include "waveform_item.hpp"
@@ -512,6 +513,7 @@ class SourceMetadataPanelSmokeTest final : public QObject {
 
 private slots:
     void childNameLookupVisitsQObjectOnce();
+    void hostCalibrationWorkerCancelsWithoutDeviceOrPersonalPcm();
     void emptyReadyErrorAndWindowLifecycle();
     void stereoMsProductDefaultDockedStartup();
     void stereoMsOptInVisualEvidence();
@@ -526,6 +528,46 @@ private slots:
 
 
 
+
+void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPersonalPcm()
+{
+    app::SourceSelectionViewModel source;
+    app::PrepareMemoryAdviceViewModel advisor{&source,nullptr};
+    QVERIFY(!advisor.calibrate(-1.0)); // no authoritative SOURCE
+    QVERIFY(!advisor.calibration_running());
+    QVERIFY(!advisor.calibration_valid());
+    QVERIFY(advisor.dsp_estimates().isEmpty());
+    QVERIFY(!advisor.calibrate(-25.0)); // rejected even without SOURCE
+
+    // Source metadata from a deterministic IN-MEMORY WAV, no user file
+    // and no Windows DEVICE. Calibrator must still use its own bounded PCM.
+    const auto bytes=valid_wav();
+    wav_support::Bytes binary;
+    binary.reserve(static_cast<std::size_t>(bytes.size()));
+    for(const auto octet:bytes)
+        binary.push_back(static_cast<std::byte>(
+            static_cast<unsigned char>(octet)));
+    const auto control=std::make_shared<wav_support::ReaderControl>();
+    auto probed=audio::SourceResource::probe(
+        wav_support::memory_reader(std::move(binary),control));
+    QVERIFY(probed);
+    source.adopt_probed_source(std::move(*probed.value()));
+    QVERIFY(source.has_source());
+    QVERIFY(!advisor.calibrate(-25.0)); // invalid Ceiling
+    QSignalSpy notifications{&advisor,
+        &app::PrepareMemoryAdviceViewModel::calibrationChanged};
+    QVERIFY(advisor.calibrate(-1.0));
+    QVERIFY(advisor.calibration_running());
+    QVERIFY(!advisor.calibration_valid()); // measurements are not forged
+    advisor.cancel_calibration();
+    QVERIFY(!advisor.calibration_running());
+    QVERIFY(!advisor.calibration_valid());
+    QVERIFY(advisor.dsp_estimates().isEmpty());
+    QTest::qWait(50); // a stale worker completion must not republish
+    QVERIFY(!advisor.calibration_valid());
+    QVERIFY(advisor.dsp_estimates().isEmpty());
+    QVERIFY(notifications.count()>=2);
+}
 
 void SourceMetadataPanelSmokeTest::childNameLookupVisitsQObjectOnce()
 {
