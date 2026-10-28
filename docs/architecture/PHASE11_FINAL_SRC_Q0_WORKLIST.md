@@ -1,5 +1,7 @@
 # PHASE 11 FINAL SRC — Q0 mathematical preflight and pending MPFR/Ziv work
 
+Sampled FFT screen: `tools/qualification/final_src/screen_candidate_spectral_response.py` accepts exact candidate-manifest SHA-256 and checks 0.001 dB passband and 140 dB stopband on a sampled FFT grid. This is NOT the independent certified MPFR/DTFT response oracle and cannot authorize release.
+
 ## Subsequent staging — atomic 14-asset MPFR candidate assembly (NOT YET FOCUSED-QUALIFIED)
 
 - `tools/qualification/final_src/build_candidate_manifest.py` enumerates the 14 canonical reduced ratios from the frozen 6x6 matrix, reuses reduced-ratio kernels and invokes the offline MPFR/Ziv generator twice for each ratio. It verifies full RGSMSR1 structure, exact same-implementation binary bytes and SHA-256, then atomically publishes one **CANDIDATE_NOT_RELEASE_QUALIFIED** folder. No partial asset files are published after any failed proof/byte mismatch, and pre-existing destinations are never intentionally overwritten.
