@@ -29,6 +29,11 @@ jobs:
       - name: Phase-11 Final SRC exact Q0 preflight (Linux)
         run: python tools/qualification/final_src/test_phase11_math_preflight.py
 
+      # Independent conceptual zero-stuffed exact-dyadic reference checks;
+      # NOT the full MPFR spectral oracle or release qualification.
+      - name: Phase-11 Final SRC independent zero-stuffed oracle (Linux)
+        run: python tools/qualification/final_src/test_exact_dyadic_zero_stuff_oracle.py
+
       # Offline MPFR proof-engine ABI smoke only; the full 14-asset
       # generator is deliberately NOT run on every quick Focused CI.
       - name: Phase-11 Final SRC MPFR interval smoke (Linux)
@@ -268,6 +273,11 @@ jobs:
       # Same integer/rational evidence independently executed on Windows.
       - name: Phase-11 Final SRC exact Q0 preflight (Windows)
         run: python tools/qualification/final_src/test_phase11_math_preflight.py
+
+      # Independent conceptual zero-stuffed exact-dyadic reference checks;
+      # NOT the full MPFR spectral oracle or release qualification.
+      - name: Phase-11 Final SRC independent zero-stuffed oracle (Windows)
+        run: python tools/qualification/final_src/test_exact_dyadic_zero_stuff_oracle.py
 
       - name: Install sccache
         uses: mozilla-actions/sccache-action@v0.0.11

@@ -64,6 +64,21 @@ or acoustic response is asserted correct before independent reproduction.
 This candidate must pass the independent reference and multi-platform
 qualification before its exact bytes can be frozen and used for production.
 
+## Supplemental independently ordered exact-dyadic reference (next staging)
+
+`tools/qualification/final_src/exact_dyadic_zero_stuff_oracle.py`
+provides a separate, conceptual zero-stuffed-stream convolution cross-check:
+it consumes **exact binary64 coefficient bits**, independent externally supplied
+SHA-256 and a complete source, iterates prototype tap j in ascending order
+and performs **exact Fraction dyadic arithmetic** rather than calling the
+production polyphase renderer or reusing its binary64 accumulator. Full and
+absolute-crop results are compared for exact equality in dedicated synthetic
+delta-kernel tests; a checksum mismatch is rejected. This is an additional
+oracle: it is **NOT the frozen MPFR 256+ standalone zero-stuffed oracle** and
+must not be used to issue the locked production coefficient or PCM expected
+without subsequent independent MPFR/QTP comparison. Both Windows/Linux
+Focused CI can exercise its fast synthetic regression tests.
+
 ## Mandatory next coherent work — DO NOT silently skip
 
 - Offline **MPFR directed-rounding / certified-interval** source evaluator:
