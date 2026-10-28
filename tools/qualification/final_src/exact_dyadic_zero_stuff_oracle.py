@@ -92,3 +92,41 @@ def assert_exact_crop_invariance(
     crop = zero_stuffed_crop(source_bits, ratio, kernel, bounds)
     if entire[begin:end] != crop:
         raise ContractError("EXACT_ZERO_STUFFED_CROP_INVARIANCE_FAILED")
+
+
+def screen_real_candidate_dyadic(asset_bytes: bytes, fin: int, fout: int) -> dict:
+    """Full REAL candidate binary64 asset: exact finite-track Q0 smoke only.
+
+    Self-derived SHA pins bytes *within this invocation*, not a frozen
+    independently approved KernelManifest. Mathematical crop equivalence
+    is exact; it does NOT establish coefficients, DTFT or Q1-Q6 response.
+    """
+    ratio = Ratio.make(fin, fout)
+    if fin == fout:
+        raise ContractError("identity path must remain bit-transparent")
+    digest = sha256(asset_bytes).hexdigest()
+    shape, kernel = read_locked_kernel(asset_bytes, ratio, digest)
+    # Nonzero, signed, endpoint-sensitive short track; crop must use absolute
+    # coordinates from the WHOLE source and preserve duplicated-end reflection.
+    source = (0.25, -0.5, 0.125, 0.0, 0.5, -0.25, 0.375, 0.0)
+    full = zero_stuffed_crop(source, ratio, kernel)
+    expected_length = ceil_div_signed(len(source) * ratio.L, ratio.M)
+    if len(full) != expected_length:
+        raise ContractError("EXACT_DYADIC_OUTPUT_LENGTH_MISMATCH")
+    assert_exact_crop_invariance(source, ratio, kernel, (1, 7))
+    # Report DC response on actual rounded taps, but do NOT replace the
+    # frozen continuous spectral response criterion with a sample threshold.
+    dc = zero_stuffed_crop((0.25,) * len(source), ratio, kernel)
+    reference_dc = Fraction(1, 4)
+    max_dc_error = max((abs(x - reference_dc) for x in dc),
+                       default=Fraction(0))
+    return dict(
+        status="REAL_BINARY64_EXACT_DYADIC_CROP_SCREEN_NOT_RELEASE_QUALIFIED",
+        fin=fin, fout=fout, L=shape.L, M=shape.M, taps=shape.N,
+        candidate_sha256=digest, checked_output_frames=expected_length,
+        exact_dyadic_crop_invariant=True,
+        max_abs_dc_error_screen=float(max_dc_error),
+        certified_mpfr_full_convolution_oracle=False,
+        mpfr_dtft_response_proven=False,
+        release_qualified=False,
+    )
