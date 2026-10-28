@@ -1,3 +1,10 @@
+## CHAT 55 — next exact-dyadic 14-asset optional regression lot (STAGING ONLY) · 2026-10-28
+
+- `exact_dyadic_zero_stuff_oracle.py` now iterates only prototype positions where the *conceptual zero-stuffed source grid* is nonzero: `j = (q mod L) + kL`, in increasing `j` order. This does not call/imitate product n-ascending binary64 summation; arithmetic remains exact `Fraction`. Added three-ratio literal all-tap comparison incl. endpoint reflection and crop.
+- New `screen_real_candidate_dyadic(asset_bytes,fin,fout)` applies independent conceptual exact dyadic convolution to an 8-frame mixed-sign full source and absolute crop [1,7), verifies full and crop frame count/invariance and reports a *sampled DC deviation* for constant 0.25. This is not continuous MPFR DTFT or an independent locked coefficient/PCM release oracle.
+- `build_candidate_manifest.py --screen-exact-dyadic` now optionally screens each of 14 real generated candidate assets before final atomic publication, alongside optional `--screen-independent-mpmath`. Failed later ratio aborts the whole candidate, tested against synthetic shapes; per-asset and family flags explicitly remain **NOT_RELEASE_QUALIFIED** and do not authorize 30 conversion paths.
+- Remains staged without PR CI or Q1–Q6 qualification. Follow up with certified independent MPFR coefficients/DTFT and product strict-scalar SRC; no beta/T redesign, no fake SHA or runtime product admission.
+
 ## CHAT 55 — optional full-family independent numerical screen (STAGING ONLY, no CI yet) · 2026-10-28
 
 - Extended `build_candidate_manifest.py` with opt-in `--screen-independent-mpmath` for all 14 **real** MPFR candidate assets. For each ratio it calls the separate mpmath 120/160-dps reconstruction, requiring byte-identical candidate output at both precisions; a mismatch aborts the entire atomic candidate destination (no partial release/publish). The check runs **only if explicitly requested**: default candidate builder and Focused CI do not silently run expensive 14-asset work.
