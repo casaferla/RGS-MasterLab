@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fast Q0 lifecycle tests for non-release atomic Phase-11 candidate builder."""
 from pathlib import Path
+import json
 import struct
 from tempfile import TemporaryDirectory
 import unittest
@@ -210,6 +211,49 @@ class CandidateManifestLifecycle(unittest.TestCase):
                     sampled_fft_screen=lambda *args: dict(
                         sampled_pass=True, caveat="CERTIFIED_DTFT"))
             self.assertFalse(target.exists())
+
+    def test_candidate_family_integrity_audit_fails_closed(self):
+        from verify_candidate_family import audit_candidate_family
+        sample = dict(list(canonical_pair_for_ratio().items())[:2])
+        with TemporaryDirectory() as d:
+            target = Path(d) / "candidate"
+            manifest = assemble_candidate(target, generator=shape_only_fixture,
+                                          pairs=sample)
+            screened = audit_candidate_family(target, require_complete=False)
+            self.assertEqual(screened["ratios"], 2)
+            self.assertFalse(screened["complete"])
+            self.assertFalse(screened["product_admission_authorized"])
+            with self.assertRaisesRegex(ContractError, "all 14 ratios"):
+                audit_candidate_family(target)
+            asset = target / manifest["assets"][0]["filename"]
+            original = asset.read_bytes()
+            damaged = bytearray(original)
+            damaged[-1] ^= 1
+            asset.write_bytes(damaged)
+            with self.assertRaises(ContractError):
+                audit_candidate_family(target, require_complete=False)
+            asset.write_bytes(original)
+            # Recount and ensure no silent file addition is accepted.
+            (target / "unexpected.bin").write_bytes(b"forbidden")
+            with self.assertRaisesRegex(ContractError, "unexpected files"):
+                audit_candidate_family(target, require_complete=False)
+            (target / "unexpected.bin").unlink()
+            name = target / "CANDIDATE_MANIFEST_NOT_FOR_RELEASE.json"
+            document = json.loads(name.read_text())
+            document["complete_ratio_family"] = True
+            name.write_text(json.dumps(document))
+            with self.assertRaisesRegex(ContractError, "completeness"):
+                audit_candidate_family(target, require_complete=False)
+            document["complete_ratio_family"] = False
+            document["sampled_fft_screen_complete"] = True
+            name.write_text(json.dumps(document))
+            with self.assertRaisesRegex(ContractError, "screen completeness"):
+                audit_candidate_family(target, require_complete=False)
+            document["sampled_fft_screen_complete"] = False
+            document["product_admission_authorized"] = True
+            name.write_text(json.dumps(document))
+            with self.assertRaisesRegex(ContractError, "certification"):
+                audit_candidate_family(target, require_complete=False)
 
     def test_reject_noncanonical_pair_and_precision_before_output(self):
         with TemporaryDirectory() as d:
