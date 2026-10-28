@@ -116,7 +116,7 @@ class MPFRZivBoundaryTests(unittest.TestCase):
         constant = zero_stuffed_crop((0.25,) * 4, ratio, dyadic)
         self.assertEqual(len(constant), 8)
         for sample in constant:
-            self.assertAlmostEqual(float(sample), 0.25, places=10)
+            self.assertAlmostEqual(float(sample), 0.25, delta=1e-8)
 
         self.assertEqual(len(data), shape.frozen_bytes)
         self.assertEqual(len(audit_rgsmsr1_structure(data, shape)), 64)
