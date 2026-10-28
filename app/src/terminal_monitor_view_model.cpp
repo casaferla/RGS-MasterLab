@@ -21,19 +21,24 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
 {
     observationTimer_.setInterval(200);
     connect(&observationTimer_,&QTimer::timeout,this,&TerminalMonitorViewModel::refresh);
-    // Master Audition's install eligibility depends on the MANUAL device
-    // being STOPPED at zero; this may change with NO M17 session signal.
-    // Notify QML only on an actual canInstall transition, not every tick.
+    // DEVICE admission and exceptional NO_SOURCE offline fallback both
+    // depend on transport, even if the session does not change. Notify QML
+    // on either eligibility transition, not on every timer tick.
     lastCanInstall_=can_install();
+    lastCanPrepareOffline_=can_prepare_offline();
     connect(transport_,&PlaybackTransportViewModel::playbackChanged,
         this,[this] {
-            const bool eligible=can_install();
-            if(eligible==lastCanInstall_)return;
-            lastCanInstall_=eligible;
+            const bool install=can_install();
+            const bool offline=can_prepare_offline();
+            if(install==lastCanInstall_
+               &&offline==lastCanPrepareOffline_)return;
+            lastCanInstall_=install;
+            lastCanPrepareOffline_=offline;
             emit changed();
         });
     connect(session_,&TerminalPrivateProductSession::changed,this,[this] {
         lastCanInstall_=can_install();
+        lastCanPrepareOffline_=can_prepare_offline();
         if(monitor_controllable()) {
             if(!observationTimer_.isActive())observationTimer_.start();
         } else {

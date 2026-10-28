@@ -66,7 +66,11 @@ public:
     // provenance for the user-requested MASTER-only action, not playback.
     using OfflineMasterAuthorizer=std::function<core::Status()>;
     void set_offline_master_authorizer(OfflineMasterAuthorizer authorizer)
-    { offlineMasterAuthorizer_=std::move(authorizer); }
+    {
+        offlineMasterAuthorizer_=std::move(authorizer);
+        lastCanPrepareOffline_=can_prepare_offline();
+        emit changed();
+    }
     Q_INVOKABLE bool requestMaster(int chosenRateHz);
     Q_INVOKABLE bool installMonitor(bool explicitlyAllowCaution);
     Q_INVOKABLE bool returnManual();
@@ -84,6 +88,7 @@ private:
     bool control(platform::windows::MonitoringTransportRequest request);
     bool monitorRequested_{false};
     bool lastCanInstall_{false};
+    bool lastCanPrepareOffline_{false};
     OfflineMasterAuthorizer offlineMasterAuthorizer_;
     TerminalPrivateProductSession* session_;
     PlaybackTransportViewModel* transport_;

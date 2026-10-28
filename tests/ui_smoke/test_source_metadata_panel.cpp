@@ -898,10 +898,10 @@ Window {
             auto* monitorRate=find_child_by_name(host,
                 QStringLiteral("monitorMasterRateSummary"));
             QVERIFY(monitorRate);
-            auto* offlineButton=find_child_by_name(host,
-                QStringLiteral("monitorPrepareMaster"));
-            auto* guidance=find_child_by_name(host,
-                QStringLiteral("monitorSinglePrepareGuidance"));
+            auto* offlineButton=qobject_cast<QQuickItem*>(
+                find_child_by_name(host,QStringLiteral("monitorPrepareMaster")));
+            auto* guidance=qobject_cast<QQuickItem*>(
+                find_child_by_name(host,QStringLiteral("monitorSinglePrepareGuidance")));
             QVERIFY(offlineButton&&guidance);
             QVERIFY(!offlineButton->isVisible()); // null monitor: no fallback
             QVERIFY(guidance->isVisible());
