@@ -189,6 +189,11 @@ public:
         core::FrameCount maximumBlockFrames,
         std::uint64_t reservedOtherPrepareBytes,
         const MonitoringPreallocationDecision& explicitDecision);
+    // One-Prepare cross-editor monitor authority: return the exact CURRENT
+    // verified MASTER rate whether it originated in M17 READY or the legacy
+    // offline MASTER-only lane. Never advertise a measured nonconforming PCM.
+    [[nodiscard]] std::optional<core::SampleRate>
+    verified_master_rate_for_monitoring() const;
     // Changes to a Loop Region cancel pending handoffs but do not stop
     // an already installed SOURCE-mapped session: its own live loop
     // controller processes active Loop Region edits.

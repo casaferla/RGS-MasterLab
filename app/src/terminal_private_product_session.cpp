@@ -156,6 +156,15 @@ core::Status TerminalPrivateProductSession::request_private_for_final_master(
 std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
 TerminalPrivateProductSession::current_verified_private_master() const
 {
+    // Normal M17 Prepare already produced an authoritative, M16-verified
+    // immutable MASTER. It may be borrowed only while MANUAL is the exact
+    // audible owner: never run another full-resource Prepare for monitoring.
+    if(pending_ && !pending_->masterOnly) {
+        if(status_!=QStringLiteral("READY_TO_INSTALL")
+           &&status_!=QStringLiteral("COMPARISON_VERIFIED"))
+            return {};
+        return borrow_verified_m17_master_for_device(pending_->outputRate);
+    }
     if(!pending_ ||!pending_->masterOnly ||privateId_
        ||status_!=QStringLiteral("MASTER_READY_MONITOR_PENDING")
        ||renderer_->status()!=QStringLiteral("READY_PRIVATE")
@@ -203,6 +212,13 @@ TerminalPrivateProductSession::current_verified_private_master() const
                   !=std::optional{pending_->manual->view().frame_count()})
         return {};
     return stage;
+}
+
+std::optional<core::SampleRate>
+TerminalPrivateProductSession::verified_master_rate_for_monitoring() const
+{
+    const auto stage=current_verified_private_master();
+    return stage ? std::optional{stage->rendered.output_rate} : std::nullopt;
 }
 
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
@@ -811,7 +827,12 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         status_=QStringLiteral("IDLE");
         renderer_->invalidate();
     } else {
-        status_=QStringLiteral("MASTER_READY_MONITOR_PENDING");
+        // Returning from DEVICE Audition does not consume the original
+        // M17 READY candidate or force a second whole-master Prepare.
+        // Only the legacy MASTER-only lane retains its own status.
+        status_=predecessor.masterOnly
+            ?QStringLiteral("MASTER_READY_MONITOR_PENDING")
+            :QStringLiteral("READY_TO_INSTALL");
     }
     emit changed();
     return core::Status::success();

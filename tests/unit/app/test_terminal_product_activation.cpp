@@ -1427,6 +1427,40 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     app::TerminalMonitorViewModel monitorUi{product,transport};
     QVERIFY(monitorUi.can_prepare());
     QVERIFY(!monitorUi.can_dismiss());
+    // A real normal M17 READY candidate at the selected MASTER clock
+    // must already be consumable by Master Audition without invoking a
+    // second terminal renderer job. No device is installed in this check.
+    const auto beforeNormalM17=renderer.render_invocation_count();
+    QVERIFY(product.request_private(*masterRate.value(),true));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("READY_TO_INSTALL"),12000);
+    QCOMPARE(renderer.render_invocation_count(),beforeNormalM17+1);
+    QVERIFY(product.verified_master_rate_for_monitoring());
+    QCOMPARE(*product.verified_master_rate_for_monitoring(),
+        *masterRate.value());
+    QCOMPARE(monitorUi.master_rate_hz(),int{192000});
+    QVERIFY(monitorUi.can_install());
+    const auto reusedNormal=product.materialize_private_final_master_monitoring(
+        [&](audio::AudioBufferView master)
+            ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
+            using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+            using Result=core::Result<Owned>;
+            auto made=audio::materialize_monitoring_pcm_candidate(
+                master,*deviceRate.value(),*block.value());
+            if(!made)return Result::failure(*made.error());
+            return Result::success(std::make_shared<
+                const audio::MonitoringPcmCandidate>(
+                    std::move(*made.value())));
+        });
+    QVERIFY2(reusedNormal,reusedNormal?"":reusedNormal.error()->message().c_str());
+    QCOMPARE(renderer.render_invocation_count(),beforeNormalM17+1);
+    QCOMPARE((*reusedNormal.value())->immutable_master_rate,
+        *masterRate.value());
+    QCOMPARE((*reusedNormal.value())->device_rate,*deviceRate.value());
+    QCOMPARE(sinkInstalls,std::size_t{0});
+    QVERIFY(product.cancel());
+    QVERIFY(monitorUi.can_prepare());
+    QVERIFY(!monitorUi.can_install());
     QVERIFY(!monitorUi.play()); // source MANUAL is never anonymous MONITOR
     QVERIFY(monitorUi.can_dismiss());
     QVERIFY(!monitorUi.error_text().isEmpty());

@@ -48,7 +48,9 @@ QString TerminalMonitorViewModel::status_text() const
         return QStringLiteral("MASTER AUDITION IDLE · NO PRIVATE DEVICE PCM");
     if(status==QStringLiteral("RENDERING"))
         return QStringLiteral("PREPARING FINAL MASTER · NOT DEVICE AUDIO");
-    if(status==QStringLiteral("MASTER_READY_MONITOR_PENDING"))
+    if(status==QStringLiteral("MASTER_READY_MONITOR_PENDING")
+       ||(status==QStringLiteral("READY_TO_INSTALL")
+          &&session_->verified_master_rate_for_monitoring()))
         return QStringLiteral("MASTER VERIFIED · DEVICE PCM NOT INSTALLED");
     if(status==QStringLiteral("MASTER_MEASURED_NONCONFORMING_PRIVATE"))
         return QStringLiteral("MASTER NON-CONFORMING · AUDITION BLOCKED");
@@ -86,7 +88,18 @@ bool TerminalMonitorViewModel::can_dismiss() const noexcept
 }
 bool TerminalMonitorViewModel::can_install() const noexcept
 {
-    return session_->status()==QStringLiteral("MASTER_READY_MONITOR_PENDING");
+    const auto status=session_->status();
+    if(status!=QStringLiteral("MASTER_READY_MONITOR_PENDING")
+       &&status!=QStringLiteral("READY_TO_INSTALL"))return false;
+    if(!session_->verified_master_rate_for_monitoring())return false;
+    // The existing Windows monitor transport contract installs only over
+    // the exact original MANUAL stopped at position zero, without Loop.
+    // Never enable the button prematurely over live/paused/looping PCM.
+    const auto source=transport_->playback_snapshot();
+    if(!source)return false;
+    return source.value()->state==core::PlaybackState::STOPPED
+        &&source.value()->position==core::FrameIndex{0}
+        &&!source.value()->loop;
 }
 bool TerminalMonitorViewModel::report(const core::Status& result)
 {
@@ -172,6 +185,12 @@ bool TerminalMonitorViewModel::returnManual()
     if(!result)return report(result);
     // Clear private evidence after restoring the exact manual owner. The
     // device-rate PCM is never copied to the FINAL MASTER or SOURCE epoch.
+    // A normal M17 READY was borrowed, not consumed. Its immutable PCM
+    // survives a DEVICE audition return and remains available to Preview.
+    if(session_->status()==QStringLiteral("READY_TO_INSTALL")) {
+        monitorRequested_=false;
+        return report(core::Status::success());
+    }
     const auto cleared=session_->cancel();
     if(cleared)monitorRequested_=false;
     return report(cleared);

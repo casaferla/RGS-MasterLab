@@ -47,7 +47,10 @@ public:
     [[nodiscard]] bool can_prepare() const noexcept;
     [[nodiscard]] bool can_dismiss() const noexcept;
     [[nodiscard]] bool can_install() const noexcept;
-    [[nodiscard]] int master_rate_hz() const noexcept {return masterRateHz_;}
+    [[nodiscard]] int master_rate_hz() const noexcept {
+        const auto ready=session_->verified_master_rate_for_monitoring();
+        return ready ? static_cast<int>(ready->value()) : masterRateHz_;
+    }
     [[nodiscard]] int device_rate_hz() const noexcept {return deviceRateHz_;}
     [[nodiscard]] qint64 master_position_frames() const noexcept {return position_;}
     [[nodiscard]] qint64 master_duration_frames() const noexcept {return duration_;}
