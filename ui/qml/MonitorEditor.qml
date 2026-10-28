@@ -9,6 +9,8 @@ Item {
     id: root
     objectName: "masterMonitorEditor"
     property var monitorViewModel: null
+    // Shared product PROJECT rate, not a separate DEVICE-rate preference.
+    property var masterRateState: null
     property bool advancedNavigationExpanded: false
     readonly property color slate: "#718092"
     readonly property color fg: "#D5E2EC"
@@ -104,11 +106,21 @@ Item {
                                 id: masterRate
                                 objectName: "monitorMasterRateSelector"
                                 model: ["44100", "48000", "88200", "96000", "176400", "192000"]
-                                currentIndex: 1
+                                readonly property var supportedRates: [44100,48000,88200,96000,176400,192000]
+                                currentIndex: root.masterRateState
+                                    ? supportedRates.indexOf(root.masterRateState.masterRateHz) : -1
                                 Layout.preferredWidth: 108
-                                enabled: root.monitorViewModel
+                                enabled: !!root.monitorViewModel
                                     && root.monitorViewModel.canPrepare
-                                Accessible.name: "Selected immutable final master sample rate"
+                                    && !!root.masterRateState
+                                    && root.masterRateState.hasSupportedMasterRate
+                                onActivated: function(index) {
+                                    if (root.masterRateState
+                                        && root.monitorViewModel
+                                        && root.monitorViewModel.canPrepare)
+                                        root.masterRateState.choose_master_rate(supportedRates[index])
+                                }
+                                Accessible.name: "Project MASTER rate, shared with M17"
                             }
                             Text { text: "Hz"; color: root.secondary; font.pixelSize: 10 }
                         }
@@ -119,8 +131,17 @@ Item {
                             accentColor: root.slate
                             enabled: !!root.monitorViewModel
                                 && root.monitorViewModel.canPrepare
+                                && !!root.masterRateState
+                                && root.masterRateState.hasSupportedMasterRate
                             onClicked: {
-                                if (root.monitorViewModel.requestMaster(Number(masterRate.currentText)))
+                                // Always submit the authoritative Project rate;
+                                // never use a stale local combo text or a
+                                // default 48-kHz placeholder for the DAC.
+                                if (root.monitorViewModel
+                                    && root.masterRateState
+                                    && root.masterRateState.hasSupportedMasterRate
+                                    && root.monitorViewModel.requestMaster(
+                                        root.masterRateState.masterRateHz))
                                     limitedConsent.checked = false
                             }
                             Accessible.name: "Prepare verified full master offline"

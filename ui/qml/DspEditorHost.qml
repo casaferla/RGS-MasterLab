@@ -580,6 +580,9 @@ Rectangle {
             Layout.minimumHeight: 0
             Layout.preferredHeight: 0
             monitorViewModel: root.terminalMonitorViewModel
+            // The product MASTER rate has ONE authority across both editors.
+            // Master Audition does not invent a second independent 48-kHz default.
+            masterRateState: root.masterRateState
         }
 
         StereoMsEditor {
@@ -796,7 +799,7 @@ Rectangle {
                                 checked: rateRow.chosen
                                 enabled: root.masterRateState
                                     && root.masterRateState.hasSupportedMasterRate
-                                    && !root.m17Preparing
+                                    && !root.m17Preparing && !root.monitorExclusive
                                 implicitWidth: 112
                                 implicitHeight: 23
                                 spacing: 5

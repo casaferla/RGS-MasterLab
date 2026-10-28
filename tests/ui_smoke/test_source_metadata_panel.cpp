@@ -892,6 +892,22 @@ Window {
                 .contains(QStringLiteral("192 kHz")),2000);
             QVERIFY(QMetaObject::invokeMethod(popup,"close"));
         }
+        if (fit.index==6) {
+            // The Master Audition selector is a VIEW of the very same
+            // Project MASTER rate chosen in M17's Rate & Time popup.
+            // A standalone default 48-kHz combo is not allowed.
+            auto* monitorRate=find_child_by_name(host,
+                QStringLiteral("monitorMasterRateSelector"));
+            QVERIFY(monitorRate);
+            QTRY_COMPARE_WITH_TIMEOUT(
+                monitorRate->property("currentIndex").toInt(),5,2000);
+            QVERIFY(selectedMasterRate.choose_master_rate(44100));
+            QTRY_COMPARE_WITH_TIMEOUT(
+                monitorRate->property("currentIndex").toInt(),0,2000);
+            QVERIFY(selectedMasterRate.choose_master_rate(192000));
+            QTRY_COMPARE_WITH_TIMEOUT(
+                monitorRate->property("currentIndex").toInt(),5,2000);
+        }
         if (fit.index==5) {
             auto* ceiling=qobject_cast<QQuickItem*>(find_child_by_name(
                 editor,QStringLiteral("m17CeilingCard")));
