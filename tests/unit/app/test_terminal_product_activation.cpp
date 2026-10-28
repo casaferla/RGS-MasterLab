@@ -1333,6 +1333,27 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(renderer.render_invocation_count(),callsBeforeIgnoredPreview);
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QCOMPARE(device->audibleRealization.realizationId,currentManualId);
+    // Coordinator is subscribed to Project rate *revision* only. A lease
+    // eligibility update must NOT become a false rate edit and retire the
+    // same immutable M17 candidate, even when QML bindings refresh.
+    const auto retainedReadyMaster=candidates.staged();
+    const auto stableRevision=projectMaster.rate_revision();
+    bool deviceOwnsMaster=true;
+    projectMaster.set_target_selection_guard([&deviceOwnsMaster]() noexcept {
+        return !deviceOwnsMaster;
+    });
+    projectMaster.refresh_selection_availability();
+    QVERIFY(!projectMaster.can_edit_target());
+    QVERIFY(!projectMaster.choose_master_rate(48000));
+    QCOMPARE(projectMaster.rate_revision(),stableRevision);
+    QCOMPARE(candidates.staged(),retainedReadyMaster);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(renderer.render_invocation_count(),callsBeforeIgnoredPreview);
+    deviceOwnsMaster=false;
+    projectMaster.refresh_selection_availability();
+    QCOMPARE(candidates.staged(),retainedReadyMaster);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(renderer.render_invocation_count(),callsBeforeIgnoredPreview);
     // A revised Project target invalidates, it does NOT silently reprepare.
     QVERIFY(projectMaster.choose_master_rate(48000));
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
