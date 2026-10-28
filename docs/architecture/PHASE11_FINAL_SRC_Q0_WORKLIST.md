@@ -2,6 +2,12 @@
 
 Sampled FFT screen: `tools/qualification/final_src/screen_candidate_spectral_response.py` accepts exact candidate-manifest SHA-256 and checks 0.001 dB passband and 140 dB stopband on a sampled FFT grid. This is NOT the independent certified MPFR/DTFT response oracle and cannot authorize release.
 
+## Next after #883 — genuine-kernel exact-dyadic convolution smoke (STAGING ONLY)
+
+- The extended 48→96-kHz Linux test now feeds the **real MPFR-generated RGSMSR1 candidate bytes** into the independent conceptual zero-stuffed exact-dyadic convolution oracle. A generated candidate SHA-256 guards the fixture load; it is explicitly not the separately frozen release manifest checksum.
+- Checks canonical eight-frame output for a four-frame impulse, exact whole-resource versus absolute crop invariance for [1,3), and a constant 0.25 signal through the actual FIR kernel against 1e-8 output tolerance (bound is a Q0/Q1 functional smoke threshold, NOT the frozen rigorous spectral 0.001dB/140dB release criterion).
+- **No product-admission, no complete 14-ratio asset release, no Q1-Q6 final verdict**. This stays on no-CI staging until the prior [Focused #883](https://github.com/casaferla/RGS-MasterLab/actions/runs/40761148791) is terminal green; only then promote a complete coherent package with CAS.
+
 ## Next staging — independent high-precision coefficient comparison (UNQUALIFIED)
 
 - `tools/qualification/final_src/independent_mpmath_crosscheck.py` independently rebuilds frozen Kaiser/I0/sinc coefficients with mpmath at 120 and 160 decimal digits. The sample 48→96-kHz candidate is compared with both computed byte streams; any mismatch fails instead of publishing a checksum. Algebraic sinc zeros are exact. This is a separate numerical algorithm from the MPFR interval engine, but the two mpmath precisions are **not** rounding-cell interval proofs.
