@@ -44,6 +44,7 @@ def assemble_candidate(
     pairs: dict[tuple[int, int], tuple[int, int]] | None = None,
     independent_screen: Callable[[bytes, int, int], dict] | None = None,
     dyadic_screen: Callable[[bytes, int, int], dict] | None = None,
+    sampled_fft_screen: Callable[[bytes, int, int, str], dict] | None = None,
 ) -> dict:
     """Publish all requested candidate ratios as one atomic folder.
 
@@ -94,6 +95,17 @@ def assemble_candidate(
                         and dyadic.get("release_qualified") is False):
                     raise ContractError(
                         "EXACT_DYADIC_SCREEN_FAILED: no candidate publication")
+            fft_evidence = None
+            if sampled_fft_screen is not None:
+                # Offline, optional dense-grid FFT is a NEGATIVE SCREEN:
+                # failure rejects the candidate atomically, success still
+                # does not prove the continuum MPFR DTFT or release Q1–Q6.
+                fft_evidence = sampled_fft_screen(data, fin, fout, digest)
+                if not (fft_evidence.get("sampled_pass") is True
+                        and fft_evidence.get("caveat")
+                            == "SAMPLED_FFT_ONLY_NOT_CERTIFIED_DTFT_OR_RELEASE"):
+                    raise ContractError(
+                        "SAMPLED_FFT_SCREEN_FAILED: no candidate publication")
             name = f"RGSMSR1_L{L}_M{M}.bin"
             (temp / name).write_bytes(data)
             entries.append(dict(
@@ -103,6 +115,14 @@ def assemble_candidate(
                 status="SAME_GENERATOR_DOUBLE_REPRODUCED_NOT_RELEASE_QUALIFIED",
                 independent_mpmath_screen_passed=(independent_screen is not None),
                 exact_dyadic_screen_passed=(dyadic_screen is not None),
+                sampled_fft_screen_passed=(sampled_fft_screen is not None),
+                sampled_fft_noncertifying_metrics=(
+                    {key: fft_evidence[key] for key in (
+                        "nfft", "frequency_step_hz",
+                        "ripple_peak_to_peak_db", "max_passband_error_db",
+                        "sampled_stopband_attenuation_db")
+                     if key in fft_evidence}
+                    if fft_evidence is not None else None),
             ))
         complete = set(pairmap) == set(allowed)
         manifest = dict(
@@ -112,6 +132,7 @@ def assemble_candidate(
             independent_generator_verified=False,
             independent_mpmath_screen_complete=(independent_screen is not None and complete),
             exact_dyadic_screen_complete=(dyadic_screen is not None and complete),
+            sampled_fft_screen_complete=(sampled_fft_screen is not None and complete),
             mpfr_dtft_oracle_passed=False,
             q1_q6_passed=False,
             product_admission_authorized=False,
@@ -136,6 +157,8 @@ def main() -> None:
                         help="Require byte-identical independent 120/160-dps screen on ALL 14 real assets; still NOT release qualified")
     parser.add_argument("--screen-exact-dyadic", action="store_true",
                         help="Real 14-asset exact dyadic finite-track/crop screen; NOT MPFR Q1 or release qualification")
+    parser.add_argument("--screen-sampled-fft", action="store_true",
+                        help="Reject candidates failing an optional sampled FFT passband/stopband screen for all 14 ratios; NOT certified MPFR DTFT")
     args = parser.parse_args()
     checker = None
     if args.screen_independent_mpmath:
@@ -145,9 +168,14 @@ def main() -> None:
     if args.screen_exact_dyadic:
         from exact_dyadic_zero_stuff_oracle import screen_real_candidate_dyadic
         dyadic = screen_real_candidate_dyadic
+    fft = None
+    if args.screen_sampled_fft:
+        from screen_candidate_spectral_response import screen_asset
+        fft = screen_asset
     manifest = assemble_candidate(args.out, max_precision=args.max_precision,
                                   independent_screen=checker,
-                                  dyadic_screen=dyadic)
+                                  dyadic_screen=dyadic,
+                                  sampled_fft_screen=fft)
     print(json.dumps({
         "status": manifest["status"],
         "ratios": manifest["observed_ratio_count"],
@@ -155,6 +183,7 @@ def main() -> None:
         "independent_qualification": False,
         "independent_mpmath_screen_complete": manifest["independent_mpmath_screen_complete"],
         "exact_dyadic_screen_complete": manifest["exact_dyadic_screen_complete"],
+        "sampled_fft_screen_complete": manifest["sampled_fft_screen_complete"],
     }, sort_keys=True))
 
 
