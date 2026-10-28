@@ -190,7 +190,12 @@ void TerminalProductActivationCoordinator::cancel_requested()
 
 void TerminalProductActivationCoordinator::preview_requested()
 {
-    if(readyToPreview_ && intent_ && !state_->bypassed())
+    // Master Audition owns a different anonymous DEVICE PCM while active.
+    // A late M17 Preview click must not try to replace this sink, trigger
+    // fail_closed or discard the immutable MASTER already being monitored.
+    if(session_->monitoring_transaction_active())return;
+    if(readyToPreview_ && intent_ && !state_->bypassed()
+       &&session_->status()==QStringLiteral("READY_TO_INSTALL"))
         commit_ready_output();
 }
 
@@ -608,8 +613,16 @@ void TerminalProductActivationCoordinator::loop_context_changed()
 
 void TerminalProductActivationCoordinator::private_session_changed()
 {
-    // MASTER_READY/MONITOR_* must not be consumed as normal SOURCE states.
-    if(session_->monitoring_transaction_active())return;
+    // A successfully installed Master Audition owns DEVICE exclusively.
+    // Explicitly retire the stale Preview Prepared button presentation,
+    // but retain the exact M17 MASTER and original intent for its return.
+    if(session_->monitoring_transaction_active()) {
+        readyToPreview_=false;
+        renderHeartbeat_.stop();
+        view_->setAudioStatus(QStringLiteral(
+            "MONITOR · PRIVATE PCM (NOT LIVE)"));
+        return;
+    }
     if(transitioning_||!intent_)return;
     const auto status=session_->status();
     if(status==QStringLiteral("READY_TO_INSTALL")) {
