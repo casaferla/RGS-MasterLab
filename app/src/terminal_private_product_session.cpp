@@ -102,7 +102,7 @@ core::Status TerminalPrivateProductSession::request_private_impl(
         &&snapshot.value()->duration
             ==std::optional{manual->view().frame_count()}
         &&(snapshot.value()->state==core::PlaybackState::STOPPED
-            ||(!masterOnly && deferred
+            ||(deferred
                 &&(snapshot.value()->state==core::PlaybackState::PLAYING
                     ||snapshot.value()->state==core::PlaybackState::PAUSED)));
     const bool audibleSelected=selected_();

@@ -136,9 +136,17 @@ bool TerminalMonitorViewModel::requestMaster(int chosenRateHz)
     // the empty sink does not imply that monitoring is already audible.
     const auto source=transport_->playback_snapshot();
     if(!source)return report(core::Status::failure(*source.error()));
-    const bool exactStopped=source.value()->state==core::PlaybackState::STOPPED
-        &&source.value()->position==core::FrameIndex{0}
-        &&!source.value()->loop;
+    // Offline MASTER preparation does not install/replace a sound device:
+    // PLAYING, PAUSED and a real SOURCE Loop are all legitimate. The
+    // private session separately validates exact MANUAL ownership, source
+    // realization and full-resource snapshot before scheduling its worker.
+    const bool exactManual=source.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::NEW
+        &&source.value()->audibleRealization.realizationId
+        &&source.value()->duration
+        &&(source.value()->state==core::PlaybackState::STOPPED
+            ||source.value()->state==core::PlaybackState::PLAYING
+            ||source.value()->state==core::PlaybackState::PAUSED);
     const bool cleanEmpty=source.value()->state==core::PlaybackState::NO_SOURCE
         &&source.value()->audibleRealization.phase
             ==core::AudibleHandoffPhase::UNAVAILABLE
@@ -146,8 +154,8 @@ bool TerminalMonitorViewModel::requestMaster(int chosenRateHz)
         &&source.value()->position==core::FrameIndex{0}
         &&!source.value()->duration
         &&!source.value()->loop;
-    if(!exactStopped&&!cleanEmpty)
-        return report(reject("AUDITION_MASTER_REQUIRES_STOPPED_OR_EMPTY_DEVICE"));
+    if(!exactManual&&!cleanEmpty)
+        return report(reject("AUDITION_MASTER_REQUIRES_OWNED_MANUAL_OR_EMPTY_DEVICE"));
     // The actual Windows SOURCE may have been accepted and rendered
     // offline while its INITIAL device prepare was rejected. Never fake
     // an audible activeTarget/RealizationId to unlock the private MASTER.

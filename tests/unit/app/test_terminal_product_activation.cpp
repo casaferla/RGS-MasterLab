@@ -1606,6 +1606,29 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(transport.set_loop_source_range(std::nullopt));
     QCOMPARE(device->state,core::PlaybackState::STOPPED);
     QCOMPARE(device->audibleRealization.realizationId,manualId);
+    // The legacy explicit MASTER-only branch is also an OFFLINE worker;
+    // there is no need for STOPPED, zero position or a disabled Loop just
+    // to calculate the immutable MASTER. Installation has its own gate.
+    const auto masterOnlyPlayingLoop=core::FrameRange::create(
+        core::FrameIndex{200},core::FrameIndex{1200});
+    QVERIFY(masterOnlyPlayingLoop);
+    selectedSourceLoop=*masterOnlyPlayingLoop.value();
+    QVERIFY(transport.set_loop_source_range(selectedSourceLoop));
+    transport.playOrResume();
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    const auto beforeMasterOnlyPlayingLoop=renderer.render_invocation_count();
+    QVERIFY(monitorUi.requestMaster(192000));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"),12000);
+    QCOMPARE(renderer.render_invocation_count(),beforeMasterOnlyPlayingLoop+1);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QVERIFY(!monitorUi.can_install());
+    QVERIFY(monitorUi.cancel());
+    transport.stop();
+    selectedSourceLoop.reset();
+    QVERIFY(transport.set_loop_source_range(std::nullopt));
+    QVERIFY(monitorUi.can_prepare());
     std::size_t deviceProbes=0;
     product.set_preferred_output_rate_probe(
         [&deviceProbes,deviceRate](audio::ChannelLayout)
@@ -1623,7 +1646,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // READY) were each counted; this distinct standalone request is third.
     // The one-Prepare invariant is per unchanged owner/parameters/epoch,
     // not a lifetime count across deliberately canceled preparations.
-    QCOMPARE(wholeMasterRenderCalls,preLoopPrepareCount+2);
+    QCOMPARE(wholeMasterRenderCalls,beforeMasterOnlyPlayingLoop+2);
     QVERIFY(monitorUi.can_dismiss());
     QVERIFY(product.monitoring_transaction_active());
     const auto owned=candidates.staged();
