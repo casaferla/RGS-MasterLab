@@ -650,7 +650,23 @@ jobs:
             $code = $LASTEXITCODE
             $result.Add("PROCESS_EXIT_CODE=$code")
             if (Test-Path $raw) {
-              $tail = @(Get-Content $raw -Tail 36 -ErrorAction SilentlyContinue)
+              # Do NOT upload the full QtTest output. The chronological
+              # tail may omit the first FAILED assertion in a multi-test
+              # executable. Capture up to four bounded FAIL contexts FIRST.
+              $lines = @(Get-Content $raw -ErrorAction SilentlyContinue)
+              $failures = 0
+              for ($i = 0; $i -lt $lines.Count -and $failures -lt 4; $i++) {
+                if ($lines[$i] -match '^(FAIL!|QFATAL|FAIL\s*:)') {
+                  $failures++
+                  $result.Add("ASSERTION_CONTEXT_$failures")
+                  for ($offset = 0; $offset -le 3 -and ($i + $offset) -lt $lines.Count; $offset++) {
+                    $line = [string]$lines[$i + $offset]
+                    $result.Add($line.Substring(0,[Math]::Min($line.Length,220)))
+                  }
+                }
+              }
+              if ($failures -eq 0) { $result.Add("ASSERTION_CONTEXT_NOT_EMITTED") }
+              $tail = @(Get-Content $raw -Tail 18 -ErrorAction SilentlyContinue)
               foreach ($line in $tail) { $result.Add($line.Substring(0,[Math]::Min($line.Length,180))) }
             } else {
               $result.Add("QTTEST_FILE_NOT_CREATED")
