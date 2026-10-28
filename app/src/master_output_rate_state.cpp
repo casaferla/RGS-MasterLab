@@ -13,6 +13,9 @@ void MasterOutputRateState::source_cleared() noexcept {
 bool MasterOutputRateState::choose_master_rate(qint64 hz) noexcept {
     if(!supported(sourceRateHz_)||!supported(hz))return false;
     if(hz==masterRateHz_)return true;
+    // A requested *change* during an exact DEVICE monitor is refused
+    // without invalidating either the Project or the M17 render epoch.
+    if(!can_edit_target())return false;
     masterRateHz_=hz;++rateRevision_;emit changed();return true;
 }
 } // namespace rgsml::app

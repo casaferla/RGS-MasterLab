@@ -18,6 +18,37 @@ private slots:
     QVERIFY(!s.choose_master_rate(384000));QCOMPARE(s.rate_revision(),revision);
     QVERIFY(s.choose_master_rate(192000));QCOMPARE(s.rate_revision(),revision);
  }
+ void monitoringGuardNeverRetargetsOrInvalidatesMaster() {
+    MasterOutputRateState s;
+    s.source_committed(192000);
+    QVERIFY(s.choose_master_rate(96000));
+    const auto priorRevision=s.rate_revision();
+    QSignalSpy changes(&s,&MasterOutputRateState::changed);
+    bool monitoring=true;
+    s.set_target_selection_guard([&monitoring]() noexcept {
+        return !monitoring;
+    });
+    QVERIFY(!s.can_edit_target());
+    QVERIFY(!s.choose_master_rate(48000));
+    QCOMPARE(s.master_rate_hz(),qint64{96000});
+    QCOMPARE(s.rate_revision(),priorRevision);
+    // Rechoosing the same rate is not a mutation even during MONITOR.
+    QVERIFY(s.choose_master_rate(96000));
+    QCOMPARE(s.rate_revision(),priorRevision);
+    monitoring=false;
+    s.refresh_selection_availability();
+    QVERIFY(s.can_edit_target());
+    QVERIFY(s.choose_master_rate(48000));
+    QCOMPARE(s.master_rate_hz(),qint64{48000});
+    QCOMPARE(s.rate_revision(),priorRevision+1);
+    QVERIFY(changes.count()>=3); // guard, availability, chosen rate
+    monitoring=true;
+    s.source_committed(44100); // genuine new SOURCE always invalidates
+    QCOMPARE(s.master_rate_hz(),qint64{44100});
+    QCOMPARE(s.source_rate_hz(),qint64{44100});
+    QVERIFY(!s.can_edit_target());
+    QCOMPARE(s.rate_revision(),priorRevision+2);
+ }
  void sourceChangeInvalidatesAndUnsupportedFailsClosed(){
     MasterOutputRateState s;s.source_committed(48000);
     QVERIFY(s.choose_master_rate(192000));const auto old=s.rate_revision();

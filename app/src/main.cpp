@@ -419,6 +419,14 @@ int main(int argc, char* argv[])
         terminalLimiterState,terminalLimiterViewModel,auditionSelector,
         playbackTransport,privateProductSession};
     terminalProductActivation.set_master_rate_state(masterOutputRate);
+    masterOutputRate.set_target_selection_guard(
+        [&privateProductSession]() noexcept {
+            return !privateProductSession.monitoring_transaction_active();
+        });
+    QObject::connect(&privateProductSession,
+        &rgsml::app::TerminalPrivateProductSession::changed,
+        &masterOutputRate,
+        [&masterOutputRate] { masterOutputRate.refresh_selection_availability(); });
     // Ordinary manual-preview updates are not terminal AUDIO errors. The
     // conductor retires a live terminal before publication of a new MANUAL
     // owner; the old blanket cancel-on-changed caused ERROR/BYPASS instead.

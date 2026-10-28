@@ -798,7 +798,7 @@ Rectangle {
                                 }
                                 checked: rateRow.chosen
                                 enabled: root.masterRateState
-                                    && root.masterRateState.hasSupportedMasterRate
+                                    && root.masterRateState.canEditTarget
                                     && !root.m17Preparing && !root.monitorExclusive
                                 implicitWidth: 112
                                 implicitHeight: 23
