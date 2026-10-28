@@ -34,6 +34,11 @@ jobs:
       - name: Phase-11 Final SRC independent zero-stuffed oracle (Linux)
         run: python tools/qualification/final_src/test_exact_dyadic_zero_stuff_oracle.py
 
+      # Offline all-14 candidate-asset assembly is too expensive for every
+      # Focused run; fast synthetic tests cover atomicity and fail-closed.
+      - name: Phase-11 Final SRC candidate manifest atomicity (Linux)
+        run: python tools/qualification/final_src/test_build_candidate_manifest.py
+
       # Small Q0 canary: directed MPFR intervals + TWO complete 1025-tap
       # RGSMSR1 reproductions; not a 14-asset release qualification.
       # Linux only to avoid adding another expensive Windows build stage.
