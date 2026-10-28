@@ -1507,8 +1507,11 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // DEVICE sink, then return to exact MANUAL without destroying M17's
     // immutable checked PCM. No new M17 Prepare and no terminal identity.
     std::shared_ptr<const audio::MonitoringPcmCandidate> monitorSinkOwner;
+    bool injectedBorrowedInstallFailure=false;
+    bool injectedBorrowedSeekFailure=false;
     product.set_private_monitor_transport(
-        [device,&monitorSinkOwner](auto candidate)->core::Status {
+        [device,&monitorSinkOwner,&injectedBorrowedInstallFailure]
+            (auto candidate)->core::Status {
             if(!candidate||monitorSinkOwner)
                 return core::Status::failure(core::Error{
                     core::ErrorCode::InvalidState,
@@ -1520,6 +1523,12 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             device->loop.reset();
             device->audibleRealization={
                 core::AudibleHandoffPhase::UNAVAILABLE,std::nullopt};
+            if(injectedBorrowedInstallFailure) {
+                injectedBorrowedInstallFailure=false;
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "TEST_INSTALL_FAILED_AFTER_PLAYING_MANUAL_REPLACED"});
+            }
             return core::Status::success();
         },
         [&monitorSinkOwner](auto candidate)->core::Result<bool> {
@@ -1584,6 +1593,12 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             case Action::PAUSE:return device->pause();
             case Action::STOP:return device->stop();
             case Action::SEEK_MASTER: {
+                if(injectedBorrowedSeekFailure) {
+                    injectedBorrowedSeekFailure=false;
+                    return core::Status::failure(core::Error{
+                        core::ErrorCode::IoFailure,
+                        "TEST_SEEK_FAILED_AFTER_DEVICE_REPLACEMENT"});
+                }
                 auto pos=mapper.value()->master_to_device(request.master_frame);
                 if(!pos)return core::Status::failure(*pos.error());
                 return device->seek(*pos.value());
@@ -1690,6 +1705,39 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->loop,selectedSourceLoop);
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(renderer.render_invocation_count(),renderedWithLoop);
+    // P0 adversarial: failure AFTER replacing PLAYING + looped MANUAL
+    // restores precisely the original SOURCE transport, not STOPPED/zero.
+    const auto loopStage=candidates.staged();
+    const auto originalRenderCount=renderer.render_invocation_count();
+    injectedBorrowedInstallFailure=true;
+    QVERIFY(!product.install_private_monitor_stopped(*loopMonitor.value()));
+    QVERIFY(!monitorSinkOwner);
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->position,core::FrameIndex{500});
+    QCOMPARE(device->loop,selectedSourceLoop);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(candidates.staged(),loopStage);
+    QCOMPARE(renderer.render_invocation_count(),originalRenderCount);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+
+    // A post-install mapped SEEK failure retains an exact recovery ticket.
+    // Return uses the captured MANUAL snapshot rather than the partially
+    // seeded anonymous DEVICE state and never runs M17 a second time.
+    requestedMasterLoop.reset();
+    injectedBorrowedSeekFailure=true;
+    QVERIFY(!product.install_private_monitor_stopped(*loopMonitor.value()));
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"));
+    QCOMPARE(monitorSinkOwner,*loopMonitor.value());
+    QVERIFY(monitorUi.returnManual());
+    QVERIFY(!monitorSinkOwner);
+    QCOMPARE(device->state,core::PlaybackState::PLAYING);
+    QCOMPARE(device->position,core::FrameIndex{500});
+    QCOMPARE(device->loop,selectedSourceLoop);
+    QCOMPARE(device->audibleRealization.realizationId,manualId);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(candidates.staged(),loopStage);
+    QCOMPARE(renderer.render_invocation_count(),originalRenderCount);
     QVERIFY(product.cancel());
     transport.stop();
     selectedSourceLoop.reset();

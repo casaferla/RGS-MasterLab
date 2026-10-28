@@ -401,6 +401,53 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
         :!stopped)
         return core::Status::failure(rejected(
             "MONITOR_INSTALL_REQUIRES_EXACT_EMPTY_OR_MANUAL_PREDECESSOR"));
+    // The DEVICE callback may fail AFTER replacing the MANUAL sink.
+    // Restore the original SOURCE cue, Loop and Play/Pause state, but only
+    // after exact-owner DEVICE retirement and unchanged SOURCE provenance.
+    const auto restoreOriginalManual=[&]()->core::Status {
+        if(offlineOrigin||!sourceClock||!selected_||!selected_()
+           ||!manual_||manual_()!=predecessor.manual
+           ||!manualId_||manualId_()!=std::optional{predecessor.manualId}
+           ||!sourceLoop_||sourceLoop_()!=predecessor.loop
+           ||!pending_||pending_->manual!=predecessor.manual
+           ||pending_->manualId!=predecessor.manualId)
+            return core::Status::failure(rejected(
+                "MONITOR_INSTALL_RECOVERY_MANUAL_EPOCH_CHANGED"));
+        const auto restored=manualRestore_(
+            predecessor.manual,predecessor.manualId,before.value()->position);
+        if(!restored)return restored;
+        const auto stoppedSnapshot=transport_->playback_snapshot();
+        if(!stoppedSnapshot
+           ||stoppedSnapshot.value()->state!=core::PlaybackState::STOPPED
+           ||stoppedSnapshot.value()->position!=before.value()->position
+           ||stoppedSnapshot.value()->loop!=predecessor.loop
+           ||stoppedSnapshot.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||stoppedSnapshot.value()->audibleRealization.realizationId
+               !=std::optional{predecessor.manualId}
+           ||stoppedSnapshot.value()->duration
+               !=std::optional{predecessor.manual->view().frame_count()})
+            return core::Status::failure(rejected(
+                "MONITOR_INSTALL_RECOVERY_MANUAL_RESTORE_UNPROVEN"));
+        if(state!=core::PlaybackState::STOPPED) {
+            transport_->playOrResume();
+            if(state==core::PlaybackState::PAUSED)transport_->pause();
+        }
+        const auto finalSnapshot=transport_->playback_snapshot();
+        if(!finalSnapshot||finalSnapshot.value()->state!=state
+           ||finalSnapshot.value()->position!=before.value()->position
+           ||finalSnapshot.value()->loop!=predecessor.loop
+           ||finalSnapshot.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||finalSnapshot.value()->audibleRealization.realizationId
+               !=std::optional{predecessor.manualId}
+           ||finalSnapshot.value()->duration
+               !=std::optional{predecessor.manual->view().frame_count()})
+            return core::Status::failure(rejected(
+                "MONITOR_INSTALL_RECOVERY_TRANSPORT_NOT_RESTORED"));
+        return core::Status::success();
+    };
+    monitorRecoveryOriginal_.reset();
     monitorTransitioning_=true;
     const auto installed=monitorInstall_(candidate);
     if(!installed) {
@@ -420,6 +467,7 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
                 // Exact candidate remains recoverable through the normal
                 // conditional-return entry point, not an orphaned sink.
                 installedMonitor_=candidate;
+                monitorRecoveryOriginal_=*before.value();
                 status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
                 monitorTransitioning_=false;
                 emit changed();
@@ -437,9 +485,9 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
             &&!current.value()->audibleRealization.realizationId
             &&current.value()->position==core::FrameIndex{0}
             &&!current.value()->duration &&!current.value()->loop;
-        const bool original=current.value()->state==core::PlaybackState::STOPPED
-            &&current.value()->position==core::FrameIndex{0}
-            &&!current.value()->loop
+        const bool original=current.value()->state==state
+            &&current.value()->position==before.value()->position
+            &&current.value()->loop==before.value()->loop
             &&current.value()->audibleRealization.phase
                 ==core::AudibleHandoffPhase::NEW
             &&current.value()->audibleRealization.realizationId
@@ -453,36 +501,11 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
                 "MONITOR_INSTALL_FAILURE_ALIEN_DEVICE_OWNER_UNTOUCHED"));
         }
         if(emptyAfterFailure && !offlineOrigin) {
-            if(!selected_||!selected_()||!manual_||!manualId_
-               ||manual_()!=predecessor.manual
-               ||manualId_()!=std::optional{predecessor.manualId}
-               ||!pending_||pending_->manual!=predecessor.manual
-               ||pending_->manualId!=predecessor.manualId) {
-                monitorTransitioning_=false;
-                return core::Status::failure(rejected(
-                    "MONITOR_INSTALL_FAILURE_MANUAL_OWNER_CHANGED"));
-            }
-            const auto restored=manualRestore_(
-                predecessor.manual,predecessor.manualId,core::FrameIndex{0});
+            const auto restored=restoreOriginalManual();
             if(!restored) {
                 monitorTransitioning_=false;
                 failed(*restored.error());
                 return restored;
-            }
-            const auto after=transport_->playback_snapshot();
-            if(!after||after.value()->state!=core::PlaybackState::STOPPED
-               ||after.value()->position!=core::FrameIndex{0}
-               ||after.value()->loop
-               ||after.value()->audibleRealization.phase
-                   !=core::AudibleHandoffPhase::NEW
-               ||after.value()->audibleRealization.realizationId
-                   !=std::optional{predecessor.manualId}
-               ||after.value()->duration
-                   !=std::optional{predecessor.manual->view().frame_count()}) {
-                monitorTransitioning_=false;
-                failed(rejected("MONITOR_INSTALL_FAILURE_MANUAL_RESTORE_UNPROVEN"));
-                return core::Status::failure(rejected(
-                    "MONITOR_INSTALL_FAILURE_MANUAL_RESTORE_UNPROVEN"));
             }
         }
         monitorTransitioning_=false;
@@ -520,17 +543,34 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
                 // DEVICE may still be active. Keep the same owner ticket
                 // available for the explicit recovery/Return action.
                 installedMonitor_=candidate;
+                monitorRecoveryOriginal_=*before.value();
                 status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
                 monitorTransitioning_=false;
                 emit changed();
                 return retired;
             }
-            if(!offlineOrigin&&selected_&&selected_()
-               &&manual_&&manual_()==predecessor.manual
-               &&manualId_&&manualId_()==std::optional{predecessor.manualId})
-                static_cast<void>(manualRestore_(
-                    predecessor.manual,predecessor.manualId,
-                    core::FrameIndex{0}));
+            // Refuse a successor after retirement and propagate any
+            // failed original MANUAL restoration rather than ignoring it.
+            const auto vacant=transport_->playback_snapshot();
+            if(!vacant
+               ||vacant.value()->state!=core::PlaybackState::NO_SOURCE
+               ||vacant.value()->audibleRealization.phase
+                   !=core::AudibleHandoffPhase::UNAVAILABLE
+               ||vacant.value()->audibleRealization.realizationId
+               ||vacant.value()->position!=core::FrameIndex{0}
+               ||vacant.value()->duration||vacant.value()->loop) {
+                monitorTransitioning_=false;
+                return core::Status::failure(rejected(
+                    "MONITOR_INSTALL_POSTCHECK_RETIRE_NOT_EMPTY"));
+            }
+            if(!offlineOrigin) {
+                const auto restored=restoreOriginalManual();
+                if(!restored) {
+                    monitorTransitioning_=false;
+                    failed(*restored.error());
+                    return restored;
+                }
+            }
         }
         monitorTransitioning_=false;
         return core::Status::failure(rejected(
@@ -570,12 +610,14 @@ core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
         // unrelated successor device. Return MANUAL remains explicitly
         // available and independently validates current device ownership.
         installedMonitor_=std::move(candidate);
+        monitorRecoveryOriginal_=*before.value();
         status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
         monitorTransitioning_=false;
         emit changed();
         return seeded;
     }
     installedMonitor_=std::move(candidate);
+    monitorRecoveryOriginal_.reset();
     status_=state==core::PlaybackState::PLAYING
         ?QStringLiteral("MONITOR_PRIVATE_PLAYING")
         :state==core::PlaybackState::PAUSED
@@ -713,6 +755,7 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
             return retired;
         }
         installedMonitor_.reset();
+        monitorRecoveryOriginal_.reset();
         const auto after=transport_->playback_snapshot();
         if(!after||after.value()->state!=core::PlaybackState::NO_SOURCE
            ||after.value()->audibleRealization.phase
@@ -743,7 +786,25 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
     core::FrameIndex sourceCue{0};
     std::optional<core::FrameRange> reconciledSourceLoop;
     core::PlaybackState priorMonitorState=core::PlaybackState::STOPPED;
-    if(monitorDisplay_) {
+    if(monitorRecoveryOriginal_) {
+        // Recovery after failed SET_LOOP/SEEK/PLAY/PAUSE must use the
+        // pre-install MANUAL snapshot, never the partial monitor clock.
+        const auto& original=*monitorRecoveryOriginal_;
+        if(!sourceLoop_||sourceLoop_()!=predecessor.loop
+           ||original.loop!=predecessor.loop
+           ||original.audibleRealization.phase!=core::AudibleHandoffPhase::NEW
+           ||original.audibleRealization.realizationId
+               !=std::optional{predecessor.manualId}
+           ||original.duration
+               !=std::optional{predecessor.manual->view().frame_count()}
+           ||(original.state!=core::PlaybackState::STOPPED
+               &&original.state!=core::PlaybackState::PLAYING
+               &&original.state!=core::PlaybackState::PAUSED))
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_RECOVERY_ORIGINAL_EPOCH_MISMATCH"));
+        sourceCue=original.position;
+        priorMonitorState=original.state;
+    } else if(monitorDisplay_) {
         const auto display=private_monitor_master_snapshot();
         if(!display)return core::Status::failure(*display.error());
         priorMonitorState=display.value()->state;
@@ -930,6 +991,7 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         }
     }
     monitorTransitioning_=false;
+    monitorRecoveryOriginal_.reset();
     if(reconciledSourceLoop) {
         // This SOURCE loop differs from the captured M17 render epoch.
         // Revoke the private MASTER ticket: new audition requires new render.

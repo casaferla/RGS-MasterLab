@@ -299,6 +299,9 @@ private:
     std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
         approvedMonitorMaster_;
     MonitoringOwner installedMonitor_;
+    // Exact pre-install MANUAL transport for recovering a partially seeded
+    // DEVICE sink, never the anonymous monitor's incomplete cue/state.
+    std::optional<core::PlaybackSnapshot> monitorRecoveryOriginal_;
     bool monitorTransitioning_{false};
     std::optional<Pending> pending_;
     // Exact immutable admission identity; never confuse an M16 failed
