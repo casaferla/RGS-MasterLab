@@ -109,6 +109,48 @@ class CandidateManifestLifecycle(unittest.TestCase):
             self.assertFalse(target.exists())
             self.assertFalse(any(Path(d).iterdir()))
 
+    def test_actual_dyadic_candidate_screen_and_atomic_late_failure(self):
+        from exact_dyadic_zero_stuff_oracle import screen_real_candidate_dyadic
+        sample = dict(list(canonical_pair_for_ratio().items())[:2])
+        observed = 0
+
+        def screen(data, fin, fout):
+            nonlocal observed
+            observed += 1
+            evidence = screen_real_candidate_dyadic(data, fin, fout)
+            self.assertTrue(evidence["exact_dyadic_crop_invariant"])
+            self.assertFalse(evidence["mpfr_dtft_response_proven"])
+            self.assertFalse(evidence["release_qualified"])
+            return evidence
+
+        with TemporaryDirectory() as d:
+            target = Path(d) / "dyadic_screen"
+            result = assemble_candidate(target, generator=shape_only_fixture,
+                                        pairs=sample, dyadic_screen=screen)
+            self.assertEqual(observed, 2)
+            self.assertFalse(result["complete_ratio_family"])
+            self.assertFalse(result["exact_dyadic_screen_complete"])
+            self.assertFalse(result["product_admission_authorized"])
+            self.assertTrue(all(row["exact_dyadic_screen_passed"]
+                                for row in result["assets"]))
+
+        failing_calls = 0
+
+        def deny_second(data, fin, fout):
+            nonlocal failing_calls
+            failing_calls += 1
+            return dict(exact_dyadic_crop_invariant=(failing_calls == 1),
+                        release_qualified=False)
+
+        with TemporaryDirectory() as d:
+            target = Path(d) / "refused"
+            with self.assertRaisesRegex(ContractError, "EXACT_DYADIC_SCREEN_FAILED"):
+                assemble_candidate(target, generator=shape_only_fixture,
+                                   pairs=sample, dyadic_screen=deny_second)
+            self.assertEqual(failing_calls, 2)
+            self.assertFalse(target.exists())
+            self.assertFalse(any(Path(d).iterdir()))
+
     def test_reject_noncanonical_pair_and_precision_before_output(self):
         with TemporaryDirectory() as d:
             target = Path(d) / "invalid"
