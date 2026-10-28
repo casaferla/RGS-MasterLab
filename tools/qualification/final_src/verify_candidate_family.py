@@ -67,7 +67,7 @@ def audit_candidate_family(folder: Path, *, require_complete: bool = True) -> di
         bytes_total += len(payload)
         observed_names.add(file_name)
         accepted.add((L, M))
-    real_names = {f.name for f in folder.iterdir() if f.is_file()}
+    real_names = {f.name for f in folder.iterdir()}
     if real_names != observed_names:
         raise ContractError("candidate folder missing or unexpected files")
     complete = accepted == set(expected)
@@ -82,6 +82,7 @@ def audit_candidate_family(folder: Path, *, require_complete: bool = True) -> di
         ("independent_mpmath_screen_complete", "independent_mpmath_screen_passed"),
         ("exact_dyadic_screen_complete", "exact_dyadic_screen_passed"),
         ("sampled_fft_screen_complete", "sampled_fft_screen_passed"),
+        ("exact_two_point_screen_complete", "exact_two_point_screen_passed"),
     ):
         flags = [row.get(per_entry_key) is True for row in rows]
         # Never trust a manifest that claims a whole-family screen if any
