@@ -21,7 +21,19 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
 {
     observationTimer_.setInterval(200);
     connect(&observationTimer_,&QTimer::timeout,this,&TerminalMonitorViewModel::refresh);
+    // Master Audition's install eligibility depends on the MANUAL device
+    // being STOPPED at zero; this may change with NO M17 session signal.
+    // Notify QML only on an actual canInstall transition, not every tick.
+    lastCanInstall_=can_install();
+    connect(transport_,&PlaybackTransportViewModel::playbackChanged,
+        this,[this] {
+            const bool eligible=can_install();
+            if(eligible==lastCanInstall_)return;
+            lastCanInstall_=eligible;
+            emit changed();
+        });
     connect(session_,&TerminalPrivateProductSession::changed,this,[this] {
+        lastCanInstall_=can_install();
         if(monitor_installed()) {
             if(!observationTimer_.isActive())observationTimer_.start();
         } else {

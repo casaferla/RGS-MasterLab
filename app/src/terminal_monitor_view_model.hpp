@@ -77,6 +77,7 @@ private:
     bool report(const core::Status& result);
     bool control(platform::windows::MonitoringTransportRequest request);
     bool monitorRequested_{false};
+    bool lastCanInstall_{false};
     OfflineMasterAuthorizer offlineMasterAuthorizer_;
     TerminalPrivateProductSession* session_;
     PlaybackTransportViewModel* transport_;

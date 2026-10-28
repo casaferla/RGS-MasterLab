@@ -1479,6 +1479,14 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         *masterRate.value());
     QCOMPARE(monitorUi.master_rate_hz(),int{192000});
     QVERIFY(monitorUi.can_install());
+    QSignalSpy installEligibility{&monitorUi,&app::TerminalMonitorViewModel::changed};
+    QVERIFY(installEligibility.isValid());
+    transport.playOrResume();
+    QVERIFY(!monitorUi.can_install()); // PLAYING must not offer replace.
+    QVERIFY(installEligibility.count()>0); // QML receives the transition.
+    transport.stop();
+    QVERIFY(monitorUi.can_install());
+    QVERIFY(installEligibility.count()>1);
     const auto reusedNormal=product.materialize_private_final_master_monitoring(
         [&](audio::AudioBufferView master)
             ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
