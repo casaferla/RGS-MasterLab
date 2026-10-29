@@ -153,7 +153,12 @@ def stage_all(workdir: Path, *, max_precision: int = 1024,
 
 def finalize(workdir: Path, destination: Path, *,
              max_precision: int = 1024,
-             allow_test_fixture: bool = False) -> dict:
+             allow_test_fixture: bool = False,
+             independent_screen: Callable[[bytes,int,int],dict] | None = None,
+             dyadic_screen: Callable[[bytes,int,int],dict] | None = None,
+             sampled_fft_screen: Callable[[bytes,int,int,str],dict] | None = None,
+             exact_anchor_screen: Callable[[bytes,int,int],dict] | None = None
+             ) -> dict:
     """Publish complete 14 ratio family atomically; no generation on finalize.
 
     The assembler reads immutable validated DOUBLE-COMPUTED checkpoint bytes
@@ -178,7 +183,11 @@ def finalize(workdir: Path, destination: Path, *,
         return data,bits
     result=assemble_candidate(
         destination,generator=from_checked_checkpoint,
-        max_precision=max_precision)
+        max_precision=max_precision,
+        independent_screen=independent_screen,
+        dyadic_screen=dyadic_screen,
+        sampled_fft_screen=sampled_fft_screen,
+        exact_anchor_screen=exact_anchor_screen)
     if result["observed_ratio_count"]!=14 or not result["complete_ratio_family"]:
         raise ContractError("complete candidate manifest required")
     return result
@@ -194,10 +203,16 @@ def main() -> None:
     p.add_argument("--fout",type=int)
     p.add_argument("--max-precision",type=int,default=1024)
     p.add_argument("--out",type=Path)
+    p.add_argument("--screen-independent-mpmath",action="store_true")
+    p.add_argument("--screen-exact-dyadic",action="store_true")
+    p.add_argument("--screen-sampled-fft",action="store_true")
+    p.add_argument("--screen-exact-spectral-anchors",action="store_true")
     a=p.parse_args()
     if a.stage:
-        if a.out is not None or (a.fin is None)!=(a.fout is None):
-            p.error("--stage takes both --fin/--fout or neither, never --out")
+        if (a.out is not None or (a.fin is None)!=(a.fout is None)
+            or any((a.screen_independent_mpmath,a.screen_exact_dyadic,
+                    a.screen_sampled_fft,a.screen_exact_spectral_anchors))):
+            p.error("--stage takes both --fin/--fout or neither, without --out/--screen flags")
         if a.fin is None:
             result=stage_all(a.workdir,max_precision=a.max_precision,
                 progress=lambda line: print(line,file=sys.stderr,flush=True))
@@ -210,7 +225,26 @@ def main() -> None:
     else:
         if a.out is None or a.fin is not None or a.fout is not None:
             p.error("--finalize requires --out, without --fin/--fout")
-        result=finalize(a.workdir,a.out,max_precision=a.max_precision)
+        independent=None
+        if a.screen_independent_mpmath:
+            from independent_mpmath_crosscheck import compare_candidate
+            independent=compare_candidate
+        dyadic=None
+        if a.screen_exact_dyadic:
+            from exact_dyadic_zero_stuff_oracle import screen_real_candidate_dyadic
+            dyadic=screen_real_candidate_dyadic
+        fft=None
+        if a.screen_sampled_fft:
+            from screen_candidate_spectral_response import screen_asset
+            fft=screen_asset
+        anchor=None
+        if a.screen_exact_spectral_anchors:
+            from exact_dyadic_spectral_anchors import screen_exact_spectral_anchors
+            anchor=screen_exact_spectral_anchors
+        result=finalize(
+            a.workdir,a.out,max_precision=a.max_precision,
+            independent_screen=independent,dyadic_screen=dyadic,
+            sampled_fft_screen=fft,exact_anchor_screen=anchor)
     print(json.dumps(result,sort_keys=True))
 
 
