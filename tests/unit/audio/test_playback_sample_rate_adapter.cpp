@@ -6,6 +6,7 @@
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <rgsml/audio/internal/phase11_strict_scalar_reference.hpp>
 #include <rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp>
+#include <rgsml/audio/internal/phase11_pinned_scalar_candidate_reference.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/audio/monitoring_frame_map.hpp>
@@ -115,6 +116,7 @@ private slots:
     void policyIdentityAndFrameMap();
     void phase11StrictScalarReferenceSixBySixAgainstConceptualGrid();
     void phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference();
+    void phase11PinnedScalarReferenceSixBySixSyntheticGeometry();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -257,6 +259,99 @@ phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference()
         bytes,1,1,T)); // identity must not load FIR
     bytes.push_back(0);
     QVERIFY(!parse(bytes)); // no appended/truncated candidate
+}
+
+void PlaybackSampleRateAdapterTest::
+phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
+{
+    // All 36 ordered rate paths with a fake center-delta FIR in exact
+    // RGSMSR1 bytes; this DOES NOT qualify real MPFR Kaiser coefficients,
+    // continuous DTFT, or any product Final SRC admission.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::uint32_t syntheticT=512;
+    const std::array<double,3> source{-0.5,0.25,0.75};
+    int identities=0,conversions=0;
+    for(const auto sourceRate:rates)for(const auto masterRate:rates) {
+        const auto common=std::gcd(sourceRate,masterRate);
+        const auto L=masterRate/common;
+        const auto M=sourceRate/common;
+        const auto length=(static_cast<std::int64_t>(source.size())*L+M-1)/M;
+        std::vector<double> whole(static_cast<std::size_t>(length),-17.0);
+        std::vector<std::uint8_t> asset;
+        std::string pin;
+        if(sourceRate!=masterRate) {
+            constexpr std::size_t header=52;
+            const auto count=static_cast<std::size_t>(L)*syntheticT+1;
+            asset.assign(header+8*count,0);
+            const std::array<std::uint8_t,8> magic{
+                'R','G','S','M','S','R','1',0};
+            std::copy(magic.begin(),magic.end(),asset.begin());
+            const auto put=[&](std::size_t at,std::uint64_t value,
+                               std::size_t countBytes) {
+                for(std::size_t k=0;k<countBytes;++k)
+                    asset[at+k]=static_cast<std::uint8_t>(
+                        value>>(8*k));
+            };
+            put(8,1,2);put(10,1,2);
+            put(12,static_cast<std::uint64_t>(L),4);
+            put(16,static_cast<std::uint64_t>(M),4);
+            put(20,syntheticT,4);
+            put(28,count,8);put(36,count,8);put(44,count*8,8);
+            put(header+8*(count/2),
+                std::bit_cast<std::uint64_t>(static_cast<double>(L)),8);
+            pin=core::sha256_hex(std::span<const std::byte>{
+                reinterpret_cast<const std::byte*>(asset.data()),
+                asset.size()});
+            ++conversions;
+        } else {
+            ++identities;
+        }
+        const auto reference=[&](std::span<double> dest,std::int64_t start,
+                                 std::string_view sha) {
+            return audio::internal::render_phase11_pinned_scalar_reference(
+                source,dest,start,sourceRate,masterRate,syntheticT,
+                asset,sha);
+        };
+        const auto full=reference(whole,0,pin);
+        QVERIFY2(full,full?"":full.error()->message().c_str());
+        for(std::int64_t m=0;m<length;++m) {
+            const auto numerator=m*M;
+            double expected=0.0;
+            if(numerator%L==0) {
+                const auto src=numerator/L;
+                expected=source[static_cast<std::size_t>(
+                    src<static_cast<std::int64_t>(source.size())
+                    ?src:2*static_cast<std::int64_t>(source.size())-1-src)]
+                    *static_cast<double>(L);
+            }
+            QCOMPARE(whole[static_cast<std::size_t>(m)],expected);
+        }
+        std::vector<double> partitioned(whole.size(),-17.0);
+        const auto split=length/2;
+        QVERIFY(reference(
+            std::span<double>{partitioned}.first(static_cast<std::size_t>(split)),
+            0,pin));
+        QVERIFY(reference(
+            std::span<double>{partitioned}.subspan(static_cast<std::size_t>(split)),
+            split,pin));
+        QCOMPARE(partitioned,whole);
+        if(sourceRate!=masterRate) {
+            auto wrong=pin;
+            wrong[0]=wrong[0]=='0'?'1':'0';
+            QVERIFY(!reference(whole,0,wrong));
+            QVERIFY(!reference(whole,0,{}));
+        } else {
+            QCOMPARE(std::bit_cast<std::uint64_t>(whole[0]),
+                     std::bit_cast<std::uint64_t>(source[0]));
+            QVERIFY(!reference(whole,0,"fake-kernel-hash"));
+        }
+    }
+    QCOMPARE(identities,6);
+    QCOMPARE(conversions,30);
+    std::array<double,1> refused{0.0};
+    QVERIFY(!audio::internal::render_phase11_pinned_scalar_reference(
+        source,refused,0,32000,96000,syntheticT,{},{}));
 }
 
 void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstConceptualGrid()
