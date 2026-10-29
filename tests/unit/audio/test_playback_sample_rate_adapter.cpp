@@ -26,6 +26,8 @@
 #include <numeric>
 #include <new>
 #include <span>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -335,7 +337,10 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
         QVERIFY(reference(
             std::span<double>{partitioned}.subspan(static_cast<std::size_t>(split)),
             split,pin));
-        QCOMPARE(partitioned,whole);
+        QCOMPARE(partitioned.size(),whole.size());
+        for(std::size_t i=0;i<whole.size();++i)
+            QCOMPARE(std::bit_cast<std::uint64_t>(partitioned[i]),
+                     std::bit_cast<std::uint64_t>(whole[i]));
         if(sourceRate!=masterRate) {
             auto wrong=pin;
             wrong[0]=wrong[0]=='0'?'1':'0';
