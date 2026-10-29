@@ -22,6 +22,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <numeric>
@@ -122,6 +125,7 @@ private slots:
     void phase11PinnedScalarReferenceSixBySixSyntheticGeometry();
     void phase11FullResourcePinnedCandidateUsesActualAudioBufferAndCancellation();
     void phase11FullResourcePinnedCandidateAll36SourceMasterPairs();
+    void phase11GenuineMpfrCanaryMatchesPythonIndependentScalarBits();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -625,6 +629,66 @@ phase11FullResourcePinnedCandidateAll36SourceMasterPairs()
     QCOMPARE(converted,30);
     QCOMPARE(static_cast<int>(std::count(
         distinct.begin(),distinct.end(),true)),14);
+}
+
+void PlaybackSampleRateAdapterTest::
+phase11GenuineMpfrCanaryMatchesPythonIndependentScalarBits()
+{
+    // This extension is gated ONLY on Linux where the earlier Python job
+    // generated the REAL 1025-tap 48->96 MPFR/Ziv RGSMSR1 candidate twice
+    // and independently matched mpmath (120/160 dps). CTest on Windows
+    // does not need an MPFR install. No product kernel-release admission.
+    const char* path=std::getenv("RGSML_PHASE11_REAL_CANARY_PATH");
+    if(!path||!*path)
+        QSKIP("Real MPFR canary lives only in the Linux Focused runner.");
+    const auto read=[&](const std::string& filepath) {
+        std::ifstream stream(filepath,std::ios::binary);
+        if(!stream)return std::vector<std::uint8_t>{};
+        return std::vector<std::uint8_t>{
+            std::istreambuf_iterator<char>{stream},
+            std::istreambuf_iterator<char>{}};
+    };
+    const auto asset=read(path);
+    const auto expected=read(std::string(path)+".expected.f64le");
+    QCOMPARE(asset.size(),std::size_t{52+8*1025});
+    QCOMPARE(expected.size(),std::size_t{8*8});
+    const auto sha=core::sha256_hex(std::span<const std::byte>{
+        reinterpret_cast<const std::byte*>(asset.data()),asset.size()});
+    auto format=audio::AudioFormat::create(
+        rate(48000),audio::ChannelLayout::MONO_C);
+    QVERIFY(format);
+    auto source=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},frame_count(4));
+    QVERIFY(source);
+    auto channel=source.value()->mutable_view().channel(0);
+    QVERIFY(channel);
+    (*channel.value())[0]=0.0;
+    (*channel.value())[1]=1.0;
+    (*channel.value())[2]=0.0;
+    (*channel.value())[3]=0.0;
+    auto converted=audio::materialize_phase11_pinned_final_src_candidate(
+        source.value()->view(),rate(96000),frame_count(128),asset,sha);
+    QVERIFY2(converted,converted?"":converted.error()->message().c_str());
+    QCOMPARE(converted.value()->pcm.view().frame_count().value(),
+             std::int64_t{8});
+    QVERIFY(converted.value()->used_src);
+    QVERIFY(converted.value()->kernel_sha256.empty()); // NEVER released
+    const auto out=converted.value()->pcm.view().channel(0);
+    QVERIFY(out);
+    for(std::size_t i=0;i<8;++i) {
+        std::uint64_t expectedBits=0;
+        for(std::size_t b=0;b<8;++b)
+            expectedBits|=static_cast<std::uint64_t>(
+                expected[8*i+b])<<(8*b);
+        QCOMPARE(std::bit_cast<std::uint64_t>((*out.value())[i]),
+                 expectedBits);
+    }
+    // Reject a mathematically valid shape whose data digest was mutated.
+    auto forged=sha;
+    forged[0]=forged[0]=='0'?'1':'0';
+    QVERIFY(!audio::materialize_phase11_pinned_final_src_candidate(
+        source.value()->view(),rate(96000),frame_count(128),asset,forged));
 }
 
 void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstConceptualGrid()
