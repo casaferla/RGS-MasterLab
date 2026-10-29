@@ -148,6 +148,25 @@ class MPFRZivBoundaryTests(unittest.TestCase):
         for offset in (-500, -100, 100, 500):
             at = 52 + 8 * (shape.D + offset)
             self.assertEqual(data[at:at + 8], struct.pack("<d", 0.0))
+        # The SAME two genuine MPFR runs and independent mpmath checks now
+        # furnish one short-lived Linux C++ candidate integration fixture.
+        # No extra generator and absolutely no kernel release certificate.
+        canary_out = os.environ.get("RGSML_PHASE11_REAL_CANARY_OUT")
+        if canary_out:
+            destination = Path(canary_out)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            expected = b"".join(struct.pack("<d", v) for v in scalar_whole)
+            self.assertEqual(len(expected), 8 * 8)
+            for file, content in (
+                (destination, data),
+                (Path(str(destination) + ".expected.f64le"), expected),
+            ):
+                temporary = Path(str(file) + ".unpublished.tmp")
+                try:
+                    temporary.write_bytes(content)
+                    temporary.replace(file)
+                finally:
+                    temporary.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
