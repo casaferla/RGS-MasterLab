@@ -96,6 +96,33 @@ class All14CampaignOrchestrationTests(unittest.TestCase):
             self._run(stage=forged)
         self.assertFalse(self.folder.exists())
 
+    def _publish_fixture(self, _work, folder, **_):
+        self.calls.append("publish")
+        folder.mkdir()
+        (folder / "fixture.txt").write_text("nonrelease", encoding="utf-8")
+        return {
+            "observed_ratio_count": 14, "complete_ratio_family": True,
+            "independent_mpmath_screen_complete": True,
+            "exact_dyadic_screen_complete": True,
+            "sampled_fft_screen_complete": True,
+            "exact_two_point_screen_complete": True,
+            "q1_q6_passed": False,
+            "product_admission_authorized": False,
+            "status": "CANDIDATE_NOT_RELEASE_QUALIFIED",
+        }
+
+    def test_rejected_final_audit_does_not_publish_a_folder(self):
+        def incomplete(folder, *, require_complete):
+            self.calls.append("audit")
+            self.assertTrue((folder / "fixture.txt").exists())
+            self.assertTrue(require_complete)
+            return {"complete": False,
+                    "status": "CANDIDATE_INTEGRITY_ONLY_NOT_RELEASE_QUALIFIED"}
+        with self.assertRaises(ContractError):
+            self._run(publisher=self._publish_fixture, verifier=incomplete)
+        self.assertFalse(self.folder.exists())
+        self.assertEqual(self.calls, ["seed", "stage", "publish", "audit"])
+
     def test_no_overwrite_or_nested_folder(self):
         self.folder.mkdir()
         with self.assertRaisesRegex(ContractError, "overwrite"):
