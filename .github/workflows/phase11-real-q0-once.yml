@@ -1,0 +1,169 @@
+name: Phase11 One-Shot REAL Q0 All-14 Offline Candidate Campaign
+# Separate nonrelease COMPUTE proof from normal PR Focused CI.
+# This one-shot file only triggers on its own initial staging publication.
+on:
+  push:
+    branches:
+      - staging/m17-monitor-preallocation-no-ci-20261024
+    paths:
+      - .github/workflows/phase11-real-q0-once.yml
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: rgsml-phase11-20261029-real-q0-one-shot
+  cancel-in-progress: false
+
+jobs:
+  generate_missing_ten:
+    name: Genuine MPFR L/M ${{ matrix.ratio }} (not release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 290
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {fin: 176400, fout: 48000, ratio: L40_M147}
+          - {fin: 88200, fout: 48000, ratio: L80_M147}
+          - {fin: 48000, fout: 176400, ratio: L147_M40}
+          - {fin: 48000, fout: 88200, ratio: L147_M80}
+          - {fin: 48000, fout: 44100, ratio: L147_M160}
+          - {fin: 96000, fout: 44100, ratio: L147_M320}
+          - {fin: 192000, fout: 44100, ratio: L147_M640}
+          - {fin: 44100, fout: 48000, ratio: L160_M147}
+          - {fin: 44100, fout: 96000, ratio: L320_M147}
+          - {fin: 44100, fout: 192000, ratio: L640_M147}
+    steps:
+      - name: Download verified #909 qualification toolkit without using untested #910 source
+        uses: actions/download-artifact@v4
+        with:
+          name: RGS-Phase11-Q0-TOOLKIT-NONRELEASE-909-77ba35c8e54fe885c472572d49b13939f02b6af1
+          run-id: 40965037807
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/phase11-toolkit
+      - name: Install genuine MPFR 4 and bounded numeric dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libmpfr6 libgmp10
+          python -m pip install --disable-pip-version-check mpmath numpy
+      - name: Twice reproduce true directed MPFR/Ziv binary64 kernel
+        timeout-minutes: 265
+        env:
+          FIN_HZ: ${{ matrix.fin }}
+          FOUT_HZ: ${{ matrix.fout }}
+        run: |
+          python "$RUNNER_TEMP/phase11-toolkit/build_resumable_real_candidates.py" \
+            --workdir "$RUNNER_TEMP/real-work" --stage \
+            --fin "$FIN_HZ" --fout "$FOUT_HZ" --max-precision 1024
+      - name: Save each genuine self-audited nonrelease checkpoint even if other ratios fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Phase11-REAL-Q0-ONESHOT-${{ matrix.ratio }}-${{ github.sha }}
+          path: ${{ runner.temp }}/real-work/
+          retention-days: 30
+          if-no-files-found: warn
+
+  assemble_full_fourteen:
+    name: Single complete 14-ratio candidate-only Q0 audit
+    needs: generate_missing_ten
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - name: Download the exact previous SUCCESS #909 source toolchain
+        uses: actions/download-artifact@v4
+        with:
+          name: RGS-Phase11-Q0-TOOLKIT-NONRELEASE-909-77ba35c8e54fe885c472572d49b13939f02b6af1
+          run-id: 40965037807
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/phase11-toolkit
+      - name: Restore all ten independently double-computed, SHA audited checkpoint artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: RGS-Phase11-REAL-Q0-ONESHOT-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/real-work
+      - name: Recover original 2/1 Q0 receipts from green CI #901
+        uses: actions/download-artifact@v4
+        with:
+          name: RGS-Phase11-REAL-Q0-2to1-NONRELEASE-901-87d573fc520e0e5423d08d013c768ddb389cb1e0
+          run-id: 40937792708
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-cis/two
+      - name: Recover original 1/2 Q0 receipts from green CI #903
+        uses: actions/download-artifact@v4
+        with:
+          name: RGS-Phase11-REAL-Q0-1to2-NONRELEASE-903-36effd339313ae0348bdb0147c93a979c4fe6634
+          run-id: 40945894792
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-cis/one
+      - name: Recover original 1/4 and 4/1 Q0 receipts from green CI #904
+        uses: actions/download-artifact@v4
+        with:
+          name: RGS-Phase11-REAL-Q0-FOURFOLD-NONRELEASE-904-d5f4798a66303ecc1fb340c48138859f3227eb72
+          run-id: 40949824092
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-cis/four
+      - name: Prepare original immutable-source ZIPs for strict all-four CI receipt audit
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_STORED
+          root=Path(os.environ["RUNNER_TEMP"])
+          for label in ("two","one","four"):
+              entries=sorted((root/"original-cis"/label).iterdir())
+              if len(entries) != (6 if label == "four" else 3):
+                  raise SystemExit("Original CI artifact inventory was not exact")
+              with ZipFile(root/f"original-{label}.zip","w",ZIP_STORED) as out:
+                  for entry in entries:
+                      if not entry.is_file() or entry.is_symlink():
+                          raise SystemExit("Original CI artifact entry is not plain file")
+                      out.write(entry,entry.name)
+          PY
+      - name: Strict original CI provenance import and merge with ten real double-run checkpoints
+        run: |
+          python "$RUNNER_TEMP/phase11-toolkit/import_audited_ci_q0_checkpoints.py" \
+            --workdir "$RUNNER_TEMP/real-work" \
+            --real-2to1-zip "$RUNNER_TEMP/original-two.zip" \
+            --real-1to2-zip "$RUNNER_TEMP/original-one.zip" \
+            --real-fourfold-zip "$RUNNER_TEMP/original-four.zip"
+      - name: Export same original four valid CI-Q0 checkpoints as a single portable seed ZIP
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_STORED
+          root=Path(os.environ["RUNNER_TEMP"])
+          source=root/"real-work"
+          seeds=((2,1),(1,2),(1,4),(4,1))
+          with ZipFile(root/"pinned-four-seeds.zip","w",ZIP_STORED) as out:
+              for L,M in seeds:
+                  slot=source/f"ratio_L{L}_M{M}"
+                  for entry in sorted(slot.iterdir()):
+                      if not entry.is_file() or entry.is_symlink():
+                          raise SystemExit("Original CI seed entry invalid")
+                      out.write(entry, f"{slot.name}/{entry.name}")
+          PY
+      - name: Independently screen every true ratio and publish only after complete Q0 audit
+        timeout-minutes: 280
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libmpfr6 libgmp10
+          python -m pip install --disable-pip-version-check mpmath numpy
+          python "$RUNNER_TEMP/phase11-toolkit/run_offline_all14_q0_campaign.py" \
+            --seed-checkpoints-zip "$RUNNER_TEMP/pinned-four-seeds.zip" \
+            --checkpoint-workdir "$RUNNER_TEMP/real-work" \
+            --candidate-folder "$RUNNER_TEMP/phase11-14-q0-candidate" \
+            --workers 2 --max-precision 1024
+      - name: Retain all genuine Q0 candidate outputs WITHOUT release or product authority
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Phase11-REAL-14-Q0-NONRELEASE-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/real-work/
+            ${{ runner.temp }}/phase11-14-q0-candidate/
+          retention-days: 30
+          if-no-files-found: warn
