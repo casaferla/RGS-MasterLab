@@ -1514,6 +1514,10 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(observedPrepare->render_wall_us>0);
     QVERIFY(observedPrepare->m17_core_us>=0);
     QVERIFY(observedPrepare->m16_primary_us>=0);
+    QVERIFY(!renderer.exact_historical_prepare_range(
+        observedPrepare->source_rate,observedPrepare->master_rate,
+        observedPrepare->source_frames,observedPrepare->layout,
+        observedPrepare->ceiling_db_tp).has_value());
     QVERIFY(product.verified_master_rate_for_monitoring());
     QCOMPARE(*product.verified_master_rate_for_monitoring(),
         *masterRate.value());
@@ -1872,6 +1876,24 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("READY_TO_INSTALL"),12000);
     QCOMPARE(renderer.render_invocation_count(),preLoopPrepareCount+1);
+    // Two accepted identical-key REAL Prepare wall times are sufficient for
+    // an empirical observed range. Unrelated rates/ceilings must not borrow it.
+    const auto sameShape=renderer.exact_historical_prepare_range(
+        observedPrepare->source_rate,observedPrepare->master_rate,
+        observedPrepare->source_frames,observedPrepare->layout,
+        observedPrepare->ceiling_db_tp);
+    QVERIFY(sameShape.has_value());
+    QVERIFY(sameShape->compatible_samples>=2);
+    QVERIFY(sameShape->minimum_wall_us>0);
+    QVERIFY(sameShape->maximum_wall_us>=sameShape->minimum_wall_us);
+    QVERIFY(!renderer.exact_historical_prepare_range(
+        *deviceRate.value(),observedPrepare->master_rate,
+        observedPrepare->source_frames,observedPrepare->layout,
+        observedPrepare->ceiling_db_tp).has_value());
+    QVERIFY(!renderer.exact_historical_prepare_range(
+        observedPrepare->source_rate,observedPrepare->master_rate,
+        observedPrepare->source_frames,observedPrepare->layout,-12.0)
+        .has_value());
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QVERIFY(product.verified_master_rate_for_monitoring());
