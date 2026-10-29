@@ -163,9 +163,34 @@ class MPFRZivBoundaryTests(unittest.TestCase):
             destination.parent.mkdir(parents=True, exist_ok=True)
             expected = b"".join(struct.pack("<d", v) for v in scalar_whole)
             self.assertEqual(len(expected), 8 * 8)
+            import json
+            receipt = {
+                "schema": "rgsml.phase11.real-mpfr-q0-canary-artifact/1",
+                "status": "REAL_MPFR_2_OVER_1_CANDIDATE_NOT_RELEASE_QUALIFIED",
+                "kernel_ratio": {"L": 2, "M": 1},
+                "canonical_generation_pair_hz": [44100, 88200],
+                "independent_oracle_pair_hz": [48000, 96000],
+                "coefficient_sha256": hashlib.sha256(data).hexdigest(),
+                "coefficient_count": shape.N,
+                "payload_bytes": len(data),
+                "rounding_precision_bits": bits,
+                "same_generator_reproductions": 2,
+                "independent_mpmath_both_precisions_matched": True,
+                "strict_scalar_python_expected_f64le_bytes": len(expected),
+                "git_pr_head_sha": os.environ.get(
+                    "RGSML_PHASE11_CANDIDATE_PR_SHA", ""),
+                "github_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+                "frozen_release_sha_approved": False,
+                "independent_continuous_dtft_proven": False,
+                "q1_q6_passed": False,
+                "product_admission_authorized": False,
+                "release_qualified": False,
+            }
             for file, content in (
                 (destination, data),
                 (Path(str(destination) + ".expected.f64le"), expected),
+                (Path(str(destination) + ".receipt.json"),
+                 (json.dumps(receipt, sort_keys=True, indent=2)+"\\n").encode("utf-8")),
             ):
                 temporary = Path(str(file) + ".unpublished.tmp")
                 try:
