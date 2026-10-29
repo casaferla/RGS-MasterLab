@@ -82,6 +82,28 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+      # Second GENUINE reduced-ratio candidate, now exercising DOWNsampling
+      # L/M=1/2, with two actual directed-MPFR/Ziv reproductions and an
+      # independently implemented high precision Python oracle.
+      # The candidate is never installed or authorized in product M17.
+      - name: Phase-11 REAL 1-to-2 MPFR downsample canary (Linux)
+        env:
+          RGSML_MPFR_FULL_SRC_SMOKE: "1"
+          RGSML_PHASE11_REAL_DOWNSAMPLE_OUT: ${{ runner.temp }}/rgsml-phase11-real-mpfr-88kto44k.bin
+          RGSML_PHASE11_CANDIDATE_PR_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python tools/qualification/final_src/test_phase11_real_downsample_canary.py
+
+      - name: Retain genuine Phase-11 ratio-1-to-2 MPFR candidate evidence (Linux)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Phase11-REAL-Q0-1to2-NONRELEASE-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/rgsml-phase11-real-mpfr-88kto44k.bin
+            ${{ runner.temp }}/rgsml-phase11-real-mpfr-88kto44k.bin.expected.f64le
+            ${{ runner.temp }}/rgsml-phase11-real-mpfr-88kto44k.bin.receipt.json
+          retention-days: 30
+          if-no-files-found: error
+
       # Sound interval coverage of continuous frequency BOXES (not mere FFT
       # samples). This fast synthetic proof harness is NOT a 14-kernel
       # continuum certificate, Q1-Q6 approval, or product SRC admission.
@@ -231,6 +253,7 @@ jobs:
       - name: Run Focused DSP Tests
         env:
           RGSML_PHASE11_REAL_CANARY_PATH: ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin
+          RGSML_PHASE11_REAL_DOWNSAMPLE_PATH: ${{ runner.temp }}/rgsml-phase11-real-mpfr-88kto44k.bin
           RGS_M17_CPU_PROBE_FILE: ${{ runner.temp }}/rgs-m17-cpu-linux.csv
           RGS_M17_PARTITION_PROBE_FILE: ${{ runner.temp }}/rgs-m17-partition-linux.csv
           RGS_M17_LOOKAHEAD_PROBE_FILE: ${{ runner.temp }}/rgs-m17-lookahead-linux.csv
