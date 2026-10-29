@@ -273,20 +273,25 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
     // continuous DTFT, or any product Final SRC admission.
     constexpr std::array<std::int64_t,6> rates{
         44100,48000,88200,96000,176400,192000};
-    constexpr std::uint32_t syntheticT=512;
     const std::array<double,3> source{-0.5,0.25,0.75};
     int identities=0,conversions=0;
     for(const auto sourceRate:rates)for(const auto masterRate:rates) {
         const auto common=std::gcd(sourceRate,masterRate);
         const auto L=masterRate/common;
         const auto M=sourceRate/common;
+        std::uint32_t frozenT=512;
         const auto length=(static_cast<std::int64_t>(source.size())*L+M-1)/M;
         std::vector<double> whole(static_cast<std::size_t>(length),-17.0);
         std::vector<std::uint8_t> asset;
         std::string pin;
         if(sourceRate!=masterRate) {
+            const auto frozen=audio::internal::phase11_frozen_shape(
+                static_cast<std::uint32_t>(L),static_cast<std::uint32_t>(M));
+            QVERIFY(frozen);
+            frozenT=frozen->T;
             constexpr std::size_t header=52;
-            const auto count=static_cast<std::size_t>(L)*syntheticT+1;
+            const auto count=static_cast<std::size_t>(L)*frozenT+1;
+            QCOMPARE(count,static_cast<std::size_t>(frozen->N));
             asset.assign(header+8*count,0);
             const std::array<std::uint8_t,8> magic{
                 'R','G','S','M','S','R','1',0};
@@ -300,7 +305,7 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
             put(8,1,2);put(10,1,2);
             put(12,static_cast<std::uint64_t>(L),4);
             put(16,static_cast<std::uint64_t>(M),4);
-            put(20,syntheticT,4);
+            put(20,frozenT,4);
             put(28,count,8);put(36,count,8);put(44,count*8,8);
             put(header+8*(count/2),
                 std::bit_cast<std::uint64_t>(static_cast<double>(L)),8);
@@ -314,7 +319,7 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
         const auto reference=[&](std::span<double> dest,std::int64_t start,
                                  std::string_view sha) {
             return audio::internal::render_phase11_pinned_scalar_reference(
-                source,dest,start,sourceRate,masterRate,syntheticT,
+                source,dest,start,sourceRate,masterRate,frozenT,
                 asset,sha);
         };
         const auto full=reference(whole,0,pin);
@@ -344,6 +349,11 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
             QCOMPARE(std::bit_cast<std::uint64_t>(partitioned[i]),
                      std::bit_cast<std::uint64_t>(whole[i]));
         if(sourceRate!=masterRate) {
+            // The exact format matches Q0 geometry. A forged caller-supplied
+            // T cannot relax the preflight even if the SHA stays identical.
+            QVERIFY(!audio::internal::render_phase11_pinned_scalar_reference(
+                source,whole,0,sourceRate,masterRate,frozenT+2,
+                asset,pin));
             auto wrong=pin;
             wrong[0]=wrong[0]=='0'?'1':'0';
             QVERIFY(!reference(whole,0,wrong));
@@ -358,7 +368,7 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
     QCOMPARE(conversions,30);
     std::array<double,1> refused{0.0};
     QVERIFY(!audio::internal::render_phase11_pinned_scalar_reference(
-        source,refused,0,32000,96000,syntheticT,{},{}));
+        source,refused,0,32000,96000,512,{},{}));
 }
 
 void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstConceptualGrid()
