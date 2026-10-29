@@ -11,6 +11,9 @@
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/audio/monitoring_frame_map.hpp>
+#include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
+#include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 
 #include <QTest>
 #include <QByteArray>
@@ -129,6 +132,7 @@ private slots:
     void phase11GenuineMpfrCanaryMatchesPythonIndependentScalarBits();
     void phase11GenuineMpfrOneToTwoDownsampleMatchesPythonScalarBits();
     void phase11GenuineMpfrFourfoldRatesMatchPythonScalarBits();
+    void phase11GenuineQ0OneM17PassThenIndependentDeviceRate();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -3116,6 +3120,105 @@ void PlaybackSampleRateAdapterTest::noFutureDependencyPrefixAgainstIndependentOr
                      core::ErrorCode::InvalidArgument);
         }
     }
+}
+
+
+void PlaybackSampleRateAdapterTest::
+phase11GenuineQ0OneM17PassThenIndependentDeviceRate()
+{
+    // Genuine binary64 from the original SUCCESS #901 CI, SHA-verified;
+    // a deliberately NONRELEASE Q0 *integration rehearsal*, NEVER product
+    // admission of the other 28 source->master conversions.
+    // All three PCM domains remain strictly distinct:
+    // immutable SOURCE 44.1 -> real MPFR candidate MASTER 88.2
+    // -> exactly ONE authentic M17/M16 execution at MASTER 88.2
+    // -> independent private DEVICE candidate at 48 kHz.
+    const QByteArray path=qgetenv("RGSML_PHASE11_REAL_CANARY_PATH");
+    if(path.isEmpty())
+        QSKIP("Genuine MPFR Q0 CI asset is available in Linux Focused only.");
+    const auto read=[&](const std::string& filename) {
+        std::ifstream input(filename,std::ios::binary);
+        return std::vector<std::uint8_t>{
+            std::istreambuf_iterator<char>{input},
+            std::istreambuf_iterator<char>{}};
+    };
+    const auto data=read(path.constData());
+    QVERIFY(!data.empty());
+    constexpr std::string_view genuineSha=
+        "6fb38a7d62859283e4061a18d23f354a8308d5b22ff55623e8b1c9a245e8b00c";
+    const auto fmt=audio::AudioFormat::create(
+        rate(44100),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(fmt);
+    auto source=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},frame_count(441));
+    QVERIFY(source);
+    for(std::size_t channel=0;channel<2;++channel) {
+        auto lane=source.value()->mutable_view().channel(channel);
+        QVERIFY(lane);
+        for(std::size_t i=0;i<lane.value()->size();++i) {
+            const double stimulus=0.67*std::sin(
+                (static_cast<double>(i)*0.19)+
+                (channel==0?0.0:0.47));
+            (*lane.value())[i]=stimulus;
+        }
+    }
+    const auto beforeLeft=channel_bits(*source.value(),0);
+    const auto beforeRight=channel_bits(*source.value(),1);
+    auto refused=audio::materialize_phase11_pinned_final_src_candidate(
+        source.value()->view(),rate(88200),frame_count(17),
+        data,std::string(64,'0'));
+    QVERIFY(!refused); // wrong checksum may not publish any master
+    auto master=audio::materialize_phase11_pinned_final_src_candidate(
+        source.value()->view(),rate(88200),frame_count(17),
+        data,genuineSha);
+    QVERIFY2(master,master?"":master.error()->message().c_str());
+    QCOMPARE(master.value()->pcm.view().frame_count().value(),std::int64_t{882});
+    QCOMPARE(master.value()->output_rate.value(),std::int64_t{88200});
+    QCOMPARE(master.value()->pcm.view().timebase().frame_domain_id(),
+             audio::FrameDomainId::OUTPUT_RATE);
+    QCOMPARE(channel_bits(*source.value(),0),beforeLeft);
+    QCOMPARE(channel_bits(*source.value(),1),beforeRight);
+
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto ceiling=dsp::TruePeakLimiterParameters::create(-6.0);
+    QVERIFY(registry);
+    QVERIFY(ceiling);
+    // M17 works on the user's 88.2 kHz master, NEVER the device's 48 kHz.
+    auto checked=render::render_true_peak_limiter_checked_candidate(
+        master.value()->pcm.view(),*ceiling.value(),*registry.value(),
+        frame_count(17),false);
+    QVERIFY2(checked,checked?"":checked.error()->message().c_str());
+    QVERIFY(checked.value()->final_check.has_value());
+    QCOMPARE(checked.value()->terminal.compensated_pcm.view().format()
+                .sample_rate().value(),std::int64_t{88200});
+    QCOMPARE(checked.value()->final_check->qualification_status,
+             analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+    const auto measured=checked.value()->final_check->after_linear_peak;
+    QVERIFY(std::isfinite(measured));
+    QVERIFY(measured>=0.0);
+    QVERIFY(measured<=std::pow(10.0,-6.0/20.0)*(1.0+1e-6));
+
+    const auto masterBitsL=channel_bits(
+        checked.value()->terminal.compensated_pcm,0);
+    const auto masterBitsR=channel_bits(
+        checked.value()->terminal.compensated_pcm,1);
+    // Monitoring may resample on the private LISTENING branch only.
+    // Its unqualified experimental 88.2 -> 48 DSP is not a Q1-Q6 asset.
+    auto device=audio::materialize_output_master_monitoring_rate_candidate(
+        checked.value()->terminal.compensated_pcm.view(),
+        rate(48000),frame_count(17));
+    QVERIFY2(device,device?"":device.error()->message().c_str());
+    QCOMPARE(device.value()->pcm.view().format().sample_rate().value(),
+             std::int64_t{48000});
+    QCOMPARE(device.value()->pcm.view().frame_count().value(),
+             std::int64_t{480});
+    QCOMPARE(channel_bits(checked.value()->terminal.compensated_pcm,0),
+             masterBitsL);
+    QCOMPARE(channel_bits(checked.value()->terminal.compensated_pcm,1),
+             masterBitsR);
+    QCOMPARE(channel_bits(*source.value(),0),beforeLeft);
+    QCOMPARE(channel_bits(*source.value(),1),beforeRight);
 }
 
 }  // namespace rgsml::tests
