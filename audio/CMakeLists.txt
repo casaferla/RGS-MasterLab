@@ -3,6 +3,7 @@ add_library(rgsml_audio STATIC
     src/audio_format.cpp
     src/playback_sample_rate_adapter.cpp
     src/full_resource_output_rate_candidate.cpp
+    src/phase11_final_src_candidate.cpp
     src/source_resource.cpp
     src/waveform_summary.cpp
     src/wav_reader.cpp
@@ -40,3 +41,11 @@ endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/../cmake/RgsmlDependencyRules.cmake")
 rgsml_assert_target_dependencies(TARGET rgsml_audio)
+
+# Phase-11 candidate strict-scalar convolution must not fuse product and
+# accumulation: preserves frozen separate IEEE binary64 operations. It is
+# not a release admission path and does not alter protected playback SRC.
+if(NOT MSVC)
+    set_source_files_properties(src/phase11_final_src_candidate.cpp
+        PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
+endif()
