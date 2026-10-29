@@ -2,6 +2,9 @@
 """Rigorous small-fixture checks for non-release MPFR DTFT interval precursor."""
 import unittest
 from fractions import Fraction
+from unittest.mock import patch
+
+import mpfr_dtft_interval_preflight as dtft
 
 from mpfr_dtft_interval_preflight import (
     PASS_TOL, STOP_TOL, enclose_dtft_box, prove_band,
@@ -31,6 +34,30 @@ class DTFTIntervalProofTests(unittest.TestCase):
                             kind="stopband", max_boxes=3)
         self.assertEqual(failed["status"], "UNRESOLVED")
         self.assertFalse(failed["release_qualified"])
+
+    def test_exact_first_moment_is_reused_for_entire_box_campaign(self):
+        # Three adaptive boxes share ONE exact first-derivative bound.
+        # Each center still performs the actual MPFR DTFT evaluation;
+        # the common moment MUST NOT be recomputed N times per box.
+        taps = tuple(map(Fraction, (0, 0, 2, 0, 0)))
+        original = dtft._absolute_first_moment
+        with patch.object(dtft, "_absolute_first_moment",
+                          wraps=original) as moment_spy:
+            outcome = prove_band(self.ratio, taps, 24000, 48000,
+                                 kind="stopband", max_boxes=5)
+        self.assertEqual(outcome["status"], "UNRESOLVED")
+        self.assertEqual(outcome["visited_boxes"], 5)
+        self.assertEqual(moment_spy.call_count, 1)
+        self.assertFalse(outcome["release_qualified"])
+        # Independently invoked box API must preserve the same exact
+        # zero-phase enclosures, including a finite-width nonzero moment.
+        nonzero = tuple(map(Fraction, (0, Fraction(1, 2), 1,
+                                      Fraction(1, 2), 0)))
+        center = dtft._enclose_dtft_box_validated(
+            self.ratio, nonzero, 36000, 36100, bits=256,
+            absolute_first_moment=original(nonzero))
+        self.assertEqual(center, enclose_dtft_box(
+            self.ratio, nonzero, 36000, 36100))
 
     def test_exact_small_symmetric_lowpass_frequency_endpoints(self):
         # Symmetric five-tap synthetic h: H(0)=1 and H(high-grid pi)=0.
