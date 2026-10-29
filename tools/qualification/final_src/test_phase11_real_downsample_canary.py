@@ -52,6 +52,24 @@ class GenuineOneToTwoDownsampleQ0(unittest.TestCase):
         self.assertEqual(len(asset), shape.frozen_bytes)
         self.assertEqual(audit_rgsmsr1_structure(asset, shape), digest)
         self.assertIn(bits, (256, 512, 1024))
+        # Independently inspected actual #903 Q0 binary is the immutable
+        # cross-run BITWISE reference, not an independent release lockfile.
+        baseline = json.loads(Path(__file__).with_name(
+            "Q0_REAL_1TO2_CANARY_PIN_NOT_FOR_RELEASE.json"
+        ).read_text(encoding="utf-8"))
+        self.assertEqual(
+            baseline["status"], "Q0_BITWISE_REPRODUCIBILITY_PIN_NOT_RELEASE")
+        self.assertEqual((baseline["ratio_L"], baseline["ratio_M"]), (1, 2))
+        self.assertEqual(baseline["canonical_generation_pair_hz"],
+                         list(canonical))
+        self.assertEqual(baseline["baseline_candidate_sha256"], digest)
+        self.assertEqual(baseline["baseline_asset_bytes"], len(asset))
+        self.assertEqual(baseline["baseline_coefficient_count"], shape.N)
+        self.assertIn(baseline["baseline_precision_bits"], (256, 512, 1024))
+        for field in ("independent_release_kernel_sha_frozen",
+                      "continuous_dtft_proven", "q1_q6_passed",
+                      "product_admission_authorized", "release_qualified"):
+            self.assertIs(baseline[field], False)
         numerical = compare_candidate(asset, *canonical)
         self.assertTrue(numerical["independent_precision_stable"])
         self.assertTrue(numerical["candidate_bytes_match_both"])
@@ -100,6 +118,11 @@ class GenuineOneToTwoDownsampleQ0(unittest.TestCase):
             "schema": "rgsml.phase11.real-downsample-q0-candidate/1",
             "status": "REAL_MPFR_1_OVER_2_CANDIDATE_NOT_RELEASE_QUALIFIED",
             "coefficient_sha256": digest,
+            "cross_run_baseline_sha256":
+                baseline["baseline_candidate_sha256"],
+            "cross_run_baseline_source_run_id":
+                baseline["source_github_run_id"],
+            "cross_run_baseline_bitwise_match": True,
             "ratio": {"L": 1, "M": 2},
             "canonical_generation_pair_hz": list(canonical),
             "same_ratio_aliases_hz": [list(x) for x in ALIASES],
