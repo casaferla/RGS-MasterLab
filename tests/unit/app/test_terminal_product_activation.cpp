@@ -1876,7 +1876,10 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QVERIFY(product.verified_master_rate_for_monitoring());
     QVERIFY(monitorUi.can_install()); // PLAY/Loop are not Prepare barriers.
+    QVERIFY(renderer.last_approved_prepare_timing().has_value());
     QVERIFY(product.cancel());
+    // Cancel revokes MASTER and must revoke its profile-eligible timing.
+    QVERIFY(!renderer.last_approved_prepare_timing().has_value());
     transport.stop();
     selectedSourceLoop.reset();
     QVERIFY(transport.set_loop_source_range(std::nullopt));
