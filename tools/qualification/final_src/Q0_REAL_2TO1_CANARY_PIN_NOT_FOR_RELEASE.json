@@ -1,0 +1,24 @@
+{
+  "schema": "rgsml.phase11.real-mpfr-q0-canary-independent-run-replay/1",
+  "status": "Q0_BITWISE_REPRODUCIBILITY_PIN_NOT_RELEASE",
+  "ratio_L": 2,
+  "ratio_M": 1,
+  "canonical_generation_pair_hz": [
+    44100,
+    88200
+  ],
+  "baseline_candidate_sha256": "6fb38a7d62859283e4061a18d23f354a8308d5b22ff55623e8b1c9a245e8b00c",
+  "baseline_asset_bytes": 8252,
+  "baseline_coefficient_count": 1025,
+  "baseline_precision_bits": 256,
+  "source_github_run_id": 40937792708,
+  "source_artifact_id": 12926370267,
+  "source_pr_sha": "87d573fc520e0e5423d08d013c768ddb389cb1e0",
+  "source_artifact_name": "RGS-Phase11-REAL-Q0-2to1-NONRELEASE-901-87d573fc520e0e5423d08d013c768ddb389cb1e0",
+  "meaning": "Bitwise replay pin from independently inspected prior CI artifact; independently approved release kernel manifest ABSENT",
+  "independent_release_kernel_sha_frozen": false,
+  "continuous_dtft_proven": false,
+  "q1_q6_passed": false,
+  "product_admission_authorized": false,
+  "release_qualified": false
+}
