@@ -64,6 +64,18 @@ public:
     // measured-nonconforming and errored runs MUST NOT train timing profiles.
     [[nodiscard]] std::optional<ApprovedPrepareTiming>
     last_approved_prepare_timing() const { return lastApprovedPrepareTiming_; }
+    struct ApprovedPrepareHistoricalRange final {
+        std::int64_t minimum_wall_us;
+        std::int64_t maximum_wall_us;
+        std::size_t compatible_samples;
+    };
+    // Small process-local REAL accepted history. Never a six-rate total ETA:
+    // it only compares EXACT (SOURCE,MASTER,frames,channels,Ceiling) matches
+    // and refuses to predict from one sample or unrelated DSP work.
+    [[nodiscard]] std::optional<ApprovedPrepareHistoricalRange>
+    exact_historical_prepare_range(
+        core::SampleRate source,core::SampleRate master,
+        core::FrameCount frames,audio::ChannelLayout layout,double ceiling) const noexcept;
     [[nodiscard]] std::uint64_t render_invocation_count() const noexcept {
         return renderInvocationCount_.load(std::memory_order_acquire);
     }
@@ -109,6 +121,7 @@ private:
     std::atomic<std::int64_t> progressTotal_{0};
     std::uint64_t staleDiscarded_{0};
     std::optional<ApprovedPrepareTiming> lastApprovedPrepareTiming_;
+    std::vector<ApprovedPrepareTiming> approvedPrepareHistory_;
     std::atomic<std::uint64_t> renderInvocationCount_{0};
     QString status_{QStringLiteral("IDLE")};
     QString error_;
