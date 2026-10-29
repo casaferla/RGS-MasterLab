@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+import tempfile
 from typing import Callable
 
 from mpfr_dtft_interval_preflight import screen_candidate_asset
@@ -92,16 +94,26 @@ def main() -> None:
     p.add_argument("--report", type=Path, required=True,
                    help="new JSON report path OUTSIDE candidate folder (never a release manifest)")
     a = p.parse_args()
-    if a.report.exists() or a.report.parent == a.candidate_folder:
+    if a.report.exists() or a.report.resolve().is_relative_to(
+            a.candidate_folder.resolve()):
         raise ContractError("report must be a new path outside the candidate folder")
     outcome = attempt_candidate_family(a.candidate_folder, max_boxes=a.max_boxes)
     a.report.parent.mkdir(parents=True, exist_ok=True)
-    # No partial report on interrupted proof. Avoid overwriting preexisting
-    # reports; qualified release hashes/certificates are never emitted.
+    # Atomic report publication, never inside the immutable candidate family.
+    # Does not issue independent hashes or a release certificate.
     if a.report.exists():
         raise ContractError("refusing to overwrite an existing report")
-    a.report.write_text(json.dumps(outcome, sort_keys=True, indent=2)+"\n",
-                        encoding="utf-8")
+    fd, temporary = tempfile.mkstemp(
+        prefix=".dtft-screen-unpublished-", dir=a.report.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            output.write(json.dumps(outcome, sort_keys=True, indent=2)+"\n")
+        if a.report.exists():
+            raise ContractError("refusing to overwrite an existing report")
+        os.replace(temporary, a.report)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
     if not outcome["continuum_bounds_closed"]:
         raise SystemExit(2)
 
