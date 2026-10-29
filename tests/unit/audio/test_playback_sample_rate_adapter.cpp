@@ -458,6 +458,51 @@ phase11FullResourcePinnedCandidateUsesActualAudioBufferAndCancellation()
                  std::bit_cast<std::uint64_t>((*channel.value())[i]));
     QVERIFY(!make(rate(48000),sha));
     QVERIFY(!make(rate(32000),sha));
+
+    // Real AudioBuffer downsampling at the hardest reduced ratio:
+    // 192k -> 44.1k (147/640), frozen 316639-tap shape, synthetic
+    // delta at the center. The checked range is ceil(9*147/640)=3.
+    auto highFormat=audio::AudioFormat::create(
+        rate(192000),audio::ChannelLayout::MONO_C);
+    QVERIFY(highFormat);
+    auto highSource=audio::AudioBuffer::create(
+        *highFormat.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},frame_count(9));
+    QVERIFY(highSource);
+    const auto highSamples=highSource.value()->mutable_view().channel(0);
+    QVERIFY(highSamples);
+    std::fill(highSamples.value()->begin(),highSamples.value()->end(),0.125);
+    const auto shape=audio::internal::phase11_frozen_shape(147,640);
+    QVERIFY(shape);
+    const auto count=static_cast<std::size_t>(shape->N);
+    std::vector<std::uint8_t> decimator(52+8*count,0);
+    std::copy(magic.begin(),magic.end(),decimator.begin());
+    const auto putDec=[&](std::size_t at,std::uint64_t value,
+                          std::size_t width) {
+        for(std::size_t i=0;i<width;++i)
+            decimator[at+i]=static_cast<std::uint8_t>(value>>(8*i));
+    };
+    putDec(8,1,2);putDec(10,1,2);
+    putDec(12,shape->L,4);putDec(16,shape->M,4);
+    putDec(20,shape->T,4);
+    putDec(28,count,8);putDec(36,count,8);putDec(44,count*8,8);
+    putDec(52+8*(count/2),std::bit_cast<std::uint64_t>(147.0),8);
+    const auto decSha=core::sha256_hex(std::span<const std::byte>{
+        reinterpret_cast<const std::byte*>(decimator.data()),
+        decimator.size()});
+    auto decimated=audio::materialize_phase11_pinned_final_src_candidate(
+        highSource.value()->view(),rate(44100),frame_count(256),
+        decimator,decSha);
+    QVERIFY2(decimated,
+        decimated?"":decimated.error()->message().c_str());
+    QCOMPARE(decimated.value()->pcm.view().frame_count().value(),
+             std::int64_t{3});
+    const auto down=decimated.value()->pcm.view().channel(0);
+    QVERIFY(down);
+    QCOMPARE((*down.value())[0],18.375); // center delta gain=147
+    QCOMPARE((*down.value())[1],0.0);
+    QCOMPARE((*down.value())[2],0.0);
+    QVERIFY(decimated.value()->kernel_sha256.empty());
     (*channel.value())[0]=std::numeric_limits<double>::infinity();
     QVERIFY(!make(rate(96000),sha));
 }
