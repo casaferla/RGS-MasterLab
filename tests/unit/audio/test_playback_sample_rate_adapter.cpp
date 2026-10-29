@@ -121,6 +121,7 @@ private slots:
     void phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference();
     void phase11PinnedScalarReferenceSixBySixSyntheticGeometry();
     void phase11FullResourcePinnedCandidateUsesActualAudioBufferAndCancellation();
+    void phase11FullResourcePinnedCandidateAll36SourceMasterPairs();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -505,6 +506,110 @@ phase11FullResourcePinnedCandidateUsesActualAudioBufferAndCancellation()
     QVERIFY(decimated.value()->kernel_sha256.empty());
     (*channel.value())[0]=std::numeric_limits<double>::infinity();
     QVERIFY(!make(rate(96000),sha));
+}
+
+void PlaybackSampleRateAdapterTest::
+phase11FullResourcePinnedCandidateAll36SourceMasterPairs()
+{
+    // Genuine AudioBuffer entrypoint for all 6x6 SOURCE/MASTER mappings:
+    // 30 candidate FIRs and 6 bit-transparent identities. Test material
+    // is ONLY synthetic centered impulse coefficients, self-pinned hashes;
+    // spectral/coefficient certification and PRODUCT ADMISSION remain OPEN.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::array<double,5> samples{
+        0.25,-0.5,0.75,-0.125,1.0};
+    std::array<bool,14> distinct{};
+    int converted=0,identical=0;
+    for(const auto fin:rates)for(const auto fout:rates) {
+        auto format=audio::AudioFormat::create(
+            rate(fin),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(format);
+        auto source=audio::AudioBuffer::create(
+            *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},frame_count(5));
+        QVERIFY(source);
+        auto left=source.value()->mutable_view().channel(0);
+        auto right=source.value()->mutable_view().channel(1);
+        QVERIFY(left&&right);
+        for(std::size_t i=0;i<samples.size();++i) {
+            (*left.value())[i]=samples[i];
+            (*right.value())[i]=-samples[i];
+        }
+        const auto g=std::gcd(fin,fout);
+        const auto L=static_cast<std::uint32_t>(fout/g);
+        const auto M=static_cast<std::uint32_t>(fin/g);
+        std::vector<std::uint8_t> payload;
+        std::string pin;
+        if(fin!=fout) {
+            const auto shape=audio::internal::phase11_frozen_shape(L,M);
+            QVERIFY(shape);
+            const auto index=static_cast<std::size_t>(
+                shape-audio::internal::kPhase11FrozenShapes.data());
+            QVERIFY(index<distinct.size());
+            distinct[index]=true;
+            const auto n=static_cast<std::size_t>(shape->N);
+            payload.assign(52+8*n,0);
+            constexpr std::array<std::uint8_t,8> magic{
+                'R','G','S','M','S','R','1',0};
+            std::copy(magic.begin(),magic.end(),payload.begin());
+            const auto put=[&](std::size_t at,std::uint64_t value,
+                               std::size_t count) {
+                for(std::size_t k=0;k<count;++k)
+                    payload[at+k]=static_cast<std::uint8_t>(
+                        value>>(8*k));
+            };
+            put(8,1,2);put(10,1,2);
+            put(12,L,4);put(16,M,4);put(20,shape->T,4);
+            put(28,n,8);put(36,n,8);put(44,8*n,8);
+            put(52+8*(n/2),
+                std::bit_cast<std::uint64_t>(static_cast<double>(L)),8);
+            pin=core::sha256_hex(std::span<const std::byte>{
+                reinterpret_cast<const std::byte*>(payload.data()),
+                payload.size()});
+            ++converted;
+        } else {
+            ++identical;
+        }
+        auto result=audio::materialize_phase11_pinned_final_src_candidate(
+            source.value()->view(),rate(fout),frame_count(128),
+            payload,pin);
+        QVERIFY2(result,result?"":result.error()->message().c_str());
+        QCOMPARE(result.value()->source_rate,rate(fin));
+        QCOMPARE(result.value()->output_rate,rate(fout));
+        QCOMPARE(result.value()->used_src,fin!=fout);
+        // The test does NOT certify the candidate's SHA as release evidence.
+        QVERIFY(result.value()->kernel_sha256.empty());
+        const auto count=static_cast<std::int64_t>(
+            (samples.size()*static_cast<std::uint64_t>(L)+M-1)/M);
+        QCOMPARE(result.value()->pcm.view().frame_count().value(),count);
+        for(std::size_t ch=0;ch<2;++ch) {
+            const auto got=result.value()->pcm.view().channel(ch);
+            QVERIFY(got);
+            for(std::int64_t m=0;m<count;++m) {
+                const auto n=static_cast<std::uint64_t>(m)*M;
+                const auto value=n%L==0
+                    ?samples[static_cast<std::size_t>(n/L)]
+                        *static_cast<double>(L)
+                    :0.0;
+                const double expected=ch==0?value:-value;
+                QCOMPARE((*got.value())[static_cast<std::size_t>(m)],
+                         expected);
+            }
+        }
+        // A well-formed, correctly hashed FIR of one ratio must never
+        // be usable for a different ratio, even inside this test-only lane.
+        if(fin!=fout) {
+            const auto wrong=audio::materialize_phase11_pinned_final_src_candidate(
+                source.value()->view(),rate(fin),frame_count(128),
+                payload,pin);
+            QVERIFY(!wrong);
+        }
+    }
+    QCOMPARE(identical,6);
+    QCOMPARE(converted,30);
+    QCOMPARE(static_cast<int>(std::count(
+        distinct.begin(),distinct.end(),true)),14);
 }
 
 void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstConceptualGrid()
