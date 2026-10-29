@@ -1,3 +1,22 @@
+## PO EXECUTION PRIORITY — 2026-10-29: FINISH FUNCTIONAL M17, MAXIMIZE COHESIVE BATCHING
+
+**This is an execution-priority directive, not permission to waive frozen DSP, Q1–Q6 or FQ.** The user reiterates that finishing a genuinely usable M17 has priority over accumulating synthetic or per-ratio micro-CIs. One Focused CI per complete meaningful coherent batch; build related code, tests, UI, diagnostics and docs together on staging while previous CI tests immutable PR SHA. Do not introduce a separate PR promotion for every new reduced ratio or a reproducibility-only change.
+
+**Verified implementation vs gaps:**
+- A single Project MasterOutputRateState is wired to TerminalProductActivationCoordinator; normal M17 prepare requests that selected master rate, and Master Audition can borrow a verified M17 private master. No duplicate normal monitor Prepare is intended. These source-level seams are NOT equivalent to physical Windows 44.1→192 @ 48 kHz device acceptance.
+- Normal product session still rejects 28 unqualified mappings using `m17_final_src_candidate_admissible`. The 6 identity and existing 44.1↔48 paths are not a substitute for 30 real admitted Final SRC conversions. Do NOT remove this guard until independent 14-asset release evidence, Q1–Q6 and 36-path product qualification are demonstrably complete.
+- Actual six-rate total Prepare ETA needs calibrated per-host SRC+M17+M16 evidence, validity/persistence and honest unavailable behavior; partial elapsed/core-stage and process-local exact history are NOT sufficient.
+- Final M17 UI/functional gate still needs tested one-Prepare→Master Audition playback return, device independence, saving/export rate, geometry/150% scaling, correct nonconforming telemetry, and PO physical FQ. Reuse already implemented components; do not create a parallel renderer/owner.
+
+**Batch plan (combine wherever risk and runtime make it safe):**
+1. Finish the running genuine 1/4+4/1 Focused #904. Never launch simultaneous PR CI. Retain actual evidence and apply only corrections to the same next staged batch.
+2. Rather than ten incremental 1-ratio CI promotions, invoke the existing `build_resumable_real_candidates.py --stage --workers 2` (or 1 when memory-limited) on an adequately provisioned offline trusted workstation to generate/reuse the 14 genuinely MPFR/Ziv candidate checkpoints in ONE resumable campaign; `--finalize` on the verified 14 only. The two tiny real Q0 CI canaries do not justify keeping this expensive all-asset campaign inside ordinary Focused CI, which might exceed runner time/RAM. Do NOT assert that this campaign ran until real artifacts/receipts are independently observed.
+3. In the SAME cohesive qualification/integration phase, apply independent mpmath/dyadic/FFT negative screens, rigorous whole-band MPFR DTFT boxes and frozen independently approved SHA provenance, plus the actual Q1–Q6 and 15 downsample alias tests. Report unresolved spectral boxes as unresolved. Batch test harness/product-path changes instead of CI per asset.
+4. Only after admitted real assets exist, wire actual 30 SOURCE→MASTER conversions into the ONE existing M17 prepare chain, run coherent 36-path actual AudioBuffer and M17/M16/monitor tests with memory/cancel/stale guards, then UI six-rate advisor and physical FQ. Preserve true MASTER versus DEVICE rate separation. No unqualified toggle to turn synthetic tests green.
+5. Do not begin M18 until P0 end-to-end usable M17 is certified and accepted by PO; cosmetic issues must not steal DSP qualification cycles.
+
+**Efficiency:** inspect CI while actively writing on no-PR staging; launch next only after terminal double-green and exact SHA + zero-behind fast-forward CAS. Never repeatedly split a logical acceptance into small synthetic CI increments. State actual remaining blockers and distinguish Q0 from release in every handoff.
+
 # RGS MasterLab — P0 M17 → MASTER AUDITION SINGLE-PREPARE / MASTER RATE GATE
 
 **Tracker (OPEN BLOCKER):** https://github.com/casaferla/RGS-MasterLab/issues/62
