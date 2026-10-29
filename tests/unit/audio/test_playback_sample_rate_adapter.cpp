@@ -5,6 +5,7 @@
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <rgsml/audio/internal/phase11_strict_scalar_reference.hpp>
+#include <rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/audio/monitoring_frame_map.hpp>
@@ -113,6 +114,7 @@ class PlaybackSampleRateAdapterTest final : public QObject {
 private slots:
     void policyIdentityAndFrameMap();
     void phase11StrictScalarReferenceSixBySixAgainstConceptualGrid();
+    void phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -148,6 +150,86 @@ private slots:
     void noFutureDependencyPrefixAgainstIndependentOracle();
 };
 
+
+void PlaybackSampleRateAdapterTest::
+phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference()
+{
+    // Real RGSMSR1 wire geometry, but SYNTHETIC binary64 taps. This is
+    // qualification infrastructure, not a real 14-asset release oracle.
+    constexpr std::uint32_t L=2,M=1,T=512;
+    constexpr std::size_t n=L*T+1,header=52;
+    std::vector<std::uint8_t> bytes(header+8*n,0);
+    constexpr std::array<std::uint8_t,8> magic{
+        'R','G','S','M','S','R','1',0};
+    std::copy(magic.begin(),magic.end(),bytes.begin());
+    const auto put16=[&](std::size_t at,std::uint16_t value) {
+        for(std::size_t i=0;i<2;++i)
+            bytes[at+i]=static_cast<std::uint8_t>(value>>(8*i));
+    };
+    const auto put32=[&](std::size_t at,std::uint32_t value) {
+        for(std::size_t i=0;i<4;++i)
+            bytes[at+i]=static_cast<std::uint8_t>(value>>(8*i));
+    };
+    const auto put64=[&](std::size_t at,std::uint64_t value) {
+        for(std::size_t i=0;i<8;++i)
+            bytes[at+i]=static_cast<std::uint8_t>(value>>(8*i));
+    };
+    put16(8,1);put16(10,1);
+    put32(12,L);put32(16,M);put32(20,T);
+    put64(28,n);put64(36,n);put64(44,8*n);
+    // Bit-symmetric signed zero is preserved. A plausible but false
+    // SHA is NOT accepted as proof; this parser deliberately has no
+    // checksum/release entry point.
+    put64(header,std::bit_cast<std::uint64_t>(-0.0));
+    put64(header+8*(n-1),std::bit_cast<std::uint64_t>(-0.0));
+    put64(header+8*(n/2),std::bit_cast<std::uint64_t>(2.0));
+    put64(header+8*(n/2-1),std::bit_cast<std::uint64_t>(0.5));
+    put64(header+8*(n/2+1),std::bit_cast<std::uint64_t>(0.5));
+    const auto parse=[&](const std::vector<std::uint8_t>& input) {
+        return audio::internal::parse_phase11_rgsmsr1_candidate_bits(
+            input,L,M,T);
+    };
+    auto valid=parse(bytes);
+    QVERIFY2(valid,valid?"":valid.error()->message().c_str());
+    QCOMPARE(valid.value()->size(),n);
+    QCOMPARE((*valid.value())[0],std::bit_cast<std::uint64_t>(-0.0));
+    QCOMPARE((*valid.value())[n/2],std::bit_cast<std::uint64_t>(2.0));
+
+    const std::array<double,3> source{-0.5,0.25,0.75};
+    std::array<double,6> output{};
+    auto rendered=audio::internal::render_phase11_strict_scalar_reference(
+        source,output,0,L,M,*valid.value());
+    QVERIFY2(rendered,rendered?"":rendered.error()->message().c_str());
+    QCOMPARE(output[0],-1.0);
+    QCOMPARE(output[1],-0.125);
+    auto tamper=[&](std::size_t offset,std::uint8_t mask) {
+        auto wrong=bytes;
+        wrong[offset]^=mask;
+        QVERIFY(!parse(wrong));
+    };
+    tamper(0,1);             // magic
+    tamper(8,1);             // version
+    tamper(10,1);            // encoding
+    tamper(12,1);            // wrong rational L
+    tamper(16,1);            // wrong rational M
+    tamper(20,1);            // frozen T
+    tamper(24,1);            // reserved
+    tamper(28,1);            // N
+    tamper(36,1);            // coefficient count
+    tamper(44,1);            // payload bytes
+    tamper(header+8*(n/2-1),1); // broken exact mirror
+    auto nonfinite=bytes;
+    put64(header+8*(n/2),std::bit_cast<std::uint64_t>(
+        std::numeric_limits<double>::infinity()));
+    QVERIFY(!parse(bytes));
+    bytes=std::move(nonfinite);
+    QVERIFY(!audio::internal::parse_phase11_rgsmsr1_candidate_bits(
+        bytes,L,M,510)); // wrong T
+    QVERIFY(!audio::internal::parse_phase11_rgsmsr1_candidate_bits(
+        bytes,1,1,T)); // identity must not load FIR
+    bytes.push_back(0);
+    QVERIFY(!parse(bytes)); // no appended/truncated candidate
+}
 
 void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstConceptualGrid()
 {
