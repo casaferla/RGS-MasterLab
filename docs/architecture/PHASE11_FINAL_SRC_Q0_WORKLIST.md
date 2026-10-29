@@ -1,3 +1,9 @@
+## CHAT 57 — #891 active; 14-shape frozen geometry added to SAME staging batch · 2026-10-29
+
+- New test-only `audio/include/rgsml/audio/internal/phase11_frozen_rgsmsr1_geometry.hpp` transcribes exactly the 14 Q0-rational/pi-enclosed frozen reduced L/M→T,N pairs; test asserts 36 rate mappings cover all 14 shapes and sum to **11,440,952 bytes** with the 52-byte RGSMSR1 header per asset. The pinned C++ strict scalar test bridge refuses a caller-supplied T that differs from the frozen shape, even if its candidate SHA matches. This adds NO 14-real-asset certification and NO product Final SRC support.
+- These are additions to the **existing next cohesive STAGING lot**, not yet tested by [Focused #891](https://github.com/casaferla/RGS-MasterLab/actions/runs/40829398147), whose head is immutable `bf200e0d2b55d9b451244665f1490cb12b557ce9`. Its eventual Windows/Linux PASS must NOT be attributed to the new staged T/N table or 36-path hash-pinned tests. Promote only after #891 terminal with fresh ancestry/expected-SHA checks, one no-force fast-forward; no other Focused while #891 is running.
+- Immediate blocker remains the genuine independent coefficient/DTFT proof for all 14 assets and acceptance of real C++ 30-path product Final SRC. Do not reopen frozen DSP or count experimental scalar infrastructure as product release.
+
 ## CHAT 57 — #891 active overlap / staging next pinned-SHA scalar reference (2026-10-29)
 
 - [Focused #891](https://github.com/casaferla/RGS-MasterLab/actions/runs/40829398147) tests immutable PR SHA `bf200e0d2b55d9b451244665f1490cb12b557ce9` (test-only RGSMSR1 structural parser); Windows/Linux CI may be running while this successor staging work is prepared. **Do not credit the following to #891.**
