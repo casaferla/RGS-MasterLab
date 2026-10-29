@@ -35,6 +35,20 @@ class All14CampaignOrchestrationTests(unittest.TestCase):
             "product_admission_authorized": False,
         }
 
+    def _mock_checkpoint_audit(self, workdir):
+        # SYNTHETIC campaign test seam only. Real command defaults to
+        # audit_progress(), which verifies every REAL MPFR receipt and SHA.
+        self.assertEqual(workdir, self.work)
+        complete = "stage" in self.calls
+        return {
+            "validated_pinned_original_ci_count": 4,
+            "validated_real_checkpoint_count": 14 if complete else 4,
+            "remaining_missing_ratio_count": 0 if complete else 10,
+            "outstanding_incomplete_temporary_entries": 0,
+            "release_qualified": False,
+            "product_admission_authorized": False,
+        }
+
     def _run(self, *, stage=None, seed=None, workers=2,
              candidate=None, precision=1024, publisher=None, verifier=None):
         optional = {}
@@ -46,7 +60,8 @@ class All14CampaignOrchestrationTests(unittest.TestCase):
             self.seed, self.work, candidate or self.folder,
             workers=workers, max_precision=precision,
             seed_importer=seed or self._seed,
-            generator=stage or self._stage, **optional)
+            generator=stage or self._stage,
+            progress_auditor=self._mock_checkpoint_audit, **optional)
 
     def test_unsafe_limits_refused_before_seed_reads(self):
         for workers in (0, -1, 5, True, 2.5):
