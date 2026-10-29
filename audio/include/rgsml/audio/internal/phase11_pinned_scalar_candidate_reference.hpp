@@ -6,6 +6,7 @@
 // A candidate checksum must ultimately come from independently approved
 // proof evidence; synthetic test hashes are not product admission.
 #include <rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp>
+#include <rgsml/audio/internal/phase11_frozen_rgsmsr1_geometry.hpp>
 #include <rgsml/audio/internal/phase11_strict_scalar_reference.hpp>
 
 #include <array>
@@ -53,6 +54,12 @@ render_phase11_pinned_scalar_reference(
        ||M>std::numeric_limits<std::uint32_t>::max())
         return Result::failure(phase11_candidate_detail::invalid(
             "Phase11 conversion ratio cannot be represented"));
+    const auto frozen=phase11_frozen_shape(
+        static_cast<std::uint32_t>(L),static_cast<std::uint32_t>(M));
+    if(!frozen||expectedFrozenT!=frozen->T
+       ||static_cast<std::uint64_t>(frozen->L)*frozen->T+1!=frozen->N)
+        return Result::failure(phase11_candidate_detail::invalid(
+            "Phase11 scalar reference refuses nonfrozen kernel shape"));
     auto parsed=parse_phase11_rgsmsr1_pinned_candidate_bits(
         candidateBytes,static_cast<std::uint32_t>(L),
         static_cast<std::uint32_t>(M),expectedFrozenT,
