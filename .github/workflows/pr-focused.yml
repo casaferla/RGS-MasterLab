@@ -39,7 +39,11 @@ jobs:
       # Offline all-14 candidate-asset assembly is too expensive for every
       # Focused run; fast synthetic tests cover atomicity and fail-closed.
       - name: Phase-11 Final SRC candidate manifest atomicity (Linux)
-        run: python tools/qualification/final_src/test_build_candidate_manifest.py
+        run: |
+          python tools/qualification/final_src/test_build_candidate_manifest.py
+          # Synthetic checkpoints only; exercises resumable two-run work
+          # recovery and no-release all-14 atomic finalization, NOT MPFR proof.
+          python tools/qualification/final_src/test_build_resumable_real_candidates.py
 
       # Independent high-precision numerical crosscheck. Offline test-only
       # dependency; no new production/runtime library or Windows build.
