@@ -11,7 +11,7 @@ from unittest.mock import patch
 from zipfile import ZipFile, ZIP_DEFLATED
 
 from build_candidate_manifest import canonical_pair_for_ratio
-from build_resumable_real_candidates import _read_checkpoint
+from build_resumable_real_candidates import _read_checkpoint, stage_one
 from import_audited_ci_q0_checkpoints import import_pinned_ci_q0
 from phase11_math_preflight import ContractError, Ratio, kernel_shape
 from test_build_candidate_manifest import shape_only_fixture
@@ -110,6 +110,14 @@ class AuditedCiBootstrapLifecycleTests(unittest.TestCase):
             data, precision = _read_checkpoint(self.workdir, *p["pair"])
             self.assertEqual(sha256(data).hexdigest(), p["sha"])
             self.assertEqual(precision, 256)
+            # The EXISTING 14-ratio generator resumes these checkpoints
+            # without a third expensive generator execution.
+            def never_generate(*_args):
+                self.fail("audited Q0 seed must be reused, not regenerated")
+            reused, reused_bits = stage_one(
+                self.workdir, *p["pair"], generator=never_generate)
+            self.assertEqual(reused, data)
+            self.assertEqual(reused_bits, precision)
         # Re-import never overwrites published checkpoints.
         self.assertEqual(self._import(), result)
         self.assertEqual(len(list(self.workdir.iterdir())), 4)
