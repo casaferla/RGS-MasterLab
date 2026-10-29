@@ -303,7 +303,7 @@ def import_pinned_seed_bundle(workdir: Path, bundle_zip: Path) -> dict:
             staged.mkdir()
             (staged / f"RGSMSR1_L{p['L']}_M{p['M']}.bin").write_bytes(data)
             (staged / RECEIPT).write_text(
-                json.dumps(receipt, indent=2, sort_keys=True) + "\\n",
+                json.dumps(receipt, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8")
         for p, _, _ in audited:
             slot = _slot(workdir, p["L"], p["M"])
