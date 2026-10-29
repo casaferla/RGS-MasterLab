@@ -654,41 +654,57 @@ phase11GenuineMpfrCanaryMatchesPythonIndependentScalarBits()
     QCOMPARE(expected.size(),std::size_t{8*8});
     const auto sha=core::sha256_hex(std::span<const std::byte>{
         reinterpret_cast<const std::byte*>(asset.data()),asset.size()});
-    auto format=audio::AudioFormat::create(
-        rate(48000),audio::ChannelLayout::MONO_C);
-    QVERIFY(format);
-    auto source=audio::AudioBuffer::create(
-        *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
-        core::FrameIndex{0},frame_count(4));
-    QVERIFY(source);
-    auto channel=source.value()->mutable_view().channel(0);
-    QVERIFY(channel);
-    (*channel.value())[0]=0.0;
-    (*channel.value())[1]=1.0;
-    (*channel.value())[2]=0.0;
-    (*channel.value())[3]=0.0;
-    auto converted=audio::materialize_phase11_pinned_final_src_candidate(
-        source.value()->view(),rate(96000),frame_count(128),asset,sha);
-    QVERIFY2(converted,converted?"":converted.error()->message().c_str());
-    QCOMPARE(converted.value()->pcm.view().frame_count().value(),
-             std::int64_t{8});
-    QVERIFY(converted.value()->used_src);
-    QVERIFY(converted.value()->kernel_sha256.empty()); // NEVER released
-    const auto out=converted.value()->pcm.view().channel(0);
-    QVERIFY(out);
-    for(std::size_t i=0;i<8;++i) {
-        std::uint64_t expectedBits=0;
-        for(std::size_t b=0;b<8;++b)
-            expectedBits|=static_cast<std::uint64_t>(
-                expected[8*i+b])<<(8*b);
-        QCOMPARE(std::bit_cast<std::uint64_t>((*out.value())[i]),
-                 expectedBits);
+    // Both absolute SRC rate labels map to the SAME frozen reduced
+    // ratio 2/1. One canonical MPFR kernel must work for both SOURCE
+    // rates without additional generation, reweighting or DSP rewrite.
+    for(const auto [fin,fout]:std::array{
+            std::pair<std::int64_t,std::int64_t>{48000,96000},
+            std::pair<std::int64_t,std::int64_t>{44100,88200}}) {
+        auto sourceFormat=audio::AudioFormat::create(
+            rate(fin),audio::ChannelLayout::MONO_C);
+        QVERIFY(sourceFormat);
+        auto input=audio::AudioBuffer::create(
+            *sourceFormat.value(),
+            audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},frame_count(4));
+        QVERIFY(input);
+        auto inputChannel=input.value()->mutable_view().channel(0);
+        QVERIFY(inputChannel);
+        (*inputChannel.value())[0]=0.0;
+        (*inputChannel.value())[1]=1.0;
+        (*inputChannel.value())[2]=0.0;
+        (*inputChannel.value())[3]=0.0;
+        auto converted=audio::materialize_phase11_pinned_final_src_candidate(
+            input.value()->view(),rate(fout),frame_count(128),asset,sha);
+        QVERIFY2(converted,converted?"":converted.error()->message().c_str());
+        QCOMPARE(converted.value()->pcm.view().frame_count().value(),
+                 std::int64_t{8});
+        QVERIFY(converted.value()->used_src);
+        QVERIFY(converted.value()->kernel_sha256.empty()); // NEVER released
+        const auto out=converted.value()->pcm.view().channel(0);
+        QVERIFY(out);
+        for(std::size_t i=0;i<8;++i) {
+            std::uint64_t expectedBits=0;
+            for(std::size_t b=0;b<8;++b)
+                expectedBits|=static_cast<std::uint64_t>(
+                    expected[8*i+b])<<(8*b);
+            QCOMPARE(std::bit_cast<std::uint64_t>((*out.value())[i]),
+                     expectedBits);
+        }
     }
     // Reject a mathematically valid shape whose data digest was mutated.
     auto forged=sha;
     forged[0]=forged[0]=='0'?'1':'0';
+    auto invalidFormat=audio::AudioFormat::create(
+        rate(48000),audio::ChannelLayout::MONO_C);
+    QVERIFY(invalidFormat);
+    auto invalidSource=audio::AudioBuffer::create(
+        *invalidFormat.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},frame_count(4));
+    QVERIFY(invalidSource);
     QVERIFY(!audio::materialize_phase11_pinned_final_src_candidate(
-        source.value()->view(),rate(96000),frame_count(128),asset,forged));
+        invalidSource.value()->view(),rate(96000),
+        frame_count(128),asset,forged));
 }
 
 void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstConceptualGrid()
