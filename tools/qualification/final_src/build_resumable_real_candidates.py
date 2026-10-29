@@ -16,6 +16,7 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
+import sys
 import tempfile
 from typing import Callable
 
@@ -129,16 +130,22 @@ def stage_one(workdir: Path, fin: int, fout: int, *,
 
 
 def stage_all(workdir: Path, *, max_precision: int = 1024,
-              generator: Callable[[int,int,int],tuple[bytes,int]] | None = None
+              generator: Callable[[int,int,int],tuple[bytes,int]] | None = None,
+              progress: Callable[[str], None] | None = None
               ) -> dict:
     """Durable ratio checkpoints; a later failed ratio cannot destroy earlier work."""
     pairmap = canonical_pair_for_ratio()
     done = []
     for (L,M),(fin,fout) in pairmap.items():
+        if progress:
+            progress(f"MPFR_RATIO_START L{L}/M{M} fin={fin} fout={fout}")
         data,bits=stage_one(workdir,fin,fout,
                             max_precision=max_precision,generator=generator)
         done.append({"L":L,"M":M,"bytes":len(data),"precision_bits":bits,
                      "sha256":sha256(data).hexdigest()})
+        if progress:
+            progress(f"MPFR_RATIO_CHECKPOINTED {len(done)}/14 L{L}/M{M} "
+                     f"bits={bits} sha256={sha256(data).hexdigest()}")
     return {"status":"14_DOUBLE_RUN_CANDIDATES_CHECKPOINTED_NOT_RELEASE",
             "ratios":len(done),"assets":done,
             "product_admission_authorized":False}
@@ -192,7 +199,8 @@ def main() -> None:
         if a.out is not None or (a.fin is None)!=(a.fout is None):
             p.error("--stage takes both --fin/--fout or neither, never --out")
         if a.fin is None:
-            result=stage_all(a.workdir,max_precision=a.max_precision)
+            result=stage_all(a.workdir,max_precision=a.max_precision,
+                progress=lambda line: print(line,file=sys.stderr,flush=True))
         else:
             data,bits=stage_one(a.workdir,a.fin,a.fout,max_precision=a.max_precision)
             result={"status":"RATIO_DOUBLE_RUN_CHECKPOINTED_NOT_RELEASE",
