@@ -14,6 +14,7 @@
 #include <limits>
 #include <numeric>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace rgsml::audio::internal {
