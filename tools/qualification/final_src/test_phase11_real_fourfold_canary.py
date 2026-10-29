@@ -36,6 +36,23 @@ class GenuineFourfoldRatioQ0(unittest.TestCase):
         os.environ.get("RGSML_MPFR_FULL_SRC_SMOKE") == "1",
         "Real 1:4 and 4:1 generation requires the opt-in offline gate")
     def test_two_real_fourfold_ratios_with_independent_pcm(self):
+        # Prior CI #904 genuine binary artifacts were downloaded, hashed,
+        # and independently inspected. Replay locks reject changed binary64
+        # coefficients ACROSS CI runs; NOT an independently approved release
+        # coefficient manifest, DTFT continuum certificate or Q1-Q6.
+        baseline = json.loads(Path(__file__).with_name(
+            "Q0_REAL_FOURFOLD_CANARY_PINS_NOT_FOR_RELEASE.json"
+        ).read_text(encoding="utf-8"))
+        self.assertEqual(baseline["status"],
+                         "CROSS_RUN_REAL_MPFR_CANDIDATES_NOT_FOR_RELEASE")
+        self.assertEqual(baseline["source_github_run_id"], 40949824092)
+        locked = {(entry["L"], entry["M"]): entry
+                  for entry in baseline["baselines"]}
+        self.assertEqual(set(locked), {(1, 4), (4, 1)})
+        for claim in ("independent_release_kernel_sha_frozen",
+                      "continuous_dtft_proven", "q1_q6_passed",
+                      "product_admission_authorized", "release_qualified"):
+            self.assertIs(baseline[claim], False)
         evidence = []
         for L, M, aliases in CASES:
             canonical = canonical_pair_for_ratio()[(L, M)]
@@ -54,6 +71,13 @@ class GenuineFourfoldRatioQ0(unittest.TestCase):
             self.assertEqual(len(asset), shape.frozen_bytes)
             self.assertEqual(audit_rgsmsr1_structure(asset, shape), digest)
             self.assertIn(precision, (256, 512, 1024))
+            pin = locked[(L, M)]
+            self.assertEqual(pin["canonical_generation_pair_hz"],
+                             list(canonical))
+            self.assertEqual(pin["sha256"], digest)
+            self.assertEqual(pin["bytes"], len(asset))
+            self.assertEqual(pin["coefficient_count"], shape.N)
+            self.assertIn(pin["precision_bits"], (256, 512, 1024))
             independent = compare_candidate(asset, *canonical)
             self.assertTrue(independent["independent_precision_stable"])
             self.assertTrue(independent["candidate_bytes_match_both"])
@@ -93,6 +117,10 @@ class GenuineFourfoldRatioQ0(unittest.TestCase):
                 "schema": "rgsml.phase11.real-fourfold-q0-candidate/1",
                 "status": "REAL_MPFR_FOURFOLD_CANDIDATE_NOT_RELEASE_QUALIFIED",
                 "coefficient_sha256": digest,
+                "cross_run_baseline_sha256": pin["sha256"],
+                "cross_run_baseline_source_run_id":
+                    baseline["source_github_run_id"],
+                "cross_run_baseline_bitwise_match": True,
                 "ratio": {"L": L, "M": M},
                 "canonical_generation_pair_hz": list(canonical),
                 "same_ratio_aliases_hz": [list(a) for a in aliases],
