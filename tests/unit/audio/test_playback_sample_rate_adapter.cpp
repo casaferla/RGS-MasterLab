@@ -194,6 +194,34 @@ phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference()
     QCOMPARE(valid.value()->size(),n);
     QCOMPARE((*valid.value())[0],std::bit_cast<std::uint64_t>(-0.0));
     QCOMPARE((*valid.value())[n/2],std::bit_cast<std::uint64_t>(2.0));
+    // Test-only digest is computed here to exercise the external-hash
+    // enforcement API, NOT to claim independently frozen release authority.
+    const auto pinned=core::sha256_hex(std::span<const std::byte>{
+        reinterpret_cast<const std::byte*>(bytes.data()),bytes.size()});
+    const auto readPinned=[&](const std::vector<std::uint8_t>& input,
+                              std::string_view digest) {
+        return audio::internal::parse_phase11_rgsmsr1_pinned_candidate_bits(
+            input,L,M,T,digest);
+    };
+    auto locked=readPinned(bytes,pinned);
+    QVERIFY(locked);
+    QCOMPARE(*locked.value(),*valid.value());
+    auto wrongSha=pinned;
+    wrongSha[0]=wrongSha[0]=='0'?'1':'0';
+    QVERIFY(!readPinned(bytes,wrongSha));
+    QVERIFY(!readPinned(bytes,std::string_view{}));
+    auto uppercaseSha=pinned;
+    uppercaseSha[0]='G';
+    QVERIFY(!readPinned(bytes,uppercaseSha));
+    // Preserve valid symmetry/finite geometry but alter one central tap.
+    // Unpinned shape parsing accepts it; pinned data integrity MUST refuse.
+    auto changed=bytes;
+    const auto different=std::bit_cast<std::uint64_t>(2.25);
+    for(std::size_t k=0;k<8;++k)
+        changed[header+8*(n/2)+k]=static_cast<std::uint8_t>(
+            different>>(8*k));
+    QVERIFY(parse(changed));
+    QVERIFY(!readPinned(changed,pinned));
 
     const std::array<double,3> source{-0.5,0.25,0.75};
     std::array<double,6> output{};
