@@ -50,6 +50,32 @@ class ResumableCandidateLifecycle(unittest.TestCase):
                 finalize(work,Path(root)/"cannot-publish")
             self.assertFalse((Path(root)/"cannot-publish").exists())
 
+    def test_bounded_process_pool_generates_all_fourteen_checkpoints_and_resumes(self):
+        with TemporaryDirectory() as root:
+            work=Path(root)/"parallel"
+            progress=[]
+            completed=stage_all(
+                work,workers=2,generator=shape_only_fixture,
+                progress=progress.append)
+            self.assertEqual(completed["ratios"],14)
+            self.assertFalse(completed["product_admission_authorized"])
+            self.assertEqual(len(list(work.iterdir())),14)
+            self.assertEqual(
+                [x["L"] for x in completed["assets"]],
+                sorted(x["L"] for x in completed["assets"]))
+            self.assertEqual(
+                len([x for x in progress if x.startswith(
+                    "MPFR_RATIO_CHECKPOINTED")]),14)
+            resumed=stage_all(work,workers=2,generator=shape_only_fixture)
+            self.assertEqual(completed,resumed)
+            self.assertEqual(
+                sum(x["bytes"] for x in completed["assets"]),11440952)
+            for invalid in (0,5,1.0,True):
+                with self.assertRaisesRegex(ContractError,"worker count"):
+                    stage_all(Path(root)/"not_created",workers=invalid,
+                              generator=shape_only_fixture)
+            self.assertFalse((Path(root)/"not_created").exists())
+
     def test_failure_at_second_reproduction_never_leaks_checkpoint(self):
         (L,M),(fin,fout)=next(iter(canonical_pair_for_ratio().items()))
         count=0
