@@ -49,6 +49,10 @@ jobs:
           # resumable checkpoint can be seeded. These lifecycle fixtures
           # are SYNTHETIC; do not imply an all-14 genuine campaign ran.
           python tools/qualification/final_src/test_import_audited_ci_q0_checkpoints.py
+          # Strict lifecycle of one resumable Q0 campaign using four
+          # audited CI seeds and ten missing ratios. SYNTHETIC orchestration
+          # checks only; expensive MPFR all-14 stays offline/on workstation.
+          python tools/qualification/final_src/test_run_offline_all14_q0_campaign.py
 
       # Independent high-precision numeric crosscheck and sampled FFT
       # NEGATIVE SCREEN on a GENUINE MPFR candidate; Python tools only.
