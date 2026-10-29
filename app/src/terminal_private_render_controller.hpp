@@ -30,6 +30,9 @@ public:
         core::FrameCount source_frames;
         audio::ChannelLayout layout;
         double ceiling_db_tp{0.0};
+        std::uint64_t manual_chain_revision{0};
+        std::uint64_t terminal_chain_revision{0};
+        std::uint64_t terminal_parameter_revision{0};
         std::int64_t queue_us{-1};
         std::int64_t render_wall_us{-1};
         std::int64_t src_us{-1};
@@ -75,7 +78,9 @@ public:
     [[nodiscard]] std::optional<ApprovedPrepareHistoricalRange>
     exact_historical_prepare_range(
         core::SampleRate source,core::SampleRate master,
-        core::FrameCount frames,audio::ChannelLayout layout,double ceiling) const noexcept;
+        core::FrameCount frames,audio::ChannelLayout layout,double ceiling,
+        std::uint64_t manualRevision,std::uint64_t terminalChainRevision,
+        std::uint64_t terminalParameterRevision) const noexcept;
     [[nodiscard]] std::uint64_t render_invocation_count() const noexcept {
         return renderInvocationCount_.load(std::memory_order_acquire);
     }
