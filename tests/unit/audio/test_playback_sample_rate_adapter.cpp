@@ -127,6 +127,7 @@ private slots:
     void phase11FullResourcePinnedCandidateUsesActualAudioBufferAndCancellation();
     void phase11FullResourcePinnedCandidateAll36SourceMasterPairs();
     void phase11GenuineMpfrCanaryMatchesPythonIndependentScalarBits();
+    void phase11GenuineMpfrOneToTwoDownsampleMatchesPythonScalarBits();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -706,6 +707,78 @@ phase11GenuineMpfrCanaryMatchesPythonIndependentScalarBits()
     QVERIFY(!audio::materialize_phase11_pinned_final_src_candidate(
         invalidSource.value()->view(),rate(96000),
         frame_count(128),asset,forged));
+}
+
+void PlaybackSampleRateAdapterTest::
+phase11GenuineMpfrOneToTwoDownsampleMatchesPythonScalarBits()
+{
+    // Genuine L/M=1/2 MPFR/Ziv downsampling, a distinct frozen REAL ratio
+    // from the previous 2/1 canary. Both absolute rate aliases must use
+    // exactly the same independently mpmath-screened candidate PCM.
+    // NOT a released kernel or authorized product Final Output SRC.
+    const QByteArray path=qgetenv("RGSML_PHASE11_REAL_DOWNSAMPLE_PATH");
+    if(path.isEmpty())
+        QSKIP("Genuine 1:2 MPFR downsampling candidate is Linux-only.");
+    const auto read=[](const std::string& filepath) {
+        std::ifstream stream(filepath,std::ios::binary);
+        if(!stream)return std::vector<std::uint8_t>{};
+        return std::vector<std::uint8_t>{
+            std::istreambuf_iterator<char>{stream},
+            std::istreambuf_iterator<char>{}};
+    };
+    const auto asset=read(path.constData());
+    const auto expected=read(std::string(path.constData())+".expected.f64le");
+    const auto shape=audio::internal::phase11_frozen_shape(1,2);
+    QVERIFY(shape);
+    QCOMPARE(asset.size(),std::size_t{52}+8*static_cast<std::size_t>(shape->N));
+    QCOMPARE(expected.size(),std::size_t{4*8});
+    const auto digest=core::sha256_hex(std::span<const std::byte>{
+        reinterpret_cast<const std::byte*>(asset.data()),asset.size()});
+    constexpr std::array<double,8> samples{
+        0.0,1.0,-0.5,0.25,0.75,0.0,-0.25,0.5};
+    for(const auto& [fin,fout]:std::array{
+            std::pair<std::int64_t,std::int64_t>{88200,44100},
+            std::pair<std::int64_t,std::int64_t>{96000,48000}}) {
+        auto fmt=audio::AudioFormat::create(
+            rate(fin),audio::ChannelLayout::MONO_C);
+        QVERIFY(fmt);
+        auto input=audio::AudioBuffer::create(
+            *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},frame_count(8));
+        QVERIFY(input);
+        auto ch=input.value()->mutable_view().channel(0);
+        QVERIFY(ch);
+        for(std::size_t i=0;i<samples.size();++i)
+            (*ch.value())[i]=samples[i];
+        auto converted=audio::materialize_phase11_pinned_final_src_candidate(
+            input.value()->view(),rate(fout),frame_count(128),asset,digest);
+        QVERIFY2(converted,converted?"":converted.error()->message().c_str());
+        QCOMPARE(converted.value()->pcm.view().frame_count().value(),
+                 std::int64_t{4});
+        QVERIFY(converted.value()->used_src);
+        QVERIFY(converted.value()->kernel_sha256.empty());
+        const auto pcm=converted.value()->pcm.view().channel(0);
+        QVERIFY(pcm);
+        for(std::size_t i=0;i<4;++i) {
+            std::uint64_t bits=0;
+            for(std::size_t byte=0;byte<8;++byte)
+                bits|=static_cast<std::uint64_t>(
+                    expected[8*i+byte])<<(8*byte);
+            QCOMPARE(std::bit_cast<std::uint64_t>((*pcm.value())[i]),bits);
+        }
+    }
+    auto forged=digest;
+    forged[0]=forged[0]=='0'?'1':'0';
+    auto fmt=audio::AudioFormat::create(
+        rate(88200),audio::ChannelLayout::MONO_C);
+    QVERIFY(fmt);
+    auto source=audio::AudioBuffer::create(
+        *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},frame_count(8));
+    QVERIFY(source);
+    QVERIFY(!audio::materialize_phase11_pinned_final_src_candidate(
+        source.value()->view(),rate(44100),frame_count(128),
+        asset,forged));
 }
 
 void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstConceptualGrid()
