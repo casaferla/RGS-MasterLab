@@ -19,6 +19,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Callable
 
+from audit_q0_checkpoint_progress import audit_progress
 from build_resumable_real_candidates import stage_all, finalize
 from import_audited_ci_q0_checkpoints import import_pinned_seed_bundle
 from phase11_math_preflight import ContractError
@@ -32,6 +33,7 @@ def run_campaign(
     generator: Callable = stage_all,
     publisher: Callable = finalize,
     verifier: Callable = audit_candidate_family,
+    progress_auditor: Callable = audit_progress,
 ) -> dict:
     if type(workers) is not int or not 1 <= workers <= 4:
         raise ContractError("real all-14 offline worker count must be 1..4")
@@ -53,6 +55,16 @@ def run_campaign(
         or seeded.get("source_ci_artifact_pins_verified") is not True
         or seeded.get("release_qualified") is not False):
         raise ContractError("four real Q0 provenance seeds not verified")
+    initial_progress = progress_auditor(workdir)
+    if (initial_progress.get("validated_pinned_original_ci_count") != 4
+        or initial_progress.get("remaining_missing_ratio_count", 14) > 10
+        or initial_progress.get("product_admission_authorized") is not False
+        or initial_progress.get("release_qualified") is not False):
+        raise ContractError("real Q0 checkpoint preflight does not match four CI pins")
+    print("PHASE11_REAL_Q0_PROGRESS_BEFORE="
+          + json.dumps({"validated": initial_progress["validated_real_checkpoint_count"],
+                        "remaining": initial_progress["remaining_missing_ratio_count"],
+                        "ETA": None}, sort_keys=True), flush=True)
     staged = generator(
         workdir, workers=workers, max_precision=max_precision,
         progress=lambda message: print(message, flush=True))
@@ -61,6 +73,14 @@ def run_campaign(
             "14_DOUBLE_RUN_CANDIDATES_CHECKPOINTED_NOT_RELEASE"
         or staged.get("product_admission_authorized") is not False):
         raise ContractError("all fourteen genuine double-run checkpoints required")
+    final_progress = progress_auditor(workdir)
+    if (final_progress.get("validated_real_checkpoint_count") != 14
+        or final_progress.get("remaining_missing_ratio_count") != 0
+        or final_progress.get("validated_pinned_original_ci_count") != 4
+        or final_progress.get("outstanding_incomplete_temporary_entries") != 0
+        or final_progress.get("release_qualified") is not False
+        or final_progress.get("product_admission_authorized") is not False):
+        raise ContractError("all fourteen real Q0 checkpoint SHA/receipt audits required")
     # No synthetic generator, partial pair map or unverified asset.
     from independent_mpmath_crosscheck import compare_candidate
     from exact_dyadic_zero_stuff_oracle import screen_real_candidate_dyadic
