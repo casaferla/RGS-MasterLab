@@ -1517,7 +1517,10 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!renderer.exact_historical_prepare_range(
         observedPrepare->source_rate,observedPrepare->master_rate,
         observedPrepare->source_frames,observedPrepare->layout,
-        observedPrepare->ceiling_db_tp).has_value());
+        observedPrepare->ceiling_db_tp,
+        observedPrepare->manual_chain_revision,
+        observedPrepare->terminal_chain_revision,
+        observedPrepare->terminal_parameter_revision).has_value());
     QVERIFY(product.verified_master_rate_for_monitoring());
     QCOMPARE(*product.verified_master_rate_for_monitoring(),
         *masterRate.value());
@@ -1881,19 +1884,41 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     const auto sameShape=renderer.exact_historical_prepare_range(
         observedPrepare->source_rate,observedPrepare->master_rate,
         observedPrepare->source_frames,observedPrepare->layout,
-        observedPrepare->ceiling_db_tp);
+        observedPrepare->ceiling_db_tp,
+        observedPrepare->manual_chain_revision,
+        observedPrepare->terminal_chain_revision,
+        observedPrepare->terminal_parameter_revision);
     QVERIFY(sameShape.has_value());
     QVERIFY(sameShape->compatible_samples>=2);
     QVERIFY(sameShape->minimum_wall_us>0);
     QVERIFY(sameShape->maximum_wall_us>=sameShape->minimum_wall_us);
     QVERIFY(!renderer.exact_historical_prepare_range(
-        *deviceRate.value(),observedPrepare->master_rate,
+        observedPrepare->source_rate,observedPrepare->master_rate,
         observedPrepare->source_frames,observedPrepare->layout,
-        observedPrepare->ceiling_db_tp).has_value());
+        observedPrepare->ceiling_db_tp,
+        observedPrepare->manual_chain_revision+1,
+        observedPrepare->terminal_chain_revision,
+        observedPrepare->terminal_parameter_revision).has_value());
     QVERIFY(!renderer.exact_historical_prepare_range(
         observedPrepare->source_rate,observedPrepare->master_rate,
-        observedPrepare->source_frames,observedPrepare->layout,-12.0)
-        .has_value());
+        observedPrepare->source_frames,observedPrepare->layout,
+        observedPrepare->ceiling_db_tp,
+        observedPrepare->manual_chain_revision,
+        observedPrepare->terminal_chain_revision,
+        observedPrepare->terminal_parameter_revision+1).has_value());
+    QVERIFY(!renderer.exact_historical_prepare_range(
+        *deviceRate.value(),observedPrepare->master_rate,
+        observedPrepare->source_frames,observedPrepare->layout,
+        observedPrepare->ceiling_db_tp,
+        observedPrepare->manual_chain_revision,
+        observedPrepare->terminal_chain_revision,
+        observedPrepare->terminal_parameter_revision).has_value());
+    QVERIFY(!renderer.exact_historical_prepare_range(
+        observedPrepare->source_rate,observedPrepare->master_rate,
+        observedPrepare->source_frames,observedPrepare->layout,-12.0,
+        observedPrepare->manual_chain_revision,
+        observedPrepare->terminal_chain_revision,
+        observedPrepare->terminal_parameter_revision).has_value());
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QVERIFY(product.verified_master_rate_for_monitoring());
