@@ -6,6 +6,7 @@
 // NO SHA-256 authentication, coefficient-proof, DTFT Q1-Q6, kernel release
 // admission or runtime discovery. NEVER use it to enable product Final SRC.
 #include <rgsml/core/result.hpp>
+#include <rgsml/core/sha256.hpp>
 
 #include <bit>
 #include <cmath>
@@ -14,6 +15,7 @@
 #include <limits>
 #include <numeric>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -98,5 +100,32 @@ parse_phase11_rgsmsr1_candidate_bits(
         if(taps[j]!=taps[taps.size()-1-j])
             return reject("Phase11 candidate asset is not bit symmetric");
     return Result::success(std::move(taps));
+}
+// Test-only external-hash pin. The caller must obtain the digest from a
+// SEPARATELY authenticated, independently qualified source. Merely hashing
+// the same untrusted candidate to supply this argument is NOT a product lock
+// or proof of coefficient correctness.
+[[nodiscard]] inline core::Result<std::vector<std::uint64_t>>
+parse_phase11_rgsmsr1_pinned_candidate_bits(
+    std::span<const std::uint8_t> bytes,
+    std::uint32_t expectedL,std::uint32_t expectedM,
+    std::uint32_t expectedT,
+    std::string_view externallyPinnedSha256)
+{
+    using Result=core::Result<std::vector<std::uint64_t>>;
+    const auto reject=[](const char* reason)->Result {
+        return Result::failure(phase11_candidate_detail::invalid(reason));
+    };
+    if(externallyPinnedSha256.size()!=64)
+        return reject("Phase11 external SHA-256 lock has invalid length");
+    for(const auto ch:externallyPinnedSha256)
+        if(!((ch>='0'&&ch<='9')||(ch>='a'&&ch<='f')))
+            return reject("Phase11 external SHA-256 lock is not lowercase hex");
+    const auto actual=core::sha256_hex(std::span<const std::byte>{
+        reinterpret_cast<const std::byte*>(bytes.data()),bytes.size()});
+    if(actual!=externallyPinnedSha256)
+        return reject("Phase11 candidate SHA-256 does not match external lock");
+    return parse_phase11_rgsmsr1_candidate_bits(bytes,expectedL,expectedM,
+                                               expectedT);
 }
 } // namespace rgsml::audio::internal
