@@ -1,3 +1,10 @@
+## CHAT 57 — #890 double-green; test-only C++ RGSMSR1 binary candidate parser · 2026-10-29
+
+- [Focused #890](https://github.com/casaferla/RGS-MasterLab/actions/runs/40825974102) terminal Windows + Linux SUCCESS at PR #61 SHA `c2681b967213be566c809959d53ad1eb961d7611`. Staging and PR started identical. No FQ or release admission.
+- Next coherent batch: `audio/include/rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp` decodes the exact 52-byte little-endian RGSMSR1 header and all IEEE binary64 tap bits at a caller-specified reduced ratio and frozen shape, fail-closed on wrong version/encoding/geometry/size/symmetry/nonfinite. A dedicated Qt unit fixture in the EXISTING `test_playback_sample_rate_adapter.cpp` exercises this parser, preserves signed zeros, feeds strict-scalar convolution and proves malformed bytes are refused. All taps are SYNTHETIC.
+- **Important boundary:** header has `PHASE11_TEST_ASSET_PARSER_ONLY` provenance; no SHA-256 authentication, no independently frozen coefficient manifest, no product runtime discovery or loader, no qualified 14-real-kernel/30-product-SRC claim. Do not expose this as `FinalOutputSrc` product support; Q1–Q6 and continuous REAL DTFT are OPEN.
+- This package is prepared on STAGING only. Its own Windows/Linux Focused must run after one exact-SHA CAS promotion. Keep all 30 experimental paths unqualified, maintain one M17 MASTER PCM and independent DEVICE branch, no PO FQ/main merge/M18 without Gate M/L.
+
 ## CHAT 56 — #889 double green; opt-in real 14-ratio DTFT candidate screening staged (2026-10-29)
 
 - [Focused #889](https://github.com/casaferla/RGS-MasterLab/actions/runs/40782090919) terminal **Linux+Windows SUCCESS** at exact PR SHA `8a2a08f453c1cc42dc8055a3015fcc16989afe0d`. Existing conservative continuous-box MPFR DTFT preflight test is green; this is synthetic non-release scope, not a real full-family proof.
