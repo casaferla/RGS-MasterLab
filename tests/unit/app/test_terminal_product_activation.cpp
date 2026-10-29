@@ -1504,6 +1504,16 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("READY_TO_INSTALL"),12000);
     QCOMPARE(renderer.render_invocation_count(),beforeNormalM17+1);
+    // Actual accepted worker timings, not a projected 50ms microbenchmark.
+    auto observedPrepare=renderer.last_approved_prepare_timing();
+    QVERIFY(observedPrepare.has_value());
+    QCOMPARE(observedPrepare->master_rate,*masterRate.value());
+    QCOMPARE(observedPrepare->source_rate,*masterRate.value());
+    QVERIFY(observedPrepare->source_frames.value()>0);
+    QVERIFY(observedPrepare->queue_us>=0);
+    QVERIFY(observedPrepare->render_wall_us>0);
+    QVERIFY(observedPrepare->m17_core_us>=0);
+    QVERIFY(observedPrepare->m16_primary_us>=0);
     QVERIFY(product.verified_master_rate_for_monitoring());
     QCOMPARE(*product.verified_master_rate_for_monitoring(),
         *masterRate.value());
@@ -1529,6 +1539,12 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         });
     QVERIFY2(reusedNormal,reusedNormal?"":reusedNormal.error()->message().c_str());
     QCOMPARE(renderer.render_invocation_count(),beforeNormalM17+1);
+    // Device-only SRC did not retrigger MASTER preparation or replace the
+    // accepted actual per-stage timing evidence.
+    auto stillObserved=renderer.last_approved_prepare_timing();
+    QVERIFY(stillObserved.has_value());
+    QCOMPARE(stillObserved->render_wall_us,
+             observedPrepare->render_wall_us);
     QCOMPARE((*reusedNormal.value())->immutable_master_rate,
         *masterRate.value());
     QCOMPARE((*reusedNormal.value())->device_rate,*deviceRate.value());
