@@ -209,7 +209,9 @@ phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference()
     };
     auto locked=readPinned(bytes,pinned);
     QVERIFY(locked);
-    QCOMPARE(*locked.value(),*valid.value());
+    QCOMPARE(locked.value()->size(),valid.value()->size());
+    for(std::size_t i=0;i<locked.value()->size();++i)
+        QCOMPARE((*locked.value())[i],(*valid.value())[i]);
     auto wrongSha=pinned;
     wrongSha[0]=wrongSha[0]=='0'?'1':'0';
     QVERIFY(!readPinned(bytes,wrongSha));
