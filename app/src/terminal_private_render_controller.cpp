@@ -27,6 +27,7 @@ void TerminalPrivateRenderController::invalidate() {
     progressFrames_.store(0,std::memory_order_relaxed);
     progressTotal_.store(0,std::memory_order_relaxed);
     gate_->invalidate();
+    lastApprovedPrepareTiming_.reset(); // Revoked PCM can never calibrate ETA.
     {std::lock_guard lock(mutex_);pending_.reset();}
     status_=QStringLiteral("IDLE");error_.clear();lastError_.reset();emit changed();
 }
@@ -125,6 +126,20 @@ void TerminalPrivateRenderController::worker_loop() {
                 << " post_m16_unsupported="
                 << stages.verification_post_trim_m16_unsupported;
         }
+        // Snapshot scalars only. The completion gate, on the owning GUI
+        // thread, decides whether this genuine Prepare is still current and
+        // accepted. No stale/failure/nonconforming run enters the profile.
+        const ApprovedPrepareTiming observed{
+            captured.manual_owner->view().format().sample_rate(),
+            captured.output_rate,captured.full_source_frames,
+            captured.manual_owner->view().format().channel_layout(),
+            captured.ceiling_db_tp,
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                started-job->enqueuedAt).count(),
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                finished-started).count(),
+            stages.src_us,stages.m17_core_us,stages.m16_primary_us,
+            stages.verification_trim_us,stages.m16_secondary_us};
         auto delivery=std::make_shared<
             core::Result<render::TruePeakLimiterOwnedSourceCandidate>>(
             std::move(result));
@@ -132,15 +147,16 @@ void TerminalPrivateRenderController::worker_loop() {
             render::TruePeakLimiterOwnedMeasuredNonconformingCandidate>>(
                 std::move(recovered));
         static_cast<void>(QMetaObject::invokeMethod(
-            this,[this,serial=job->serial,captured,delivery,retained] {
-                complete(serial,captured,delivery,retained);
+            this,[this,serial=job->serial,captured,delivery,retained,observed] {
+                complete(serial,captured,delivery,retained,observed);
             },Qt::QueuedConnection));
     }
 }
 void TerminalPrivateRenderController::complete(
     std::uint64_t serial,TerminalCandidateGate::Capture captured,
     std::shared_ptr<core::Result<render::TruePeakLimiterOwnedSourceCandidate>> outcome,
-    std::shared_ptr<std::optional<render::TruePeakLimiterOwnedMeasuredNonconformingCandidate>> recovered)
+    std::shared_ptr<std::optional<render::TruePeakLimiterOwnedMeasuredNonconformingCandidate>> recovered,
+    ApprovedPrepareTiming observed)
 {
     if(serial!=serial_||!prepared_||!manual_||!id_||!chain_
        ||prepared_()!=captured.prepared_owner
@@ -182,6 +198,13 @@ void TerminalPrivateRenderController::complete(
         ++staleDiscarded_;
         status_=QStringLiteral("STALE");error_.clear();emit changed();return;
     }
+    // The only point at which a real whole-resource timing observation
+    // becomes trustworthy: exact renderer owner and authoritative M17/M16
+    // gate have both accepted the still-current immutable MASTER.
+    if(observed.render_wall_us>0 && observed.queue_us>=0
+       &&observed.src_us>=-1 &&observed.m17_core_us>=0
+       &&observed.m16_primary_us>=0)
+        lastApprovedPrepareTiming_=observed;
     status_=QStringLiteral("READY_PRIVATE");error_.clear();lastError_.reset();emit changed();
 }
 } // namespace rgsml::app
