@@ -110,6 +110,8 @@ def _validated_zip_payload(path: Path, p: dict) -> bytes:
             data = z.read(p["filename"])
             receipt = json.loads(z.read(p["filename"] + ".receipt.json"))
             expected_pcm = z.read(p["filename"] + ".expected.f64le")
+    except ContractError:
+        raise  # Preserve precise fail-closed provenance/inventory diagnostics.
     except (OSError, zipfile.BadZipFile, ValueError, KeyError) as error:
         raise ContractError("Q0 CI ZIP could not be securely audited") from error
     if not isinstance(receipt, dict):
@@ -281,6 +283,8 @@ def import_pinned_seed_bundle(workdir: Path, bundle_zip: Path) -> dict:
                     or receipt.get("release_qualified") is not False):
                     raise ContractError("four-Q0 ZIP pin or provenance invalid")
                 audited.append((p, data, receipt))
+    except ContractError:
+        raise  # Preserve precise fail-closed provenance/inventory diagnostics.
     except (OSError, zipfile.BadZipFile, ValueError, KeyError) as error:
         raise ContractError("four-Q0 seed archive audit failed") from error
     # No side effect before ALL four records have passed the independent
