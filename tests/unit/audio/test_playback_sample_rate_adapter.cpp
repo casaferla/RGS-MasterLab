@@ -853,6 +853,42 @@ phase11GenuineMpfrFourfoldRatesMatchPythonScalarBits()
                 QCOMPARE(std::bit_cast<std::uint64_t>((*output.value())[i]),
                          bits);
             }
+            // Genuine 1:4/4:1 SOURCE→MASTER candidate PCM is borrowed
+            // immutably into a DISTINCT DEVICE-rate offline buffer. This
+            // asserts rate separation and exact MASTER binary64 retention
+            // through real conversion, without fabricating M17/M16 release
+            // authority, a physical Windows sink or production SRC admission.
+            std::vector<std::uint64_t> immutableMasterBits;
+            for(std::size_t i=0;i<static_cast<std::size_t>(spec.outputFrames);++i)
+                immutableMasterBits.push_back(
+                    std::bit_cast<std::uint64_t>((*output.value())[i]));
+            for(const auto deviceHz:std::array<std::int64_t,2>{44100,48000}) {
+                auto monitor=audio::materialize_monitoring_pcm_candidate(
+                    converted.value()->pcm.view(),rate(deviceHz),
+                    frame_count(128));
+                QVERIFY2(monitor,monitor?"":monitor.error()->message().c_str());
+                QVERIFY(audio::validate_monitoring_pcm_candidate(*monitor.value()));
+                QCOMPARE(monitor.value()->immutable_master_rate.value(),
+                         rates.second);
+                QCOMPARE(monitor.value()->device_rate.value(),deviceHz);
+                QCOMPARE(monitor.value()->immutable_master_frames.value(),
+                         spec.outputFrames);
+                QCOMPARE(monitor.value()->device_src_applied,
+                         rates.second!=deviceHz);
+                const auto count=
+                    (spec.outputFrames*deviceHz+rates.second-1)/rates.second;
+                QCOMPARE(monitor.value()->device_pcm.view().frame_count().value(),
+                         count);
+                const auto deviceSamples=monitor.value()->device_pcm.view().channel(0);
+                QVERIFY(deviceSamples);
+                for(const double sample:*deviceSamples.value())
+                    QVERIFY(std::isfinite(sample));
+                const auto stillMaster=converted.value()->pcm.view().channel(0);
+                QVERIFY(stillMaster);
+                for(std::size_t i=0;i<immutableMasterBits.size();++i)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        (*stillMaster.value())[i]),immutableMasterBits[i]);
+            }
             auto forged=digest;
             forged[0]=forged[0]=='0'?'1':'0';
             QVERIFY(!audio::materialize_phase11_pinned_final_src_candidate(
