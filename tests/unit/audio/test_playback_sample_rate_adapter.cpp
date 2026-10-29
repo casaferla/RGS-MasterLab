@@ -275,6 +275,7 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
         44100,48000,88200,96000,176400,192000};
     const std::array<double,3> source{-0.5,0.25,0.75};
     int identities=0,conversions=0;
+    std::array<bool,14> observedRatios{};
     for(const auto sourceRate:rates)for(const auto masterRate:rates) {
         const auto common=std::gcd(sourceRate,masterRate);
         const auto L=masterRate/common;
@@ -288,6 +289,8 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
             const auto frozen=audio::internal::phase11_frozen_shape(
                 static_cast<std::uint32_t>(L),static_cast<std::uint32_t>(M));
             QVERIFY(frozen);
+            observedRatios[static_cast<std::size_t>(
+                frozen-audio::internal::kPhase11FrozenShapes.data())]=true;
             frozenT=frozen->T;
             constexpr std::size_t header=52;
             const auto count=static_cast<std::size_t>(L)*frozenT+1;
@@ -366,6 +369,12 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
     }
     QCOMPARE(identities,6);
     QCOMPARE(conversions,30);
+    QCOMPARE(static_cast<int>(std::count(observedRatios.begin(),
+        observedRatios.end(),true)),14);
+    std::uint64_t frozenAssetBytes=0;
+    for(const auto& shape:audio::internal::kPhase11FrozenShapes)
+        frozenAssetBytes+=52+8*static_cast<std::uint64_t>(shape.N);
+    QCOMPARE(frozenAssetBytes,std::uint64_t{11440952});
     std::array<double,1> refused{0.0};
     QVERIFY(!audio::internal::render_phase11_pinned_scalar_reference(
         source,refused,0,32000,96000,512,{},{}));
