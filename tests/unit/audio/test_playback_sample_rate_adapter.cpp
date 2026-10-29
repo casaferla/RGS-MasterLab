@@ -446,6 +446,21 @@ phase11FullResourcePinnedCandidateUsesActualAudioBufferAndCancellation()
         return ++cancelCalls>=2;
     }));
     QVERIFY(cancelCalls>=2);
+    // Cancel AFTER a real output block was already computed. No partial
+    // AudioBuffer may escape the PRIVATE unqualified materializer.
+    auto longSource=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},frame_count(1027));
+    QVERIFY(longSource);
+    auto longSamples=longSource.value()->mutable_view().channel(0);
+    QVERIFY(longSamples);
+    std::fill(longSamples.value()->begin(),longSamples.value()->end(),0.125);
+    std::size_t duringCalls=0;
+    auto retired=audio::materialize_phase11_pinned_final_src_candidate(
+        longSource.value()->view(),rate(96000),frame_count(128),
+        asset,sha,[&duringCalls] {return ++duringCalls>=4;});
+    QVERIFY(!retired);
+    QVERIFY(duringCalls>=4); // after entry, channel, frames 0 and 1024
     // Identity is exact bit transparency but must never consume a FIR.
     const auto identity=audio::materialize_phase11_pinned_final_src_candidate(
         source.value()->view(),rate(48000),frame_count(128),{},{});
