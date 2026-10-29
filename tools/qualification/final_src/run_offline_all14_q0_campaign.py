@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Callable
 
 from build_resumable_real_candidates import stage_all, finalize
@@ -36,8 +37,11 @@ def run_campaign(
         raise ContractError("real all-14 offline worker count must be 1..4")
     if type(max_precision) is not int or not 256 <= max_precision <= 4096:
         raise ContractError("real all-14 MPFR precision must be 256..4096")
-    if candidate_folder.exists():
+    if candidate_folder.exists() or candidate_folder.is_symlink():
         raise ContractError("refuse overwrite of an existing candidate folder")
+    if (not candidate_folder.parent.is_dir()
+        or candidate_folder.parent.is_symlink()):
+        raise ContractError("existing ordinary candidate output parent required")
     # A successful publication MUST be distinct from the checkpoint tree.
     if (candidate_folder.resolve().is_relative_to(workdir.resolve())
         or workdir.resolve().is_relative_to(candidate_folder.resolve())):
@@ -60,30 +64,45 @@ def run_campaign(
     from exact_dyadic_zero_stuff_oracle import screen_real_candidate_dyadic
     from screen_candidate_spectral_response import screen_asset
     from exact_dyadic_spectral_anchors import screen_exact_spectral_anchors
-    manifest = publisher(
-        workdir, candidate_folder, max_precision=max_precision,
-        independent_screen=compare_candidate,
-        dyadic_screen=screen_real_candidate_dyadic,
-        sampled_fft_screen=screen_asset,
-        exact_anchor_screen=screen_exact_spectral_anchors)
-    if (manifest.get("observed_ratio_count") != 14
-        or manifest.get("complete_ratio_family") is not True
-        or manifest.get("independent_mpmath_screen_complete") is not True
-        or manifest.get("exact_dyadic_screen_complete") is not True
-        or manifest.get("sampled_fft_screen_complete") is not True
-        or manifest.get("exact_two_point_screen_complete") is not True
-        or manifest.get("q1_q6_passed") is not False
-        or manifest.get("product_admission_authorized") is not False
-        or manifest.get("status") != "CANDIDATE_NOT_RELEASE_QUALIFIED"):
-        raise ContractError("complete 14-asset Q0 numerical negative screen unresolved")
-    audit = verifier(candidate_folder, require_complete=True)
-    if (audit.get("complete") is not True
-        or audit.get("status") not in
-            ("CANDIDATE_INTEGRITY_ONLY_NOT_RELEASE_QUALIFIED",)):
-        raise ContractError("all-14 candidate folder independently failed integrity audit")
+    # The existing assembler already performs atomically checked asset
+    # publication, but an independent post-assembly integrity audit can
+    # still fail. Do NOT leave a purported complete candidate folder if
+    # that final audit rejects it. Publish only after BOTH gates succeed.
+    # This is a NONRELEASE folder transaction, not a release signature.
+    with TemporaryDirectory(
+            prefix=".phase11-all14-q0-unpublished-",
+            dir=candidate_folder.parent) as temporary:
+        unpublished = Path(temporary) / "candidate"
+        manifest = publisher(
+            workdir, unpublished, max_precision=max_precision,
+            independent_screen=compare_candidate,
+            dyadic_screen=screen_real_candidate_dyadic,
+            sampled_fft_screen=screen_asset,
+            exact_anchor_screen=screen_exact_spectral_anchors)
+        if (manifest.get("observed_ratio_count") != 14
+            or manifest.get("complete_ratio_family") is not True
+            or manifest.get("independent_mpmath_screen_complete") is not True
+            or manifest.get("exact_dyadic_screen_complete") is not True
+            or manifest.get("sampled_fft_screen_complete") is not True
+            or manifest.get("exact_two_point_screen_complete") is not True
+            or manifest.get("q1_q6_passed") is not False
+            or manifest.get("product_admission_authorized") is not False
+            or manifest.get("status") != "CANDIDATE_NOT_RELEASE_QUALIFIED"):
+            raise ContractError("complete 14-asset Q0 numerical negative screen unresolved")
+        audit = verifier(unpublished, require_complete=True)
+        if (audit.get("complete") is not True
+            or audit.get("status") not in
+                ("CANDIDATE_INTEGRITY_ONLY_NOT_RELEASE_QUALIFIED",)):
+            raise ContractError("all-14 candidate folder independently failed integrity audit")
+        if candidate_folder.exists() or candidate_folder.is_symlink():
+            raise ContractError("candidate output appeared during independent audit")
+        # A directory rename within the SAME filesystem is atomic.
+        # No overwrite of another writer's candidate is permitted.
+        unpublished.rename(candidate_folder)
     return {
         "status": "FOUR_SEEDS_PLUS_TEN_GENUINE_MPFR_Q0_SCREENS_COMPLETE_NONRELEASE",
-        "seeded_ratio_count": 4, "genuinely_generated_remaining_ratios": 10,
+        "seeded_ratio_count": 4, "nonseed_ratio_count": 10,
+        "new_generation_count_in_this_invocation": None,
         "total_distinct_ratios": 14,
         "ratio_pair_mappings": 30,
         "independent_generator_interval_proven": False,
