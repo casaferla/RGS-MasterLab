@@ -128,6 +128,7 @@ private slots:
     void phase11FullResourcePinnedCandidateAll36SourceMasterPairs();
     void phase11GenuineMpfrCanaryMatchesPythonIndependentScalarBits();
     void phase11GenuineMpfrOneToTwoDownsampleMatchesPythonScalarBits();
+    void phase11GenuineMpfrFourfoldRatesMatchPythonScalarBits();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -779,6 +780,86 @@ phase11GenuineMpfrOneToTwoDownsampleMatchesPythonScalarBits()
     QVERIFY(!audio::materialize_phase11_pinned_final_src_candidate(
         source.value()->view(),rate(44100),frame_count(128),
         asset,forged));
+}
+
+void PlaybackSampleRateAdapterTest::
+phase11GenuineMpfrFourfoldRatesMatchPythonScalarBits()
+{
+    // REAL reduced ratios 1/4 and 4/1: independent MPFR vs mpmath,
+    // exact-dyadic and scalar Python fixtures. Linux candidate evidence
+    // only: NEVER an admitted production Final Output SRC kernel.
+    const QByteArray root=qgetenv("RGSML_PHASE11_REAL_POW4_PATH");
+    if(root.isEmpty())
+        QSKIP("Genuine fourfold MPFR fixtures are Linux-only.");
+    const auto read=[](const std::string& filepath) {
+        std::ifstream stream(filepath,std::ios::binary);
+        if(!stream)return std::vector<std::uint8_t>{};
+        return std::vector<std::uint8_t>{
+            std::istreambuf_iterator<char>{stream},
+            std::istreambuf_iterator<char>{}};
+    };
+    struct Case final {
+        std::uint32_t L,M;
+        std::int64_t fin1,fout1,fin2,fout2;
+        std::int64_t outputFrames;
+    };
+    constexpr std::array<Case,2> cases{{
+        {1,4,176400,44100,192000,48000,2},
+        {4,1,44100,176400,48000,192000,32},
+    }};
+    constexpr std::array<double,8> samples{
+        0.0,1.0,-0.5,0.25,0.75,0.0,-0.25,0.5};
+    for(const auto& spec:cases) {
+        const auto filename=std::string(root.constData())+
+            "/ratio_L"+std::to_string(spec.L)+
+            "_M"+std::to_string(spec.M)+".bin";
+        const auto asset=read(filename);
+        const auto expected=read(filename+".expected.f64le");
+        const auto shape=audio::internal::phase11_frozen_shape(spec.L,spec.M);
+        QVERIFY(shape);
+        QCOMPARE(asset.size(),std::size_t{52}+8*static_cast<std::size_t>(shape->N));
+        QCOMPARE(expected.size(),static_cast<std::size_t>(spec.outputFrames)*8);
+        const auto digest=core::sha256_hex(std::span<const std::byte>{
+            reinterpret_cast<const std::byte*>(asset.data()),asset.size()});
+        for(const auto& rates:std::array{
+                std::pair<std::int64_t,std::int64_t>{spec.fin1,spec.fout1},
+                std::pair<std::int64_t,std::int64_t>{spec.fin2,spec.fout2}}) {
+            auto fmt=audio::AudioFormat::create(
+                rate(rates.first),audio::ChannelLayout::MONO_C);
+            QVERIFY(fmt);
+            auto source=audio::AudioBuffer::create(
+                *fmt.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+                core::FrameIndex{0},frame_count(8));
+            QVERIFY(source);
+            auto channel=source.value()->mutable_view().channel(0);
+            QVERIFY(channel);
+            for(std::size_t i=0;i<samples.size();++i)
+                (*channel.value())[i]=samples[i];
+            const auto converted=audio::materialize_phase11_pinned_final_src_candidate(
+                source.value()->view(),rate(rates.second),frame_count(128),
+                asset,digest);
+            QVERIFY2(converted,converted?"":converted.error()->message().c_str());
+            QCOMPARE(converted.value()->pcm.view().frame_count().value(),
+                     spec.outputFrames);
+            QVERIFY(converted.value()->used_src);
+            QVERIFY(converted.value()->kernel_sha256.empty());
+            const auto output=converted.value()->pcm.view().channel(0);
+            QVERIFY(output);
+            for(std::size_t i=0;i<static_cast<std::size_t>(spec.outputFrames);++i) {
+                std::uint64_t bits=0;
+                for(std::size_t byte=0;byte<8;++byte)
+                    bits|=static_cast<std::uint64_t>(
+                        expected[8*i+byte])<<(8*byte);
+                QCOMPARE(std::bit_cast<std::uint64_t>((*output.value())[i]),
+                         bits);
+            }
+            auto forged=digest;
+            forged[0]=forged[0]=='0'?'1':'0';
+            QVERIFY(!audio::materialize_phase11_pinned_final_src_candidate(
+                source.value()->view(),rate(rates.second),frame_count(128),
+                asset,forged));
+        }
+    }
 }
 
 void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstConceptualGrid()
