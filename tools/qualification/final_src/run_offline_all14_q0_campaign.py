@@ -79,7 +79,7 @@ def run_campaign(
     audit = verifier(candidate_folder, require_complete=True)
     if (audit.get("complete") is not True
         or audit.get("status") not in
-            ("CANDIDATE_FAMILY_INTEGRITY_PASS_NOT_RELEASE",)):
+            ("CANDIDATE_INTEGRITY_ONLY_NOT_RELEASE_QUALIFIED",)):
         raise ContractError("all-14 candidate folder independently failed integrity audit")
     return {
         "status": "FOUR_SEEDS_PLUS_TEN_GENUINE_MPFR_Q0_SCREENS_COMPLETE_NONRELEASE",
