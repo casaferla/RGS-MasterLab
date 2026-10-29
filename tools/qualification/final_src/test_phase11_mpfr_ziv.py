@@ -164,13 +164,53 @@ class MPFRZivBoundaryTests(unittest.TestCase):
             expected = b"".join(struct.pack("<d", v) for v in scalar_whole)
             self.assertEqual(len(expected), 8 * 8)
             import json
+            from screen_candidate_spectral_response import screen_asset
+            from exact_dyadic_spectral_anchors import screen_exact_spectral_anchors
+            digest = hashlib.sha256(data).hexdigest()
+            sampled_screens = [
+                screen_asset(data, fin, fout, digest, minimum_fft=1 << 20)
+                for fin, fout in ((44100, 88200), (48000, 96000))
+            ]
+            for screen in sampled_screens:
+                self.assertTrue(screen["sampled_pass"],
+                                "REAL 2/1 MPFR candidate failed sampled FFT negative screen")
+                self.assertEqual(
+                    screen["caveat"],
+                    "SAMPLED_FFT_ONLY_NOT_CERTIFIED_DTFT_OR_RELEASE")
+                self.assertEqual(screen["nfft"], 1 << 20)
+                self.assertLessEqual(screen["ripple_peak_to_peak_db"], 0.001)
+                self.assertGreaterEqual(
+                    screen["sampled_stopband_attenuation_db"], 140.0)
+            # Two EXACT dyadic rational spectral anchors are rigorous at
+            # f=0 and high-grid Nyquist, but never cover a continuum band.
+            anchors = screen_exact_spectral_anchors(data, 44100, 88200)
+            self.assertTrue(anchors["dc_within_strong_rational_screen"])
+            self.assertTrue(
+                anchors["high_grid_nyquist_within_strong_rational_screen"])
+            self.assertFalse(anchors["full_frequency_band_proven"])
+            self.assertFalse(anchors["release_qualified"])
             receipt = {
-                "schema": "rgsml.phase11.real-mpfr-q0-canary-artifact/1",
+                "schema": "rgsml.phase11.real-mpfr-q0-canary-artifact/2",
                 "status": "REAL_MPFR_2_OVER_1_CANDIDATE_NOT_RELEASE_QUALIFIED",
                 "kernel_ratio": {"L": 2, "M": 1},
                 "canonical_generation_pair_hz": [44100, 88200],
                 "independent_oracle_pair_hz": [48000, 96000],
-                "coefficient_sha256": hashlib.sha256(data).hexdigest(),
+                "coefficient_sha256": digest,
+                "sampled_fft_negative_screens": sampled_screens,
+                "exact_dyadic_two_point_screen": {
+                    "dc_within_strong_rational_screen":
+                        anchors["dc_within_strong_rational_screen"],
+                    "high_grid_nyquist_within_strong_rational_screen":
+                        anchors["high_grid_nyquist_within_strong_rational_screen"],
+                    "dc_gain_exact_numerator": anchors["dc_gain_exact_numerator"],
+                    "dc_gain_exact_denominator": anchors["dc_gain_exact_denominator"],
+                    "high_grid_nyquist_exact_numerator":
+                        anchors["high_grid_nyquist_exact_numerator"],
+                    "high_grid_nyquist_exact_denominator":
+                        anchors["high_grid_nyquist_exact_denominator"],
+                    "full_frequency_band_proven": False,
+                    "release_qualified": False,
+                },
                 "coefficient_count": shape.N,
                 "payload_bytes": len(data),
                 "rounding_precision_bits": bits,
