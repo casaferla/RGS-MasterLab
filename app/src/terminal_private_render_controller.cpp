@@ -3,6 +3,9 @@
 #include <QMetaObject>
 #include <QDebug>
 #include <chrono>
+#include <algorithm>
+#include <limits>
+#include <new>
 #include <utility>
 namespace rgsml::app {
 TerminalPrivateRenderController::TerminalPrivateRenderController(
@@ -203,8 +206,51 @@ void TerminalPrivateRenderController::complete(
     // gate have both accepted the still-current immutable MASTER.
     if(observed.render_wall_us>0 && observed.queue_us>=0
        &&observed.src_us>=-1 &&observed.m17_core_us>=0
-       &&observed.m16_primary_us>=0)
+       &&observed.m16_primary_us>=0) {
         lastApprovedPrepareTiming_=observed;
+        // Only accepted, finite non-overflowing wall times become evidence.
+        // History survives an ordinary cancel for future on-host calibration,
+        // while the authority-bearing latest timing is always revoked.
+        if(observed.render_wall_us<=
+                std::numeric_limits<std::int64_t>::max()-observed.queue_us) {
+            try {
+                constexpr std::size_t kCapacity=24;
+                if(approvedPrepareHistory_.size()==kCapacity)
+                    approvedPrepareHistory_.erase(approvedPrepareHistory_.begin());
+                approvedPrepareHistory_.push_back(observed);
+            } catch(const std::bad_alloc&) {
+                // Never cause failure of already-accepted audio due to an
+                // optional non-audio diagnostics history allocation.
+            }
+        }
+    }
     status_=QStringLiteral("READY_PRIVATE");error_.clear();lastError_.reset();emit changed();
+}
+std::optional<TerminalPrivateRenderController::ApprovedPrepareHistoricalRange>
+TerminalPrivateRenderController::exact_historical_prepare_range(
+    core::SampleRate source,core::SampleRate master,
+    core::FrameCount frames,audio::ChannelLayout layout,double ceiling) const noexcept
+{
+    // A single observed duration is not an interval; avoid invented
+    // uncertainty. This is an exact-key empirical observation, NOT a
+    // projection to a different song, build, chain or target format.
+    std::int64_t low=std::numeric_limits<std::int64_t>::max();
+    std::int64_t high=0;
+    std::size_t samples=0;
+    for(const auto& item:approvedPrepareHistory_) {
+        if(item.source_rate!=source||item.master_rate!=master
+           ||item.source_frames!=frames||item.layout!=layout
+           ||item.ceiling_db_tp!=ceiling
+           ||item.queue_us<0||item.render_wall_us<=0
+           ||item.render_wall_us>
+               std::numeric_limits<std::int64_t>::max()-item.queue_us)
+            continue;
+        const auto wall=item.queue_us+item.render_wall_us;
+        low=std::min(low,wall);
+        high=std::max(high,wall);
+        ++samples;
+    }
+    if(samples<2)return std::nullopt;
+    return ApprovedPrepareHistoricalRange{low,high,samples};
 }
 } // namespace rgsml::app
