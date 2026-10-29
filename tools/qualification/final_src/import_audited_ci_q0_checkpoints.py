@@ -216,16 +216,134 @@ def import_pinned_ci_q0(workdir: Path, two_zip: Path, one_zip: Path,
     }
 
 
+
+def import_pinned_seed_bundle(workdir: Path, bundle_zip: Path) -> dict:
+    """Bootstrap from the four-checkpoint ZIP instead of three CI artifact ZIPs.
+
+    This is the *same* previous independently audited genuine Q0 candidate
+    material, not a new independent coefficient reproduction. The ZIP is a
+    transport format. Trust is bounded by each separately frozen prior CI
+    hash and real GitHub provenance. Refuse all extra/unrecognized members.
+    """
+    if workdir.is_symlink():
+        raise ContractError("Q0 checkpoint workdir must not be a symlink")
+    if not bundle_zip.is_file() or bundle_zip.is_symlink():
+        raise ContractError("four-Q0 seed ZIP missing or symlink")
+    pins = _pinned_candidates()
+    members = {
+        f"ratio_L{p['L']}_M{p['M']}/{name}": p
+        for p in pins
+        for name in (
+            f"RGSMSR1_L{p['L']}_M{p['M']}.bin",
+            RECEIPT)
+    }
+    audited = []
+    try:
+        with zipfile.ZipFile(bundle_zip) as archive:
+            if len(archive.namelist()) != len(members) or (
+                    set(archive.namelist()) != set(members)):
+                raise ContractError("four-Q0 ZIP member inventory not exact")
+            for member in members:
+                info = archive.getinfo(member)
+                if info.is_dir() or info.file_size > 8 * 1024 * 1024:
+                    raise ContractError("four-Q0 ZIP member size/type invalid")
+            for p in pins:
+                slot = f"ratio_L{p['L']}_M{p['M']}"
+                data = archive.read(
+                    f"{slot}/RGSMSR1_L{p['L']}_M{p['M']}.bin")
+                receipt = json.loads(archive.read(f"{slot}/{RECEIPT}"))
+                shape = kernel_shape(Ratio.make(*p["pair"]))
+                if not isinstance(receipt, dict):
+                    raise ContractError("four-Q0 ZIP receipt is not an object")
+                if (sha256(data).hexdigest() != p["sha"]
+                    or len(data) != p["size"]
+                    or audit_rgsmsr1_structure(data, shape) != p["sha"]
+                    or receipt.get("recipe") != RECIPE
+                    or receipt.get("backend") != BACKEND
+                    or receipt.get("fin") != p["pair"][0]
+                    or receipt.get("fout") != p["pair"][1]
+                    or receipt.get("L") != p["L"]
+                    or receipt.get("M") != p["M"]
+                    or receipt.get("T") != shape.T
+                    or receipt.get("N") != shape.N
+                    or receipt.get("bytes") != p["size"]
+                    or receipt.get("sha256") != p["sha"]
+                    or receipt.get("precision_bits") != p["bits"]
+                    or receipt.get("same_generator_double_run") is not True
+                    or receipt.get("origin") !=
+                        "INDEPENDENTLY_AUDITED_CI_Q0_ARTIFACT"
+                    or receipt.get("origin_github_run_id") != p["run"]
+                    or receipt.get("origin_pr_sha") != p["pr"]
+                    or receipt.get("independent_generator_verified") is not False
+                    or receipt.get("mpfr_dtft_oracle_passed") is not False
+                    or receipt.get("q1_q6_passed") is not False
+                    or receipt.get("product_admission_authorized") is not False
+                    or receipt.get("release_qualified") is not False):
+                    raise ContractError("four-Q0 ZIP pin or provenance invalid")
+                audited.append((p, data, receipt))
+    except (OSError, zipfile.BadZipFile, ValueError, KeyError) as error:
+        raise ContractError("four-Q0 seed archive audit failed") from error
+    # No side effect before ALL four records have passed the independent
+    # hash/provenance inventory. Existing checkpoints are never overwritten.
+    workdir.mkdir(parents=True, exist_ok=True)
+    for p, data, _ in audited:
+        slot = _slot(workdir, p["L"], p["M"])
+        if slot.exists() or slot.is_symlink():
+            existing, bits = _read_checkpoint(workdir, *p["pair"])
+            if existing != data or bits != p["bits"]:
+                raise ContractError("four-Q0 seed conflicts with existing checkpoint")
+    with tempfile.TemporaryDirectory(
+            prefix=".ci-q0-bundle-unpublished-", dir=workdir) as temp:
+        root = Path(temp)
+        for p, data, receipt in audited:
+            slot = _slot(workdir, p["L"], p["M"])
+            if slot.exists():
+                continue
+            staged = root / slot.name
+            staged.mkdir()
+            (staged / f"RGSMSR1_L{p['L']}_M{p['M']}.bin").write_bytes(data)
+            (staged / RECEIPT).write_text(
+                json.dumps(receipt, indent=2, sort_keys=True) + "\\n",
+                encoding="utf-8")
+        for p, _, _ in audited:
+            slot = _slot(workdir, p["L"], p["M"])
+            if not slot.exists():
+                (root / slot.name).rename(slot)
+    for p, data, _ in audited:
+        existing, bits = _read_checkpoint(workdir, *p["pair"])
+        if existing != data or bits != p["bits"]:
+            raise ContractError("four-Q0 seed checkpoint post-audit failed")
+    return {
+        "status": "FOUR_REAL_CI_Q0_CHECKPOINTS_IMPORTED_NOT_FOR_RELEASE",
+        "ratios": 4, "remaining_genuine_ratio_candidates": 10,
+        "source_ci_artifact_pins_verified": True,
+        "release_qualified": False, "product_admission_authorized": False,
+        "assets": [{"L": p["L"], "M": p["M"], "sha256": p["sha"]}
+                   for p, _, _ in audited],
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--workdir", type=Path, required=True)
-    ap.add_argument("--real-2to1-zip", type=Path, required=True)
-    ap.add_argument("--real-1to2-zip", type=Path, required=True)
-    ap.add_argument("--real-fourfold-zip", type=Path, required=True)
+    ap.add_argument("--real-2to1-zip", type=Path)
+    ap.add_argument("--real-1to2-zip", type=Path)
+    ap.add_argument("--real-fourfold-zip", type=Path)
+    ap.add_argument("--seed-checkpoints-zip", type=Path,
+                    help="one previously audited four-real-Q0 checkpoint bundle")
     args = ap.parse_args()
-    print(json.dumps(import_pinned_ci_q0(
-        args.workdir, args.real_2to1_zip, args.real_1to2_zip,
-        args.real_fourfold_zip), sort_keys=True))
+    original_zips = (
+        args.real_2to1_zip, args.real_1to2_zip, args.real_fourfold_zip)
+    if args.seed_checkpoints_zip is not None:
+        if any(x is not None for x in original_zips):
+            ap.error("choose one audited seed archive OR three original CI ZIPs")
+        result = import_pinned_seed_bundle(
+            args.workdir, args.seed_checkpoints_zip)
+    else:
+        if any(x is None for x in original_zips):
+            ap.error("supply all three original CI ZIPs")
+        result = import_pinned_ci_q0(args.workdir, *original_zips)
+    print(json.dumps(result, sort_keys=True))
 
 
 if __name__ == "__main__":
