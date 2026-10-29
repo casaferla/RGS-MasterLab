@@ -44,6 +44,11 @@ jobs:
           # Synthetic checkpoints only; exercises resumable two-run work
           # recovery and no-release all-14 atomic finalization, NOT MPFR proof.
           python tools/qualification/final_src/test_build_resumable_real_candidates.py
+          # Audited CI-to-offline-workstation Q0 artifact import: all four
+          # hashes/receipts/real-ratio geometries are checked before a
+          # resumable checkpoint can be seeded. These lifecycle fixtures
+          # are SYNTHETIC; do not imply an all-14 genuine campaign ran.
+          python tools/qualification/final_src/test_import_audited_ci_q0_checkpoints.py
 
       # Independent high-precision numeric crosscheck and sampled FFT
       # NEGATIVE SCREEN on a GENUINE MPFR candidate; Python tools only.
