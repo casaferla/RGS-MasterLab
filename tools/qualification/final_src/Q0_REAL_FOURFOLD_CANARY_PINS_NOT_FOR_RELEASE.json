@@ -1,0 +1,40 @@
+{
+  "schema": "rgsml.phase11.real-mpfr-fourfold-q0-cross-run-pin/1",
+  "status": "CROSS_RUN_REAL_MPFR_CANDIDATES_NOT_FOR_RELEASE",
+  "source_github_run_id": 40949824092,
+  "source_artifact_id": 12930987052,
+  "source_pr_sha": "d5f4798a66303ecc1fb340c48138859f3227eb72",
+  "source_artifact_name": "RGS-Phase11-REAL-Q0-FOURFOLD-NONRELEASE-904-d5f4798a66303ecc1fb340c48138859f3227eb72",
+  "baselines": [
+    {
+      "L": 1,
+      "M": 4,
+      "canonical_generation_pair_hz": [
+        176400,
+        44100
+      ],
+      "sha256": "3c5db068904a059fae54ab3a96ae96ec3963fc31e649f5f4de9ecf5b6d17a947",
+      "bytes": 15900,
+      "coefficient_count": 1981,
+      "precision_bits": 256
+    },
+    {
+      "L": 4,
+      "M": 1,
+      "canonical_generation_pair_hz": [
+        44100,
+        176400
+      ],
+      "sha256": "f2563518411bc6525889eaf82c43b194f88ceadd59b0750071c613d1071de095",
+      "bytes": 16444,
+      "coefficient_count": 2049,
+      "precision_bits": 256
+    }
+  ],
+  "independently_inspected_actual_artifact": true,
+  "independent_release_kernel_sha_frozen": false,
+  "continuous_dtft_proven": false,
+  "q1_q6_passed": false,
+  "product_admission_authorized": false,
+  "release_qualified": false
+}
