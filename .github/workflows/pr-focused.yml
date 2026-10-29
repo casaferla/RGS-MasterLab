@@ -53,6 +53,9 @@ jobs:
           # audited CI seeds and ten missing ratios. SYNTHETIC orchestration
           # checks only; expensive MPFR all-14 stays offline/on workstation.
           python tools/qualification/final_src/test_run_offline_all14_q0_campaign.py
+          # Read-only 14-ratio checkpoint inventory and original 4 CI pins.
+          # Synthetic fast tests only; never assume real remaining 10 ran.
+          python tools/qualification/final_src/test_audit_q0_checkpoint_progress.py
 
       # Independent high-precision numeric crosscheck and sampled FFT
       # NEGATIVE SCREEN on a GENUINE MPFR candidate; Python tools only.
