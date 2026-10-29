@@ -1892,6 +1892,16 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(sameShape->compatible_samples>=2);
     QVERIFY(sameShape->minimum_wall_us>0);
     QVERIFY(sameShape->maximum_wall_us>=sameShape->minimum_wall_us);
+    const auto differentFrames=core::FrameCount::create(
+        observedPrepare->source_frames.value()+1);
+    QVERIFY(differentFrames);
+    QVERIFY(!renderer.exact_historical_prepare_range(
+        observedPrepare->source_rate,observedPrepare->master_rate,
+        *differentFrames.value(),observedPrepare->layout,
+        observedPrepare->ceiling_db_tp,
+        observedPrepare->manual_chain_revision,
+        observedPrepare->terminal_chain_revision,
+        observedPrepare->terminal_parameter_revision).has_value());
     QVERIFY(!renderer.exact_historical_prepare_range(
         observedPrepare->source_rate,observedPrepare->master_rate,
         observedPrepare->source_frames,observedPrepare->layout,
