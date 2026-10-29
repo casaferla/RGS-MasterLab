@@ -123,6 +123,26 @@ class All14CampaignOrchestrationTests(unittest.TestCase):
         self.assertFalse(self.folder.exists())
         self.assertEqual(self.calls, ["seed", "stage", "publish", "audit"])
 
+    def test_verified_candidate_is_published_atomically_but_not_released(self):
+        def complete(folder, *, require_complete):
+            self.calls.append("audit")
+            self.assertTrue(require_complete)
+            self.assertTrue((folder / "fixture.txt").is_file())
+            self.assertFalse(self.folder.exists())
+            return {"complete": True,
+                    "status": "CANDIDATE_INTEGRITY_ONLY_NOT_RELEASE_QUALIFIED"}
+        result = self._run(
+            publisher=self._publish_fixture, verifier=complete)
+        self.assertEqual(self.calls, ["seed", "stage", "publish", "audit"])
+        self.assertTrue((self.folder / "fixture.txt").is_file())
+        self.assertEqual(result["nonseed_ratio_count"], 10)
+        self.assertIsNone(result["new_generation_count_in_this_invocation"])
+        self.assertFalse(result["release_qualified"])
+        self.assertFalse(result["product_admission_authorized"])
+        self.assertFalse(result["q1_q6_passed"])
+        with self.assertRaises(ContractError):
+            self._run(publisher=self._publish_fixture, verifier=complete)
+
     def test_no_overwrite_or_nested_folder(self):
         self.folder.mkdir()
         with self.assertRaisesRegex(ContractError, "overwrite"):
