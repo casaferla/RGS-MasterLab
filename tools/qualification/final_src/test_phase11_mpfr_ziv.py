@@ -167,6 +167,31 @@ class MPFRZivBoundaryTests(unittest.TestCase):
             from screen_candidate_spectral_response import screen_asset
             from exact_dyadic_spectral_anchors import screen_exact_spectral_anchors
             digest = hashlib.sha256(data).hexdigest()
+            # Real binary fixture observed and independently inspected in
+            # GitHub Focused #901, rather than an in-run self-pinned digest.
+            # This asserts cross-run exact reproducibility, NOT approval of
+            # a release KernelManifest or an independent interval oracle.
+            baseline = json.loads(
+                Path(__file__).with_name(
+                    "Q0_REAL_2TO1_CANARY_PIN_NOT_FOR_RELEASE.json"
+                ).read_text(encoding="utf-8"))
+            self.assertEqual(
+                baseline["status"], "Q0_BITWISE_REPRODUCIBILITY_PIN_NOT_RELEASE")
+            self.assertEqual(
+                (baseline["ratio_L"], baseline["ratio_M"]), (2, 1))
+            self.assertEqual(
+                baseline["canonical_generation_pair_hz"], [44100, 88200])
+            self.assertEqual(baseline["baseline_candidate_sha256"], digest)
+            self.assertEqual(baseline["baseline_asset_bytes"], len(data))
+            self.assertEqual(
+                baseline["baseline_coefficient_count"], shape.N)
+            self.assertEqual(
+                baseline["baseline_precision_bits"], bits)
+            self.assertFalse(baseline["independent_release_kernel_sha_frozen"])
+            self.assertFalse(baseline["continuous_dtft_proven"])
+            self.assertFalse(baseline["q1_q6_passed"])
+            self.assertFalse(baseline["product_admission_authorized"])
+            self.assertFalse(baseline["release_qualified"])
             sampled_screens = [
                 screen_asset(data, fin, fout, digest, minimum_fft=1 << 20)
                 for fin, fout in ((44100, 88200), (48000, 96000))
@@ -196,6 +221,10 @@ class MPFRZivBoundaryTests(unittest.TestCase):
                 "canonical_generation_pair_hz": [44100, 88200],
                 "independent_oracle_pair_hz": [48000, 96000],
                 "coefficient_sha256": digest,
+                "cross_run_baseline_sha256": baseline["baseline_candidate_sha256"],
+                "cross_run_baseline_source_run_id":
+                    baseline["source_github_run_id"],
+                "cross_run_baseline_bitwise_match": True,
                 "sampled_fft_negative_screens": sampled_screens,
                 "exact_dyadic_two_point_screen": {
                     "dc_within_strong_rational_screen":
