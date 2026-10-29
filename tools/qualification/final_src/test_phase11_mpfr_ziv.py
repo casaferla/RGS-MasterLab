@@ -190,7 +190,7 @@ class MPFRZivBoundaryTests(unittest.TestCase):
                 (destination, data),
                 (Path(str(destination) + ".expected.f64le"), expected),
                 (Path(str(destination) + ".receipt.json"),
-                 (json.dumps(receipt, sort_keys=True, indent=2)+"\\n").encode("utf-8")),
+                 (json.dumps(receipt, sort_keys=True, indent=2)+"\n").encode("utf-8")),
             ):
                 temporary = Path(str(file) + ".unpublished.tmp")
                 try:
