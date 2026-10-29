@@ -114,6 +114,40 @@ class ResumableCandidateLifecycle(unittest.TestCase):
             integrity=audit_candidate_family(output)
             self.assertTrue(integrity["complete"])
             self.assertFalse(integrity["product_admission_authorized"])
+            # Screens run ONCE on the actual cached candidate bytes, with
+            # zero extra coefficient generator passes. Stubs are TEST ONLY.
+            seen=[]
+            def screen(data,fin,fout):
+                seen.append((fin,fout))
+                return dict(independent_precision_stable=True,
+                            candidate_bytes_match_both=True,
+                            release_qualified=False)
+            screened_dir=Path(root)/"screened_nonrelease_candidate"
+            screened=finalize(work,screened_dir,allow_test_fixture=True,
+                              independent_screen=screen)
+            self.assertEqual(len(seen),14)
+            self.assertTrue(screened["independent_mpmath_screen_complete"])
+            self.assertFalse(screened["independent_generator_verified"])
+            self.assertFalse(screened["product_admission_authorized"])
+            self.assertFalse(screened["q1_q6_passed"])
+            self.assertTrue(audit_candidate_family(screened_dir)["complete"])
+            # A failed late screen preserves all expensive checkpoints
+            # and never partially publishes a purported 14-kernel result.
+            failcount=0
+            def fail_late(data,fin,fout):
+                nonlocal failcount
+                failcount+=1
+                report=screen(data,fin,fout)
+                report["candidate_bytes_match_both"]=failcount!=14
+                return report
+            broken=Path(root)/"not_published"
+            with self.assertRaisesRegex(ContractError,
+                                        "INDEPENDENT_NUMERICAL_SCREEN_FAILED"):
+                finalize(work,broken,allow_test_fixture=True,
+                         independent_screen=fail_late)
+            self.assertEqual(failcount,14)
+            self.assertFalse(broken.exists())
+            self.assertEqual(len(list(work.iterdir())),14)
             # No overwrite of an existing published family.
             with self.assertRaisesRegex(ContractError,"already exists"):
                 finalize(work,output,allow_test_fixture=True)
