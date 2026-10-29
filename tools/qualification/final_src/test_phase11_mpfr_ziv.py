@@ -91,12 +91,18 @@ class MPFRZivBoundaryTests(unittest.TestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
         from build_resumable_real_candidates import stage_one
+        from build_candidate_manifest import canonical_pair_for_ratio
+        canonical = canonical_pair_for_ratio()[(ratio.L, ratio.M)]
+        self.assertEqual(canonical, (44100, 88200))
+        # The MPFR kernel is a function of reduced L/M, not the absolute
+        # Fs labels. Checkpoint receipts intentionally require canonical
+        # aliases; 48->96 is used below as the *same* 2/1 response oracle.
         with TemporaryDirectory() as d:
             work = Path(d) / "resume"
-            data, bits = stage_one(work, 48000, 96000, max_precision=1024)
+            data, bits = stage_one(work, *canonical, max_precision=1024)
             self.assertIn(bits, (256, 512, 1024))
             self.assertEqual(
-                stage_one(work, 48000, 96000, max_precision=1024),
+                stage_one(work, *canonical, max_precision=1024),
                 (data, bits),
                 "REAL already-proven per-ratio checkpoint must resume unchanged")
             self.assertEqual(len(list(work.iterdir())), 1)
