@@ -36,12 +36,17 @@ class All14CampaignOrchestrationTests(unittest.TestCase):
         }
 
     def _run(self, *, stage=None, seed=None, workers=2,
-             candidate=None, precision=1024):
+             candidate=None, precision=1024, publisher=None, verifier=None):
+        optional = {}
+        if publisher is not None:
+            optional["publisher"] = publisher
+        if verifier is not None:
+            optional["verifier"] = verifier
         return run_campaign(
             self.seed, self.work, candidate or self.folder,
             workers=workers, max_precision=precision,
             seed_importer=seed or self._seed,
-            generator=stage or self._stage)
+            generator=stage or self._stage, **optional)
 
     def test_unsafe_limits_refused_before_seed_reads(self):
         for workers in (0, -1, 5, True, 2.5):
