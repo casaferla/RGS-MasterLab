@@ -96,8 +96,11 @@ def _validated_zip_payload(path: Path, p: dict) -> bytes:
         raise ContractError("Q0 original CI ZIP missing or symlink")
     try:
         with zipfile.ZipFile(path) as z:
-            expected = {p["filename"], p["filename"] + ".expected.f64le",
-                        p["filename"] + ".receipt.json"}
+            filenames = ([p["filename"]] if p["archive_key"] != "four"
+                         else ["ratio_L1_M4.bin", "ratio_L4_M1.bin"])
+            expected = {
+                name + suffix for name in filenames
+                for suffix in ("", ".expected.f64le", ".receipt.json")}
             if set(z.namelist()) != expected:
                 raise ContractError("Q0 CI ZIP has missing or unexpected files")
             for name in expected:
