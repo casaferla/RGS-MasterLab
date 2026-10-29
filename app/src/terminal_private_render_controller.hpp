@@ -21,6 +21,23 @@ namespace rgsml::app {
 class TerminalPrivateRenderController final : public QObject {
     Q_OBJECT
 public:
+    // A REAL accepted whole-master Prepare observation, not a microprobe,
+    // predicted ETA, released Final SRC, or evidence of M16 LIVE. UI-owned
+    // lifetime only; no PCM, file path, personal metadata or device identity.
+    struct ApprovedPrepareTiming final {
+        core::SampleRate source_rate;
+        core::SampleRate master_rate;
+        core::FrameCount source_frames;
+        audio::ChannelLayout layout;
+        double ceiling_db_tp{0.0};
+        std::int64_t queue_us{-1};
+        std::int64_t render_wall_us{-1};
+        std::int64_t src_us{-1};
+        std::int64_t m17_core_us{-1};
+        std::int64_t m16_primary_us{-1};
+        std::int64_t verification_trim_us{-1};
+        std::int64_t m16_secondary_us{-1};
+    };
     using Snapshot=std::function<std::shared_ptr<const render::RenderResult>()>;
     using ManualId=std::function<std::optional<core::RealizationId>()>;
     using ManualChain=std::function<dsp::ProcessingChain()>;
@@ -43,6 +60,10 @@ public:
     // Passive proof of actual M17 whole-resource invocation count. This is
     // not a WAV-export certificate, GUI progress metric or audio callback.
     // Monitor SRC/replay must NOT increment it for the same MASTER owner.
+    // Last still-current accepted MASTER only. Discarded, canceled, stale,
+    // measured-nonconforming and errored runs MUST NOT train timing profiles.
+    [[nodiscard]] std::optional<ApprovedPrepareTiming>
+    last_approved_prepare_timing() const { return lastApprovedPrepareTiming_; }
     [[nodiscard]] std::uint64_t render_invocation_count() const noexcept {
         return renderInvocationCount_.load(std::memory_order_acquire);
     }
@@ -69,7 +90,8 @@ private:
     void worker_loop();
     void complete(std::uint64_t,TerminalCandidateGate::Capture,
         std::shared_ptr<core::Result<render::TruePeakLimiterOwnedSourceCandidate>>,
-        std::shared_ptr<std::optional<render::TruePeakLimiterOwnedMeasuredNonconformingCandidate>>);
+        std::shared_ptr<std::optional<render::TruePeakLimiterOwnedMeasuredNonconformingCandidate>>,
+    ApprovedPrepareTiming);
     TerminalCandidateGate* gate_;
     TerminalLimiterState* terminal_;
     Snapshot prepared_;
@@ -86,6 +108,7 @@ private:
     std::atomic<std::int64_t> progressFrames_{0};
     std::atomic<std::int64_t> progressTotal_{0};
     std::uint64_t staleDiscarded_{0};
+    std::optional<ApprovedPrepareTiming> lastApprovedPrepareTiming_;
     std::atomic<std::uint64_t> renderInvocationCount_{0};
     QString status_{QStringLiteral("IDLE")};
     QString error_;
