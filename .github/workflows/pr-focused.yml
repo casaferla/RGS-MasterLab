@@ -56,6 +56,10 @@ jobs:
       - name: Phase-11 Final SRC MPFR exact-zero and reproducibility canary (Linux)
         env:
           RGSML_MPFR_FULL_SRC_SMOKE: "1"
+          # Reuses the genuine MPFR twice-generated kernel + independent
+          # Python strict-scalar oracle in later native C++ full-resource test.
+          # Ephemeral test fixture only, NEVER a released asset/manifest.
+          RGSML_PHASE11_REAL_CANARY_OUT: ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin
         run: python tools/qualification/final_src/test_phase11_mpfr_ziv.py
 
       # Sound interval coverage of continuous frequency BOXES (not mere FFT
@@ -206,6 +210,7 @@ jobs:
 
       - name: Run Focused DSP Tests
         env:
+          RGSML_PHASE11_REAL_CANARY_PATH: ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin
           RGS_M17_CPU_PROBE_FILE: ${{ runner.temp }}/rgs-m17-cpu-linux.csv
           RGS_M17_PARTITION_PROBE_FILE: ${{ runner.temp }}/rgs-m17-partition-linux.csv
           RGS_M17_LOOKAHEAD_PROBE_FILE: ${{ runner.temp }}/rgs-m17-lookahead-linux.csv
