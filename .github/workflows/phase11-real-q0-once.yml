@@ -2,6 +2,7 @@ name: Phase11 One-Shot REAL Q0 All-14 Offline Candidate Campaign
 # Separate nonrelease COMPUTE proof from normal PR Focused CI.
 # This one-shot file only triggers on its own initial staging publication.
 on:
+  workflow_dispatch:
   push:
     branches:
       - staging/m17-monitor-preallocation-no-ci-20261024
