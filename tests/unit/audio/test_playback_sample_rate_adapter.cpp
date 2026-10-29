@@ -657,7 +657,7 @@ phase11GenuineMpfrCanaryMatchesPythonIndependentScalarBits()
     // Both absolute SRC rate labels map to the SAME frozen reduced
     // ratio 2/1. One canonical MPFR kernel must work for both SOURCE
     // rates without additional generation, reweighting or DSP rewrite.
-    for(const auto [fin,fout]:std::array{
+    for(const auto& [fin,fout]:std::array{
             std::pair<std::int64_t,std::int64_t>{48000,96000},
             std::pair<std::int64_t,std::int64_t>{44100,88200}}) {
         auto sourceFormat=audio::AudioFormat::create(
