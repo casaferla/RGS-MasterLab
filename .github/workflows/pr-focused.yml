@@ -58,7 +58,9 @@ jobs:
       # samples). This fast synthetic proof harness is NOT a 14-kernel
       # continuum certificate, Q1-Q6 approval, or product SRC admission.
       - name: Phase-11 Final SRC MPFR DTFT interval proof precursor (Linux)
-        run: python tools/qualification/final_src/test_mpfr_dtft_interval_preflight.py
+        run: |
+          python tools/qualification/final_src/test_mpfr_dtft_interval_preflight.py
+          python tools/qualification/final_src/test_screen_real_candidate_family_dtft.py
 
       - name: Install system dependencies & Ninja
         run: |
