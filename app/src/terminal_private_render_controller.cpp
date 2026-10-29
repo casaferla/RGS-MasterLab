@@ -137,6 +137,9 @@ void TerminalPrivateRenderController::worker_loop() {
             captured.output_rate,captured.full_source_frames,
             captured.manual_owner->view().format().channel_layout(),
             captured.ceiling_db_tp,
+            captured.manual_chain_revision,
+            captured.terminal_chain_revision,
+            captured.terminal_parameter_revision,
             std::chrono::duration_cast<std::chrono::microseconds>(
                 started-job->enqueuedAt).count(),
             std::chrono::duration_cast<std::chrono::microseconds>(
@@ -229,7 +232,9 @@ void TerminalPrivateRenderController::complete(
 std::optional<TerminalPrivateRenderController::ApprovedPrepareHistoricalRange>
 TerminalPrivateRenderController::exact_historical_prepare_range(
     core::SampleRate source,core::SampleRate master,
-    core::FrameCount frames,audio::ChannelLayout layout,double ceiling) const noexcept
+    core::FrameCount frames,audio::ChannelLayout layout,double ceiling,
+    std::uint64_t manualRevision,std::uint64_t terminalChainRevision,
+    std::uint64_t terminalParameterRevision) const noexcept
 {
     // A single observed duration is not an interval; avoid invented
     // uncertainty. This is an exact-key empirical observation, NOT a
@@ -241,6 +246,9 @@ TerminalPrivateRenderController::exact_historical_prepare_range(
         if(item.source_rate!=source||item.master_rate!=master
            ||item.source_frames!=frames||item.layout!=layout
            ||item.ceiling_db_tp!=ceiling
+           ||item.manual_chain_revision!=manualRevision
+           ||item.terminal_chain_revision!=terminalChainRevision
+           ||item.terminal_parameter_revision!=terminalParameterRevision
            ||item.queue_us<0||item.render_wall_us<=0
            ||item.render_wall_us>
                std::numeric_limits<std::int64_t>::max()-item.queue_us)
