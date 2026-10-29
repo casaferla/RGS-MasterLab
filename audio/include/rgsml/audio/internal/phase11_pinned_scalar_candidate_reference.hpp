@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <numeric>
+#include <limits>
 #include <span>
 #include <string_view>
 
@@ -48,7 +49,8 @@ render_phase11_pinned_scalar_reference(
         return render_phase11_strict_scalar_reference(
             fullSource,output,absoluteOutputStart,1,1,{});
     }
-    if(L<=0||M<=0||L>UINT32_MAX||M>UINT32_MAX)
+    if(L<=0||M<=0||L>std::numeric_limits<std::uint32_t>::max()
+       ||M>std::numeric_limits<std::uint32_t>::max())
         return Result::failure(phase11_candidate_detail::invalid(
             "Phase11 conversion ratio cannot be represented"));
     auto parsed=parse_phase11_rgsmsr1_pinned_candidate_bits(
