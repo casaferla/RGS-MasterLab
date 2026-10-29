@@ -13,6 +13,7 @@ CLI: --workdir NEW_OR_EXISTING --stage [--fin F --fout F] [--max-precision N]
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -131,23 +132,61 @@ def stage_one(workdir: Path, fin: int, fout: int, *,
 
 def stage_all(workdir: Path, *, max_precision: int = 1024,
               generator: Callable[[int,int,int],tuple[bytes,int]] | None = None,
-              progress: Callable[[str], None] | None = None
+              progress: Callable[[str], None] | None = None,
+              workers: int = 1
               ) -> dict:
-    """Durable ratio checkpoints; a later failed ratio cannot destroy earlier work."""
+    """Resume up to 14 isolated genuine MPFR double-runs.
+
+    A bounded process pool (not threads sharing native MPFR objects)
+    independently owns each L/M ratio. Every worker writes its OWN atomic
+    checkpoint; a later failure preserves completed checkpoint directories.
+    The caller must never launch two stage_all processes on the same workdir.
+    Default workers=1 preserves current low-memory/serial behavior.
+    """
+    if type(workers) is not int or not 1 <= workers <= 4:
+        raise ContractError("MPFR generator worker count must be 1..4")
     pairmap = canonical_pair_for_ratio()
-    done = []
-    for (L,M),(fin,fout) in pairmap.items():
-        if progress:
-            progress(f"MPFR_RATIO_START L{L}/M{M} fin={fin} fout={fout}")
-        data,bits=stage_one(workdir,fin,fout,
-                            max_precision=max_precision,generator=generator)
-        done.append({"L":L,"M":M,"bytes":len(data),"precision_bits":bits,
-                     "sha256":sha256(data).hexdigest()})
-        if progress:
-            progress(f"MPFR_RATIO_CHECKPOINTED {len(done)}/14 L{L}/M{M} "
-                     f"bits={bits} sha256={sha256(data).hexdigest()}")
+    done = {}
+    if workers == 1:
+        for (L,M),(fin,fout) in pairmap.items():
+            if progress:
+                progress(f"MPFR_RATIO_START L{L}/M{M} fin={fin} fout={fout}")
+            data,bits=stage_one(workdir,fin,fout,
+                                max_precision=max_precision,generator=generator)
+            done[(L,M)]={"L":L,"M":M,"bytes":len(data),"precision_bits":bits,
+                         "sha256":sha256(data).hexdigest()}
+            if progress:
+                progress(f"MPFR_RATIO_CHECKPOINTED {len(done)}/14 L{L}/M{M} "
+                         f"bits={bits} sha256={sha256(data).hexdigest()}")
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            futures={}
+            for (L,M),(fin,fout) in pairmap.items():
+                if progress:
+                    progress(f"MPFR_RATIO_SUBMITTED L{L}/M{M} fin={fin} fout={fout}")
+                future=pool.submit(stage_one,workdir,fin,fout,
+                                   max_precision=max_precision,
+                                   generator=generator)
+                futures[future]=(L,M)
+            try:
+                for future in as_completed(futures):
+                    L,M=futures[future]
+                    data,bits=future.result()
+                    done[(L,M)]={"L":L,"M":M,"bytes":len(data),
+                                 "precision_bits":bits,
+                                 "sha256":sha256(data).hexdigest()}
+                    if progress:
+                        progress(f"MPFR_RATIO_CHECKPOINTED {len(done)}/14 L{L}/M{M} "
+                                 f"bits={bits} sha256={sha256(data).hexdigest()}")
+            except Exception:
+                for future in futures:
+                    future.cancel()
+                raise
+    # Publish deterministic metadata in canonical ratio order independent of
+    # process completion order. A partial failure NEVER reports all-14 done.
     return {"status":"14_DOUBLE_RUN_CANDIDATES_CHECKPOINTED_NOT_RELEASE",
-            "ratios":len(done),"assets":done,
+            "ratios":len(done),
+            "assets":[done[key] for key in pairmap],
             "product_admission_authorized":False}
 
 
@@ -202,12 +241,20 @@ def main() -> None:
     p.add_argument("--fin",type=int)
     p.add_argument("--fout",type=int)
     p.add_argument("--max-precision",type=int,default=1024)
+    p.add_argument("--workers",type=int,default=1,
+                   help="offline MPFR generation processes, 1..4; default 1")
     p.add_argument("--out",type=Path)
     p.add_argument("--screen-independent-mpmath",action="store_true")
     p.add_argument("--screen-exact-dyadic",action="store_true")
     p.add_argument("--screen-sampled-fft",action="store_true")
     p.add_argument("--screen-exact-spectral-anchors",action="store_true")
     a=p.parse_args()
+    if not 1 <= a.workers <= 4:
+        p.error("--workers must be 1..4")
+    if a.finalize and a.workers != 1:
+        p.error("--finalize never launches generation workers")
+    if a.stage and a.fin is not None and a.workers != 1:
+        p.error("single-ratio --stage accepts --workers 1 only")
     if a.stage:
         if (a.out is not None or (a.fin is None)!=(a.fout is None)
             or any((a.screen_independent_mpmath,a.screen_exact_dyadic,
@@ -215,6 +262,7 @@ def main() -> None:
             p.error("--stage takes both --fin/--fout or neither, without --out/--screen flags")
         if a.fin is None:
             result=stage_all(a.workdir,max_precision=a.max_precision,
+                workers=a.workers,
                 progress=lambda line: print(line,file=sys.stderr,flush=True))
         else:
             data,bits=stage_one(a.workdir,a.fin,a.fout,max_precision=a.max_precision)
