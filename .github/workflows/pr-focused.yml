@@ -60,7 +60,24 @@ jobs:
           # Python strict-scalar oracle in later native C++ full-resource test.
           # Ephemeral test fixture only, NEVER a released asset/manifest.
           RGSML_PHASE11_REAL_CANARY_OUT: ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin
+          RGSML_PHASE11_CANDIDATE_PR_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python tools/qualification/final_src/test_phase11_mpfr_ziv.py
+
+      # Preserve the REAL twice-reproduced MPFR/Ziv candidate and independent
+      # Python strict-scalar expected PCM bytes for later 14-kernel campaign.
+      # NONRELEASE Q0 diagnostic only: no frozen SHA authority, DTFT or Q1-Q6.
+      # Keeps artifacts out of the product/repository assets and cannot
+      # affect M17 admission by itself.
+      - name: Retain genuine Phase-11 ratio-2-to-1 MPFR candidate evidence (Linux)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Phase11-REAL-Q0-2to1-NONRELEASE-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin
+            ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin.expected.f64le
+            ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin.receipt.json
+          retention-days: 30
+          if-no-files-found: error
 
       # Sound interval coverage of continuous frequency BOXES (not mere FFT
       # samples). This fast synthetic proof harness is NOT a 14-kernel
