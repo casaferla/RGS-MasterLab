@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <functional>
 #include <numeric>
 #include <span>
 
@@ -52,7 +53,8 @@ namespace phase11_detail {
     std::int64_t absoluteOutputStart,
     std::int64_t L,
     std::int64_t M,
-    std::span<const std::uint64_t> kernelBits)
+    std::span<const std::uint64_t> kernelBits,
+    const std::function<bool()>& cancelled = {})
 {
     using core::ErrorCode;
     const auto reject=[](ErrorCode code,const char* msg) {
@@ -79,8 +81,12 @@ namespace phase11_detail {
         if(!kernelBits.empty())
             return reject(ErrorCode::InvalidArgument,
                           "Identity must not evaluate a filter");
-        for(std::size_t i=0;i<output.size();++i)
+        for(std::size_t i=0;i<output.size();++i) {
+            if((i%1024)==0 &&cancelled &&cancelled())
+                return reject(ErrorCode::InvalidState,
+                              "Phase11 identity retired during PCM copy");
             output[i]=fullSource[static_cast<std::size_t>(absoluteOutputStart)+i];
+        }
         return core::Result<void>::success();
     }
     if(kernelBits.size()<3 || kernelBits.size()%2!=1
@@ -98,6 +104,12 @@ namespace phase11_detail {
         return reject(ErrorCode::IntegerOverflow,
                       "Absolute high-rate output coordinate overflows");
     for(std::size_t i=0;i<output.size();++i) {
+        // A canceled full-resource job must stop before returning any
+        // candidate. The output buffer remains privately owned by the
+        // caller until the entire conversion succeeds.
+        if((i%1024)==0 &&cancelled &&cancelled())
+            return reject(ErrorCode::InvalidState,
+                          "Phase11 candidate retired during SRC conversion");
         const auto m=absoluteOutputStart+static_cast<std::int64_t>(i);
         const auto q=delay+m*M;
         const auto first=phase11_detail::signed_ceil(q-(tapCount-1),L);
