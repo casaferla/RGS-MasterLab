@@ -104,6 +104,30 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+      # Two additional distinct REAL MPFR/Ziv reduced ratios, L/M=1/4 and
+      # 4/1, jointly generated twice and independently screened before
+      # writing ephemeral fixtures. These are Q0 candidates, NOT product FIRs.
+      - name: Phase-11 REAL 1-to-4 and 4-to-1 MPFR candidates (Linux)
+        env:
+          RGSML_MPFR_FULL_SRC_SMOKE: "1"
+          RGSML_PHASE11_REAL_POW4_OUT_DIR: ${{ runner.temp }}/rgsml-phase11-real-pow4
+          RGSML_PHASE11_CANDIDATE_PR_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python tools/qualification/final_src/test_phase11_real_fourfold_canary.py
+
+      - name: Retain genuine Phase-11 fourfold MPFR Q0 candidate evidence (Linux)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Phase11-REAL-Q0-FOURFOLD-NONRELEASE-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/rgsml-phase11-real-pow4/ratio_L1_M4.bin
+            ${{ runner.temp }}/rgsml-phase11-real-pow4/ratio_L1_M4.bin.expected.f64le
+            ${{ runner.temp }}/rgsml-phase11-real-pow4/ratio_L1_M4.bin.receipt.json
+            ${{ runner.temp }}/rgsml-phase11-real-pow4/ratio_L4_M1.bin
+            ${{ runner.temp }}/rgsml-phase11-real-pow4/ratio_L4_M1.bin.expected.f64le
+            ${{ runner.temp }}/rgsml-phase11-real-pow4/ratio_L4_M1.bin.receipt.json
+          retention-days: 30
+          if-no-files-found: error
+
       # Sound interval coverage of continuous frequency BOXES (not mere FFT
       # samples). This fast synthetic proof harness is NOT a 14-kernel
       # continuum certificate, Q1-Q6 approval, or product SRC admission.
@@ -254,6 +278,7 @@ jobs:
         env:
           RGSML_PHASE11_REAL_CANARY_PATH: ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin
           RGSML_PHASE11_REAL_DOWNSAMPLE_PATH: ${{ runner.temp }}/rgsml-phase11-real-mpfr-88kto44k.bin
+          RGSML_PHASE11_REAL_POW4_PATH: ${{ runner.temp }}/rgsml-phase11-real-pow4
           RGS_M17_CPU_PROBE_FILE: ${{ runner.temp }}/rgs-m17-cpu-linux.csv
           RGS_M17_PARTITION_PROBE_FILE: ${{ runner.temp }}/rgs-m17-partition-linux.csv
           RGS_M17_LOOKAHEAD_PROBE_FILE: ${{ runner.temp }}/rgs-m17-lookahead-linux.csv
