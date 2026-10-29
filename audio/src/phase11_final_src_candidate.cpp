@@ -5,10 +5,12 @@
 #include <rgsml/core/error.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <numeric>
 #include <span>
+#include <utility>
 
 namespace rgsml::audio {
 namespace {
