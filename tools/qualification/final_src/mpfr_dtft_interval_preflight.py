@@ -32,24 +32,35 @@ def _mpfr_dyadic(e: Engine, x: Fraction):
     return value.shift2(-(d.bit_length() - 1))
 
 
-def enclose_dtft_box(ratio: Ratio, taps: tuple[Fraction, ...],
-                     lo_hz: Fraction, hi_hz: Fraction,
-                     *, bits: int = 256) -> tuple[Fraction, Fraction]:
-    """Rigorous interval for REAL zero-phase H(f), for all f in [lo,hi].
+def _validate_dtft_input(ratio: Ratio, taps: tuple[Fraction, ...],
+                         bits: int) -> None:
+    if len(taps) < 3 or len(taps) % 2 == 0 or tuple(taps) != tuple(reversed(taps)):
+        raise ContractError("DTFT requires a finite symmetric odd-length FIR")
+    if bits < 256 or bits > 4096:
+        raise ContractError("DTFT precision budget outside allowed range")
 
-    Symmetry removes the linear-phase factor. Center value is enclosed using
-    MPFR directed intervals and exact binary64 tap values. A rigorous global
-    first-derivative (Lipschitz) bound encloses the entire frequency box.
-    It is deliberately conservative and may need many subdivisions.
+
+def _absolute_first_moment(taps: tuple[Fraction, ...]) -> Fraction:
+    """Exact rational Lipschitz moment, independent of frequency/box/MPFR."""
+    D = (len(taps) - 1) // 2
+    return sum((u * abs(taps[D + u]) for u in range(1, D + 1)),
+               Fraction(0))
+
+
+def _enclose_dtft_box_validated(
+        ratio: Ratio, taps: tuple[Fraction, ...],
+        lo_hz: Fraction, hi_hz: Fraction, *,
+        bits: int, absolute_first_moment: Fraction
+        ) -> tuple[Fraction, Fraction]:
+    """Internal: callers MUST validate symmetric taps and bits first.
+
+    Each MPFR box still evaluates the REAL exact-binary64 DTFT from scratch.
+    Only the frequency-INDEPENDENT exact Lipschitz moment is reused.
     """
     lo_hz, hi_hz = Fraction(lo_hz), Fraction(hi_hz)
     if (lo_hz < 0 or hi_hz < lo_hz
         or hi_hz > Fraction(ratio.fin * ratio.L, 2)):
         raise ContractError("DTFT frequency box outside high-grid Nyquist")
-    if len(taps) < 3 or len(taps) % 2 == 0 or tuple(taps) != tuple(reversed(taps)):
-        raise ContractError("DTFT requires a finite symmetric odd-length FIR")
-    if bits < 256 or bits > 4096:
-        raise ContractError("DTFT precision budget outside allowed range")
     D = (len(taps) - 1) // 2
     center = (lo_hz + hi_hz) / 2
     radius = (hi_hz - lo_hz) / 2
@@ -57,12 +68,10 @@ def enclose_dtft_box(ratio: Ratio, taps: tuple[Fraction, ...],
     two = e.fraction(Fraction(2))
     pi = e.pi()
     total = _mpfr_dyadic(e, taps[D])
-    moment = Fraction(0)
     for u in range(1, D + 1):
         tap = taps[D + u]
         if not tap:
             continue
-        moment += u * abs(tap)
         # Frequency is rational. Remove exact full cycles BEFORE multiplying
         # by MPFR pi, avoiding giant unreduced trigonometric arguments.
         cycles = (center * u / (ratio.fin * ratio.L)) % 1
@@ -77,9 +86,19 @@ def enclose_dtft_box(ratio: Ratio, taps: tuple[Fraction, ...],
     low = Fraction.from_float(e.fn["get_d"](response.lo.ref, RNDD))
     high = Fraction.from_float(e.fn["get_d"](response.hi.ref, RNDU))
     pi_upper = pi_bounds()[1]
-    max_delta = Fraction(4) * pi_upper * moment * radius / (
+    max_delta = Fraction(4) * pi_upper * absolute_first_moment * radius / (
         ratio.fin * ratio.L * ratio.L)
     return low - max_delta, high + max_delta
+
+
+def enclose_dtft_box(ratio: Ratio, taps: tuple[Fraction, ...],
+                     lo_hz: Fraction, hi_hz: Fraction,
+                     *, bits: int = 256) -> tuple[Fraction, Fraction]:
+    """Rigorous MPFR directed-interval enclosure of every real f in box."""
+    _validate_dtft_input(ratio, taps, bits)
+    return _enclose_dtft_box_validated(
+        ratio, taps, lo_hz, hi_hz, bits=bits,
+        absolute_first_moment=_absolute_first_moment(taps))
 
 
 def prove_band(ratio: Ratio, taps: tuple[Fraction, ...],
@@ -89,6 +108,10 @@ def prove_band(ratio: Ratio, taps: tuple[Fraction, ...],
     """Attempt full continuum coverage. NEVER issue PASS for incomplete boxes."""
     if kind not in ("passband", "stopband") or not 1 <= max_boxes <= 1_000_000:
         raise ContractError("DTFT proof kind or explicit box budget invalid")
+    _validate_dtft_input(ratio, taps, bits)
+    # For a large REAL prototype the exact dyadic moment is expensive.
+    # Compute it ONCE per complete band, not once per subdivided box.
+    moment = _absolute_first_moment(taps)
     stack = [(Fraction(start_hz), Fraction(end_hz))]
     visited = 0
     while stack:
@@ -97,7 +120,9 @@ def prove_band(ratio: Ratio, taps: tuple[Fraction, ...],
                         remaining_boxes=len(stack),
                         release_qualified=False)
         lo, hi = stack.pop()
-        low, high = enclose_dtft_box(ratio, taps, lo, hi, bits=bits)
+        low, high = _enclose_dtft_box_validated(
+            ratio, taps, lo, hi, bits=bits,
+            absolute_first_moment=moment)
         visited += 1
         proven = ((low >= 1 - PASS_TOL and high <= 1 + PASS_TOL)
                   if kind == "passband" else
