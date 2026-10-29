@@ -145,6 +145,18 @@ jobs:
           python tools/qualification/final_src/test_mpfr_dtft_interval_preflight.py
           python tools/qualification/final_src/test_screen_real_candidate_family_dtft.py
 
+      # Exact Python MPFR toolkit archived once per immutable CI SHA:
+      # enables an offline all-14 campaign using the same tested source,
+      # without repeatedly generating all kernels in Focused CI. Python
+      # scripts are qualification tooling, never product runtime assets.
+      - name: Retain Phase-11 offline MPFR Q0 workstation toolkit (Linux)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Phase11-Q0-TOOLKIT-NONRELEASE-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tools/qualification/final_src/
+          retention-days: 14
+          if-no-files-found: error
+
       - name: Install system dependencies & Ninja
         run: |
           sudo apt-get update
