@@ -39,13 +39,15 @@ def run_campaign(
         raise ContractError("real all-14 MPFR precision must be 256..4096")
     if candidate_folder.exists() or candidate_folder.is_symlink():
         raise ContractError("refuse overwrite of an existing candidate folder")
-    if (not candidate_folder.parent.is_dir()
-        or candidate_folder.parent.is_symlink()):
-        raise ContractError("existing ordinary candidate output parent required")
-    # A successful publication MUST be distinct from the checkpoint tree.
+    # A successful publication MUST be distinct from the checkpoint tree,
+    # including candidates nested under a checkpoint workdir that does
+    # not exist yet. Validate this BEFORE checking the output parent.
     if (candidate_folder.resolve().is_relative_to(workdir.resolve())
         or workdir.resolve().is_relative_to(candidate_folder.resolve())):
         raise ContractError("checkpoint and candidate folders must be disjoint")
+    if (not candidate_folder.parent.is_dir()
+        or candidate_folder.parent.is_symlink()):
+        raise ContractError("existing ordinary candidate output parent required")
     seeded = seed_importer(workdir, seed_zip)
     if (seeded.get("ratios") != 4
         or seeded.get("source_ci_artifact_pins_verified") is not True
