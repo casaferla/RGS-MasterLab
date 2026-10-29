@@ -99,7 +99,7 @@ class All14CampaignOrchestrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "disjoint"):
             self._run(candidate=nested)
         outer = self.work.parent
-        with self.assertRaisesRegex(ContractError, "disjoint"):
+        with self.assertRaisesRegex(ContractError, "overwrite"):
             self._run(candidate=outer)
         self.assertEqual(self.calls, [])
 
