@@ -3,6 +3,7 @@
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
+#include <rgsml/audio/phase11_final_src_candidate.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <rgsml/audio/internal/phase11_strict_scalar_reference.hpp>
 #include <rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp>
@@ -119,6 +120,7 @@ private slots:
     void phase11StrictScalarReferenceSixBySixAgainstConceptualGrid();
     void phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference();
     void phase11PinnedScalarReferenceSixBySixSyntheticGeometry();
+    void phase11FullResourcePinnedCandidateUsesActualAudioBufferAndCancellation();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -378,6 +380,86 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
     std::array<double,1> refused{0.0};
     QVERIFY(!audio::internal::render_phase11_pinned_scalar_reference(
         source,refused,0,32000,96000,512,{},{}));
+}
+
+void PlaybackSampleRateAdapterTest::
+phase11FullResourcePinnedCandidateUsesActualAudioBufferAndCancellation()
+{
+    // Actual source->master AudioBuffer materialization under STRICT scalar
+    // math, but synthetic delta FIR ONLY, NOT a release-qualified asset.
+    auto format=audio::AudioFormat::create(rate(48000),
+                                           audio::ChannelLayout::MONO_C);
+    QVERIFY(format);
+    auto source=audio::AudioBuffer::create(
+        *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+        core::FrameIndex{0},frame_count(3));
+    QVERIFY(source);
+    auto channel=source.value()->mutable_view().channel(0);
+    QVERIFY(channel);
+    (*channel.value())[0]=0.25;
+    (*channel.value())[1]=-0.5;
+    (*channel.value())[2]=0.75;
+    constexpr std::uint32_t L=2,M=1,T=512;
+    constexpr std::size_t N=1025;
+    std::vector<std::uint8_t> asset(52+8*N,0);
+    constexpr std::array<std::uint8_t,8> magic{
+        'R','G','S','M','S','R','1',0};
+    std::copy(magic.begin(),magic.end(),asset.begin());
+    const auto put=[&](std::size_t at,std::uint64_t value,
+                       std::size_t width) {
+        for(std::size_t i=0;i<width;++i)
+            asset[at+i]=static_cast<std::uint8_t>(value>>(8*i));
+    };
+    put(8,1,2);put(10,1,2);
+    put(12,L,4);put(16,M,4);put(20,T,4);
+    put(28,N,8);put(36,N,8);put(44,8*N,8);
+    put(52+8*(N/2),std::bit_cast<std::uint64_t>(2.0),8);
+    const auto sha=core::sha256_hex(std::span<const std::byte>{
+        reinterpret_cast<const std::byte*>(asset.data()),asset.size()});
+    const auto make=[&](core::SampleRate master,std::string_view pin,
+                        const audio::FullResourceOutputRateCancel& cancel={}) {
+        return audio::materialize_phase11_pinned_final_src_candidate(
+            source.value()->view(),master,frame_count(128),asset,pin,cancel);
+    };
+    auto converted=make(rate(96000),sha);
+    QVERIFY2(converted,converted?"":converted.error()->message().c_str());
+    QCOMPARE(converted.value()->source_rate,rate(48000));
+    QCOMPARE(converted.value()->output_rate,rate(96000));
+    QCOMPARE(converted.value()->pcm.view().frame_count().value(),
+             std::int64_t{6});
+    QVERIFY(converted.value()->used_src);
+    QVERIFY(converted.value()->kernel_sha256.empty()); // NEVER released
+    const auto output=converted.value()->pcm.view().channel(0);
+    QVERIFY(output);
+    for(std::size_t i=0;i<6;++i) {
+        const double expected=i%2==0
+            ?2.0*(*channel.value())[i/2]:0.0;
+        QCOMPARE((*output.value())[i],expected);
+    }
+    QVERIFY(!make(rate(96000),std::string_view{}));
+    auto tampered=sha;
+    tampered[0]=tampered[0]=='0'?'1':'0';
+    QVERIFY(!make(rate(96000),tampered));
+    int cancelCalls=0;
+    QVERIFY(!make(rate(96000),sha,[&cancelCalls] {
+        return ++cancelCalls>=2;
+    }));
+    QVERIFY(cancelCalls>=2);
+    // Identity is exact bit transparency but must never consume a FIR.
+    const auto identity=audio::materialize_phase11_pinned_final_src_candidate(
+        source.value()->view(),rate(48000),frame_count(128),{},{});
+    QVERIFY(identity);
+    QCOMPARE(identity.value()->pcm.view().frame_count().value(),
+             std::int64_t{3});
+    const auto equal=identity.value()->pcm.view().channel(0);
+    QVERIFY(equal);
+    for(std::size_t i=0;i<3;++i)
+        QCOMPARE(std::bit_cast<std::uint64_t>((*equal.value())[i]),
+                 std::bit_cast<std::uint64_t>((*channel.value())[i]));
+    QVERIFY(!make(rate(48000),sha));
+    QVERIFY(!make(rate(32000),sha));
+    (*channel.value())[0]=std::numeric_limits<double>::infinity();
+    QVERIFY(!make(rate(96000),sha));
 }
 
 void PlaybackSampleRateAdapterTest::phase11StrictScalarReferenceSixBySixAgainstConceptualGrid()
