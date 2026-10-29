@@ -12,7 +12,10 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 from build_candidate_manifest import canonical_pair_for_ratio
 from build_resumable_real_candidates import _read_checkpoint, stage_one
-from import_audited_ci_q0_checkpoints import import_pinned_ci_q0
+from import_audited_ci_q0_checkpoints import (
+    import_pinned_ci_q0, import_pinned_seed_bundle,
+)
+from build_resumable_real_candidates import BACKEND, RECEIPT, RECIPE
 from phase11_math_preflight import ContractError, Ratio, kernel_shape
 from test_build_candidate_manifest import shape_only_fixture
 
@@ -146,6 +149,86 @@ class AuditedCiBootstrapLifecycleTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             self._import()
         self.assertFalse(self.workdir.exists())
+
+    def _write_seed_bundle(self, *, tamper=None):
+        bundle = self.root / "audited-four-q0-checkpoints.zip"
+        with ZipFile(bundle, "w", compression=ZIP_DEFLATED) as archive:
+            for p in self.pins:
+                L, M = p["L"], p["M"]
+                prefix = f"ratio_L{L}_M{M}/"
+                data, _ = shape_only_fixture(*p["pair"], 1024)
+                shape = kernel_shape(Ratio.make(*p["pair"]))
+                receipt = {
+                    "recipe": RECIPE, "backend": BACKEND,
+                    "fin": p["pair"][0], "fout": p["pair"][1],
+                    "L": L, "M": M, "T": shape.T, "N": shape.N,
+                    "bytes": p["size"], "sha256": p["sha"],
+                    "precision_bits": 256,
+                    "same_generator_double_run": True,
+                    "independent_generator_verified": False,
+                    "mpfr_dtft_oracle_passed": False,
+                    "q1_q6_passed": False,
+                    "release_qualified": False,
+                    "product_admission_authorized": False,
+                    "origin": "INDEPENDENTLY_AUDITED_CI_Q0_ARTIFACT",
+                    "origin_github_run_id": p["run"],
+                    "origin_pr_sha": p["pr"],
+                }
+                if tamper == (L, M):
+                    receipt["origin_pr_sha"] = "forged-PR"
+                archive.writestr(
+                    prefix + f"RGSMSR1_L{L}_M{M}.bin", data)
+                archive.writestr(
+                    prefix + RECEIPT, json.dumps(receipt, sort_keys=True))
+        return bundle
+
+    def _import_bundle(self, bundle):
+        with patch("import_audited_ci_q0_checkpoints._pinned_candidates",
+                   return_value=tuple(self.pins)):
+            return import_pinned_seed_bundle(self.workdir, bundle)
+
+    def test_single_bundle_reuses_all_four_without_regeneration(self):
+        bundle = self._write_seed_bundle()
+        result = self._import_bundle(bundle)
+        self.assertEqual(result["ratios"], 4)
+        self.assertEqual(result["remaining_genuine_ratio_candidates"], 10)
+        self.assertFalse(result["release_qualified"])
+        self.assertFalse(result["product_admission_authorized"])
+        self.assertEqual(self._import_bundle(bundle), result)
+        for p in self.pins:
+            actual, bits = _read_checkpoint(self.workdir, *p["pair"])
+            self.assertEqual(sha256(actual).hexdigest(), p["sha"])
+            self.assertEqual(bits, 256)
+            def no_regeneration(*_):
+                self.fail("a safely seeded Q0 candidate must be reused")
+            self.assertEqual(
+                stage_one(self.workdir, *p["pair"], generator=no_regeneration),
+                (actual, bits))
+
+    def test_single_bundle_forged_provenance_fails_atomically(self):
+        bundle = self._write_seed_bundle(tamper=(4, 1))
+        with self.assertRaisesRegex(ContractError, "provenance"):
+            self._import_bundle(bundle)
+        self.assertFalse(self.workdir.exists())
+
+    def test_single_bundle_extra_file_fails_before_publication(self):
+        bundle = self._write_seed_bundle()
+        with ZipFile(bundle, "a") as archive:
+            archive.writestr("../other.bin", b"not a candidate")
+        with self.assertRaisesRegex(ContractError, "inventory"):
+            self._import_bundle(bundle)
+        self.assertFalse(self.workdir.exists())
+
+    def test_single_bundle_conflicting_existing_checkpoint_fails_closed(self):
+        bundle = self._write_seed_bundle()
+        self._import_bundle(bundle)
+        candidate = self.workdir / "ratio_L2_M1" / "RGSMSR1_L2_M1.bin"
+        altered = bytearray(candidate.read_bytes())
+        altered[52] ^= 1
+        candidate.write_bytes(altered)
+        with self.assertRaises(ContractError):
+            self._import_bundle(bundle)
+        self.assertEqual(candidate.read_bytes(), altered)
 
 
 if __name__ == "__main__":
