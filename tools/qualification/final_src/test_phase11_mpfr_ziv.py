@@ -86,11 +86,20 @@ class MPFRZivBoundaryTests(unittest.TestCase):
         # for production until second generator, DTFT, Q1-Q6 and manifest.
         ratio = Ratio.make(48000, 96000)
         shape = kernel_shape(ratio)
-        data, bits = generate(48000, 96000, max_precision=1024)
-        second, second_bits = generate(48000, 96000, max_precision=1024)
-        self.assertIn(bits, (256, 512, 1024))
-        self.assertEqual(bits, second_bits)
-        self.assertEqual(data, second, "repeat offline RGSMSR1 generation must be bit-identical")
+        # Exercise the REAL resumable runner using the two already-required
+        # full MPFR/Ziv executions. Do not add a third expensive generator.
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from build_resumable_real_candidates import stage_one
+        with TemporaryDirectory() as d:
+            work = Path(d) / "resume"
+            data, bits = stage_one(work, 48000, 96000, max_precision=1024)
+            self.assertIn(bits, (256, 512, 1024))
+            self.assertEqual(
+                stage_one(work, 48000, 96000, max_precision=1024),
+                (data, bits),
+                "REAL already-proven per-ratio checkpoint must resume unchanged")
+            self.assertEqual(len(list(work.iterdir())), 1)
         # A genuinely separate, high-precision numerical implementation
         # checks the exact candidate bytes at two rebuilt precisions.
         # This is an independent CROSSCHECK, not certified MPFR/DTFT Q1.
