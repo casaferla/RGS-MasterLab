@@ -324,6 +324,7 @@ qt_add_executable(rgsml_playback_src_tests
 target_link_libraries(rgsml_playback_src_tests
     PRIVATE
         rgsml_audio
+        rgsml_render # genuine Q0 SOURCE->MASTER -> one M17/M16 -> DEVICE rehearsal
         Qt6::Test
 )
 rgsml_apply_project_warnings(rgsml_playback_src_tests)
