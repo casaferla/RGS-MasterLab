@@ -13,6 +13,8 @@
 #include <rgsml/audio/monitoring_frame_map.hpp>
 
 #include <QTest>
+#include <QByteArray>
+#include <QtGlobal>
 #include <QDebug>
 #include <QElapsedTimer>
 
@@ -22,7 +24,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -638,8 +639,8 @@ phase11GenuineMpfrCanaryMatchesPythonIndependentScalarBits()
     // generated the REAL 1025-tap 48->96 MPFR/Ziv RGSMSR1 candidate twice
     // and independently matched mpmath (120/160 dps). CTest on Windows
     // does not need an MPFR install. No product kernel-release admission.
-    const char* path=std::getenv("RGSML_PHASE11_REAL_CANARY_PATH");
-    if(!path||!*path)
+    const QByteArray path=qgetenv("RGSML_PHASE11_REAL_CANARY_PATH");
+    if(path.isEmpty())
         QSKIP("Real MPFR canary lives only in the Linux Focused runner.");
     const auto read=[&](const std::string& filepath) {
         std::ifstream stream(filepath,std::ios::binary);
@@ -648,8 +649,8 @@ phase11GenuineMpfrCanaryMatchesPythonIndependentScalarBits()
             std::istreambuf_iterator<char>{stream},
             std::istreambuf_iterator<char>{}};
     };
-    const auto asset=read(path);
-    const auto expected=read(std::string(path)+".expected.f64le");
+    const auto asset=read(path.constData());
+    const auto expected=read(std::string(path.constData())+".expected.f64le");
     QCOMPARE(asset.size(),std::size_t{52+8*1025});
     QCOMPARE(expected.size(),std::size_t{8*8});
     const auto sha=core::sha256_hex(std::span<const std::byte>{
