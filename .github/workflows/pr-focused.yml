@@ -151,6 +151,15 @@ jobs:
       # Sound interval coverage of continuous frequency BOXES (not mere FFT
       # samples). This fast synthetic proof harness is NOT a 14-kernel
       # continuum certificate, Q1-Q6 approval, or product SRC admission.
+      # The complete 15 downsample alias probe numerical screen is run
+      # offline with private 14 Q0 assets. Focused tests only adversarial
+      # fail-closed behavior and ONE authentic SHA-pinned downsampling kernel;
+      # never claim all 15 or continuous stopband from Focused CI.
+      - name: Phase-11 genuine 1-to-2 and adversarial alias probe screen (Linux)
+        env:
+          RGSML_PHASE11_REAL_DOWNSAMPLE_PATH: ${{ runner.temp }}/rgsml-phase11-real-mpfr-88kto44k.bin
+        run: python tools/qualification/final_src/test_screen_real_15_downsample_alias_probe.py
+
       - name: Phase-11 Final SRC MPFR DTFT interval proof precursor (Linux)
         run: |
           python tools/qualification/final_src/test_mpfr_dtft_interval_preflight.py
