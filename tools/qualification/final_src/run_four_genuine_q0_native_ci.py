@@ -38,7 +38,7 @@ PINS = (
     ("four", "f2563518411bc6525889eaf82c43b194f88ceadd59b0750071c613d1071de095",
      "d2483af9f1bfd6516f806280632d78581ed24efb39640daf2c10c6f0495a7f25"),
 )
-NONPASS = re.compile(r"^\\s*(?:FAIL|SKIP|XFAIL|XPASS)\\s*:", re.MULTILINE)
+NONPASS = re.compile(r"^\s*(?:FAIL|SKIP|XFAIL|XPASS)\s*:", re.MULTILINE)
 
 
 def _require_pin(path: Path, digest: str) -> None:
@@ -91,8 +91,8 @@ def execute(*, build_dir: Path, two: Path, one: Path,
         output = process.stdout + "\n" + process.stderr
         # Do not accept an unrelated PASS, a missing method or a silent SKIP.
         passed = re.findall(
-            r"^PASS\\s*:\\s*[^\\n]*::" + re.escape(test) +
-            r"\\s*\\(\\s*\\)", output, re.MULTILINE)
+            r"^PASS\s*:\s*[^\n]*::" + re.escape(test) +
+            r"\s*\(\s*\)", output, re.MULTILINE)
         if process.returncode != 0 or len(passed) != 1 or NONPASS.search(output):
             tail = "\n".join(output.splitlines()[-12:])[:1600]
             raise ContractError("native genuine-Q0 test failed/skipped/missing "
