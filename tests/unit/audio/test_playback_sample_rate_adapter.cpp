@@ -3330,7 +3330,7 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
     }
     QCOMPARE(identities,6);
     QCOMPARE(conversions,30);
-    QCOMPARE(std::count(seen.begin(),seen.end(),true),14);
+    QCOMPARE(static_cast<int>(std::count(seen.begin(),seen.end(),true)),14);
 }
 }  // namespace rgsml::tests
 
