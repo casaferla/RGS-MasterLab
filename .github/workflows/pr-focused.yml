@@ -59,6 +59,8 @@ jobs:
           # Fail closed on syntax errors in the real-archive-to-native-Q1
           # handoff tool; no expensive 14-asset payload in Focused CI.
           python -m py_compile tools/qualification/final_src/prepare_real_q1_36_native_rehearsal.py
+          python -m py_compile tools/qualification/final_src/run_native_q1_36_real_offline.py
+          python tools/qualification/final_src/test_run_native_q1_36_real_offline.py
           python -m py_compile tools/qualification/final_src/qualify_q2_real_36_partition_rehearsal.py
 
       # Independent high-precision numeric crosscheck and sampled FFT
