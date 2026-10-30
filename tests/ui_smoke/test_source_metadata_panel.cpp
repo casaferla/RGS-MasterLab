@@ -3128,6 +3128,21 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     auto* desktopMenu = root->findChild<QObject*>(QStringLiteral("desktopMenuBar"));
     QVERIFY(desktopMenu);
     QVERIFY(root->findChild<QObject*>(QStringLiteral("controlStripElasticCenter")));
+    // PO §12: one integrated MASTER listening surface in MAIN transport.
+    // Minimal mock has no verified M17 candidate and MUST fail closed.
+    for (const char* name : {
+        "transportListenMaster", "transportMasterMemoryConsent",
+        "transportMasterNavigation", "transportMasterSeekFrame",
+        "transportMasterSeek", "transportMasterLoopStart",
+        "transportMasterLoopEnd", "transportMasterLoopSet",
+        "transportMasterLoopClear", "globalReturnFromMonitor"}) {
+        QVERIFY2(root->findChild<QObject*>(QString::fromLatin1(name)) != nullptr,
+                 name);
+    }
+    auto* listenMaster = root->findChild<QObject*>(
+        QStringLiteral("transportListenMaster"));
+    QVERIFY(listenMaster);
+    QVERIFY(!listenMaster->property("enabled").toBool());
     auto* statusBar = root->findChild<QObject*>(QStringLiteral("statusBar"));
     auto* statusBarMessage = root->findChild<QObject*>(QStringLiteral("statusBarMessage"));
     auto* statusIndicator = root->findChild<QObject*>(QStringLiteral("statusReadyIndicator"));

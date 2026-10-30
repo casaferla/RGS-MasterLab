@@ -50,6 +50,47 @@ ApplicationWindow {
         ? prepareRateAdvisor : null
     readonly property bool monitorExclusive: root.appTerminalMonitorViewModel
         ? root.appTerminalMonitorViewModel.monitorExclusive : false
+    // PO 2026-10-27 §12: Master listening belongs to MAIN transport.
+    // The historic service editor remains temporarily for PO parity/FQ,
+    // not as a second DSP or a second MASTER Prepare authority.
+    readonly property bool canListenMaster: !root.monitorExclusive
+        && !!root.appTerminalMonitorViewModel
+        && root.appTerminalMonitorViewModel.canInstall
+    readonly property bool masterTransportPlaying: root.monitorExclusive
+        && !!root.appTerminalMonitorViewModel
+        && root.appTerminalMonitorViewModel.transportState === "PLAYING"
+    function listenToPreparedMaster() {
+        if (!root.canListenMaster || !root.appTerminalMonitorViewModel)
+            return false
+        const success = root.appTerminalMonitorViewModel.installMonitor(
+            masterLimitedHeadroom.checked)
+        if (success) masterLimitedHeadroom.checked = false
+        return success
+    }
+    function stopCurrentTransport() {
+        if (root.monitorExclusive) {
+            if (root.appTerminalMonitorViewModel
+                    && root.appTerminalMonitorViewModel.monitorControllable)
+                root.appTerminalMonitorViewModel.stop()
+        } else if (playbackTransport.canStop) {
+            playbackTransport.stop()
+        }
+    }
+    function toggleCurrentTransport() {
+        if (root.monitorExclusive) {
+            if (!root.appTerminalMonitorViewModel
+                    || !root.appTerminalMonitorViewModel.monitorControllable)
+                return
+            if (root.masterTransportPlaying)
+                root.appTerminalMonitorViewModel.pause()
+            else
+                root.appTerminalMonitorViewModel.play()
+        } else if (playbackTransport.isPlaying) {
+            playbackTransport.pause()
+        } else {
+            playbackTransport.playOrResume()
+        }
+    }
     readonly property var appTerminalPostLimiterMeter: typeof terminalPostLimiterTruePeak !== "undefined"
         ? terminalPostLimiterTruePeak : null
     readonly property var appSpectrumViewModel: typeof liveSpectrumViewModel !== "undefined" ? liveSpectrumViewModel : null
@@ -455,10 +496,65 @@ ApplicationWindow {
                 StudioIconButton { id: zoomInButton; objectName: "waveformZoomInButton"; iconKind: "zoom-in"; enabled: sourceWaveform.canNavigate && sourceWaveform.zoomPosition < 1.0; KeyNavigation.backtab: zoomControl; KeyNavigation.tab: fitSourceButton; onClicked: sourceWaveform.zoomIn(); Accessible.name: "Zoom in Source waveform" }
                 StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: sourceWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
-                TransportButton { id: stopButton; objectName: "stopButton"; compact: false; iconKind: "stop"; enabled: !root.monitorExclusive && playbackTransport.canStop; KeyNavigation.backtab: auditionTargetSelector.lastTarget; KeyNavigation.tab: playPauseButton; onClicked: playbackTransport.stop(); Accessible.name: "Stop" }
+                TransportButton {
+                    id: stopButton
+                    objectName: "stopButton"
+                    compact: false
+                    iconKind: "stop"
+                    enabled: root.monitorExclusive
+                        ? !!root.appTerminalMonitorViewModel
+                            && root.appTerminalMonitorViewModel.monitorControllable
+                        : playbackTransport.canStop
+                    KeyNavigation.backtab: auditionTargetSelector.lastTarget
+                    KeyNavigation.tab: playPauseButton
+                    onClicked: root.stopCurrentTransport()
+                    Accessible.name: root.monitorExclusive ? "Stop Master" : "Stop"
+                }
                 Item { Layout.preferredWidth: 8 }
-                TransportButton { id: playPauseButton; objectName: "playPauseButton"; compact: false; primary: true; iconKind: playbackTransport.isPlaying ? "pause" : "play"; enabled: !root.monitorExclusive && (playbackTransport.canPlay || playbackTransport.canPause); KeyNavigation.backtab: stopButton; KeyNavigation.tab: auditionStartEditor.firstField; onClicked: playbackTransport.isPlaying ? playbackTransport.pause() : playbackTransport.playOrResume(); Accessible.name: playbackTransport.isPlaying ? "Pause" : "Play" }
+                TransportButton {
+                    id: playPauseButton
+                    objectName: "playPauseButton"
+                    compact: false
+                    primary: true
+                    iconKind: (root.monitorExclusive
+                        ? root.masterTransportPlaying : playbackTransport.isPlaying)
+                        ? "pause" : "play"
+                    enabled: root.monitorExclusive
+                        ? !!root.appTerminalMonitorViewModel
+                            && root.appTerminalMonitorViewModel.monitorControllable
+                        : (playbackTransport.canPlay || playbackTransport.canPause)
+                    KeyNavigation.backtab: stopButton
+                    KeyNavigation.tab: auditionStartEditor.firstField
+                    onClicked: root.toggleCurrentTransport()
+                    Accessible.name: root.monitorExclusive
+                        ? (root.masterTransportPlaying ? "Pause Master" : "Play Master")
+                        : (playbackTransport.isPlaying ? "Pause" : "Play")
+                }
                 Item { Layout.preferredWidth: 8 }
+                StudioButton {
+                    id: masterListenButton
+                    objectName: "transportListenMaster"
+                    text: "Ascolta Master"
+                    visible: root.canListenMaster
+                    enabled: root.canListenMaster
+                    minimumControlWidth: 112
+                    onClicked: root.listenToPreparedMaster()
+                    Accessible.name: "Ascolta MASTER preparato da M17"
+                    ToolTip.text: "Stesso MASTER verificato, SRC soltanto verso DEVICE"
+                    ToolTip.visible: hovered
+                }
+                CheckBox {
+                    id: masterLimitedHeadroom
+                    objectName: "transportMasterMemoryConsent"
+                    visible: root.canListenMaster
+                    enabled: root.canListenMaster
+                    checked: false
+                    text: "RAM limitata"
+                    font.pixelSize: 9
+                    onVisibleChanged: if (!visible) checked = false
+                    ToolTip.text: "Consenso esplicito solo per CAUTION: memoria sconosciuta o insufficiente resta bloccata."
+                    ToolTip.visible: hovered
+                }
                 StudioButton {
                     objectName: "globalReturnFromMonitor"
                     text: root.appTerminalMonitorViewModel
@@ -466,8 +562,10 @@ ApplicationWindow {
                     visible: root.monitorExclusive
                     enabled: root.monitorExclusive
                     minimumControlWidth: 110
-                    onClicked: if (root.appTerminalMonitorViewModel)
-                        root.appTerminalMonitorViewModel.cancel()
+                    onClicked: if (root.appTerminalMonitorViewModel) {
+                        if (root.appTerminalMonitorViewModel.cancel())
+                            masterLimitedHeadroom.checked = false
+                    }
                     Accessible.name: text
                 }
                 Rectangle {
@@ -480,13 +578,23 @@ ApplicationWindow {
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16; spacing: 16
                         ColumnLayout { spacing: 1
-                            Label { text: "CURRENT POSITION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
-                            Label { objectName: "playbackTimeLabel"; text: playbackTransport.positionLabel; color: root.textPrimary; font.family: "Consolas"; font.pixelSize: 20 }
+                            Label { text: root.monitorExclusive ? "MASTER FRAME" : "CURRENT POSITION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
+                            Label { objectName: "playbackTimeLabel"; text: root.monitorExclusive
+                                    && root.appTerminalMonitorViewModel
+                                ? String(root.appTerminalMonitorViewModel.masterPositionFrames)
+                                : playbackTransport.positionLabel
+                                color: root.textPrimary; font.family: "Consolas"; font.pixelSize: 20
+                                elide: Text.ElideRight }
                         }
                         Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; Layout.topMargin: 4; Layout.bottomMargin: 4; color: root.border }
                         ColumnLayout { spacing: 1
-                            Label { text: "TOTAL DURATION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
-                            Label { text: playbackTransport.durationLabel; color: root.textPrimary; font.family: "Consolas"; font.pixelSize: 20 }
+                            Label { text: root.monitorExclusive ? "MASTER FRAMES" : "TOTAL DURATION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
+                            Label { text: root.monitorExclusive
+                                    && root.appTerminalMonitorViewModel
+                                ? String(root.appTerminalMonitorViewModel.masterDurationFrames)
+                                : playbackTransport.durationLabel
+                                color: root.textPrimary; font.family: "Consolas"; font.pixelSize: 20
+                                elide: Text.ElideRight }
                         }
                     }
                 }
@@ -495,13 +603,15 @@ ApplicationWindow {
 
         Rectangle {
             id: realRegionPanel
-            enabled: !root.monitorExclusive
+            enabled: true
             objectName: "auditionRegionControls"
             color: "transparent"
             border.color: root.border
             radius: 5
             RowLayout {
                 objectName: "auditionRegionContent"
+                visible: !root.monitorExclusive
+                enabled: !root.monitorExclusive
                 anchors.fill: parent
                 anchors.leftMargin: root.upperStripHorizontalPadding
                 anchors.rightMargin: root.upperStripHorizontalPadding
@@ -537,6 +647,107 @@ ApplicationWindow {
                 StudioToggle { id: loopRegionCheckBox; objectName: "auditionRegionLoopCheckBox"; text: "Loop Region"; checked: auditionRegion.loopEnabled; enabled: auditionRegion.canLoop || auditionRegion.loopEnabled; KeyNavigation.backtab: fitRegionButton; KeyNavigation.tab: clearRegionButton; onClicked: auditionRegion.requestLoopEnabled(checked); Accessible.name: "Loop Audition Region" }
                 Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: root.border }
                 StudioButton { id: clearRegionButton; objectName: "auditionRegionClearButton"; text: "Clear Region"; iconKind: "clear-region"; minimumControlWidth: 80; enabled: auditionRegion.controlsEnabled && auditionRegion.hasRegion; KeyNavigation.backtab: loopRegionCheckBox; KeyNavigation.tab: sourceOpenButton; onClicked: auditionRegion.requestClearRegion(); Accessible.name: "Clear Audition Region" }
+            }
+            // Shares the SAME physical strip as the Source Audition Region:
+            // zero extra vertical height and no additional DSP module.
+            RowLayout {
+                objectName: "transportMasterNavigation"
+                visible: root.monitorExclusive
+                enabled: root.monitorExclusive
+                    && !!root.appTerminalMonitorViewModel
+                    && root.appTerminalMonitorViewModel.monitorControllable
+                anchors.fill: parent
+                anchors.leftMargin: root.upperStripHorizontalPadding
+                anchors.rightMargin: root.upperStripHorizontalPadding
+                spacing: 6
+                Label {
+                    text: "MASTER"
+                    color: root.accent
+                    font.pixelSize: 10
+                    font.weight: Font.DemiBold
+                }
+                Label {
+                    text: root.appTerminalMonitorViewModel
+                        ? root.appTerminalMonitorViewModel.masterRateHz + " → "
+                            + root.appTerminalMonitorViewModel.deviceRateHz + " Hz"
+                        : "DEVICE N/A"
+                    color: root.textSecondary
+                    font.pixelSize: 10
+                }
+                TextField {
+                    id: masterSeekFrame
+                    objectName: "transportMasterSeekFrame"
+                    placeholderText: "Seek frame"
+                    Layout.preferredWidth: 92
+                    font.pixelSize: 10
+                    inputMethodHints: Qt.ImhDigitsOnly
+                }
+                StudioButton {
+                    objectName: "transportMasterSeek"
+                    text: "Seek"
+                    minimumControlWidth: 48
+                    enabled: parent.enabled
+                    onClicked: {
+                        const n = Number(masterSeekFrame.text)
+                        if (masterSeekFrame.text.length > 0
+                            && Number.isSafeInteger(n) && n >= 0
+                            && root.appTerminalMonitorViewModel
+                            && n <= root.appTerminalMonitorViewModel.masterDurationFrames)
+                            root.appTerminalMonitorViewModel.seekMaster(n)
+                    }
+                    Accessible.name: "Seek in MASTER frames"
+                }
+                TextField {
+                    id: masterLoopStart
+                    objectName: "transportMasterLoopStart"
+                    placeholderText: "Loop start"
+                    Layout.preferredWidth: 92
+                    font.pixelSize: 10
+                    inputMethodHints: Qt.ImhDigitsOnly
+                }
+                TextField {
+                    id: masterLoopEnd
+                    objectName: "transportMasterLoopEnd"
+                    placeholderText: "Loop end"
+                    Layout.preferredWidth: 92
+                    font.pixelSize: 10
+                    inputMethodHints: Qt.ImhDigitsOnly
+                }
+                StudioButton {
+                    objectName: "transportMasterLoopSet"
+                    text: "Loop"
+                    minimumControlWidth: 50
+                    enabled: parent.enabled
+                    onClicked: {
+                        const a = Number(masterLoopStart.text)
+                        const b = Number(masterLoopEnd.text)
+                        if (masterLoopStart.text.length > 0
+                            && masterLoopEnd.text.length > 0
+                            && Number.isSafeInteger(a)
+                            && Number.isSafeInteger(b)
+                            && a >= 0 && b > a
+                            && root.appTerminalMonitorViewModel
+                            && b <= root.appTerminalMonitorViewModel.masterDurationFrames)
+                            root.appTerminalMonitorViewModel.setMasterLoop(a, b, true)
+                    }
+                    Accessible.name: "Set MASTER loop"
+                }
+                StudioButton {
+                    objectName: "transportMasterLoopClear"
+                    text: "No loop"
+                    minimumControlWidth: 68
+                    enabled: parent.enabled
+                    onClicked: if (root.appTerminalMonitorViewModel)
+                        root.appTerminalMonitorViewModel.setMasterLoop(0, 0, false)
+                }
+                Item { Layout.fillWidth: true }
+                Label {
+                    text: root.appTerminalMonitorViewModel
+                        ? root.appTerminalMonitorViewModel.transportState
+                        : "UNAVAILABLE"
+                    color: root.textSecondary
+                    font.pixelSize: 10
+                }
             }
         }
 
@@ -730,8 +941,22 @@ ApplicationWindow {
                     Menu {
                         title: "&Transport"
                         background: Rectangle { color: root.surface; border.color: root.border }
-                        StudioMenuItem { text: playbackTransport.isPlaying ? "Pause\tSpace" : "Play\tSpace"; enabled: !root.monitorExclusive && (playbackTransport.canPlay || playbackTransport.canPause); onTriggered: playPauseButton.clicked() }
-                        StudioMenuItem { text: "Stop"; enabled: !root.monitorExclusive && playbackTransport.canStop; onTriggered: playbackTransport.stop() }
+                        StudioMenuItem {
+                            text: root.monitorExclusive
+                                ? (root.masterTransportPlaying ? "Pause Master" : "Play Master")
+                                : (playbackTransport.isPlaying ? "Pause\tSpace" : "Play\tSpace")
+                            enabled: playPauseButton.enabled
+                            onTriggered: root.toggleCurrentTransport()
+                        }
+                        StudioMenuItem { text: root.monitorExclusive ? "Stop Master" : "Stop"
+                            enabled: stopButton.enabled; onTriggered: root.stopCurrentTransport() }
+                        StudioMenuItem { text: "Ascolta Master"
+                            enabled: root.canListenMaster
+                            onTriggered: root.listenToPreparedMaster() }
+                        StudioMenuItem { text: "Return MANUAL"
+                            enabled: root.monitorExclusive
+                            onTriggered: if (root.appTerminalMonitorViewModel)
+                                root.appTerminalMonitorViewModel.cancel() }
                         MenuSeparator { }
                         StudioMenuItem { text: auditionRegion.loopEnabled ? "Disable Loop Region" : "Enable Loop Region"; enabled: !root.monitorExclusive && (auditionRegion.canLoop || auditionRegion.loopEnabled); onTriggered: auditionRegion.requestLoopEnabled(!auditionRegion.loopEnabled) }
                     }
