@@ -90,6 +90,8 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
             "schema":"rgsml.phase11.qt-native-test-exe-portable-nonrelease/1",
             "native_elf_sha256":digest(target),
             "runtime_platform":platform.platform(),
+            "focused_ci_sha":os.environ.get("GITHUB_SHA","UNQUALIFIED_OFFLINE"),
+            "focused_ci_run_id":os.environ.get("GITHUB_RUN_ID","UNQUALIFIED_OFFLINE"),
             "native_archive_contains_private_q0_q1":False,
             "native_complete_14_q0_36_q1_test_executed":False,
             "product_admission_authorized":False,
