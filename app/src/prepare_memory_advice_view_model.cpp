@@ -275,12 +275,18 @@ QVariantList PrepareMemoryAdviceViewModel::actual_prepare_times() const
         ?source_->frame_count():0;
     const auto channels=source_&&source_->has_source()
         ?source_->channel_count():0;
+    // Actual durations are measurements, not rounded-up estimates:
+    // preserve millisecond resolution for short, accepted full Prepares.
+    // Divide before rounding to avoid signed overflow at large durations.
     const auto fmt=[](std::int64_t us)->QString {
-        const auto seconds=std::max<std::int64_t>(1,
-            us/1'000'000+(us%1'000'000!=0));
-        if(seconds>=3600)return QStringLiteral("%1h").arg(seconds/3600);
-        if(seconds>=60)return QStringLiteral("%1m").arg(seconds/60);
-        return QStringLiteral("%1s").arg(seconds);
+        const auto ms=us/1000+(us%1000>=500?1:0);
+        if(ms<1000)return QStringLiteral("%1 ms").arg(ms);
+        if(ms<60'000)return QStringLiteral("%1.%2 s")
+            .arg(ms/1000).arg(ms%1000,3,10,QChar('0'));
+        if(ms<3'600'000)return QStringLiteral("%1m %2s")
+            .arg(ms/60'000).arg(ms%60'000/1000);
+        return QStringLiteral("%1h %2m")
+            .arg(ms/3'600'000).arg(ms%3'600'000/60'000);
     };
     for(const auto hz:kMasterRates) {
         QVariantMap item{

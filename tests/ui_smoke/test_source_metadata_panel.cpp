@@ -554,6 +554,60 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
     source.adopt_probed_source(std::move(*probed.value()));
     QVERIFY(source.has_source());
     QVERIFY(!advisor.calibrate(-25.0)); // invalid Ceiling
+    // Accepted whole-Prepare timing is *historical* and completely distinct
+    // from the disposable M17/M16 calibration. No DAC or personal PCM used.
+    const auto sourceHz=source.sample_rate_hz();
+    QVERIFY(app::m17_six_rate(sourceHz));
+    int sourceRateIndex=-1;
+    for(int i=0;i<6;++i) {
+        constexpr std::array<qint64,6> rates{
+            44100,48000,88200,96000,176400,192000};
+        if(rates[static_cast<std::size_t>(i)]==sourceHz)
+            sourceRateIndex=i;
+    }
+    QVERIFY(sourceRateIndex>=0);
+    QCOMPARE(advisor.actual_prepare_times().size(),6);
+    QVERIFY(!advisor.actual_prepare_times().at(sourceRateIndex)
+        .toMap().value(QStringLiteral("actual")).toBool());
+    QSignalSpy actualNotifications{
+        &advisor,&app::PrepareMemoryAdviceViewModel::actualPrepareChanged};
+    app::AcceptedPrepareObservation accepted{
+        1,sourceHz,sourceHz,source.frame_count(),
+        source.channel_count(),-1.0,7,8,9,
+        110000,1540000,-1,1000000,130000};
+    advisor.observe_approved_prepare(accepted);
+    QCOMPARE(actualNotifications.count(),1);
+    auto actualRow=advisor.actual_prepare_times().at(sourceRateIndex).toMap();
+    QVERIFY(actualRow.value(QStringLiteral("actual")).toBool());
+    QCOMPARE(actualRow.value(QStringLiteral("ceilingDbTp")).toDouble(),-1.0);
+    QVERIFY(actualRow.value(QStringLiteral("label")).toString()
+        .startsWith(QStringLiteral("ACT ")));
+    QVERIFY(actualRow.value(QStringLiteral("details")).toString()
+        .contains(QStringLiteral("NOT a future total ETA")));
+    advisor.observe_approved_prepare(accepted);
+    QCOMPARE(actualNotifications.count(),1); // exact render cannot replay
+    accepted.invocation=2;
+    accepted.master_hz=(sourceHz==44100)?96000:44100;
+    accepted.src_us=-1; // missing conversion-stage proof
+    advisor.observe_approved_prepare(accepted);
+    QCOMPARE(actualNotifications.count(),1); // product guard fails closed
+    // A new SOURCE of the same rate and frame count still revokes history.
+    wav_support::Bytes replacement;
+    replacement.reserve(static_cast<std::size_t>(bytes.size()));
+    for(const auto octet:bytes)
+        replacement.push_back(static_cast<std::byte>(
+            static_cast<unsigned char>(octet)));
+    auto replacementControl=std::make_shared<wav_support::ReaderControl>();
+    auto replacementSource=audio::SourceResource::probe(
+        wav_support::memory_reader(
+            std::move(replacement),replacementControl));
+    QVERIFY(replacementSource);
+    source.adopt_probed_source(std::move(*replacementSource.value()));
+    QCOMPARE(actualNotifications.count(),2);
+    QVERIFY(!advisor.actual_prepare_times().at(sourceRateIndex)
+        .toMap().value(QStringLiteral("actual")).toBool());
+    advisor.observe_approved_prepare(accepted); // no stale authorization
+    QCOMPARE(actualNotifications.count(),2);
     QSignalSpy notifications{&advisor,
         &app::PrepareMemoryAdviceViewModel::calibrationChanged};
     QVERIFY(advisor.calibrate(-1.0));
@@ -872,7 +926,7 @@ Window {
             const std::array<std::pair<QString,QString>,3> headings{{
                 {QStringLiteral("m17RateColumnHeader"),QStringLiteral("MASTER RATE")},
                 {QStringLiteral("m17MemoryColumnHeader"),QStringLiteral("MEMORY (MIN.)")},
-                {QStringLiteral("m17TimeColumnHeader"),QStringLiteral("DSP EST.")}}};
+                {QStringLiteral("m17TimeColumnHeader"),QStringLiteral("TIME")}}};
             for(const auto& [objectName,expectedText]:headings) {
                 auto* header=find_child_by_name(host,objectName);
                 QVERIFY(header);
@@ -939,7 +993,7 @@ Window {
                 QStringLiteral("m17RateMemory_5"));
             QVERIFY(unavailableMemory);
             QTRY_VERIFY_WITH_TIMEOUT(unavailableMemory->property("text")
-                .toString().contains(QStringLiteral("Final SRC N/A")),2000);
+                .toString().contains(QStringLiteral("SRC blocked")),2000);
             QTRY_VERIFY_WITH_TIMEOUT(summary->property("text").toString()
                 .contains(QStringLiteral("192 kHz")),2000);
             QTRY_VERIFY_WITH_TIMEOUT(srcStatus->property("text")
