@@ -158,17 +158,17 @@ jobs:
             --fin 48000 --fout 96000 \
             --pinned-sha256 6fb38a7d62859283e4061a18d23f354a8308d5b22ff55623e8b1c9a245e8b00c \
             --lo 3000 --hi 3001 --kind passband --max-boxes 32 \
-            --report ${{ runner.temp }}/rgsml-phase11-real-q0-mpfr-subband-pass.json
+            --report ${{ github.workspace }}/rgsml-phase11-real-q0-mpfr-subband-pass.json
           python tools/qualification/final_src/dtft_second_order_rigorous.py ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin \
             --fin 48000 --fout 96000 \
             --pinned-sha256 6fb38a7d62859283e4061a18d23f354a8308d5b22ff55623e8b1c9a245e8b00c \
             --lo 34000 --hi 34001 --kind stopband --max-boxes 256 \
-            --report ${{ runner.temp }}/rgsml-phase11-real-q0-mpfr-subband-stop.json
+            --report ${{ github.workspace }}/rgsml-phase11-real-q0-mpfr-subband-stop.json
           python - <<'PY'
           import json
           from pathlib import Path
           import os
-          root = Path(os.environ['RUNNER_TEMP'])
+          root = Path(os.environ['GITHUB_WORKSPACE'])
           for band in ('pass', 'stop'):
               p = root / f'rgsml-phase11-real-q0-mpfr-subband-{band}.json'
               v = json.loads(p.read_text())
