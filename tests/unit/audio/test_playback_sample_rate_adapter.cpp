@@ -3360,7 +3360,8 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
                 });
             QVERIFY2(rowIt!=expectedRows.end(),
                 "Pinned independent Q1 reference row is missing");
-            const auto row=rowIt->toObject();
+            const QJsonValue rowValue=*rowIt;
+            const auto row=rowValue.toObject();
             QCOMPARE(row.value("expected_file").toString().toStdString(),
                      expectedFile);
             QCOMPARE(row.value("real_q0_kernel_sha256").isNull(),fin==fout);
