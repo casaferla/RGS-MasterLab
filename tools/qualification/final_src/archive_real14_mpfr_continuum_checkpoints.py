@@ -84,13 +84,16 @@ def _receipt(name: str, content: bytes, pins: dict, engine_sha: str) -> dict:
         mid=(lo+hi)/2
         if bit=="0": hi=mid
         else: lo=mid
-    expected=dict(schema=SCHEMA,fin=fin,fout=fout,L=L,M=M,kind=kind,
-                  lo_hz=str(lo),hi_hz=str(hi),candidate_sha256=pins[pair],
-                  engine_sha256=engine_sha,bits=256)
     try:
         r=json.loads(content)
     except (UnicodeError,ValueError) as e:
         raise ContractError("invalid receipt JSON") from e
+    bits=r.get("bits") if isinstance(r,dict) else None
+    if type(bits) is not int or not 256 <= bits <= 4096:
+        raise ContractError("MPFR checkpoint precision invalid")
+    expected=dict(schema=SCHEMA,fin=fin,fout=fout,L=L,M=M,kind=kind,
+                  lo_hz=str(lo),hi_hz=str(hi),candidate_sha256=pins[pair],
+                  engine_sha256=engine_sha,bits=bits)
     if not isinstance(r,dict) or any(r.get(k)!=v for k,v in expected.items()):
         raise ContractError("checkpoint frequency interval/source/engine SHA mismatch")
     if r.get("release_qualified") is not False or r.get("product_admission_authorized") is not False:

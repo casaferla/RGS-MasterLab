@@ -1,3 +1,8 @@
+## 2026-10-30 — SAME MPFR CHECKPOINT TRANSPORT BATCH: 256/512/1024/4096-BIT RECEIPTS
+
+- The offline archiver now accepts the **actual frozen per-receipt MPFR precision** (strict native integer between 256 and 4096) instead of hardcoding 256. Each receipt's actual `bits` is validated, retained as part of the exact rational interval/provenance contract, and rejected for boolean, floating-point, insufficient or oversized precision. This is a transport/provenance correction only, not an MPFR coefficient change or newly certified band.
+- Local transport 6/6 synthetic adversarial tests, 9/9 resume tests and 5/5 third-order MPFR proof tests pass. Existing Linux Focused workflow runs them as one group, within the same coherent next CAS; no independent CI or private coefficients in GitHub.
+
 ## 2026-10-30 — SAME COHERENT STAGING: FAIL-CLOSED PRIVATE MPFR CHECKPOINT ZIP TRANSPORT
 
 - NEW offline-only tool `tools/qualification/final_src/archive_real14_mpfr_continuum_checkpoints.py`: package, verify and atomic restore of **ONLY MPFR third-order NONRELEASE JSON checkpoint receipts**; never stores any private FIR coefficients, or the source Q0 ZIP, in GitHub/CI artifacts. Independently pins genuine Q0 original ZIP via `CANDIDATE_ZIP_SHA`, verifies original private 14-asset manifest ratios/SHA, current MPFR proof-engine source SHA, exact binary64 SHA/rational subband route/proof status for EVERY receipt, manifest and per-receipt ZIP SHA-256; rejects ZIP duplicates, missing/extra entries, release forgery, symlinks, unexpected file names and unsafe paths. Restores into a **new folder only** without overwrite. NOT an independent final proof or production release.

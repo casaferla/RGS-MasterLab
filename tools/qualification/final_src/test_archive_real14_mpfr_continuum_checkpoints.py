@@ -98,6 +98,21 @@ class CheckpointTransportTests(unittest.TestCase):
                 with self.assertRaises(ContractError):verify(bad,self.original)
                 self.assertFalse((self.root/(kind+'-restored')).exists())
 
+    def test_supported_high_precision_checkpoint_and_invalid_bit_budget(self):
+        for bits in (256,512,1024,4096):
+            with self.subTest(bits=bits):
+                record=dict(self.record,bits=bits)
+                (self.checkpoints/self.name).write_text(json.dumps(record))
+                output=self.root/f"proof-{bits}.zip"
+                package(self.checkpoints,self.original,output)
+                self.assertEqual(verify(output,self.original)[0]["count"],1)
+        for bits in (True,128,4097,256.0):
+            with self.subTest(rejected=bits):
+                record=dict(self.record,bits=bits)
+                (self.checkpoints/self.name).write_text(json.dumps(record))
+                with self.assertRaises(ContractError):
+                    package(self.checkpoints,self.original,self.root/"rejected.zip")
+
     def test_unexpected_checkpoint_name_and_symlink_rejected(self):
         self._pack()
         self.assertEqual(len(verify(self.archive,self.original)[1]),1)
