@@ -25,3 +25,7 @@ The tool is intentionally read-only, SHA-pins the **external** private archive, 
 - No M18 start, full FQ or merge to `main` absent the governing Product Owner gate.
 
 The fast route to M18 is to finish canonical Q0 SRC intake and the applicable actual M17/Final SRC conversion tests in one cohesive package, not broaden this to Reference Match or all unrelated Final Pipeline work.
+
+## Next qualified package: independent exact-rational envelope check
+
+An additional short portable script `tools/qualification/final_src/phase3_exact_model_q0_nonrelease.py` rederives the specifically stated Phase3 FFT twiddle, butterfly depth, input roundoff, gradual underflow and passband sufficient-bound inequalities with Python `Fraction`. The operator executed the same arithmetic locally (PASS). Both existing Focused Q0 preflight jobs will execute the script; **no private Q0 binaries or Work ZIP** are needed in CI. This is an arithmetic **NONRELEASE** confirmation of declared formulae, not an independent C++ producer or MPFR implementation proof and not M17 SRC admission. Work Phase3 formal error model and original SHA remain unchanged; all Q0–Q6 gates remain OPEN.

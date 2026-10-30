@@ -27,7 +27,9 @@ jobs:
       # Phase-11 exact Q0 mathematics; does not assert MPFR assets, Q1-Q6
       # spectral qualification or release readiness. No Qt/MPFR required.
       - name: Phase-11 Final SRC exact Q0 preflight (Linux)
-        run: python tools/qualification/final_src/test_phase11_math_preflight.py
+        run: |
+          python tools/qualification/final_src/test_phase11_math_preflight.py
+          python tools/qualification/final_src/phase3_exact_model_q0_nonrelease.py
 
       # Independent conceptual zero-stuffed exact-dyadic reference checks;
       # NOT the full MPFR spectral oracle or release qualification.
@@ -553,7 +555,9 @@ jobs:
 
       # Same integer/rational evidence independently executed on Windows.
       - name: Phase-11 Final SRC exact Q0 preflight (Windows)
-        run: python tools/qualification/final_src/test_phase11_math_preflight.py
+        run: |
+          python tools/qualification/final_src/test_phase11_math_preflight.py
+          python tools/qualification/final_src/phase3_exact_model_q0_nonrelease.py
 
       # Independent conceptual zero-stuffed exact-dyadic reference checks;
       # NOT the full MPFR spectral oracle or release qualification.
