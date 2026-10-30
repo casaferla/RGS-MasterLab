@@ -181,6 +181,20 @@ def walk_ratio(ratio: Ratio, taps: tuple[Fraction, ...], candidate_sha256: str,
                 pending_nodes=remaining)
 
 
+def _fair_ratio_order(pairs: dict, checkpoints: Path) -> list:
+    """Avoid starving 13 ratios when the first full-band proof is expensive."""
+    return sorted(pairs.items(), key=lambda item: (
+        sum(1 for _ in checkpoints.glob(
+            f"L{item[0][0]}_M{item[0][1]}_*.json")), item[0]))
+
+
+def _fair_attempts(remaining: int, remaining_ratios: int) -> int:
+    if (type(remaining) is not int or remaining < 0
+        or type(remaining_ratios) is not int or remaining_ratios < 1):
+        raise ContractError("invalid fair MPFR allocation")
+    return (remaining+remaining_ratios-1)//remaining_ratios
+
+
 def run_campaign(candidate_dir: Path, checkpoints: Path, *,
                  original_q0_zip: Path, max_attempts: int=8, boxes: int=128, bits: int=256,
                  max_depth: int=20) -> dict:
@@ -203,7 +217,8 @@ def run_campaign(candidate_dir: Path, checkpoints: Path, *,
         raise ContractError("complete frozen ratio mapping required")
     total=dict(attempted=0,proven_leaves=0,replayed_receipts=0,
                blocked_leaves=0,pending_nodes=0)
-    for key, (fin,fout) in pairs.items():
+    order=_fair_ratio_order(pairs,checkpoints)
+    for index, (key, (fin,fout)) in enumerate(order):
         row=entries[key]
         ratio=Ratio.make(fin,fout)
         payload=(candidate_dir/row["filename"]).read_bytes()
@@ -212,8 +227,9 @@ def run_campaign(candidate_dir: Path, checkpoints: Path, *,
             raise ContractError("real Q0 SHA drift during proof")
         _,taps=read_locked_kernel(payload,ratio,digest)
         remaining=max(0,max_attempts-total["attempted"])
+        allocated=_fair_attempts(remaining,len(order)-index)
         progress=walk_ratio(ratio,taps,digest,checkpoints,
-                            max_attempts=remaining,boxes=boxes,bits=bits,
+                            max_attempts=allocated,boxes=boxes,bits=bits,
                             max_depth=max_depth,engine_sha256=engine_sha256)
         for key2 in total:
             total[key2]+=progress[key2]

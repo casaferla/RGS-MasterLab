@@ -11,7 +11,7 @@ from zipfile import ZipFile
 
 from phase11_math_preflight import ContractError, Ratio
 from run_resumable_14_mpfr_continuum import (
-    walk_ratio, authenticate_original_archive, PROVEN)
+    walk_ratio, authenticate_original_archive, _fair_ratio_order, _fair_attempts, PROVEN)
 
 
 class Real14ContinuousCheckpoints(unittest.TestCase):
@@ -130,6 +130,19 @@ class Real14ContinuousCheckpoints(unittest.TestCase):
             (private/"asset.bin").write_bytes(b"SWAPPED-KERNEL")
             with self.assertRaisesRegex(ContractError,"bytes differ"):
                 authenticate_original_archive(private,original)
+
+    def test_short_budget_fairly_reaches_unvisited_ratios(self):
+        pairs={(1,2):(88200,44100),(2,1):(48000,96000),
+               (4,1):(44100,176400)}
+        (self.root/"L1_M2_passband_r.json").write_text("historical")
+        (self.root/"L1_M2_passband_r0.json").write_text("historical")
+        order=_fair_ratio_order(pairs,self.root)
+        self.assertEqual([x[0] for x in order],[(2,1),(4,1),(1,2)])
+        self.assertEqual(_fair_attempts(8,14),1)
+        self.assertEqual(_fair_attempts(24,14),2)
+        self.assertEqual(_fair_attempts(0,14),0)
+        with self.assertRaises(ContractError):
+            _fair_attempts(-1,14)
 
     def test_bad_budget_refused(self):
         for opts in (dict(max_attempts=-1),dict(boxes=0),dict(bits=128),

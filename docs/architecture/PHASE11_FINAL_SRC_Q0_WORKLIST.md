@@ -1,3 +1,8 @@
+## 2026-10-30 — CONTINUUM MPFR CAMPAIGN FAIRNESS / NO-STARVATION (ADDED TO SAME NEXT COHERENT STAGING BATCH)
+
+- With bounded offline `--max-attempts`, the 14-ratio prover previously spent every attempt on the first expensive ratio, starving the remaining 13. The revised offline scheduler first favors ratios with fewer persisted checkpoint nodes, then fairly apportions bounded work among the remaining ratios. Every reused leaf still requires the same independently pinned original 14-Q0 ZIP, exact binary64 SHA, full third-order engine SHA, rational frequency interval and honest proof status; the fairness count itself NEVER certifies a band. No DSP or release asset changes.
+- Local adversarial regression additionally proves least-work-first ordering and bounded allocation (short budgets can visit the other ratios); native full-band proof remains independently unresolved. Seven new resume/fairness tests + five existing MPFR tests PASS locally. This is staged alongside the original ZIP-authentication correction and MUST be promoted in ONE next PR CI only after running #924 reaches terminal green, or bundled with any #924 red correction.
+
 ## 2026-10-30 — SAME P0 CONTINUUM CAMPAIGN, PRIVATE ORIGINAL ZIP PROVENANCE HARDENING (STAGING WHILE #924 RUNS)
 
 - [Focused #924](https://github.com/casaferla/RGS-MasterLab/actions/runs/41105456261) on exact PR #61 SHA `8ca79ae89285a09337b254719acb5efa8cd462da` was IN PROGRESS when this NEXT unpromoted staging-only correction was prepared. Never promote until #924 terminates and exact PR/staging ancestry is checked; on red, combine failure recovery with this same coherent next lot.
