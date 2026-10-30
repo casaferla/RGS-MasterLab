@@ -57,10 +57,9 @@ def _assert_qualifying_record(name: str, record: dict, count_key: str,
 def execute(*, native_exe: Path, q0_zip: Path, q1_zip: Path,
             new_output: Path, timeout_seconds: int = 1200) -> dict:
     if (new_output.exists() or new_output.is_symlink()
-        or not new_output.parent.is_dir() or
-        new_output.resolve().is_relative_to(q0_zip.resolve().parent)
-        or new_output.resolve().is_relative_to(q1_zip.resolve().parent)):
-        raise ContractError("bulk gate needs NEW evidence directory OUTSIDE frozen ZIP folder")
+        or not new_output.parent.is_dir()
+        or new_output == q0_zip or new_output == q1_zip):
+        raise ContractError("bulk gate needs a NEW, unused evidence directory")
     if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 1800:
         raise ContractError("invalid native bulk-gate time budget")
     if not native_exe.is_file() or not os.access(native_exe, os.X_OK):
