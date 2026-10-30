@@ -1,3 +1,30 @@
+## 2026-10-30 — LARGE COHESIVE M17/FINAL SRC Q0→Q2→ALIAS NATIVE BUNDLE (STAGING, NOT YET FQ)
+
+**Baseline:** [#921](https://github.com/casaferla/RGS-MasterLab/actions/runs/41068955003) **double green** Windows + Linux, PR #61 Draft SHA `134f0e345b95f412aa5b50009bc5ab38b3417603`, staging identical before this lot. The PO explicitly requests **MAXIMUM safe coherent batching**, not one CI per fix.
+
+### New material improvements staged together
+
+1. **C++ real AudioBuffer anti-alias 15/15 native method**: `tests/unit/audio/test_playback_sample_rate_adapter.cpp::phase11External14RealCandidates15NativeAliasSineRehearsal`. Exactly 15 ordered SOURCE>MASTER pairings, seven distinct SHA-pinned original REAL MPFR Q0 FIR assets, independent 0.1-second source sine at frozen `aliasProbeHz=(fin+fout)/4` with 0.25 amplitude, actual `materialize_phase11_pinned_final_src_candidate`, exact MASTER frame count, 10% start/end settled-region RMS and **140 dB** suppression requirement. Does not touch frozen assets, Source or M17; QSKIPs if private files unavailable in normal CI. **When executed with private authentic assets by a named-test runner, a PASS is a real product C++ AudioBuffer SRC output measurement at 15 frequency points**, stronger than SciPy/FFT screens, but still NOT full-band DTFT or release. Full public CI compiles it without fixtures.
+2. **Single private atomic offline bulk runner**: `tools/qualification/final_src/run_phase11_private_m17_bulk_gate.py`, requiring built Qt `rgsml_playback_src_tests`, frozen genuine 14-asset ZIP SHA `94d3340667ab5c86b2db5f2d0e191f58b5d05863413312fb3545faed51798ce4` and independent 36-Q1-reference ZIP SHA `1c48bf8cd078ab9ad75649303ddc3dae370fd1a16acfea94e3804bd355b09dff`. It runs **ONE combined physical private fixture session** with FIVE fail-closed stages: (i) unskipped 36/36 C++ Qt bitwise Q1 using 14 originals, (ii) unskipped native 15/15 140 dB alias sine, (iii) independent Q2 real36 × 2 signal/partitions incl signed-zero/subnormal subset, (iv) 15/15 extended-precision one-frequency DTFT screens, (v) 15/15 independent SciPy one-second real source polyphase audio checks. Only after all five succeed does it atomically rename the isolated temporary directory to requested `--new-output-dir` and publish a receipt with SHA for every subreport; ANY failed/skipped/missing stage leaves NO falsely completed evidence. The report explicitly flags **NONRELEASE / no full-Q0 continuum / no full Q1–Q6 / no M17 product FQ**.
+3. **Adversarial CI coverage**: `test_run_phase11_private_m17_bulk_gate.py` verifies exact 5 stage launch, missing native binary, a prior result, 15-count/Q2-count errors, unexpected Qt SKIP/FAIL and timeout guard. The revised `test_native_q1_36_fixture_contract.py` scopes the original Q1 C++ source method separately from the new Qt alias method; checks all seven Q0 pins, the 140dB real AudioBuffer check and refuses weakened guards. Both run in the **EXISTING single Linux Focused workflow**, with no extra PR workflow.
+4. **One large batch, one CI**: code, Qt method, Python bulk orchestration, negatives, workflow and canonical docs together before one no-force CAS. No individual per-ratio or docs-only PR promotion.
+
+### How the authorized offline Qt operator runs the WHOLE combined package
+
+On a private trusted machine with Qt 6.8.3 compiled `rgsml_playback_src_tests` and both original locally downloaded ZIPs, Python 3.11+ (project-compatible), MPFR, mpmath, NumPy **with genuine extended `longdouble` precision** and SciPy:
+
+```shell
+python tools/qualification/final_src/run_phase11_private_m17_bulk_gate.py \
+  --native-exe "<absolute/path/to/rgsml_playback_src_tests[.exe]>" \
+  --candidate-zip "<path/to/14-original-Q0.zip>" \
+  --q1-reference-zip "<path/to/36-independent-Q1.zip>" \
+  --new-output-dir "<path/to/NEW/phase11-bulk-output>"
+```
+
+The output path MUST be unused, the ZIPs immutable and SHA-pinned, and an independent Windows/Linux native exe is mandatory. **No automatic secrets/public upload or synthetic substitute.** On Windows, NumPy `longdouble` may be only 64-bit: the extended-screen step fails closed, so run the numerical stage on a verified extended-precision Linux host; do NOT relax the screen to 64-bit solely for a green Windows result.
+
+**M17 remaining blockers:** Actual full 14-family continuous MPFR passband AND stopband proof, independent release SHA signoff, complete Q1–Q6 (beyond these subset tests), actual single-PREPARE integration at 6×6 rates, device-independent Master Audition + calibrated ETA/RAM, physical Windows FQ accepted by PO. The frozen 28 non-admitted product mappings MUST stay blocked. This coherent batch is further **test + native qualification functionality**, not permission to start M18, merge main, certify Q0 or release.
+
 ## 2026-10-30 — REAL 14/36 QT OFFLINE FIXTURE GATE: TWO-VARIABLE CONTRACT BUG FIXED ON STAGING
 
 - Focused [#920](https://github.com/casaferla/RGS-MasterLab/actions/runs/41065475579) double green on PR #61 Draft SHA `82f887d5cc1188c291f46590516e11014bbef325`. Crucial inspection of **actual optional Qt 14/36 method** uncovered a SECOND legacy `RGSML_PHASE11_REAL_14_Q1_EXPECTED_DIR` requirement and duplicate Q1 reference-reading/bit-comparison AFTER the correctly SHA-verified `RGSML_PHASE11_REAL_36_Q1_DIR` manifest + bitwise loop. Private archive launcher sets only the correct modern env `RGSML_PHASE11_REAL_36_Q1_DIR`, so genuine execution would have failed despite all previous normal CI builds GREEN. **The previous historical text claiming fully runnable Qt 14/36 was too strong.**
