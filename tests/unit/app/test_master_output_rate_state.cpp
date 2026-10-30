@@ -202,10 +202,13 @@ private slots:
     r=h.latest(44100,132300,2,44100);
     QVERIFY(r);
     QCOMPARE(r->exact_revision_count,std::size_t{1});
-    // A->B->A restores the numeric Ceiling, never the chain epoch.
-    QVERIFY(!h.latest(44100,132300,2,44100,exact));
+    // History retains old evidence. Only querying the CURRENT monotonic
+    // chain revision can authorize historical ACT for the UI.
+    QVERIFY(h.latest(44100,132300,2,44100,exact));
     QVERIFY(h.latest(44100,132300,2,44100,
         AcceptedPrepareRevisionKey{99,8,9}));
+    QVERIFY(!h.latest(44100,132300,2,44100,
+        AcceptedPrepareRevisionKey{99,8,10}));
     h.source_changed();
     QVERIFY(!h.latest(44100,132300,2,44100));
     QVERIFY(!h.observe(y)); // same old invocation after source epoch

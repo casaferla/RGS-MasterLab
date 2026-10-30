@@ -1,3 +1,11 @@
+## 2026-10-30 — ACTIVE STATE: FOCUSED #931 RED; NEXT STAGING RECOVERY + PHASE2 Q0 28/28 NONRELEASE
+
+- PR #61 Draft/staging baseline SHA `2a77c1d7b192b9b52648cf293f1d4711a1af4eb6`. [Focused #931](https://github.com/casaferla/RGS-MasterLab/actions/runs/41125569150) completed RED on both platforms, same single Qt test assertion, not a DSP compile failure. The old accepted ACT history is intentionally retained but filtered by CURRENT monotonic chain revisions; fix an incorrect test expectation, not the product.
+- Phase2 independent Work package now has **28/28 full spectral bands** under a checked hybrid IEEE/MPFR mathematical model, not a signed canonical Q0 release. Main operator replayed all 18 new directly computed bands on MPFR 4.2.2 at 256 & 512 bits, verified transfer of 2 bands, and reclassified the 219,128 included cells. The eight older bands remain from prior direct MPFR proof. Full frozen refs, boundaries and links: [Phase2 independent audit](PHASE11_FINAL_SRC_PHASE2_28OF28_NONRELEASE_AUDIT_20261030.md). Original 44 third-order checkpoint receipts remain 0/28 in their separate format; **never mix formats**.
+- Private review tool tested on authentic package + 5 synthetic adversarial tests, remains on RGS ContentBox rather than the public repo pending separate deliberate import gate. No FIR originals, MPFR proof payloads, or other private bytes in GitHub.
+- Product gate unchanged: 28 unqualified SOURCE→MASTER paths blocked; Q0 canonical mathematical/code audit, signed manifest, Q1–Q6, total Prepare ETA and Windows PO FQ outstanding. No main merge, M18, PO FQ or independent CI overlap.
+- One coherent next no-CI staging lot: #931 test recovery + Q0 nonrelease provenance documentation. Once ready, promote CAS only after confirming #931 terminal and staged SHA. Preserve single writer and bounded test artifacts; never full logs.
+
 ## 2026-10-30 — NEXT M17 STAGING: EXACT MANUAL/M17 REVISION PIN FOR HISTORICAL ACT (NO STALE A→B→A)
 
 - Prior [Focused #930](https://github.com/casaferla/RGS-MasterLab/actions/runs/41122080080) completed Linux/Windows SUCCESS on immutable PR #61 Draft `7c33e35b853206a6a3f9a88ad2b3f5f337413609`. The next coherent functional M17 change is developed on no-CI staging only.
