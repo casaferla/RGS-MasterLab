@@ -760,8 +760,8 @@ Rectangle {
                         Text {
                             objectName: "m17TimeColumnHeader"
                             Layout.preferredWidth: 62
-                            property string interactionHint: "LOCAL M17+M16 DSP-only projected range from real offline calibration; never a total Prepare/Final SRC time. N/A if unmeasured."
-                            text: "DSP EST."
+                            property string interactionHint: "ACT means actual accepted full M17 Prepare, historical only (NOT an ETA). Otherwise the local M17+M16 estimate excludes Final SRC, disk, queue and finalization."
+                            text: "TIME"
                             HoverHandler { id: timeHeaderHover }
                             ToolTip.text: interactionHint
                             ToolTip.visible: timeHeaderHover.hovered && timeHeaderDwell.ready
@@ -903,15 +903,27 @@ Rectangle {
                                     && root.memoryAdvisor.dspEstimates.length === 6
                                 readonly property var probe: matchingProfile
                                     ? root.memoryAdvisor.dspEstimates[rateRow.index] : null
+                                readonly property var actual: root.memoryAdvisor
+                                    && root.memoryAdvisor.actualPrepareTimes.length === 6
+                                    ? root.memoryAdvisor.actualPrepareTimes[rateRow.index]
+                                    : null
+                                readonly property bool actualMatchesCeiling: actual
+                                    && actual.actual
+                                    && root.terminalLimiterViewModel
+                                    && actual.ceilingDbTp
+                                        === root.terminalLimiterViewModel.ceilingDbTp
                                 property string interactionHint: !admissible
                                     ? "Final SRC candidate unavailable for this SOURCE/MASTER pair: "
                                         + (root.masterRateState
                                             ? root.masterRateState.final_src_path_status(
                                                 rateRow.modelData) : "no source")
+                                    : actualMatchesCeiling && actual.details
+                                    ? actual.details
                                     : probe && probe.details ? probe.details
-                                    : "M17/M16 local calibration not measured at this Ceiling. Total Prepare ETA is N/A."
+                                    : "No whole-Prepare observation or M17/M16 local calibration at this Ceiling. Total future Prepare ETA N/A."
                                 Layout.preferredWidth: 62
                                 text: !admissible ? "SRC N/A"
+                                    : actualMatchesCeiling && actual.label ? actual.label
                                     : probe && probe.label ? probe.label : "N/A"
                                 elide: Text.ElideRight
                                 HoverHandler { id: etaHover }
@@ -922,11 +934,16 @@ Rectangle {
                                     id: etaDwell
                                     anchors.fill: parent
                                 }
-                                color: admissible && probe && probe.label !== "N/A"
+                                color: admissible
+                                    && (actualMatchesCeiling
+                                        || probe && probe.label !== "N/A")
                                     ? "#B6D6CA" : "#92A9BB"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
-                                Accessible.name: text + ". DSP estimate only; total Prepare time unavailable."
+                                Accessible.name: text
+                                    + (actualMatchesCeiling
+                                        ? ". Historical real full Prepare, not an ETA."
+                                        : ". DSP estimate only; total Prepare ETA unavailable.")
                             }
                         }
                     }

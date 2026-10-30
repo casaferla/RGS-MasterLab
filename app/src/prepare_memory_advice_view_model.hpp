@@ -1,5 +1,6 @@
 #pragma once
 
+#include "accepted_prepare_observation_policy.hpp"
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -30,6 +31,7 @@ class PrepareMemoryAdviceViewModel final : public QObject {
     Q_PROPERTY(double calibratedCeilingDbTp READ calibrated_ceiling_db_tp NOTIFY calibrationChanged)
     Q_PROPERTY(QVariantList dspEstimates READ dsp_estimates NOTIFY calibrationChanged)
     Q_PROPERTY(QString calibrationStatus READ calibration_status NOTIFY calibrationChanged)
+    Q_PROPERTY(QVariantList actualPrepareTimes READ actual_prepare_times NOTIFY actualPrepareChanged)
 public:
     PrepareMemoryAdviceViewModel(
         const SourceSelectionViewModel* source,
@@ -51,9 +53,12 @@ public:
     [[nodiscard]] double calibrated_ceiling_db_tp() const noexcept {return calibratedCeiling_;}
     [[nodiscard]] QVariantList dsp_estimates() const {return dspEstimates_;}
     [[nodiscard]] QString calibration_status() const {return calibrationStatus_;}
+    [[nodiscard]] QVariantList actual_prepare_times() const;
+    void observe_approved_prepare(const AcceptedPrepareObservation& observation);
 signals:
     void changed();
     void calibrationChanged();
+    void actualPrepareChanged();
 private:
     struct CalibrationJob {
         std::uint64_t serial;
@@ -87,6 +92,7 @@ private:
     bool calibrationValid_{false};
     double calibratedCeiling_{0.0};
     QVariantList dspEstimates_;
+    AcceptedPrepareObservationHistory actualHistory_;
     QString calibrationStatus_{QStringLiteral("No on-host calibration yet")};
     std::jthread calibrationThread_;
 };

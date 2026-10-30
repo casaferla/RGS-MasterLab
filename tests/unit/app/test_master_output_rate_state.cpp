@@ -1,5 +1,7 @@
 #include "master_output_rate_state.hpp"
 #include "prepare_memory_advice_source_policy.hpp"
+#include "accepted_prepare_observation_policy.hpp"
+#include <limits>
 #include <QSignalSpy>
 #include <QtTest>
 #include <array>
@@ -157,6 +159,46 @@ private slots:
     QVERIFY(!prepare_rate_advice_snapshot_valid(
         rows,*source.value(),*duration.value(),
         audio::ChannelLayout::MONO_C));
+ }
+ void approvedWholePrepareHistoryNeverInventsElapsedTime() {
+    AcceptedPrepareObservationHistory h;
+    AcceptedPrepareObservation x{
+        1,44100,44100,132300,2,-1.0,7,8,9,
+        110000,1540000,-1,1000000,130000};
+    QVERIFY(AcceptedPrepareObservationHistory::eligible(x));
+    QVERIFY(h.observe(x));
+    auto r=h.latest(44100,132300,2,44100);
+    QVERIFY(r);
+    QCOMPARE(r->last.queue_us+r->last.wall_us,1650000);
+    QCOMPARE(r->exact_revision_count,std::size_t{1});
+    QVERIFY(!h.observe(x)); // identical invocation cannot be relearned
+    QVERIFY(!h.latest(44100,132300,2,96000));
+    QVERIFY(!h.latest(48000,132300,2,44100));
+    QVERIFY(!h.latest(44100,132300,1,44100));
+    auto y=x;
+    y.invocation=2;y.master_hz=96000;y.src_us=-1;
+    QVERIFY(!h.observe(y)); // cross-rate must measure genuine SRC
+    y.invocation=3;y.src_us=90000;
+    QVERIFY(h.observe(y));
+    y.invocation=4;y.queue_us=std::numeric_limits<std::int64_t>::max();
+    QVERIFY(!h.observe(y)); // total elapsed cannot overflow
+    y=x;y.invocation=5;y.wall_us=1200000;
+    QVERIFY(h.observe(y));
+    r=h.latest(44100,132300,2,44100);
+    QVERIFY(r);
+    QCOMPARE(r->exact_revision_count,std::size_t{2});
+    QCOMPARE(r->minimum_total_us,1310000);
+    QCOMPARE(r->maximum_total_us,1650000);
+    y=x;y.invocation=6;y.manual_revision=99;
+    QVERIFY(h.observe(y));
+    r=h.latest(44100,132300,2,44100);
+    QVERIFY(r);
+    QCOMPARE(r->exact_revision_count,std::size_t{1});
+    h.source_changed();
+    QVERIFY(!h.latest(44100,132300,2,44100));
+    QVERIFY(!h.observe(y)); // same old invocation after source epoch
+    y.invocation=7;
+    QVERIFY(h.observe(y));
  }
  void monitoringGuardNeverRetargetsOrInvalidatesMaster() {
     MasterOutputRateState s;

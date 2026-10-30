@@ -419,6 +419,28 @@ int main(int argc, char* argv[])
         terminalLimiterState,terminalLimiterViewModel,auditionSelector,
         playbackTransport,privateProductSession};
     terminalProductActivation.set_master_rate_state(masterOutputRate);
+    // Read-only exact-owner telemetry: real immutable MASTER has already
+    // passed the terminal M16 gate. No re-render, no device or PCM allocation.
+    QObject::connect(&privateTerminalRenderer,
+        &rgsml::app::TerminalPrivateRenderController::changed,
+        &prepareRateAdvisor,
+        [&privateTerminalRenderer,&prepareRateAdvisor] {
+            const auto x=privateTerminalRenderer.last_approved_prepare_timing();
+            if(!x)return;
+            if(x->layout!=rgsml::audio::ChannelLayout::MONO_C
+               &&x->layout!=rgsml::audio::ChannelLayout::STEREO_LR)return;
+            const auto channels=x->layout==rgsml::audio::ChannelLayout::MONO_C
+                ?1:2;
+            const rgsml::app::AcceptedPrepareObservation observed{
+                privateTerminalRenderer.render_invocation_count(),
+                x->source_rate.value(),x->master_rate.value(),
+                x->source_frames.value(),channels,x->ceiling_db_tp,
+                x->manual_chain_revision,x->terminal_chain_revision,
+                x->terminal_parameter_revision,
+                x->queue_us,x->render_wall_us,x->src_us,
+                x->m17_core_us,x->m16_primary_us};
+            prepareRateAdvisor.observe_approved_prepare(observed);
+        });
     // A real full-track M17 Prepare supersedes disposable host benchmarks.
     // Cancel at the exact request signal, before any renderer CPU work,
     // without touching the source/MANUAL playback identity.

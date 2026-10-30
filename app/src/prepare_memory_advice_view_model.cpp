@@ -178,6 +178,8 @@ PrepareMemoryAdviceViewModel::PrepareMemoryAdviceViewModel(
         this,[this] {
             cancel_calibration();
             clear_calibration(QStringLiteral("SOURCE changed · calibrate again"));
+            actualHistory_.source_changed();
+            emit actualPrepareChanged();
         });
     calibrationThread_=std::jthread([this] {calibration_loop();});
 }
@@ -261,6 +263,69 @@ void PrepareMemoryAdviceViewModel::refresh()
     const auto deviceHz=advice.value()->front().observed_device_rate.value();
     statusText_=QStringLiteral("DEVICE %1").arg(rate_label(deviceHz));
     emit changed();
+}
+
+QVariantList PrepareMemoryAdviceViewModel::actual_prepare_times() const
+{
+    QVariantList rows;
+    rows.reserve(static_cast<qsizetype>(kMasterRates.size()));
+    const auto sourceHz=source_&&source_->has_source()
+        ?source_->sample_rate_hz():0;
+    const auto frames=source_&&source_->has_source()
+        ?source_->frame_count():0;
+    const auto channels=source_&&source_->has_source()
+        ?source_->channel_count():0;
+    const auto fmt=[](std::int64_t us)->QString {
+        const auto seconds=std::max<std::int64_t>(1,
+            us/1'000'000+(us%1'000'000!=0));
+        if(seconds>=3600)return QStringLiteral("%1h").arg(seconds/3600);
+        if(seconds>=60)return QStringLiteral("%1m").arg(seconds/60);
+        return QStringLiteral("%1s").arg(seconds);
+    };
+    for(const auto hz:kMasterRates) {
+        QVariantMap item{
+            {QStringLiteral("label"),QStringLiteral("N/A")},
+            {QStringLiteral("details"),QStringLiteral(
+                "No accepted actual whole-Prepare measurement at this rate; "
+                "future total Prepare ETA N/A.")},
+            {QStringLiteral("ceilingDbTp"),QVariant{}},
+            {QStringLiteral("actual"),false}};
+        if(m17_final_src_candidate_admissible(sourceHz,hz)) {
+            const auto observed=actualHistory_.latest(
+                sourceHz,frames,channels,hz);
+            if(observed) {
+                const auto& x=observed->last;
+                item[QStringLiteral("label")]=QStringLiteral("ACT %1")
+                    .arg(fmt(x.queue_us+x.wall_us));
+                item[QStringLiteral("details")]=QStringLiteral(
+                    "Actual ACCEPTED full M17 Prepare on this host: last %1 "
+                    "(queue + render, including Final SRC where required). "
+                    "%2 same-chain measurements, observed range %3–%4. "
+                    "Historical observation ONLY, NOT a future total ETA, "
+                    "hardware FQ or Final SRC release.")
+                    .arg(fmt(x.queue_us+x.wall_us))
+                    .arg(observed->exact_revision_count)
+                    .arg(fmt(observed->minimum_total_us),
+                         fmt(observed->maximum_total_us));
+                item[QStringLiteral("ceilingDbTp")]=x.ceiling;
+                item[QStringLiteral("actual")]=true;
+            }
+        }
+        rows.append(item);
+    }
+    return rows;
+}
+
+void PrepareMemoryAdviceViewModel::observe_approved_prepare(
+    const AcceptedPrepareObservation& x)
+{
+    if(!source_||!source_->has_source()
+       ||source_->sample_rate_hz()!=x.source_hz
+       ||source_->frame_count()!=x.source_frames
+       ||source_->channel_count()!=x.channels
+       ||!m17_final_src_candidate_admissible(x.source_hz,x.master_hz))
+        return;
+    if(actualHistory_.observe(x))emit actualPrepareChanged();
 }
 
 void PrepareMemoryAdviceViewModel::clear_calibration(const QString& message)
