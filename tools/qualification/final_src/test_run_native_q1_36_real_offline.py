@@ -65,6 +65,20 @@ class GenuineNativeQ1GateTests(unittest.TestCase):
         self.assertTrue(value["native_test_not_skipped"])
         self.assertTrue(self.report.is_file())
 
+    def test_platform_probe_after_native_subprocess_never_masks_env(self):
+        # Regression for #916 Linux: platform.platform() can run uname
+        # THROUGH the same mocked subprocess, after the Qt invocation.
+        # The native argv/env audit must inspect the native call, not the last.
+        def identity_probe():
+            subprocess.run(["uname", "-p"])
+            return "Linux-test-probe"
+        with patch("run_native_q1_36_real_offline.platform.platform",
+                   side_effect=identity_probe):
+            result = self.call(subprocess.CompletedProcess(
+                [], 0, "PASS   : rgsml::tests::" + TEST_NAME + "()\\n", ""))
+        self.assertEqual(result["source_master_pairs_verified"], 36)
+        self.assertTrue(result["native_test_not_skipped"])
+
     def test_false_positive_success_exit_but_missing_exact_test(self):
         with self.assertRaises(ContractError):
             self.call(subprocess.CompletedProcess([], 0,
