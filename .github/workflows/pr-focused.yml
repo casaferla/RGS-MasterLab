@@ -56,6 +56,9 @@ jobs:
           # Read-only 14-ratio checkpoint inventory and original 4 CI pins.
           # Synthetic fast tests only; never assume real remaining 10 ran.
           python tools/qualification/final_src/test_audit_q0_checkpoint_progress.py
+          # Fail closed on syntax errors in the real-archive-to-native-Q1
+          # handoff tool; no expensive 14-asset payload in Focused CI.
+          python -m py_compile tools/qualification/final_src/prepare_real_q1_36_native_rehearsal.py
 
       # Independent high-precision numeric crosscheck and sampled FFT
       # NEGATIVE SCREEN on a GENUINE MPFR candidate; Python tools only.
