@@ -912,6 +912,10 @@ Rectangle {
                                     && root.memoryAdvisor.actualPrepareTimes.length === 6
                                     ? root.memoryAdvisor.actualPrepareTimes[rateRow.index]
                                     : null
+                                readonly property var hostRange: root.memoryAdvisor
+                                    && root.memoryAdvisor.hostTotalRanges.length === 6
+                                    ? root.memoryAdvisor.hostTotalRanges[rateRow.index]
+                                    : null
                                 readonly property bool actualMatchesCeiling: actual
                                     && actual.actual
                                     && root.terminalLimiterViewModel
@@ -924,11 +928,15 @@ Rectangle {
                                                 rateRow.modelData) : "no source")
                                     : actualMatchesCeiling && actual.details
                                     ? actual.details
+                                    : hostRange && hostRange.valid && hostRange.details
+                                    ? hostRange.details
                                     : probe && probe.details ? probe.details
                                     : "No whole-Prepare observation or M17/M16 local calibration at this Ceiling. Total future Prepare ETA N/A."
                                 Layout.preferredWidth: 62
                                 text: !admissible ? "SRC N/A"
                                     : actualMatchesCeiling && actual.label ? actual.label
+                                    : hostRange && hostRange.valid && hostRange.label
+                                    ? hostRange.label
                                     : probe && probe.label ? probe.label : "N/A"
                                 elide: Text.ElideRight
                                 HoverHandler { id: etaHover }
@@ -941,6 +949,7 @@ Rectangle {
                                 }
                                 color: admissible
                                     && (actualMatchesCeiling
+                                        || hostRange && hostRange.valid
                                         || probe && probe.label !== "N/A")
                                     ? "#B6D6CA" : "#92A9BB"
                                 font.family: "Segoe UI"
@@ -948,7 +957,9 @@ Rectangle {
                                 Accessible.name: text
                                     + (actualMatchesCeiling
                                         ? ". Historical real full Prepare, not an ETA."
-                                        : ". DSP estimate only; total Prepare ETA unavailable.")
+                                        : hostRange && hostRange.valid
+                                          ? ". Indicative host historical whole-Prepare time range, not guaranteed."
+                                          : ". DSP estimate only; total Prepare ETA unavailable.")
                             }
                         }
                     }

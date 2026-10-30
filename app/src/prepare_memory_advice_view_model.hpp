@@ -34,6 +34,7 @@ class PrepareMemoryAdviceViewModel final : public QObject {
     Q_PROPERTY(QVariantList dspEstimates READ dsp_estimates NOTIFY calibrationChanged)
     Q_PROPERTY(QString calibrationStatus READ calibration_status NOTIFY calibrationChanged)
     Q_PROPERTY(QVariantList actualPrepareTimes READ actual_prepare_times NOTIFY actualPrepareChanged)
+    Q_PROPERTY(QVariantList hostTotalRanges READ host_total_ranges NOTIFY actualPrepareChanged)
 public:
     PrepareMemoryAdviceViewModel(
         const SourceSelectionViewModel* source,
@@ -62,6 +63,12 @@ public:
     [[nodiscard]] QVariantList dsp_estimates() const {return dspEstimates_;}
     [[nodiscard]] QString calibration_status() const {return calibrationStatus_;}
     [[nodiscard]] QVariantList actual_prepare_times() const;
+    [[nodiscard]] QVariantList host_total_ranges() const;
+    using CeilingProvider=std::function<double()>;
+    void set_active_ceiling_provider(CeilingProvider provider) {
+        activeCeilingProvider_=std::move(provider);
+        emit actualPrepareChanged();
+    }
     void observe_approved_prepare(const AcceptedPrepareObservation& observation);
     using RevisionProvider=std::function<
         std::optional<AcceptedPrepareRevisionKey>()>;
@@ -110,6 +117,8 @@ private:
     double calibratedCeiling_{0.0};
     QVariantList dspEstimates_;
     AcceptedPrepareObservationHistory actualHistory_;
+    AcceptedPrepareHostTimingHistory hostTimingHistory_;
+    CeilingProvider activeCeilingProvider_;
     RevisionProvider activeRevisionProvider_;
     std::function<bool()> calibrationActivityGuard_;
     QString calibrationStatus_{QStringLiteral("No on-host calibration yet")};

@@ -348,6 +348,64 @@ QVariantList PrepareMemoryAdviceViewModel::actual_prepare_times() const
     return rows;
 }
 
+QVariantList PrepareMemoryAdviceViewModel::host_total_ranges() const
+{
+    QVariantList rows;
+    rows.reserve(static_cast<qsizetype>(kMasterRates.size()));
+    const auto revisions=activeRevisionProvider_
+        ?activeRevisionProvider_():std::nullopt;
+    const auto ceiling=activeCeilingProvider_
+        ?std::optional<double>{activeCeilingProvider_()}:std::nullopt;
+    const auto sourceHz=source_&&source_->has_source()
+        ?source_->sample_rate_hz():0;
+    const auto frames=source_&&source_->has_source()
+        ?source_->frame_count():0;
+    const auto channels=source_&&source_->has_source()
+        ?source_->channel_count():0;
+    const auto fmt=[](std::int64_t us)->QString {
+        const auto seconds=us/1000000+(us%1000000!=0);
+        if(seconds>=3600)return QStringLiteral("%1h %2m")
+            .arg(seconds/3600).arg(seconds%3600/60);
+        if(seconds>=60)return QStringLiteral("%1m %2s")
+            .arg(seconds/60).arg(seconds%60);
+        return QStringLiteral("%1s").arg(seconds);
+    };
+    for(const auto hz:kMasterRates) {
+        QVariantMap item{
+            {QStringLiteral("valid"),false},
+            {QStringLiteral("label"),QStringLiteral("N/A")},
+            {QStringLiteral("details"),QStringLiteral(
+                "Whole-Prepare future host ETA unavailable: requires at least "
+                "three accepted full preparations on this host with matching "
+                "SOURCE/MASTER rates, channels, M17 revisions and Ceiling.")}};
+        if(revisions&&ceiling&&std::isfinite(*ceiling)) {
+            const auto range=hostTimingHistory_.predict(
+                sourceHz,frames,channels,hz,*ceiling,
+                revisions->terminal,revisions->parameters);
+            if(range) {
+                item[QStringLiteral("valid")]=true;
+                item[QStringLiteral("label")]=QStringLiteral("~%1-%2")
+                    .arg(fmt(range->low_us),fmt(range->high_us));
+                item[QStringLiteral("details")]=QStringLiteral(
+                    "INDICATIVE PRE-PREPARE HOST RANGE %1–%2: extrapolated "
+                    "only from %3 genuine previously ACCEPTED whole-source "
+                    "M17 Prepares with matching SOURCE/MASTER sample rates, "
+                    "channels, Ceiling and M17 parameter revisions. Includes "
+                    "actual queue + complete renderer wall time, including "
+                    "SRC only if it really ran. A deliberately enlarged "
+                    "diagnostic interval, NOT a confidence interval or "
+                    "guarantee; no persistent host profile, WAV/export "
+                    "claim, Final SRC qualification or physical FQ. "
+                    "Unqualified SRC routes remain BLOCKED.")
+                    .arg(fmt(range->low_us),fmt(range->high_us))
+                    .arg(range->matched_observations);
+            }
+        }
+        rows.append(item);
+    }
+    return rows;
+}
+
 void PrepareMemoryAdviceViewModel::observe_approved_prepare(
     const AcceptedPrepareObservation& x)
 {
@@ -362,7 +420,13 @@ void PrepareMemoryAdviceViewModel::observe_approved_prepare(
     if(!current ||x.manual_revision!=current->manual
        ||x.terminal_revision!=current->terminal
        ||x.terminal_parameter_revision!=current->parameters)return;
-    if(actualHistory_.observe(x))emit actualPrepareChanged();
+    if(actualHistory_.observe(x)) {
+        // Only an actually accepted new whole-Prepare may teach the host
+        // model. Anonymous process-local timings survive SOURCE replacement;
+        // exact-owner ACT history above remains SOURCE-epoch scoped.
+        static_cast<void>(hostTimingHistory_.observe(x));
+        emit actualPrepareChanged();
+    }
 }
 
 void PrepareMemoryAdviceViewModel::clear_calibration(const QString& message)

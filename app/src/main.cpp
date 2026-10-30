@@ -422,6 +422,10 @@ int main(int argc, char* argv[])
     // Historical ACT is visible ONLY when the current MANUAL PCM is still
     // the exact chain revision and the M17 terminal state/parameters are
     // unchanged. A->B->A Ceiling edits never resurrect old measurements.
+    prepareRateAdvisor.set_active_ceiling_provider(
+        [&terminalLimiterViewModel] {
+            return terminalLimiterViewModel.ceiling_db_tp();
+        });
     prepareRateAdvisor.set_active_revision_provider(
         [&auditionSelector,&masteringChainState,&terminalLimiterState]()
             ->std::optional<rgsml::app::AcceptedPrepareRevisionKey> {

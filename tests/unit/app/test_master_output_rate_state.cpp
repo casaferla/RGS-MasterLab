@@ -275,6 +275,52 @@ private slots:
     x.invocation=35;x.m16_us=20000;x.src_us=-1;x.master_hz=96000;
     QVERIFY(!h.observe(x));
  }
+ void hostWholePrepareEstimateLearnsOnlyGenuineSameConfiguration() {
+    AcceptedPrepareHostTimingHistory host;
+    AcceptedPrepareObservation x{
+        1,44100,44100,132300,2,-1.0,10,20,30,
+        100000,1500000,-1,1200000,250000};
+    auto predict=[&](std::int64_t sourceFrames,std::int64_t sourceHz,
+                     std::int64_t masterHz,int channels,
+                     double ceiling,std::uint64_t rev,std::uint64_t param) {
+        return host.predict(sourceHz,sourceFrames,channels,masterHz,
+                            ceiling,rev,param);
+    };
+    QVERIFY(!predict(132300,44100,44100,2,-1.0,20,30));
+    for(int i=1;i<=3;++i) {
+        x.invocation=static_cast<std::uint64_t>(i);
+        x.wall_us=1500000+100000*i;
+        QVERIFY(host.observe(x));
+    }
+    const auto base=predict(132300,44100,44100,2,-1.0,20,30);
+    QVERIFY(base);
+    QCOMPARE(base->matched_observations,std::size_t{3});
+    QVERIFY(base->low_us>0);
+    QVERIFY(base->high_us>base->low_us);
+    // A different SOURCE file with similar duration is legal to estimate;
+    // this host profile stores no SOURCE identity or PCM. Revisions of M17
+    // parameters remain mandatory, including A -> B -> A invalidation.
+    const auto doubled=predict(264600,44100,44100,2,-1.0,20,30);
+    QVERIFY(doubled);
+    QCOMPARE(doubled->low_us,base->low_us*2);
+    QCOMPARE(doubled->high_us,base->high_us*2);
+    QVERIFY(!predict(132300,44100,192000,2,-1.0,20,30));
+    QVERIFY(!predict(132300,44100,44100,1,-1.0,20,30));
+    QVERIFY(!predict(132300,44100,44100,2,-12.0,20,30));
+    QVERIFY(!predict(132300,44100,44100,2,-1.0,21,30));
+    QVERIFY(!predict(132300,44100,44100,2,-1.0,20,31));
+    QVERIFY(!predict(132300*5,44100,44100,2,-1.0,20,30));
+    QVERIFY(!predict(132300,44100,96000,2,-1.0,20,30));
+    auto stale=x;stale.invocation=3;
+    QVERIFY(!host.observe(stale));
+    stale.invocation=4;stale.master_hz=192000;stale.src_us=-1;
+    QVERIFY(!host.observe(stale)); // impossible unqualified SRC timing
+    stale.invocation=5;stale.master_hz=44100;
+    stale.wall_us=1;stale.m17_us=1200000;
+    QVERIFY(!host.observe(stale)); // measured stages exceed whole wall
+    host.clear();
+    QVERIFY(!predict(132300,44100,44100,2,-1.0,20,30));
+ }
  void monitoringGuardNeverRetargetsOrInvalidatesMaster() {
     MasterOutputRateState s;
     s.source_committed(192000);

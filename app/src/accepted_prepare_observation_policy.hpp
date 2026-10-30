@@ -126,4 +126,83 @@ private:
     std::uint64_t last_seen_{0};
     std::vector<AcceptedPrepareObservation> history_;
 };
+
+    
+// PROCESS-LOCAL HOST PERFORMANCE LEARNING, using only completed authentic
+// M17 full-Prepare timing scalars. It never stores PCM, file/source identity,
+// OS identifiers, window/device rate, or user selections. A profile requires
+// >=3 genuine accepted whole-Prepare observations of the SAME SOURCE/MASTER
+// rate pair, channel count, Ceiling and frozen M17 revisions. It is NOT
+// hardware FQ, a guarantee, SRC admission or a persistent host benchmark.
+struct AcceptedPrepareHostTotalRange {
+    std::int64_t low_us{0},high_us{0};
+    std::size_t matched_observations{0};
+};
+class AcceptedPrepareHostTimingHistory {
+public:
+    [[nodiscard]] bool observe(const AcceptedPrepareObservation& x) {
+        if(x.invocation<=lastSeen_)return false;
+        lastSeen_=x.invocation;
+        if(!m17_final_src_candidate_admissible(x.source_hz,x.master_hz)
+           ||!AcceptedPrepareObservationHistory::stage_breakdown(x))
+            return false;
+        try {
+            if(observed_.size()==48)observed_.erase(observed_.begin());
+            observed_.push_back(x);
+        } catch(const std::bad_alloc&) {return false;}
+        return true;
+    }
+    [[nodiscard]] std::optional<AcceptedPrepareHostTotalRange> predict(
+        std::int64_t source_hz,std::int64_t source_frames,int channels,
+        std::int64_t master_hz,double ceiling,
+        std::uint64_t terminal_revision,
+        std::uint64_t parameter_revision) const noexcept
+    {
+        if(source_frames<=0 || (channels!=1&&channels!=2)
+           ||!std::isfinite(ceiling)
+           ||!m17_final_src_candidate_admissible(source_hz,master_hz))
+            return std::nullopt;
+        long double low=std::numeric_limits<long double>::infinity();
+        long double high=0;
+        std::size_t count=0;
+        for(const auto& x:observed_) {
+            if(x.source_hz!=source_hz ||x.master_hz!=master_hz
+               ||x.channels!=channels ||x.ceiling!=ceiling
+               ||x.terminal_revision!=terminal_revision
+               ||x.terminal_parameter_revision!=parameter_revision
+               ||!AcceptedPrepareObservationHistory::stage_breakdown(x))
+                continue;
+            // A huge duration extrapolation is not a trustworthy profile.
+            const auto scale=static_cast<long double>(source_frames)
+                /static_cast<long double>(x.source_frames);
+            if(scale<0.25L || scale>4.0L)continue;
+            const auto projected=static_cast<long double>(
+                x.queue_us+x.wall_us)*scale;
+            if(!std::isfinite(projected)||projected<=0)continue;
+            low=std::min(low,projected);
+            high=std::max(high,projected);
+            ++count;
+        }
+        if(count<3)return std::nullopt;
+        // Expanded diagnostic band, not a statistical confidence interval.
+        // Queue and all measured/unknown render stages are INCLUDED because
+        // the inputs are complete accepted whole-Prepare wall observations.
+        low=std::max(1.0L,std::floor(low/2.0L));
+        high=std::ceil(high*2.0L);
+        constexpr auto maximum=static_cast<long double>(
+            std::numeric_limits<std::int64_t>::max());
+        if(!std::isfinite(low)||!std::isfinite(high)
+           ||high>=maximum||low>high)return std::nullopt;
+        return AcceptedPrepareHostTotalRange{
+            static_cast<std::int64_t>(low),
+            static_cast<std::int64_t>(high),count};
+    }
+    // Every genuine ENGINE/algorithm update constructs a new process-local
+    // object. A new SOURCE does NOT erase anonymous completed timings.
+    void clear() noexcept {observed_.clear();}
+private:
+    std::uint64_t lastSeen_{0};
+    std::vector<AcceptedPrepareObservation> observed_;
+};
+
 } // namespace rgsml::app
