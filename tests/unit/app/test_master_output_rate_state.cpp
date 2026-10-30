@@ -1,4 +1,5 @@
 #include "master_output_rate_state.hpp"
+#include "prepare_memory_advice_source_policy.hpp"
 #include <QSignalSpy>
 #include <QtTest>
 #include <array>
@@ -54,6 +55,35 @@ private slots:
     QCOMPARE(unqualified,28);
     state.source_committed(32000);
     QVERIFY(!state.m17_candidate_rate_admissible(192000));
+ }
+ void prepareMemoryDisplayNeverRecommendsUnqualifiedSrc() {
+    const std::array<qint64,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    int permitted=0,unqualified=0;
+    for(const auto source:rates) {
+        for(const auto master:rates) {
+            const auto display=prepare_memory_display_admission(source,master);
+            if(source==master
+                ||(source==44100&&master==48000)
+                ||(source==48000&&master==44100)) {
+                QCOMPARE(display,
+                    PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE);
+                ++permitted;
+            } else {
+                QCOMPARE(display,
+                    PrepareMemoryDisplayAdmission::FINAL_SRC_UNQUALIFIED);
+                ++unqualified;
+            }
+        }
+    }
+    QCOMPARE(permitted,8);
+    QCOMPARE(unqualified,28);
+    for(const auto bad:{0,32000,384000}) {
+        QCOMPARE(prepare_memory_display_admission(bad,192000),
+            PrepareMemoryDisplayAdmission::SOURCE_OR_RATE_UNAVAILABLE);
+        QCOMPARE(prepare_memory_display_admission(192000,bad),
+            PrepareMemoryDisplayAdmission::SOURCE_OR_RATE_UNAVAILABLE);
+    }
  }
  void monitoringGuardNeverRetargetsOrInvalidatesMaster() {
     MasterOutputRateState s;

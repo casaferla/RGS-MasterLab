@@ -1,5 +1,6 @@
 #include "prepare_memory_advice_view_model.hpp"
 #include "source_selection_view_model.hpp"
+#include "prepare_memory_advice_source_policy.hpp"
 #include <rgsml/render/m17_offline_calibration.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include <rgsml/dsp/true_peak_limiter_parameters.hpp>
@@ -46,7 +47,8 @@ constexpr std::array<std::int64_t,6> kMasterRates{
 }
 
 [[nodiscard]] QVariantMap classified_row(
-    const audio::MonitoringRateMemoryAdvice& advice)
+    const audio::MonitoringRateMemoryAdvice& advice,
+    std::int64_t source_hz)
 {
     using Kind=audio::MonitoringMemoryAdviceKind;
     const auto hz=advice.proposed_master_rate.value();
@@ -121,7 +123,43 @@ constexpr std::array<std::int64_t,6> kMasterRates{
          "The >= figure is ONLY a lower bound: additional SRC/M17/M16 peaks, "
          "Qt and render/export peaks are not yet measured or summed. "
         "No RAM is reserved; CPU/real-time performance is not guaranteed.");
+    // Memory fitness is never permission to run an unqualified Final SRC.
+    // Keep the hypothetical cost visible without presenting it as a usable
+    // M17 Prepare recommendation. This is a display-only product guard.
+    const auto admission=prepare_memory_display_admission(source_hz,hz);
+    const bool candidateAdmissible=
+        admission==PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE;
+    QString pathStatus;
+    if(admission==PrepareMemoryDisplayAdmission::FINAL_SRC_UNQUALIFIED) {
+        pathStatus=QStringLiteral("FINAL_SRC_UNQUALIFIED");
+        label=QStringLiteral("SRC unavailable");
+        kind=QStringLiteral("unknown");
+        const auto warning=QStringLiteral(
+            "Final SRC UNQUALIFIED: M17 Prepare is unavailable for this "
+            "SOURCE-to-MASTER pair. RAM is hypothetical, not a recommendation. ");
+        details.prepend(warning);
+        summary.prepend(QStringLiteral("SRC unavailable · "));
+    } else if(admission==PrepareMemoryDisplayAdmission::SOURCE_OR_RATE_UNAVAILABLE) {
+        pathStatus=QStringLiteral("RATE_UNAVAILABLE");
+        label=QStringLiteral("Not available");
+        kind=QStringLiteral("unknown");
+        details.prepend(QStringLiteral(
+            "SOURCE or MASTER rate is unsupported. RAM does not grant Prepare. "));
+        summary.prepend(QStringLiteral("Rate unavailable · "));
+    } else if(final_src_candidate_path(source_hz,hz)
+              ==FinalSrcCandidatePath::EXISTING_44K_48K_FIR) {
+        pathStatus=QStringLiteral("EXISTING_FIR_CANDIDATE");
+        details.prepend(QStringLiteral(
+            "Existing 44.1/48 FIR candidate is admitted by M17, "
+            "but Final SRC release qualification is still pending. "));
+    } else {
+        pathStatus=QStringLiteral("IDENTITY");
+        details.prepend(QStringLiteral(
+            "Identity rate: no Final SRC required. "));
+    }
     auto result=row(hz,label,kind,details);
+    result[QStringLiteral("srcCandidateAdmissible")]=candidateAdmissible;
+    result[QStringLiteral("srcCandidateStatus")]=pathStatus;
     result[QStringLiteral("minimumLabel")]=
         QStringLiteral(">=%1 MiB").arg(QString::number(roundedMib));
     result[QStringLiteral("summary")]=summary;
@@ -207,10 +245,21 @@ void PrepareMemoryAdviceViewModel::refresh()
         reset_unknown(QStringLiteral("Device or memory unavailable"));
         return;
     }
+    // All six rate rows must describe one coherent DEVICE snapshot and
+    // the exact standard order; never accidentally recommend stale/extra rows.
+    const auto deviceRate=advice.value()->front().observed_device_rate;
+    for(std::size_t i=0;i<kMasterRates.size();++i) {
+        const auto& entry=(*advice.value())[i];
+        if(entry.proposed_master_rate.value()!=kMasterRates[i]
+           ||entry.observed_device_rate!=deviceRate) {
+            reset_unknown(QStringLiteral("Incoherent device/rate advice"));
+            return;
+        }
+    }
     QVariantList rows;
     rows.reserve(static_cast<qsizetype>(kMasterRates.size()));
     for(const auto& entry:*advice.value()) {
-        rows.append(classified_row(entry));
+        rows.append(classified_row(entry,source_->sample_rate_hz()));
     }
     recommendations_=std::move(rows);
     const auto deviceHz=advice.value()->front().observed_device_rate.value();
