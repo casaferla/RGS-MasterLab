@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 from hashlib import sha256
 import json
-import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -34,7 +33,7 @@ def _extract_exact_archive(archive: Path, target: Path,
             or len({p.filename for p in items}) != len(items)
             or {p.filename for p in items} != names
             or any(p.is_dir() or p.file_size > 12_000_000
-                   or "/" in p.filename or "\\\\" in p.filename
+                   or "/" in p.filename or chr(92) in p.filename
                    or p.filename in (".", "..") for p in items)):
             raise ContractError("unexpected member, size or path in frozen Q1 archive")
         target.mkdir()
