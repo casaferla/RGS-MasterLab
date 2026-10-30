@@ -588,6 +588,14 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
         .startsWith(QStringLiteral("ACT ")));
     QVERIFY(actualRow.value(QStringLiteral("details")).toString()
         .contains(QStringLiteral("NOT a future total ETA")));
+    const auto stageDetails=
+        actualRow.value(QStringLiteral("details")).toString();
+    QVERIFY(stageDetails.contains(QStringLiteral("Actual stages: queue")));
+    QVERIFY(stageDetails.contains(QStringLiteral(
+        "Final SRC identity / bypassed")));
+    QVERIFY(stageDetails.contains(QStringLiteral(
+        "other render time")));
+    QVERIFY(!stageDetails.contains(QStringLiteral("predicted total")));
     advisor.observe_approved_prepare(accepted);
     QCOMPARE(actualNotifications.count(),1); // exact render cannot replay
     advisor.set_active_revision_provider([] {

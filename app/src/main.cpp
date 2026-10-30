@@ -438,6 +438,13 @@ int main(int argc, char* argv[])
         &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
         &prepareRateAdvisor,
         &rgsml::app::PrepareMemoryAdviceViewModel::current_revision_changed);
+    // A committed M17 edit may immediately trigger a real terminal render.
+    // Stop the disposable six-rate CPU calibration so it cannot compete
+    // with the single product Prepare. Draft edits and repaint do not abort.
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
+        &prepareRateAdvisor,
+        &rgsml::app::PrepareMemoryAdviceViewModel::cancel_calibration);
     QObject::connect(&previewController,
         &rgsml::app::MasteringPreviewController::changed,
         &prepareRateAdvisor,

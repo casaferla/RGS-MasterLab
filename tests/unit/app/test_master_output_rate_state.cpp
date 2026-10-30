@@ -215,6 +215,36 @@ private slots:
     y.invocation=7;
     QVERIFY(h.observe(y));
  }
+ void acceptedPrepareStageBreakdownDoesNotInventElapsedBuckets() {
+    AcceptedPrepareObservation x{
+        1,44100,44100,132300,2,-1.0,7,8,9,
+        110000,1540000,-1,1000000,130000};
+    QVERIFY(AcceptedPrepareObservationHistory::eligible(x));
+    auto parts=AcceptedPrepareObservationHistory::stage_breakdown(x);
+    QVERIFY(parts);
+    QVERIFY(!parts->converted);
+    QCOMPARE(parts->src_us,std::int64_t{0});
+    QCOMPARE(parts->other_render_us,std::int64_t{410000});
+    x.master_hz=96000;x.src_us=90000;
+    parts=AcceptedPrepareObservationHistory::stage_breakdown(x);
+    QVERIFY(parts);
+    QVERIFY(parts->converted);
+    QCOMPARE(parts->src_us,std::int64_t{90000});
+    QCOMPARE(parts->other_render_us,std::int64_t{320000});
+    x.src_us=-1;
+    QVERIFY(!AcceptedPrepareObservationHistory::stage_breakdown(x));
+    x.src_us=900000;
+    QVERIFY(AcceptedPrepareObservationHistory::eligible(x));
+    QVERIFY(!AcceptedPrepareObservationHistory::stage_breakdown(x));
+    x.master_hz=44100;x.src_us=-1;x.wall_us=50000;
+    QVERIFY(AcceptedPrepareObservationHistory::eligible(x));
+    QVERIFY(!AcceptedPrepareObservationHistory::stage_breakdown(x));
+    x.queue_us=0;
+    x.wall_us=std::numeric_limits<std::int64_t>::max();
+    QVERIFY(AcceptedPrepareObservationHistory::stage_breakdown(x));
+    x.queue_us=1;
+    QVERIFY(!AcceptedPrepareObservationHistory::stage_breakdown(x));
+ }
  void acceptedHistoryBoundedAndSourceRevocationUnderManyPrepares() {
     AcceptedPrepareObservationHistory h;
     AcceptedPrepareObservation x{

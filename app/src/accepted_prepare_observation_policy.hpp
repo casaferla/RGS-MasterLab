@@ -29,6 +29,14 @@ struct AcceptedPrepareRevisionKey {
     std::uint64_t terminal{0};
     std::uint64_t parameters{0};
 };
+// Exact scalar timings of an already accepted full Prepare. Derived only
+// when separately measured, nonoverlapping stages fit the render wall time.
+// "Other" is explicitly unattributed; it is NOT a new performance forecast.
+struct AcceptedPrepareStageBreakdown {
+    std::int64_t src_us;
+    std::int64_t other_render_us;
+    bool converted;
+};
 struct AcceptedPrepareHistorySummary {
     AcceptedPrepareObservation last;
     std::size_t exact_revision_count{0};
@@ -45,6 +53,20 @@ public:
             && x.wall_us<=std::numeric_limits<std::int64_t>::max()-x.queue_us
             && x.m17_us>=0 && x.m16_us>=0
             && (x.source_hz==x.master_hz || x.src_us>=0);
+    }
+    [[nodiscard]] static std::optional<AcceptedPrepareStageBreakdown>
+    stage_breakdown(const AcceptedPrepareObservation& x) noexcept {
+        if(!eligible(x))return std::nullopt;
+        auto remaining=x.wall_us;
+        if(x.m17_us>remaining)return std::nullopt;
+        remaining-=x.m17_us;
+        if(x.m16_us>remaining)return std::nullopt;
+        remaining-=x.m16_us;
+        const auto measured_src=std::max<std::int64_t>(0,x.src_us);
+        if(measured_src>remaining)return std::nullopt;
+        remaining-=measured_src;
+        return AcceptedPrepareStageBreakdown{
+            measured_src,remaining,x.source_hz!=x.master_hz};
     }
     [[nodiscard]] bool observe(const AcceptedPrepareObservation& x) {
         if(x.invocation<=last_seen_)return false;

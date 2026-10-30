@@ -305,6 +305,23 @@ QVariantList PrepareMemoryAdviceViewModel::actual_prepare_times() const
                 const auto& x=observed->last;
                 item[QStringLiteral("label")]=QStringLiteral("ACT %1")
                     .arg(fmt(x.queue_us+x.wall_us));
+                const auto stages=
+                    AcceptedPrepareObservationHistory::stage_breakdown(x);
+                const auto stageDetails=stages
+                    ? QStringLiteral(
+                        " Actual stages: queue %1; Final SRC %2; M17 %3; "
+                        "M16 primary %4; other render time %5. "
+                        "Other render time is unattributed, not measured "
+                        "separately.")
+                        .arg(fmt(x.queue_us),
+                             stages->converted
+                                ?fmt(stages->src_us)
+                                :QStringLiteral("identity / bypassed"),
+                             fmt(x.m17_us),fmt(x.m16_us),
+                             fmt(stages->other_render_us))
+                    : QStringLiteral(
+                        " Detailed stage attribution N/A: measured stage "
+                        "counters exceed the render wall time.");
                 item[QStringLiteral("details")]=QStringLiteral(
                     "Actual ACCEPTED full M17 Prepare on this host: last %1 "
                     "(queue + render, including Final SRC where required). "
@@ -314,7 +331,8 @@ QVariantList PrepareMemoryAdviceViewModel::actual_prepare_times() const
                     .arg(fmt(x.queue_us+x.wall_us))
                     .arg(observed->exact_revision_count)
                     .arg(fmt(observed->minimum_total_us),
-                         fmt(observed->maximum_total_us));
+                         fmt(observed->maximum_total_us))
+                    +stageDetails;
                 item[QStringLiteral("ceilingDbTp")]=x.ceiling;
                 item[QStringLiteral("actual")]=true;
             }
