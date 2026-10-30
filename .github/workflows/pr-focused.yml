@@ -440,6 +440,9 @@ jobs:
           python tools/qualification/final_src/pack_private_offline_qt_test_bundle.py \
             --build-dir build-linux \
             --output ${{ runner.temp }}/RGS-Phase11-NATIVE-QT-OFFLINE-NONRELEASE.tar.gz
+          python tools/qualification/final_src/pack_private_offline_qt_test_bundle.py \
+            --verify-only \
+            --output ${{ runner.temp }}/RGS-Phase11-NATIVE-QT-OFFLINE-NONRELEASE.tar.gz
 
       - name: Archive real Qt native offline test executable without any private assets (Linux)
         uses: actions/upload-artifact@v4

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Synthetic negative tests for offline genuine-Qt binary packaging; NOT audio."""
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -9,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from phase11_math_preflight import ContractError
-from pack_private_offline_qt_test_bundle import pack,parse_ldd
+from pack_private_offline_qt_test_bundle import pack,parse_ldd,verify_archive
 
 
 class PortableQtNativeBundleTests(unittest.TestCase):
@@ -52,6 +53,54 @@ class PortableQtNativeBundleTests(unittest.TestCase):
                 "rgsml_offline_qt_native/PROVENANCE_NONRELEASE.json").read())
             self.assertEqual(receipt["native_elf_sha256"],
                              manifest["native_elf_sha256"])
+
+    def test_archive_tamper_and_missing_members_rejected(self):
+        ldd="\n".join((self.line(self.core),self.line(self.test)))
+        with patch("pack_private_offline_qt_test_bundle.subprocess.run",
+                   return_value=subprocess.CompletedProcess([],0,ldd,"")):
+            pack(self.build,self.archive)
+        self.assertEqual(len(verify_archive(self.archive)["dependencies"]),2)
+        with tarfile.open(self.archive,"r:gz") as tar:
+            source=[(m,tar.extractfile(m).read() if m.isfile() else None)
+                    for m in tar.getmembers()]
+        for kind in ("missing","altered","duplicate","symlink","unexpected","false_release"):
+            with self.subTest(kind=kind):
+                import copy
+                items=list(source)
+                if kind=="missing":
+                    items=[(m,b) for m,b in items if not m.name.endswith("libQt6Test.so.6")]
+                if kind=="altered":
+                    items=[(m,b+b"TAMPER" if m.name.endswith("/rgsml_playback_src_tests") else b)
+                           for m,b in items]
+                if kind=="duplicate": items.append(items[-1])
+                if kind=="symlink":
+                    m,b=next((m,b) for m,b in items if m.name.endswith("libQt6Test.so.6"))
+                    bad=copy.copy(m)
+                    bad.type=tarfile.SYMTYPE
+                    bad.linkname="/tmp/foreign"
+                    items=[(bad,None) if x is m else (x,y) for x,y in items]
+                if kind=="unexpected":
+                    m=tarfile.TarInfo("rgsml_offline_qt_native/private/FIR.bin")
+                    items.append((m,b"leak"))
+                if kind=="false_release":
+                    altered=[]
+                    for m,b in items:
+                        if m.name.endswith("PROVENANCE_NONRELEASE.json"):
+                            record=json.loads(b)
+                            record["release_qualified"]=True
+                            b=json.dumps(record).encode()
+                        altered.append((m,b))
+                    items=altered
+                path=Path(self.tmp.name)/("bad-"+kind+".tar.gz")
+                with tarfile.open(path,"w:gz") as tar:
+                    for m,b in items:
+                        m=copy.copy(m)
+                        if m.isfile():
+                            m.size=len(b)
+                            tar.addfile(m,io.BytesIO(b))
+                        else: tar.addfile(m)
+                with self.assertRaises(ContractError):
+                    verify_archive(path)
 
     def test_missing_qt_deps_and_unresolved_deps_fail(self):
         for ldd in ("libNotQt.so.1 => /tmp/libOther.so.1 (0x0)",

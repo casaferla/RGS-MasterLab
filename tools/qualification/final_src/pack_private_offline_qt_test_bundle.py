@@ -59,6 +59,66 @@ def parse_ldd(text: str)->list[Path]:
     return list(found.values())
 
 
+
+def verify_archive(archive: Path, *, maximum_bytes=120_000_000) -> dict:
+    """Fail closed on incomplete, altered, extra, duplicate and unsafe Qt bundles."""
+    if not archive.is_file() or archive.suffixes[-2:] != [".tar", ".gz"]:
+        raise ContractError("Qt native archive missing or invalid")
+    try:
+        with tarfile.open(archive,"r:gz") as tar:
+            members=tar.getmembers()
+            names=[m.name for m in members]
+            if len(names)!=len(set(names)):
+                raise ContractError("duplicate Qt tar member")
+            root="rgsml_offline_qt_native"
+            files={root+"/rgsml_playback_src_tests",root+"/PROVENANCE_NONRELEASE.json",root+"/RUN_OFFLINE.txt"}
+            dirs={root,root+"/lib"}
+            mapping={m.name:m for m in members}
+            if not files.issubset(mapping) or not dirs.issubset(mapping):
+                raise ContractError("Qt bundle incomplete")
+            if any(not mapping[d].isdir() for d in dirs) or any(not m.isfile() for m in members if m.name not in dirs):
+                raise ContractError("unsafe Qt bundle member")
+            provenance=mapping[root+"/PROVENANCE_NONRELEASE.json"]
+            if provenance.size>50000:
+                raise ContractError("oversized Qt manifest")
+            manifest=json.loads(tar.extractfile(provenance).read())
+            if not isinstance(manifest,dict) or not isinstance(manifest.get("dependencies"),dict):
+                raise ContractError("invalid Qt provenance")
+            libs=manifest["dependencies"]
+            if not libs or any(not isinstance(k,str) or not re.fullmatch(r"lib[A-Za-z0-9_+.-]+\.so(?:\.[0-9]+)*",k)
+                               or not isinstance(h,str) or not re.fullmatch(r"[a-f0-9]{64}",h)
+                               for k,h in libs.items()):
+                raise ContractError("unsafe Qt dependency entry")
+            if set(names)!=files|dirs|{root+"/lib/"+k for k in libs}:
+                raise ContractError("Qt archive has missing or extra members")
+            if (manifest.get("schema")!="rgsml.phase11.qt-native-test-exe-portable-nonrelease/1"
+                or any(manifest.get(k) is not False for k in ("native_archive_contains_private_q0_q1",
+                    "native_complete_14_q0_36_q1_test_executed","product_admission_authorized","release_qualified"))
+                or not any(k.startswith("libQt6Core.so") for k in libs)
+                or not any(k.startswith("libQt6Test.so") for k in libs)):
+                raise ContractError("Qt bundle provenance/Qt libraries invalid")
+            if not mapping[root+"/rgsml_playback_src_tests"].mode & 0o111:
+                raise ContractError("Qt ELF execute bit missing")
+            expected={root+"/rgsml_playback_src_tests":manifest.get("native_elf_sha256")}
+            expected.update({root+"/lib/"+k:h for k,h in libs.items()})
+            total=0
+            for filename,want in expected.items():
+                if not isinstance(want,str) or not re.fullmatch(r"[a-f0-9]{64}",want):
+                    raise ContractError("missing valid Qt SHA256")
+                total+=mapping[filename].size
+                if total>maximum_bytes:
+                    raise ContractError("Qt bundle oversized")
+                f=tar.extractfile(mapping[filename])
+                if f is None:
+                    raise ContractError("Qt bundle unreadable")
+                h=sha256()
+                for block in iter(lambda:f.read(1048576),b""): h.update(block)
+                if h.hexdigest()!=want:
+                    raise ContractError("Qt member checksum mismatch")
+            return manifest
+    except (OSError,tarfile.TarError,ValueError,UnicodeError,TypeError,KeyError) as exc:
+        raise ContractError("invalid or incomplete Qt archive") from exc
+
 def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ContractError("Qt archive path must be new")
@@ -120,6 +180,9 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
             "This package does NOT certify Q0 full DTFT or Q1-Q6 release.\n")
         with tarfile.open(output,"w:gz") as tar:
             tar.add(package,arcname="rgsml_offline_qt_native")
+        checked=verify_archive(output,maximum_bytes=maximum_bytes)
+        if checked["native_elf_sha256"]!=manifest["native_elf_sha256"] or checked["dependencies"]!=manifest["dependencies"]:
+            raise ContractError("Qt postpack provenance changed")
         manifest["bundle_tar_gz_sha256"]=digest(output)
         manifest["bundle_uncompressed_bytes"]=total
         return manifest
@@ -133,9 +196,16 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
 
 def main()->None:
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--build-dir",type=Path,required=True)
+    p.add_argument("--build-dir",type=Path)
+    p.add_argument("--verify-only",action="store_true")
     p.add_argument("--output",type=Path,required=True)
     a=p.parse_args()
+    if a.verify_only:
+        record=verify_archive(a.output)
+        print(json.dumps({"status":"QT_NONRELEASE_INTEGRITY_PASS","dependencies":len(record["dependencies"]),"native_elf_sha256":record["native_elf_sha256"],"release_qualified":False},sort_keys=True))
+        return
+    if a.build_dir is None:
+        p.error("--build-dir required for packing")
     record=pack(a.build_dir,a.output)
     print(json.dumps({
         "schema":record["schema"],
