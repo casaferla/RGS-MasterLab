@@ -6,7 +6,7 @@ from fractions import Fraction
 from unittest.mock import patch
 
 from dtft_third_order_rigorous import (
-    enclose_third_order, exact_third_moment, prove_window)
+    enclose_third_order, exact_third_moment, prove_window, PreparedThirdOrderProof)
 from phase11_math_preflight import ContractError, Ratio
 
 
@@ -47,6 +47,19 @@ class ThirdOrderMPFRTests(unittest.TestCase):
         result=prove_window(self.r,taps,34000,34001,kind="stopband",max_boxes=1)
         self.assertEqual(result["status"],"UNRESOLVED")
         self.assertGreater(result["remaining_boxes"],0)
+
+    def test_prepared_proof_reuses_exact_moment_and_matches_public_result(self):
+        taps=tuple(Fraction(x) for x in (0,0,2,0,0))
+        with patch("dtft_third_order_rigorous.exact_third_moment",
+                   wraps=exact_third_moment) as moment:
+            prepared=PreparedThirdOrderProof(self.r,taps)
+            a=prepared.prove_window(0,100,kind="passband",max_boxes=8)
+            b=prepared.prove_window(200,300,kind="passband",max_boxes=8)
+            self.assertEqual(moment.call_count,1)
+        self.assertEqual(a,prove_window(self.r,taps,0,100,kind="passband",max_boxes=8))
+        self.assertEqual(b,prove_window(self.r,taps,200,300,kind="passband",max_boxes=8))
+        with self.assertRaises(ContractError):
+            PreparedThirdOrderProof(self.r,(Fraction(0),Fraction(1),Fraction(2)))
 
     def test_independent_sampled_values_enclosed(self):
         # Sampling only checks our implementation; the actual proof is the

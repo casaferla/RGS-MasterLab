@@ -219,6 +219,13 @@ jobs:
           set -o pipefail
           python tools/qualification/final_src/test_dtft_third_order_rigorous.py 2>&1 | tail -n 32
 
+      # Synthetic checkpoint adversarial tests only; the full 14-asset
+      # interval campaign stays private/offline, NOT per-PR Focused CI.
+      - name: Phase-11 MPFR resumable 14-ratio checkpoint regression (Linux)
+        run: |
+          set -o pipefail
+          python tools/qualification/final_src/test_run_resumable_14_mpfr_continuum.py 2>&1 | tail -n 32
+
       - name: Phase-11 MPFR third-order real 20Hz continuum proof (Linux)
         run: |
           set -o pipefail

@@ -42,6 +42,11 @@ def enclose_third_order(ratio,taps,lo,hi,*,bits=256):
 
 def _validated_enclosure(ratio,taps,lo,hi,*,m3,bits):
     _validate_dtft_input(ratio,taps,bits)
+    return _prevalidated_enclosure(ratio,taps,lo,hi,m3=m3,bits=bits)
+
+
+def _prevalidated_enclosure(ratio,taps,lo,hi,*,m3,bits):
+    """Only callable AFTER _validate_dtft_input; never a public oracle."""
     lo,hi=Fraction(lo),Fraction(hi)
     grid_hz=ratio.fin*ratio.L
     if lo<0 or hi<lo or hi>Fraction(grid_hz,2):
@@ -83,40 +88,57 @@ def _validated_enclosure(ratio,taps,lo,hi,*,m3,bits):
     return v_lo-variation,v_hi+variation
 
 
+class PreparedThirdOrderProof:
+    """Reuse the exact third moment and validated tap geometry across boxes.
+
+    Constructor is required: no external caller can provide a smaller moment.
+    Existing public prove_window remains a fully checked one-shot wrapper.
+    """
+    def __init__(self,ratio,taps,*,bits=256):
+        _validate_dtft_input(ratio,taps,bits)
+        self.ratio=ratio
+        self.taps=taps
+        self.bits=bits
+        self._m3=exact_third_moment(taps)
+
+    def prove_window(self,start,end,*,kind,max_boxes=128):
+        if (kind not in ("passband","stopband")
+            or type(max_boxes) is not int or not 1<=max_boxes<=1_000_000):
+            raise ContractError("invalid MPFR third-order proof parameters")
+        first,last=Fraction(start),Fraction(end)
+        if first<0 or last<first or last>Fraction(self.ratio.fin*self.ratio.L,2):
+            raise ContractError("invalid proof frequencies")
+        stack=[(first,last)]
+        visited=accepted=0
+        while stack:
+            if visited>=max_boxes:
+                return {"status":"UNRESOLVED","visited_boxes":visited,
+                        "proven_boxes":accepted,"remaining_boxes":len(stack),
+                        "release_qualified":False}
+            lo,hi=stack.pop()
+            lower,upper=_prevalidated_enclosure(
+                self.ratio,self.taps,lo,hi,m3=self._m3,bits=self.bits)
+            visited+=1
+            good=((lower>=1-PASS_TOL and upper<=1+PASS_TOL)
+                  if kind=="passband" else
+                  (lower>=-STOP_TOL and upper<=STOP_TOL))
+            if good:
+                accepted+=1
+            elif lo==hi:
+                return {"status":"UNRESOLVED","visited_boxes":visited,
+                        "proven_boxes":accepted,"remaining_boxes":len(stack)+1,
+                        "release_qualified":False}
+            else:
+                mid=(lo+hi)/2
+                stack.extend(((mid,hi),(lo,mid)))
+        return {"status":"CONTINUUM_SUBBAND_PROVEN_NONRELEASE",
+                "visited_boxes":visited,"proven_boxes":accepted,
+                "remaining_boxes":0,"release_qualified":False}
+
+
 def prove_window(ratio,taps,start,end,*,kind,max_boxes=128,bits=256):
-    _validate_dtft_input(ratio,taps,bits)
-    if (kind not in ("passband","stopband")
-        or type(max_boxes) is not int or not 1<=max_boxes<=1_000_000):
-        raise ContractError("invalid MPFR third-order proof parameters")
-    first,last=Fraction(start),Fraction(end)
-    if first<0 or last<first or last>Fraction(ratio.fin*ratio.L,2):
-        raise ContractError("invalid proof frequencies")
-    m3=exact_third_moment(taps)
-    stack=[(first,last)]
-    visited=accepted=0
-    while stack:
-        if visited>=max_boxes:
-            return {"status":"UNRESOLVED","visited_boxes":visited,
-                    "proven_boxes":accepted,"remaining_boxes":len(stack),
-                    "release_qualified":False}
-        lo,hi=stack.pop()
-        lower,upper=_validated_enclosure(ratio,taps,lo,hi,m3=m3,bits=bits)
-        visited+=1
-        good=((lower>=1-PASS_TOL and upper<=1+PASS_TOL)
-              if kind=="passband" else
-              (lower>=-STOP_TOL and upper<=STOP_TOL))
-        if good:
-            accepted+=1
-        elif lo==hi:
-            return {"status":"UNRESOLVED","visited_boxes":visited,
-                    "proven_boxes":accepted,"remaining_boxes":len(stack)+1,
-                    "release_qualified":False}
-        else:
-            mid=(lo+hi)/2
-            stack.extend(((mid,hi),(lo,mid)))
-    return {"status":"CONTINUUM_SUBBAND_PROVEN_NONRELEASE",
-            "visited_boxes":visited,"proven_boxes":accepted,
-            "remaining_boxes":0,"release_qualified":False}
+    return PreparedThirdOrderProof(ratio,taps,bits=bits).prove_window(
+        start,end,kind=kind,max_boxes=max_boxes)
 
 
 def main():
