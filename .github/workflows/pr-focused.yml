@@ -427,6 +427,28 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+      # REAL compiled Qt test executable; NO proprietary Q0 FIR binaries or
+      # Q1 reference vectors are transferred to Actions or uploaded here.
+      # Run this build later against the existing PRIVATE frozen ZIPs on
+      # an authorized offline host, avoiding a new Qt build for each gate.
+      - name: Phase11 portable REAL Qt native test packaging negative gates (Linux)
+        run: |
+          python tools/qualification/final_src/test_pack_private_offline_qt_test_bundle.py
+
+      - name: Pack exact compiled Linux Qt SRC native test for private offline 14/36 gate
+        run: |
+          python tools/qualification/final_src/pack_private_offline_qt_test_bundle.py \
+            --build-dir build-linux \
+            --output ${{ runner.temp }}/RGS-Phase11-NATIVE-QT-OFFLINE-NONRELEASE.tar.gz
+
+      - name: Archive real Qt native offline test executable without any private assets (Linux)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Phase11-REAL-NATIVE-QT-EXE-NONRELEASE-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ runner.temp }}/RGS-Phase11-NATIVE-QT-OFFLINE-NONRELEASE.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+
       - name: Upload bounded M17 CPU probe (Linux)
         if: success()
         uses: actions/upload-artifact@v4
