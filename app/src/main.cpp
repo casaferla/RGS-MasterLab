@@ -419,6 +419,16 @@ int main(int argc, char* argv[])
         terminalLimiterState,terminalLimiterViewModel,auditionSelector,
         playbackTransport,privateProductSession};
     terminalProductActivation.set_master_rate_state(masterOutputRate);
+    terminalMonitorViewModel.set_installed_m17_handoff(
+        [&terminalProductActivation] {
+            return terminalProductActivation.can_handoff_installed_to_monitor();
+        },
+        [&terminalProductActivation] {
+            return terminalProductActivation.handoff_installed_to_monitor();
+        },
+        [&terminalProductActivation] {
+            terminalProductActivation.restore_ready_after_monitor_return();
+        });
     // Historical ACT is visible ONLY when the current MANUAL PCM is still
     // the exact chain revision and the M17 terminal state/parameters are
     // unchanged. A->B->A Ceiling edits never resurrect old measurements.

@@ -71,6 +71,20 @@ public:
         lastCanPrepareOffline_=can_prepare_offline();
         emit changed();
     }
+    // Independent conductor runs one exact M17 DEVICE retirement before
+    // an ordinary Master Audition preflight. No M17 render is triggered.
+    using InstalledHandoffEligible=std::function<bool()>;
+    using InstalledHandoff=std::function<core::Status()>;
+    using ReturnedReady=std::function<void()>;
+    void set_installed_m17_handoff(InstalledHandoffEligible eligible,
+        InstalledHandoff handoff,ReturnedReady returned)
+    {
+        installedHandoffEligible_=std::move(eligible);
+        installedHandoff_=std::move(handoff);
+        returnedReady_=std::move(returned);
+        lastCanInstall_=can_install();
+        emit changed();
+    }
     Q_INVOKABLE bool requestMaster(int chosenRateHz);
     Q_INVOKABLE bool installMonitor(bool explicitlyAllowCaution);
     Q_INVOKABLE bool returnManual();
@@ -90,6 +104,9 @@ private:
     bool lastCanInstall_{false};
     bool lastCanPrepareOffline_{false};
     OfflineMasterAuthorizer offlineMasterAuthorizer_;
+    InstalledHandoffEligible installedHandoffEligible_;
+    InstalledHandoff installedHandoff_;
+    ReturnedReady returnedReady_;
     TerminalPrivateProductSession* session_;
     PlaybackTransportViewModel* transport_;
     QTimer observationTimer_;

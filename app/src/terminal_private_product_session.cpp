@@ -170,6 +170,10 @@ TerminalPrivateProductSession::current_verified_private_master() const
     // immutable MASTER. It may be borrowed only while MANUAL is the exact
     // audible owner: never run another full-resource Prepare for monitoring.
     if(pending_ && !pending_->masterOnly) {
+        // Retired installed M17: exact MANUAL is restored and the checked
+        // MASTER remains in the unchanged COMPARISON_VERIFIED gate. Only the
+        // owner-exact borrowing path below can read it; never borrow from a
+        // still-installed M17 device.
         if(status_!=QStringLiteral("READY_TO_INSTALL")
            &&status_!=QStringLiteral("COMPARISON_VERIFIED"))
             return {};

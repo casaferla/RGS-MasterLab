@@ -160,7 +160,11 @@ Item {
                                 && root.monitorViewModel.monitorInstalled
                                 ? "Shared MASTER retained · Return to MANUAL"
                                 : root.ready
-                                    ? "M17 MASTER verified · no second Prepare"
+                                    ? (root.monitorViewModel
+                                          && root.monitorViewModel.statusText.indexOf(
+                                              "M17 PREVIEW ACTIVE") >= 0
+                                        ? "M17 Preview active · handoff retains MASTER"
+                                        : "M17 MASTER verified · no second Prepare")
                                     : "Use Prepare in M17 · then Start Device Audition"
                             Accessible.name: text
                         }

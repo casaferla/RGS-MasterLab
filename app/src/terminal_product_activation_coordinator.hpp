@@ -22,6 +22,13 @@ public:
         AuditionSourceSelector&,PlaybackTransportViewModel&,
         TerminalPrivateProductSession&,QObject* parent=nullptr);
     [[nodiscard]] bool device_active() const noexcept {return deviceActive_;}
+    // Explicit user handoff from an already installed M17 Preview Prepared
+    // to Master Audition. Retires the exact M17 DEVICE owner, restores
+    // MANUAL and keeps the SAME verified MASTER; never runs Prepare.
+    [[nodiscard]] bool can_handoff_installed_to_monitor() const;
+    [[nodiscard]] core::Status handoff_installed_to_monitor();
+    // Re-presents retained READY after a successful exact monitor Return.
+    void restore_ready_after_monitor_return();
     // Product-only authority: M17 Prepare targets PROJECT MASTER, never the
     // Windows endpoint. Absent binding preserves legacy isolated fixtures.
     void set_master_rate_state(MasterOutputRateState& masterState);

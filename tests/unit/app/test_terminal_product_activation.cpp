@@ -875,8 +875,45 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
     QVERIFY(coordinator.device_active());
+    // INSTALLED -> Master Audition requires explicit exact-owner retirement.
+    // The user starts audition directly, not a second whole-resource Prepare.
+    // This fixture intentionally lacks DEVICE-monitor preflight: the
+    // handoff must still safely retain the MASTER when allocation is denied.
+    app::TerminalMonitorViewModel handoffUi{product,transport};
+    handoffUi.set_installed_m17_handoff(
+        [&coordinator] {
+            return coordinator.can_handoff_installed_to_monitor();
+        },
+        [&coordinator] {
+            return coordinator.handoff_installed_to_monitor();
+        },
+        [&coordinator] {
+            coordinator.restore_ready_after_monitor_return();
+        });
+    const auto verifiedBeforeHandoff=candidates.staged();
+    const auto renderBeforeHandoff=renderer.render_invocation_count();
+    QVERIFY(handoffUi.can_install());
+    QVERIFY(!handoffUi.installMonitor(false)); // Windows preflight not wired
+    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    QCOMPARE(candidates.staged(),verifiedBeforeHandoff);
+    QCOMPARE(product.verified_master_rate_for_monitoring(),
+             std::optional{*deviceRate.value()});
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QVERIFY(!coordinator.device_active());
+    QVERIFY(handoffUi.can_install()); // retry allowed without reprepare
+    QCOMPARE(renderer.render_invocation_count(),renderBeforeHandoff);
+    // Re-enter the pre-existing M17 A/B gate and restore installed Preview.
+    vm.setBypass(true);
+    vm.setBypass(false);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    vm.previewPrepared();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QVERIFY(coordinator.device_active());
+    QCOMPARE(candidates.staged(),verifiedBeforeHandoff);
+    QCOMPARE(renderer.render_invocation_count(),renderBeforeHandoff);
     // Product cannot silently borrow an already installed terminal sink;
-    // a future explicit ownership-retirement transaction is mandatory.
+    // an explicit ownership-retirement transaction is mandatory.
     QVERIFY(!product.borrow_verified_m17_master_for_device(
         *deviceRate.value()));
     auto rejectedInstalledReuse=

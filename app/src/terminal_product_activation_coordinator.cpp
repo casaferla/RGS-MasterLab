@@ -451,6 +451,60 @@ void TerminalProductActivationCoordinator::finish_activation(bool nonconforming)
     transitioning_=false;
 }
 
+bool TerminalProductActivationCoordinator::can_handoff_installed_to_monitor() const
+{
+    return !transitioning_ && deviceActive_ && intent_
+        && !state_->bypassed()
+        && session_->status()==QStringLiteral("PRIVATE_INSTALLED")
+        && static_cast<bool>(session_->private_installed_output_identity());
+}
+
+core::Status TerminalProductActivationCoordinator::handoff_installed_to_monitor()
+{
+    if(!can_handoff_installed_to_monitor())
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_MONITOR_HANDOFF_REQUIRES_EXACT_INSTALLED_PREVIEW"});
+    const auto identity=session_->private_installed_output_identity();
+    if(!identity)return core::Status::failure(*identity.error());
+    const auto original=identity.value()->owner;
+    const auto rate=original->rendered.output_rate;
+    // The existing A/B retirement transaction has already been tested
+    // for current SOURCE cue/Loop and exact installed RealizationId.
+    // It restores the MANUAL device before any unrelated monitor allocation.
+    deactivate(true);
+    if(!session_->comparison_owners_current()
+       ||session_->status()!=QStringLiteral("COMPARISON_VERIFIED")
+       ||session_->borrow_verified_m17_master_for_device(rate)!=original)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_MONITOR_HANDOFF_COULD_NOT_PROVE_RETAINED_MASTER"});
+    return core::Status::success();
+}
+
+void TerminalProductActivationCoordinator::restore_ready_after_monitor_return()
+{
+    if(transitioning_||intent_||deviceActive_||state_->bypassed()
+       ||session_->monitoring_transaction_active()
+       ||session_->status()!=QStringLiteral("READY_TO_INSTALL"))
+        return;
+    // The exact MANUAL was restored by the private session, not fabricated
+    // from monitoring PCM. Re-arm M17's UI WITHOUT any new whole-track job.
+    auto captured=selector_->capture_terminal_activation_intent();
+    if(!captured)return;
+    const auto rate=session_->verified_master_rate_for_monitoring();
+    if(!rate || (masterRateState_
+        &&masterRateState_->master_rate_hz()!=rate->value()))
+        return;
+    intent_=*captured.value();
+    readyToPreview_=session_->current_master_matches_device_for_preview();
+    view_->setPreparationProgress(
+        QStringLiteral("Verified MASTER ready"),1.0,true);
+    view_->setAudioStatus(readyToPreview_
+        ?QStringLiteral("READY · PREVIEW AVAILABLE")
+        :QStringLiteral("MASTER VERIFIED · USE MASTER AUDITION"));
+}
+
 void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
 {
     if(transitioning_)return;

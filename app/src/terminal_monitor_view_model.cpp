@@ -66,9 +66,14 @@ QString TerminalMonitorViewModel::status_text() const
     if(status==QStringLiteral("RENDERING"))
         return QStringLiteral("PREPARING FINAL MASTER · NOT DEVICE AUDIO");
     if(status==QStringLiteral("MASTER_READY_MONITOR_PENDING")
-       ||(status==QStringLiteral("READY_TO_INSTALL")
+       ||((status==QStringLiteral("READY_TO_INSTALL")
+           ||status==QStringLiteral("COMPARISON_VERIFIED"))
           &&session_->verified_master_rate_for_monitoring()))
         return QStringLiteral("MASTER VERIFIED · DEVICE PCM NOT INSTALLED");
+    if(status==QStringLiteral("PRIVATE_INSTALLED")
+       &&installedHandoffEligible_&&installedHandoffEligible_())
+        return QStringLiteral(
+            "M17 PREVIEW ACTIVE · START AUDITION RETAINS SAME MASTER");
     if(status==QStringLiteral("MASTER_MEASURED_NONCONFORMING_PRIVATE"))
         return QStringLiteral("MASTER NON-CONFORMING · AUDITION BLOCKED");
     if(status==QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"))
@@ -132,8 +137,12 @@ bool TerminalMonitorViewModel::can_dismiss() const noexcept
 bool TerminalMonitorViewModel::can_install() const noexcept
 {
     const auto status=session_->status();
+    if(status==QStringLiteral("PRIVATE_INSTALLED"))
+        return installedHandoff_ && installedHandoffEligible_
+            && installedHandoffEligible_();
     if(status!=QStringLiteral("MASTER_READY_MONITOR_PENDING")
-       &&status!=QStringLiteral("READY_TO_INSTALL"))return false;
+       &&status!=QStringLiteral("READY_TO_INSTALL")
+       &&status!=QStringLiteral("COMPARISON_VERIFIED"))return false;
     if(!session_->verified_master_rate_for_monitoring())return false;
     // A verified immutable M17 MASTER is independent of Play/Pause,
     // source cue and Loop. Its DEVICE installation must still pass exact
@@ -210,6 +219,17 @@ bool TerminalMonitorViewModel::requestMaster(int chosenRateHz)
 bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
 {
     if(!can_install())return report(reject("MONITOR_INSTALL_REQUIRES_VERIFIED_MASTER"));
+    if(session_->status()==QStringLiteral("PRIVATE_INSTALLED")) {
+        // One explicit user command; the conductor retires the exact M17
+        // device and restores MANUAL. Only THEN may Windows allocate an
+        // independent DEVICE-rate monitoring sink from the SAME MASTER.
+        if(!installedHandoff_)return report(reject(
+            "MONITOR_M17_INSTALLED_HANDOFF_UNAVAILABLE"));
+        const auto handed=installedHandoff_();
+        if(!report(handed))return false;
+        if(!can_install())return report(reject(
+            "MONITOR_M17_RETAINED_MASTER_NOT_ADMISSIBLE"));
+    }
     // Playback SRC's hard block bound is 1024 OUTPUT_RATE frames. An
     // oversized block made every real DEVICE allocation fail.
     const auto block=core::FrameCount::create(
@@ -246,6 +266,9 @@ bool TerminalMonitorViewModel::returnManual()
     // survives a DEVICE audition return and remains available to Preview.
     if(session_->status()==QStringLiteral("READY_TO_INSTALL")) {
         monitorRequested_=false;
+        // Normal M17 does not lose its master or become a second Prepare
+        // after Return from the exact monitoring lease.
+        if(returnedReady_)returnedReady_();
         return report(core::Status::success());
     }
     const auto cleared=session_->cancel();
