@@ -137,6 +137,7 @@ private slots:
     void phase11GenuineMpfrFourfoldRatesMatchPythonScalarBits();
     void phase11GenuineQ0OneM17PassThenIndependentDeviceRate();
     void phase11External14RealCandidatesAll36OfflineNativeRehearsal();
+    void phase11External14RealCandidates15NativeAliasSineRehearsal();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -3408,6 +3409,110 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
     QCOMPARE(conversions,30);
     QCOMPARE(static_cast<int>(std::count(seen.begin(),seen.end(),true)),14);
 }
+
+void PlaybackSampleRateAdapterTest::
+phase11External14RealCandidates15NativeAliasSineRehearsal()
+{
+    // Additional OFFLINE NATIVE numerical test, intentionally QSKIP in
+    // routine CI when private 14 REAL Q0 assets are not supplied.
+    // This is product AudioBuffer SRC output (not SciPy), but only at
+    // 15 isolated aliasProbeHz points, NEVER a full-band certificate.
+    const QByteArray root=qgetenv("RGSML_PHASE11_REAL_14_Q0_DIR");
+    if(root.isEmpty())
+        QSKIP("Private complete 14-asset Q0 candidate family not installed.");
+    struct Pin {
+        std::uint32_t L,M;
+        const char* sha;
+    };
+    constexpr std::array<Pin,7> pins{{
+        {1,2,"b97776527687180bea6dbf86a8da877c0bdaa528d305abe4b7beaf806ecaf48e"},
+        {1,4,"3c5db068904a059fae54ab3a96ae96ec3963fc31e649f5f4de9ecf5b6d17a947"},
+        {40,147,"7658f824ca67beab44a3dee35ccbdaae3aa0acdfc9257c327a9eaa7f3851928f"},
+        {80,147,"42d55a83855e1f166819ce4c3ad6bd53293ddb76a51afd5b1733c520be7ec5f0"},
+        {147,160,"697face6bce0cf299e80c0c28cae51bb49e13dbe435fb529fbf98cfb76fee991"},
+        {147,320,"36e226baf02c67e6e9357c0c1d31c205b2f00ef89526512347487c27479d8936"},
+        {147,640,"42f674e946c7aa816da52ef434f162caed917199ad752514ab771d3094860923"},
+    }};
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    const double pi=std::acos(-1.0);
+    constexpr double inputAmplitude=0.25;
+    constexpr double minAttenuationDb=140.0;
+    const double maxAliasAmplitude=inputAmplitude*
+        std::pow(10.0,-minAttenuationDb/20.0);
+    int tested=0;
+    std::array<bool,7> ratiosSeen{};
+    for(const auto fin:rates)for(const auto fout:rates) {
+        if(fin<=fout)continue;
+        const auto g=std::gcd(fin,fout);
+        const auto L=static_cast<std::uint32_t>(fout/g);
+        const auto M=static_cast<std::uint32_t>(fin/g);
+        const auto it=std::find_if(pins.begin(),pins.end(),
+            [&](const Pin& p){return p.L==L&&p.M==M;});
+        QVERIFY2(it!=pins.end(),"Missing frozen downsampling ratio");
+        ratiosSeen[static_cast<std::size_t>(it-pins.begin())]=true;
+        const auto filename=std::string(root.constData())+
+            "/RGSMSR1_L"+std::to_string(L)+"_M"+std::to_string(M)+".bin";
+        std::ifstream file(filename,std::ios::binary);
+        QVERIFY2(file.good(),"Missing genuine offline Q0 candidate");
+        const std::vector<std::uint8_t> asset{
+            std::istreambuf_iterator<char>{file},
+            std::istreambuf_iterator<char>{}};
+        const auto digest=core::sha256_hex(std::span<const std::byte>{
+            reinterpret_cast<const std::byte*>(asset.data()),asset.size()});
+        QCOMPARE(digest,std::string(it->sha));
+        // One tenth of a second; >= 10% trim at each end eliminates
+        // frozen FIR startup/tail settling before true-source alias RMS.
+        const auto sourceFrames=fin/10;
+        const auto outputFrames=fout/10;
+        auto format=audio::AudioFormat::create(
+            rate(fin),audio::ChannelLayout::MONO_C);
+        QVERIFY(format);
+        auto input=audio::AudioBuffer::create(
+            *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},frame_count(sourceFrames));
+        QVERIFY(input);
+        auto channel=input.value()->mutable_view().channel(0);
+        QVERIFY(channel);
+        const double probeHz=static_cast<double>(fin+fout)/4.0;
+        for(std::int64_t n=0;n<sourceFrames;++n) {
+            const double phase=2.0*pi*probeHz*static_cast<double>(n)/
+                               static_cast<double>(fin);
+            (*channel.value())[static_cast<std::size_t>(n)]=
+                inputAmplitude*std::sin(phase);
+        }
+        const auto result=audio::materialize_phase11_pinned_final_src_candidate(
+            input.value()->view(),rate(fout),frame_count(256),
+            asset,it->sha);
+        QVERIFY2(result,result?"":result.error()->message().c_str());
+        QCOMPARE(result.value()->pcm.view().frame_count().value(),
+                 outputFrames);
+        const auto output=result.value()->pcm.view().channel(0);
+        QVERIFY(output);
+        const auto trim=outputFrames/10;
+        QVERIFY2(trim>0&&2*trim<outputFrames,"No settled alias interval");
+        long double energy=0;
+        for(std::int64_t n=trim;n<outputFrames-trim;++n) {
+            const double x=(*output.value())[static_cast<std::size_t>(n)];
+            QVERIFY2(std::isfinite(x),"Nonfinite native Final SRC PCM");
+            energy+=static_cast<long double>(x)*
+                    static_cast<long double>(x);
+        }
+        const long double count=static_cast<long double>(
+            outputFrames-2*trim);
+        const double aliasAmplitude=std::sqrt(
+            static_cast<double>(2*energy/count));
+        QVERIFY2(std::isfinite(aliasAmplitude),
+            "Native alias amplitude nonfinite");
+        QVERIFY2(aliasAmplitude<=maxAliasAmplitude,
+            "Real native SRC alias-sine output exceeds frozen 140dB requirement");
+        ++tested;
+    }
+    QCOMPARE(tested,15);
+    QCOMPARE(static_cast<int>(
+        std::count(ratiosSeen.begin(),ratiosSeen.end(),true)),7);
+}
+
 }  // namespace rgsml::tests
 
 QTEST_APPLESS_MAIN(rgsml::tests::PlaybackSampleRateAdapterTest)
