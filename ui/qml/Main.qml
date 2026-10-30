@@ -540,8 +540,13 @@ ApplicationWindow {
                     minimumControlWidth: 112
                     onClicked: root.listenToPreparedMaster()
                     Accessible.name: "Ascolta MASTER preparato da M17"
+                    StudioTooltipDwell {
+                        id: mainMasterListenTooltipDwell
+                        anchors.fill: parent
+                    }
                     ToolTip.text: "Stesso MASTER verificato, SRC soltanto verso DEVICE"
-                    ToolTip.visible: hovered
+                    ToolTip.visible: mainMasterListenTooltipDwell.ready
+                    ToolTip.delay: 0
                 }
                 CheckBox {
                     id: masterLimitedHeadroom
@@ -552,8 +557,13 @@ ApplicationWindow {
                     text: "RAM limitata"
                     font.pixelSize: 9
                     onVisibleChanged: if (!visible) checked = false
+                    StudioTooltipDwell {
+                        id: mainMasterMemoryTooltipDwell
+                        anchors.fill: parent
+                    }
                     ToolTip.text: "Consenso esplicito solo per CAUTION: memoria sconosciuta o insufficiente resta bloccata."
-                    ToolTip.visible: hovered
+                    ToolTip.visible: mainMasterMemoryTooltipDwell.ready
+                    ToolTip.delay: 0
                 }
                 StudioButton {
                     objectName: "globalReturnFromMonitor"

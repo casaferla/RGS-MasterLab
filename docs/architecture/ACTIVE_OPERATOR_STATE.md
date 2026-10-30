@@ -1,3 +1,7 @@
+## 2026-10-31 — #937 Linux stationary tooltip policy red, STAGING correction only
+- [Focused #937](https://github.com/casaferla/RGS-MasterLab/actions/runs/41145920051) Linux first failed step 32 `Global stationary tooltip policy (Linux)`; 31 preceding steps succeeded, including independent Phase11 Q0 tests. The new MAIN "Ascolta Master" and "RAM limitata" ToolTips used direct `hovered` and no `ToolTip.delay: 0`, violating the established global 1000ms stationary-hover policy. No Linux DSP/Qt compile was reached.
+- Both MAIN controls now have dedicated standard `StudioTooltipDwell` with `.ready` visibility and `ToolTip.delay: 0`. Existing frozen contract, M17 Prepare popup, DSP and SOURCE controls are unchanged. This correction remains unpromoted staging while Windows #937 finishes; combine all resulting faults into one subsequent CAS/Focused CI. DO NOT rerun per tooltip, do not merge main or start FQ.
+
 ## 2026-10-31 — BIG M17 LOT: MAIN TRANSPORT CONTRACT / C++ FQ PREPARATION (NO-CI)
 
 - Updated the visible READY and idle wording to PO-authoritative **Ascolta Master** (no permanent autonomous Master Audition DSP unit). MAIN transport keeps exact original backend and temporary service editor until PO Windows parity gate; no second MASTER renderer or Device-adopted export rate.
