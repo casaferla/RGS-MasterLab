@@ -245,16 +245,12 @@ void PrepareMemoryAdviceViewModel::refresh()
         reset_unknown(QStringLiteral("Device or memory unavailable"));
         return;
     }
-    // All six rate rows must describe one coherent DEVICE snapshot and
-    // the exact standard order; never accidentally recommend stale/extra rows.
-    const auto deviceRate=advice.value()->front().observed_device_rate;
-    for(std::size_t i=0;i<kMasterRates.size();++i) {
-        const auto& entry=(*advice.value())[i];
-        if(entry.proposed_master_rate.value()!=kMasterRates[i]
-           ||entry.observed_device_rate!=deviceRate) {
-            reset_unknown(QStringLiteral("Incoherent device/rate advice"));
-            return;
-        }
+    // Fail closed on stale/mixed SOURCE, DEVICE or RAM records, including
+    // forged smaller PCM cost, incomplete frame maps or wrong reserve.
+    if(!prepare_rate_advice_snapshot_valid(
+           *advice.value(),*sourceRate.value(),*sourceFrames.value(),layout)) {
+        reset_unknown(QStringLiteral("Incoherent device/rate advice"));
+        return;
     }
     QVariantList rows;
     rows.reserve(static_cast<qsizetype>(kMasterRates.size()));

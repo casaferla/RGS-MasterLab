@@ -1,3 +1,10 @@
+## 2026-10-30 — M17 MEMORY ADVICE COHERENT 6-RATE SOURCE/DEVICE/RESOURCE GATE (STAGING, NEXT BATCH)
+
+- [Focused #926](https://github.com/casaferla/RGS-MasterLab/actions/runs/41111910285) Windows+Linux SUCCESS for prior PR #61 Draft `a263e0e13c9e8fe6c8b8376328b32eaae5917e02`; initial M17 display-policy/UI lot was already staging-only `eaf00f62f0b7711ff2db18f6ba9b832c9106b39a`, two commits ahead/zero behind. DO NOT promote individual files or launch per-fix CI.
+- `prepare_rate_advice_snapshot_valid` in the existing app Prepare policy now independently reprojects all six exact MASTER frames, PCM+FIR resource bytes/operations, DEVICE rate, Windows memory snapshot, memory headroom and classification against the ONE SOURCE duration and layout. It refuses incorrect/mixed DEVICE observations, stale SOURCE, undersized costs, malformed ordering, incomplete entries and any forged CPU qualification. The UI shows neutral unknown rather than a false green RAM estimate; source and target rate are never changed, product Final SRC guard stays untouched.
+- The existing `rgsml_master_output_rate_state_tests` target now includes adversarial six-rate RAM/frame/device/source/CPU falsification cases. This is read-only advisory hardening and NOT full total Prepare ETA, real 14 kernel certification, Q1-Q6 or hardware FQ; those remain OPEN.
+- Preserve Single-Writer: intermediate commits only on staging, one next big coherent PR CAS after candidate complete; no main merge/M18.
+
 ## 2026-10-30 — SAME STAGING M17 MEMORY/FINAL-SRC PRESENTATION BATCH: DISTINCT BLOCKED RATE ROWS
 
 - Actual `ui/qml/Main.qml` memory-rate repeater consumes `modelData.label/kind/details`; after inspecting its 2-column minimum-height 19px geometry, the 28 unqualified Final SRC cases now use a concise `SRC blocked` label and explicit `blocked` kind (rather than a neutral `unknown` color). The QML applies a muted red border and readable label, retains existing 2-column/min-height layout, tooltip and accessibility metadata. No vertical scrolling, no DSP modification, no rate retargeting or product admission.

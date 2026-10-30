@@ -85,6 +85,79 @@ private slots:
             PrepareMemoryDisplayAdmission::SOURCE_OR_RATE_UNAVAILABLE);
     }
  }
+ void prepareMemorySnapshotRejectsStaleOrForgedResourceCosts() {
+    constexpr std::uint64_t gib=UINT64_C(1024)*1024*1024;
+    auto source=core::SampleRate::create(44100);
+    auto duration=core::FrameCount::create(132300);
+    auto device=core::SampleRate::create(48000);
+    QVERIFY(source&&duration&&device);
+    const audio::MonitoringMemoryObservation memory{
+        16*gib,12*gib,1*gib};
+    auto advice=audio::advise_monitoring_master_rates_for_prepare(
+        *source.value(),*duration.value(),*device.value(),
+        audio::ChannelLayout::STEREO_LR,memory);
+    QVERIFY(advice);
+    const auto rows=*advice.value();
+    const auto valid=[&](const auto& r) {
+        return prepare_rate_advice_snapshot_valid(
+            r,*source.value(),*duration.value(),
+            audio::ChannelLayout::STEREO_LR);
+    };
+    QVERIFY(valid(rows));
+    {
+        auto wrong=rows;
+        wrong[1].proposed_master_rate=wrong[0].proposed_master_rate;
+        QVERIFY(!valid(wrong));
+    }
+    {
+        auto wrong=rows;
+        wrong[1].observed_device_rate=*source.value();
+        QVERIFY(!valid(wrong));
+    }
+    {
+        auto wrong=rows;
+        wrong[2].estimated_master_frames=*duration.value();
+        QVERIFY(!valid(wrong));
+    }
+    {
+        auto wrong=rows;
+        ++wrong[3].resource.combined_pcm_bytes;
+        QVERIFY(!valid(wrong));
+    }
+    {
+        auto wrong=rows;
+        ++wrong[4].resource.experimental_fir_scratch_bytes;
+        QVERIFY(!valid(wrong));
+    }
+    {
+        auto wrong=rows;
+        ++wrong[0].memory_observation.available_commit_bytes;
+        QVERIFY(!valid(wrong));
+    }
+    {
+        auto wrong=rows;
+        ++wrong[1].memory_headroom_after_reserve_bytes;
+        QVERIFY(!valid(wrong));
+    }
+    {
+        auto wrong=rows;
+        wrong[5].cpu_performance_qualified=true;
+        QVERIFY(!valid(wrong));
+    }
+    {
+        auto wrong=rows;
+        wrong.pop_back();
+        QVERIFY(!valid(wrong));
+    }
+    auto otherSource=core::SampleRate::create(96000);
+    QVERIFY(otherSource);
+    QVERIFY(!prepare_rate_advice_snapshot_valid(
+        rows,*otherSource.value(),*duration.value(),
+        audio::ChannelLayout::STEREO_LR));
+    QVERIFY(!prepare_rate_advice_snapshot_valid(
+        rows,*source.value(),*duration.value(),
+        audio::ChannelLayout::MONO_C));
+ }
  void monitoringGuardNeverRetargetsOrInvalidatesMaster() {
     MasterOutputRateState s;
     s.source_committed(192000);
