@@ -1,3 +1,9 @@
+## 2026-10-30 — REAL WHOLE-PREPARE TELEMETRY ADMISSION HARDENING (STAGING WHILE #927 RUNS)
+
+- [Focused #927](https://github.com/casaferla/RGS-MasterLab/actions/runs/41115026885) is testing the previous M17 six-rate display/PCM policy PR SHA `21b44454ffd7d399de5c312af5603c55f1d0e3b5`. Independently develop on the no-CI staging branch only.
+- Existing `TerminalPrivateRenderController` already captures authentic accepted M17 whole-resource queue/render/stage timings and small exact-owner history, but previously allowed `src_us == -1` even for a SOURCE→MASTER rate mismatch. An SRC-missing receipt could therefore train a putative total Prepare historical estimate. Now a reusable *read-only* `approved_timing_eligible` predicate requires valid positive wall, bounded queue+wall, M17 and M16 stage observations, and a nonnegative SRC stage time for every nonidentity conversion. The gate controls ONLY timing history, never PCM acceptance or audibility. The exact historical range refuses any invalid old record.
+- The existing native Qt terminal integration test now checks real accepted current timing, rejects a missing cross-rate SRC observation, invalid queue/overflow and absent M16; it preserves expected 36 MASTER, 36 WAV and device Matrix gates and cannot authorize Q0/Q1-Q6 release. No new CI until the cohesive next M17 batch is ready and #927 terminal.
+
 ## 2026-10-30 — M17 MEMORY ADVICE COHERENT 6-RATE SOURCE/DEVICE/RESOURCE GATE (STAGING, NEXT BATCH)
 
 - [Focused #926](https://github.com/casaferla/RGS-MasterLab/actions/runs/41111910285) Windows+Linux SUCCESS for prior PR #61 Draft `a263e0e13c9e8fe6c8b8376328b32eaae5917e02`; initial M17 display-policy/UI lot was already staging-only `eaf00f62f0b7711ff2db18f6ba9b832c9106b39a`, two commits ahead/zero behind. DO NOT promote individual files or launch per-fix CI.

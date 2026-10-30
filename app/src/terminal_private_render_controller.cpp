@@ -207,24 +207,16 @@ void TerminalPrivateRenderController::complete(
     // The only point at which a real whole-resource timing observation
     // becomes trustworthy: exact renderer owner and authoritative M17/M16
     // gate have both accepted the still-current immutable MASTER.
-    if(observed.render_wall_us>0 && observed.queue_us>=0
-       &&observed.src_us>=-1 &&observed.m17_core_us>=0
-       &&observed.m16_primary_us>=0) {
+    if(approved_timing_eligible(observed)) {
         lastApprovedPrepareTiming_=observed;
-        // Only accepted, finite non-overflowing wall times become evidence.
-        // History survives an ordinary cancel for future on-host calibration,
-        // while the authority-bearing latest timing is always revoked.
-        if(observed.render_wall_us<=
-                std::numeric_limits<std::int64_t>::max()-observed.queue_us) {
-            try {
-                constexpr std::size_t kCapacity=24;
-                if(approvedPrepareHistory_.size()==kCapacity)
-                    approvedPrepareHistory_.erase(approvedPrepareHistory_.begin());
-                approvedPrepareHistory_.push_back(observed);
-            } catch(const std::bad_alloc&) {
-                // Never cause failure of already-accepted audio due to an
-                // optional non-audio diagnostics history allocation.
-            }
+        // History survives an ordinary cancel, never a stale PCM owner.
+        try {
+            constexpr std::size_t kCapacity=24;
+            if(approvedPrepareHistory_.size()==kCapacity)
+                approvedPrepareHistory_.erase(approvedPrepareHistory_.begin());
+            approvedPrepareHistory_.push_back(observed);
+        } catch(const std::bad_alloc&) {
+            // Optional telemetry must not fail already accepted audio.
         }
     }
     status_=QStringLiteral("READY_PRIVATE");error_.clear();lastError_.reset();emit changed();
@@ -249,9 +241,7 @@ TerminalPrivateRenderController::exact_historical_prepare_range(
            ||item.manual_chain_revision!=manualRevision
            ||item.terminal_chain_revision!=terminalChainRevision
            ||item.terminal_parameter_revision!=terminalParameterRevision
-           ||item.queue_us<0||item.render_wall_us<=0
-           ||item.render_wall_us>
-               std::numeric_limits<std::int64_t>::max()-item.queue_us)
+           ||!approved_timing_eligible(item))
             continue;
         const auto wall=item.queue_us+item.render_wall_us;
         low=std::min(low,wall);

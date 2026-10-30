@@ -6,6 +6,8 @@
 #include <QObject>
 #include <QString>
 #include <atomic>
+#include <cstdint>
+#include <limits>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
@@ -41,6 +43,20 @@ public:
         std::int64_t verification_trim_us{-1};
         std::int64_t m16_secondary_us{-1};
     };
+    // This is *only* observational admission to a local timing history.
+    // A valid audible output is not sufficient evidence of complete stage
+    // telemetry. In particular, a cross-rate MASTER requires an actual
+    // nonnegative Final SRC timing; never learn from missing measurements.
+    [[nodiscard]] static bool approved_timing_eligible(
+        const ApprovedPrepareTiming& x) noexcept {
+        return x.source_frames.value()>0
+            && x.queue_us>=0 && x.render_wall_us>0
+            && x.render_wall_us<=
+               std::numeric_limits<std::int64_t>::max()-x.queue_us
+            && x.m17_core_us>=0 && x.m16_primary_us>=0
+            && x.src_us>=-1
+            && (x.source_rate==x.master_rate || x.src_us>=0);
+    }
     using Snapshot=std::function<std::shared_ptr<const render::RenderResult>()>;
     using ManualId=std::function<std::optional<core::RealizationId>()>;
     using ManualChain=std::function<dsp::ProcessingChain()>;

@@ -1514,6 +1514,32 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(observedPrepare->render_wall_us>0);
     QVERIFY(observedPrepare->m17_core_us>=0);
     QVERIFY(observedPrepare->m16_primary_us>=0);
+    QVERIFY(app::TerminalPrivateRenderController::approved_timing_eligible(
+        *observedPrepare));
+    // A real accepted MASTER with missing SRC telemetry must NOT
+    // become a false whole-Prepare timing observation for another rate.
+    {
+        auto incomplete=*observedPrepare;
+        auto otherSource=core::SampleRate::create(44100);
+        QVERIFY(otherSource);
+        incomplete.source_rate=*otherSource.value();
+        incomplete.src_us=-1;
+        QVERIFY(!app::TerminalPrivateRenderController::approved_timing_eligible(
+            incomplete));
+        incomplete.src_us=0;
+        QVERIFY(app::TerminalPrivateRenderController::approved_timing_eligible(
+            incomplete));
+        incomplete.queue_us=-1;
+        QVERIFY(!app::TerminalPrivateRenderController::approved_timing_eligible(
+            incomplete));
+        incomplete.queue_us=std::numeric_limits<std::int64_t>::max();
+        QVERIFY(!app::TerminalPrivateRenderController::approved_timing_eligible(
+            incomplete));
+        incomplete.queue_us=0;
+        incomplete.m16_primary_us=-1;
+        QVERIFY(!app::TerminalPrivateRenderController::approved_timing_eligible(
+            incomplete));
+    }
     QVERIFY(!renderer.exact_historical_prepare_range(
         observedPrepare->source_rate,observedPrepare->master_rate,
         observedPrepare->source_frames,observedPrepare->layout,
