@@ -121,6 +121,10 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
         manifest["bundle_tar_gz_sha256"]=digest(output)
         manifest["bundle_uncompressed_bytes"]=total
         return manifest
+    except BaseException:
+        # A half-written transport archive is never an acceptable receipt.
+        output.unlink(missing_ok=True)
+        raise
     finally:
         shutil.rmtree(scratch,ignore_errors=True)
 
