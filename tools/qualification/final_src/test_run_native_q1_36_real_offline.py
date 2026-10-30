@@ -40,8 +40,17 @@ class GenuineNativeQ1GateTests(unittest.TestCase):
                 return execute(self.exe, self.candidate, self.oracle,
                                self.workdir, self.report, timeout_seconds=45)
             finally:
+                # platform.platform() may invoke subprocess.run internally
+                # on Linux. The LAST mocked call is therefore not necessarily
+                # our C++ invocation: inspect the exact native test argv.
+                native = [
+                    call for call in runner.call_args_list
+                    if call.args and len(call.args[0]) >= 2
+                    and call.args[0][1] == TEST_NAME
+                ]
                 if runner.call_count:
-                    env = runner.call_args.kwargs["env"]
+                    self.assertEqual(len(native), 1)
+                    env = native[0].kwargs["env"]
                     self.assertEqual(env["RGSML_PHASE11_REAL_14_Q0_DIR"],
                                      fixture["assets_dir"])
                     self.assertEqual(env["RGSML_PHASE11_REAL_36_Q1_DIR"],
