@@ -1,3 +1,8 @@
+## 2026-10-31 — FULL TEST-SIMULATED MAIN MASTER TRANSPORT CYCLE, SAME VERIFIED PCM (STAGING)
+
+- In the SAME M17 Qt product activation test, rather than adding an unrelated standalone fake, staged a complete **installed M17 Preview → explicit Ascolta Master on 44.1-kHz simulated sink → 48-kHz immutable MASTER retained → exact Return MANUAL → direct Preview Prepared**. Synthetic Windows-like preflight validates zero extra allocation reserve, recommended memory, 1024-frame Playback SRC hard bound, and real `MonitoringFrameMap`. Fake independent DEVICE sink has exact ownership checks and Play/Pause/Stop/Seek/Loop/controller/display callbacks; the test exercises PAUSE and PLAY, monitors separate SAMPLE_RATES and absence of a terminal RealizationId, and asserts no extra full M17 renderer invocation after the entire roundtrip.
+- This is a deterministic native Qt integration regression for the actual conductors, **not** an actual Windows DAC / physical FQ. No private FIR, coefficient replacement, SRC admission, product export, M18 or main merge. All existing M17 popup controls preserved. No PR CI for this intermediate staging checkpoint.
+
 ## 2026-10-31 — BIG M17 LOT: MAIN TRANSPORT CONTRACT / C++ FQ PREPARATION (NO-CI)
 
 - Updated the visible READY and idle wording to PO-authoritative **Ascolta Master** (no permanent autonomous Master Audition DSP unit). MAIN transport keeps exact original backend and temporary service editor until PO Windows parity gate; no second MASTER renderer or Device-adopted export rate.

@@ -920,6 +920,163 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(renderer.render_invocation_count(),renderBeforeHandoff);
     QVERIFY(handoffUi.can_install()); // new explicit owner retirement required
     QCOMPARE(renderer.render_invocation_count(),renderBeforeHandoff);
+    // MAIN TRANSPORT POSITIVE PATH: explicit installed M17 Preview -> SAME
+    // verified MASTER -> independent 44.1-kHz DEVICE PCM -> owner-exact Return.
+    // A new Windows sink owns the audition frames, not M17's 48-kHz MASTER;
+    // no second Prepare or new SOURCE/terminal DSP RealizationId is minted.
+    const auto positivePreflightRenderCount=renderer.render_invocation_count();
+    const auto positiveMasterOwner=candidates.staged();
+    QVERIFY(positiveMasterOwner);
+    std::size_t positivePreflightCount=0;
+    std::shared_ptr<const audio::MonitoringPcmCandidate> activeMasterDevice;
+    std::optional<core::FrameRange> requestedMasterLoop;
+    product.set_monitoring_preflight_materializer(
+        [&](audio::AudioBufferView view,core::FrameCount block,
+            std::uint64_t reserved,
+            const app::TerminalPrivateProductSession::
+                MonitoringPreallocationDecision& decision)
+            ->core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>> {
+            using Result=core::Result<
+                std::shared_ptr<const audio::MonitoringPcmCandidate>>;
+            ++positivePreflightCount;
+            if(block!=*offlineBlock.value()||reserved!=0)
+                return Result::failure(core::Error{
+                    core::ErrorCode::InvalidArgument,
+                    "MAIN_MASTER_TEST_WRONG_MONITOR_BLOCK_OR_RESERVATION"});
+            auto advice=audio::advise_imminent_monitoring_pcm_allocation(
+                view.format().sample_rate(),view.frame_count(),
+                *sourceRate.value(),view.format().channel_layout(),
+                audio::MonitoringMemoryObservation{
+                    UINT64_C(4)*1024*1024*1024,
+                    UINT64_C(5)*1024*1024*1024,reserved});
+            if(!advice)return Result::failure(*advice.error());
+            const auto allowed=decision(*advice.value());
+            if(!allowed)return Result::failure(*allowed.error());
+            return convertedFromExisting(view);
+        });
+    product.set_private_monitor_transport(
+        [device,&activeMasterDevice](auto candidate)->core::Status {
+            if(!candidate||activeMasterDevice)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MAIN_MASTER_DEVICE_ALREADY_OWNED"});
+            activeMasterDevice=candidate;
+            device->state=core::PlaybackState::STOPPED;
+            device->position=core::FrameIndex{0};
+            device->duration=candidate->device_pcm.view().frame_count();
+            device->loop.reset();
+            device->audibleRealization={
+                core::AudibleHandoffPhase::UNAVAILABLE,std::nullopt};
+            return core::Status::success();
+        },
+        [device,&activeMasterDevice](auto candidate)->core::Result<bool> {
+            return core::Result<bool>::success(candidate
+                &&activeMasterDevice==candidate
+                &&device->state!=core::PlaybackState::NO_SOURCE
+                &&device->duration==std::optional{
+                    candidate->device_pcm.view().frame_count()}
+                &&device->audibleRealization.phase
+                    ==core::AudibleHandoffPhase::UNAVAILABLE
+                &&!device->audibleRealization.realizationId);
+        },
+        [device,&activeMasterDevice](auto candidate)->core::Status {
+            if(!candidate||candidate!=activeMasterDevice)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MAIN_MASTER_DEVICE_RETIRE_OWNER_MISMATCH"});
+            activeMasterDevice.reset();
+            return device->clear();
+        },
+        [&selector](auto manual,core::RealizationId id,
+            core::FrameIndex cue)->core::Status {
+            return selector.restore_manual_processed_after_terminal(
+                std::move(manual),id,cue);
+        });
+    product.set_private_monitor_controls(
+        [device,&activeMasterDevice,&requestedMasterLoop]
+            (auto owner,auto command)->core::Status {
+            if(!owner||owner!=activeMasterDevice)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MAIN_MASTER_TRANSPORT_OWNER_MISMATCH"});
+            auto map=audio::MonitoringFrameMap::create(*owner);
+            if(!map)return core::Status::failure(*map.error());
+            using Action=platform::windows::MonitoringTransportAction;
+            switch(command.action) {
+            case Action::PLAY:return device->play();
+            case Action::PAUSE:return device->pause();
+            case Action::STOP:return device->stop();
+            case Action::SEEK_MASTER: {
+                auto mapped=map.value()->master_to_device(command.master_frame);
+                if(!mapped)return core::Status::failure(*mapped.error());
+                return device->seek(*mapped.value());
+            }
+            case Action::SET_MASTER_LOOP: {
+                std::optional<core::FrameRange> loop;
+                if(command.master_loop) {
+                    auto mapped=map.value()->master_loop_to_device(
+                        *command.master_loop);
+                    if(!mapped)return core::Status::failure(*mapped.error());
+                    loop=*mapped.value();
+                }
+                const auto status=device->set_loop(loop);
+                if(status)requestedMasterLoop=command.master_loop;
+                return status;
+            }
+            }
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidArgument,
+                "MAIN_MASTER_UNKNOWN_TRANSPORT_COMMAND"});
+        },
+        [device,&activeMasterDevice,&requestedMasterLoop](auto owner)
+            ->core::Result<audio::MonitoringMasterDisplaySnapshot> {
+            using Snapshot=audio::MonitoringMasterDisplaySnapshot;
+            if(!owner||owner!=activeMasterDevice)
+                return core::Result<Snapshot>::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MAIN_MASTER_DISPLAY_OWNER_MISMATCH"});
+            auto map=audio::MonitoringFrameMap::create(*owner);
+            if(!map)return core::Result<Snapshot>::failure(*map.error());
+            auto playback=device->snapshot();
+            if(!playback)return core::Result<Snapshot>::failure(
+                *playback.error());
+            return map.value()->project_display_snapshot(
+                *playback.value(),requestedMasterLoop);
+        });
+    QVERIFY(handoffUi.can_install());
+    QVERIFY(handoffUi.installMonitor(false));
+    QVERIFY(handoffUi.monitor_exclusive());
+    QVERIFY(handoffUi.monitor_controllable());
+    QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PLAYING"));
+    QCOMPARE(positivePreflightCount,std::size_t{1});
+    QCOMPARE(renderer.render_invocation_count(),positivePreflightRenderCount);
+    QCOMPARE(candidates.staged(),positiveMasterOwner);
+    QVERIFY(activeMasterDevice);
+    QCOMPARE(activeMasterDevice->immutable_master_rate,*deviceRate.value());
+    QCOMPARE(activeMasterDevice->device_rate,*sourceRate.value());
+    QVERIFY(!device->audibleRealization.realizationId);
+    QVERIFY(!coordinator.device_active());
+    // The main physical transport drives MASTER-specific controls through
+    // the existing typed monitor VM; SOURCE cannot be silently selected.
+    QVERIFY(handoffUi.pause());
+    QCOMPARE(handoffUi.transport_state(),QStringLiteral("PAUSED"));
+    QVERIFY(handoffUi.play());
+    QCOMPARE(handoffUi.transport_state(),QStringLiteral("PLAYING"));
+    // Close the exact independent DEVICE owner and restore the MANUAL source
+    // without consuming the immutable MASTER. M17 READY can be previewed
+    // immediately, with the same renderer invocation and no second job.
+    QVERIFY(handoffUi.returnManual());
+    QVERIFY(!activeMasterDevice);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(device->audibleRealization.realizationId,originalId);
+    QCOMPARE(candidates.staged(),positiveMasterOwner);
+    QCOMPARE(renderer.render_invocation_count(),positivePreflightRenderCount);
+    vm.previewPrepared();
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("PRIVATE_INSTALLED"),12000);
+    QCOMPARE(candidates.staged(),positiveMasterOwner);
+    QCOMPARE(renderer.render_invocation_count(),positivePreflightRenderCount);
     // Product cannot silently borrow an already installed terminal sink;
     // an explicit ownership-retirement transaction is mandatory.
     QVERIFY(!product.borrow_verified_m17_master_for_device(
@@ -928,7 +1085,7 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         product.materialize_borrowed_verified_m17_monitoring(
             *deviceRate.value(),convertedFromExisting);
     QVERIFY(!rejectedInstalledReuse);
-    QCOMPARE(borrowedSrcCalls,std::size_t{2});
+    QCOMPARE(borrowedSrcCalls,std::size_t{3});
     QCOMPARE(renderer.render_invocation_count(),firstRenderCount);
     QCOMPARE(vm.audio_status(),
         QStringLiteral("ACTIVE · AUDITION UNQUALIFIED"));
