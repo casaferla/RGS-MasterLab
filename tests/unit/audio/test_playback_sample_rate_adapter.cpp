@@ -3240,6 +3240,8 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
         "A supplied 36-path Q1 oracle MUST also have all 14 genuine Q0 binaries");
     if(root.isEmpty())
         QSKIP("Real 14-asset nonrelease family not provided to this CI runner.");
+    QVERIFY2(!referenceRoot.isEmpty(),
+        "Native Q1 rehearsal MUST be given 36 original independent f64 vectors");
     QJsonArray expectedRows;
     if(!referenceRoot.isEmpty()) {
         const auto filename=std::string(referenceRoot.constData())+
