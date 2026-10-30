@@ -30,9 +30,9 @@ from screen_real_15_downsample_alias_probe import run_all as alias_frequency
 from screen_real_15_downsample_time_domain import check_time_domain as alias_signal
 
 REAL_ALIAS_TEST = "phase11External14RealCandidates15NativeAliasSineRehearsal"
-BAD_QTEST = re.compile(r"^\\s*(?:FAIL|SKIP|XFAIL|XPASS)\\s*:", re.MULTILINE)
+BAD_QTEST = re.compile(r"^\s*(?:FAIL|SKIP|XFAIL|XPASS)\s*:", re.MULTILINE)
 NATIVE_PASS = re.compile(
-    r"^PASS\\s*:\\s*[^\\n]*::" + REAL_ALIAS_TEST + r"\\s*\\(\\s*\\)",
+    r"^PASS\s*:\s*[^\n]*::" + REAL_ALIAS_TEST + r"\s*\(\s*\)",
     re.MULTILINE,
 )
 
