@@ -907,15 +907,18 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!coordinator.device_active());
     QVERIFY(handoffUi.can_install()); // retry allowed without reprepare
     QCOMPARE(renderer.render_invocation_count(),renderBeforeHandoff);
-    // Re-enter the pre-existing M17 A/B gate and restore installed Preview.
-    vm.setBypass(true);
-    vm.setBypass(false);
-    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    // One-button recovery: the same M17 candidate must be previewable
+    // directly after DEVICE admission refusal, with no compensating
+    // BYPASS flip and no second full MASTER Prepare.
+    QVERIFY(!limiter.value()->bypassed());
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     vm.previewPrepared();
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("PRIVATE_INSTALLED"),12000);
     QVERIFY(coordinator.device_active());
     QCOMPARE(candidates.staged(),verifiedBeforeHandoff);
+    QCOMPARE(renderer.render_invocation_count(),renderBeforeHandoff);
+    QVERIFY(handoffUi.can_install()); // new explicit owner retirement required
     QCOMPARE(renderer.render_invocation_count(),renderBeforeHandoff);
     // Product cannot silently borrow an already installed terminal sink;
     // an explicit ownership-retirement transaction is mandatory.
@@ -1373,7 +1376,7 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(firstProjectMaster);
     QCOMPARE(firstProjectMaster->rendered.output_rate,*masterRate.value());
     QCOMPARE(vm.audio_status(),
-        QStringLiteral("MASTER VERIFIED · USE MASTER AUDITION"));
+        QStringLiteral("MASTER VERIFIED · ASCOLTA MASTER"));
     QVERIFY(!product.current_master_matches_device_for_preview());
     const auto callsBeforeIgnoredPreview=renderer.render_invocation_count();
     vm.previewPrepared(); // disallowed: project MASTER != physical DEVICE
@@ -2861,7 +2864,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!audioGate.has_session());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QCOMPARE(monitorUi.status_text(),
-        QStringLiteral("MASTER AUDITION IDLE · NO PRIVATE DEVICE PCM"));
+        QStringLiteral("ASCOLTA MASTER IDLE · NO PRIVATE DEVICE PCM"));
     // SOURCE was refused by the physical device: returning from the
     // exclusive monitor MUST clear its readouts immediately. The UI must
     // never retain an apparently PLAYING ghost owner or borrowed rate.

@@ -3152,6 +3152,10 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("transportMasterMemoryConsent"));
     QVERIFY(memoryConsent);
     QVERIFY(!memoryConsent->property("checked").toBool());
+    auto* mainSourceRegion=root->findChild<QObject*>(
+        QStringLiteral("auditionRegionContent"));
+    QVERIFY(mainSourceRegion);
+    QVERIFY(mainSourceRegion->property("visible").toBool());
     auto* statusBar = root->findChild<QObject*>(QStringLiteral("statusBar"));
     auto* statusBarMessage = root->findChild<QObject*>(QStringLiteral("statusBarMessage"));
     auto* statusIndicator = root->findChild<QObject*>(QStringLiteral("statusReadyIndicator"));

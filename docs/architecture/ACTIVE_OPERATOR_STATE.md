@@ -1,3 +1,10 @@
+## 2026-10-31 — BIG M17 LOT: MAIN TRANSPORT CONTRACT / C++ FQ PREPARATION (NO-CI)
+
+- Updated the visible READY and idle wording to PO-authoritative **Ascolta Master** (no permanent autonomous Master Audition DSP unit). MAIN transport keeps exact original backend and temporary service editor until PO Windows parity gate; no second MASTER renderer or Device-adopted export rate.
+- Native Qt regression now performs the **one-click direct Preview Prepared after a refused Ascolta Master install**, without artificially toggling Bypass to re-arm the M17 conductor. It asserts identical verified MASTER candidate and renderer invocation count across failure/return and repeated installation. Refusal must not spur a second Prepare, hide a valid READY, or leave an unowned DEVICE.
+- Tightened process-local six-rate historic full-Prepare range tests: zero/negative/overflow frames, impossible channel counts and NaN Ceiling do not become an ETA. GUI empty-source smoke verifies Source Audition controls remain visible when the MASTER strip is hidden.
+- Scope measured by functional acceptance, not number of commits or invented fractional progress: the transport replacement is ONE OF FOUR big M17 exit workstreams; Q0/Final SRC 36-pair qualification, truthful full six-rate SRC time/RAM, Windows full-product FQ remain OPEN. No PR promotion, FQ, main merge, M18, or change to M17 Prepare popup. Last CI #936 PASS applies only to PR SHA `21013afe47e6`.
+
 ## 2026-10-31 — BIG LOT ADDENDUM: FAILED DEVICE LISTEN RETAINS ACTUAL M17 READY
 
 - Corrected a real failure-recovery gap in the newly staged installed M17 Preview -> MAIN "Ascolta Master" handoff. The coordinator previously retired the exact private M17 device and left the immutable checked master in COMPARISON_VERIFIED while external Windows monitor preflight/device installation ran. If RAM policy/SRC/DEVICE install then refused, M17 could misleadingly show NEEDS PREPARATION despite a valid verified MASTER.

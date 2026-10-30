@@ -311,6 +311,14 @@ private slots:
     QVERIFY(!predict(132300,44100,44100,2,-1.0,20,31));
     QVERIFY(!predict(132300*5,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(132300,44100,96000,2,-1.0,20,30));
+    QVERIFY(!predict(0,44100,44100,2,-1.0,20,30));
+    QVERIFY(!predict(-1,44100,44100,2,-1.0,20,30));
+    QVERIFY(!predict(132300,44100,44100,2,
+        std::numeric_limits<double>::quiet_NaN(),20,30));
+    QVERIFY(!predict(std::numeric_limits<std::int64_t>::max(),
+        44100,44100,2,-1.0,20,30));
+    QVERIFY(!predict(132300,44100,44100,0,-1.0,20,30));
+    QVERIFY(!predict(132300,44100,44100,3,-1.0,20,30));
     auto stale=x;stale.invocation=3;
     QVERIFY(!host.observe(stale));
     stale.invocation=4;stale.master_hz=192000;stale.src_us=-1;

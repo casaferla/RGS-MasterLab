@@ -514,7 +514,7 @@ void TerminalProductActivationCoordinator::restore_ready_after_monitor_return()
         QStringLiteral("Verified MASTER ready"),1.0,true);
     view_->setAudioStatus(readyToPreview_
         ?QStringLiteral("READY · PREVIEW AVAILABLE")
-        :QStringLiteral("MASTER VERIFIED · USE MASTER AUDITION"));
+        :QStringLiteral("MASTER VERIFIED · ASCOLTA MASTER"));
 }
 
 void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
@@ -702,7 +702,7 @@ void TerminalProductActivationCoordinator::private_session_changed()
             QStringLiteral("Verified MASTER ready"),1.0,true);
         view_->setAudioStatus(direct
             ?QStringLiteral("READY · PREVIEW AVAILABLE")
-            :QStringLiteral("MASTER VERIFIED · USE MASTER AUDITION"));
+            :QStringLiteral("MASTER VERIFIED · ASCOLTA MASTER"));
     } else if(status==QStringLiteral("MEASURED_NONCONFORMING_READY")) {
         readyToPreview_=false;
         renderHeartbeat_.stop();
