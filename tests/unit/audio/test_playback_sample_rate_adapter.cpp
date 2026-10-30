@@ -3266,9 +3266,6 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
         expectedRows=object.value("outputs").toArray();
         QCOMPARE(expectedRows.size(),36);
     }
-    const QByteArray expectedRoot=qgetenv("RGSML_PHASE11_REAL_14_Q1_EXPECTED_DIR");
-    QVERIFY2(!expectedRoot.isEmpty(),
-        "Real 14 Q0 input MUST have all 36 independent Q1 expected vectors.");
     struct AssetPin {
         std::uint32_t L,M;
         const char* sha;
@@ -3393,25 +3390,11 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
         }
         const auto masterFrames=(std::int64_t{8}*L+M-1)/M;
         QCOMPARE(whole.value()->pcm.view().frame_count().value(),masterFrames);
-        const auto expected=read(std::string(expectedRoot.constData())+
-            "/Q1_EXPECTED_"+std::to_string(fin)+
-            "_TO_"+std::to_string(fout)+".f64le");
-        QCOMPARE(expected.size(),
-                 static_cast<std::size_t>(masterFrames)*2*8);
-        for(std::size_t ch=0;ch<2;++ch) {
-            const auto out=whole.value()->pcm.view().channel(ch);
-            QVERIFY(out);
-            for(std::size_t m=0;m<static_cast<std::size_t>(masterFrames);++m) {
-                std::uint64_t refBits=0;
-                for(std::size_t byte=0;byte<8;++byte)
-                    refBits|=static_cast<std::uint64_t>(
-                        expected[8*(2*m+ch)+byte])<<(8*byte);
-                QCOMPARE(std::bit_cast<std::uint64_t>((*out.value())[m]),
-                         refBits);
-            }
+        // Single SHA-pinned Q1 oracle read and binary64 comparison above;
+        // independently require both block partitions to agree.
+        for(std::size_t ch=0;ch<2;++ch)
             QCOMPARE(channel_bits(whole.value()->pcm,ch),
                      channel_bits(partitioned.value()->pcm,ch));
-        }
         QCOMPARE(channel_bits(*source.value(),0),beforeLeft);
         QCOMPARE(channel_bits(*source.value(),1),beforeRight);
         if(fin!=fout) {
