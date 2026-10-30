@@ -14,8 +14,10 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from zipfile import ZipFile, BadZipFile
 
 from build_candidate_manifest import canonical_pair_for_ratio
+from prepare_real_q1_36_native_rehearsal import CANDIDATE_ZIP_SHA
 from dtft_third_order_rigorous import prove_window, PreparedThirdOrderProof
 from exact_dyadic_zero_stuff_oracle import read_locked_kernel
 from phase11_math_preflight import ContractError, Ratio
@@ -23,6 +25,38 @@ from verify_candidate_family import audit_candidate_family
 
 SCHEMA = "rgsml.phase11.resumable-real14-dtft-continuum-nonrelease/1"
 PROVEN = "CONTINUUM_SUBBAND_PROVEN_NONRELEASE"
+
+
+
+def authenticate_original_archive(candidate_dir: Path, original_q0_zip: Path) -> str:
+    """Independently pin the exact original *archive*, then compare all members.
+
+    A self-consistent candidate manifest does NOT authenticate provenance.
+    Never substitute a reconstructed or repacked ZIP: the frozen SHA is exact.
+    """
+    if not original_q0_zip.is_file() or original_q0_zip.is_symlink():
+        raise ContractError("original private Q0 ZIP required")
+    archive_sha = sha256(original_q0_zip.read_bytes()).hexdigest()
+    if archive_sha != CANDIDATE_ZIP_SHA:
+        raise ContractError("original Q0 archive differs from independently frozen SHA")
+    try:
+        with ZipFile(original_q0_zip) as source:
+            entries = source.infolist()
+            names = [item.filename for item in entries]
+            expected = {item.name for item in candidate_dir.iterdir() if item.is_file()}
+            if (len(names) != 15 or len(set(names)) != len(names)
+                or set(names) != expected
+                or any(item.is_dir() or item.file_size > 12_000_000
+                       or "/" in item.filename or chr(92) in item.filename
+                       or item.filename in (".", "..") for item in entries)):
+                raise ContractError("original archive/candidate inventory mismatch")
+            for name in names:
+                unpacked = source.read(name)  # includes ZIP CRC verification
+                if sha256(unpacked).digest() != sha256((candidate_dir/name).read_bytes()).digest():
+                    raise ContractError("untrusted folder bytes differ from original Q0 archive")
+    except (BadZipFile, OSError, KeyError) as exc:
+        raise ContractError("original Q0 archive invalid/incomplete") from exc
+    return archive_sha
 
 
 def _exact_record(path: Path, expected: dict) -> dict | None:
@@ -148,7 +182,7 @@ def walk_ratio(ratio: Ratio, taps: tuple[Fraction, ...], candidate_sha256: str,
 
 
 def run_campaign(candidate_dir: Path, checkpoints: Path, *,
-                 max_attempts: int=8, boxes: int=128, bits: int=256,
+                 original_q0_zip: Path, max_attempts: int=8, boxes: int=128, bits: int=256,
                  max_depth: int=20) -> dict:
     if not candidate_dir.is_dir() or candidate_dir.is_symlink():
         raise ContractError("original private candidate directory required")
@@ -156,6 +190,7 @@ def run_campaign(candidate_dir: Path, checkpoints: Path, *,
         or checkpoints.resolve().is_relative_to(candidate_dir.resolve())
         or candidate_dir.resolve().is_relative_to(checkpoints.resolve())):
         raise ContractError("private assets and receipt trees must be disjoint")
+    original_archive_sha=authenticate_original_archive(candidate_dir,original_q0_zip)
     proof_source=Path(__file__).with_name("dtft_third_order_rigorous.py")
     engine_sha256=sha256(proof_source.read_bytes()).hexdigest()
     audit=audit_candidate_family(candidate_dir,require_complete=True)
@@ -189,7 +224,8 @@ def run_campaign(candidate_dir: Path, checkpoints: Path, *,
                 candidate_ratios=14, required_full_bands=28,
                 continuous_coverage_observed=complete,
                 q1_q6_passed=False, product_admission_authorized=False,
-                release_qualified=False, engine_sha256=engine_sha256,
+                release_qualified=False, original_archive_sha256=original_archive_sha,
+                engine_sha256=engine_sha256,
                 **total)
 
 
@@ -197,12 +233,14 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--candidate-dir",type=Path,required=True)
     p.add_argument("--checkpoint-dir",type=Path,required=True)
+    p.add_argument("--original-q0-zip",type=Path,required=True)
     p.add_argument("--max-attempts",type=int,default=8)
     p.add_argument("--boxes",type=int,default=128)
     p.add_argument("--bits",type=int,default=256)
     p.add_argument("--max-depth",type=int,default=20)
     a=p.parse_args()
     print(json.dumps(run_campaign(a.candidate_dir,a.checkpoint_dir,
+          original_q0_zip=a.original_q0_zip,
           max_attempts=a.max_attempts,boxes=a.boxes,bits=a.bits,
           max_depth=a.max_depth),sort_keys=True),flush=True)
 

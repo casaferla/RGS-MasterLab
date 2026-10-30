@@ -5,9 +5,13 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from hashlib import sha256
+from unittest.mock import patch
+from zipfile import ZipFile
 
 from phase11_math_preflight import ContractError, Ratio
-from run_resumable_14_mpfr_continuum import walk_ratio, PROVEN
+from run_resumable_14_mpfr_continuum import (
+    walk_ratio, authenticate_original_archive, PROVEN)
 
 
 class Real14ContinuousCheckpoints(unittest.TestCase):
@@ -97,6 +101,35 @@ class Real14ContinuousCheckpoints(unittest.TestCase):
                 walk_ratio(self.r,self.taps,self.sha,another,
                            max_attempts=2,boxes=4,bits=256,max_depth=4,
                            engine_sha256="b"*64,prover=wrong)
+
+    def test_archive_provenance_missing_repacked_and_folder_tamper(self):
+        private=self.root/"candidate"
+        private.mkdir()
+        (private/"asset.bin").write_bytes(b"ORIGINAL-KERNEL")
+        (private/"manifest.json").write_text("ORIGINAL-MANIFEST")
+        original=self.root/"original.zip"
+        with ZipFile(original,"w") as z:
+            for file in private.iterdir():
+                z.write(file,file.name)
+        with self.assertRaisesRegex(ContractError,"frozen SHA"):
+            authenticate_original_archive(private,original)
+        with patch("run_resumable_14_mpfr_continuum.CANDIDATE_ZIP_SHA",
+                   sha256(original.read_bytes()).hexdigest()):
+            with self.assertRaisesRegex(ContractError,"inventory"):
+                authenticate_original_archive(private,original)
+            # Even after supplying a complete 15-member ZIP the exact
+            # member bytes must match, not merely a self-consistent manifest.
+            for n in range(13):
+                (private/f"extra-{n}.bin").write_bytes(b"original-"+str(n).encode())
+            with ZipFile(original,"w") as z:
+                for file in private.iterdir(): z.write(file,file.name)
+        with patch("run_resumable_14_mpfr_continuum.CANDIDATE_ZIP_SHA",
+                   sha256(original.read_bytes()).hexdigest()):
+            self.assertEqual(authenticate_original_archive(private,original),
+                             sha256(original.read_bytes()).hexdigest())
+            (private/"asset.bin").write_bytes(b"SWAPPED-KERNEL")
+            with self.assertRaisesRegex(ContractError,"bytes differ"):
+                authenticate_original_archive(private,original)
 
     def test_bad_budget_refused(self):
         for opts in (dict(max_attempts=-1),dict(boxes=0),dict(bits=128),
