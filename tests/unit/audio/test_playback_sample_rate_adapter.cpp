@@ -20,6 +20,9 @@
 #include <QtGlobal>
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
 
 #include <algorithm>
 #include <array>
@@ -3232,8 +3235,35 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
     // real assets are explicitly provided for certification work.
     // Frozen SHA pins come from independent 2026-10-30 Q0 evidence.
     const QByteArray root=qgetenv("RGSML_PHASE11_REAL_14_Q0_DIR");
+    const QByteArray referenceRoot=qgetenv("RGSML_PHASE11_REAL_36_Q1_DIR");
+    QVERIFY2(referenceRoot.isEmpty() || !root.isEmpty(),
+        "A supplied 36-path Q1 oracle MUST also have all 14 genuine Q0 binaries");
     if(root.isEmpty())
         QSKIP("Real 14-asset nonrelease family not provided to this CI runner.");
+    QJsonArray expectedRows;
+    if(!referenceRoot.isEmpty()) {
+        const auto filename=std::string(referenceRoot.constData())+
+            "/Q1_EXPECTED_MANIFEST_NONRELEASE.json";
+        std::ifstream stream(filename,std::ios::binary);
+        QVERIFY2(stream.good(),"Genuine Q1 oracle manifest is missing");
+        const std::vector<std::uint8_t> raw{
+            std::istreambuf_iterator<char>{stream},
+            std::istreambuf_iterator<char>{}};
+        const auto actualSha=core::sha256_hex(std::span<const std::byte>{
+            reinterpret_cast<const std::byte*>(raw.data()),raw.size()});
+        QCOMPARE(actualSha,std::string{
+            "0072fb8cf2fa5930c8200c67cac21d710724b0eb0ee1f2d73e9dbf9798938d37"});
+        const auto doc=QJsonDocument::fromJson(QByteArray{
+            reinterpret_cast<const char*>(raw.data()),
+            static_cast<qsizetype>(raw.size())});
+        QVERIFY2(doc.isObject(),"Q1 manifest must be a real JSON object");
+        const auto object=doc.object();
+        QCOMPARE(object.value("path_count").toInt(),36);
+        QCOMPARE(object.value("product_admission_authorized").toBool(true),false);
+        QCOMPARE(object.value("release_qualified").toBool(true),false);
+        expectedRows=object.value("outputs").toArray();
+        QCOMPARE(expectedRows.size(),36);
+    }
     const QByteArray expectedRoot=qgetenv("RGSML_PHASE11_REAL_14_Q1_EXPECTED_DIR");
     QVERIFY2(!expectedRoot.isEmpty(),
         "Real 14 Q0 input MUST have all 36 independent Q1 expected vectors.");
@@ -3317,6 +3347,47 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
         QCOMPARE(whole.value()->used_src,fin!=fout);
         QCOMPARE(whole.value()->output_rate.value(),fout);
         QCOMPARE(whole.value()->kernel_sha256,std::string{}); // NOT release
+        if(!referenceRoot.isEmpty()) {
+            const auto expectedFile=std::string{"Q1_EXPECTED_"}+
+                std::to_string(fin)+"_TO_"+std::to_string(fout)+".f64le";
+            auto rowIt=std::find_if(expectedRows.begin(),expectedRows.end(),
+                [&](const QJsonValue& value) {
+                    const auto o=value.toObject();
+                    return o.value("fin").toDouble()==fin &&
+                           o.value("fout").toDouble()==fout;
+                });
+            QVERIFY2(rowIt!=expectedRows.end(),
+                "Pinned independent Q1 reference row is missing");
+            const auto row=rowIt->toObject();
+            QCOMPARE(row.value("expected_file").toString().toStdString(),
+                     expectedFile);
+            QCOMPARE(row.value("real_q0_kernel_sha256").isNull(),fin==fout);
+            if(fin!=fout)
+                QCOMPARE(row.value("real_q0_kernel_sha256")
+                            .toString().toStdString(),pinnedSha);
+            const auto expected=read(std::string(referenceRoot.constData())
+                +"/"+expectedFile);
+            QCOMPARE(expected.size(),static_cast<std::size_t>(
+                whole.value()->pcm.view().frame_count().value())*2*8);
+            const auto oracleSha=core::sha256_hex(std::span<const std::byte>{
+                reinterpret_cast<const std::byte*>(expected.data()),
+                expected.size()});
+            QCOMPARE(oracleSha,row.value("interleaved_f64le_sha256")
+                .toString().toStdString());
+            const auto left=whole.value()->pcm.view().channel(0);
+            const auto right=whole.value()->pcm.view().channel(1);
+            QVERIFY(left&&right);
+            for(std::size_t i=0;i<left.value()->size();++i) {
+                for(std::size_t ch=0;ch<2;++ch) {
+                    std::uint64_t expectedBits=0;
+                    for(std::size_t k=0;k<8;++k)
+                        expectedBits|=static_cast<std::uint64_t>(
+                            expected[16*i+8*ch+k])<<(8*k);
+                    const auto observed=ch==0?(*left.value())[i]:(*right.value())[i];
+                    QCOMPARE(std::bit_cast<std::uint64_t>(observed),expectedBits);
+                }
+            }
+        }
         const auto masterFrames=(std::int64_t{8}*L+M-1)/M;
         QCOMPARE(whole.value()->pcm.view().frame_count().value(),masterFrames);
         const auto expected=read(std::string(expectedRoot.constData())+
