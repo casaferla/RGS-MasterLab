@@ -22,8 +22,8 @@ from phase11_math_preflight import ContractError
 
 EXE_NAME="rgsml_playback_src_tests"
 SKIP_SYSTEM=re.compile(
-    r"^(?:linux-vdso|ld-linux|libc\\.|libm\\.|libpthread\\.|"
-    r"librt\\.|libdl\\.|libresolv\\.|libgcc_s\\.|libstdc\\+\\+\\.)"
+    r"^(?:linux-vdso|ld-linux|libc\.|libm\.|libpthread\.|"
+    r"librt\.|libdl\.|libresolv\.|libgcc_s\.|libstdc\+\+\.)"
 )
 
 
@@ -40,7 +40,7 @@ def parse_ldd(text: str)->list[Path]:
         raise ContractError("Qt native test dependencies are missing")
     found={}
     for line in text.splitlines():
-        match=re.match(r"^\\s*([^\\s]+)\\s+=>\\s+(/[^\\s]+)",line)
+        match=re.match(r"^\s*([^\s]+)\s+=>\s+(/[^\s]+)",line)
         if not match:
             continue
         name,path=match.groups()
@@ -111,11 +111,11 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
         (package/"PROVENANCE_NONRELEASE.json").write_text(
             json.dumps(manifest,sort_keys=True,indent=2)+"\n")
         (package/"RUN_OFFLINE.txt").write_text(
-            "TEST EXECUTABLE ONLY: no private FIR coefficients shipped.\\n"
+            "TEST EXECUTABLE ONLY: no private FIR coefficients shipped.\n"
             "Run from this directory with LD_LIBRARY_PATH=$PWD/lib set, "
             "and supply original two private SHA-locked ZIPs to "
-            "tools/qualification/final_src/run_phase11_private_m17_bulk_gate.py.\\n"
-            "This package does NOT certify Q0 full DTFT or Q1-Q6 release.\\n")
+            "tools/qualification/final_src/run_phase11_private_m17_bulk_gate.py.\n"
+            "This package does NOT certify Q0 full DTFT or Q1-Q6 release.\n")
         with tarfile.open(output,"w:gz") as tar:
             tar.add(package,arcname="rgsml_offline_qt_native")
         manifest["bundle_tar_gz_sha256"]=digest(output)
