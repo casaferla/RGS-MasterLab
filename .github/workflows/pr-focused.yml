@@ -185,6 +185,28 @@ jobs:
             --one ${{ runner.temp }}/rgsml-phase11-real-mpfr-88kto44k.bin \
             --fourfold-dir ${{ runner.temp }}/rgsml-phase11-real-pow4 \
             --report ${{ runner.temp }}/rgsml-phase11-original-four-8subbands-NONRELEASE.json
+          # Independently reproduced THIRD-order Lagrange enclosure.
+          # A full 20-Hz REAL continuous stop subband, not an FFT sample;
+          # no false whole-band or production release authority.
+          python tools/qualification/final_src/test_dtft_third_order_rigorous.py
+          python tools/qualification/final_src/dtft_third_order_rigorous.py ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin \
+            --fin 48000 --fout 96000 \
+            --pinned-sha256 6fb38a7d62859283e4061a18d23f354a8308d5b22ff55623e8b00c \
+            --lo 34000 --hi 34020 --kind stopband --max-boxes 128 \
+            --report ${{ github.workspace }}/rgsml-phase11-mpfr-thirdorder-real-20hz-stop-NONRELEASE.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import os
+          x=json.loads((Path(os.environ["GITHUB_WORKSPACE"])/"rgsml-phase11-mpfr-thirdorder-real-20hz-stop-NONRELEASE.json").read_text())
+          assert x["status"] == "CONTINUUM_SUBBAND_PROVEN_NONRELEASE"
+          assert x["visited_boxes"] > 0 and x["remaining_boxes"] == 0
+          assert x["hi_hz"] == "34020" and x["lo_hz"] == "34000"
+          assert x["full_passband_and_stopband_proven"] is False
+          assert x["q1_q6_passed"] is False
+          assert x["release_qualified"] is False
+          assert x["product_admission_authorized"] is False
+          PY
 
       # Exact Python MPFR toolkit archived once per immutable CI SHA:
       # enables an offline all-14 campaign using the same tested source,
