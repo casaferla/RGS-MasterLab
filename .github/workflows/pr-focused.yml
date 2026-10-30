@@ -177,6 +177,14 @@ jobs:
               assert v['full_passband_and_stopband_proven'] is False
               assert v['product_admission_authorized'] is False
           PY
+          # Reuse every genuine Q0 canary already generated in this job:
+          # the other three real ratios and eight 1-Hz continuous subbands.
+          # A skipped/missing/falsely hashed asset is a hard CI FAILURE.
+          python tools/qualification/final_src/prove_original_four_mpfr_subbands.py \
+            --two ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin \
+            --one ${{ runner.temp }}/rgsml-phase11-real-mpfr-88kto44k.bin \
+            --fourfold-dir ${{ runner.temp }}/rgsml-phase11-real-pow4 \
+            --report ${{ runner.temp }}/rgsml-phase11-original-four-8subbands-NONRELEASE.json
 
       # Exact Python MPFR toolkit archived once per immutable CI SHA:
       # enables an offline all-14 campaign using the same tested source,
