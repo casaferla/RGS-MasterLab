@@ -1,3 +1,31 @@
+## 2026-10-30 — CERTIFICATION CONTINUATION: THIRD-ORDER DTFT AND REAL NATIVE Q1 EXECUTION GATE
+
+**Confirmed prerequisites:** original 14 true MPFR/Ziv Q0 asset ZIP, complete candidate manifest ZIP and independent 36 Q1 vector ZIP remain in the verified RGS ContentBox Phase11 Final SRC / M17 folder. Never put fake 14-kernel files in the product, change their SHA, use synthetic substitutes, or call a skipped C++ test PASS.
+
+### A. Real continuous spetral proof
+
+- `tools/qualification/final_src/dtft_second_order_rigorous.py` is a valid 2nd-order enclosure, previously proven on **one-hertz** windows; the initial #914 failed at the file-location protection check, not a kernel hash mismatch. Corrected report output path and reran on #915.
+- The newer `dtft_third_order_rigorous.py` computes frozen binary64 H, H' and H'' at exact rational midpoint via directed 256-bit MPFR and an exact-rational moment `sum u^3*abs(h[D+u])`; with upper pi bound it constructs sound cubic Taylor/Lagrange remainder on EVERY frequency of each box. Expended box budget means **UNRESOLVED**, not certification. Quick synthetic negative tests under `test_dtft_third_order_rigorous.py`; the existing Linux focused workflow also tests **true original 2:1 SHA** for the 20-Hz continuous stopband 34000–34020 Hz.
+- In independently executed local Linux qualification runs on ORIGINAL SHA-verified 14-family assets, the actual original four ratios `2/1`, `1/2`, `1/4`, `4/1` each proved **[34000,34020] Hz continuous stopband** with respective visited/accepted boxes 15/8, 31/16, 31/16, 31/16. The original four local 20-Hz report SHA is `75be62bcd79ccbe863368ba21172ffdf16f97cd27cfd158e96f520d7b42f3457` (local-only artifact). These are **four tiny subbands**, NOT whole-band response, not four RELEASE kernels. The remaining 10 kernels still lack any continuum proof; the entire 14-family full-band interval programme remains OPEN.
+
+### B. REAL 36-path native audio, NOT green skipped CI
+
+- Existing `tests/unit/audio/test_playback_sample_rate_adapter.cpp::phase11External14RealCandidatesAll36OfflineNativeRehearsal` is an authentic SHA-pinned 14-asset C++ check for all 30 actual rate conversions and six identities, over TWO block sizes, with byte-exact independently generated source/master expected vectors. Routine Focused CI omits proprietary ZIPs and therefore can SKIP; DO NOT count its green as Q1 native success.
+- Source of two private nonrelease ZIPs, both verified on Drive: complete candidate 14 asset ZIP (SHA `94d3340667ab5c86b2db5f2d0e191f58b5d05863413312fb3545faed51798ce4`) and independent Q1 vector ZIP (SHA `1c48bf8cd078ab9ad75649303ddc3dae370fd1a16acfea94e3804bd355b09dff`).
+- **Unskipped native execution (Windows or Linux) is now implemented**, no public Drive share required: compile existing `rgsml_playback_src_tests` in the repo's supported CMake/Qt 6.8.3 build, download both ZIPs using existing authorized private Drive access, then run:
+
+```text
+python tools/qualification/final_src/run_native_q1_36_real_offline.py
+  --native-exe <absolute path to built rgsml_playback_src_tests[.exe]>
+  --candidate-zip <private local 14-real-Q0 candidate ZIP>
+  --q1-reference-zip <private local independent 36-Q1 vectors ZIP>
+  --new-fixture-dir <NEW empty/missing directory for verified extracted assets>
+  --report <NEW external nonrelease native-result.json>
+```
+
+- Wrapper calls SHA-locked `prepare_real_q1_36_native_rehearsal.py`, checks 14 real assets+36 rows, runs **only** exact Qt test by name, checks exit code==0, explicit Qt PASS for this named method, 0 SKIP/FAIL, and only THEN publishes a NONRELEASE receipt with binary SHA, 14 Q0/36 Q1 ZIP SHA and platform. A missing Qt binary, absent archive, checksum mismatch, skipped test or invalid path is a hard error. The native wrapper itself has adversarial mock tests in the regular Linux CI, but those are NOT a replacement for running actual C++.
+- Before release: rigorous **full** passband+stopband continuum bounds on all 14 ratios, independent release-frozen hashes/signoff, native/functional Q1–Q6, Q3 correct SRC→M17→M16 single Prepare, qualified monitoring at device rate, full measured six-rate timing/RAM and physical FQ. Keep 28 new production mappings blocked until real proof; no main merge or M18.
+
 ## 2026-10-30 — ACTUAL 36-PATH BINARY64 INDEPENDENT Q1 REFERENCE VECTORS: STAGED NATIVE BITWISE TEST
 
 - Re-read and SHA-validated all 14 actual NONRELEASE MPFR/Ziv Q0 RGSMSR1 candidates. Independent Python strict-scalar code generated **36 distinct two-channel binary64 little-endian interleaved vectors** (6 identity + 30 genuine source→master FIR conversions) from exact source stimulus `[0.25,-0.5,0.125,+0.0,0.5,-0.25,0.375,-0.125]` and an independently negated RIGHT channel. Every expected vector is indexed by actual source/output rates, SHA256 locked in `Q1_EXPECTED_MANIFEST_NONRELEASE.json`. This is an OFFLINE actual-coefficient test oracle, not a release fixture signature or sufficient Q1 certificate.
