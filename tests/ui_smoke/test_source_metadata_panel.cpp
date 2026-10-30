@@ -680,6 +680,16 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
     QVERIFY(advisor.calibration_running());
     QCOMPARE(advisor.calibration_completed_rates(),0);
     QVERIFY(!advisor.calibration_valid()); // measurements are not forged
+    // A direct M17 request can start after calibration begins. The actual
+    // renderer RENDERING signal cooperatively revokes the worker, and a
+    // direct restart must be refused for the duration of that transaction.
+    terminalRendering=true;
+    advisor.cancel_calibration();
+    QVERIFY(!advisor.calibrate(-1.0));
+    QVERIFY(!advisor.calibration_running());
+    terminalRendering=false;
+    QVERIFY(advisor.calibrate(-1.0));
+    QVERIFY(advisor.calibration_running());
     // The exclusive lease can begin AFTER an offline probe was admitted.
     // Production renderer/session notifications cancel it, and the C++
     // authority guard must refuse restart until the lease is released.
