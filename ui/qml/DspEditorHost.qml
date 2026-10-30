@@ -862,10 +862,12 @@ Rectangle {
                                 id: rateMemoryText
                                 objectName: "m17RateMemory_" + rateRow.index
                                 property string interactionHint: !rateRow.admissible
-                                    ? "Final SRC cannot currently prepare this SOURCE/MASTER pair. "
-                                        + (root.masterRateState
-                                            ? root.masterRateState.final_src_path_status(
-                                                rateRow.modelData) : "")
+                                    ? "Final SRC BLOCKED: this SOURCE/MASTER pair cannot Prepare. "
+                                        + (rateRow.advice && rateRow.advice.details
+                                            ? rateRow.advice.details
+                                            : root.masterRateState
+                                                ? root.masterRateState.final_src_path_status(
+                                                    rateRow.modelData) : "")
                                     : rateRow.advice ? rateRow.advice.details
                                     : "No Windows memory observation is available for this rate."
                                 Layout.fillWidth: true
@@ -877,7 +879,10 @@ Rectangle {
                                     ? "#EE9398"
                                     : rateRow.advice && rateRow.advice.kind === "caution"
                                       ? "#F0C87D" : "#B3CAD4"
-                                text: !rateRow.admissible ? "Final SRC N/A"
+                                text: !rateRow.admissible
+                                    ? (rateRow.advice && rateRow.advice.minimumLabel
+                                        ? "SRC blocked · " + rateRow.advice.minimumLabel
+                                        : "SRC blocked")
                                     : rateRow.advice
                                     ? (rateRow.advice.minimumLabel
                                         ? rateRow.advice.minimumLabel + " · " : "")

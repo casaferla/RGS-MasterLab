@@ -200,6 +200,36 @@ private slots:
     y.invocation=7;
     QVERIFY(h.observe(y));
  }
+ void acceptedHistoryBoundedAndSourceRevocationUnderManyPrepares() {
+    AcceptedPrepareObservationHistory h;
+    AcceptedPrepareObservation x{
+        1,48000,48000,96000,1,-3.9,4,5,6,1500,120000,
+        -1,70000,20000};
+    for(std::uint64_t serial=1;serial<=30;++serial) {
+        x.invocation=serial;
+        x.wall_us=120000+static_cast<std::int64_t>(serial);
+        QVERIFY(h.observe(x));
+    }
+    auto last=h.latest(48000,96000,1,48000);
+    QVERIFY(last);
+    QCOMPARE(last->last.invocation,std::uint64_t{30});
+    QCOMPARE(last->exact_revision_count,std::size_t{24});
+    QCOMPARE(last->minimum_total_us,std::int64_t{121507});
+    QCOMPARE(last->maximum_total_us,std::int64_t{121530});
+    h.source_changed(); // same shape, DIFFERENT SOURCE identity
+    QVERIFY(!h.latest(48000,96000,1,48000));
+    QVERIFY(!h.observe(x)); // old render ticket cannot repopulate
+    x.invocation=31;
+    QVERIFY(h.observe(x));
+    x.invocation=32;x.ceiling=std::numeric_limits<double>::quiet_NaN();
+    QVERIFY(!h.observe(x));
+    x.invocation=33;x.ceiling=-13.0;
+    QVERIFY(!h.observe(x));
+    x.invocation=34;x.ceiling=-3.9;x.m16_us=-1;
+    QVERIFY(!h.observe(x));
+    x.invocation=35;x.m16_us=20000;x.src_us=-1;x.master_hz=96000;
+    QVERIFY(!h.observe(x));
+ }
  void monitoringGuardNeverRetargetsOrInvalidatesMaster() {
     MasterOutputRateState s;
     s.source_committed(192000);

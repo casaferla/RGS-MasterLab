@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <new>
 #include <optional>
 #include <vector>
 
@@ -41,8 +42,14 @@ public:
         if(x.invocation<=last_seen_)return false;
         last_seen_=x.invocation;
         if(!eligible(x))return false;
-        if(history_.size()>=24)history_.erase(history_.begin());
-        history_.push_back(x);
+        // Optional diagnostics must never break an already accepted M17
+        // owner if the host is low on memory.
+        try {
+            if(history_.size()>=24)history_.erase(history_.begin());
+            history_.push_back(x);
+        } catch(const std::bad_alloc&) {
+            return false;
+        }
         return true;
     }
     // SOURCE changed (including a different file with the same Fs/frames).
