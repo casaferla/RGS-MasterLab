@@ -1,3 +1,10 @@
+## 2026-10-31 — BIG LOT ADDENDUM: FAILED DEVICE LISTEN RETAINS ACTUAL M17 READY
+
+- Corrected a real failure-recovery gap in the newly staged installed M17 Preview -> MAIN "Ascolta Master" handoff. The coordinator previously retired the exact private M17 device and left the immutable checked master in COMPARISON_VERIFIED while external Windows monitor preflight/device installation ran. If RAM policy/SRC/DEVICE install then refused, M17 could misleadingly show NEEDS PREPARATION despite a valid verified MASTER.
+- The same owner-exact existing A/B transaction now explicitly resumes the checked **READY_TO_INSTALL** candidate and verifies the identical staged PCM identity *before* allocating monitoring DEVICE PCM. It immediately restores M17 READY UI without creating a new renderer ticket. Failed Windows monitoring admission therefore leaves both the manual sink and M17 Preview Prepared eligible for retry, with zero new full Prepare; unexpected owner/rate changes fail closed and cannot mint a replacement master.
+- Extended native Qt real C++ test to assert post-refusal `READY_TO_INSTALL` and `READY · PREVIEW AVAILABLE`, immutable PCM identity, unchanged renderer invocation serial, and safe repeated Preview activation. Extended QML smoke to assert Ascolta Master/MASTER navigation are hidden while no checked master exists and limited-RAM consent remains unchecked. M17 RATE/TIME/RAM/Calibrate UI remains untouched.
+- Keep all this staging-only as part of one large M17 product lot; not CI validated, not 36 SRC routes qualified, no FQ, no M18, no merge main.
+
 ## 2026-10-31 — PO §12: MAIN TRANSPORT MASTER LISTENING, ONE PREPARE IN M17
 
 - PO authority [23/27 October, §12.2–12.3](https://docs.google.com/document/d/13fIk06CgiPLWcaW3KAZPCUoNFN5ffh6NHlVXK1sfA_8/edit): Master Audition is **not** a permanent DSP Chain module. It is listening only, owned by MAIN TRANSPORT after qualified parity/FQ. This is a direct correction of the preceding standalone-editor focus; preserve Windows DEVICE transport and all exact ownership/memory checks rather than delete the audio backend.

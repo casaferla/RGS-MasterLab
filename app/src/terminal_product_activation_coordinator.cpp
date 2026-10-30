@@ -479,6 +479,18 @@ core::Status TerminalProductActivationCoordinator::handoff_installed_to_monitor(
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,
             "M17_MONITOR_HANDOFF_COULD_NOT_PROVE_RETAINED_MASTER"});
+    // Re-arm the ORIGINAL verified M17 READY ticket while MANUAL is its
+    // exact audible owner. If Windows RAM preflight, DEVICE-rate SRC or
+    // monitor sink creation then fails, ordinary Preview Prepared remains
+    // available: the user must never pay for another full Prepare.
+    const auto resumed=session_->resume_comparison();
+    if(!resumed)return resumed;
+    if(session_->status()!=QStringLiteral("READY_TO_INSTALL")
+       ||session_->borrow_verified_m17_master_for_device(rate)!=original)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_MONITOR_HANDOFF_REARM_LOST_VERIFIED_MASTER"});
+    restore_ready_after_monitor_return();
     return core::Status::success();
 }
 

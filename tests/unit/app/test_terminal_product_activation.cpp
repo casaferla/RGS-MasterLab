@@ -893,8 +893,13 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     const auto verifiedBeforeHandoff=candidates.staged();
     const auto renderBeforeHandoff=renderer.render_invocation_count();
     QVERIFY(handoffUi.can_install());
-    QVERIFY(!handoffUi.installMonitor(false)); // Windows preflight not wired
-    QCOMPARE(product.status(),QStringLiteral("COMPARISON_VERIFIED"));
+    // The preflight is configured, but this fixture intentionally does not
+    // install an independent monitoring output. The failed command must
+    // recover M17 READY (not a misleading NEEDS PREPARATION) and retain the
+    // exact original checked PCM for a retry without another M17 render.
+    QVERIFY(!handoffUi.installMonitor(false));
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
     QCOMPARE(candidates.staged(),verifiedBeforeHandoff);
     QCOMPARE(product.verified_master_rate_for_monitoring(),
              std::optional{*deviceRate.value()});
