@@ -107,6 +107,18 @@ def _commit_receipt(path: Path, receipt: dict) -> None:
         Path(scratch).unlink(missing_ok=True)
 
 
+def _fair_band_order(ratio: Ratio, bands: tuple, checkpoints: Path) -> tuple:
+    """Schedule the least-explored band first, avoiding passband-only runs.
+
+    Uses receipts solely to allocate COMPUTATION, never to prove a frequency.
+    A complete band must still pass exact per-node receipt audit in walk_ratio.
+    """
+    return tuple(sorted(bands, key=lambda band: (
+        sum(1 for _ in checkpoints.glob(
+            f"L{ratio.L}_M{ratio.M}_{band[0]}_*.json")),
+        0 if band[0] == "passband" else 1)))
+
+
 def walk_ratio(ratio: Ratio, taps: tuple[Fraction, ...], candidate_sha256: str,
                checkpoints: Path, *, max_attempts: int, boxes: int,
                bits: int, max_depth: int, engine_sha256: str,
@@ -127,7 +139,10 @@ def walk_ratio(ratio: Ratio, taps: tuple[Fraction, ...], candidate_sha256: str,
     attempted=proven=reused=blocked=0
     session=None
     remaining=0
-    for kind, first, last in bands:
+    completed_bands=0
+    band_evidence={}
+    for kind, first, last in _fair_band_order(ratio,bands,checkpoints):
+        band_pending=band_blocked=0
         stack = [(first, last, "r", 0)]
         while stack:
             lo,hi,route,depth = stack.pop()
@@ -143,6 +158,7 @@ def walk_ratio(ratio: Ratio, taps: tuple[Fraction, ...], candidate_sha256: str,
                 state=record["status"]
             else:
                 if attempted >= max_attempts:
+                    band_pending+=len(stack)+1
                     remaining+=len(stack)+1
                     break
                 if prover is prove_window:
@@ -162,6 +178,7 @@ def walk_ratio(ratio: Ratio, taps: tuple[Fraction, ...], candidate_sha256: str,
                 else:
                     if depth >= max_depth or lo == hi:
                         blocked+=1
+                        band_blocked+=1
                         continue  # Never persist unresolved as a qualifying leaf.
                     state="SPLIT_UNRESOLVED"
                 _commit_receipt(checkpoints/filename,
@@ -176,9 +193,18 @@ def walk_ratio(ratio: Ratio, taps: tuple[Fraction, ...], candidate_sha256: str,
                 mid=(lo+hi)/2
                 stack.extend(((mid,hi,route+"1",depth+1),
                               (lo,mid,route+"0",depth+1)))
+        # This is a topology/receipt accounting condition, NOT a release
+        # certificate: every PROVEN receipt still belongs to a private,
+        # explicitly nonrelease MPFR candidate campaign.
+        certified=(band_pending==0 and band_blocked==0)
+        completed_bands+=int(certified)
+        band_evidence[kind]=dict(
+            full_continuum_covered_nonrelease=certified,
+            pending_nodes=band_pending,blocked_leaves=band_blocked)
     return dict(attempted=attempted,proven_leaves=proven,
                 replayed_receipts=reused,blocked_leaves=blocked,
-                pending_nodes=remaining)
+                pending_nodes=remaining,completed_bands=completed_bands,
+                band_evidence=band_evidence)
 
 
 def _fair_ratio_order(pairs: dict, checkpoints: Path) -> list:
@@ -216,7 +242,7 @@ def run_campaign(candidate_dir: Path, checkpoints: Path, *,
     if set(entries)!=set(pairs):
         raise ContractError("complete frozen ratio mapping required")
     total=dict(attempted=0,proven_leaves=0,replayed_receipts=0,
-               blocked_leaves=0,pending_nodes=0)
+               blocked_leaves=0,pending_nodes=0,completed_bands=0)
     order=_fair_ratio_order(pairs,checkpoints)
     for index, (key, (fin,fout)) in enumerate(order):
         row=entries[key]
@@ -233,7 +259,10 @@ def run_campaign(candidate_dir: Path, checkpoints: Path, *,
                             max_depth=max_depth,engine_sha256=engine_sha256)
         for key2 in total:
             total[key2]+=progress[key2]
-    complete=(total["pending_nodes"]==0 and total["blocked_leaves"]==0)
+    # Count each of the fourteen frozen canonical passbands and fourteen
+    # stopbands individually; do not describe a partial interval as 28/28.
+    complete=(total["completed_bands"]==28 and
+              total["pending_nodes"]==0 and total["blocked_leaves"]==0)
     return dict(schema=SCHEMA,
                 status=("COMPLETE_CONTINUUM_CANDIDATE_NONRELEASE" if complete
                         else "UNRESOLVED_MORE_MPFR_PROOF_REQUIRED"),

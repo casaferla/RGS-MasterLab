@@ -11,7 +11,7 @@ from zipfile import ZipFile
 
 from phase11_math_preflight import ContractError, Ratio
 from run_resumable_14_mpfr_continuum import (
-    walk_ratio, authenticate_original_archive, _fair_ratio_order, _fair_attempts, PROVEN)
+    walk_ratio, authenticate_original_archive, _fair_ratio_order, _fair_band_order, _fair_attempts, PROVEN)
 
 
 class Real14ContinuousCheckpoints(unittest.TestCase):
@@ -38,10 +38,14 @@ class Real14ContinuousCheckpoints(unittest.TestCase):
     def test_real_checkpoint_resume_no_duplicate_proof(self):
         first=self._call(1,self._all_good)
         self.assertEqual(first["attempted"],1)
+        self.assertEqual(first["completed_bands"],1)
+        self.assertEqual(first["band_evidence"]["passband"]["full_continuum_covered_nonrelease"],True)
+        self.assertEqual(first["band_evidence"]["stopband"]["full_continuum_covered_nonrelease"],False)
         self.assertGreater(first["pending_nodes"],0)
         final=self._call(4,self._all_good)
         self.assertEqual(final["attempted"],1)
         self.assertEqual(final["pending_nodes"],0)
+        self.assertEqual(final["completed_bands"],2)
         self.assertEqual(len(self.calls),2)
         replay=self._call(0,self._all_good)
         self.assertEqual(replay["attempted"],0)
@@ -130,6 +134,29 @@ class Real14ContinuousCheckpoints(unittest.TestCase):
             (private/"asset.bin").write_bytes(b"SWAPPED-KERNEL")
             with self.assertRaisesRegex(ContractError,"bytes differ"):
                 authenticate_original_archive(private,original)
+
+    def test_fair_band_order_reaches_stopband_on_resume(self):
+        bands=(("passband",Fraction(0),Fraction(12*48000,25)),
+               ("stopband",Fraction(24000),Fraction(48000)))
+        self.assertEqual(_fair_band_order(self.r,bands,self.root)[0][0],"passband")
+        first=self._call(1,self._all_good)
+        self.assertEqual(first["completed_bands"],1)
+        self.assertEqual(_fair_band_order(self.r,bands,self.root)[0][0],"stopband")
+        resumed=self._call(1,self._all_good)
+        self.assertEqual(resumed["attempted"],1)
+        self.assertEqual(resumed["completed_bands"],2)
+        self.assertEqual(self.calls[-1][2],"stopband")
+        self.assertEqual(self._call(0,self._all_good)["completed_bands"],2)
+
+    def test_partial_split_never_claims_whole_band(self):
+        def split(*args,**kwargs):
+            return dict(status="UNRESOLVED",remaining_boxes=1,
+                        proven_boxes=0,visited_boxes=1,release_qualified=False)
+        state=self._call(1,split)
+        self.assertEqual(state["completed_bands"],0)
+        self.assertGreater(state["pending_nodes"],0)
+        self.assertFalse(state["band_evidence"]["passband"]["full_continuum_covered_nonrelease"])
+        self.assertFalse(state["band_evidence"]["stopband"]["full_continuum_covered_nonrelease"])
 
     def test_short_budget_fairly_reaches_unvisited_ratios(self):
         pairs={(1,2):(88200,44100),(2,1):(48000,96000),
