@@ -455,6 +455,13 @@ int main(int argc, char* argv[])
         &rgsml::app::TerminalPrivateRenderController::changed,
         &prepareRateAdvisor,
         [&privateTerminalRenderer,&prepareRateAdvisor] {
+            // A direct C++ request_private() can bypass prepareRequested.
+            // Revoke disposable CPU calibration as soon as the authoritative
+            // renderer signals RENDERING; a prior completed ACT stays read-only.
+            if(privateTerminalRenderer.status()==QStringLiteral("RENDERING")) {
+                prepareRateAdvisor.cancel_calibration();
+                return;
+            }
             const auto x=privateTerminalRenderer.last_approved_prepare_timing();
             if(!x)return;
             if(x->layout!=rgsml::audio::ChannelLayout::MONO_C
