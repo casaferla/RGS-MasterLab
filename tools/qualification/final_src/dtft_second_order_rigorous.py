@@ -25,7 +25,16 @@ def second_moment(taps):
                Fraction(0))
 
 
-def enclose_second_order(ratio, taps, left, right, *, moment2, bits=256):
+def enclose_second_order(ratio, taps, left, right, *, bits=256):
+    """Public entry: compute the exact second moment, no caller trust."""
+    _validate_dtft_input(ratio, taps, bits)
+    return _enclose_second_order_validated(
+        ratio, taps, left, right,
+        moment2=second_moment(taps), bits=bits)
+
+
+def _enclose_second_order_validated(ratio, taps, left, right, *,
+                                    moment2, bits=256):
     """Sound interval A(f) using exact rational second moment and MPFR slope."""
     _validate_dtft_input(ratio, taps, bits)
     left, right = Fraction(left), Fraction(right)
@@ -85,7 +94,7 @@ def prove_window(ratio, taps, start, end, *,
                         proven_boxes=proven, remaining_boxes=len(stack),
                         release_qualified=False)
         lo, hi = stack.pop()
-        low, high = enclose_second_order(
+        low, high = _enclose_second_order_validated(
             ratio, taps, lo, hi, moment2=moment2, bits=bits)
         visited += 1
         ok = ((low >= 1-PASS_TOL and high <= 1+PASS_TOL)
