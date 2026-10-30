@@ -663,6 +663,19 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
     QCOMPARE(actualNotifications.count(),4);
     QSignalSpy notifications{&advisor,
         &app::PrepareMemoryAdviceViewModel::calibrationChanged};
+    bool exclusiveAudition=true;
+    bool terminalRendering=false;
+    advisor.set_calibration_activity_guard([&] {
+        return !exclusiveAudition && !terminalRendering;
+    });
+    QVERIFY(!advisor.calibrate(-1.0)); // C++ call during Master Audition
+    QVERIFY(!advisor.calibration_running());
+    QCOMPARE(notifications.count(),0);
+    exclusiveAudition=false;
+    terminalRendering=true;
+    QVERIFY(!advisor.calibrate(-1.0)); // C++ call during single Prepare
+    QCOMPARE(notifications.count(),0);
+    terminalRendering=false;
     QVERIFY(advisor.calibrate(-1.0));
     QVERIFY(advisor.calibration_running());
     QCOMPARE(advisor.calibration_completed_rates(),0);

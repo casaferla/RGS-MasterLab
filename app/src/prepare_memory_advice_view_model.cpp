@@ -390,7 +390,8 @@ void PrepareMemoryAdviceViewModel::cancel_calibration()
 
 bool PrepareMemoryAdviceViewModel::calibrate(double ceiling)
 {
-    if(calibrationRunning_)return false;
+    if(calibrationRunning_ || (calibrationActivityGuard_
+        && !calibrationActivityGuard_()))return false;
     if(!source_||!source_->has_source()
        ||!std::isfinite(ceiling))
         return false;

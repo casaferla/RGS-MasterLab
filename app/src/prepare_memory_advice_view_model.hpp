@@ -49,6 +49,12 @@ public:
     // deterministic PCM in a NON-AUDIO worker. No Final SRC/DEVICE/WAV.
     Q_INVOKABLE bool calibrate(double ceilingDbTp);
     Q_INVOKABLE void cancel_calibration();
+    // A GUI-thread authority veto: calibrated CPU probes never overlap a
+    // live M17 terminal Prepare or an exclusive Master Audition session.
+    // The QML enabled state is only presentation, not this safety gate.
+    void set_calibration_activity_guard(std::function<bool()> guard) {
+        calibrationActivityGuard_=std::move(guard);
+    }
     [[nodiscard]] bool calibration_running() const noexcept {return calibrationRunning_;}
     [[nodiscard]] int calibration_completed_rates() const noexcept {return completedCalibrationRates_;}
     [[nodiscard]] bool calibration_valid() const noexcept {return calibrationValid_;}
@@ -105,6 +111,7 @@ private:
     QVariantList dspEstimates_;
     AcceptedPrepareObservationHistory actualHistory_;
     RevisionProvider activeRevisionProvider_;
+    std::function<bool()> calibrationActivityGuard_;
     QString calibrationStatus_{QStringLiteral("No on-host calibration yet")};
     std::jthread calibrationThread_;
 };

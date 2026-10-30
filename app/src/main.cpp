@@ -487,6 +487,13 @@ int main(int argc, char* argv[])
             if(privateProductSession.monitoring_transaction_active())
                 prepareRateAdvisor.cancel_calibration();
         });
+    // The C++ service must enforce the same exclusivity as the QML button:
+    // callers can invoke calibrate() directly when the popup is not shown.
+    prepareRateAdvisor.set_calibration_activity_guard(
+        [&privateProductSession,&privateTerminalRenderer] {
+            return !privateProductSession.monitoring_transaction_active()
+                &&privateTerminalRenderer.status()!=QStringLiteral("RENDERING");
+        });
     masterOutputRate.set_target_selection_guard(
         [&privateProductSession]() noexcept {
             return !privateProductSession.monitoring_transaction_active();
