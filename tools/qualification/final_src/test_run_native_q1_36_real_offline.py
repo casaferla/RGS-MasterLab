@@ -75,7 +75,7 @@ class GenuineNativeQ1GateTests(unittest.TestCase):
         with patch("run_native_q1_36_real_offline.platform.platform",
                    side_effect=identity_probe):
             result = self.call(subprocess.CompletedProcess(
-                [], 0, "PASS   : rgsml::tests::" + TEST_NAME + "()\\n", ""))
+                [], 0, "PASS   : rgsml::tests::" + TEST_NAME + "()\n", ""))
         self.assertEqual(result["source_master_pairs_verified"], 36)
         self.assertTrue(result["native_test_not_skipped"])
 
