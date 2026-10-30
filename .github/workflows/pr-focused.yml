@@ -61,6 +61,9 @@ jobs:
           python -m py_compile tools/qualification/final_src/prepare_real_q1_36_native_rehearsal.py
           python -m py_compile tools/qualification/final_src/run_native_q1_36_real_offline.py
           python tools/qualification/final_src/test_run_native_q1_36_real_offline.py
+          # Static regression for the actual optional Qt method: one Q0 folder,
+          # one SHA-pinned Q1 folder, no obsolete second env/QSKIP shortcut.
+          python tools/qualification/final_src/test_native_q1_36_fixture_contract.py
           python tools/qualification/final_src/test_run_four_genuine_q0_native_ci.py
           python -m py_compile tools/qualification/final_src/run_four_genuine_q0_native_ci.py
           python -m py_compile tools/qualification/final_src/qualify_q2_real_36_partition_rehearsal.py
