@@ -21,9 +21,13 @@ def verify_source_method(source: str) -> None:
     begin = source.find("void PlaybackSampleRateAdapterTest::\n" + TEST_NAME + "()")
     if begin < 0:
         raise AssertionError("genuine 36-Q1 native Qt test method absent")
-    end = source.find("}  // namespace rgsml::tests", begin)
-    if end < 0:
+    # The next Qt slot MAY be another private genuine-asset test. Limit
+    # the audit to the 36-Q1 METHOD, never include a following 15-alias QSKIP.
+    next_slot = source.find("\nvoid PlaybackSampleRateAdapterTest::", begin + 10)
+    namespace_end = source.find("}  // namespace rgsml::tests", begin)
+    if namespace_end < 0:
         raise AssertionError("genuine 36-Q1 native Qt test body truncated")
+    end = min(next_slot, namespace_end) if next_slot >= 0 else namespace_end
     method = source[begin:end]
     env = re.findall(r'qgetenv\("([A-Z][A-Z0-9_]+)"\)', method)
     if env != [Q0,Q1]:
@@ -49,6 +53,37 @@ def verify_source_method(source: str) -> None:
         raise AssertionError("native real-data test must SKIP only for absent Q0 fixture")
 
 
+def verify_native_15_alias_source_method(source: str) -> None:
+    name = "phase11External14RealCandidates15NativeAliasSineRehearsal"
+    begin = source.find("void PlaybackSampleRateAdapterTest::\n" + name + "()")
+    if begin < 0:
+        raise AssertionError("real native 15-alias Qt test missing")
+    end = source.find("}  // namespace rgsml::tests", begin)
+    if end < 0:
+        raise AssertionError("native 15-alias method unterminated")
+    method = source[begin:end]
+    required = (
+        'qgetenv("' + Q0 + '")',
+        "const double maxAliasAmplitude",
+        "minAttenuationDb=140.0",
+        "materialize_phase11_pinned_final_src_candidate(",
+        "sourceFrames=fin/10",
+        "outputFrames=fout/10",
+        "std::sin(phase)",
+        "QCOMPARE(digest,std::string(it->sha))",
+        "aliasAmplitude<=maxAliasAmplitude",
+        "QCOMPARE(tested,15)",
+        "ratiosSeen.begin(),ratiosSeen.end(),true)),7",
+    )
+    if method.count("QSKIP(") != 1:
+        raise AssertionError("exactly one SKIP permitted: absent original Q0 folder")
+    if "RGSML_PHASE11_REAL_14_Q1_EXPECTED_DIR" in method:
+        raise AssertionError("legacy reference folder in native 15-alias test")
+    for key in required:
+        if key not in method:
+            raise AssertionError("native 15-alias test missing guard: "+key)
+
+
 class RealQ1ContractSourceTests(unittest.TestCase):
     def setUp(self):
         self.path = (Path(__file__).resolve().parents[3] / "tests" /
@@ -57,6 +92,19 @@ class RealQ1ContractSourceTests(unittest.TestCase):
 
     def test_exact_native_q0_q1_folder_contract(self):
         verify_source_method(self.source)
+        verify_native_15_alias_source_method(self.source)
+
+    def test_native_alias_threshold_tamper_must_fail(self):
+        with self.assertRaises(AssertionError):
+            verify_native_15_alias_source_method(
+                self.source.replace("minAttenuationDb=140.0",
+                                    "minAttenuationDb=120.0",1))
+
+    def test_native_alias_sha_pin_tamper_must_fail(self):
+        with self.assertRaises(AssertionError):
+            verify_native_15_alias_source_method(
+                self.source.replace("QCOMPARE(digest,std::string(it->sha))",
+                                    "QVERIFY(!digest.empty())",1))
 
     def test_stale_legacy_env_must_fail(self):
         with self.assertRaises(AssertionError):
