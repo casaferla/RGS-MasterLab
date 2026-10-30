@@ -1,3 +1,16 @@
+## 2026-10-30 — PHASE11 REAL 14/14 Q0 EVIDENCE ACTUALLY ARCHIVED ON RGS CONTENTBOX DRIVE
+
+**Confirmed Google Drive uploads and metadata readback** (do not silently equate a chat sandbox artifact with permanent Drive storage). RGS ContentBox project folder `RGS MasterLab / Future Tasks / L1-M17 True-Peak Limiter / Phase11 Final SRC — 14 kernel MPFR Q0 — NONRELEASE — 2026-10-30`, canonical folder: https://drive.google.com/drive/folders/1SkWUGGPves-t-PAIEnsMhbqJe-WCWQYH .
+
+Drive evidence (all five files read-back with exact expected parent folder; NONRELEASE/Q0, no product admission):
+1. Original double-generated **14 REAL MPFR/Ziv checkpoint/receipt** ZIP, 10,797,152 bytes, SHA256 `4e144356f653652d5950cd45919fd1d4fab5650eff4f155522111567c7384ebe`: https://drive.google.com/file/d/1sjE6L0GeI3JZdoBewFeeav1L5pxor5sv/view
+2. 14 checkpoint inventory and canonical SHA-256 receipt report, 4,427 bytes: https://drive.google.com/file/d/18tbSOIb4Ez8Ggm9FklIw3l5Gpg5J7Jp6/view
+3. All-14 independent numerical Q0 screening report (two mpmath precisions, dyadic, FFT grid, rational anchors), 6,058 bytes: https://drive.google.com/file/d/1clQXeTHfpdp8PvXIIM8J_4tNV0Uei7nJ/view
+4. All-14 actual candidate binary assets PLUS the complete `CANDIDATE_MANIFEST_NOT_FOR_RELEASE.json` (15 files, 11,455,283-byte ZIP; ZIP SHA256 `94d3340667ab5c86b2db5f2d0e191f58b5d05863413312fb3545faed51798ce4`): https://drive.google.com/file/d/1pbmZqDNefH-F_RiNZEdP9z_BC3seUGsh/view
+5. Green Focused #908 reproducible MPFR/Ziv offline qualifying Python toolkit (170,150 bytes), preserved on Drive independently of expiring GitHub Actions artifact: https://drive.google.com/file/d/1xPk2cPV_-KRaQUUaAjpxrjxmVrA4AIBv/view
+
+Original shared Google Drive historical normative requirements and frozen Final SRC/M17 PO contract remain in existing project Drive, no moving/superseding them. **Authority boundary:** 14/14 genuine MPFR source Q0 assets, completed Q0 numerical negative screens and candidate manifest publication do NOT imply independently frozen release certificate, rigorous MPFR DTFT continuum proof, Q1–Q6, 30 source→master product SRC paths, real M17 one-Prepare/48k-device FQ, six-rate full ETA or M18 gate. Product guard must remain fail closed. The five archived files and this note are evidence for next certification, not a PO release authorization.
+
 ## 2026-10-30 — RECOVERED AND COMPLETED 14/14 GENUINE PHASE11 MPFR/ZIV Q0 CHECKPOINTS
 
 - **ACTUAL FILES, NOT AN UNVERIFIED PLAN.** Resumed from the previously SHA/receipt-audited eight real Q0 checkpoint ZIP. On an independent Linux host (system MPFR 4.x) executed the ORIGINAL green #908 MPFR/Ziv Python generator through `build_resumable_real_candidates.stage_one`: all six missing canonical L/M ratios each double-computed independently at **256-bit MPFR**, bit-identical binary64 output and atomically published complete receipts. Strict independent `_read_checkpoint` revalidated ALL FOURTEEN receipts, canonical ratio, dimensions, original four CI-pinned hashes, real backend and artifact SHA. No synthetic source bytes. 14/14 VALID REAL Q0 checkpoints, 0 missing.
