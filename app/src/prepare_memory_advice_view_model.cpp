@@ -176,9 +176,15 @@ PrepareMemoryAdviceViewModel::PrepareMemoryAdviceViewModel(
     reset_unknown(QStringLiteral("Load a source"));
     connect(source_,&SourceSelectionViewModel::sourceChanged,
         this,[this] {
+            // Invalidate ALL read-only advice immediately, including previous
+            // SOURCE's six RAM/DEVICE rows, before the next popup refresh.
+            // The new SOURCE can have exactly the same rate and frame count.
             cancel_calibration();
             clear_calibration(QStringLiteral("SOURCE changed · calibrate again"));
             actualHistory_.source_changed();
+            reset_unknown(source_ && source_->has_source()
+                ? QStringLiteral("SOURCE changed · refresh memory")
+                : QStringLiteral("Load a source"));
             emit actualPrepareChanged();
         });
     calibrationThread_=std::jthread([this] {calibration_loop();});

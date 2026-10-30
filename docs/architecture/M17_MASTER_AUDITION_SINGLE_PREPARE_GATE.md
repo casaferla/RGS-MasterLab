@@ -1,3 +1,10 @@
+## 2026-10-30 — STAGING WHILE FOCUSED #933 RUNS: FAIL-CLOSED SOURCE-EPOCH RAM/DEVICE ADVICE
+
+- Old M17 rate/memory advice was initially constructed with six `recommendations` rows from Windows DEVICE/available RAM and the current SOURCE frame geometry. On `SourceSelectionViewModel::sourceChanged` the code correctly canceled the disposable CPU probe and cleared accepted ACT timing history, **but left the six cached RAM/DEVICE recommendations visible** until a subsequent popup/explicit refresh. On a new SOURCE (even one with equal Fs, channel layout and frame count) those stale numbers could be misrepresented as current.
+- Source change now synchronously invokes `reset_unknown` for all six rows, clears old `minimumLabel`, sets the explicit `SOURCE changed · refresh memory` status and emits the ordinary read-only advice `changed` notification; a source removal shows `Load a source`. A real, fresh `refresh()` may then recompute the six-rate RAM and device snapshot. No fake `recommendation`, allocation, rate switch, SRC admission, or second Prepare.
+- The existing real Qt in-memory-WAV smoke is extended to assert all six rate advice rows are `unknown` and contain no old memory minimum immediately after SOURCE adoption and after replacing the SOURCE with **exactly the same format and length**; checks that the advice notification fires only once for the replacement while ACT history remains revoked.
+- Single Writer: this commit is on **staging only**, Focused #933 continues evaluating the earlier PR SHA `4cd7701b0e70b3ff2f448669f4d49474a443d8c9`; do not promote before #933 is terminal. Work Phase3 owns PRIVATE formal Q0 math; 28/28 independent proof NONRELEASE, M17 28 unqualified SRC paths still blocked, no M18/FQ/merge.
+
 ## 2026-10-30 — M17 NEXT STAGING: TRUE ACCEPTED PREPARE STAGE ATTRIBUTION, CPU CALIBRATION PREEMPTION
 
 - Focused [#932](https://github.com/casaferla/RGS-MasterLab/actions/runs/41128586824) completed **DOUBLE GREEN** Windows/Linux on PR #61 SHA `cbafed171550843db0a85c32ba0c59384d1c0fd9`; staging/PR aligned before next batch. No previous CI active.

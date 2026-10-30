@@ -553,6 +553,20 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
     QVERIFY(probed);
     source.adopt_probed_source(std::move(*probed.value()));
     QVERIFY(source.has_source());
+    // RAM/DEVICE rows from an earlier SOURCE must be cleared as soon as
+    // this real source is committed, even before a manual popup refresh.
+    QSignalSpy adviceNotifications{
+        &advisor,&app::PrepareMemoryAdviceViewModel::changed};
+    QCOMPARE(advisor.recommendations().size(),6);
+    QCOMPARE(advisor.status_text(),
+        QStringLiteral("SOURCE changed · refresh memory"));
+    for(const auto& entry:advisor.recommendations()) {
+        const auto row=entry.toMap();
+        QCOMPARE(row.value(QStringLiteral("kind")).toString(),
+            QStringLiteral("unknown"));
+        QVERIFY(row.value(QStringLiteral("minimumLabel"))
+            .toString().isEmpty());
+    }
     QVERIFY(!advisor.calibrate(-25.0)); // invalid Ceiling
     // Accepted whole-Prepare timing is *historical* and completely distinct
     // from the disposable M17/M16 calibration. No DAC or personal PCM used.
@@ -632,6 +646,16 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
             std::move(replacement),replacementControl));
     QVERIFY(replacementSource);
     source.adopt_probed_source(std::move(*replacementSource.value()));
+    QCOMPARE(adviceNotifications.count(),1); // second SOURCE, same geometry
+    QCOMPARE(advisor.status_text(),
+        QStringLiteral("SOURCE changed · refresh memory"));
+    for(const auto& entry:advisor.recommendations()) {
+        const auto row=entry.toMap();
+        QCOMPARE(row.value(QStringLiteral("kind")).toString(),
+            QStringLiteral("unknown"));
+        QVERIFY(row.value(QStringLiteral("minimumLabel"))
+            .toString().isEmpty());
+    }
     QCOMPARE(actualNotifications.count(),4);
     QVERIFY(!advisor.actual_prepare_times().at(sourceRateIndex)
         .toMap().value(QStringLiteral("actual")).toBool());
