@@ -226,6 +226,11 @@ jobs:
           set -o pipefail
           python tools/qualification/final_src/test_run_resumable_14_mpfr_continuum.py 2>&1 | tail -n 32
 
+      - name: Phase-11 MPFR real14 private checkpoint transport regression (Linux)
+        run: |
+          set -o pipefail
+          python tools/qualification/final_src/test_archive_real14_mpfr_continuum_checkpoints.py 2>&1 | tail -n 32
+
       - name: Phase-11 MPFR third-order real 20Hz continuum proof (Linux)
         run: |
           set -o pipefail
