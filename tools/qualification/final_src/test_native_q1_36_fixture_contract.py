@@ -18,14 +18,14 @@ LEGACY = "RGSML_PHASE11_REAL_14_Q1_EXPECTED_DIR"
 
 def verify_source_method(source: str) -> None:
     # Limit inspection to ONE exact method, not unrelated Qt tests.
-    begin = source.find("void PlaybackSampleRateAdapterTest::\\n" + TEST_NAME + "()")
+    begin = source.find("void PlaybackSampleRateAdapterTest::\n" + TEST_NAME + "()")
     if begin < 0:
         raise AssertionError("genuine 36-Q1 native Qt test method absent")
     end = source.find("}  // namespace rgsml::tests", begin)
     if end < 0:
         raise AssertionError("genuine 36-Q1 native Qt test body truncated")
     method = source[begin:end]
-    env = re.findall(r'qgetenv\\("([A-Z][A-Z0-9_]+)"\\)', method)
+    env = re.findall(r'qgetenv\("([A-Z][A-Z0-9_]+)"\)', method)
     if env != [Q0,Q1]:
         raise AssertionError(f"native fixture must use ONE Q0 and ONE Q1 directory: {env!r}")
     if LEGACY in method or "expectedRoot" in method:
@@ -66,7 +66,7 @@ class RealQ1ContractSourceTests(unittest.TestCase):
     def test_second_duplicate_q1_variable_must_fail(self):
         injected = self.source.replace(
             'const QByteArray referenceRoot=qgetenv("' + Q1 + '");',
-            'const QByteArray referenceRoot=qgetenv("' + Q1 + '");\\n'
+            'const QByteArray referenceRoot=qgetenv("' + Q1 + '");\n'
             '    const QByteArray expectedRoot=qgetenv("' + LEGACY + '");',
             1)
         with self.assertRaises(AssertionError):
