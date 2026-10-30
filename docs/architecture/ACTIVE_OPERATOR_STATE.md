@@ -1,3 +1,9 @@
+## 2026-10-30 — SAME NEXT M17 STAGING LOT: RENDERER-STATE CPU PROBE PREEMPTION
+
+- In addition to the C++ entry guard, the existing real `TerminalPrivateRenderController::changed` observer in `app/src/main.cpp` now cancels disposable CPU calibration immediately upon the authoritative `RENDERING` transition. This covers direct C++ `request_private()` paths that need not emit the QML `prepareRequested` notification. Previous accepted ACT history is left untouched; the main callback still records exact-owner completed Prepare timing only. Cancellation is cooperative via the existing worker serial, not a claim of physical zero-cycle overlap or DAC/FQ proof.
+- Extended real Qt synthetic-WAV smoke to cover a calibration that starts legitimately, then encounters an exclusive Master Audition lease: the pending worker is canceled, direct restart is refused while the lease is active and stale worker completion cannot publish estimated results. Together with the earlier guard refusal for both rendering and exclusive monitoring, this stays ONE no-CI staging lot pending Focused #934 terminal, an exact PR/staging CAS audit and a single coherent promotion.
+- This does not implement full future SOURCE→MASTER six-rate total ETA, qualify the 28 blocked SRC mappings, close Final SRC Q1–Q6 or start M18/FQ/main merge. Independent Work Q0 is still separate NONRELEASE evidence.
+
 ## 2026-10-30 — NEXT M17 STAGING WHILE #934 RUNS: C++ CALIBRATION EXCLUSIVITY IS AUTHORITATIVE
 
 - Focused [#933](https://github.com/casaferla/RGS-MasterLab/actions/runs/41131561427) was Windows/Linux SUCCESS at `4cd7701b0e70b3ff2f448669f4d49474a443d8c9`. The previous committed batch fixing stale SOURCE-epoch six-rate RAM advice was promoted at `1dbddf80124e06e9b0785d16b5da25b7880c4894` and Focused #934 is evaluating that immutable PR SHA. PR/staging aligned before this next no-CI batch.
