@@ -1,3 +1,9 @@
+## 2026-10-30 — Focused #927 Windows RED root cause and grouped staging correction
+
+- [Focused #927](https://github.com/casaferla/RGS-MasterLab/actions/runs/41115026885) Windows Focused DSP failed at `Build Focused DSP Targets (Release) — Ninja + sccache` (step 19); original filtered compiler excerpt: `prepare_memory_advice_source_policy.hpp(3): fatal error C1083: Cannot open include file: 'rgsml/audio/monitoring_rate_memory_advisor.hpp'` while compiling `rgsml_master_output_rate_state_tests`. Later bounded diagnostic summary failure is downstream, NOT independent evidence of DSP regression. Only filtered compiler messages were inspected; no logs copied wholesale into project docs.
+- Root: M17 source-policy header now uses the PUBLIC `rgsml_audio` monitoring memory advisor in the existing master output-rate unit target, which previously linked Qt6 only. Fix in `tests/CMakeLists.txt`: link `rgsml_audio` to exact target, inheriting its PUBLIC audio include path and `rgsml_core`. Do not add machine-specific include hacks or relax SRC qualification.
+- Correction was staged on top of the existing `0a9e57bb7fa9` timing eligibility hardening, for ONE new PR promotion and ONE new Focused CI after #927 reaches terminal. Windows compilation fix not asserted PASS until new job runs. Never merge main, release 28 blocked SRC routes or start M18.
+
 ## 2026-10-30 — REAL WHOLE-PREPARE TELEMETRY ADMISSION HARDENING (STAGING WHILE #927 RUNS)
 
 - [Focused #927](https://github.com/casaferla/RGS-MasterLab/actions/runs/41115026885) is testing the previous M17 six-rate display/PCM policy PR SHA `21b44454ffd7d399de5c312af5603c55f1d0e3b5`. Independently develop on the no-CI staging branch only.

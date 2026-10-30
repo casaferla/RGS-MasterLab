@@ -70,7 +70,11 @@ qt_add_executable(rgsml_master_output_rate_state_tests
     ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp)
 target_include_directories(rgsml_master_output_rate_state_tests
     PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
-target_link_libraries(rgsml_master_output_rate_state_tests PRIVATE Qt6::Core Qt6::Test)
+# The source/MASTER-rate test also exercises the read-only six-rate RAM
+# projection contract. PUBLIC audio headers depend on rgsml_core; link
+# the real library, never add filesystem-specific include directories.
+target_link_libraries(rgsml_master_output_rate_state_tests
+    PRIVATE rgsml_audio Qt6::Core Qt6::Test)
 rgsml_apply_project_warnings(rgsml_master_output_rate_state_tests)
 add_test(NAME rgsml_master_output_rate_state_tests
     COMMAND rgsml_master_output_rate_state_tests)
