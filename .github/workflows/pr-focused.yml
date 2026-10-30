@@ -67,6 +67,9 @@ jobs:
           python tools/qualification/final_src/test_run_four_genuine_q0_native_ci.py
           python -m py_compile tools/qualification/final_src/run_four_genuine_q0_native_ci.py
           python -m py_compile tools/qualification/final_src/qualify_q2_real_36_partition_rehearsal.py
+          # Private Work Phase3 ZIP is NOT in CI: bounded synthetic NONRELEASE tests.
+          python -m py_compile tools/qualification/final_src/audit_work_phase3_handoff_nonrelease.py
+          python tools/qualification/final_src/test_audit_work_phase3_handoff_nonrelease.py
 
       # Independent high-precision numeric crosscheck and sampled FFT
       # NEGATIVE SCREEN on a GENUINE MPFR candidate; Python tools only.
