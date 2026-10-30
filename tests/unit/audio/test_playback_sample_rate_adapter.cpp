@@ -133,6 +133,7 @@ private slots:
     void phase11GenuineMpfrOneToTwoDownsampleMatchesPythonScalarBits();
     void phase11GenuineMpfrFourfoldRatesMatchPythonScalarBits();
     void phase11GenuineQ0OneM17PassThenIndependentDeviceRate();
+    void phase11External14RealCandidatesAll36OfflineNativeRehearsal();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
     void experimentalFullResourceSixBySixRateMatrix();
     void finalOutputExperimentalSpectralScreenSixBySix();
@@ -3221,6 +3222,116 @@ phase11GenuineQ0OneM17PassThenIndependentDeviceRate()
     QCOMPARE(channel_bits(*source.value(),1),beforeRight);
 }
 
+
+void PlaybackSampleRateAdapterTest::
+phase11External14RealCandidatesAll36OfflineNativeRehearsal()
+{
+    // The actual complete 14-candidate nonrelease asset directory is
+    // supplied by an OFFLINE OPERATOR, never by runtime code. This test is
+    // intentionally optional in routine CI, but MUST run (not skip) when
+    // real assets are explicitly provided for certification work.
+    // Frozen SHA pins come from independent 2026-10-30 Q0 evidence.
+    const QByteArray root=qgetenv("RGSML_PHASE11_REAL_14_Q0_DIR");
+    if(root.isEmpty())
+        QSKIP("Real 14-asset nonrelease family not provided to this CI runner.");
+    struct AssetPin {
+        std::uint32_t L,M;
+        const char* sha;
+    };
+    constexpr std::array<AssetPin,14> pins{{
+        {1,2,"b97776527687180bea6dbf86a8da877c0bdaa528d305abe4b7beaf806ecaf48e"},
+        {1,4,"3c5db068904a059fae54ab3a96ae96ec3963fc31e649f5f4de9ecf5b6d17a947"},
+        {2,1,"6fb38a7d62859283e4061a18d23f354a8308d5b22ff55623e8b1c9a245e8b00c"},
+        {4,1,"f2563518411bc6525889eaf82c43b194f88ceadd59b0750071c613d1071de095"},
+        {40,147,"7658f824ca67beab44a3dee35ccbdaae3aa0acdfc9257c327a9eaa7f3851928f"},
+        {80,147,"42d55a83855e1f166819ce4c3ad6bd53293ddb76a51afd5b1733c520be7ec5f0"},
+        {147,40,"fd57c100ca171a73a3bae4e61c4cc8faca64deff722b363375e4a6fae51f65ef"},
+        {147,80,"38f23112566f59137383d9ba58a0e47a80c583b1232bbbf88315b2505ac02488"},
+        {147,160,"697face6bce0cf299e80c0c28cae51bb49e13dbe435fb529fbf98cfb76fee991"},
+        {147,320,"36e226baf02c67e6e9357c0c1d31c205b2f00ef89526512347487c27479d8936"},
+        {147,640,"42f674e946c7aa816da52ef434f162caed917199ad752514ab771d3094860923"},
+        {160,147,"6997f49435c08f031fd3df68405fbd4836f1918b3a6756aa6defb970241380cf"},
+        {320,147,"4da7e0cbafc81837c159dab8139e605350f9c156d92b5f11bd02262b51872004"},
+        {640,147,"5f5a3b1c9020f3404cb5b1f292396122c3d65368c61988809713ac94acfb08e1"},
+    }};
+    const auto read=[](const std::string& path) {
+        std::ifstream input(path,std::ios::binary);
+        if(!input)return std::vector<std::uint8_t>{};
+        return std::vector<std::uint8_t>{
+            std::istreambuf_iterator<char>{input},
+            std::istreambuf_iterator<char>{}};
+    };
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::array<double,8> samples{
+        0.25,-0.5,0.125,0.0,0.5,-0.25,0.375,-0.125};
+    int conversions=0,identities=0;
+    std::array<bool,14> seen{};
+    for(const auto fin:rates)for(const auto fout:rates) {
+        const auto g=std::gcd(fin,fout);
+        const auto L=static_cast<std::uint32_t>(fout/g);
+        const auto M=static_cast<std::uint32_t>(fin/g);
+        const auto format=audio::AudioFormat::create(
+            rate(fin),audio::ChannelLayout::STEREO_LR);
+        QVERIFY(format);
+        auto source=audio::AudioBuffer::create(
+            *format.value(),audio::FrameDomainId::SOURCE_PROCESSING_RATE,
+            core::FrameIndex{0},frame_count(8));
+        QVERIFY(source);
+        for(std::size_t ch=0;ch<2;++ch) {
+            auto channel=source.value()->mutable_view().channel(ch);
+            QVERIFY(channel);
+            for(std::size_t n=0;n<samples.size();++n)
+                (*channel.value())[n]=ch==0?samples[n]:-samples[n];
+        }
+        const auto beforeLeft=channel_bits(*source.value(),0);
+        const auto beforeRight=channel_bits(*source.value(),1);
+        std::vector<std::uint8_t> asset;
+        std::string pinnedSha;
+        if(fin!=fout) {
+            const auto it=std::find_if(pins.begin(),pins.end(),
+                [&](const AssetPin& p){return p.L==L && p.M==M;});
+            QVERIFY(it!=pins.end());
+            seen[static_cast<std::size_t>(it-pins.begin())]=true;
+            pinnedSha=it->sha;
+            asset=read(std::string(root.constData())+
+                "/RGSMSR1_L"+std::to_string(L)+
+                "_M"+std::to_string(M)+".bin");
+            QVERIFY2(!asset.empty(),"14 genuine Q0 assets must all be present");
+            const auto digest=core::sha256_hex(std::span<const std::byte>{
+                reinterpret_cast<const std::byte*>(asset.data()),asset.size()});
+            QCOMPARE(digest,pinnedSha);
+            ++conversions;
+        } else {
+            ++identities;
+        }
+        const auto whole=audio::materialize_phase11_pinned_final_src_candidate(
+            source.value()->view(),rate(fout),frame_count(17),asset,pinnedSha);
+        QVERIFY2(whole,whole?"":whole.error()->message().c_str());
+        const auto partitioned=audio::materialize_phase11_pinned_final_src_candidate(
+            source.value()->view(),rate(fout),frame_count(128),asset,pinnedSha);
+        QVERIFY2(partitioned,partitioned?"":partitioned.error()->message().c_str());
+        QCOMPARE(whole.value()->used_src,fin!=fout);
+        QCOMPARE(whole.value()->output_rate.value(),fout);
+        QCOMPARE(whole.value()->kernel_sha256,std::string{}); // NOT release
+        QCOMPARE(whole.value()->pcm.view().frame_count().value(),
+                 (std::int64_t{8}*L+M-1)/M);
+        for(std::size_t ch=0;ch<2;++ch)
+            QCOMPARE(channel_bits(whole.value()->pcm,ch),
+                     channel_bits(partitioned.value()->pcm,ch));
+        QCOMPARE(channel_bits(*source.value(),0),beforeLeft);
+        QCOMPARE(channel_bits(*source.value(),1),beforeRight);
+        if(fin!=fout) {
+            auto forged=pinnedSha;
+            forged[0]=forged[0]=='0'?'1':'0';
+            QVERIFY(!audio::materialize_phase11_pinned_final_src_candidate(
+                source.value()->view(),rate(fout),frame_count(17),asset,forged));
+        }
+    }
+    QCOMPARE(identities,6);
+    QCOMPARE(conversions,30);
+    QCOMPARE(std::count(seen.begin(),seen.end(),true),14);
+}
 }  // namespace rgsml::tests
 
 QTEST_APPLESS_MAIN(rgsml::tests::PlaybackSampleRateAdapterTest)
