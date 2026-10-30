@@ -419,6 +419,29 @@ int main(int argc, char* argv[])
         terminalLimiterState,terminalLimiterViewModel,auditionSelector,
         playbackTransport,privateProductSession};
     terminalProductActivation.set_master_rate_state(masterOutputRate);
+    // Historical ACT is visible ONLY when the current MANUAL PCM is still
+    // the exact chain revision and the M17 terminal state/parameters are
+    // unchanged. A->B->A Ceiling edits never resurrect old measurements.
+    prepareRateAdvisor.set_active_revision_provider(
+        [&auditionSelector,&masteringChainState,&terminalLimiterState]()
+            ->std::optional<rgsml::app::AcceptedPrepareRevisionKey> {
+            const auto manual=auditionSelector.processed_realization_snapshot();
+            if(!manual
+               ||manual->chain_revision()!=masteringChainState.chain().revision())
+                return std::nullopt;
+            return rgsml::app::AcceptedPrepareRevisionKey{
+                manual->chain_revision(),
+                terminalLimiterState.chain().revision(),
+                terminalLimiterState.parameter_revision()};
+        });
+    QObject::connect(&terminalLimiterViewModel,
+        &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
+        &prepareRateAdvisor,
+        &rgsml::app::PrepareMemoryAdviceViewModel::current_revision_changed);
+    QObject::connect(&previewController,
+        &rgsml::app::MasteringPreviewController::changed,
+        &prepareRateAdvisor,
+        &rgsml::app::PrepareMemoryAdviceViewModel::current_revision_changed);
     // Read-only exact-owner telemetry: real immutable MASTER has already
     // passed the terminal M16 gate. No re-render, no device or PCM allocation.
     QObject::connect(&privateTerminalRenderer,

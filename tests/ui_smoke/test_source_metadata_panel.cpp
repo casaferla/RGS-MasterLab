@@ -569,6 +569,10 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
     QCOMPARE(advisor.actual_prepare_times().size(),6);
     QVERIFY(!advisor.actual_prepare_times().at(sourceRateIndex)
         .toMap().value(QStringLiteral("actual")).toBool());
+    advisor.set_active_revision_provider([] {
+        return std::optional<app::AcceptedPrepareRevisionKey>{
+            app::AcceptedPrepareRevisionKey{7,8,9}};
+    });
     QSignalSpy actualNotifications{
         &advisor,&app::PrepareMemoryAdviceViewModel::actualPrepareChanged};
     app::AcceptedPrepareObservation accepted{
@@ -586,11 +590,28 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
         .contains(QStringLiteral("NOT a future total ETA")));
     advisor.observe_approved_prepare(accepted);
     QCOMPARE(actualNotifications.count(),1); // exact render cannot replay
+    advisor.set_active_revision_provider([] {
+        return std::optional<app::AcceptedPrepareRevisionKey>{
+            app::AcceptedPrepareRevisionKey{7,8,10}};
+    });
+    QVERIFY(!advisor.actual_prepare_times().at(sourceRateIndex)
+        .toMap().value(QStringLiteral("actual")).toBool());
     accepted.invocation=2;
+    advisor.observe_approved_prepare(accepted);
+    QCOMPARE(actualNotifications.count(),2); // provider edit is repaint only
+    advisor.set_active_revision_provider([] {
+        return std::optional<app::AcceptedPrepareRevisionKey>{
+            app::AcceptedPrepareRevisionKey{7,8,9}};
+    });
+    QVERIFY(advisor.actual_prepare_times().at(sourceRateIndex)
+        .toMap().value(QStringLiteral("actual")).toBool());
+    // In production, a reverted Ceiling increments param revision, so no
+    // historical ACT would be valid until a fresh accepted real render.
+    accepted.invocation=3;
     accepted.master_hz=(sourceHz==44100)?96000:44100;
     accepted.src_us=-1; // missing conversion-stage proof
     advisor.observe_approved_prepare(accepted);
-    QCOMPARE(actualNotifications.count(),1); // product guard fails closed
+    QCOMPARE(actualNotifications.count(),3); // product guard fails closed
     // A new SOURCE of the same rate and frame count still revokes history.
     wav_support::Bytes replacement;
     replacement.reserve(static_cast<std::size_t>(bytes.size()));
@@ -603,11 +624,11 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
             std::move(replacement),replacementControl));
     QVERIFY(replacementSource);
     source.adopt_probed_source(std::move(*replacementSource.value()));
-    QCOMPARE(actualNotifications.count(),2);
+    QCOMPARE(actualNotifications.count(),4);
     QVERIFY(!advisor.actual_prepare_times().at(sourceRateIndex)
         .toMap().value(QStringLiteral("actual")).toBool());
     advisor.observe_approved_prepare(accepted); // no stale authorization
-    QCOMPARE(actualNotifications.count(),2);
+    QCOMPARE(actualNotifications.count(),4);
     QSignalSpy notifications{&advisor,
         &app::PrepareMemoryAdviceViewModel::calibrationChanged};
     QVERIFY(advisor.calibrate(-1.0));

@@ -8,6 +8,8 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
+#include <utility>
 #include <thread>
 #include <mutex>
 #include <optional>
@@ -55,6 +57,15 @@ public:
     [[nodiscard]] QString calibration_status() const {return calibrationStatus_;}
     [[nodiscard]] QVariantList actual_prepare_times() const;
     void observe_approved_prepare(const AcceptedPrepareObservation& observation);
+    using RevisionProvider=std::function<
+        std::optional<AcceptedPrepareRevisionKey>()>;
+    void set_active_revision_provider(RevisionProvider provider) {
+        activeRevisionProvider_=std::move(provider);
+        emit actualPrepareChanged();
+    }
+    // Passive repaint on any committed terminal edit or completed/invalidated
+    // MANUAL preview. Never starts a render or changes an audio owner.
+    void current_revision_changed() {emit actualPrepareChanged();}
 signals:
     void changed();
     void calibrationChanged();
@@ -93,6 +104,7 @@ private:
     double calibratedCeiling_{0.0};
     QVariantList dspEstimates_;
     AcceptedPrepareObservationHistory actualHistory_;
+    RevisionProvider activeRevisionProvider_;
     QString calibrationStatus_{QStringLiteral("No on-host calibration yet")};
     std::jthread calibrationThread_;
 };

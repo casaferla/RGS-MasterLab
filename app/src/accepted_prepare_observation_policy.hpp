@@ -21,6 +21,14 @@ struct AcceptedPrepareObservation {
     std::int64_t queue_us{-1},wall_us{-1},src_us{-1},
         m17_us{-1},m16_us{-1};
 };
+// The actual active chain revisions, not just a matching Ceiling. On an
+// A -> B -> A edit the monotonic revision must change, so old ACT timings
+// cannot reappear as if the current DSP owner were unchanged.
+struct AcceptedPrepareRevisionKey {
+    std::uint64_t manual{0};
+    std::uint64_t terminal{0};
+    std::uint64_t parameters{0};
+};
 struct AcceptedPrepareHistorySummary {
     AcceptedPrepareObservation last;
     std::size_t exact_revision_count{0};
@@ -57,11 +65,19 @@ public:
     void source_changed() noexcept {history_.clear();}
     [[nodiscard]] std::optional<AcceptedPrepareHistorySummary> latest(
         std::int64_t source_hz,std::int64_t source_frames,int channels,
-        std::int64_t master_hz) const noexcept
+        std::int64_t master_hz,
+        std::optional<AcceptedPrepareRevisionKey> activeRevisions =
+            std::nullopt) const noexcept
     {
+        const auto current=[&](const AcceptedPrepareObservation& x) noexcept {
+            return !activeRevisions
+                ||(x.manual_revision==activeRevisions->manual
+                   &&x.terminal_revision==activeRevisions->terminal
+                   &&x.terminal_parameter_revision==activeRevisions->parameters);
+        };
         const AcceptedPrepareObservation* last=nullptr;
         for(const auto& x:history_)
-            if(eligible(x) && x.source_hz==source_hz
+            if(eligible(x) && current(x) && x.source_hz==source_hz
                && x.source_frames==source_frames && x.channels==channels
                && x.master_hz==master_hz
                && (!last||x.invocation>last->invocation))last=&x;
@@ -70,7 +86,7 @@ public:
         auto low=std::numeric_limits<std::int64_t>::max();
         std::int64_t high=0;
         for(const auto& x:history_) {
-            if(!eligible(x)||x.source_hz!=last->source_hz
+            if(!eligible(x)||!current(x)||x.source_hz!=last->source_hz
                ||x.master_hz!=last->master_hz
                ||x.source_frames!=last->source_frames
                ||x.channels!=last->channels || x.ceiling!=last->ceiling

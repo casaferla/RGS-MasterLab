@@ -171,6 +171,14 @@ private slots:
     QVERIFY(r);
     QCOMPARE(r->last.queue_us+r->last.wall_us,1650000);
     QCOMPARE(r->exact_revision_count,std::size_t{1});
+    const AcceptedPrepareRevisionKey exact{7,8,9};
+    QVERIFY(h.latest(44100,132300,2,44100,exact));
+    QVERIFY(!h.latest(44100,132300,2,44100,
+        AcceptedPrepareRevisionKey{8,8,9}));
+    QVERIFY(!h.latest(44100,132300,2,44100,
+        AcceptedPrepareRevisionKey{7,9,9}));
+    QVERIFY(!h.latest(44100,132300,2,44100,
+        AcceptedPrepareRevisionKey{7,8,10}));
     QVERIFY(!h.observe(x)); // identical invocation cannot be relearned
     QVERIFY(!h.latest(44100,132300,2,96000));
     QVERIFY(!h.latest(48000,132300,2,44100));
@@ -194,6 +202,10 @@ private slots:
     r=h.latest(44100,132300,2,44100);
     QVERIFY(r);
     QCOMPARE(r->exact_revision_count,std::size_t{1});
+    // A->B->A restores the numeric Ceiling, never the chain epoch.
+    QVERIFY(!h.latest(44100,132300,2,44100,exact));
+    QVERIFY(h.latest(44100,132300,2,44100,
+        AcceptedPrepareRevisionKey{99,8,9}));
     h.source_changed();
     QVERIFY(!h.latest(44100,132300,2,44100));
     QVERIFY(!h.observe(y)); // same old invocation after source epoch

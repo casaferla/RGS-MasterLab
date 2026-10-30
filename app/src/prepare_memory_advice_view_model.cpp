@@ -275,6 +275,8 @@ QVariantList PrepareMemoryAdviceViewModel::actual_prepare_times() const
         ?source_->frame_count():0;
     const auto channels=source_&&source_->has_source()
         ?source_->channel_count():0;
+    const auto revisions=activeRevisionProvider_
+        ?activeRevisionProvider_():std::nullopt;
     // Actual durations are measurements, not rounded-up estimates:
     // preserve millisecond resolution for short, accepted full Prepares.
     // Divide before rounding to avoid signed overflow at large durations.
@@ -296,9 +298,9 @@ QVariantList PrepareMemoryAdviceViewModel::actual_prepare_times() const
                 "future total Prepare ETA N/A.")},
             {QStringLiteral("ceilingDbTp"),QVariant{}},
             {QStringLiteral("actual"),false}};
-        if(m17_final_src_candidate_admissible(sourceHz,hz)) {
+        if(revisions && m17_final_src_candidate_admissible(sourceHz,hz)) {
             const auto observed=actualHistory_.latest(
-                sourceHz,frames,channels,hz);
+                sourceHz,frames,channels,hz,revisions);
             if(observed) {
                 const auto& x=observed->last;
                 item[QStringLiteral("label")]=QStringLiteral("ACT %1")
@@ -331,6 +333,11 @@ void PrepareMemoryAdviceViewModel::observe_approved_prepare(
        ||source_->channel_count()!=x.channels
        ||!m17_final_src_candidate_admissible(x.source_hz,x.master_hz))
         return;
+    const auto current=activeRevisionProvider_
+        ?activeRevisionProvider_():std::nullopt;
+    if(!current ||x.manual_revision!=current->manual
+       ||x.terminal_revision!=current->terminal
+       ||x.terminal_parameter_revision!=current->parameters)return;
     if(actualHistory_.observe(x))emit actualPrepareChanged();
 }
 
