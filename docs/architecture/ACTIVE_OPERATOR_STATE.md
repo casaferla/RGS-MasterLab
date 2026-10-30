@@ -1,3 +1,8 @@
+## 2026-10-30 — SAME STAGING M17 MEMORY/FINAL-SRC PRESENTATION BATCH: DISTINCT BLOCKED RATE ROWS
+
+- Actual `ui/qml/Main.qml` memory-rate repeater consumes `modelData.label/kind/details`; after inspecting its 2-column minimum-height 19px geometry, the 28 unqualified Final SRC cases now use a concise `SRC blocked` label and explicit `blocked` kind (rather than a neutral `unknown` color). The QML applies a muted red border and readable label, retains existing 2-column/min-height layout, tooltip and accessibility metadata. No vertical scrolling, no DSP modification, no rate retargeting or product admission.
+- Keep both this and the preceding model/policy/test commit on staging until the next broad M17 functional code/test batch; never trigger a per-UI CI while Focused #926 is running. If #926 becomes red, fold correction into same broad next promotion.
+
 ## 2026-10-30 — NEXT M17 P0 BATCH (STAGING ONLY): MEMORY ADVICE MUST NOT MISREPRESENT SRC ADMISSION
 
 - Baseline [Focused #926](https://github.com/casaferla/RGS-MasterLab/actions/runs/41111910285), PR #61 Draft `a263e0e13c9e8fe6c8b8376328b32eaae5917e02` when preparation started; CI still in progress. Work remains only on no-CI staging, no overlapping PR promotion.

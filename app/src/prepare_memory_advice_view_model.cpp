@@ -132,8 +132,8 @@ constexpr std::array<std::int64_t,6> kMasterRates{
     QString pathStatus;
     if(admission==PrepareMemoryDisplayAdmission::FINAL_SRC_UNQUALIFIED) {
         pathStatus=QStringLiteral("FINAL_SRC_UNQUALIFIED");
-        label=QStringLiteral("SRC unavailable");
-        kind=QStringLiteral("unknown");
+        label=QStringLiteral("SRC blocked");
+        kind=QStringLiteral("blocked");
         const auto warning=QStringLiteral(
             "Final SRC UNQUALIFIED: M17 Prepare is unavailable for this "
             "SOURCE-to-MASTER pair. RAM is hypothetical, not a recommendation. ");

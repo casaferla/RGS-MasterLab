@@ -1477,6 +1477,7 @@ ApplicationWindow {
                                                             border.color: modelData.kind === "recommended" ? "#3C786C"
                                                                 : modelData.kind === "caution" ? "#806A3B"
                                                                 : modelData.kind === "discouraged" ? "#82525A"
+                                                                : modelData.kind === "blocked" ? "#B35A64"
                                                                 : "#365064"
                                                             RowLayout {
                                                                 anchors.fill: parent
@@ -1496,6 +1497,7 @@ ApplicationWindow {
                                                                     color: modelData.kind === "recommended" ? "#9DD8C2"
                                                                         : modelData.kind === "caution" ? "#F2CE82"
                                                                         : modelData.kind === "discouraged" ? "#F4A5AA"
+                                                                        : modelData.kind === "blocked" ? "#FFB5BC"
                                                                         : "#91AABA"
                                                                     font.pixelSize: 9
                                                                     elide: Text.ElideRight
