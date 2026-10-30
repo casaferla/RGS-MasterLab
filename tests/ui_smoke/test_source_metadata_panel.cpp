@@ -680,8 +680,14 @@ void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPe
     QVERIFY(advisor.calibration_running());
     QCOMPARE(advisor.calibration_completed_rates(),0);
     QVERIFY(!advisor.calibration_valid()); // measurements are not forged
+    // The exclusive lease can begin AFTER an offline probe was admitted.
+    // Production renderer/session notifications cancel it, and the C++
+    // authority guard must refuse restart until the lease is released.
+    exclusiveAudition=true;
     advisor.cancel_calibration();
+    QVERIFY(!advisor.calibrate(-1.0));
     QVERIFY(!advisor.calibration_running());
+    exclusiveAudition=false;
     QCOMPARE(advisor.calibration_completed_rates(),0);
     QVERIFY(!advisor.calibration_valid());
     QVERIFY(advisor.dsp_estimates().isEmpty());
