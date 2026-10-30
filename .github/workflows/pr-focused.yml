@@ -187,15 +187,26 @@ jobs:
             --one ${{ runner.temp }}/rgsml-phase11-real-mpfr-88kto44k.bin \
             --fourfold-dir ${{ runner.temp }}/rgsml-phase11-real-pow4 \
             --report ${{ runner.temp }}/rgsml-phase11-original-four-8subbands-NONRELEASE.json
-          # Independently reproduced THIRD-order Lagrange enclosure.
-          # A full 20-Hz REAL continuous stop subband, not an FFT sample;
-          # no false whole-band or production release authority.
-          python tools/qualification/final_src/test_dtft_third_order_rigorous.py
+
+      # Keep existing 2nd-order/4-original CI gate intact. Break the NEW
+      # 3rd-order stage into independently named steps: no whole job log
+      # download needed to diagnose Python/unit vs genuine/MPFR vs assertion.
+      - name: Phase-11 MPFR third-order adversarial unit proof (Linux)
+        run: |
+          set -o pipefail
+          python tools/qualification/final_src/test_dtft_third_order_rigorous.py 2>&1 | tail -n 32
+
+      - name: Phase-11 MPFR third-order real 20Hz continuum proof (Linux)
+        run: |
+          set -o pipefail
           python tools/qualification/final_src/dtft_third_order_rigorous.py ${{ runner.temp }}/rgsml-phase11-real-mpfr-48to96.bin \
             --fin 48000 --fout 96000 \
-            --pinned-sha256 6fb38a7d62859283e4061a18d23f354a8308d5b22ff55623e8b00c \
+            --pinned-sha256 6fb38a7d62859283e4061a18d23f354a8308d5b22ff55623e8b1c9a245e8b00c \
             --lo 34000 --hi 34020 --kind stopband --max-boxes 128 \
-            --report ${{ github.workspace }}/rgsml-phase11-mpfr-thirdorder-real-20hz-stop-NONRELEASE.json
+            --report ${{ github.workspace }}/rgsml-phase11-mpfr-thirdorder-real-20hz-stop-NONRELEASE.json 2>&1 | tail -n 32
+
+      - name: Phase-11 MPFR third-order honest nonrelease result (Linux)
+        run: |
           python - <<'PY'
           import json
           from pathlib import Path
