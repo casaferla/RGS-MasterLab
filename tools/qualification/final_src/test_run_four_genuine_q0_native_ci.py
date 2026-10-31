@@ -20,6 +20,13 @@ class FourRealNativeTests(unittest.TestCase):
         self.root=Path(self.tmp.name)
         self.build=self.root/"build"
         self.build.mkdir()
+        # Direct native driver now requires the same frozen playback FIR pack
+        # as the CTest runtime, even with synthetic mock subprocesses.
+        self.playback=self.build/"generated/rgsml/fir/playback"
+        self.playback.mkdir(parents=True)
+        for rate_pair in ("44100_48000","48000_44100"):
+            (self.playback/f"playback_src_kernel_{rate_pair}.bin").write_bytes(
+                b"mock-external-fir-not-a-real-coefficient")
         self.exe=self.build/"rgsml_playback_src_tests"
         self.exe.write_bytes(b"mock-test-binary")
         self.exe.chmod(0o755)
@@ -55,6 +62,9 @@ class FourRealNativeTests(unittest.TestCase):
                 self.assertEqual(call.args[0][1],NATIVE_TESTS[i])
                 self.assertIn("RGSML_PHASE11_REAL_CANARY_PATH",
                               call.kwargs["env"])
+                self.assertEqual(
+                    call.kwargs["env"]["RGSML_PLAYBACK_FIR_ROOT"],
+                    str(self.playback.resolve()))
             return value
 
     @staticmethod
@@ -101,6 +111,13 @@ class FourRealNativeTests(unittest.TestCase):
             self.invoke([])
         self.two.write_bytes(b"real-stimulus-placeholder\x00")
         self.exe.unlink()
+        with self.assertRaises(ContractError):
+            self.invoke([])
+        self.assertFalse(self.report.exists())
+
+    def test_missing_external_playback_fir_pack_rejected(self):
+        missing=self.playback/"playback_src_kernel_44100_48000.bin"
+        missing.unlink()
         with self.assertRaises(ContractError):
             self.invoke([])
         self.assertFalse(self.report.exists())
