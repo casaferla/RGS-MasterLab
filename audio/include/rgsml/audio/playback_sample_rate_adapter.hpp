@@ -36,9 +36,10 @@ struct PlaybackRateSpec final {
     core::FrameCount totalInputFrames;
 };
 
-// Playback-only exact-rational adapter for the frozen 44.1 <-> 48 kHz policy.
-// It reads bounded canonical windows through WavReader and writes ephemeral
-// OUTPUT_RATE blocks. It is not a render node or a persisted audio artifact.
+// Playback-only exact-rational adapter: frozen bit-exact 44.1 <-> 48 FIRs,
+// plus provisional six-rate device FIRs generated only during Prepare.
+// It writes ephemeral OUTPUT_RATE blocks, never MASTER PCM. The new FIRs
+// have NO original-Q0/mastering certification and no SHA-release claim.
 class PlaybackSampleRateAdapter final {
 public:
     static constexpr std::int64_t kMaximumOutputBlockFrames = 1024;

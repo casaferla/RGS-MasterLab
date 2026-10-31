@@ -42,7 +42,8 @@ struct DeviceFormat final {
     bool exactFloat32Supported,
     bool exactPcm16Supported,
     bool pairedFloat32Supported,
-    bool pairedPcm16Supported);
+    bool pairedPcm16Supported,
+    int explicitAlternativeHz=0);
 
 // Future monitoring-only route: derive a device PCM rate from an observed
 // *preferred* Windows format, never change the M17/M18 MASTER rate. This is

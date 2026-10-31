@@ -466,9 +466,16 @@ struct OutputCandidate final {
     }
 
     const auto sourceRate = static_cast<int>(sourceFormat.sample_rate().value());
-    const auto pairedRate = sourceRate == 44'100
-        ? 48'000
-        : (sourceRate == 48'000 ? 44'100 : 0);
+    const auto preferred=defaultOutput.preferredFormat().sampleRate();
+    const bool sixPreferred=preferred==44100||preferred==48000
+        ||preferred==88200||preferred==96000
+        ||preferred==176400||preferred==192000;
+    // Exact source clock wins when supported; otherwise the observed
+    // Windows preferred clock is the monitoring-only target. The 44.1/48
+    // fallback is preserved for legacy devices without a six-rate preference.
+    const auto pairedRate=(sixPreferred&&preferred!=sourceRate)
+        ?preferred:(sourceRate==44100?48000:
+                     sourceRate==48000?44100:0);
     const auto exactFloatFormat = make_format(
         sourceFormat, sourceRate, QAudioFormat::Float);
     const auto exactPcm16Format = make_format(
@@ -484,7 +491,8 @@ struct OutputCandidate final {
         pairedRate != 0
             && defaultOutput.isFormatSupported(pairedFloatFormat),
         pairedRate != 0
-            && defaultOutput.isFormatSupported(pairedPcm16Format));
+            && defaultOutput.isFormatSupported(pairedPcm16Format),
+        pairedRate);
     if (!selected) {
         // Diagnostic only: source-rate rejection cannot silently retarget
         // the MASTER or claim an offline M17/MONITOR failure. Record the

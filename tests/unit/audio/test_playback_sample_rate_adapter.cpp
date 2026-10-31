@@ -130,6 +130,7 @@ class PlaybackSampleRateAdapterTest final : public QObject {
 
 private slots:
     void policyIdentityAndFrameMap();
+    void sixRateDevicePlaybackStreamingPreservesDcAndSourceClock();
     void phase11StrictScalarReferenceSixBySixAgainstConceptualGrid();
     void phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference();
     void phase11PinnedScalarReferenceSixBySixSyntheticGeometry();
@@ -2731,6 +2732,67 @@ void PlaybackSampleRateAdapterTest::experimentalFullResourceSixBySixRateMatrix()
     QCOMPARE(verified,std::size_t{36});
 }
 
+void PlaybackSampleRateAdapterTest::
+sixRateDevicePlaybackStreamingPreservesDcAndSourceClock()
+{
+    // Real WAV streaming path, not the offline MASTER/FQ-Q0 resampler:
+    // SOURCE and DEVICE are independent, with exact rational frame mapping.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::int64_t sourceFrames=192;
+    std::vector<std::uint64_t> samples(
+        static_cast<std::size_t>(sourceFrames*2),
+        std::bit_cast<std::uint64_t>(0.125));
+    for(const auto src:rates) {
+        for(const auto dst:rates) {
+            if(src==dst)continue; // exact-rate listening has no SRC adapter
+            auto reader=open_f64_stereo(static_cast<std::uint32_t>(src),samples);
+            QVERIFY(reader);
+            auto prepared=audio::PlaybackSampleRateAdapter::create(
+                audio::PlaybackRateSpec{
+                    rate(src),rate(dst),audio::ChannelLayout::STEREO_LR,
+                    frame_count(sourceFrames)});
+            QVERIFY2(prepared,prepared?"":prepared.error()->message().c_str());
+            auto& a=*prepared.value();
+            QCOMPARE(a.input_rate().value(),src);
+            QCOMPARE(a.output_rate().value(),dst);
+            const auto expected=(sourceFrames/src)*dst
+                +((sourceFrames%src)*dst+src-1)/src;
+            QCOMPARE(a.output_frame_count().value(),expected);
+            const bool frozen=(src==44100&&dst==48000)
+                ||(src==48000&&dst==44100);
+            QCOMPARE(a.kernel_sha256().empty(),!frozen);
+            auto from=core::FrameIndex{sourceFrames};
+            QCOMPARE(a.map_input_frame_to_output(from).value()->value(),
+                     expected);
+            std::int64_t begin=0;
+            while(begin<expected) {
+                const auto count=std::min(std::int64_t{73},expected-begin);
+                auto block=output_buffer(a,begin,count);
+                auto written=a.read_frames(
+                    *reader,core::FrameIndex{begin},block.mutable_view());
+                QVERIFY2(written,written?"":written.error()->message().c_str());
+                QCOMPARE(written.value()->value(),count);
+                for(std::size_t ch=0;ch<2;++ch) {
+                    auto lane=block.view().channel(ch);
+                    QVERIFY(lane);
+                    for(const auto sample:*lane.value()) {
+                        QVERIFY(std::isfinite(sample));
+                        if(!frozen)
+                            QVERIFY2(std::abs(sample-0.125)<1e-10,
+                                "Device-only rational FIR must preserve DC.");
+                    }
+                }
+                begin+=count;
+            }
+            auto retired=a.no_future_dependency_source_prefix(
+                core::FrameIndex{expected});
+            QVERIFY(retired);
+            QCOMPARE(retired.value()->value(),sourceFrames);
+        }
+    }
+}
+
 void PlaybackSampleRateAdapterTest::policyIdentityAndFrameMap()
 {
     auto identity = audio::PlaybackSampleRateAdapter::create(
@@ -2746,15 +2808,16 @@ void PlaybackSampleRateAdapterTest::policyIdentityAndFrameMap()
         QString::fromStdString(identity.error()->message()),
         QStringLiteral("PLAYBACK_RATE_PAIR_UNSUPPORTED_V1"));
 
-    auto unsupported = audio::PlaybackSampleRateAdapter::create(
+    // 96 -> 48 is now a supported DEVICE audition pair, but not a new
+    // MASTER Final SRC authorization or a new pinned coefficient identity.
+    auto extended=audio::PlaybackSampleRateAdapter::create(
         audio::PlaybackRateSpec{
-            rate(96'000),
-            rate(48'000),
-            audio::ChannelLayout::STEREO_LR,
-            frame_count(960),
-        });
-    QVERIFY(!unsupported);
-    QCOMPARE(unsupported.error()->code(), core::ErrorCode::UnsupportedOperation);
+            rate(96'000),rate(48'000),
+            audio::ChannelLayout::STEREO_LR,frame_count(960)});
+    QVERIFY(extended);
+    QCOMPARE(extended.value()->output_frame_count().value(),
+             std::int64_t{480});
+    QVERIFY(extended.value()->kernel_sha256().empty());
 
     auto forward = adapter(44'100, 48'000, 441);
     QCOMPARE(forward.interpolation_factor(), std::int64_t{160});

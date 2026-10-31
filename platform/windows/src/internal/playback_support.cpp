@@ -173,7 +173,8 @@ core::Result<DeviceFormat> select_device_format(
     bool exactFloat32Supported,
     bool exactPcm16Supported,
     bool pairedFloat32Supported,
-    bool pairedPcm16Supported)
+    bool pairedPcm16Supported,
+    int explicitAlternativeHz)
 {
     const auto rate = sourceFormat.sample_rate().value();
     if (rate <= 0 || rate > std::numeric_limits<int>::max()) {
@@ -201,17 +202,23 @@ core::Result<DeviceFormat> select_device_format(
             DeviceSampleFormat::PCM_S16,
             false});
     }
-    const std::int64_t pairedRate = rate == 44'100
-        ? 48'000
-        : (rate == 48'000 ? 44'100 : 0);
-    if (pairedRate != 0 && pairedFloat32Supported) {
+    const std::int64_t pairedRate=explicitAlternativeHz!=0
+        ?explicitAlternativeHz
+        :(rate==44'100?48'000:(rate==48'000?44'100:0));
+    const bool sixAlternative=pairedRate==44100||pairedRate==48000
+        ||pairedRate==88200||pairedRate==96000
+        ||pairedRate==176400||pairedRate==192000;
+    const bool sixSource=rate==44100||rate==48000
+        ||rate==88200||rate==96000||rate==176400||rate==192000;
+    const bool permitted=sixSource&&sixAlternative&&pairedRate!=rate;
+    if (permitted && pairedFloat32Supported) {
         return core::Result<DeviceFormat>::success(DeviceFormat{
             static_cast<int>(pairedRate),
             channels,
             DeviceSampleFormat::IEEE_F32,
             true});
     }
-    if (pairedRate != 0 && pairedPcm16Supported) {
+    if (permitted && pairedPcm16Supported) {
         return core::Result<DeviceFormat>::success(DeviceFormat{
             static_cast<int>(pairedRate),
             channels,

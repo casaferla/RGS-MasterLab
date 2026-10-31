@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <new>
+#include <numeric>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -289,6 +290,75 @@ template <typename T>
         remainder < inputFrames ? remainder : period - 1 - remainder);
 }
 
+
+// Playback-only provisional six-rate FIR, constructed during Prepare on the
+// playback worker (never inside the device callback). Master Final SRC is
+// independent and still requires its separately pinned original Q0 assets.
+// The historic 44.1/48 kHz bitwise-frozen kernels are NOT synthesized here.
+[[nodiscard]] bool six_rate(std::int64_t hz) noexcept
+{
+    return hz==44100||hz==48000||hz==88200||hz==96000
+        ||hz==176400||hz==192000;
+}
+
+[[nodiscard]] core::Result<std::shared_ptr<const std::vector<std::uint64_t>>>
+make_provisional_device_fir(std::uint32_t interpolation,
+                            std::uint32_t decimation)
+{
+    using Owner=std::shared_ptr<const std::vector<std::uint64_t>>;
+    if(interpolation==0||decimation==0)
+        return failure<Owner>(core::ErrorCode::InvalidArgument,
+            "PLAYBACK_SIX_RATE_FIR_RATIO_INVALID");
+    // At most 960 input taps per output in the six-rate family. This
+    // expands the prototype's transition width for rational downsampling,
+    // without altering any pinned historical coefficient or master render.
+    constexpr double pi=3.141592653589793238462643383279502884;
+    const auto tapsPerPhase=static_cast<std::size_t>(
+        std::max(192.0,std::ceil(192.0*decimation/interpolation)));
+    const auto count=static_cast<std::size_t>(interpolation)*tapsPerPhase+1U;
+    if(tapsPerPhase>1024||count>655361)
+        return failure<Owner>(core::ErrorCode::UnsupportedOperation,
+            "PLAYBACK_SIX_RATE_FIR_RESOURCE_LIMIT");
+    try {
+        std::vector<double> provisional(count);
+        const auto center=static_cast<double>(count-1U)/2.0;
+        const double cutoff=0.94/static_cast<double>(
+            std::max(interpolation,decimation));
+        for(std::size_t i=0;i<count;++i) {
+            const double x=static_cast<double>(i)-center;
+            const double angle=2.0*pi*static_cast<double>(i)/(count-1U);
+            const double window=0.35875-0.48829*std::cos(angle)
+                +0.14128*std::cos(2*angle)-0.01168*std::cos(3*angle);
+            const double sinc=std::abs(x)<1e-12 ? cutoff
+                :std::sin(pi*cutoff*x)/(pi*x);
+            provisional[i]=sinc*window;
+        }
+        auto owned=std::make_shared<std::vector<std::uint64_t>>(count);
+        // One gain normalization per L-phase; ensures constant PCM remains
+        // constant on every fractional phase, independent of chunk boundaries.
+        for(std::size_t phase=0;phase<interpolation;++phase) {
+            double sum=0.0;
+            for(std::size_t k=phase;k<count;k+=interpolation)
+                sum+=provisional[k];
+            if(!std::isfinite(sum)||std::abs(sum)<1e-12)
+                return failure<Owner>(core::ErrorCode::InvalidState,
+                    "PLAYBACK_SIX_RATE_FIR_NORMALIZATION_FAILED");
+            for(std::size_t k=phase;k<count;k+=interpolation) {
+                const double tap=provisional[k]/sum;
+                if(!std::isfinite(tap))
+                    return failure<Owner>(core::ErrorCode::InvalidState,
+                        "PLAYBACK_SIX_RATE_FIR_NONFINITE");
+                (*owned)[k]=std::bit_cast<std::uint64_t>(tap);
+            }
+        }
+        Owner immutable=std::move(owned);
+        return core::Result<Owner>::success(std::move(immutable));
+    } catch(const std::bad_alloc&) {
+        return failure<Owner>(core::ErrorCode::IoFailure,
+            "PLAYBACK_SIX_RATE_FIR_OUT_OF_MEMORY");
+    }
+}
+
 }  // namespace
 
 core::Result<PlaybackSampleRateAdapter> PlaybackSampleRateAdapter::create(
@@ -304,6 +374,11 @@ core::Result<PlaybackSampleRateAdapter> PlaybackSampleRateAdapter::create(
     } else if (inputRate == 48'000 && outputRate == 44'100) {
         interpolation = 147;
         decimation = 160;
+    } else if (six_rate(inputRate) && six_rate(outputRate)
+               && inputRate!=outputRate) {
+        const auto divisor=std::gcd(inputRate,outputRate);
+        interpolation=outputRate/divisor;
+        decimation=inputRate/divisor;
     } else {
         return failure<PlaybackSampleRateAdapter>(
             core::ErrorCode::UnsupportedOperation,
@@ -334,24 +409,33 @@ core::Result<PlaybackSampleRateAdapter> PlaybackSampleRateAdapter::create(
         return core::Result<PlaybackSampleRateAdapter>::failure(
             *outputFrames.error());
     }
-    // No filter math change: asset is read and SHA-pinned on the caller's
-    // control path; the existing convolution and frame map are unchanged.
-    auto verified = load_external_playback_fir(inputRate, outputRate);
-    if (!verified)
-        return core::Result<PlaybackSampleRateAdapter>::failure(
-            *verified.error());
-    auto owner = verified.value()->bits;
+    // The two historic playback FIRs remain EXACT frozen SHA-pinned assets.
+    // Every other six-rate playback pair has an isolated, PREPARE-only
+    // provisional FIR. It is NOT the private original-14 Final SRC bank.
+    const bool frozen=(inputRate==44100&&outputRate==48000)
+        ||(inputRate==48000&&outputRate==44100);
+    std::shared_ptr<const std::vector<std::uint64_t>> owner;
+    std::string_view kernelSha;
+    if(frozen) {
+        auto verified=load_external_playback_fir(inputRate,outputRate);
+        if(!verified)
+            return core::Result<PlaybackSampleRateAdapter>::failure(
+                *verified.error());
+        owner=verified.value()->bits;
+        kernelSha=verified.value()->sha256;
+    } else {
+        auto provisional=make_provisional_device_fir(
+            static_cast<std::uint32_t>(interpolation),
+            static_cast<std::uint32_t>(decimation));
+        if(!provisional)
+            return core::Result<PlaybackSampleRateAdapter>::failure(
+                *provisional.error());
+        owner=std::move(*provisional.value());
+    }
     return core::Result<PlaybackSampleRateAdapter>::success(
         PlaybackSampleRateAdapter{
-            spec,
-            interpolation,
-            decimation,
-            owner,
-            owner->data(),
-            owner->size(),
-            verified.value()->sha256,
-            *outputFrames.value(),
-        });
+            spec,interpolation,decimation,owner,owner->data(),
+            owner->size(),kernelSha,*outputFrames.value()});
 }
 
 PlaybackSampleRateAdapter::PlaybackSampleRateAdapter(
@@ -656,9 +740,10 @@ core::Result<core::FrameCount> internal::read_playback_src_frames(
         maximumSource = std::max(maximumSource, *reflected.value());
     }
     const auto sourceWindowFrames = maximumSource - minimumSource + 1;
-    constexpr auto kMaximumSourceWindowFrames =
-        PlaybackSampleRateAdapter::kMaximumOutputBlockFrames
-        + (PlaybackSampleRateAdapter::kTapsPerPhase * 2) + 4;
+    // All six-rate rational pairs: <=1024 output frames, decimation /
+    // interpolation <=640/147 or 4, and <=1024 source taps per phase.
+    // A fixed 8192-source-frame guard is intentionally conservative.
+    constexpr std::int64_t kMaximumSourceWindowFrames=8192;
     if (sourceWindowFrames > kMaximumSourceWindowFrames) {
         return failure<core::FrameCount>(
             core::ErrorCode::InvalidState,

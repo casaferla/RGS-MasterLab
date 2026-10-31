@@ -904,6 +904,23 @@ void PlaybackSupportTest::formatSelectionIsDeterministic()
     QCOMPARE(pairedPcm.value()->sampleFormat, DeviceSampleFormat::PCM_S16);
     QVERIFY(pairedPcm.value()->srcApplied);
 
+    // New six-rate preferred-device capability is SOURCE audition only:
+    // an exact 48 kHz sink still wins; 192 kHz MASTER is never retargeted.
+    auto hiPreferred=platform::windows::internal::select_device_format(
+        *format.value(),false,false,true,true,192000);
+    QVERIFY(hiPreferred);
+    QCOMPARE(hiPreferred.value()->sampleRateHz,192000);
+    QVERIFY(hiPreferred.value()->srcApplied);
+    auto exactPreferred=platform::windows::internal::select_device_format(
+        *format.value(),true,true,true,true,192000);
+    QVERIFY(exactPreferred);
+    QCOMPARE(exactPreferred.value()->sampleRateHz,48000);
+    QVERIFY(!exactPreferred.value()->srcApplied);
+    for(const int invalid:{32000,384000}) {
+        auto refused=platform::windows::internal::select_device_format(
+            *format.value(),false,false,true,true,invalid);
+        QVERIFY(!refused);
+    }
     auto unsupported = platform::windows::internal::select_device_format(
         *format.value(), false, false, false, false);
     QVERIFY(!unsupported);
