@@ -958,6 +958,9 @@ jobs:
           $gridExit = 127
           if (Test-Path $exe) {
             $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+            # Direct QtTest bypasses CTest ENVIRONMENT_MODIFICATION:
+            # supply the same already-produced exact frozen external FIRs.
+            $env:RGSML_PLAYBACK_FIR_ROOT = (Join-Path $env:GITHUB_WORKSPACE 'build/windows-ninja-cache/generated/rgsml/fir/playback')
             & $exe sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix -v1 -o "$rawGrid,txt" 2>&1 | Out-Null
             $gridExit = $LASTEXITCODE
           }
