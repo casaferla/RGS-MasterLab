@@ -1376,6 +1376,24 @@ core::Status TerminalPrivateProductSession::cancel()
     return core::Status::success();
 }
 
+bool TerminalPrivateProductSession::adopt_pending_source_loop_without_rerender()
+{
+    if(monitorTransitioning_ ||installedMonitor_ ||privateId_||!pending_
+       ||!prepared_||!manual_||!manualId_||!sourceLoop_
+       ||!current_selection_for_pending()
+       ||prepared_()!=pending_->prepared||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId})
+        return false;
+    const auto current=sourceLoop_();
+    const auto full=pending_->manual->view().absolute_range();
+    if(current &&(current->begin().value()<0 ||current->end()>full.end()))
+        return false;
+    // PCM is always the complete zero-origin SOURCE, never the active loop.
+    // Only the handoff's SOURCE transport/cue mapping changes.
+    pending_->loop=current;
+    return true;
+}
+
 void TerminalPrivateProductSession::cancel_pending_on_region_change()
 {
     // A synchronous SOURCE-region signal during exact MONITOR retirement

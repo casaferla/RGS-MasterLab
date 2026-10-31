@@ -2107,6 +2107,22 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QTRY_COMPARE_WITH_TIMEOUT(product.status(),
         QStringLiteral("READY_TO_INSTALL"),12000);
     QCOMPARE(renderer.render_invocation_count(),preLoopPrepareCount+1);
+    // PO 31 Oct: change the LIVE Loop while the verified entire-track
+    // MASTER is READY. This changes no SOURCE PCM, no M17 invocation and
+    // no true-peak certificate. The later device handoff must map the
+    // *new* SOURCE Loop, not the old captured one.
+    const auto changedLoop=core::FrameRange::create(
+        core::FrameIndex{160},core::FrameIndex{1100});
+    QVERIFY(changedLoop);
+    selectedSourceLoop=*changedLoop.value();
+    QVERIFY(transport.set_loop_source_range(selectedSourceLoop));
+    QVERIFY(product.adopt_pending_source_loop_without_rerender());
+    QCOMPARE(renderer.render_invocation_count(),preLoopPrepareCount+1);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    selectedSourceLoop=*listeningLoop.value();
+    QVERIFY(transport.set_loop_source_range(selectedSourceLoop));
+    QVERIFY(product.adopt_pending_source_loop_without_rerender());
+    QCOMPARE(renderer.render_invocation_count(),preLoopPrepareCount+1);
     // Two accepted identical-key REAL Prepare wall times are sufficient for
     // an empirical observed range. Unrelated rates/ceilings must not borrow it.
     const auto sameShape=renderer.exact_historical_prepare_range(

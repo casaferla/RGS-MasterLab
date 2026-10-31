@@ -201,9 +201,14 @@ public:
     // independently reports exactly the same rate as the checked MASTER.
     // A mismatch is NOT an error or permission to rerender the MASTER.
     [[nodiscard]] bool current_master_matches_device_for_preview() const;
-    // Changes to a Loop Region cancel pending handoffs but do not stop
-    // an already installed SOURCE-mapped session: its own live loop
-    // controller processes active Loop Region edits.
+    // A SOURCE Loop Region is PLAYBACK METADATA, not M17 full-track DSP
+    // input. A valid region edit during deferred Prepare / READY may adopt
+    // its new SOURCE loop mapping without invalidating the immutable PCM,
+    // changing any M17 math or starting another worker. Required owner,
+    // region range and currently selected SOURCE must still match.
+    [[nodiscard]] bool adopt_pending_source_loop_without_rerender();
+    // Hard cancel is still available for a genuine SOURCE epoch retirement
+    // or explicitly cancelled user transaction, never mere loop presence.
     void cancel_pending_on_region_change();
     // Interlock: MASTER-only render and anonymous monitor PCM are not
     // terminal SOURCE audio owned by the ordinary Qt M17 conductor.

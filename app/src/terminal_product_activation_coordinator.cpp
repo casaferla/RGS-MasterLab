@@ -671,9 +671,14 @@ void TerminalProductActivationCoordinator::loop_context_changed()
         // live SOURCE transport already applied this Loop Region change.
         intent_->sourceLoop=source.value()->loop;
     } else {
-        // The pending job captured a different loop/owner. Cancel it and
-        // request a fresh exact candidate while preserving the Active bit.
-        deactivate(false);
+        // A valid loop is not DSP input. Keep the ONE running/completed
+        // offline full-track M17 Prepare; change only deferred transport
+        // metadata. Refuse stale/alien SOURCE ownership, never invent PCM.
+        if(session_->adopt_pending_source_loop_without_rerender())
+            intent_->sourceLoop=source.value()->loop;
+        else
+            fail_closed(QStringLiteral(
+                "M17 SOURCE loop changed but exact manual ownership was lost."));
     }
 }
 
