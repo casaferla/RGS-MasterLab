@@ -21,6 +21,13 @@ import tempfile
 from phase11_math_preflight import ContractError
 
 EXE_NAME="rgsml_playback_src_tests"
+PUBLIC_PLAYBACK_PINS={
+    "playback_src_kernel_44100_48000.bin":
+        "ec8c4d554eb4ede15f58eead1fede923e74c4692c57832bda716e3fc826926b4",
+    "playback_src_kernel_48000_44100.bin":
+        "37cfda8e885e2d00646ec60d02bdf5b7dcb85348fca416e065bab71a824efb22",
+}
+PUBLIC_PLAYBACK_RELATIVE="resources/fir/playback"
 SKIP_SYSTEM=re.compile(
     r"^(?:linux-vdso|ld-linux|libc\.|libm\.|libpthread\.|"
     r"librt\.|libdl\.|libresolv\.|libgcc_s\.|libstdc\+\+\.)"
@@ -72,7 +79,11 @@ def verify_archive(archive: Path, *, maximum_bytes=120_000_000) -> dict:
                 raise ContractError("duplicate Qt tar member")
             root="rgsml_offline_qt_native"
             files={root+"/rgsml_playback_src_tests",root+"/PROVENANCE_NONRELEASE.json",root+"/RUN_OFFLINE.txt"}
-            dirs={root,root+"/lib"}
+            public_files={root+"/"+PUBLIC_PLAYBACK_RELATIVE+"/"+name
+                          for name in PUBLIC_PLAYBACK_PINS}
+            files.update(public_files)
+            dirs={root,root+"/lib",root+"/resources",root+"/resources/fir",
+                  root+"/"+PUBLIC_PLAYBACK_RELATIVE}
             mapping={m.name:m for m in members}
             if not files.issubset(mapping) or not dirs.issubset(mapping):
                 raise ContractError("Qt bundle incomplete")
@@ -85,6 +96,8 @@ def verify_archive(archive: Path, *, maximum_bytes=120_000_000) -> dict:
             if not isinstance(manifest,dict) or not isinstance(manifest.get("dependencies"),dict):
                 raise ContractError("invalid Qt provenance")
             libs=manifest["dependencies"]
+            if manifest.get("external_playback_fir_sha256")!=PUBLIC_PLAYBACK_PINS:
+                raise ContractError("Qt native playback FIR pin inventory mismatch")
             if not libs or any(not isinstance(k,str) or not re.fullmatch(r"lib[A-Za-z0-9_+.-]+\.so(?:\.[0-9]+)*",k)
                                or not isinstance(h,str) or not re.fullmatch(r"[a-f0-9]{64}",h)
                                for k,h in libs.items()):
@@ -101,6 +114,8 @@ def verify_archive(archive: Path, *, maximum_bytes=120_000_000) -> dict:
                 raise ContractError("Qt ELF execute bit missing")
             expected={root+"/rgsml_playback_src_tests":manifest.get("native_elf_sha256")}
             expected.update({root+"/lib/"+k:h for k,h in libs.items()})
+            expected.update({root+"/"+PUBLIC_PLAYBACK_RELATIVE+"/"+k:h
+                             for k,h in PUBLIC_PLAYBACK_PINS.items()})
             total=0
             for filename,want in expected.items():
                 if not isinstance(want,str) or not re.fullmatch(r"[a-f0-9]{64}",want):
@@ -131,6 +146,13 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
     if len(executables)!=1:
         raise ContractError("expected exactly one compiled native Qt SRC test")
     exe=executables[0]
+    # Only the two already-public, frozen playback FIRs are permitted here.
+    # No private original 14 Final SRC files may enter the CI archive.
+    playback_source=build_dir/"generated/rgsml/fir/playback"
+    for name,want in PUBLIC_PLAYBACK_PINS.items():
+        p=playback_source/name
+        if not p.is_file() or digest(p)!=want:
+            raise ContractError("portable Qt frozen playback FIR absent/tampered: "+name)
     result=subprocess.run(
         ["ldd",str(exe.resolve())],
         capture_output=True,text=True,check=False,timeout=20)
@@ -146,6 +168,10 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
         target.chmod(target.stat().st_mode|0o111)
         libdir=package/"lib"
         libdir.mkdir()
+        playback_dest=package/PUBLIC_PLAYBACK_RELATIVE
+        playback_dest.mkdir(parents=True)
+        for name in PUBLIC_PLAYBACK_PINS:
+            shutil.copy2(playback_source/name,playback_dest/name)
         manifest={
             "schema":"rgsml.phase11.qt-native-test-exe-portable-nonrelease/1",
             "native_elf_sha256":digest(target),
@@ -157,8 +183,10 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
             "product_admission_authorized":False,
             "release_qualified":False,
             "dependencies":{},
+            "external_playback_fir_sha256":dict(PUBLIC_PLAYBACK_PINS),
         }
-        total=target.stat().st_size
+        total=target.stat().st_size+sum(
+            (playback_dest/name).stat().st_size for name in PUBLIC_PLAYBACK_PINS)
         for source in libs:
             dest=libdir/source.name
             if dest.exists():
@@ -173,8 +201,9 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
         (package/"PROVENANCE_NONRELEASE.json").write_text(
             json.dumps(manifest,sort_keys=True,indent=2)+"\n")
         (package/"RUN_OFFLINE.txt").write_text(
-            "TEST EXECUTABLE ONLY: no private FIR coefficients shipped.\n"
-            "Run from this directory with LD_LIBRARY_PATH=$PWD/lib set, "
+            "TEST EXECUTABLE + TWO PUBLIC FROZEN PLAYBACK FIRs; no private Q0/Q1 shipped.\n"
+            "For native Qt invocation, set RGSML_PLAYBACK_FIR_ROOT=$PWD/resources/fir/playback "
+            "and LD_LIBRARY_PATH=$PWD/lib; "
             "and supply original two private SHA-locked ZIPs to "
             "tools/qualification/final_src/run_phase11_private_m17_bulk_gate.py.\n"
             "This package does NOT certify Q0 full DTFT or Q1-Q6 release.\n")
