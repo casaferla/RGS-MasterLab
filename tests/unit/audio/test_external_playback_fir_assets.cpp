@@ -76,7 +76,14 @@ void ExternalPlaybackFirAssetsTests::exactFrozenLegacyAssetPack()
         std::string_view{"37cfda8e885e2d00646ec60d02bdf5b7dcb85348fca416e065bab71a824efb22"});
     QCOMPARE(forward.value()->coefficient_bits(0),std::uint64_t{0xbe82172c5b578940});
     QCOMPARE(backward.value()->coefficient_bits(0),std::uint64_t{0xbe82172c5b5d4f61});
-    QVERIFY(!make(44100,96000)); // playback v1 is NOT Phase11 Final SRC
+    // The frozen bank contains ONLY two SHA-authenticated historical FIRs.
+    // Other SOURCE->DEVICE rates use a separate provisional, generated
+    // playback-only FIR; success must NOT imply a new pinned Q0 original.
+    auto generated=make(44100,96000);
+    QVERIFY(static_cast<bool>(generated));
+    QCOMPARE(generated.value()->output_rate().value(),std::int64_t{96000});
+    QVERIFY(generated.value()->kernel_sha256().empty());
+    QVERIFY(!make(44100,44100)); // identity uses direct playback, no FIR
 }
 
 void ExternalPlaybackFirAssetsTests::missingCorruptAndOwnedLifetime()
@@ -93,6 +100,9 @@ void ExternalPlaybackFirAssetsTests::missingCorruptAndOwnedLifetime()
     const auto empty=std::filesystem::path{temp.path().toStdString()};
     audio::configure_external_playback_fir_root(empty.u16string());
     QVERIFY(!make(44100,48000));
+    auto generatedWithoutFrozenPack=make(44100,96000);
+    QVERIFY(generatedWithoutFrozenPack); // no private/original FIR publication
+    QVERIFY(generatedWithoutFrozenPack.value()->kernel_sha256().empty());
     // Previously admitted existing adapters retain their OWN immutable asset.
     QCOMPARE(original.value()->coefficient_bits(0),first);
 

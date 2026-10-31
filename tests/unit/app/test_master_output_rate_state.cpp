@@ -438,6 +438,7 @@ private slots:
     s.set_target_selection_guard([&monitoring]() noexcept {
         return !monitoring;
     });
+    QCOMPARE(availability.count(),1); // guard installation
     QVERIFY(!s.can_edit_target());
     QVERIFY(!s.choose_master_rate(48000));
     QCOMPARE(s.master_rate_hz(),qint64{96000});
@@ -447,12 +448,15 @@ private slots:
     QCOMPARE(s.rate_revision(),priorRevision);
     monitoring=false;
     s.refresh_selection_availability();
+    QCOMPARE(availability.count(),2); // exact DEVICE monitor Return
     QVERIFY(s.can_edit_target());
     QVERIFY(s.choose_master_rate(48000));
     QCOMPARE(s.master_rate_hz(),qint64{48000});
     QCOMPARE(s.rate_revision(),priorRevision+1);
     QCOMPARE(changes.count(),1); // only genuine 192->48 change
-    QCOMPARE(availability.count(),2); // guard and monitor Return
+    // NEW NOTIFY-backed six-rate QML admission must update when MASTER
+    // changes, without signaling a spurious SOURCE revision.
+    QCOMPARE(availability.count(),3); // guard, Return, MASTER selection
     monitoring=true;
     s.source_committed(44100); // genuine new SOURCE always invalidates
     QCOMPARE(s.master_rate_hz(),qint64{44100});
@@ -460,7 +464,7 @@ private slots:
     QVERIFY(!s.can_edit_target());
     QCOMPARE(s.rate_revision(),priorRevision+2);
     QCOMPARE(changes.count(),2);
-    QCOMPARE(availability.count(),3);
+    QCOMPARE(availability.count(),4); // new SOURCE invalidates six QML rows
  }
  void sourceChangeInvalidatesAndUnsupportedFailsClosed(){
     MasterOutputRateState s;s.source_committed(48000);
