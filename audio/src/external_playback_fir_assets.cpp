@@ -83,9 +83,21 @@ core::Result<ExternalPlaybackFir> load_external_playback_fir(
     // Only test/authorized process configuration may supply a root;
     // no network discovery, user home search or system-directory fallback.
     if(root.empty()) {
+#if defined(_WIN32)
+        // MSVC secure CRT: read the explicit test-only fallback without
+        // disabling C4996 / warnings-as-errors for the audio library.
+        char* explicitRoot=nullptr;
+        std::size_t chars=0;
+        const auto err=_dupenv_s(
+            &explicitRoot,&chars,"RGSML_PLAYBACK_FIR_ROOT");
+        if(err==0 && explicitRoot!=nullptr && chars>1)
+            root=std::filesystem::path{explicitRoot};
+        std::free(explicitRoot);
+#else
         if(const auto* explicitRoot=std::getenv("RGSML_PLAYBACK_FIR_ROOT");
            explicitRoot!=nullptr&&*explicitRoot!='\0')
             root=std::filesystem::path{explicitRoot};
+#endif
     }
     if(root.empty())
         return refused(core::ErrorCode::InvalidState,
