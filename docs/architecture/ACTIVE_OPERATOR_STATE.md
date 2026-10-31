@@ -1,3 +1,8 @@
+## 2026-10-31 — SRC-Q0 MATHEMATICAL SUBGATE ACCEPTED (SCOPED); 28 PRODUCT ROUTES STILL DENIED
+- PO directed Q0 qualification and transition to M17 macro-lot 4 preparation. [Canonical bounded Q0 mathematical decision](PHASE11_FINAL_SRC_Q0_CANONICAL_MATH_DECISION_20261031.md) accepts only the **exact pinned 14-FIR/28-continuum-band mathematics under explicit numeric/implementation trust assumptions**; the principal-operator 31 Oct independent math review remains the evidentiary source. No new spectral/MPFR replay is asserted in this acceptance.
+- [Focused CI #940](https://github.com/casaferla/RGS-MasterLab/actions/runs/41153372210) Windows/Linux SUCCESS at immutable PR SHA `46541cde7f2ce6f94ce66f1ee7ff09a5ebaf2cae`; the present documentation stays STAGING ONLY and is untested by #940. PR #61 stays Draft, no merge, no physical FQ.
+- **Product 28 new Final SRC admissions remain fail-closed**: genuine version-pinned kernel/admission manifest and latest applicable native 36-route M17/M16 Prepare/alias/master-device/cancel/memory test gates still need completion. Preparing macro-lot 4 UI and FQ-readiness in parallel does not close macro-lot 3's product integration. After PO M17 physical FQ approval proceed to M18 Dither. GitHub technical status ↔ RGS ContentBox milestone snapshot must stay cross-linked.
+
 ## 2026-10-31 — FOCUSED #940 DOUBLE GREEN; GITHUB ↔ CONTENTBOX SNAPSHOT UPDATE
 
 - [Focused #940](https://github.com/casaferla/RGS-MasterLab/actions/runs/41153372210) has **COMPLETED SUCCESS** on both `Windows Focused DSP` and `Linux Portable DSP Guard`, immutable tested PR SHA `46541cde7f2ce6f94ce66f1ee7ff09a5ebaf2cae`; no failed jobs. Prior ongoing-status snapshot is now historical.
