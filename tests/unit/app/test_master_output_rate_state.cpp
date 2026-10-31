@@ -88,6 +88,48 @@ private slots:
     state.set_original_q0_family_ready(false);
     QVERIFY(!state.m17_candidate_rate_admissible(192000));
  }
+ void sourceRateAdmissionNotifyDrivesLiveQmlFor48And192() {
+    MasterOutputRateState state;
+    QSignalSpy admissionSignals(&state,
+        &MasterOutputRateState::selectionAvailabilityChanged);
+    const auto read=[&state](std::size_t index) {
+        const auto values=state.candidate_rate_admissions();
+        QCOMPARE(values.size(),qsizetype{6});
+        return values.at(static_cast<qsizetype>(index)).toBool();
+    };
+    for(std::size_t i=0;i<6;++i)QVERIFY(!read(i));
+    QVERIFY(!state.current_master_rate_admissible());
+    // Source 48 is always IDENTITY admitted, 44.1 is the existing public
+    // pair. All other targets fail closed until the original 14 private
+    // Q0 files are independently authenticated.
+    state.source_committed(48000);
+    QCOMPARE(admissionSignals.count(),1);
+    QCOMPARE(state.master_rate_hz(),qint64{48000});
+    QVERIFY(state.current_master_rate_admissible());
+    QVERIFY(read(0));QVERIFY(read(1));
+    for(std::size_t i=2;i<6;++i)QVERIFY(!read(i));
+    // Prove NOTIFY on an admitted MASTER edit even with identical SOURCE.
+    QVERIFY(state.choose_master_rate(44100));
+    QCOMPARE(admissionSignals.count(),2);
+    QVERIFY(state.current_master_rate_admissible());
+    state.set_original_q0_family_ready(true);
+    QCOMPARE(admissionSignals.count(),3);
+    for(std::size_t i=0;i<6;++i)QVERIFY(read(i));
+    state.set_original_q0_family_ready(false);
+    QCOMPARE(admissionSignals.count(),4);
+    for(std::size_t i=2;i<6;++i)QVERIFY(!read(i));
+    // A 192 kHz SOURCE may have no exact Windows device, but its 192 kHz
+    // MASTER identity route MUST remain admissible to offline M17 Prepare.
+    state.source_committed(192000);
+    QCOMPARE(admissionSignals.count(),5);
+    QVERIFY(read(5));
+    for(std::size_t i=0;i<5;++i)QVERIFY(!read(i));
+    QVERIFY(state.current_master_rate_admissible());
+    state.source_cleared();
+    QCOMPARE(admissionSignals.count(),6);
+    QVERIFY(!state.current_master_rate_admissible());
+    for(std::size_t i=0;i<6;++i)QVERIFY(!read(i));
+ }
  void prepareMemoryDisplayNeverRecommendsUnqualifiedSrc() {
     const std::array<qint64,6> rates{
         44100,48000,88200,96000,176400,192000};
