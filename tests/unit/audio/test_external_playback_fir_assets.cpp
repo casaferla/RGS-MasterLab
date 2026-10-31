@@ -55,9 +55,9 @@ void ExternalPlaybackFirAssetsTests::exactFrozenLegacyAssetPack()
     QVERIFY(static_cast<bool>(backward));
     QCOMPARE(forward.value()->kernel_size(),std::size_t{30721});
     QCOMPARE(backward.value()->kernel_size(),std::size_t{28225});
-    QCOMPARE(forward.value()->kernel_sha256(),
+    QVERIFY(forward.value()->kernel_sha256()==
         std::string_view{"ec8c4d554eb4ede15f58eead1fede923e74c4692c57832bda716e3fc826926b4"});
-    QCOMPARE(backward.value()->kernel_sha256(),
+    QVERIFY(backward.value()->kernel_sha256()==
         std::string_view{"37cfda8e885e2d00646ec60d02bdf5b7dcb85348fca416e065bab71a824efb22"});
     QCOMPARE(forward.value()->coefficient_bits(0),std::uint64_t{0xbe82172c5b578940});
     QCOMPARE(backward.value()->coefficient_bits(0),std::uint64_t{0xbe82172c5b5d4f61});
