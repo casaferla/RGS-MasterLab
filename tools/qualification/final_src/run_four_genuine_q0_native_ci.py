@@ -72,7 +72,19 @@ def execute(*, build_dir: Path, two: Path, one: Path,
         _require_pin(Path(str(path) + ".expected.f64le"), pcm_h)
     exe = _native_binary(build_dir)
     environment = __import__("os").environ.copy()
+    # This driver launches QtTest DIRECTLY, bypassing CTest's explicit
+    # ENVIRONMENT_MODIFICATION. The newly externalized frozen playback FIRs
+    # must be provided in the exact same build-generated root. Do not run
+    # MPFR canaries against an implicit system/user or network fallback.
+    playback_root = build_dir.resolve() / "generated" / "rgsml" / "fir" / "playback"
+    playback_names = (
+        "playback_src_kernel_44100_48000.bin",
+        "playback_src_kernel_48000_44100.bin",
+    )
+    if any(not (playback_root / name).is_file() for name in playback_names):
+        raise ContractError("native Q0 canary frozen external playback FIR pack missing")
     environment.update({
+        "RGSML_PLAYBACK_FIR_ROOT": str(playback_root),
         "RGSML_PHASE11_REAL_CANARY_PATH": str(two.resolve()),
         "RGSML_PHASE11_REAL_DOWNSAMPLE_PATH": str(one.resolve()),
         "RGSML_PHASE11_REAL_POW4_PATH": str(fourfold_dir.resolve()),
