@@ -1,3 +1,9 @@
+## 2026-10-31 — MACRO-LOT 2 STAGING ADDENDUM: 36-PATH TYPED TIME / RAM RISK VALIDATION
+
+- Added synthetic in-memory SOURCE Qt ViewModel exercise for all six rows: 6 exact geometry/rate cells, 28 denied Final SRC targets fail closed, observed ACT is historical only, three authentic whole Prepare completions enable an **indicative** host future range, cross-source same-format transfer uses anonymous RAM-only timing, Ceiling and accepted parameter revision invalidate A→B→A reuse, and unknown Windows RAM never obtains peak-RAM approval. No user audio, no claimed 28-pass Final SRC eligibility, no Full Qualification.
+- C++ future-total timing rows now carry the current Windows `memoryKind` and `peakRamQualified=false`; if RAM unknown/insufficient, the historical forecast explicitly says it is not allocation authorization. The host clear operation deliberately **retains** its monotonic invocation serial, so a stale completion cannot repopulate the new history after invalidation. One Prepare popup/6 rows retained.
+- The only prior Windows tested SHA is the already completed Windows PASS #937 PR `3364f993be98`; Linux step 32 tooltip failure corrected on staging `d3bd491a64d3`. Entire macro-lot 2 not yet CI-tested. Promote once with all fixes, only after coherent candidate is complete.
+
 ## 2026-10-31 — M17 MACRO-LOT 2: AUTHORITATIVE SIX-RATE PRE-PREPARE TIME TRUTH (STAGING)
 
 - Focused #937 at PR `3364f993be98`: **Windows SUCCESS**, Linux STOPPED at stationary tooltip policy (not C++ compile). Linux-only standard 1000ms tooltip correction was already staged `d3bd491a64d3`. No unexplained Windows failure. The second cohesive big workstream is **M17 pre-Prepare time / memory evidence**, not any new DSP algorithm or new Master Audition module.

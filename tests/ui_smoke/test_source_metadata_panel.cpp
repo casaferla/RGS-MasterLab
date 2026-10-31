@@ -514,6 +514,7 @@ class SourceMetadataPanelSmokeTest final : public QObject {
 private slots:
     void childNameLookupVisitsQObjectOnce();
     void hostCalibrationWorkerCancelsWithoutDeviceOrPersonalPcm();
+    void sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes();
     void emptyReadyErrorAndWindowLifecycle();
     void stereoMsProductDefaultDockedStartup();
     void stereoMsOptInVisualEvidence();
@@ -528,6 +529,106 @@ private slots:
 
 
 
+
+
+void SourceMetadataPanelSmokeTest::
+sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes()
+{
+    app::SourceSelectionViewModel source;
+    app::PrepareMemoryAdviceViewModel advisor{&source,nullptr};
+    double ceiling=-1.0;
+    advisor.set_active_ceiling_provider([&] {return ceiling;});
+    std::uint64_t parameterRevision=4;
+    advisor.set_active_revision_provider([&] {
+        return std::optional<app::AcceptedPrepareRevisionKey>{
+            app::AcceptedPrepareRevisionKey{2,3,parameterRevision}};
+    });
+    QSignalSpy repaints{&advisor,
+        &app::PrepareMemoryAdviceViewModel::timingAdviceChanged};
+    QVERIFY(repaints.isValid());
+    const auto load=[&] {
+        const auto bytes=valid_wav();
+        wav_support::Bytes binary;
+        binary.reserve(static_cast<std::size_t>(bytes.size()));
+        for(const auto b:bytes)
+            binary.push_back(static_cast<std::byte>(
+                static_cast<unsigned char>(b)));
+        auto control=std::make_shared<wav_support::ReaderControl>();
+        auto found=audio::SourceResource::probe(
+            wav_support::memory_reader(std::move(binary),control));
+        if(!found)return false;
+        source.adopt_probed_source(std::move(*found.value()));
+        return source.has_source();
+    };
+    QVERIFY(load());
+    QCOMPARE(source.sample_rate_hz(),qint64{44100});
+    const std::array<qint64,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    auto table=advisor.prepare_time_rows();
+    QCOMPARE(table.size(),6);
+    for(int index=0;index<6;++index) {
+        const auto row=table.at(index).toMap();
+        QCOMPARE(row.value(QStringLiteral("sourceRateHz")).toLongLong(),
+            qint64{44100});
+        QCOMPARE(row.value(QStringLiteral("masterRateHz")).toLongLong(),
+            rates[static_cast<std::size_t>(index)]);
+        QCOMPARE(row.value(QStringLiteral("peakRamQualified")).toBool(),false);
+        QCOMPARE(row.value(QStringLiteral("isFutureWholePrepare")).toBool(),
+            false);
+        QCOMPARE(row.value(QStringLiteral("kind")).toString(),
+            index>=2 ? QStringLiteral("blocked")
+                :QStringLiteral("unavailable"));
+    }
+    app::AcceptedPrepareObservation x{
+        1,44100,44100,source.frame_count(),
+        source.channel_count(),-1.0,2,3,4,
+        100000,1900000,-1,1200000,250000};
+    advisor.observe_approved_prepare(x);
+    table=advisor.prepare_time_rows();
+    QCOMPARE(table.at(0).toMap().value(QStringLiteral("kind")).toString(),
+        QStringLiteral("historical_actual"));
+    QVERIFY(table.at(0).toMap().value(QStringLiteral("label")).toString()
+        .startsWith(QStringLiteral("ACT ")));
+    QCOMPARE(table.at(0).toMap().value(
+        QStringLiteral("isFutureWholePrepare")).toBool(),false);
+    for(std::uint64_t serial=2;serial<=3;++serial) {
+        x.invocation=serial;
+        x.wall_us=1900000+static_cast<std::int64_t>(100000*serial);
+        advisor.observe_approved_prepare(x);
+    }
+    table=advisor.prepare_time_rows();
+    const auto future=table.at(0).toMap();
+    QCOMPARE(future.value(QStringLiteral("kind")).toString(),
+        QStringLiteral("host_future"));
+    QCOMPARE(future.value(QStringLiteral("isFutureWholePrepare")).toBool(),true);
+    QVERIFY(future.value(QStringLiteral("details")).toString()
+        .contains(QStringLiteral("Previous ACT")));
+    QCOMPARE(table.at(1).toMap().value(QStringLiteral("kind")).toString(),
+        QStringLiteral("unavailable"));
+    for(int i=2;i<6;++i)
+        QCOMPARE(table.at(i).toMap().value(QStringLiteral("kind")).toString(),
+            QStringLiteral("blocked"));
+    // A different SOURCE with the same Fs and frame count has NO ACT, yet
+    // anonymized accepted host data may project a diagnostic interval.
+    QVERIFY(load());
+    QVERIFY(!advisor.actual_prepare_times().at(0).toMap()
+        .value(QStringLiteral("actual")).toBool());
+    table=advisor.prepare_time_rows();
+    QCOMPARE(table.at(0).toMap().value(QStringLiteral("kind")).toString(),
+        QStringLiteral("host_future"));
+    ceiling=-3.0;
+    advisor.current_revision_changed();
+    QCOMPARE(advisor.prepare_time_rows().at(0).toMap()
+        .value(QStringLiteral("kind")).toString(),
+        QStringLiteral("unavailable"));
+    ceiling=-1.0;
+    ++parameterRevision; // A -> B -> A must NOT revive stale ETA.
+    advisor.current_revision_changed();
+    QCOMPARE(advisor.prepare_time_rows().at(0).toMap()
+        .value(QStringLiteral("kind")).toString(),
+        QStringLiteral("unavailable"));
+    QVERIFY(repaints.count()>0);
+}
 
 void SourceMetadataPanelSmokeTest::hostCalibrationWorkerCancelsWithoutDeviceOrPersonalPcm()
 {

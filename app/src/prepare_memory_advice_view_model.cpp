@@ -381,6 +381,9 @@ QVariantList PrepareMemoryAdviceViewModel::prepare_time_rows() const
         &&dspEstimates_.size()==static_cast<qsizetype>(kMasterRates.size());
     for(std::size_t i=0;i<kMasterRates.size();++i) {
         const auto rate=kMasterRates[i];
+        const auto memory=i<static_cast<std::size_t>(recommendations_.size())
+            ? recommendations_.at(static_cast<qsizetype>(i)).toMap()
+            : QVariantMap{};
         QVariantMap entry{
             {QStringLiteral("kind"),QStringLiteral("unavailable")},
             {QStringLiteral("label"),QStringLiteral("N/A")},
@@ -389,7 +392,10 @@ QVariantList PrepareMemoryAdviceViewModel::prepare_time_rows() const
                 "additional full-Prepare measurements required.")},
             {QStringLiteral("isFutureWholePrepare"),false},
             {QStringLiteral("sourceRateHz"),sourceHz},
-            {QStringLiteral("masterRateHz"),rate}};
+            {QStringLiteral("masterRateHz"),rate},
+            {QStringLiteral("memoryKind"),
+                memory.value(QStringLiteral("kind"),QStringLiteral("unknown"))},
+            {QStringLiteral("peakRamQualified"),false}};
         if(!m17_final_src_candidate_admissible(sourceHz,rate)) {
             entry[QStringLiteral("kind")]=QStringLiteral("blocked");
             entry[QStringLiteral("label")]=QStringLiteral("SRC N/A");
@@ -438,6 +444,19 @@ QVariantList PrepareMemoryAdviceViewModel::prepare_time_rows() const
                     "where required, queue and full-track resource peaks.");
             }
         }
+        // An indicative historical time is NEVER a memory or renderer
+        // admission. Link the same source-epoch Windows RAM observation in
+        // the row; prohibit any visible implication of an "OK to Prepare".
+        const auto memoryKind=entry.value(QStringLiteral("memoryKind")).toString();
+        if(memoryKind==QStringLiteral("discouraged")
+           ||memoryKind==QStringLiteral("unknown"))
+            entry[QStringLiteral("details")]=
+                entry.value(QStringLiteral("details")).toString()
+                +QStringLiteral(" RAM currently ")
+                +(memoryKind==QStringLiteral("unknown")
+                    ?QStringLiteral("unassessed")
+                    :QStringLiteral("insufficient"))
+                +QStringLiteral("; time is not an allocation permit.");
         rows.append(entry);
     }
     return rows;

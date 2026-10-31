@@ -203,7 +203,7 @@ public:
     }
     // Every genuine ENGINE/algorithm update constructs a new process-local
     // object. A new SOURCE does NOT erase anonymous completed timings.
-    void clear() noexcept {observed_.clear();lastSeen_=0;}
+    void clear() noexcept {observed_.clear();} // preserve stale-invocation barrier
 private:
     std::uint64_t lastSeen_{0};
     std::vector<AcceptedPrepareObservation> observed_;
