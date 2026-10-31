@@ -1,5 +1,7 @@
 # AGENTS.md — Normative Guidelines
 
+**2026-10-31 PRODUCT OWNER SCOPE DECISION — M17 -> M18 DITHER, NO FUTURE PIPELINE GATES:** M17/Final SRC certification requires mathematically/audibly qualified SOURCE→MASTER conversions and all tests actually applicable to the current M17 Windows product and implemented shared foundations. Do NOT block closing M17 on Android execution, Reference Match, or other Final Pipeline components that do not yet exist; qualify each at its later implementation milestone. Q0 canonical scrutiny, applicable real SRC functional/invariance/performance/regression gates, six-rate Prepare and Windows PO FQ still apply—never misrepresent a partial M17 gate as global Q0–Q6 release PASS. Once M17 is approved by PO, the very next milestone is **M18 Dither**. Do not begin M18 prematurely or bring unrelated future features forward.
+
 **2026-10-27 PO RATE-TIME REPRIORITIZATION:** Include real per-host calibration, truthful pre-Prepare ETA ranges across six real master rates, learning aggregated stage timings from actual Prepare, and strict MASTER/DEVICE rate separation within existing P0 M17+Phase11 contract. Earlier 23 Oct PO had deferred priority after observing in-progress ETA, but current 27 Oct PO revives this goal. Read `docs/architecture/M17_MASTER_AUDITION_SINGLE_PREPARE_GATE.md` for evidence and exact mandatory acceptance; never invent supported 192 SRC, ETA or hardware DAC requirement.
 
 

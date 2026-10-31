@@ -1,3 +1,10 @@
+## 2026-10-31 — NEW PO SCOPE OVERRIDE: FINISH M17, THEN M18 DITHER (NO UNBUILT PIPELINE DEPENDENCIES)
+
+- PO explicitly ruled that Android, Reference Match and other not-yet-built parts of the Final Pipeline must be qualified **when those features exist**, not as prerequisites for M17 or its 36 SOURCE→MASTER Final SRC paths. These global Q0–Q6 categories remain a forward-looking overall Final Pipeline obligation, not an invented M17 exit blocker.
+- CURRENT M17 exit gates: canonical Q0 real 14 FIR / 28 continuous bands independently accepted; relevant real C++/Qt output SRC for 36 product SOURCE→MASTER pairs; per-current-product invariance/alias/owner checks, M17/M16 single Prepare, truthful time+RAM six-rate handling and Windows physical PO FQ. Existing Linux portability/CI guards remain required to pass the current pipeline; Android implementation and tests are DEFERRED until Android exists. Do not claim global Q0–Q6 PASS merely because M17 subset passes. Preserve 28 product SRC routes blocked until their own proof/admission is complete.
+- After successful M17 closure and explicit PO gate, **M18 Dither is the immediate next milestone**. Do not insert Reference Match, Android or generic full pipeline release ceremonies in between. No M18 coding before the M17 gate; no merge main/FQ without PO.
+- Current CI #938 PR `fa78ab7f8de7`: Windows FAILED C4189 unused locals in new M17 time advisor; minimal C++ deletion is staging-only `889150f1c059`; Linux still running at last checked state. Keep PR immutable until both branches terminal, then consolidate any remaining failures in one next CAS/CI. This documentation update is staging-only, no CI triggered independently.
+
 ## 2026-10-31 — M17 MACRO-LOT 2: AUTHORITATIVE SIX-RATE PRE-PREPARE TIME TRUTH (STAGING)
 
 - Focused #937 at PR `3364f993be98`: **Windows SUCCESS**, Linux STOPPED at stationary tooltip policy (not C++ compile). Linux-only standard 1000ms tooltip correction was already staged `d3bd491a64d3`. No unexplained Windows failure. The second cohesive big workstream is **M17 pre-Prepare time / memory evidence**, not any new DSP algorithm or new Master Audition module.
