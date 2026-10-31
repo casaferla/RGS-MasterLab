@@ -90,7 +90,7 @@ int main(int argc, char* argv[])
         QCoreApplication::applicationDirPath().toStdString()};
 #endif
     rgsml::audio::configure_external_playback_fir_root(
-        appAssetRoot/"resources"/"fir"/"playback");
+        (appAssetRoot/"resources"/"fir"/"playback").u16string());
     // Matching icon for the Qt window/task switcher. The QML module embeds
     // the identical approved C artwork under its resource URL.
     application.setWindowIcon(QIcon(QStringLiteral(
