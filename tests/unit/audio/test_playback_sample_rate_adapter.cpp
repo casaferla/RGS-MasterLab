@@ -8,6 +8,7 @@
 #include <rgsml/audio/internal/phase11_strict_scalar_reference.hpp>
 #include <rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
+#include <rgsml/audio/internal/phase11_pinned_private_fir_loader.hpp>
 #include <rgsml/audio/internal/phase11_pinned_scalar_candidate_reference.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
@@ -31,6 +32,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -3269,6 +3271,10 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
         QCOMPARE(expectedRows.size(),36);
     }
     const auto& pins=audio::internal::kPhase11FrozenOriginalFirPins;
+    // Read-only full-pack input integrity. Never product admission or a
+    // release signature; the genuine Qt 36 Q1 oracle still governs tests.
+    QVERIFY(audio::internal::all_14_phase11_original_pins_present(
+        std::filesystem::path{root.constData()}));
     const auto read=[](const std::string& path) {
         std::ifstream input(path,std::ios::binary);
         if(!input)return std::vector<std::uint8_t>{};
@@ -3309,10 +3315,11 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
             QVERIFY(it!=pins.end());
             seen[static_cast<std::size_t>(it-pins.begin())]=true;
             pinnedSha=it->sha256;
-            asset=read(std::string(root.constData())+
-                "/RGSMSR1_L"+std::to_string(L)+
-                "_M"+std::to_string(M)+".bin");
-            QVERIFY2(!asset.empty(),"14 genuine Q0 assets must all be present");
+            const auto loaded=audio::internal::load_phase11_original_pinned_private_fir(
+                std::filesystem::path{root.constData()},L,M);
+            QVERIFY2(loaded,loaded?"":loaded.error()->message().c_str());
+            asset=*loaded.value();
+            QVERIFY2(!asset.empty(),"14 genuine original Q0 assets required");
             const auto digest=core::sha256_hex(std::span<const std::byte>{
                 reinterpret_cast<const std::byte*>(asset.data()),asset.size()});
             QCOMPARE(digest,pinnedSha);
