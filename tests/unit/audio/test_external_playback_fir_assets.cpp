@@ -18,8 +18,23 @@ using namespace rgsml;
 namespace {
 [[nodiscard]] std::filesystem::path test_asset_root()
 {
+#ifdef _WIN32
+    // Keep the isolated native test compatible with production MSVC
+    // warnings-as-errors, without hiding C4996 globally.
+    char* value=nullptr;
+    std::size_t chars=0;
+    if(_dupenv_s(&value,&chars,"RGSML_PLAYBACK_FIR_ROOT")!=0
+       ||value==nullptr||chars<2) {
+        std::free(value);
+        return {};
+    }
+    const std::filesystem::path root{value};
+    std::free(value);
+    return root;
+#else
     const auto* value=std::getenv("RGSML_PLAYBACK_FIR_ROOT");
     return value ? std::filesystem::path{value} : std::filesystem::path{};
+#endif
 }
 [[nodiscard]] core::Result<audio::PlaybackSampleRateAdapter> make(
     std::int64_t input,std::int64_t output)
