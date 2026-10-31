@@ -258,6 +258,9 @@ int main(int argc, char* argv[])
         privateTerminalRenderer.set_original_q0_fir_root(
             std::filesystem::path{originalFirRoot.constData()});
 
+    // Mirror EXACT startup original-Q0 asset admission in six-rate advice.
+    prepareRateAdvisor.set_original_q0_family_ready(
+        privateTerminalRenderer.full_original_q0_family_ready());
     rgsml::app::MasteringPreviewController previewController{
         &masteringChainState,
         [&auditionSelector] {

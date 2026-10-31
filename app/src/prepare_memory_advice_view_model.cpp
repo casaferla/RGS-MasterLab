@@ -48,7 +48,7 @@ constexpr std::array<std::int64_t,6> kMasterRates{
 
 [[nodiscard]] QVariantMap classified_row(
     const audio::MonitoringRateMemoryAdvice& advice,
-    std::int64_t source_hz)
+    std::int64_t source_hz,bool authenticatedFullQ0)
 {
     using Kind=audio::MonitoringMemoryAdviceKind;
     const auto hz=advice.proposed_master_rate.value();
@@ -126,7 +126,8 @@ constexpr std::array<std::int64_t,6> kMasterRates{
     // Memory fitness is never permission to run an unqualified Final SRC.
     // Keep the hypothetical cost visible without presenting it as a usable
     // M17 Prepare recommendation. This is a display-only product guard.
-    const auto admission=prepare_memory_display_admission(source_hz,hz);
+    const auto admission=prepare_memory_display_admission(
+        source_hz,hz,authenticatedFullQ0);
     const bool candidateAdmissible=
         admission==PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE;
     QString pathStatus;
@@ -146,6 +147,12 @@ constexpr std::array<std::int64_t,6> kMasterRates{
         details.prepend(QStringLiteral(
             "SOURCE or MASTER rate is unsupported. RAM does not grant Prepare. "));
         summary.prepend(QStringLiteral("Rate unavailable · "));
+    } else if(final_src_candidate_path(source_hz,hz)
+              ==FinalSrcCandidatePath::EXPERIMENTAL_UNQUALIFIED) {
+        pathStatus=QStringLiteral("SOURCE_PINNED_Q0_ORIGINAL");
+        details.prepend(QStringLiteral(
+            "Original 14-FIR Q0 package authenticated locally; source SHA "
+            "rechecked per Prepare. Full M17 physical FQ remains required. "));
     } else if(final_src_candidate_path(source_hz,hz)
               ==FinalSrcCandidatePath::EXISTING_44K_48K_FIR) {
         pathStatus=QStringLiteral("EXISTING_FIR_CANDIDATE");
@@ -272,7 +279,7 @@ void PrepareMemoryAdviceViewModel::refresh()
     QVariantList rows;
     rows.reserve(static_cast<qsizetype>(kMasterRates.size()));
     for(const auto& entry:*advice.value()) {
-        rows.append(classified_row(entry,source_->sample_rate_hz()));
+        rows.append(classified_row(entry,source_->sample_rate_hz(),originalQ0FamilyReady_));
     }
     recommendations_=std::move(rows);
     const auto deviceHz=advice.value()->front().observed_device_rate.value();
@@ -313,7 +320,7 @@ QVariantList PrepareMemoryAdviceViewModel::actual_prepare_times() const
                 "future total Prepare ETA N/A.")},
             {QStringLiteral("ceilingDbTp"),QVariant{}},
             {QStringLiteral("actual"),false}};
-        if(revisions && m17_final_src_candidate_admissible(sourceHz,hz)) {
+        if(revisions && m17_final_src_candidate_admissible(sourceHz,hz,originalQ0FamilyReady_)) {
             const auto observed=actualHistory_.latest(
                 sourceHz,frames,channels,hz,revisions);
             if(observed) {
@@ -390,7 +397,7 @@ QVariantList PrepareMemoryAdviceViewModel::prepare_time_rows() const
             {QStringLiteral("memoryKind"),
                 memory.value(QStringLiteral("kind"),QStringLiteral("unknown"))},
             {QStringLiteral("peakRamQualified"),false}};
-        if(!m17_final_src_candidate_admissible(sourceHz,rate)) {
+        if(!m17_final_src_candidate_admissible(sourceHz,rate,originalQ0FamilyReady_)) {
             entry[QStringLiteral("kind")]=QStringLiteral("blocked");
             entry[QStringLiteral("label")]=QStringLiteral("SRC N/A");
             entry[QStringLiteral("details")]=QStringLiteral(
@@ -521,7 +528,7 @@ void PrepareMemoryAdviceViewModel::observe_approved_prepare(
        ||source_->sample_rate_hz()!=x.source_hz
        ||source_->frame_count()!=x.source_frames
        ||source_->channel_count()!=x.channels
-       ||!m17_final_src_candidate_admissible(x.source_hz,x.master_hz))
+       ||!m17_final_src_candidate_admissible(x.source_hz,x.master_hz,originalQ0FamilyReady_))
         return;
     const auto current=activeRevisionProvider_
         ?activeRevisionProvider_():std::nullopt;

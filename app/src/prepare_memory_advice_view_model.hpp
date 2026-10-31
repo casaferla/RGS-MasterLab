@@ -47,6 +47,13 @@ public:
     ~PrepareMemoryAdviceViewModel() override;
     PrepareMemoryAdviceViewModel(const PrepareMemoryAdviceViewModel&)=delete;
     PrepareMemoryAdviceViewModel& operator=(const PrepareMemoryAdviceViewModel&)=delete;
+    // Same immutable startup authority as the actual renderer. Only the
+    // presentation reacts: a memory estimate NEVER opens a missing rate.
+    void set_original_q0_family_ready(bool ready) {
+        originalQ0FamilyReady_=ready;
+        refresh();
+        emit timingAdviceChanged();
+    }
     [[nodiscard]] QVariantList recommendations() const;
     [[nodiscard]] QString status_text() const;
     Q_INVOKABLE void refresh();
@@ -111,6 +118,7 @@ private:
     const platform::windows::WindowsAudioPlaybackService* playback_;
     QVariantList recommendations_;
     QString statusText_;
+    bool originalQ0FamilyReady_{false};
     std::mutex calibrationMutex_;
     std::condition_variable calibrationWake_;
     std::optional<CalibrationJob> pendingCalibration_;

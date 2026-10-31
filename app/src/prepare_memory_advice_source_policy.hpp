@@ -17,14 +17,17 @@ enum class PrepareMemoryDisplayAdmission : std::uint8_t {
 
 [[nodiscard]] constexpr PrepareMemoryDisplayAdmission
 prepare_memory_display_admission(std::int64_t source_hz,
-                                  std::int64_t master_hz) noexcept
+                                  std::int64_t master_hz,
+                                  bool authenticated_full_original_q0_pack=false) noexcept
 {
     switch (final_src_candidate_path(source_hz,master_hz)) {
     case FinalSrcCandidatePath::IDENTITY:
     case FinalSrcCandidatePath::EXISTING_44K_48K_FIR:
         return PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE;
     case FinalSrcCandidatePath::EXPERIMENTAL_UNQUALIFIED:
-        return PrepareMemoryDisplayAdmission::FINAL_SRC_UNQUALIFIED;
+        return authenticated_full_original_q0_pack
+            ? PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE
+            : PrepareMemoryDisplayAdmission::FINAL_SRC_UNQUALIFIED;
     default:
         return PrepareMemoryDisplayAdmission::SOURCE_OR_RATE_UNAVAILABLE;
     }
