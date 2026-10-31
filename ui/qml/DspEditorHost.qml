@@ -412,13 +412,11 @@ Rectangle {
                     && !root.terminalLimiterViewModel.bypass
                     && root.terminalLimiterViewModel.audioStatus.startsWith("NEEDS PREPARATION")
                     && !!root.masterRateState
-                    && root.masterRateState.m17_candidate_rate_admissible(
-                        root.masterRateState.masterRateHz)
+                    && root.masterRateState.currentMasterRateAdmissible
                 onClicked: root.terminalLimiterViewModel.requestPrepare()
                 Accessible.name: "Prepare offline true peak limiter"
                 ToolTip.text: root.masterRateState
-                    && !root.masterRateState.m17_candidate_rate_admissible(
-                        root.masterRateState.masterRateHz)
+                    && !root.masterRateState.currentMasterRateAdmissible
                     ? root.masterRateState.final_src_path_status(
                         root.masterRateState.masterRateHz)
                     : "Render and verify the full master; Play never starts this job."
@@ -699,8 +697,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 16
                     color: root.masterRateState
-                        && root.masterRateState.m17_candidate_rate_admissible(
-                            root.masterRateState.masterRateHz)
+                        && root.masterRateState.currentMasterRateAdmissible
                         ? "#B6D6CA" : "#F2CE82"
                     font.family: "Segoe UI"
                     font.pixelSize: 10
@@ -788,9 +785,14 @@ Rectangle {
                             ? root.memoryAdvisor.recommendations[index] : null
                         readonly property bool chosen: root.masterRateState
                             && root.masterRateState.masterRateHz === modelData
-                        readonly property bool admissible: root.masterRateState
-                            && root.masterRateState.m17_candidate_rate_admissible(
-                                modelData)
+                        // Read a NOTIFY-backed C++ property. An opaque Q_INVOKABLE
+                        // call with constant modelData cannot by itself track
+                        // SOURCE epoch changes, leaving FALSE from first load.
+                        readonly property var admissions: root.masterRateState
+                            ? root.masterRateState.candidateRateAdmissions : null
+                        readonly property bool admissible: admissions
+                            && admissions.length === 6
+                            && admissions[rateRow.index] === true
                         Layout.fillWidth: true
                         Layout.preferredHeight: 27
                         radius: 3
