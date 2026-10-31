@@ -286,7 +286,7 @@ jobs:
 
       - name: Configure CMake (Portable DSP)
         run: |
-          cmake -B build-linux -G Ninja \
+          if cmake -B build-linux -G Ninja \
             -DCMAKE_PREFIX_PATH="${{ github.workspace }}/6.8.3/gcc_64" \
             -DRGSML_BUILD_TESTS=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
@@ -294,7 +294,25 @@ jobs:
             -DRGSML_PROVENANCE_TYPE=PR \
             -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} \
             -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} \
-            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }}
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }} \
+            > "$RUNNER_TEMP/rgsml-linux-configure-full-local.log" 2>&1; then
+            echo "CMAKE_PORTABLE_CONFIGURE_PASS"
+          else
+            python tools/ci/summarize_cmake_configure_failure.py \
+              --input "$RUNNER_TEMP/rgsml-linux-configure-full-local.log" \
+              --output "$RUNNER_TEMP/rgsml-linux-configure-bounded.txt"
+            cat "$RUNNER_TEMP/rgsml-linux-configure-bounded.txt"
+            exit 1
+          fi
+
+      - name: Upload bounded CMake configuration errors (Linux)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Bounded-CMake-Linux-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgsml-linux-configure-bounded.txt
+          retention-days: 7
+          if-no-files-found: ignore
 
       # B2f: inspect Ninja's true compile command for each production object.
       - name: Verify Linux True Peak scoped strict FP flags
@@ -592,13 +610,30 @@ jobs:
       # Preserve the original M16 B2f attestation source unchanged: configure
       # Visual Studio only to inspect source-scoped .vcxproj, NEVER MSBuild.
       - name: Configure Visual Studio only for frozen M16 B2f evidence
+        shell: pwsh
         run: |
-          cmake --preset windows-msvc `
+          $configureLog = Join-Path $env:RUNNER_TEMP 'rgsml-windows-configure-full-local.log'
+          & cmake --preset windows-msvc `
             -DRGSML_PROVENANCE_TYPE=PR `
             -DRGSML_PROVENANCE_PR_NUMBER=${{ github.event.pull_request.number }} `
             -DRGSML_PROVENANCE_RUN_NUMBER=${{ github.run_number }} `
-            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }}
-          if ($LASTEXITCODE -ne 0) { throw 'VS_B2F_CONFIGURATION_FAILED' }
+            -DRGSML_PROVENANCE_GIT_SHA=${{ github.event.pull_request.head.sha || github.sha }} *> $configureLog
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            python tools/ci/summarize_cmake_configure_failure.py --input "$configureLog" --output "$env:RUNNER_TEMP/rgsml-windows-configure-bounded.txt"
+            Get-Content "$env:RUNNER_TEMP/rgsml-windows-configure-bounded.txt"
+            throw 'VS_B2F_CONFIGURATION_FAILED'
+          }
+          Write-Host 'CMAKE_VISUAL_STUDIO_CONFIGURE_PASS'
+
+      - name: Upload bounded CMake configuration errors (Windows)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-Bounded-CMake-Windows-${{ github.run_number }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/rgsml-windows-configure-bounded.txt
+          retention-days: 7
+          if-no-files-found: ignore
 
       # Product CI now compiles with Microsoft cl.exe, Ninja Multi-Config and
       # sccache; Visual Studio generator above is evidence-only.
