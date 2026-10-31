@@ -38,6 +38,11 @@ bool MasterOutputRateState::choose_master_rate(qint64 hz) noexcept {
     // A requested *change* during an exact DEVICE monitor is refused
     // without invalidating either the Project or the M17 render epoch.
     if(!can_edit_target())return false;
-    masterRateHz_=hz;++rateRevision_;emit changed();return true;
+    masterRateHz_=hz;++rateRevision_;
+    emit changed();
+    // The current MASTER admission and observable six-rate list share the
+    // same binding contract; update even when the SOURCE itself is stable.
+    emit selectionAvailabilityChanged();
+    return true;
 }
 } // namespace rgsml::app
