@@ -1,3 +1,10 @@
+## 2026-10-31 — FOCUSED #940 DOUBLE GREEN; GITHUB ↔ CONTENTBOX SNAPSHOT UPDATE
+
+- [Focused #940](https://github.com/casaferla/RGS-MasterLab/actions/runs/41153372210) has **COMPLETED SUCCESS** on both `Windows Focused DSP` and `Linux Portable DSP Guard`, immutable tested PR SHA `46541cde7f2ce6f94ce66f1ee7ff09a5ebaf2cae`; no failed jobs. Prior ongoing-status snapshot is now historical.
+- PR #61 remains Draft at SHA `46541cde7f2ce6f94ce66f1ee7ff09a5ebaf2cae`. GitHub staging is ahead with **documentation-only** principal-operator mathematical review, dual-archive continuity rule and this state entry. **Do not say staging code or Q0 admission passed #940**. No PR promotion or new CI for documentation snapshots.
+- Cross-linked [RGS ContentBox current M17 handoff](https://docs.google.com/document/d/1D3jbgKd4DMVxdFG8ZMYwsnPPNguzb13tFOPLqPhICkM/edit) and [continuity index](https://docs.google.com/document/d/1Snic1CzHKHhiKe3yP1kpd3XWBUK8fK5FZNIU891C8zA/edit) must record the #940 terminal result and the current GitHub staging SHA. See [archive sync contract](PROJECT_ARCHIVE_SYNC_CONTRACT.md).
+- Q0 mathematical technical review evidence is positive but **canonical signoff still OPEN**, 28 newer Final SRC paths blocked by product admission. Physical Windows FQ remains PO-only. M18 Dither is next after M17 closure; do not insert unbuilt Android/Reference Match gates.
+
 ## 2026-10-31 — GITHUB PRIMARY / CONTENTBOX MIRROR CONTRACT REGISTERED (STAGING-ONLY)
 
 - Product Owner prefers GitHub as instantly accessible current operational memory; preserve dual archive synchronization **at material macro-lot gates**, not duplicate every commit or recreate full handoffs between chats. GitHub owns LIVE SHA/CI/PR/current engineering state, Drive owns private/frozen evidence and linked project continuity. See [PROJECT_ARCHIVE_SYNC_CONTRACT.md](PROJECT_ARCHIVE_SYNC_CONTRACT.md).
