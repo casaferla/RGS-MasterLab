@@ -1,5 +1,6 @@
 add_library(rgsml_project STATIC
     src/project_snapshot.cpp
+    src/master_output_rate_preference.cpp
     src/internal/canonical_json.cpp
     src/internal/minizip_resource_stream.cpp
     src/internal/raw_zip_validator.cpp

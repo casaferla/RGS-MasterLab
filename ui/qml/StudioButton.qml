@@ -6,6 +6,12 @@ Button {
 
     property string tone: "secondary"
     property bool selected: false
+    // Opt-in M17 semantic family styling. Non-limiter buttons retain the
+    // historic primary/cyan and gold identities without any visual changes.
+    property bool selectedFamilyAccent: false
+    // Opt-in for planned M17 actions: display a faint family stroke even
+    // while truly disabled; unrelated StudioButtons keep historical styling.
+    property bool showDisabledAccent: false
     property string iconKind: ""
     property color accentColor: tone === "gold" ? "#F2B632" : "#00C8FF"
     property int minimumControlWidth: 80
@@ -46,7 +52,8 @@ Button {
                 font.weight: control.emphasizeSelectedText
                     && (control.selected || control.tone === "primary")
                     ? Font.DemiBold : Font.Normal
-                color: !control.enabled ? "#6E7E8D"
+                color: !control.enabled ? (control.showDisabledAccent ? "#99A5B2" : "#6E7E8D")
+                     : control.selectedFamilyAccent && control.selected ? "#F4F9FC"
                      : control.tone === "primary" ? "#F4F9FC"
                      : control.tone === "gold" && control.selected ? "#FFF4C8"
                      : control.down ? "#B8C7D9"
@@ -70,18 +77,25 @@ Button {
         Rectangle {
             anchors.fill: parent
             radius: 6
-            color: !control.enabled ? "#0B141C"
+            color: !control.enabled ? (control.showDisabledAccent
+                     ? Qt.alpha(control.accentColor, 0.08) : "#0B141C")
+                 : control.selectedFamilyAccent && control.selected
+                     ? Qt.alpha(control.accentColor, 0.20)
                  : control.tone === "primary" ? (control.down ? "#073344" : control.hovered ? "#0B4154" : "#0A3443")
                  : control.tone === "gold" && control.selected ? "#3B2D08"
                  : control.selected ? "#0A3443"
                  : control.down ? "#0B151E"
                  : control.hovered ? "#132433" : "#0E1A24"
             border.width: 1
-            border.color: !control.enabled ? "#22303A"
+            border.color: !control.enabled
+                         ? (control.showDisabledAccent
+                             ? Qt.alpha(control.accentColor, 0.58) : "#22303A")
+                        : control.selectedFamilyAccent && control.selected
+                            ? control.accentColor
                         : control.tone === "gold" && control.selected ? "#F2B632"
                         : control.selected ? control.accentColor
                         : control.hovered ? "#3A566B" : "#2A3F4F"
-            opacity: control.enabled ? 1.0 : 0.4
+            opacity: control.enabled ? 1.0 : (control.showDisabledAccent ? 0.78 : 0.4)
         }
         Rectangle {
             visible: control.selected

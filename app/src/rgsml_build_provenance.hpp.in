@@ -1,0 +1,15 @@
+#pragma once
+
+#include <QString>
+
+namespace rgsml::app {
+
+// CMake regenerates this header for EACH build tree (FQ, PR, DEV).
+// No hard-coded FQ number. Keep the full configured SHA available in
+// QML; the short user-facing label was chosen by RgsmlOptions.cmake.
+inline QString configured_build_provenance()
+{
+    return QString::fromUtf8(R"RGS(@RGSML_BUILD_PROVENANCE@)RGS");
+}
+
+}  // namespace rgsml::app

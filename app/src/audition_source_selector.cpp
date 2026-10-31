@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -120,6 +121,192 @@ AuditionSourceSelector::processed_realization_snapshot() const noexcept
     return processed_;
 }
 
+std::optional<core::RealizationId>
+AuditionSourceSelector::processed_realization_id() const noexcept
+{
+    return processedRealizationId_;
+}
+
+bool AuditionSourceSelector::offline_processed_provenance_current() const
+{
+    return offlineProcessedAuthority_ && source_
+        &&!activeTarget_ &&sourceDerivedCue_==core::FrameIndex{0}
+        &&sourceEpoch_==offlineProcessedAuthority_->sourceEpoch
+        &&prepared_==offlineProcessedAuthority_->prepared
+        &&processed_==offlineProcessedAuthority_->processed
+        &&processedRealizationId_
+            ==std::optional{offlineProcessedAuthority_->manualId}
+        &&(sourceLoopProvider_?sourceLoopProvider_():std::nullopt)
+            ==offlineProcessedAuthority_->loop;
+}
+
+bool AuditionSourceSelector::offline_processed_selected_for_final_master() const
+{
+    if(!offline_processed_provenance_current()||!playback_)return false;
+    const auto sink=playback_->playback_snapshot();
+    return sink
+        &&sink.value()->state==core::PlaybackState::NO_SOURCE
+        &&sink.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!sink.value()->audibleRealization.realizationId
+        &&sink.value()->position==core::FrameIndex{0}
+        &&!sink.value()->duration &&!sink.value()->loop;
+}
+
+core::Status AuditionSourceSelector::authorize_offline_processed_for_final_master()
+{
+    offlineProcessedAuthority_.reset();
+    if(!source_ ||sourceEpoch_==0 ||activeTarget_ ||!playback_
+       ||!prepared_ ||!processed_ ||!processedRealizationId_
+       ||processedRealizationId_->value==0
+       ||sourceDerivedCue_!=core::FrameIndex{0})
+        return unavailable("OFFLINE_MASTER_REQUIRES_ACCEPTED_SOURCE_PROCESSED");
+    const auto p=prepared_->view();
+    const auto m=processed_->view();
+    if(prepared_->frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE
+       ||processed_->frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE
+       ||p.absolute_start_frame()!=core::FrameIndex{0}
+       ||m.absolute_start_frame()!=core::FrameIndex{0}
+       ||p.frame_count().value()<=0 ||p.frame_count()!=m.frame_count()
+       ||p.format()!=m.format()
+       ||prepared_->render_window()!=p.absolute_range()
+       ||processed_->render_window()!=m.absolute_range())
+        return unavailable("OFFLINE_MASTER_REQUIRES_COMPLETE_SOURCE_OWNERS");
+    // First offline admission deliberately rejects active Loop Region;
+    // the whole SOURCE programme and source cue zero must be unambiguous.
+    const auto loop=sourceLoopProvider_?sourceLoopProvider_():std::nullopt;
+    if(loop)return unavailable("OFFLINE_MASTER_REQUIRES_NO_SOURCE_LOOP");
+    const auto before=playback_->playback_snapshot();
+    if(!before)return core::Status::failure(*before.error());
+    if(before.value()->state!=core::PlaybackState::NO_SOURCE
+       ||before.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||before.value()->audibleRealization.realizationId
+       ||before.value()->position!=core::FrameIndex{0}
+       ||before.value()->duration ||before.value()->loop)
+        return unavailable("OFFLINE_MASTER_REFUSES_NONEMPTY_OR_ALIEN_DEVICE");
+    offlineProcessedAuthority_.emplace(OfflineProcessedAuthority{
+        sourceEpoch_,prepared_,processed_,*processedRealizationId_,loop});
+    return core::Status::success();
+}
+
+core::Result<AuditionSourceSelector::TerminalActivationIntent>
+AuditionSourceSelector::capture_terminal_activation_intent() const
+{
+    using I=TerminalActivationIntent;
+    auto refused=[](const char* message)->core::Result<I> {
+        return core::Result<I>::failure(core::Error{
+            core::ErrorCode::InvalidState,message});
+    };
+    // Distinguish target state from published manual availability. Both
+    // are required and neither is permission to borrow an old device
+    // realization. The coordinator will surface this precise diagnostic,
+    // while every later SOURCE and sink-ownership guard remains unchanged.
+    if (!playback_)
+        return refused("M17 activation has no playback transport.");
+    if (activeTarget_ != AuditionTarget::PROCESSED)
+        return refused("M17 activation requires PROCESSED audition target.");
+    if (!prepared_ || !processed_ || !processedRealizationId_
+        || processedRealizationId_->value == 0)
+        return refused("M17 activation has no accepted complete PROCESSED manual owner.");
+    const auto& manual=*processed_;
+    const auto range=manual.render_window();
+    if(range.begin().value()!=0
+       ||manual.frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE
+       ||manual.view().frame_count().value()<=0
+       ||manual.view().absolute_start_frame().value()!=0)
+        return refused("M17 activation needs an origin-zero complete SOURCE manual owner.");
+    const auto before=playback_->playback_snapshot();
+    if(!before)return core::Result<I>::failure(*before.error());
+    if(before.value()->state!=core::PlaybackState::STOPPED
+       &&before.value()->state!=core::PlaybackState::PLAYING
+       &&before.value()->state!=core::PlaybackState::PAUSED)
+        return refused("M17 activation has no valid audible transport state.");
+    if(before.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||before.value()->audibleRealization.realizationId
+            !=processedRealizationId_
+       ||before.value()->duration!=std::optional{manual.view().frame_count()})
+        return refused("M17 activation cannot borrow another device realization.");
+    const auto source=playback_->source_display_snapshot();
+    const auto after=playback_->playback_snapshot();
+    if(!source)return core::Result<I>::failure(*source.error());
+    if(!after)return core::Result<I>::failure(*after.error());
+    // Snapshot is an eligibility capture only. A later user seek, device
+    // handoff, region edit or source change MUST invalidate it before install.
+    // PLAYING advances frames between otherwise stable serialized reads.
+    // Match owner/epoch/loop/state instead of requiring an impossible
+    // byte-identical playhead. The middle SOURCE snapshot is the cue to save.
+    if(after.value()->state!=before.value()->state
+       ||after.value()->audibleRealization
+           !=before.value()->audibleRealization
+       ||after.value()->duration!=before.value()->duration
+       ||after.value()->loop!=before.value()->loop
+       ||after.value()->seekSerial!=before.value()->seekSerial
+       ||after.value()->traversalSerial!=before.value()->traversalSerial
+       ||after.value()->loopWrapCount!=before.value()->loopWrapCount
+       ||source.value()->position.value()<0
+       ||source.value()->position>range.end()
+       ||source.value()->duration!=manual.view().frame_count()
+       ||source.value()->state!=before.value()->state)
+        return refused("M17 activation SOURCE and device clocks are not stable.");
+    const auto actualLoop=sourceLoopProvider_?sourceLoopProvider_():std::nullopt;
+    if(source.value()->loop!=actualLoop
+       ||(actualLoop&&(actualLoop->begin()<range.begin()
+                      ||actualLoop->end()>range.end())))
+        return refused("M17 activation loop snapshot is stale.");
+    return core::Result<I>::success(I{
+        processed_,*processedRealizationId_,source.value()->position,
+        actualLoop,before.value()->state,before.value()->seekSerial,
+        before.value()->traversalSerial,before.value()->loopWrapCount});
+}
+
+core::Result<core::RealizationId>
+AuditionSourceSelector::reserve_private_terminal_realization_id(
+    std::shared_ptr<const render::RenderResult> prepared_owner,
+    std::shared_ptr<const render::RenderResult> manual_owner,
+    std::optional<core::RealizationId> manual_id)
+{
+    // Ownership and audible-device authority are independent. A private
+    // terminal candidate may never borrow an unselected or stale Manual ID.
+    if (!prepared_owner || !manual_owner || !manual_id
+        || manual_id->value == 0
+        || prepared_ != prepared_owner || processed_ != manual_owner
+        || processedRealizationId_ != manual_id
+        || activeTarget_ != AuditionTarget::PROCESSED
+        || !playback_) {
+        return core::Result<core::RealizationId>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17 private ID requires current PREPARED/MANUAL owners and the selected PROCESSED target."});
+    }
+    auto current = playback_->playback_snapshot();
+    if (!current) {
+        return core::Result<core::RealizationId>::failure(*current.error());
+    }
+    const auto range = manual_owner->render_window();
+    if (range.begin().value() != 0
+        || current.value()->state != core::PlaybackState::STOPPED
+        || current.value()->audibleRealization.phase
+            != core::AudibleHandoffPhase::NEW
+        || current.value()->audibleRealization.realizationId != manual_id
+        || !current.value()->duration
+        || *current.value()->duration != manual_owner->view().frame_count()) {
+        return core::Result<core::RealizationId>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17 private ID requires the stopped exact audible manual PROCESSED realization."});
+    }
+    if (nextRealizationIdValue_
+        == std::numeric_limits<std::uint64_t>::max()) {
+        return core::Result<core::RealizationId>::failure(core::Error{
+            core::ErrorCode::IntegerOverflow,
+            "The shared MANUAL/TERMINAL realization ID sequence is exhausted."});
+    }
+    // Burn the reserved ID even if a subsequent terminal prepare fails:
+    // another audio owner may have briefly observed that identity.
+    const core::RealizationId terminalId{nextRealizationIdValue_++};
+    return core::Result<core::RealizationId>::success(terminalId);
+}
+
 void AuditionSourceSelector::set_source_loop_provider(SourceLoopProvider provider)
 {
     sourceLoopProvider_ = std::move(provider);
@@ -128,15 +315,20 @@ void AuditionSourceSelector::set_source_loop_provider(SourceLoopProvider provide
 core::Status AuditionSourceSelector::source_committed(
     const core::ResourceReference& source)
 {
+    offlineProcessedAuthority_.reset();
+    if(sourceEpoch_==std::numeric_limits<std::uint64_t>::max())
+        return unavailable("OFFLINE_MASTER_SOURCE_EPOCH_EXHAUSTED");
     auto cleared = playback_->stop_and_clear();
     if (!cleared) {
         fail_closed(*cleared.error());
         return cleared;
     }
+    ++sourceEpoch_;
     source_ = source;
     sourceDerivedCue_ = core::FrameIndex{0};
     prepared_.reset();
     processed_.reset();
+    processedRealizationId_.reset();
     activeTarget_.reset();
 
     if (gold_) {
@@ -167,6 +359,7 @@ core::Status AuditionSourceSelector::source_committed(
 core::Status AuditionSourceSelector::set_prepared_realization(
     render::RenderResult realization)
 {
+    offlineProcessedAuthority_.reset();
     if (activeTarget_ == AuditionTarget::PREPARED) {
         auto cleared = playback_->stop_and_clear();
         if (!cleared) {
@@ -182,11 +375,38 @@ core::Status AuditionSourceSelector::set_prepared_realization(
 core::Status AuditionSourceSelector::set_processed_realization(
     render::RenderResult realization)
 {
-    auto candidate = std::make_shared<const render::RenderResult>(std::move(realization));
+    offlineProcessedAuthority_.reset();
+    if (nextRealizationIdValue_
+        == std::numeric_limits<std::uint64_t>::max()) {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::IntegerOverflow,
+            "Processed realization identity sequence is exhausted."});
+    }
+
+    const core::RealizationId candidateRealizationId{
+        nextRealizationIdValue_};
+    auto identityBound =
+        realization.bind_compressor_telemetry_realization_id(
+            candidateRealizationId);
+    if (!identityBound) {
+        return identityBound;
+    }
+    // Bind stage-capture provenance to the SAME candidate before publishing
+    // the Processed realization or handing PCM off to playback.
+    auto msIdentityBound =
+        realization.bind_stereo_ms_stage_output_realization_id(
+            candidateRealizationId);
+    if (!msIdentityBound) {
+        return msIdentityBound;
+    }
+    auto candidate = std::make_shared<const render::RenderResult>(
+        std::move(realization));
 
     if (activeTarget_ == AuditionTarget::PROCESSED) {
         const auto range = candidate->render_window();
-        auto snapshot = playback_->playback_snapshot();
+        // PROCESSED can temporarily be OUTPUT_RATE private audio. Preserve
+        // the original SOURCE playhead, never store an output-rate cursor.
+        auto snapshot = playback_->source_display_snapshot();
         if (snapshot) {
             sourceDerivedCue_ = snapshot.value()->position;
         }
@@ -199,7 +419,8 @@ core::Status AuditionSourceSelector::set_processed_realization(
         }
 
         playback_->set_source_derived_active(true);
-        auto handedOff = playback_->handoff_pcm(candidate->view(), candidate);
+        auto handedOff = playback_->handoff_pcm(
+            candidate->view(), candidate, candidateRealizationId);
         if (!handedOff) {
             publish_error(QString::fromStdString(handedOff.error()->message()));
             return handedOff;
@@ -213,12 +434,16 @@ core::Status AuditionSourceSelector::set_processed_realization(
         }
 
         processed_ = candidate;
+        processedRealizationId_ = candidateRealizationId;
+        ++nextRealizationIdValue_;
         statusText_.clear();
         emit changed();
         return core::Status::success();
     }
 
     processed_ = candidate;
+    processedRealizationId_ = candidateRealizationId;
+    ++nextRealizationIdValue_;
     emit changed();
     return core::Status::success();
 }
@@ -228,6 +453,7 @@ core::Status AuditionSourceSelector::set_gold(
     core::SampleRate sampleRate,
     core::FrameCount frameCount)
 {
+    offlineProcessedAuthority_.reset();
     if (source_) {
         if (source_->same_resource_identity(reference)) {
             return unavailable("Gold must be a file distinct from Source.");
@@ -258,6 +484,7 @@ core::Status AuditionSourceSelector::set_gold(
 
 core::Status AuditionSourceSelector::clear_gold()
 {
+    offlineProcessedAuthority_.reset();
     const bool wasGold = activeTarget_ == AuditionTarget::GOLD;
     if (wasGold) {
         auto stored = store_active_cue();
@@ -290,6 +517,7 @@ core::Status AuditionSourceSelector::clear_gold()
 
 core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
 {
+    offlineProcessedAuthority_.reset();
     if ((target == AuditionTarget::PREPARED && !prepared_)
         || (target == AuditionTarget::PROCESSED && !processed_)
         || (target == AuditionTarget::GOLD && !gold_)) {
@@ -328,8 +556,14 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
         }
     } else {
         playback_->set_source_derived_active(true);
-        const auto& real = (target == AuditionTarget::PREPARED ? prepared_ : processed_);
-        preparedStatus = prepare_realization(*real, real);
+        const auto& real =
+            (target == AuditionTarget::PREPARED ? prepared_ : processed_);
+        const auto realizationId =
+            target == AuditionTarget::PROCESSED
+            ? processedRealizationId_
+            : std::nullopt;
+        preparedStatus = prepare_realization(
+            *real, real, realizationId);
     }
     if (!preparedStatus) {
         fail_closed(*preparedStatus.error());
@@ -348,6 +582,76 @@ core::Status AuditionSourceSelector::switch_to(AuditionTarget target)
     }
 
     activeTarget_ = target;
+    statusText_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status AuditionSourceSelector::restore_manual_processed_after_terminal(
+    std::shared_ptr<const render::RenderResult> expectedManual,
+    core::RealizationId expectedManualId, core::FrameIndex sourceCue)
+{
+    auto refuse=[](const char* message) -> core::Status {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,message});
+    };
+    if(!playback_ || activeTarget_!=AuditionTarget::PROCESSED
+       ||!expectedManual || expectedManualId.value==0
+       ||processed_!=expectedManual
+       ||processedRealizationId_!=std::optional{expectedManualId})
+        return refuse("M17 return-to-manual requires the current exact selected predecessor.");
+    // A current terminal sink, live or stopped, may ONLY be retired via
+    // TerminalPrivateProductSession::cancel(). Never clear an alien owner.
+    const auto sink=playback_->playback_snapshot();
+    if(!sink) return core::Status::failure(*sink.error());
+    if(sink.value()->state!=core::PlaybackState::NO_SOURCE
+       ||sink.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||sink.value()->audibleRealization.realizationId)
+        return refuse("M17 return-to-manual requires an already retired empty sink.");
+    const auto range=processed_->render_window();
+    if(range.begin().value()!=0 || sourceCue.value()<0
+       ||sourceCue>range.end())
+        return refuse("M17 return-to-manual cue lies outside the full SOURCE programme.");
+
+    // EOF has the same semantics as normal selector activation: begin.
+    const auto canonical=sourceCue==range.end()?range.begin():sourceCue;
+    const auto previousCue=sourceDerivedCue_;
+    sourceDerivedCue_=canonical;
+    playback_->set_source_derived_active(true);
+    auto restored=prepare_realization(
+        *expectedManual,expectedManual,expectedManualId);
+    if(!restored) {
+        sourceDerivedCue_=previousCue;
+        // prepare_realization may have installed PCM before failing seek
+        // or loop setup. Retire only the MANUAL ID that we just installed;
+        // never clear a successor that won the device asynchronously.
+        const auto current=playback_->playback_snapshot();
+        if(current && current.value()->audibleRealization.phase
+               ==core::AudibleHandoffPhase::NEW
+           &&current.value()->audibleRealization.realizationId
+               ==std::optional{expectedManualId})
+            static_cast<void>(playback_->stop_and_clear());
+        return restored;
+    }
+    const auto after=playback_->playback_snapshot();
+    if(!after || after.value()->state!=core::PlaybackState::STOPPED
+       ||after.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||after.value()->audibleRealization.realizationId
+            !=std::optional{expectedManualId}
+       ||after.value()->position!=canonical
+       ||after.value()->duration
+            !=std::optional{expectedManual->view().frame_count()}) {
+        sourceDerivedCue_=previousCue;
+        // Fail closed; do not claim restored audio without exact ownership.
+        if(after && after.value()->audibleRealization.phase
+                ==core::AudibleHandoffPhase::NEW
+            &&after.value()->audibleRealization.realizationId
+                ==std::optional{expectedManualId})
+            static_cast<void>(playback_->stop_and_clear());
+        return refuse("M17 manual return failed its post-install sink identity check.");
+    }
     statusText_.clear();
     emit changed();
     return core::Status::success();
@@ -376,21 +680,25 @@ core::Status AuditionSourceSelector::store_active_cue()
     if (!activeTarget_) {
         return core::Status::success();
     }
-    auto snapshot = playback_->playback_snapshot();
-    if (!snapshot) {
-        return core::Status::failure(*snapshot.error());
-    }
+    auto snapshot = *activeTarget_ == AuditionTarget::GOLD
+        ? playback_->playback_snapshot()
+        : core::Result<core::PlaybackSnapshot>::failure(core::Error{
+            core::ErrorCode::InvalidState, "Source-target cursor uses mapped coordinates."});
     if (*activeTarget_ == AuditionTarget::GOLD) {
+        if (!snapshot) return core::Status::failure(*snapshot.error());
         goldCue_ = snapshot.value()->position;
-    } else {
-        sourceDerivedCue_ = snapshot.value()->position;
+        return core::Status::success();
     }
+    auto source=playback_->source_display_snapshot();
+    if (!source) return core::Status::failure(*source.error());
+    sourceDerivedCue_=source.value()->position;
     return core::Status::success();
 }
 
 core::Status AuditionSourceSelector::prepare_realization(
     const render::RenderResult& realization,
-    std::shared_ptr<const void> lifetime)
+    std::shared_ptr<const void> lifetime,
+    std::optional<core::RealizationId> realizationId)
 {
     const auto range = realization.render_window();
     if (sourceDerivedCue_.value() == range.end().value()) {
@@ -399,7 +707,8 @@ core::Status AuditionSourceSelector::prepare_realization(
     if (sourceDerivedCue_ < range.begin() || sourceDerivedCue_ > range.end()) {
         return unavailable("Source cue is outside the available realization range.");
     }
-    auto prepared = playback_->prepare_pcm(realization.view(), std::move(lifetime));
+    auto prepared = playback_->prepare_pcm(
+        realization.view(), std::move(lifetime), realizationId);
     if (!prepared) {
         return prepared;
     }

@@ -1,0 +1,1546 @@
+#include "terminal_private_product_session.hpp"
+#include "final_src_candidate_policy.hpp"
+#include <rgsml/core/error.hpp>
+#include <rgsml/audio/master_monitoring_rate_plan.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
+#include <rgsml/audio/monitoring_frame_map.hpp>
+#include <limits>
+#include <new>
+#include <utility>
+
+namespace rgsml::app {
+namespace {
+[[nodiscard]] core::Error rejected(const char* reason) {
+    return core::Error{core::ErrorCode::InvalidState,reason};
+}
+}
+TerminalPrivateProductSession::TerminalPrivateProductSession(
+    TerminalPrivateRenderController& renderer,
+    TerminalPrivatePublicationCoordinator& publisher,
+    TerminalCandidateGate& candidates,
+    PlaybackTransportViewModel& transport,
+    Snapshot prepared,Snapshot manual,ManualId manualId,
+    Loop sourceLoop,Selected selected,QObject* parent)
+    : QObject(parent),renderer_(&renderer),publisher_(&publisher),
+      candidates_(&candidates),transport_(&transport),
+      prepared_(std::move(prepared)),manual_(std::move(manual)),
+      manualId_(std::move(manualId)),sourceLoop_(std::move(sourceLoop)),
+      selected_(std::move(selected))
+{
+    QObject::connect(renderer_,&TerminalPrivateRenderController::changed,
+                     this,&TerminalPrivateProductSession::on_renderer_changed);
+}
+
+bool TerminalPrivateProductSession::current_selection_for_pending() const
+{
+    return selected_ && (selected_()
+        || (pending_ && pending_->offlineNonAudibleSelection
+            && offlineSelected_ && offlineSelected_()));
+}
+
+void TerminalPrivateProductSession::failed(const core::Error& error) {
+    approvedMonitor_.reset();
+    approvedMonitorMaster_.reset();
+    pending_.reset();
+    status_=QStringLiteral("ERROR");
+    error_=QString::fromStdString(error.message());
+    for(const auto& detail:error.details()) {
+        if(detail.key=="category" && !detail.value.empty()) {
+            error_=QStringLiteral("[%1] %2")
+                .arg(QString::fromStdString(detail.value),error_);
+            break;
+        }
+    }
+    emit changed();
+}
+void TerminalPrivateProductSession::stale() {
+    approvedMonitor_.reset();
+    approvedMonitorMaster_.reset();
+    pending_.reset();
+    status_=QStringLiteral("STALE");
+    error_.clear();
+    emit changed();
+}
+
+core::Status TerminalPrivateProductSession::request_private(core::SampleRate rate,
+                                                           bool deferred)
+{
+    return request_private_impl(rate,deferred,false);
+}
+
+core::Status TerminalPrivateProductSession::request_private_impl(
+    core::SampleRate rate, bool deferred, bool masterOnly)
+{
+    if(pending_ || privateId_ ||installedMonitor_ ||monitorTransitioning_)
+        return core::Status::failure(rejected(
+            "A private M17 transaction is already pending or installed."));
+    if(!prepared_||!manual_||!manualId_||!sourceLoop_||!selected_)
+        return core::Status::failure(rejected(
+            "Private M17 requires an authoritative PROCESSED source."));
+    auto prepared=prepared_(),manual=manual_();
+    auto manualId=manualId_();
+    if(!prepared||!manual||!manualId||manualId->value==0)
+        return core::Status::failure(rejected(
+            "Private M17 requires a published manual predecessor."));
+    // Product admission is conditioned on all 14 authentic original Q0
+    // FIR binaries being available locally; exact requested SHA is checked
+    // again by the worker launcher before any M17 DSP can begin.
+    const auto sourceRate=manual->view().format().sample_rate().value();
+    if(!m17_final_src_candidate_admissible(sourceRate,rate.value(),
+           renderer_->full_original_q0_family_ready()))
+        return core::Status::failure(core::Error{
+            core::ErrorCode::UnsupportedOperation,
+            "M17_FINAL_OUTPUT_SRC_CANDIDATE_NOT_QUALIFIED"});
+    auto snapshot=transport_->playback_snapshot();
+    if(!snapshot)return core::Status::failure(*snapshot.error());
+    // ONLY a private final-master request may render without the playback
+    // device. Both a clean NO_SOURCE state and the published MANUAL
+    // predecessor must be proven; alien, stale or anonymous sinks fail.
+    // Ordinary M17 Active/Play retains the strict MANUAL audible contract.
+    const bool offlineNoSink=masterOnly
+        &&snapshot.value()->state==core::PlaybackState::NO_SOURCE
+        &&snapshot.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!snapshot.value()->audibleRealization.realizationId
+        &&snapshot.value()->position==core::FrameIndex{0}
+        &&!snapshot.value()->duration
+        &&!snapshot.value()->loop;
+    const bool exactManual=snapshot.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::NEW
+        &&snapshot.value()->audibleRealization.realizationId==manualId
+        &&snapshot.value()->duration
+            ==std::optional{manual->view().frame_count()}
+        &&(snapshot.value()->state==core::PlaybackState::STOPPED
+            ||(deferred
+                &&(snapshot.value()->state==core::PlaybackState::PLAYING
+                    ||snapshot.value()->state==core::PlaybackState::PAUSED)));
+    const bool audibleSelected=selected_();
+    const bool nonAudibleOfflineSelected=offlineNoSink
+        &&offlineSelected_&&offlineSelected_();
+    if(!audibleSelected&&!nonAudibleOfflineSelected)
+        return core::Status::failure(rejected(
+            "Private M17 requires a selected PROCESSED source or explicit non-audible MASTER provenance."));
+    if(!offlineNoSink&&!exactManual)
+        return core::Status::failure(rejected(
+            "M17 requires exact manual DEVICE ownership; only a private MASTER may render with NO_SOURCE."));
+    auto loop=sourceLoop_();
+    if(loop && (loop->begin().value()<0
+       ||loop->end()>manual->view().absolute_range().end()))
+        return core::Status::failure(rejected(
+            "M17 SOURCE loop lies outside the full manual programme."));
+    // request_private internally invalidates the gate, then emits RENDERING;
+    // pending ownership is captured before any queued worker completion.
+    pending_.emplace(Pending{prepared,manual,*manualId,loop,rate,
+                             deferred,masterOnly,offlineNoSink,
+                             nonAudibleOfflineSelected&&!audibleSelected});
+    approvedMonitor_.reset();
+    approvedMonitorMaster_.reset();
+    privateId_.reset();
+    status_=QStringLiteral("RENDERING");
+    error_.clear();
+    auto submitted=renderer_->request_private(rate);
+    if(!submitted) {
+        failed(*submitted.error());
+        return submitted;
+    }
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::request_private_for_final_master(
+    core::SampleRate selectedFinalMasterRate)
+{
+    // Pure rate validation: pass the same value twice ONLY to verify the
+    // frozen six-rate MASTER set, not as a proxy for the actual device.
+    const auto eligible=audio::plan_master_monitoring_rate(
+        selectedFinalMasterRate,selectedFinalMasterRate);
+    if(!eligible)return core::Status::failure(*eligible.error());
+    // A private MASTER is a render operation, not a DEVICE installation.
+    // It can run after the output vanished, as long as immutable MANUAL
+    // provenance and the clean empty-sink snapshot both hold. Do not relax
+    // request_private() or the audible terminal handoff contract.
+    return request_private_impl(selectedFinalMasterRate,true,true);
+}
+
+std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+TerminalPrivateProductSession::current_verified_private_master() const
+{
+    // Normal M17 Prepare already produced an authoritative, M16-verified
+    // immutable MASTER. It may be borrowed only while MANUAL is the exact
+    // audible owner: never run another full-resource Prepare for monitoring.
+    if(pending_ && !pending_->masterOnly) {
+        // Retired installed M17: exact MANUAL is restored and the checked
+        // MASTER remains in the unchanged COMPARISON_VERIFIED gate. Only the
+        // owner-exact borrowing path below can read it; never borrow from a
+        // still-installed M17 device.
+        if(status_!=QStringLiteral("READY_TO_INSTALL")
+           &&status_!=QStringLiteral("COMPARISON_VERIFIED"))
+            return {};
+        return borrow_verified_m17_master_for_device(pending_->outputRate);
+    }
+    if(!pending_ ||!pending_->masterOnly ||privateId_
+       ||status_!=QStringLiteral("MASTER_READY_MONITOR_PENDING")
+       ||renderer_->status()!=QStringLiteral("READY_PRIVATE")
+       ||!current_selection_for_pending() ||!prepared_||!manual_||!manualId_
+       ||!sourceLoop_||prepared_()!=pending_->prepared
+       ||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId}
+       ||sourceLoop_()!=pending_->loop)
+        return {};
+    const auto stage=candidates_->staged();
+    if(!stage||stage->prepared_owner!=pending_->prepared
+       ||stage->rendered.manual_owner!=pending_->manual
+       ||stage->original_manual_realization_id!=pending_->manualId
+       ||stage->rendered.output_rate!=pending_->outputRate
+       ||!stage->rendered.terminal.checked.final_check)
+        return {};
+    const auto master=stage->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    if(master.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||master.absolute_start_frame().value()!=0
+       ||master.frame_count().value()<=0
+       ||master.format().sample_rate()!=pending_->outputRate
+       ||master.format().channel_layout()!=pending_->manual->view()
+           .format().channel_layout())
+        return {};
+    const auto audible=transport_->playback_snapshot();
+    if(!audible)return {};
+    if(pending_->offlineNoSink) {
+        // An empty endpoint must remain empty until an explicit,
+        // independently checked monitoring installation. A successor
+        // source device would invalidate this private master ticket.
+        if(audible.value()->state!=core::PlaybackState::NO_SOURCE
+           ||audible.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::UNAVAILABLE
+           ||audible.value()->audibleRealization.realizationId
+           ||audible.value()->position!=core::FrameIndex{0}
+           ||audible.value()->duration
+           ||audible.value()->loop)
+            return {};
+    } else if(audible.value()->audibleRealization.phase
+                  !=core::AudibleHandoffPhase::NEW
+              ||audible.value()->audibleRealization.realizationId
+                  !=std::optional{pending_->manualId}
+              ||audible.value()->duration
+                  !=std::optional{pending_->manual->view().frame_count()})
+        return {};
+    return stage;
+}
+
+std::optional<core::SampleRate>
+TerminalPrivateProductSession::verified_master_rate_for_monitoring() const
+{
+    const auto stage=current_verified_private_master();
+    return stage ? std::optional{stage->rendered.output_rate} : std::nullopt;
+}
+
+bool TerminalPrivateProductSession::current_master_matches_device_for_preview() const
+{
+    const auto stage=current_verified_private_master();
+    if(!stage||!rateProbe_||!manual_)return false;
+    const auto manual=manual_();
+    if(!manual)return false;
+    const auto rate=rateProbe_(manual->view().format().channel_layout());
+    return rate && *rate.value()==stage->rendered.output_rate
+        &&current_verified_private_master()==stage;
+}
+
+core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
+TerminalPrivateProductSession::materialize_private_final_master_monitoring(
+    const MonitoringMaterializer& materializer)
+{
+    using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+    const auto refuse=[](const char* message)->core::Result<Owned> {
+        return core::Result<Owned>::failure(
+            core::Error{core::ErrorCode::InvalidState,message});
+    };
+    if(!materializer)return core::Result<Owned>::failure(core::Error{
+        core::ErrorCode::InvalidArgument,
+        "M17_MONITOR_EXPLICIT_MATERIALIZER_REQUIRED"});
+    const auto stage=current_verified_private_master();
+    if(!stage)return refuse("M17_MONITOR_VERIFIED_MASTER_NOT_CURRENT");
+    // Holding the stage preserves the immutable MASTER allocation even if
+    // a reentrant callback revokes its source transaction.
+    const auto master=stage->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    auto result=[&]()->core::Result<Owned> {
+        try {
+            return materializer(master);
+        } catch(const std::bad_alloc&) {
+            return core::Result<Owned>::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "M17_MONITOR_MATERIALIZER_OUT_OF_MEMORY"});
+        }
+    }();
+    // Fail closed AFTER an arbitrarily expensive conversion: a new source,
+    // loop, M17 identity or canceled request invalidates its entire result.
+    if(current_verified_private_master()!=stage)
+        return refuse("M17_MONITOR_MASTER_REVOKED_DURING_MATERIALIZATION");
+    if(!result)return result;
+    if(!*result.value())
+        return refuse("M17_MONITOR_DEVICE_PCM_OWNER_MISSING");
+    const auto checked=audio::validate_monitoring_pcm_candidate(
+        **result.value());
+    if(!checked)return core::Result<Owned>::failure(*checked.error());
+    if((*result.value())->immutable_master_rate!=master.format().sample_rate()
+       ||(*result.value())->immutable_master_frames!=master.frame_count()
+       ||(*result.value())->device_pcm.view().format().channel_layout()
+           !=master.format().channel_layout())
+        return refuse("M17_MONITOR_MASTER_DEVICE_PROVENANCE_MISMATCH");
+    // Mint exact stage/PCM pointer authority ONLY after both the MASTER
+    // and the independent monitoring provenance gates succeeded.
+    approvedMonitor_=*result.value();
+    approvedMonitorMaster_=stage;
+    // Never install automatically or claim M16 LIVE.
+    return result;
+}
+
+core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
+TerminalPrivateProductSession::
+materialize_private_final_master_monitoring_with_preflight(
+    core::FrameCount maximumBlockFrames,
+    std::uint64_t reservedOtherPrepareBytes,
+    const MonitoringPreallocationDecision& explicitDecision)
+{
+    using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+    if(!explicitDecision)
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "M17_MONITOR_EXPLICIT_MEMORY_DECISION_REQUIRED"});
+    // Copy the configured service seam before the synchronous user callback.
+    // Reentrant changes to the registration cannot replace an in-flight
+    // materializer. The verified-MASTER bridge independently checks owner
+    // identity both before and after this entire operation.
+    const auto preflight=monitoringPreflight_;
+    if(!preflight)
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_MONITOR_WINDOWS_PREFLIGHT_NOT_CONFIGURED"});
+    return materialize_private_final_master_monitoring(
+        [preflight,maximumBlockFrames,reservedOtherPrepareBytes,
+         &explicitDecision](audio::AudioBufferView master) {
+            return preflight(master,maximumBlockFrames,
+                             reservedOtherPrepareBytes,explicitDecision);
+        });
+}
+
+
+core::Status TerminalPrivateProductSession::install_private_monitor_stopped(
+    MonitoringOwner candidate)
+{
+    if(monitorTransitioning_||installedMonitor_||!candidate
+       ||!monitorInstall_||!monitorOwned_||!monitorRetire_||!manualRestore_)
+        return core::Status::failure(rejected(
+            "MONITOR_INSTALL_EXPLICIT_TRANSPORT_OR_OWNER_MISSING"));
+    const auto masterStage=current_verified_private_master();
+    if(!masterStage||masterStage!=approvedMonitorMaster_
+       ||candidate!=approvedMonitor_)
+        return core::Status::failure(rejected(
+            "MONITOR_INSTALL_UNMINTED_OR_STALE_MASTER_TICKET"));
+    const auto coherent=audio::validate_monitoring_pcm_candidate(*candidate);
+    if(!coherent)return coherent;
+    const auto master=masterStage->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    if(candidate->immutable_master_rate!=master.format().sample_rate()
+       ||candidate->immutable_master_frames!=master.frame_count()
+       ||candidate->device_pcm.view().format().channel_layout()
+           !=master.format().channel_layout())
+        return core::Status::failure(rejected(
+            "MONITOR_INSTALL_MASTER_PROVENANCE_MISMATCH"));
+    // An initial Windows SOURCE-format rejection can leave a sound
+    // complete SOURCE/MANUAL owner with NO audible MANUAL sink. It is NOT
+    // legal to invent one. Only a previously explicit, current offline
+    // provenance ticket may replace a *demonstrably empty* endpoint.
+    const Pending predecessor=*pending_;
+    const bool offlineOrigin=predecessor.offlineNoSink
+        &&predecessor.offlineNonAudibleSelection;
+    const auto before=transport_->playback_snapshot();
+    if(!before)return core::Status::failure(rejected(
+        "MONITOR_INSTALL_SOURCE_SNAPSHOT_UNAVAILABLE"));
+    // Map the current MANUAL transport into MASTER frames before replacing
+    // its DEVICE sink. Only the exact immutable, matched predecessor may
+    // be handed off; SOURCE loops are not DSP/render ownership changes.
+    const auto mapped=audio::MonitoringFrameMap::create(*candidate);
+    if(!mapped)return core::Status::failure(*mapped.error());
+    core::FrameIndex masterCue{0};
+    std::optional<core::FrameRange> masterLoop;
+    const auto state=before.value()->state;
+    const bool sourceClock=(state==core::PlaybackState::STOPPED
+        ||state==core::PlaybackState::PLAYING
+        ||state==core::PlaybackState::PAUSED);
+    if(sourceClock) {
+        if(before.value()->position.value()<0
+           ||before.value()->position.value()
+                >predecessor.manual->view().frame_count().value()
+           ||before.value()->loop!=predecessor.loop
+           ||!sourceLoop_||sourceLoop_()!=predecessor.loop)
+            return core::Status::failure(rejected(
+                "MONITOR_INSTALL_SOURCE_CUE_OR_LOOP_EPOCH_CHANGED"));
+        const auto hz=predecessor.manual->view().format().sample_rate();
+        const auto n=predecessor.manual->view().frame_count();
+        const auto cue=mapped.value()->source_to_master(
+            before.value()->position,hz,n);
+        if(!cue)return core::Status::failure(*cue.error());
+        masterCue=*cue.value();
+        if(predecessor.loop) {
+            auto region=mapped.value()->source_loop_to_master(
+                *predecessor.loop,hz,n);
+            if(!region)return core::Status::failure(*region.error());
+            masterLoop=*region.value();
+        }
+    }
+    const bool requiresTransport=(sourceClock
+        &&(state!=core::PlaybackState::STOPPED
+            ||masterCue!=core::FrameIndex{0}||masterLoop));
+    if(requiresTransport &&(!monitorControl_||!monitorDisplay_))
+        return core::Status::failure(rejected(
+            "MONITOR_INSTALL_MAPPED_TRANSPORT_PORTS_REQUIRED"));
+    const bool empty=before.value()->state==core::PlaybackState::NO_SOURCE
+        &&before.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!before.value()->audibleRealization.realizationId
+        &&before.value()->position==core::FrameIndex{0}
+        &&!before.value()->duration &&!before.value()->loop;
+    const bool stopped=sourceClock
+        &&before.value()->loop==predecessor.loop
+        &&before.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::NEW
+        &&before.value()->audibleRealization.realizationId
+            ==std::optional{predecessor.manualId}
+        &&before.value()->duration
+            ==std::optional{predecessor.manual->view().frame_count()};
+    if(offlineOrigin
+        ?(!empty||!offlineProvenance_||!offlineProvenance_())
+        :!stopped)
+        return core::Status::failure(rejected(
+            "MONITOR_INSTALL_REQUIRES_EXACT_EMPTY_OR_MANUAL_PREDECESSOR"));
+    // The DEVICE callback may fail AFTER replacing the MANUAL sink.
+    // Restore the original SOURCE cue, Loop and Play/Pause state, but only
+    // after exact-owner DEVICE retirement and unchanged SOURCE provenance.
+    const auto restoreOriginalManual=[&]()->core::Status {
+        if(offlineOrigin||!sourceClock||!selected_||!selected_()
+           ||!manual_||manual_()!=predecessor.manual
+           ||!manualId_||manualId_()!=std::optional{predecessor.manualId}
+           ||!sourceLoop_||sourceLoop_()!=predecessor.loop
+           ||!pending_||pending_->manual!=predecessor.manual
+           ||pending_->manualId!=predecessor.manualId)
+            return core::Status::failure(rejected(
+                "MONITOR_INSTALL_RECOVERY_MANUAL_EPOCH_CHANGED"));
+        const auto restored=manualRestore_(
+            predecessor.manual,predecessor.manualId,before.value()->position);
+        if(!restored)return restored;
+        const auto stoppedSnapshot=transport_->playback_snapshot();
+        if(!stoppedSnapshot
+           ||stoppedSnapshot.value()->state!=core::PlaybackState::STOPPED
+           ||stoppedSnapshot.value()->position!=before.value()->position
+           ||stoppedSnapshot.value()->loop!=predecessor.loop
+           ||stoppedSnapshot.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||stoppedSnapshot.value()->audibleRealization.realizationId
+               !=std::optional{predecessor.manualId}
+           ||stoppedSnapshot.value()->duration
+               !=std::optional{predecessor.manual->view().frame_count()})
+            return core::Status::failure(rejected(
+                "MONITOR_INSTALL_RECOVERY_MANUAL_RESTORE_UNPROVEN"));
+        if(state!=core::PlaybackState::STOPPED) {
+            transport_->playOrResume();
+            if(state==core::PlaybackState::PAUSED)transport_->pause();
+        }
+        const auto finalSnapshot=transport_->playback_snapshot();
+        // PLAYING may have legitimately advanced after the exact-cue
+        // stopped restore and Play command. PAUSED/STOPPED must stay at
+        // the exact pre-install cue; the same return-MANUAL contract does
+        // not demand a frozen PLAYING sample clock after resumption.
+        if(!finalSnapshot||finalSnapshot.value()->state!=state
+           ||(state!=core::PlaybackState::PLAYING
+               &&finalSnapshot.value()->position!=before.value()->position)
+           ||finalSnapshot.value()->loop!=predecessor.loop
+           ||finalSnapshot.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||finalSnapshot.value()->audibleRealization.realizationId
+               !=std::optional{predecessor.manualId}
+           ||finalSnapshot.value()->duration
+               !=std::optional{predecessor.manual->view().frame_count()})
+            return core::Status::failure(rejected(
+                "MONITOR_INSTALL_RECOVERY_TRANSPORT_NOT_RESTORED"));
+        return core::Status::success();
+    };
+    monitorRecoveryOriginal_.reset();
+    monitorTransitioning_=true;
+    const auto installed=monitorInstall_(candidate);
+    if(!installed) {
+        // Device creation/installation can fail AFTER replacing MANUAL.
+        // An error is not proof that the original sink survived. Recover
+        // only an exactly recognized candidate or a demonstrably empty sink;
+        // never clear an alien anonymous monitor or a successor owner.
+        const auto observed=monitorOwned_(candidate);
+        if(!observed) {
+            monitorTransitioning_=false;
+            return core::Status::failure(*observed.error());
+        }
+        const auto owned=*observed.value();
+        if(owned) {
+            const auto retired=monitorRetire_(candidate);
+            if(!retired) {
+                // Exact candidate remains recoverable through the normal
+                // conditional-return entry point, not an orphaned sink.
+                installedMonitor_=candidate;
+                monitorRecoveryOriginal_=*before.value();
+                status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
+                monitorTransitioning_=false;
+                emit changed();
+                return retired;
+            }
+        }
+        const auto current=transport_->playback_snapshot();
+        if(!current) {
+            monitorTransitioning_=false;
+            return core::Status::failure(*current.error());
+        }
+        const bool emptyAfterFailure=current.value()->state==core::PlaybackState::NO_SOURCE
+            &&current.value()->audibleRealization.phase
+                ==core::AudibleHandoffPhase::UNAVAILABLE
+            &&!current.value()->audibleRealization.realizationId
+            &&current.value()->position==core::FrameIndex{0}
+            &&!current.value()->duration &&!current.value()->loop;
+        const bool original=current.value()->state==state
+            &&current.value()->position==before.value()->position
+            &&current.value()->loop==before.value()->loop
+            &&current.value()->audibleRealization.phase
+                ==core::AudibleHandoffPhase::NEW
+            &&current.value()->audibleRealization.realizationId
+                ==std::optional{predecessor.manualId}
+            &&current.value()->duration
+                ==std::optional{predecessor.manual->view().frame_count()};
+        if((offlineOrigin&&!emptyAfterFailure)
+           ||(!offlineOrigin&&!emptyAfterFailure&&!original)) {
+            monitorTransitioning_=false;
+            return core::Status::failure(rejected(
+                "MONITOR_INSTALL_FAILURE_ALIEN_DEVICE_OWNER_UNTOUCHED"));
+        }
+        if(emptyAfterFailure && !offlineOrigin) {
+            const auto restored=restoreOriginalManual();
+            if(!restored) {
+                monitorTransitioning_=false;
+                failed(*restored.error());
+                return restored;
+            }
+        }
+        monitorTransitioning_=false;
+        // No M17 realization or LIVE provenance was ever issued.
+        return installed;
+    }
+    const auto ownership=monitorOwned_(candidate);
+    const auto after=transport_->playback_snapshot();
+    const bool valid=ownership&&*ownership.value()&&after
+        &&after.value()->state==core::PlaybackState::STOPPED
+        &&after.value()->duration
+            ==std::optional{candidate->device_pcm.view().frame_count()}
+        &&after.value()->audibleRealization.phase
+            ==core::AudibleHandoffPhase::UNAVAILABLE
+        &&!after.value()->audibleRealization.realizationId
+        &&pending_&&pending_->manual==predecessor.manual
+        &&pending_->prepared==predecessor.prepared
+        &&pending_->manualId==predecessor.manualId
+        &&pending_->outputRate==predecessor.outputRate
+        &&pending_->loop==predecessor.loop
+        &&sourceLoop_&&sourceLoop_()==predecessor.loop
+        &&(offlineOrigin
+            ?(offlineProvenance_&&offlineProvenance_())
+            :(selected_&&selected_()))
+        &&manual_&&manual_()==predecessor.manual
+        &&manualId_&&manualId_()==std::optional{predecessor.manualId}
+        &&candidates_->staged()==masterStage
+        &&renderer_->status()==QStringLiteral("READY_PRIVATE");
+    if(!valid) {
+        // Roll back only the exactly owned monitor. Never erase a successor.
+        if(ownership&&*ownership.value()) {
+            const auto retired=monitorRetire_(candidate);
+            if(!retired) {
+                // Positive exact ownership + failed retirement means the
+                // DEVICE may still be active. Keep the same owner ticket
+                // available for the explicit recovery/Return action.
+                installedMonitor_=candidate;
+                monitorRecoveryOriginal_=*before.value();
+                status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
+                monitorTransitioning_=false;
+                emit changed();
+                return retired;
+            }
+            // Refuse a successor after retirement and propagate any
+            // failed original MANUAL restoration rather than ignoring it.
+            const auto vacant=transport_->playback_snapshot();
+            if(!vacant
+               ||vacant.value()->state!=core::PlaybackState::NO_SOURCE
+               ||vacant.value()->audibleRealization.phase
+                   !=core::AudibleHandoffPhase::UNAVAILABLE
+               ||vacant.value()->audibleRealization.realizationId
+               ||vacant.value()->position!=core::FrameIndex{0}
+               ||vacant.value()->duration||vacant.value()->loop) {
+                monitorTransitioning_=false;
+                return core::Status::failure(rejected(
+                    "MONITOR_INSTALL_POSTCHECK_RETIRE_NOT_EMPTY"));
+            }
+            if(!offlineOrigin) {
+                const auto restored=restoreOriginalManual();
+                if(!restored) {
+                    monitorTransitioning_=false;
+                    failed(*restored.error());
+                    return restored;
+                }
+            }
+        }
+        monitorTransitioning_=false;
+        return core::Status::failure(rejected(
+            "MONITOR_INSTALL_LOST_EXACT_STOPPED_OWNER"));
+    }
+    // The Windows worker owns the new DEVICE PCM. Reapply the current
+    // SOURCE cue and loop via the separate exact-owner monitoring control
+    // seam; no second M17 job and no mutation of authoritative MASTER PCM.
+    auto seeded=core::Status::success();
+    if(requiresTransport) {
+        using Action=platform::windows::MonitoringTransportAction;
+        if(masterLoop)
+            seeded=monitorControl_(candidate,{
+                Action::SET_MASTER_LOOP,core::FrameIndex{0},masterLoop});
+        if(seeded &&masterCue!=core::FrameIndex{0})
+            seeded=monitorControl_(candidate,{
+                Action::SEEK_MASTER,masterCue,std::nullopt});
+        if(seeded &&state!=core::PlaybackState::STOPPED)
+            seeded=monitorControl_(candidate,{
+                Action::PLAY,core::FrameIndex{0},std::nullopt});
+        if(seeded &&state==core::PlaybackState::PAUSED)
+            seeded=monitorControl_(candidate,{
+                Action::PAUSE,core::FrameIndex{0},std::nullopt});
+        if(seeded) {
+            const auto display=monitorDisplay_(candidate);
+            if(!display ||display.value()->state!=state
+               ||display.value()->requested_master_loop!=masterLoop
+               ||display.value()->master_rate!=candidate->immutable_master_rate
+               ||display.value()->device_rate!=candidate->device_rate)
+                seeded=core::Status::failure(rejected(
+                    "MONITOR_INSTALL_MAPPED_TRANSPORT_POSTCHECK_FAILED"));
+        }
+    }
+    if(!seeded) {
+        // Preserve a positive exact-owner recovery ticket. An incomplete
+        // install must never be published as fully operational or clear an
+        // unrelated successor device. Return MANUAL remains explicitly
+        // available and independently validates current device ownership.
+        installedMonitor_=std::move(candidate);
+        monitorRecoveryOriginal_=*before.value();
+        status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
+        monitorTransitioning_=false;
+        emit changed();
+        return seeded;
+    }
+    installedMonitor_=std::move(candidate);
+    monitorRecoveryOriginal_.reset();
+    status_=state==core::PlaybackState::PLAYING
+        ?QStringLiteral("MONITOR_PRIVATE_PLAYING")
+        :state==core::PlaybackState::PAUSED
+            ?QStringLiteral("MONITOR_PRIVATE_PAUSED")
+            :QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED");
+    monitorTransitioning_=false;
+    emit changed();
+    return core::Status::success();
+}
+
+
+core::Result<audio::MonitoringMasterDisplaySnapshot>
+TerminalPrivateProductSession::private_monitor_master_snapshot() const
+{
+    using MonitorDisplaySnapshot=audio::MonitoringMasterDisplaySnapshot;
+    const auto refused=[](const char* why)->core::Result<MonitorDisplaySnapshot> {
+        return core::Result<MonitorDisplaySnapshot>::failure(
+            core::Error{core::ErrorCode::InvalidState,why});
+    };
+    if(monitorTransitioning_||!installedMonitor_||!approvedMonitor_
+       ||installedMonitor_!=approvedMonitor_||!approvedMonitorMaster_
+       ||!monitorOwned_||!monitorDisplay_||!pending_
+       ||candidates_->staged()!=approvedMonitorMaster_
+       ||renderer_->status()!=QStringLiteral("READY_PRIVATE")
+       ||!(pending_->offlineNonAudibleSelection
+            ?(offlineProvenance_&&offlineProvenance_())
+            :(selected_&&selected_()))
+       ||!manual_||!manualId_
+       ||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId})
+        return refused("MONITOR_DISPLAY_EXACT_MASTER_AUTHORITY_REQUIRED");
+    const auto observed=monitorOwned_(installedMonitor_);
+    if(!observed||!*observed.value())
+        return refused("MONITOR_DISPLAY_EXACT_DEVICE_OWNER_REQUIRED");
+    auto display=monitorDisplay_(installedMonitor_);
+    if(!display)return display;
+    if(display.value()->master_rate!=installedMonitor_->immutable_master_rate
+       ||display.value()->device_rate!=installedMonitor_->device_rate
+       ||display.value()->master_duration!=installedMonitor_->immutable_master_frames
+       ||display.value()->device_duration
+           !=installedMonitor_->device_pcm.view().frame_count()
+       ||display.value()->master_display_position.value()<0
+       ||display.value()->master_display_position.value()
+           >display.value()->master_duration.value())
+        return refused("MONITOR_DISPLAY_MASTER_DEVICE_PROVENANCE_MISMATCH");
+    return display;
+}
+
+core::Status TerminalPrivateProductSession::control_private_monitor(
+    platform::windows::MonitoringTransportRequest command)
+{
+    if(monitorTransitioning_||!installedMonitor_||!monitorControl_)
+        return core::Status::failure(rejected(
+            "MONITOR_CONTROL_PRIVATE_OWNER_REQUIRED"));
+    // A failed installation may leave an exact-owner recovery ticket but
+    // NOT a complete DEVICE transport. Only conditional Return/retirement
+    // may operate here; never expose a partial monitor for PLAY/SEEK/LOOP.
+    if(status_!=QStringLiteral("MONITOR_PRIVATE_PLAYING")
+       &&status_!=QStringLiteral("MONITOR_PRIVATE_PAUSED")
+       &&status_!=QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"))
+        return core::Status::failure(rejected(
+            "MONITOR_CONTROL_REQUIRES_COMMITTED_DEVICE_TRANSPORT"));
+    const auto owner=installedMonitor_;
+    const auto before=private_monitor_master_snapshot();
+    if(!before)return core::Status::failure(*before.error());
+    // Without a prior audible MANUAL, a MASTER Loop Region has no safe
+    // SOURCE loop to commit on return. Play/Pause/Stop/Seek remain
+    // independently owner-checked by the Windows worker.
+    if(pending_&&pending_->offlineNonAudibleSelection
+       &&command.action==platform::windows::MonitoringTransportAction::SET_MASTER_LOOP
+       &&command.master_loop)
+        return core::Status::failure(rejected(
+            "MONITOR_OFFLINE_ORIGIN_REJECTS_UNRESTORABLE_SOURCE_LOOP"));
+    // Do not allow a command to invent a new SOURCE processing history;
+    // the device-only monitor is still unqualified for LIVE TP/GR.
+    monitorTransitioning_=true;
+    const auto executed=monitorControl_(owner,command);
+    monitorTransitioning_=false;
+    if(!executed)return executed;
+    if(installedMonitor_!=owner)
+        return core::Status::failure(rejected(
+            "MONITOR_CONTROL_OWNER_REVOKED_DURING_COMMAND"));
+    const auto after=private_monitor_master_snapshot();
+    if(!after)return core::Status::failure(*after.error());
+    using Action=platform::windows::MonitoringTransportAction;
+    bool coherent=false;
+    switch(command.action) {
+    case Action::PLAY:
+        coherent=after.value()->state==core::PlaybackState::PLAYING;break;
+    case Action::PAUSE:
+        coherent=after.value()->state==core::PlaybackState::PAUSED;break;
+    case Action::STOP:
+        coherent=after.value()->state==core::PlaybackState::STOPPED
+            &&after.value()->device_position.value()==0;break;
+    case Action::SEEK_MASTER: {
+        auto map=audio::MonitoringFrameMap::create(*owner);
+        if(!map)return core::Status::failure(*map.error());
+        auto expected=map.value()->master_to_device(command.master_frame);
+        coherent=expected
+            &&after.value()->device_position==*expected.value();
+        break;
+    }
+    case Action::SET_MASTER_LOOP:
+        coherent=after.value()->requested_master_loop
+            ==command.master_loop;
+        break;
+    }
+    if(!coherent)return core::Status::failure(rejected(
+        "MONITOR_CONTROL_POST_COMMAND_DEVICE_STATE_MISMATCH"));
+    status_=after.value()->state==core::PlaybackState::PLAYING
+        ?QStringLiteral("MONITOR_PRIVATE_PLAYING")
+        :after.value()->state==core::PlaybackState::PAUSED
+            ?QStringLiteral("MONITOR_PRIVATE_PAUSED")
+            :QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED");
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
+{
+    if(monitorTransitioning_||!installedMonitor_||!pending_
+       ||!monitorOwned_||!monitorRetire_||!manualRestore_)
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_HAS_NO_EXACT_INSTALLED_OWNER"));
+    const auto candidate=installedMonitor_;
+    const Pending predecessor=*pending_;
+    if(predecessor.offlineNoSink&&predecessor.offlineNonAudibleSelection) {
+        // Offline origin has NO installed MANUAL to return to. Retire ONLY
+        // the exact anonymous monitor; never synthesize a NEW audible ID
+        // or attempt to reinstall unsupported original-rate SOURCE PCM.
+        // This recovery is allowed even if the SOURCE provenance expired.
+        const auto owned=monitorOwned_(candidate);
+        if(!owned)return core::Status::failure(*owned.error());
+        if(!*owned.value())
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_OFFLINE_ALIEN_DEVICE_UNTOUCHED"));
+        monitorTransitioning_=true;
+        const auto retired=monitorRetire_(candidate);
+        if(!retired) {
+            status_=QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED");
+            monitorTransitioning_=false;
+            emit changed();
+            return retired;
+        }
+        installedMonitor_.reset();
+        monitorRecoveryOriginal_.reset();
+        const auto after=transport_->playback_snapshot();
+        if(!after||after.value()->state!=core::PlaybackState::NO_SOURCE
+           ||after.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::UNAVAILABLE
+           ||after.value()->audibleRealization.realizationId
+           ||after.value()->position!=core::FrameIndex{0}
+           ||after.value()->duration||after.value()->loop) {
+            monitorTransitioning_=false;
+            renderer_->invalidate();
+            failed(rejected("MONITOR_RETURN_OFFLINE_DID_NOT_EMPTY_DEVICE"));
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_OFFLINE_DID_NOT_EMPTY_DEVICE"));
+        }
+        pending_.reset();
+        approvedMonitor_.reset();
+        approvedMonitorMaster_.reset();
+        status_=QStringLiteral("IDLE");
+        error_.clear();
+        renderer_->invalidate();
+        monitorTransitioning_=false;
+        emit changed();
+        return core::Status::success();
+    }
+    // The Windows MONITOR snapshot is in MASTER frames, not device or
+    // SOURCE units. Convert the display cue to the original SOURCE domain
+    // with bounded integer arithmetic. A stopped monitor without the new
+    // controller retains the original legacy zero-cue return.
+    core::FrameIndex sourceCue{0};
+    std::optional<core::FrameRange> reconciledSourceLoop;
+    core::PlaybackState priorMonitorState=core::PlaybackState::STOPPED;
+    if(monitorRecoveryOriginal_) {
+        // Recovery after failed SET_LOOP/SEEK/PLAY/PAUSE must use the
+        // pre-install MANUAL snapshot, never the partial monitor clock.
+        const auto& original=*monitorRecoveryOriginal_;
+        if(!sourceLoop_||sourceLoop_()!=predecessor.loop
+           ||original.loop!=predecessor.loop
+           ||original.audibleRealization.phase!=core::AudibleHandoffPhase::NEW
+           ||original.audibleRealization.realizationId
+               !=std::optional{predecessor.manualId}
+           ||original.duration
+               !=std::optional{predecessor.manual->view().frame_count()}
+           ||(original.state!=core::PlaybackState::STOPPED
+               &&original.state!=core::PlaybackState::PLAYING
+               &&original.state!=core::PlaybackState::PAUSED))
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_RECOVERY_ORIGINAL_EPOCH_MISMATCH"));
+        sourceCue=original.position;
+        priorMonitorState=original.state;
+    } else if(monitorDisplay_) {
+        const auto display=private_monitor_master_snapshot();
+        if(!display)return core::Status::failure(*display.error());
+        priorMonitorState=display.value()->state;
+        if(priorMonitorState!=core::PlaybackState::STOPPED
+           &&priorMonitorState!=core::PlaybackState::PLAYING
+           &&priorMonitorState!=core::PlaybackState::PAUSED)
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_INVALID_TRANSPORT_STATE"));
+        // Verify selected SOURCE epoch BEFORE retiring the device. An
+        // explicitly supplied callback will commit only the projected loop
+        // after original MANUAL restoration, not during MONITOR playback.
+        if(!sourceLoop_||sourceLoop_()!=predecessor.loop)
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_SOURCE_LOOP_CHANGED_DURING_MONITOR"));
+        if(display.value()->requested_master_loop) {
+            const auto map=audio::MonitoringFrameMap::create(*candidate);
+            if(!map)return core::Status::failure(*map.error());
+            std::optional<core::FrameRange> inherited;
+            if(predecessor.loop) {
+                const auto original=map.value()->source_loop_to_master(
+                    *predecessor.loop,
+                    predecessor.manual->view().format().sample_rate(),
+                    predecessor.manual->view().frame_count());
+                if(!original)return core::Status::failure(*original.error());
+                inherited=*original.value();
+            }
+            // Inherited SOURCE loop must survive a no-change round trip
+            // bit-exactly, including when rational-rate ceil projection
+            // would otherwise shift its boundary by one frame.
+            if(display.value()->requested_master_loop!=inherited) {
+                // A changed loop while auditioning is audition-local when
+                // the MANUAL had a loop: return restores the exact original.
+                // On a MANUAL without a loop, the existing explicit SOURCE
+                // reconciliation transaction may adopt a new requested loop.
+                if(!predecessor.loop) {
+                    if(!sourceLoopReconcile_)
+                        return core::Status::failure(rejected(
+                            "MONITOR_RETURN_EXPLICIT_SOURCE_LOOP_TRANSACTION_REQUIRED"));
+                    const auto projected=map.value()->master_loop_to_source(
+                        *display.value()->requested_master_loop,
+                        predecessor.manual->view().format().sample_rate(),
+                        predecessor.manual->view().frame_count());
+                    if(!projected)
+                        return core::Status::failure(*projected.error());
+                    reconciledSourceLoop=*projected.value();
+                }
+            }
+        }
+        const auto masterHz=display.value()->master_rate.value();
+        const auto sourceHz=predecessor.manual->view().format()
+            .sample_rate().value();
+        const auto masterPos=display.value()->master_display_position.value();
+        if(masterHz<=0||sourceHz<=0||masterPos<0)
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_INVALID_MASTER_SOURCE_TIMELINE"));
+        const auto q=masterPos/masterHz;
+        const auto rem=masterPos%masterHz;
+        if(q>(std::numeric_limits<std::int64_t>::max()
+                -(rem*sourceHz)/masterHz)/sourceHz)
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_SOURCE_CUE_OVERFLOW"));
+        const auto value=q*sourceHz+(rem*sourceHz)/masterHz;
+        sourceCue=core::FrameIndex{std::min(
+            value,predecessor.manual->view().frame_count().value())};
+        if(reconciledSourceLoop
+           &&(sourceCue<reconciledSourceLoop->begin()
+              ||sourceCue>=reconciledSourceLoop->end()))
+            sourceCue=reconciledSourceLoop->begin();
+    }
+    const auto owned=monitorOwned_(candidate);
+    if(!owned)return core::Status::failure(*owned.error());
+    if(!*owned.value())
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_REFUSES_ALIEN_DEVICE_OWNER"));
+    monitorTransitioning_=true;
+    // The worker thread ATOMICALLY rechecks owner identity before clear.
+    const auto retired=monitorRetire_(candidate);
+    if(!retired){monitorTransitioning_=false;return retired;}
+    installedMonitor_.reset();
+    const auto vacant=transport_->playback_snapshot();
+    if(!vacant||vacant.value()->state!=core::PlaybackState::NO_SOURCE
+       ||vacant.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||vacant.value()->audibleRealization.realizationId) {
+        monitorTransitioning_=false;
+        renderer_->invalidate();
+        failed(rejected("MONITOR_RETURN_RETIRE_DID_NOT_EMPTY_DEVICE"));
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_RETIRE_DID_NOT_EMPTY_DEVICE"));
+    }
+    if(!selected_||!selected_()||!manual_||!manualId_
+       ||manual_()!=predecessor.manual
+       ||manualId_()!=std::optional{predecessor.manualId}) {
+        monitorTransitioning_=false;
+        renderer_->invalidate();
+        failed(rejected("MONITOR_RETURN_STALE_MANUAL_OWNER"));
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_STALE_MANUAL_OWNER"));
+    }
+    const auto restored=manualRestore_(
+        predecessor.manual,predecessor.manualId,sourceCue);
+    if(!restored){
+        monitorTransitioning_=false;
+        renderer_->invalidate();
+        failed(*restored.error());
+        return restored;
+    }
+    const auto after=transport_->playback_snapshot();
+    if(!after||after.value()->state!=core::PlaybackState::STOPPED
+       ||after.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::NEW
+       ||after.value()->audibleRealization.realizationId
+           !=std::optional{predecessor.manualId}
+       ||after.value()->duration
+           !=std::optional{predecessor.manual->view().frame_count()}
+       ||after.value()->position!=sourceCue
+       ||after.value()->loop!=predecessor.loop) {
+        monitorTransitioning_=false;
+        renderer_->invalidate();
+        failed(rejected("MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
+    }
+    if(reconciledSourceLoop) {
+        // The callback must act on the restored original MANUAL, never on
+        // the anonymous monitor. Its SOURCE region is independently checked.
+        const auto committed=sourceLoopReconcile_(*reconciledSourceLoop);
+        if(!committed) {
+            monitorTransitioning_=false;
+            renderer_->invalidate();
+            failed(*committed.error());
+            return committed;
+        }
+        const auto region=sourceLoop_();
+        const auto loopSink=transport_->playback_snapshot();
+        if(!region||*region!=*reconciledSourceLoop
+           ||!loopSink||loopSink.value()->state!=core::PlaybackState::STOPPED
+           ||loopSink.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||loopSink.value()->audibleRealization.realizationId
+               !=std::optional{predecessor.manualId}
+           ||loopSink.value()->position!=sourceCue
+           ||loopSink.value()->duration
+               !=std::optional{predecessor.manual->view().frame_count()}
+           ||loopSink.value()->loop!=reconciledSourceLoop) {
+            monitorTransitioning_=false;
+            renderer_->invalidate();
+            failed(rejected("MONITOR_RETURN_SOURCE_LOOP_EPOCH_MISMATCH"));
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_SOURCE_LOOP_EPOCH_MISMATCH"));
+        }
+    }
+    // Restore the prior Play/Pause state only after the exact original
+    // MANUAL PCM and clock have been installed. A paused monitor returns
+    // to PAUSED by starting the MANUAL sink then suspending the same owner.
+    if(priorMonitorState!=core::PlaybackState::STOPPED) {
+        transport_->playOrResume();
+        if(priorMonitorState==core::PlaybackState::PAUSED)
+            transport_->pause();
+        const auto resumed=transport_->playback_snapshot();
+        if(!resumed
+           ||resumed.value()->state!=priorMonitorState
+           ||resumed.value()->audibleRealization.phase
+               !=core::AudibleHandoffPhase::NEW
+           ||resumed.value()->audibleRealization.realizationId
+               !=std::optional{predecessor.manualId}
+           ||resumed.value()->duration
+               !=std::optional{predecessor.manual->view().frame_count()}
+           ||resumed.value()->loop!=(reconciledSourceLoop
+                ?reconciledSourceLoop:predecessor.loop)) {
+            // Do not announce restored playback and do not clear a
+            // successor. Retire only the exact MANUAL owner if still there.
+            if(resumed
+               &&resumed.value()->audibleRealization.phase
+                   ==core::AudibleHandoffPhase::NEW
+               &&resumed.value()->audibleRealization.realizationId
+                   ==std::optional{predecessor.manualId})
+                static_cast<void>(transport_->stop_and_clear());
+            monitorTransitioning_=false;
+            renderer_->invalidate();
+            failed(rejected("MONITOR_RETURN_MANUAL_TRANSPORT_NOT_RESTORED"));
+            return core::Status::failure(rejected(
+                "MONITOR_RETURN_MANUAL_TRANSPORT_NOT_RESTORED"));
+        }
+    }
+    monitorTransitioning_=false;
+    monitorRecoveryOriginal_.reset();
+    if(reconciledSourceLoop) {
+        // This SOURCE loop differs from the captured M17 render epoch.
+        // Revoke the private MASTER ticket: new audition requires new render.
+        pending_.reset();
+        approvedMonitor_.reset();
+        approvedMonitorMaster_.reset();
+        status_=QStringLiteral("IDLE");
+        renderer_->invalidate();
+    } else {
+        // Returning from DEVICE Audition does not consume the original
+        // M17 READY candidate or force a second whole-master Prepare.
+        // Only the legacy MASTER-only lane retains its own status.
+        status_=predecessor.masterOnly
+            ?QStringLiteral("MASTER_READY_MONITOR_PENDING")
+            :QStringLiteral("READY_TO_INSTALL");
+    }
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::request_private_for_device(bool deferred)
+{
+    if(!rateProbe_ || !selected_ || !selected_() || !manual_)
+        return core::Status::failure(rejected(
+            "No selected manual programme or real output-rate probe for M17."));
+    auto manual=manual_();
+    if(!manual || manual->view().frame_count().value()<=0
+       ||manual->frame_domain_id()!=audio::FrameDomainId::SOURCE_PROCESSING_RATE)
+        return core::Status::failure(rejected(
+            "M17 output-rate discovery requires complete SOURCE-domain manual PCM."));
+    auto rate=rateProbe_(manual->view().format().channel_layout());
+    if(!rate)return core::Status::failure(*rate.error());
+    if(manual_()!=manual || !selected_())
+        return core::Status::failure(rejected(
+            "M17 manual owner or audition target changed during device probe."));
+    // request_private rechecks stopped audible ownership and Loop Region;
+    // device install independently rechecks the exact rate and channel format.
+    return request_private(*rate.value(),deferred);
+}
+
+core::Result<TerminalPrivateProductSession::InstalledOutputIdentity>
+TerminalPrivateProductSession::private_installed_output_identity() const
+{
+    using Identity=InstalledOutputIdentity;
+    auto refused=[](const char* reason) -> core::Result<Identity> {
+        return core::Result<Identity>::failure(
+            core::Error{core::ErrorCode::InvalidState,reason});
+    };
+    if(!privateId_ || privateId_->value==0 || pending_
+       ||status_!=QStringLiteral("PRIVATE_INSTALLED")
+       ||!selected_ || !selected_() || !prepared_ || !manual_
+       ||!manualId_)
+        return refused("M17 is not a current installed PROCESSED terminal.");
+    auto candidate=candidates_->staged();
+    if(!candidate || candidate->prepared_owner!=prepared_()
+       ||candidate->rendered.manual_owner!=manual_()
+       ||candidate->original_manual_realization_id
+           !=manualId_().value_or(core::RealizationId{0}))
+        return refused("M17 immutable candidate no longer has its manual owner.");
+    const auto pcm=candidate->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    if(pcm.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||pcm.frame_count().value()<=0
+       ||pcm.format().sample_rate()!=candidate->rendered.output_rate)
+        return refused("M17 candidate lacks exact OUTPUT_RATE PCM provenance.");
+    auto audible=transport_->playback_snapshot();
+    if(!audible) return core::Result<Identity>::failure(*audible.error());
+    if(audible.value()->state==core::PlaybackState::NO_SOURCE
+       ||audible.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::NEW
+       ||audible.value()->audibleRealization.realizationId
+           !=std::optional{*privateId_}
+       ||audible.value()->duration!=std::optional{pcm.frame_count()})
+        return refused("M17 terminal is not the independently audible exact device owner.");
+    auto source=transport_->source_display_snapshot();
+    if(!source) return core::Result<Identity>::failure(*source.error());
+    if(source.value()->duration
+       !=candidate->rendered.manual_owner->view().frame_count()
+       ||source.value()->position.value()<0
+       ||source.value()->position.value()>source.value()->duration.value())
+        return refused("M17 SOURCE clock is not mapped to the full predecessor.");
+    return core::Result<Identity>::success(Identity{
+        std::move(candidate),*privateId_,*audible.value(),*source.value()});
+}
+
+bool TerminalPrivateProductSession::comparison_owners_current() const
+{
+    if(!comparison_cached()||!pending_||!selected_||!selected_()
+       ||!prepared_||!manual_||!manualId_||!sourceLoop_
+       ||prepared_()!=pending_->prepared||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId}
+       ||sourceLoop_()!=pending_->loop)
+        return false;
+    if(status_==QStringLiteral("COMPARISON_VERIFIED")) {
+        const auto stage=candidates_->staged();
+        return stage && stage==comparisonVerified_
+            && stage->prepared_owner==pending_->prepared
+            && stage->rendered.manual_owner==pending_->manual
+            && stage->original_manual_realization_id==pending_->manualId
+            && stage->rendered.output_rate==pending_->outputRate
+            && renderer_->status()==QStringLiteral("READY_PRIVATE");
+    }
+    const auto stage=candidates_->staged_measured();
+    return stage && stage==comparisonMeasured_
+        && stage->prepared_owner==pending_->prepared
+        && stage->rendered.manual_owner==pending_->manual
+        && stage->original_manual_realization_id==pending_->manualId
+        && stage->rendered.output_rate==pending_->outputRate
+        && renderer_->status()==QStringLiteral("MEASURED_NONCONFORMING_PRIVATE");
+}
+
+std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+TerminalPrivateProductSession::borrow_verified_m17_master_for_device(
+    core::SampleRate selectedMasterRate) const
+{
+    // A passive private ownership read, NOT a permission to play, export,
+    // claim verified LIVE/GR, or bypass the separate device-RAM preflight.
+    if((status_!=QStringLiteral("READY_TO_INSTALL")
+        &&status_!=QStringLiteral("COMPARISON_VERIFIED"))
+       ||!pending_ || pending_->masterOnly ||privateId_
+       ||installedMonitor_ ||monitorTransitioning_
+       ||renderer_->status()!=QStringLiteral("READY_PRIVATE")
+       ||pending_->outputRate!=selectedMasterRate
+       ||!current_selection_for_pending()
+       ||!prepared_||!manual_||!manualId_||!sourceLoop_
+       ||prepared_()!=pending_->prepared
+       ||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId}
+       ||sourceLoop_()!=pending_->loop)
+        return {};
+    auto stage=candidates_->staged();
+    if(!stage
+       ||(status_==QStringLiteral("COMPARISON_VERIFIED")
+           &&stage!=comparisonVerified_)
+       ||stage->prepared_owner!=pending_->prepared
+       ||stage->rendered.manual_owner!=pending_->manual
+       ||stage->original_manual_realization_id!=pending_->manualId
+       ||stage->rendered.output_rate!=selectedMasterRate
+       ||!stage->rendered.terminal.checked.final_check)
+        return {};
+    const auto master=stage->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    if(master.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
+       ||master.absolute_start_frame()!=core::FrameIndex{0}
+       ||master.frame_count().value()<=0
+       ||master.format().sample_rate()!=selectedMasterRate
+       ||master.format().channel_layout()!=pending_->manual->view()
+           .format().channel_layout())
+        return {};
+    // A pending M17 READY state still has exact original MANUAL audio.
+    // An installed M17 terminal is intentionally excluded above until its
+    // own verified-device owner release transaction is implemented.
+    const auto playback=transport_->playback_snapshot();
+    if(!playback
+       ||playback.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::NEW
+       ||playback.value()->audibleRealization.realizationId
+           !=std::optional{pending_->manualId}
+       ||playback.value()->duration
+           !=std::optional{pending_->manual->view().frame_count()}
+       ||(playback.value()->state!=core::PlaybackState::STOPPED
+           &&playback.value()->state!=core::PlaybackState::PLAYING
+           &&playback.value()->state!=core::PlaybackState::PAUSED))
+        return {};
+    return stage;
+}
+
+core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
+TerminalPrivateProductSession::materialize_borrowed_verified_m17_monitoring(
+    core::SampleRate selectedMasterRate,
+    const MonitoringMaterializer& materializer)
+{
+    using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+    auto refuse=[](const char* reason)->core::Result<Owned> {
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidState,reason});
+    };
+    if(!materializer)
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "M17_REUSE_EXPLICIT_MONITOR_MATERIALIZER_REQUIRED"});
+    const auto stage=borrow_verified_m17_master_for_device(selectedMasterRate);
+    if(!stage)return refuse("M17_REUSE_VERIFIED_MASTER_UNAVAILABLE");
+    const auto master=stage->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    // The existing MASTER remains borrowed with shared lifetime; no fresh
+    // full-resource M17 job and no SOURCE scratch copy is permitted here.
+    auto converted=[&]()->core::Result<Owned> {
+        try {
+            return materializer(master);
+        } catch(const std::bad_alloc&) {
+            return core::Result<Owned>::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "M17_REUSE_MONITOR_OUT_OF_MEMORY"});
+        }
+    }();
+    // An invalidating source/loop/limiter epoch during offline DEVICE SRC
+    // must discard the outcome, even if the new candidate looks well formed.
+    if(borrow_verified_m17_master_for_device(selectedMasterRate)!=stage)
+        return refuse("M17_REUSE_MASTER_REVOKED_DURING_DEVICE_SRC");
+    if(!converted)return converted;
+    if(!*converted.value())
+        return refuse("M17_REUSE_MONITOR_OWNER_MISSING");
+    const auto coherent=audio::validate_monitoring_pcm_candidate(
+        **converted.value());
+    if(!coherent)return core::Result<Owned>::failure(*coherent.error());
+    const auto& candidate=**converted.value();
+    if(candidate.immutable_master_rate!=selectedMasterRate
+       ||candidate.immutable_master_frames!=master.frame_count()
+       ||candidate.device_pcm.view().format().channel_layout()
+           !=master.format().channel_layout())
+        return refuse("M17_REUSE_MONITOR_MASTER_PROVENANCE_MISMATCH");
+    // No approvedMonitor_/installedMonitor_ mutation. The actual UI and
+    // device install still require an independently designed P0 gate.
+    return converted;
+}
+
+core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
+TerminalPrivateProductSession::
+materialize_borrowed_verified_m17_monitoring_with_preflight(
+    core::SampleRate selectedMasterRate,
+    core::FrameCount maximumBlockFrames,
+    std::uint64_t reservedOtherPrepareBytes,
+    const MonitoringPreallocationDecision& explicitDecision)
+{
+    using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+    if(!explicitDecision)
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidArgument,
+            "M17_REUSE_EXPLICIT_MEMORY_DECISION_REQUIRED"});
+    const auto preflight=monitoringPreflight_;
+    if(!preflight)
+        return core::Result<Owned>::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "M17_REUSE_WINDOWS_PREFLIGHT_NOT_CONFIGURED"});
+    // Never invoke Windows/Qt memory code from an audio callback or under
+    // a DSP lock. The underlying master-identity check is repeated AFTER
+    // this potentially expensive device conversion.
+    return materialize_borrowed_verified_m17_monitoring(
+        selectedMasterRate,
+        [preflight,maximumBlockFrames,reservedOtherPrepareBytes,
+         &explicitDecision](audio::AudioBufferView master) {
+            return preflight(master,maximumBlockFrames,
+                reservedOtherPrepareBytes,explicitDecision);
+        });
+}
+
+core::Status TerminalPrivateProductSession::suspend_for_comparison()
+{
+    const bool verified=status_==QStringLiteral("READY_TO_INSTALL")
+        ||status_==QStringLiteral("PRIVATE_INSTALLED");
+    const bool measured=status_==QStringLiteral("MEASURED_NONCONFORMING_READY")
+        ||status_==QStringLiteral("NONCONFORMING_INSTALLED");
+    if(!verified&&!measured)
+        return core::Status::failure(rejected(
+            "M17 comparison requires a finished measured PCM, not an in-flight job."));
+    auto stage=verified?candidates_->staged():nullptr;
+    auto unsafe=measured?candidates_->staged_measured():nullptr;
+    if((verified&&!stage)||(measured&&!unsafe))
+        return core::Status::failure(rejected(
+            "M17 comparison has no immutable verified/measured source candidate."));
+    const auto& prepared=verified?stage->prepared_owner:unsafe->prepared_owner;
+    const auto& manual=verified?stage->rendered.manual_owner:unsafe->rendered.manual_owner;
+    const auto id=verified?stage->original_manual_realization_id
+                          :unsafe->original_manual_realization_id;
+    const auto rate=verified?stage->rendered.output_rate
+                            :unsafe->rendered.output_rate;
+    if(!prepared_||!manual_||!manualId_||!sourceLoop_||!selected_
+       ||!selected_()||prepared_()!=prepared||manual_()!=manual
+       ||manualId_()!=std::optional{id}
+       ||(verified&&renderer_->status()!=QStringLiteral("READY_PRIVATE"))
+       ||(measured&&renderer_->status()
+            !=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")))
+        return core::Status::failure(rejected(
+            "M17 comparison source or measured candidate is no longer authoritative."));
+    const auto loop=sourceLoop_();
+    if(loop&&(loop->begin().value()<0
+        ||loop->end()>manual->view().absolute_range().end()))
+        return core::Status::failure(rejected(
+            "M17 comparison SOURCE loop is outside the complete manual programme."));
+    // Revoke device/SOURCE transport ownership, NOT the gate or renderer.
+    // The coordinator alone restores the exact MANUAL sink after retirement.
+    auto retired=publisher_->revoke_private();
+    if(!retired)return retired;
+    pending_.emplace(Pending{prepared,manual,id,loop,rate,true});
+    privateId_.reset();
+    comparisonVerified_=stage;
+    comparisonMeasured_=unsafe;
+    status_=verified?QStringLiteral("COMPARISON_VERIFIED")
+                    :QStringLiteral("COMPARISON_NONCONFORMING");
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::resume_comparison()
+{
+    if(!comparison_owners_current()||!rateProbe_)
+        return core::Status::failure(rejected(
+            "M17 comparison PCM, measured evidence or MANUAL owner became stale."));
+    // Never borrow a candidate prepared for a different physical device
+    // format. No implicit resampling and absolutely NO new full-resource job.
+    auto rate=rateProbe_(pending_->manual->view().format().channel_layout());
+    if(!rate)return core::Status::failure(*rate.error());
+    if(*rate.value()!=pending_->outputRate ||!comparison_owners_current())
+        return core::Status::failure(rejected(
+            "M17 comparison output rate or exact MANUAL authority changed."));
+    const auto playback=transport_->playback_snapshot();
+    if(!playback
+       ||playback.value()->audibleRealization.phase
+            !=core::AudibleHandoffPhase::NEW
+       ||playback.value()->audibleRealization.realizationId
+            !=std::optional{pending_->manualId}
+       ||playback.value()->duration
+            !=std::optional{pending_->manual->view().frame_count()}
+       ||(playback.value()->state!=core::PlaybackState::STOPPED
+           &&playback.value()->state!=core::PlaybackState::PLAYING
+           &&playback.value()->state!=core::PlaybackState::PAUSED))
+        return core::Status::failure(rejected(
+            "M17 comparison cannot replace an unknown audible MANUAL owner."));
+    status_=comparisonVerified_?QStringLiteral("READY_TO_INSTALL")
+                              :QStringLiteral("MEASURED_NONCONFORMING_READY");
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::cancel()
+{
+    // A monitoring sink has no terminal RealizationId. The terminal gate
+    // cannot retire it: require exact monitor ownership and MANUAL restore.
+    if(installedMonitor_) {
+        const auto restored=return_private_monitor_to_manual();
+        if(!restored)return restored;
+    }
+    if(monitorTransitioning_)
+        return core::Status::failure(rejected(
+            "MONITOR_CANCEL_REENTRANT_TRANSITION"));
+    approvedMonitor_.reset();
+    approvedMonitorMaster_.reset();
+    // Withdraw transaction first: renderer.invalidate() emits changed and
+    // must not reinterpret its own invalidation as a new acceptance.
+    pending_.reset();
+    privateId_.reset();
+    comparisonVerified_.reset();
+    comparisonMeasured_.reset();
+    auto retired=publisher_->revoke_private();
+    renderer_->invalidate();
+    if(!retired) {
+        failed(*retired.error());
+        return retired;
+    }
+    status_=QStringLiteral("IDLE");
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
+bool TerminalPrivateProductSession::adopt_pending_source_loop_without_rerender()
+{
+    if(monitorTransitioning_ ||installedMonitor_ ||privateId_||!pending_
+       ||!prepared_||!manual_||!manualId_||!sourceLoop_
+       ||!current_selection_for_pending()
+       ||prepared_()!=pending_->prepared||manual_()!=pending_->manual
+       ||manualId_()!=std::optional{pending_->manualId})
+        return false;
+    const auto current=sourceLoop_();
+    const auto full=pending_->manual->view().absolute_range();
+    if(current &&(current->begin().value()<0 ||current->end()>full.end()))
+        return false;
+    // PCM is always the complete zero-origin SOURCE, never the active loop.
+    // Only the handoff's SOURCE transport/cue mapping changes.
+    pending_->loop=current;
+    return true;
+}
+
+void TerminalPrivateProductSession::cancel_pending_on_region_change()
+{
+    // A synchronous SOURCE-region signal during exact MONITOR retirement
+    // must never re-enter cancel() and disturb the owner transaction.
+    if(monitorTransitioning_)return;
+    if(pending_)static_cast<void>(cancel());
+}
+
+void TerminalPrivateProductSession::on_renderer_changed()
+{
+    if(!pending_)return;
+    const QString state=renderer_->status();
+    if(state==QStringLiteral("ERROR")) {
+        // Never erase the diagnostic after a minutes-long Windows render:
+        // e.g. M16 post-trim failure and verification-guard exceedance
+        // are actionable, and categorically different from stale owners.
+        auto reason=renderer_->last_error();
+        failed(reason ? *reason
+            : rejected("M17 private renderer returned no diagnostic."));
+        return;
+    }
+    if(state==QStringLiteral("STALE")) {stale();return;}
+    if(state==QStringLiteral("MEASURED_NONCONFORMING_PRIVATE")) {
+        // Keep owner and PCM intact, but never invoke verified install.
+        auto evidence=candidates_->staged_measured();
+        if(!current_selection_for_pending()||prepared_()!=pending_->prepared
+           ||manual_()!=pending_->manual
+           ||manualId_()!=std::optional{pending_->manualId}
+           ||sourceLoop_()!=pending_->loop
+           ||!evidence||evidence->prepared_owner!=pending_->prepared
+           ||evidence->rendered.manual_owner!=pending_->manual
+           ||evidence->original_manual_realization_id!=pending_->manualId) {
+            renderer_->invalidate();
+            stale();
+            return;
+        }
+        status_=pending_->masterOnly
+            ?QStringLiteral("MASTER_MEASURED_NONCONFORMING_PRIVATE")
+            :QStringLiteral("MEASURED_NONCONFORMING_READY");
+        error_.clear();
+        emit changed();
+        return;
+    }
+    if(state!=QStringLiteral("READY_PRIVATE"))return;
+    if(pending_->masterOnly) {
+        // Master-rate rendering is complete and M16 checked. This is NOT
+        // audition-ready: no device SRC, SOURCE transport or sink ownership.
+        status_=QStringLiteral("MASTER_READY_MONITOR_PENDING");
+        emit changed();
+        return;
+    }
+    if(pending_->deferred) {
+        // The MANUAL sink continues playing until accepted OUTPUT_RATE
+        // audio is ready. Only its conductor may perform the handoff.
+        status_=QStringLiteral("READY_TO_INSTALL");
+        emit changed();
+        return;
+    }
+    static_cast<void>(install_accepted_candidate());
+}
+
+core::Status TerminalPrivateProductSession::install_ready_private()
+{
+    if(!pending_ || !pending_->deferred
+       ||status_!=QStringLiteral("READY_TO_INSTALL")
+       ||renderer_->status()!=QStringLiteral("READY_PRIVATE"))
+        return core::Status::failure(rejected(
+            "M17 deferred installation has no exact accepted output candidate."));
+    return install_accepted_candidate();
+}
+
+core::Status TerminalPrivateProductSession::install_measured_private()
+{
+    if(!pending_||!pending_->deferred
+       ||status_!=QStringLiteral("MEASURED_NONCONFORMING_READY")
+       ||renderer_->status()!=QStringLiteral("MEASURED_NONCONFORMING_PRIVATE"))
+        return core::Status::failure(rejected(
+            "M17 nonconforming preview was not explicitly available."));
+    const Pending authority=*pending_;
+    if(!selected_()||prepared_()!=authority.prepared
+       ||manual_()!=authority.manual
+       ||manualId_()!=std::optional{authority.manualId}
+       ||sourceLoop_()!=authority.loop) {
+        renderer_->invalidate();
+        stale();
+        return core::Status::failure(rejected(
+            "Nonconforming preview source, owner or loop changed."));
+    }
+    const auto held=measured_candidate();
+    if(!held||held->rendered.output_rate!=authority.outputRate)
+        return core::Status::failure(rejected(
+            "No current measured nonconforming output-rate PCM."));
+    auto installed=publisher_->install_measured_private(
+        authority.prepared,authority.manual,authority.manualId,authority.loop);
+    if(!installed) {
+        failed(*installed.error());
+        renderer_->invalidate();
+        return core::Status::failure(*installed.error());
+    }
+    pending_.reset();
+    privateId_=*installed.value();
+    status_=QStringLiteral("NONCONFORMING_INSTALLED");
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+
+core::Status TerminalPrivateProductSession::install_accepted_candidate()
+{
+    if(!pending_)return core::Status::failure(rejected(
+        "M17 cannot install without captured owners."));
+    const Pending authority=*pending_;
+    // No user-visible publication if input, target or Loop Region changed
+    // while the worker calculated its OUTPUT_RATE candidate.
+    if(!selected_()||prepared_()!=authority.prepared
+       ||manual_()!=authority.manual
+       ||manualId_()!=std::optional{authority.manualId}
+       ||sourceLoop_()!=authority.loop) {
+        renderer_->invalidate();
+        stale();
+        return core::Status::failure(rejected(
+            "M17 deferred source/target/Loop ownership changed."));
+    }
+    auto accepted=candidates_->staged();
+    if(!accepted || accepted->prepared_owner!=authority.prepared
+       ||accepted->rendered.manual_owner!=authority.manual
+       ||accepted->original_manual_realization_id!=authority.manualId
+       ||accepted->rendered.output_rate!=authority.outputRate) {
+        renderer_->invalidate();
+        stale();
+        return core::Status::failure(rejected(
+            "M17 accepted OUTPUT_RATE candidate changed before installation."));
+    }
+    // The publisher and audio gate still independently verify STOPPED,
+    // immutable MANUAL ownership before installing any output-rate PCM.
+    auto installed=publisher_->install_private(authority.prepared,
+        authority.manual,authority.manualId,authority.loop);
+    if(!installed) {
+        failed(*installed.error());
+        renderer_->invalidate();
+        return core::Status::failure(*installed.error());
+    }
+    pending_.reset();
+    privateId_=*installed.value();
+    status_=QStringLiteral("PRIVATE_INSTALLED");
+    error_.clear();
+    emit changed();
+    return core::Status::success();
+}
+} // namespace rgsml::app

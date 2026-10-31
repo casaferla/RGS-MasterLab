@@ -8,6 +8,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <vector>
 #include <string_view>
 
 namespace rgsml::audio {
@@ -34,9 +36,10 @@ struct PlaybackRateSpec final {
     core::FrameCount totalInputFrames;
 };
 
-// Playback-only exact-rational adapter for the frozen 44.1 <-> 48 kHz policy.
-// It reads bounded canonical windows through WavReader and writes ephemeral
-// OUTPUT_RATE blocks. It is not a render node or a persisted audio artifact.
+// Playback-only exact-rational adapter: frozen bit-exact 44.1 <-> 48 FIRs,
+// plus provisional six-rate device FIRs generated only during Prepare.
+// It writes ephemeral OUTPUT_RATE blocks, never MASTER PCM. The new FIRs
+// have NO original-Q0/mastering certification and no SHA-release claim.
 class PlaybackSampleRateAdapter final {
 public:
     static constexpr std::int64_t kMaximumOutputBlockFrames = 1024;
@@ -64,6 +67,22 @@ public:
     [[nodiscard]] core::Result<core::FrameIndex> map_output_frame_to_input_cursor(
         core::FrameIndex outputFrame) const;
 
+    // Observation-only conservative enclosure of SOURCE dependencies of
+    // an OUTPUT_RATE interval. Includes FIR taps and mirrored boundaries.
+    // NOT consumed SOURCE coverage, NOT a cursor inverse, NOT LIVE proof.
+    // Bounded to one decode block; never invoke on the audio callback.
+    [[nodiscard]] core::Result<core::FrameRange>
+    conservative_input_enclosure_for_output_range(
+        core::FrameRange outputRange) const;
+
+    // An OUTPUT_RATE consumed prefix may only retire SOURCE samples that
+    // are absent from EVERY remaining output FIR dependency window.
+    // Pure single traversal from output frame zero ONLY. This is a negative
+    // dependency certificate, not positive sink/owner/loop LIVE evidence.
+    [[nodiscard]] core::Result<core::FrameIndex>
+    no_future_dependency_source_prefix(
+        core::FrameIndex consumedOutputExclusive) const;
+
     [[nodiscard]] core::Result<core::FrameCount> read_frames(
         WavReader& source,
         core::FrameIndex absoluteOutputStart,
@@ -74,6 +93,7 @@ private:
         PlaybackRateSpec spec,
         std::int64_t interpolation,
         std::int64_t decimation,
+        std::shared_ptr<const std::vector<std::uint64_t>> coefficientsOwner,
         const std::uint64_t* coefficientBits,
         std::size_t coefficientCount,
         std::string_view kernelSha256,
@@ -82,6 +102,9 @@ private:
     PlaybackRateSpec spec_;
     std::int64_t interpolation_;
     std::int64_t decimation_;
+    // Lifetimed, verified immutable asset: no dangling file cache pointers
+    // when a test/operator changes roots, and no audio-callback disk I/O.
+    std::shared_ptr<const std::vector<std::uint64_t>> coefficientsOwner_;
     const std::uint64_t* coefficientBits_;
     std::size_t coefficientCount_;
     std::string_view kernelSha256_;

@@ -7,16 +7,64 @@ Rectangle {
     objectName: "dspWorkspace"
 
     property var adapterModel: null
+    // Handles Chain selections consistently whether an editor is docked
+    // or already floating, without allocating a duplicate DSP QML editor.
+    property var moduleActivationHandler: null
+    property var tearOffHandler: null
+    property var dockToggleHandler: null
+    property bool hostDetached: false
+    property bool errorsInGlobalStatusBar: false
     property int selectedModuleIndex: adapterModel ? adapterModel.selectedIndex : 0
     property var gainViewModel: null
     property var eqViewModel: null
     property var spectrumViewModel: null
+    property var truePeakStaticViewModel: null
+    property var truePeakLiveViewModel: null
+    property var terminalPostLimiterTruePeak: null
+    property var terminalLimiterViewModel: null
+    property var terminalMonitorViewModel: null
+    property var masterRateState: null
+    property var memoryAdvisor: null
+    property var limiterGrProvider: null
 
     // Backward-compatibility alias so code referencing workspace.viewModel sets/gets eqViewModel
     property alias viewModel: root.eqViewModel
 
     property alias chainSelector: realChainSelector
     property alias editorHost: realEditorHost
+
+    // Allocate another QML HOST (not an audio module) only when the existing
+    // persistent editor has been frozen and moved to a native Window.
+    // Each detached host keeps its original QObject / draft controls while
+    // selection uses a new host. Main alone owns window/session lifetimes.
+    function createExtraEditorHost() {
+        return extraEditorHostFactory.createObject(workspaceItemPool)
+    }
+
+    Component {
+        id: extraEditorHostFactory
+        DspEditorHost {
+            id: additionalEditorHost
+            objectName: "dspAdditionalEditorHost"
+            adapterModel: root.adapterModel
+            gainViewModel: root.gainViewModel
+            eqViewModel: root.eqViewModel
+            errorsInGlobalStatusBar: root.errorsInGlobalStatusBar
+            spectrumViewModel: root.spectrumViewModel
+            truePeakStaticViewModel: root.truePeakStaticViewModel
+            truePeakLiveViewModel: root.truePeakLiveViewModel
+            terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
+            terminalLimiterViewModel: root.terminalLimiterViewModel
+            terminalMonitorViewModel: root.terminalMonitorViewModel
+            masterRateState: root.masterRateState
+            memoryAdvisor: root.memoryAdvisor
+            limiterGrProvider: root.limiterGrProvider
+            activeChainRow: realChainSelector.activeRow
+            onDockToggleRequested: {
+                if (root.dockToggleHandler) root.dockToggleHandler(additionalEditorHost)
+            }
+        }
+    }
 
     onSelectedModuleIndexChanged: {
         if (adapterModel && adapterModel.selectedIndex !== selectedModuleIndex) {
@@ -42,6 +90,7 @@ Rectangle {
             id: realChainSelector
             objectName: "dspChainSelector"
             adapterModel: root.adapterModel
+            moduleActivationHandler: root.moduleActivationHandler
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
         }
@@ -52,8 +101,24 @@ Rectangle {
             adapterModel: root.adapterModel
             gainViewModel: root.gainViewModel
             eqViewModel: root.eqViewModel
+            errorsInGlobalStatusBar: root.errorsInGlobalStatusBar
             spectrumViewModel: root.spectrumViewModel
+            truePeakStaticViewModel: root.truePeakStaticViewModel
+            truePeakLiveViewModel: root.truePeakLiveViewModel
+            terminalPostLimiterTruePeak: root.terminalPostLimiterTruePeak
+            terminalLimiterViewModel: root.terminalLimiterViewModel
+        terminalMonitorViewModel: root.terminalMonitorViewModel
+        masterRateState: root.masterRateState
+        memoryAdvisor: root.memoryAdvisor
+            limiterGrProvider: root.limiterGrProvider
             activeChainRow: realChainSelector.activeRow
+            detachedWindow: root.hostDetached
+            onDockToggleRequested: {
+                if (root.dockToggleHandler) root.dockToggleHandler(realEditorHost)
+            }
+            onTearOffRequested: function(globalX,globalY) {
+                if(root.tearOffHandler)root.tearOffHandler(globalX,globalY)
+            }
         }
     }
 }

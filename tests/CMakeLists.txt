@@ -15,6 +15,17 @@ qt_add_executable(rgsml_m10_sha_tests spikes/l1_m10/test_sha256.cpp)
 
 qt_add_executable(rgsml_project_value_tests unit/project/test_project_snapshot.cpp)
 
+qt_add_executable(rgsml_master_output_rate_codec_tests
+    unit/project/test_master_output_rate_codec.cpp)
+target_link_libraries(rgsml_master_output_rate_codec_tests PRIVATE
+    rgsml_project Qt6::Test)
+rgsml_apply_project_warnings(rgsml_master_output_rate_codec_tests)
+add_test(NAME rgsml_master_output_rate_codec_tests
+    COMMAND rgsml_master_output_rate_codec_tests)
+set_tests_properties(rgsml_master_output_rate_codec_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "project;master_rate;finalization;codec")
+
 add_test(NAME rgsml_project_dependency_contract_tests
     COMMAND "${CMAKE_COMMAND}"
         "-DRGSML_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
@@ -52,10 +63,31 @@ set_tests_properties(rgsml_project_security_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "project;security")
 
+# PO M17 finalization: DEVICE-independent target rate preference contract.
+qt_add_executable(rgsml_master_output_rate_state_tests
+    unit/app/test_master_output_rate_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp)
+target_include_directories(rgsml_master_output_rate_state_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/app/src)
+# The source/MASTER-rate test also exercises the read-only six-rate RAM
+# projection contract. PUBLIC audio headers depend on rgsml_core; link
+# the real library, never add filesystem-specific include directories.
+target_link_libraries(rgsml_master_output_rate_state_tests
+    PRIVATE rgsml_audio Qt6::Core Qt6::Test)
+rgsml_apply_project_warnings(rgsml_master_output_rate_state_tests)
+add_test(NAME rgsml_master_output_rate_state_tests
+    COMMAND rgsml_master_output_rate_state_tests)
+set_tests_properties(rgsml_master_output_rate_state_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;project;master_rate;finalization")
+
 qt_add_executable(rgsml_project_session_tests
     integration/app/test_project_session.cpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
@@ -68,8 +100,14 @@ qt_add_executable(rgsml_project_session_tests
     ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/source_selection_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gold_selection_view_model.cpp
@@ -284,15 +322,47 @@ set_tests_properties(rgsml_waveform_wav_tests PROPERTIES
     LABELS "audio;audio_golden;waveform;waveform_golden;source_resource"
 )
 
+# External coefficients are bit-exact copies of the frozen constexpr
+# words, validated at build configuration. This native regression exercises
+# SHA pins, corrupt/missing files and owned callback-safe lifetimes.
+qt_add_executable(rgsml_external_playback_fir_assets_tests
+    unit/audio/test_external_playback_fir_assets.cpp
+)
+target_link_libraries(rgsml_external_playback_fir_assets_tests PRIVATE
+    rgsml_audio Qt6::Test)
+rgsml_apply_project_warnings(rgsml_external_playback_fir_assets_tests)
+add_test(NAME rgsml_external_playback_fir_assets_tests
+    COMMAND rgsml_external_playback_fir_assets_tests)
+set_tests_properties(rgsml_external_playback_fir_assets_tests PROPERTIES
+    # Isolated VS Debug CTest does NOT inherit Qt PATH from other workflow
+    # steps. Without Qt6Cored.dll, this test exits instantly with zero output.
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;playback_src;external_fir;frozen_kernel")
+
 qt_add_executable(rgsml_playback_src_tests
     unit/audio/test_playback_sample_rate_adapter.cpp
 )
 target_link_libraries(rgsml_playback_src_tests
     PRIVATE
         rgsml_audio
+        rgsml_render # genuine Q0 SOURCE->MASTER -> one M17/M16 -> DEVICE rehearsal
         Qt6::Test
 )
+# The genuine original-Q0 loader is private to the app/offline-FQ
+# boundary. This test is explicitly allowed to exercise that helper.
+target_include_directories(rgsml_playback_src_tests PRIVATE
+    "${CMAKE_SOURCE_DIR}/app/src")
 rgsml_apply_project_warnings(rgsml_playback_src_tests)
+# The supplemental Phase-11 polyphase C++ oracle is STRICT binary64:
+# forbid FMA contraction/fast-math in BOTH OS Focused qualification runs.
+# This applies to the test TU only; the frozen playback/DSP libraries and
+# production compile oracles are NOT changed here.
+if(MSVC)
+    target_compile_options(rgsml_playback_src_tests PRIVATE /fp:strict)
+else()
+    target_compile_options(rgsml_playback_src_tests PRIVATE
+        -fno-fast-math -ffp-contract=off)
+endif()
 add_test(NAME rgsml_playback_src_tests COMMAND rgsml_playback_src_tests)
 set_tests_properties(rgsml_playback_src_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -359,8 +429,12 @@ set_tests_properties(rgsml_source_selection_tests PROPERTIES
 
 qt_add_executable(rgsml_source_metadata_panel_smoke
     ui_smoke/test_source_metadata_panel.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/prepare_memory_advice_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/prepare_memory_advice_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/project_session_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/master_output_rate_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.cpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_source_selector.hpp
     ${CMAKE_SOURCE_DIR}/app/src/audition_region_view_model.cpp
@@ -381,8 +455,20 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
     ${CMAKE_SOURCE_DIR}/app/src/compressor_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_binding.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_binding.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_live_input_binding.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_live_input_binding.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_coordinator.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_coordinator.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
@@ -393,6 +479,7 @@ qt_add_executable(rgsml_source_metadata_panel_smoke
 target_include_directories(rgsml_source_metadata_panel_smoke
     PRIVATE
         ${CMAKE_SOURCE_DIR}/app/src
+        ${CMAKE_BINARY_DIR}/app/generated
 )
 target_link_libraries(rgsml_source_metadata_panel_smoke
     PRIVATE
@@ -415,7 +502,9 @@ if(MSVC)
 endif()
 add_test(
     NAME rgsml_source_metadata_panel_smoke
-    COMMAND rgsml_source_metadata_panel_smoke
+    COMMAND "${CMAKE_COMMAND}"
+        "-DRGSML_SMOKE_EXE=$<TARGET_FILE:rgsml_source_metadata_panel_smoke>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/m16_c2_smoke_ctest_diagnostic.cmake"
 )
 set_tests_properties(rgsml_source_metadata_panel_smoke PROPERTIES
     ENVIRONMENT_MODIFICATION
@@ -499,10 +588,12 @@ set_tests_properties(rgsml_pcm_playback_tests PROPERTIES
 target_include_directories(rgsml_playback_support_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/platform/windows/src/internal
+        ${CMAKE_SOURCE_DIR}/analysis/src
 )
 target_link_libraries(rgsml_playback_support_tests
     PRIVATE
         rgsml_audio
+        rgsml_analysis
         rgsml_platform
         Qt6::Test
 )
@@ -512,6 +603,33 @@ set_tests_properties(rgsml_playback_support_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "platform;playback"
 )
+
+# Exercise the same pure PlaybackEngine and FakeOutput tests on Linux without
+# pulling rgsml_platform's Windows-only resource/export backends into the link.
+if(NOT WIN32)
+    qt_add_executable(rgsml_playback_engine_portable_tests
+        unit/platform/test_playback_support.cpp
+        ${CMAKE_SOURCE_DIR}/platform/windows/src/internal/playback_support.cpp
+    )
+    target_include_directories(rgsml_playback_engine_portable_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/platform/windows/src/internal
+        ${CMAKE_SOURCE_DIR}/platform/windows/include
+        ${CMAKE_SOURCE_DIR}/audio/src/internal
+        ${CMAKE_SOURCE_DIR}/analysis/src
+    )
+    target_link_libraries(rgsml_playback_engine_portable_tests PRIVATE
+        rgsml_audio
+        rgsml_analysis
+        Qt6::Test
+    )
+    rgsml_apply_project_warnings(rgsml_playback_engine_portable_tests)
+    add_test(NAME rgsml_playback_engine_portable_tests
+        COMMAND rgsml_playback_engine_portable_tests)
+    set_tests_properties(rgsml_playback_engine_portable_tests PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "platform;playback;portable"
+    )
+endif()
 
 qt_add_executable(rgsml_playback_composition_tests
     integration/platform/test_playback_composition.cpp
@@ -712,6 +830,252 @@ foreach(dsp_test IN ITEMS
     )
 endforeach()
 
+# M17 Core-first focused test carrier. New M17 suites have their own
+# named CTest entries; the pre-existing Windows and Linux focused workflows
+# build rgsml_dsp_structural_integration_tests and execute ^rgsml_dsp_.
+# Keep the workflow immutable and make new tests explicit build dependencies.
+foreach(m17_test IN ITEMS parameters core checkpoint verification)
+    qt_add_executable("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+        "unit/dsp/test_true_peak_limiter_${m17_test}.cpp"
+    )
+    target_include_directories("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/dsp/src
+            ${CMAKE_SOURCE_DIR}/analysis/src
+    )
+    target_link_libraries("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+        PRIVATE
+            rgsml_dsp
+            Qt6::Test
+    )
+    # M16 is referenced strictly from the TEST-ONLY verification executable,
+    # not as a reverse dependency of the M17 production DSP library.
+    if(m17_test STREQUAL "verification" OR m17_test STREQUAL "checkpoint")
+        # M16/whole-resource binding stays test-only, never linked by DSP.
+        target_link_libraries("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+            PRIVATE rgsml_analysis)
+    endif()
+    if(m17_test STREQUAL "verification")
+        # The optional stage-timing regression invokes the actual terminal
+        # candidate renderer. Link ONLY its test executable to render;
+        # never introduce production rgsml_dsp -> rgsml_render coupling.
+        target_link_libraries("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+            PRIVATE rgsml_render)
+    endif()
+    # Detector signed-grid tests share the protected M16 strict arithmetic
+    # requirement; source-file-scoped flags, no global DSP semantic changes.
+    if(MSVC)
+        target_compile_options("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+            PRIVATE /fp:strict)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+        target_compile_options("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+            PRIVATE -fno-fast-math -ffp-contract=off)
+    else()
+        message(FATAL_ERROR "M17 true peak tests require audited strict FP")
+    endif()
+    rgsml_apply_project_warnings("rgsml_dsp_true_peak_limiter_${m17_test}_tests")
+    add_test(
+        NAME "rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+        COMMAND "rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+    )
+    set_tests_properties("rgsml_dsp_true_peak_limiter_${m17_test}_tests"
+        PROPERTIES
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+            LABELS "dsp;m17;true_peak;core_first"
+    )
+    add_dependencies(rgsml_dsp_structural_integration_tests
+        "rgsml_dsp_true_peak_limiter_${m17_test}_tests")
+endforeach()
+
+qt_add_executable(rgsml_stereo_ms_crossover_runtime_tests
+    unit/dsp/test_stereo_ms_crossover_runtime.cpp
+)
+target_link_libraries(rgsml_stereo_ms_crossover_runtime_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_crossover_runtime_tests)
+add_test(NAME rgsml_stereo_ms_crossover_runtime_tests
+    COMMAND rgsml_stereo_ms_crossover_runtime_tests)
+set_tests_properties(rgsml_stereo_ms_crossover_runtime_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;lr12;lr24;recursive"
+)
+
+qt_add_executable(rgsml_stereo_ms_crossover_tests
+    unit/dsp/test_stereo_ms_crossover.cpp
+)
+target_link_libraries(rgsml_stereo_ms_crossover_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_crossover_tests)
+add_test(NAME rgsml_stereo_ms_crossover_tests
+    COMMAND rgsml_stereo_ms_crossover_tests)
+set_tests_properties(rgsml_stereo_ms_crossover_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;lr12;lr24;coefficients"
+)
+
+qt_add_executable(rgsml_stereo_ms_width_response_tests
+    unit/dsp/test_stereo_ms_width_response.cpp
+)
+target_link_libraries(rgsml_stereo_ms_width_response_tests
+    PRIVATE rgsml_dsp rgsml_core Qt6::Test)
+rgsml_apply_project_warnings(rgsml_stereo_ms_width_response_tests)
+add_test(NAME rgsml_stereo_ms_width_response_tests
+    COMMAND rgsml_stereo_ms_width_response_tests)
+set_tests_properties(rgsml_stereo_ms_width_response_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;observational_response"
+)
+
+qt_add_executable(rgsml_stereo_ms_width_tests
+    unit/dsp/test_stereo_ms_width.cpp
+)
+target_link_libraries(rgsml_stereo_ms_width_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_width_tests)
+add_test(NAME rgsml_stereo_ms_width_tests
+    COMMAND rgsml_stereo_ms_width_tests)
+set_tests_properties(rgsml_stereo_ms_width_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;gate_g;width"
+)
+
+qt_add_executable(rgsml_stereo_ms_no_alloc_tests
+    unit/dsp/test_stereo_ms_no_alloc.cpp
+)
+target_link_libraries(rgsml_stereo_ms_no_alloc_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_no_alloc_tests)
+add_test(NAME rgsml_stereo_ms_no_alloc_tests
+    COMMAND rgsml_stereo_ms_no_alloc_tests)
+set_tests_properties(rgsml_stereo_ms_no_alloc_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;gate_g;no_alloc"
+)
+
+qt_add_executable(rgsml_stereo_ms_gate_g_spatial_evidence_tests
+    unit/dsp/test_stereo_ms_gate_g_spatial_evidence.cpp
+)
+target_link_libraries(rgsml_stereo_ms_gate_g_spatial_evidence_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_gate_g_spatial_evidence_tests)
+add_test(NAME rgsml_stereo_ms_gate_g_spatial_evidence_tests
+    COMMAND rgsml_stereo_ms_gate_g_spatial_evidence_tests)
+set_tests_properties(rgsml_stereo_ms_gate_g_spatial_evidence_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;gate_g;spatial_evidence"
+)
+
+qt_add_executable(rgsml_stereo_ms_independent_math_tests
+    unit/dsp/test_stereo_ms_independent_math.cpp
+)
+target_link_libraries(rgsml_stereo_ms_independent_math_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_independent_math_tests)
+add_test(NAME rgsml_stereo_ms_independent_math_tests
+    COMMAND rgsml_stereo_ms_independent_math_tests)
+set_tests_properties(rgsml_stereo_ms_independent_math_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;independent_oracle;runtime"
+)
+
+qt_add_executable(rgsml_stereo_ms_long_resume_tests
+    unit/dsp/test_stereo_ms_long_resume.cpp
+)
+target_link_libraries(rgsml_stereo_ms_long_resume_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_long_resume_tests)
+add_test(NAME rgsml_stereo_ms_long_resume_tests
+    COMMAND rgsml_stereo_ms_long_resume_tests)
+set_tests_properties(rgsml_stereo_ms_long_resume_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;independent_oracle;runtime"
+)
+
+qt_add_executable(rgsml_stereo_ms_checkpoint_tests
+    unit/dsp/test_stereo_ms_checkpoint.cpp
+)
+target_link_libraries(rgsml_stereo_ms_checkpoint_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_checkpoint_tests)
+add_test(NAME rgsml_stereo_ms_checkpoint_tests
+    COMMAND rgsml_stereo_ms_checkpoint_tests)
+set_tests_properties(rgsml_stereo_ms_checkpoint_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;lr12;lr24;checkpoint"
+)
+
+qt_add_executable(rgsml_stereo_ms_module_streaming_tests
+    unit/dsp/test_stereo_ms_module_streaming.cpp
+)
+target_link_libraries(rgsml_stereo_ms_module_streaming_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_module_streaming_tests)
+add_test(NAME rgsml_stereo_ms_module_streaming_tests
+    COMMAND rgsml_stereo_ms_module_streaming_tests)
+set_tests_properties(rgsml_stereo_ms_module_streaming_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;lr12;lr24;streaming;atomicity"
+)
+
+qt_add_executable(rgsml_stereo_ms_module_tests
+    unit/dsp/test_stereo_ms_module.cpp
+)
+target_link_libraries(rgsml_stereo_ms_module_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_module_tests)
+add_test(NAME rgsml_stereo_ms_module_tests
+    COMMAND rgsml_stereo_ms_module_tests)
+set_tests_properties(rgsml_stereo_ms_module_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;runtime"
+)
+
+qt_add_executable(rgsml_stereo_ms_parameters_tests
+    unit/dsp/test_stereo_ms_parameters.cpp
+)
+target_link_libraries(rgsml_stereo_ms_parameters_tests
+    PRIVATE
+        rgsml_dsp
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_parameters_tests)
+add_test(NAME rgsml_stereo_ms_parameters_tests
+    COMMAND rgsml_stereo_ms_parameters_tests)
+set_tests_properties(rgsml_stereo_ms_parameters_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;parameters"
+)
+
 qt_add_executable(rgsml_gain_tests
     unit/dsp/test_gain.cpp
 )
@@ -823,17 +1187,41 @@ set_tests_properties(rgsml_module_parameter_codec_tests PROPERTIES
 
 qt_add_executable(rgsml_mastering_chain_state_tests
     unit/app/test_mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_candidate_gate.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_candidate_gate.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_playback_frame_map.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_playback_frame_map.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_source_control_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_source_control_bridge.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_audio_session_gate.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_audio_session_gate.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_private_publication_coordinator.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_private_publication_coordinator.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_private_render_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_private_render_controller.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_private_product_session.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_private_product_session.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_consumed_output_binding.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_consumed_output_binding.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/playback_transport_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
     ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp
 )
 target_include_directories(rgsml_mastering_chain_state_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}/app/src
+        ${CMAKE_SOURCE_DIR}/platform/windows/include
 )
 target_link_libraries(rgsml_mastering_chain_state_tests
     PRIVATE
         rgsml_dsp
         rgsml_core
+        rgsml_render
         Qt6::Test
 )
 rgsml_apply_project_warnings(rgsml_mastering_chain_state_tests)
@@ -926,6 +1314,67 @@ add_test(NAME rgsml_mastering_preview_controller_tests COMMAND rgsml_mastering_p
 set_tests_properties(rgsml_mastering_preview_controller_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "app;mastering_chain;render"
+)
+
+qt_add_executable(rgsml_stereo_ms_view_model_tests
+    unit/app/test_stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_chain_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/mastering_preview_controller.hpp
+)
+target_include_directories(rgsml_stereo_ms_view_model_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src
+)
+target_link_libraries(rgsml_stereo_ms_view_model_tests
+    PRIVATE
+        rgsml_render
+        rgsml_dsp
+        rgsml_audio
+        rgsml_core
+        Qt6::Core
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_view_model_tests)
+add_test(NAME rgsml_stereo_ms_view_model_tests COMMAND rgsml_stereo_ms_view_model_tests)
+set_tests_properties(rgsml_stereo_ms_view_model_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "app;stereo_ms;editor_draft"
+)
+
+qt_add_executable(rgsml_stereo_ms_signature_tests
+    unit/render/test_stereo_ms_execution_signature.cpp
+)
+target_link_libraries(rgsml_stereo_ms_signature_tests
+    PRIVATE
+        rgsml_render
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_signature_tests)
+add_test(NAME rgsml_stereo_ms_signature_tests
+    COMMAND rgsml_stereo_ms_signature_tests)
+set_tests_properties(rgsml_stereo_ms_signature_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;render;semantic_signature"
+)
+
+qt_add_executable(rgsml_stereo_ms_audible_resolver_tests
+    unit/render/test_audible_stereo_ms_telemetry_resolver.cpp
+)
+target_link_libraries(rgsml_stereo_ms_audible_resolver_tests
+    PRIVATE
+        rgsml_render
+        Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_stereo_ms_audible_resolver_tests)
+add_test(NAME rgsml_stereo_ms_audible_resolver_tests
+    COMMAND rgsml_stereo_ms_audible_resolver_tests)
+set_tests_properties(rgsml_stereo_ms_audible_resolver_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "dsp;stereo_ms;render;audible_telemetry"
 )
 
 qt_add_executable(rgsml_render_preview_tests
@@ -1212,6 +1661,148 @@ set_tests_properties(rgsml_analysis_tests PROPERTIES
     LABELS "analysis;unit"
 )
 
+qt_add_executable(rgsml_true_peak_itu4x_coefficients_tests
+    unit/analysis/test_true_peak_itu4x_coefficients.cpp
+)
+target_include_directories(rgsml_true_peak_itu4x_coefficients_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_itu4x_coefficients_tests
+    PRIVATE rgsml_analysis Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_true_peak_itu4x_coefficients_tests)
+add_test(NAME rgsml_true_peak_itu4x_coefficients_tests
+    COMMAND rgsml_true_peak_itu4x_coefficients_tests)
+set_tests_properties(rgsml_true_peak_itu4x_coefficients_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;true_peak;coefficients;unit"
+)
+
+qt_add_executable(rgsml_true_peak_itu4x_channel_stream_tests
+    unit/analysis/test_true_peak_itu4x_channel_stream.cpp
+)
+target_include_directories(rgsml_true_peak_itu4x_channel_stream_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_itu4x_channel_stream_tests
+    PRIVATE rgsml_analysis Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_true_peak_itu4x_channel_stream_tests)
+add_test(NAME rgsml_true_peak_itu4x_channel_stream_tests COMMAND rgsml_true_peak_itu4x_channel_stream_tests)
+set_tests_properties(rgsml_true_peak_itu4x_channel_stream_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;true_peak;stream;unit"
+)
+
+qt_add_executable(rgsml_true_peak_full_resource_tests
+    unit/analysis/test_true_peak_full_resource.cpp
+)
+target_include_directories(rgsml_true_peak_full_resource_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_full_resource_tests PRIVATE
+    rgsml_analysis Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_true_peak_full_resource_tests)
+add_test(NAME rgsml_true_peak_full_resource_tests COMMAND rgsml_true_peak_full_resource_tests)
+set_tests_properties(rgsml_true_peak_full_resource_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;true_peak;full_resource;unit"
+)
+
+# M16 B3: deliberately non-qualifying public full-resource result adapter.
+qt_add_executable(rgsml_true_peak_static_binding_tests
+    unit/app/test_true_peak_static_binding.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_binding.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_live_input_binding.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_live_coordinator.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_live_coordinator.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_coordinator.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/true_peak_static_coordinator.hpp
+)
+target_include_directories(rgsml_true_peak_static_binding_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/src
+    ${CMAKE_SOURCE_DIR}/tests/unit/render
+    ${CMAKE_SOURCE_DIR}/platform/windows/include
+    ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_static_binding_tests PRIVATE
+    rgsml_analysis rgsml_render Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_true_peak_static_binding_tests)
+add_test(NAME rgsml_true_peak_static_binding_tests
+    COMMAND rgsml_true_peak_static_binding_tests)
+set_tests_properties(rgsml_true_peak_static_binding_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;true_peak;app;static_binding;source_coverage;unit"
+)
+
+qt_add_executable(rgsml_true_peak_measurement_tests
+    unit/analysis/test_true_peak_measurement.cpp
+)
+target_include_directories(rgsml_true_peak_measurement_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_measurement_tests PRIVATE
+    rgsml_analysis Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_true_peak_measurement_tests)
+add_test(NAME rgsml_true_peak_measurement_tests
+    COMMAND rgsml_true_peak_measurement_tests)
+set_tests_properties(rgsml_true_peak_measurement_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;true_peak;public_result;unqualified;unit"
+)
+
+qt_add_executable(rgsml_true_peak_gate_g_edge_tests
+    unit/analysis/test_true_peak_gate_g_edges.cpp
+)
+target_include_directories(rgsml_true_peak_gate_g_edge_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_gate_g_edge_tests PRIVATE
+    rgsml_analysis Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_true_peak_gate_g_edge_tests)
+add_test(NAME rgsml_true_peak_gate_g_edge_tests COMMAND rgsml_true_peak_gate_g_edge_tests)
+set_tests_properties(rgsml_true_peak_gate_g_edge_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;true_peak;gate_g;edge_prequalification"
+)
+
+qt_add_executable(rgsml_true_peak_chunk_invariance_tests
+    unit/analysis/test_true_peak_chunk_invariance.cpp
+)
+target_include_directories(rgsml_true_peak_chunk_invariance_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_chunk_invariance_tests PRIVATE
+    rgsml_analysis Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_true_peak_chunk_invariance_tests)
+add_test(NAME rgsml_true_peak_chunk_invariance_tests COMMAND rgsml_true_peak_chunk_invariance_tests)
+set_tests_properties(rgsml_true_peak_chunk_invariance_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "analysis;true_peak;chunk_invariance;unit"
+)
+
+# B2b is an INTERNAL C++ probe of the real M16 estimator, not official Gate G.
+# The self-test is synthetic and can run in normal CI without EBU audio bytes.
+add_executable(rgsml_true_peak_b2b_probe
+    ../tools/qualification/true_peak/true_peak_cpp_probe.cpp
+)
+target_include_directories(rgsml_true_peak_b2b_probe PRIVATE
+    ${CMAKE_SOURCE_DIR}/analysis/src
+)
+target_link_libraries(rgsml_true_peak_b2b_probe PRIVATE rgsml_analysis)
+rgsml_apply_project_warnings(rgsml_true_peak_b2b_probe)
+add_test(NAME rgsml_true_peak_b2b_probe_selftest
+    COMMAND rgsml_true_peak_b2b_probe --selftest
+)
+set_tests_properties(rgsml_true_peak_b2b_probe_selftest PROPERTIES
+    LABELS "analysis;true_peak;gate_g;synthetic_prequalification"
+)
+
 qt_add_executable(rgsml_live_spectrum_oracle_tests
     unit/analysis/live_spectrum_oracle_test.cpp
 )
@@ -1246,6 +1837,12 @@ qt_add_executable(rgsml_dsp_module_adapter_tests
     unit/app/test_dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_module_adapter.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.cpp
+    ${CMAKE_SOURCE_DIR}/app/src/stereo_ms_view_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.cpp
     ${CMAKE_SOURCE_DIR}/app/src/dsp_chain_adapter_model.hpp
     ${CMAKE_SOURCE_DIR}/app/src/gain_view_model.cpp
@@ -1307,3 +1904,50 @@ set_tests_properties(rgsml_dsp_module_adapter_tests PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "app;dsp_adapter;view_model"
 )
+
+# M16 C2: stdlib-only TEST-ONLY interval observation model.
+# This test does not use the Windows audio callback or authoritative M16 FIR.
+# The Focused CI regex selects the existing channel_stream_tests prefix.
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(
+    NAME rgsml_true_peak_itu4x_channel_stream_tests_c2_coverage_contract
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/unit/analysis/test_m16_c2_interval_observer.py"
+)
+set_tests_properties(rgsml_true_peak_itu4x_channel_stream_tests_c2_coverage_contract PROPERTIES
+    LABELS "analysis;true_peak;c2;test_only"
+)
+
+# The terminal limiter adapter connects to the Q_OBJECT ViewModel from
+# the header. Qt AUTOMOC must compile that ViewModel in EVERY executable
+# that compiles DspChainAdapterModel, including smoke and project tests.
+# This configure-time contract prevents another Windows LNK2019/LNK2001
+# on a future non-core consumer while leaving M16 DSP/FP untouched.
+foreach(_rgsml_m17_consumer IN ITEMS
+        rgsml_project_session_tests
+        rgsml_source_metadata_panel_smoke
+        rgsml_dsp_module_adapter_tests)
+    get_target_property(_rgsml_m17_sources
+        ${_rgsml_m17_consumer} SOURCES)
+    foreach(_rgsml_m17_required IN ITEMS
+            "${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.cpp"
+            "${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_state.hpp"
+            "${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.cpp"
+            "${CMAKE_SOURCE_DIR}/app/src/terminal_limiter_view_model.hpp")
+        if(NOT _rgsml_m17_required IN_LIST _rgsml_m17_sources)
+            message(FATAL_ERROR
+                "${_rgsml_m17_consumer} missing M17 Qt/MOC dependency: "
+                "${_rgsml_m17_required}")
+        endif()
+    endforeach()
+endforeach()
+
+# External playback FIR assets must be available to every existing native
+# SRC/Windows/Qt test, not only the newly introduced negative tests.
+# CTest injects this explicit build directory; no end-user environment setup.
+get_property(_rgsml_fir_ctests DIRECTORY PROPERTY TESTS)
+foreach(_rgsml_fir_ctest IN LISTS _rgsml_fir_ctests)
+    set_property(TEST "${_rgsml_fir_ctest}" APPEND PROPERTY
+        ENVIRONMENT_MODIFICATION
+        "RGSML_PLAYBACK_FIR_ROOT=set:${RGSML_PLAYBACK_FIR_BUILD_ROOT}")
+endforeach()

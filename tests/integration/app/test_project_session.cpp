@@ -23,12 +23,15 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
+#include "master_output_rate_state.hpp"
+#include <rgsml/project/master_output_rate_preference.hpp>
 #include <QUrl>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <filesystem>
 #include <vector>
 #include <utility>
@@ -36,12 +39,13 @@
 namespace rgsml::tests {
 namespace {
 
-[[nodiscard]] QString wav(QTemporaryDir& dir, const QString& name, int seed)
+[[nodiscard]] QString wav(QTemporaryDir& dir, const QString& name, int seed,
+    std::uint32_t sampleRate = 48'000U)
 {
     std::vector<std::int64_t> samples(256U);
     for (std::size_t i = 0; i < samples.size(); ++i)
         samples[i] = (static_cast<std::int64_t>(i) + seed) % 100;
-    const auto data = wav_support::make_wav(1U, 16U, 1U, 48'000U,
+    const auto data = wav_support::make_wav(1U, 16U, 1U, sampleRate,
         wav_support::pcm_payload(samples, 16U));
     const auto path = dir.filePath(name);
     QFile file{path};
@@ -125,7 +129,11 @@ struct Session final {
                   gainViewModel.get(), eqViewModel.get(), adapterModel.get(), previewController.get(),
                   std::move(uuidFactory))
     {
-        transport.set_pcm_prepare_handler([this](audio::AudioBufferView view, std::shared_ptr<const void>) {
+        transport.set_pcm_prepare_handler(
+            [this](
+                audio::AudioBufferView view,
+                std::shared_ptr<const void>,
+                std::optional<core::RealizationId>) {
             observed->state = core::PlaybackState::STOPPED;
             observed->position = view.absolute_start_frame();
             observed->duration = *core::FrameCount::create(
@@ -154,6 +162,7 @@ class ProjectSessionTest final : public QObject {
     Q_OBJECT
 private slots:
     void source_save_open_existing_fail();
+    void master_rate_save_open_and_invalid_atomic();
     void gold_region_roundtrip();
     void missing_source_preflight_preserves_live_session();
     void clear_region_and_replace_source_save_as();
@@ -170,7 +179,76 @@ private slots:
     void legacy_two_module_gain_eq_migration();
     void future_opaque_preservation_and_non_degraded_b4();
     void source_reset_vs_project_open();
+    void stereo_ms_four_module_project_roundtrip_and_atomic_rejection();
+    void product_default_stereo_ms_project_save_open_save_identity();
 };
+
+
+void ProjectSessionTest::master_rate_save_open_and_invalid_atomic()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto sourcePath=wav(dir,QStringLiteral("rate-source.wav"),0,44'100U);
+    QVERIFY(!sourcePath.isEmpty());
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(sourcePath));
+    app::MasterOutputRateState selected;
+    // This case specifically verifies SOURCE 44.1 -> MASTER 192, not
+    // the default 48 kHz WAV fixture used by the other Project tests.
+    QCOMPARE(author.source.sample_rate_hz(),qint64{44100});
+    selected.source_committed(author.source.sample_rate_hz());
+    author.project.set_master_output_rate_state(&selected);
+    QCOMPARE(selected.master_rate_hz(),qint64{44100});
+    QVERIFY(selected.choose_master_rate(192000));
+    const auto path=dir.filePath(QStringLiteral("master192.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(path));
+    QCOMPARE(author.project.error_message(),QString());
+
+    auto saved=load_project(path);
+    QVERIFY(saved);
+    auto decoded=project::MasterOutputRatePreference::read(
+        saved.value()->document().output);
+    QVERIFY(decoded);
+    QVERIFY(decoded.value()->has_value());
+    QCOMPARE(decoded.value()->value(),std::int64_t{192000});
+
+    Session reopened;
+    app::MasterOutputRateState restored;
+    reopened.project.set_master_output_rate_state(&restored);
+    reopened.project.openProject(QUrl::fromLocalFile(path));
+    QCOMPARE(reopened.project.error_message(),QString());
+    QVERIFY(!reopened.project.degraded()); // recognized known output schema
+    QCOMPARE(restored.source_rate_hz(),qint64{44100});
+    QCOMPARE(restored.master_rate_hz(),qint64{192000});
+    const auto second=dir.filePath(QStringLiteral("master192-again.rgsml"));
+    reopened.project.saveProjectAs(QUrl::fromLocalFile(second));
+    QCOMPARE(reopened.project.error_message(),QString());
+    auto again=load_project(second);
+    QVERIFY(again);
+    auto recovered=project::MasterOutputRatePreference::read(
+        again.value()->document().output);
+    QVERIFY(recovered);
+    QCOMPARE(recovered.value()->value(),std::int64_t{192000});
+
+    // Known but malformed output: fail before replacing live SOURCE or
+    // even touching the rate authority revision.
+    auto malformedDoc=saved.value()->document();
+    auto badValue=project::OpaqueJsonValue::parse(
+        R"({"targetMasterOutputRateHz":"192000"})");
+    QVERIFY(badValue);
+    malformedDoc.output=*badValue.value();
+    auto malformed=project::ProjectSnapshot::create(malformedDoc);
+    QVERIFY(malformed);
+    const auto invalidPath=dir.filePath(QStringLiteral("invalid-rate.rgsml"));
+    QVERIFY(write_project(invalidPath,*malformed.value()));
+    const auto oldSource=reopened.source.source_resource()->reference().locator();
+    const auto oldRevision=restored.rate_revision();
+    reopened.project.openProject(QUrl::fromLocalFile(invalidPath));
+    QVERIFY(!reopened.project.error_message().isEmpty());
+    QCOMPARE(restored.rate_revision(),oldRevision);
+    QCOMPARE(restored.master_rate_hz(),qint64{192000});
+    QCOMPARE(reopened.source.source_resource()->reference().locator(),oldSource);
+}
 
 void ProjectSessionTest::source_save_open_existing_fail()
 {
@@ -1309,6 +1387,231 @@ void ProjectSessionTest::source_reset_vs_project_open()
              QString::fromStdString(bandId.value()->to_string()));
 }
 
+
+void ProjectSessionTest::product_default_stereo_ms_project_save_open_save_identity()
+{
+    // Product-startup M15 is a real fourth persisted module, but the legacy
+    // 2/3-node project factories remain unchanged and never auto-insert it.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto wavPath = wav(dir, QStringLiteral("product_default_source.wav"), 9);
+    QVERIFY(!wavPath.isEmpty());
+
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(wavPath));
+    QVERIFY(author.source.source_resource());
+    const auto stereoUuid = core::Uuid::parse(
+        "17000000-0000-4000-8000-000000000015");
+    QVERIFY(stereoUuid);
+    const auto stereoId = dsp::ModuleInstanceId::from_uuid(*stereoUuid.value());
+    QVERIFY(stereoId);
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto product = app::MasteringChainState::create_product_default(
+        *registry.value(), author.chainId, author.gainId, author.eqId,
+        author.compId, *stereoId.value());
+    QVERIFY(product);
+    *author.masteringChainState = std::move(*product.value());
+    author.adapterModel->refreshFromAuthority();
+    QCOMPARE(author.masteringChainState->module_count(), std::size_t{4});
+    const auto defaults = dsp::StereoMsParameters::create_default();
+    QVERIFY(defaults);
+    QCOMPARE(author.masteringChainState->stereo_ms_parameters(),
+             std::optional{*defaults.value()});
+    auto bypass = author.masteringChainState->is_bypassed(*stereoId.value());
+    QVERIFY(bypass);
+    QVERIFY(*bypass.value());
+
+    const auto firstPath = dir.filePath(QStringLiteral("product_default_four.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(firstPath));
+    QCOMPARE(author.project.error_message(), QString{});
+    auto first = load_project(firstPath);
+    QVERIFY(first);
+    const auto& authored = first.value()->document().chains;
+    QCOMPARE(authored.size(), std::size_t{1});
+    QCOMPARE(authored[0].modules.size(), std::size_t{4});
+    QCOMPARE(authored[0].modules[0].typeId, std::string("rgsml.dsp.gain"));
+    QCOMPARE(authored[0].modules[1].typeId, std::string("rgsml.dsp.parametric-eq"));
+    QCOMPARE(authored[0].modules[2].typeId, std::string("rgsml.dsp.compressor"));
+    QCOMPARE(authored[0].modules[3].typeId, std::string("rgsml.dsp.stereo-ms"));
+    QCOMPARE(authored[0].modules[3].instanceId, *stereoUuid.value());
+    QCOMPARE(authored[0].modules[3].userBypass, true);
+
+    Session reopened;
+    reopened.project.openProject(QUrl::fromLocalFile(firstPath));
+    QCOMPARE(reopened.project.error_message(), QString{});
+    QVERIFY(!reopened.project.degraded());
+    QCOMPARE(reopened.masteringChainState->module_count(), std::size_t{4});
+    QCOMPARE(reopened.masteringChainState->chain_id(), author.chainId);
+    QCOMPARE(reopened.masteringChainState->stereo_ms_instance_id(),
+             std::optional{*stereoId.value()});
+    QCOMPARE(reopened.masteringChainState->stereo_ms_parameters(),
+             std::optional{*defaults.value()});
+    bypass = reopened.masteringChainState->is_bypassed(*stereoId.value());
+    QVERIFY(bypass);
+    QVERIFY(*bypass.value());
+
+    const auto secondPath = dir.filePath(QStringLiteral("product_default_four_again.rgsml"));
+    reopened.project.saveProjectAs(QUrl::fromLocalFile(secondPath));
+    QCOMPARE(reopened.project.error_message(), QString{});
+    auto second = load_project(secondPath);
+    QVERIFY(second);
+    const auto& roundtripped = second.value()->document().chains;
+    QCOMPARE(roundtripped.size(), std::size_t{1});
+    QCOMPARE(roundtripped[0].chainId, authored[0].chainId);
+    QCOMPARE(roundtripped[0].revision, authored[0].revision);
+    QCOMPARE(roundtripped[0].modules.size(), std::size_t{4});
+    for (std::size_t i = 0; i < 4U; ++i) {
+        QCOMPARE(roundtripped[0].modules[i].typeId, authored[0].modules[i].typeId);
+        QCOMPARE(roundtripped[0].modules[i].instanceId, authored[0].modules[i].instanceId);
+        QCOMPARE(roundtripped[0].modules[i].userBypass, authored[0].modules[i].userBypass);
+        QCOMPARE(roundtripped[0].modules[i].parameters.canonical_utf8(),
+                 authored[0].modules[i].parameters.canonical_utf8());
+    }
+}
+
+void ProjectSessionTest::stereo_ms_four_module_project_roundtrip_and_atomic_rejection()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto wavPath = wav(dir, QStringLiteral("m15_source.wav"), 8);
+    QVERIFY(!wavPath.isEmpty());
+
+    Session author;
+    author.source.selectSource(QUrl::fromLocalFile(wavPath));
+    QVERIFY(author.source.source_resource());
+    const auto msUuid = core::Uuid::parse(
+        "15000000-0000-4000-8000-000000000015");
+    QVERIFY(msUuid);
+    auto msId = dsp::ModuleInstanceId::from_uuid(*msUuid.value());
+    QVERIFY(msId);
+    auto params = dsp::StereoMsParameters::create(
+        -1.5, 2.5, false, dsp::MonoBassMode::LR24, 125.0, 35.0);
+    QVERIFY(params);
+    auto registry = dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    auto optIn = app::MasteringChainState::create_with_stereo_ms(
+        *registry.value(), author.chainId, author.gainId, author.eqId,
+        author.compId, *msId.value(), *params.value(), true);
+    QVERIFY(optIn);
+    *author.masteringChainState = std::move(*optIn.value());
+    // Preserve non-default chain revision and independent bypass state.
+    QVERIFY(author.masteringChainState->set_user_bypass(author.compId, false));
+    const auto revision = author.masteringChainState->chain().revision();
+
+    const auto firstPath = dir.filePath(QStringLiteral("four_modules.rgsml"));
+    author.project.saveProjectAs(QUrl::fromLocalFile(firstPath));
+    QCOMPARE(author.project.error_message(), QString{});
+    auto first = load_project(firstPath);
+    QVERIFY(first);
+    const auto& original = first.value()->document();
+    QCOMPARE(original.chains.size(), std::size_t{1});
+    QCOMPARE(original.chains[0].modules.size(), std::size_t{4});
+    const auto& fourth = original.chains[0].modules[3];
+    QCOMPARE(fourth.typeId, std::string("rgsml.dsp.stereo-ms"));
+    QCOMPARE(fourth.instanceId, *msUuid.value());
+    QCOMPARE(fourth.userBypass, true);
+    QCOMPARE(original.chains[0].revision, revision);
+    QCOMPARE(fourth.parameterSchemaId,
+             std::optional<std::string>{"rgsml.dsp.stereo-ms.parameters/1.0.0"});
+    QCOMPARE(fourth.algorithmVersion, std::optional<std::string>{"1.0.0"});
+    auto decoded = dsp::decode_stereo_ms_parameters_json(
+        fourth.parameters.canonical_utf8());
+    QVERIFY(decoded);
+    QCOMPARE(*decoded.value(), *params.value());
+
+    Session target;
+    target.project.openProject(QUrl::fromLocalFile(firstPath));
+    QCOMPARE(target.project.error_message(), QString{});
+    QVERIFY(!target.project.degraded());
+    QCOMPARE(target.masteringChainState->module_count(), std::size_t{4});
+    QCOMPARE(target.masteringChainState->chain_id(), author.chainId);
+    QCOMPARE(target.masteringChainState->chain().revision(), revision);
+    QCOMPARE(target.masteringChainState->stereo_ms_instance_id(),
+             std::optional{*msId.value()});
+    QCOMPARE(target.masteringChainState->stereo_ms_parameters(),
+             std::optional{*params.value()});
+    QCOMPARE(target.masteringChainState->instances()[3].instance_id(),
+             *msId.value());
+    auto bypass = target.masteringChainState->is_bypassed(*msId.value());
+    QVERIFY(bypass);
+    QVERIFY(*bypass.value());
+    auto bindings = target.masteringChainState->execution_bindings();
+    QCOMPARE(bindings.size(), std::size_t{4});
+    QCOMPARE(std::get<dsp::StereoMsParameters>(bindings[3].parameters),
+             *params.value());
+
+    // Save-as from the reopened session must retain exactly the canonical
+    // descriptor, typed parameters, stable IDs, revision and bypass.
+    const auto secondPath = dir.filePath(QStringLiteral("four_modules_again.rgsml"));
+    target.project.saveProjectAs(QUrl::fromLocalFile(secondPath));
+    QCOMPARE(target.project.error_message(), QString{});
+    auto second = load_project(secondPath);
+    QVERIFY(second);
+    const auto& again = second.value()->document().chains[0];
+    QCOMPARE(again.revision, revision);
+    QCOMPARE(again.modules.size(), std::size_t{4});
+    for (std::size_t i = 0; i < 4U; ++i) {
+        QCOMPARE(again.modules[i].instanceId,
+                 original.chains[0].modules[i].instanceId);
+        QCOMPARE(again.modules[i].typeId,
+                 original.chains[0].modules[i].typeId);
+        QCOMPARE(again.modules[i].userBypass,
+                 original.chains[0].modules[i].userBypass);
+        QCOMPARE(again.modules[i].parameters.canonical_utf8(),
+                 original.chains[0].modules[i].parameters.canonical_utf8());
+    }
+
+    // Reject malformed four-node input BEFORE stopping playback or
+    // mutating the currently open project/chain/source.
+    const auto currentSource = target.source.source_resource()->reference().locator();
+    const auto verifyStillOpen = [&]() {
+        QCOMPARE(target.source.source_resource()->reference().locator(), currentSource);
+        QCOMPARE(target.masteringChainState->chain_id(), author.chainId);
+        QCOMPARE(target.masteringChainState->chain().revision(), revision);
+        QCOMPARE(target.masteringChainState->stereo_ms_instance_id(),
+                 std::optional{*msId.value()});
+        QCOMPARE(target.masteringChainState->stereo_ms_parameters(),
+                 std::optional{*params.value()});
+    };
+    const auto reject = [&](project::ProjectDocument bad, const QString& name) {
+        auto candidate = project::ProjectSnapshot::create(std::move(bad));
+        QVERIFY(candidate);
+        const auto path = dir.filePath(name);
+        QVERIFY(write_project(path, *candidate.value()));
+        target.project.openProject(QUrl::fromLocalFile(path));
+        QVERIFY2(!target.project.error_message().isEmpty(),
+                 "Corrupt Stereo/M-S project must fail closed before adoption");
+        verifyStillOpen();
+    };
+    {
+        auto bad = original;
+        bad.chains[0].modules[3].parameters =
+            *project::OpaqueJsonValue::parse("{\"invalid\":true}").value();
+        reject(std::move(bad), QStringLiteral("bad_ms_payload.rgsml"));
+    }
+    {
+        auto bad = original;
+        bad.chains[0].modules[3].parameterSchemaId =
+            "rgsml.dsp.stereo-ms.parameters/2.0.0";
+        reject(std::move(bad), QStringLiteral("bad_ms_schema.rgsml"));
+    }
+    {
+        auto bad = original;
+        bad.chains[0].modules[3].typeId = "rgsml.dsp.unknown-stereo";
+        reject(std::move(bad), QStringLiteral("bad_ms_type.rgsml"));
+    }
+    {
+        auto bad = original;
+        std::swap(bad.chains[0].modules[2], bad.chains[0].modules[3]);
+        reject(std::move(bad), QStringLiteral("bad_ms_order.rgsml"));
+    }
+    {
+        auto bad = original;
+        bad.chains[0].modules[3].provenance = "AUTOMATED";
+        reject(std::move(bad), QStringLiteral("bad_ms_provenance.rgsml"));
+    }
+}
 
 }  // namespace rgsml::tests
 

@@ -1,0 +1,741 @@
+#include "prepare_memory_advice_view_model.hpp"
+#include "source_selection_view_model.hpp"
+#include "prepare_memory_advice_source_policy.hpp"
+#include <rgsml/render/m17_offline_calibration.hpp>
+#include <rgsml/dsp/module_registry.hpp>
+#include <rgsml/dsp/true_peak_limiter_parameters.hpp>
+#include <rgsml/core/frame_time.hpp>
+#include <QMetaObject>
+#include <cmath>
+#include <thread>
+#include <utility>
+
+#include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
+#include <rgsml/platform/windows/windows_audio_playback_service.hpp>
+
+#include <QVariantMap>
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <limits>
+#include <vector>
+
+namespace rgsml::app {
+namespace {
+constexpr std::array<std::int64_t,6> kMasterRates{
+    44100,48000,88200,96000,176400,192000};
+
+[[nodiscard]] QString rate_label(std::int64_t hz)
+{
+    const auto decimals=(hz%1000)/100;
+    return QString::number(hz/1000)
+        +(decimals ? QStringLiteral(",")+QString::number(decimals) : QString())
+        +QStringLiteral(" kHz");
+}
+
+[[nodiscard]] QVariantMap row(std::int64_t hz,const QString& label,
+    const QString& kind,const QString& details)
+{
+    return QVariantMap{
+        {QStringLiteral("rateLabel"),rate_label(hz)},
+        {QStringLiteral("label"),label},
+        {QStringLiteral("kind"),kind},
+        {QStringLiteral("details"),details},
+        {QStringLiteral("minimumLabel"),QString{}},
+        {QStringLiteral("summary"),QString{}}};
+}
+
+[[nodiscard]] QVariantMap classified_row(
+    const audio::MonitoringRateMemoryAdvice& advice,
+    std::int64_t source_hz,bool authenticatedFullQ0)
+{
+    using Kind=audio::MonitoringMemoryAdviceKind;
+    const auto hz=advice.proposed_master_rate.value();
+    QString label;
+    QString kind;
+    switch(advice.kind) {
+    case Kind::RECOMMENDED_MEMORY_ONLY:
+        label=QStringLiteral("Recommended");
+        kind=QStringLiteral("recommended");
+        break;
+    case Kind::CAUTION_LIMITED_HEADROOM:
+        label=QStringLiteral("Limited");
+        kind=QStringLiteral("caution");
+        break;
+    case Kind::DISCOURAGED_INSUFFICIENT_HEADROOM:
+        label=QStringLiteral("Insufficient");
+        kind=QStringLiteral("discouraged");
+        break;
+    case Kind::UNKNOWN:
+        label=QStringLiteral("Not assessed");
+        kind=QStringLiteral("unknown");
+        break;
+    }
+    constexpr std::uint64_t mib=UINT64_C(1024)*1024;
+    constexpr std::uint64_t gib=mib*1024;
+    const auto& resource=advice.resource;
+    const auto& observed=advice.memory_observation;
+    const auto firBytes=resource.experimental_fir_scratch_bytes;
+    // Overflow cannot become a tiny, green memory recommendation.
+    const bool overflow=firBytes>
+        std::numeric_limits<std::uint64_t>::max()-resource.combined_pcm_bytes;
+    const auto minimumBytes=overflow
+        ? std::numeric_limits<std::uint64_t>::max()
+        : resource.combined_pcm_bytes+firBytes;
+    const auto roundedMib=minimumBytes/mib+(minimumBytes%mib!=0 ? 1U : 0U);
+    const auto fmtGiB=[gib](std::uint64_t bytes) {
+        return QString::number(static_cast<double>(bytes)/gib,'f',1)
+            +QStringLiteral(" GiB");
+    };
+    QString details=QStringLiteral(
+         "Known MASTER + DEVICE PCM lower bound: %1 MiB; FIR scratch %2 MiB. ")
+        .arg(QString::number(resource.combined_pcm_bytes/mib
+            +(resource.combined_pcm_bytes%mib!=0 ? 1U : 0U)),
+             QString::number(firBytes/mib+(firBytes%mib!=0 ? 1U : 0U)));
+    QString summary;
+    if(observed.available_physical_bytes==0
+       ||observed.available_commit_bytes==0) {
+        summary=QStringLiteral(
+            "Available RAM N/A · PCM+FIR >=%1 MiB · other DSP/Qt N/A")
+            .arg(QString::number(roundedMib));
+        details+=QStringLiteral(
+             "Physical or commit memory could not be observed. ");
+    } else {
+        const auto available=std::min(observed.available_physical_bytes,
+            observed.available_commit_bytes);
+        const auto safety=std::max(UINT64_C(512)*mib,available/4);
+        const auto remaining=advice.memory_headroom_after_reserve_bytes;
+        summary=QStringLiteral(
+            "Avail. %1 · safe budget %2 · PCM+FIR >=%3 MiB · DSP/Qt N/A")
+            .arg(fmtGiB(available),fmtGiB(remaining),
+                 QString::number(roundedMib));
+        details+=QStringLiteral(
+             "Available physical RAM %1; available commit %2; "
+             "safety reserve %3; accounted other Prepare/DSP reserve %4; "
+             "usable budget before PCM allocations %5. ")
+            .arg(fmtGiB(observed.available_physical_bytes),
+                 fmtGiB(observed.available_commit_bytes),fmtGiB(safety),
+                 fmtGiB(observed.reserved_other_prepare_bytes),
+                 fmtGiB(remaining));
+    }
+    details+=QStringLiteral(
+         "The >= figure is ONLY a lower bound: additional SRC/M17/M16 peaks, "
+         "Qt and render/export peaks are not yet measured or summed. "
+        "No RAM is reserved; CPU/real-time performance is not guaranteed.");
+    // Memory fitness is never permission to run an unqualified Final SRC.
+    // Keep the hypothetical cost visible without presenting it as a usable
+    // M17 Prepare recommendation. This is a display-only product guard.
+    const auto admission=prepare_memory_display_admission(
+        source_hz,hz,authenticatedFullQ0);
+    const bool candidateAdmissible=
+        admission==PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE;
+    QString pathStatus;
+    if(admission==PrepareMemoryDisplayAdmission::FINAL_SRC_UNQUALIFIED) {
+        pathStatus=QStringLiteral("FINAL_SRC_UNQUALIFIED");
+        label=QStringLiteral("SRC blocked");
+        kind=QStringLiteral("blocked");
+        const auto warning=QStringLiteral(
+            "Final SRC UNQUALIFIED: M17 Prepare is unavailable for this "
+            "SOURCE-to-MASTER pair. RAM is hypothetical, not a recommendation. ");
+        details.prepend(warning);
+        summary.prepend(QStringLiteral("SRC unavailable · "));
+    } else if(admission==PrepareMemoryDisplayAdmission::SOURCE_OR_RATE_UNAVAILABLE) {
+        pathStatus=QStringLiteral("RATE_UNAVAILABLE");
+        label=QStringLiteral("Not available");
+        kind=QStringLiteral("unknown");
+        details.prepend(QStringLiteral(
+            "SOURCE or MASTER rate is unsupported. RAM does not grant Prepare. "));
+        summary.prepend(QStringLiteral("Rate unavailable · "));
+    } else if(final_src_candidate_path(source_hz,hz)
+              ==FinalSrcCandidatePath::EXPERIMENTAL_UNQUALIFIED) {
+        pathStatus=QStringLiteral("SOURCE_PINNED_Q0_ORIGINAL");
+        details.prepend(QStringLiteral(
+            "Original 14-FIR Q0 package authenticated locally; source SHA "
+            "rechecked per Prepare. Full M17 physical FQ remains required. "));
+    } else if(final_src_candidate_path(source_hz,hz)
+              ==FinalSrcCandidatePath::EXISTING_44K_48K_FIR) {
+        pathStatus=QStringLiteral("EXISTING_FIR_CANDIDATE");
+        details.prepend(QStringLiteral(
+            "Existing 44.1/48 FIR candidate is admitted by M17, "
+            "but Final SRC release qualification is still pending. "));
+    } else {
+        pathStatus=QStringLiteral("IDENTITY");
+        details.prepend(QStringLiteral(
+            "Identity rate: no Final SRC required. "));
+    }
+    auto result=row(hz,label,kind,details);
+    result[QStringLiteral("srcCandidateAdmissible")]=candidateAdmissible;
+    result[QStringLiteral("srcCandidateStatus")]=pathStatus;
+    result[QStringLiteral("minimumLabel")]=
+        QStringLiteral(">=%1 MiB").arg(QString::number(roundedMib));
+    result[QStringLiteral("summary")]=summary;
+    return result;
+}
+} // namespace
+
+PrepareMemoryAdviceViewModel::PrepareMemoryAdviceViewModel(
+    const SourceSelectionViewModel* source,
+    const platform::windows::WindowsAudioPlaybackService* playback,
+    QObject* parent)
+    :QObject(parent),source_(source),playback_(playback)
+{
+    reset_unknown(QStringLiteral("Load a source"));
+    // Unify the three independently versioned timing evidence streams.
+    // Every change re-evaluates all six rates against live SOURCE,
+    // Ceiling, original chain revisions and Final SRC admission.
+    connect(this,&PrepareMemoryAdviceViewModel::actualPrepareChanged,
+        this,&PrepareMemoryAdviceViewModel::timingAdviceChanged);
+    connect(this,&PrepareMemoryAdviceViewModel::calibrationChanged,
+        this,&PrepareMemoryAdviceViewModel::timingAdviceChanged);
+    connect(this,&PrepareMemoryAdviceViewModel::changed,
+        this,&PrepareMemoryAdviceViewModel::timingAdviceChanged);
+    connect(source_,&SourceSelectionViewModel::sourceChanged,
+        this,[this] {
+            // Invalidate ALL read-only advice immediately, including previous
+            // SOURCE's six RAM/DEVICE rows, before the next popup refresh.
+            // The new SOURCE can have exactly the same rate and frame count.
+            cancel_calibration();
+            clear_calibration(QStringLiteral("SOURCE changed · calibrate again"));
+            actualHistory_.source_changed();
+            reset_unknown(source_ && source_->has_source()
+                ? QStringLiteral("SOURCE changed · refresh memory")
+                : QStringLiteral("Load a source"));
+            emit actualPrepareChanged();
+        });
+    calibrationThread_=std::jthread([this] {calibration_loop();});
+}
+
+PrepareMemoryAdviceViewModel::~PrepareMemoryAdviceViewModel()
+{
+    activeCalibrationSerial_.fetch_add(1,std::memory_order_release);
+    {
+        std::lock_guard lock(calibrationMutex_);
+        stoppingCalibration_=true;
+        pendingCalibration_.reset();
+    }
+    calibrationWake_.notify_one();
+    if(calibrationThread_.joinable())calibrationThread_.join();
+}
+
+QVariantList PrepareMemoryAdviceViewModel::recommendations() const
+{
+    return recommendations_;
+}
+
+QString PrepareMemoryAdviceViewModel::status_text() const
+{
+    return statusText_;
+}
+
+void PrepareMemoryAdviceViewModel::reset_unknown(const QString& status)
+{
+    statusText_=status;
+    recommendations_.clear();
+    for(const auto hz:kMasterRates) {
+        recommendations_.append(row(hz,
+            QStringLiteral("Not assessed"),QStringLiteral("unknown"),
+            QStringLiteral("No verified memory budget; "
+                "no master rate is automatically recommended.")));
+    }
+    emit changed();
+}
+
+void PrepareMemoryAdviceViewModel::refresh()
+{
+    if(!source_||!source_->has_source()) {
+        reset_unknown(QStringLiteral("Load a source"));
+        return;
+    }
+    if(!playback_) {
+        reset_unknown(QStringLiteral("Device unavailable"));
+        return;
+    }
+    const auto sourceRate=core::SampleRate::create(source_->sample_rate_hz());
+    const auto sourceFrames=core::FrameCount::create(source_->frame_count());
+    const auto channelCount=source_->channel_count();
+    if(!sourceRate||!sourceFrames||(channelCount!=1&&channelCount!=2)) {
+        reset_unknown(QStringLiteral("Source format unavailable"));
+        return;
+    }
+    const auto layout=channelCount==1
+        ? audio::ChannelLayout::MONO_C
+        : audio::ChannelLayout::STEREO_LR;
+    // Snapshot is fresh for every Prepare opening, new Source and explicit
+    // refresh. NO automatic output-rate change; no allocations of PCM.
+    const auto advice=playback_->advise_prepare_master_rate_memory(
+        *sourceRate.value(),*sourceFrames.value(),layout);
+    if(!advice||advice.value()->size()!=kMasterRates.size()) {
+        reset_unknown(QStringLiteral("Device or memory unavailable"));
+        return;
+    }
+    // Fail closed on stale/mixed SOURCE, DEVICE or RAM records, including
+    // forged smaller PCM cost, incomplete frame maps or wrong reserve.
+    if(!prepare_rate_advice_snapshot_valid(
+           *advice.value(),*sourceRate.value(),*sourceFrames.value(),layout)) {
+        reset_unknown(QStringLiteral("Incoherent device/rate advice"));
+        return;
+    }
+    QVariantList rows;
+    rows.reserve(static_cast<qsizetype>(kMasterRates.size()));
+    for(const auto& entry:*advice.value()) {
+        rows.append(classified_row(entry,source_->sample_rate_hz(),originalQ0FamilyReady_));
+    }
+    recommendations_=std::move(rows);
+    const auto deviceHz=advice.value()->front().observed_device_rate.value();
+    statusText_=QStringLiteral("DEVICE %1").arg(rate_label(deviceHz));
+    emit changed();
+}
+
+QVariantList PrepareMemoryAdviceViewModel::actual_prepare_times() const
+{
+    QVariantList rows;
+    rows.reserve(static_cast<qsizetype>(kMasterRates.size()));
+    const auto sourceHz=source_&&source_->has_source()
+        ?source_->sample_rate_hz():0;
+    const auto frames=source_&&source_->has_source()
+        ?source_->frame_count():0;
+    const auto channels=source_&&source_->has_source()
+        ?source_->channel_count():0;
+    const auto revisions=activeRevisionProvider_
+        ?activeRevisionProvider_():std::nullopt;
+    // Actual durations are measurements, not rounded-up estimates:
+    // preserve millisecond resolution for short, accepted full Prepares.
+    // Divide before rounding to avoid signed overflow at large durations.
+    const auto fmt=[](std::int64_t us)->QString {
+        const auto ms=us/1000+(us%1000>=500?1:0);
+        if(ms<1000)return QStringLiteral("%1 ms").arg(ms);
+        if(ms<60'000)return QStringLiteral("%1.%2 s")
+            .arg(ms/1000).arg(ms%1000,3,10,QChar('0'));
+        if(ms<3'600'000)return QStringLiteral("%1m %2s")
+            .arg(ms/60'000).arg(ms%60'000/1000);
+        return QStringLiteral("%1h %2m")
+            .arg(ms/3'600'000).arg(ms%3'600'000/60'000);
+    };
+    for(const auto hz:kMasterRates) {
+        QVariantMap item{
+            {QStringLiteral("label"),QStringLiteral("N/A")},
+            {QStringLiteral("details"),QStringLiteral(
+                "No accepted actual whole-Prepare measurement at this rate; "
+                "future total Prepare ETA N/A.")},
+            {QStringLiteral("ceilingDbTp"),QVariant{}},
+            {QStringLiteral("actual"),false}};
+        if(revisions && m17_final_src_candidate_admissible(sourceHz,hz,originalQ0FamilyReady_)) {
+            const auto observed=actualHistory_.latest(
+                sourceHz,frames,channels,hz,revisions);
+            if(observed) {
+                const auto& x=observed->last;
+                item[QStringLiteral("label")]=QStringLiteral("ACT %1")
+                    .arg(fmt(x.queue_us+x.wall_us));
+                const auto stages=
+                    AcceptedPrepareObservationHistory::stage_breakdown(x);
+                const auto stageDetails=stages
+                    ? QStringLiteral(
+                        " Actual stages: queue %1; Final SRC %2; M17 %3; "
+                        "M16 primary %4; other render time %5. "
+                        "Other render time is unattributed, not measured "
+                        "separately.")
+                        .arg(fmt(x.queue_us),
+                             stages->converted
+                                ?fmt(stages->src_us)
+                                :QStringLiteral("identity / bypassed"),
+                             fmt(x.m17_us),fmt(x.m16_us),
+                             fmt(stages->other_render_us))
+                    : QStringLiteral(
+                        " Detailed stage attribution N/A: measured stage "
+                        "counters exceed the render wall time.");
+                item[QStringLiteral("details")]=QStringLiteral(
+                    "Actual ACCEPTED full M17 Prepare on this host: last %1 "
+                    "(queue + render, including Final SRC where required). "
+                    "%2 same-chain measurements, observed range %3–%4. "
+                    "Historical observation ONLY, NOT a future total ETA, "
+                    "hardware FQ or Final SRC release.")
+                    .arg(fmt(x.queue_us+x.wall_us))
+                    .arg(observed->exact_revision_count)
+                    .arg(fmt(observed->minimum_total_us),
+                         fmt(observed->maximum_total_us))
+                    +stageDetails;
+                item[QStringLiteral("ceilingDbTp")]=x.ceiling;
+                item[QStringLiteral("actual")]=true;
+            }
+        }
+        rows.append(item);
+    }
+    return rows;
+}
+
+
+QVariantList PrepareMemoryAdviceViewModel::prepare_time_rows() const
+{
+    QVariantList rows;
+    rows.reserve(static_cast<qsizetype>(kMasterRates.size()));
+    const auto ceiling=activeCeilingProvider_
+        ?std::optional<double>{activeCeilingProvider_()}:std::nullopt;
+    const auto sourceHz=source_&&source_->has_source()
+        ?source_->sample_rate_hz():0;
+    // History and DSP rows remain independent evidence, but their user-
+    // visible classification/priority is C++-owned, not QML business math.
+    const auto historical=actual_prepare_times();
+    const auto host=host_total_ranges();
+    const auto sixProbeReady=calibrationValid_ && ceiling
+        &&std::isfinite(*ceiling) &&calibratedCeiling_==*ceiling
+        &&dspEstimates_.size()==static_cast<qsizetype>(kMasterRates.size());
+    for(std::size_t i=0;i<kMasterRates.size();++i) {
+        const auto rate=kMasterRates[i];
+        const auto memory=i<static_cast<std::size_t>(recommendations_.size())
+            ? recommendations_.at(static_cast<qsizetype>(i)).toMap()
+            : QVariantMap{};
+        QVariantMap entry{
+            {QStringLiteral("kind"),QStringLiteral("unavailable")},
+            {QStringLiteral("label"),QStringLiteral("N/A")},
+            {QStringLiteral("details"),QStringLiteral(
+                "No qualified complete Prepare duration projection; "
+                "additional full-Prepare measurements required.")},
+            {QStringLiteral("isFutureWholePrepare"),false},
+            {QStringLiteral("sourceRateHz"),sourceHz},
+            {QStringLiteral("masterRateHz"),rate},
+            {QStringLiteral("memoryKind"),
+                memory.value(QStringLiteral("kind"),QStringLiteral("unknown"))},
+            {QStringLiteral("peakRamQualified"),false}};
+        if(!m17_final_src_candidate_admissible(sourceHz,rate,originalQ0FamilyReady_)) {
+            entry[QStringLiteral("kind")]=QStringLiteral("blocked");
+            entry[QStringLiteral("label")]=QStringLiteral("SRC N/A");
+            entry[QStringLiteral("details")]=QStringLiteral(
+                "FINAL SRC not admitted for SOURCE %1 → MASTER %2 Hz. "
+                "Neither a synthetic DSP calibration nor available RAM "
+                "is permission to Prepare; total ETA unavailable.")
+                .arg(sourceHz).arg(rate);
+            rows.append(entry);
+            continue;
+        }
+        const auto future=host.at(static_cast<qsizetype>(i)).toMap();
+        const auto actual=historical.at(static_cast<qsizetype>(i)).toMap();
+        const auto actualCeiling=actual.value(QStringLiteral("ceilingDbTp"));
+        // Future estimate is the PRIMARY ETA only if >=3 matched, accepted,
+        // same-algorithm complete Prepare observations exist. The ACT record
+        // below is never masqueraded as the duration of a future track.
+        if(future.value(QStringLiteral("valid")).toBool()) {
+            entry[QStringLiteral("kind")]=QStringLiteral("host_future");
+            entry[QStringLiteral("label")]=future.value(QStringLiteral("label"));
+            entry[QStringLiteral("details")]=future.value(QStringLiteral("details"));
+            entry[QStringLiteral("isFutureWholePrepare")]=true;
+            if(actual.value(QStringLiteral("actual")).toBool()
+               &&actualCeiling.isValid() &&ceiling
+               &&actualCeiling.toDouble()==*ceiling)
+                entry[QStringLiteral("details")]=
+                    entry.value(QStringLiteral("details")).toString()
+                    +QStringLiteral(" Previous ACT: ")
+                    +actual.value(QStringLiteral("label")).toString()
+                    +QStringLiteral(" (historical, not this projection).");
+        } else if(actual.value(QStringLiteral("actual")).toBool()
+               &&actualCeiling.isValid()&&ceiling
+               &&actualCeiling.toDouble()==*ceiling) {
+            entry[QStringLiteral("kind")]=QStringLiteral("historical_actual");
+            entry[QStringLiteral("label")]=actual.value(QStringLiteral("label"));
+            entry[QStringLiteral("details")]=actual.value(QStringLiteral("details"));
+        } else if(sixProbeReady) {
+            const auto probe=dspEstimates_.at(static_cast<qsizetype>(i)).toMap();
+            if(probe.value(QStringLiteral("label")).toString()
+                !=QStringLiteral("N/A")) {
+                entry[QStringLiteral("kind")]=QStringLiteral("dsp_only");
+                entry[QStringLiteral("label")]=probe.value(QStringLiteral("label"));
+                entry[QStringLiteral("details")]=probe.value(QStringLiteral("details"))
+                    .toString()+QStringLiteral(
+                    " COMPLETE PREPARE ETA N/A: no real Final SRC timing "
+                    "where required, queue and full-track resource peaks.");
+            }
+        }
+        // An indicative historical time is NEVER a memory or renderer
+        // admission. Link the same source-epoch Windows RAM observation in
+        // the row; prohibit any visible implication of an "OK to Prepare".
+        const auto memoryKind=entry.value(QStringLiteral("memoryKind")).toString();
+        if(memoryKind==QStringLiteral("discouraged")
+           ||memoryKind==QStringLiteral("unknown"))
+            entry[QStringLiteral("details")]=
+                entry.value(QStringLiteral("details")).toString()
+                +QStringLiteral(" RAM currently ")
+                +(memoryKind==QStringLiteral("unknown")
+                    ?QStringLiteral("unassessed")
+                    :QStringLiteral("insufficient"))
+                +QStringLiteral("; time is not an allocation permit.");
+        rows.append(entry);
+    }
+    return rows;
+}
+
+QVariantList PrepareMemoryAdviceViewModel::host_total_ranges() const
+{
+    QVariantList rows;
+    rows.reserve(static_cast<qsizetype>(kMasterRates.size()));
+    const auto revisions=activeRevisionProvider_
+        ?activeRevisionProvider_():std::nullopt;
+    const auto ceiling=activeCeilingProvider_
+        ?std::optional<double>{activeCeilingProvider_()}:std::nullopt;
+    const auto sourceHz=source_&&source_->has_source()
+        ?source_->sample_rate_hz():0;
+    const auto frames=source_&&source_->has_source()
+        ?source_->frame_count():0;
+    const auto channels=source_&&source_->has_source()
+        ?source_->channel_count():0;
+    const auto fmt=[](std::int64_t us)->QString {
+        const auto seconds=us/1000000+(us%1000000!=0);
+        if(seconds>=3600)return QStringLiteral("%1h %2m")
+            .arg(seconds/3600).arg(seconds%3600/60);
+        if(seconds>=60)return QStringLiteral("%1m %2s")
+            .arg(seconds/60).arg(seconds%60);
+        return QStringLiteral("%1s").arg(seconds);
+    };
+    for(const auto hz:kMasterRates) {
+        QVariantMap item{
+            {QStringLiteral("valid"),false},
+            {QStringLiteral("label"),QStringLiteral("N/A")},
+            {QStringLiteral("details"),QStringLiteral(
+                "Whole-Prepare future host ETA unavailable: requires at least "
+                "three accepted full preparations on this host with matching "
+                "SOURCE/MASTER rates, channels, M17 revisions and Ceiling.")}};
+        if(revisions&&ceiling&&std::isfinite(*ceiling)) {
+            const auto range=hostTimingHistory_.predict(
+                sourceHz,frames,channels,hz,*ceiling,
+                revisions->terminal,revisions->parameters);
+            if(range) {
+                item[QStringLiteral("valid")]=true;
+                item[QStringLiteral("label")]=QStringLiteral("~%1-%2")
+                    .arg(fmt(range->low_us),fmt(range->high_us));
+                item[QStringLiteral("details")]=QStringLiteral(
+                    "INDICATIVE PRE-PREPARE HOST RANGE %1–%2: extrapolated "
+                    "only from %3 genuine previously ACCEPTED whole-source "
+                    "M17 Prepares with matching SOURCE/MASTER sample rates, "
+                    "channels, Ceiling and M17 parameter revisions. Includes "
+                    "actual queue + complete renderer wall time, including "
+                    "SRC only if it really ran. A deliberately enlarged "
+                    "diagnostic interval, NOT a confidence interval or "
+                    "guarantee; no persistent host profile, WAV/export "
+                    "claim, Final SRC qualification or physical FQ. "
+                    "Unqualified SRC routes remain BLOCKED.")
+                    .arg(fmt(range->low_us),fmt(range->high_us))
+                    .arg(range->matched_observations);
+            }
+        }
+        rows.append(item);
+    }
+    return rows;
+}
+
+void PrepareMemoryAdviceViewModel::observe_approved_prepare(
+    const AcceptedPrepareObservation& x)
+{
+    if(!source_||!source_->has_source()
+       ||source_->sample_rate_hz()!=x.source_hz
+       ||source_->frame_count()!=x.source_frames
+       ||source_->channel_count()!=x.channels
+       ||!m17_final_src_candidate_admissible(x.source_hz,x.master_hz,originalQ0FamilyReady_))
+        return;
+    const auto current=activeRevisionProvider_
+        ?activeRevisionProvider_():std::nullopt;
+    if(!current ||x.manual_revision!=current->manual
+       ||x.terminal_revision!=current->terminal
+       ||x.terminal_parameter_revision!=current->parameters)return;
+    if(actualHistory_.observe(x)) {
+        // Only an actually accepted new whole-Prepare may teach the host
+        // model. Anonymous process-local timings survive SOURCE replacement;
+        // exact-owner ACT history above remains SOURCE-epoch scoped.
+        static_cast<void>(hostTimingHistory_.observe(x));
+        emit actualPrepareChanged();
+    }
+}
+
+void PrepareMemoryAdviceViewModel::clear_calibration(const QString& message)
+{
+    calibrationRunning_=false;
+    completedCalibrationRates_=0;
+    calibrationValid_=false;
+    dspEstimates_.clear();
+    calibratedCeiling_=0.0;
+    calibrationStatus_=message;
+    emit calibrationChanged();
+}
+
+void PrepareMemoryAdviceViewModel::cancel_calibration()
+{
+    ++calibrationSerial_;
+    activeCalibrationSerial_.store(calibrationSerial_,std::memory_order_release);
+    {
+        std::lock_guard lock(calibrationMutex_);
+        pendingCalibration_.reset();
+    }
+    if(calibrationRunning_)
+        clear_calibration(QStringLiteral("Calibration cancelled · no partial ETA"));
+}
+
+bool PrepareMemoryAdviceViewModel::calibrate(double ceiling)
+{
+    if(calibrationRunning_ || (calibrationActivityGuard_
+        && !calibrationActivityGuard_()))return false;
+    if(!source_||!source_->has_source()
+       ||!std::isfinite(ceiling))
+        return false;
+    const auto rate=source_->sample_rate_hz();
+    const auto frames=source_->frame_count();
+    const auto channels=source_->channel_count();
+    if(std::find(kMasterRates.begin(),kMasterRates.end(),rate)
+           ==kMasterRates.end()
+       ||frames<=0 || (channels!=1&&channels!=2)
+       ||!dsp::TruePeakLimiterParameters::create(ceiling))
+        return false;
+    ++calibrationSerial_;
+    activeCalibrationSerial_.store(calibrationSerial_,std::memory_order_release);
+    {
+        std::lock_guard lock(calibrationMutex_);
+        pendingCalibration_=CalibrationJob{
+            calibrationSerial_,rate,frames,channels,ceiling};
+    }
+    clear_calibration(QStringLiteral(
+        "Measuring real M17/M16 offline · no device, track or WAV"));
+    calibrationRunning_=true;
+    emit calibrationChanged();
+    calibrationWake_.notify_one();
+    return true;
+}
+
+void PrepareMemoryAdviceViewModel::calibration_loop()
+{
+    for(;;) {
+        std::optional<CalibrationJob> job;
+        {
+            std::unique_lock lock(calibrationMutex_);
+            calibrationWake_.wait(lock,[this] {
+                return stoppingCalibration_ || pendingCalibration_.has_value();
+            });
+            if(stoppingCalibration_)return;
+            job.swap(pendingCalibration_);
+        }
+        if(!job)continue;
+        const auto cancelled=[this,serial=job->serial] {
+            return activeCalibrationSerial_.load(std::memory_order_acquire)
+                !=serial;
+        };
+        auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+        auto parameters=dsp::TruePeakLimiterParameters::create(job->ceiling);
+        auto block=core::FrameCount::create(256);
+        std::array<DspProbeEstimate,6> completed{};
+        if(registry && parameters && block) {
+            for(std::size_t index=0;index<kMasterRates.size();++index) {
+                if(cancelled())break;
+                const auto hz=kMasterRates[index];
+                auto rate=core::SampleRate::create(hz);
+                auto probe=core::FrameCount::create(hz/20); // 50ms genuine M17
+                const auto q=job->sourceFrames/job->sourceRate;
+                const auto r=job->sourceFrames%job->sourceRate;
+                const auto tail=(r*hz+job->sourceRate-1)/job->sourceRate;
+                if(q>(std::numeric_limits<std::int64_t>::max()-tail)/hz
+                   ||!rate||!probe)continue;
+                auto projected=core::FrameCount::create(q*hz+tail);
+                if(!projected)continue;
+                const auto layout=job->channels==1
+                    ?audio::ChannelLayout::MONO_C
+                    :audio::ChannelLayout::STEREO_LR;
+                std::int64_t low=std::numeric_limits<std::int64_t>::max();
+                std::int64_t high=0;
+                bool valid=true;
+                // Two deterministic programme classes, two repeated
+                // authentic M17+M16 measurements per rate. Neither transient
+                // success nor timing is silently fabricated on failure.
+                for(const auto stimulus:{
+                    render::M17CalibrationStimulus::QUIET_PROGRAMME,
+                    render::M17CalibrationStimulus::TRANSIENT_STRESS}) {
+                    for(int repeat=0;repeat<2;++repeat) {
+                        if(cancelled()){valid=false;break;}
+                        auto measured=render::calibrate_m17_offline_once(
+                            *rate.value(),layout,*parameters.value(),
+                            stimulus,*probe.value(),*registry.value(),
+                            *block.value(),cancelled);
+                        if(!measured){valid=false;break;}
+                        auto estimate=render::estimate_m17_m16_microseconds(
+                            *measured.value(),*rate.value(),layout,job->ceiling,
+                            stimulus,*projected.value());
+                        if(!estimate){valid=false;break;}
+                        low=std::min(low,*estimate.value());
+                        high=std::max(high,*estimate.value());
+                    }
+                    if(!valid)break;
+                }
+                if(valid && low>0 && high>=low)
+                    completed[index]={low,high,true};
+                if(cancelled())break;
+                const auto finished=static_cast<int>(index)+1;
+                static_cast<void>(QMetaObject::invokeMethod(this,
+                    [this,serial=job->serial,finished] {
+                        if(serial!=calibrationSerial_ || !calibrationRunning_)
+                            return;
+                        completedCalibrationRates_=finished;
+                        calibrationStatus_=QStringLiteral(
+                            "M17/M16 local calibration %1/6 rates · TOTAL ETA N/A")
+                            .arg(finished);
+                        emit calibrationChanged();
+                    },Qt::QueuedConnection));
+            }
+        }
+        if(cancelled())continue;
+        // All QObjects and QVariant presentations are GUI-thread only.
+        static_cast<void>(QMetaObject::invokeMethod(this,
+            [this,serial=job->serial,ceiling=job->ceiling,completed] {
+                finish_calibration(serial,ceiling,completed);
+            },Qt::QueuedConnection));
+    }
+}
+
+void PrepareMemoryAdviceViewModel::finish_calibration(
+    std::uint64_t serial,double ceiling,
+    std::array<DspProbeEstimate,6> results)
+{
+    if(serial!=calibrationSerial_ || !calibrationRunning_)return;
+    const auto formatDuration=[](std::int64_t us)->QString {
+        constexpr std::int64_t million=1'000'000;
+        const auto seconds=std::max<std::int64_t>(
+            1,us/million+(us%million!=0?1:0));
+        if(seconds>=3600)
+            return QStringLiteral("%1h").arg(seconds/3600);
+        if(seconds>=60)
+            return QStringLiteral("%1m").arg(seconds/60);
+        return QStringLiteral("%1s").arg(seconds);
+    };
+    QVariantList rows;
+    rows.reserve(6);
+    int measured=0;
+    for(const auto& result:results) {
+        QVariantMap row;
+        if(result.valid) {
+            ++measured;
+            const auto low=formatDuration(result.lowUs);
+            const auto high=formatDuration(result.highUs);
+            row[QStringLiteral("label")]=low==high
+                ?QStringLiteral("~%1*").arg(low)
+                :QStringLiteral("%1-%2*").arg(low,high);
+            row[QStringLiteral("details")]=QStringLiteral(
+                "LOCAL M17+M16 compute-time projection ONLY (%1 to %2); "
+                "two actual quiet + two transient 50ms probes on this CPU. "
+                "NOT total Prepare time: Final SRC, queue, allocation, "
+                "finalization and real-track effects NOT modeled. "
+                "No guaranteed duration; do not use as an export ETA.")
+                .arg(low,high);
+        } else {
+            row[QStringLiteral("label")]=QStringLiteral("N/A");
+            row[QStringLiteral("details")]=QStringLiteral(
+                "Genuine M17/M16 calibration did not produce four "
+                "complete, verified measurements at this rate. "
+                "Total Prepare estimate unavailable.");
+        }
+        rows.append(row);
+    }
+    dspEstimates_=std::move(rows);
+    calibratedCeiling_=ceiling;
+    calibrationRunning_=false;
+    completedCalibrationRates_=6;
+    calibrationValid_=measured>0;
+    calibrationStatus_=QStringLiteral(
+        "%1/6 M17+M16 rate probes completed · TOTAL Prepare ETA N/A")
+        .arg(measured);
+    emit calibrationChanged();
+}
+
+} // namespace rgsml::app
