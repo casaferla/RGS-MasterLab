@@ -48,12 +48,14 @@ AssetState& state() {
 }
 } // namespace
 
-void configure_external_playback_fir_root(std::filesystem::path root)
+void configure_external_playback_fir_root(std::u16string root)
 {
     auto& s=state();
     std::lock_guard guard{s.mutex};
     s.cache={}; // existing PlaybackSampleRateAdapter owns its immutable copy
-    s.root=std::move(root);
+    // Convert the portable UTF-16 API value to the native filesystem path
+    // ONLY inside this .cpp (never in public DSP-facing headers).
+    s.root=std::filesystem::path{std::move(root)};
 }
 
 core::Result<ExternalPlaybackFir> load_external_playback_fir(
