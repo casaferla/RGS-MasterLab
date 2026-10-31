@@ -391,7 +391,6 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
     }
     QCOMPARE(identities,6);
     QCOMPARE(conversions,30);
-    QCOMPARE(m17M16RealPaths,36);
     QCOMPARE(static_cast<int>(std::count(observedRatios.begin(),
         observedRatios.end(),true)),14);
     std::uint64_t frozenAssetBytes=0;
@@ -3435,6 +3434,7 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
     }
     QCOMPARE(identities,6);
     QCOMPARE(conversions,30);
+    QCOMPARE(m17M16RealPaths,36);
     QCOMPARE(static_cast<int>(std::count(seen.begin(),seen.end(),true)),14);
 }
 
