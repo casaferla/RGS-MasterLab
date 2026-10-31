@@ -1382,21 +1382,19 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         QStringLiteral("READY_TO_INSTALL"),12000);
     QCOMPARE(device->audibleRealization.realizationId,updatedManualId);
 
-    // SOURCE Loop edit cancels only the pending/READY private job. New
-    // request is explicit, source ownership is never silently substituted.
+    // SOURCE Loop edits on a READY whole-track private Prepare update only
+    // the live transport handoff. They MUST NOT invalidate the immutable PCM
+    // or require a second full-resource M17 Prepare.
     const auto shiftedRegion=core::FrameRange::create(
         core::FrameIndex{700},core::FrameIndex{3300});
     QVERIFY(shiftedRegion);
     desiredLoop=*shiftedRegion.value();
     QVERIFY(transport.set_loop_source_range(desiredLoop));
     coordinator.loop_context_changed();
-    QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
-    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QCOMPARE(vm.audio_status(),QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QVERIFY(!coordinator.device_active());
     QVERIFY(!product.private_id());
-    vm.requestPrepare();
-    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
-        QStringLiteral("READY_TO_INSTALL"),12000);
     vm.previewPrepared();
     QVERIFY(coordinator.device_active());
     QCOMPARE(transport.source_display_snapshot().value()->loop,desiredLoop);
