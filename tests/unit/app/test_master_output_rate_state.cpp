@@ -92,10 +92,14 @@ private slots:
     MasterOutputRateState state;
     QSignalSpy admissionSignals(&state,
         &MasterOutputRateState::selectionAvailabilityChanged);
-    const auto read=[&state](std::size_t index) {
+    // Qt QCOMPARE/QVERIFY are void-returning assertions; never use them
+    // inside a bool-returning QML admission accessor lambda. Check the
+    // fixed six-row contract at the test boundary instead.
+    QCOMPARE(state.candidate_rate_admissions().size(),qsizetype{6});
+    const auto read=[&state](std::size_t index)->bool {
         const auto values=state.candidate_rate_admissions();
-        QCOMPARE(values.size(),qsizetype{6});
-        return values.at(static_cast<qsizetype>(index)).toBool();
+        return index<static_cast<std::size_t>(values.size())
+            && values.at(static_cast<qsizetype>(index)).toBool();
     };
     for(std::size_t i=0;i<6;++i)QVERIFY(!read(i));
     QVERIFY(!state.current_master_rate_admissible());
