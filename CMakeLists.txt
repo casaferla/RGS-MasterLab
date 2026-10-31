@@ -36,6 +36,11 @@ set(RGSML_TOOLCHAIN_MANIFEST
 )
 rgsml_generate_current_toolchain_manifest("${RGSML_TOOLCHAIN_MANIFEST}")
 
+# Playback FIR coefficients are EXTERNAL application resources. Generate
+# only bit-exact frozen copies at configure time, never regenerate filters.
+include(cmake/RgsmlExternalFirAssets.cmake)
+rgsml_configure_external_fir_assets()
+
 add_subdirectory(core)
 add_subdirectory(third_party)
 add_subdirectory(project)
