@@ -63,7 +63,7 @@ void ExternalPlaybackFirAssetsTests::exactFrozenLegacyAssetPack()
 {
     const auto root=test_asset_root();
     QVERIFY(!root.empty());
-    audio::configure_external_playback_fir_root(root);
+    audio::configure_external_playback_fir_root(root.u16string());
     auto forward=make(44100,48000);
     auto backward=make(48000,44100);
     QVERIFY(static_cast<bool>(forward));
@@ -83,7 +83,7 @@ void ExternalPlaybackFirAssetsTests::missingCorruptAndOwnedLifetime()
 {
     const auto root=test_asset_root();
     QVERIFY(!root.empty());
-    audio::configure_external_playback_fir_root(root);
+    audio::configure_external_playback_fir_root(root.u16string());
     auto original=make(44100,48000);
     QVERIFY(static_cast<bool>(original));
     const auto first=original.value()->coefficient_bits(0);
@@ -91,7 +91,7 @@ void ExternalPlaybackFirAssetsTests::missingCorruptAndOwnedLifetime()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
     const auto empty=std::filesystem::path{temp.path().toStdString()};
-    audio::configure_external_playback_fir_root(empty);
+    audio::configure_external_playback_fir_root(empty.u16string());
     QVERIFY(!make(44100,48000));
     // Previously admitted existing adapters retain their OWN immutable asset.
     QCOMPARE(original.value()->coefficient_bits(0),first);
@@ -114,7 +114,7 @@ void ExternalPlaybackFirAssetsTests::missingCorruptAndOwnedLifetime()
         QVERIFY(static_cast<bool>(file));
     }
     QVERIFY(!make(44100,48000)); // SHA pin prevents installation of fake FIR
-    audio::configure_external_playback_fir_root(root);
+    audio::configure_external_playback_fir_root(root.u16string());
     QVERIFY(static_cast<bool>(make(44100,48000)));
 }
 
