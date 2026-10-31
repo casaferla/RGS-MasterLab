@@ -8,6 +8,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <vector>
 #include <string_view>
 
 namespace rgsml::audio {
@@ -90,6 +92,7 @@ private:
         PlaybackRateSpec spec,
         std::int64_t interpolation,
         std::int64_t decimation,
+        std::shared_ptr<const std::vector<std::uint64_t>> coefficientsOwner,
         const std::uint64_t* coefficientBits,
         std::size_t coefficientCount,
         std::string_view kernelSha256,
@@ -98,6 +101,9 @@ private:
     PlaybackRateSpec spec_;
     std::int64_t interpolation_;
     std::int64_t decimation_;
+    // Lifetimed, verified immutable asset: no dangling file cache pointers
+    // when a test/operator changes roots, and no audio-callback disk I/O.
+    std::shared_ptr<const std::vector<std::uint64_t>> coefficientsOwner_;
     const std::uint64_t* coefficientBits_;
     std::size_t coefficientCount_;
     std::string_view kernelSha256_;
