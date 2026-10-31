@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QString>
+#include <QVariantList>
 #include <QtGlobal>
 #include <array>
 #include <functional>
@@ -15,6 +16,11 @@ class MasterOutputRateState final : public QObject {
     Q_PROPERTY(bool hasSupportedMasterRate READ has_supported_master_rate NOTIFY changed)
     Q_PROPERTY(bool canEditTarget READ can_edit_target NOTIFY selectionAvailabilityChanged)
     Q_PROPERTY(quint64 rateRevision READ rate_revision NOTIFY changed)
+    // All six Final SRC admission results and the selected MASTER gate are
+    // observable. QML must not call opaque methods without a NOTIFY-bound
+    // property dependency, or SOURCE changes leave stale blocked rows.
+    Q_PROPERTY(QVariantList candidateRateAdmissions READ candidate_rate_admissions NOTIFY selectionAvailabilityChanged)
+    Q_PROPERTY(bool currentMasterRateAdmissible READ current_master_rate_admissible NOTIFY selectionAvailabilityChanged)
 public:
     explicit MasterOutputRateState(QObject* parent=nullptr):QObject(parent){}
     [[nodiscard]] static constexpr bool supported(qint64 hz) noexcept {
@@ -31,6 +37,18 @@ public:
     }
     [[nodiscard]] qint64 source_rate_hz()const noexcept{return sourceRateHz_;}
     [[nodiscard]] qint64 master_rate_hz()const noexcept{return masterRateHz_;}
+    [[nodiscard]] QVariantList candidate_rate_admissions() const {
+        constexpr std::array<qint64,6> rates{
+            44100,48000,88200,96000,176400,192000};
+        QVariantList admission;
+        admission.reserve(static_cast<qsizetype>(rates.size()));
+        for(const auto hz:rates)
+            admission.append(m17_candidate_rate_admissible(hz));
+        return admission;
+    }
+    [[nodiscard]] bool current_master_rate_admissible() const noexcept {
+        return m17_candidate_rate_admissible(masterRateHz_);
+    }
     [[nodiscard]] bool has_supported_master_rate()const noexcept {
         return supported(sourceRateHz_)&&supported(masterRateHz_);
     }
