@@ -1002,6 +1002,9 @@ jobs:
         continue-on-error: true
         run: |
           $env:PATH = "$env:RGSML_QT_ROOT\bin;$env:PATH"
+          # Diagnostic reruns must use the SAME public external-FIR root as
+          # the real CTest/direct-rate gate; no misleading secondary failure.
+          $env:RGSML_PLAYBACK_FIR_ROOT = (Join-Path $env:GITHUB_WORKSPACE 'build/windows-ninja-cache/generated/rgsml/fir/playback')
           $exe = "build/windows-ninja-cache/Release/rgsml_terminal_product_activation_tests.exe"
           $raw = "$env:RUNNER_TEMP/rgsml-terminal-activation-qt.txt"
           $dest = "$env:RUNNER_TEMP/rgsml-terminal-activation-bounded.txt"
