@@ -362,16 +362,10 @@ QVariantList PrepareMemoryAdviceViewModel::prepare_time_rows() const
 {
     QVariantList rows;
     rows.reserve(static_cast<qsizetype>(kMasterRates.size()));
-    const auto revisions=activeRevisionProvider_
-        ?activeRevisionProvider_():std::nullopt;
     const auto ceiling=activeCeilingProvider_
         ?std::optional<double>{activeCeilingProvider_()}:std::nullopt;
     const auto sourceHz=source_&&source_->has_source()
         ?source_->sample_rate_hz():0;
-    const auto frames=source_&&source_->has_source()
-        ?source_->frame_count():0;
-    const auto channels=source_&&source_->has_source()
-        ?source_->channel_count():0;
     // History and DSP rows remain independent evidence, but their user-
     // visible classification/priority is C++-owned, not QML business math.
     const auto historical=actual_prepare_times();
