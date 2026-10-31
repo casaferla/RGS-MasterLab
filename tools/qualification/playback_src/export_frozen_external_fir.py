@@ -51,7 +51,7 @@ def export(source_root: Path, output_root: Path) -> None:
     # to keep ONE total 16-FIR application resource inventory.
     pins_source = (source_root / "audio" / "include" / "rgsml" / "audio"
                    / "internal" / "phase11_frozen_rgsmsr1_pins.hpp")
-    pins = re.findall(r'\\{(\\d+),(\\d+),"([a-f0-9]{64})"\\}',
+    pins = re.findall(r'\{(\d+),(\d+),"([a-f0-9]{64})"\}',
                       pins_source.read_text(encoding="utf-8"))
     if len(pins) != 14 or len(set((L, M) for L, M, _ in pins)) != 14:
         raise ValueError("Original 14-Q0 trusted FIR pin inventory changed")
