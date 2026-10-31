@@ -1,7 +1,15 @@
 # RGS MasterLab — PO decision: all SRC FIR assets external in installed product
 
-**Product Owner decision: 2026-10-31.** **Status: APPROVED FOR DEFERRED IMPLEMENTATION; NOT IMPLEMENTED, NOT CI-QUALIFIED.**
+**Product Owner decision: 2026-10-31.** **Status: IMPLEMENTATION IN PROGRESS ON NO-CI STAGING; NOT YET CI-QUALIFIED.**
 **Priority (SUPERSEDED BY LATEST PO ORDER ABOVE):** protect current M17 Focused #942 double-green and complete M17 Windows FQ first. The successful M17 FQ is the **trigger** for one coherent packaging/loader macro-lot **BEFORE M18 Dither**; one Focused Windows+Linux CI per completed candidate, recovery CI only if red, and suitable PO-gated Windows qualification for its newly changed artifact. No standalone documentation CI.
+
+## 2026-10-31 — LATEST PO OVERRIDE: MACRO-LOT NOW, REPLACE OLD FQ
+
+**LATEST PRODUCT OWNER DECISION supersedes both prior timing sequences:** the Product Owner launched the older M17 FQ and explicitly undertook to **cancel it personally**, because changing the executable's FIR loading after FQ would force a second Windows qualification. No assistant cancellation is claimed. Build/qualify **ONE complete all-16-FIR external migration macro-lot NOW on no-CI staging** (exact bit extraction of both preexisting 44.1↔48 FIRs, unified source-pinned 14 private Q0 resource discovery, app-relative Windows deploy/manifest, native ownership and corruption tests). Then **promote only this complete candidate once**, using expected SHA CAS to the existing Draft PR and one Windows/Linux Focused CI, correcting red results in subsequent coherent repair lots. **THEN launch one new cold Windows FQ for the migrated artifact**, under the PO's manual dispatch authority, and complete private original-14 FIR provisioning plus real physical M17/MASTER/DEVICE/GUI/installer verification. Only after the new FQ and accepted externalization proceed to M18 Dither. Never claim the #942 green tests the new staging code.
+
+**Privacy/release limitation:** The two historical FIR coefficient sources are public frozen .inc files; the new build-time script copies their exact existing binary64 bits into **external** binary files, without costly MPFR regeneration. No compiled constexpr kernel arrays remain. The private original 14 RGSMSR1 FIR bytes remain **OUT** of public GitHub, public CI and unauthorized bundles; operator-provisioned private FQ and future specifically authorized packaging remain distinct. In this source-controlled macro-lot, the unified 16-entry SHA-only manifest may list the 14 public pin hashes but **must not** embed the private taps. All 16 coefficients are external to the resulting executable; full automatic distribution of the 14 private files requires separate release authorization. Keep native numerical paths independent, runtime offline, no user Python, immutable ownership, and fail closed.
+
+**Current state:** code/build/test changes are being staged, NOT yet CI-certified; the previous #942 Windows/Linux green only certifies its unchanged Draft PR SHA f446baf91a1b4bd8abed7bd3df63f6060be1fc9b. This override cancels prior *ordering*, not immutable mathematical, CI, FQ or privacy gates.
 
 ## 2026-10-31 — LATEST PO OVERRIDE: successful M17 FQ -> FIR migration macro-lot -> M18
 
