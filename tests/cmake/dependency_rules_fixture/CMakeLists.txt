@@ -30,6 +30,13 @@ endif()
 if(FIXTURE_CASE MATCHES "^(audio_|platform_|dsp_|render_)"
     OR FIXTURE_CASE STREQUAL "core_negative_audio"
     OR FIXTURE_CASE STREQUAL "core_negative_dsp")
+    # Real audio/CMakeLists now depends on the exact-frozen external FIR
+    # build target; reconstruct that target in every isolated fixture.
+    # Without this, render standalone/positive CMake generation fails even
+    # when the production tree correctly configures and all DSP tests pass.
+    set(RGSML_EXTERNAL_FIR_SOURCE_ROOT "${RGSML_SOURCE_DIR}")
+    include("${RGSML_SOURCE_DIR}/cmake/RgsmlExternalFirAssets.cmake")
+    rgsml_configure_external_fir_assets()
     add_subdirectory("${RGSML_SOURCE_DIR}/audio" rgsml_audio_build)
 endif()
 
