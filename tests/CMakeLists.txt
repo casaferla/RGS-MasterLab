@@ -334,6 +334,9 @@ rgsml_apply_project_warnings(rgsml_external_playback_fir_assets_tests)
 add_test(NAME rgsml_external_playback_fir_assets_tests
     COMMAND rgsml_external_playback_fir_assets_tests)
 set_tests_properties(rgsml_external_playback_fir_assets_tests PROPERTIES
+    # Isolated VS Debug CTest does NOT inherit Qt PATH from other workflow
+    # steps. Without Qt6Cored.dll, this test exits instantly with zero output.
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     LABELS "audio;playback_src;external_fir;frozen_kernel")
 
 qt_add_executable(rgsml_playback_src_tests
