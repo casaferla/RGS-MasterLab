@@ -323,8 +323,15 @@ private slots:
         fir.invocation=serial;fir.master_hz=48000;fir.src_us=100000;
         QVERIFY(converted.observe(fir));
     }
-    QVERIFY(converted.predict(132300,44100,2,48000,-1.0,20,30));
-    QVERIFY(!converted.predict(132300,44100,2,192000,-1.0,20,30));
+    // Direct C++ API order is source Hz, source frames, channel count,
+    // master Hz. The fixture-local predictor above has a different order.
+    const auto genuineFir=converted.predict(44100,132300,2,
+                                            48000,-1.0,20,30);
+    QVERIFY(genuineFir);
+    QCOMPARE(genuineFir->matched_observations,std::size_t{3});
+    QVERIFY(genuineFir->low_us>0);
+    QVERIFY(genuineFir->high_us>genuineFir->low_us);
+    QVERIFY(!converted.predict(44100,132300,2,192000,-1.0,20,30));
     QVERIFY(!predict(0,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(-1,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(132300,44100,44100,2,
