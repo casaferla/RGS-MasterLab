@@ -760,7 +760,7 @@ Rectangle {
                         Text {
                             objectName: "m17TimeColumnHeader"
                             Layout.preferredWidth: 62
-                            property string interactionHint: "ACT means actual accepted full M17 Prepare, historical only (NOT an ETA). Otherwise the local M17+M16 estimate excludes Final SRC, disk, queue and finalization."
+                            property string interactionHint: "HOST ~range is an indicative future total Prepare estimate from three or more accepted full runs. ACT is only a past completed Prepare. DSP * is an M17/M16 compute projection, NOT total Prepare. SRC N/A is blocked."
                             text: "TIME"
                             HoverHandler { id: timeHeaderHover }
                             ToolTip.text: interactionHint
@@ -899,45 +899,15 @@ Rectangle {
                             }
                             Text {
                                 objectName: "m17RateTime_" + rateRow.index
-                                readonly property bool admissible: rateRow.admissible
-                                readonly property bool matchingProfile: root.memoryAdvisor
-                                    && root.memoryAdvisor.calibrationValid
-                                    && root.terminalLimiterViewModel
-                                    && root.memoryAdvisor.calibratedCeilingDbTp
-                                        === root.terminalLimiterViewModel.ceilingDbTp
-                                    && root.memoryAdvisor.dspEstimates.length === 6
-                                readonly property var probe: matchingProfile
-                                    ? root.memoryAdvisor.dspEstimates[rateRow.index] : null
-                                readonly property var actual: root.memoryAdvisor
-                                    && root.memoryAdvisor.actualPrepareTimes.length === 6
-                                    ? root.memoryAdvisor.actualPrepareTimes[rateRow.index]
+                                readonly property var forecast: root.memoryAdvisor
+                                    && root.memoryAdvisor.prepareTimeRows.length === 6
+                                    ? root.memoryAdvisor.prepareTimeRows[rateRow.index]
                                     : null
-                                readonly property var hostRange: root.memoryAdvisor
-                                    && root.memoryAdvisor.hostTotalRanges.length === 6
-                                    ? root.memoryAdvisor.hostTotalRanges[rateRow.index]
-                                    : null
-                                readonly property bool actualMatchesCeiling: actual
-                                    && actual.actual
-                                    && root.terminalLimiterViewModel
-                                    && actual.ceilingDbTp
-                                        === root.terminalLimiterViewModel.ceilingDbTp
-                                property string interactionHint: !admissible
-                                    ? "Final SRC candidate unavailable for this SOURCE/MASTER pair: "
-                                        + (root.masterRateState
-                                            ? root.masterRateState.final_src_path_status(
-                                                rateRow.modelData) : "no source")
-                                    : actualMatchesCeiling && actual.details
-                                    ? actual.details
-                                    : hostRange && hostRange.valid && hostRange.details
-                                    ? hostRange.details
-                                    : probe && probe.details ? probe.details
-                                    : "No whole-Prepare observation or M17/M16 local calibration at this Ceiling. Total future Prepare ETA N/A."
+                                property string interactionHint: forecast && forecast.details
+                                    ? forecast.details
+                                    : "Complete future Prepare ETA N/A."
                                 Layout.preferredWidth: 62
-                                text: !admissible ? "SRC N/A"
-                                    : actualMatchesCeiling && actual.label ? actual.label
-                                    : hostRange && hostRange.valid && hostRange.label
-                                    ? hostRange.label
-                                    : probe && probe.label ? probe.label : "N/A"
+                                text: forecast && forecast.label ? forecast.label : "N/A"
                                 elide: Text.ElideRight
                                 HoverHandler { id: etaHover }
                                 ToolTip.text: interactionHint
@@ -947,19 +917,16 @@ Rectangle {
                                     id: etaDwell
                                     anchors.fill: parent
                                 }
-                                color: admissible
-                                    && (actualMatchesCeiling
-                                        || hostRange && hostRange.valid
-                                        || probe && probe.label !== "N/A")
-                                    ? "#B6D6CA" : "#92A9BB"
+                                color: forecast && forecast.kind === "host_future"
+                                    ? "#B6D6CA"
+                                    : forecast && forecast.kind === "blocked"
+                                      ? "#F0C87D" : "#92A9BB"
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
-                                Accessible.name: text
-                                    + (actualMatchesCeiling
-                                        ? ". Historical real full Prepare, not an ETA."
-                                        : hostRange && hostRange.valid
-                                          ? ". Indicative host historical whole-Prepare time range, not guaranteed."
-                                          : ". DSP estimate only; total Prepare ETA unavailable.")
+                                Accessible.name: text + (forecast
+                                    && forecast.isFutureWholePrepare
+                                    ? ". Indicative host full-Prepare future range."
+                                    : ". Not a whole-Prepare future ETA.")
                             }
                         }
                     }

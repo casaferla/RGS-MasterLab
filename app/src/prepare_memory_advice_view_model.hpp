@@ -35,6 +35,10 @@ class PrepareMemoryAdviceViewModel final : public QObject {
     Q_PROPERTY(QString calibrationStatus READ calibration_status NOTIFY calibrationChanged)
     Q_PROPERTY(QVariantList actualPrepareTimes READ actual_prepare_times NOTIFY actualPrepareChanged)
     Q_PROPERTY(QVariantList hostTotalRanges READ host_total_ranges NOTIFY actualPrepareChanged)
+    // ONE typed C++ policy combines: blocked SRC / future on-host full
+    // Prepare envelope / historical ACT / local DSP-only projection / N/A.
+    // Qt/QML may display it, never reclassify an unsupported SRC path.
+    Q_PROPERTY(QVariantList prepareTimeRows READ prepare_time_rows NOTIFY timingAdviceChanged)
 public:
     PrepareMemoryAdviceViewModel(
         const SourceSelectionViewModel* source,
@@ -64,6 +68,7 @@ public:
     [[nodiscard]] QString calibration_status() const {return calibrationStatus_;}
     [[nodiscard]] QVariantList actual_prepare_times() const;
     [[nodiscard]] QVariantList host_total_ranges() const;
+    [[nodiscard]] QVariantList prepare_time_rows() const;
     using CeilingProvider=std::function<double()>;
     void set_active_ceiling_provider(CeilingProvider provider) {
         activeCeilingProvider_=std::move(provider);
@@ -83,6 +88,7 @@ signals:
     void changed();
     void calibrationChanged();
     void actualPrepareChanged();
+    void timingAdviceChanged();
 private:
     struct CalibrationJob {
         std::uint64_t serial;

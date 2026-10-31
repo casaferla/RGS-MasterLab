@@ -302,8 +302,12 @@ private slots:
     // parameters remain mandatory, including A -> B -> A invalidation.
     const auto doubled=predict(264600,44100,44100,2,-1.0,20,30);
     QVERIFY(doubled);
-    QCOMPARE(doubled->low_us,base->low_us*2);
-    QCOMPARE(doubled->high_us,base->high_us*2);
+    // Rendered audio scales with duration, but QUEUE wait is constant.
+    // The old predictor incorrectly multiplied queue by track length.
+    QVERIFY(doubled->low_us<base->low_us*2);
+    QVERIFY(doubled->high_us<base->high_us*2);
+    QVERIFY(doubled->low_us>base->low_us);
+    QVERIFY(doubled->high_us>base->high_us);
     QVERIFY(!predict(132300,44100,192000,2,-1.0,20,30));
     QVERIFY(!predict(132300,44100,44100,1,-1.0,20,30));
     QVERIFY(!predict(132300,44100,44100,2,-12.0,20,30));
@@ -311,6 +315,16 @@ private slots:
     QVERIFY(!predict(132300,44100,44100,2,-1.0,20,31));
     QVERIFY(!predict(132300*5,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(132300,44100,96000,2,-1.0,20,30));
+    // More than 3 real observations from the SAME 44.1->48 FIR path
+    // are necessary; equality/unknown cannot be projected as SRC time.
+    AcceptedPrepareHostTimingHistory converted;
+    auto fir=x;
+    for(std::uint64_t serial=11;serial<=13;++serial) {
+        fir.invocation=serial;fir.master_hz=48000;fir.src_us=100000;
+        QVERIFY(converted.observe(fir));
+    }
+    QVERIFY(converted.predict(132300,44100,2,48000,-1.0,20,30));
+    QVERIFY(!converted.predict(132300,44100,2,192000,-1.0,20,30));
     QVERIFY(!predict(0,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(-1,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(132300,44100,44100,2,

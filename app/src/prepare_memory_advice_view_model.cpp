@@ -174,6 +174,15 @@ PrepareMemoryAdviceViewModel::PrepareMemoryAdviceViewModel(
     :QObject(parent),source_(source),playback_(playback)
 {
     reset_unknown(QStringLiteral("Load a source"));
+    // Unify the three independently versioned timing evidence streams.
+    // Every change re-evaluates all six rates against live SOURCE,
+    // Ceiling, original chain revisions and Final SRC admission.
+    connect(this,&PrepareMemoryAdviceViewModel::actualPrepareChanged,
+        this,&PrepareMemoryAdviceViewModel::timingAdviceChanged);
+    connect(this,&PrepareMemoryAdviceViewModel::calibrationChanged,
+        this,&PrepareMemoryAdviceViewModel::timingAdviceChanged);
+    connect(this,&PrepareMemoryAdviceViewModel::changed,
+        this,&PrepareMemoryAdviceViewModel::timingAdviceChanged);
     connect(source_,&SourceSelectionViewModel::sourceChanged,
         this,[this] {
             // Invalidate ALL read-only advice immediately, including previous
@@ -344,6 +353,92 @@ QVariantList PrepareMemoryAdviceViewModel::actual_prepare_times() const
             }
         }
         rows.append(item);
+    }
+    return rows;
+}
+
+
+QVariantList PrepareMemoryAdviceViewModel::prepare_time_rows() const
+{
+    QVariantList rows;
+    rows.reserve(static_cast<qsizetype>(kMasterRates.size()));
+    const auto revisions=activeRevisionProvider_
+        ?activeRevisionProvider_():std::nullopt;
+    const auto ceiling=activeCeilingProvider_
+        ?std::optional<double>{activeCeilingProvider_()}:std::nullopt;
+    const auto sourceHz=source_&&source_->has_source()
+        ?source_->sample_rate_hz():0;
+    const auto frames=source_&&source_->has_source()
+        ?source_->frame_count():0;
+    const auto channels=source_&&source_->has_source()
+        ?source_->channel_count():0;
+    // History and DSP rows remain independent evidence, but their user-
+    // visible classification/priority is C++-owned, not QML business math.
+    const auto historical=actual_prepare_times();
+    const auto host=host_total_ranges();
+    const auto sixProbeReady=calibrationValid_ && ceiling
+        &&std::isfinite(*ceiling) &&calibratedCeiling_==*ceiling
+        &&dspEstimates_.size()==static_cast<qsizetype>(kMasterRates.size());
+    for(std::size_t i=0;i<kMasterRates.size();++i) {
+        const auto rate=kMasterRates[i];
+        QVariantMap entry{
+            {QStringLiteral("kind"),QStringLiteral("unavailable")},
+            {QStringLiteral("label"),QStringLiteral("N/A")},
+            {QStringLiteral("details"),QStringLiteral(
+                "No qualified complete Prepare duration projection; "
+                "additional full-Prepare measurements required.")},
+            {QStringLiteral("isFutureWholePrepare"),false},
+            {QStringLiteral("sourceRateHz"),sourceHz},
+            {QStringLiteral("masterRateHz"),rate}};
+        if(!m17_final_src_candidate_admissible(sourceHz,rate)) {
+            entry[QStringLiteral("kind")]=QStringLiteral("blocked");
+            entry[QStringLiteral("label")]=QStringLiteral("SRC N/A");
+            entry[QStringLiteral("details")]=QStringLiteral(
+                "FINAL SRC not admitted for SOURCE %1 → MASTER %2 Hz. "
+                "Neither a synthetic DSP calibration nor available RAM "
+                "is permission to Prepare; total ETA unavailable.")
+                .arg(sourceHz).arg(rate);
+            rows.append(entry);
+            continue;
+        }
+        const auto future=host.at(static_cast<qsizetype>(i)).toMap();
+        const auto actual=historical.at(static_cast<qsizetype>(i)).toMap();
+        const auto actualCeiling=actual.value(QStringLiteral("ceilingDbTp"));
+        // Future estimate is the PRIMARY ETA only if >=3 matched, accepted,
+        // same-algorithm complete Prepare observations exist. The ACT record
+        // below is never masqueraded as the duration of a future track.
+        if(future.value(QStringLiteral("valid")).toBool()) {
+            entry[QStringLiteral("kind")]=QStringLiteral("host_future");
+            entry[QStringLiteral("label")]=future.value(QStringLiteral("label"));
+            entry[QStringLiteral("details")]=future.value(QStringLiteral("details"));
+            entry[QStringLiteral("isFutureWholePrepare")]=true;
+            if(actual.value(QStringLiteral("actual")).toBool()
+               &&actualCeiling.isValid() &&ceiling
+               &&actualCeiling.toDouble()==*ceiling)
+                entry[QStringLiteral("details")]=
+                    entry.value(QStringLiteral("details")).toString()
+                    +QStringLiteral(" Previous ACT: ")
+                    +actual.value(QStringLiteral("label")).toString()
+                    +QStringLiteral(" (historical, not this projection).");
+        } else if(actual.value(QStringLiteral("actual")).toBool()
+               &&actualCeiling.isValid()&&ceiling
+               &&actualCeiling.toDouble()==*ceiling) {
+            entry[QStringLiteral("kind")]=QStringLiteral("historical_actual");
+            entry[QStringLiteral("label")]=actual.value(QStringLiteral("label"));
+            entry[QStringLiteral("details")]=actual.value(QStringLiteral("details"));
+        } else if(sixProbeReady) {
+            const auto probe=dspEstimates_.at(static_cast<qsizetype>(i)).toMap();
+            if(probe.value(QStringLiteral("label")).toString()
+                !=QStringLiteral("N/A")) {
+                entry[QStringLiteral("kind")]=QStringLiteral("dsp_only");
+                entry[QStringLiteral("label")]=probe.value(QStringLiteral("label"));
+                entry[QStringLiteral("details")]=probe.value(QStringLiteral("details"))
+                    .toString()+QStringLiteral(
+                    " COMPLETE PREPARE ETA N/A: no real Final SRC timing "
+                    "where required, queue and full-track resource peaks.");
+            }
+        }
+        rows.append(entry);
     }
     return rows;
 }

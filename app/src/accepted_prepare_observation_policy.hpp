@@ -176,8 +176,12 @@ public:
             const auto scale=static_cast<long double>(source_frames)
                 /static_cast<long double>(x.source_frames);
             if(scale<0.25L || scale>4.0L)continue;
-            const auto projected=static_cast<long double>(
-                x.queue_us+x.wall_us)*scale;
+            // Queue is an observed host scheduler wait, NOT rendered audio.
+            // Scaling it with track length falsely multiplies a fixed delay
+            // when forecasting a longer programme. Render wall scales with
+            // frames; queue is carried once, explicitly as historical noise.
+            const auto projected=static_cast<long double>(x.queue_us)
+                +static_cast<long double>(x.wall_us)*scale;
             if(!std::isfinite(projected)||projected<=0)continue;
             low=std::min(low,projected);
             high=std::max(high,projected);
@@ -199,7 +203,7 @@ public:
     }
     // Every genuine ENGINE/algorithm update constructs a new process-local
     // object. A new SOURCE does NOT erase anonymous completed timings.
-    void clear() noexcept {observed_.clear();}
+    void clear() noexcept {observed_.clear();lastSeen_=0;}
 private:
     std::uint64_t lastSeen_{0};
     std::vector<AcceptedPrepareObservation> observed_;
