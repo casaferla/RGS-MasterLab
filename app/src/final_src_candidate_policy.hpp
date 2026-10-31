@@ -19,9 +19,12 @@ enum class FinalSrcCandidatePath : std::uint8_t {
     return FinalSrcCandidatePath::EXPERIMENTAL_UNQUALIFIED;
 }
 [[nodiscard]] constexpr bool m17_final_src_candidate_admissible(
-    std::int64_t source,std::int64_t target) noexcept {
+    std::int64_t source,std::int64_t target,
+    bool authenticated_full_original_q0_pack=false) noexcept {
     const auto path=final_src_candidate_path(source,target);
     return path==FinalSrcCandidatePath::IDENTITY
-        ||path==FinalSrcCandidatePath::EXISTING_44K_48K_FIR;
+        ||path==FinalSrcCandidatePath::EXISTING_44K_48K_FIR
+        ||(path==FinalSrcCandidatePath::EXPERIMENTAL_UNQUALIFIED
+            &&authenticated_full_original_q0_pack);
 }
 } // namespace rgsml::app

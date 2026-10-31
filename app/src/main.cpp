@@ -38,6 +38,7 @@
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 
 #include <QGuiApplication>
+#include <filesystem>
 #include <QIcon>
 #include <QLibraryInfo>
 #include <QUuid>
@@ -250,6 +251,12 @@ int main(int argc, char* argv[])
         [&auditionSelector] {return auditionSelector.processed_realization_snapshot();},
         [&auditionSelector] {return auditionSelector.processed_realization_id();},
         [&masteringChainState] {return masteringChainState.chain();}};
+
+    // Product-private external original FIR provision, never publish assets.
+    const auto originalFirRoot=qgetenv("RGSML_FINAL_SRC_Q0_PRIVATE_DIR");
+    if(!originalFirRoot.isEmpty())
+        privateTerminalRenderer.set_original_q0_fir_root(
+            std::filesystem::path{originalFirRoot.constData()});
 
     rgsml::app::MasteringPreviewController previewController{
         &masteringChainState,

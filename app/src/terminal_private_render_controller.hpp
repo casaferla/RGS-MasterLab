@@ -11,6 +11,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <functional>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -67,6 +68,12 @@ public:
     ~TerminalPrivateRenderController() override;
     TerminalPrivateRenderController(const TerminalPrivateRenderController&)=delete;
     TerminalPrivateRenderController& operator=(const TerminalPrivateRenderController&)=delete;
+    // One explicit, original SHA-authenticated 14-FIR offline package.
+    // It is not embedded in public GitHub; missing/altered FIR fails closed.
+    void set_original_q0_fir_root(std::filesystem::path root);
+    [[nodiscard]] bool full_original_q0_family_ready() const noexcept {
+        return privateOriginalFirFamilyReady_;
+    }
     [[nodiscard]] core::Status request_private(core::SampleRate outputRate);
     void invalidate();
     [[nodiscard]] QString status() const {return status_;}
@@ -119,6 +126,7 @@ private:
         std::vector<dsp::ModuleExecutionBinding> bindings;
         core::FrameCount block;
         std::chrono::steady_clock::time_point enqueuedAt;
+        std::vector<std::uint8_t> authenticatedOriginalFir;
     };
     void worker_loop();
     void complete(std::uint64_t,TerminalCandidateGate::Capture,
@@ -150,6 +158,8 @@ private:
     std::mutex mutex_;
     std::condition_variable cv_;
     std::optional<Job> pending_;
+    std::filesystem::path privateOriginalFirRoot_;
+    bool privateOriginalFirFamilyReady_{false}; // fixed GUI-thread startup
     bool stopping_{false};
     std::jthread worker_;
 };

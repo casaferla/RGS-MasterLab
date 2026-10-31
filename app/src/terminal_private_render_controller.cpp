@@ -1,5 +1,7 @@
 #include "terminal_private_render_controller.hpp"
 #include <rgsml/core/error.hpp>
+#include <rgsml/audio/internal/phase11_pinned_private_fir_loader.hpp>
+#include <numeric>
 #include <QMetaObject>
 #include <QDebug>
 #include <chrono>
@@ -34,6 +36,17 @@ void TerminalPrivateRenderController::invalidate() {
     {std::lock_guard lock(mutex_);pending_.reset();}
     status_=QStringLiteral("IDLE");error_.clear();lastError_.reset();emit changed();
 }
+void TerminalPrivateRenderController::set_original_q0_fir_root(
+    std::filesystem::path root)
+{
+    privateOriginalFirFamilyReady_=false;
+    privateOriginalFirRoot_.clear();
+    if(root.empty())return;
+    // Original pinned bytes, shape, symmetry and 14 SHA files verified.
+    if(!audio::internal::all_14_phase11_original_pins_present(root))return;
+    privateOriginalFirRoot_=std::move(root);
+    privateOriginalFirFamilyReady_=true;
+}
 core::Status TerminalPrivateRenderController::request_private(core::SampleRate rate) {
     invalidate();
     if(!prepared_||!manual_||!id_||!chain_)
@@ -49,11 +62,36 @@ core::Status TerminalPrivateRenderController::request_private(core::SampleRate r
         emit changed();
         return core::Status::failure(*captured.error());
     }
+    std::vector<std::uint8_t> originalFir;
+    const auto fin=captured.value()->manual_owner->view()
+        .format().sample_rate().value();
+    const auto fout=rate.value();
+    if(fin!=fout &&privateOriginalFirFamilyReady_) {
+        const auto g=std::gcd(fin,fout);
+        const auto* pin=audio::internal::phase11_frozen_original_fir_pin(
+            static_cast<std::uint32_t>(fout/g),
+            static_cast<std::uint32_t>(fin/g));
+        if(!pin) {
+            invalidate();
+            return core::Status::failure(core::Error{
+                core::ErrorCode::UnsupportedOperation,
+                "M17_FINAL_SRC_Q0_RATIO_NOT_FROZEN"});
+        }
+        auto loaded=audio::internal::load_phase11_original_pinned_private_fir(
+            privateOriginalFirRoot_,pin->L,pin->M);
+        if(!loaded) {
+            // Re-authenticate the actual file per render. A changed/unsafe
+            // asset never falls back to experimental or the legacy path.
+            invalidate();
+            return core::Status::failure(*loaded.error());
+        }
+        originalFir=std::move(*loaded.value());
+    }
     auto block=core::FrameCount::create(4096);
     if(!block)return core::Status::failure(*block.error());
     Job job{serial_,std::move(*captured.value()),std::move(chain),
         terminal_->chain(),terminal_->execution_bindings(),*block.value(),
-        std::chrono::steady_clock::now()};
+        std::chrono::steady_clock::now(),std::move(originalFir)};
     {std::lock_guard lock(mutex_);pending_.emplace(std::move(job));}
     status_=QStringLiteral("RENDERING");error_.clear();
     cv_.notify_one();emit changed();return core::Status::success();
@@ -95,7 +133,8 @@ void TerminalPrivateRenderController::worker_loop() {
             captured.manual_owner,job->manualChain,
             captured.full_source_frames,captured.manual_chain_revision,
             captured.output_rate,job->terminalChain,job->bindings,
-            registry_,job->block,cancelled,&stages,true,&recovered);
+            registry_,job->block,cancelled,&stages,true,&recovered,
+            std::span<const std::uint8_t>{job->authenticatedOriginalFir});
         const auto finished=std::chrono::steady_clock::now();
         const auto queueMs=std::chrono::duration_cast<
             std::chrono::milliseconds>(started-job->enqueuedAt).count();
