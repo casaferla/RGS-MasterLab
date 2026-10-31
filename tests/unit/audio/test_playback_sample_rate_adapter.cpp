@@ -391,6 +391,7 @@ phase11PinnedScalarReferenceSixBySixSyntheticGeometry()
     }
     QCOMPARE(identities,6);
     QCOMPARE(conversions,30);
+    QCOMPARE(m17M16RealPaths,36);
     QCOMPARE(static_cast<int>(std::count(observedRatios.begin(),
         observedRatios.end(),true)),14);
     std::uint64_t frozenAssetBytes=0;
@@ -3286,6 +3287,14 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
         44100,48000,88200,96000,176400,192000};
     constexpr std::array<double,8> samples{
         0.25,-0.5,0.125,0.0,0.5,-0.25,0.375,-0.125};
+    // One authentic Qt/C++ M17+M16 executable and SAME frozen 36-path FIR
+    // family. These private short-programme cases are NONRELEASE, not a
+    // substitute for Windows full-resource physical FQ.
+    auto terminalRegistry=dsp::ModuleRegistry::create_dsp_package_v1();
+    auto terminalCeiling=dsp::TruePeakLimiterParameters::create(-1.0);
+    QVERIFY(terminalRegistry);
+    QVERIFY(terminalCeiling);
+    int m17M16RealPaths=0;
     int conversions=0,identities=0;
     std::array<bool,14> seen{};
     for(const auto fin:rates)for(const auto fout:rates) {
@@ -3348,6 +3357,24 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
                  channel_bits(whole.value()->pcm,0));
         QCOMPARE(channel_bits(mathPinned.value()->pcm,1),
                  channel_bits(whole.value()->pcm,1));
+        // Entire immutable OUTPUT_RATE PCM goes through the real typed
+        // terminal M17 and the authoritative M16 full verification.
+        // No SOURCE Loop/Play or DEVICE Fs is consulted by this DSP test.
+        auto terminalCheck=render::render_true_peak_limiter_checked_candidate(
+            mathPinned.value()->pcm.view(),*terminalCeiling.value(),
+            *terminalRegistry.value(),frame_count(128),false);
+        QVERIFY2(terminalCheck,
+            terminalCheck?"":terminalCheck.error()->message().c_str());
+        QVERIFY(terminalCheck.value()->final_check.has_value());
+        QCOMPARE(terminalCheck.value()->terminal.compensated_pcm.view()
+                     .format().sample_rate().value(),fout);
+        QCOMPARE(terminalCheck.value()->terminal.compensated_pcm.view()
+                     .frame_count(),mathPinned.value()->pcm.view().frame_count());
+        QCOMPARE(terminalCheck.value()->final_check->qualification_status,
+                 analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED);
+        QCOMPARE(channel_bits(*source.value(),0),beforeLeft);
+        QCOMPARE(channel_bits(*source.value(),1),beforeRight);
+        ++m17M16RealPaths;
         if(!referenceRoot.isEmpty()) {
             const auto expectedFile=std::string{"Q1_EXPECTED_"}+
                 std::to_string(fin)+"_TO_"+std::to_string(fout)+".f64le";
