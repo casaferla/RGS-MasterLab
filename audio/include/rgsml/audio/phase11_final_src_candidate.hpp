@@ -20,4 +20,15 @@ materialize_phase11_pinned_final_src_candidate(
     std::span<const std::uint8_t> candidate_rgsmsr1_bytes,
     std::string_view externally_locked_sha256,
     const FullResourceOutputRateCancel& cancelled = {});
+
+// Distinct, explicit OFFLINE test of the SOURCE-AUTHENTIC Q0 PIN (not
+// self-declared hash). This mathematical-subgate wrapper remains NONRELEASE:
+// production admission, manifest release and full M17 FQ are independent.
+[[nodiscard]] core::Result<FullResourceOutputRateCandidate>
+materialize_phase11_scoped_q0_pinned_offline_candidate(
+    AudioBufferView full_source_pcm,core::SampleRate output_rate,
+    core::FrameCount maximum_output_block_frames,
+    std::span<const std::uint8_t> original_private_fir_asset,
+    const FullResourceOutputRateCancel& cancelled = {});
+
 } // namespace rgsml::audio

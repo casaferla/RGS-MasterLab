@@ -7,6 +7,7 @@
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
 #include <rgsml/audio/internal/phase11_strict_scalar_reference.hpp>
 #include <rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp>
+#include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
 #include <rgsml/audio/internal/phase11_pinned_scalar_candidate_reference.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
@@ -3267,26 +3268,7 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
         expectedRows=object.value("outputs").toArray();
         QCOMPARE(expectedRows.size(),36);
     }
-    struct AssetPin {
-        std::uint32_t L,M;
-        const char* sha;
-    };
-    constexpr std::array<AssetPin,14> pins{{
-        {1,2,"b97776527687180bea6dbf86a8da877c0bdaa528d305abe4b7beaf806ecaf48e"},
-        {1,4,"3c5db068904a059fae54ab3a96ae96ec3963fc31e649f5f4de9ecf5b6d17a947"},
-        {2,1,"6fb38a7d62859283e4061a18d23f354a8308d5b22ff55623e8b1c9a245e8b00c"},
-        {4,1,"f2563518411bc6525889eaf82c43b194f88ceadd59b0750071c613d1071de095"},
-        {40,147,"7658f824ca67beab44a3dee35ccbdaae3aa0acdfc9257c327a9eaa7f3851928f"},
-        {80,147,"42d55a83855e1f166819ce4c3ad6bd53293ddb76a51afd5b1733c520be7ec5f0"},
-        {147,40,"fd57c100ca171a73a3bae4e61c4cc8faca64deff722b363375e4a6fae51f65ef"},
-        {147,80,"38f23112566f59137383d9ba58a0e47a80c583b1232bbbf88315b2505ac02488"},
-        {147,160,"697face6bce0cf299e80c0c28cae51bb49e13dbe435fb529fbf98cfb76fee991"},
-        {147,320,"36e226baf02c67e6e9357c0c1d31c205b2f00ef89526512347487c27479d8936"},
-        {147,640,"42f674e946c7aa816da52ef434f162caed917199ad752514ab771d3094860923"},
-        {160,147,"6997f49435c08f031fd3df68405fbd4836f1918b3a6756aa6defb970241380cf"},
-        {320,147,"4da7e0cbafc81837c159dab8139e605350f9c156d92b5f11bd02262b51872004"},
-        {640,147,"5f5a3b1c9020f3404cb5b1f292396122c3d65368c61988809713ac94acfb08e1"},
-    }};
+    const auto& pins=audio::internal::kPhase11FrozenOriginalFirPins;
     const auto read=[](const std::string& path) {
         std::ifstream input(path,std::ios::binary);
         if(!input)return std::vector<std::uint8_t>{};
@@ -3323,10 +3305,10 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
         std::string pinnedSha;
         if(fin!=fout) {
             const auto it=std::find_if(pins.begin(),pins.end(),
-                [&](const AssetPin& p){return p.L==L && p.M==M;});
+                [&](const audio::internal::Phase11FrozenOriginalFirPin& p){return p.L==L && p.M==M;});
             QVERIFY(it!=pins.end());
             seen[static_cast<std::size_t>(it-pins.begin())]=true;
-            pinnedSha=it->sha;
+            pinnedSha=it->sha256;
             asset=read(std::string(root.constData())+
                 "/RGSMSR1_L"+std::to_string(L)+
                 "_M"+std::to_string(M)+".bin");
@@ -3347,6 +3329,18 @@ phase11External14RealCandidatesAll36OfflineNativeRehearsal()
         QCOMPARE(whole.value()->used_src,fin!=fout);
         QCOMPARE(whole.value()->output_rate.value(),fout);
         QCOMPARE(whole.value()->kernel_sha256,std::string{}); // NOT release
+        // REAL SOURCE SHA, not the candidate-provided hash. This reuses
+        // the identical private 36-route Q1 family and same product Qt ELF.
+        const auto mathPinned=audio::materialize_phase11_scoped_q0_pinned_offline_candidate(
+            source.value()->view(),rate(fout),frame_count(128),asset);
+        QVERIFY2(mathPinned,
+            mathPinned?"":mathPinned.error()->message().c_str());
+        QCOMPARE(mathPinned.value()->kernel_sha256,
+                 std::string_view{fin==fout?"":pinnedSha.c_str()});
+        QCOMPARE(channel_bits(mathPinned.value()->pcm,0),
+                 channel_bits(whole.value()->pcm,0));
+        QCOMPARE(channel_bits(mathPinned.value()->pcm,1),
+                 channel_bits(whole.value()->pcm,1));
         if(!referenceRoot.isEmpty()) {
             const auto expectedFile=std::string{"Q1_EXPECTED_"}+
                 std::to_string(fin)+"_TO_"+std::to_string(fout)+".f64le";

@@ -1,5 +1,6 @@
 #include <rgsml/audio/phase11_final_src_candidate.hpp>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_geometry.hpp>
+#include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
 #include <rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp>
 #include <rgsml/audio/internal/phase11_strict_scalar_reference.hpp>
 #include <rgsml/core/error.hpp>
@@ -114,5 +115,31 @@ materialize_phase11_pinned_final_src_candidate(
     return core::Result<FullResourceOutputRateCandidate>::success({
         std::move(*output.value()),input.format().sample_rate(),outputRate,
         input.frame_count(),true,{}});
+}
+
+core::Result<FullResourceOutputRateCandidate>
+materialize_phase11_scoped_q0_pinned_offline_candidate(
+    AudioBufferView input,core::SampleRate outputRate,core::FrameCount block,
+    std::span<const std::uint8_t> privateAsset,
+    const FullResourceOutputRateCancel& cancelled)
+{
+    const auto fin=input.format().sample_rate().value();
+    const auto fout=outputRate.value();
+    if(fin==fout)
+        return materialize_phase11_pinned_final_src_candidate(
+            input,outputRate,block,privateAsset,{},cancelled);
+    if(fin<=0||fout<=0)return refuse("Q0 pinned offline rate invalid");
+    const auto g=std::gcd(fin,fout);
+    const auto L=static_cast<std::uint32_t>(fout/g);
+    const auto M=static_cast<std::uint32_t>(fin/g);
+    const auto* pin=internal::phase11_frozen_original_fir_pin(L,M);
+    if(!pin)return refuse("No authenticated original Q0 FIR for this ratio",
+                          core::ErrorCode::UnsupportedOperation);
+    // Do not permit an untrusted caller to self-issue a SHA from its own bytes.
+    auto converted=materialize_phase11_pinned_final_src_candidate(
+        input,outputRate,block,privateAsset,pin->sha256,cancelled);
+    if(!converted)return converted;
+    converted.value()->kernel_sha256=pin->sha256; // source identity only
+    return converted; // not a product release or publication
 }
 } // namespace rgsml::audio
