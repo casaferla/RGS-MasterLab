@@ -1,4 +1,5 @@
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
+#include <rgsml/audio/external_playback_fir_assets.hpp>
 
 #include <rgsml/audio/audio_buffer.hpp>
 
@@ -44,17 +45,8 @@ private:
     WavReader& reader_;
 };
 
-constexpr std::array<std::uint64_t, 30'721> kKernel44100To48000{
-#include "internal/playback_src_kernel_44100_48000.inc"
-};
-constexpr std::array<std::uint64_t, 28'225> kKernel48000To44100{
-#include "internal/playback_src_kernel_48000_44100.inc"
-};
-
-constexpr std::string_view kKernel44100To48000Sha256 =
-    "ec8c4d554eb4ede15f58eead1fede923e74c4692c57832bda716e3fc826926b4";
-constexpr std::string_view kKernel48000To44100Sha256 =
-    "37cfda8e885e2d00646ec60d02bdf5b7dcb85348fca416e065bab71a824efb22";
+// Frozen FIR coefficients now ship as authenticated external binary64 resources.
+// No coefficient words are embedded in this translation unit.
 
 struct WideUnsigned final {
     std::uint64_t high;
@@ -304,24 +296,14 @@ core::Result<PlaybackSampleRateAdapter> PlaybackSampleRateAdapter::create(
 {
     const auto inputRate = spec.inputRate.value();
     const auto outputRate = spec.outputRate.value();
-    const std::uint64_t* coefficients = nullptr;
-    std::size_t coefficientCount = 0U;
-    std::string_view checksum;
     std::int64_t interpolation = 0;
     std::int64_t decimation = 0;
-
     if (inputRate == 44'100 && outputRate == 48'000) {
         interpolation = 160;
         decimation = 147;
-        coefficients = kKernel44100To48000.data();
-        coefficientCount = kKernel44100To48000.size();
-        checksum = kKernel44100To48000Sha256;
     } else if (inputRate == 48'000 && outputRate == 44'100) {
         interpolation = 147;
         decimation = 160;
-        coefficients = kKernel48000To44100.data();
-        coefficientCount = kKernel48000To44100.size();
-        checksum = kKernel48000To44100Sha256;
     } else {
         return failure<PlaybackSampleRateAdapter>(
             core::ErrorCode::UnsupportedOperation,
@@ -352,14 +334,22 @@ core::Result<PlaybackSampleRateAdapter> PlaybackSampleRateAdapter::create(
         return core::Result<PlaybackSampleRateAdapter>::failure(
             *outputFrames.error());
     }
+    // No filter math change: asset is read and SHA-pinned on the caller's
+    // control path; the existing convolution and frame map are unchanged.
+    auto verified = load_external_playback_fir(inputRate, outputRate);
+    if (!verified)
+        return core::Result<PlaybackSampleRateAdapter>::failure(
+            *verified.error());
+    auto owner = verified.value()->bits;
     return core::Result<PlaybackSampleRateAdapter>::success(
         PlaybackSampleRateAdapter{
             spec,
             interpolation,
             decimation,
-            coefficients,
-            coefficientCount,
-            checksum,
+            owner,
+            owner->data(),
+            owner->size(),
+            verified.value()->sha256,
             *outputFrames.value(),
         });
 }
@@ -368,6 +358,7 @@ PlaybackSampleRateAdapter::PlaybackSampleRateAdapter(
     PlaybackRateSpec spec,
     std::int64_t interpolation,
     std::int64_t decimation,
+    std::shared_ptr<const std::vector<std::uint64_t>> coefficientsOwner,
     const std::uint64_t* coefficientBits,
     std::size_t coefficientCount,
     std::string_view kernelSha256,
@@ -375,6 +366,7 @@ PlaybackSampleRateAdapter::PlaybackSampleRateAdapter(
     : spec_(spec)
     , interpolation_(interpolation)
     , decimation_(decimation)
+    , coefficientsOwner_(std::move(coefficientsOwner))
     , coefficientBits_(coefficientBits)
     , coefficientCount_(coefficientCount)
     , kernelSha256_(kernelSha256)
