@@ -1,5 +1,6 @@
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
+#include <rgsml/audio/phase11_final_src_candidate.hpp>
 
 #include <rgsml/core/error.hpp>
 
@@ -41,7 +42,8 @@ render_true_peak_limiter_owned_candidate_impl(
     const TerminalRenderCancel& cancelled,
     TerminalRenderStageTimings* stage_timings,
     bool use_experimental_offline_accelerator,
-    std::optional<TruePeakLimiterOwnedMeasuredNonconformingCandidate>* nonconforming_out)
+    std::optional<TruePeakLimiterOwnedMeasuredNonconformingCandidate>* nonconforming_out,
+    std::span<const std::uint8_t> original_q0_fir_asset)
 {
     if(nonconforming_out)nonconforming_out->reset();
     using Candidate = TruePeakLimiterOwnedSourceCandidate;
@@ -133,8 +135,15 @@ render_true_peak_limiter_owned_candidate_impl(
     // Preserve the existing serial-authoritative renderer cancellation
     // through SOURCE -> OUTPUT SRC itself, rather than waiting for the
     // entire track conversion to finish before the next retirement poll.
-    auto output=audio::materialize_full_resource_output_rate_candidate(
-        view,output_rate,*boundedBlock.value(),cancelled);
+    // Explicit, SOURCE-authenticated mathematical-Q0 offline seam.
+    // No source pin and no permission means the original product/candidate
+    // behavior remains exactly unchanged. This is not runtime admission.
+    auto output=original_q0_fir_asset.empty()
+        ? audio::materialize_full_resource_output_rate_candidate(
+            view,output_rate,*boundedBlock.value(),cancelled)
+        : audio::materialize_phase11_scoped_q0_pinned_offline_candidate(
+            view,output_rate,*boundedBlock.value(),
+            original_q0_fir_asset,cancelled);
     if(stage_timings)
         stage_timings->src_us=std::chrono::duration_cast<
             std::chrono::microseconds>(
@@ -195,7 +204,7 @@ render_true_peak_limiter_owned_same_rate_candidate(
     return render_true_peak_limiter_owned_candidate_impl(
         std::move(manual),manual_chain,full_frames,manual_revision,
         output_rate,terminal_chain,bindings,registry,block,false,cancelled,
-        stage_timings,use_experimental_offline_accelerator,nullptr);
+        stage_timings,use_experimental_offline_accelerator,nullptr,{});
 }
 
 core::Result<TruePeakLimiterOwnedSourceCandidate>
@@ -212,12 +221,14 @@ render_true_peak_limiter_owned_output_rate_candidate(
     const TerminalRenderCancel& cancelled,
     TerminalRenderStageTimings* stage_timings,
     bool use_experimental_offline_accelerator,
-    std::optional<TruePeakLimiterOwnedMeasuredNonconformingCandidate>* nonconforming_out)
+    std::optional<TruePeakLimiterOwnedMeasuredNonconformingCandidate>* nonconforming_out,
+    std::span<const std::uint8_t> original_q0_fir_asset)
 {
     return render_true_peak_limiter_owned_candidate_impl(
         std::move(manual),manual_chain,full_frames,manual_revision,
         output_rate,terminal_chain,bindings,registry,block,true,cancelled,
-        stage_timings,use_experimental_offline_accelerator,nonconforming_out);
+        stage_timings,use_experimental_offline_accelerator,nonconforming_out,
+        original_q0_fir_asset);
 }
 
 core::Result<FinalMasterOutputRatePlan>

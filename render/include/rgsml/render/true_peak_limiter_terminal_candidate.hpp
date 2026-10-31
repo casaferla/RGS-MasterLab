@@ -265,7 +265,8 @@ render_true_peak_limiter_owned_output_rate_candidate(
     TerminalRenderStageTimings* stage_timings = nullptr,
     bool use_experimental_offline_accelerator = false,
     std::optional<TruePeakLimiterOwnedMeasuredNonconformingCandidate>*
-        nonconforming_out = nullptr);
+        nonconforming_out = nullptr,
+    std::span<const std::uint8_t> original_scoped_q0_fir_asset = {});
 
 
 // Approved six-rate FINAL MASTER target plan, independent of audition hardware.
