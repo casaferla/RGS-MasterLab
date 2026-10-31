@@ -322,6 +322,20 @@ set_tests_properties(rgsml_waveform_wav_tests PROPERTIES
     LABELS "audio;audio_golden;waveform;waveform_golden;source_resource"
 )
 
+# External coefficients are bit-exact copies of the frozen constexpr
+# words, validated at build configuration. This native regression exercises
+# SHA pins, corrupt/missing files and owned callback-safe lifetimes.
+qt_add_executable(rgsml_external_playback_fir_assets_tests
+    unit/audio/test_external_playback_fir_assets.cpp
+)
+target_link_libraries(rgsml_external_playback_fir_assets_tests PRIVATE
+    rgsml_audio Qt6::Test)
+rgsml_apply_project_warnings(rgsml_external_playback_fir_assets_tests)
+add_test(NAME rgsml_external_playback_fir_assets_tests
+    COMMAND rgsml_external_playback_fir_assets_tests)
+set_tests_properties(rgsml_external_playback_fir_assets_tests PROPERTIES
+    LABELS "audio;playback_src;external_fir;frozen_kernel")
+
 qt_add_executable(rgsml_playback_src_tests
     unit/audio/test_playback_sample_rate_adapter.cpp
 )
@@ -1919,4 +1933,14 @@ foreach(_rgsml_m17_consumer IN ITEMS
                 "${_rgsml_m17_required}")
         endif()
     endforeach()
+endforeach()
+
+# External playback FIR assets must be available to every existing native
+// SRC/Windows/Qt test, not only the newly introduced negative tests.
+// CTest injects this explicit build directory; no end-user environment setup.
+get_property(_rgsml_fir_ctests DIRECTORY PROPERTY TESTS)
+foreach(_rgsml_fir_ctest IN LISTS _rgsml_fir_ctests)
+    set_property(TEST "${_rgsml_fir_ctest}" APPEND PROPERTY
+        ENVIRONMENT_MODIFICATION
+        "RGSML_PLAYBACK_FIR_ROOT=set:${RGSML_PLAYBACK_FIR_BUILD_ROOT}")
 endforeach()
