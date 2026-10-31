@@ -10,6 +10,7 @@ from audit_work_phase3_handoff_nonrelease import AuditError
 from audit_work_phase3_frozen_math_nonrelease import (
     canonical_ratio_pairs, verify_frozen_band_domains,
     verify_exact_covered_error_model, verify_independent_rounding_receipt_shapes,
+    verify_phase3_q1_q2_subset_receipts,
 )
 
 
@@ -73,7 +74,62 @@ def fake_rounding():
                            f"{size} BITS {bits} MPFR 4.2.1\n")
     return rows, receipts
 
+
+def fake_q1_subset():
+    kernels = {(L,M): "a"*64 for L,M in canonical_ratio_pairs()}
+    rows=[]
+    for source in (44100,48000,88200,96000,176400,192000):
+        for target in (44100,48000,88200,96000,176400,192000):
+            from math import gcd
+            ratio=(target//gcd(source,target),source//gcd(source,target))
+            for recipe, n in (("short_17",17),("one_frame",1)):
+                frames=(n*target+source-1)//source
+                rows.append(dict(fin=source, fout=target, case=recipe,
+                    frames=frames, expected_sha256="b"*64,
+                    kernel_sha256=(None if source==target else kernels[ratio]),
+                    mpfr_zero_stuffed_rounding_cells_proven=True,
+                    exact_dyadic_independent_bitwise_match=True,
+                    strict_scalar_absolute_partition_bitwise_equal=True,
+                    strict_scalar_crop_bitwise_equal=True,
+                    strict_scalar_max_abs_error_vs_exact="0",
+                    canonical_qtp_profile_applied=False,
+                    actual_product_qt_executed=False, release_qualified=False,
+                    transcript=f"FULL_ZERO_STUFF_CONVOLUTION_ROUNDING_PROVEN "
+                               f"{frames} MPFR_BITS 256\n"))
+    return dict(cases=72, source_master_pairs=36,
+                mpfr_vs_dyadic_exact_cases=72,
+                scalar_partition_and_crop_cases=72,
+                identity_special_bit_cases=6,
+                full_Q1_gate="OPEN",full_Q2_gate="OPEN",
+                release_qualified=False,product_admission_authorized=False,
+                results=rows),kernels
+
 class FrozenMathReviewTests(unittest.TestCase):
+    def test_all_72_q1_q2_receipts_are_exact_subset_only(self):
+        doc,kernels=fake_q1_subset()
+        self.assertEqual(verify_phase3_q1_q2_subset_receipts(
+            doc,kernels),72)
+
+    def test_reject_q1_q2_bogus_frames_and_kernel_sha(self):
+        doc,kernels=fake_q1_subset()
+        doc["results"][0]["frames"]+=1
+        with self.assertRaisesRegex(AuditError,"frame count"):
+            verify_phase3_q1_q2_subset_receipts(doc,kernels)
+        doc,kernels=fake_q1_subset()
+        doc["results"][2]["kernel_sha256"]="f"*64
+        with self.assertRaisesRegex(AuditError,"unpinned Q0"):
+            verify_phase3_q1_q2_subset_receipts(doc,kernels)
+
+    def test_reject_missing_q1_q2_case_and_false_qt_pass(self):
+        doc,kernels=fake_q1_subset()
+        doc["results"].pop()
+        with self.assertRaisesRegex(AuditError,"72 source"):
+            verify_phase3_q1_q2_subset_receipts(doc,kernels)
+        doc,kernels=fake_q1_subset()
+        doc["results"][3]["actual_product_qt_executed"]=True
+        with self.assertRaisesRegex(AuditError,"unexecuted product Qt"):
+            verify_phase3_q1_q2_subset_receipts(doc,kernels)
+
     def test_28_binary64_shape_and_rounding_receipt_claims(self):
         rows, receipts=fake_rounding()
         self.assertEqual(verify_independent_rounding_receipt_shapes(
@@ -96,6 +152,12 @@ class FrozenMathReviewTests(unittest.TestCase):
             verify_independent_rounding_receipt_shapes(rows,receipts)
         rows, receipts=fake_rounding()
         rows[0]["asset_sha256"]="e"*64
+        with self.assertRaisesRegex(AuditError,"SHA discrepancy"):
+            verify_independent_rounding_receipt_shapes(rows,receipts)
+        # Prior operator precedence could accept a mismatched 512-bit
+        # receipt whenever a 256-bit asset SHA matched the stored ratio.
+        rows, receipts=fake_rounding()
+        receipts[(1,2,512)]["expected_sha256"]="f"*64
         with self.assertRaisesRegex(AuditError,"SHA discrepancy"):
             verify_independent_rounding_receipt_shapes(rows,receipts)
 

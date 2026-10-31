@@ -1,3 +1,8 @@
+## 2026-10-31 — MACRO-LOT 3 SUBLOT: Q1/Q2 72 RECEIPTS, NO SIMULATED QT PASS
+
+- Added exact validation of all 72 private Phase3 MPFR/dyadic Q1/Q2 **subset-only** receipts: all 36 ordered SOURCE→MASTER pairs × both frozen short_17/one_frame recipes, exact ceil(N×Fout/Fin) frame map, genuine original 14 SHA ratio binding, each separately certified binary64 rounding claim and dyadic partition/crop flags, exact observed error fraction, and explicitly FALSE `actual_product_qt_executed`/global Q1/Q2/release statuses. These checks are documentary **negative gates**; existing real Qt 36/36+15 sine native suite must remain a separate genuine test and cannot be auto-declared from this report.
+- Fixed a possible boolean-precedence mistake in new 256/512 coefficient SHA audit: receipt and expected SHA must BOTH agree even when the other precision's ratio SHA exists. A synthetic adversarial 512-bit receipt mismatch now fails, instead of accidentally passing because one ratio hash matched. All 28 product-unqualified routes remain blocked, no coefficients leaked, no PR CI yet.
+
 ## 2026-10-31 — MACRO-LOT 3: Pinned private Phase3 Q0 independent audit expansion (STAGING, NONRELEASE)
 
 - Recovery confirmed [#939](https://github.com/casaferla/RGS-MasterLab/actions/runs/41150399393) Windows/Linux PASS on immutable PR SHA `a11b6eaceb92`; Phase3 code staged separately without PR CI. The exact [RGS ContentBox Phase3 ZIP](https://drive.google.com/file/d/1EEe-a3L4J_Sr8qQmUVlB_gSEDr4VTB0A/view) was acquired privately; SHA256 locally rechecked equals frozen `b6dea3257aa2b4202f297094750e59d0f29d4bd871b106bae092c80417c40251`, 289 ZIP members. Never push ZIP, coefficient binaries, private receipt transcripts or derived original sample data to GitHub.

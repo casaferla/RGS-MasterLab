@@ -171,7 +171,7 @@ def verify_independent_rounding_receipt_shapes(rows, receipts):
                 and all(c in "0123456789abcdef" for c in digest)
                 and receipt.get("asset_sha256") == digest
                 and receipt.get("expected_sha256") == digest
-                and (L, M) not in kernels or kernels.get((L, M)) == digest,
+                and ((L, M) not in kernels or kernels[(L, M)] == digest),
                 "binary64 256/512 coefficient payload SHA discrepancy")
         kernels[(L, M)] = digest
         expected_note = (
@@ -188,6 +188,73 @@ def verify_independent_rounding_receipt_shapes(rows, receipts):
             and len(producer_sources) == len(helpers) == 1,
             "incomplete cross-precision or inconsistent generator provenance")
     return 28
+
+
+def verify_phase3_q1_q2_subset_receipts(document, kernels):
+    """Check all 72 claims against canonical 36 path/2-recipe geometry.
+
+    A receipt SHA is *not* equivalent to executing Qt or comparing PCM.
+    This does not confer Q1/Q2 release authority on the current product.
+    """
+    require(type(document) is dict
+            and document.get("cases") == 72
+            and document.get("source_master_pairs") == 36
+            and document.get("mpfr_vs_dyadic_exact_cases") == 72
+            and document.get("scalar_partition_and_crop_cases") == 72
+            and document.get("identity_special_bit_cases") == 6
+            and document.get("full_Q1_gate") == "OPEN"
+            and document.get("full_Q2_gate") == "OPEN"
+            and document.get("release_qualified") is False
+            and document.get("product_admission_authorized") is False,
+            "Phase3 Q1/Q2 report must remain a complete NONRELEASE subset")
+    rows = document.get("results")
+    require(type(rows) is list and len(rows) == 72,
+            "72 source/master/recipe receipts required")
+    seen = set()
+    for row in rows:
+        require(type(row) is dict, "invalid Q1/Q2 receipt row")
+        fin, fout, recipe = row.get("fin"), row.get("fout"), row.get("case")
+        require(type(fin) is int and type(fout) is int
+                and fin in RATES and fout in RATES
+                and recipe in ("short_17", "one_frame"),
+                "invalid SOURCE/MASTER/recipe")
+        key = fin, fout, recipe
+        require(key not in seen, "duplicate Phase3 SRC recipe")
+        seen.add(key)
+        source_frames = 17 if recipe == "short_17" else 1
+        frames = (source_frames * fout + fin - 1) // fin
+        digest = row.get("expected_sha256")
+        require(row.get("frames") == frames
+                and type(row.get("frames")) is int
+                and type(digest) is str and len(digest) == 64
+                and all(c in "0123456789abcdef" for c in digest),
+                "wrong SRC output frame count or independent vector digest")
+        ratio = (fout//gcd(fin, fout), fin//gcd(fin, fout))
+        expected_kernel = None if fin == fout else kernels.get(ratio)
+        require((fin == fout or expected_kernel is not None)
+                and row.get("kernel_sha256") == expected_kernel,
+                "Phase3 vector uses an unpinned Q0 coefficient ratio")
+        require(all(row.get(name) is True for name in (
+                    "mpfr_zero_stuffed_rounding_cells_proven",
+                    "exact_dyadic_independent_bitwise_match",
+                    "strict_scalar_absolute_partition_bitwise_equal",
+                    "strict_scalar_crop_bitwise_equal"))
+                and row.get("canonical_qtp_profile_applied") is False
+                and row.get("actual_product_qt_executed") is False
+                and row.get("release_qualified") is False,
+                "Phase3 subset claims unexecuted product Qt or misses exact oracle")
+        require(row.get("transcript") ==
+                f"FULL_ZERO_STUFF_CONVOLUTION_ROUNDING_PROVEN "
+                f"{frames} MPFR_BITS 256\n",
+                "Phase3 result transcript is not the exact test geometry")
+        error = row.get("strict_scalar_max_abs_error_vs_exact")
+        require(type(error) is str and 0 < len(error) < 200
+                and F(error) >= 0,
+                "Phase3 exact dyadic error is invalid")
+    require(seen == {(a, b, c) for a in RATES for b in RATES
+                     for c in ("short_17", "one_frame")},
+            "incomplete Phase3 36x2 subset matrix")
+    return 72
 
 
 def review(pinned_phase3_zip: Path):
@@ -211,10 +278,17 @@ def review(pinned_phase3_zip: Path):
                 receipts[(L, M, bits)] = parsed(z.read(filename))
         validated_rounding = verify_independent_rounding_receipt_shapes(
             summaries, receipts)
+        kernels = {
+            (row["L"], row["M"]): row["asset_sha256"]
+            for row in summaries
+        }
+        subset = parsed(z.read("phase3/Q1_Q2_NEW_OFFLINE_SUBSET.json"))
+        validated_q1_q2 = verify_phase3_q1_q2_subset_receipts(subset, kernels)
     return {
         "status": "FROZEN_DOMAIN_AND_ERROR_MODEL_AUDITED_NONRELEASE",
         "complete_band_domains": n,
         "reproduction_receipt_shapes": validated_rounding,
+        "q1_q2_independent_subset_receipts": validated_q1_q2,
         "canonical_ratio_count": len(canonical_ratio_pairs()),
         "pinned_inventory": result["result"],
         "independent_spectral_cell_replay_executed": False,
