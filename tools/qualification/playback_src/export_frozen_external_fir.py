@@ -46,13 +46,27 @@ def export(source_root: Path, output_root: Path) -> None:
         entries.append({"file": name, "coefficients": expected_count,
                         "sha256": expected_sha,
                         "encoding": "ieee754-binary64-uint64-little-endian-j-ascending"})
+    # Trust-anchor inventory only: the original 14 private FIR BYTES never
+    # enter the public build. Import their already-public fixed SHA identities
+    # to keep ONE total 16-FIR application resource inventory.
+    pins_source = (source_root / "audio" / "include" / "rgsml" / "audio"
+                   / "internal" / "phase11_frozen_rgsmsr1_pins.hpp")
+    pins = re.findall(r'\\{(\\d+),(\\d+),"([a-f0-9]{64})"\\}',
+                      pins_source.read_text(encoding="utf-8"))
+    if len(pins) != 14 or len(set((L, M) for L, M, _ in pins)) != 14:
+        raise ValueError("Original 14-Q0 trusted FIR pin inventory changed")
+    final_src = [
+        {"file": f"RGSMSR1_L{L}_M{M}.bin", "ratioL": int(L),
+         "ratioM": int(M), "sha256": digest, "private": True}
+        for L, M, digest in pins
+    ]
     manifest = {
         "schema": "rgsml.external-src-fir-assets/1",
         "purpose": "frozen-playback-fir-bitwise-migration",
         "releaseAuthority": False,
         "playback": entries,
         "finalSrc": {"source": "original-private-Q0-14-source-pinned",
-                     "includedInPublicBuild": False}
+                     "includedInPublicBuild": False, "kernels": final_src}
     }
     (output_root / "playback_fir_manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
