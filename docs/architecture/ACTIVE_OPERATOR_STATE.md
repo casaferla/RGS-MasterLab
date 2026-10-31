@@ -1,3 +1,9 @@
+## 2026-10-31 — #939 DOUBLE GREEN; PERMANENT PO MACRO-LOT WORKFLOW
+
+- Latest immutable [Focused #939](https://github.com/casaferla/RGS-MasterLab/actions/runs/41150399393) Windows PASS + Linux PASS at PR SHA a11b6eaceb92d61cb4c9cbd0d43cd79980fedc82. PR #61 Draft and staging aligned at that SHA before this new unqualified staging-only process/documentation commit. #937/#938 reds superseded. No PO physical FQ or Final SRC release gate passed merely by #939.
+- PO formalizes broad functional macro-lots as the PERMANENT method: stage everything related without CI, one CAS/PR/Focused CI per full batch, bundled bounded red fixes, continue authorized work during running immutable PR CI, no routine GO or one-CI-per-fix. Single Writer, no full logs, no merge main/FQ without explicit PO stay mandatory. AGENTS.md and OPERATIONAL_HANDOFF_CONTRACT.md hold rule and literal inherited clause.
+- First two M17 macro-lots have Focused CI green: MAIN Ascolta Master transport; six-rate Prepare timing/RAM. Third planned now: Final SRC Q0 canonical review of independent Phase3 28/28 mathematical bands and 14 FIR, applicable real 36-path SOURCE→MASTER/ownership/alias/native product tests, then admission only after genuine signoff. Fourth: remaining full product/Windows PO FQ readiness. 28 unqualified SRC pairings remain blocked. No Android/Reference Match gates until those components exist. M18 Dither is immediately after accepted M17, not a new precondition.
+
 ## 2026-10-31 — NEW PO SCOPE OVERRIDE: FINISH M17, THEN M18 DITHER (NO UNBUILT PIPELINE DEPENDENCIES)
 
 - PO explicitly ruled that Android, Reference Match and other not-yet-built parts of the Final Pipeline must be qualified **when those features exist**, not as prerequisites for M17 or its 36 SOURCE→MASTER Final SRC paths. These global Q0–Q6 categories remain a forward-looking overall Final Pipeline obligation, not an invented M17 exit blocker.

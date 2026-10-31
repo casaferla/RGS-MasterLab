@@ -1,3 +1,8 @@
+## 2026-10-31 — MACRO-LOT 3 ENTRY AFTER #939 DOUBLE GREEN
+
+- Product Owner adopted permanent LARGE functional macro-lots, minimal PR CI, no repeated routine GO, staging development while immutable PR CI runs. [#939](https://github.com/casaferla/RGS-MasterLab/actions/runs/41150399393) Windows/Linux PASS at a11b6eaceb92d61cb4c9cbd0d43cd79980fedc82; not a Final SRC/Q0 signoff.
+- Macro-lot 3 reuses independently replayed NONRELEASE Phase2/Phase3 evidence, must still independently approve formal canonical Q0 proof/error model, run applicable genuine native Qt 36-route source/master and alias/invariance/ownership tests, then only unlock formally qualified paths. Private binary FIR/assets never public GitHub. Do not insert unimplemented Android or Reference Match as M17 blockers; M18 Dither follows PO-approved M17 FQ.
+
 ## 2026-10-30 — WORK PHASE3 Q0 PRIVATE ZIP INTAKE, NEXT STAGING WHILE #935 RUNS (NONRELEASE)
 
 - Work Phase3 owner's private ZIP SHA256 `b6dea3257aa2b4202f297094750e59d0f29d4bd871b106bae092c80417c40251` delivered; no private asset, binary coefficients, source proof transcript or reference-audio files committed to GitHub. The new read-only fail-closed intake tool, adversarial tests and [handoff note](PHASE11_WORK_PHASE3_NONRELEASE_INGEST_20261030.md) are one coherent **staging-only** candidate. External Q0/Phase2 SHA pins verified; proof receipt inventory is 28/28 spectral bands, 14/14 independent source kernels × 256/512, nine guarded replays, global Q0–Q6 all OPEN. This checks provenance and claims only; main operator must review formal mathematics before canonical approval.
