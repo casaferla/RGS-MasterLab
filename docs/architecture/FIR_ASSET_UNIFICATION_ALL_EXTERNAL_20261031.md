@@ -1,7 +1,19 @@
 # RGS MasterLab — PO decision: all SRC FIR assets external in installed product
 
 **Product Owner decision: 2026-10-31.** **Status: APPROVED FOR DEFERRED IMPLEMENTATION; NOT IMPLEMENTED, NOT CI-QUALIFIED.**
-**Priority:** protect current M17 Focused #942 double-green and physical Windows FQ. Do not reopen M17 DSP or delay M18 with an installer refactor. Schedule this as **one coherent packaging/loader macro-lot** before normal public distribution, with only one Focused Windows+Linux CI per substantive completed candidate, plus recovery CI only if red. No standalone documentation CI.
+**Priority (SUPERSEDED BY LATEST PO ORDER ABOVE):** protect current M17 Focused #942 double-green and complete M17 Windows FQ first. The successful M17 FQ is the **trigger** for one coherent packaging/loader macro-lot **BEFORE M18 Dither**; one Focused Windows+Linux CI per completed candidate, recovery CI only if red, and suitable PO-gated Windows qualification for its newly changed artifact. No standalone documentation CI.
+
+## 2026-10-31 — LATEST PO OVERRIDE: successful M17 FQ -> FIR migration macro-lot -> M18
+
+**LATEST PRODUCT OWNER INSTRUCTION OVERRIDES ANY EARLIER “AFTER M18” / “DO NOT DELAY M18” ORDERING IN THIS DOCUMENT, AGENTS.md OR PRIOR HANDOFFS.** The mandatory sequence is:
+
+1. Finish the current M17 Windows **cold automated FQ** at a single exact green candidate SHA, then the required **actual Windows physical acceptance** (including genuine locally provisioned Q0 original-14 FIR, 36 SOURCE→MASTER routes, MASTER/DEVICE independence and audition, full-song M17/M16, memory/time, -12 dBTP, UI/150% DPI). An automated green without these applicable physical checks is not a declaration of M17 accepted.
+2. **IF AND ONLY IF M17 FQ passes the applicable automated and physical checks**, make the **very next engineering work package** the single cohesive **16-FIR external-asset migration macro-lot** described below. This work is **BEFORE M18 Dither**, not deferred to a later public-distribution phase.
+3. Perform exact-bit migration of the two frozen 44.1↔48 playback FIRs, integrate all 14 original-Q0 external FIRs under one versioned authenticated application resource/installer/portable ZIP contract, preserve distinct numerical paths and source-pinned release guards, add all relevant native/packaging regressions, and promote the complete batch ONCE to Draft PR with CAS lease. Aim for **one Focused CI** on Windows+Linux for the cohesive lot; run additional CI only to correct genuine failures, never per file. No filter redesign, new kernel generation, or unnecessary MPFR replay.
+4. Because asset loading and distribution change the produced executable, **Focused CI green alone is insufficient**: qualify the migrated Windows artifact with appropriately scoped cold FQ/deployment and real DEVICE playback/MASTER checks under the separate PO FQ gate, without pretending the preceding M17 FQ covered newly changed code. Private original-Q0 coefficients must remain excluded from public repository/CI and unauthorized public artifacts; perform protected/private FQ provision until separate release authorization.
+5. Only once the all-external loader/packaging, bitwise invariance and applicable qualification are accepted may development move to **M18 Dither**.
+
+If first M17 FQ is red/incomplete, correct and requalify M17 before initiating the FIR macro-lot. Do not proactively start FIR implementation, trigger CI/FQ, merge main, or publish private binaries as part of this **documentation-only** priority update. Preserve one exact-source single-writer active epoch and GitHub↔ContentBox continuity.
 
 ## Uniform architecture — 16 external, install-managed FIR assets
 
@@ -26,6 +38,6 @@
 - Original 14 `RGSMSR1` files: **1,430,028** float64 coefficient words, **11,440,952 bytes** (10.91 MiB including 52-byte headers per file), derived from current immutable public manifest *without publishing private coefficients*.
 - Two existing built-in playback FIR arrays: **30,721 + 28,225** 64-bit words; original static coefficients approx. 0.45 MiB. Together 16 raw FIR data approx. 11.92 MB decimal, excluding manifest/container overhead.
 - **Current product**: 14 original binaries are locally provisioned as private FQ fixtures; no release authorization is implied by SRC-Q0 scoped mathematical acceptance. Existing 44.1↔48 conversion remains inside binary and production behavior MUST NOT change until external migration is Focused/FQ-qualified.
-- **Latest verified Focused on M17 candidate**: [#942](https://github.com/casaferla/RGS-MasterLab/actions/runs/41196958089) Windows PASS + Linux PASS at Draft PR #61 `f446baf91a1b4bd8abed7bd3df63f6060be1fc9b`. This *document-only staging decision* is **not** tested by #942. No FQ manually dispatched here, no main merge, no M18 yet.
+- **Latest verified Focused on M17 candidate**: [#942](https://github.com/casaferla/RGS-MasterLab/actions/runs/41196958089) Windows PASS + Linux PASS at Draft PR #61 `f446baf91a1b4bd8abed7bd3df63f6060be1fc9b`. This *document-only staging decision*, including the later PO ordering supersession, is **not** tested by #942. No FQ manually dispatched here, no main merge, no M18 yet.
 
 **Continuity:** GitHub operational checkpoint first; mirror this decision and #942 exact SHA/result in RGS ContentBox linked handoff under the dual-archive contract.
