@@ -1936,8 +1936,8 @@ foreach(_rgsml_m17_consumer IN ITEMS
 endforeach()
 
 # External playback FIR assets must be available to every existing native
-// SRC/Windows/Qt test, not only the newly introduced negative tests.
-// CTest injects this explicit build directory; no end-user environment setup.
+# SRC/Windows/Qt test, not only the newly introduced negative tests.
+# CTest injects this explicit build directory; no end-user environment setup.
 get_property(_rgsml_fir_ctests DIRECTORY PROPERTY TESTS)
 foreach(_rgsml_fir_ctest IN LISTS _rgsml_fir_ctests)
     set_property(TEST "${_rgsml_fir_ctest}" APPEND PROPERTY
