@@ -10,7 +10,8 @@ import unittest
 from unittest.mock import patch
 
 from phase11_math_preflight import ContractError
-from pack_private_offline_qt_test_bundle import pack,parse_ldd,verify_archive
+from pack_private_offline_qt_test_bundle import (
+    pack,parse_ldd,verify_archive,PUBLIC_PLAYBACK_RELATIVE)
 
 
 class PortableQtNativeBundleTests(unittest.TestCase):
@@ -23,6 +24,20 @@ class PortableQtNativeBundleTests(unittest.TestCase):
         self.exe=self.build/"rgsml_playback_src_tests"
         self.exe.write_bytes(b"mock-binary-NOT-REAL-Qt")
         self.exe.chmod(0o755)
+        self.fir_root=self.build/"generated/rgsml/fir/playback"
+        self.fir_root.mkdir(parents=True)
+        self.test_pins={}
+        for pair,letter,n in (("44100_48000",b"A",245768),
+                              ("48000_44100",b"B",225800)):
+            name=f"playback_src_kernel_{pair}.bin"
+            payload=letter*n
+            (self.fir_root/name).write_bytes(payload)
+            self.test_pins[name]=__import__("hashlib").sha256(payload).hexdigest()
+        self.pin_patch=patch(
+            "pack_private_offline_qt_test_bundle.PUBLIC_PLAYBACK_PINS",
+            self.test_pins)
+        self.pin_patch.start()
+        self.addCleanup(self.pin_patch.stop)
         self.libs=p/"mock-libs"
         self.libs.mkdir()
         self.core=self.libs/"libQt6Core.so.6"
@@ -49,6 +64,9 @@ class PortableQtNativeBundleTests(unittest.TestCase):
             self.assertIn("rgsml_offline_qt_native/rgsml_playback_src_tests",names)
             self.assertIn("rgsml_offline_qt_native/lib/libQt6Core.so.6",names)
             self.assertIn("rgsml_offline_qt_native/lib/libQt6Test.so.6",names)
+            for public_name in self.test_pins:
+                self.assertIn("rgsml_offline_qt_native/"+PUBLIC_PLAYBACK_RELATIVE+
+                              "/"+public_name,names)
             receipt=json.loads(t.extractfile(
                 "rgsml_offline_qt_native/PROVENANCE_NONRELEASE.json").read())
             self.assertEqual(receipt["native_elf_sha256"],
@@ -63,7 +81,7 @@ class PortableQtNativeBundleTests(unittest.TestCase):
         with tarfile.open(self.archive,"r:gz") as tar:
             source=[(m,tar.extractfile(m).read() if m.isfile() else None)
                     for m in tar.getmembers()]
-        for kind in ("missing","altered","duplicate","symlink","unexpected","false_release"):
+        for kind in ("missing","altered","bad_public_fir","duplicate","symlink","unexpected","false_release"):
             with self.subTest(kind=kind):
                 import copy
                 items=list(source)
@@ -71,6 +89,10 @@ class PortableQtNativeBundleTests(unittest.TestCase):
                     items=[(m,b) for m,b in items if not m.name.endswith("libQt6Test.so.6")]
                 if kind=="altered":
                     items=[(m,b+b"TAMPER" if m.name.endswith("/rgsml_playback_src_tests") else b)
+                           for m,b in items]
+                if kind=="bad_public_fir":
+                    items=[(m,b+b"TAMPER" if m.name.endswith(
+                        "/playback_src_kernel_44100_48000.bin") else b)
                            for m,b in items]
                 if kind=="duplicate": items.append(items[-1])
                 if kind=="symlink":
@@ -101,6 +123,21 @@ class PortableQtNativeBundleTests(unittest.TestCase):
                         else: tar.addfile(m)
                 with self.assertRaises(ContractError):
                     verify_archive(path)
+
+    def test_missing_or_corrupt_public_playback_fir_source_rejected(self):
+        for name in self.test_pins:
+            p=self.fir_root/name
+            original=p.read_bytes()
+            with self.subTest(name=name):
+                p.unlink()
+                with self.assertRaises(ContractError):
+                    pack(self.build,self.archive)
+                self.assertFalse(self.archive.exists())
+                p.write_bytes(b"malicious")
+                with self.assertRaises(ContractError):
+                    pack(self.build,self.archive)
+                self.assertFalse(self.archive.exists())
+                p.write_bytes(original)
 
     def test_missing_qt_deps_and_unresolved_deps_fail(self):
         for ldd in ("libNotQt.so.1 => /tmp/libOther.so.1 (0x0)",
