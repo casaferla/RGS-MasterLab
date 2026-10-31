@@ -8,7 +8,7 @@
 #include <rgsml/audio/internal/phase11_strict_scalar_reference.hpp>
 #include <rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
-#include <rgsml/audio/internal/phase11_pinned_private_fir_loader.hpp>
+#include "private_io/phase11_pinned_private_fir_loader.hpp"
 #include <rgsml/audio/internal/phase11_pinned_scalar_candidate_reference.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
