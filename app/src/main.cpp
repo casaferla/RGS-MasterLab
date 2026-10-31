@@ -11,6 +11,7 @@
 #include "mastering_preview_controller.hpp"
 #include "playback_transport_view_model.hpp"
 #include <rgsml/analysis/live_spectrum_analyzer.hpp>
+#include <rgsml/audio/external_playback_fir_assets.hpp>
 #include <rgsml/dsp/module_registry.hpp>
 #include "prepare_memory_advice_view_model.hpp"
 #include "master_output_rate_state.hpp"
@@ -78,6 +79,18 @@ int main(int argc, char* argv[])
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QGuiApplication application(argc, argv);
     application.setApplicationName(QStringLiteral("RGS MasterLab"));
+    // Frozen playback FIRs are installed *beside* the executable, never
+    // linked as coefficient arrays. Resolve the real executable directory
+    // once on the GUI/control thread before a playback adapter can exist.
+#ifdef _WIN32
+    const auto appAssetRoot=std::filesystem::path{
+        QCoreApplication::applicationDirPath().toStdWString()};
+#else
+    const auto appAssetRoot=std::filesystem::path{
+        QCoreApplication::applicationDirPath().toStdString()};
+#endif
+    rgsml::audio::configure_external_playback_fir_root(
+        appAssetRoot/"resources"/"fir"/"playback");
     // Matching icon for the Qt window/task switcher. The QML module embeds
     // the identical approved C artwork under its resource URL.
     application.setWindowIcon(QIcon(QStringLiteral(
@@ -254,9 +267,15 @@ int main(int argc, char* argv[])
 
     // Product-private external original FIR provision, never publish assets.
     const auto originalFirRoot=qgetenv("RGSML_FINAL_SRC_Q0_PRIVATE_DIR");
+    // The public build contains NO original private 14-Q0 FIRs.
+    // Local FQ override is authoritative; future approved installers
+    // may provide the same frozen SHA-pinned bytes in app resources.
     if(!originalFirRoot.isEmpty())
         privateTerminalRenderer.set_original_q0_fir_root(
             std::filesystem::path{originalFirRoot.constData()});
+    else
+        privateTerminalRenderer.set_original_q0_fir_root(
+            appAssetRoot/"resources"/"fir"/"final_src");
 
     // One immutable authority bit for PRODUCT worker, six-rate picker and
     // RAM/timing panel. Missing authentic private assets keep 28 paths off.
