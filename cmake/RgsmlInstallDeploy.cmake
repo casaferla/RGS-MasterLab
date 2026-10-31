@@ -23,6 +23,14 @@ function(rgsml_configure_install_deploy target manifest)
         DESTINATION "${CMAKE_INSTALL_DATADIR}/RGSMasterLab"
     )
 
+    # Every installed product includes both frozen playback FIR files
+    # OUTSIDE the EXE. Private original Q0 Final SRC coefficients are NOT
+    # published by public CI; authenticated local FQ provisioning remains.
+    install(
+        FILES ${RGSML_PLAYBACK_FIR_INSTALL_FILES}
+        DESTINATION "${CMAKE_INSTALL_BINDIR}/resources/fir/playback"
+    )
+
     qt_generate_deploy_qml_app_script(
         TARGET ${target}
         OUTPUT_SCRIPT deploy_script
