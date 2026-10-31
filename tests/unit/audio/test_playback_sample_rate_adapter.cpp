@@ -139,6 +139,7 @@ private slots:
     void phase11GenuineMpfrOneToTwoDownsampleMatchesPythonScalarBits();
     void phase11GenuineMpfrFourfoldRatesMatchPythonScalarBits();
     void phase11GenuineQ0OneM17PassThenIndependentDeviceRate();
+    void phase11OriginalPrivateLoaderFailsClosedWithoutInstalledAssets();
     void phase11External14RealCandidatesAll36OfflineNativeRehearsal();
     void phase11External14RealCandidates15NativeAliasSineRehearsal();
     void offlineCandidateMatchesFrozenPlaybackKernelBitwise();
@@ -3229,6 +3230,21 @@ phase11GenuineQ0OneM17PassThenIndependentDeviceRate()
     QCOMPARE(channel_bits(*source.value(),1),beforeRight);
 }
 
+
+void PlaybackSampleRateAdapterTest::
+phase11OriginalPrivateLoaderFailsClosedWithoutInstalledAssets()
+{
+    const std::filesystem::path missing{};
+    QVERIFY(!audio::internal::all_14_phase11_original_pins_present(missing));
+    QVERIFY(!audio::internal::load_phase11_original_pinned_private_fir(
+        missing,2,1));
+    QVERIFY(!audio::internal::load_phase11_original_pinned_private_fir(
+        std::filesystem::path{"__rgsml_missing_private_q0__"},640,147));
+    QVERIFY(!audio::internal::load_phase11_original_pinned_private_fir(
+        std::filesystem::path{"__rgsml_missing_private_q0__"},1,1));
+    QCOMPARE(audio::internal::kPhase11FrozenOriginalFirPins.size(),
+             std::size_t{14});
+}
 
 void PlaybackSampleRateAdapterTest::
 phase11External14RealCandidatesAll36OfflineNativeRehearsal()

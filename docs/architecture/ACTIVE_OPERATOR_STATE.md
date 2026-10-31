@@ -1,3 +1,7 @@
+## 2026-10-31 — GENUINE PRIVATE ORIGINAL Q0 ASSET PROVISIONING + FAIL-CLOSED REGRESSION STAGED
+- New `tools/qualification/final_src/install_private_q0_originals.py` checks frozen external ZIP SHA, complete 14-file manifest, all original asset bytes SHA/shape and a new private target directory atomically; no network, public FIR attachment or silently generated replacement. Separate [FQ operator instructions](M17_FINAL_SRC_PRIVATE_FIR_WINDOWS_FQ_20261031.md) describe explicit local `RGSML_FINAL_SRC_Q0_PRIVATE_DIR`. Native routine tests assert a missing or unsafe private root cannot mint any positive route. Private 36 Qt real test still requires offline files, unavailable to ordinary public CI.
+- Single coherent macro-lot still staging and unqualified; do not treat green #940 as covering changes, do not launch FQ before new PR Focused green.
+
 ## 2026-10-31 — ALL THREE RATE VIEWS SAME FULL-Q0 PACK ADMISSION (STAGING)
 - `MasterOutputRateState` rate-picker + status now receives identical authenticated startup 14-FIR pack bit as real M17 private renderer and six-rate RAM/ETA model. A new pure Qt regression explicitly verifies 6 identity + 2 legacy + 28 newly permitted ONLY with Q0 ready, and immediate loss of permission without it. This is source-scoped M17 candidate admission, not a general Final SRC Q0–Q6 release certificate. No Play/Loop blocker, no extra SRC engine.
 
