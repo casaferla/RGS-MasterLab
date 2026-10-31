@@ -1,6 +1,6 @@
 #include "terminal_private_render_controller.hpp"
 #include <rgsml/core/error.hpp>
-#include <rgsml/audio/internal/phase11_pinned_private_fir_loader.hpp>
+#include "private_io/phase11_pinned_private_fir_loader.hpp"
 #include <numeric>
 #include <QMetaObject>
 #include <QDebug>
