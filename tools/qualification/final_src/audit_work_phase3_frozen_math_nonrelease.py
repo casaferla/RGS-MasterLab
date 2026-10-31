@@ -19,7 +19,7 @@ import json
 from audit_work_phase3_handoff_nonrelease import (
     audit, AuditError, parsed, require,
 )
-from phase11_math_preflight import RATES
+from phase11_math_preflight import RATES, Ratio, kernel_shape
 
 
 def canonical_ratio_pairs():
@@ -127,6 +127,69 @@ def verify_exact_covered_error_model(model):
     return True
 
 
+def verify_independent_rounding_receipt_shapes(rows, receipts):
+    """Cross-check all 28 signed-off *claims* against frozen Q0 geometry.
+
+    Receipts are externally SHA-pinned by the parent package audit. This
+    function checks internal shape/metadata contradictions, not the MPFR
+    proof execution or correctness of original proprietary FIR bytes.
+    """
+    pairs = canonical_ratio_pairs()
+    require(type(rows) is list and len(rows) == 28
+            and type(receipts) is dict and len(receipts) == 28,
+            "exact 28 original coefficient receipts required")
+    seen = set()
+    kernels = {}
+    producer_sources = set()
+    helpers = set()
+    for row in rows:
+        require(type(row) is dict, "invalid reproduction summary")
+        L, M, bits = row.get("L"), row.get("M"), row.get("bits")
+        require(type(L) is int and type(M) is int
+                and type(bits) is int and (L, M) in pairs
+                and bits in (256, 512) and (L, M, bits) not in seen,
+                "noncanonical or duplicate coefficient precision entry")
+        seen.add((L, M, bits))
+        source, master = pairs[(L, M)]
+        shape = kernel_shape(Ratio.make(source, master))
+        require(row.get("coefficient_count") == shape.N
+                and type(row.get("coefficient_count")) is int,
+                "reproduced FIR coefficient count differs from frozen shape")
+        key = (L, M, bits)
+        receipt = receipts.get(key)
+        require(type(receipt) is dict and
+                (receipt.get("L"), receipt.get("M"), receipt.get("bits")) == key
+                and receipt.get("shape_formula_exact_pi_interval_verified") is True
+                and receipt.get("header_independent_regeneration") is True
+                and receipt.get("original_header_reused_and_independently_parsed") is False
+                and receipt.get("all_binary64_rounding_cells_proven") is True
+                and receipt.get("payload_bitwise_equal") is True
+                and receipt.get("release_qualified") is False,
+                "coefficient receipt shape/RN assertions not satisfied")
+        digest = row.get("asset_sha256")
+        require(type(digest) is str and len(digest) == 64
+                and all(c in "0123456789abcdef" for c in digest)
+                and receipt.get("asset_sha256") == digest
+                and receipt.get("expected_sha256") == digest
+                and (L, M) not in kernels or kernels.get((L, M)) == digest,
+                "binary64 256/512 coefficient payload SHA discrepancy")
+        kernels[(L, M)] = digest
+        expected_note = (
+            f"DIRECTED_COEFFICIENT_ROUNDING_CELLS_PROVEN {shape.N} "
+            f"BITS {bits} MPFR "
+        )
+        require(type(receipt.get("transcript")) is str
+                and receipt["transcript"].startswith(expected_note),
+                "wrong geometry or precision in directed rounding receipt")
+        producer_sources.add(receipt.get("source_sha256"))
+        helpers.add(receipt.get("arithmetic_helper_sha256"))
+    require(seen == {(L, M, b) for L, M in pairs for b in (256, 512)}
+            and len(kernels) == 14
+            and len(producer_sources) == len(helpers) == 1,
+            "incomplete cross-precision or inconsistent generator provenance")
+    return 28
+
+
 def review(pinned_phase3_zip: Path):
     # Existing original-external-SHA audit also rejects unsafe archives,
     # duplicate JSON keys, forged release flags and unpinned sources.
@@ -137,9 +200,21 @@ def review(pinned_phase3_zip: Path):
         err_doc = parsed(z.read("phase3/FORMAL_ERROR_REVIEW.json"))
         n = verify_frozen_band_domains(band_doc["bands"])
         verify_exact_covered_error_model(err_doc)
+        reproduction = parsed(z.read(
+            "phase3/INDEPENDENT_COEFFICIENT_AUDIT.json"))
+        summaries = reproduction["reproductions"]
+        receipts = {}
+        for (L, M) in canonical_ratio_pairs():
+            for bits in (256, 512):
+                filename = (f"phase3/coefficient_reproduction/"
+                            f"L{L}_M{M}_{bits}.json")
+                receipts[(L, M, bits)] = parsed(z.read(filename))
+        validated_rounding = verify_independent_rounding_receipt_shapes(
+            summaries, receipts)
     return {
         "status": "FROZEN_DOMAIN_AND_ERROR_MODEL_AUDITED_NONRELEASE",
         "complete_band_domains": n,
+        "reproduction_receipt_shapes": validated_rounding,
         "canonical_ratio_count": len(canonical_ratio_pairs()),
         "pinned_inventory": result["result"],
         "independent_spectral_cell_replay_executed": False,

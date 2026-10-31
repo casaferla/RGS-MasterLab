@@ -5,10 +5,11 @@ operator environment, never uploaded as GitHub public CI input.
 """
 import unittest
 from fractions import Fraction as F
+from phase11_math_preflight import Ratio, kernel_shape
 from audit_work_phase3_handoff_nonrelease import AuditError
 from audit_work_phase3_frozen_math_nonrelease import (
     canonical_ratio_pairs, verify_frozen_band_domains,
-    verify_exact_covered_error_model,
+    verify_exact_covered_error_model, verify_independent_rounding_receipt_shapes,
 )
 
 
@@ -50,7 +51,54 @@ def sufficient_model():
     }
 
 
+
+def fake_rounding():
+    rows, receipts = [], {}
+    for (L, M), (source, target) in canonical_ratio_pairs().items():
+        size = kernel_shape(Ratio.make(source, target)).N
+        for bits in (256, 512):
+            sha = "a"*64
+            rows.append(dict(L=L, M=M, bits=bits,
+                             coefficient_count=size, asset_sha256=sha))
+            receipts[(L, M, bits)] = dict(
+                L=L, M=M, bits=bits,
+                shape_formula_exact_pi_interval_verified=True,
+                header_independent_regeneration=True,
+                original_header_reused_and_independently_parsed=False,
+                all_binary64_rounding_cells_proven=True,
+                payload_bitwise_equal=True, release_qualified=False,
+                asset_sha256=sha, expected_sha256=sha,
+                source_sha256="b"*64, arithmetic_helper_sha256="c"*64,
+                transcript=f"DIRECTED_COEFFICIENT_ROUNDING_CELLS_PROVEN "
+                           f"{size} BITS {bits} MPFR 4.2.1\n")
+    return rows, receipts
+
 class FrozenMathReviewTests(unittest.TestCase):
+    def test_28_binary64_shape_and_rounding_receipt_claims(self):
+        rows, receipts=fake_rounding()
+        self.assertEqual(verify_independent_rounding_receipt_shapes(
+            rows, receipts),28)
+
+    def test_reject_bogus_shape_and_shared_producer(self):
+        rows, receipts=fake_rounding()
+        rows[0]["coefficient_count"]-=1
+        with self.assertRaisesRegex(AuditError,"coefficient count"):
+            verify_independent_rounding_receipt_shapes(rows,receipts)
+        rows, receipts=fake_rounding()
+        receipts[(1,2,256)]["source_sha256"]="d"*64
+        with self.assertRaisesRegex(AuditError,"generator provenance"):
+            verify_independent_rounding_receipt_shapes(rows,receipts)
+
+    def test_reject_false_rounding_or_cross_precision_payload(self):
+        rows, receipts=fake_rounding()
+        receipts[(1,2,256)]["all_binary64_rounding_cells_proven"]=False
+        with self.assertRaisesRegex(AuditError,"RN assertions"):
+            verify_independent_rounding_receipt_shapes(rows,receipts)
+        rows, receipts=fake_rounding()
+        rows[0]["asset_sha256"]="e"*64
+        with self.assertRaisesRegex(AuditError,"SHA discrepancy"):
+            verify_independent_rounding_receipt_shapes(rows,receipts)
+
     def test_exact_all_28_domains(self):
         self.assertEqual(verify_frozen_band_domains(authentic_geometry()), 28)
         self.assertEqual(len(canonical_ratio_pairs()),14)
