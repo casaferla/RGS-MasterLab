@@ -348,6 +348,10 @@ target_link_libraries(rgsml_playback_src_tests
         rgsml_render # genuine Q0 SOURCE->MASTER -> one M17/M16 -> DEVICE rehearsal
         Qt6::Test
 )
+# The genuine original-Q0 loader is private to the app/offline-FQ
+# boundary. This test is explicitly allowed to exercise that helper.
+target_include_directories(rgsml_playback_src_tests PRIVATE
+    "${CMAKE_SOURCE_DIR}/app/src")
 rgsml_apply_project_warnings(rgsml_playback_src_tests)
 # The supplemental Phase-11 polyphase C++ oracle is STRICT binary64:
 # forbid FMA contraction/fast-math in BOTH OS Focused qualification runs.
