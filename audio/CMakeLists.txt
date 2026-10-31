@@ -11,6 +11,10 @@ add_library(rgsml_audio STATIC
     src/wav_writer.cpp
 )
 
+# Even when Focused CI builds explicit test targets (not ALL), the frozen
+# external resources must be built before any audio consumer can execute.
+add_dependencies(rgsml_audio rgsml_external_fir_assets)
+
 target_include_directories(rgsml_audio
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
