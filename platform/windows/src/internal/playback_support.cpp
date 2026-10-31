@@ -1608,8 +1608,12 @@ void PlaybackEngine::tick()
 
 core::Status PlaybackEngine::prefill()
 {
+    // Fill the enlarged SRC queue BEFORE starting the sink consumption
+    // clock. This is owner-thread work, never QIODevice callback work.
+    const auto prefillLimit = rateAdapter_
+        ? 4U * kMaximumPumpIterations : kMaximumPumpIterations;
     for (std::size_t iteration = 0;
-         iteration < kMaximumPumpIterations && output_->writable_bytes() > 0U;
+         iteration < prefillLimit && output_->writable_bytes() > 0U;
          ++iteration) {
         auto pumped = pump_once();
         if (!pumped) {

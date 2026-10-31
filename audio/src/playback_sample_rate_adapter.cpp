@@ -790,22 +790,78 @@ core::Result<core::FrameCount> internal::read_playback_src_frames(
         destinationPlanes[channel] = *destinationPlane.value();
     }
 
+    // Full interior device blocks use contiguous SOURCE samples. Preserve
+    // coefficient bits and sequential scalar accumulation, but avoid an
+    // expensive modulo/Result reflection on every one of the FIR taps.
+    const bool contiguousInterior =
+        firstWindow.value()->firstInput >= 0
+        && lastWindow.value()->lastInput < adapter.input_frame_count().value();
+    const auto interpolation = static_cast<std::uint32_t>(
+        adapter.interpolation_factor());
+    const auto decimation = static_cast<std::uint32_t>(
+        adapter.decimation_factor());
     for (std::int64_t localOutput = 0; localOutput < requested; ++localOutput) {
-        auto window = convolution_window(
-            absoluteOutputStart.value() + localOutput,
-            static_cast<std::uint32_t>(adapter.interpolation_factor()),
-            static_cast<std::uint32_t>(adapter.decimation_factor()),
-            adapter.kernel_size());
-        if (!window) {
-            return core::Result<core::FrameCount>::failure(*window.error());
+        ConvolutionWindow directWindow{};
+        if (contiguousInterior && interpolation == 1U) {
+            // L=1 downsamplers (192->48): monotone fixed convolution,
+            // no per-device-frame wide integer division needed.
+            directWindow.firstInput = firstWindow.value()->firstInput
+                + localOutput * decimation;
+            directWindow.lastInput = directWindow.firstInput
+                + static_cast<std::int64_t>(adapter.kernel_size() - 1U);
+            directWindow.firstCoefficient = adapter.kernel_size() - 1U;
+        } else {
+            auto resolved = convolution_window(
+                absoluteOutputStart.value() + localOutput,
+                interpolation, decimation, adapter.kernel_size());
+            if (!resolved) {
+                return core::Result<core::FrameCount>::failure(*resolved.error());
+            }
+            directWindow = *resolved.value();
         }
+        if (contiguousInterior) {
+            const auto firstOffset = static_cast<std::size_t>(
+                directWindow.firstInput - minimumSource);
+            const auto taps = static_cast<std::size_t>(
+                directWindow.lastInput - directWindow.firstInput + 1);
+            for (std::size_t channel = 0;
+                 channel < source.format().channel_count(); ++channel) {
+                const double* samples = sourcePlanes[channel].data() + firstOffset;
+                auto coefficient = directWindow.firstCoefficient;
+                double accumulator = 0.0;
+                for (std::size_t tap = 0; tap < taps; ++tap) {
+                    const double sample = samples[tap];
+                    if (!std::isfinite(sample)) {
+                        return failure<core::FrameCount>(
+                            core::ErrorCode::InvalidAudioSample,
+                            "Non-finite canonical sample reached playback SRC.");
+                    }
+                    const double kernel = std::bit_cast<double>(
+                        adapter.coefficient_bits(coefficient));
+                    accumulator = accumulator + sample * kernel;
+                    if (tap + 1U < taps) {
+                        coefficient -= interpolation;
+                    }
+                }
+                if (!std::isfinite(accumulator)) {
+                    return failure<core::FrameCount>(
+                        core::ErrorCode::InvalidAudioSample,
+                        "Playback SRC produced a non-finite sample.");
+                }
+                destinationPlanes[channel][static_cast<std::size_t>(localOutput)] =
+                    accumulator;
+            }
+            continue;
+        }
+        // Reflected file-edge blocks retain the existing checked scalar path.
+        const auto window = &directWindow;
         for (std::size_t channel = 0;
              channel < source.format().channel_count();
              ++channel) {
             double accumulator = 0.0;
-            auto coefficient = window.value()->firstCoefficient;
-            for (auto logical = window.value()->firstInput;
-                 logical <= window.value()->lastInput;
+            auto coefficient = window->firstCoefficient;
+            for (auto logical = window->firstInput;
+                 logical <= window->lastInput;
                  ++logical) {
                 auto reflected = reflect_frame(
                     logical, adapter.input_frame_count().value());
@@ -825,7 +881,7 @@ core::Result<core::FrameCount> internal::read_playback_src_frames(
                     adapter.coefficient_bits(coefficient));
                 const auto product = sample * kernel;
                 accumulator = accumulator + product;
-                if (logical != window.value()->lastInput) {
+                if (logical != window->lastInput) {
                     coefficient -= static_cast<std::size_t>(
                         adapter.interpolation_factor());
                 }

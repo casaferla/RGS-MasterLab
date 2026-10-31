@@ -214,7 +214,8 @@ struct MonitoringEndpointLock final {
 
 class QtPlaybackOutput final : public IPlaybackOutput {
 public:
-    static constexpr qsizetype kQueueCapacityBytes = 64 * 1024;
+    // Fixed, preallocated queue: 0.68s at 48k stereo float32 for SRC jitter.
+    static constexpr qsizetype kQueueCapacityBytes = 256 * 1024;
 
     QtPlaybackOutput(QAudioDevice device,QAudioFormat format,
         std::optional<MonitoringEndpointLock> monitorLock=std::nullopt)
@@ -289,7 +290,7 @@ public:
                 core::ErrorCode::UnsupportedOperation,
                 "The default Windows audio sink could not be created.");
         }
-        sink_->setBufferSize(static_cast<qsizetype>(32 * 1024));
+        sink_->setBufferSize(static_cast<qsizetype>(64 * 1024));
         sink_->start(&queue_);
         if (sink_->error() != QtAudio::NoError) {
             const auto mapped = error();

@@ -131,6 +131,7 @@ class PlaybackSampleRateAdapterTest final : public QObject {
 private slots:
     void policyIdentityAndFrameMap();
     void sixRateDevicePlaybackStreamingPreservesDcAndSourceClock();
+    void long192kTo48kStereoDeviceStreamingThroughput();
     void phase11StrictScalarReferenceSixBySixAgainstConceptualGrid();
     void phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference();
     void phase11PinnedScalarReferenceSixBySixSyntheticGeometry();
@@ -2791,6 +2792,55 @@ sixRateDevicePlaybackStreamingPreservesDcAndSourceClock()
             QCOMPARE(retired.value()->value(),sourceFrames);
         }
     }
+}
+
+
+void PlaybackSampleRateAdapterTest::long192kTo48kStereoDeviceStreamingThroughput()
+{
+    // FQ #87 physical regression: 192k SOURCE -> 48k output was crackling,
+    // delayed and slow. Exercise one continuous second in 1024-frame blocks.
+    // This tests CPU production, not real Qt sink scheduling.
+    constexpr std::int64_t sourceFrames = 192000;
+    constexpr std::int64_t outputFrames = 48000;
+    std::vector<std::uint64_t> interleaved;
+    interleaved.reserve(static_cast<std::size_t>(sourceFrames * 2));
+    for (std::int64_t n = 0; n < sourceFrames; ++n) {
+        interleaved.push_back(std::bit_cast<std::uint64_t>(0.125));
+        interleaved.push_back(std::bit_cast<std::uint64_t>(-0.125));
+    }
+    auto reader = open_f64_stereo(192000U, interleaved);
+    QVERIFY(reader);
+    auto converter = adapter(192000, 48000, sourceFrames);
+    QCOMPARE(converter.interpolation_factor(), std::int64_t{1});
+    QCOMPARE(converter.decimation_factor(), std::int64_t{4});
+    QCOMPARE(converter.output_frame_count().value(), outputFrames);
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+    for (std::int64_t begin = 0; begin < outputFrames; begin += 1024) {
+        const auto count = std::min<std::int64_t>(1024, outputFrames - begin);
+        auto block = output_buffer(converter, begin, count);
+        auto produced = converter.read_frames(
+            *reader, core::FrameIndex{begin}, block.mutable_view());
+        QVERIFY2(produced, produced ? "" : produced.error()->message().c_str());
+        QCOMPARE(produced.value()->value(), count);
+        for (std::size_t channel = 0; channel < 2; ++channel) {
+            auto samples = block.view().channel(channel);
+            QVERIFY(samples);
+            const double expected = channel == 0 ? 0.125 : -0.125;
+            for (const auto sample : *samples.value()) {
+                QVERIFY(std::isfinite(sample));
+                QVERIFY(std::abs(sample - expected) < 1e-10);
+            }
+        }
+    }
+    qInfo("DEVICE_SRC_192_TO_48_STEREO one_second_elapsed_ms=%lld",
+          static_cast<long long>(elapsed.elapsed()));
+#if defined(NDEBUG)
+    // Production Release must decode faster than the device consumes.
+    QVERIFY2(elapsed.elapsed() < 1500,
+             "192->48 stereo device SRC sustained CPU throughput is insufficient.");
+#endif
 }
 
 void PlaybackSampleRateAdapterTest::policyIdentityAndFrameMap()
