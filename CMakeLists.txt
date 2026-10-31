@@ -89,4 +89,12 @@ if(RGSML_BUILD_TESTS)
     # app-test dependencies without modifying the large frozen test suite.
     include(cmake/RgsmlTerminalPrivateGrTests.cmake)
     include(cmake/RgsmlTerminalProductActivationTests.cmake)
+    # Special root-level M17 tests are registered AFTER tests/CMakeLists.
+    # They also need the exact external playback resources.
+    get_property(_rgsml_fir_root_ctests DIRECTORY PROPERTY TESTS)
+    foreach(_rgsml_fir_ctest IN LISTS _rgsml_fir_root_ctests)
+        set_property(TEST "${_rgsml_fir_ctest}" APPEND PROPERTY
+            ENVIRONMENT_MODIFICATION
+            "RGSML_PLAYBACK_FIR_ROOT=set:${RGSML_PLAYBACK_FIR_BUILD_ROOT}")
+    endforeach()
 endif()
