@@ -58,6 +58,36 @@ private slots:
     state.source_committed(32000);
     QVERIFY(!state.m17_candidate_rate_admissible(192000));
  }
+ void originalQ0AdmissionAll36RequiresAuthenticatedFullFamily() {
+    const std::array<qint64,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    MasterOutputRateState state;
+    int actualNew=0,identity=0,legacy=0;
+    for(const auto source:rates) {
+        state.source_committed(source);
+        for(const auto target:rates) {
+            const bool prior=state.m17_candidate_rate_admissible(target);
+            const bool after=m17_final_src_candidate_admissible(source,target,true);
+            const auto ui=prepare_memory_display_admission(source,target,true);
+            QVERIFY(after);
+            QCOMPARE(ui,PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE);
+            if(source==target){QVERIFY(prior);++identity;}
+            else if((source==44100&&target==48000)
+                ||(source==48000&&target==44100)){QVERIFY(prior);++legacy;}
+            else {QVERIFY(!prior);++actualNew;}
+        }
+    }
+    QCOMPARE(identity,6);QCOMPARE(legacy,2);QCOMPARE(actualNew,28);
+    state.source_committed(44100);
+    QVERIFY(!state.m17_candidate_rate_admissible(192000));
+    state.set_original_q0_family_ready(true);
+    QVERIFY(state.m17_candidate_rate_admissible(192000));
+    QVERIFY(state.final_src_path_status(192000).contains(
+        QStringLiteral("Q0 FIR")));
+    QVERIFY(!state.m17_candidate_rate_admissible(384000));
+    state.set_original_q0_family_ready(false);
+    QVERIFY(!state.m17_candidate_rate_admissible(192000));
+ }
  void prepareMemoryDisplayNeverRecommendsUnqualifiedSrc() {
     const std::array<qint64,6> rates{
         44100,48000,88200,96000,176400,192000};

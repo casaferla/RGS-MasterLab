@@ -258,7 +258,10 @@ int main(int argc, char* argv[])
         privateTerminalRenderer.set_original_q0_fir_root(
             std::filesystem::path{originalFirRoot.constData()});
 
-    // Mirror EXACT startup original-Q0 asset admission in six-rate advice.
+    // One immutable authority bit for PRODUCT worker, six-rate picker and
+    // RAM/timing panel. Missing authentic private assets keep 28 paths off.
+    masterOutputRate.set_original_q0_family_ready(
+        privateTerminalRenderer.full_original_q0_family_ready());
     prepareRateAdvisor.set_original_q0_family_ready(
         privateTerminalRenderer.full_original_q0_family_ready());
     rgsml::app::MasteringPreviewController previewController{

@@ -2,7 +2,7 @@
 #include "final_src_candidate_policy.hpp"
 namespace rgsml::app {
 bool MasterOutputRateState::m17_candidate_rate_admissible(qint64 hz) const noexcept {
-    return m17_final_src_candidate_admissible(sourceRateHz_,hz);
+    return m17_final_src_candidate_admissible(sourceRateHz_,hz,originalQ0Ready_);
 }
 QString MasterOutputRateState::final_src_path_status(qint64 hz) const {
     switch(final_src_candidate_path(sourceRateHz_,hz)) {
@@ -11,7 +11,9 @@ QString MasterOutputRateState::final_src_path_status(qint64 hz) const {
     case FinalSrcCandidatePath::EXISTING_44K_48K_FIR:
         return QStringLiteral("44.1/48 FIR candidate · Final SRC release pending");
     case FinalSrcCandidatePath::EXPERIMENTAL_UNQUALIFIED:
-        return QStringLiteral("Final SRC UNQUALIFIED · Prepare unavailable");
+        return originalQ0Ready_
+            ? QStringLiteral("Original SHA-pinned Q0 FIR · M17 FQ pending")
+            : QStringLiteral("Final SRC UNQUALIFIED · Prepare unavailable");
     default:
         return QStringLiteral("SOURCE / target rate unavailable");
     }

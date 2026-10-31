@@ -22,6 +22,13 @@ public:
         for(const auto candidate:rates)if(candidate==hz)return true;
         return false;
     }
+    // GUI and rate-picker use the very same original-Q0 product admission
+    // as M17 worker and six-rate memory panel; not a DEVICE-derived choice.
+    void set_original_q0_family_ready(bool ready) noexcept {
+        if(originalQ0Ready_==ready)return;
+        originalQ0Ready_=ready;
+        emit selectionAvailabilityChanged();
+    }
     [[nodiscard]] qint64 source_rate_hz()const noexcept{return sourceRateHz_;}
     [[nodiscard]] qint64 master_rate_hz()const noexcept{return masterRateHz_;}
     [[nodiscard]] bool has_supported_master_rate()const noexcept {
@@ -57,6 +64,7 @@ private:
     qint64 sourceRateHz_{0};
     qint64 masterRateHz_{0};
     quint64 rateRevision_{0};
+    bool originalQ0Ready_{false};
     TargetSelectionGuard targetSelectionGuard_;
 };
 } // namespace rgsml::app

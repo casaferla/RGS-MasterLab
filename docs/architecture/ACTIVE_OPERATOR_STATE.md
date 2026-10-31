@@ -1,3 +1,6 @@
+## 2026-10-31 — ALL THREE RATE VIEWS SAME FULL-Q0 PACK ADMISSION (STAGING)
+- `MasterOutputRateState` rate-picker + status now receives identical authenticated startup 14-FIR pack bit as real M17 private renderer and six-rate RAM/ETA model. A new pure Qt regression explicitly verifies 6 identity + 2 legacy + 28 newly permitted ONLY with Q0 ready, and immediate loss of permission without it. This is source-scoped M17 candidate admission, not a general Final SRC Q0–Q6 release certificate. No Play/Loop blocker, no extra SRC engine.
+
 ## 2026-10-31 — SIX-RATE UI AND ETA AUTHORITY MATCH PRODUCT ORIGINAL Q0 ASSETS (STAGING)
 - The six-rate Prepare RAM rows, source admission status and whole-track timing/ACT panels now consume the exact product startup state `originalQ0FamilyReady_`. When authentic 14 originals are verified, additional SOURCE→MASTER routes are marked source-pinned (not globally released); if absent, 28 new paths remain blocked. The realtime M17 worker still authenticates the exact bytes for every request. SOURCE/MASTER/DEVICE remain separate and the Loop/Play no-PREPARE-block rule remains in force.
 - No CI/Windows FQ yet for these staging changes, and no private FIR bytes on public repository. Follow one coherent CAS batch with full tests.
