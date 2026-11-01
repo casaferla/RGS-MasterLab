@@ -1507,6 +1507,8 @@ Window {
     width: 1184
     height: 688
     property bool meterMode: false
+    property bool privateMonitorOn: false
+    property bool sourceBoundTpValid: true
     visible: false
     color: "#06121F"
     QtObject {
@@ -1544,6 +1546,44 @@ Window {
         property var eqViewModel: null
         property var compressorViewModel: null
     }
+    // This is a source/PROCESSED-bound historical M16 measurement, not
+    // private MASTER PCM. The fixture can independently invalidate it.
+    QtObject {
+        id: sourceBoundPreLimiter
+        objectName: "m17FixtureSourceBoundPreLimiterTp"
+        property bool hasMeasurement: true
+        property int measuredChannelCount: 2
+        property string stateText: "COMPLETE"
+        property string qualificationText: "SOURCE-BOUND COMPLETE"
+        property string realizationText: "PROCESSED fixture owner"
+        property string sampleRateText: "48 kHz SOURCE"
+        property string peakText: "−2.21 dBTP"
+        property string channelText: "RIGHT"
+    }
+    QtObject {
+        id: manualLive
+        objectName: "m17FixtureProcessedLive"
+        property bool recentAvailable: true
+        property bool holdAvailable: true
+        property int channelCount: 2
+        property bool monitoringAttempted: true
+        property string statusText: "MANUAL"
+        property string peakText: "−2.21 dBTP"
+        property string holdText: "−2.21 dBTP"
+        property string leftText: "−2.21 dBTP"
+        property string rightText: "−2.21 dBTP"
+        property real leftLevel: 0.7
+        property real rightLevel: 0.7
+        property bool leftOverZero: false
+        property bool rightOverZero: false
+        property real leftHoldLevel: 0.7
+        property real rightHoldLevel: 0.7
+    }
+    QtObject {
+        id: privateMonitor
+        objectName: "m17FixturePrivateMonitor"
+        property bool monitorExclusive: fixtureWindow.privateMonitorOn
+    }
     QtObject {
         id: fixtureModel
         property var activeModule: fixtureWindow.meterMode ? meter : limiter
@@ -1562,6 +1602,10 @@ Window {
             width: 972
             height: 652
             adapterModel: fixtureModel
+            truePeakStaticViewModel: fixtureWindow.sourceBoundTpValid
+                ? sourceBoundPreLimiter : null
+            truePeakLiveViewModel: manualLive
+            terminalMonitorViewModel: privateMonitor
         }
     }
 }
@@ -1679,6 +1723,39 @@ Window {
     QVERIFY2(captureHost(QStringLiteral("m17_host_family_on_1184x688.png")),
         "Native M17 DSP host ON screenshot must be captured");
     QVERIFY(checkTheme(true, QStringLiteral("#6CBCCF")));
+
+    // Real DspEditorHost routing test: Preview Prepared / private MASTER
+    // must retain an ALREADY-COMPLETE source-bound PRE-LIMITER measurement
+    // in M17, without leaking the ordinary M16 live meter or relabelling
+    // DEVICE PCM. M16 still hides both providers during private listening.
+    auto* historicalTp = find_child_by_name(
+        root.data(), QStringLiteral("m17FixtureSourceBoundPreLimiterTp"));
+    auto* processedLive = find_child_by_name(
+        root.data(), QStringLiteral("m17FixtureProcessedLive"));
+    QVERIFY(historicalTp && processedLive);
+    QVERIFY(window->setProperty("privateMonitorOn",false));
+    QCoreApplication::processEvents();
+    QCOMPARE(host->property("truePeakCurrentStatic").value<QObject*>(),historicalTp);
+    QCOMPARE(host->property("truePeakCurrentLive").value<QObject*>(),processedLive);
+    QVERIFY(window->setProperty("privateMonitorOn",true));
+    QCoreApplication::processEvents();
+    QVERIFY(host->property("monitorExclusive").toBool());
+    QCOMPARE(host->property("truePeakCurrentStatic").value<QObject*>(),historicalTp);
+    QVERIFY(host->property("truePeakCurrentLive").value<QObject*>() == nullptr);
+    // Switching the editor to M16 must NEVER show a foreign private owner.
+    QVERIFY(window->setProperty("meterMode",true));
+    QCoreApplication::processEvents();
+    QVERIFY(host->property("truePeakCurrentStatic").value<QObject*>() == nullptr);
+    QVERIFY(host->property("truePeakCurrentLive").value<QObject*>() == nullptr);
+    // Upstream SOURCE/PROCESSED invalidation must remove the historical
+    // figure, even if the M17 editor is still in private monitor.
+    QVERIFY(window->setProperty("meterMode",false));
+    QVERIFY(window->setProperty("sourceBoundTpValid",false));
+    QCoreApplication::processEvents();
+    QVERIFY(host->property("truePeakCurrentStatic").value<QObject*>() == nullptr);
+    QVERIFY(window->setProperty("privateMonitorOn",false));
+    QCoreApplication::processEvents();
+    QCOMPARE(host->property("truePeakCurrentLive").value<QObject*>(),processedLive);
     window->close();
 }
 
