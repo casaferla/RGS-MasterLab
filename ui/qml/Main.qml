@@ -1848,68 +1848,172 @@ ApplicationWindow {
         }
     }
 
+    // MASTER DEVICE listening has a distinct owner from the SOURCE Region.
+    // Keep this small modal themed with the actual RGS host instead of the
+    // system's bright default; refuse invalid edits without closing it.
     Dialog {
         id: masterLoopDialog
         objectName: "transportMasterLoopDialog"
         parent: Overlay.overlay
         anchors.centerIn: parent
         modal: true
-        title: "Master Listening Loop"
-        width: Math.min(400, root.width - 48)
-        standardButtons: Dialog.Ok | Dialog.Cancel
+        title: "Master Loop"
+        width: Math.min(430, root.width - 48)
         enabled: root.monitorExclusive
+        property string validationMessage: ""
+        onOpened: validationMessage = ""
+        background: Rectangle {
+            radius: 9
+            color: "#0F2236"
+            border.color: "#385773"
+            border.width: 1
+        }
+        header: Rectangle {
+            implicitHeight: 44
+            radius: 9
+            color: "#163047"
+            Text {
+                anchors.centerIn: parent
+                text: "MASTER LISTENING LOOP"
+                font.family: "Segoe UI"
+                font.pixelSize: 13
+                font.bold: true
+                color: "#E7F1F9"
+            }
+        }
         contentItem: ColumnLayout {
             spacing: 10
             Label {
-                text: "Set a Master preview loop in mm:ss.mmm. "
-                    + "The Source Region below remains unchanged."
+                text: "Set the loop for Master listening only. "
+                    + "The Source Region remains unchanged."
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
-                color: root.textSecondary
+                color: "#B3C9D9"
+                font.pixelSize: 12
             }
             RowLayout {
-                Label { text: "Start"; color: root.textPrimary }
+                spacing: 10
+                Label {
+                    text: "Start"
+                    color: "#E7F1F9"
+                    Layout.preferredWidth: 45
+                }
                 TextField {
                     id: masterLoopStartTime
                     objectName: "transportMasterLoopStartTime"
                     text: "0:00.000"
                     Layout.fillWidth: true
+                    color: "#E7F1F9"
                     placeholderText: "m:ss.mmm"
+                    placeholderTextColor: "#7D99AE"
+                    selectByMouse: true
+                    onTextEdited: masterLoopDialog.validationMessage = ""
+                    background: Rectangle {
+                        color: "#142E45"
+                        radius: 5
+                        border.color: masterLoopStartTime.activeFocus
+                            ? "#6CBCCF" : "#385773"
+                        border.width: 1
+                    }
                 }
             }
             RowLayout {
-                Label { text: "End"; color: root.textPrimary }
+                spacing: 10
+                Label {
+                    text: "End"
+                    color: "#E7F1F9"
+                    Layout.preferredWidth: 45
+                }
                 TextField {
                     id: masterLoopEndTime
                     objectName: "transportMasterLoopEndTime"
                     text: "0:30.000"
                     Layout.fillWidth: true
+                    color: "#E7F1F9"
                     placeholderText: "m:ss.mmm"
+                    placeholderTextColor: "#7D99AE"
+                    selectByMouse: true
+                    onTextEdited: masterLoopDialog.validationMessage = ""
+                    background: Rectangle {
+                        color: "#142E45"
+                        radius: 5
+                        border.color: masterLoopEndTime.activeFocus
+                            ? "#6CBCCF" : "#385773"
+                        border.width: 1
+                    }
                 }
+            }
+            Label {
+                objectName: "transportMasterLoopValidation"
+                text: masterLoopDialog.validationMessage.length > 0
+                    ? masterLoopDialog.validationMessage
+                    : "Time format m:ss.mmm; End must be later than Start."
+                color: masterLoopDialog.validationMessage.length > 0
+                    ? "#F29A9A" : "#91AFC3"
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                font.pixelSize: 10
             }
             StudioButton {
                 objectName: "transportMasterLoopClear"
                 text: "Clear Master Loop"
                 minimumControlWidth: 140
+                enabled: root.monitorExclusive
                 onClicked: {
-                    if (root.appTerminalMonitorViewModel
-                            && root.appTerminalMonitorViewModel.setMasterLoop(0, 0, false))
+                    if (!root.appTerminalMonitorViewModel) {
+                        masterLoopDialog.validationMessage = "Master listener unavailable."
+                        return
+                    }
+                    if (root.appTerminalMonitorViewModel.setMasterLoop(0, 0, false))
                         masterLoopDialog.close()
+                    else
+                        masterLoopDialog.validationMessage =
+                            root.appTerminalMonitorViewModel.errorText
                 }
             }
-            Label {
-                text: "Valid time: m:ss.mmm; end must exceed start."
-                color: root.textSecondary
-                font.pixelSize: 10
-            }
         }
-        onAccepted: {
-            if (!root.monitorExclusive || !root.appTerminalMonitorViewModel)
-                return
-            const begin = root.masterFrameFromTime(masterLoopStartTime.text)
-            const end = root.masterFrameFromTime(masterLoopEndTime.text)
-            if (begin >= 0 && end > begin)
-                root.appTerminalMonitorViewModel.setMasterLoop(begin, end, true)
+        footer: Rectangle {
+            implicitHeight: 49
+            color: "#163047"
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 8
+                Item { Layout.fillWidth: true }
+                StudioButton {
+                    objectName: "transportMasterLoopCancel"
+                    text: "Cancel"
+                    minimumControlWidth: 76
+                    onClicked: masterLoopDialog.close()
+                }
+                StudioButton {
+                    objectName: "transportMasterLoopApply"
+                    text: "Apply Loop"
+                    tone: "primary"
+                    minimumControlWidth: 102
+                    enabled: root.monitorExclusive
+                    onClicked: {
+                        if (!root.monitorExclusive || !root.appTerminalMonitorViewModel) {
+                            masterLoopDialog.validationMessage = "No active Master listener."
+                            return
+                        }
+                        const begin = root.masterFrameFromTime(masterLoopStartTime.text)
+                        const end = root.masterFrameFromTime(masterLoopEndTime.text)
+                        if (begin < 0 || end <= begin) {
+                            masterLoopDialog.validationMessage =
+                                "Enter a valid interval with End later than Start."
+                            return
+                        }
+                        if (root.appTerminalMonitorViewModel.setMasterLoop(
+                                begin, end, true))
+                            masterLoopDialog.close()
+                        else
+                            masterLoopDialog.validationMessage =
+                                root.appTerminalMonitorViewModel.errorText
+                    }
+                }
+            }
         }
     }
 
