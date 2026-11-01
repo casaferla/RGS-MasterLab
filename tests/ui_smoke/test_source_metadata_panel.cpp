@@ -1735,6 +1735,9 @@ Window {
     auto* processedLive = find_child_by_name(
         root.data(), QStringLiteral("m17FixtureProcessedLive"));
     QVERIFY(historicalTp && processedLive);
+    auto* preLimiterCard = find_child_by_name(
+        limiterEditor, QStringLiteral("truePeakFullResourceCard"));
+    QVERIFY(preLimiterCard);
     QVERIFY(window->setProperty("privateMonitorOn",false));
     QVERIFY(window->setProperty("sourceBoundTpValid",true));
     QVERIFY(window->setProperty("sourceLiveAvailable",true));
@@ -1745,6 +1748,11 @@ Window {
     QCoreApplication::processEvents();
     QVERIFY(host->property("monitorExclusive").toBool());
     QCOMPARE(host->property("truePeakCurrentStatic").value<QObject*>(),historicalTp);
+    QCOMPARE(preLimiterCard->property("heading").toString(),
+        QStringLiteral("COMPLETE PRE-LIMITER TP"));
+    QCOMPARE(preLimiterCard->property("reading").toString(),
+        QStringLiteral("−2.21 dBTP"));
+    QVERIFY(preLimiterCard->property("available").toBool());
     QVERIFY(host->property("truePeakCurrentLive").value<QObject*>() == nullptr);
     // Switching the editor to M16 must NEVER show a foreign private owner.
     QVERIFY(window->setProperty("meterMode",true));
@@ -1757,6 +1765,7 @@ Window {
     QVERIFY(window->setProperty("sourceBoundTpValid",false));
     QCoreApplication::processEvents();
     QVERIFY(host->property("truePeakCurrentStatic").value<QObject*>() == nullptr);
+    QVERIFY(!preLimiterCard->property("available").toBool());
     QVERIFY(window->setProperty("privateMonitorOn",false));
     QCoreApplication::processEvents();
     QCOMPARE(host->property("truePeakCurrentLive").value<QObject*>(),processedLive);
