@@ -1,3 +1,7 @@
+# This standalone cmake -P script uses IN_LIST for FIR/route uniqueness.
+# Script-mode CMake does not inherit the project's policy scope.
+cmake_policy(SET CMP0057 NEW)
+
 if(NOT BUILD_CONFIG)
     message(FATAL_ERROR "BUILD_CONFIG is required")
 endif()
