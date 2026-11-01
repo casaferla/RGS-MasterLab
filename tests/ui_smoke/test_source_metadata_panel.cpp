@@ -3868,6 +3868,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
              QColor{QStringLiteral("#4E86C6")});
     QCOMPARE(chainGainIcon->width(),16.0);
     QCOMPARE(chainEqIcon->width(),16.0);
+    // Default pictograms are not glowing even when visually selected.
+    QVERIFY(!chainGainIcon->property("glowEnabled").toBool());
+    QVERIFY(!chainEqIcon->property("glowEnabled").toBool());
     // Both original silhouettes use their fixed Chain slot; the glyph
     // brightness is a configuration semantic, never a separate LED.
     QCOMPARE(chainGainIcon->property("opacity").toDouble(),
@@ -4435,6 +4438,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCOMPARE(eqViewModel.selected_index(), 1);
     QVERIFY2(!eqViewModel.is_default(), "EQ state must no longer be default after adding a band");
     QCOMPARE(chainEqIcon->opacity(), 1.0);
+    QVERIFY2(chainEqIcon->property("glowEnabled").toBool(),
+             "Manual EQ must glow while its family hue and 16px slot remain unchanged");
     QCOMPARE(dspChainStateText1->property("text").toString(), QStringLiteral("Manual Edit"));
     QVERIFY2(dspChainStateText1->property("visible").toBool(), "Manual Edit must be visible for a non-default EQ");
     QVERIFY(gainHostUndoBtn->property("enabled").toBool());
@@ -4608,6 +4613,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QVERIFY2(undoBtn != nullptr && redoBtn != nullptr && resetFlatBtn != nullptr, "Undo, Redo, and Reset Flat buttons must exist");
     QVERIFY2(overallToggleBtn != nullptr, "Overall toggle button must exist");
     QVERIFY2(spectrumToggleBtn != nullptr, "Spectrum toggle button must exist");
+    QVERIFY2(eqViewModel.show_combined_response(), "Overall must start visibly ON");
+    QVERIFY2(overallToggleBtn->property("selected").toBool(),
+             "Overall button must show the startup total-response preference");
 
     QVERIFY2(liveSpectrumVM.spectrumEnabled(), "SPECTRUM toggle must default to ON");
     auto* spectrumCanvasObj = eqGraph->findChild<QObject*>(QStringLiteral("spectrumCanvas"));
@@ -4672,6 +4680,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QCoreApplication::processEvents();
     QVERIFY2(eqViewModel.bypass(), "eqViewModel.bypass must be true after clicking Bypass");
     QVERIFY2(dspChainRow1->property("isBypassed").toBool(), "EQ chain row must reflect bypass without a badge");
+    QVERIFY2(!chainEqIcon->property("glowEnabled").toBool(),
+             "Bypassed Manual must keep configuration but extinguish its light");
     QCOMPARE(chainEqIcon->width(),16.0);
     QCOMPARE(chainEqIcon->mapToItem(
         qobject_cast<QQuickItem*>(dspChainRow1),QPointF{}).x(),eqIconXBefore);

@@ -1039,7 +1039,14 @@ void EqViewModelTest::testOverallToggleIsViewStateOnly()
     const bool canUndoBefore = vm.can_undo();
     const bool canRedoBefore = vm.can_redo();
 
+    // Product startup: the combined response is visible by default.
+    QVERIFY(vm.show_combined_response());
+
+    vm.setShowCombinedResponse(false);
     QVERIFY(!vm.show_combined_response());
+    QCOMPARE(vm.preview_generation(), genBefore); // Pure view preference
+    QCOMPARE(vm.can_undo(), canUndoBefore);
+    QCOMPARE(vm.can_redo(), canRedoBefore);
 
     vm.setShowCombinedResponse(true);
 

@@ -249,7 +249,9 @@ private:
 
     QVariantList responseGrid_;
     QVariantList combinedResponseGrid_;
-    bool showCombinedResponse_{false};
+    // Visual-only startup default: show the whole EQ response first.
+    // The user may hide Overall to inspect individual band contributions.
+    bool showCombinedResponse_{true};
 };
 
 }  // namespace rgsml::app

@@ -326,6 +326,11 @@ Rectangle {
                             strokeWidth: rowItem.permanentlyLit || !rowItem.isDefaultState
                                 ? 2.1 : 1.65
                             strokeColor: root.moduleIconColor(rowItem.moduleAdapter)
+                            // Approved LED semantics: Manual=lit, Default=dim.
+                            // Analysis/service modules stay lit unless bypassed.
+                            // Bypass dims the separate row and extinguishes halo.
+                            glowEnabled: (rowItem.permanentlyLit
+                                || !rowItem.isDefaultState) && !rowItem.isBypassed
                             opacity: (rowItem.permanentlyLit ? 1.0
                                 : rowItem.isDefaultState ? 0.58 : 1.0)
                                 * (rowItem.isBypassed ? 0.7 : 1.0)

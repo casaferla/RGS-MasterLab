@@ -7,6 +7,10 @@ Canvas {
     property color strokeColor: "#DDE6F3"
     property color fillColor: strokeColor
     property real strokeWidth: 1.8
+    // Real, same-hue phosphor glow follows the silhouette, not a second LED.
+    // Default/unconfigured icons and non-chain controls remain unlit.
+    property bool glowEnabled: false
+    readonly property real glowBlur: glowEnabled ? 5.0 : 0.0
 
     implicitWidth: 18
     implicitHeight: 18
@@ -16,6 +20,7 @@ Canvas {
     onStrokeColorChanged: requestPaint()
     onFillColorChanged: requestPaint()
     onStrokeWidthChanged: requestPaint()
+    onGlowEnabledChanged: requestPaint()
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
     Component.onCompleted: requestPaint()
@@ -32,6 +37,13 @@ Canvas {
         ctx.lineWidth = strokeWidth
         ctx.lineCap = "round"
         ctx.lineJoin = "round"
+        // Qt 6 Canvas Context2D natively supports shadowBlur/shadowColor.
+        // One path emits a crisp core plus an integrated colored halo; no
+        // extra item, dot, size change, new import or glow under Bypass.
+        ctx.shadowBlur = icon.glowBlur
+        ctx.shadowColor = icon.glowEnabled ? icon.strokeColor : "transparent"
+        ctx.shadowOffsetX = 0
+        ctx.shadowOffsetY = 0
 
         function line(x1, y1, x2, y2) {
             ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
