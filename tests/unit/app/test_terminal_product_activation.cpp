@@ -1998,6 +1998,14 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     const auto beforeAsyncRender=renderer.render_invocation_count();
     QVERIFY(monitorUi.installMonitor(false));
     QVERIFY(monitorUi.monitor_preparing());
+    // The original SOURCE transport remains interactive during a whole-song
+    // DEVICE FIR worker: PLAY and STOP only change transport, not M17
+    // immutable PCM or the device-owner ticket. These are synchronous UI
+    // commands while the worker is still PREPARING (before queued completion).
+    transport.playOrResume();
+    QVERIFY(monitorUi.monitor_preparing());
+    transport.stop();
+    QVERIFY(monitorUi.monitor_preparing());
     QVERIFY(monitorUi.can_dismiss());
     QVERIFY(!monitorUi.can_install());
     QVERIFY(!monitorUi.monitor_installed());
