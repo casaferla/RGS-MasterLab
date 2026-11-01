@@ -980,12 +980,12 @@ ApplicationWindow {
                         MenuSeparator { }
                         StudioMenuItem {
                             objectName: "menuUseExistingOriginalQ0Firs"
-                            text: root.appPrivateFirLibrary
-                                && root.appPrivateFirLibrary.originalQ0Ready
-                                ? "Original Q0 FIRs verified · Change folder…"
-                                : "Use existing Q0 FIR folder…"
-                            enabled: !root.monitorExclusive
-                                && !!root.appPrivateFirLibrary
+                            // Recovery-only legacy tool, not an option in a
+                            // complete 16-FIR standard public FQ artifact.
+                            visible: root.appPrivateFirLibrary
+                                && !root.appPrivateFirLibrary.originalQ0Ready
+                            text: "Use existing Q0 FIR folder…"
+                            enabled: visible && !root.monitorExclusive
                             onTriggered: originalFirFolderDialog.open()
                         }
                     }
