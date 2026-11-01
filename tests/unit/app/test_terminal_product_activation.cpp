@@ -2017,7 +2017,33 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(monitorSinkOwner->windows_prepared_endpoint_id,
         std::string{"fixed-fake-physical-endpoint"});
     QCOMPARE(renderer.render_invocation_count(),beforeAsyncRender);
+    // One permanently visible Region strip edits independent MASTER frames.
+    // A draft interval does not affect SOURCE or DEVICE loop until enabled.
+    QVERIFY(monitorUi.master_duration_frames()>960);
+    QCOMPARE(monitorUi.master_region_start_frames(),qint64{0});
+    QCOMPARE(monitorUi.master_region_end_frames(),
+        monitorUi.master_duration_frames());
+    QVERIFY(!monitorUi.master_loop_enabled());
+    QVERIFY(monitorUi.setMasterRegion(120,880));
+    QCOMPARE(monitorUi.master_region_start_frames(),qint64{120});
+    QCOMPARE(monitorUi.master_region_end_frames(),qint64{880});
+    QVERIFY(!monitorUi.master_loop_enabled());
+    QVERIFY(monitorUi.setMasterLoop(120,880,true));
+    QVERIFY(monitorUi.master_loop_enabled());
+    QCOMPARE(monitorUi.master_region_start_frames(),qint64{120});
+    QCOMPARE(monitorUi.master_region_end_frames(),qint64{880});
+    QVERIFY(monitorUi.setMasterRegion(240,960));
+    QVERIFY(monitorUi.master_loop_enabled());
+    QCOMPARE(monitorUi.master_region_start_frames(),qint64{240});
+    QCOMPARE(monitorUi.master_region_end_frames(),qint64{960});
+    QVERIFY(monitorUi.clearMasterRegion());
+    QVERIFY(!monitorUi.master_loop_enabled());
+    QCOMPARE(monitorUi.master_region_start_frames(),qint64{0});
+    QCOMPARE(monitorUi.master_region_end_frames(),
+        monitorUi.master_duration_frames());
     QVERIFY(monitorUi.returnManual());
+    QVERIFY(!monitorUi.master_loop_enabled());
+    QCOMPARE(monitorUi.master_region_end_frames(),qint64{0});
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QVERIFY(!monitorSinkOwner);
     // UNKNOWN or DISCOURAGED memory advice must be refused BEFORE the
