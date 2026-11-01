@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Bit-exact externalization of the TWO frozen playback FIR coefficient arrays.
+"""Build-time bit-exact export of the unified 16 original SRC FIR resources.
 
-This is a BUILD-TIME converter, not a generator: it copies the already frozen
-uint64 binary64 words into little-endian resources without MPFR, recomputation
-or filtering changes. No Python is needed on an end-user Windows installation.
+The two historic Playback FIRs are extracted bit-for-bit from frozen source.
+When a genuine frozen ORIGINAL 14-Q0 ZIP is present, the exact 14 SHA-pinned
+binary files are staged beside them in the SAME resources/fir directory. No
+original filter is regenerated; no Python or separate install for end users.
+The ordinary Focused CI may run without original-14 bytes, but a real FQ build
+MUST require the complete authentic 16-file package and fail closed otherwise.
 """
 from __future__ import annotations
 
@@ -23,7 +26,9 @@ KERNELS = (
 WORDS = re.compile(r"UINT64_C\(0x([0-9a-fA-F]{16})\)")
 
 
-def export(source_root: Path, output_root: Path) -> None:
+def export(source_root: Path, output_root: Path,
+           originals_archive: Path | None = None,
+           require_originals: bool = False) -> None:
     output_root.mkdir(parents=True, exist_ok=True)
     entries = []
     for pair, expected_count, expected_sha in KERNELS:
@@ -47,9 +52,8 @@ def export(source_root: Path, output_root: Path) -> None:
         entries.append({"file": name, "coefficients": expected_count,
                         "sha256": expected_sha,
                         "encoding": "ieee754-binary64-uint64-little-endian-j-ascending"})
-    # Trust-anchor inventory only: the original 14 private FIR BYTES never
-    # enter the public build. Import their already-public fixed SHA identities
-    # to keep ONE total 16-FIR application resource inventory.
+    # One SHA-pinned inventory: same on-disk root for playback and Final SRC.
+    # PO has explicitly authorized public distribution of the original 14.
     pins_source = (source_root / "audio" / "include" / "rgsml" / "audio"
                    / "internal" / "phase11_frozen_rgsmsr1_pins.hpp")
     pins = re.findall(r'\{(\d+),(\d+),"([a-f0-9]{64})"\}',
@@ -61,8 +65,42 @@ def export(source_root: Path, output_root: Path) -> None:
          "ratioM": int(M), "sha256": digest, "private": True}
         for L, M, digest in pins
     ]
+    if require_originals and originals_archive is None:
+        raise ValueError("FQ requires exact original 14-Q0 FIR archive")
+    originals_included = originals_archive is not None
+    if originals_included:
+        # This audited reader requires an EXACT matching frozen source ZIP
+        # SHA, inventory, 14 per-file SHA/size, regular-file semantics and
+        # candidate-origin manifest. No ambient network/hidden fallback.
+        import importlib.util
+        reader_path = (source_root / "tools" / "qualification" /
+                       "final_src" / "install_private_q0_originals.py")
+        spec = importlib.util.spec_from_file_location("rgsml_original_q0_archive_reader", reader_path)
+        if spec is None or spec.loader is None:
+            raise ValueError("Original Q0 ZIP authenticated reader unavailable")
+        reader = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reader)
+        binaries = reader.checked_files(originals_archive)
+        required = {entry["file"]: entry["sha256"] for entry in final_src}
+        if set(binaries) != set(required):
+            raise ValueError("Original 14-Q0 ZIP does not match frozen release inventory")
+        for name in sorted(required):
+            binary = binaries[name]
+            if hashlib.sha256(binary).hexdigest() != required[name]:
+                raise ValueError(f"Original Q0 FIR source pin mismatch: {name}")
+            destination = output_root / name
+            if not destination.is_file() or destination.read_bytes() != binary:
+                temporary = destination.with_suffix(".tmp")
+                temporary.write_bytes(binary)
+                temporary.replace(destination)
+    else:
+        # Never leave an old 14-file set in a reused two-only build tree:
+        # a stale prior FQ export must not appear authenticated by accident.
+        for item in final_src:
+            (output_root / item["file"]).unlink(missing_ok=True)
+
     # One trusted inventory: the exact two frozen Playback coefficient files,
-    # plus 14 pinned Q0 original PRIVATE identities (NO private coefficient bytes).
+    # plus 14 independently pinned Q0 originals with OPTIONAL actual bytes.
     pins_by_ratio = {(entry["ratioL"], entry["ratioM"]): entry
                      for entry in final_src}
     rates = (44100, 48000, 88200, 96000, 176400, 192000)
@@ -93,14 +131,17 @@ def export(source_root: Path, output_root: Path) -> None:
         "schema": "rgsml.external-src-fir-assets/2",
         "installationRoot": "resources/fir",
         "assets": ([{"role": "PLAYBACK_FROZEN", **entry} for entry in entries]
-                   + [{"role": "FINAL_SRC_Q0_PRIVATE_NONRELEASE", **entry}
+                   + [{"role": "FINAL_SRC_Q0_ORIGINAL", **{k:v for k,v in entry.items() if k != "private"},
+                       "packaged": originals_included}
                       for entry in final_src]),
         "routes": routes,
-        "purpose": "frozen-playback-fir-bitwise-migration",
+        "purpose": "frozen-16-src-fir-bitwise-originals",
         "releaseAuthority": False,
+        "publicOriginalFirDistributionAuthorized": True,
+        "complete16FilePackage": originals_included,
         "playback": entries,
-        "finalSrc": {"source": "original-private-Q0-14-source-pinned",
-                     "includedInPublicBuild": False, "kernels": final_src}
+        "finalSrc": {"source": "original-Q0-14-source-pinned",
+                     "includedInPublicBuild": originals_included, "kernels": final_src}
     }
     if len(manifest["assets"]) != 16 or len({
             asset["file"] for asset in manifest["assets"]}) != 16:
@@ -113,12 +154,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--originals-zip", type=Path)
+    parser.add_argument("--require-originals", action="store_true")
     args = parser.parse_args()
-    export(args.source_root, args.output_root)
+    export(args.source_root, args.output_root, args.originals_zip,
+           args.require_originals)
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, ImportError) as exc:
         sys.exit(f"EXTERNAL_FIR_BIT_EXACT_EXPORT_REFUSED: {exc}")
