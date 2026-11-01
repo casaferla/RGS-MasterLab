@@ -270,6 +270,97 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
     const auto block=core::FrameCount::create(
         audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames);
     if(!block)return report(core::Status::failure(*block.error()));
+    // Product GUI supplies two cheap, owner-thread-only Windows probes.
+    // The expensive FIR and full-duration DEVICE PCM allocation are the
+    // ONLY operations moved to the background. The previously tested
+    // synchronous seam remains available for isolated fake test callers.
+    if(asyncProbe_ && asyncRecheck_) {
+        if(asyncWorkerRunning_.load(std::memory_order_acquire))
+            return report(reject("MONITOR_ASYNC_PREVIOUS_JOB_DRAINING"));
+        const auto stage=session_->capture_monitor_master_for_conversion();
+        if(!stage)return report(reject("MONITOR_ASYNC_VERIFIED_MASTER_NOT_CURRENT"));
+        const auto master=stage->rendered.terminal.checked.terminal
+            .compensated_pcm.view();
+        const auto plan=asyncProbe_(master,explicitlyAllowCaution);
+        if(!plan)return report(core::Status::failure(*plan.error()));
+        if(session_->capture_monitor_master_for_conversion()!=stage)
+            return report(reject("MONITOR_ASYNC_MASTER_REVOKED_DURING_PREFLIGHT"));
+        if(monitorWorker_.joinable())monitorWorker_.join();
+        const auto token=std::make_shared<std::atomic_bool>(false);
+        const auto job=++monitorSerial_;
+        asyncCancellation_=token;
+        pendingMaster_=stage;
+        monitorPreparing_=true;
+        asyncWorkerRunning_.store(true,std::memory_order_release);
+        error_.clear();
+        emit changed();
+        // Worker must not capture Windows service, OS device/QMediaDevices,
+        // QObjects or user policy callbacks. It only owns immutable MASTER
+        // buffers, scalar plan, bounded output blocks and an atomic stop.
+        monitorWorker_=std::jthread(
+            [this,stage,plan=*plan.value(),block=*block.value(),
+             token,job,explicitlyAllowCaution](std::stop_token stop) {
+            using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+            using Result=core::Result<Owned>;
+            const auto outcome=std::make_shared<Result>([&]()->Result {
+                try {
+                    const auto immutable=stage->rendered.terminal.checked
+                        .terminal.compensated_pcm.view();
+                    auto created=audio::materialize_monitoring_pcm_candidate(
+                        immutable,plan.device_rate,block,{},
+                        [token,stop] {
+                            return stop.stop_requested()
+                                ||token->load(std::memory_order_acquire);
+                        });
+                    if(!created)return Result::failure(*created.error());
+                    auto completed=std::move(*created.value());
+                    completed.windows_prepared_endpoint_id=plan.opaque_endpoint_id;
+                    return Result::success(
+                        std::make_shared<const audio::MonitoringPcmCandidate>(
+                            std::move(completed)));
+                } catch(const std::bad_alloc&) {
+                    return Result::failure(core::Error{
+                        core::ErrorCode::IoFailure,
+                        "MONITOR_ASYNC_DEVICE_PCM_OUT_OF_MEMORY"});
+                }
+            }());
+            asyncWorkerRunning_.store(false,std::memory_order_release);
+            // Posted completion runs on the original Qt application thread,
+            // never inside the FIR worker. Qt discards this event if the
+            // QObject has been destroyed during application shutdown.
+            QMetaObject::invokeMethod(this,
+                [this,job,token,stage,plan,explicitlyAllowCaution,outcome] {
+                if(job!=monitorSerial_ ||!monitorPreparing_
+                   ||token->load(std::memory_order_acquire))
+                    return; // cancellation/stale SOURCE epoch: no install
+                monitorPreparing_=false;
+                pendingMaster_.reset();
+                emit changed();
+                if(!*outcome) {
+                    report(core::Status::failure(*outcome->error()));
+                    return;
+                }
+                if(!can_install()
+                   ||session_->capture_monitor_master_for_conversion()!=stage) {
+                    report(reject("MONITOR_ASYNC_MASTER_REVOKED_BEFORE_INSTALL"));
+                    return;
+                }
+                const auto master=stage->rendered.terminal.checked.terminal
+                    .compensated_pcm.view();
+                const auto rechecked=asyncRecheck_(
+                    plan,master,explicitlyAllowCaution);
+                if(!rechecked) {report(rechecked);return;}
+                const auto admitted=session_->admit_converted_monitor_owner(
+                    stage,*outcome->value());
+                if(!admitted) {report(admitted);return;}
+                const auto installed=session_->install_private_monitor_stopped(
+                    *outcome->value());
+                if(!report(installed))return;
+                refresh();
+            },Qt::QueuedConnection);
+        });
+        return true; // accepted async request, NOT yet DEVICE installed
+    }
     // Re-probe exact current DEVICE and Windows memory immediately before
     // allocating the full-length monitoring PCM. UNKNOWN/DISCOURAGED are
     // denied; CAUTION requires a separate, explicit user opt-in.
@@ -312,6 +403,18 @@ bool TerminalMonitorViewModel::returnManual()
 }
 bool TerminalMonitorViewModel::cancel()
 {
+    if(monitorPreparing_) {
+        abort_async_conversion();
+        // Normal M17 READY must remain available for an immediate retry.
+        // The separate MASTER-only offline request belongs to this UI and
+        // is explicitly canceled without disturbing another M17 publisher.
+        if(monitorRequested_ &&session_->status()!=QStringLiteral("IDLE")) {
+            const auto revoked=session_->cancel();
+            if(revoked)monitorRequested_=false;
+            return report(revoked);
+        }
+        return report(core::Status::success());
+    }
     if(monitor_installed())return returnManual();
     if(!monitor_exclusive() && (!monitorRequested_
          || session_->status()==QStringLiteral("IDLE"))) {
