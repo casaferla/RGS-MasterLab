@@ -50,6 +50,8 @@
 #include <QMetaObject>
 #include <cmath>
 #include <QQuickStyle>
+#include <QSettings>
+#include <QUrl>
 
 #include <optional>
 #include <variant>
@@ -264,24 +266,59 @@ int main(int argc, char* argv[])
         [&auditionSelector] {return auditionSelector.processed_realization_id();},
         [&masteringChainState] {return masteringChainState.chain();}};
 
-    // Product-private external original FIR provision, never publish assets.
+    // Original 14-Q0 FIRs are private and never embedded in PUBLIC FQ.
+    // Explicit local test override keeps highest priority. Otherwise first
+    // verify the current executable's flat FIR root, then the previously
+    // registered, user-local PATH to an EXISTING verified bank. An FQ unpacked
+    // to a new folder thus needs neither a new ZIP extraction nor Python.
+    // Every startup independently verifies all immutable SHA/shape pins.
     const auto originalFirRoot=qgetenv("RGSML_FINAL_SRC_Q0_PRIVATE_DIR");
-    // The public build contains NO original private 14-Q0 FIRs.
-    // Local FQ override is authoritative; future approved installers
-    // may provide the same frozen SHA-pinned bytes in app resources.
-    if(!originalFirRoot.isEmpty())
+    if(!originalFirRoot.isEmpty()) {
+#ifdef _WIN32
+        privateTerminalRenderer.set_original_q0_fir_root(
+            std::filesystem::path{
+                QString::fromLocal8Bit(originalFirRoot).toStdWString()});
+#else
         privateTerminalRenderer.set_original_q0_fir_root(
             std::filesystem::path{originalFirRoot.constData()});
-    else
-        privateTerminalRenderer.set_original_q0_fir_root(
-            appAssetRoot/"resources"/"fir");
-
-    // One immutable authority bit for PRODUCT worker, six-rate picker and
-    // RAM/timing panel. Missing authentic private assets keep 28 paths off.
-    masterOutputRate.set_original_q0_family_ready(
-        privateTerminalRenderer.full_original_q0_family_ready());
-    prepareRateAdvisor.set_original_q0_family_ready(
-        privateTerminalRenderer.full_original_q0_family_ready());
+#endif
+    } else {
+        const auto installed=appAssetRoot/"resources"/"fir";
+        privateTerminalRenderer.set_original_q0_fir_root(installed);
+        if(privateTerminalRenderer.full_original_q0_family_ready()) {
+            // Automatically remember a successfully verified app-local bank
+            // so it survives a later FQ build extracted elsewhere.
+            privateTerminalRenderer.remember_existing_original_q0_folder(
+                QUrl::fromLocalFile(QCoreApplication::applicationDirPath()
+                    +QStringLiteral("/resources/fir")));
+        } else {
+            QSettings preferences{QSettings::IniFormat,QSettings::UserScope,
+                QStringLiteral("RGS MasterLab"),QStringLiteral("RGS MasterLab")};
+            const auto previous=preferences.value(
+                QStringLiteral("privateQ0/originalDirectory")).toString();
+            if(!previous.isEmpty()) {
+#ifdef _WIN32
+                privateTerminalRenderer.set_original_q0_fir_root(
+                    std::filesystem::path{previous.toStdWString()});
+#else
+                privateTerminalRenderer.set_original_q0_fir_root(
+                    std::filesystem::path{previous.toStdString()});
+#endif
+            }
+        }
+    }
+    // One source-pinned authority shared by M17, all 6 Fs choices and
+    // RAM/timing advice. A newly selected existing folder becomes effective
+    // without restarting, but never changes a completed candidate.
+    const auto publishFirAvailability=[&] {
+        const bool ready=privateTerminalRenderer.full_original_q0_family_ready();
+        masterOutputRate.set_original_q0_family_ready(ready);
+        prepareRateAdvisor.set_original_q0_family_ready(ready);
+    };
+    QObject::connect(&privateTerminalRenderer,
+        &rgsml::app::TerminalPrivateRenderController::originalQ0FamilyChanged,
+        &masterOutputRate,publishFirAvailability);
+    publishFirAvailability();
     rgsml::app::MasteringPreviewController previewController{
         &masteringChainState,
         [&auditionSelector] {
@@ -751,6 +788,8 @@ int main(int argc, char* argv[])
         &sourceSelection);
     engine.rootContext()->setContextProperty(
         QStringLiteral("masterOutputRateState"), &masterOutputRate);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("privateOriginalFirLibrary"),&privateTerminalRenderer);
     engine.rootContext()->setContextProperty(
         QStringLiteral("prepareRateAdvisor"),
         &prepareRateAdvisor);
