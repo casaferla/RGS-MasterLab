@@ -433,7 +433,7 @@ int main(int argc, char* argv[])
     // The Qt-facing Windows service probes endpoint, negotiated rate and
     // fresh OS headroom BEFORE and AFTER the off-thread FIR. No Qt device
     // objects or memory probes ever run on the background DSP worker.
-    const monitorMemoryDecision=[](bool allowCaution) {
+    const auto monitorMemoryDecision=[](bool allowCaution) {
         return [allowCaution](
             const rgsml::audio::MonitoringPcmPreallocationAdvice& advice)
             ->rgsml::core::Status {
