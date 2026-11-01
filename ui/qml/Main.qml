@@ -49,6 +49,9 @@ ApplicationWindow {
         ? masterOutputRateState : null
     readonly property var appMemoryAdvisor: typeof prepareRateAdvisor !== "undefined"
         ? prepareRateAdvisor : null
+    readonly property var appPrivateFirLibrary:
+        typeof privateOriginalFirLibrary !== "undefined"
+        ? privateOriginalFirLibrary : null
     readonly property bool monitorExclusive: root.appTerminalMonitorViewModel
         ? root.appTerminalMonitorViewModel.monitorExclusive : false
     // PO 2026-10-27 §12: Master listening belongs to MAIN transport.
@@ -363,6 +366,29 @@ ApplicationWindow {
         background: Rectangle { color: menuItem.highlighted && menuItem.enabled ? "#173043" : "transparent" }
     }
 
+    // Reuse the PO's EXISTING frozen 14-original-Q0 directory across
+    // separately extracted FQ binaries. This is a folder selector, never a
+    // private ZIP extractor or a permission to bundle the 14 binary taps.
+    FolderDialog {
+        id: originalFirFolderDialog
+        objectName: "existingOriginalQ0FirFolderDialog"
+        title: "Select existing verified 14-Q0 FIR folder"
+        onAccepted: {
+            if (!root.appPrivateFirLibrary) return
+            root.appPrivateFirLibrary.remember_existing_original_q0_folder(
+                selectedFolder)
+            originalFirResultDialog.open()
+        }
+    }
+    MessageDialog {
+        id: originalFirResultDialog
+        objectName: "existingOriginalQ0FirResultDialog"
+        title: "Original Q0 FIR library"
+        text: root.appPrivateFirLibrary
+            ? root.appPrivateFirLibrary.originalQ0Status
+            : "The private original FIR library is unavailable."
+        buttons: MessageDialog.Ok
+    }
     FileDialog {
         id: sourceDialog
         objectName: "sourceFileDialog"
@@ -839,6 +865,17 @@ ApplicationWindow {
                         StudioMenuItem { text: "Redo"; enabled: false }
                         MenuSeparator { }
                         StudioMenuItem { text: "Preferences"; enabled: false }
+                        MenuSeparator { }
+                        StudioMenuItem {
+                            objectName: "menuUseExistingOriginalQ0Firs"
+                            text: root.appPrivateFirLibrary
+                                && root.appPrivateFirLibrary.originalQ0Ready
+                                ? "Original Q0 FIRs verified · Change folder…"
+                                : "Use existing Q0 FIR folder…"
+                            enabled: !root.monitorExclusive
+                                && !!root.appPrivateFirLibrary
+                            onTriggered: originalFirFolderDialog.open()
+                        }
                     }
                     Menu {
                         id: desktopViewMenu
