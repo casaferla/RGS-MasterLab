@@ -76,7 +76,10 @@ def execute(*, build_dir: Path, two: Path, one: Path,
     # ENVIRONMENT_MODIFICATION. The newly externalized frozen playback FIRs
     # must be provided in the exact same build-generated root. Do not run
     # MPFR canaries against an implicit system/user or network fallback.
-    playback_root = build_dir.resolve() / "generated" / "rgsml" / "fir" / "playback"
+    # The frozen Playback assets and public SHA-only 16-FIR inventory now
+    # share ONE flat build root. The old trailing /playback directory was
+    # retired by the M17/FIR migration; retaining it falsely fails the gate.
+    playback_root = build_dir.resolve() / "generated" / "rgsml" / "fir"
     playback_names = (
         "playback_src_kernel_44100_48000.bin",
         "playback_src_kernel_48000_44100.bin",
