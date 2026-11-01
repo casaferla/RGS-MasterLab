@@ -69,6 +69,23 @@ ApplicationWindow {
             limitedMemoryConfirmation.open()
         return success
     }
+    // Frame conversion is used only for explicit MASTER preview navigation;
+    // the main transport always shows time and never exposes raw frames.
+    function masterFrameFromTime(text) {
+        if (!root.appTerminalMonitorViewModel
+                || root.appTerminalMonitorViewModel.masterRateHz <= 0)
+            return -1
+        const match = /^([0-9]+):([0-5][0-9])\.([0-9]{3})$/.exec(text.trim())
+        if (!match) return -1
+        const milliseconds = Number(match[1]) * 60000
+            + Number(match[2]) * 1000 + Number(match[3])
+        const frames = Math.floor(milliseconds
+            * root.appTerminalMonitorViewModel.masterRateHz / 1000)
+        return Number.isSafeInteger(frames)
+            && frames >= 0
+            && frames <= root.appTerminalMonitorViewModel.masterDurationFrames
+            ? frames : -1
+    }
     function formattedMasterTime(frames) {
         if (!root.appTerminalMonitorViewModel
                 || root.appTerminalMonitorViewModel.masterRateHz <= 0)
@@ -543,28 +560,30 @@ ApplicationWindow {
                             root.appTerminalMonitorViewModel.cancel()
                         Accessible.name: text
                     }
-                    ColumnLayout {
-                        objectName: "transportMasterFrameCounter"
+                    // Consumer clock stays at the right in mm:ss.mmm.
+                    // MASTER/DEVICE rate is status, never a replacement for
+                    // the source Region toolbar or a raw engineering counter.
+                    Label {
+                        objectName: "transportMasterDeviceRate"
                         visible: root.monitorExclusive
-                        spacing: 0
-                        Layout.maximumWidth: 180
-                        Label {
-                            text: "Master frames"
-                            font.pixelSize: 9
-                            color: root.textSecondary
-                            font.weight: Font.DemiBold
-                        }
-                        Label {
-                            text: root.appTerminalMonitorViewModel
-                                ? String(root.appTerminalMonitorViewModel.masterPositionFrames)
-                                    + " / " + String(root.appTerminalMonitorViewModel.masterDurationFrames)
-                                : "0 / 0"
-                            font.pixelSize: 11
-                            font.family: "Consolas"
-                            color: root.textPrimary
-                            elide: Text.ElideRight
-                            Layout.maximumWidth: 180
-                        }
+                        text: root.appTerminalMonitorViewModel
+                            ? "Master " + (root.appTerminalMonitorViewModel.masterRateHz / 1000)
+                                + " → " + (root.appTerminalMonitorViewModel.deviceRateHz / 1000)
+                                + " kHz"
+                            : "Master preview"
+                        color: root.textSecondary
+                        font.pixelSize: 10
+                    }
+                    StudioButton {
+                        objectName: "transportMasterLoopOptions"
+                        text: "Master Loop"
+                        visible: root.monitorExclusive
+                        enabled: root.monitorExclusive
+                            && !!root.appTerminalMonitorViewModel
+                            && root.appTerminalMonitorViewModel.monitorControllable
+                        minimumControlWidth: 88
+                        onClicked: masterLoopDialog.open()
+                        Accessible.name: "Master listening loop options"
                     }
                 }
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
@@ -645,7 +664,7 @@ ApplicationWindow {
             radius: 5
             RowLayout {
                 objectName: "auditionRegionContent"
-                visible: !root.monitorExclusive
+                visible: true
                 enabled: !root.monitorExclusive
                 anchors.fill: parent
                 anchors.leftMargin: root.upperStripHorizontalPadding
@@ -683,107 +702,10 @@ ApplicationWindow {
                 Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: root.border }
                 StudioButton { id: clearRegionButton; objectName: "auditionRegionClearButton"; text: "Clear Region"; iconKind: "clear-region"; minimumControlWidth: 80; enabled: auditionRegion.controlsEnabled && auditionRegion.hasRegion; KeyNavigation.backtab: loopRegionCheckBox; KeyNavigation.tab: sourceOpenButton; onClicked: auditionRegion.requestClearRegion(); Accessible.name: "Clear Audition Region" }
             }
-            // Shares the SAME physical strip as the Source Audition Region:
-            // zero extra vertical height and no additional DSP module.
-            RowLayout {
-                objectName: "transportMasterNavigation"
-                visible: root.monitorExclusive
-                enabled: root.monitorExclusive
-                    && !!root.appTerminalMonitorViewModel
-                    && root.appTerminalMonitorViewModel.monitorControllable
-                anchors.fill: parent
-                anchors.leftMargin: root.upperStripHorizontalPadding
-                anchors.rightMargin: root.upperStripHorizontalPadding
-                spacing: 6
-                Label {
-                    text: "MASTER"
-                    color: root.accent
-                    font.pixelSize: 10
-                    font.weight: Font.DemiBold
-                }
-                Label {
-                    text: root.appTerminalMonitorViewModel
-                        ? root.appTerminalMonitorViewModel.masterRateHz + " → "
-                            + root.appTerminalMonitorViewModel.deviceRateHz + " Hz"
-                        : "DEVICE N/A"
-                    color: root.textSecondary
-                    font.pixelSize: 10
-                }
-                TextField {
-                    id: masterSeekFrame
-                    objectName: "transportMasterSeekFrame"
-                    placeholderText: "Seek frame"
-                    Layout.preferredWidth: 92
-                    font.pixelSize: 10
-                    inputMethodHints: Qt.ImhDigitsOnly
-                }
-                StudioButton {
-                    objectName: "transportMasterSeek"
-                    text: "Seek"
-                    minimumControlWidth: 48
-                    enabled: parent.enabled
-                    onClicked: {
-                        const n = Number(masterSeekFrame.text)
-                        if (masterSeekFrame.text.length > 0
-                            && Number.isSafeInteger(n) && n >= 0
-                            && root.appTerminalMonitorViewModel
-                            && n <= root.appTerminalMonitorViewModel.masterDurationFrames)
-                            root.appTerminalMonitorViewModel.seekMaster(n)
-                    }
-                    Accessible.name: "Seek in MASTER frames"
-                }
-                TextField {
-                    id: masterLoopStart
-                    objectName: "transportMasterLoopStart"
-                    placeholderText: "Loop start"
-                    Layout.preferredWidth: 92
-                    font.pixelSize: 10
-                    inputMethodHints: Qt.ImhDigitsOnly
-                }
-                TextField {
-                    id: masterLoopEnd
-                    objectName: "transportMasterLoopEnd"
-                    placeholderText: "Loop end"
-                    Layout.preferredWidth: 92
-                    font.pixelSize: 10
-                    inputMethodHints: Qt.ImhDigitsOnly
-                }
-                StudioButton {
-                    objectName: "transportMasterLoopSet"
-                    text: "Loop"
-                    minimumControlWidth: 50
-                    enabled: parent.enabled
-                    onClicked: {
-                        const a = Number(masterLoopStart.text)
-                        const b = Number(masterLoopEnd.text)
-                        if (masterLoopStart.text.length > 0
-                            && masterLoopEnd.text.length > 0
-                            && Number.isSafeInteger(a)
-                            && Number.isSafeInteger(b)
-                            && a >= 0 && b > a
-                            && root.appTerminalMonitorViewModel
-                            && b <= root.appTerminalMonitorViewModel.masterDurationFrames)
-                            root.appTerminalMonitorViewModel.setMasterLoop(a, b, true)
-                    }
-                    Accessible.name: "Set MASTER loop"
-                }
-                StudioButton {
-                    objectName: "transportMasterLoopClear"
-                    text: "No loop"
-                    minimumControlWidth: 68
-                    enabled: parent.enabled
-                    onClicked: if (root.appTerminalMonitorViewModel)
-                        root.appTerminalMonitorViewModel.setMasterLoop(0, 0, false)
-                }
-                Item { Layout.fillWidth: true }
-                Label {
-                    text: root.appTerminalMonitorViewModel
-                        ? root.appTerminalMonitorViewModel.transportState
-                        : "UNAVAILABLE"
-                    color: root.textSecondary
-                    font.pixelSize: 10
-                }
-            }
+            // SOURCE Region remains visible in the SAME 72px slot even
+            // during Master listening. It is read-only while the anonymous
+            // Master DEVICE owner is installed: never mutate SOURCE epoch
+            // or silently apply SOURCE loop to unrelated MASTER frames.
         }
 
         DspWorkspace {
@@ -1923,6 +1845,71 @@ ApplicationWindow {
                     Layout.alignment: Qt.AlignVCenter
                 }
             }
+        }
+    }
+
+    Dialog {
+        id: masterLoopDialog
+        objectName: "transportMasterLoopDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: "Master Listening Loop"
+        width: Math.min(400, root.width - 48)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        enabled: root.monitorExclusive
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                text: "Set a Master preview loop in mm:ss.mmm. "
+                    + "The Source Region below remains unchanged."
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                color: root.textSecondary
+            }
+            RowLayout {
+                Label { text: "Start"; color: root.textPrimary }
+                TextField {
+                    id: masterLoopStartTime
+                    objectName: "transportMasterLoopStartTime"
+                    text: "0:00.000"
+                    Layout.fillWidth: true
+                    placeholderText: "m:ss.mmm"
+                }
+            }
+            RowLayout {
+                Label { text: "End"; color: root.textPrimary }
+                TextField {
+                    id: masterLoopEndTime
+                    objectName: "transportMasterLoopEndTime"
+                    text: "0:30.000"
+                    Layout.fillWidth: true
+                    placeholderText: "m:ss.mmm"
+                }
+            }
+            StudioButton {
+                objectName: "transportMasterLoopClear"
+                text: "Clear Master Loop"
+                minimumControlWidth: 140
+                onClicked: {
+                    if (root.appTerminalMonitorViewModel
+                            && root.appTerminalMonitorViewModel.setMasterLoop(0, 0, false))
+                        masterLoopDialog.close()
+                }
+            }
+            Label {
+                text: "Valid time: m:ss.mmm; end must exceed start."
+                color: root.textSecondary
+                font.pixelSize: 10
+            }
+        }
+        onAccepted: {
+            if (!root.monitorExclusive || !root.appTerminalMonitorViewModel)
+                return
+            const begin = root.masterFrameFromTime(masterLoopStartTime.text)
+            const end = root.masterFrameFromTime(masterLoopEndTime.text)
+            if (begin >= 0 && end > begin)
+                root.appTerminalMonitorViewModel.setMasterLoop(begin, end, true)
         }
     }
 
