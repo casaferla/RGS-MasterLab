@@ -3326,7 +3326,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         "transportMasterDeviceRate", "transportMasterLoopOptions",
         "transportMasterLoopDialog", "transportMasterLoopStartTime",
         "transportMasterLoopEndTime", "transportMasterMemoryConfirmation",
-        "transportMasterLoopClear", "globalReturnFromMonitor"}) {
+        "transportMasterLoopClear", "transportMasterLoopApply",
+        "transportMasterLoopCancel", "transportMasterLoopValidation",
+        "globalReturnFromMonitor"}) {
         QVERIFY2(root->findChild<QObject*>(QString::fromLatin1(name)) != nullptr,
                  name);
     }
