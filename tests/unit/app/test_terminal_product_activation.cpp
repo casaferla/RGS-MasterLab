@@ -2019,23 +2019,33 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(renderer.render_invocation_count(),beforeAsyncRender);
     // One permanently visible Region strip edits independent MASTER frames.
     // A draft interval does not affect SOURCE or DEVICE loop until enabled.
-    QVERIFY(monitorUi.master_duration_frames()>960);
+    const qint64 measuredMasterDuration=monitorUi.master_duration_frames();
+    // The independent fake M17 MASTER can be a SHORT real frame sequence.
+    // Always select legal half-open regions from measured master geometry,
+    // never assume a large hardcoded count such as 960 frames.
+    QVERIFY(measuredMasterDuration>=16);
+    const qint64 firstStart=measuredMasterDuration/8;
+    const qint64 firstEnd=measuredMasterDuration*7/8;
+    const qint64 secondStart=measuredMasterDuration/4;
+    const qint64 secondEnd=measuredMasterDuration*3/4;
+    QVERIFY(firstStart<secondStart);
+    QVERIFY(secondStart<secondEnd);
+    QVERIFY(secondEnd<firstEnd);
     QCOMPARE(monitorUi.master_region_start_frames(),qint64{0});
-    QCOMPARE(monitorUi.master_region_end_frames(),
-        monitorUi.master_duration_frames());
+    QCOMPARE(monitorUi.master_region_end_frames(),measuredMasterDuration);
     QVERIFY(!monitorUi.master_loop_enabled());
-    QVERIFY(monitorUi.setMasterRegion(120,880));
-    QCOMPARE(monitorUi.master_region_start_frames(),qint64{120});
-    QCOMPARE(monitorUi.master_region_end_frames(),qint64{880});
+    QVERIFY(monitorUi.setMasterRegion(firstStart,firstEnd));
+    QCOMPARE(monitorUi.master_region_start_frames(),firstStart);
+    QCOMPARE(monitorUi.master_region_end_frames(),firstEnd);
     QVERIFY(!monitorUi.master_loop_enabled());
-    QVERIFY(monitorUi.setMasterLoop(120,880,true));
+    QVERIFY(monitorUi.setMasterLoop(firstStart,firstEnd,true));
     QVERIFY(monitorUi.master_loop_enabled());
-    QCOMPARE(monitorUi.master_region_start_frames(),qint64{120});
-    QCOMPARE(monitorUi.master_region_end_frames(),qint64{880});
-    QVERIFY(monitorUi.setMasterRegion(240,960));
+    QCOMPARE(monitorUi.master_region_start_frames(),firstStart);
+    QCOMPARE(monitorUi.master_region_end_frames(),firstEnd);
+    QVERIFY(monitorUi.setMasterRegion(secondStart,secondEnd));
     QVERIFY(monitorUi.master_loop_enabled());
-    QCOMPARE(monitorUi.master_region_start_frames(),qint64{240});
-    QCOMPARE(monitorUi.master_region_end_frames(),qint64{960});
+    QCOMPARE(monitorUi.master_region_start_frames(),secondStart);
+    QCOMPARE(monitorUi.master_region_end_frames(),secondEnd);
     QVERIFY(monitorUi.clearMasterRegion());
     QVERIFY(!monitorUi.master_loop_enabled());
     QCOMPARE(monitorUi.master_region_start_frames(),qint64{0});
