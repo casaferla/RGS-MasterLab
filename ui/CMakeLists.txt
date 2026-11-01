@@ -40,6 +40,9 @@ qt_add_qml_module(rgsml_ui
     RESOURCES
         resources/app_icon_canonical.jpg
         resources/RGS_ML_C_header_64.png
+        resources/RGS_MasterLab_40x40.png
+        resources/RGS_MasterLab_64x64.png
+        resources/RGS_MasterLab_96x96.png
     SOURCES
         src/internal/waveform_geometry.cpp
         src/internal/waveform_geometry.hpp

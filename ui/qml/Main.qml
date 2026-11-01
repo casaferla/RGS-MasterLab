@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
@@ -13,6 +14,7 @@ ApplicationWindow {
     minimumHeight: 688
     visible: true
     title: "RGS MasterLab"
+    icon: "qrc:/rgsml/resources/RGS_MasterLab_optimized.ico"
     color: "#071117"
     flags: Qt.Window
 
@@ -62,10 +64,23 @@ ApplicationWindow {
     function listenToPreparedMaster() {
         if (!root.canListenMaster || !root.appTerminalMonitorViewModel)
             return false
-        const success = root.appTerminalMonitorViewModel.installMonitor(
-            masterLimitedHeadroom.checked)
-        if (success) masterLimitedHeadroom.checked = false
+        const success = root.appTerminalMonitorViewModel.installMonitor(false)
+        if (!success && root.appTerminalMonitorViewModel.errorText.indexOf(
+                "MONITOR_MEMORY_NOT_APPROVED_OR_UNAVAILABLE") !== -1)
+            limitedMemoryConfirmation.open()
         return success
+    }
+    function formattedMasterTime(frames) {
+        if (!root.appTerminalMonitorViewModel
+                || root.appTerminalMonitorViewModel.masterRateHz <= 0)
+            return "0:00.000"
+        const ms = Math.floor(Math.max(0, frames) * 1000
+            / root.appTerminalMonitorViewModel.masterRateHz)
+        const minutes = Math.floor(ms / 60000)
+        const seconds = Math.floor(ms / 1000) % 60
+        const fraction = ms % 1000
+        return minutes + ":" + String(seconds).padStart(2, "0")
+            + "." + String(fraction).padStart(3, "0")
     }
     function stopCurrentTransport() {
         if (root.monitorExclusive) {
@@ -495,6 +510,64 @@ ApplicationWindow {
                 }
                 StudioIconButton { id: zoomInButton; objectName: "waveformZoomInButton"; iconKind: "zoom-in"; enabled: sourceWaveform.canNavigate && sourceWaveform.zoomPosition < 1.0; KeyNavigation.backtab: zoomControl; KeyNavigation.tab: fitSourceButton; onClicked: sourceWaveform.zoomIn(); Accessible.name: "Zoom in Source waveform" }
                 StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: sourceWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
+                // The only Master-specific controls live LEFT of Stop.
+                RowLayout {
+                    objectName: "transportMasterListenControls"
+                    visible: root.canListenMaster || root.monitorExclusive
+                    spacing: 6
+                    StudioButton {
+                        id: masterListenButton
+                        objectName: "transportListenMaster"
+                        text: "Listen to Master"
+                        visible: root.canListenMaster
+                        enabled: root.canListenMaster
+                        minimumControlWidth: 124
+                        onClicked: root.listenToPreparedMaster()
+                        Accessible.name: "Listen to the verified Master"
+                        StudioTooltipDwell {
+                            id: mainMasterListenTooltipDwell
+                            anchors.fill: parent
+                        }
+                        ToolTip.text: "Use the prepared Master, resampled only for the device"
+                        ToolTip.visible: mainMasterListenTooltipDwell.ready
+                        ToolTip.delay: 0
+                    }
+                    StudioButton {
+                        objectName: "globalReturnFromMonitor"
+                        text: root.appTerminalMonitorViewModel
+                                && root.appTerminalMonitorViewModel.returnTargetText.indexOf("Close") === 0
+                            ? "Close Master Listening" : "Return to Source"
+                        visible: root.monitorExclusive
+                        enabled: root.monitorExclusive
+                        minimumControlWidth: 110
+                        onClicked: if (root.appTerminalMonitorViewModel)
+                            root.appTerminalMonitorViewModel.cancel()
+                        Accessible.name: text
+                    }
+                    ColumnLayout {
+                        objectName: "transportMasterFrameCounter"
+                        visible: root.monitorExclusive
+                        spacing: 0
+                        Layout.maximumWidth: 180
+                        Label {
+                            text: "Master frames"
+                            font.pixelSize: 9
+                            color: root.textSecondary
+                            font.weight: Font.DemiBold
+                        }
+                        Label {
+                            text: root.appTerminalMonitorViewModel
+                                ? String(root.appTerminalMonitorViewModel.masterPositionFrames)
+                                    + " / " + String(root.appTerminalMonitorViewModel.masterDurationFrames)
+                                : "0 / 0"
+                            font.pixelSize: 11
+                            font.family: "Consolas"
+                            color: root.textPrimary
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: 180
+                        }
+                    }
+                }
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
                 TransportButton {
                     id: stopButton
@@ -531,53 +604,6 @@ ApplicationWindow {
                         : (playbackTransport.isPlaying ? "Pause" : "Play")
                 }
                 Item { Layout.preferredWidth: 8 }
-                StudioButton {
-                    id: masterListenButton
-                    objectName: "transportListenMaster"
-                    text: "Ascolta Master"
-                    visible: root.canListenMaster
-                    enabled: root.canListenMaster
-                    minimumControlWidth: 112
-                    onClicked: root.listenToPreparedMaster()
-                    Accessible.name: "Ascolta MASTER preparato da M17"
-                    StudioTooltipDwell {
-                        id: mainMasterListenTooltipDwell
-                        anchors.fill: parent
-                    }
-                    ToolTip.text: "Stesso MASTER verificato, SRC soltanto verso DEVICE"
-                    ToolTip.visible: mainMasterListenTooltipDwell.ready
-                    ToolTip.delay: 0
-                }
-                CheckBox {
-                    id: masterLimitedHeadroom
-                    objectName: "transportMasterMemoryConsent"
-                    visible: root.canListenMaster
-                    enabled: root.canListenMaster
-                    checked: false
-                    text: "RAM limitata"
-                    font.pixelSize: 9
-                    onVisibleChanged: if (!visible) checked = false
-                    StudioTooltipDwell {
-                        id: mainMasterMemoryTooltipDwell
-                        anchors.fill: parent
-                    }
-                    ToolTip.text: "Consenso esplicito solo per CAUTION: memoria sconosciuta o insufficiente resta bloccata."
-                    ToolTip.visible: mainMasterMemoryTooltipDwell.ready
-                    ToolTip.delay: 0
-                }
-                StudioButton {
-                    objectName: "globalReturnFromMonitor"
-                    text: root.appTerminalMonitorViewModel
-                        ? root.appTerminalMonitorViewModel.returnTargetText : "Return to Source"
-                    visible: root.monitorExclusive
-                    enabled: root.monitorExclusive
-                    minimumControlWidth: 110
-                    onClicked: if (root.appTerminalMonitorViewModel) {
-                        if (root.appTerminalMonitorViewModel.cancel())
-                            masterLimitedHeadroom.checked = false
-                    }
-                    Accessible.name: text
-                }
                 Rectangle {
                     objectName: "transportTimeModule"
                     Layout.preferredWidth: 246
@@ -588,20 +614,20 @@ ApplicationWindow {
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16; spacing: 16
                         ColumnLayout { spacing: 1
-                            Label { text: root.monitorExclusive ? "MASTER FRAME" : "CURRENT POSITION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
+                            Label { text: "CURRENT POSITION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
                             Label { objectName: "playbackTimeLabel"; text: root.monitorExclusive
                                     && root.appTerminalMonitorViewModel
-                                ? String(root.appTerminalMonitorViewModel.masterPositionFrames)
+                                ? root.formattedMasterTime(root.appTerminalMonitorViewModel.masterPositionFrames)
                                 : playbackTransport.positionLabel
                                 color: root.textPrimary; font.family: "Consolas"; font.pixelSize: 20
                                 elide: Text.ElideRight }
                         }
                         Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; Layout.topMargin: 4; Layout.bottomMargin: 4; color: root.border }
                         ColumnLayout { spacing: 1
-                            Label { text: root.monitorExclusive ? "MASTER FRAMES" : "TOTAL DURATION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
+                            Label { text: "TOTAL DURATION"; color: root.textSecondary; font.pixelSize: 8; font.weight: Font.DemiBold }
                             Label { text: root.monitorExclusive
                                     && root.appTerminalMonitorViewModel
-                                ? String(root.appTerminalMonitorViewModel.masterDurationFrames)
+                                ? root.formattedMasterTime(root.appTerminalMonitorViewModel.masterDurationFrames)
                                 : playbackTransport.durationLabel
                                 color: root.textPrimary; font.family: "Consolas"; font.pixelSize: 20
                                 elide: Text.ElideRight }
@@ -838,7 +864,12 @@ ApplicationWindow {
                     objectName: "headerAppIcon"
                     Layout.preferredWidth: 40
                     Layout.preferredHeight: 40
-                    source: "qrc:/qt/qml/Rgsml/Ui/resources/RGS_ML_C_header_64.png"
+                    // Use a native-sized icon per display scaling; old art stays.
+                    source: Screen.devicePixelRatio >= 2
+                        ? "qrc:/qt/qml/Rgsml/Ui/resources/RGS_MasterLab_96x96.png"
+                        : Screen.devicePixelRatio >= 1.25
+                            ? "qrc:/qt/qml/Rgsml/Ui/resources/RGS_MasterLab_64x64.png"
+                            : "qrc:/qt/qml/Rgsml/Ui/resources/RGS_MasterLab_40x40.png"
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     mipmap: true
@@ -960,7 +991,7 @@ ApplicationWindow {
                         }
                         StudioMenuItem { text: root.monitorExclusive ? "Stop Master" : "Stop"
                             enabled: stopButton.enabled; onTriggered: root.stopCurrentTransport() }
-                        StudioMenuItem { text: "Ascolta Master"
+                        StudioMenuItem { text: "Listen to Master"
                             enabled: root.canListenMaster
                             onTriggered: root.listenToPreparedMaster() }
                         StudioMenuItem { text: "Return MANUAL"
@@ -1896,6 +1927,28 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: limitedMemoryConfirmation
+        objectName: "transportMasterMemoryConfirmation"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: "Master listening · memory headroom"
+        width: Math.min(460, root.width - 48)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        contentItem: Label {
+            padding: 12
+            color: root.textPrimary
+            wrapMode: Text.Wrap
+            text: "Device-rate Master listening requires additional RAM. "
+                + "Retry only if the memory policy permits limited headroom? "
+                + "Unknown or insufficient memory remains blocked."
+        }
+        onAccepted: {
+            if (root.canListenMaster && root.appTerminalMonitorViewModel)
+                root.appTerminalMonitorViewModel.installMonitor(true)
+        }
+    }
     Label { objectName: "playbackErrorMessage"; visible: false; text: playbackTransport.errorMessage }
     Label { objectName: "goldErrorLabel"; visible: false; text: goldSelection.errorMessage }
     Label { objectName: "auditionRoutingStatus"; visible: false; text: auditionSelector.statusText }

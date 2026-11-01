@@ -3232,7 +3232,8 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // PO §12: one integrated MASTER listening surface in MAIN transport.
     // Minimal mock has no verified M17 candidate and MUST fail closed.
     for (const char* name : {
-        "transportListenMaster", "transportMasterMemoryConsent",
+        "transportListenMaster", "transportMasterListenControls",
+        "transportMasterFrameCounter", "transportMasterMemoryConfirmation",
         "transportMasterNavigation", "transportMasterSeekFrame",
         "transportMasterSeek", "transportMasterLoopStart",
         "transportMasterLoopEnd", "transportMasterLoopSet",
@@ -3249,10 +3250,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("transportMasterNavigation"));
     QVERIFY(masterNavigation);
     QVERIFY(!masterNavigation->property("visible").toBool());
-    auto* memoryConsent = root->findChild<QObject*>(
-        QStringLiteral("transportMasterMemoryConsent"));
-    QVERIFY(memoryConsent);
-    QVERIFY(!memoryConsent->property("checked").toBool());
+    auto* memoryDialog = root->findChild<QObject*>(
+        QStringLiteral("transportMasterMemoryConfirmation"));
+    QVERIFY(memoryDialog);
+    QVERIFY(!memoryDialog->property("visible").toBool());
+    // Consent is contextual, not a permanently visible checkbox.
+    QVERIFY(root->findChild<QObject*>(
+        QStringLiteral("transportMasterMemoryConsent")) == nullptr);
+    auto* masterControls = root->findChild<QObject*>(
+        QStringLiteral("transportMasterListenControls"));
+    QVERIFY(masterControls);
+    QVERIFY(!masterControls->property("visible").toBool());
     auto* mainSourceRegion=root->findChild<QObject*>(
         QStringLiteral("auditionRegionContent"));
     QVERIFY(mainSourceRegion);

@@ -95,6 +95,11 @@ if(WIN32)
     target_sources(rgsml_app PRIVATE resources/rgsml_app_icon.rc)
 endif()
 
+# Same native Windows artwork for Qt application/window chrome.
+qt_add_resources(rgsml_app "rgsml_window_icon" PREFIX "/rgsml"
+    FILES resources/RGS_MasterLab_optimized.ico
+)
+
 target_include_directories(rgsml_app PRIVATE
     ${CMAKE_SOURCE_DIR}/analysis/src
     ${CMAKE_CURRENT_BINARY_DIR}/generated

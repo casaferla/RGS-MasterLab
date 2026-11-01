@@ -22,6 +22,7 @@ Window {
     property bool wasMovedByGrip: false
 
     title: moduleTitle + " — RGS MasterLab"
+    icon: "qrc:/rgsml/resources/RGS_MasterLab_optimized.ico"
     visible: detached && editorTarget !== null
     flags: Qt.Window
     width: 920

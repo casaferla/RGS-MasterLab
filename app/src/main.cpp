@@ -91,10 +91,9 @@ int main(int argc, char* argv[])
 #endif
     rgsml::audio::configure_external_playback_fir_root(
         (appAssetRoot/"resources"/"fir"/"playback").u16string());
-    // Matching icon for the Qt window/task switcher. The QML module embeds
-    // the identical approved C artwork under its resource URL.
+    // Same optimized icon as the native Windows executable.
     application.setWindowIcon(QIcon(QStringLiteral(
-        ":/qt/qml/Rgsml/Ui/resources/RGS_ML_C_header_64.png")));
+        ":/rgsml/resources/RGS_MasterLab_optimized.ico")));
     const bool deploySmoke = application.arguments().contains(QStringLiteral("--rgsml-deploy-smoke"));
     // Opt-in CI-only REAL product Main Qt screenshot; never a user render path.
     const bool m17MainEvidence = application.arguments().contains(
