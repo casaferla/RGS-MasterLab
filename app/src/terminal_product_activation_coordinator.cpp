@@ -45,6 +45,7 @@ void TerminalProductActivationCoordinator::set_master_rate_state(
 void TerminalProductActivationCoordinator::master_rate_changed()
 {
     if(transitioning_)return;
+    view_->clearVerificationTrim();
     if(session_->monitoring_transaction_active()) {
         view_->setAudioStatus(QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
         return;
@@ -78,6 +79,7 @@ void TerminalProductActivationCoordinator::resume_previous_state()
 void TerminalProductActivationCoordinator::fail_closed(const QString& reason)
 {
     if(transitioning_)return;
+    view_->clearVerificationTrim();
     renderHeartbeat_.stop();
     corePhaseObserved_=false;
     view_->clearPreparationProgress();
@@ -123,6 +125,7 @@ void TerminalProductActivationCoordinator::begin_activation()
         return;
     }
     readyToPreview_=false;
+    view_->clearVerificationTrim();
     auto captured=selector_->capture_terminal_activation_intent();
     if(!captured) {
         // Preserve the precise, SOURCE-owned capture refusal. A failed
@@ -520,6 +523,7 @@ void TerminalProductActivationCoordinator::restore_ready_after_monitor_return()
 void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
 {
     if(transitioning_)return;
+    view_->clearVerificationTrim();
     renderHeartbeat_.stop();
     transitioning_=true;
     const bool hadActiveOutput=deviceActive_;
@@ -588,6 +592,7 @@ void TerminalProductActivationCoordinator::limiter_accepted()
         return;
     }
     if(changedCeiling) {
+        view_->clearVerificationTrim();
         // This includes Ceiling changes made while BYPASS is selected.
         // No A->B->A parameter revision may recover an obsolete result.
         if(intent_)deactivate(false);
@@ -630,6 +635,7 @@ void TerminalProductActivationCoordinator::manual_preview_changed(
 {
     if(previewStatus==QStringLiteral("RENDERING")) {
         manualPreviewInProgress_=true;
+        view_->clearVerificationTrim();
         // A fresh MANUAL render invalidates cached A/B even while bypassed.
         // Never keep a previous PCM after changing Input Gain or DSP chain.
         if(state_->bypassed()) {
@@ -697,6 +703,21 @@ void TerminalProductActivationCoordinator::private_session_changed()
     if(transitioning_||!intent_)return;
     const auto status=session_->status();
     if(status==QStringLiteral("READY_TO_INSTALL")) {
+        // Only the current exact verified M17 MASTER can supply an M16
+        // full-resource pre/post trim witness. This is NOT derived from
+        // Ceiling, a historic PRE-LIMITER value or private DEVICE playback.
+        const auto masterRate=session_->verified_master_rate_for_monitoring();
+        const auto stage=masterRate
+            ?session_->borrow_verified_m17_master_for_device(*masterRate)
+            :nullptr;
+        if(stage &&stage->rendered.terminal.checked.final_check) {
+            const auto& check=*stage->rendered.terminal.checked.final_check;
+            view_->setVerifiedTrimObservation(
+                check.global_trim_gain,check.trim_used,
+                check.before_linear_peak,check.after_linear_peak);
+        } else {
+            view_->clearVerificationTrim(); // never publish stale owner
+        }
         // The authoritative MASTER rate may be 192k on a 48k DAC. Never
         // offer the legacy direct terminal install for an incompatible
         // DEVICE: use Master Audition's independently preflighted SRC.
@@ -709,6 +730,7 @@ void TerminalProductActivationCoordinator::private_session_changed()
             ?QStringLiteral("READY · PREVIEW AVAILABLE")
             :QStringLiteral("MASTER VERIFIED · ASCOLTA MASTER"));
     } else if(status==QStringLiteral("MEASURED_NONCONFORMING_READY")) {
+        view_->clearVerificationTrim(); // measured miss is never a verified trim
         readyToPreview_=false;
         renderHeartbeat_.stop();
         auto measured=session_->measured_candidate();
@@ -757,6 +779,7 @@ void TerminalProductActivationCoordinator::source_committed_successfully()
         return;
     view_->clearAudioError();
     view_->clearPreparationProgress();
+    view_->clearVerificationTrim();
     view_->setAudioStatus(QStringLiteral("BYPASS · NEW SOURCE"));
 }
 
@@ -767,8 +790,10 @@ void TerminalProductActivationCoordinator::external_context_changed()
     if(transitioning_)return;
     if(!intent_) {
         if(session_->comparison_cached()
-           &&!session_->comparison_owners_current())
+           &&!session_->comparison_owners_current()) {
             static_cast<void>(session_->cancel());
+            view_->clearVerificationTrim();
+        }
         return;
     }
     // A new manual owner or selected target invalidates any terminal
