@@ -35,6 +35,7 @@
 #include <cmath>
 #include <limits>
 #include <vector>
+#include <thread>
 
 namespace rgsml::tests {
 
@@ -1841,6 +1842,24 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         {},*reusedNormal.value());
     QVERIFY(!rejectedCapture);
     QCOMPARE(rejectedCapture.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(product.admit_converted_monitor_owner(
+        capturedForAsync,*reusedNormal.value()));
+    // A DSP conversion worker may hold/copy the immutable MASTER ticket,
+    // but MUST NOT call the QObject-owned source/DEVICE admission there.
+    // Verify refusal before any access to transport/session mutable state.
+    bool foreignCaptureDenied=false;
+    bool foreignAdmissionDenied=false;
+    std::jthread foreignThread([&] {
+        foreignCaptureDenied=!product.capture_monitor_master_for_conversion();
+        const auto refused=product.admit_converted_monitor_owner(
+            capturedForAsync,*reusedNormal.value());
+        foreignAdmissionDenied=!refused &&refused.error()
+            &&refused.error()->code()==core::ErrorCode::InvalidState;
+    });
+    foreignThread.join();
+    QVERIFY(foreignCaptureDenied);
+    QVERIFY(foreignAdmissionDenied);
+    // The owning thread can still admit the exact unchanged ticket.
     QVERIFY(product.admit_converted_monitor_owner(
         capturedForAsync,*reusedNormal.value()));
     // Admission does NOT call the DEVICE sink or create a RealizationId.
