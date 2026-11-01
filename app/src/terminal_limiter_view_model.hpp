@@ -20,6 +20,8 @@ class TerminalLimiterViewModel final : public QObject {
     Q_PROPERTY(double draftCeilingDbTp READ draft_ceiling_db_tp NOTIFY changed)
     Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
     Q_PROPERTY(QString audioStatus READ audio_status NOTIFY changed)
+    Q_PROPERTY(QString verificationTrimStatus READ verification_trim_status NOTIFY changed)
+    Q_PROPERTY(QString verificationTrimDetails READ verification_trim_details NOTIFY changed)
     Q_PROPERTY(QString nonconformingPeakText READ nonconforming_peak_text NOTIFY changed)
     Q_PROPERTY(QString nonconformingTargetText READ nonconforming_target_text NOTIFY changed)
     Q_PROPERTY(QString nonconformingExcessText READ nonconforming_excess_text NOTIFY changed)
@@ -42,6 +44,8 @@ public:
     [[nodiscard]] double draft_ceiling_db_tp() const noexcept;
     [[nodiscard]] bool bypass() const noexcept;
     [[nodiscard]] QString audio_status() const {return audioStatus_;}
+    [[nodiscard]] QString verification_trim_status() const {return verificationTrimStatus_;}
+    [[nodiscard]] QString verification_trim_details() const {return verificationTrimDetails_;}
     [[nodiscard]] QString nonconforming_peak_text() const {return nonconformingPeakText_;}
     [[nodiscard]] QString nonconforming_target_text() const {return nonconformingTargetText_;}
     [[nodiscard]] QString nonconforming_excess_text() const {return nonconformingExcessText_;}
@@ -75,6 +79,10 @@ public:
     void setNonconformingObservation(double measured_linear_peak,
                                      double ceiling_linear,double target_db_tp);
     void setAudioStatus(const QString& value);
+    // Only the coordinator may supply independently M16-remeasured,
+    // exact-owner final-check evidence; the UI never derives trim from Ceiling.
+    void setVerifiedTrimObservation(double gain,bool used,double before,double after);
+    void clearVerificationTrim();
     void setPreparationProgress(const QString& stage,double fraction,
                                 bool determinate,const QString& eta = {});
     void clearPreparationProgress();
@@ -100,6 +108,9 @@ private:
     QString validationMessage_;
     AcceptedStateChange stateChanged_;
     QString audioStatus_{QStringLiteral("BYPASS")};
+    QString verificationTrimStatus_{QStringLiteral("UNAVAILABLE · NOT VERIFIED")};
+    QString verificationTrimDetails_{QStringLiteral(
+        "No current, source-bound verified M17 full-resource trim measurement.")};
     QString nonconformingPeakText_;
     QString nonconformingTargetText_;
     QString nonconformingExcessText_;
