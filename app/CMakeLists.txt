@@ -128,9 +128,9 @@ rgsml_apply_project_warnings(rgsml_app)
 # FIR asset pack as the deployable executable. No coefficient is in the PE.
 add_custom_command(TARGET rgsml_app POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory
-        "$<TARGET_FILE_DIR:rgsml_app>/resources/fir/playback"
+        "$<TARGET_FILE_DIR:rgsml_app>/resources/fir"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         ${RGSML_PLAYBACK_FIR_INSTALL_FILES}
-        "$<TARGET_FILE_DIR:rgsml_app>/resources/fir/playback"
+        "$<TARGET_FILE_DIR:rgsml_app>/resources/fir"
     VERBATIM
 )

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from math import gcd
 from pathlib import Path
 import re
 import struct
@@ -60,15 +61,51 @@ def export(source_root: Path, output_root: Path) -> None:
          "ratioM": int(M), "sha256": digest, "private": True}
         for L, M, digest in pins
     ]
+    # One trusted inventory: the exact two frozen Playback coefficient files,
+    # plus 14 pinned Q0 original PRIVATE identities (NO private coefficient bytes).
+    pins_by_ratio = {(entry["ratioL"], entry["ratioM"]): entry
+                     for entry in final_src}
+    rates = (44100, 48000, 88200, 96000, 176400, 192000)
+    routes = []
+    for source in rates:
+        for target in rates:
+            if source == target:
+                continue
+            factor = gcd(source, target)
+            ratio = (target // factor, source // factor)
+            if ratio not in pins_by_ratio:
+                raise ValueError(f"Unpinned SOURCE/DEVICE rate pair: {source}->{target}")
+            historic = source == 44100 and target == 48000 or (
+                source == 48000 and target == 44100)
+            routes.append({
+                "sourceRateHz": source, "targetRateHz": target,
+                "ratioL": ratio[0], "ratioM": ratio[1],
+                "kernelFile": (f"playback_src_kernel_{source}_{target}.bin"
+                               if historic else pins_by_ratio[ratio]["file"]),
+                "role": ("PLAYBACK_FROZEN" if historic else
+                         "Q0_ORIGINAL_PENDING_DEVICE_QUALIFICATION"),
+                "devicePlaybackAdmitted": bool(historic),
+            })
+    if len(routes) != 30 or len(pins_by_ratio) != 14 or sum(
+            r["devicePlaybackAdmitted"] for r in routes) != 2:
+        raise ValueError("SRC device route qualification inventory is inconsistent")
     manifest = {
-        "schema": "rgsml.external-src-fir-assets/1",
+        "schema": "rgsml.external-src-fir-assets/2",
+        "installationRoot": "resources/fir",
+        "assets": ([{"role": "PLAYBACK_FROZEN", **entry} for entry in entries]
+                   + [{"role": "FINAL_SRC_Q0_PRIVATE_NONRELEASE", **entry}
+                      for entry in final_src]),
+        "routes": routes,
         "purpose": "frozen-playback-fir-bitwise-migration",
         "releaseAuthority": False,
         "playback": entries,
         "finalSrc": {"source": "original-private-Q0-14-source-pinned",
                      "includedInPublicBuild": False, "kernels": final_src}
     }
-    (output_root / "playback_fir_manifest.json").write_text(
+    if len(manifest["assets"]) != 16 or len({
+            asset["file"] for asset in manifest["assets"]}) != 16:
+        raise ValueError("Unified FIR catalog is not 16 unique SHA-pinned files")
+    (output_root / "fir_manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 

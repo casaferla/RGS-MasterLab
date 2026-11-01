@@ -28,7 +28,7 @@ function(rgsml_configure_install_deploy target manifest)
     # published by public CI; authenticated local FQ provisioning remains.
     install(
         FILES ${RGSML_PLAYBACK_FIR_INSTALL_FILES}
-        DESTINATION "${CMAKE_INSTALL_BINDIR}/resources/fir/playback"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}/resources/fir"
     )
 
     qt_generate_deploy_qml_app_script(

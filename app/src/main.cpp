@@ -90,7 +90,7 @@ int main(int argc, char* argv[])
         QCoreApplication::applicationDirPath().toStdString()};
 #endif
     rgsml::audio::configure_external_playback_fir_root(
-        (appAssetRoot/"resources"/"fir"/"playback").u16string());
+        (appAssetRoot/"resources"/"fir").u16string());
     // Same optimized icon as the native Windows executable.
     application.setWindowIcon(QIcon(QStringLiteral(
         ":/rgsml/resources/RGS_MasterLab_optimized.ico")));
@@ -274,7 +274,7 @@ int main(int argc, char* argv[])
             std::filesystem::path{originalFirRoot.constData()});
     else
         privateTerminalRenderer.set_original_q0_fir_root(
-            appAssetRoot/"resources"/"fir"/"final_src");
+            appAssetRoot/"resources"/"fir");
 
     // One immutable authority bit for PRODUCT worker, six-rate picker and
     // RAM/timing panel. Missing authentic private assets keep 28 paths off.

@@ -12,7 +12,7 @@ function(rgsml_configure_external_fir_assets)
         set(_fir_source_root "${CMAKE_SOURCE_DIR}")
     endif()
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
-    set(_asset_root "${CMAKE_BINARY_DIR}/generated/rgsml/fir/playback")
+    set(_asset_root "${CMAKE_BINARY_DIR}/generated/rgsml/fir")
     set(_sources
         "${_fir_source_root}/audio/src/internal/playback_src_kernel_44100_48000.inc"
         "${_fir_source_root}/audio/src/internal/playback_src_kernel_48000_44100.inc"
@@ -22,7 +22,7 @@ function(rgsml_configure_external_fir_assets)
     set(_names
         playback_src_kernel_44100_48000.bin
         playback_src_kernel_48000_44100.bin
-        playback_fir_manifest.json
+        fir_manifest.json
     )
     set(_files)
     foreach(_name IN LISTS _names)
