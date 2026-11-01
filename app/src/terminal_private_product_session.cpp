@@ -273,27 +273,50 @@ TerminalPrivateProductSession::materialize_private_final_master_monitoring(
                 "M17_MONITOR_MATERIALIZER_OUT_OF_MEMORY"});
         }
     }();
-    // Fail closed AFTER an arbitrarily expensive conversion: a new source,
-    // loop, M17 identity or canceled request invalidates its entire result.
-    if(current_verified_private_master()!=stage)
-        return refuse("M17_MONITOR_MASTER_REVOKED_DURING_MATERIALIZATION");
+    // The exact capture is preserved across conversion. The eventual
+    // asynchronous path can use the SAME owning-thread-only admission, so
+    // only one authoritative Q0/M17 monitor-ticket security decision exists.
     if(!result)return result;
-    if(!*result.value())
-        return refuse("M17_MONITOR_DEVICE_PCM_OWNER_MISSING");
-    const auto checked=audio::validate_monitoring_pcm_candidate(
-        **result.value());
-    if(!checked)return core::Result<Owned>::failure(*checked.error());
-    if((*result.value())->immutable_master_rate!=master.format().sample_rate()
-       ||(*result.value())->immutable_master_frames!=master.frame_count()
-       ||(*result.value())->device_pcm.view().format().channel_layout()
+    const auto admitted=admit_converted_monitor_owner(
+        stage,*result.value());
+    if(!admitted)return core::Result<Owned>::failure(*admitted.error());
+    return result;
+}
+
+TerminalPrivateProductSession::MonitoringMasterCapture
+TerminalPrivateProductSession::capture_monitor_master_for_conversion() const
+{
+    // Capture ONLY on the owning UI thread. This pointer owns the complete
+    // immutable M17 MASTER PCM for the later worker's bounded lifetime.
+    return current_verified_private_master();
+}
+
+core::Status TerminalPrivateProductSession::admit_converted_monitor_owner(
+    MonitoringMasterCapture captured,
+    std::shared_ptr<const audio::MonitoringPcmCandidate> candidate)
+{
+    const auto refuse=[](const char* message)->core::Status {
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,message});
+    };
+    // This method intentionally neither touches Windows hardware nor
+    // constructs PCM. It must be invoked by the caller on the owning thread.
+    if(!captured ||current_verified_private_master()!=captured)
+        return refuse("M17_MONITOR_MASTER_REVOKED_DURING_MATERIALIZATION");
+    if(!candidate)return refuse("M17_MONITOR_DEVICE_PCM_OWNER_MISSING");
+    const auto checked=audio::validate_monitoring_pcm_candidate(*candidate);
+    if(!checked)return checked;
+    const auto master=captured->rendered.terminal.checked.terminal
+        .compensated_pcm.view();
+    if(candidate->immutable_master_rate!=master.format().sample_rate()
+       ||candidate->immutable_master_frames!=master.frame_count()
+       ||candidate->device_pcm.view().format().channel_layout()
            !=master.format().channel_layout())
         return refuse("M17_MONITOR_MASTER_DEVICE_PROVENANCE_MISMATCH");
-    // Mint exact stage/PCM pointer authority ONLY after both the MASTER
-    // and the independent monitoring provenance gates succeeded.
-    approvedMonitor_=*result.value();
-    approvedMonitorMaster_=stage;
-    // Never install automatically or claim M16 LIVE.
-    return result;
+    approvedMonitor_=std::move(candidate);
+    approvedMonitorMaster_=std::move(captured);
+    // No automatic PLAY/DEVICE install, SOURCE retarget or M16 LIVE claim.
+    return core::Status::success();
 }
 
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
