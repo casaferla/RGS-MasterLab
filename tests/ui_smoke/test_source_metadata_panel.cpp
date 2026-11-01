@@ -1508,7 +1508,8 @@ Window {
     height: 688
     property bool meterMode: false
     property bool privateMonitorOn: false
-    property bool sourceBoundTpValid: true
+    property bool sourceBoundTpValid: false
+    property bool sourceLiveAvailable: false
     visible: false
     color: "#06121F"
     QtObject {
@@ -1604,7 +1605,8 @@ Window {
             adapterModel: fixtureModel
             truePeakStaticViewModel: fixtureWindow.sourceBoundTpValid
                 ? sourceBoundPreLimiter : null
-            truePeakLiveViewModel: manualLive
+            truePeakLiveViewModel: fixtureWindow.sourceLiveAvailable
+                ? manualLive : null
             terminalMonitorViewModel: privateMonitor
         }
     }
@@ -1734,6 +1736,8 @@ Window {
         root.data(), QStringLiteral("m17FixtureProcessedLive"));
     QVERIFY(historicalTp && processedLive);
     QVERIFY(window->setProperty("privateMonitorOn",false));
+    QVERIFY(window->setProperty("sourceBoundTpValid",true));
+    QVERIFY(window->setProperty("sourceLiveAvailable",true));
     QCoreApplication::processEvents();
     QCOMPARE(host->property("truePeakCurrentStatic").value<QObject*>(),historicalTp);
     QCOMPARE(host->property("truePeakCurrentLive").value<QObject*>(),processedLive);
