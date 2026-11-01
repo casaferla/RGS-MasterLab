@@ -4,6 +4,8 @@
 #include "terminal_audio_session_gate.hpp"
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
+#include <QDir>
+#include <QUrl>
 #include "terminal_private_product_session.hpp"
 #include "terminal_monitor_view_model.hpp"
 #include "terminal_product_activation_coordinator.hpp"
@@ -701,6 +703,18 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
         [&selector]{return selector.processed_realization_snapshot();},
         [&selector]{return selector.processed_realization_id();},
         [&]{return upstream.value()->chain();}};
+    // Private original 14 Q0 files are intentionally NOT present in
+    // CI. The one-time folder enrollment must refuse network URLs and
+    // directories without the actual source-pinned FIR family.
+    QVERIFY(!renderer.full_original_q0_family_ready());
+    QCOMPARE(renderer.property("originalQ0Ready").toBool(),false);
+    QVERIFY(!renderer.remember_existing_original_q0_folder(
+        QUrl{QStringLiteral("https://invalid.example/private-firs")}));
+    QVERIFY(!renderer.remember_existing_original_q0_folder(
+        QUrl::fromLocalFile(QDir::tempPath())));
+    QVERIFY(!renderer.full_original_q0_family_ready());
+    QVERIFY(renderer.original_q0_status().contains(
+        QStringLiteral("not the verified original")));
     app::TerminalPrivateProductSession product{
         renderer,publisher,candidates,transport,
         [&selector]{return selector.prepared_realization_snapshot();},
