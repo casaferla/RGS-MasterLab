@@ -28,7 +28,7 @@ function(rgsml_configure_install_deploy target manifest)
     # 2 Playback in routine PR CI, and ALL 16 mandatory for FQ provenance.
     # No separate manual Q0 copy, Python installer or hidden external path.
     install(
-        FILES ${RGSML_PLAYBACK_FIR_INSTALL_FILES}
+        FILES ${RGSML_FIR_INSTALL_FILES}
         DESTINATION "${CMAKE_INSTALL_BINDIR}/resources/fir"
     )
 
