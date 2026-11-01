@@ -1510,6 +1510,12 @@ Window {
     property bool privateMonitorOn: false
     property bool sourceBoundTpValid: false
     property bool sourceLiveAvailable: false
+    // Compare QML source-owner identity in QML, without assuming Qt's
+    // QVariant representation of a JavaScript 'var' is QObject*.
+    readonly property bool preLimiterIsCurrent: host.truePeakCurrentStatic === sourceBoundPreLimiter
+    readonly property bool processedLiveIsCurrent: host.truePeakCurrentLive === manualLive
+    readonly property bool staticIsAbsent: host.truePeakCurrentStatic === null
+    readonly property bool liveIsAbsent: host.truePeakCurrentLive === null
     visible: false
     color: "#06121F"
     QtObject {
@@ -1742,33 +1748,33 @@ Window {
     QVERIFY(window->setProperty("sourceBoundTpValid",true));
     QVERIFY(window->setProperty("sourceLiveAvailable",true));
     QCoreApplication::processEvents();
-    QCOMPARE(host->property("truePeakCurrentStatic").value<QObject*>(),historicalTp);
-    QCOMPARE(host->property("truePeakCurrentLive").value<QObject*>(),processedLive);
+    QVERIFY(window->property("preLimiterIsCurrent").toBool());
+    QVERIFY(window->property("processedLiveIsCurrent").toBool());
     QVERIFY(window->setProperty("privateMonitorOn",true));
     QCoreApplication::processEvents();
     QVERIFY(host->property("monitorExclusive").toBool());
-    QCOMPARE(host->property("truePeakCurrentStatic").value<QObject*>(),historicalTp);
+    QVERIFY(window->property("preLimiterIsCurrent").toBool());
     QCOMPARE(preLimiterCard->property("heading").toString(),
         QStringLiteral("COMPLETE PRE-LIMITER TP"));
     QCOMPARE(preLimiterCard->property("reading").toString(),
         QStringLiteral("−2.21 dBTP"));
     QVERIFY(preLimiterCard->property("available").toBool());
-    QVERIFY(host->property("truePeakCurrentLive").value<QObject*>() == nullptr);
+    QVERIFY(window->property("liveIsAbsent").toBool());
     // Switching the editor to M16 must NEVER show a foreign private owner.
     QVERIFY(window->setProperty("meterMode",true));
     QCoreApplication::processEvents();
-    QVERIFY(host->property("truePeakCurrentStatic").value<QObject*>() == nullptr);
-    QVERIFY(host->property("truePeakCurrentLive").value<QObject*>() == nullptr);
+    QVERIFY(window->property("staticIsAbsent").toBool());
+    QVERIFY(window->property("liveIsAbsent").toBool());
     // Upstream SOURCE/PROCESSED invalidation must remove the historical
     // figure, even if the M17 editor is still in private monitor.
     QVERIFY(window->setProperty("meterMode",false));
     QVERIFY(window->setProperty("sourceBoundTpValid",false));
     QCoreApplication::processEvents();
-    QVERIFY(host->property("truePeakCurrentStatic").value<QObject*>() == nullptr);
+    QVERIFY(window->property("staticIsAbsent").toBool());
     QVERIFY(!preLimiterCard->property("available").toBool());
     QVERIFY(window->setProperty("privateMonitorOn",false));
     QCoreApplication::processEvents();
-    QCOMPARE(host->property("truePeakCurrentLive").value<QObject*>(),processedLive);
+    QVERIFY(window->property("processedLiveIsCurrent").toBool());
     window->close();
 }
 
