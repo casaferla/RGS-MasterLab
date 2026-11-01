@@ -1964,6 +1964,63 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!monitorSinkOwner);
     QVERIFY(monitorUi.can_install());
 
+    // M17 asynchronous Master audition PRODUCT path: a true off-thread
+    // full-duration FIR (not a fake ready PCM) with Qt-owner-only preflight
+    // and fresh post-conversion recheck. No second M17 Prepare and no UI
+    // thread allocation of the DEVICE PCM.
+    std::size_t asyncPreflights=0;
+    std::size_t asyncRechecks=0;
+    monitorUi.set_async_monitoring_device(
+        [&](audio::AudioBufferView master,bool allowCaution)
+            ->core::Result<platform::windows::MonitoringAsyncDevicePlan> {
+            ++asyncPreflights;
+            QVERIFY(!allowCaution);
+            QCOMPARE(master.format().sample_rate(),*masterRate.value());
+            return core::Result<
+                platform::windows::MonitoringAsyncDevicePlan>::success({
+                    *deviceRate.value(),"fixed-fake-physical-endpoint"
+                });
+        },
+        [&](const platform::windows::MonitoringAsyncDevicePlan& plan,
+            audio::AudioBufferView master,bool allowCaution)->core::Status {
+            ++asyncRechecks;
+            if(allowCaution ||plan.device_rate!=*deviceRate.value()
+               ||plan.opaque_endpoint_id!="fixed-fake-physical-endpoint"
+               ||master.format().sample_rate()!=*masterRate.value())
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,"ASYNC_TEST_ENDPOINT_CHANGED"});
+            return core::Status::success();
+        });
+    const auto beforeAsyncRender=renderer.render_invocation_count();
+    QVERIFY(monitorUi.installMonitor(false));
+    QVERIFY(monitorUi.monitor_preparing());
+    QVERIFY(monitorUi.can_dismiss());
+    QVERIFY(!monitorUi.can_install());
+    QVERIFY(!monitorUi.monitor_installed());
+    QTRY_VERIFY_WITH_TIMEOUT(monitorUi.monitor_installed(),12000);
+    QVERIFY(!monitorUi.monitor_preparing());
+    QCOMPARE(asyncPreflights,std::size_t{1});
+    QCOMPARE(asyncRechecks,std::size_t{1});
+    QVERIFY(monitorSinkOwner);
+    QCOMPARE(monitorSinkOwner->windows_prepared_endpoint_id,
+        std::string{"fixed-fake-physical-endpoint"});
+    QCOMPARE(renderer.render_invocation_count(),beforeAsyncRender);
+    QVERIFY(monitorUi.returnManual());
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QVERIFY(!monitorSinkOwner);
+    // Accepted async preflight can be withdrawn before the Qt completion
+    // posts. No eventual stale DEVICE PCM may be installed.
+    QVERIFY(monitorUi.installMonitor(false));
+    QVERIFY(monitorUi.monitor_preparing());
+    QVERIFY(monitorUi.cancel());
+    QVERIFY(!monitorUi.monitor_preparing());
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QTest::qWait(25); QCoreApplication::processEvents();
+    QVERIFY(!monitorSinkOwner);
+    QCOMPARE(asyncRechecks,std::size_t{1});
+    QVERIFY(monitorUi.can_install());
+    monitorUi.set_async_monitoring_device({}, {});
+
     // Product P0 dynamic handoff. With an unchanged M17 READY stage we can
     // enter DEVICE audition at a nonzero MANUAL playhead while PLAYING or
     // PAUSED, and return to exactly the same SOURCE cue and original ID.
