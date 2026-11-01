@@ -22,7 +22,7 @@ class FourRealNativeTests(unittest.TestCase):
         self.build.mkdir()
         # Direct native driver now requires the same frozen playback FIR pack
         # as the CTest runtime, even with synthetic mock subprocesses.
-        self.playback=self.build/"generated/rgsml/fir/playback"
+        self.playback=self.build/"generated/rgsml/fir"
         self.playback.mkdir(parents=True)
         for rate_pair in ("44100_48000","48000_44100"):
             (self.playback/f"playback_src_kernel_{rate_pair}.bin").write_bytes(
@@ -119,6 +119,18 @@ class FourRealNativeTests(unittest.TestCase):
         missing=self.playback/"playback_src_kernel_44100_48000.bin"
         missing.unlink()
         with self.assertRaises(ContractError):
+            self.invoke([])
+        self.assertFalse(self.report.exists())
+
+    def test_old_playback_subfolder_cannot_substitute_flat_fir_root(self):
+        old=self.playback/"playback"
+        old.mkdir()
+        for pair in ("44100_48000","48000_44100"):
+            name=f"playback_src_kernel_{pair}.bin"
+            (self.playback/name).rename(old/name)
+        # The obsolete /playback path must never silently be searched.
+        with self.assertRaisesRegex(
+            ContractError,"frozen external playback FIR pack missing"):
             self.invoke([])
         self.assertFalse(self.report.exists())
 
