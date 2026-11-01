@@ -122,6 +122,7 @@ private:
     bool monitorRequested_{false};
     bool monitorPreparing_{false};
     std::uint64_t monitorSerial_{0};
+    std::atomic_bool asyncWorkerRunning_{false};
     std::shared_ptr<std::atomic_bool> asyncCancellation_;
     TerminalPrivateProductSession::MonitoringMasterCapture pendingMaster_;
     AsyncProbe asyncProbe_;
