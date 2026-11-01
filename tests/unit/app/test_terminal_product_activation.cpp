@@ -1974,12 +1974,16 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         [&](audio::AudioBufferView master,bool allowCaution)
             ->core::Result<platform::windows::MonitoringAsyncDevicePlan> {
             ++asyncPreflights;
-            QVERIFY(!allowCaution);
-            QCOMPARE(master.format().sample_rate(),*masterRate.value());
-            return core::Result<
-                platform::windows::MonitoringAsyncDevicePlan>::success({
-                    *deviceRate.value(),"fixed-fake-physical-endpoint"
-                });
+            using PlanResult=core::Result<
+                platform::windows::MonitoringAsyncDevicePlan>;
+            if(allowCaution
+               ||master.format().sample_rate()!=*masterRate.value())
+                return PlanResult::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "ASYNC_TEST_INVALID_MASTER_OR_CAUTION"});
+            return PlanResult::success({
+                *deviceRate.value(),"fixed-fake-physical-endpoint"
+            });
         },
         [&](const platform::windows::MonitoringAsyncDevicePlan& plan,
             audio::AudioBufferView master,bool allowCaution)->core::Status {
