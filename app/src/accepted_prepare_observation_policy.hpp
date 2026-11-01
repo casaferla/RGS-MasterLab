@@ -140,10 +140,15 @@ struct AcceptedPrepareHostTotalRange {
 };
 class AcceptedPrepareHostTimingHistory {
 public:
-    [[nodiscard]] bool observe(const AcceptedPrepareObservation& x) {
+    [[nodiscard]] bool observe(const AcceptedPrepareObservation& x,
+                               bool authenticated_full_original_q0_pack=false) {
         if(x.invocation<=lastSeen_)return false;
         lastSeen_=x.invocation;
-        if(!m17_final_src_candidate_admissible(x.source_hz,x.master_hz)
+        // Never infer Q0 access from a valid duration alone: the accepted
+        // Product Prepare caller must provide its CURRENT authenticated
+        // original-14-FIR family status. This does not certify Q1-Q6.
+        if(!m17_final_src_candidate_admissible(
+               x.source_hz,x.master_hz,authenticated_full_original_q0_pack)
            ||!AcceptedPrepareObservationHistory::stage_breakdown(x))
             return false;
         try {
@@ -156,11 +161,13 @@ public:
         std::int64_t source_hz,std::int64_t source_frames,int channels,
         std::int64_t master_hz,double ceiling,
         std::uint64_t terminal_revision,
-        std::uint64_t parameter_revision) const noexcept
+        std::uint64_t parameter_revision,
+        bool authenticated_full_original_q0_pack=false) const noexcept
     {
         if(source_frames<=0 || (channels!=1&&channels!=2)
            ||!std::isfinite(ceiling)
-           ||!m17_final_src_candidate_admissible(source_hz,master_hz))
+           ||!m17_final_src_candidate_admissible(
+               source_hz,master_hz,authenticated_full_original_q0_pack))
             return std::nullopt;
         long double low=std::numeric_limits<long double>::infinity();
         long double high=0;
