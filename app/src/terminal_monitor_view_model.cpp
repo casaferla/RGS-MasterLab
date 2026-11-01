@@ -307,12 +307,21 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
         // QObjects or user policy callbacks. It only owns immutable MASTER
         // buffers, scalar plan, bounded output blocks and an atomic stop.
         try {
+            // Allocate the completion owner BEFORE launching the worker:
+            // severe Windows memory pressure must not throw std::bad_alloc
+            // from the background thread's own result allocation and
+            // terminate the entire product with an otherwise sound MASTER.
+            using AsyncOwned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
+            using AsyncResult=core::Result<AsyncOwned>;
+            auto outcome=std::make_shared<AsyncResult>(AsyncResult::failure(
+                core::Error{core::ErrorCode::IoFailure,
+                    "MONITOR_ASYNC_DEVICE_PCM_OUT_OF_MEMORY"}));
             monitorWorker_=std::jthread(
             [this,stage,plan=*plan.value(),block=*block.value(),
-             token,job,explicitlyAllowCaution](std::stop_token stop) {
+             token,job,explicitlyAllowCaution,outcome](std::stop_token stop) {
             using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
             using Result=core::Result<Owned>;
-            const auto outcome=std::make_shared<Result>([&]()->Result {
+            *outcome=([&]()->Result {
                 try {
                     const auto immutable=stage->rendered.terminal.checked
                         .terminal.compensated_pcm.view();
