@@ -31,6 +31,9 @@ class TerminalMonitorViewModel final : public QObject {
     Q_PROPERTY(int deviceRateHz READ device_rate_hz NOTIFY changed)
     Q_PROPERTY(qint64 masterPositionFrames READ master_position_frames NOTIFY changed)
     Q_PROPERTY(qint64 masterDurationFrames READ master_duration_frames NOTIFY changed)
+    Q_PROPERTY(qint64 masterRegionStartFrames READ master_region_start_frames NOTIFY changed)
+    Q_PROPERTY(qint64 masterRegionEndFrames READ master_region_end_frames NOTIFY changed)
+    Q_PROPERTY(bool masterLoopEnabled READ master_loop_enabled NOTIFY changed)
     Q_PROPERTY(QString transportState READ transport_state NOTIFY changed)
 public:
     TerminalMonitorViewModel(TerminalPrivateProductSession& session,
@@ -71,6 +74,9 @@ public:
     [[nodiscard]] int device_rate_hz() const noexcept {return deviceRateHz_;}
     [[nodiscard]] qint64 master_position_frames() const noexcept {return position_;}
     [[nodiscard]] qint64 master_duration_frames() const noexcept {return duration_;}
+    [[nodiscard]] qint64 master_region_start_frames() const noexcept {return masterRegionStart_;}
+    [[nodiscard]] qint64 master_region_end_frames() const noexcept {return masterRegionEnd_;}
+    [[nodiscard]] bool master_loop_enabled() const noexcept {return masterLoopEnabled_;}
     [[nodiscard]] QString transport_state() const {return transportState_;}
 
     // Optional app-owned preflight: creates an explicit offline SOURCE
@@ -117,6 +123,8 @@ public:
     Q_INVOKABLE bool stop();
     Q_INVOKABLE bool seekMaster(qint64 frame);
     Q_INVOKABLE bool setMasterLoop(qint64 begin,qint64 end,bool enabled);
+    Q_INVOKABLE bool setMasterRegion(qint64 begin,qint64 end);
+    Q_INVOKABLE bool clearMasterRegion();
     Q_INVOKABLE void refresh();
 signals:
     void changed();
@@ -146,6 +154,10 @@ private:
     QString transportState_{QStringLiteral("UNAVAILABLE")};
     qint64 position_{0};
     qint64 duration_{0};
+    qint64 masterRegionStart_{0};
+    qint64 masterRegionEnd_{0};
+    bool masterLoopEnabled_{false};
+    bool masterRegionInitialized_{false};
     int masterRateHz_{0};
     int deviceRateHz_{0};
 };
