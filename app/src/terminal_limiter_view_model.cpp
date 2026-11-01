@@ -261,7 +261,7 @@ void TerminalLimiterViewModel::setVerifiedTrimObservation(
     // M16 full-resource BEFORE/AFTER observations belong to ONE completed
     // immutable M17 owner. This is NOT a DAC true-peak or release certificate.
     // No inferred value from user Ceiling or a PRE-LIMITER historical meter.
-    if(!std::isfinite(gain)||gain<=0.0||gain>1.0
+    if(!std::isfinite(gain)||gain<0x1.fa23a197d2819p-1||gain>1.0
        ||!std::isfinite(before)||before<0.0
        ||!std::isfinite(after)||after<0.0
        ||(used &&gain>=1.0)
