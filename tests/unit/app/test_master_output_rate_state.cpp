@@ -408,6 +408,37 @@ private slots:
     QVERIFY(genuineFir->low_us>0);
     QVERIFY(genuineFir->high_us>genuineFir->low_us);
     QVERIFY(!converted.predict(44100,132300,2,192000,-1.0,20,30));
+    // The 28 newer real Q0 SOURCE->MASTER routes can teach an INDICATIVE
+    // host ETA only after full local original-14-FIR authentication. A
+    // numerical history is not itself a Q0 admission or release ticket.
+    AcceptedPrepareHostTimingHistory originalQ0;
+    auto q0=fir;
+    q0.master_hz=192000;
+    q0.src_us=400000;
+    q0.wall_us=2500000;
+    q0.invocation=20;
+    QVERIFY(!originalQ0.observe(q0)); // fail closed without source pins
+    QVERIFY(!originalQ0.observe(q0,true)); // stale serial cannot replay
+    for(std::uint64_t serial=21;serial<=23;++serial) {
+        q0.invocation=serial;
+        QVERIFY(originalQ0.observe(q0,true));
+    }
+    // Disconnecting/private FIR tamper suppresses even an existing host
+    // profile. Reauthenticating can restore it, but only against matching
+    // rates, Ceiling and M17 typed parameter revision.
+    QVERIFY(!originalQ0.predict(44100,132300,2,192000,-1.0,20,30));
+    const auto authenticated=originalQ0.predict(
+        44100,132300,2,192000,-1.0,20,30,true);
+    QVERIFY(authenticated);
+    QCOMPARE(authenticated->matched_observations,std::size_t{3});
+    QVERIFY(authenticated->high_us>authenticated->low_us);
+    QVERIFY(!originalQ0.predict(44100,132300,2,192000,
+                                -12.0,20,30,true));
+    QVERIFY(!originalQ0.predict(44100,132300,2,192000,
+                                -1.0,20,31,true));
+    originalQ0.clear();
+    QVERIFY(!originalQ0.predict(44100,132300,2,192000,
+                                -1.0,20,30,true));
     QVERIFY(!predict(0,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(-1,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(132300,44100,44100,2,
