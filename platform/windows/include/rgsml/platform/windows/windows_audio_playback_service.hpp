@@ -33,6 +33,14 @@ struct MonitoringTransportRequest {
     std::optional<core::FrameRange> master_loop;
 };
 
+// Captured exclusively on the Qt/Windows owner thread. The background FIR
+// converter may use these immutable scalar/byte fields but MUST NOT read
+// QMediaDevices, device preferences, QObjects or OS memory from that thread.
+struct MonitoringAsyncDevicePlan final {
+    core::SampleRate device_rate;
+    std::string opaque_endpoint_id;
+};
+
 // Windows owner-thread adapter for the frozen playback control-plane port.
 // Qt Multimedia and native device state are hidden in the implementation.
 class WindowsAudioPlaybackService final : public core::IAudioPlaybackService {
@@ -99,6 +107,21 @@ public:
         const std::function<core::Status(
             const audio::MonitoringPcmPreallocationAdvice&)>&
             explicitDecision) const;
+
+    // A split-phase version of the synchronous monitor preflight.
+    // Both calls run on the Qt/device OWNER thread: cheap endpoint identity,
+    // currently measured OS RAM and exact approved DEVICE rate. The expensive
+    // PCM conversion occurs independently off-thread between these calls.
+    [[nodiscard]] core::Result<MonitoringAsyncDevicePlan>
+    probe_monitoring_async_device(
+        audio::AudioBufferView immutableMaster,
+        const std::function<core::Status(
+            const audio::MonitoringPcmPreallocationAdvice&)>& decision) const;
+    [[nodiscard]] core::Status recheck_monitoring_async_device(
+        const MonitoringAsyncDevicePlan& plan,
+        audio::AudioBufferView immutableMaster,
+        const std::function<core::Status(
+            const audio::MonitoringPcmPreallocationAdvice&)>& decision) const;
 
     // EXPERIMENTAL device-monitoring seam: candidate PCM is separately owned
     // and already converted offline. Never substitute a new master rate or
