@@ -174,13 +174,19 @@ materialize_monitoring_pcm_candidate(
     core::SampleRate observed_device_rate,
     core::FrameCount offline_block,
     const std::function<core::Status(const MonitoringPcmResourceProjection&)>&
-        preallocation_check = {})
+        preallocation_check = {},
+    const FullResourceOutputRateCancel& cancelled = {})
 {
     auto refused=[](core::ErrorCode code,const char* message)
         -> core::Result<MonitoringPcmCandidate> {
         return core::Result<MonitoringPcmCandidate>::failure(
             core::Error{code,message});
     };
+    // Worker-safe opt-in cancellation. No partial DEVICE PCM may be
+    // returned or installed after a stop request.
+    if(cancelled && cancelled())
+        return refused(core::ErrorCode::InvalidState,
+            "MONITOR_SRC_CANCELLED_BEFORE_PREFLIGHT");
     if(verified_master_pcm.timebase().frame_domain_id()
            !=FrameDomainId::OUTPUT_RATE
        ||verified_master_pcm.absolute_start_frame().value()!=0
@@ -222,6 +228,9 @@ materialize_monitoring_pcm_candidate(
         }
     }
 
+    if(cancelled && cancelled())
+        return refused(core::ErrorCode::InvalidState,
+            "MONITOR_SRC_CANCELLED_AFTER_PREFLIGHT");
     // No extra O(track duration) SRC scratch allocation. The borrowed view
     // remains OUTPUT_RATE, and only this explicit monitor entrypoint may
     // consume it as the immutable input to a separate device-rate PCM.
@@ -230,7 +239,8 @@ materialize_monitoring_pcm_candidate(
     auto converted=[&]()->core::Result<FullResourceOutputRateCandidate> {
         try {
             return materialize_output_master_monitoring_rate_candidate(
-                verified_master_pcm,observed_device_rate,offline_block);
+                verified_master_pcm,observed_device_rate,offline_block,
+                cancelled);
         } catch(const std::bad_alloc&) {
             return core::Result<FullResourceOutputRateCandidate>::failure(
                 core::Error{core::ErrorCode::IoFailure,
