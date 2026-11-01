@@ -1,5 +1,17 @@
 #include <rgsml/audio/external_playback_fir_assets.hpp>
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
+#include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
+
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSet>
+#include <QString>
+
+#include <array>
+#include <numeric>
+
 
 #include <QTest>
 #include <QByteArray>
@@ -57,6 +69,9 @@ class ExternalPlaybackFirAssetsTests final : public QObject {
 private slots:
     void exactFrozenLegacyAssetPack();
     void missingCorruptAndOwnedLifetime();
+    void full16AssetManifestAnd30DeviceRouteAdmissionBoundary();
+    void relocatedFlatFirPackageKeepsBitwiseLegacyAndRejectsPrivateSpoof();
+
 };
 
 void ExternalPlaybackFirAssetsTests::exactFrozenLegacyAssetPack()
@@ -126,6 +141,178 @@ void ExternalPlaybackFirAssetsTests::missingCorruptAndOwnedLifetime()
     QVERIFY(!make(44100,48000)); // SHA pin prevents installation of fake FIR
     audio::configure_external_playback_fir_root(root.u16string());
     QVERIFY(static_cast<bool>(make(44100,48000)));
+}
+
+
+// This test uses the PUBLIC 16-entry SHA-only manifest and the two frozen
+// Playback binaries. The 14 original private Q0 coefficient files must NOT
+// be copied into CI or ordinary portable packages.
+void ExternalPlaybackFirAssetsTests::
+full16AssetManifestAnd30DeviceRouteAdmissionBoundary()
+{
+    const auto root=test_asset_root();
+    QVERIFY(!root.empty());
+    QFile manifest{QString::fromStdString((root/"fir_manifest.json").string())};
+    QVERIFY(manifest.open(QIODevice::ReadOnly));
+    QJsonParseError error{};
+    const auto parsed=QJsonDocument::fromJson(manifest.readAll(),&error);
+    QCOMPARE(error.error,QJsonParseError::NoError);
+    QVERIFY(parsed.isObject());
+    const auto obj=parsed.object();
+    QCOMPARE(obj.value(QStringLiteral("schema")).toString(),
+             QStringLiteral("rgsml.external-src-fir-assets/2"));
+    QCOMPARE(obj.value(QStringLiteral("installationRoot")).toString(),
+             QStringLiteral("resources/fir"));
+    QVERIFY(!obj.value(QStringLiteral("releaseAuthority")).toBool());
+    const auto files=obj.value(QStringLiteral("assets")).toArray();
+    QCOMPARE(files.size(),16);
+    QSet<QString> filenames;
+    QHash<QString,QString> pinnedDigests;
+    constexpr std::array<const char*,2> frozenFileNames{
+        "playback_src_kernel_44100_48000.bin",
+        "playback_src_kernel_48000_44100.bin"};
+    constexpr std::array<const char*,2> frozenDigests{
+        "ec8c4d554eb4ede15f58eead1fede923e74c4692c57832bda716e3fc826926b4",
+        "37cfda8e885e2d00646ec60d02bdf5b7dcb85348fca416e065bab71a824efb22"};
+    for(int i=0;i<files.size();++i) {
+        QVERIFY(files.at(i).isObject());
+        const auto entry=files.at(i).toObject();
+        const auto filename=entry.value(QStringLiteral("file")).toString();
+        const auto sha=entry.value(QStringLiteral("sha256")).toString();
+        QCOMPARE(sha.size(),64);
+        QVERIFY(!filename.isEmpty());
+        QVERIFY(!filenames.contains(filename));
+        filenames.insert(filename);
+        pinnedDigests.insert(filename,sha);
+        if(i<2) {
+            QCOMPARE(filename,QString::fromLatin1(frozenFileNames[static_cast<std::size_t>(i)]));
+            QCOMPARE(sha,QString::fromLatin1(frozenDigests[static_cast<std::size_t>(i)]));
+            QCOMPARE(entry.value(QStringLiteral("role")).toString(),
+                QStringLiteral("PLAYBACK_FROZEN"));
+            QVERIFY(std::filesystem::is_regular_file(root/filename.toStdString()));
+        } else {
+            QCOMPARE(entry.value(QStringLiteral("role")).toString(),
+                QStringLiteral("FINAL_SRC_Q0_PRIVATE_NONRELEASE"));
+            QVERIFY(entry.value(QStringLiteral("private")).toBool());
+            const auto L=entry.value(QStringLiteral("ratioL")).toInt();
+            const auto M=entry.value(QStringLiteral("ratioM")).toInt();
+            QVERIFY(L>0 && M>0 && std::gcd(L,M)==1);
+            const auto* pin=audio::internal::phase11_frozen_original_fir_pin(
+                static_cast<std::uint32_t>(L),static_cast<std::uint32_t>(M));
+            QVERIFY(pin);
+            QCOMPARE(sha,QString::fromLatin1(pin->sha256));
+            QCOMPARE(filename,QStringLiteral("RGSMSR1_L%1_M%2.bin").arg(L).arg(M));
+            // A public FQ must not ship a private original merely because
+            // its approved identity appears in the SHA-only inventory.
+            QVERIFY(!std::filesystem::exists(root/filename.toStdString()));
+        }
+    }
+    QCOMPARE(filenames.size(),16);
+    const auto routes=obj.value(QStringLiteral("routes")).toArray();
+    QCOMPARE(routes.size(),30);
+    QSet<QString> seen;
+    constexpr std::array<int,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    int historicallyAdmitted=0;
+    for(const auto routeJson:routes) {
+        QVERIFY(routeJson.isObject());
+        const auto route=routeJson.toObject();
+        const int source=route.value(QStringLiteral("sourceRateHz")).toInt();
+        const int target=route.value(QStringLiteral("targetRateHz")).toInt();
+        const auto key=QStringLiteral("%1_%2").arg(source).arg(target);
+        QVERIFY(source!=target);
+        QVERIFY(std::find(rates.begin(),rates.end(),source)!=rates.end());
+        QVERIFY(std::find(rates.begin(),rates.end(),target)!=rates.end());
+        QVERIFY(!seen.contains(key));
+        seen.insert(key);
+        const auto kernel=route.value(QStringLiteral("kernelFile")).toString();
+        QVERIFY(pinnedDigests.contains(kernel));
+        const auto divisor=std::gcd(source,target);
+        const auto L=target/divisor;
+        const auto M=source/divisor;
+        QCOMPARE(route.value(QStringLiteral("ratioL")).toInt(),L);
+        QCOMPARE(route.value(QStringLiteral("ratioM")).toInt(),M);
+        const bool frozen=(source==44100 && target==48000)
+                          ||(source==48000 && target==44100);
+        if(frozen) {
+            ++historicallyAdmitted;
+            QVERIFY(route.value(QStringLiteral("devicePlaybackAdmitted")).toBool());
+            QCOMPARE(route.value(QStringLiteral("role")).toString(),
+                QStringLiteral("PLAYBACK_FROZEN"));
+            QCOMPARE(kernel,QStringLiteral("playback_src_kernel_%1.bin").arg(key));
+        } else {
+            QVERIFY(!route.value(QStringLiteral("devicePlaybackAdmitted")).toBool());
+            QCOMPARE(route.value(QStringLiteral("role")).toString(),
+                QStringLiteral("Q0_ORIGINAL_PENDING_DEVICE_QUALIFICATION"));
+            QCOMPARE(kernel,QStringLiteral("RGSMSR1_L%1_M%2.bin").arg(L).arg(M));
+            const auto* pin=audio::internal::phase11_frozen_original_fir_pin(
+                static_cast<std::uint32_t>(L),static_cast<std::uint32_t>(M));
+            QVERIFY(pin);
+            QCOMPARE(pinnedDigests.value(kernel),QString::fromLatin1(pin->sha256));
+        }
+    }
+    QCOMPARE(historicallyAdmitted,2);
+    // Thirty distinct, directed nonidentity pairs over six Fs values
+    // exhaust the intended matrix; no missing route can be hidden.
+    for(const int source:rates)for(const int target:rates) {
+        if(source!=target)
+            QVERIFY(seen.contains(QStringLiteral("%1_%2").arg(source).arg(target)));
+    }
+}
+
+void ExternalPlaybackFirAssetsTests::
+relocatedFlatFirPackageKeepsBitwiseLegacyAndRejectsPrivateSpoof()
+{
+    const auto originalRoot=test_asset_root();
+    QVERIFY(!originalRoot.empty());
+    audio::configure_external_playback_fir_root(originalRoot.u16string());
+    const auto baselineUp=make(44100,48000);
+    const auto baselineDown=make(48000,44100);
+    QVERIFY(baselineUp && baselineDown);
+    QTemporaryDir temporary;
+    QVERIFY(temporary.isValid());
+    const auto relocated=std::filesystem::path{temporary.path().toStdString()};
+    std::error_code ec;
+    for(const char* name:{"playback_src_kernel_44100_48000.bin",
+                           "playback_src_kernel_48000_44100.bin",
+                           "fir_manifest.json"}) {
+        std::filesystem::copy_file(originalRoot/name,relocated/name,
+            std::filesystem::copy_options::none,ec);
+        QVERIFY(!ec);
+    }
+    // A forged loose private filename may never switch the provisional
+    // Playback path into a silently "authenticated" Q0 DEVICE converter.
+    {
+        std::ofstream fake{relocated/"RGSMSR1_L320_M147.bin",std::ios::binary};
+        QVERIFY(static_cast<bool>(fake));
+        fake << "unqualified-data";
+        QVERIFY(static_cast<bool>(fake));
+    }
+    audio::configure_external_playback_fir_root(relocated.u16string());
+    const auto relocatedUp=make(44100,48000);
+    const auto relocatedDown=make(48000,44100);
+    QVERIFY(relocatedUp && relocatedDown);
+    QCOMPARE(relocatedUp.value()->kernel_size(),baselineUp.value()->kernel_size());
+    QCOMPARE(relocatedDown.value()->kernel_size(),baselineDown.value()->kernel_size());
+    for(std::size_t k=0;k<baselineUp.value()->kernel_size();++k)
+        QCOMPARE(relocatedUp.value()->coefficient_bits(k),
+                 baselineUp.value()->coefficient_bits(k));
+    for(std::size_t k=0;k<baselineDown.value()->kernel_size();++k)
+        QCOMPARE(relocatedDown.value()->coefficient_bits(k),
+                 baselineDown.value()->coefficient_bits(k));
+    const auto notYetQualified=make(44100,96000);
+    QVERIFY(notYetQualified);
+    QVERIFY(notYetQualified.value()->kernel_sha256().empty());
+    // Refresh root after removal: tampering/absence is never masked by
+    // a previously cached FILE; earlier adapters still own immutable bits.
+    QVERIFY(std::filesystem::remove(
+        relocated/"playback_src_kernel_48000_44100.bin",ec));
+    QVERIFY(!ec);
+    audio::configure_external_playback_fir_root(relocated.u16string());
+    QVERIFY(!make(48000,44100));
+    QCOMPARE(relocatedDown.value()->coefficient_bits(0),
+        baselineDown.value()->coefficient_bits(0));
+    audio::configure_external_playback_fir_root(originalRoot.u16string());
 }
 
 QTEST_APPLESS_MAIN(ExternalPlaybackFirAssetsTests)
