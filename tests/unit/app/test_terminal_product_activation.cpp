@@ -2124,6 +2124,24 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(asyncRechecks,std::size_t{2});
     monitorUi.set_async_monitoring_device({}, {});
 
+    // The asynchronous converter correctly superseded the old synchronous
+    // DEVICE ticket. Even with bit-identical/master-matched PCM, the stale
+    // owner is NOT legal for a subsequent manual transport handoff. An
+    // explicit new owner admission from the SAME live immutable M17 stage
+    // must precede the later stopped/playing/paused transport cases below.
+    QVERIFY(!product.install_private_monitor_stopped(*reusedNormal.value()));
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    const auto afterAsyncCapture=
+        product.capture_monitor_master_for_conversion();
+    QVERIFY(afterAsyncCapture);
+    QCOMPARE(afterAsyncCapture,normalM17Stage);
+    const auto readmitted=
+        product.admit_converted_monitor_owner(
+            afterAsyncCapture,*reusedNormal.value());
+    QVERIFY2(readmitted,readmitted?"":readmitted.error()->message().c_str());
+    QVERIFY(!monitorSinkOwner);
+    QCOMPARE(renderer.render_invocation_count(),beforeNormalM17+1);
+
     // Product P0 dynamic handoff. With an unchanged M17 READY stage we can
     // enter DEVICE audition at a nonzero MANUAL playhead while PLAYING or
     // PAUSED, and return to exactly the same SOURCE cue and original ID.
