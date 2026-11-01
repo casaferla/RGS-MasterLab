@@ -3329,11 +3329,9 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // Minimal mock has no verified M17 candidate and MUST fail closed.
     for (const char* name : {
         "transportListenMaster", "transportMasterListenControls",
-        "transportMasterDeviceRate", "transportMasterLoopOptions",
-        "transportMasterLoopDialog", "transportMasterLoopStartTime",
-        "transportMasterLoopEndTime", "transportMasterMemoryConfirmation",
-        "transportMasterLoopClear", "transportMasterLoopApply",
-        "transportMasterLoopCancel", "transportMasterLoopValidation",
+        "transportMasterDeviceRate", "transportMasterMemoryConfirmation",
+        "auditionRegionStartEditor", "auditionRegionEndEditor",
+        "auditionRegionLoopCheckBox", "auditionRegionClearButton",
         "globalReturnFromMonitor"}) {
         QVERIFY2(root->findChild<QObject*>(QString::fromLatin1(name)) != nullptr,
                  name);
@@ -3348,10 +3346,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("transportMasterNavigation")) == nullptr);
     QVERIFY(root->findChild<QObject*>(
         QStringLiteral("transportMasterFrameCounter")) == nullptr);
-    auto* masterLoop = root->findChild<QObject*>(
-        QStringLiteral("transportMasterLoopOptions"));
-    QVERIFY(masterLoop);
-    QVERIFY(!masterLoop->property("visible").toBool());
+    // PO requested ONE permanent Region strip. Historic MASTER-only
+    // popup and its extra button MUST be absent from Main.
+    QVERIFY(!root->findChild<QObject*>(
+        QStringLiteral("transportMasterLoopOptions")));
+    QVERIFY(!root->findChild<QObject*>(
+        QStringLiteral("transportMasterLoopDialog")));
     auto* memoryDialog = root->findChild<QObject*>(
         QStringLiteral("transportMasterMemoryConfirmation"));
     QVERIFY(memoryDialog);
@@ -3367,12 +3367,17 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("auditionRegionContent"));
     QVERIFY(mainSourceRegion);
     QVERIFY(mainSourceRegion->property("visible").toBool());
-    // The SOURCE editing Region keeps its physical slot; its editability
-    // is guarded by monitorExclusive in QML, not hidden/replaced by MASTER.
+    // Exactly the same SOURCE/MASTER time editors and Loop toggle remain
+    // visible: only their independent coordinate owner switches. No modal.
     auto* sourceLoop=root->findChild<QObject*>(
         QStringLiteral("auditionRegionLoopCheckBox"));
     QVERIFY(sourceLoop);
+    QVERIFY(mainSourceRegion->property("enabled").toBool());
     QVERIFY(root->findChild<QObject*>(
+        QStringLiteral("auditionRegionStartEditor")));
+    QVERIFY(root->findChild<QObject*>(
+        QStringLiteral("auditionRegionEndEditor")));
+    QVERIFY(!root->findChild<QObject*>(
         QStringLiteral("transportMasterLoopDialog")));
     auto* statusBar = root->findChild<QObject*>(QStringLiteral("statusBar"));
     auto* statusBarMessage = root->findChild<QObject*>(QStringLiteral("statusBarMessage"));
