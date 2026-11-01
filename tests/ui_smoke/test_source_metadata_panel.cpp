@@ -1237,29 +1237,32 @@ Window {
                 "PO no-scroll: M17 Verification Trim card outside editor");
         }
         if (fit.index==6) {
-            // The expandable SECONDARY controls must also fit at the
-            // minimum: opening SEEK/LOOP cannot push its last row outside
-            // the editor or introduce scrolling. MASTER/DEVICE remain two
-            // columns; the status/transport wells yield compact space.
+            // The optional SEEK alone must fit at the minimum. Loop editing
+            // belongs to the always-visible global SOURCE/MASTER Region;
+            // the service panel must contain no duplicate Master Loop row.
             QVERIFY(editor->setProperty("advancedNavigationExpanded",true));
             QTest::qWait(40);
             QCoreApplication::processEvents();
             auto* navigation=qobject_cast<QQuickItem*>(find_child_by_name(
                 editor,QStringLiteral("monitorNavigationRow")));
-            auto* loop=qobject_cast<QQuickItem*>(find_child_by_name(
+            QVERIFY(!find_child_by_name(
                 editor,QStringLiteral("monitorLoopRow")));
+            QVERIFY(!find_child_by_name(
+                editor,QStringLiteral("monitorSetLoop")));
+            QVERIFY(!find_child_by_name(
+                editor,QStringLiteral("monitorClearLoop")));
             auto* transport=qobject_cast<QQuickItem*>(find_child_by_name(
                 editor,QStringLiteral("monitorTransportWell")));
             auto* pair=qobject_cast<QQuickItem*>(find_child_by_name(
                 editor,QStringLiteral("monitorMasterDevicePair")));
-            QVERIFY(navigation&&loop&&transport&&pair);
-            QVERIFY(navigation->isVisible()&&loop->isVisible());
+            QVERIFY(navigation&&transport&&pair);
+            QVERIFY(navigation->isVisible());
             QVERIFY(pair->isVisible());
             QVERIFY(!transport->isVisible());
-            const auto expandedBottom=loop->mapToItem(editor,
-                QPointF{0.0,loop->height()}).y();
+            const auto expandedBottom=navigation->mapToItem(editor,
+                QPointF{0.0,navigation->height()}).y();
             QVERIFY2(expandedBottom<=editor->height()+1.5,
-                qPrintable(QStringLiteral("PO SEEK/LOOP overflows: %1 > %2")
+                qPrintable(QStringLiteral("PO secondary SEEK overflows: %1 > %2")
                     .arg(expandedBottom).arg(editor->height())));
             auto* advancedFooter=qobject_cast<QQuickItem*>(find_child_by_name(
                 editor,QStringLiteral("monitorAdvancedNavigationFooter")));
