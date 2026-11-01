@@ -154,6 +154,7 @@ private slots:
     void monitoringMasterSnapshotFailClosedAcrossSixRatePairs();
     void monitoringBorrowsMasterWithoutSourceAlias();
     void monitoringCancellationCannotPublishPartialDeviceOwner();
+    void monitoringActualOfflineFirPreflightGeometryAllRatePairs();
     void monitoring44100SixDeviceRatesRemainBlockInvariant();
     void monitoringFullSixBySixSignalBlockInvariance();
     void monitoringExperimentalPassbandAndAliasScreen();
@@ -1721,6 +1722,70 @@ void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()
     QVERIFY(fiveMinutes.value()->experimental_fir_mac_operations);
     QCOMPARE(*fiveMinutes.value()->experimental_fir_mac_operations,
         UINT64_C(14745600000));
+}
+
+void PlaybackSampleRateAdapterTest::
+monitoringActualOfflineFirPreflightGeometryAllRatePairs()
+{
+    // Independent offline MASTER->DEVICE kernel geometry is *not* the
+    // 192-taps-per-phase PlaybackSampleRateAdapter. The actual converter is
+    // experimental_rational_output_rate() in full_resource_output_rate_candidate.
+    // Its temporary double phase-coefficient and window arrays coexist.
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    std::size_t provisional=0,legacy=0,identity=0;
+    for(const auto master:rates)for(const auto device:rates) {
+        auto projection=audio::project_monitoring_pcm_resource_cost(
+            rate(master),frame_count(master*2),rate(device),
+            audio::ChannelLayout::STEREO_LR);
+        QVERIFY(projection);
+        const bool frozen=(master==44100&&device==48000)
+            ||(master==48000&&device==44100);
+        if(master==device) {
+            ++identity;
+            QVERIFY(!projection.value()->experimental_fir_mac_operations);
+            QCOMPARE(projection.value()->experimental_fir_scratch_bytes,
+                     std::uint64_t{0});
+        } else if(frozen) {
+            ++legacy;
+            QVERIFY(!projection.value()->experimental_fir_mac_operations);
+            QCOMPARE(projection.value()->experimental_fir_scratch_bytes,
+                     std::uint64_t{0});
+        } else {
+            ++provisional;
+            // Use integer-ceil form of ceil(128*max(1,source/device))
+            // to falsify any shrinkage in a preview budget at 192->48.
+            const auto maximum=std::max(master,device);
+            const auto tapsCeil=(128*maximum+device-1)/device;
+            const auto taps=tapsCeil+(tapsCeil%2);
+            const auto phases=device/std::gcd(master,device);
+            const auto expectedScratch=static_cast<std::uint64_t>(
+                (phases+1)*taps*sizeof(double));
+            const auto expectedMac=static_cast<std::uint64_t>(
+                (device*2)*taps*2);
+            QCOMPARE(projection.value()->experimental_fir_scratch_bytes,
+                     expectedScratch);
+            QVERIFY(projection.value()->experimental_fir_mac_operations);
+            QCOMPARE(*projection.value()->experimental_fir_mac_operations,
+                     expectedMac);
+            QVERIFY(expectedScratch>0);
+        }
+        QCOMPARE(projection.value()->device_frames.value(),device*2);
+        QCOMPARE(projection.value()->master_pcm_bytes,
+                 static_cast<std::uint64_t>(master*2)*2*sizeof(double));
+        QCOMPARE(projection.value()->device_pcm_bytes,
+                 static_cast<std::uint64_t>(device*2)*2*sizeof(double));
+    }
+    QCOMPARE(identity,std::size_t{6});
+    QCOMPARE(legacy,std::size_t{2});
+    QCOMPARE(provisional,std::size_t{28});
+    // Spectrally expensive 192->48 exact ratio requires >=512 taps/phase.
+    auto downsample=audio::project_monitoring_pcm_resource_cost(
+        rate(192000),frame_count(192000*2),rate(48000),
+        audio::ChannelLayout::STEREO_LR);
+    QVERIFY(downsample);
+    QCOMPARE(downsample.value()->experimental_fir_scratch_bytes,
+        std::uint64_t{(1+1)*512*sizeof(double)});
 }
 
 void PlaybackSampleRateAdapterTest::monitoringResourcePreflightFailsOnOverflow()
