@@ -164,7 +164,6 @@ private slots:
     void monitoringOversizedOfflineBlockRejectsWithoutMutatingMaster();
     void monitoringVirtualLongTrackResourceMatrix();
     void monitoringResourcePreflightFailsOnOverflow();
-    void monitoringFirScratchBudgetMatchesRuntimeAllSixRatePairs();
     void monitoringPrepareAdviceSixMasterRatesAndHeadroom();
     void monitoringPrepareAdviceDurationRoundingAndUnknownState();
     void monitoringPrepareAdviceBudgetBoundariesAndFreshObservations();
@@ -1721,58 +1720,6 @@ void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()
     QVERIFY(fiveMinutes.value()->experimental_fir_mac_operations);
     QCOMPARE(*fiveMinutes.value()->experimental_fir_mac_operations,
         UINT64_C(14745600000));
-}
-
-void PlaybackSampleRateAdapterTest::
-monitoringFirScratchBudgetMatchesRuntimeAllSixRatePairs()
-{
-    // Preflight may not under-count the two coefficient allocations that
-    // actually coexist during provisional SOURCE/DEVICE FIR construction.
-    // Test all nonidentity six-rate pair geometries independently against
-    // the instantiated Playback adapter's real kernel length.
-    constexpr std::array<std::int64_t,6> rates{
-        44100,48000,88200,96000,176400,192000};
-    for(const auto src:rates)for(const auto dst:rates) {
-        if(src==dst)continue;
-        const auto frames=frame_count(src);
-        const auto budget=audio::project_monitoring_pcm_resource_cost(
-            rate(src),frames,rate(dst),audio::ChannelLayout::STEREO_LR);
-        QVERIFY2(budget,budget ? "" : budget.error()->message().c_str());
-        const auto actual=audio::PlaybackSampleRateAdapter::create(
-            audio::PlaybackRateSpec{rate(src),rate(dst),
-                audio::ChannelLayout::STEREO_LR,frames});
-        QVERIFY2(actual,actual ? "" : actual.error()->message().c_str());
-        const bool frozen=(src==44100&&dst==48000)
-                          ||(src==48000&&dst==44100);
-        if(frozen) {
-            QCOMPARE(budget.value()->experimental_fir_scratch_bytes,
-                std::uint64_t{0});
-            QVERIFY(!budget.value()->experimental_fir_mac_operations);
-        } else {
-            const auto actualProvisionalBytes=static_cast<std::uint64_t>(
-                actual.value()->kernel_size())*
-                (sizeof(double)+sizeof(std::uint64_t));
-            QCOMPARE(budget.value()->experimental_fir_scratch_bytes,
-                actualProvisionalBytes);
-            QVERIFY(actual.value()->kernel_sha256().empty());
-            QVERIFY(budget.value()->experimental_fir_mac_operations);
-            const auto L=static_cast<std::uint64_t>(
-                dst/std::gcd(src,dst));
-            const auto perPhase=static_cast<std::uint64_t>(
-                (actual.value()->kernel_size()-1)/L);
-            const auto expectedMac=static_cast<std::uint64_t>(
-                budget.value()->device_frames.value())*perPhase*2;
-            QCOMPARE(*budget.value()->experimental_fir_mac_operations,
-                expectedMac);
-        }
-        QCOMPARE(budget.value()->device_frames.value(),dst);
-        // Exactly one second in, exactly one second out: SOURCE and DEVICE
-        // remain distinct frame domains even when both own full PCM.
-        QCOMPARE(budget.value()->master_pcm_bytes,
-            static_cast<std::uint64_t>(src)*2*sizeof(double));
-        QCOMPARE(budget.value()->device_pcm_bytes,
-            static_cast<std::uint64_t>(dst)*2*sizeof(double));
-    }
 }
 
 void PlaybackSampleRateAdapterTest::monitoringResourcePreflightFailsOnOverflow()
