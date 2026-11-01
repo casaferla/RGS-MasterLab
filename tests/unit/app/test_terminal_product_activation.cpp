@@ -133,7 +133,7 @@ verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners()
     QCOMPARE(vm.verification_trim_status(),
         QStringLiteral("UNAVAILABLE · NOT VERIFIED"));
     // A user-set Ceiling, even at -12 dBTP, is NOT full M16 trim evidence.
-    QVERIFY(vm.setDraftFieldValue(QStringLiteral("CEILING"),-12.0));
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("ceilingDbTp"),-12.0));
     QVERIFY(vm.commitDraft());
     QCOMPARE(vm.verification_trim_status(),
         QStringLiteral("UNAVAILABLE · NOT VERIFIED"));
