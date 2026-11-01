@@ -318,10 +318,14 @@ Item {
                             id: trimTooltipDwell
                             anchors.fill: parent
                         }
-                        ToolTip.text: "Verification Trim is a distinct measured observation, not an adjustable sonic control. Status remains unavailable until verified."
+                        ToolTip.text: root.limiterViewModel
+                            ? root.limiterViewModel.verificationTrimDetails
+                            : "No current verified M17 full-resource trim measurement."
                         ToolTip.visible: trimTooltipDwell.ready
                         ToolTip.delay: 0
-                        text: "UNAVAILABLE · NOT VERIFIED"
+                        text: root.limiterViewModel
+                            ? root.limiterViewModel.verificationTrimStatus
+                            : "UNAVAILABLE · NOT VERIFIED"
                         color: "#B3C9D9"
                         font.family: "Segoe UI"
                         font.pixelSize: 10
