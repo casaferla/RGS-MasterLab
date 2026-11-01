@@ -3,6 +3,7 @@
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
 
 #include <QFile>
+#include <QCryptographicHash>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -146,9 +147,10 @@ void ExternalPlaybackFirAssetsTests::missingCorruptAndOwnedLifetime()
 }
 
 
-// This test uses the PUBLIC 16-entry SHA-only manifest and the two frozen
-// Playback binaries. The 14 original private Q0 coefficient files must NOT
-// be copied into CI or ordinary portable packages.
+// One public 16-entry SHA inventory has TWO legitimate build stages:
+// PR Focused (2 built Playback + 14 pinned source identities) and FQ
+// (all 16 approved actual binaries at the SAME flat resource root).
+// Never accept a 2-file package masquerading as a complete 16-file FQ.
 void ExternalPlaybackFirAssetsTests::
 full16AssetManifestAnd30DeviceRouteAdmissionBoundary()
 {
@@ -166,6 +168,10 @@ full16AssetManifestAnd30DeviceRouteAdmissionBoundary()
     QCOMPARE(obj.value(QStringLiteral("installationRoot")).toString(),
              QStringLiteral("resources/fir"));
     QVERIFY(!obj.value(QStringLiteral("releaseAuthority")).toBool());
+    QVERIFY(obj.value(QStringLiteral("publicOriginalFirDistributionAuthorized")).toBool());
+    const bool all16Packed=obj.value(QStringLiteral("complete16FilePackage")).toBool();
+    QCOMPARE(obj.value(QStringLiteral("finalSrc")).toObject()
+        .value(QStringLiteral("includedInPublicBuild")).toBool(),all16Packed);
     const auto files=obj.value(QStringLiteral("assets")).toArray();
     QCOMPARE(files.size(),16);
     QSet<QString> filenames;
@@ -194,8 +200,9 @@ full16AssetManifestAnd30DeviceRouteAdmissionBoundary()
             QVERIFY(std::filesystem::is_regular_file(root/filename.toStdString()));
         } else {
             QCOMPARE(entry.value(QStringLiteral("role")).toString(),
-                QStringLiteral("FINAL_SRC_Q0_PRIVATE_NONRELEASE"));
-            QVERIFY(entry.value(QStringLiteral("private")).toBool());
+                QStringLiteral("FINAL_SRC_Q0_ORIGINAL"));
+            QCOMPARE(entry.value(QStringLiteral("packaged")).toBool(),
+                     all16Packed);
             const auto L=entry.value(QStringLiteral("ratioL")).toInt();
             const auto M=entry.value(QStringLiteral("ratioM")).toInt();
             QVERIFY(L>0 && M>0 && std::gcd(L,M)==1);
@@ -204,9 +211,18 @@ full16AssetManifestAnd30DeviceRouteAdmissionBoundary()
             QVERIFY(pin);
             QCOMPARE(sha,QString::fromLatin1(pin->sha256));
             QCOMPARE(filename,QStringLiteral("RGSMSR1_L%1_M%2.bin").arg(L).arg(M));
-            // A public FQ must not ship a private original merely because
-            // its approved identity appears in the SHA-only inventory.
-            QVERIFY(!std::filesystem::exists(root/filename.toStdString()));
+            const auto original=root/filename.toStdString();
+            if(all16Packed) {
+                QVERIFY(std::filesystem::is_regular_file(original));
+                QFile binary{QString::fromStdString(original.string())};
+                QVERIFY(binary.open(QIODevice::ReadOnly));
+                QCOMPARE(QString::fromLatin1(QCryptographicHash::hash(
+                    binary.readAll(),QCryptographicHash::Sha256).toHex()),sha);
+            } else {
+                // A non-FQ developer build cannot silently claim an
+                // authenticated complete archive from SHA identities.
+                QVERIFY(!std::filesystem::exists(original));
+            }
         }
     }
     QCOMPARE(filenames.size(),16);
