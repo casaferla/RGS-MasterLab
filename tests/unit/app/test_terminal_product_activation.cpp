@@ -2105,10 +2105,15 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(monitorUi.cancel());
     QVERIFY(!monitorUi.monitor_preparing());
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
-    QTest::qWait(25); QCoreApplication::processEvents();
+    // Immediately after Cancel, the FIR worker can still be draining.
+    // The command must remain disabled until it has actually exited,
+    // without treating an old queued completion as DEVICE authorization.
+    if(!monitorUi.can_install())
+        QVERIFY(monitorUi.status_text().contains(
+            QStringLiteral("CANCELLING MASTER DEVICE PREPARE")));
+    QTRY_VERIFY_WITH_TIMEOUT(monitorUi.can_install(),12000);
     QVERIFY(!monitorSinkOwner);
     QCOMPARE(asyncRechecks,std::size_t{2});
-    QVERIFY(monitorUi.can_install());
     monitorUi.set_async_monitoring_device({}, {});
 
     // Product P0 dynamic handoff. With an unchanged M17 READY stage we can
