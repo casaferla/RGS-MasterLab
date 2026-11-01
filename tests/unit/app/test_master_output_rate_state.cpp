@@ -439,6 +439,35 @@ private slots:
     originalQ0.clear();
     QVERIFY(!originalQ0.predict(44100,132300,2,192000,
                                 -1.0,20,30,true));
+    // No particular frequency pair is implicitly blessed: all 28
+    // original-Q0 routes share the same full-family proof requirement.
+    constexpr std::array<std::int64_t,6> fs{
+        44100,48000,88200,96000,176400,192000};
+    int authenticatedRoutes=0;
+    for(const auto source:fs)for(const auto target:fs) {
+        if(source==target
+           ||(source==44100&&target==48000)
+           ||(source==48000&&target==44100))
+            continue;
+        AcceptedPrepareHostTimingHistory byRoute;
+        auto accepted=q0;
+        accepted.source_hz=source;
+        accepted.master_hz=target;
+        accepted.source_frames=source*3;
+        for(std::uint64_t serial=1;serial<=3;++serial) {
+            accepted.invocation=2*serial-1;
+            QVERIFY(!byRoute.observe(accepted)); // no original bank
+            // Rejected serial is non-replayable even after authentication.
+            accepted.invocation=2*serial;
+            QVERIFY(byRoute.observe(accepted,true));
+        }
+        const auto learned=byRoute.predict(source,source*3,2,target,
+                                           -1.0,20,30,true);
+        QVERIFY(learned);
+        QVERIFY(!byRoute.predict(source,source*3,2,target,-1.0,20,30));
+        ++authenticatedRoutes;
+    }
+    QCOMPARE(authenticatedRoutes,28);
     QVERIFY(!predict(0,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(-1,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(132300,44100,44100,2,
