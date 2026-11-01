@@ -14,7 +14,6 @@ ApplicationWindow {
     minimumHeight: 688
     visible: true
     title: "RGS MasterLab"
-    icon: "qrc:/rgsml/resources/RGS_MasterLab_optimized.ico"
     color: "#071117"
     flags: Qt.Window
 
