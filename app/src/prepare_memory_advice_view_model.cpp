@@ -496,7 +496,8 @@ QVariantList PrepareMemoryAdviceViewModel::host_total_ranges() const
         if(revisions&&ceiling&&std::isfinite(*ceiling)) {
             const auto range=hostTimingHistory_.predict(
                 sourceHz,frames,channels,hz,*ceiling,
-                revisions->terminal,revisions->parameters);
+                revisions->terminal,revisions->parameters,
+                originalQ0FamilyReady_);
             if(range) {
                 item[QStringLiteral("valid")]=true;
                 item[QStringLiteral("label")]=QStringLiteral("~%1-%2")
@@ -539,7 +540,8 @@ void PrepareMemoryAdviceViewModel::observe_approved_prepare(
         // Only an actually accepted new whole-Prepare may teach the host
         // model. Anonymous process-local timings survive SOURCE replacement;
         // exact-owner ACT history above remains SOURCE-epoch scoped.
-        static_cast<void>(hostTimingHistory_.observe(x));
+        static_cast<void>(hostTimingHistory_.observe(
+            x,originalQ0FamilyReady_));
         emit actualPrepareChanged();
     }
 }
