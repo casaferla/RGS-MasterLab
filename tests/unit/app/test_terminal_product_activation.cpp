@@ -2017,40 +2017,6 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(monitorSinkOwner->windows_prepared_endpoint_id,
         std::string{"fixed-fake-physical-endpoint"});
     QCOMPARE(renderer.render_invocation_count(),beforeAsyncRender);
-    // One permanently visible Region strip edits independent MASTER frames.
-    // A draft interval does not affect SOURCE or DEVICE loop until enabled.
-    const qint64 measuredMasterDuration=monitorUi.master_duration_frames();
-    // The independent fake M17 MASTER can be a SHORT real frame sequence.
-    // Always select legal half-open regions from measured master geometry,
-    // never assume a large hardcoded count such as 960 frames.
-    QVERIFY(measuredMasterDuration>=16);
-    const qint64 firstStart=measuredMasterDuration/8;
-    const qint64 firstEnd=measuredMasterDuration*7/8;
-    const qint64 secondStart=measuredMasterDuration/4;
-    const qint64 secondEnd=measuredMasterDuration*3/4;
-    QVERIFY(firstStart<secondStart);
-    QVERIFY(secondStart<secondEnd);
-    QVERIFY(secondEnd<firstEnd);
-    QCOMPARE(monitorUi.master_region_start_frames(),qint64{0});
-    QCOMPARE(monitorUi.master_region_end_frames(),measuredMasterDuration);
-    QVERIFY(!monitorUi.master_loop_enabled());
-    QVERIFY(monitorUi.setMasterRegion(firstStart,firstEnd));
-    QCOMPARE(monitorUi.master_region_start_frames(),firstStart);
-    QCOMPARE(monitorUi.master_region_end_frames(),firstEnd);
-    QVERIFY(!monitorUi.master_loop_enabled());
-    QVERIFY(monitorUi.setMasterLoop(firstStart,firstEnd,true));
-    QVERIFY(monitorUi.master_loop_enabled());
-    QCOMPARE(monitorUi.master_region_start_frames(),firstStart);
-    QCOMPARE(monitorUi.master_region_end_frames(),firstEnd);
-    QVERIFY(monitorUi.setMasterRegion(secondStart,secondEnd));
-    QVERIFY(monitorUi.master_loop_enabled());
-    QCOMPARE(monitorUi.master_region_start_frames(),secondStart);
-    QCOMPARE(monitorUi.master_region_end_frames(),secondEnd);
-    QVERIFY(monitorUi.clearMasterRegion());
-    QVERIFY(!monitorUi.master_loop_enabled());
-    QCOMPARE(monitorUi.master_region_start_frames(),qint64{0});
-    QCOMPARE(monitorUi.master_region_end_frames(),
-        monitorUi.master_duration_frames());
     QVERIFY(monitorUi.returnManual());
     QVERIFY(!monitorUi.master_loop_enabled());
     QCOMPARE(monitorUi.master_region_end_frames(),qint64{0});
@@ -2252,6 +2218,46 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->position,core::FrameIndex{200});
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
     QCOMPARE(renderer.render_invocation_count(),renderCountBeforeDevice);
+    // This fixture installs its fake DEVICE-display snapshot only in the
+    // P0 dynamic handoff section below, not during the earlier worker
+    // admission smoke. Verify Region UI after the real test display seam
+    // exists; checking masterDurationFrames before this point falsely
+    // asserts zero even for a valid 1920-frame MASTER owner.
+    monitorUi.refresh();
+    // One permanently visible Region strip edits independent MASTER frames.
+    // A draft interval does not affect SOURCE or DEVICE loop until enabled.
+    const qint64 measuredMasterDuration=monitorUi.master_duration_frames();
+    // The independent fake M17 MASTER can be a SHORT real frame sequence.
+    // Always select legal half-open regions from measured master geometry,
+    // never assume a large hardcoded count such as 960 frames.
+    QVERIFY(measuredMasterDuration>=16);
+    const qint64 firstStart=measuredMasterDuration/8;
+    const qint64 firstEnd=measuredMasterDuration*7/8;
+    const qint64 secondStart=measuredMasterDuration/4;
+    const qint64 secondEnd=measuredMasterDuration*3/4;
+    QVERIFY(firstStart<secondStart);
+    QVERIFY(secondStart<secondEnd);
+    QVERIFY(secondEnd<firstEnd);
+    QCOMPARE(monitorUi.master_region_start_frames(),qint64{0});
+    QCOMPARE(monitorUi.master_region_end_frames(),measuredMasterDuration);
+    QVERIFY(!monitorUi.master_loop_enabled());
+    QVERIFY(monitorUi.setMasterRegion(firstStart,firstEnd));
+    QCOMPARE(monitorUi.master_region_start_frames(),firstStart);
+    QCOMPARE(monitorUi.master_region_end_frames(),firstEnd);
+    QVERIFY(!monitorUi.master_loop_enabled());
+    QVERIFY(monitorUi.setMasterLoop(firstStart,firstEnd,true));
+    QVERIFY(monitorUi.master_loop_enabled());
+    QCOMPARE(monitorUi.master_region_start_frames(),firstStart);
+    QCOMPARE(monitorUi.master_region_end_frames(),firstEnd);
+    QVERIFY(monitorUi.setMasterRegion(secondStart,secondEnd));
+    QVERIFY(monitorUi.master_loop_enabled());
+    QCOMPARE(monitorUi.master_region_start_frames(),secondStart);
+    QCOMPARE(monitorUi.master_region_end_frames(),secondEnd);
+    QVERIFY(monitorUi.clearMasterRegion());
+    QVERIFY(!monitorUi.master_loop_enabled());
+    QCOMPARE(monitorUi.master_region_start_frames(),qint64{0});
+    QCOMPARE(monitorUi.master_region_end_frames(),
+        monitorUi.master_duration_frames());
     QVERIFY(monitorUi.returnManual());
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QCOMPARE(device->audibleRealization.realizationId,manualId);
