@@ -24,7 +24,7 @@ class PortableQtNativeBundleTests(unittest.TestCase):
         self.exe=self.build/"rgsml_playback_src_tests"
         self.exe.write_bytes(b"mock-binary-NOT-REAL-Qt")
         self.exe.chmod(0o755)
-        self.fir_root=self.build/"generated/rgsml/fir/playback"
+        self.fir_root=self.build/"generated/rgsml/fir"
         self.fir_root.mkdir(parents=True)
         self.test_pins={}
         for pair,letter,n in (("44100_48000",b"A",245768),
@@ -138,6 +138,28 @@ class PortableQtNativeBundleTests(unittest.TestCase):
                     pack(self.build,self.archive)
                 self.assertFalse(self.archive.exists())
                 p.write_bytes(original)
+
+    def test_obsolete_nested_playback_root_fails_closed(self):
+        # After FIR unification a legacy nested directory cannot silently
+        # be mistaken for a complete portable asset package.
+        old=self.fir_root/"playback"
+        old.mkdir()
+        for name in self.test_pins:
+            (self.fir_root/name).rename(old/name)
+        with self.assertRaisesRegex(ContractError,
+                                    "portable Qt frozen playback FIR absent/tampered"):
+            pack(self.build,self.archive)
+        self.assertFalse(self.archive.exists())
+
+    def test_packaging_uses_one_flat_16_fir_root(self):
+        # The portable bundle ships only two public immutable FIRs, while
+        # offline private original 14 Q0 remain provisioned independently.
+        source=Path(__file__).with_name(
+            "pack_private_offline_qt_test_bundle.py").read_text(
+                encoding="utf-8")
+        self.assertNotIn("generated/rgsml/fir/playback",source)
+        self.assertNotIn("resources/fir/playback",source)
+        self.assertEqual(PUBLIC_PLAYBACK_RELATIVE,"resources/fir")
 
     def test_missing_qt_deps_and_unresolved_deps_fail(self):
         for ldd in ("libNotQt.so.1 => /tmp/libOther.so.1 (0x0)",
