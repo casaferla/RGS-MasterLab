@@ -334,6 +334,16 @@ jobs:
         run: |
           cmake --install build/windows-fq-ninja --config Release --prefix build/windows-fq-ninja/stage/CI/Release
           if ($LASTEXITCODE -ne 0) { throw "FQ_INSTALL_FAILED" }
+      # Full FQ cannot pass as 2 + a SHA-only 14-file catalog. The exact
+      # deployed ZIP must have 16 real binary files at ONE flat relative root
+      # with unchanged frozen SHA pins and NO Python/end-user installer.
+      - name: Verify installed 16 authentic FIR files in one flat package
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:GITHUB_WORKSPACE 'build/windows-fq-ninja/stage/CI/Release/bin/resources/fir'
+          python tools/qualification/playback_src/verify_installed_16_firs.py --fir-root "$root"
+          if ($LASTEXITCODE -ne 0) { throw "FQ_ALL_16_FIR_PACKAGE_GATE_FAILED" }
+          Write-Host "FQ_FLAT_16_FIRS_PINNED_SHA256_VERIFIED"
       - name: Run isolated staged deploy smoke with failure evidence
         shell: pwsh
         run: |
