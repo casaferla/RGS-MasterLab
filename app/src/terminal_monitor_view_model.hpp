@@ -21,6 +21,7 @@ class TerminalMonitorViewModel final : public QObject {
     Q_PROPERTY(bool monitorExclusive READ monitor_exclusive NOTIFY changed)
     Q_PROPERTY(bool monitorInstalled READ monitor_installed NOTIFY changed)
     Q_PROPERTY(bool monitorPreparing READ monitor_preparing NOTIFY changed)
+    Q_PROPERTY(bool monitorCancelling READ monitor_cancelling NOTIFY changed)
     Q_PROPERTY(bool monitorControllable READ monitor_controllable NOTIFY changed)
     Q_PROPERTY(bool canPrepare READ can_prepare NOTIFY changed)
     Q_PROPERTY(bool canPrepareOffline READ can_prepare_offline NOTIFY changed)
@@ -52,6 +53,10 @@ public:
     [[nodiscard]] bool monitor_exclusive() const noexcept;
     [[nodiscard]] bool monitor_installed() const noexcept;
     [[nodiscard]] bool monitor_preparing() const noexcept {return monitorPreparing_;}
+    [[nodiscard]] bool monitor_cancelling() const noexcept {
+        return !monitorPreparing_
+            &&asyncWorkerRunning_.load(std::memory_order_acquire);
+    }
     [[nodiscard]] bool monitor_controllable() const noexcept;
     [[nodiscard]] bool can_prepare() const noexcept;
     // Exceptional no-DEVICE fallback: ordinary audible MANUAL always
