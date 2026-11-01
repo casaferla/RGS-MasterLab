@@ -38,8 +38,16 @@ Rectangle {
     readonly property var truePeakCurrentLive: root.monitorExclusive ? null
         : terminalOn ? root.terminalPostLimiterTruePeak
         : root.terminalNonconformingAudible ? null : root.truePeakLiveViewModel
-    readonly property var truePeakCurrentStatic: root.monitorExclusive ? null
-        : terminalOn || root.terminalNonconformingAudible
+    // Full-resource pre-limiter M16 is a completed, source-bound
+    // PROCESSED measurement. M17 may keep that historic figure visible
+    // while a distinct MASTER owner is being auditioned: the shared rail
+    // explicitly labels it PRE-LIMITER, never MASTER POST-LIMITER.
+    // The ordinary M16 editor still refuses an unrelated private owner.
+    // The coordinator invalidates this value on SOURCE/PROCESSED changes.
+    readonly property var truePeakCurrentStatic: root.isLimiterEditor
+        ? root.truePeakStaticViewModel
+        : root.monitorExclusive ? null
+        : root.terminalOn || root.terminalNonconformingAudible
             ? null : root.truePeakStaticViewModel
     property var terminalLimiterViewModel: null
     property var terminalMonitorViewModel: null
