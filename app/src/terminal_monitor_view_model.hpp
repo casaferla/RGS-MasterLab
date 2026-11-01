@@ -4,7 +4,10 @@
 #include <QObject>
 #include <QTimer>
 #include <QString>
+#include <atomic>
 #include <functional>
+#include <memory>
+#include <thread>
 #include <utility>
 
 // Explicit Windows-only experimental MASTER monitoring control surface.
@@ -17,6 +20,7 @@ class TerminalMonitorViewModel final : public QObject {
     Q_PROPERTY(QString errorText READ error_text NOTIFY changed)
     Q_PROPERTY(bool monitorExclusive READ monitor_exclusive NOTIFY changed)
     Q_PROPERTY(bool monitorInstalled READ monitor_installed NOTIFY changed)
+    Q_PROPERTY(bool monitorPreparing READ monitor_preparing NOTIFY changed)
     Q_PROPERTY(bool monitorControllable READ monitor_controllable NOTIFY changed)
     Q_PROPERTY(bool canPrepare READ can_prepare NOTIFY changed)
     Q_PROPERTY(bool canPrepareOffline READ can_prepare_offline NOTIFY changed)
@@ -31,6 +35,7 @@ public:
     TerminalMonitorViewModel(TerminalPrivateProductSession& session,
                              PlaybackTransportViewModel& transport,
                              QObject* parent=nullptr);
+    ~TerminalMonitorViewModel() override;
     [[nodiscard]] QString status_text() const;
     [[nodiscard]] QString return_target_text() const {
         return session_->monitor_returns_to_empty_source()
@@ -46,6 +51,7 @@ public:
     }
     [[nodiscard]] bool monitor_exclusive() const noexcept;
     [[nodiscard]] bool monitor_installed() const noexcept;
+    [[nodiscard]] bool monitor_preparing() const noexcept {return monitorPreparing_;}
     [[nodiscard]] bool monitor_controllable() const noexcept;
     [[nodiscard]] bool can_prepare() const noexcept;
     // Exceptional no-DEVICE fallback: ordinary audible MANUAL always
@@ -85,6 +91,18 @@ public:
         lastCanInstall_=can_install();
         emit changed();
     }
+    // These two callbacks execute ONLY on the Qt owner thread. The async
+    // FIR worker receives only immutable source-buffer owners and a frozen
+    // endpoint ID + rate. Existing isolated tests may omit the callbacks
+    // and retain their independently-tested synchronous fake seam.
+    using AsyncDevicePlan=platform::windows::MonitoringAsyncDevicePlan;
+    using AsyncProbe=std::function<core::Result<AsyncDevicePlan>(
+        audio::AudioBufferView,bool)>;
+    using AsyncRecheck=std::function<core::Status(
+        const AsyncDevicePlan&,audio::AudioBufferView,bool)>;
+    void set_async_monitoring_device(AsyncProbe probe,AsyncRecheck recheck)
+    { asyncProbe_=std::move(probe);asyncRecheck_=std::move(recheck); }
+
     Q_INVOKABLE bool requestMaster(int chosenRateHz);
     Q_INVOKABLE bool installMonitor(bool explicitlyAllowCaution);
     Q_INVOKABLE bool returnManual();
@@ -100,7 +118,15 @@ signals:
 private:
     bool report(const core::Status& result);
     bool control(platform::windows::MonitoringTransportRequest request);
+    void abort_async_conversion();
     bool monitorRequested_{false};
+    bool monitorPreparing_{false};
+    std::uint64_t monitorSerial_{0};
+    std::shared_ptr<std::atomic_bool> asyncCancellation_;
+    TerminalPrivateProductSession::MonitoringMasterCapture pendingMaster_;
+    AsyncProbe asyncProbe_;
+    AsyncRecheck asyncRecheck_;
+    std::jthread monitorWorker_;
     bool lastCanInstall_{false};
     bool lastCanPrepareOffline_{false};
     OfflineMasterAuthorizer offlineMasterAuthorizer_;
