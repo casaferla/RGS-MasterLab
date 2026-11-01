@@ -3,12 +3,14 @@
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
 
 #include <QFile>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSet>
 #include <QString>
 
+#include <algorithm>
 #include <array>
 #include <numeric>
 
