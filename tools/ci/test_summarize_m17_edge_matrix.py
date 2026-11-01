@@ -48,4 +48,13 @@ failed=passed.replace("Test Passed.","FAIL!  : Terminal test line 17")
 assert "WINDOWS_PRODUCT_TEST=FAIL" in module.collect(failed,SHA)
 assert "WINDOWS_PRODUCT_TEST=NOT_EXECUTED" in module.collect("",SHA)
 assert len(module.collect(sample*200,SHA).encode("utf-8"))<=4096
+# Direct Windows QtTest launches do not inherit CTest's environment.
+# Both explicit runners (terminal diagnostic and 36-rate matrix) must use
+# the same flat build root as the 16-FIR asset exporter after migration.
+workflow=(Path(__file__).resolve().parents[2]
+          /".github"/"workflows"/"pr-focused.yml").read_text(
+              encoding="utf-8")
+assert "generated/rgsml/fir/playback" not in workflow
+flat="build/windows-ninja-cache/generated/rgsml/fir'"
+assert workflow.count(flat)>=2, "both Windows direct native runners need flat FIR root"
 print("M17_EDGE_MATRIX_BOUND_FILTER_SELFTEST_PASS")
