@@ -430,6 +430,34 @@ int main(int argc, char* argv[])
     // Explicit user-only Windows MASTER->DEVICE monitor, with no LIVE identity.
     rgsml::app::TerminalMonitorViewModel terminalMonitorViewModel{
         privateProductSession,playbackTransport};
+    // The Qt-facing Windows service probes endpoint, negotiated rate and
+    // fresh OS headroom BEFORE and AFTER the off-thread FIR. No Qt device
+    // objects or memory probes ever run on the background DSP worker.
+    const monitorMemoryDecision=[](bool allowCaution) {
+        return [allowCaution](
+            const rgsml::audio::MonitoringPcmPreallocationAdvice& advice)
+            ->rgsml::core::Status {
+            using Kind=rgsml::audio::MonitoringMemoryAdviceKind;
+            if(advice.kind==Kind::RECOMMENDED_MEMORY_ONLY
+                ||(advice.kind==Kind::CAUTION_LIMITED_HEADROOM&&allowCaution))
+                return rgsml::core::Status::success();
+            return rgsml::core::Status::failure(rgsml::core::Error{
+                rgsml::core::ErrorCode::InvalidState,
+                "MONITOR_MEMORY_NOT_APPROVED_OR_UNAVAILABLE"});
+        };
+    };
+    terminalMonitorViewModel.set_async_monitoring_device(
+        [windowsPlayback,monitorMemoryDecision](
+            rgsml::audio::AudioBufferView master,bool allowCaution) {
+            return windowsPlayback->probe_monitoring_async_device(
+                master,monitorMemoryDecision(allowCaution));
+        },
+        [windowsPlayback,monitorMemoryDecision](
+            const rgsml::platform::windows::MonitoringAsyncDevicePlan& plan,
+            rgsml::audio::AudioBufferView master,bool allowCaution) {
+            return windowsPlayback->recheck_monitoring_async_device(
+                plan,master,monitorMemoryDecision(allowCaution));
+        });
     terminalMonitorViewModel.set_offline_master_authorizer(
         [&auditionSelector,&previewController,&masteringChainState]
             () -> rgsml::core::Status {
