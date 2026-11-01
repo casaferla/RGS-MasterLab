@@ -1832,6 +1832,18 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE((*reusedNormal.value())->immutable_master_rate,
         *masterRate.value());
     QCOMPARE((*reusedNormal.value())->device_rate,*deviceRate.value());
+    // Two-phase UI-thread authority for a future nonblocking converter.
+    // A fabricated absent MASTER token cannot publish even a valid PCM.
+    const auto capturedForAsync=product.capture_monitor_master_for_conversion();
+    QVERIFY(capturedForAsync);
+    QVERIFY(capturedForAsync==candidates.staged());
+    auto rejectedCapture=product.admit_converted_monitor_owner(
+        {},*reusedNormal.value());
+    QVERIFY(!rejectedCapture);
+    QCOMPARE(rejectedCapture.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(product.admit_converted_monitor_owner(
+        capturedForAsync,*reusedNormal.value()));
+    // Admission does NOT call the DEVICE sink or create a RealizationId.
     QCOMPARE(sinkInstalls,std::size_t{0});
     // Install exactly this borrowed candidate into the fake anonymous
     // DEVICE sink, then return to exact MANUAL without destroying M17's
