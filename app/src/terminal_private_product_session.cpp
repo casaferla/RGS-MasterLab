@@ -1,4 +1,5 @@
 #include "terminal_private_product_session.hpp"
+#include <QThread>
 #include "final_src_candidate_policy.hpp"
 #include <rgsml/core/error.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
@@ -286,6 +287,8 @@ TerminalPrivateProductSession::materialize_private_final_master_monitoring(
 TerminalPrivateProductSession::MonitoringMasterCapture
 TerminalPrivateProductSession::capture_monitor_master_for_conversion() const
 {
+    // Do not even inspect source/transport state from a DSP worker.
+    if(QThread::currentThread()!=thread())return {};
     // Capture ONLY on the owning UI thread. This pointer owns the complete
     // immutable M17 MASTER PCM for the later worker's bounded lifetime.
     return current_verified_private_master();
@@ -299,6 +302,11 @@ core::Status TerminalPrivateProductSession::admit_converted_monitor_owner(
         return core::Status::failure(core::Error{
             core::ErrorCode::InvalidState,message});
     };
+    // A posted asynchronous completion must return to the owning QObject
+    // thread before touching source, transport or candidate gate. Checking
+    // this FIRST avoids even a read of mutable app state from a DSP worker.
+    if(QThread::currentThread()!=thread())
+        return refuse("M17_MONITOR_ADMISSION_REQUIRES_OWNER_THREAD");
     // This method intentionally neither touches Windows hardware nor
     // constructs PCM. It must be invoked by the caller on the owning thread.
     if(!captured ||current_verified_private_master()!=captured)
