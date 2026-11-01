@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Install ONLY the frozen private Q0 originals for an explicit local Windows M17 FQ.
-No network, hidden fallback, source-code embedding or change of release authority.
-The ZIP and original FIR binaries must stay outside the PUBLIC repository.
+"""Authenticate the frozen original 14-Q0 FIR source and legacy local copy.
+
+The Product Owner explicitly approved PUBLIC source distribution of all 16 FIR
+files on 2026-11-02. The normal FQ build now uses `checked_files` automatically
+to include these immutable verified originals beside two Playback FIRs; the old
+manual installer CLI is retained solely for compatibility and is NOT required
+for any complete modern FQ. No network, hidden fallback, coefficient
+regeneration, or bypass of mathematical/DEVICE qualification gates.
 """
 import argparse
 import hashlib
