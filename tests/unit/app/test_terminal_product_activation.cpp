@@ -2012,6 +2012,62 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(monitorUi.returnManual());
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QVERIFY(!monitorSinkOwner);
+    // A hardware endpoint can change to a different physical ID with the
+    // SAME rate while the FIR runs. The second owner-thread probe MUST
+    // refuse installation even though the audio bits are already computed.
+    monitorUi.set_async_monitoring_device(
+        [&](audio::AudioBufferView master,bool allowCaution)
+            ->core::Result<platform::windows::MonitoringAsyncDevicePlan> {
+            ++asyncPreflights;
+            if(allowCaution
+               ||master.format().sample_rate()!=*masterRate.value())
+                return core::Result<
+                    platform::windows::MonitoringAsyncDevicePlan>::failure(
+                        core::Error{core::ErrorCode::InvalidState,
+                            "ASYNC_TEST_PREPARE_OWNER_CHANGED"});
+            return core::Result<
+                platform::windows::MonitoringAsyncDevicePlan>::success({
+                    *deviceRate.value(),"original-endpoint-id"
+                });
+        },
+        [&](const platform::windows::MonitoringAsyncDevicePlan&,
+            audio::AudioBufferView,bool)->core::Status {
+            ++asyncRechecks;
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "MONITOR_ASYNC_DEVICE_ENDPOINT_OR_RATE_CHANGED_DURING_CONVERSION"});
+        });
+    QVERIFY(monitorUi.installMonitor(false));
+    QVERIFY(monitorUi.monitor_preparing());
+    QTRY_VERIFY_WITH_TIMEOUT(!monitorUi.monitor_preparing(),12000);
+    QVERIFY(!monitorUi.monitor_installed());
+    QVERIFY(!monitorSinkOwner);
+    QCOMPARE(monitorUi.error_text(),QStringLiteral(
+        "MONITOR_ASYNC_DEVICE_ENDPOINT_OR_RATE_CHANGED_DURING_CONVERSION"));
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(asyncRechecks,std::size_t{2});
+    QVERIFY(monitorUi.can_install());
+    // The cancel test below must still use a current, approvable endpoint;
+    // a freshly captured identity is independent from the rejected one.
+    monitorUi.set_async_monitoring_device(
+        [&](audio::AudioBufferView master,bool)->core::Result<
+            platform::windows::MonitoringAsyncDevicePlan> {
+            ++asyncPreflights;
+            if(master.format().sample_rate()!=*masterRate.value())
+                return core::Result<
+                    platform::windows::MonitoringAsyncDevicePlan>::failure(
+                        core::Error{core::ErrorCode::InvalidState,
+                            "ASYNC_TEST_MASTER_NOT_CURRENT"});
+            return core::Result<
+                platform::windows::MonitoringAsyncDevicePlan>::success({
+                    *deviceRate.value(),"fixed-fake-physical-endpoint"
+                });
+        },
+        [&](const platform::windows::MonitoringAsyncDevicePlan&,
+            audio::AudioBufferView,bool)->core::Status {
+            ++asyncRechecks;
+            return core::Status::success();
+        });
     // Accepted async preflight can be withdrawn before the Qt completion
     // posts. No eventual stale DEVICE PCM may be installed.
     QVERIFY(monitorUi.installMonitor(false));
@@ -2021,7 +2077,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QTest::qWait(25); QCoreApplication::processEvents();
     QVERIFY(!monitorSinkOwner);
-    QCOMPARE(asyncRechecks,std::size_t{1});
+    QCOMPARE(asyncRechecks,std::size_t{2});
     QVERIFY(monitorUi.can_install());
     monitorUi.set_async_monitoring_device({}, {});
 
