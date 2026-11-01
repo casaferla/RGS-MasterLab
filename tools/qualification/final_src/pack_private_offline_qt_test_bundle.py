@@ -27,7 +27,7 @@ PUBLIC_PLAYBACK_PINS={
     "playback_src_kernel_48000_44100.bin":
         "37cfda8e885e2d00646ec60d02bdf5b7dcb85348fca416e065bab71a824efb22",
 }
-PUBLIC_PLAYBACK_RELATIVE="resources/fir/playback"
+PUBLIC_PLAYBACK_RELATIVE="resources/fir"
 SKIP_SYSTEM=re.compile(
     r"^(?:linux-vdso|ld-linux|libc\.|libm\.|libpthread\.|"
     r"librt\.|libdl\.|libresolv\.|libgcc_s\.|libstdc\+\+\.)"
@@ -82,8 +82,7 @@ def verify_archive(archive: Path, *, maximum_bytes=120_000_000) -> dict:
             public_files={root+"/"+PUBLIC_PLAYBACK_RELATIVE+"/"+name
                           for name in PUBLIC_PLAYBACK_PINS}
             files.update(public_files)
-            dirs={root,root+"/lib",root+"/resources",root+"/resources/fir",
-                  root+"/"+PUBLIC_PLAYBACK_RELATIVE}
+            dirs={root,root+"/lib",root+"/resources",root+"/resources/fir"}
             mapping={m.name:m for m in members}
             if not files.issubset(mapping) or not dirs.issubset(mapping):
                 raise ContractError("Qt bundle incomplete")
@@ -148,7 +147,7 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
     exe=executables[0]
     # Only the two already-public, frozen playback FIRs are permitted here.
     # No private original 14 Final SRC files may enter the CI archive.
-    playback_source=build_dir/"generated/rgsml/fir/playback"
+    playback_source=build_dir/"generated/rgsml/fir"
     for name,want in PUBLIC_PLAYBACK_PINS.items():
         p=playback_source/name
         if not p.is_file() or digest(p)!=want:
@@ -202,7 +201,7 @@ def pack(build_dir:Path,output:Path,*,maximum_bytes=120_000_000)->dict:
             json.dumps(manifest,sort_keys=True,indent=2)+"\n")
         (package/"RUN_OFFLINE.txt").write_text(
             "TEST EXECUTABLE + TWO PUBLIC FROZEN PLAYBACK FIRs; no private Q0/Q1 shipped.\n"
-            "For native Qt invocation, set RGSML_PLAYBACK_FIR_ROOT=$PWD/resources/fir/playback "
+            "For native Qt invocation, set RGSML_PLAYBACK_FIR_ROOT=$PWD/resources/fir "
             "and LD_LIBRARY_PATH=$PWD/lib; "
             "and supply original two private SHA-locked ZIPs to "
             "tools/qualification/final_src/run_phase11_private_m17_bulk_gate.py.\n"
