@@ -68,6 +68,10 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
             duration_=0;
             deviceRateHz_=0;
             transportState_=QStringLiteral("UNAVAILABLE");
+            masterLoopEnabled_=false;
+            masterRegionInitialized_=false;
+            masterRegionStart_=0;
+            masterRegionEnd_=0;
             // A canceled/returned MASTER is no longer an immutable
             // prepared realization. Do not retain its stale UI rate.
             if(session_->status()==QStringLiteral("IDLE"))
@@ -501,11 +505,53 @@ bool TerminalMonitorViewModel::seekMaster(qint64 frame)
 bool TerminalMonitorViewModel::setMasterLoop(qint64 begin,qint64 end,bool enabled)
 {
     using Action=platform::windows::MonitoringTransportAction;
-    if(!enabled)return control({Action::SET_MASTER_LOOP});
+    if(!enabled) {
+        const auto clear=control({Action::SET_MASTER_LOOP});
+        if(clear) {
+            masterLoopEnabled_=false;
+            emit changed();
+        }
+        return clear;
+    }
     const auto loop=core::FrameRange::create(
         core::FrameIndex{begin},core::FrameIndex{end});
     if(!loop)return report(core::Status::failure(*loop.error()));
-    return control({Action::SET_MASTER_LOOP,core::FrameIndex{0},*loop.value()});
+    const bool applied=control({
+        Action::SET_MASTER_LOOP,core::FrameIndex{0},*loop.value()});
+    if(applied) {
+        masterRegionStart_=begin;
+        masterRegionEnd_=end;
+        masterRegionInitialized_=true;
+        masterLoopEnabled_=true;
+        emit changed();
+    }
+    return applied;
+}
+bool TerminalMonitorViewModel::setMasterRegion(qint64 begin,qint64 end)
+{
+    if(!monitor_controllable()||begin<0||end<=begin
+       ||end>duration_||masterRateHz_<=0)
+        return report(reject("MONITOR_MASTER_REGION_INVALID_OR_UNOWNED"));
+    if(masterLoopEnabled_)
+        return setMasterLoop(begin,end,true);
+    masterRegionStart_=begin;
+    masterRegionEnd_=end;
+    masterRegionInitialized_=true;
+    error_.clear();
+    emit changed();
+    return true;
+}
+bool TerminalMonitorViewModel::clearMasterRegion()
+{
+    if(!monitor_controllable())
+        return report(reject("MONITOR_CLEAR_REGION_REQUIRES_EXACT_OWNER"));
+    if(masterLoopEnabled_ &&!setMasterLoop(0,0,false))
+        return false;
+    masterRegionStart_=0;
+    masterRegionEnd_=duration_;
+    masterRegionInitialized_=true;
+    emit changed();
+    return true;
 }
 void TerminalMonitorViewModel::refresh()
 {
@@ -517,6 +563,10 @@ void TerminalMonitorViewModel::refresh()
         position_=0;
         duration_=0;
         deviceRateHz_=0;
+        masterRegionStart_=0;
+        masterRegionEnd_=0;
+        masterLoopEnabled_=false;
+        masterRegionInitialized_=false;
         transportState_=QStringLiteral("UNAVAILABLE");
         error_=observed.error()
             ?QString::fromStdString(observed.error()->message())
@@ -527,6 +577,19 @@ void TerminalMonitorViewModel::refresh()
     const auto& data=*observed.value();
     position_=data.master_display_position.value();
     duration_=data.master_duration.value();
+    if(!masterRegionInitialized_) {
+        masterRegionStart_=0;
+        masterRegionEnd_=duration_;
+        masterRegionInitialized_=true;
+    }
+    // The DEVICE command's owner-verified monitoring snapshot is the
+    // ONLY source of active MASTER-loop truth. A draft selected interval
+    // survives disabling loop and cannot mutate the SOURCE region.
+    masterLoopEnabled_=data.requested_master_loop.has_value();
+    if(data.requested_master_loop) {
+        masterRegionStart_=data.requested_master_loop->begin().value();
+        masterRegionEnd_=data.requested_master_loop->end().value();
+    }
     masterRateHz_=static_cast<int>(data.master_rate.value());
     deviceRateHz_=static_cast<int>(data.device_rate.value());
     switch(data.state) {
