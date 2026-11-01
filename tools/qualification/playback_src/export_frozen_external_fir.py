@@ -62,7 +62,7 @@ def export(source_root: Path, output_root: Path,
         raise ValueError("Original 14-Q0 trusted FIR pin inventory changed")
     final_src = [
         {"file": f"RGSMSR1_L{L}_M{M}.bin", "ratioL": int(L),
-         "ratioM": int(M), "sha256": digest, "private": True}
+         "ratioM": int(M), "sha256": digest}
         for L, M, digest in pins
     ]
     if require_originals and originals_archive is None:
@@ -131,7 +131,7 @@ def export(source_root: Path, output_root: Path,
         "schema": "rgsml.external-src-fir-assets/2",
         "installationRoot": "resources/fir",
         "assets": ([{"role": "PLAYBACK_FROZEN", **entry} for entry in entries]
-                   + [{"role": "FINAL_SRC_Q0_ORIGINAL", **{k:v for k,v in entry.items() if k != "private"},
+                   + [{"role": "FINAL_SRC_Q0_ORIGINAL", **entry,
                        "packaged": originals_included}
                       for entry in final_src]),
         "routes": routes,
