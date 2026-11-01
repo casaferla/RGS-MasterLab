@@ -4,6 +4,9 @@
 #include <numeric>
 #include <QMetaObject>
 #include <QDebug>
+#include <QSettings>
+#include <QThread>
+#include <QUrl>
 #include <chrono>
 #include <algorithm>
 #include <limits>
@@ -39,13 +42,63 @@ void TerminalPrivateRenderController::invalidate() {
 void TerminalPrivateRenderController::set_original_q0_fir_root(
     std::filesystem::path root)
 {
+    // Startup and explicit UI selection only: a worker may own a snapshot
+    // of the previous trusted root but must never observe a path mutation.
+    if(QThread::currentThread()!=thread())return;
     privateOriginalFirFamilyReady_=false;
     privateOriginalFirRoot_.clear();
-    if(root.empty())return;
-    // Original pinned bytes, shape, symmetry and 14 SHA files verified.
-    if(!audio::internal::all_14_phase11_original_pins_present(root))return;
-    privateOriginalFirRoot_=std::move(root);
-    privateOriginalFirFamilyReady_=true;
+    originalQ0Status_=QStringLiteral("14 original Q0 FIRs not available");
+    if(!root.empty()
+       &&audio::internal::all_14_phase11_original_pins_present(root)) {
+        privateOriginalFirRoot_=std::move(root);
+        privateOriginalFirFamilyReady_=true;
+        originalQ0Status_=QStringLiteral(
+            "14 original Q0 FIRs verified · reusable for future FQ");
+    }
+    emit originalQ0FamilyChanged();
+}
+
+bool TerminalPrivateRenderController::remember_existing_original_q0_folder(
+    const QUrl& folder)
+{
+    // The chooser is NOT a ZIP installer, verifier script, network fetch,
+    // FIR generator or final Q1-Q6 release authorization.
+    if(QThread::currentThread()!=thread()
+       ||status_!=QStringLiteral("IDLE")
+       ||!folder.isValid()||!folder.isLocalFile()
+       ||!qgetenv("RGSML_FINAL_SRC_Q0_PRIVATE_DIR").isEmpty()) {
+        originalQ0Status_=QStringLiteral(
+            "Stop M17 and clear any explicit FIR override before selection");
+        emit originalQ0FamilyChanged();
+        return false;
+    }
+    const auto local=folder.toLocalFile();
+    if(local.isEmpty())return false;
+#ifdef _WIN32
+    const auto candidate=std::filesystem::path{local.toStdWString()};
+#else
+    const auto candidate=std::filesystem::path{local.toStdString()};
+#endif
+    // Check all 14 frozen, SHA-pinned original RGSMSR1 files BEFORE writing
+    // any persistent user preference. Symlinks/missing or corrupt files fail.
+    if(!audio::internal::all_14_phase11_original_pins_present(candidate)) {
+        originalQ0Status_=QStringLiteral(
+            "Selected folder is not the verified original 14-Q0 FIR bank");
+        emit originalQ0FamilyChanged();
+        return false;
+    }
+    QSettings preferences{QSettings::IniFormat,QSettings::UserScope,
+        QStringLiteral("RGS MasterLab"),QStringLiteral("RGS MasterLab")};
+    // A path is only a locator, never a trusted hash or certificate.
+    preferences.setValue(QStringLiteral("privateQ0/originalDirectory"),local);
+    preferences.sync();
+    if(preferences.status()!=QSettings::NoError) {
+        originalQ0Status_=QStringLiteral("Unable to remember private FIR folder");
+        emit originalQ0FamilyChanged();
+        return false;
+    }
+    set_original_q0_fir_root(candidate);
+    return privateOriginalFirFamilyReady_;
 }
 core::Status TerminalPrivateRenderController::request_private(core::SampleRate rate) {
     invalidate();
