@@ -102,18 +102,25 @@ project_monitoring_pcm_resource_cost(
     std::optional<std::uint64_t> macs;
     std::uint64_t firScratch=0;
     if(sourceHz!=deviceHz && !frozenPair) {
-        // Mirrors the rational FIR's tap geometry, without allocating PCM.
-        auto taps=(128*sourceHz+deviceHz-1)/deviceHz;
-        if(taps<128)taps=128;
-        taps+=taps%2;
-        // Experimental FIR owns both its window and phase coefficient arrays.
-        const auto phases=static_cast<std::uint64_t>(
-            deviceHz/std::gcd(sourceHz,deviceHz));
-        firScratch=(phases+1)*static_cast<std::uint64_t>(taps)
-            *sizeof(double);
+        // PREPARE-only provisional Playback SRC currently owns TWO arrays:
+        // a windowed double prototype and the immutable uint64 tap vector.
+        // Mirror make_provisional_device_fir() EXACTLY, including the +1
+        // endpoint tap. An earlier 128-tap/phase estimate undercounted this
+        // allocation (and its arithmetic work) at many SOURCE/DEVICE ratios.
+        // These sizes are budget bounds, not Q0/DEVICE qualification.
+        const auto gcd=std::gcd(sourceHz,deviceHz);
+        const auto interpolation=static_cast<std::uint64_t>(deviceHz/gcd);
+        const auto decimation=static_cast<std::uint64_t>(sourceHz/gcd);
+        constexpr std::uint64_t nominalTapsPerPhase=192;
+        const auto tapsPerPhase=std::max(nominalTapsPerPhase,
+            (nominalTapsPerPhase*decimation+interpolation-1)/interpolation);
+        const auto coefficientCount=interpolation*tapsPerPhase+1;
+        // Both arrays coexist during prototype synthesis, before the
+        // transient double array is discarded. No callbacks use this heap.
+        firScratch=coefficientCount*(sizeof(double)+sizeof(std::uint64_t));
         const auto channels=static_cast<std::uint64_t>(
             format.value()->channel_count());
-        const auto perOutput=static_cast<std::uint64_t>(taps)*channels;
+        const auto perOutput=tapsPerPhase*channels;
         if(static_cast<std::uint64_t>(outFrames)
             <=std::numeric_limits<std::uint64_t>::max()/perOutput)
             macs=static_cast<std::uint64_t>(outFrames)*perOutput;
