@@ -30,6 +30,9 @@ def export(source_root: Path, output_root: Path,
            originals_archive: Path | None = None,
            require_originals: bool = False) -> None:
     output_root.mkdir(parents=True, exist_ok=True)
+    # A failed/deferred original-14 source check must not leave an older
+    # "complete16FilePackage" attestation in an incrementally reused tree.
+    (output_root / "fir_manifest.json").unlink(missing_ok=True)
     entries = []
     for pair, expected_count, expected_sha in KERNELS:
         source = source_root / "audio" / "src" / "internal" / f"playback_src_kernel_{pair}.inc"
@@ -146,8 +149,13 @@ def export(source_root: Path, output_root: Path,
     if len(manifest["assets"]) != 16 or len({
             asset["file"] for asset in manifest["assets"]}) != 16:
         raise ValueError("Unified FIR catalog is not 16 unique SHA-pinned files")
-    (output_root / "fir_manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    # Publish the completeness attestation LAST and atomically, only after
+    # every original+Playback SHA-pinned binary has reached the flat root.
+    manifest_tmp = output_root / "fir_manifest.json.tmp"
+    manifest_tmp.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8")
+    manifest_tmp.replace(output_root / "fir_manifest.json")
 
 
 def main() -> None:
