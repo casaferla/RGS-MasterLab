@@ -153,6 +153,7 @@ private slots:
     void monitoringFrameMapSixRateEndpointsAndLoops();
     void monitoringMasterSnapshotFailClosedAcrossSixRatePairs();
     void monitoringBorrowsMasterWithoutSourceAlias();
+    void monitoringCancellationCannotPublishPartialDeviceOwner();
     void monitoring44100SixDeviceRatesRemainBlockInvariant();
     void monitoringFullSixBySixSignalBlockInvariance();
     void monitoringExperimentalPassbandAndAliasScreen();
@@ -2342,6 +2343,72 @@ void PlaybackSampleRateAdapterTest::monitoringBorrowsMasterWithoutSourceAlias()
         QCOMPARE(channel_bits(owned.value()->device_pcm,1),
             channel_bits(expected.value()->pcm,1));
     }
+}
+
+void PlaybackSampleRateAdapterTest::
+monitoringCancellationCannotPublishPartialDeviceOwner()
+{
+    auto format=audio::AudioFormat::create(
+        rate(192000),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(format);
+    auto master=audio::AudioBuffer::create(*format.value(),
+        audio::FrameDomainId::OUTPUT_RATE,core::FrameIndex{0},
+        frame_count(193));
+    QVERIFY(master);
+    for(std::size_t ch=0;ch<2;++ch) {
+        auto channel=master.value()->mutable_view().channel(ch);
+        QVERIFY(channel);
+        std::fill(channel.value()->begin(),channel.value()->end(),0.125);
+    }
+    const auto originalL=channel_bits(*master.value(),0);
+    const auto originalR=channel_bits(*master.value(),1);
+    int preflightCalls=0;
+    const auto preflight=[&](const audio::MonitoringPcmResourceProjection&)
+        ->core::Status {
+        ++preflightCalls;
+        return core::Status::success();
+    };
+    // Cancel BEFORE memory advice. Even the preflight callback is omitted.
+    auto stopped=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),rate(48000),frame_count(17),preflight,
+        [] {return true;});
+    QVERIFY(!stopped);
+    QCOMPARE(stopped.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(preflightCalls,0);
+    // Cancel from a legitimate, successful preflight. No DEVICE allocation,
+    // no private owner and no hardware transport can have been published.
+    bool retire=false;
+    const auto preflightRetiring=[&](const audio::MonitoringPcmResourceProjection&)
+        ->core::Status {
+        ++preflightCalls;
+        retire=true;
+        return core::Status::success();
+    };
+    auto revoked=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),rate(48000),frame_count(17),
+        preflightRetiring,[&retire] {return retire;});
+    QVERIFY(!revoked);
+    QCOMPARE(revoked.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(preflightCalls,1);
+    // Cancellation while the expensive rational FIR is building/reading
+    // must also fail atomically, not return a partly-filled DEVICE owner.
+    int progressChecks=0;
+    auto interrupted=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),rate(48000),frame_count(17),preflight,
+        [&progressChecks] {return ++progressChecks>=5;});
+    QVERIFY(!interrupted);
+    QCOMPARE(interrupted.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(preflightCalls,2);
+    QCOMPARE(channel_bits(*master.value(),0),originalL);
+    QCOMPARE(channel_bits(*master.value(),1),originalR);
+    // Fresh, never-cancelled invocation still works on the SAME immutable
+    // MASTER; a cancelled worker cannot spoil an eventual later attempt.
+    auto success=audio::materialize_monitoring_pcm_candidate(
+        master.value()->view(),rate(48000),frame_count(17),preflight,
+        [] {return false;});
+    QVERIFY(success);
+    QVERIFY(audio::validate_monitoring_pcm_candidate(*success.value()));
+    QCOMPARE(preflightCalls,3);
 }
 
 void PlaybackSampleRateAdapterTest::monitoringMasterSnapshotFailClosedAcrossSixRatePairs()
