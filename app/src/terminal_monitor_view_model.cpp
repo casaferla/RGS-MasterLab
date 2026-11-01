@@ -92,6 +92,9 @@ QString TerminalMonitorViewModel::status_text() const
 {
     if(monitorPreparing_)
         return QStringLiteral("PREPARING DEVICE PCM · SOURCE STILL RESPONSIVE");
+    if(asyncWorkerRunning_.load(std::memory_order_acquire))
+        return QStringLiteral(
+            "CANCELLING MASTER DEVICE PREPARE · SOURCE STILL RESPONSIVE");
     const auto status=session_->status();
     // IDLE cannot attest audible MANUAL: SOURCE may have been refused
     // initially and an offline-origin monitor may have returned NO_SOURCE.
@@ -170,7 +173,12 @@ bool TerminalMonitorViewModel::can_dismiss() const noexcept
 }
 bool TerminalMonitorViewModel::can_install() const noexcept
 {
-    if(monitorPreparing_)return false;
+    // Cancel only invalidates the transaction; the prior FIR worker may
+    // still be draining. Never show a clickable Listen command until it has
+    // actually exited. The queued completion below re-notifies QML.
+    if(monitorPreparing_
+       ||asyncWorkerRunning_.load(std::memory_order_acquire))
+        return false;
     const auto status=session_->status();
     if(status==QStringLiteral("PRIVATE_INSTALLED"))
         return installedHandoff_ && installedHandoffEligible_
@@ -331,8 +339,15 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
             QMetaObject::invokeMethod(this,
                 [this,job,token,stage,plan,explicitlyAllowCaution,outcome] {
                 if(job!=monitorSerial_ ||!monitorPreparing_
-                   ||token->load(std::memory_order_acquire))
-                    return; // cancellation/stale SOURCE epoch: no install
+                   ||token->load(std::memory_order_acquire)) {
+                    // A cancelled worker has now fully exited. Recompute
+                    // QML canInstall rather than leaving Listen disabled
+                    // forever because the cancellation itself emitted while
+                    // the worker was still draining.
+                    lastCanInstall_=can_install();
+                    emit changed();
+                    return; // stale SOURCE epoch: absolutely no install
+                }
                 monitorPreparing_=false;
                 pendingMaster_.reset();
                 emit changed();
