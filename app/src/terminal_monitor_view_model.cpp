@@ -6,6 +6,7 @@
 #include <QMetaObject>
 #include <QThread>
 #include <new>
+#include <exception>
 #include <utility>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/frame_time.hpp>
@@ -305,7 +306,8 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
         // Worker must not capture Windows service, OS device/QMediaDevices,
         // QObjects or user policy callbacks. It only owns immutable MASTER
         // buffers, scalar plan, bounded output blocks and an atomic stop.
-        monitorWorker_=std::jthread(
+        try {
+            monitorWorker_=std::jthread(
             [this,stage,plan=*plan.value(),block=*block.value(),
              token,job,explicitlyAllowCaution](std::stop_token stop) {
             using Owned=std::shared_ptr<const audio::MonitoringPcmCandidate>;
@@ -374,6 +376,15 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
                 refresh();
             },Qt::QueuedConnection);
         });
+        } catch(const std::exception&) {
+            // Windows can refuse a new worker thread under severe resource
+            // pressure. Refuse and revoke the pending ticket instead of
+            // propagating std::system_error/std::bad_alloc through QML.
+            // The original accepted M17 MASTER stays intact for retry.
+            abort_async_conversion();
+            asyncWorkerRunning_.store(false,std::memory_order_release);
+            return report(reject("MONITOR_ASYNC_WORKER_START_FAILED"));
+        }
         return true; // accepted async request, NOT yet DEVICE installed
     }
     // Re-probe exact current DEVICE and Windows memory immediately before
