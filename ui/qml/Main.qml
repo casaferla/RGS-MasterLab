@@ -577,10 +577,15 @@ ApplicationWindow {
                     StudioButton {
                         objectName: "globalReturnFromMonitor"
                         text: root.appTerminalMonitorViewModel
+                                && root.appTerminalMonitorViewModel.monitorPreparing
+                            ? "Cancel Master Prepare"
+                            : root.appTerminalMonitorViewModel
                                 && root.appTerminalMonitorViewModel.returnTargetText.indexOf("Close") === 0
-                            ? "Close Master Listening" : "Return to Source"
+                                ? "Close Master Listening" : "Return to Source"
                         visible: root.monitorExclusive
-                        enabled: root.monitorExclusive
+                            || (root.appTerminalMonitorViewModel
+                                && root.appTerminalMonitorViewModel.monitorPreparing)
+                        enabled: visible
                         minimumControlWidth: 110
                         onClicked: if (root.appTerminalMonitorViewModel)
                             root.appTerminalMonitorViewModel.cancel()
@@ -592,11 +597,16 @@ ApplicationWindow {
                     Label {
                         objectName: "transportMasterDeviceRate"
                         visible: root.monitorExclusive
+                            || (root.appTerminalMonitorViewModel
+                                && root.appTerminalMonitorViewModel.monitorPreparing)
                         text: root.appTerminalMonitorViewModel
-                            ? "Master " + (root.appTerminalMonitorViewModel.masterRateHz / 1000)
-                                + " → " + (root.appTerminalMonitorViewModel.deviceRateHz / 1000)
-                                + " kHz"
-                            : "Master preview"
+                            && root.appTerminalMonitorViewModel.monitorPreparing
+                            ? "Preparing Master device PCM…"
+                            : root.appTerminalMonitorViewModel
+                                ? "Master " + (root.appTerminalMonitorViewModel.masterRateHz / 1000)
+                                    + " → " + (root.appTerminalMonitorViewModel.deviceRateHz / 1000)
+                                    + " kHz"
+                                : "Master preview"
                         color: root.textSecondary
                         font.pixelSize: 10
                     }
