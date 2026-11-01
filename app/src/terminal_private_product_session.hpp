@@ -79,6 +79,19 @@ public:
     materialize_private_final_master_monitoring(
         const MonitoringMaterializer& materializer);
 
+    // Split-phase, owning-thread-only MASTER-ticket boundary for a FUTURE
+    // nonblocking DEVICE conversion. Capture retains the exact immutable
+    // M17 stage; an asynchronous worker must consume only its PCM, never
+    // access this QObject, selectors, Qt audio-device services or the sink.
+    // Admission is called back on the original UI thread and rechecks the
+    // identical live stage BEFORE minting a separate DEVICE ticket.
+    using MonitoringMasterCapture=
+        std::shared_ptr<const TerminalCandidateGate::StagedCandidate>;
+    [[nodiscard]] MonitoringMasterCapture capture_monitor_master_for_conversion() const;
+    [[nodiscard]] core::Status admit_converted_monitor_owner(
+        MonitoringMasterCapture captured,
+        std::shared_ptr<const audio::MonitoringPcmCandidate> candidate);
+
     // App-to-Windows registration, without an automatic PREPARE or QML entry.
     // The real Windows adapter probes the endpoint and OS memory AGAIN at
     // imminent allocation; the independent caller chooses any policy.
