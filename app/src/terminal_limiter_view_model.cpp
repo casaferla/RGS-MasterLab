@@ -243,6 +243,62 @@ void TerminalLimiterViewModel::clearPreparationProgress()
     setPreparationProgress({},0.0,false);
 }
 
+void TerminalLimiterViewModel::clearVerificationTrim()
+{
+    const auto unavailable=QStringLiteral("UNAVAILABLE · NOT VERIFIED");
+    const auto details=QStringLiteral(
+        "No current, source-bound verified M17 full-resource trim measurement.");
+    if(verificationTrimStatus_==unavailable &&verificationTrimDetails_==details)
+        return;
+    verificationTrimStatus_=unavailable;
+    verificationTrimDetails_=details;
+    emit changed();
+}
+
+void TerminalLimiterViewModel::setVerifiedTrimObservation(
+    double gain,bool used,double before,double after)
+{
+    // M16 full-resource BEFORE/AFTER observations belong to ONE completed
+    // immutable M17 owner. This is NOT a DAC true-peak or release certificate.
+    // No inferred value from user Ceiling or a PRE-LIMITER historical meter.
+    if(!std::isfinite(gain)||gain<=0.0||gain>1.0
+       ||!std::isfinite(before)||before<0.0
+       ||!std::isfinite(after)||after<0.0
+       ||(used &&gain>=1.0)
+       ||(!used &&gain!=1.0)) {
+        clearVerificationTrim();
+        return;
+    }
+    const double attenuation=20.0*std::log10(gain);
+    if(!std::isfinite(attenuation) ||attenuation>0.0) {
+        clearVerificationTrim();
+        return;
+    }
+    QString label;
+    if(!used)
+        label=QStringLiteral("0.00 dB · NO TRIM");
+    else if(attenuation>-0.005)
+        label=QStringLiteral("−<0.01 dB · M16 CHECK");
+    else
+        label=QString::number(attenuation,'f',2)
+            +QStringLiteral(" dB · M16 CHECK");
+    const auto peakText=[](double value)->QString {
+        return value==0.0 ? QStringLiteral("−∞ dBTP")
+            :QString::number(20.0*std::log10(value),'f',3)
+                +QStringLiteral(" dBTP");
+    };
+    const auto detail=QStringLiteral(
+        "SOURCE/MASTER owner-bound complete M16 verification: pre-trim "
+        "%1, post-trim %2; actual global gain %3 (binary64). "
+        "Not a DEVICE playback meter, DAC measurement or final M17 FQ.")
+        .arg(peakText(before),peakText(after),
+             QString::number(gain,'g',17));
+    if(verificationTrimStatus_==label &&verificationTrimDetails_==detail)return;
+    verificationTrimStatus_=label;
+    verificationTrimDetails_=detail;
+    emit changed();
+}
+
 void TerminalLimiterViewModel::setAudioStatus(const QString& value)
 {
     if(audioStatus_==value)return;
