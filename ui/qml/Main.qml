@@ -1859,7 +1859,8 @@ ApplicationWindow {
         modal: true
         title: "Master Loop"
         width: Math.min(430, root.width - 48)
-        enabled: root.monitorExclusive
+        // Keep Cancel usable if the listener loses ownership while open.
+        // Apply/Clear below still require a current exact MASTER owner.
         property string validationMessage: ""
         onOpened: validationMessage = ""
         background: Rectangle {
