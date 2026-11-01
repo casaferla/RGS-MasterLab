@@ -111,12 +111,63 @@ private slots:
     void rejectedCeilingCannotAlterAuthority_data();
     void rejectedCeilingCannotAlterAuthority();
     void unchangedCeilingLeavesRevisionAndConsentUntouched();
+    void verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners();
 };
 
 
 // Adversarial parameter-input oracle: independent data rows run even if a
 // different failure later aborts the full A/B integration scenario. No PCM,
 // filename, or hardware certificate is created by these input tests.
+void TerminalActivationIntegrationTest::
+verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners()
+{
+    auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
+    QVERIFY(registry);
+    const auto id=dsp::ModuleInstanceId::from_uuid(*core::Uuid::parse(
+        "7f000000-0000-4000-8000-000000000618").value());
+    QVERIFY(id);
+    auto state=app::TerminalLimiterState::create_default(
+        *registry.value(),*id.value());
+    QVERIFY(state);
+    app::TerminalLimiterViewModel vm{state.value()};
+    QCOMPARE(vm.verification_trim_status(),
+        QStringLiteral("UNAVAILABLE · NOT VERIFIED"));
+    // A user-set Ceiling, even at -12 dBTP, is NOT full M16 trim evidence.
+    QVERIFY(vm.setDraftFieldValue(QStringLiteral("CEILING"),-12.0));
+    QVERIFY(vm.commitDraft());
+    QCOMPARE(vm.verification_trim_status(),
+        QStringLiteral("UNAVAILABLE · NOT VERIFIED"));
+    QSignalSpy changed{&vm,&app::TerminalLimiterViewModel::changed};
+    // Values below are synthetic DATA FOR UI MAPPING only. Actual
+    // production permission comes exclusively from an exact M17 owner.
+    vm.setVerifiedTrimObservation(0.99,true,1.0,0.99);
+    QCOMPARE(vm.verification_trim_status(),QStringLiteral("-0.09 dB · M16 CHECK"));
+    QVERIFY(vm.verification_trim_details().contains(
+        QStringLiteral("post-trim")));
+    QVERIFY(vm.verification_trim_details().contains(
+        QStringLiteral("Not a DEVICE playback meter")));
+    QVERIFY(changed.count()>=1);
+    vm.setVerifiedTrimObservation(1.0,false,0.0,0.0);
+    QCOMPARE(vm.verification_trim_status(),QStringLiteral("0.00 dB · NO TRIM"));
+    // Reject unphysical/nonfinite gains, unsupported >0.10 dB trim,
+    // false "trim used" and never retain a previous successful label.
+    vm.setVerifiedTrimObservation(0.5,true,1.0,0.5);
+    QCOMPARE(vm.verification_trim_status(),
+        QStringLiteral("UNAVAILABLE · NOT VERIFIED"));
+    vm.setVerifiedTrimObservation(
+        std::numeric_limits<double>::quiet_NaN(),true,1.0,1.0);
+    QCOMPARE(vm.verification_trim_status(),
+        QStringLiteral("UNAVAILABLE · NOT VERIFIED"));
+    vm.setVerifiedTrimObservation(1.0,true,1.0,1.0);
+    QCOMPARE(vm.verification_trim_status(),
+        QStringLiteral("UNAVAILABLE · NOT VERIFIED"));
+    vm.setVerifiedTrimObservation(0.99,true,1.0,0.99);
+    QVERIFY(vm.verification_trim_status().contains(QStringLiteral("M16 CHECK")));
+    vm.clearVerificationTrim(); // invalidated SOURCE or MASTER owner
+    QCOMPARE(vm.verification_trim_status(),
+        QStringLiteral("UNAVAILABLE · NOT VERIFIED"));
+}
+
 void TerminalActivationIntegrationTest::rejectedCeilingCannotAlterAuthority_data()
 {
     QTest::addColumn<double>("invalidCeiling");
