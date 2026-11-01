@@ -101,6 +101,55 @@ ApplicationWindow {
         return minutes + ":" + String(seconds).padStart(2, "0")
             + "." + String(fraction).padStart(3, "0")
     }
+    // One permanently visible SOURCE/MASTER Region strip. The underlying
+    // SOURCE coordinates are never edited while a distinct MASTER PCM owns
+    // the DEVICE. The displayed region uses MASTER frame coordinates.
+    function masterRegionSegments(frames) {
+        const hz = root.appTerminalMonitorViewModel
+            ? root.appTerminalMonitorViewModel.masterRateHz : 0
+        if (hz <= 0 || frames < 0) return ["00", "00", "00", "000000000"]
+        const sec = Math.floor(frames / hz)
+        const remainder = frames % hz
+        const frac = Math.floor(remainder * 1000000000 / hz)
+        return [String(Math.floor(sec / 3600)).padStart(2, "0"),
+            String(Math.floor(sec / 60) % 60).padStart(2, "0"),
+            String(sec % 60).padStart(2, "0"),
+            String(frac).padStart(9, "0")]
+    }
+    function masterRegionFrameFromSegments(h, m, sec, frac) {
+        const hz = root.appTerminalMonitorViewModel
+            ? root.appTerminalMonitorViewModel.masterRateHz : 0
+        const digits = /^[0-9]+$/
+        if(hz <= 0 || !digits.test(h) || !digits.test(m)
+                || !digits.test(sec) || !digits.test(frac)
+                || Number(m) > 59 || Number(sec) > 59
+                || String(frac).length > 9)
+            return -1
+        const whole = (Number(h) * 3600 + Number(m) * 60 + Number(sec)) * hz
+        const fractional = Math.round(Number("0." + String(frac)) * hz)
+        const frame = whole + fractional
+        return Number.isSafeInteger(frame) && frame >= 0
+            && frame <= root.appTerminalMonitorViewModel.masterDurationFrames
+            ? frame : -1
+    }
+    function updateSharedMasterRegion(which, h, m, sec, frac) {
+        const vm = root.appTerminalMonitorViewModel
+        if (!root.monitorExclusive || !vm || !vm.monitorControllable) return
+        const frame = root.masterRegionFrameFromSegments(h,m,sec,frac)
+        if (frame < 0) return
+        const begin = which === "start" ? frame : vm.masterRegionStartFrames
+        const end = which === "end" ? frame : vm.masterRegionEndFrames
+        vm.setMasterRegion(begin,end)
+    }
+    function nudgeSharedMasterRegion(which, direction) {
+        const vm=root.appTerminalMonitorViewModel
+        if (!root.monitorExclusive || !vm || !vm.monitorControllable) return
+        const step=Math.max(1,Math.round(vm.masterRateHz/1000))
+        const start=vm.masterRegionStartFrames
+        const end=vm.masterRegionEndFrames
+        vm.setMasterRegion(which==="start" ? start+direction*step : start,
+            which==="end" ? end+direction*step : end)
+    }
     function stopCurrentTransport() {
         if (root.monitorExclusive) {
             if (root.appTerminalMonitorViewModel
@@ -619,17 +668,6 @@ ApplicationWindow {
                         color: root.textSecondary
                         font.pixelSize: 10
                     }
-                    StudioButton {
-                        objectName: "transportMasterLoopOptions"
-                        text: "Master Loop"
-                        visible: root.monitorExclusive
-                        enabled: root.monitorExclusive
-                            && !!root.appTerminalMonitorViewModel
-                            && root.appTerminalMonitorViewModel.monitorControllable
-                        minimumControlWidth: 88
-                        onClicked: masterLoopDialog.open()
-                        Accessible.name: "Master listening loop options"
-                    }
                 }
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
                 TransportButton {
@@ -976,7 +1014,26 @@ ApplicationWindow {
                             onTriggered: if (root.appTerminalMonitorViewModel)
                                 root.appTerminalMonitorViewModel.cancel() }
                         MenuSeparator { }
-                        StudioMenuItem { text: auditionRegion.loopEnabled ? "Disable Loop Region" : "Enable Loop Region"; enabled: !root.monitorExclusive && (auditionRegion.canLoop || auditionRegion.loopEnabled); onTriggered: auditionRegion.requestLoopEnabled(!auditionRegion.loopEnabled) }
+                        StudioMenuItem {
+                            text: (root.monitorExclusive
+                                && root.appTerminalMonitorViewModel
+                                ? root.appTerminalMonitorViewModel.masterLoopEnabled
+                                : auditionRegion.loopEnabled)
+                                ? "Disable Loop Region" : "Enable Loop Region"
+                            enabled: root.monitorExclusive
+                                ? !!root.appTerminalMonitorViewModel
+                                    && root.appTerminalMonitorViewModel.monitorControllable
+                                : (auditionRegion.canLoop || auditionRegion.loopEnabled)
+                            onTriggered: {
+                                if (root.monitorExclusive) {
+                                    const vm=root.appTerminalMonitorViewModel
+                                    if (vm) vm.setMasterLoop(vm.masterRegionStartFrames,
+                                        vm.masterRegionEndFrames,!vm.masterLoopEnabled)
+                                } else {
+                                    auditionRegion.requestLoopEnabled(!auditionRegion.loopEnabled)
+                                }
+                            }
+                        }
                     }
                     Menu {
                         title: "&Help"
@@ -1899,176 +1956,6 @@ ApplicationWindow {
                     font.family: "Segoe UI"
                     font.pixelSize: 10
                     Layout.alignment: Qt.AlignVCenter
-                }
-            }
-        }
-    }
-
-    // MASTER DEVICE listening has a distinct owner from the SOURCE Region.
-    // Keep this small modal themed with the actual RGS host instead of the
-    // system's bright default; refuse invalid edits without closing it.
-    Dialog {
-        id: masterLoopDialog
-        objectName: "transportMasterLoopDialog"
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        modal: true
-        title: "Master Loop"
-        width: Math.min(430, root.width - 48)
-        // Keep Cancel usable if the listener loses ownership while open.
-        // Apply/Clear below still require a current exact MASTER owner.
-        property string validationMessage: ""
-        onOpened: validationMessage = ""
-        background: Rectangle {
-            radius: 9
-            color: "#0F2236"
-            border.color: "#385773"
-            border.width: 1
-        }
-        header: Rectangle {
-            implicitHeight: 44
-            radius: 9
-            color: "#163047"
-            Text {
-                anchors.centerIn: parent
-                text: "MASTER LISTENING LOOP"
-                font.family: "Segoe UI"
-                font.pixelSize: 13
-                font.bold: true
-                color: "#E7F1F9"
-            }
-        }
-        contentItem: ColumnLayout {
-            spacing: 10
-            Label {
-                text: "Set the loop for Master listening only. "
-                    + "The Source Region remains unchanged."
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-                color: "#B3C9D9"
-                font.pixelSize: 12
-            }
-            RowLayout {
-                spacing: 10
-                Label {
-                    text: "Start"
-                    color: "#E7F1F9"
-                    Layout.preferredWidth: 45
-                }
-                TextField {
-                    id: masterLoopStartTime
-                    objectName: "transportMasterLoopStartTime"
-                    text: "0:00.000"
-                    Layout.fillWidth: true
-                    color: "#E7F1F9"
-                    placeholderText: "m:ss.mmm"
-                    placeholderTextColor: "#7D99AE"
-                    selectByMouse: true
-                    onTextEdited: masterLoopDialog.validationMessage = ""
-                    background: Rectangle {
-                        color: "#142E45"
-                        radius: 5
-                        border.color: masterLoopStartTime.activeFocus
-                            ? "#6CBCCF" : "#385773"
-                        border.width: 1
-                    }
-                }
-            }
-            RowLayout {
-                spacing: 10
-                Label {
-                    text: "End"
-                    color: "#E7F1F9"
-                    Layout.preferredWidth: 45
-                }
-                TextField {
-                    id: masterLoopEndTime
-                    objectName: "transportMasterLoopEndTime"
-                    text: "0:30.000"
-                    Layout.fillWidth: true
-                    color: "#E7F1F9"
-                    placeholderText: "m:ss.mmm"
-                    placeholderTextColor: "#7D99AE"
-                    selectByMouse: true
-                    onTextEdited: masterLoopDialog.validationMessage = ""
-                    background: Rectangle {
-                        color: "#142E45"
-                        radius: 5
-                        border.color: masterLoopEndTime.activeFocus
-                            ? "#6CBCCF" : "#385773"
-                        border.width: 1
-                    }
-                }
-            }
-            Label {
-                objectName: "transportMasterLoopValidation"
-                text: masterLoopDialog.validationMessage.length > 0
-                    ? masterLoopDialog.validationMessage
-                    : "Time format m:ss.mmm; End must be later than Start."
-                color: masterLoopDialog.validationMessage.length > 0
-                    ? "#F29A9A" : "#91AFC3"
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-                font.pixelSize: 10
-            }
-            StudioButton {
-                objectName: "transportMasterLoopClear"
-                text: "Clear Master Loop"
-                minimumControlWidth: 140
-                enabled: root.monitorExclusive
-                onClicked: {
-                    if (!root.appTerminalMonitorViewModel) {
-                        masterLoopDialog.validationMessage = "Master listener unavailable."
-                        return
-                    }
-                    if (root.appTerminalMonitorViewModel.setMasterLoop(0, 0, false))
-                        masterLoopDialog.close()
-                    else
-                        masterLoopDialog.validationMessage =
-                            root.appTerminalMonitorViewModel.errorText
-                }
-            }
-        }
-        footer: Rectangle {
-            implicitHeight: 49
-            color: "#163047"
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
-                spacing: 8
-                Item { Layout.fillWidth: true }
-                StudioButton {
-                    objectName: "transportMasterLoopCancel"
-                    text: "Cancel"
-                    minimumControlWidth: 76
-                    onClicked: masterLoopDialog.close()
-                }
-                StudioButton {
-                    objectName: "transportMasterLoopApply"
-                    text: "Apply Loop"
-                    tone: "primary"
-                    minimumControlWidth: 102
-                    enabled: root.monitorExclusive
-                    onClicked: {
-                        if (!root.monitorExclusive || !root.appTerminalMonitorViewModel) {
-                            masterLoopDialog.validationMessage = "No active Master listener."
-                            return
-                        }
-                        const begin = root.masterFrameFromTime(masterLoopStartTime.text)
-                        const end = root.masterFrameFromTime(masterLoopEndTime.text)
-                        if (begin < 0 || end <= begin) {
-                            masterLoopDialog.validationMessage =
-                                "Enter a valid interval with End later than Start."
-                            return
-                        }
-                        if (root.appTerminalMonitorViewModel.setMasterLoop(
-                                begin, end, true))
-                            masterLoopDialog.close()
-                        else
-                            masterLoopDialog.validationMessage =
-                                root.appTerminalMonitorViewModel.errorText
-                    }
                 }
             }
         }
