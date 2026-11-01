@@ -2024,6 +2024,14 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // loop including on the return to SOURCE with exact half-open bounds.
     transport.stop();
     QVERIFY(product.cancel());
+    // An arbitrarily late worker result must not revive a canceled M17
+    // epoch, even if it carries a structurally valid DEVICE PCM owner.
+    auto staleWorker=product.admit_converted_monitor_owner(
+        capturedForAsync,*reusedNormal.value());
+    QVERIFY(!staleWorker);
+    QCOMPARE(staleWorker.error()->code(),core::ErrorCode::InvalidState);
+    QVERIFY(!product.capture_monitor_master_for_conversion());
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
     const auto sourceRegion=core::FrameRange::create(
         core::FrameIndex{120},core::FrameIndex{1200});
     QVERIFY(sourceRegion);
