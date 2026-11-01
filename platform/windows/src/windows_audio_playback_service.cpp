@@ -1573,6 +1573,63 @@ WindowsAudioPlaybackService::advise_imminent_monitoring_pcm_allocation(
 #endif
 }
 
+core::Result<MonitoringAsyncDevicePlan>
+WindowsAudioPlaybackService::probe_monitoring_async_device(
+    audio::AudioBufferView immutableMaster,
+    const std::function<core::Status(
+        const audio::MonitoringPcmPreallocationAdvice&)>& decision) const
+{
+    using Result=core::Result<MonitoringAsyncDevicePlan>;
+    const auto reject=[](const char* message)->Result {
+        return Result::failure(core::Error{
+            core::ErrorCode::InvalidState,message});
+    };
+    if(!decision)return reject("MONITOR_ASYNC_EXPLICIT_MEMORY_DECISION_REQUIRED");
+    const auto before=QMediaDevices::defaultAudioOutput();
+    if(before.isNull()||before.id().isEmpty())
+        return reject("MONITOR_ASYNC_DEFAULT_ENDPOINT_NOT_AVAILABLE");
+    const auto layout=immutableMaster.format().channel_layout();
+    const auto observedRate=preferred_monitoring_output_rate(layout);
+    if(!observedRate)return Result::failure(*observedRate.error());
+    auto planned=audio::project_monitoring_pcm_resource_cost(
+        immutableMaster.format().sample_rate(),
+        immutableMaster.frame_count(),*observedRate.value(),layout);
+    if(!planned)return Result::failure(*planned.error());
+    const auto fresh=advise_imminent_monitoring_pcm_allocation(
+        immutableMaster.format().sample_rate(),
+        immutableMaster.frame_count(),layout);
+    if(!fresh)return Result::failure(*fresh.error());
+    if(const auto status=audio::evaluate_imminent_monitoring_preallocation(
+        *fresh.value(),*observedRate.value(),*planned.value(),decision);
+        !status)
+        return Result::failure(*status.error());
+    const auto after=QMediaDevices::defaultAudioOutput();
+    if(after.isNull()||after.id()!=before.id())
+        return reject("MONITOR_ASYNC_DEFAULT_ENDPOINT_CHANGED_DURING_PREFLIGHT");
+    const auto id=before.id();
+    return Result::success(MonitoringAsyncDevicePlan{
+        *observedRate.value(),
+        std::string{id.constData(),static_cast<std::size_t>(id.size())}
+    });
+}
+
+core::Status WindowsAudioPlaybackService::recheck_monitoring_async_device(
+    const MonitoringAsyncDevicePlan& plan,
+    audio::AudioBufferView immutableMaster,
+    const std::function<core::Status(
+        const audio::MonitoringPcmPreallocationAdvice&)>& decision) const
+{
+    const auto current=probe_monitoring_async_device(
+        immutableMaster,decision);
+    if(!current)return core::Status::failure(*current.error());
+    if(current.value()->device_rate!=plan.device_rate
+       ||current.value()->opaque_endpoint_id!=plan.opaque_endpoint_id)
+        return core::Status::failure(core::Error{
+            core::ErrorCode::InvalidState,
+            "MONITOR_ASYNC_DEVICE_ENDPOINT_OR_RATE_CHANGED_DURING_CONVERSION"});
+    return core::Status::success();
+}
+
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
 WindowsAudioPlaybackService::materialize_monitoring_pcm_with_preflight(
     audio::AudioBufferView alreadyOwnedMaster,
