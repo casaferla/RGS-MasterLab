@@ -319,11 +319,13 @@ Item {
                             anchors.fill: parent
                         }
                         ToolTip.text: root.limiterViewModel
+                            && typeof root.limiterViewModel.verificationTrimDetails === "string"
                             ? root.limiterViewModel.verificationTrimDetails
                             : "No current verified M17 full-resource trim measurement."
                         ToolTip.visible: trimTooltipDwell.ready
                         ToolTip.delay: 0
                         text: root.limiterViewModel
+                            && typeof root.limiterViewModel.verificationTrimStatus === "string"
                             ? root.limiterViewModel.verificationTrimStatus
                             : "UNAVAILABLE · NOT VERIFIED"
                         color: "#B3C9D9"
