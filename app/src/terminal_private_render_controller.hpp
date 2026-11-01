@@ -5,6 +5,7 @@
 #include <rgsml/render/true_peak_limiter_terminal_candidate.hpp>
 #include <QObject>
 #include <QString>
+#include <QUrl>
 #include <atomic>
 #include <cstdint>
 #include <limits>
@@ -23,6 +24,10 @@ namespace rgsml::app {
 // Output rate must be independently negotiated, never assumed to be 48 kHz.
 class TerminalPrivateRenderController final : public QObject {
     Q_OBJECT
+    Q_PROPERTY(bool originalQ0Ready READ full_original_q0_family_ready
+               NOTIFY originalQ0FamilyChanged)
+    Q_PROPERTY(QString originalQ0Status READ original_q0_status
+               NOTIFY originalQ0FamilyChanged)
 public:
     // A REAL accepted whole-master Prepare observation, not a microprobe,
     // predicted ETA, released Final SRC, or evidence of M16 LIVE. UI-owned
@@ -71,6 +76,11 @@ public:
     // One explicit, original SHA-authenticated 14-FIR offline package.
     // It is not embedded in public GitHub; missing/altered FIR fails closed.
     void set_original_q0_fir_root(std::filesystem::path root);
+    // Persist a *reference* to the user's EXISTING 14-file original Q0 bank.
+    // Never copy/release private taps or trust the path without frozen pins.
+    // Called only on GUI thread while the M17 renderer is idle.
+    Q_INVOKABLE bool remember_existing_original_q0_folder(const QUrl& folder);
+    [[nodiscard]] QString original_q0_status() const {return originalQ0Status_;}
     [[nodiscard]] bool full_original_q0_family_ready() const noexcept {
         return privateOriginalFirFamilyReady_;
     }
@@ -117,6 +127,7 @@ public:
     }
 signals:
     void changed();
+    void originalQ0FamilyChanged();
 private:
     struct Job {
         std::uint64_t serial;
@@ -159,7 +170,8 @@ private:
     std::condition_variable cv_;
     std::optional<Job> pending_;
     std::filesystem::path privateOriginalFirRoot_;
-    bool privateOriginalFirFamilyReady_{false}; // fixed GUI-thread startup
+    bool privateOriginalFirFamilyReady_{false}; // GUI-thread verified original bank
+    QString originalQ0Status_{QStringLiteral("14 original Q0 FIRs not available")};
     bool stopping_{false};
     std::jthread worker_;
 };
