@@ -2012,6 +2012,30 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(monitorUi.returnManual());
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QVERIFY(!monitorSinkOwner);
+    // UNKNOWN or DISCOURAGED memory advice must be refused BEFORE the
+    // jthread even begins; the checked M17 MASTER stays ready for retry.
+    monitorUi.set_async_monitoring_device(
+        [](audio::AudioBufferView,bool)->core::Result<
+            platform::windows::MonitoringAsyncDevicePlan> {
+            return core::Result<
+                platform::windows::MonitoringAsyncDevicePlan>::failure(
+                    core::Error{core::ErrorCode::InvalidState,
+                        "MONITOR_MEMORY_NOT_APPROVED_OR_UNAVAILABLE"});
+        },
+        [](const platform::windows::MonitoringAsyncDevicePlan&,
+            audio::AudioBufferView,bool)->core::Status {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "MONITOR_ASYNC_RECHECK_MUST_NEVER_RUN"});
+        });
+    QVERIFY(!monitorUi.installMonitor(false));
+    QVERIFY(!monitorUi.monitor_preparing());
+    QVERIFY(!monitorSinkOwner);
+    QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
+    QCOMPARE(monitorUi.error_text(),
+        QStringLiteral("MONITOR_MEMORY_NOT_APPROVED_OR_UNAVAILABLE"));
+    QCOMPARE(renderer.render_invocation_count(),beforeAsyncRender);
+    QCOMPARE(asyncRechecks,std::size_t{1});
     // A hardware endpoint can change to a different physical ID with the
     // SAME rate while the FIR runs. The second owner-thread probe MUST
     // refuse installation even though the audio bits are already computed.
@@ -2069,8 +2093,14 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
             return core::Status::success();
         });
     // Accepted async preflight can be withdrawn before the Qt completion
-    // posts. No eventual stale DEVICE PCM may be installed.
+    // posts. No eventual stale DEVICE PCM may be installed. A second click
+    // must not launch a competing worker or re-probe a potentially changed
+    // device while the first conversion still owns its immutable ticket.
     QVERIFY(monitorUi.installMonitor(false));
+    QVERIFY(monitorUi.monitor_preparing());
+    const auto beforeDuplicateProbe=asyncPreflights;
+    QVERIFY(!monitorUi.installMonitor(false));
+    QCOMPARE(asyncPreflights,beforeDuplicateProbe);
     QVERIFY(monitorUi.monitor_preparing());
     QVERIFY(monitorUi.cancel());
     QVERIFY(!monitorUi.monitor_preparing());
