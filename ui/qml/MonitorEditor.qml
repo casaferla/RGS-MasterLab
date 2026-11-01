@@ -376,11 +376,11 @@ Item {
                 StudioButton {
                     objectName: "monitorAdvancedNavigationButton"
                     text: root.advancedNavigationExpanded
-                        ? "SEEK / LOOP  ▾" : "SEEK / LOOP  ▸"
+                        ? "SEEK  ▾" : "SEEK  ▸"
                     accentColor: root.slate
                     onClicked: root.advancedNavigationExpanded
                         = !root.advancedNavigationExpanded
-                    Accessible.name: "Show or hide secondary seek and loop commands"
+                    Accessible.name: "Show or hide optional Master seek command"
                 }
                 Item { Layout.fillWidth: true }
                 Text {
@@ -412,44 +412,6 @@ Item {
                         const n=Number(seekFrame.text)
                         if(Number.isSafeInteger(n) && n>=0)root.monitorViewModel.seekMaster(n)
                     }
-                }
-            }
-            RowLayout {
-                objectName: "monitorLoopRow"
-                visible: root.advancedNavigationExpanded
-                Layout.fillWidth: true
-                spacing: 5
-                TextField {
-                    id: loopStart
-                    objectName: "monitorLoopStartFrame"
-                    Layout.fillWidth: true
-                    placeholderText: "MASTER loop from"
-                    font.pixelSize: 10
-                    inputMethodHints: Qt.ImhDigitsOnly
-                }
-                TextField {
-                    id: loopEnd
-                    objectName: "monitorLoopEndFrame"
-                    Layout.fillWidth: true
-                    placeholderText: "to (exclusive)"
-                    font.pixelSize: 10
-                    inputMethodHints: Qt.ImhDigitsOnly
-                }
-                StudioButton {
-                    objectName: "monitorSetLoop"
-                    text: "Loop"
-                    enabled: root.controlsAvailable
-                    onClicked: {
-                        const a=Number(loopStart.text), b=Number(loopEnd.text)
-                        if(Number.isSafeInteger(a)&&Number.isSafeInteger(b)&&a>=0&&b>a)
-                            root.monitorViewModel.setMasterLoop(a,b,true)
-                    }
-                }
-                StudioButton {
-                    objectName: "monitorClearLoop"
-                    text: "No loop"
-                    enabled: root.controlsAvailable
-                    onClicked: root.monitorViewModel.setMasterLoop(0,0,false)
                 }
             }
             Text {
