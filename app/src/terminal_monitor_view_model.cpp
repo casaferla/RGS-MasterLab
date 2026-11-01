@@ -34,6 +34,15 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
     lastCanPrepareOffline_=can_prepare_offline();
     connect(transport_,&PlaybackTransportViewModel::playbackChanged,
         this,[this] {
+            // SOURCE transport may retire its real audible owner without a
+            // simultaneous TerminalPrivateProductSession::changed signal.
+            // Revoke any obsolete off-thread DEVICE conversion promptly
+            // rather than wasting a whole-song FIR before the final gate.
+            // A legal Play/Pause/Seek on the SAME immutable owner remains
+            // current and must not cause a second M17 PREPARE.
+            if(monitorPreparing_
+               &&session_->capture_monitor_master_for_conversion()!=pendingMaster_)
+                abort_async_conversion();
             const bool install=can_install();
             const bool offline=can_prepare_offline();
             if(install==lastCanInstall_
