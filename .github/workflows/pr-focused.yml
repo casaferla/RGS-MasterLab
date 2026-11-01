@@ -30,6 +30,8 @@ jobs:
         run: |
           python tools/qualification/final_src/test_phase11_math_preflight.py
           python tools/qualification/final_src/phase3_exact_model_q0_nonrelease.py
+          # Same unified FIR-root policy on both OS: FQ must have all 16.
+          python tools/qualification/playback_src/test_approved_16_fir_package.py
 
       # Independent conceptual zero-stuffed exact-dyadic reference checks;
       # NOT the full MPFR spectral oracle or release qualification.
@@ -579,6 +581,7 @@ jobs:
           python tools/qualification/final_src/test_phase11_math_preflight.py
           python tools/qualification/final_src/phase3_exact_model_q0_nonrelease.py
           python tools/qualification/final_src/test_audit_work_phase3_frozen_math_nonrelease.py
+          python tools/qualification/playback_src/test_approved_16_fir_package.py
 
       # Independent conceptual zero-stuffed exact-dyadic reference checks;
       # NOT the full MPFR spectral oracle or release qualification.
