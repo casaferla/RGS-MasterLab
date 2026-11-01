@@ -2,6 +2,11 @@
 
 #include <rgsml/audio/monitoring_rate_memory_advisor.hpp>
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
+#include <rgsml/audio/monitoring_pcm_candidate.hpp>
+#include <QMetaObject>
+#include <QThread>
+#include <new>
+#include <utility>
 #include <rgsml/core/error.hpp>
 #include <rgsml/core/frame_time.hpp>
 
@@ -37,6 +42,12 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
             emit changed();
         });
     connect(session_,&TerminalPrivateProductSession::changed,this,[this] {
+        // A newly selected SOURCE, closed render epoch or returned MANUAL
+        // invalidates a pending off-thread conversion immediately. No stale
+        // worker is allowed to install DEVICE audio on completion.
+        if(monitorPreparing_
+           &&session_->capture_monitor_master_for_conversion()!=pendingMaster_)
+            abort_async_conversion();
         lastCanInstall_=can_install();
         lastCanPrepareOffline_=can_prepare_offline();
         if(monitor_controllable()) {
@@ -56,8 +67,31 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
     });
 }
 
+TerminalMonitorViewModel::~TerminalMonitorViewModel()
+{
+    // Cancellation is cooperative inside bounded offline DSP blocks; never
+    // join a live full-track conversion without requesting stop first.
+    abort_async_conversion();
+    if(monitorWorker_.joinable()) {
+        monitorWorker_.request_stop();
+        monitorWorker_.join();
+    }
+}
+
+void TerminalMonitorViewModel::abort_async_conversion()
+{
+    if(asyncCancellation_)
+        asyncCancellation_->store(true,std::memory_order_release);
+    ++monitorSerial_;
+    monitorPreparing_=false;
+    pendingMaster_.reset();
+    emit changed();
+}
+
 QString TerminalMonitorViewModel::status_text() const
 {
+    if(monitorPreparing_)
+        return QStringLiteral("PREPARING DEVICE PCM · SOURCE STILL RESPONSIVE");
     const auto status=session_->status();
     // IDLE cannot attest audible MANUAL: SOURCE may have been refused
     // initially and an offline-origin monitor may have returned NO_SOURCE.
@@ -130,12 +164,13 @@ bool TerminalMonitorViewModel::can_dismiss() const noexcept
     // still needs an explicit reset rather than a disabled Cancel button.
     // Reset only the MASTER request owned by this UI. A separate
     // ordinary M17 preview must not become cancellable from MONITOR.
-    return monitor_exclusive()
+    return monitorPreparing_ ||monitor_exclusive()
         || (monitorRequested_ && session_->status()!=QStringLiteral("IDLE"))
         || !error_.isEmpty();
 }
 bool TerminalMonitorViewModel::can_install() const noexcept
 {
+    if(monitorPreparing_)return false;
     const auto status=session_->status();
     if(status==QStringLiteral("PRIVATE_INSTALLED"))
         return installedHandoff_ && installedHandoffEligible_
