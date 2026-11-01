@@ -381,8 +381,8 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
             // pressure. Refuse and revoke the pending ticket instead of
             // propagating std::system_error/std::bad_alloc through QML.
             // The original accepted M17 MASTER stays intact for retry.
-            abort_async_conversion();
             asyncWorkerRunning_.store(false,std::memory_order_release);
+            abort_async_conversion();
             return report(reject("MONITOR_ASYNC_WORKER_START_FAILED"));
         }
         return true; // accepted async request, NOT yet DEVICE installed
