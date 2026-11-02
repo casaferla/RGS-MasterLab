@@ -48,6 +48,24 @@ class All16FirsPackagingTest(unittest.TestCase):
             self.assertEqual({x["file"]:x["sha256"]
                 for x in catalog["assets"][:2]},expected)
 
+    def test_no_experimental_runtime_converter_and_uniform_admission(self):
+        # Source-health/preview/DEVICE may have distinct PCM owners,
+        # but none may silently select a generated per-rate FIR. Make this
+        # rejection part of both Focused OS preflight and later FQ builds.
+        playback=(REPO/"audio"/"src"/"playback_sample_rate_adapter.cpp").read_text()
+        full=(REPO/"audio"/"src"/"full_resource_output_rate_candidate.cpp").read_text()
+        loader=(REPO/"audio"/"private_io"/"external_playback_fir_assets.cpp").read_text()
+        policy=(REPO/"app"/"src"/"final_src_candidate_policy.hpp").read_text()
+        self.assertNotIn("make_provisional_device_fir",playback)
+        self.assertNotIn("experimental_rational_output_rate",full)
+        self.assertIn("load_external_playback_fir(inputRate,outputRate)",playback)
+        self.assertIn("PlaybackSampleRateAdapter::create",full)
+        self.assertIn("phase11_frozen_original_fir_pin",loader)
+        self.assertIn("PLAYBACK_FIR_TRUSTED_SHA256_MISMATCH",loader)
+        self.assertNotIn("EXPERIMENTAL_UNQUALIFIED",policy)
+        self.assertNotIn("EXISTING_44K_48K_FIR",policy)
+        self.assertIn("PINNED_FIR_PENDING_PRODUCT_FQ",policy)
+
     def test_official_fq_refuses_absent_originals(self):
         with tempfile.TemporaryDirectory() as d:
             output=Path(d)/"resources"/"fir"
