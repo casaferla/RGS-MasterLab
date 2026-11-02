@@ -1386,8 +1386,10 @@ void MasteringChainStateTest::terminalPrivateEndToEndRenderInstallAndRollback()
     // Product policy is now identical for every nonidentity rate: the
     // historic 44.1->48 path is not privately exempt from a complete,
     // byte-authenticated Q0 FIR family. Exercise the REAL in-repo assets.
+    // Source is tests/unit/app/<fixture>.cpp: four parents reach the
+    // repository root, not tests/. Never weaken the source SHA admission.
     const auto repoRoot=std::filesystem::path{__FILE__}
-        .parent_path().parent_path().parent_path();
+        .parent_path().parent_path().parent_path().parent_path();
     renderer.set_original_q0_fir_root(repoRoot/"resources"/"fir");
     QVERIFY(renderer.full_original_q0_family_ready());
     int installedCount=0,issuedCount=0;
