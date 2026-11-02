@@ -10,7 +10,7 @@ QString MasterOutputRateState::final_src_path_status(qint64 hz) const {
         return QStringLiteral("IDENTITY · no Final SRC");
     case FinalSrcCandidatePath::PINNED_FIR_PENDING_PRODUCT_FQ:
         return originalQ0Ready_
-            ? QStringLiteral("SHA-pinned original FIR · M17 FQ pending")
+            ? QStringLiteral("SHA-pinned original Q0 FIR · M17 FQ pending")
             : QStringLiteral("Final SRC UNQUALIFIED · Prepare unavailable");
     default:
         return QStringLiteral("SOURCE / target rate unavailable");
