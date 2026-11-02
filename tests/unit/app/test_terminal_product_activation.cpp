@@ -1642,22 +1642,27 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!candidates.staged());
     QCOMPARE(device->audibleRealization.realizationId,currentManualId);
 
-    // 44.1 -> 192 Final SRC is still experimental and cannot provide
-    // a certified Phase-11 FIR checksum. Refuse before any whole-programme
-    // render, not after wasting M17/M16 time and discarding the candidate.
-    const auto beforeUnqualified=renderer.render_invocation_count();
-    const auto refusedUnqualified=product.request_private_for_final_master(
-        *highMasterRate.value());
-    QVERIFY(!refusedUnqualified);
-    QCOMPARE(refusedUnqualified.error()->code(),
-        core::ErrorCode::UnsupportedOperation);
-    QCOMPARE(product.status(),QStringLiteral("IDLE"));
-    QCOMPARE(renderer.render_invocation_count(),beforeUnqualified);
-    QVERIFY(!candidates.staged());
+    // Uniform original-Q0 admission: 44.1 -> 192 is a supported,
+    // authenticated nonidentity MASTER rate just like 44.1 -> 48.
+    // A formerly experimental/rejected fixture MUST now finish an actual
+    // M17+M16 private render, retaining SOURCE and never touching DEVICE.
+    const auto beforeHighRate=renderer.render_invocation_count();
+    QVERIFY(product.request_private_for_final_master(*highMasterRate.value()));
+    QTRY_COMPARE_WITH_TIMEOUT(product.status(),
+        QStringLiteral("MASTER_READY_MONITOR_PENDING"),30000);
+    QCOMPARE(renderer.render_invocation_count(),beforeHighRate+1);
+    const auto highRateMaster=candidates.staged();
+    QVERIFY(highRateMaster);
+    QCOMPARE(highRateMaster->rendered.output_rate,*highMasterRate.value());
+    QCOMPARE(highRateMaster->rendered.terminal.checked.terminal
+        .compensated_pcm.view().format().sample_rate(),*highMasterRate.value());
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
     QCOMPARE(device->audibleRealization.realizationId,currentManualId);
     QVERIFY(product.cancel());
+    QCOMPARE(product.status(),QStringLiteral("IDLE"));
+    QVERIFY(!candidates.staged());
+    QCOMPARE(device->audibleRealization.realizationId,currentManualId);
 
     // Production M17 now chooses the persisted PROJECT MASTER target,
     // not the DAC clock. The 44.1k MASTER on a probed 48k device is
