@@ -29,7 +29,7 @@ private slots:
         QStringLiteral("SOURCE / target rate unavailable"));
     const std::array<qint64,6> rates{
         44100,48000,88200,96000,176400,192000};
-    int identity=0,legacy=0,unqualified=0;
+    int identity=0,unqualified=0;
     for(const auto from:rates) {
         state.source_committed(from);
         for(const auto to:rates) {
@@ -39,12 +39,6 @@ private slots:
                 QVERIFY(admitted);
                 QVERIFY(label.contains(QStringLiteral("IDENTITY")));
                 ++identity;
-            } else if((from==44100&&to==48000)
-                   ||(from==48000&&to==44100)) {
-                QVERIFY(admitted);
-                QVERIFY(label.contains(QStringLiteral("candidate")));
-                QVERIFY(label.contains(QStringLiteral("release pending")));
-                ++legacy;
             } else {
                 QVERIFY(!admitted);
                 QVERIFY(label.contains(QStringLiteral("UNQUALIFIED")));
@@ -53,8 +47,7 @@ private slots:
         }
     }
     QCOMPARE(identity,6);
-    QCOMPARE(legacy,2);
-    QCOMPARE(unqualified,28);
+    QCOMPARE(unqualified,30);
     state.source_committed(32000);
     QVERIFY(!state.m17_candidate_rate_admissible(192000));
  }
@@ -62,7 +55,7 @@ private slots:
     const std::array<qint64,6> rates{
         44100,48000,88200,96000,176400,192000};
     MasterOutputRateState state;
-    int actualNew=0,identity=0,legacy=0;
+    int needsOriginal=0,identity=0;
     for(const auto source:rates) {
         state.source_committed(source);
         for(const auto target:rates) {
@@ -72,12 +65,10 @@ private slots:
             QVERIFY(after);
             QCOMPARE(ui,PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE);
             if(source==target){QVERIFY(prior);++identity;}
-            else if((source==44100&&target==48000)
-                ||(source==48000&&target==44100)){QVERIFY(prior);++legacy;}
-            else {QVERIFY(!prior);++actualNew;}
+            else {QVERIFY(!prior);++needsOriginal;}
         }
     }
-    QCOMPARE(identity,6);QCOMPARE(legacy,2);QCOMPARE(actualNew,28);
+    QCOMPARE(identity,6);QCOMPARE(needsOriginal,30);
     state.source_committed(44100);
     QVERIFY(!state.m17_candidate_rate_admissible(192000));
     state.set_original_q0_family_ready(true);
@@ -103,24 +94,24 @@ private slots:
     };
     for(std::size_t i=0;i<6;++i)QVERIFY(!read(i));
     QVERIFY(!state.current_master_rate_admissible());
-    // Source 48 is always IDENTITY admitted, 44.1 is the existing public
-    // pair. All other targets fail closed until the original 14 private
-    // Q0 files are independently authenticated.
+    // Source 48 identity is admitted; ALL 30 other selected rates
+    // require authentication of the exact same original Q0 asset family.
     state.source_committed(48000);
     QCOMPARE(admissionSignals.count(),1);
     QCOMPARE(state.master_rate_hz(),qint64{48000});
     QVERIFY(state.current_master_rate_admissible());
-    QVERIFY(read(0));QVERIFY(read(1));
+    QVERIFY(!read(0));QVERIFY(read(1));
     for(std::size_t i=2;i<6;++i)QVERIFY(!read(i));
     // Prove NOTIFY on an admitted MASTER edit even with identical SOURCE.
     QVERIFY(state.choose_master_rate(44100));
     QCOMPARE(admissionSignals.count(),2);
-    QVERIFY(state.current_master_rate_admissible());
+    QVERIFY(!state.current_master_rate_admissible());
     state.set_original_q0_family_ready(true);
     QCOMPARE(admissionSignals.count(),3);
     for(std::size_t i=0;i<6;++i)QVERIFY(read(i));
     state.set_original_q0_family_ready(false);
     QCOMPARE(admissionSignals.count(),4);
+    QVERIFY(!read(0));QVERIFY(read(1));
     for(std::size_t i=2;i<6;++i)QVERIFY(!read(i));
     // A 192 kHz SOURCE may have no exact Windows device, but its 192 kHz
     // MASTER identity route MUST remain admissible to offline M17 Prepare.
@@ -141,9 +132,7 @@ private slots:
     for(const auto source:rates) {
         for(const auto master:rates) {
             const auto display=prepare_memory_display_admission(source,master);
-            if(source==master
-                ||(source==44100&&master==48000)
-                ||(source==48000&&master==44100)) {
+            if(source==master) {
                 QCOMPARE(display,
                     PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE);
                 ++permitted;
@@ -154,8 +143,8 @@ private slots:
             }
         }
     }
-    QCOMPARE(permitted,8);
-    QCOMPARE(unqualified,28);
+    QCOMPARE(permitted,6);
+    QCOMPARE(unqualified,30);
     for(const auto bad:{0,32000,384000}) {
         QCOMPARE(prepare_memory_display_admission(bad,192000),
             PrepareMemoryDisplayAdmission::SOURCE_OR_RATE_UNAVAILABLE);
