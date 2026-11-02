@@ -40,6 +40,7 @@
 #include <limits>
 #include <vector>
 #include <thread>
+#include <filesystem>
 #include <numeric>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
 
@@ -784,6 +785,15 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!renderer.full_original_q0_family_ready());
     QVERIFY(renderer.original_q0_status().contains(
         QStringLiteral("not the verified original")));
+    // Negative enrollment checks above require NO original family.
+    // Positive 44.1->48 activation below now obeys exactly the SAME
+    // 14-file original Q0 admission as all other nonidentity rates.
+    // Load the genuine pinned repository assets, never stub the policy
+    // or invent coefficients to force an artificial READY.
+    const auto repoRoot=std::filesystem::path{__FILE__}
+        .parent_path().parent_path().parent_path();
+    renderer.set_original_q0_fir_root(repoRoot/"resources"/"fir");
+    QVERIFY(renderer.full_original_q0_family_ready());
     app::TerminalPrivateProductSession product{
         renderer,publisher,candidates,transport,
         [&selector]{return selector.prepared_realization_snapshot();},
