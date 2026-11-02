@@ -1604,7 +1604,8 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // The source and selected master here are both 44.1 kHz. The
     // deliberately failing DEVICE probe must not affect the independent
     // master-only request, and must not publish into any audio sink.
-    // This test does NOT qualify the separate 44.1 -> 192 FIR.
+    // The positive cross-rate 44.1 -> 192 original-Q0 render below
+    // exercises this same immutable MASTER path without granting FQ release.
     QVERIFY(selector.switch_to(app::AuditionTarget::PROCESSED));
     // The second Input Gain edit earlier in this fixture publishes a NEW
     // MANUAL realization. The previous updatedManualId is now stale.
@@ -1727,10 +1728,9 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
 void TerminalActivationIntegrationTest::
 privateMaster192kOn48kDeviceRemainsUninstalled()
 {
-    // Separate fresh 192-kHz SOURCE fixture: the certified identity-rate
-    // master route can succeed without relying on the still-unqualified
-    // 44.1 -> 192 experimental Final Output FIR, while the independently
-    // probed 48-kHz sink must remain completely untouched.
+    // Separate fresh 192-kHz SOURCE fixture: the identity MASTER
+    // uses no SRC FIR, while the independent physical 48-kHz DEVICE
+    // remains untouched. Cross-rate original-Q0 policy is tested above.
     auto registry=dsp::ModuleRegistry::create_dsp_package_v1();
     auto masterRate=core::SampleRate::create(192000);
     auto deviceRate=core::SampleRate::create(48000);
