@@ -1,6 +1,8 @@
 #include "audition_source_selector.hpp"
 #include "playback_transport_view_model.hpp"
 #include "terminal_candidate_gate.hpp"
+#include "terminal_playback_frame_map.hpp"
+#include "internal/terminal_src_frame_map_provenance.hpp"
 #include "terminal_audio_session_gate.hpp"
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_private_render_controller.hpp"
@@ -38,6 +40,8 @@
 #include <limits>
 #include <vector>
 #include <thread>
+#include <numeric>
+#include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
 
 namespace rgsml::tests {
 
@@ -105,6 +109,7 @@ private:
 class TerminalActivationIntegrationTest final:public QObject {
     Q_OBJECT
 private slots:
+    void acceptedQ0MasterFrameMapPreservesBothKernelFamilies();
     void audibleOnBypassRestoresExactManualSourceAndLoop();
     void finalMasterAt192kNeverBecomesDeviceRate48k();
     void sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix();
@@ -117,6 +122,59 @@ private slots:
     void verificationTrimCannotBeForgedFromCeilingOrRetainedAcrossOwners();
 };
 
+
+// FQ90 physical regression: a real original-Q0 SOURCE->MASTER result must
+// be previewable even though the historic/provisional DEVICE SRC uses a
+// DIFFERENT FIR SHA. Neither a made-up digest nor a frame-count mismatch
+// may acquire playback authority. Source/MASTER coordinates use the same
+// exact ceil half-open map, without replacing the Q0 render coefficients.
+void TerminalActivationIntegrationTest::
+acceptedQ0MasterFrameMapPreservesBothKernelFamilies()
+{
+    for(const auto pair:std::array<std::pair<std::int64_t,std::int64_t>,3>{{
+        {44100,48000},{192000,48000},{48000,44100}}) {
+        auto fin=core::SampleRate::create(pair.first);
+        auto fout=core::SampleRate::create(pair.second);
+        auto n=core::FrameCount::create(513);
+        QVERIFY(fin&&fout&&n);
+        auto map=audio::PlaybackSampleRateAdapter::create({
+            *fin.value(),*fout.value(),audio::ChannelLayout::STEREO_LR,
+            *n.value()});
+        QVERIFY(map);
+        const auto gcd=std::gcd(pair.first,pair.second);
+        const auto* original=audio::internal::phase11_frozen_original_fir_pin(
+            static_cast<std::uint32_t>(pair.second/gcd),
+            static_cast<std::uint32_t>(pair.first/gcd));
+        QVERIFY(original);
+        const auto total=map.value()->output_frame_count();
+        // Authentic Phase-11 Q0 on the same L/M must NOT be compared
+        // to the genuinely different playback-kernel SHA.
+        QVERIFY(app::internal::accepted_terminal_src_frame_map_provenance(
+            *fin.value(),*fout.value(),*n.value(),total,
+            original->sha256,*map.value()));
+        QVERIFY(app::internal::accepted_terminal_src_frame_map_provenance(
+            *fin.value(),*fout.value(),*n.value(),total,
+            map.value()->kernel_sha256(),*map.value()));
+        QVERIFY(!app::internal::accepted_terminal_src_frame_map_provenance(
+            *fin.value(),*fout.value(),*n.value(),total,
+            "forged-missing-or-stale-kernel",*map.value()));
+        const auto changedSource=core::FrameCount::create(n.value()->value()+1);
+        const auto changedOutput=core::FrameCount::create(total.value()+1);
+        QVERIFY(changedSource&&changedOutput);
+        QVERIFY(!app::internal::accepted_terminal_src_frame_map_provenance(
+            *fin.value(),*fout.value(),*changedSource.value(),total,
+            original->sha256,*map.value()));
+        QVERIFY(!app::internal::accepted_terminal_src_frame_map_provenance(
+            *fin.value(),*fout.value(),*n.value(),*changedOutput.value(),
+            original->sha256,*map.value()));
+        // Nontrivial SOURCE boundaries always map with exact ceil.
+        const auto p=map.value()->map_input_frame_to_output(
+            core::FrameIndex{147});
+        QVERIFY(p);
+        const auto expected=(147*pair.second+pair.first-1)/pair.first;
+        QCOMPARE(p.value()->value(),expected);
+    }
+}
 
 // Adversarial parameter-input oracle: independent data rows run even if a
 // different failure later aborts the full A/B integration scenario. No PCM,
