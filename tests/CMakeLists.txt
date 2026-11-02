@@ -1942,6 +1942,27 @@ foreach(_rgsml_m17_consumer IN ITEMS
     endforeach()
 endforeach()
 
+# M18 PREPRODUCTION only: corrected Philox RNG and counter-addressed
+# TPDF tests. This new standalone QtTest target links no M17, Windows
+# DEVICE, WavWriter or final delivery pipeline. Gate G remains pending.
+qt_add_executable(rgsml_m18_counter_dither_philox_tests
+    unit/audio/test_m18_counter_dither_philox.cpp
+)
+target_include_directories(rgsml_m18_counter_dither_philox_tests
+    PRIVATE ${CMAKE_SOURCE_DIR}/audio/src
+)
+target_link_libraries(rgsml_m18_counter_dither_philox_tests
+    PRIVATE Qt6::Core Qt6::Test
+)
+rgsml_apply_project_warnings(rgsml_m18_counter_dither_philox_tests)
+add_test(NAME rgsml_m18_counter_dither_philox_tests
+    COMMAND rgsml_m18_counter_dither_philox_tests
+)
+set_tests_properties(rgsml_m18_counter_dither_philox_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "audio;m18;preproduction;dither;philox"
+)
+
 # External playback FIR assets must be available to every existing native
 # SRC/Windows/Qt test, not only the newly introduced negative tests.
 # CTest injects this explicit build directory; no end-user environment setup.
