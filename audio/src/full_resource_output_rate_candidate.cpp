@@ -233,11 +233,18 @@ materialize_full_resource_output_rate_candidate_impl(
         }
     }
     const auto same=input.format().sample_rate()==output_rate;
-    if(!same && !(
-        (input.format().sample_rate().value()==44100
-           && output_rate.value()==48000)
-        || (input.format().sample_rate().value()==48000
-           && output_rate.value()==44100))) {
+    // Only the legacy SOURCE-domain exploratory API keeps its historic
+    // unqualified in-memory prototype for isolated negative/fixture tests.
+    // PRODUCT MASTER already uses the genuine Q0 converter independently.
+    // Every MASTER->DEVICE monitoring route MUST instead use the same
+    // pinned 16-file catalog as the Playback adapter, without prototype
+    // generation or a second synthetic coefficient family.
+    const bool historic=(input.format().sample_rate().value()==44100
+                            &&output_rate.value()==48000)
+        ||(input.format().sample_rate().value()==48000
+                            &&output_rate.value()==44100);
+    if(!same&&!historic
+       &&requiredInputDomain==FrameDomainId::SOURCE_PROCESSING_RATE) {
         return experimental_rational_output_rate(
             input,output_rate,block,cancelled);
     }
