@@ -380,23 +380,28 @@ private slots:
     QVERIFY(!predict(132300,44100,44100,2,-1.0,20,31));
     QVERIFY(!predict(132300*5,44100,44100,2,-1.0,20,30));
     QVERIFY(!predict(132300,44100,96000,2,-1.0,20,30));
-    // More than 3 real observations from the SAME 44.1->48 FIR path
-    // are necessary; equality/unknown cannot be projected as SRC time.
+    // All 30 nonidentity SOURCE->MASTER rate pairs, including historical
+    // 44.1->48, require identical actual Q0 source-family authentication
+    // before a measured whole-Prepare timing can train a host estimate.
     AcceptedPrepareHostTimingHistory converted;
     auto fir=x;
     for(std::uint64_t serial=11;serial<=13;++serial) {
         fir.invocation=serial;fir.master_hz=48000;fir.src_us=100000;
-        QVERIFY(converted.observe(fir));
+        QVERIFY(!converted.observe(fir)); // no family = no observation
+        ++fir.invocation; // rejected serial must never be replayed
+        QVERIFY(converted.observe(fir,true));
     }
     // Direct C++ API order is source Hz, source frames, channel count,
     // master Hz. The fixture-local predictor above has a different order.
+    QVERIFY(!converted.predict(44100,132300,2,
+                               48000,-1.0,20,30)); // no family
     const auto genuineFir=converted.predict(44100,132300,2,
-                                            48000,-1.0,20,30);
+                                            48000,-1.0,20,30,true);
     QVERIFY(genuineFir);
     QCOMPARE(genuineFir->matched_observations,std::size_t{3});
     QVERIFY(genuineFir->low_us>0);
     QVERIFY(genuineFir->high_us>genuineFir->low_us);
-    QVERIFY(!converted.predict(44100,132300,2,192000,-1.0,20,30));
+    QVERIFY(!converted.predict(44100,132300,2,192000,-1.0,20,30,true));
     // The 28 newer real Q0 SOURCE->MASTER routes can teach an INDICATIVE
     // host ETA only after full local original-14-FIR authentication. A
     // numerical history is not itself a Q0 admission or release ticket.
