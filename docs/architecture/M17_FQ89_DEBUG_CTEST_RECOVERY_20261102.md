@@ -12,3 +12,10 @@ Corrective coherent staging-only macro-lot:
 - No coefficient, SRC/DSP math, runtime, UI, source ownership, manual FQ, or `main` change.
 
 Before PR promotion verify exact staging-to-PR fast-forward and Single-Writer Epoch, then one CAS update to Draft PR. Obtain new Windows/Linux Focused green on the new SHA. This certifies the shared standalone manifest gate, **NOT** the complete FQ Debug install / Release / physical acceptance. Only Product Owner dispatches a NEW cold Windows FQ on that new exact SHA. Keep M17 and post-M17 CI reset before M18; no main merge.
+
+## 2026-11-02 — Focused #967 completed: Windows+Linux PASS
+
+- Run: https://github.com/casaferla/RGS-MasterLab/actions/runs/41437614078 ; terminal `completed/success`, both `Windows Focused DSP` and `Linux Portable DSP Guard` succeeded on exact PR SHA `5e1604c484913dd08bcba6a08401e180930b4b8e`.
+- PR #61 remains Draft, open, unmerged. At this check staging was identical to PR (ahead 0 / behind 0). The new shared CMake installed-16-FIR gate was exercised via `test_approved_16_fir_package.py` on both runners. This automated PASS does not close the old FQ #89 failure retroactively.
+- PO-only NEXT: manually dispatch `Windows Full Qualification` with PR branch `experimental/m17-monitoring-pcm-isolation-20261024`, `expected_source_sha=5e1604c484913dd08bcba6a08401e180930b4b8e`, `cache_mode=cold`. Expect the next run to be FQ #90; verify run number after dispatch. Do not use this documentation-only staging commit as the expected SHA.
+- After successful cold FQ: independently verify installed ZIP contains all 16 unmodified FIRs and complete manifest; then Windows physical M17 listening/MASTER/DEVICE/meters/Region/time checks. No main merge, no M18 before M17 acceptance; post-M17 CI audit/reset precedes M18.
