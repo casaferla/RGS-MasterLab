@@ -152,23 +152,20 @@ acceptedQ0MasterFrameMapPreservesBothKernelFamilies()
         QVERIFY(app::internal::accepted_terminal_src_frame_map_provenance(
             *fin.value(),*fout.value(),*n.value(),total,
             original->sha256,*map.value()));
-        // Only the two historical Playback FIRs have an external,
-        // certified digest. Other Playback six-rate pairs use provisional
-        // PREPARE-only coefficients with NO digest: an empty SHA must
-        // always fail admission as accepted MASTER provenance.
+        // All DEVICE ratios now have an independently frozen SHA from the
+        // flat 16-FIR package. For the two legacy directions Playback and
+        // Q0 remain different valid hashes; for other rates the DEVICE and
+        // original MASTER use the exact same original-Q0 SHA.
         const bool historic=(pair.first==44100&&pair.second==48000)
             ||(pair.first==48000&&pair.second==44100);
-        if(historic) {
-            QVERIFY(!map.value()->kernel_sha256().empty());
-            QVERIFY(app::internal::accepted_terminal_src_frame_map_provenance(
-                *fin.value(),*fout.value(),*n.value(),total,
-                map.value()->kernel_sha256(),*map.value()));
-        } else {
-            QVERIFY(map.value()->kernel_sha256().empty());
-            QVERIFY(!app::internal::accepted_terminal_src_frame_map_provenance(
-                *fin.value(),*fout.value(),*n.value(),total,
-                map.value()->kernel_sha256(),*map.value()));
-        }
+        QVERIFY(!map.value()->kernel_sha256().empty());
+        if(historic)
+            QVERIFY(map.value()->kernel_sha256()!=std::string_view{original->sha256});
+        else
+            QCOMPARE(map.value()->kernel_sha256(),std::string_view{original->sha256});
+        QVERIFY(app::internal::accepted_terminal_src_frame_map_provenance(
+            *fin.value(),*fout.value(),*n.value(),total,
+            map.value()->kernel_sha256(),*map.value()));
         QVERIFY(!app::internal::accepted_terminal_src_frame_map_provenance(
             *fin.value(),*fout.value(),*n.value(),total,
             "forged-missing-or-stale-kernel",*map.value()));
