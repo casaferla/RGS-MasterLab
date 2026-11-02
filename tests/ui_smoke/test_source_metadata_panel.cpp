@@ -39,6 +39,7 @@
 #include <QLibraryInfo>
 #include <QRegularExpressionValidator>
 #include <QSet>
+#include <QVariantMap>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -5998,6 +5999,37 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QStringLiteral("m15_global_status_stereo_corrected_1184x688.png"),
         QSize{1184, 688}),
         "Capture real Qt Stereo/M-S corrected global status");
+
+    // FQ90 physical listening: while a genuine MASTER -> DEVICE conversion
+    // runs on its dedicated worker, its Main transport group MUST remain
+    // visible, including the cancel command and truthful busy text.
+    // A mocked source has no verified Master; no audio install is attempted.
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("terminalMonitorViewModel"),
+        QVariantMap{
+            {QStringLiteral("canInstall"),false},
+            {QStringLiteral("monitorExclusive"),false},
+            {QStringLiteral("monitorPreparing"),true},
+            {QStringLiteral("monitorCancelling"),false},
+            {QStringLiteral("returnTargetText"),QStringLiteral("Return to Source")},
+            {QStringLiteral("masterRateHz"),88200},
+            {QStringLiteral("deviceRateHz"),48000}
+        });
+    QCoreApplication::processEvents();
+    auto* masterBusyRow=find_child_by_name(root,
+        QStringLiteral("transportMasterListenControls"));
+    auto* masterBusyCancel=find_child_by_name(root,
+        QStringLiteral("globalReturnFromMonitor"));
+    auto* masterBusyStatus=find_child_by_name(root,
+        QStringLiteral("transportMasterDeviceRate"));
+    QVERIFY(masterBusyRow && masterBusyCancel && masterBusyStatus);
+    QTRY_VERIFY_WITH_TIMEOUT(masterBusyRow->property("visible").toBool(),1500);
+    QVERIFY(masterBusyCancel->property("visible").toBool());
+    QCOMPARE(masterBusyCancel->property("text").toString(),
+        QStringLiteral("Cancel Master Prepare"));
+    QVERIFY(masterBusyStatus->property("visible").toBool());
+    QVERIFY(masterBusyStatus->property("text").toString().contains(
+        QStringLiteral("Preparing Master device PCM")));
 
     window->close();
     QCoreApplication::processEvents();
