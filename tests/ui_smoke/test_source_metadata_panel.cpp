@@ -576,8 +576,11 @@ sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes()
         QCOMPARE(row.value(QStringLiteral("peakRamQualified")).toBool(),false);
         QCOMPARE(row.value(QStringLiteral("isFutureWholePrepare")).toBool(),
             false);
+        // Historical 44.1->48 is no longer an exceptional admitted
+        // MASTER path: all five nonidentity targets fail closed without
+        // the same authenticated original-Q0 family.
         QCOMPARE(row.value(QStringLiteral("kind")).toString(),
-            index>=2 ? QStringLiteral("blocked")
+            index>=1 ? QStringLiteral("blocked")
                 :QStringLiteral("unavailable"));
     }
     app::AcceptedPrepareObservation x{
@@ -604,9 +607,7 @@ sixRatePrepareTimePolicyUsesRealHistoryAndGuardsUnsupportedRoutes()
     QCOMPARE(future.value(QStringLiteral("isFutureWholePrepare")).toBool(),true);
     QVERIFY(future.value(QStringLiteral("details")).toString()
         .contains(QStringLiteral("Previous ACT")));
-    QCOMPARE(table.at(1).toMap().value(QStringLiteral("kind")).toString(),
-        QStringLiteral("unavailable"));
-    for(int i=2;i<6;++i)
+    for(int i=1;i<6;++i)
         QCOMPARE(table.at(i).toMap().value(QStringLiteral("kind")).toString(),
             QStringLiteral("blocked"));
     // A different SOURCE with the same Fs and frame count has NO ACT, yet
