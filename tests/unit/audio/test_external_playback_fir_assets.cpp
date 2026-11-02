@@ -94,13 +94,14 @@ void ExternalPlaybackFirAssetsTests::exactFrozenLegacyAssetPack()
         std::string_view{"37cfda8e885e2d00646ec60d02bdf5b7dcb85348fca416e065bab71a824efb22"});
     QCOMPARE(forward.value()->coefficient_bits(0),std::uint64_t{0xbe82172c5b578940});
     QCOMPARE(backward.value()->coefficient_bits(0),std::uint64_t{0xbe82172c5b5d4f61});
-    // The frozen bank contains ONLY two SHA-authenticated historical FIRs.
-    // Other SOURCE->DEVICE rates use a separate provisional, generated
-    // playback-only FIR; success must NOT imply a new pinned Q0 original.
-    auto generated=make(44100,96000);
-    QVERIFY(static_cast<bool>(generated));
-    QCOMPARE(generated.value()->output_rate().value(),std::int64_t{96000});
-    QVERIFY(generated.value()->kernel_sha256().empty());
+    // 14 original Q0 FIRs are used for every other DEVICE path. The two
+    // historical coefficient sets remain bit-exact and separately pinned.
+    auto unified=make(44100,96000);
+    QVERIFY(static_cast<bool>(unified));
+    QCOMPARE(unified.value()->output_rate().value(),std::int64_t{96000});
+    const auto* pin=audio::internal::phase11_frozen_original_fir_pin(320,147);
+    QVERIFY(pin);
+    QCOMPARE(unified.value()->kernel_sha256(),std::string_view{pin->sha256});
     QVERIFY(!make(44100,44100)); // identity uses direct playback, no FIR
 }
 
@@ -118,9 +119,9 @@ void ExternalPlaybackFirAssetsTests::missingCorruptAndOwnedLifetime()
     const auto empty=std::filesystem::path{temp.path().toStdString()};
     audio::configure_external_playback_fir_root(empty.u16string());
     QVERIFY(!make(44100,48000));
-    auto generatedWithoutFrozenPack=make(44100,96000);
-    QVERIFY(generatedWithoutFrozenPack); // no private/original FIR publication
-    QVERIFY(generatedWithoutFrozenPack.value()->kernel_sha256().empty());
+    // No generated fallback: the Q0 source must be present, authentic
+    // and rooted at the identical flat 16-file package.
+    QVERIFY(!make(44100,96000));
     // Previously admitted existing adapters retain their OWN immutable asset.
     QCOMPARE(original.value()->coefficient_bits(0),first);
 
@@ -298,8 +299,7 @@ relocatedFlatFirPackageKeepsBitwiseLegacyAndRejectsPrivateSpoof()
             std::filesystem::copy_options::none,ec);
         QVERIFY(!ec);
     }
-    // A forged loose private filename may never switch the provisional
-    // Playback path into a silently "authenticated" Q0 DEVICE converter.
+    // A forged original Q0 filename must never satisfy DEVICE admission.
     {
         std::ofstream fake{relocated/"RGSMSR1_L320_M147.bin",std::ios::binary};
         QVERIFY(static_cast<bool>(fake));
@@ -318,9 +318,9 @@ relocatedFlatFirPackageKeepsBitwiseLegacyAndRejectsPrivateSpoof()
     for(std::size_t k=0;k<baselineDown.value()->kernel_size();++k)
         QCOMPARE(relocatedDown.value()->coefficient_bits(k),
                  baselineDown.value()->coefficient_bits(k));
-    const auto notYetQualified=make(44100,96000);
-    QVERIFY(notYetQualified);
-    QVERIFY(notYetQualified.value()->kernel_sha256().empty());
+    // Repackaging only two historic assets + forged Q0 cannot silently
+    // enable an unverified original. No synthetic fallback is permitted.
+    QVERIFY(!make(44100,96000));
     // Refresh root after removal: tampering/absence is never masked by
     // a previously cached FILE; earlier adapters still own immutable bits.
     QVERIFY(std::filesystem::remove(
