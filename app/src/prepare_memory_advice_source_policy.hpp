@@ -22,9 +22,8 @@ prepare_memory_display_admission(std::int64_t source_hz,
 {
     switch (final_src_candidate_path(source_hz,master_hz)) {
     case FinalSrcCandidatePath::IDENTITY:
-    case FinalSrcCandidatePath::EXISTING_44K_48K_FIR:
         return PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE;
-    case FinalSrcCandidatePath::EXPERIMENTAL_UNQUALIFIED:
+    case FinalSrcCandidatePath::PINNED_FIR_PENDING_PRODUCT_FQ:
         return authenticated_full_original_q0_pack
             ? PrepareMemoryDisplayAdmission::CANDIDATE_ADMISSIBLE
             : PrepareMemoryDisplayAdmission::FINAL_SRC_UNQUALIFIED;
