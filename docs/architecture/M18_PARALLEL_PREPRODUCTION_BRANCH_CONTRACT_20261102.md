@@ -38,3 +38,13 @@
 5. Once parent gate and CI reset are approved, forward-integrate M17 changes, run Windows/Linux focused tests, independent mathematical Gate G, cold FQ and physical PCM24/Float32 tests as needed. Then PO alone authorizes any merge.
 
 **No M18 readiness, product release or M17 acceptance is implied by branch creation.**
+
+
+## Independent M18 CI tier — incremental 2026-11-03
+
+- Added `.github/workflows/m18-preproduction.yml` with its own workflow named **M18 Independent Preproduction CI**, triggered only by pushes to `experimental/m18-dither-20261102` touching M18 paths or explicit manual dispatch. **M17 PR #61 does not trigger it**. The legacy M17 `pr-focused.yml` is triggered only by `pull_request` with base `main`, not by PR #63 (which targets the M17 experimental branch). The full Windows FQ remains manual-only and untouched.
+- Jobs: Windows 2022 MSVC C++20 Debug+Release, Linux C++20 Debug+Release. Standalone translation unit (no Qt, Fir, MPFR, M17 tests, performance benchmarks, or DAC). Existing Qt-native M18 test remains registered in the main CTest suite for later *full integration qualification*; the fast lane intentionally does not claim that Qt test has been run.
+- Added `audio/src/internal/m18_pcm24_pack.hpp` for **checked PCM24 integer-code byte packing only**, not yet for conversion or statistical TPDF quantization. Rejects overload, little-endian three-byte two's-complement, exact sign extension in test function, static assertions on rails. Never writes files or changes any M17 sample.
+- Added `tools/qualification/m18/m18_portable_selftest.cpp` with exact mathematical word-vector oracle, 53-bit grid, counter carry, chunk identity and packing overflow/boundary checks; compiled against the *same* internal C++ headers. This allows immediate cheap iteration on GitHub Actions separate from M17.
+- The CI must actually run and report PASS on the new M18 SHA before it may be called green. It is **preproduction compiler+fixed-oracle smoke**, NOT M18 mathematical Gate G, CTest/Qt product, PCM24 sample quantizer, Float32 writer, M16 post-delivery TP or actual listening qualification.
+- When continuing M18 in parallel, write one coherent macro-lot to the M18 staging branch. Advance M18 PR head using nonforce expected-SHA CAS only once per ready lot, creating a dedicated M18 push run. Do not touch M17 PR #61. Never merge M18 to main before M17 physical acceptance, explicit post-M17 CI audit/reset, forward integration, full validation and PO approval.
