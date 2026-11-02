@@ -1,31 +1,23 @@
-# RGS MasterLab — Frozen original SRC FIR source for the standard FQ package
+# RGS MasterLab — immutable FIR coefficient sources
 
-The Product Owner has explicitly authorized PUBLIC DISTRIBUTION of the 14
-original RGSMSR1 FIR binaries and the 2 historic Playback FIR binaries together.
+This folder contains **14 exact original Final SRC FIR binaries**, each
+version-controlled directly as an ordinary build resource. Their frozen
+SHA-256 pins remain defined in `phase11_frozen_rgsmsr1_pins.hpp`.
+The two existing Playback FIRs are exported bit-for-bit from their
+frozen C++ coefficient inputs.
 
-This source folder is for the ONE-TIME exact immutable original-Q0 ZIP import:
+**One build, one destination:** CMake verifies every original SHA-256,
+then packages all **16 binary files** alongside a unified
+`fir_manifest.json` at `<installed-exe>/resources/fir`.
+No separate ZIP download, manual installation or end-user Python step.
 
-**Required file name:** `phase11_original_14_q0.zip`
+The original, independently authenticated 11,455,283-byte archive is
+preserved on RGS ContentBox as immutable evidence, but is **not**
+a build-time requirement. Its SHA-256 is
+`94d3340667ab5c86b2db5f2d0e191f58b5d05863413312fb3545faed51798ce4`.
+The historical NONRELEASE manifest inside that archive is **not**
+installed or treated as a release authorization.
 
-**Required SHA-256:** `94d3340667ab5c86b2db5f2d0e191f58b5d05863413312fb3545faed51798ce4`
-
-**Original source:** RGS ContentBox, Google Drive ID
-`1pbmZqDNefH-F_RiNZEdP9z_BC3seUGsh`.
-It contains the fourteen `RGSMSR1_L*_M*.bin` original bytes plus a
-historical source-candidate manifest, which the installer MUST NOT copy.
-
-The exact 11,455,283-byte source ZIP must be present in the repository
-before any official `RGSML_PROVENANCE_TYPE=FQ` build. The CMake build
-authenticates the archive and all 14 SHA pins, then installs **only the
-original binary files**, together with the 2 bit-identical Playback FIR
-files and one unified `fir_manifest.json`, all at one level under
-`<installed-exe>/resources/fir`.
-
-**Do not regenerate, approximate or modify the ZIP.** A missing or tampered
-source makes FQ FAIL. Upload/import once to this folder, then every subsequent
-FQ is automatically self-contained with all 16 FIRs. No end-user Python,
-secondary download or separate installation.
-
-Note: permission to distribute original coefficients does NOT imply that
-all SRC DEVICE routes, Q1-Q6 or physical listening gates have passed. Those
-independent correctness gates remain mandatory.
+FQ fails closed if any required source binary is missing or altered.
+Permission to distribute the coefficients does not itself certify
+all DEVICE SRC routes, Q1–Q6, or physical listening acceptance.

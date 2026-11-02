@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """FQ all-16 FIR export policy tests (source bytes never regenerated).
 
-The complete authentic 14-original source archive is intentionally OPTIONAL in
-Focused CI, but MANDATORY for an official FQ build. All existing PlayBack and
+The fourteen SHA-pinned original source binaries now live directly in the
+repository. Focused CI verifies a full real 16-file package on both systems;
+FQ must refuse missing/tampered originals. All existing PlayBack and
 Original-Q0 SHA pins remain unchanged; this test never fabricates substitutes.
 """
 from __future__ import annotations
@@ -65,6 +66,36 @@ class All16FirsPackagingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"ZIP SHA-256 mismatch"):
                 export(REPO,output,originals_archive=fake,
                        require_originals=True)
+            self.assertFalse((output/"fir_manifest.json").exists())
+
+    def test_direct_14_original_files_and_unified_package(self):
+        source=REPO/"resources"/"fir"
+        self.assertEqual(sum((source/n).is_file() for n in ORIGINALS),14)
+        from verify_installed_16_firs import verify
+        with tempfile.TemporaryDirectory() as d:
+            output=Path(d)/"resources"/"fir"
+            export(REPO,output,require_originals=True,originals_dir=source)
+            result=verify(output)
+            self.assertEqual(result["files"],16)
+            self.assertEqual(result["originalQ0"],14)
+            self.assertEqual(result["playback"],2)
+            self.assertEqual(len(list(output.glob("*.bin"))),16)
+
+    def test_direct_original_tamper_is_rejected(self):
+        import shutil
+        source=REPO/"resources"/"fir"
+        with tempfile.TemporaryDirectory() as d:
+            direct=Path(d)/"source"
+            direct.mkdir()
+            for name in ORIGINALS:
+                shutil.copyfile(source/name,direct/name)
+            changed=direct/ORIGINALS[0]
+            binary=bytearray(changed.read_bytes())
+            binary[-1]^=1
+            changed.write_bytes(binary)
+            output=Path(d)/"destination"
+            with self.assertRaisesRegex(ValueError,"source pin mismatch"):
+                export(REPO,output,require_originals=True,originals_dir=direct)
             self.assertFalse((output/"fir_manifest.json").exists())
 
     def test_real_original_archive_if_staged_by_fq_or_developer(self):

@@ -2,8 +2,8 @@
 """Build-time bit-exact export of the unified 16 original SRC FIR resources.
 
 The two historic Playback FIRs are extracted bit-for-bit from frozen source.
-When a genuine frozen ORIGINAL 14-Q0 ZIP is present, the exact 14 SHA-pinned
-binary files are staged beside them in the SAME resources/fir directory. No
+When authenticated original Q0 source binaries (or the historical exact ZIP)
+are present, the exact 14 SHA-pinned files are staged beside the Playback FIRs. No
 original filter is regenerated; no Python or separate install for end users.
 The ordinary Focused CI may run without original-14 bytes, but a real FQ build
 MUST require the complete authentic 16-file package and fail closed otherwise.
@@ -28,7 +28,8 @@ WORDS = re.compile(r"UINT64_C\(0x([0-9a-fA-F]{16})\)")
 
 def export(source_root: Path, output_root: Path,
            originals_archive: Path | None = None,
-           require_originals: bool = False) -> None:
+           require_originals: bool = False,
+           originals_dir: Path | None = None) -> None:
     output_root.mkdir(parents=True, exist_ok=True)
     # A failed/deferred original-14 source check must not leave an older
     # "complete16FilePackage" attestation in an incrementally reused tree.
@@ -68,25 +69,36 @@ def export(source_root: Path, output_root: Path,
          "ratioM": int(M), "sha256": digest}
         for L, M, digest in pins
     ]
-    if require_originals and originals_archive is None:
-        raise ValueError("FQ requires exact original 14-Q0 FIR archive")
-    originals_included = originals_archive is not None
+    if originals_archive is not None and originals_dir is not None:
+        raise ValueError("Specify only one original FIR source: directory or ZIP")
+    if require_originals and originals_archive is None and originals_dir is None:
+        raise ValueError("FQ requires exact original 14-Q0 FIR source")
+    originals_included = originals_archive is not None or originals_dir is not None
     if originals_included:
-        # This audited reader requires an EXACT matching frozen source ZIP
-        # SHA, inventory, 14 per-file SHA/size, regular-file semantics and
-        # candidate-origin manifest. No ambient network/hidden fallback.
-        import importlib.util
-        reader_path = (source_root / "tools" / "qualification" /
-                       "final_src" / "install_private_q0_originals.py")
-        spec = importlib.util.spec_from_file_location("rgsml_original_q0_archive_reader", reader_path)
-        if spec is None or spec.loader is None:
-            raise ValueError("Original Q0 ZIP authenticated reader unavailable")
-        reader = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(reader)
-        binaries = reader.checked_files(originals_archive)
         required = {entry["file"]: entry["sha256"] for entry in final_src}
+        if originals_archive is not None:
+            # Historical whole-ZIP authentication remains available for
+            # recovery. Ordinary public builds use the 14 direct source files.
+            import importlib.util
+            reader_path = (source_root / "tools" / "qualification" /
+                           "final_src" / "install_private_q0_originals.py")
+            spec = importlib.util.spec_from_file_location("rgsml_original_q0_archive_reader", reader_path)
+            if spec is None or spec.loader is None:
+                raise ValueError("Original Q0 ZIP authenticated reader unavailable")
+            reader = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(reader)
+            binaries = reader.checked_files(originals_archive)
+        else:
+            if not originals_dir.is_dir() or originals_dir.is_symlink():
+                raise ValueError("Original FIR source directory invalid")
+            binaries = {}
+            for name in sorted(required):
+                source = originals_dir / name
+                if not source.is_file() or source.is_symlink():
+                    raise ValueError(f"Original Q0 FIR source missing or symlink: {name}")
+                binaries[name] = source.read_bytes()
         if set(binaries) != set(required):
-            raise ValueError("Original 14-Q0 ZIP does not match frozen release inventory")
+            raise ValueError("Original 14-Q0 source does not match frozen release inventory")
         for name in sorted(required):
             binary = binaries[name]
             if hashlib.sha256(binary).hexdigest() != required[name]:
@@ -163,10 +175,11 @@ def main() -> None:
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--originals-zip", type=Path)
+    parser.add_argument("--originals-dir", type=Path)
     parser.add_argument("--require-originals", action="store_true")
     args = parser.parse_args()
     export(args.source_root, args.output_root, args.originals_zip,
-           args.require_originals)
+           args.require_originals, args.originals_dir)
 
 
 if __name__ == "__main__":
