@@ -32,6 +32,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Independently reconstruct M18 RNG/PCM24/Float32 numerical oracles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qualification/m18/test_m18_independent_reference.py
       - name: Compile and run independent M18 oracle · Debug
         shell: bash
         run: |
