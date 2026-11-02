@@ -439,7 +439,9 @@ Rectangle {
                 visible: root.isLimiterEditor && root.m17Preparing
                 objectName: "m17CancelPreparationButton"
                 text: "Cancel"
-                minimumControlWidth: 80
+                // Same fixed slot as Prepare: Rate & Time must never jump
+                // horizontally during an in-flight full-resource job.
+                minimumControlWidth: 86
                 enabled: !root.monitorExclusive && root.terminalLimiterViewModel
                     && !root.terminalLimiterViewModel.bypass
                     && root.terminalLimiterViewModel.audioStatus.startsWith("Preparing")
