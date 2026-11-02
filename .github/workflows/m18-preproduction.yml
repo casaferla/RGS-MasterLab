@@ -1,0 +1,83 @@
+# Independent M18-only preproduction CI. No Qt, Ninja, MPFR, FIR/FQ or M17.
+# Invoked ONLY by a push to M18's dedicated Draft PR head, or manually.
+# This is a compile/smoke gate, never Gate G or M18 integration authority.
+name: M18 Independent Preproduction CI
+
+on:
+  push:
+    branches:
+      - experimental/m18-dither-20261102
+    paths:
+      - 'audio/src/internal/m18_*.hpp'
+      - 'tools/qualification/m18/**'
+      - 'tests/unit/audio/test_m18_counter_dither_philox.cpp'
+      - 'tests/CMakeLists.txt'
+      - '.github/workflows/m18-preproduction.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m18-preproduction-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-m18:
+    name: M18 only · Linux C++20 Debug + Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Compile and run independent M18 oracle · Debug
+        shell: bash
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O0 -g -Wall -Wextra -Wpedantic -Werror \
+            -I audio/src \
+            tools/qualification/m18/m18_portable_selftest.cpp \
+            -o "$RUNNER_TEMP/m18-preproduction-debug"
+          "$RUNNER_TEMP/m18-preproduction-debug"
+      - name: Compile and run independent M18 oracle · Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror \
+            -I audio/src \
+            tools/qualification/m18/m18_portable_selftest.cpp \
+            -o "$RUNNER_TEMP/m18-preproduction-release"
+          "$RUNNER_TEMP/m18-preproduction-release"
+
+  windows-m18:
+    name: M18 only · Windows MSVC C++20 Debug + Release
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Compile and run independent M18 oracle · Debug
+        shell: pwsh
+        run: |
+          & cl.exe /nologo /std:c++20 /EHsc /Od /W4 /WX /Zc:__cplusplus /Iaudio/src `
+            tools/qualification/m18/m18_portable_selftest.cpp `
+            "/Fe:$env:RUNNER_TEMP/m18-preproduction-debug.exe"
+          if ($LASTEXITCODE -ne 0) { throw "M18_DEBUG_COMPILE_FAILED" }
+          & "$env:RUNNER_TEMP/m18-preproduction-debug.exe"
+          if ($LASTEXITCODE -ne 0) { throw "M18_DEBUG_ORACLE_FAILED" }
+      - name: Compile and run independent M18 oracle · Release
+        shell: pwsh
+        run: |
+          & cl.exe /nologo /std:c++20 /EHsc /O2 /W4 /WX /Zc:__cplusplus /Iaudio/src `
+            tools/qualification/m18/m18_portable_selftest.cpp `
+            "/Fe:$env:RUNNER_TEMP/m18-preproduction-release.exe"
+          if ($LASTEXITCODE -ne 0) { throw "M18_RELEASE_COMPILE_FAILED" }
+          & "$env:RUNNER_TEMP/m18-preproduction-release.exe"
+          if ($LASTEXITCODE -ne 0) { throw "M18_RELEASE_ORACLE_FAILED" }
