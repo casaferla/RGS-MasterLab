@@ -1185,9 +1185,11 @@ Window {
             QVERIFY(selectedMasterRate.choose_master_rate(44100));
             QTRY_VERIFY_WITH_TIMEOUT(srcStatus->property("text")
                 .toString().contains(QStringLiteral("IDENTITY")),2000);
+            // No privileged historic 44.1->48 status: all 30
+            // nonidentity routes require the same authentic 16-FIR gate.
             QVERIFY(selectedMasterRate.choose_master_rate(48000));
             QTRY_VERIFY_WITH_TIMEOUT(srcStatus->property("text")
-                .toString().contains(QStringLiteral("release pending")),2000);
+                .toString().contains(QStringLiteral("UNQUALIFIED")),2000);
             QVERIFY(selectedMasterRate.choose_master_rate(192000));
             QVERIFY(QMetaObject::invokeMethod(popup,"close"));
         }
