@@ -1,4 +1,5 @@
 #include "terminal_playback_frame_map.hpp"
+#include "internal/terminal_src_frame_map_provenance.hpp"
 
 #include <rgsml/core/error.hpp>
 
@@ -61,8 +62,9 @@ core::Result<TerminalPlaybackFrameMap> TerminalPlaybackFrameMap::create(
             output.format().channel_layout(),sourceFrames});
     if(!adapter)
         return core::Result<Map>::failure(*adapter.error());
-    if(adapter.value()->output_frame_count()!=outputFrames
-       ||provenance.src_kernel_sha256!=adapter.value()->kernel_sha256()) {
+    if(!internal::accepted_terminal_src_frame_map_provenance(
+           sourceRate,outputRate,sourceFrames,outputFrames,
+           provenance.src_kernel_sha256,*adapter.value())) {
         return invalid<Map>(core::ErrorCode::InvalidState,
             "M17_FRAME_MAP_KERNEL_OR_LENGTH_STALE",
             "Terminal PCM frame length or FIR kernel differs from accepted provenance.");
@@ -118,8 +120,9 @@ core::Result<TerminalPlaybackFrameMap> TerminalPlaybackFrameMap::create_measured
             output.format().channel_layout(),sourceFrames});
     if(!adapter)
         return core::Result<Map>::failure(*adapter.error());
-    if(adapter.value()->output_frame_count()!=outputFrames
-       ||provenance.src_kernel_sha256!=adapter.value()->kernel_sha256()) {
+    if(!internal::accepted_terminal_src_frame_map_provenance(
+           sourceRate,outputRate,sourceFrames,outputFrames,
+           provenance.src_kernel_sha256,*adapter.value())) {
         return invalid<Map>(core::ErrorCode::InvalidState,
             "M17_FRAME_MAP_KERNEL_OR_LENGTH_STALE",
             "Terminal PCM frame length or FIR kernel differs from accepted provenance.");
