@@ -66,14 +66,18 @@ void M18CounterDitherPhiloxTest::genericPhiloxRoundSchedule()
 {
     using audio::internal::M18PhiloxWords;
     using audio::internal::M18PhiloxKey;
-    QCOMPARE(audio::internal::m18_philox4x32_10_core(
+    const auto maximal=audio::internal::m18_philox4x32_10_core(
         M18PhiloxWords{{UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX}},
-        M18PhiloxKey{{UINT32_MAX,UINT32_MAX}}),
-        (M18PhiloxWords{{0x408F276DU,0x41C83B0EU,0xA20BC7C6U,0x6D5451FDU}}));
-    QCOMPARE(audio::internal::m18_philox4x32_10_core(
+        M18PhiloxKey{{UINT32_MAX,UINT32_MAX}});
+    const M18PhiloxWords maximalExpected{{
+        0x408F276DU,0x41C83B0EU,0xA20BC7C6U,0x6D5451FDU}};
+    QVERIFY(maximal == maximalExpected);
+    const auto pi=audio::internal::m18_philox4x32_10_core(
         M18PhiloxWords{{0x243F6A88U,0x85A308D3U,0x13198A2EU,0x03707344U}},
-        M18PhiloxKey{{0xA4093822U,0x299F31D0U}}),
-        (M18PhiloxWords{{0xD16CFE09U,0x94FDCCEBU,0x5001E420U,0x24126EA1U}}));
+        M18PhiloxKey{{0xA4093822U,0x299F31D0U}});
+    const M18PhiloxWords piExpected{{
+        0xD16CFE09U,0x94FDCCEBU,0x5001E420U,0x24126EA1U}};
+    QVERIFY(pi == piExpected);
 }
 
 void M18CounterDitherPhiloxTest::exactUniform53Construction()
