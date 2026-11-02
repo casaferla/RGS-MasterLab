@@ -386,7 +386,7 @@ private slots:
     AcceptedPrepareHostTimingHistory converted;
     auto fir=x;
     for(std::uint64_t serial=11;serial<=13;++serial) {
-        fir.invocation=serial;fir.master_hz=48000;fir.src_us=100000;
+        fir.invocation=2*serial-1;fir.master_hz=48000;fir.src_us=100000;
         QVERIFY(!converted.observe(fir)); // no family = no observation
         ++fir.invocation; // rejected serial must never be replayed
         QVERIFY(converted.observe(fir,true));
