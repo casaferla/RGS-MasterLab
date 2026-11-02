@@ -132,6 +132,7 @@ class PlaybackSampleRateAdapterTest final : public QObject {
 private slots:
     void policyIdentityAndFrameMap();
     void sixRateDevicePlaybackStreamingPreservesDcAndSourceClock();
+    void allThirtyDevicePairsUseFrozenSourcePinsAndQ0ScalarParity();
     void long192kTo48kStereoDeviceStreamingThroughput();
     void phase11StrictScalarReferenceSixBySixAgainstConceptualGrid();
     void phase11CandidateBinaryParserRejectsMalformedAndRunsStrictReference();
@@ -2935,6 +2936,81 @@ sixRateDevicePlaybackStreamingPreservesDcAndSourceClock()
     }
 }
 
+
+// Product/device matrix gate: all 28 original-Q0 DEVICE directions use
+// the exact frozen coefficients AND must be numerically identical to the
+// source-pinned strict scalar Q0 reference for short full-range PCM. The
+// historic two Playback kernels are separately pinned, never overwritten.
+void PlaybackSampleRateAdapterTest::
+allThirtyDevicePairsUseFrozenSourcePinsAndQ0ScalarParity()
+{
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    constexpr std::int64_t n=31;
+    std::array<std::vector<double>,2> source{};
+    std::vector<std::uint64_t> interleaved;
+    for(std::int64_t k=0;k<n;++k) {
+        const auto left=0.125*static_cast<double>((k%7)-3);
+        const auto right=0.0625*static_cast<double>((k%5)-2);
+        source[0].push_back(left);
+        source[1].push_back(right);
+        interleaved.push_back(std::bit_cast<std::uint64_t>(left));
+        interleaved.push_back(std::bit_cast<std::uint64_t>(right));
+    }
+    std::size_t realQ0=0,historic=0;
+    for(const auto input:rates)for(const auto output:rates) {
+        if(input==output)continue; // six identity PCM paths need no FIR
+        const auto divisor=std::gcd(input,output);
+        const auto* shape=audio::internal::phase11_frozen_shape(
+            static_cast<std::uint32_t>(output/divisor),
+            static_cast<std::uint32_t>(input/divisor));
+        const auto* pin=audio::internal::phase11_frozen_original_fir_pin(
+            static_cast<std::uint32_t>(output/divisor),
+            static_cast<std::uint32_t>(input/divisor));
+        QVERIFY(shape && pin);
+        auto reader=open_f64_stereo(static_cast<std::uint32_t>(input),interleaved);
+        QVERIFY(reader);
+        auto converter=adapter(input,output,n);
+        const bool old=(input==44100 && output==48000)
+            ||(input==48000 && output==44100);
+        if(old) {
+            ++historic;
+            QVERIFY(!converter.kernel_sha256().empty());
+            QVERIFY(converter.kernel_sha256()!=std::string_view{pin->sha256});
+            continue; // bit-exact historical Playback oracle tested elsewhere
+        }
+        ++realQ0;
+        QCOMPARE(converter.kernel_sha256(),std::string_view{pin->sha256});
+        QCOMPARE(converter.kernel_size(),static_cast<std::size_t>(shape->N));
+        std::vector<std::uint64_t> bits(converter.kernel_size());
+        for(std::size_t k=0;k<bits.size();++k)
+            bits[k]=converter.coefficient_bits(k);
+        const auto outN=converter.output_frame_count().value();
+        for(std::size_t ch=0;ch<2;++ch) {
+            std::vector<double> strict(static_cast<std::size_t>(outN));
+            auto calculated=audio::internal::render_phase11_strict_scalar_reference(
+                source[ch],strict,0,shape->L,shape->M,bits);
+            QVERIFY2(calculated,calculated?"":calculated.error()->message().c_str());
+            for(std::int64_t begin=0;begin<outN;) {
+                const auto count=std::min<std::int64_t>(17,outN-begin);
+                auto out=output_buffer(converter,begin,count);
+                auto wrote=converter.read_frames(
+                    *reader,core::FrameIndex{begin},out.mutable_view());
+                QVERIFY2(wrote,wrote?"":wrote.error()->message().c_str());
+                const auto samples=out.view().channel(ch);
+                QVERIFY(samples);
+                for(std::int64_t i=0;i<count;++i)
+                    QCOMPARE(std::bit_cast<std::uint64_t>(
+                        (*samples.value())[static_cast<std::size_t>(i)]),
+                        std::bit_cast<std::uint64_t>(
+                            strict[static_cast<std::size_t>(begin+i)]));
+                begin+=count;
+            }
+        }
+    }
+    QCOMPARE(realQ0,std::size_t{28});
+    QCOMPARE(historic,std::size_t{2});
+}
 
 void PlaybackSampleRateAdapterTest::long192kTo48kStereoDeviceStreamingThroughput()
 {
