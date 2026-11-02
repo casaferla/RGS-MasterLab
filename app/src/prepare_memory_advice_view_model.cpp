@@ -148,17 +148,13 @@ constexpr std::array<std::int64_t,6> kMasterRates{
             "SOURCE or MASTER rate is unsupported. RAM does not grant Prepare. "));
         summary.prepend(QStringLiteral("Rate unavailable · "));
     } else if(final_src_candidate_path(source_hz,hz)
-              ==FinalSrcCandidatePath::EXPERIMENTAL_UNQUALIFIED) {
+              ==FinalSrcCandidatePath::PINNED_FIR_PENDING_PRODUCT_FQ) {
+        // One nonidentity contract for all 30 directed SOURCE->MASTER
+        // rate pairs; the historical two do not receive a special pass.
         pathStatus=QStringLiteral("SOURCE_PINNED_Q0_ORIGINAL");
         details.prepend(QStringLiteral(
-            "Original 14-FIR Q0 package authenticated locally; source SHA "
-            "rechecked per Prepare. Full M17 physical FQ remains required. "));
-    } else if(final_src_candidate_path(source_hz,hz)
-              ==FinalSrcCandidatePath::EXISTING_44K_48K_FIR) {
-        pathStatus=QStringLiteral("EXISTING_FIR_CANDIDATE");
-        details.prepend(QStringLiteral(
-            "Existing 44.1/48 FIR candidate is admitted by M17, "
-            "but Final SRC release qualification is still pending. "));
+            "Authenticated original Q0 FIR for this rate ratio; source "
+            "SHA rechecked per Prepare. Full M17 physical FQ remains required. "));
     } else {
         pathStatus=QStringLiteral("IDENTITY");
         details.prepend(QStringLiteral(
