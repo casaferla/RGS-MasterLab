@@ -604,7 +604,14 @@ ApplicationWindow {
                 // The only Master-specific controls live LEFT of Stop.
                 RowLayout {
                     objectName: "transportMasterListenControls"
+                    // A pending asynchronous MASTER -> DEVICE conversion is
+                    // neither installable yet nor an active monitor lease.
+                    // Keep this row visible so Cancel + real preparation
+                    // status do not disappear for the whole conversion.
                     visible: root.canListenMaster || root.monitorExclusive
+                        || (root.appTerminalMonitorViewModel
+                            && (root.appTerminalMonitorViewModel.monitorPreparing
+                                || root.appTerminalMonitorViewModel.monitorCancelling))
                     spacing: 6
                     StudioButton {
                         id: masterListenButton
