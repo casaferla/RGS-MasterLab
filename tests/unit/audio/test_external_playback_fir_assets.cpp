@@ -71,6 +71,7 @@ class ExternalPlaybackFirAssetsTests final : public QObject {
     Q_OBJECT
 private slots:
     void exactFrozenLegacyAssetPack();
+    void allThirtyRatesHaveOneExactSuccessAndMissingAssetFailureContract();
     void missingCorruptAndOwnedLifetime();
     void full16AssetManifestAnd30DeviceRouteAdmissionBoundary();
     void relocatedFlatFirPackageKeepsBitwiseLegacyAndRejectsPrivateSpoof();
@@ -103,6 +104,57 @@ void ExternalPlaybackFirAssetsTests::exactFrozenLegacyAssetPack()
     QVERIFY(pin);
     QCOMPARE(unified.value()->kernel_sha256(),std::string_view{pin->sha256});
     QVERIFY(!make(44100,44100)); // identity uses direct playback, no FIR
+}
+
+// One uniform observable contract: every nonidentity six-rate direction
+// uses the same SHA-pinned loader and fails the same way when an asset is
+// missing. Historical 2 and original-Q0 28 are NOT separate UI or FQ paths.
+void ExternalPlaybackFirAssetsTests::
+allThirtyRatesHaveOneExactSuccessAndMissingAssetFailureContract()
+{
+    constexpr std::array<std::int64_t,6> rates{
+        44100,48000,88200,96000,176400,192000};
+    const auto root=test_asset_root();
+    QVERIFY(!root.empty());
+    audio::configure_external_playback_fir_root(root.u16string());
+    std::size_t count=0,unchanged=0,original=0;
+    for(const auto src:rates)for(const auto dst:rates) {
+        if(src==dst)continue;
+        const auto result=make(src,dst);
+        QVERIFY2(result,result?"":result.error()->message().c_str());
+        QVERIFY(!result.value()->kernel_sha256().empty());
+        const bool historic=(src==44100&&dst==48000)
+            ||(src==48000&&dst==44100);
+        if(historic) {
+            ++unchanged;
+        } else {
+            ++original;
+            const auto divisor=std::gcd(src,dst);
+            const auto* pin=audio::internal::phase11_frozen_original_fir_pin(
+                static_cast<std::uint32_t>(dst/divisor),
+                static_cast<std::uint32_t>(src/divisor));
+            QVERIFY(pin);
+            QCOMPARE(result.value()->kernel_sha256(),
+                     std::string_view{pin->sha256});
+        }
+        ++count;
+    }
+    QCOMPARE(count,std::size_t{30});
+    QCOMPARE(unchanged,std::size_t{2});
+    QCOMPARE(original,std::size_t{28});
+
+    QTemporaryDir empty;
+    QVERIFY(empty.isValid());
+    audio::configure_external_playback_fir_root(
+        std::filesystem::path{empty.path().toStdString()}.u16string());
+    for(const auto src:rates)for(const auto dst:rates) {
+        if(src==dst)continue;
+        const auto result=make(src,dst);
+        QVERIFY(!result);
+        QCOMPARE(result.error()->message(),
+                 std::string{"PLAYBACK_FIR_RESOURCE_MISSING_OR_UNSAFE"});
+    }
+    audio::configure_external_playback_fir_root(root.u16string());
 }
 
 void ExternalPlaybackFirAssetsTests::missingCorruptAndOwnedLifetime()
