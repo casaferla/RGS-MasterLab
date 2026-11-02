@@ -3,8 +3,12 @@
 // One tiny translation unit compiles under both MSVC and GCC/Clang.
 #include "internal/m18_counter_dither_philox.hpp"
 #include "internal/m18_pcm24_pack.hpp"
+#include "internal/m18_terminal_sample_codec.hpp"
 #include <array>
 #include <cstdint>
+#include <bit>
+#include <cfenv>
+#include <vector>
 #include <cstdio>
 #include <limits>
 
@@ -58,6 +62,162 @@ static_assert(m18_uniform53(0,0x800U)==1U);
 static_assert(m18_uniform53(UINT32_MAX,UINT32_MAX)
     ==UINT64_C(9007199254740991));
 
+
+static int m18_test_pcm24_numerics()
+{
+    using namespace rgsml::audio::internal;
+    // The expected integers were independently reconstructed from exact
+    // Fraction arithmetic using original binary64 input bits and PHILOX
+    // counter addresses; they are not generated from the codec under test.
+    struct Row {std::uint64_t input;std::int32_t q;};
+    constexpr std::array<Row,16> vectors{{
+        {UINT64_C(0x0000000000000000),0},
+        {UINT64_C(0x8000000000000000),0},
+        {UINT64_C(0x3e70000000000000),1},
+        {UINT64_C(0xbe70000000000000),-1},
+        {UINT64_C(0x3e80000000000000),1},
+        {UINT64_C(0xbe80000000000000),-2},
+        {UINT64_C(0x3e60000000000000),0},
+        {UINT64_C(0xbe60000000000000),-1},
+        {UINT64_C(0x3e70000000000000),1},
+        {UINT64_C(0xbe70000000000000),-1},
+        {UINT64_C(0x3fefffffc0000000),8388607},
+        {UINT64_C(0xbff0000000000000),-8388608},
+        {UINT64_C(0x3fd0000000000000),2097152},
+        {UINT64_C(0xbfd0000000000000),-2097152},
+        {UINT64_C(0x3fefffffffffffff),8388607},
+        {UINT64_C(0xbfefffffffffffff),-8388609}
+    }};
+    constexpr auto seed=UINT64_C(0x0123456789ABCDEF);
+    for(std::size_t i=0;i<vectors.size();++i) {
+        const auto x=std::bit_cast<double>(vectors[i].input);
+        const auto out=m18_quantize_pcm24(x,seed,i,0);
+        if(vectors[i].q<-8388608 || vectors[i].q>8388607) {
+            if(out.status!=M18CodecStatus::PCM24_OVERLOAD)return 20;
+        } else {
+            if(out.status!=M18CodecStatus::OK
+                ||out.code!=vectors[i].q
+                ||m18_decode_pcm24_for_test(out.bytes)!=vectors[i].q)
+                return 21;
+        }
+    }
+    if(m18_quantize_pcm24(
+        std::bit_cast<double>(UINT64_C(0x7FF0000000000000)),
+        seed,0,0).status!=M18CodecStatus::NONFINITE_INPUT)return 22;
+    if(m18_quantize_pcm24(
+        std::bit_cast<double>(UINT64_C(0x7FF8000000000000)),
+        seed,0,0).status!=M18CodecStatus::NONFINITE_INPUT)return 23;
+    if(m18_quantize_pcm24(2.0,seed,0,0).status
+        !=M18CodecStatus::PCM24_OVERLOAD)return 24;
+    return 0;
+}
+
+static int m18_test_float32_numerics()
+{
+    using namespace rgsml::audio::internal;
+    struct Row {std::uint64_t source;std::uint32_t expected;bool fail;};
+    // Signed zero, subnormal tie/just-above, normal transition,
+    // largest finite and one-ULP-before halfway-overflow.
+    constexpr std::array<Row,15> vectors{{
+        {UINT64_C(0x0000000000000000),0U,false},
+        {UINT64_C(0x8000000000000000),0x80000000U,false},
+        {UINT64_C(0x3FF0000000000000),0x3F800000U,false},
+        {UINT64_C(0xBFF0000000000000),0xBF800000U,false},
+        {UINT64_C(0x36A0000000000000),0x00000001U,false},
+        {UINT64_C(0x3690000000000000),0x00000000U,false},
+        {UINT64_C(0x3690000000000001),0x00000001U,false},
+        {UINT64_C(0x3810000000000000),0x00800000U,false},
+        {UINT64_C(0x380FFFFFFFFFFFFF),0x00800000U,false},
+        {UINT64_C(0x47EFFFFFE0000000),0x7F7FFFFFU,false},
+        {UINT64_C(0x47EFFFFFF0000000),0U,true},
+        {UINT64_C(0x47EFFFFFEFFFFFFF),0x7F7FFFFFU,false},
+        {UINT64_C(0x3FF8000000000000),0x3FC00000U,false},
+        {UINT64_C(0xB6A0000000000000),0x80000001U,false},
+        {UINT64_C(0x7FF8000000000000),0U,true}
+    }};
+    for(const auto& row:vectors) {
+        const auto got=m18_convert_float32(std::bit_cast<double>(row.source));
+        if(row.fail) {
+            if(got.status!=M18CodecStatus::NONFINITE_INPUT
+               &&got.status!=M18CodecStatus::FLOAT32_OVERFLOW)return 30;
+        } else if(got.status!=M18CodecStatus::OK
+            ||got.bits!=row.expected
+            ||got.bytes[0]!=static_cast<std::uint8_t>(row.expected)
+            ||got.bytes[3]!=static_cast<std::uint8_t>(row.expected>>24))
+            return 31;
+    }
+    return 0;
+}
+
+static int m18_test_fail_atomic_and_chunks()
+{
+    using namespace rgsml::audio::internal;
+    constexpr auto seed=UINT64_C(0x0123456789ABCDEF);
+    // Two-pass prevalidation: a bad final sample leaves all caller bytes
+    // EXACTLY untouched and never publishes a partial terminal candidate.
+    std::array<double,6> input{{0.0,0.25,-0.25,0.0,0.125,2.0}};
+    std::array<std::uint8_t,18> output{};
+    output.fill(0xA5U);
+    if(m18_pcm24_block(input,2U,17,seed,output)
+        !=M18CodecStatus::PCM24_OVERLOAD)return 40;
+    for(const auto v:output)if(v!=0xA5U)return 41;
+    input.back()=0.0;
+    if(m18_pcm24_block(input,2U,17,seed,output)
+        !=M18CodecStatus::OK)return 42;
+    // Verify exact frame address continuity across arbitrary chunking
+    // and per-channel independence; mono and stereo are different layouts.
+    std::array<std::uint8_t,18> chunked{};
+    if(m18_pcm24_block(std::span<const double>(input).first(2),2U,
+        17,seed,std::span<std::uint8_t>(chunked).first(6))
+            !=M18CodecStatus::OK)return 43;
+    if(m18_pcm24_block(std::span<const double>(input).subspan(2),2U,
+        18,seed,std::span<std::uint8_t>(chunked).subspan(6))
+            !=M18CodecStatus::OK)return 44;
+    if(chunked!=output)return 45;
+    if(m18_pcm24_block(input,2U,UINT64_MAX,seed,output)
+        !=M18CodecStatus::FRAME_ADDRESS_OVERFLOW)return 46;
+    std::array<double,2> oneFrame{{0.0,0.0}};
+    std::array<std::uint8_t,6> oneBytes{};
+    if(m18_pcm24_block(oneFrame,2U,UINT64_MAX,seed,oneBytes)
+        !=M18CodecStatus::OK)return 47;
+    if(m18_pcm24_block(input,3U,0,seed,output)
+        !=M18CodecStatus::INVALID_LAYOUT)return 48;
+    std::array<std::uint8_t,24> floatBytes{};
+    floatBytes.fill(0xA5U);
+    input.back()=std::bit_cast<double>(UINT64_C(0x7FF0000000000000));
+    if(m18_float32_block(input,2U,17,floatBytes)
+        !=M18CodecStatus::NONFINITE_INPUT)return 49;
+    for(const auto v:floatBytes)if(v!=0xA5U)return 50;
+    input.back()=0.0;
+    if(m18_float32_block(input,2U,17,floatBytes)
+        !=M18CodecStatus::OK)return 51;
+    return 0;
+}
+
+static int m18_test_fp_environment_independence()
+{
+    using namespace rgsml::audio::internal;
+    const int previous=std::fegetround();
+    if(previous==-1)return 0; // platform may not expose host fenv
+    constexpr auto seed=UINT64_C(0x0123456789ABCDEF);
+    const double source=std::bit_cast<double>(
+        UINT64_C(0x3e70000000000000));
+    const auto pcm=m18_quantize_pcm24(source,seed,12,1);
+    const auto f32=m18_convert_float32(
+        std::bit_cast<double>(UINT64_C(0x3690000000000001)));
+    bool matched=true;
+    for(const auto mode:{FE_TONEAREST,FE_UPWARD,FE_DOWNWARD,FE_TOWARDZERO}){
+        if(std::fesetround(mode)!=0)continue;
+        const auto a=m18_quantize_pcm24(source,seed,12,1);
+        const auto b=m18_convert_float32(
+            std::bit_cast<double>(UINT64_C(0x3690000000000001)));
+        if(a.status!=pcm.status||a.bytes!=pcm.bytes
+            ||b.status!=f32.status||b.bits!=f32.bits)matched=false;
+    }
+    if(std::fesetround(previous)!=0)return 61;
+    return matched?0:60;
+}
+
 int main()
 {
     // Runtime checks mirror independently anchored compile-time vectors
@@ -102,6 +262,10 @@ int main()
     if(!left||!right||(*left)[0]!=0xFFU||(*left)[2]!=0x7FU
        ||(*right)[0]!=0x00U||(*right)[2]!=0x80U)return 6;
 
-    std::puts("M18_PREPRODUCTION_PORTABLE_PASS: corrected Philox, TPDF, frame carry, chunk identity, PCM24 strict packing");
+    if(const auto s=m18_test_pcm24_numerics();s) return s;
+    if(const auto s=m18_test_float32_numerics();s) return s;
+    if(const auto s=m18_test_fail_atomic_and_chunks();s) return s;
+    if(const auto s=m18_test_fp_environment_independence();s) return s;
+    std::puts("M18_PREPRODUCTION_PORTABLE_PASS: exact RN64 PCM24, Float32 RNE, fail-atomic blocks, corrected Philox, FP-mode independence");
     return 0;
 }
