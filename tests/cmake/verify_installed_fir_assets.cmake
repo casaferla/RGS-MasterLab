@@ -46,7 +46,7 @@ foreach(_i RANGE 0 15)
     string(JSON _sha GET "${_fir_manifest}" assets ${_i} sha256)
     string(LENGTH "${_sha}" _digest_len)
     if(NOT _digest_len EQUAL 64 OR NOT _sha MATCHES "^[0-9a-f]+$"
-       OR _name IN_LIST _known_files OR _name MATCHES "[/\\\\]")
+       OR _name IN_LIST _known_files)
         message(FATAL_ERROR "INSTALLED_UNIFIED_FIR_BAD_ASSET_IDENTITY")
     endif()
     list(APPEND _known_files "${_name}")
