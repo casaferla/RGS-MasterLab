@@ -10,11 +10,12 @@
 namespace rgsml::audio {
 
 // Candidate-only full-resource materializer; NEVER a playback publisher.
-// This is a dedicated offline PCM client of the existing frozen 192-tap
-// kernel. The numerical playback implementation is NOT modified.
-// Equal rates and the frozen 44.1<->48 kernels preserve existing oracles.
-// Other six-rate pairs use a separate EXPERIMENTAL rational FIR candidate:
-// fidelity, performance, cancellation and actual audio are not qualified.
+// Equal rates remain a bit-exact copy. Two historic 44.1<->48 PCM oracles
+// remain unchanged. The PRODUCT MASTER->DEVICE monitoring entrypoint uses
+// the exact verified 16-FIR assets and shared Playback polyphase path for
+// all 30 nonidentity pairs. Legacy SOURCE-domain exploratory candidate
+// tests retain their separate NONRELEASE rational prototype only in that
+// explicitly distinct source entrypoint. Device Q1-Q6/physical still open.
 // A zero-side-effect caller-owned retirement check, polled at output-block
 // boundaries. On cancellation no partial output owner escapes the function.
 using FullResourceOutputRateCancel=std::function<bool()>;
