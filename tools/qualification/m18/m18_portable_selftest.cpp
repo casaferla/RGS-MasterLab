@@ -109,6 +109,19 @@ static int m18_test_pcm24_numerics()
         seed,0,0).status!=M18CodecStatus::NONFINITE_INPUT)return 23;
     if(m18_quantize_pcm24(2.0,seed,0,0).status
         !=M18CodecStatus::PCM24_OVERLOAD)return 24;
+    // The pre-audit's crucial RN64-vs-real-arithmetic rail adversary:
+    // t=8388606.5, D=(2^53-1)/2^53. The exact real sum is below
+    // 8388607.5, but RN64 of the SUM is exactly 8388607.5,
+    // and ties-to-even gives 8388608, a mandatory overload failure.
+    const auto railSource=std::bit_cast<double>(
+        UINT64_C(0x3fefffffa0000000));
+    const auto stage=m18_exact_detail::round_exact_sum_to_binary64(
+        std::bit_cast<std::uint64_t>(railSource),
+        INT64_C(9007199254740991));
+    if(stage!=UINT64_C(0x415fffffe0000000))return 25;
+    const auto nearest=m18_exact_detail::
+        rounded_positive_integer_from_binary64(stage);
+    if(nearest!=8388608U || m18_pack_pcm24_checked(nearest))return 26;
     return 0;
 }
 
