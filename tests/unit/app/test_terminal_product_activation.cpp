@@ -132,7 +132,7 @@ void TerminalActivationIntegrationTest::
 acceptedQ0MasterFrameMapPreservesBothKernelFamilies()
 {
     for(const auto pair:std::array<std::pair<std::int64_t,std::int64_t>,3>{{
-        {44100,48000},{192000,48000},{48000,44100}}) {
+        {44100,48000},{192000,48000},{48000,44100}}}) {
         auto fin=core::SampleRate::create(pair.first);
         auto fout=core::SampleRate::create(pair.second);
         auto n=core::FrameCount::create(513);
