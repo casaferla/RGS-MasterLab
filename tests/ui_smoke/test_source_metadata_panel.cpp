@@ -1683,6 +1683,20 @@ Window {
     auto* inGrProgress = find_child_by_name(
         limiterEditor, QStringLiteral("m17PreparationProgressBar"));
     QVERIFY(meterEditor && limiterEditor && actionBand && inGrProgress);
+    // PO FQ90: Prepare -> Cancel must occupy exactly the SAME physical
+    // RowLayout width, never moving Rate & Time during a long render.
+    auto* prepareButton=find_child_by_name(
+        host, QStringLiteral("m17PrepareButton"));
+    auto* cancelButton=find_child_by_name(
+        host, QStringLiteral("m17CancelPreparationButton"));
+    auto* rateTimeButton=find_child_by_name(
+        host, QStringLiteral("m17RateAndTimesButton"));
+    QVERIFY(prepareButton && cancelButton && rateTimeButton);
+    QCOMPARE(prepareButton->property("minimumControlWidth").toInt(),
+             cancelButton->property("minimumControlWidth").toInt());
+    QCOMPARE(prepareButton->property("implicitWidth").toDouble(),
+             cancelButton->property("implicitWidth").toDouble());
+
     auto hostRect = [host](QQuickItem* editor, const QString& childName)
         -> QRectF {
         auto* child=qobject_cast<QQuickItem*>(
