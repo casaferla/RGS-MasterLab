@@ -98,6 +98,33 @@ class All16FirsPackagingTest(unittest.TestCase):
                 export(REPO,output,require_originals=True,originals_dir=direct)
             self.assertFalse((output/"fir_manifest.json").exists())
 
+    def test_same_cmake_fq_deploy_gate_positive_and_tamper_negative(self):
+        # FQ #89 regression: Debug install_deploy_smoke previously expected
+        # `assets[i].private` from a withdrawn two-file public policy.
+        # Execute the ACTUAL CMake installer asset check on both Focused OS.
+        import subprocess
+        source=REPO/"resources"/"fir"
+        gate=REPO/"tests"/"cmake"/"verify_installed_fir_assets.cmake"
+        with tempfile.TemporaryDirectory() as d:
+            output=Path(d)/"resources"/"fir"
+            export(REPO,output,require_originals=True,originals_dir=source)
+            cmd=["cmake",f"-D_fir_root={output}","-P",str(gate)]
+            checked=subprocess.run(cmd,capture_output=True,text=True,
+                                   encoding="utf-8",errors="replace")
+            self.assertEqual(checked.returncode,0,
+                             checked.stdout+"\\n"+checked.stderr)
+            # A single changed coefficient must fail even if the loose
+            # manifest remains the same. No fake or regenerated FIR allowed.
+            altered=output/ORIGINALS[0]
+            binary=bytearray(altered.read_bytes())
+            binary[-1]^=1
+            altered.write_bytes(binary)
+            rejected=subprocess.run(cmd,capture_output=True,text=True,
+                                    encoding="utf-8",errors="replace")
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertIn("INSTALLED_UNIFIED_FIR_BINARY_SHA_MISMATCH",
+                          rejected.stdout+rejected.stderr)
+
     def test_real_original_archive_if_staged_by_fq_or_developer(self):
         # The real original archive has an exact immutable SHA and is on
         # ContentBox; normal public Focused CI doesn't yet contain it. Once
