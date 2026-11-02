@@ -5,8 +5,8 @@
 #include <rgsml/core/sha256.hpp>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_geometry.hpp>
-#include <rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -182,14 +182,42 @@ core::Result<ExternalPlaybackFir> load_external_playback_fir(
                 bits[i]=word;
             }
         } else {
-            // Separate frozen SHA was checked above. Validate the whole
-            // exact 52-byte RGSMSR1 header, count and symmetric binary64
-            // coefficients before making an immutable DEVICE owner.
-            auto verified=internal::parse_phase11_rgsmsr1_pinned_candidate_bits(
-                raw,original->L,original->M,shape->T,pinnedSha);
-            if(!verified)
-                return Result::failure(*verified.error());
-            bits=std::move(*verified.value());
+            // Production-owned validation: do not call the Phase-11
+            // TEST-only parser from the real DEVICE runtime. Only exact
+            // SHA-pinned original binary64 assets can populate this owner.
+            constexpr std::array<std::uint8_t,8> magic{
+                'R','G','S','M','S','R','1',0};
+            const auto readLE=[&raw](std::size_t start,
+                                    std::size_t length)->std::uint64_t {
+                std::uint64_t value=0;
+                for(std::size_t i=0;i<length;++i)
+                    value|=static_cast<std::uint64_t>(raw[start+i])<<(8*i);
+                return value;
+            };
+            if(raw.size()<52U
+               ||!std::equal(magic.begin(),magic.end(),raw.begin())
+               ||readLE(8,2)!=1 ||readLE(10,2)!=1
+               ||readLE(12,4)!=original->L
+               ||readLE(16,4)!=original->M
+               ||readLE(20,4)!=shape->T
+               ||readLE(24,4)!=0
+               ||readLE(28,8)!=expectedWords
+               ||readLE(36,8)!=expectedWords
+               ||readLE(44,8)!=expectedWords*8U)
+                return refused(core::ErrorCode::InvalidState,
+                    "PLAYBACK_FIR_CANONICAL_Q0_HEADER_MISMATCH");
+            bits.resize(expectedWords);
+            for(std::size_t i=0;i<expectedWords;++i) {
+                const auto word=readLE(52U+8U*i,8);
+                if(!std::isfinite(std::bit_cast<double>(word)))
+                    return refused(core::ErrorCode::InvalidState,
+                        "PLAYBACK_FIR_NONFINITE_BINARY64");
+                bits[i]=word;
+            }
+            for(std::size_t i=0;i<expectedWords/2U;++i)
+                if(bits[i]!=bits[expectedWords-i-1U])
+                    return refused(core::ErrorCode::InvalidState,
+                        "PLAYBACK_FIR_Q0_SYMMETRY_MISMATCH");
         }
         if(bits.size()!=expectedWords)
             return refused(core::ErrorCode::InvalidState,
