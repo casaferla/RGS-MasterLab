@@ -790,8 +790,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // 14-file original Q0 admission as all other nonidentity rates.
     // Load the genuine pinned repository assets, never stub the policy
     // or invent coefficients to force an artificial READY.
+    // Source is tests/unit/app/<fixture>.cpp: four parents reach the
+    // repository root, not tests/. Never weaken the source SHA admission.
     const auto repoRoot=std::filesystem::path{__FILE__}
-        .parent_path().parent_path().parent_path();
+        .parent_path().parent_path().parent_path().parent_path();
     renderer.set_original_q0_fir_root(repoRoot/"resources"/"fir");
     QVERIFY(renderer.full_original_q0_family_ready());
     app::TerminalPrivateProductSession product{
