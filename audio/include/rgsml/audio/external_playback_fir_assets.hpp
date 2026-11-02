@@ -1,7 +1,9 @@
 #pragma once
-// Frozen playback FIRs are application resources, NEVER compiled coefficients.
+// Unified 16-FIR bank: frozen historical Playback and genuine Q0 original
+// coefficients are external application resources, NEVER compiled coefficients.
 // Loading and SHA verification occur OFF the realtime audio callback.
-// The two playback paths remain separate from 14 private Final SRC FIRs.
+// 14 Q0 originals are independently SHA-pinned for every other directed
+// six-rate DEVICE candidate, with two historic Playback SHA pins unchanged.
 #include <rgsml/core/result.hpp>
 #include <cstdint>
 #include <string>
