@@ -1722,8 +1722,12 @@ void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()
     QCOMPARE(fiveMinutes.value()->combined_pcm_bytes,
         UINT64_C(1152000000));
     QVERIFY(fiveMinutes.value()->experimental_fir_mac_operations);
+    // 192->48 now runs the full 1:4 Q0 bank (1981 taps/output),
+    // not the removed prototype's 512-tap estimate.
+    const auto* geometry=audio::internal::phase11_frozen_shape(1,4);
+    QVERIFY(geometry);
     QCOMPARE(*fiveMinutes.value()->experimental_fir_mac_operations,
-        UINT64_C(14745600000));
+        std::uint64_t{48000}*300U*2U*(geometry->T+1U));
 }
 
 void PlaybackSampleRateAdapterTest::
@@ -2126,9 +2130,37 @@ void PlaybackSampleRateAdapterTest::monitoringStereoImpulseSeparationSixBySix()
             QVERIFY2(std::abs(static_cast<std::int64_t>(peakL)-expectedL)<=3
                 && std::abs(static_cast<std::int64_t>(peakR)-expectedR)<=3,
                 "MONITOR_STEREO_IMPULSE_POSITION_SCREEN_FAILED");
-            QVERIFY2(std::abs((*actualR.value())[peakL])<1e-12
-                && std::abs((*actualL.value())[peakR])<1e-12,
-                "MONITOR_STEREO_CROSSTALK_SCREEN_FAILED");
+            // With the genuine Q0 FIR the decimation impulse response
+            // can extend beyond the 1024-frame separation, especially
+            // 147:640. Nonzero signal at the *other impulse's time* is
+            // legitimate same-channel ringing, NOT cross-channel leakage.
+            // Probe an independently prepared right-SILENT source and
+            // demand exact right zero while left remains bit-for-bit
+            // unchanged. This detects real L/R mixing without imposing
+            // a false 512-tap experimental filter assumption.
+            auto isolated=audio::AudioBuffer::create(
+                *format.value(),audio::FrameDomainId::OUTPUT_RATE,
+                core::FrameIndex{0},frame_count(N));
+            QVERIFY(isolated);
+            auto onlyL=isolated.value()->mutable_view().channel(0);
+            auto onlyR=isolated.value()->mutable_view().channel(1);
+            QVERIFY(onlyL&&onlyR);
+            std::copy(left.value()->begin(),left.value()->end(),
+                      onlyL.value()->begin());
+            std::fill(onlyR.value()->begin(),onlyR.value()->end(),0.0);
+            auto checked=audio::materialize_monitoring_pcm_candidate(
+                isolated.value()->view(),rate(deviceHz),frame_count(89));
+            QVERIFY2(checked,checked?"":checked.error()->message().c_str());
+            auto checkedL=checked.value()->device_pcm.view().channel(0);
+            auto checkedR=checked.value()->device_pcm.view().channel(1);
+            QVERIFY(checkedL&&checkedR);
+            QCOMPARE(checkedL.value()->size(),size);
+            QCOMPARE(checkedR.value()->size(),size);
+            for(std::size_t j=0;j<size;++j) {
+                QCOMPARE(std::bit_cast<std::uint64_t>((*checkedL.value())[j]),
+                    std::bit_cast<std::uint64_t>((*actualL.value())[j]));
+                QCOMPARE((*checkedR.value())[j],0.0);
+            }
             QCOMPARE(channel_bits(*master.value(),0),originalL);
             QCOMPARE(channel_bits(*master.value(),1),originalR);
         }
