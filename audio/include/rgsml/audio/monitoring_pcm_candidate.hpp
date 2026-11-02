@@ -3,6 +3,7 @@
 #include <rgsml/audio/audio_buffer.hpp>
 #include <rgsml/audio/full_resource_output_rate_candidate.hpp>
 #include <rgsml/audio/master_monitoring_rate_plan.hpp>
+#include <rgsml/audio/internal/phase11_frozen_rgsmsr1_geometry.hpp>
 #include <rgsml/core/error.hpp>
 
 #include <algorithm>
@@ -102,18 +103,24 @@ project_monitoring_pcm_resource_cost(
     std::optional<std::uint64_t> macs;
     std::uint64_t firScratch=0;
     if(sourceHz!=deviceHz && !frozenPair) {
-        // Mirrors the rational FIR's tap geometry, without allocating PCM.
-        auto taps=(128*sourceHz+deviceHz-1)/deviceHz;
-        if(taps<128)taps=128;
-        taps+=taps%2;
-        // Experimental FIR owns both its window and phase coefficient arrays.
-        const auto phases=static_cast<std::uint64_t>(
-            deviceHz/std::gcd(sourceHz,deviceHz));
-        firScratch=(phases+1)*static_cast<std::uint64_t>(taps)
-            *sizeof(double);
+        // The approved original RGSMSR1 FIR is a REAL immutable
+        // 52-byte-header + binary64 N-tap resource, not a synthetic
+        // 128-tap approximation. Preflight must cover its actual bytes.
+        // Shared coefficient owners may be cached; count one complete
+        // resource conservatively, without claiming process peak RSS.
+        const auto gcd=std::gcd(sourceHz,deviceHz);
+        const auto* shape=internal::phase11_frozen_shape(
+            static_cast<std::uint32_t>(deviceHz/gcd),
+            static_cast<std::uint32_t>(sourceHz/gcd));
+        if(!shape)
+            return invalid(core::ErrorCode::UnsupportedOperation,
+                "MONITOR_RESOURCE_NO_FROZEN_Q0_RATIO");
+        firScratch=std::uint64_t{52}
+            +static_cast<std::uint64_t>(shape->N)*sizeof(double);
         const auto channels=static_cast<std::uint64_t>(
             format.value()->channel_count());
-        const auto perOutput=static_cast<std::uint64_t>(taps)*channels;
+        const auto perOutput=(static_cast<std::uint64_t>(shape->T)+1)
+            *channels; // upper bound, valid for every rational phase
         if(static_cast<std::uint64_t>(outFrames)
             <=std::numeric_limits<std::uint64_t>::max()/perOutput)
             macs=static_cast<std::uint64_t>(outFrames)*perOutput;
