@@ -152,9 +152,23 @@ acceptedQ0MasterFrameMapPreservesBothKernelFamilies()
         QVERIFY(app::internal::accepted_terminal_src_frame_map_provenance(
             *fin.value(),*fout.value(),*n.value(),total,
             original->sha256,*map.value()));
-        QVERIFY(app::internal::accepted_terminal_src_frame_map_provenance(
-            *fin.value(),*fout.value(),*n.value(),total,
-            map.value()->kernel_sha256(),*map.value()));
+        // Only the two historical Playback FIRs have an external,
+        // certified digest. Other Playback six-rate pairs use provisional
+        // PREPARE-only coefficients with NO digest: an empty SHA must
+        // always fail admission as accepted MASTER provenance.
+        const bool historic=(pair.first==44100&&pair.second==48000)
+            ||(pair.first==48000&&pair.second==44100);
+        if(historic) {
+            QVERIFY(!map.value()->kernel_sha256().empty());
+            QVERIFY(app::internal::accepted_terminal_src_frame_map_provenance(
+                *fin.value(),*fout.value(),*n.value(),total,
+                map.value()->kernel_sha256(),*map.value()));
+        } else {
+            QVERIFY(map.value()->kernel_sha256().empty());
+            QVERIFY(!app::internal::accepted_terminal_src_frame_map_provenance(
+                *fin.value(),*fout.value(),*n.value(),total,
+                map.value()->kernel_sha256(),*map.value()));
+        }
         QVERIFY(!app::internal::accepted_terminal_src_frame_map_provenance(
             *fin.value(),*fout.value(),*n.value(),total,
             "forged-missing-or-stale-kernel",*map.value()));
