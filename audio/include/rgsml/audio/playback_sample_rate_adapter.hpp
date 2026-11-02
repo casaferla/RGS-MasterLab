@@ -36,10 +36,11 @@ struct PlaybackRateSpec final {
     core::FrameCount totalInputFrames;
 };
 
-// Playback-only exact-rational adapter: frozen bit-exact 44.1 <-> 48 FIRs,
-// plus provisional six-rate device FIRs generated only during Prepare.
-// It writes ephemeral OUTPUT_RATE blocks, never MASTER PCM. The new FIRs
-// have NO original-Q0/mastering certification and no SHA-release claim.
+// Playback-only exact-rational adapter: two historic bit-exact 44.1<->48
+// Playback FIRs and the original 14 frozen Q0 FIRs for the remaining 28
+// DEVICE directions. All coefficient files are SHA-pinned in one flat root.
+// It writes ephemeral OUTPUT_RATE blocks, never MASTER PCM. Q0 mathematics
+// is accepted; the device application still requires physical Q1-Q6 gating.
 class PlaybackSampleRateAdapter final {
 public:
     static constexpr std::int64_t kMaximumOutputBlockFrames = 1024;
