@@ -8,6 +8,7 @@
 #include <rgsml/audio/internal/phase11_strict_scalar_reference.hpp>
 #include <rgsml/audio/internal/phase11_rgsmsr1_candidate_asset.hpp>
 #include <rgsml/audio/internal/phase11_frozen_rgsmsr1_pins.hpp>
+#include <rgsml/audio/internal/phase11_frozen_rgsmsr1_geometry.hpp>
 #include "private_io/phase11_pinned_private_fir_loader.hpp"
 #include <rgsml/audio/internal/phase11_pinned_scalar_candidate_reference.hpp>
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
@@ -1688,17 +1689,17 @@ void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()
             QCOMPARE(cost.value()->experimental_fir_mac_operations.has_value(),
                      rational);
             if(rational) {
-                const auto taps=static_cast<std::uint64_t>(
-                    std::max<std::int64_t>(128,
-                        (128*inputHz+deviceHz-1)/deviceHz));
-                const auto evenTaps=taps+(taps%2);
+                const auto divisor=std::gcd(inputHz,deviceHz);
+                const auto* frozen=audio::internal::phase11_frozen_shape(
+                    static_cast<std::uint32_t>(deviceHz/divisor),
+                    static_cast<std::uint32_t>(inputHz/divisor));
+                QVERIFY(frozen);
                 QCOMPARE(*cost.value()->experimental_fir_mac_operations,
                     static_cast<std::uint64_t>(deviceHz*seconds)
-                        *2*evenTaps);
-                const auto phases=static_cast<std::uint64_t>(
-                    deviceHz/std::gcd(inputHz,deviceHz));
+                        *2*(static_cast<std::uint64_t>(frozen->T)+1));
                 QCOMPARE(cost.value()->experimental_fir_scratch_bytes,
-                    (phases+1)*evenTaps*sizeof(double));
+                    std::uint64_t{52}
+                        +static_cast<std::uint64_t>(frozen->N)*sizeof(double));
             } else {
                 QCOMPARE(cost.value()->experimental_fir_scratch_bytes,
                     UINT64_C(0));
@@ -1727,10 +1728,9 @@ void PlaybackSampleRateAdapterTest::monitoringVirtualLongTrackResourceMatrix()
 void PlaybackSampleRateAdapterTest::
 monitoringActualOfflineFirPreflightGeometryAllRatePairs()
 {
-    // Independent offline MASTER->DEVICE kernel geometry is *not* the
-    // 192-taps-per-phase PlaybackSampleRateAdapter. The actual converter is
-    // experimental_rational_output_rate() in full_resource_output_rate_candidate.
-    // Its temporary double phase-coefficient and window arrays coexist.
+    // All 28 nonhistoric MASTER->DEVICE paths reuse the exact SHA-pinned
+    // original Q0 geometry and the shared Playback polyphase engine. The
+    // 2 legacy paths remain immutable; no generated prototype is admitted.
     constexpr std::array<std::int64_t,6> rates{
         44100,48000,88200,96000,176400,192000};
     std::size_t provisional=0,legacy=0,identity=0;
@@ -1752,17 +1752,16 @@ monitoringActualOfflineFirPreflightGeometryAllRatePairs()
             QCOMPARE(projection.value()->experimental_fir_scratch_bytes,
                      std::uint64_t{0});
         } else {
-            ++provisional;
-            // Use integer-ceil form of ceil(128*max(1,source/device))
-            // to falsify any shrinkage in a preview budget at 192->48.
-            const auto maximum=std::max(master,device);
-            const auto tapsCeil=(128*maximum+device-1)/device;
-            const auto taps=tapsCeil+(tapsCeil%2);
-            const auto phases=device/std::gcd(master,device);
-            const auto expectedScratch=static_cast<std::uint64_t>(
-                (phases+1)*taps*sizeof(double));
+            ++provisional; // unchanged counter: 28 original-Q0 routes
+            const auto divisor=std::gcd(master,device);
+            const auto* shape=audio::internal::phase11_frozen_shape(
+                static_cast<std::uint32_t>(device/divisor),
+                static_cast<std::uint32_t>(master/divisor));
+            QVERIFY(shape);
+            const auto expectedScratch=std::uint64_t{52}
+                +static_cast<std::uint64_t>(shape->N)*sizeof(double);
             const auto expectedMac=static_cast<std::uint64_t>(
-                (device*2)*taps*2);
+                device*2)*(static_cast<std::uint64_t>(shape->T)+1)*2;
             QCOMPARE(projection.value()->experimental_fir_scratch_bytes,
                      expectedScratch);
             QVERIFY(projection.value()->experimental_fir_mac_operations);
@@ -1785,7 +1784,7 @@ monitoringActualOfflineFirPreflightGeometryAllRatePairs()
         audio::ChannelLayout::STEREO_LR);
     QVERIFY(downsample);
     QCOMPARE(downsample.value()->experimental_fir_scratch_bytes,
-        std::uint64_t{(1+1)*512*sizeof(double)});
+        std::uint64_t{52+1981*sizeof(double)});
 }
 
 void PlaybackSampleRateAdapterTest::monitoringResourcePreflightFailsOnOverflow()
@@ -2894,7 +2893,17 @@ sixRateDevicePlaybackStreamingPreservesDcAndSourceClock()
             QCOMPARE(a.output_frame_count().value(),expected);
             const bool frozen=(src==44100&&dst==48000)
                 ||(src==48000&&dst==44100);
-            QCOMPARE(a.kernel_sha256().empty(),!frozen);
+            // Every DEVICE nonidentity ratio is authenticated, including
+            // all 28 original-Q0 directed paths.
+            QVERIFY(!a.kernel_sha256().empty());
+            if(!frozen) {
+                const auto divisor=std::gcd(src,dst);
+                const auto* pin=audio::internal::phase11_frozen_original_fir_pin(
+                    static_cast<std::uint32_t>(dst/divisor),
+                    static_cast<std::uint32_t>(src/divisor));
+                QVERIFY(pin);
+                QCOMPARE(a.kernel_sha256(),std::string_view{pin->sha256});
+            }
             auto from=core::FrameIndex{sourceFrames};
             QCOMPARE(a.map_input_frame_to_output(from).value()->value(),
                      expected);
@@ -2912,8 +2921,8 @@ sixRateDevicePlaybackStreamingPreservesDcAndSourceClock()
                     for(const auto sample:*lane.value()) {
                         QVERIFY(std::isfinite(sample));
                         if(!frozen)
-                            QVERIFY2(std::abs(sample-0.125)<1e-10,
-                                "Device-only rational FIR must preserve DC.");
+                            QVERIFY2(std::abs(sample-0.125)<5e-5,
+                                "Original Q0 DEVICE FIR passband DC exceeds mathematical Q0 tolerance.");
                     }
                 }
                 begin+=count;
@@ -2962,7 +2971,7 @@ void PlaybackSampleRateAdapterTest::long192kTo48kStereoDeviceStreamingThroughput
             const double expected = channel == 0 ? 0.125 : -0.125;
             for (const auto sample : *samples.value()) {
                 QVERIFY(std::isfinite(sample));
-                QVERIFY(std::abs(sample - expected) < 1e-10);
+                QVERIFY(std::abs(sample - expected) < 5e-5);
             }
         }
     }
@@ -2999,7 +3008,10 @@ void PlaybackSampleRateAdapterTest::policyIdentityAndFrameMap()
     QVERIFY(extended);
     QCOMPARE(extended.value()->output_frame_count().value(),
              std::int64_t{480});
-    QVERIFY(extended.value()->kernel_sha256().empty());
+    const auto* extendedPin=audio::internal::phase11_frozen_original_fir_pin(1,2);
+    QVERIFY(extendedPin);
+    QCOMPARE(extended.value()->kernel_sha256(),
+             std::string_view{extendedPin->sha256});
 
     auto forward = adapter(44'100, 48'000, 441);
     QCOMPARE(forward.interpolation_factor(), std::int64_t{160});
