@@ -2606,11 +2606,10 @@ void PlaybackSampleRateAdapterTest::offlineCandidateMatchesFrozenPlaybackKernelB
 
 void PlaybackSampleRateAdapterTest::finalOutputExperimentalSpectralScreenSixBySix()
 {
-    // Prequalification screen of the ACTUAL Final Output SOURCE -> MASTER
-    // candidate (not merely the monitoring wrapper). These bounds detect
-    // gross passband/alias failures; they are NOT a mastering-grade ripple,
-    // transition-band, true-peak, listening or physical Windows certificate.
-    // Frozen 44.1 <-> 48 kHz kernels are excluded and remain bitwise frozen.
+    // One uniform SRC source-domain screen of genuine pinned Q0 filter
+    // coefficients (not a separate rational or provisional converter).
+    // This supplements Q0 proof; does not imply physical-device acceptance.
+    // Historical Playback kernels retain their frozen bitwise oracles.
     constexpr double pi=3.141592653589793238462643383279502884;
     constexpr std::array<std::int64_t,6> hz{
         44100,48000,88200,96000,176400,192000};
@@ -2634,16 +2633,18 @@ void PlaybackSampleRateAdapterTest::finalOutputExperimentalSpectralScreenSixBySi
             if(sourceHz==masterHz||frozen)continue;
             const auto expectedFrames=
                 (inputFrames*masterHz+sourceHz-1)/sourceHz;
-            // Exclude reflected transient edges in OUTPUT coordinates,
-            // accounting for the experimental FIR's source-rate tap span.
-            const double ratio=std::max(
-                1.0,static_cast<double>(sourceHz)/masterHz);
-            auto taps=static_cast<std::int64_t>(
-                std::ceil(128.0*ratio));
-            taps+=taps%2;
-            const auto trim=std::max<std::int64_t>(
-                96,static_cast<std::int64_t>(std::ceil(
-                    0.65*static_cast<double>(taps)*masterHz/sourceHz))+16);
+            // Exact original-Q0 FIR reflected edge length, not the obsolete
+            // synthetic 128-tap geometry. Exclude the entire group delay
+            // in output coordinates before measuring the interior tone.
+            const auto divisor=std::gcd(sourceHz,masterHz);
+            const auto* shape=audio::internal::phase11_frozen_shape(
+                static_cast<std::uint32_t>(masterHz/divisor),
+                static_cast<std::uint32_t>(sourceHz/divisor));
+            QVERIFY(shape);
+            const auto trim=static_cast<std::int64_t>(
+                (static_cast<std::uint64_t>(shape->N-1)/2
+                    +static_cast<std::uint64_t>(shape->M)-1)
+                    /shape->M)+16;
             QVERIFY(expectedFrames>2*trim+64);
             for(const auto tone:passHz) {
                 // These tones are strictly inside every output passband.
@@ -2656,7 +2657,11 @@ void PlaybackSampleRateAdapterTest::finalOutputExperimentalSpectralScreenSixBySi
                     source.value()->view(),rate(masterHz),frame_count(127));
                 QVERIFY2(candidate,candidate?"":candidate.error()->message().c_str());
                 QVERIFY(candidate.value()->used_src);
-                QVERIFY(candidate.value()->kernel_sha256.empty());
+                const auto* pin=audio::internal::phase11_frozen_original_fir_pin(
+                    shape->L,shape->M);
+                QVERIFY(pin);
+                QCOMPARE(candidate.value()->kernel_sha256,
+                         std::string_view{pin->sha256});
                 QCOMPARE(candidate.value()->source_rate,rate(sourceHz));
                 QCOMPARE(candidate.value()->output_rate,rate(masterHz));
                 QCOMPARE(candidate.value()->pcm.view().frame_count().value(),
@@ -2725,8 +2730,8 @@ void PlaybackSampleRateAdapterTest::fullResourceSrcCancellationAbortsBeforePubli
     // block loop. The output remains private; no half-filled PCM escapes.
     struct RateCase {std::int64_t source; std::int64_t target;};
     constexpr std::array<RateCase,4> cases{{
-        {192000,48000}, // experimental downsample, 512 taps
-        {44100,192000}, // experimental upsample
+        {192000,48000}, // original-Q0 1:4 downsample
+        {44100,192000}, // original-Q0 640:147 upsample
         {44100,48000},  // frozen playback kernels, unchanged FP math
         {48000,48000}   // bit-exact identity copy with bounded checks
     }};
@@ -2855,8 +2860,9 @@ void PlaybackSampleRateAdapterTest::experimentalFullResourceSixBySixRateMatrix()
                     QVERIFY2(std::isfinite(v),
                         "All 36 SRC pairs must generate finite output.");
                     if(!frozenPair)
-                        QVERIFY2(std::abs(v-expected)<2e-12,
-                            "New rational SRC must preserve constant PCM.");
+                        QVERIFY2(std::abs(v-expected)
+                                 <=std::abs(expected)/30000.0+1e-10,
+                            "Original Q0 SRC DC exceeds frozen passband envelope.");
                 }
             }
             ++verified;
