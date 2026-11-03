@@ -555,6 +555,13 @@ bool TerminalMonitorViewModel::returnManual()
 }
 bool TerminalMonitorViewModel::cancel()
 {
+    // The shared UI "Return to Source" button and menu route through
+    // cancel(). After the monitor has ALREADY been retired, this must
+    // dispatch the ONLY explicit recovery command, not generic session
+    // Cancel (which correctly refuses any implicit device installation).
+    if(session_->status()
+           ==QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"))
+        return returnManual();
     if(monitorPreparing_) {
         abort_async_conversion();
         // Normal M17 READY must remain available for an immediate retry.
