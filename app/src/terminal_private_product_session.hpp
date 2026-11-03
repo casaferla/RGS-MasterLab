@@ -342,6 +342,10 @@ private:
         core::FrameIndex sourceCue{0};
         core::PlaybackState priorTransport{core::PlaybackState::STOPPED};
         std::optional<core::FrameRange> reconciledSourceLoop;
+        // Keep the exact verified MASTER gate alive across a denied
+        // Windows reinstall, and reject any later replacement/revocation.
+        std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
+            capturedVerifiedMaster;
     };
     std::optional<ReturnRecovery> returnRecovery_;
     bool monitorTransitioning_{false};
