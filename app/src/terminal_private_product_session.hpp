@@ -239,6 +239,7 @@ public:
     // terminal SOURCE audio owned by the ordinary Qt M17 conductor.
     [[nodiscard]] bool monitoring_transaction_active() const noexcept {
         return monitorTransitioning_ || static_cast<bool>(installedMonitor_)
+            || static_cast<bool>(returnRecovery_)
             || (pending_.has_value() && pending_->masterOnly);
     }
     [[nodiscard]] QString status() const {return status_;}
@@ -300,6 +301,7 @@ private:
         bool offlineNonAudibleSelection{false};
     };
     void on_renderer_changed();
+    [[nodiscard]] core::Status retry_source_return_after_monitor_retirement();
     [[nodiscard]] core::Status install_accepted_candidate();
     [[nodiscard]] std::shared_ptr<const TerminalCandidateGate::StagedCandidate>
     current_verified_private_master() const;
@@ -333,6 +335,15 @@ private:
     // Exact pre-install MANUAL transport for recovering a partially seeded
     // DEVICE sink, never the anonymous monitor's incomplete cue/state.
     std::optional<core::PlaybackSnapshot> monitorRecoveryOriginal_;
+    // The monitor has been PROVEN retired, but Windows denied reinstalling
+    // the immutable MANUAL. Retain exact source cue/loop/state plus pending
+    // M17 PCM; no new DEVICE owner or M16 LIVE/GR claim may arise here.
+    struct ReturnRecovery final {
+        core::FrameIndex sourceCue{0};
+        core::PlaybackState priorTransport{core::PlaybackState::STOPPED};
+        std::optional<core::FrameRange> reconciledSourceLoop;
+    };
+    std::optional<ReturnRecovery> returnRecovery_;
     bool monitorTransitioning_{false};
     std::optional<Pending> pending_;
     // Exact immutable admission identity; never confuse an M16 failed
