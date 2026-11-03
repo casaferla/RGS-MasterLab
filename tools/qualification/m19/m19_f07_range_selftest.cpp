@@ -51,8 +51,10 @@ run(const std::vector<double>& left,
     auto result=engine.finalize();
     require(result.has_value());
     require(!result->integrated_lufs);
+    // 44100 now has its exact frozen PO P01 bank. This short diagnostic
+    // vector simply lacks the minimum 400-ms support.
     require(result->loudness_state==
-        m19::LoudnessPreproductionState::unsupported_k_weighting_rate);
+        m19::LoudnessPreproductionState::insufficient_duration);
     require(!result->true_peak_db_tp);
     return *result;
 }
