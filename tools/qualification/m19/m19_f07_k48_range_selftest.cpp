@@ -2,6 +2,7 @@
 // Exercises ZERO_STATE_AT_LOGICAL_ANALYSIS_SCOPE_START using actual PCM
 // and the fixed 48k BS.1770 coefficient bank only.
 #include "internal/m19_basic_level_candidate.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
