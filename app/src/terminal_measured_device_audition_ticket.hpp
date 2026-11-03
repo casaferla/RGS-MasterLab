@@ -16,11 +16,36 @@ namespace rgsml::app {
 // be mistaken for StagedCandidate / M16-verified MASTER. The device-rate PCM
 // is a DIFFERENT anonymous allocation. This type grants no SOURCE identity,
 // M16 LIVE certificate, GR chronology, playback permission or export right.
-struct MeasuredDeviceAuditionTicket final {
+class MeasuredDeviceAuditionTicket final {
+public:
+    [[nodiscard]] const auto& measured_master() const noexcept
+    { return measuredMaster_; }
+    [[nodiscard]] const auto& audition_device_pcm() const noexcept
+    { return devicePcm_; }
+    [[nodiscard]] core::RealizationId original_manual_realization_id()
+        const noexcept { return originalManualId_; }
+
+    [[nodiscard]] static core::Result<MeasuredDeviceAuditionTicket> admit(
+        std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+            captured,
+        std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+            current,
+        std::shared_ptr<const audio::MonitoringPcmCandidate> converted,
+        bool explicitUserRequest);
+private:
+    // No public aggregate or default constructor: only the explicit,
+    // owner-checked admission may construct an audition candidate.
+    MeasuredDeviceAuditionTicket(
+        std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+            master,
+        std::shared_ptr<const audio::MonitoringPcmCandidate> device,
+        core::RealizationId originalId)
+        : measuredMaster_(std::move(master)),devicePcm_(std::move(device)),
+          originalManualId_(originalId) {}
     std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
-        measured_master;
-    std::shared_ptr<const audio::MonitoringPcmCandidate> audition_device_pcm;
-    core::RealizationId original_manual_realization_id;
+        measuredMaster_;
+    std::shared_ptr<const audio::MonitoringPcmCandidate> devicePcm_;
+    core::RealizationId originalManualId_;
 };
 
 // Only a user-explicitly-requested, current, independently M16-measured
@@ -28,8 +53,8 @@ struct MeasuredDeviceAuditionTicket final {
 // buffer. The calling coordinator must obtain 'current' on the app OWNER
 // thread AFTER conversion. Windows must then recheck the opaque endpoint at
 // install time; even a valid ticket here is NOT permission to start playback.
-[[nodiscard]] inline core::Result<MeasuredDeviceAuditionTicket>
-admit_measured_device_audition_ticket(
+inline core::Result<MeasuredDeviceAuditionTicket>
+MeasuredDeviceAuditionTicket::admit(
     std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
         captured,
     std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
@@ -85,6 +110,22 @@ admit_measured_device_audition_ticket(
     return Result::success(MeasuredDeviceAuditionTicket{
         std::move(captured),std::move(converted),
         current->original_manual_realization_id});
+}
+
+// This named helper is retained for unit test readability; construction
+// remains strictly private to the typed admission method.
+[[nodiscard]] inline core::Result<MeasuredDeviceAuditionTicket>
+admit_measured_device_audition_ticket(
+    std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+        captured,
+    std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>
+        current,
+    std::shared_ptr<const audio::MonitoringPcmCandidate> converted,
+    bool explicitUserRequest)
+{
+    return MeasuredDeviceAuditionTicket::admit(
+        std::move(captured),std::move(current),std::move(converted),
+        explicitUserRequest);
 }
 
 } // namespace rgsml::app
