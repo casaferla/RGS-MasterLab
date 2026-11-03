@@ -29,6 +29,12 @@ ApplicationWindow {
     // Explicitly confirmed in-RAM MASTER loss alone permits exiting a
     // recovery state without reinstalling the original Windows DEVICE.
     property bool m17ConfirmedDiscardExit: false
+    readonly property bool m17RecoveryExitRequired: root.monitorExclusive
+        && !!root.appTerminalMonitorViewModel
+        && (String(root.appTerminalMonitorViewModel.returnTargetText)
+                .indexOf("Retry") === 0
+            || String(root.appTerminalMonitorViewModel.statusText)
+                .indexOf("RECOVERY REQUIRED") !== -1)
 
     // Minimum-first desktop composition: the supported 1184 x 688 geometry is
     // already complete and readable. Larger windows expand elastic content
@@ -522,10 +528,10 @@ ApplicationWindow {
             Label {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Windows could not restore the Source device. "
-                    + "Your prepared Master remains in memory. Keep "
-                    + "working and retry Return to Source, or explicitly "
-                    + "exit and lose the unsaved Master."
+                text: "Windows could not verify a safe return from Master "
+                    + "listening to the Source device. Your prepared Master "
+                    + "remains in memory. Keep working and retry Return to "
+                    + "Source, or explicitly exit and lose the unsaved Master."
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -560,9 +566,7 @@ ApplicationWindow {
             Qt.quit()
             return
         }
-        if (root.monitorExclusive && root.appTerminalMonitorViewModel
-                && root.appTerminalMonitorViewModel.returnTargetText
-                    === "Retry Return to Source") {
+        if (root.m17RecoveryExitRequired) {
             close.accepted = false
             if (!m17RecoveryExitDialog.opened)
                 m17RecoveryExitDialog.open()
