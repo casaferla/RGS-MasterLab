@@ -72,12 +72,21 @@ jobs:
       - name: Compile and run independent M18 oracle · Debug
         shell: pwsh
         run: |
+          $debugLog = "$env:RUNNER_TEMP/m18-windows-debug-bounded.txt"
           & cl.exe /nologo /std:c++20 /EHsc /Od /W4 /WX /Zc:__cplusplus /Iaudio/src `
             tools/qualification/m18/m18_portable_selftest.cpp `
-            "/Fe:$env:RUNNER_TEMP/m18-preproduction-debug.exe"
-          if ($LASTEXITCODE -ne 0) { throw "M18_DEBUG_COMPILE_FAILED" }
-          & "$env:RUNNER_TEMP/m18-preproduction-debug.exe"
-          if ($LASTEXITCODE -ne 0) { throw "M18_DEBUG_ORACLE_FAILED" }
+            "/Fe:$env:RUNNER_TEMP/m18-preproduction-debug.exe" *> $debugLog
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Add-Content $debugLog "M18_DEBUG_COMPILE_EXIT=$code"
+            Get-Content $debugLog -Tail 70
+            throw "M18_DEBUG_COMPILE_FAILED"
+          }
+          & "$env:RUNNER_TEMP/m18-preproduction-debug.exe" *> "$env:RUNNER_TEMP/m18-windows-execution.txt"
+          $code = $LASTEXITCODE
+          Add-Content $debugLog "M18_DEBUG_RUNTIME_EXIT=$code"
+          Get-Content "$env:RUNNER_TEMP/m18-windows-execution.txt" -Tail 16
+          if ($code -ne 0) { throw "M18_DEBUG_ORACLE_FAILED_$code" }
       - name: Compile and run independent M18 oracle · Release
         shell: pwsh
         run: |
@@ -87,3 +96,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "M18_RELEASE_COMPILE_FAILED" }
           & "$env:RUNNER_TEMP/m18-preproduction-release.exe"
           if ($LASTEXITCODE -ne 0) { throw "M18_RELEASE_ORACLE_FAILED" }
+
+      - name: Upload bounded Windows M18 errors only
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M18-Bounded-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/m18-windows-debug-bounded.txt
+            ${{ runner.temp }}/m18-windows-execution.txt
+          if-no-files-found: ignore
+          retention-days: 7
