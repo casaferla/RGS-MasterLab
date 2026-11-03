@@ -171,6 +171,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           QT_QUICK_BACKEND: software
+          M21_SCREENSHOT_PATH: ${{ runner.temp }}/m21-preview-windows.png
         run: |
           cmake -S tools/qualification/m21/qt_preview -B "$env:RUNNER_TEMP/m21-qt-build" -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$env:RUNNER_TEMP/m21qt/6.8.3/msvc2022_64"
           if ($LASTEXITCODE -ne 0) { throw "M21_QT_WIN_CONFIGURE" }
@@ -182,3 +183,10 @@ jobs:
           & "$env:RUNNER_TEMP/m21-qt-build/m21_qt_preview_smoke.exe"
           if ($LASTEXITCODE -ne 0) { throw "M21_QT_WIN_SMOKE" }
           Write-Output M21_QT_WINDOWS_PRIVATE_PASS_NOT_GATE_M
+      - name: Preserve actual Windows Qt screenshot · DEMO DATA (not product)
+        uses: actions/upload-artifact@v4
+        with:
+          name: m21-actual-windows-qt-demo-screenshot
+          path: ${{ runner.temp }}/m21-preview-windows.png
+          if-no-files-found: error
+          retention-days: 14
