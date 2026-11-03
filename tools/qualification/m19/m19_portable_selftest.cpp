@@ -125,12 +125,17 @@ int main() {
     near(*hot.full_scope_rms_dbfs, 20.0*std::log10(2.0));
     near(*hot.sample_peak_crest_db, 0.0);
 
-    // Five other rates must NOT pretend to have certified K banks.
-    for (std::uint32_t hz : {44100U, 88200U, 96000U, 176400U, 192000U}) {
+    // Later PO ACCEPTED/FROZEN P01 explicitly authorizes exactly SIX
+    // physical K banks (Oct 05). Here all six are shorter than their
+    // respective complete 400-ms block, so numeric LUFS is unavailable
+    // solely for insufficient duration, NOT for absent bank coefficients.
+    for (std::uint32_t hz : {44100U, 48000U, 88200U, 96000U, 176400U, 192000U}) {
         auto out = run(std::vector<double>(2000U, 0.25), {}, hz, origin, ragged);
         require(out.loudness_state ==
-                LoudnessPreproductionState::unsupported_k_weighting_rate);
+                LoudnessPreproductionState::insufficient_duration);
         require(!out.integrated_lufs);
+        require(!out.k_weighting_bank_member_id.empty());
+        require(out.k_weighting_bank_sha256.size() == 64U);
         near(*out.full_scope_rms_dbfs, 20.0*std::log10(0.25));
         near(*out.sample_peak_dbfs, 20.0*std::log10(0.25));
     }
