@@ -209,8 +209,8 @@ public:
             }
         }
 
-        // Exact frozen 48-kHz coefficients only. At the other five clocks the
-        // physical K-weighting bank is not yet authority-reconciled: no LUFS.
+        // Six exact PO-frozen P01 K banks; zero state at the logical scope
+        // start and persistent state across input chunk boundaries.
         for (std::size_t i = 0; i < channel0.size(); ++i) {
             for (std::uint32_t channel = 0; channel < channel_count_; ++channel) {
                 const double x = channel == 0U ? channel0[i] : channel1[i];
@@ -312,10 +312,11 @@ public:
             out.full_scope_rms_dbfs = rmsDb;
             out.sample_peak_crest_db = crestDb;
         }
-        if (sample_rate_hz_ != 48000U) {
-            out.loudness_state =
-                LoudnessPreproductionState::unsupported_k_weighting_rate;
-        } else if (block_powers_.empty()) {
+        const auto* bank = find_frozen_k_weighting_bank_candidate(sample_rate_hz_);
+        if (bank == nullptr) return std::nullopt;
+        out.k_weighting_bank_member_id = bank->member_id;
+        out.k_weighting_bank_sha256 = bank->canonical_le_sha256;
+        if (block_powers_.empty()) {
             out.loudness_state = LoudnessPreproductionState::insufficient_duration;
         } else {
             const auto gated = gate_complete_400ms_block_powers(block_powers_);
@@ -347,13 +348,9 @@ private:
         }
     };
     struct KFilter {
-        Biquad shelf{1.53512485958697, -2.69169618940638,
-                     1.19839281085285, -1.69065929318241,
-                     0.73248077421585};
-        Biquad highpass{1.0, -2.0, 1.0, -1.99004745483398,
-                        0.99007225036621};
+        Biquad shelf{0.0,0.0,0.0,0.0,0.0};
+        Biquad highpass{0.0,0.0,0.0,0.0,0.0};
     };
-    static constexpr std::uint64_t kQuarterFrames = 4800U;
     std::uint32_t sample_rate_hz_{};
     std::uint32_t channel_count_{};
     std::uint64_t scope_begin_{};
