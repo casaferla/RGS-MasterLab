@@ -59,6 +59,7 @@ class M18PreAuditPayloadDigest(unittest.TestCase):
     def test_three_independently_frozen_sha256(self) -> None:
         for start, count, channels, digest in VECTORS:
             with self.subTest(start=start, channels=channels):
+                self.assertEqual(len(digest), 64, "frozen SHA-256 must be 64 hex characters")
                 b = encode(start, count, channels)
                 self.assertEqual(len(b), count*channels*3)
                 self.assertEqual(hashlib.sha256(b).hexdigest(), digest)
