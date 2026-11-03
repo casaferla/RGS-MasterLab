@@ -66,6 +66,17 @@ jobs:
             g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src -Ianalysis/include -Iaudio/include -Icore/include tools/qualification/m20/m20_real_audio_scope_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp audio/src/audio_buffer.cpp audio/src/audio_format.cpp core/src/checked_integer.cpp core/src/frame_time.cpp core/src/rational.cpp core/src/error.cpp -o "$RUNNER_TEMP/m20-audioscope"
             "$RUNNER_TEMP/m20-audioscope"
           done
+      - name: M20 independent exact stereo temporal/union reference
+        shell: bash
+        run: python3 tools/qualification/m20/test_m20_stereo_reference.py
+      - name: Six-rate stereo correlation, Width, active union and range adversaries · both modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src tools/qualification/m20/m20_stereo_adversarial_selftest.cpp -o "$RUNNER_TEMP/m20-stereo-adv"
+            "$RUNNER_TEMP/m20-stereo-adv"
+          done
   windows-m20:
     name: M20 only · Windows 2022 MSVC Debug + Release
     runs-on: windows-2022
@@ -134,3 +145,18 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "M20_AUDIOBUFFER_SCOPE_TEST_FAILED_$mode" }
           }
           Write-Output M20_REAL_AUDIOBUFFER_SCOPE_WINDOWS_PASS_NOT_GATE_G
+      - name: M20 independent exact stereo temporal/union reference
+        shell: pwsh
+        run: python tools/qualification/m20/test_m20_stereo_reference.py
+      - name: Six-rate stereo correlation, Width, active union and range adversaries · both modes
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m20-stereo-adv-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src tools/qualification/m20/m20_stereo_adversarial_selftest.cpp "/Fe:$env:RUNNER_TEMP/m20-stereo-adv-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 90; throw "M20_STEREO_ADV_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m20-stereo-adv-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M20_STEREO_ADV_TEST_FAILED_$mode" }
+          }
+          Write-Output M20_STEREO_ADVERSARIAL_WINDOWS_PASS_NOT_GATE_G
