@@ -53,3 +53,7 @@ A second independent Python Fraction oracle and six-clock C++ test validate over
 
 ### M20 lot #4 Windows red bounded diagnosis and #5 corrective fixture
 CI run 41669577807: Linux SUCCESS; Windows FAILED in the new real AudioBufferView scope selftest. Source inspection found that the negative mismatched-mask fixture mutated a `std::vector` after handing its storage to a `std::span`, then passed the STALE span (still old length and potentially dangling) to the adapter. This is invalid test construction and gives nondeterministic behavior, not evidence of a Windows math failure. Corrected negative fixture now makes a separate larger vector and rebinds a fresh `ExternallyOwnedGateInputs` span explicitly, so the intended invalid-mask length is truly exercised. Requires fresh Windows + Linux rerun on the corrected exact SHA; this note is diagnosis, not yet claim of green.
+
+
+### Bounded diagnostics for M20 CI #5
+After previous scoped-mask test correction, CI run 41670334732 exposed a separate Linux M20 stereo adversarial step failure and recurring Windows AudioBufferView step failure; do not claim either green. Add self-contained failure-only artifacts containing at most 40/60 diagnostic lines per failed test/compile. Preserve exact test assertions; do not download whole workflow logs. Use output to classify failures before next corrective candidate; no release/merge/FQ authority.

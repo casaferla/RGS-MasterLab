@@ -74,9 +74,16 @@ jobs:
         run: |
           set -euo pipefail
           for opts in "-O0 -g" "-O2"; do
-            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src tools/qualification/m20/m20_stereo_adversarial_selftest.cpp -o "$RUNNER_TEMP/m20-stereo-adv"
-            "$RUNNER_TEMP/m20-stereo-adv"
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src tools/qualification/m20/m20_stereo_adversarial_selftest.cpp -o "$RUNNER_TEMP/m20-stereo-adv" >"$RUNNER_TEMP/m20-stereo-diagnostic.log" 2>&1 || { tail -n 40 "$RUNNER_TEMP/m20-stereo-diagnostic.log" >"$RUNNER_TEMP/m20-stereo-bounded.txt"; exit 1; }
+            "$RUNNER_TEMP/m20-stereo-adv" >>"$RUNNER_TEMP/m20-stereo-diagnostic.log" 2>&1 || { tail -n 40 "$RUNNER_TEMP/m20-stereo-diagnostic.log" >"$RUNNER_TEMP/m20-stereo-bounded.txt"; exit 1; }
           done
+      - name: Preserve ONLY bounded Linux failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: M20-Linux-bounded-diagnostic
+          path: ${{ runner.temp }}/m20-stereo-bounded.txt
+          if-no-files-found: ignore
   windows-m20:
     name: M20 only · Windows 2022 MSVC Debug + Release
     runs-on: windows-2022
@@ -140,9 +147,16 @@ jobs:
             $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
             $log = "$env:RUNNER_TEMP/m20-audioscope-$mode.log"
             & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src /Ianalysis/include /Iaudio/include /Icore/include tools/qualification/m20/m20_real_audio_scope_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp audio/src/audio_buffer.cpp audio/src/audio_format.cpp core/src/checked_integer.cpp core/src/frame_time.cpp core/src/rational.cpp core/src/error.cpp "/Fe:$env:RUNNER_TEMP/m20-audioscope-$mode.exe" *> $log
-            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 90; throw "M20_AUDIOBUFFER_SCOPE_COMPILE_FAILED_$mode" }
-            & "$env:RUNNER_TEMP/m20-audioscope-$mode.exe"
-            if ($LASTEXITCODE -ne 0) { throw "M20_AUDIOBUFFER_SCOPE_TEST_FAILED_$mode" }
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 60 | Set-Content "$env:RUNNER_TEMP/m20-audioscope-bounded.txt"
+              throw "M20_AUDIOBUFFER_SCOPE_COMPILE_FAILED_$mode"
+            }
+            $runtime = "$env:RUNNER_TEMP/m20-audioscope-runtime-$mode.log"
+            & "$env:RUNNER_TEMP/m20-audioscope-$mode.exe" *> $runtime
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $runtime -Tail 60 | Set-Content "$env:RUNNER_TEMP/m20-audioscope-bounded.txt"
+              throw "M20_AUDIOBUFFER_SCOPE_TEST_FAILED_$mode"
+            }
           }
           Write-Output M20_REAL_AUDIOBUFFER_SCOPE_WINDOWS_PASS_NOT_GATE_G
       - name: M20 independent exact stereo temporal/union reference
@@ -160,3 +174,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "M20_STEREO_ADV_TEST_FAILED_$mode" }
           }
           Write-Output M20_STEREO_ADVERSARIAL_WINDOWS_PASS_NOT_GATE_G
+      - name: Preserve ONLY bounded Windows failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: M20-Windows-bounded-diagnostic
+          path: ${{ runner.temp }}/m20-audioscope-bounded.txt
+          if-no-files-found: ignore
