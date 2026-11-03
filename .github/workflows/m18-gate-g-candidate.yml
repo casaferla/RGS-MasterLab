@@ -1,0 +1,108 @@
+# M18 mathematical Gate-G PROPOSAL, NOT a product/release certificate.
+# Separate from fast CI and M17. A candidate file/workflow change starts
+# this heavy dual-OS run. M18-only branch guard; no other path triggers it.
+name: M18 Proposed Gate G Candidate (dual OS)
+
+on:
+  push:
+    branches:
+      - experimental/m18-dither-20261102
+    paths:
+      - 'tools/qualification/m18/m18_gate_g_candidate.cpp'
+      - '.github/workflows/m18-gate-g-candidate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m18-proposed-gate-g-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    name: M18 · 87 proposed checks · Linux Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Guard M18-only ref
+        shell: bash
+        env:
+          CHECK_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          test "$CHECK_REF" = "refs/heads/experimental/m18-dither-20261102"
+      - name: Build and run the full proposed 87 checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror \
+            -I audio/src tools/qualification/m18/m18_gate_g_candidate.cpp \
+            -o "$RUNNER_TEMP/m18-gate-g"
+          "$RUNNER_TEMP/m18-gate-g" --full-proposal \
+            | tee "$RUNNER_TEMP/m18-gate-g-metrics.csv"
+          grep -q 'M18_STAT_SUMMARY,total=87,expected=87' \
+            "$RUNNER_TEMP/m18-gate-g-metrics.csv"
+          grep -q 'M18_GATE_G_PROPOSAL_PASS_NOT_FORMAL_GATE_G' \
+            "$RUNNER_TEMP/m18-gate-g-metrics.csv"
+      - name: Preserve auditable proposed metrics (not certificate)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: M18-proposed-87-Linux-${{ github.sha }}
+          path: ${{ runner.temp }}/m18-gate-g-metrics.csv
+          if-no-files-found: ignore
+          retention-days: 14
+
+  windows:
+    name: M18 · 87 proposed checks · Windows Release
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Guard M18-only ref
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -ne "refs/heads/experimental/m18-dither-20261102") {
+            throw "M18_GATE_G_WRONG_REF"
+          }
+      - name: Build and run the full proposed 87 checks
+        shell: pwsh
+        run: |
+          $buildLog = "$env:RUNNER_TEMP/m18-gate-g-build.txt"
+          & cl.exe /nologo /std:c++20 /EHsc /O2 /W4 /WX /Zc:__cplusplus `
+            /Iaudio/src tools/qualification/m18/m18_gate_g_candidate.cpp `
+            "/Fe:$env:RUNNER_TEMP/m18-gate-g.exe" *> $buildLog
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $buildLog -Tail 70
+            throw "M18_GATE_G_MSVC_BUILD_FAILED"
+          }
+          $report = "$env:RUNNER_TEMP/m18-gate-g-metrics.csv"
+          & "$env:RUNNER_TEMP/m18-gate-g.exe" --full-proposal *> $report
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $report -Tail 80
+            throw "M18_GATE_G_MSVC_TEST_FAILED"
+          }
+          $content = Get-Content $report -Raw
+          if ($content -notmatch "M18_STAT_SUMMARY,total=87,expected=87" -or
+              $content -notmatch "M18_GATE_G_PROPOSAL_PASS_NOT_FORMAL_GATE_G") {
+            throw "M18_GATE_G_METRICS_INCOMPLETE"
+          }
+      - name: Preserve auditable proposed metrics (not certificate)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: M18-proposed-87-Windows-${{ github.sha }}
+          path: ${{ runner.temp }}/m18-gate-g-metrics.csv
+          if-no-files-found: ignore
+          retention-days: 14
