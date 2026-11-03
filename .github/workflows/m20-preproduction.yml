@@ -84,6 +84,14 @@ jobs:
           name: M20-Linux-bounded-diagnostic
           path: ${{ runner.temp }}/m20-stereo-bounded.txt
           if-no-files-found: ignore
+      - name: Actual M19 candidate snapshot + Phase-6 gate proof boundary · both modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src -Ianalysis/include -Iaudio/include -Icore/include tools/qualification/m20/m20_m19_phase6_port_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp -o "$RUNNER_TEMP/m20-phase6-port"
+            "$RUNNER_TEMP/m20-phase6-port"
+          done
   windows-m20:
     name: M20 only · Windows 2022 MSVC Debug + Release
     runs-on: windows-2022
@@ -174,6 +182,18 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "M20_STEREO_ADV_TEST_FAILED_$mode" }
           }
           Write-Output M20_STEREO_ADVERSARIAL_WINDOWS_PASS_NOT_GATE_G
+      - name: Actual M19 candidate snapshot + Phase-6 gate proof boundary · both modes
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m20-phase6-port-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src /Ianalysis/include /Iaudio/include /Icore/include tools/qualification/m20/m20_m19_phase6_port_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp "/Fe:$env:RUNNER_TEMP/m20-phase6-port-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 45; throw "M20_PHASE6_PORT_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m20-phase6-port-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M20_PHASE6_PORT_TEST_FAILED_$mode" }
+          }
+          Write-Output M20_PHASE6_PORT_WINDOWS_PREPRODUCTION_PASS_NOT_GATE_G
       - name: Preserve ONLY bounded Windows failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
