@@ -414,6 +414,7 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
     std::size_t masterPairs=0;
     std::size_t wavPairs=0;
     std::size_t devicePairs=0;
+    std::size_t equalSourceMasterDevicePairs=0;
     for(const auto sourceHz:rates) {
         const auto sourceRate=core::SampleRate::create(sourceHz);
         QVERIFY(sourceRate);
@@ -484,10 +485,12 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
                 static_cast<std::uint32_t>(
                     master.frame_count().value()*2*sizeof(double)));
             ++wavPairs;
-            if(finalHz!=sourceHz)continue;
-            // 36 more genuine PCM conversions: six independently
-            // prepared source-rate M17 masters versus six DEVICE rates.
-            // DEVICE allocation never mutates the MASTER output clock.
+            // Exercise the FULL composed physical rate topology:
+            // 6 SOURCE rates x 6 MASTER rates x 6 DEVICE rates = 216.
+            // Prior 36+36 tests covered only same SOURCE/MASTER DEVICE
+            // conversion, not the actual SOURCE!=MASTER!=DEVICE path.
+            // Each device buffer must be derived from THIS M17 MASTER,
+            // not from the source or another verified candidate.
             for(const auto deviceHz:rates) {
                 const auto deviceRate=core::SampleRate::create(deviceHz);
                 QVERIFY(deviceRate);
@@ -507,19 +510,24 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
                          *finalRate.value());
                 QCOMPARE(monitor.value()->device_rate,*deviceRate.value());
                 QCOMPARE(monitor.value()->device_src_applied,
-                    sourceHz!=deviceHz);
+                    finalHz!=deviceHz);
                 QCOMPARE(monitor.value()->device_pcm.view().format().sample_rate(),
                          *deviceRate.value());
-                QCOMPARE(master.format().sample_rate(),*sourceRate.value());
+                QCOMPARE(master.format().sample_rate(),*finalRate.value());
+                if(sourceHz==finalHz)++equalSourceMasterDevicePairs;
                 ++devicePairs;
             }
         }
     }
     QCOMPARE(masterPairs,std::size_t{36});
     QCOMPARE(wavPairs,std::size_t{36});
-    QCOMPARE(devicePairs,std::size_t{36});
+    QCOMPARE(devicePairs,std::size_t{216});
+    QCOMPARE(equalSourceMasterDevicePairs,std::size_t{36});
+    // Retain the historical CI attestation for the 36 legacy equal
+    // SOURCE/MASTER pair subset; assert its count independently above.
     qInfo().noquote()<<"M17_RATE_MATRIX=36_MASTER_PLUS_36_IEEE_F64_WAV_PLUS_36_DEVICE_PCM";
-    qInfo().noquote()<<"M17_EDGE_CASE=RATE_GRID_36X36_MASTER_WAV_DEVICE";
+    qInfo().noquote()<<"M17_RATE_MATRIX_FULL_COMPOSED_CHAIN=216_SOURCE_MASTER_DEVICE_PCM";
+    qInfo().noquote()<<"M17_EDGE_CASE=RATE_GRID_216_TRIPLES_MASTER_WAV_DEVICE";
 }
 
 void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate48k()
