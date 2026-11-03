@@ -38,6 +38,15 @@ jobs:
             "$RUNNER_TEMP/m20-real"
           done
           echo M20_LINUX_PREPRODUCTION_PASS_NOT_U_OR_G
+      - name: Real canonical six-rate scope spectrum / externally supplied gate mask · both modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src -Ianalysis/include tools/qualification/m20/m20_scope_spectrum_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp -o "$RUNNER_TEMP/m20-scope"
+            "$RUNNER_TEMP/m20-scope"
+          done
+          echo M20_REAL_SCOPE_LINUX_PASS_NOT_GATE_G
   windows-m20:
     name: M20 only · Windows 2022 MSVC Debug + Release
     runs-on: windows-2022
@@ -67,3 +76,15 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "M20_REAL_FFT_TEST_FAILED_$mode" }
           }
           Write-Output M20_WINDOWS_PREPRODUCTION_PASS_NOT_U_OR_G
+      - name: Real canonical six-rate scope spectrum / externally supplied gate mask · both modes
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m20-scope-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src /Ianalysis/include tools/qualification/m20/m20_scope_spectrum_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp "/Fe:$env:RUNNER_TEMP/m20-scope-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 80; throw "M20_SCOPE_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m20-scope-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M20_SCOPE_TEST_FAILED_$mode" }
+          }
+          Write-Output M20_REAL_SCOPE_WINDOWS_PASS_NOT_GATE_G
