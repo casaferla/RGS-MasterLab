@@ -48,7 +48,7 @@ int main(){
     assert(o.spectrum_point_counts[1]==0);
     g.lifecycle=Lifecycle::current;x.lifecycle=Lifecycle::stale;
     o=make_presentation(compose({p,g,x}));
-    assert(o.rows[0].processed_delta=="STALE" && o.rows[0].prepared_delta!=="STALE");
+    assert(o.rows[0].processed_delta=="STALE" && o.rows[0].prepared_delta!="STALE");
     o=make_presentation(compose({g,p,x})); // deliberately swapped identities
     assert(o.states[0]=="INVALID" && o.rows[0].values[0]=="INVALID");
     o=make_presentation(compose({std::nullopt,std::nullopt,std::nullopt}));
