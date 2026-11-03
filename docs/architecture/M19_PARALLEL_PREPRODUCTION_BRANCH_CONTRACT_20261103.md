@@ -7,8 +7,9 @@
 > P01 fixes exact six-rate binary64 banks, 12-double canonical little-endian
 > SHA256s and exact-rational source derivation; all were recovered into an
 > M19-only private table and independent bank oracles in macro-lot #7.
-> **The existing M19 loudness runtime candidate is still 48-kHz-only** until
-> subsequent audited six-rate wiring: mathematical bank freeze is NOT Gate G.
+> **MACRO-LOT #8:** the PRIVATE headless M19 loudness candidate now consumes
+> all six exact PO-frozen banks; this is preproduction numerical functionality,
+> NOT official Gate G, canonical product status or Qt integration.
 > Historical lower sections are retained as a dated record, not as present
 > authority. No merges/production changes.
 
@@ -166,3 +167,54 @@ and M16 binding remain separate.
 
 **No merge:** M17 formal physical acceptance → post-M17 CI audit/reset →
 M18 merged and qualified → only then M19 product qualification/PO merge.
+
+## M19 parallel macro-lot #8 — P01 six-rate candidate execution and feature independence
+
+**PO policy** `rgsml.kweight.bs1770-5.anchor48-blt.v1` recovered in
+macro-lot #7, exact 72 frozen IEEE-binary64 values, 6 immutable SHA256s.
+Unlike the October-04-only prototype, the M19 private candidate now
+**selects the exact frozen bank by supported rate** at construction (one
+lookup, no runtime polynomial derivation), uses both fresh zero-state
+biquads per channel from the first logical scope PCM sample, computes the
+400ms/100ms integrated-gate block grid with **Fs/10 quarters** and persistent
+streaming K states at each of the six rates. It retains the same 48k literal
+coefficient values byte-for-byte and never uses 48k coefficients elsewhere.
+
+The private snapshot now records the **actual P01 member ID and canonical
+coefficient SHA256** as provenance. This metadata does not imply release
+qualification. Unrecognized sample rates remain rejected outright.
+No additional windowed/live metrics or M19 True Peak detector were introduced.
+
+**Independent checked-in evidence:**
+- `tools/qualification/m19/test_m19_p01_six_rate_k_pcm_reference.py`:
+  separate standard-library Python causal K recurrence on *real target-Fs
+  PCM*, using independently exact-rational-derived P01 coefficients,
+  fixed mono first-block DC, impulse and 997Hz tone references for each
+  44.1/48/88.2/96/176.4/192kHz rate. Its frozen anchors check both rate
+  dependent responses and phase/startup.
+- `tools/qualification/m19/m19_p01_six_rate_k_pcm_selftest.cpp`:
+  strict-fp native C++ diagnostic, actual six-rate PCM blocks,
+  400ms exact support/no end-padding, nonzero scope-origin independence,
+  chunked versus whole-scope comparison, original 48k DC compatibility,
+  997Hz tone, zero-start impulse, stereo opposite sign with +3.0103 LU,
+  unchanged RMS and sample peak, exact per-rate member ID/SHA; out-of-policy
+  clocks are rejected.
+- Existing earlier P01 byte-authority tests, F01 60-partition K-state,
+  F07 100-digit extreme block/range checks and actual M16 API tests run
+  on both platforms Debug/Release in the same isolated M19-only workflow.
+
+**Per-feature validity repair (F07/F09 preproduction diagnostic only):**
+A finite source may have representable Peak/RMS/Crest while the separate
+K-weighting arithmetic overflows binary64. The candidate now disables the
+K branch and reports *private* `k_numerically_undefined` with null LUFS,
+while continuing the unweighted level calculations, instead of throwing
+away other valid static features. `m19_f07_k48_range_selftest.cpp` checks
+this at magnitude 2^512. This private diagnostic is **NOT** an approved
+canonical `FeatureStatus`/reason mapping; F09/Phase-6 status precedence,
+numerical error policy, M16 identity, integrated Gate U+G and product Qt
+surface all remain to be qualified after dependencies release.
+
+**No merge / deployment:** All changes exist only on the isolated M19
+staging and Draft PR branches; no M17/M18/main/UI/analysis-CMake/source
+registration changes. M17 formal physical qualification and M18 integrated
+qualification must precede any M19 integration.
