@@ -242,9 +242,25 @@ void TerminalProductActivationCoordinator::preview_requested()
 
 void TerminalProductActivationCoordinator::preview_nonconforming_requested()
 {
-    if(intent_ && !state_->bypassed()
-       && session_->status()==QStringLiteral("MEASURED_NONCONFORMING_READY"))
-        commit_ready_output(true);
+    if(!intent_ || state_->bypassed()
+       ||session_->status()!=QStringLiteral("MEASURED_NONCONFORMING_READY"))
+        return;
+    // Unlike a verified MASTER, measured NON-CONFORMING PCM is not
+    // authorized for the independent monitoring SRC. A 48k Windows
+    // endpoint cannot consume direct 88.2k terminal PCM. Reject the
+    // audition BEFORE stopping MANUAL playback or touching the accepted
+    // measured render; never turn this recoverable refusal into ERROR/BYPASS.
+    if(!session_->current_measured_matches_device_for_preview()) {
+        view_->reportAudioError(QStringLiteral(
+            "Preview Anyway unavailable: the measured MASTER rate does not "
+            "match the current Windows DEVICE rate. The non-conforming PCM "
+            "is retained. Select a DEVICE-compatible MASTER rate in "
+            "Rate & Time and Prepare again; no automatic rate conversion "
+            "is authorized for non-conforming audio."));
+        return;
+    }
+    view_->clearAudioError();
+    commit_ready_output(true);
 }
 
 void TerminalProductActivationCoordinator::update_render_elapsed()
