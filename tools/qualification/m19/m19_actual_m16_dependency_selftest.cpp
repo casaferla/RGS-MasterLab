@@ -189,13 +189,14 @@ int main()
         require(!wrongDomain);
         require(wrongDomain.error()->code()==
                 rgsml::core::ErrorCode::InvalidFrameRange);
+        auto outsideCount = rgsml::core::FrameCount::create(
+            static_cast<std::int64_t>(scopeLength+18U));
+        require(outsideCount.has_value());
         auto outside=rgsml::analysis::internal::m19::
             measure_selected_scope_candidate(
                 owner.value()->view(),
                 rgsml::core::FrameIndex{static_cast<std::int64_t>(scopeBegin)},
-                rgsml::core::FrameCount::create(
-                    static_cast<std::int64_t>(scopeLength+18U)).value()[0],
-                FrameDomainId::SOURCE_PROCESSING_RATE);
+                *outsideCount.value(),FrameDomainId::SOURCE_PROCESSING_RATE);
         require(!outside);
         auto negative=rgsml::analysis::internal::m19::
             measure_selected_scope_candidate(
@@ -203,12 +204,12 @@ int main()
                 rgsml::core::FrameIndex{-1},
                 *frameCount.value(),FrameDomainId::SOURCE_PROCESSING_RATE);
         require(!negative);
+        auto zeroCount = rgsml::core::FrameCount::create(0);
+        require(zeroCount.has_value());
         auto emptied=rgsml::analysis::internal::m19::
             measure_selected_scope_candidate(
-                owner.value()->view(),
-                rgsml::core::FrameIndex{0},
-                *rgsml::core::FrameCount::create(0).value(),
-                FrameDomainId::SOURCE_PROCESSING_RATE);
+                owner.value()->view(),rgsml::core::FrameIndex{0},
+                *zeroCount.value(),FrameDomainId::SOURCE_PROCESSING_RATE);
         require(!emptied);
         // A nonfinite value INSIDE the scope is categorically rejected.
         auto corrupted=envelope;
