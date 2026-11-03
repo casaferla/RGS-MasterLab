@@ -42,6 +42,9 @@ bool TerminalPrivateProductSession::current_selection_for_pending() const
 }
 
 void TerminalPrivateProductSession::failed(const core::Error& error) {
+    // Destructive hard failures must never leave an apparently usable
+    // post-retire recovery token referring to revoked PCM.
+    returnRecovery_.reset();
     approvedMonitor_.reset();
     approvedMonitorMaster_.reset();
     pending_.reset();
@@ -57,6 +60,7 @@ void TerminalPrivateProductSession::failed(const core::Error& error) {
     emit changed();
 }
 void TerminalPrivateProductSession::stale() {
+    returnRecovery_.reset();
     approvedMonitor_.reset();
     approvedMonitorMaster_.reset();
     pending_.reset();
@@ -1570,7 +1574,9 @@ core::Status TerminalPrivateProductSession::cancel()
 {
     // A monitoring sink has no terminal RealizationId. The terminal gate
     // cannot retire it: require exact monitor ownership and MANUAL restore.
-    if(installedMonitor_) {
+    if(installedMonitor_ ||returnRecovery_) {
+        // A mere cancel or source-loop notification must never silently
+        // throw away a MASTER after Windows refused the SOURCE install.
         const auto restored=return_private_monitor_to_manual();
         if(!restored)return restored;
     }
@@ -1599,7 +1605,8 @@ core::Status TerminalPrivateProductSession::cancel()
 
 bool TerminalPrivateProductSession::adopt_pending_source_loop_without_rerender()
 {
-    if(monitorTransitioning_ ||installedMonitor_ ||privateId_||!pending_
+    if(monitorTransitioning_ ||returnRecovery_ ||installedMonitor_
+       ||privateId_||!pending_
        ||!prepared_||!manual_||!manualId_||!sourceLoop_
        ||!current_selection_for_pending()
        ||prepared_()!=pending_->prepared||manual_()!=pending_->manual
