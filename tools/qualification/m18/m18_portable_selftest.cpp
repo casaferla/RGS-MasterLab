@@ -350,7 +350,7 @@ static int m18_test_wave_candidates_and_identity()
     if(lastFrame.status!=M18WavStatus::OK)return 80;
     const auto badFrame=m18_make_bounded_wav_candidate(stereo24,input,
         UINT64_MAX);
-    if(badFrame.status!=M18WavStatus::OVERFLOW)return 81;
+    if(badFrame.status!=M18WavStatus::SIZE_OVERFLOW)return 81;
 
     // Candidate rejection must return no published header OR payload.
     const std::array<double,2> overloaded{{0.0,2.0}};
