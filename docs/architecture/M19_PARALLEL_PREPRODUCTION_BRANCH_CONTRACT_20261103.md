@@ -218,3 +218,82 @@ surface all remain to be qualified after dependencies release.
 staging and Draft PR branches; no M17/M18/main/UI/analysis-CMake/source
 registration changes. M17 formal physical qualification and M18 integrated
 qualification must precede any M19 integration.
+
+## M19 parallel macro-lot #9 — final isolated pre-merge regression and HOLD checkpoint
+
+**Scope:** last pre-merge preproduction macro-lot, not official Gate G/U,
+Windows Qt application integration, FQ, PO acceptance or an authorization to
+merge. All code is still deliberately private in the M19 Draft PR tree,
+stacked on the original unmodified M18 parent SHA. No M17/M18/main/Qt
+production code or FIR resources changed by this operator.
+
+### Executed evidence / independent identity
+- `tools/qualification/m19/m19_final_six_rate_multiblock_selftest.cpp`
+  exercises **ALL six PO-frozen K rates** at actual clock-specific PCM
+  lengths of 8 complete 100ms cells plus a trailing 17-frame fragment;
+  precisely five eligible 400ms overlapping blocks, no sixth padded
+  or premature block. Five distinct feeder schedules per rate,
+  exact result equality against one contiguous pass, two absolute
+  logical-scope origins with independent zero-state K reset,
+  ×2 gain and opposite-sign two-channel K level laws,
+  no extra live/windowed metrics, and explicit absence of surrogate TP.
+  A poisonous NaN at the last *incomplete-loudness-tail* sample rejects
+  the whole scope, without partial state advance on rejected chunks.
+- Existing **actual** `audio::AudioBufferView/subview` + **unmodified
+  public M16 API** harness now repeats full-scope selected-region checks
+  at all six rates for SOURCE_PROCESSING_RATE and OUTPUT_RATE frame
+  domains. It injects NaN/Inf outside the selected interval, confirms
+  that M19 reads only real selected PCM, maintains frozen per-rate
+  bank member/hash provenance, remains repeatable and read-only,
+  rejects wrong frame domain, and refuses to substitute
+  M16 whole-resource unqualified TP as region-qualified M19 TP.
+- Runs with every earlier single-block independent 48k anchor,
+  six-rate independent Python filter/coefficients SHA256, F07 100-digit
+  dynamic-range numerics, strict F04 threshold adversaries,
+  60-partition prior F01 state matrix, exact geometric time grid,
+  and the real M16 public source C++ build on Linux GCC and
+  Windows MSVC, each Debug and Release.
+
+### Operator stop / explicit readiness boundary
+
+**Ready for later dependency-controlled integration engineering**:
+private deterministic source PCM calculator for Integrated LUFS at six
+PO-frozen K rates, full-scope RMS, Sample Peak and sample-peak Crest;
+read-only canonical resource interval adapter; independent six-rate
+mathematical/reference test harness; M16 public TP type/code integration
+proof; exact six P01 coefficient bank SHA records; M19-only CI.
+
+**NOT YET QUALIFIED OR BUILT INTO THE WINDOWS PRODUCT**:
+- M16 qualified True Peak **for the identical declared actual analysis
+  scope**, including algorithm/version/policy/silence/support/status,
+  NOT its existing `SUPPORTED_UNQUALIFIED` whole owning resource result.
+- Real Phase-6 `FeatureDefinitionRegistry`/FeatureStatus/error/reason,
+  supporting view DTO and scope provenance, numerical floor and exact
+  QTP (F09), and `rgsml_analysis` target + actual Qt GUI composition;
+  no independent invented registry or persistent schema.
+- Official ITU/EBU validation for all six physical banks, 35-entry
+  original mathematical qualification ZIP, adversarial near-boundary
+  high-precision gate intervals, original independent 2026-10-04
+  suite/2026-10-05 P01 closure synthesis, actual compiler FP tolerance
+  and independent user-level Gate U/G.
+- Full M17/M18 integrated baseline and Windows product FQ after
+  qualification; renderer/export/audio path not modified now.
+- Large-track operational memory bound (block-power vector grows
+  with scope), exception/OOM strategy, fully production-approved
+  M19 error mapping and all remaining performance qualification.
+- M19 preproduction's private diagnostic `k_numerically_undefined`
+  is not a canonical public status; neither it nor a diagnostic
+  `available` is a product acceptance claim.
+
+**Hard chain, no exceptions**:
+M17 physical FQ and PO formal qualification
+→ required post-M17 CI architecture/reset audit
+→ M18 integration and qualification
+→ rebasing/forward-integration of this private M19 candidate against
+  the **actual accepted heads** (M17 is still moving independently)
+→ M19 production API/status/feature/DSP composition
+→ official M19 Gate U+G and real Windows FQ
+→ explicit PO approval for M19 merge.
+
+No branch merge, PR undrafting, FQ dispatch or change to
+`analysis/CMakeLists.txt` is authorized by this checkpoint.
