@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -63,7 +64,39 @@ private slots:
     void rejectsLateNonfiniteAndUnsupportedWithoutSourceMutation();
     void fullResource4096ChunkBoundaryParity();
     void binaryExactPowerOfTwoGainLawSixRates();
+    void chunkProgressIsMonotoneAndBitExact();
 };
+
+void TruePeakFullResourceTest::chunkProgressIsMonotoneAndBitExact()
+{
+    std::vector<double> a(12345,0.125), b(12345,-0.25);
+    a.back()=0.5;
+    auto pcm=make_pcm(48000,ChannelLayout::STEREO_LR,a,b);
+    QVERIFY(pcm);
+    const auto reference=measure_unqualified_true_peak_full_resource(*pcm.value());
+    QVERIFY(reference);
+    std::vector<std::pair<std::int64_t,std::int64_t>> trace;
+    const auto observed=measure_unqualified_true_peak_full_resource(
+        *pcm.value(),[&trace](std::int64_t done,std::int64_t total) {
+            trace.emplace_back(done,total);
+        });
+    QVERIFY(observed);
+    QVERIFY(trace.size()>=3);
+    QCOMPARE(trace.front().first,std::int64_t{0});
+    QCOMPARE(trace.back().first,std::int64_t{24690});
+    for(std::size_t i=0;i<trace.size();++i) {
+        QCOMPARE(trace[i].second,std::int64_t{24690});
+        QVERIFY(trace[i].first<=trace[i].second);
+        if(i>0)QVERIFY(trace[i].first>=trace[i-1].first);
+    }
+    for(std::size_t ch=0;ch<2;++ch)
+        QCOMPARE(std::bit_cast<std::uint64_t>(
+                     observed.value()->per_channel_linear_peak[ch]),
+                 std::bit_cast<std::uint64_t>(
+                     reference.value()->per_channel_linear_peak[ch]));
+    QCOMPARE(std::bit_cast<std::uint64_t>(observed.value()->global_linear_peak),
+             std::bit_cast<std::uint64_t>(reference.value()->global_linear_peak));
+}
 
 void TruePeakFullResourceTest::monoSixRatesImpulseAndTail()
 {
