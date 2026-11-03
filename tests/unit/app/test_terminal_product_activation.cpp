@@ -3250,7 +3250,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!loopRefused);
     QCOMPARE(deviceMonitor,privateMonitor);
     QCOMPARE(monitorRetires,std::size_t{1});
-    QCOMPARE(manualRestores,std::size_t{1});
+    QCOMPARE(manualRestores,std::size_t{2});
     QVERIFY(product.control_private_monitor(
         Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},std::nullopt}));
     QVERIFY(product.control_private_monitor(
@@ -3264,7 +3264,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->position,core::FrameIndex{800});
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(monitorRetires,std::size_t{2});
-    QCOMPARE(manualRestores,std::size_t{2});
+    QCOMPARE(manualRestores,std::size_t{3});
     QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     // A PLAYING monitor must yield a PLAYING original MANUAL (never a
     // freshly issued M17 identity). It may advance after resume, so
@@ -3280,7 +3280,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(device->position,core::FrameIndex{1024});
     QCOMPARE(monitorRetires,std::size_t{3});
-    QCOMPARE(manualRestores,std::size_t{3});
+    QCOMPARE(manualRestores,std::size_t{4});
     QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     QCOMPARE(sinkInstalls,std::size_t{0});
     QVERIFY(!product.private_id());
