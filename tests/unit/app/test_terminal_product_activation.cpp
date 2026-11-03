@@ -701,15 +701,15 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     const auto ticket=admit_measured_device_audition_ticket(
         captured,captured,deviceOwned,true);
     QVERIFY(ticket);
-    QCOMPARE(ticket.value()->measured_master,captured);
-    QCOMPARE(ticket.value()->audition_device_pcm,deviceOwned);
-    QCOMPARE(ticket.value()->original_manual_realization_id.value,
+    QCOMPARE(ticket.value()->measured_master(),captured);
+    QCOMPARE(ticket.value()->audition_device_pcm(),deviceOwned);
+    QCOMPARE(ticket.value()->original_manual_realization_id().value,
              std::uint64_t{9001});
-    QCOMPARE(ticket.value()->audition_device_pcm->device_rate,
+    QCOMPARE(ticket.value()->audition_device_pcm()->device_rate,
              *deviceRate.value());
-    QCOMPARE(ticket.value()->measured_master->rendered.output_rate,
+    QCOMPARE(ticket.value()->measured_master()->rendered.output_rate,
              *sourceRate.value());
-    QVERIFY(!ticket.value()->audition_device_pcm->windows_prepared_endpoint_id.empty());
+    QVERIFY(!ticket.value()->audition_device_pcm()->windows_prepared_endpoint_id.empty());
 }
 
 void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSourceAndLoop()
