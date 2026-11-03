@@ -1631,6 +1631,9 @@ Window {
         property string devicePreparationEta: "~45s remaining"
         property int masterRateHz: 192000
         property int pendingDeviceRateHz: 48000
+        property string returnTargetText: "Return MANUAL"
+        property int recoveryClicks: 0
+        function cancel() { recoveryClicks += 1; return true }
     }
     QtObject {
         id: fixtureModel
@@ -1825,6 +1828,28 @@ Window {
     QVERIFY(window->setProperty("privateMonitorOn",true));
     QCoreApplication::processEvents();
     QVERIFY(host->property("monitorExclusive").toBool());
+    // The actual QML Return button must display the recovery label and
+    // dispatch exactly once to the ViewModel cancel() route. A direct
+    // C++ returnManual() call alone would have missed the previous bug.
+    auto* recoveryVm=find_child_by_name(root.data(),
+        QStringLiteral("m17FixturePrivateMonitor"));
+    auto* returnButton=find_child_by_name(root.data(),
+        QStringLiteral("m17ReturnSourceButton"));
+    QVERIFY(recoveryVm&&returnButton);
+    QVERIFY(recoveryVm->setProperty("returnTargetText",
+        QStringLiteral("Retry Return to Source")));
+    QCoreApplication::processEvents();
+    QVERIFY(returnButton->property("visible").toBool());
+    QCOMPARE(returnButton->property("text").toString(),
+        QStringLiteral("Retry Return to Source"));
+    QCOMPARE(recoveryVm->property("recoveryClicks").toInt(),0);
+    QVERIFY(QMetaObject::invokeMethod(returnButton,"clicked"));
+    QCOMPARE(recoveryVm->property("recoveryClicks").toInt(),1);
+    QVERIFY(recoveryVm->setProperty("returnTargetText",
+        QStringLiteral("Return MANUAL")));
+    QCoreApplication::processEvents();
+    QCOMPARE(returnButton->property("text").toString(),
+        QStringLiteral("Return to Source"));
     QVERIFY(window->property("preLimiterIsCurrent").toBool());
     QCOMPARE(preLimiterCard->property("heading").toString(),
         QStringLiteral("COMPLETE PRE-LIMITER TP"));
