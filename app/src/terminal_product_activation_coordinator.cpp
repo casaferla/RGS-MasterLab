@@ -184,6 +184,7 @@ void TerminalProductActivationCoordinator::begin_activation()
     srcPhaseObserved_=false;
     m16PhaseObserved_=false;
     observedCoreMs_=0;
+    observedPrimaryM16Ms_=0;
     lastObservedM16Phase_=render::TerminalRenderProgressPhase::IDLE;
     renderElapsed_.start();
     renderHeartbeat_.start();
@@ -341,6 +342,9 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
             ?QStringLiteral("M16 primary TP verification")
             :QStringLiteral("M16 final TP verification");
         if(progress.phase!=lastObservedM16Phase_) {
+            if(lastObservedM16Phase_==Phase::M16_PRIMARY
+               &&m16PhaseElapsed_.isValid())
+                observedPrimaryM16Ms_=m16PhaseElapsed_.elapsed();
             lastObservedM16Phase_=progress.phase;
             m16PhaseElapsed_.start();
             m16PhaseObserved_=true;
@@ -348,24 +352,31 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
                 observedCoreMs_=corePhaseObserved_
                     ?corePhaseElapsed_.elapsed():0;
         }
-        if(fractionKnown) {
-            fraction=std::min(0.99,f);
-            determinate=true;
-        }
-        if(f>=0.025 &&m16PhaseElapsed_.elapsed()>=2000) {
-            const auto spent=static_cast<long double>(
-                m16PhaseElapsed_.elapsed());
-            const auto left=spent*(1.0L-f)/f;
-            // The observer now measures M16's actual processed input
-            // frames across all channels. Uncertainty converges as the
-            // percentage rises; it may increase on SECONDARY verification.
-            const auto mid=left+3'000.0L;
-            const auto spread=std::max(2'000.0L,
-                left*(0.50L*(1.0L-f)+0.12L)+2'000.0L);
-            remaining=std::pair<std::int64_t,std::int64_t>{
-                bounded(std::max(0.0L,mid-spread)),
-                bounded(mid+spread)};
-        }
+        // Gate G protects M16's production measurement source. It has
+        // NO progress observer and must not be modified for cosmetics.
+        // Forecast time here is explicitly provisional, not a fake
+        // measured M16 percentage. The indeterminate bar stays honest.
+        const auto spent=static_cast<long double>(
+            m16PhaseElapsed_.elapsed());
+        const auto nominal=progress.phase==Phase::M16_SECONDARY
+            &&observedPrimaryM16Ms_>0
+                ?static_cast<long double>(observedPrimaryM16Ms_)
+                :observedCoreMs_>0
+                    ?std::max(15'000.0L,
+                        static_cast<long double>(observedCoreMs_)*0.48L)
+                    :30'000.0L;
+        // Close toward a central estimate as elapsed time approaches
+        // the nominal cost; if it overruns, extend the expectation
+        // rather than freezing the clock at zero.
+        const auto projected=std::max(nominal,spent*1.22L);
+        const auto left=std::max(0.0L,projected-spent);
+        const auto mid=left+3'000.0L;
+        const auto spread=std::max(2'000.0L,
+            left*(0.36L*(1.0L-std::min(1.0L,spent/projected))
+                +0.12L)+2'000.0L);
+        remaining=std::pair<std::int64_t,std::int64_t>{
+            bounded(std::max(0.0L,mid-spread)),
+            bounded(mid+spread)};
         break;
     }
     case Phase::VERIFICATION_TRIM:
