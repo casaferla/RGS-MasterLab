@@ -542,8 +542,7 @@ ApplicationWindow {
                         HoverHandler { id: waveformClockHover }
                         ToolTip.text: sourceWaveform.viewportStartText
                             + " — " + sourceWaveform.viewportEndText
-                        ToolTip.visible: waveformClockHover.hovered
-                            && waveformClockDwell.ready
+                        ToolTip.visible: (waveformClockHover.hovered && waveformClockDwell.ready)
                         ToolTip.delay: 0
                         StudioTooltipDwell {
                             id: waveformClockDwell
