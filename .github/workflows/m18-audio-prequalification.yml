@@ -1,0 +1,199 @@
+# Separate heavy M18-only evidence lane; does NOT replace full Qt/Windows FQ.
+# M18 PR remains Draft. Full 87 statistics here are proposed, not PO Gate G.
+name: M18 Full Proposed Math and Audio Prequalification
+
+on:
+  push:
+    branches:
+      - experimental/m18-dither-20261102
+    paths:
+      - '.github/workflows/m18-audio-prequalification.yml'
+      - 'tools/qualification/m18/audit_m18_proposed_gate_g_metrics.py'
+      - 'tools/qualification/m18/test_m18_proposed_gate_g_metrics_audit.py'
+      - 'tools/qualification/m18/m18_listening_pack_fixtures.cpp'
+      - 'tools/qualification/m18/m18_prequalification_bundle.py'
+      - 'tools/qualification/m18/m18_audio_pathology_fixtures.cpp'
+      - 'tools/qualification/m18/m18_gate_g_candidate.cpp'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m18-full-proposed-audio-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  m18-prequalification-linux:
+    name: M18 full 87/11-WAV prequalification · Linux Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: M18-only branch and exact SHA guard
+        shell: bash
+        env:
+          CHECK_REF: ${{ github.ref }}
+        run: |
+          test "$CHECK_REF" = "refs/heads/experimental/m18-dither-20261102"
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+      - name: Build and run complete proposed 87 statistics
+        shell: bash
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror \
+            -ffp-contract=off -fno-fast-math \
+            -I audio/src tools/qualification/m18/m18_gate_g_candidate.cpp \
+            -o "$RUNNER_TEMP/m18-gate-g"
+          "$RUNNER_TEMP/m18-gate-g" --full-proposal \
+            | tee "$RUNNER_TEMP/m18-gate-g-metrics.csv"
+          python3 tools/qualification/m18/test_m18_proposed_gate_g_metrics_audit.py
+          python3 tools/qualification/m18/audit_m18_proposed_gate_g_metrics.py \
+            "$RUNNER_TEMP/m18-gate-g-metrics.csv"
+      - name: Compile true M18 low-level and audible synthetic WAV producers
+        shell: bash
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror \
+            -ffp-contract=off -fno-fast-math -I audio/src -I core/include \
+            tools/qualification/m18/m18_audio_pathology_fixtures.cpp \
+            core/src/sha256.cpp -o "$RUNNER_TEMP/m18-lowlevel"
+          c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror \
+            -ffp-contract=off -fno-fast-math -I audio/src -I core/include \
+            tools/qualification/m18/m18_listening_pack_fixtures.cpp \
+            core/src/sha256.cpp -o "$RUNNER_TEMP/m18-audible"
+      - name: Independently audit 11 physical WAVs and level/format equivalence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qualification/m18/test_m18_audio_pathology.py \
+            "$RUNNER_TEMP/m18-lowlevel"
+          python3 tools/qualification/m18/m18_prequalification_bundle.py \
+            --low-exe "$RUNNER_TEMP/m18-lowlevel" \
+            --audible-exe "$RUNNER_TEMP/m18-audible" \
+            --output-dir "$RUNNER_TEMP/m18-prequal-listening-linux" \
+            --source-sha "${{ github.sha }}"
+      - name: Preserve proposed 87-statistic metrics (not Gate G)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: M18-proposed-metrics-Linux-${{ github.sha }}
+          path: ${{ runner.temp }}/m18-gate-g-metrics.csv
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Preserve independent Linux audio manifest and SHA
+        uses: actions/upload-artifact@v4
+        with:
+          name: M18-11-WAV-manifest-Linux-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/m18-prequal-listening-linux/manifest.json
+            ${{ runner.temp }}/m18-prequal-listening-linux/SHA256SUMS.txt
+            ${{ runner.temp }}/m18-prequal-listening-linux/README.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  m18-prequalification-windows:
+    name: M18 full 87/11-WAV prequalification · Windows Release
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: M18-only branch and exact SHA guard
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -ne "refs/heads/experimental/m18-dither-20261102") {
+            throw "M18_PREQUAL_WRONG_REF"
+          }
+          if ((git rev-parse HEAD).Trim() -ne "${{ github.sha }}") {
+            throw "M18_PREQUAL_WRONG_SHA"
+          }
+      - name: Build and run complete proposed 87 statistics
+        shell: pwsh
+        run: |
+          $compileLog = "$env:RUNNER_TEMP/m18-prequal-metrics-build.txt"
+          $exe = "$env:RUNNER_TEMP/m18-gate-g-proposal.exe"
+          & cl.exe /nologo /std:c++20 /EHsc /O2 /W4 /WX /Zc:__cplusplus /fp:strict `
+            /Iaudio/src tools/qualification/m18/m18_gate_g_candidate.cpp `
+            "/Fe:$exe" *> $compileLog
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $compileLog -Tail 75
+            throw "M18_PREQUAL_STATISTICS_COMPILE_FAILED"
+          }
+          $metrics = "$env:RUNNER_TEMP/m18-gate-g-metrics.csv"
+          & $exe --full-proposal *> $metrics
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $metrics -Tail 70
+            throw "M18_PREQUAL_87_NATIVE_FAILED"
+          }
+          python tools/qualification/m18/test_m18_proposed_gate_g_metrics_audit.py
+          if ($LASTEXITCODE -ne 0) { throw "M18_METRICS_AUDITOR_SELFTEST_FAILED" }
+          python tools/qualification/m18/audit_m18_proposed_gate_g_metrics.py $metrics
+          if ($LASTEXITCODE -ne 0) { throw "M18_INDEPENDENT_87_METRICS_AUDIT_FAILED" }
+      - name: Compile true M18 low-level and audible synthetic WAV producers
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-prequal-audio-build-bounded.txt"
+          $low = "$env:RUNNER_TEMP/m18-lowlevel.exe"
+          $audible = "$env:RUNNER_TEMP/m18-audible.exe"
+          & cl.exe /nologo /std:c++20 /EHsc /O2 /W4 /WX /Zc:__cplusplus /fp:strict `
+            /Iaudio/src /Icore/include `
+            tools/qualification/m18/m18_audio_pathology_fixtures.cpp `
+            core/src/sha256.cpp "/Fe:$low" *> $report
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $report -Tail 75
+            throw "M18_PREQUAL_LOWLEVEL_COMPILE_FAILED"
+          }
+          & cl.exe /nologo /std:c++20 /EHsc /O2 /W4 /WX /Zc:__cplusplus /fp:strict `
+            /Iaudio/src /Icore/include `
+            tools/qualification/m18/m18_listening_pack_fixtures.cpp `
+            core/src/sha256.cpp "/Fe:$audible" *> $report
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $report -Tail 75
+            throw "M18_PREQUAL_AUDIBLE_COMPILE_FAILED"
+          }
+      - name: Independently audit 11 physical WAVs and level/format equivalence
+        shell: pwsh
+        run: |
+          $log = "$env:RUNNER_TEMP/m18-prequal-audio-audit.txt"
+          $low = "$env:RUNNER_TEMP/m18-lowlevel.exe"
+          $audible = "$env:RUNNER_TEMP/m18-audible.exe"
+          python tools/qualification/m18/test_m18_audio_pathology.py $low *> $log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 75
+            throw "M18_PREQUAL_SPECTRAL_AUDIT_FAILED"
+          }
+          python tools/qualification/m18/m18_prequalification_bundle.py `
+            --low-exe $low --audible-exe $audible `
+            --output-dir "$env:RUNNER_TEMP/m18-prequal-listening-windows" `
+            --source-sha "${{ github.sha }}" >> $log 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $log -Tail 75
+            throw "M18_PREQUAL_11_WAV_READBACK_FAILED"
+          }
+          if ((Get-Content $log -Raw) -notmatch "M18_11_REAL_WAV_PREQUALIFICATION_BUNDLE_PASS_NOT_PRODUCT_FQ") {
+            throw "M18_PREQUAL_WAV_EVIDENCE_MISSING"
+          }
+      - name: Preserve proposed 87-statistic metrics (not Gate G)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: M18-proposed-metrics-Windows-${{ github.sha }}
+          path: ${{ runner.temp }}/m18-gate-g-metrics.csv
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload 11 independently verified WAVs for PO exploration (not FQ)
+        uses: actions/upload-artifact@v4
+        with:
+          name: M18-11-WAV-PREQUALIFICATION-NOT-FQ-${{ github.sha }}
+          path: ${{ runner.temp }}/m18-prequal-listening-windows/
+          if-no-files-found: error
+          retention-days: 14

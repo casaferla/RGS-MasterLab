@@ -1,0 +1,535 @@
+# Independent M18-only preproduction CI. No Qt, Ninja, MPFR, FIR/FQ or M17.
+# Invoked ONLY by a push to M18's dedicated Draft PR head, or manually.
+# This is a compile/smoke gate, never Gate G or M18 integration authority.
+name: M18 Independent Preproduction CI
+
+on:
+  push:
+    branches:
+      - experimental/m18-dither-20261102
+    paths:
+      - 'audio/src/internal/m18_*.hpp'
+      - 'tools/qualification/m18/**'
+      - 'tests/unit/audio/test_m18_counter_dither_philox.cpp'
+      - 'tests/CMakeLists.txt'
+      - '.github/workflows/m18-preproduction.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m18-preproduction-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-m18:
+    name: M18 only · Linux C++20 Debug + Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Independently reconstruct M18 RNG/PCM24/Float32 numerical oracles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qualification/m18/test_m18_independent_reference.py
+          python3 tools/qualification/m18/test_m18_pre_audit_payload_digests.py
+          python3 tools/qualification/m18/test_m18_statistical_reference.py
+          python3 tools/qualification/m18/test_m18_wav_reference.py
+          python3 tools/qualification/m18/test_m18_wav_candidate_auditor.py
+      - name: Compile and run independent M18 oracle · Debug
+        shell: bash
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O0 -g -Wall -Wextra -Wpedantic -Werror \
+            -I audio/src \
+            tools/qualification/m18/m18_portable_selftest.cpp \
+            -o "$RUNNER_TEMP/m18-preproduction-debug"
+          "$RUNNER_TEMP/m18-preproduction-debug"
+      - name: Compile and run independent M18 oracle · Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror \
+            -I audio/src \
+            tools/qualification/m18/m18_portable_selftest.cpp \
+            -o "$RUNNER_TEMP/m18-preproduction-release"
+          "$RUNNER_TEMP/m18-preproduction-release"
+
+      - name: M18 TPDF and total error statistical screen · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror \
+              -I audio/src \
+              tools/qualification/m18/m18_statistical_selftest.cpp \
+              -o "$RUNNER_TEMP/m18-statistics-linux"
+            "$RUNNER_TEMP/m18-statistics-linux"
+          done
+
+      - name: Structural preflight of all 87 proposed criteria · Linux Debug and Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror \
+              -I audio/src \
+              tools/qualification/m18/m18_gate_g_candidate.cpp \
+              -o "$RUNNER_TEMP/m18-gate-g-smoke"
+            "$RUNNER_TEMP/m18-gate-g-smoke" --smoke \
+              | grep -q 'M18_GATE_G_SMOKE_PASS_NOT_FORMAL_GATE_G'
+          done
+
+      - name: Frozen independent PCM24 pre-audit byte SHA vectors · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror \
+              -I audio/src -I core/include \
+              tools/qualification/m18/m18_pre_audit_payload_digests.cpp \
+              core/src/sha256.cpp -o "$RUNNER_TEMP/m18-pre-audit-hashes"
+            "$RUNNER_TEMP/m18-pre-audit-hashes"
+          done
+
+      - name: M18 streaming WAV and private disk transaction · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror \
+              -I audio/src -I core/include \
+              tools/qualification/m18/m18_streaming_selftest.cpp \
+              core/src/sha256.cpp \
+              -o "$RUNNER_TEMP/m18-streaming-linux"
+            "$RUNNER_TEMP/m18-streaming-linux"
+          done
+
+      - name: M18 isolated offline terminal export and independent WAV readback · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flags in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $flags -Wall -Wextra -Wpedantic -Werror \
+              -I audio/src -I core/include \
+              tools/qualification/m18/m18_offline_export_selftest.cpp \
+              core/src/sha256.cpp \
+              -o "$RUNNER_TEMP/m18-offline-lane"
+            "$RUNNER_TEMP/m18-offline-lane"
+            python3 tools/qualification/m18/test_m18_offline_export_e2e.py \
+              "$RUNNER_TEMP/m18-offline-lane"
+          done
+
+      - name: M18 low-level correlation and fade-to-zero · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flags in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $flags -Wall -Wextra -Wpedantic -Werror \
+              -I audio/src \
+              tools/qualification/m18/m18_lowlevel_audio_selftest.cpp \
+              -o "$RUNNER_TEMP/m18-lowlevel-lane"
+            "$RUNNER_TEMP/m18-lowlevel-lane"
+          done
+
+      - name: Decode actual M18 WAV and invoke unmodified M16 FIR · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flags in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $flags -Wall -Wextra -Wpedantic -Werror \
+              -ffp-contract=off -fno-fast-math \
+              -I analysis/src -I audio/src -I core/include \
+              tools/qualification/m18/m18_true_peak_delivered_selftest.cpp \
+              analysis/src/true_peak_itu4x_channel_stream.cpp \
+              core/src/error.cpp core/src/sha256.cpp \
+              -o "$RUNNER_TEMP/m18-m16-delivery"
+            "$RUNNER_TEMP/m18-m16-delivery" \
+              | tee "$RUNNER_TEMP/m18-m16-delivered-evidence.txt"
+            grep -q 'M18_POST_QUANTIZATION_AUTHENTIC_M16_NUMERIC_SEAM_PASS_NOT_PRODUCT_GATE' \
+              "$RUNNER_TEMP/m18-m16-delivered-evidence.txt"
+          done
+
+      - name: Seven pathological PCM24 audio WAVs and independent harmonic audit · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flags in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $flags -Wall -Wextra -Wpedantic -Werror \
+              -ffp-contract=off -fno-fast-math \
+              -I audio/src -I core/include \
+              tools/qualification/m18/m18_audio_pathology_fixtures.cpp \
+              core/src/sha256.cpp \
+              -o "$RUNNER_TEMP/m18-pathology"
+            "$RUNNER_TEMP/m18-pathology"
+            python3 tools/qualification/m18/test_m18_audio_pathology.py \
+              "$RUNNER_TEMP/m18-pathology"
+          done
+
+      - name: Strict-FP and FTZ-DAZ real WAV matrix with independent Python full-sample oracle · Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flags in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $flags -Wall -Wextra -Wpedantic -Werror \
+              -ffp-contract=off -fno-fast-math \
+              -I audio/src -I core/include \
+              tools/qualification/m18/m18_environment_end_to_end_selftest.cpp \
+              core/src/sha256.cpp -o "$RUNNER_TEMP/m18-fp-environment"
+            python3 tools/qualification/m18/test_m18_environment_end_to_end.py \
+              "$RUNNER_TEMP/m18-fp-environment"
+          done
+
+      - name: Inject every M18 stream failure and adversarial block schedule · Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flags in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $flags -Wall -Wextra -Wpedantic -Werror \
+              -ffp-contract=off -fno-fast-math \
+              -I audio/src -I core/include \
+              tools/qualification/m18/m18_stream_fault_partition_selftest.cpp \
+              core/src/sha256.cpp -o "$RUNNER_TEMP/m18-stream-adversarial"
+            "$RUNNER_TEMP/m18-stream-adversarial" \
+              | grep -q "M18_FAULT_INJECTION_96_CASES_AND_RAGGED_PARTITIONS_PASS_NOT_PRODUCT_GATE"
+          done
+
+  windows-m18:
+    name: M18 only · Windows MSVC C++20 Debug + Release
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Verify independent WAV auditor adversarial fixtures · Windows
+        shell: pwsh
+        run: |
+          python tools/qualification/m18/test_m18_wav_candidate_auditor.py
+          if ($LASTEXITCODE -ne 0) { throw "M18_WAV_CANDIDATE_AUDIT_FAILED" }
+
+      - name: Compile and run independent M18 oracle · Debug
+        shell: pwsh
+        run: |
+          $debugLog = "$env:RUNNER_TEMP/m18-windows-debug-bounded.txt"
+          & cl.exe /nologo /std:c++20 /EHsc /Od /W4 /WX /Zc:__cplusplus /Iaudio/src `
+            tools/qualification/m18/m18_portable_selftest.cpp `
+            "/Fe:$env:RUNNER_TEMP/m18-preproduction-debug.exe" *> $debugLog
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Add-Content $debugLog "M18_DEBUG_COMPILE_EXIT=$code"
+            Get-Content $debugLog -Tail 70
+            throw "M18_DEBUG_COMPILE_FAILED"
+          }
+          & "$env:RUNNER_TEMP/m18-preproduction-debug.exe" *> "$env:RUNNER_TEMP/m18-windows-execution.txt"
+          $code = $LASTEXITCODE
+          Add-Content $debugLog "M18_DEBUG_RUNTIME_EXIT=$code"
+          Get-Content "$env:RUNNER_TEMP/m18-windows-execution.txt" -Tail 16
+          if ($code -ne 0) { throw "M18_DEBUG_ORACLE_FAILED_$code" }
+      - name: Compile and run independent M18 oracle · Release
+        shell: pwsh
+        run: |
+          & cl.exe /nologo /std:c++20 /EHsc /O2 /W4 /WX /Zc:__cplusplus /Iaudio/src `
+            tools/qualification/m18/m18_portable_selftest.cpp `
+            "/Fe:$env:RUNNER_TEMP/m18-preproduction-release.exe"
+          if ($LASTEXITCODE -ne 0) { throw "M18_RELEASE_COMPILE_FAILED" }
+          & "$env:RUNNER_TEMP/m18-preproduction-release.exe"
+          if ($LASTEXITCODE -ne 0) { throw "M18_RELEASE_ORACLE_FAILED" }
+
+      - name: M18 TPDF and total error statistical screen · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-statistics-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus `
+              /Iaudio/src `
+              tools/qualification/m18/m18_statistical_selftest.cpp `
+              "/Fe:$env:RUNNER_TEMP/m18-statistics-$mode.exe" *> $report
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+              Get-Content $report -Tail 70
+              throw "M18_STATISTICS_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m18-statistics-$mode.exe" >> $report 2>&1
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+              Get-Content $report -Tail 40
+              throw "M18_STATISTICS_FAILED_$mode"
+            }
+          }
+
+      - name: Structural preflight of all 87 proposed criteria · Windows Debug and Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-gate-g-smoke-windows.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus `
+              /Iaudio/src tools/qualification/m18/m18_gate_g_candidate.cpp `
+              "/Fe:$env:RUNNER_TEMP/m18-gate-g-smoke.exe" *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 65
+              throw "M18_GATEG_SMOKE_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m18-gate-g-smoke.exe" --smoke *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 65
+              throw "M18_GATEG_SMOKE_FAILED_$mode"
+            }
+            $content = Get-Content $report -Raw
+            if ($content -notmatch "M18_STAT_SUMMARY,total=87,expected=87" -or
+                $content -notmatch "M18_GATE_G_SMOKE_PASS_NOT_FORMAL_GATE_G") {
+              throw "M18_GATEG_SMOKE_INCOMPLETE_$mode"
+            }
+          }
+
+      - name: Frozen independent PCM24 pre-audit byte SHA vectors · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $log = "$env:RUNNER_TEMP/m18-pre-audit-hashes-windows.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus `
+              /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_pre_audit_payload_digests.cpp `
+              core/src/sha256.cpp `
+              "/Fe:$env:RUNNER_TEMP/m18-pre-audit-hashes.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 70
+              throw "M18_SHA_ORACLE_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m18-pre-audit-hashes.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 40
+              throw "M18_SHA_ORACLE_RUNTIME_FAILED_$mode"
+            }
+            $output = Get-Content $log -Raw
+            if ($output -notmatch "M18_INDEPENDENT_PUBLISHED_SHA_AND_RESUME_PASS_NOT_GATE_G") {
+              throw "M18_SHA_ORACLE_INCOMPLETE_$mode"
+            }
+          }
+
+      - name: M18 streaming WAV and private disk transaction · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-streaming-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus `
+              /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_streaming_selftest.cpp `
+              core/src/sha256.cpp `
+              "/Fe:$env:RUNNER_TEMP/m18-streaming-$mode.exe" *> $report
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+              Add-Content $report "M18_STREAM_COMPILE_${mode}_EXIT=$code"
+              Get-Content $report -Tail 70
+              throw "M18_STREAM_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m18-streaming-$mode.exe" >> $report 2>&1
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+              Add-Content $report "M18_STREAM_RUNTIME_${mode}_EXIT=$code"
+              Get-Content $report -Tail 40
+              throw "M18_STREAM_RUNTIME_FAILED_$mode"
+            }
+          }
+
+      - name: Preserve bounded M18 source reproducer on diagnostic failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: M18-Exact-Boundary-Source-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            audio/src/internal/m18_*.hpp
+            core/include/rgsml/core/sha256.hpp
+            core/src/sha256.cpp
+            tools/qualification/m18/m18_pre_audit_payload_digests.cpp
+          if-no-files-found: error
+          retention-days: 2
+
+      - name: M18 isolated offline terminal export and independent WAV readback · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-offline-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $exe = "$env:RUNNER_TEMP/m18-offline-$mode.exe"
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus `
+              /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_offline_export_selftest.cpp `
+              core/src/sha256.cpp "/Fe:$exe" *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 75
+              throw "M18_OFFLINE_COMPILE_FAILED_$mode"
+            }
+            & $exe *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 50
+              throw "M18_OFFLINE_NATIVE_FAILED_$mode"
+            }
+            python tools/qualification/m18/test_m18_offline_export_e2e.py $exe >> $report 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 70
+              throw "M18_OFFLINE_READBACK_FAILED_$mode"
+            }
+          }
+
+      - name: M18 low-level correlation and fade-to-zero · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-lowlevel-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $exe = "$env:RUNNER_TEMP/m18-lowlevel-$mode.exe"
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus `
+              /Iaudio/src `
+              tools/qualification/m18/m18_lowlevel_audio_selftest.cpp `
+              "/Fe:$exe" *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 70
+              throw "M18_LOWLEVEL_COMPILE_FAILED_$mode"
+            }
+            & $exe *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 40
+              throw "M18_LOWLEVEL_NATIVE_FAILED_$mode"
+            }
+          }
+
+      - name: Decode actual M18 WAV and invoke unmodified M16 FIR · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-m16-delivered-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $exe = "$env:RUNNER_TEMP/m18-m16-delivery-$mode.exe"
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus /fp:strict `
+              /Ianalysis/src /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_true_peak_delivered_selftest.cpp `
+              analysis/src/true_peak_itu4x_channel_stream.cpp `
+              core/src/error.cpp core/src/sha256.cpp `
+              "/Fe:$exe" *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 75
+              throw "M18_M16_DELIVERED_COMPILE_FAILED_$mode"
+            }
+            & $exe *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 65
+              throw "M18_M16_DELIVERED_RUNTIME_FAILED_$mode"
+            }
+            $content = Get-Content $report -Raw
+            if ($content -notmatch "M18_POST_QUANTIZATION_AUTHENTIC_M16_NUMERIC_SEAM_PASS_NOT_PRODUCT_GATE") {
+              throw "M18_M16_DELIVERED_EVIDENCE_MISSING_$mode"
+            }
+          }
+
+      - name: Seven pathological PCM24 audio WAVs and independent harmonic audit · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-pathology-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $exe = "$env:RUNNER_TEMP/m18-pathology-$mode.exe"
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus /fp:strict `
+              /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_audio_pathology_fixtures.cpp `
+              core/src/sha256.cpp `
+              "/Fe:$exe" *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 75
+              throw "M18_PATHOLOGY_COMPILE_FAILED_$mode"
+            }
+            & $exe *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 40
+              throw "M18_PATHOLOGY_NATIVE_FAILED_$mode"
+            }
+            python tools/qualification/m18/test_m18_audio_pathology.py $exe >> $report 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 70
+              throw "M18_PATHOLOGY_INDEPENDENT_FAILED_$mode"
+            }
+          }
+
+      - name: Strict-FP and FTZ-DAZ real WAV matrix with independent Python full-sample oracle · Windows
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-fp-matrix-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $exe = "$env:RUNNER_TEMP/m18-fp-matrix-$mode.exe"
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus /fp:strict `
+              /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_environment_end_to_end_selftest.cpp `
+              core/src/sha256.cpp "/Fe:$exe" *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 75
+              throw "M18_FP_MATRIX_COMPILE_FAILED_$mode"
+            }
+            python tools/qualification/m18/test_m18_environment_end_to_end.py $exe >> $report 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 80
+              throw "M18_FP_MATRIX_PYTHON_ORACLE_FAILED_$mode"
+            }
+            if ((Get-Content $report -Raw) -notmatch "M18_FP_ENV_INDEPENDENT_24_REAL_WAV_ORACLE_PASS_NOT_GATE_G") {
+              throw "M18_FP_MATRIX_EVIDENCE_MISSING_$mode"
+            }
+          }
+
+      - name: Inject every M18 stream failure and adversarial block schedule · Windows
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-stream-adversarial-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $exe = "$env:RUNNER_TEMP/m18-stream-adversarial-$mode.exe"
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus /fp:strict `
+              /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_stream_fault_partition_selftest.cpp `
+              core/src/sha256.cpp "/Fe:$exe" *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 70
+              throw "M18_STREAM_ADVERSARIAL_COMPILE_FAILED_$mode"
+            }
+            & $exe *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 60
+              throw "M18_STREAM_ADVERSARIAL_RUNTIME_FAILED_$mode"
+            }
+            if ((Get-Content $report -Raw) -notmatch "M18_FAULT_INJECTION_96_CASES_AND_RAGGED_PARTITIONS_PASS_NOT_PRODUCT_GATE") {
+              throw "M18_STREAM_ADVERSARIAL_EVIDENCE_MISSING_$mode"
+            }
+          }
+
+      - name: Upload bounded Windows M18 errors only
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RGS-M18-Bounded-Windows-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/m18-windows-debug-bounded.txt
+            ${{ runner.temp }}/m18-windows-execution.txt
+            ${{ runner.temp }}/m18-streaming-windows-bounded.txt
+            ${{ runner.temp }}/m18-statistics-windows-bounded.txt
+            ${{ runner.temp }}/m18-gate-g-smoke-windows.txt
+            ${{ runner.temp }}/m18-pre-audit-hashes-windows.txt
+            ${{ runner.temp }}/m18-offline-windows-bounded.txt
+            ${{ runner.temp }}/m18-lowlevel-windows-bounded.txt
+            ${{ runner.temp }}/m18-m16-delivered-windows-bounded.txt
+            ${{ runner.temp }}/m18-pathology-windows-bounded.txt
+            ${{ runner.temp }}/m18-fp-matrix-windows-bounded.txt
+            ${{ runner.temp }}/m18-stream-adversarial-windows-bounded.txt
+          if-no-files-found: ignore
+          retention-days: 7
