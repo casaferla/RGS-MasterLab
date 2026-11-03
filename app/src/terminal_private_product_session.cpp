@@ -809,6 +809,7 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
     // second anonymous DEVICE realization. The original M17 PCM remains
     // held by pending_/candidate stage until the SOURCE is genuinely back.
     if(monitorTransitioning_ ||installedMonitor_ ||!returnRecovery_
+       ||status_!=QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED")
        ||!pending_ ||!manualRestore_ ||!transport_)
         return core::Status::failure(rejected(
             "MONITOR_RETURN_RECOVERY_NOT_AVAILABLE"));
@@ -1588,11 +1589,12 @@ core::Status TerminalPrivateProductSession::resume_comparison()
 
 core::Status TerminalPrivateProductSession::cancel()
 {
-    // A monitoring sink has no terminal RealizationId. The terminal gate
-    // cannot retire it: require exact monitor ownership and MANUAL restore.
-    if(installedMonitor_ ||returnRecovery_) {
-        // A mere cancel or source-loop notification must never silently
-        // throw away a MASTER after Windows refused the SOURCE install.
+    // Generic Cancel must not secretly retry a physical Windows install.
+    // Retain the M17 MASTER while a dedicated explicit Return is required.
+    if(returnRecovery_)
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_RECOVERY_EXPLICIT_RETRY_REQUIRED"));
+    if(installedMonitor_) {
         const auto restored=return_private_monitor_to_manual();
         if(!restored)return restored;
     }
