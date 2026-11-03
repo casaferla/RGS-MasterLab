@@ -182,7 +182,8 @@ materialize_monitoring_pcm_candidate(
     core::FrameCount offline_block,
     const std::function<core::Status(const MonitoringPcmResourceProjection&)>&
         preallocation_check = {},
-    const FullResourceOutputRateCancel& cancelled = {})
+    const FullResourceOutputRateCancel& cancelled = {},
+    const FullResourceOutputRateProgress& progress = {})
 {
     auto refused=[](core::ErrorCode code,const char* message)
         -> core::Result<MonitoringPcmCandidate> {
@@ -247,7 +248,7 @@ materialize_monitoring_pcm_candidate(
         try {
             return materialize_output_master_monitoring_rate_candidate(
                 verified_master_pcm,observed_device_rate,offline_block,
-                cancelled);
+                cancelled,progress);
         } catch(const std::bad_alloc&) {
             return core::Result<FullResourceOutputRateCandidate>::failure(
                 core::Error{core::ErrorCode::IoFailure,

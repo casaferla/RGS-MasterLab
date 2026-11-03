@@ -4,6 +4,7 @@
 #include <rgsml/audio/playback_sample_rate_adapter.hpp>
 #include <rgsml/core/result.hpp>
 
+#include <cstdint>
 #include <functional>
 #include <string_view>
 
@@ -19,6 +20,8 @@ namespace rgsml::audio {
 // A zero-side-effect caller-owned retirement check, polled at output-block
 // boundaries. On cancellation no partial output owner escapes the function.
 using FullResourceOutputRateCancel=std::function<bool()>;
+// Observer-only completed/total output frames. No change to audio numerics.
+using FullResourceOutputRateProgress=std::function<void(std::int64_t,std::int64_t)>;
 
 struct FullResourceOutputRateCandidate final {
     AudioBuffer pcm;
@@ -39,7 +42,8 @@ materialize_full_resource_output_rate_candidate(
     AudioBufferView full_source_pcm,
     core::SampleRate required_output_rate,
     core::FrameCount maximum_output_block_frames,
-    const FullResourceOutputRateCancel& cancelled = {});
+    const FullResourceOutputRateCancel& cancelled = {},
+    const FullResourceOutputRateProgress& progress = {});
 
 // Borrow-only monitoring entrypoint: identical offline SRC numerical path,
 // but requires an immutable OUTPUT_RATE master domain instead of SOURCE.
@@ -50,6 +54,7 @@ materialize_output_master_monitoring_rate_candidate(
     AudioBufferView immutable_output_master_pcm,
     core::SampleRate required_device_rate,
     core::FrameCount maximum_output_block_frames,
-    const FullResourceOutputRateCancel& cancelled = {});
+    const FullResourceOutputRateCancel& cancelled = {},
+    const FullResourceOutputRateProgress& progress = {});
 
 } // namespace rgsml::audio

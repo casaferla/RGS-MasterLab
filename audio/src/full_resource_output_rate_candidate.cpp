@@ -67,7 +67,8 @@ namespace {
 materialize_full_resource_output_rate_candidate_impl(
     AudioBufferView input,core::SampleRate output_rate,
     core::FrameCount block,FrameDomainId requiredInputDomain,
-    const FullResourceOutputRateCancel& cancelled)
+    const FullResourceOutputRateCancel& cancelled,
+    const FullResourceOutputRateProgress& progress)
 {
     using Candidate=FullResourceOutputRateCandidate;
     const auto interrupted=[] { return core::Result<Candidate>::failure(
@@ -117,12 +118,16 @@ materialize_full_resource_output_rate_candidate_impl(
                 candidate_error(core::ErrorCode::InvalidState,
                     "M17_SRC_CHANNEL_UNAVAILABLE","A channel is unavailable."));
             const auto total=input.frame_count().value();
+            if(ch+1==input.format().channel_count() && progress)
+                progress(0,total);
             for(std::int64_t begin=0;begin<total;) {
                 if(cancelled && cancelled())return interrupted();
                 const auto n=std::min(block.value(),total-begin);
                 std::copy_n(src.value()->begin()+begin,n,
                     dst.value()->begin()+begin);
                 begin+=n;
+                if(ch+1==input.format().channel_count() && progress)
+                    progress(begin,total);
             }
         }
         if(cancelled && cancelled())return interrupted();
@@ -139,6 +144,7 @@ materialize_full_resource_output_rate_candidate_impl(
     if(!dest)return core::Result<Candidate>::failure(*dest.error());
     ImmutablePcmInput ownedInput{input};
     const auto total=adapter.value()->output_frame_count().value();
+    if(progress)progress(0,total);
     for(std::int64_t begin=0;begin<total;) {
         if(cancelled && cancelled())return interrupted();
         const auto length=std::min(block.value(),total-begin);
@@ -156,6 +162,7 @@ materialize_full_resource_output_rate_candidate_impl(
                 "M17_SRC_SHORT_OUTPUT",
                 "Full-resource SRC returned an incomplete output block."));
         begin+=length;
+        if(progress)progress(begin,total);
     }
     if(cancelled && cancelled())return interrupted();
     return core::Result<Candidate>::success({
@@ -167,18 +174,22 @@ materialize_full_resource_output_rate_candidate_impl(
 core::Result<FullResourceOutputRateCandidate>
 materialize_full_resource_output_rate_candidate(
     AudioBufferView input,core::SampleRate output_rate,core::FrameCount block,
-    const FullResourceOutputRateCancel& cancelled)
+    const FullResourceOutputRateCancel& cancelled,
+    const FullResourceOutputRateProgress& progress)
 {
     return materialize_full_resource_output_rate_candidate_impl(
-        input,output_rate,block,FrameDomainId::SOURCE_PROCESSING_RATE,cancelled);
+        input,output_rate,block,FrameDomainId::SOURCE_PROCESSING_RATE,
+        cancelled,progress);
 }
 
 core::Result<FullResourceOutputRateCandidate>
 materialize_output_master_monitoring_rate_candidate(
     AudioBufferView master,core::SampleRate deviceRate,core::FrameCount block,
-    const FullResourceOutputRateCancel& cancelled)
+    const FullResourceOutputRateCancel& cancelled,
+    const FullResourceOutputRateProgress& progress)
 {
     return materialize_full_resource_output_rate_candidate_impl(
-        master,deviceRate,block,FrameDomainId::OUTPUT_RATE,cancelled);
+        master,deviceRate,block,FrameDomainId::OUTPUT_RATE,
+        cancelled,progress);
 }
 } // namespace rgsml::audio
