@@ -337,11 +337,16 @@ nonconformingPreviewRequiresSeparateExplicitConsent()
         &app::TerminalLimiterViewModel::previewRequested};
     QVERIFY(unsafe.isValid()&&verified.isValid());
     vm.setAudioStatus(QStringLiteral("NEEDS PREPARATION"));
+    vm.setNonconformingDirectPreviewAvailable(true);
+    QVERIFY(!vm.nonconforming_direct_preview_available());
     vm.previewNonconforming();
     QCOMPARE(unsafe.count(),0);
     QVERIFY(state.value()->set_user_bypass(false));
     vm.setAudioStatus(QStringLiteral(
         "NON-CONFORMING · -11.76 dBTP (target -12.00)"));
+    QVERIFY(!vm.nonconforming_direct_preview_available());
+    vm.setNonconformingDirectPreviewAvailable(true);
+    QVERIFY(vm.nonconforming_direct_preview_available());
     const double ceiling=std::pow(10.0,-12.0/20.0);
     const double over=ceiling*std::pow(10.0,0.24/20.0);
     vm.setNonconformingObservation(over,ceiling,-12.0);
@@ -370,6 +375,7 @@ nonconformingPreviewRequiresSeparateExplicitConsent()
     vm.previewNonconforming();
     QCOMPARE(unsafe.count(),1); // Explicit action only.
     vm.setAudioStatus(QStringLiteral("READY · PREVIEW AVAILABLE"));
+    QVERIFY(!vm.nonconforming_direct_preview_available());
     vm.cancelPreparation();
     QCOMPARE(cancelled.count(),0); // READY is not cancellable.
     vm.setAudioStatus(QStringLiteral("Preparing audio"));
@@ -846,6 +852,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QCOMPARE(vm.preparation_stage(),QStringLiteral("Verified MASTER ready"));
     const auto initialPreparedPcm=candidates.staged();
     QVERIFY(initialPreparedPcm);
+    // A verified MASTER is not a measured nonconforming candidate.
+    // No fabricated unsafe direct-preview availability.
+    QVERIFY(product.current_master_matches_device_for_preview());
+    QVERIFY(!product.current_measured_matches_device_for_preview());
     // P0 bridge returns ONLY the exact currently verified MASTER at the
     // selected PROJECT rate. DEVICE must not implicitly retarget it.
     const auto firstRenderCount=renderer.render_invocation_count();
