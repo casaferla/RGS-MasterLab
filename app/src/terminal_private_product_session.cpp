@@ -814,6 +814,10 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
             "MONITOR_RETURN_RECOVERY_NOT_AVAILABLE"));
     const Pending predecessor=*pending_;
     const ReturnRecovery recovery=*returnRecovery_;
+    if(!candidates_ ||!recovery.capturedVerifiedMaster
+       ||candidates_->staged()!=recovery.capturedVerifiedMaster)
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_RECOVERY_VERIFIED_STAGE_REVOKED"));
     if(predecessor.offlineNoSink ||!manual_ ||!prepared_ ||!manualId_
        ||!sourceLoop_ ||!selected_
        ||manual_()!=predecessor.manual
@@ -940,6 +944,9 @@ TerminalPrivateProductSession::retry_source_return_after_monitor_retirement()
 
 core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
 {
+    if(QThread::currentThread()!=thread())
+        return core::Status::failure(rejected(
+            "MONITOR_RETURN_REQUIRES_OWNER_THREAD"));
     // A monitored DEVICE was already proven retired, but a later Windows
     // SOURCE installation failed. This branch never adopts a foreign sink.
     if(returnRecovery_)
@@ -1156,7 +1163,8 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         // No SOURCE audio is asserted and the only future action is an
         // exact, fresh endpoint preflight followed by guarded retry.
         returnRecovery_=ReturnRecovery{
-            sourceCue,priorMonitorState,reconciledSourceLoop};
+            sourceCue,priorMonitorState,reconciledSourceLoop,
+            candidates_?candidates_->staged():nullptr};
         monitorTransitioning_=false;
         status_=QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED");
         error_=QString::fromStdString(restored.error()->message());
