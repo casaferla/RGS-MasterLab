@@ -29,6 +29,7 @@
 #include <QSignalSpy>
 #include <QDebug>
 #include <memory>
+#include <new>
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -3142,9 +3143,11 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // install a partial MANUAL, and must retain the master and cue for retry.
     std::size_t sourceRestoreProbes=0;
     bool sourceRestoreSupported=false;
+    bool sourceRestoreThrows=false;
     product.set_private_monitor_manual_restore_preflight(
         [&](auto original)->core::Status {
             ++sourceRestoreProbes;
+            if(sourceRestoreThrows)throw std::bad_alloc{};
             if(original!=selector.processed_realization_snapshot())
                 return core::Status::failure(core::Error{
                     core::ErrorCode::InvalidState,
@@ -3165,9 +3168,18 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(product.status(),
         QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
     QCOMPARE(device->position,core::FrameIndex{200});
+    sourceRestoreThrows=true;
+    const auto exceptionRefused=product.return_private_monitor_to_manual();
+    QVERIFY(!exceptionRefused);
+    QCOMPARE(exceptionRefused.error()->code(),core::ErrorCode::IoFailure);
+    QCOMPARE(sourceRestoreProbes,std::size_t{2});
+    QCOMPARE(monitorRetires,std::size_t{0});
+    QCOMPARE(manualRestores,std::size_t{0});
+    QCOMPARE(deviceMonitor,privateMonitor);
+    sourceRestoreThrows=false;
     sourceRestoreSupported=true;
     QVERIFY(product.return_private_monitor_to_manual());
-    QCOMPARE(sourceRestoreProbes,std::size_t{2});
+    QCOMPARE(sourceRestoreProbes,std::size_t{3});
     QCOMPARE(monitorRetires,std::size_t{1});
     QCOMPARE(manualRestores,std::size_t{1});
     QCOMPARE(product.status(),
