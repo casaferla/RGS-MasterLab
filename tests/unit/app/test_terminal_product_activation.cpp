@@ -648,7 +648,7 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
     }
     render::TruePeakLimiterTerminalCandidate taggedPcm{
         std::move(*original.value()),checked.terminal.applied_gain_frames,0,false};
-    const render::TruePeakLimiterMeasuredNonconformingCandidate fakeMiss{
+    render::TruePeakLimiterMeasuredNonconformingCandidate fakeMiss{
         std::move(taggedPcm),-7.0,0.44,0.51,
         render::M17NonconformingReason::TRIM_GUARD_EXCEEDED,
         analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED};
@@ -675,14 +675,21 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         captured,{},unfinished,true));
     QVERIFY(!admit_measured_device_audition_ticket(
         captured,captured,unfinished,true)); // missing endpoint witness
-    auto device=std::make_shared<audio::MonitoringPcmCandidate>(
+    const auto shortCount=core::FrameCount::create(1);
+    const auto deviceFmt=audio::AudioFormat::create(
+        *deviceRate.value(),audio::ChannelLayout::STEREO_LR);
+    QVERIFY(shortCount&&deviceFmt);
+    auto shortPcm=audio::AudioBuffer::create(
+        *deviceFmt.value(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},*shortCount.value());
+    QVERIFY(shortPcm);
+    auto invalidDevice=std::make_shared<const audio::MonitoringPcmCandidate>(
         audio::MonitoringPcmCandidate{
-            audio::AudioBuffer{},*sourceRate.value(),*deviceRate.value(),
-            *frames.value(),true,"fixture-endpoint-A"});
-    // Replace the empty buffer by a genuine independently converted owner.
-    // The gate must not allow an impossible stage to become verified.
+            std::move(*shortPcm.value()),*sourceRate.value(),
+            *deviceRate.value(),*frames.value(),true,"fixture-endpoint-A"});
+    // A device buffer with a false rate/frame count cannot be admitted.
     QVERIFY(!admit_measured_device_audition_ticket(
-        captured,captured,device,true));
+        captured,captured,invalidDevice,true));
     // A second properly typed real conversion is cheap (513 frames) and
     // carries only an opaque simulated endpoint ID, never LIVE authority.
     auto second=audio::materialize_monitoring_pcm_candidate(
