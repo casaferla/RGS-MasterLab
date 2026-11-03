@@ -458,8 +458,10 @@ phase11FullResourcePinnedCandidateUsesActualAudioBufferAndCancellation()
         });
     QVERIFY(withProgress);
     QVERIFY(!reported.empty());
-    QCOMPARE(reported.front(),(std::pair<std::int64_t,std::int64_t>{0,6}));
-    QCOMPARE(reported.back(),(std::pair<std::int64_t,std::int64_t>{6,6}));
+    QCOMPARE(reported.front().first,std::int64_t{0});
+    QCOMPARE(reported.front().second,std::int64_t{6});
+    QCOMPARE(reported.back().first,std::int64_t{6});
+    QCOMPARE(reported.back().second,std::int64_t{6});
     for(std::size_t i=1;i<reported.size();++i) {
         QCOMPARE(reported[i].second,std::int64_t{6});
         QVERIFY(reported[i].first>=reported[i-1].first);
