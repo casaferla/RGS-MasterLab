@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -30,10 +31,16 @@ constexpr std::array<Fixture,3> kFixtures{{
     {UINT64_C(0),257U,2U,
      "2adc005bceabf3de5f7186dc5084db3abf38a5f59e6e5e00f0a0322180a65d56"},
     {UINT64_C(4294967295),257U,2U,
-     "4d79f5f4b7032d1134b365cf9aaa7041b37319c1a0ae4f2e73d5c44f4d9f2c"},
+     "4d79f5f4b7032d1134b365cf9aaa7041b37319c1a0aeae4f2e73d5c44f4d9f2c"},
     {UINT64_C(4294963199),8209U,1U,
      "25090a67926933541c0d2a502f98075b6c8fc344b9b047d09513af520131f447"}
 }};
+
+// Protect the immutable independently published digests against silent
+// truncation or transcription errors in future revisions.
+static_assert(std::string_view{kFixtures[0].expected_sha256}.size()==64U);
+static_assert(std::string_view{kFixtures[1].expected_sha256}.size()==64U);
+static_assert(std::string_view{kFixtures[2].expected_sha256}.size()==64U);
 
 [[nodiscard]] bool encode(
     const Fixture& fixture,std::span<const std::size_t> partition,
