@@ -247,6 +247,20 @@ bool TerminalPrivateProductSession::current_master_matches_device_for_preview() 
         &&current_verified_private_master()==stage;
 }
 
+bool TerminalPrivateProductSession::current_measured_matches_device_for_preview() const
+{
+    // No fallback to Windows' paired Source frequency is authorized for
+    // measured NON-CONFORMING terminal PCM. The verified-master monitoring
+    // SRC cannot lend its distinct certificate to this measured candidate.
+    const auto stage=measured_candidate();
+    if(!stage||!rateProbe_||!manual_)return false;
+    const auto manual=manual_();
+    if(!manual)return false;
+    const auto rate=rateProbe_(manual->view().format().channel_layout());
+    return rate && *rate.value()==stage->rendered.output_rate
+        &&measured_candidate()==stage;
+}
+
 core::Result<std::shared_ptr<const audio::MonitoringPcmCandidate>>
 TerminalPrivateProductSession::materialize_private_final_master_monitoring(
     const MonitoringMaterializer& materializer)
