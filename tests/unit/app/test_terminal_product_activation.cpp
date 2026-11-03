@@ -2874,6 +2874,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     std::size_t monitorRetires=0;
     std::size_t manualRestores=0;
     int injectedManualRestoreFailure=0;
+    int injectedManualRestoreException=0;
     int injectedManualRestoreWrongOwner=0;
     std::optional<core::FrameRange> monitorMasterLoop;
     int injectedMonitorInstallFailure=0;
@@ -2931,6 +2932,10 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         [&](auto manual,core::RealizationId id,core::FrameIndex cue)
             ->core::Status {
             ++manualRestores;
+            if(injectedManualRestoreException>0) {
+                --injectedManualRestoreException;
+                throw std::bad_alloc{};
+            }
             if(injectedManualRestoreFailure>0) {
                 --injectedManualRestoreFailure;
                 return core::Status::failure(core::Error{
@@ -3259,13 +3264,23 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(monitorRetires,std::size_t{1});
     QVERIFY(candidates.staged());
     sourceRestoreSupported=true;
+    injectedManualRestoreException=1;
+    const auto throwingRetry=product.return_private_monitor_to_manual();
+    QVERIFY(!throwingRetry);
+    QCOMPARE(throwingRetry.error()->code(),core::ErrorCode::IoFailure);
+    QCOMPARE(sourceRestoreProbes,std::size_t{5});
+    QCOMPARE(manualRestores,std::size_t{2});
+    QCOMPARE(monitorRetires,std::size_t{1});
+    QVERIFY(candidates.staged());
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"));
     injectedManualRestoreWrongOwner=1;
     const auto wrongOwner=product.return_private_monitor_to_manual();
     QVERIFY(!wrongOwner);
     QCOMPARE(wrongOwner.error()->code(),core::ErrorCode::InvalidState);
-    QCOMPARE(sourceRestoreProbes,std::size_t{5});
+    QCOMPARE(sourceRestoreProbes,std::size_t{6});
     QCOMPARE(monitorRetires,std::size_t{1});
-    QCOMPARE(manualRestores,std::size_t{2});
+    QCOMPARE(manualRestores,std::size_t{3});
     QCOMPARE(device->audibleRealization.realizationId,
         std::optional{core::RealizationId{0xDEAD}});
     QCOMPARE(product.status(),
@@ -3275,9 +3290,9 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     // emulates its removal before the next explicitly requested Return.
     QVERIFY(device->clear());
     QVERIFY(monitorUi.returnManual()); // the sole recovery UI operation
-    QCOMPARE(sourceRestoreProbes,std::size_t{6});
+    QCOMPARE(sourceRestoreProbes,std::size_t{7});
     QCOMPARE(monitorRetires,std::size_t{1});
-    QCOMPARE(manualRestores,std::size_t{3});
+    QCOMPARE(manualRestores,std::size_t{4});
     QCOMPARE(product.status(),
         QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     QVERIFY(!deviceMonitor);
@@ -3309,7 +3324,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!loopRefused);
     QCOMPARE(deviceMonitor,privateMonitor);
     QCOMPARE(monitorRetires,std::size_t{1});
-    QCOMPARE(manualRestores,std::size_t{3});
+    QCOMPARE(manualRestores,std::size_t{4});
     QVERIFY(product.control_private_monitor(
         Request{Action::SET_MASTER_LOOP,core::FrameIndex{0},std::nullopt}));
     QVERIFY(product.control_private_monitor(
@@ -3323,7 +3338,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->position,core::FrameIndex{800});
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(monitorRetires,std::size_t{2});
-    QCOMPARE(manualRestores,std::size_t{4});
+    QCOMPARE(manualRestores,std::size_t{5});
     QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     // A PLAYING monitor must yield a PLAYING original MANUAL (never a
     // freshly issued M17 identity). It may advance after resume, so
@@ -3339,7 +3354,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(device->audibleRealization.realizationId,manualId);
     QCOMPARE(device->position,core::FrameIndex{1024});
     QCOMPARE(monitorRetires,std::size_t{3});
-    QCOMPARE(manualRestores,std::size_t{5});
+    QCOMPARE(manualRestores,std::size_t{6});
     QCOMPARE(product.status(),QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     QCOMPARE(sinkInstalls,std::size_t{0});
     QVERIFY(!product.private_id());
