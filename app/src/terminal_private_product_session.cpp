@@ -1155,22 +1155,24 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         return core::Status::failure(rejected(
             "MONITOR_RETURN_STALE_MANUAL_OWNER"));
     }
-    const auto restored=manualRestore_(
-        predecessor.manual,predecessor.manualId,sourceCue);
-    if(!restored){
-        // The monitor is already retired. Do not destroy the still-valid
-        // immutable MASTER because a hotplug/rate/Qt sink install failed.
-        // No SOURCE audio is asserted and the only future action is an
-        // exact, fresh endpoint preflight followed by guarded retry.
+    // All failures AFTER the exact monitor has retired must retain the
+    // authoritative MASTER and typed timeline. Never fabricate a MANUAL
+    // audible certificate, and never overwrite a successor DEVICE sink.
+    const auto preserveReturnFailure=[&](const core::Error& error)
+        ->core::Status {
         returnRecovery_=ReturnRecovery{
             sourceCue,priorMonitorState,reconciledSourceLoop,
             candidates_?candidates_->staged():nullptr};
         monitorTransitioning_=false;
         status_=QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED");
-        error_=QString::fromStdString(restored.error()->message());
+        error_=QString::fromStdString(error.message());
         emit changed();
-        return restored;
-    }
+        return core::Status::failure(error);
+    };
+    const auto restored=manualRestore_(
+        predecessor.manual,predecessor.manualId,sourceCue);
+    if(!restored)
+        return preserveReturnFailure(*restored.error());
     const auto after=transport_->playback_snapshot();
     if(!after||after.value()->state!=core::PlaybackState::STOPPED
        ||after.value()->audibleRealization.phase
@@ -1181,10 +1183,7 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
            !=std::optional{predecessor.manual->view().frame_count()}
        ||after.value()->position!=sourceCue
        ||after.value()->loop!=predecessor.loop) {
-        monitorTransitioning_=false;
-        renderer_->invalidate();
-        failed(rejected("MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
-        return core::Status::failure(rejected(
+        return preserveReturnFailure(rejected(
             "MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
     }
     if(reconciledSourceLoop) {
@@ -1242,10 +1241,7 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
                &&resumed.value()->audibleRealization.realizationId
                    ==std::optional{predecessor.manualId})
                 static_cast<void>(transport_->stop_and_clear());
-            monitorTransitioning_=false;
-            renderer_->invalidate();
-            failed(rejected("MONITOR_RETURN_MANUAL_TRANSPORT_NOT_RESTORED"));
-            return core::Status::failure(rejected(
+            return preserveReturnFailure(rejected(
                 "MONITOR_RETURN_MANUAL_TRANSPORT_NOT_RESTORED"));
         }
     }
