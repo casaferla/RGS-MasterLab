@@ -15,14 +15,14 @@ Rectangle {
         Text {
             text: "METRICS / DELTA · PREPARED | GOLD | PROCESSED · DEMO DATA"
             font.bold: true
-            font.pixelSize: 18
+            font.family: "Arial"; font.pixelSize: 18
             color: "#DCEAF2"
         }
         Text {
             objectName: "m21ScopeWarning"
             text: root.modelReady ? root.presentation.scopeWarning :
                   "Independent GOLD analysis scope; no time alignment is implied."
-            font.pixelSize: 12
+            font.family: "Arial"; font.pixelSize: 12
             color: "#EAC28C"
             width: parent.width
             wrapMode: Text.WordWrap
@@ -31,7 +31,7 @@ Rectangle {
             objectName: "m21NoData"
             visible: !root.modelReady
             text: "MISSING · No authenticated metrics available"
-            font.pixelSize: 13
+            font.family: "Arial"; font.pixelSize: 13
             color: "#EAC28C"
         }
         Row {
@@ -45,7 +45,7 @@ Rectangle {
                 text: root.modelReady ? "PREPARED · " +
                     root.presentation.scopes[0] + " · " + root.presentation.states[0] : ""
                 color: "#C8DFEF"
-                font.pixelSize: 12
+                font.family: "Arial"; font.pixelSize: 12
                 wrapMode: Text.WordWrap
             }
             Text {
@@ -54,7 +54,7 @@ Rectangle {
                 text: root.modelReady ? "GOLD · " +
                     root.presentation.scopes[1] + " · " + root.presentation.states[1] : ""
                 color: "#EFCB8D"
-                font.pixelSize: 12
+                font.family: "Arial"; font.pixelSize: 12
                 wrapMode: Text.WordWrap
             }
             Text {
@@ -63,7 +63,7 @@ Rectangle {
                 text: root.modelReady ? "PROCESSED · " +
                     root.presentation.scopes[2] + " · " + root.presentation.states[2] : ""
                 color: "#C8DFEF"
-                font.pixelSize: 12
+                font.family: "Arial"; font.pixelSize: 12
                 wrapMode: Text.WordWrap
             }
         }
@@ -89,7 +89,7 @@ Rectangle {
                                 height: parent.height
                                 text: modelData
                                 font.bold: true
-                                font.pixelSize: 10
+                                font.family: "Arial"; font.pixelSize: 10
                                 color: "#F5F7FA"
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -114,7 +114,7 @@ Rectangle {
                                     width: parent.width/6
                                     height: parent.height
                                     text: modelData
-                                    font.pixelSize: 10
+                                    font.family: "Arial"; font.pixelSize: 10
                                     color: text.indexOf("STALE")>=0 ? "#EAC28C" : "#DFE9F0"
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment: Text.AlignVCenter
@@ -135,7 +135,7 @@ Rectangle {
                 root.presentation.spectrumStates[1] + " | PROCESSED " +
                 root.presentation.spectrumStates[2] : ""
             color: "#A7CADC"
-            font.pixelSize: 11
+            font.family: "Arial"; font.pixelSize: 11
             wrapMode: Text.WordWrap
         }
         Text {
@@ -144,7 +144,7 @@ Rectangle {
             text: "TONAL DELTAS · ONLY externally certified normalized shapeDb " +
                   "and common-band evidence. BAND ID is not a frequency label."
             color: "#EAC28C"
-            font.pixelSize: 11
+            font.family: "Arial"; font.pixelSize: 11
             wrapMode: Text.WordWrap
         }
         ListView {
@@ -166,7 +166,7 @@ Rectangle {
                           "  |  PREPARED Δ " + modelData.preparedDelta +
                           "  |  PROCESSED Δ " + modelData.processedDelta
                     color: "#DCEAF2"
-                    font.pixelSize: 11
+                    font.family: "Arial"; font.pixelSize: 11
                 }
             }
         }
