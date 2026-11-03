@@ -530,6 +530,14 @@ bool TerminalMonitorViewModel::returnManual()
         return report(reject("MONITOR_RETURN_EXACT_DEVICE_OWNER_REQUIRED"));
     const auto result=session_->return_private_monitor_to_manual();
     if(!result)return report(result);
+    // A successful retry has only just restored physical MANUAL audio.
+    // Do not interpret the *recovery action* as permission to discard the
+    // preserved offline MASTER and force another minutes-long Prepare.
+    if(retry&&session_->status()
+           ==QStringLiteral("MASTER_READY_MONITOR_PENDING")) {
+        monitorRequested_=false;
+        return report(core::Status::success());
+    }
     // Clear private evidence after restoring the exact manual owner. The
     // device-rate PCM is never copied to the FINAL MASTER or SOURCE epoch.
     // A normal M17 READY was borrowed, not consumed. Its immutable PCM
