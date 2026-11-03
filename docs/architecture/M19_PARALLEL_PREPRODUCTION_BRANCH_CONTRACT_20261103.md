@@ -1,5 +1,17 @@
 # RGS MasterLab — M19 parallel preproduction contract (2026-11-03)
 
+> **UPDATED AUTHORITY — 2026-11-03 / MACRO-LOT #7:** The original 2026-10-04
+> M19 pre-audit's conclusion "other-rate K banks unrecovered" was superseded
+> by the later **2026-10-05 ACCEPTED/FROZEN Product Owner P01 closure**,
+> Drive `1rBiwPOz5lMGDMGuKyFNVzw9d9SIBhS3Znx3aWVr-eE4`.
+> P01 fixes exact six-rate binary64 banks, 12-double canonical little-endian
+> SHA256s and exact-rational source derivation; all were recovered into an
+> M19-only private table and independent bank oracles in macro-lot #7.
+> **The existing M19 loudness runtime candidate is still 48-kHz-only** until
+> subsequent audited six-rate wiring: mathematical bank freeze is NOT Gate G.
+> Historical lower sections are retained as a dated record, not as present
+> authority. No merges/production changes.
+
 **Status:** DRAFT / isolated technical candidate; NOT production-integrated; NOT U/G qualified; NO main merge.
 
 ## Binding dependency and single-writer sequence
@@ -104,3 +116,53 @@ Scope and provenance: use the **2026-10-04 accepted M19 mathematical pre-audit F
 - This improvement does not select a production FP/QTP error envelope or close F09 status/support precedence; gate membership at the exact irrational absolute boundary is still pending independent interval-based numerical qualification.
 - 48-kHz K-filter arithmetic at extreme amplitudes can reject invalid finite recurrence mathematics; the exact final feature reason/status remains canonical-authority dependent. Remaining five K-weighting coefficient banks and supported-rate declaration remain **unrecovered** and intentionally not generated at runtime.
 - Formal M19 U+G and Windows app/FQ are prohibited pending M17 qualified → post-M17 CI audit/reset → M18 integrated+qualified → specific M19 review/PO approval.
+
+## M19 parallel macro-lot #7 — independently frozen six-rate K bank recovery
+
+**Authority:**
+`RGS_MasterLab_Phase6_Residual_Semantic_Closure_P01_P06_Product_Owner_Decision_ACCEPTED_FROZEN_2026-10-05_v1.0`,
+Google Drive ID `1rBiwPOz5lMGDMGuKyFNVzw9d9SIBhS3Znx3aWVr-eE4`.
+Accepted on **October 5** — later and more specific than the October 4 M19
+math pre-audit's "P01 still absent" finding. P01 explicitly fixes K-weighting
+for **44.1, 48, 88.2, 96, 176.4 and 192 kHz**. All other rates are
+`UNSUPPORTED`; no runtime coefficient design, nearest-bank substitution,
+resampling, library-selected design or applying 48-kHz coefficients to other
+clock rates. P01 policy ID:
+`rgsml.kweight.bs1770-5.anchor48-blt.v1`.
+The non-48k banks are **RGS-derived fixed banks**, not ITU-published ones.
+
+**Immutable recovered assets:** `analysis/src/internal/m19_k_weighting_frozen_banks.hpp`
+stores the **exact PO-supplied 72 binary64 hexadecimal coefficient literals**,
+12 per member, `Shelf(b0,b1,b2,a0,a1,a2)` followed by
+`RLB(b0,b1,b2,a0,a1,a2)`. It also records six canonical member IDs and six
+SHA-256 hashes over exact little-endian 96-byte coefficient sequences.
+The original 48-kHz printed-decimal anchor remains byte-identical; the
+new constants have **not** been inserted into `analysis/CMakeLists.txt`,
+public service APIs or DSP modules.
+
+**Independent checks:**
+- `tools/qualification/m19/test_m19_p01_kbank_frozen_authority.py` parses
+  the *actual checked-in private C++ literals*, validates the six SHA-256
+  hashes against the separately frozen PO ledger, and independently
+  **re-derives** all 72 double values from the *original printed-decimal*
+  48-kHz biquad anchor using exact `fractions.Fraction`, rational
+  (q_0=(u+vq)/(v+uq)) coefficient transformation and a **single final**
+  ties-to-even binary64 rounding. That is an independent audit, not runtime
+  coefficient design.
+- `tools/qualification/m19/m19_p01_frozen_bank_selftest.cpp` verifies the
+  private native header compiles on both compilers, supported/unsupported clock
+  guards, exact original 48-kHz decimal equality, canonical member/hash
+  identities, basic normalized pole stability and proper RLB numerator.
+  Compile for Debug and Release on Windows MSVC and Linux GCC in M19-only CI.
+
+**Next dependency:** now that the actual six canonical frozen banks are
+recovered, the next M19-only macro-lot may wire the private zero-state
+K-weighting diagnostic onto them at the six supported clocks with the frozen
+exact 400/100ms `AnalysisScope` geometry. It must then create independent
+per-rate response/startup/streaming/edge reference checks. **Do not promote
+six-rate Integrated Loudness to official qualified output** merely because
+bank SHA and derivation checks pass. Official Gate G, QTP, canonical status
+and M16 binding remain separate.
+
+**No merge:** M17 formal physical acceptance → post-M17 CI audit/reset →
+M18 merged and qualified → only then M19 product qualification/PO merge.
