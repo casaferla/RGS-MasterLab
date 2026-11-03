@@ -6,7 +6,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <optional>
 
 namespace rgsml::analysis::internal {
@@ -28,8 +27,6 @@ struct UnqualifiedTruePeakResourceEvidence final {
 // Frozen FIR 4x / 11-zero EOS from B1a/B1b; six frozen supported rates.
 // NOT qualified until the official independent M16 Gate G is completed.
 [[nodiscard]] core::Result<UnqualifiedTruePeakResourceEvidence>
-measure_unqualified_true_peak_full_resource(
-    const audio::AudioBuffer& resource,
-    const std::function<void(std::int64_t,std::int64_t)>& progress = {});
+measure_unqualified_true_peak_full_resource(const audio::AudioBuffer& resource);
 
 }  // namespace rgsml::analysis::internal
