@@ -256,6 +256,19 @@ jobs:
             }
           }
 
+      - name: Preserve bounded M18 source reproducer on diagnostic failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: M18-Exact-Boundary-Source-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            audio/src/internal/m18_*.hpp
+            core/include/rgsml/core/sha256.hpp
+            core/src/sha256.cpp
+            tools/qualification/m18/m18_pre_audit_payload_digests.cpp
+          if-no-files-found: error
+          retention-days: 2
+
       - name: Upload bounded Windows M18 errors only
         if: failure()
         uses: actions/upload-artifact@v4
