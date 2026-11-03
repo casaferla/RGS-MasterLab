@@ -39,12 +39,6 @@ jobs:
           python3 tools/qualification/m18/test_m18_independent_reference.py
           python3 tools/qualification/m18/test_m18_wav_reference.py
           python3 tools/qualification/m18/test_m18_wav_candidate_auditor.py
-      - name: Verify independent WAV auditor adversarial fixtures · Windows
-        shell: pwsh
-        run: |
-          python tools/qualification/m18/test_m18_wav_candidate_auditor.py
-          if ($LASTEXITCODE -ne 0) { throw "M18_WAV_CANDIDATE_AUDIT_FAILED" }
-
       - name: Compile and run independent M18 oracle · Debug
         shell: bash
         run: |
@@ -89,6 +83,12 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+      - name: Verify independent WAV auditor adversarial fixtures · Windows
+        shell: pwsh
+        run: |
+          python tools/qualification/m18/test_m18_wav_candidate_auditor.py
+          if ($LASTEXITCODE -ne 0) { throw "M18_WAV_CANDIDATE_AUDIT_FAILED" }
+
       - name: Compile and run independent M18 oracle · Debug
         shell: pwsh
         run: |
