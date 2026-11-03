@@ -999,11 +999,34 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
            !=std::optional{predecessor.manual->view().frame_count()}
        ||after.value()->position!=sourceCue
        ||after.value()->loop!=predecessor.loop) {
+        // Preserve the strict owner/clock/Loop gate, but classify which
+        // predicate failed. This is only a categorical diagnostic for the
+        // intermittent physical Windows Return-to-Source refusal; no PCM,
+        // user path, waveform or unsafe retry is logged or published.
+        const char* category=!after
+            ?"MONITOR_RETURN_SNAPSHOT_UNAVAILABLE"
+            :after.value()->state!=core::PlaybackState::STOPPED
+                ?"MONITOR_RETURN_NOT_STOPPED"
+            :after.value()->audibleRealization.phase
+                !=core::AudibleHandoffPhase::NEW
+                ?"MONITOR_RETURN_PHASE_MISMATCH"
+            :after.value()->audibleRealization.realizationId
+                !=std::optional{predecessor.manualId}
+                ?"MONITOR_RETURN_REALIZATION_MISMATCH"
+            :after.value()->duration
+                !=std::optional{predecessor.manual->view().frame_count()}
+                ?"MONITOR_RETURN_DURATION_MISMATCH"
+            :after.value()->position!=sourceCue
+                ?"MONITOR_RETURN_POSITION_MISMATCH"
+                :"MONITOR_RETURN_LOOP_MISMATCH";
+        const core::Error diagnostic{
+            core::ErrorCode::InvalidState,
+            "MONITOR_RETURN_MANUAL_SINK_NOT_EXACT",
+            {{"category",category}}};
         monitorTransitioning_=false;
         renderer_->invalidate();
-        failed(rejected("MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
-        return core::Status::failure(rejected(
-            "MONITOR_RETURN_MANUAL_SINK_NOT_EXACT"));
+        failed(diagnostic);
+        return core::Status::failure(diagnostic);
     }
     if(reconciledSourceLoop) {
         // The callback must act on the restored original MANUAL, never on
