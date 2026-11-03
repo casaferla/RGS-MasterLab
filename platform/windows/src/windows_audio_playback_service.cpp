@@ -466,60 +466,50 @@ struct OutputCandidate final {
             "No default Windows audio output is available.");
     }
 
-    const auto sourceRate = static_cast<int>(sourceFormat.sample_rate().value());
-    const auto preferred=defaultOutput.preferredFormat().sampleRate();
-    const bool sixPreferred=preferred==44100||preferred==48000
-        ||preferred==88200||preferred==96000
-        ||preferred==176400||preferred==192000;
-    // Exact source clock wins when supported; otherwise the observed
-    // Windows preferred clock is the monitoring-only target. The 44.1/48
-    // fallback is preserved for legacy devices without a six-rate preference.
-    const auto pairedRate=(sixPreferred&&preferred!=sourceRate)
-        ?preferred:(sourceRate==44100?48000:
-                     sourceRate==48000?44100:0);
-    const auto exactFloatFormat = make_format(
-        sourceFormat, sourceRate, QAudioFormat::Float);
-    const auto exactPcm16Format = make_format(
-        sourceFormat, sourceRate, QAudioFormat::Int16);
-    const auto pairedFloatFormat = make_format(
-        sourceFormat, pairedRate, QAudioFormat::Float);
-    const auto pairedPcm16Format = make_format(
-        sourceFormat, pairedRate, QAudioFormat::Int16);
-    auto selected = internal::select_device_format(
-        sourceFormat,
-        defaultOutput.isFormatSupported(exactFloatFormat),
-        defaultOutput.isFormatSupported(exactPcm16Format),
-        pairedRate != 0
-            && defaultOutput.isFormatSupported(pairedFloatFormat),
-        pairedRate != 0
-            && defaultOutput.isFormatSupported(pairedPcm16Format),
-        pairedRate);
-    if (!selected) {
-        // Diagnostic only: source-rate rejection cannot silently retarget
-        // the MASTER or claim an offline M17/MONITOR failure. Record the
-        // REAL device preference/capability decision so 44.1/48/192 kHz
-        // user reports distinguish endpoint constraints from DSP defects.
-        const int preferredHz=defaultOutput.preferredFormat().sampleRate();
-        const std::string detail=std::string(selected.error()->message())
-            + " SOURCE=" + std::to_string(sourceRate) + " Hz"
-            + "; DEFAULT_DEVICE_PREFERRED=" + std::to_string(preferredHz) + " Hz"
-            + "; EXACT_FLOAT=" + (defaultOutput.isFormatSupported(exactFloatFormat)?"YES":"NO")
-            + "; EXACT_PCM16=" + (defaultOutput.isFormatSupported(exactPcm16Format)?"YES":"NO")
-            + "; PAIRED_FLOAT=" + (pairedRate!=0
-                &&defaultOutput.isFormatSupported(pairedFloatFormat)?"YES":"NO")
-            + "; PAIRED_PCM16=" + (pairedRate!=0
-                &&defaultOutput.isFormatSupported(pairedPcm16Format)?"YES":"NO");
+    const auto rawSourceRate=sourceFormat.sample_rate().value();
+    if(rawSourceRate<=0||rawSourceRate>std::numeric_limits<int>::max())
+        return failure<OutputCandidate>(core::ErrorCode::OutOfRange,
+            "SOURCE_DEVICE_INVALID_SOURCE_RATE");
+    const int sourceRate=static_cast<int>(rawSourceRate);
+    const int preferred=defaultOutput.preferredFormat().sampleRate();
+    constexpr std::array<int,6> sixRates{
+        44'100,48'000,88'200,96'000,176'400,192'000};
+    std::array<internal::ObservedSixRateDeviceFormat,6> observed{};
+    for(std::size_t i=0;i<sixRates.size();++i) {
+        const int hz=sixRates[i];
+        const auto floatFormat=make_format(
+            sourceFormat,hz,QAudioFormat::Float);
+        const auto pcm16Format=make_format(
+            sourceFormat,hz,QAudioFormat::Int16);
+        observed[i]={hz,defaultOutput.isFormatSupported(floatFormat),
+                        defaultOutput.isFormatSupported(pcm16Format)};
+    }
+    // Every possible sink candidate was freshly probed on the SAME actual
+    // default endpoint; this pure selector never changes the MASTER clock.
+    // A missing/tampered Playback FIR fails BEFORE constructing an output
+    // or touching the current PlaybackEngine sink.
+    auto selected=internal::select_source_device_format_six_rate(
+        sourceFormat,preferred,observed);
+    if(!selected) {
+        std::string detail=std::string(selected.error()->message())
+            +" SOURCE="+std::to_string(sourceRate)
+            +" Hz; DEFAULT_DEVICE_PREFERRED="+std::to_string(preferred)
+            +" Hz; SIX_RATE_OBSERVED=";
+        for(const auto& option:observed) {
+            detail+=std::to_string(option.sampleRateHz);
+            detail+="[F";
+            detail+=option.ieeeFloat32Supported?"1":"0";
+            detail+="P";
+            detail+=option.pcm16Supported?"1":"0";
+            detail+="] ";
+        }
         return core::Result<OutputCandidate>::failure(
             core::Error{selected.error()->code(),detail});
     }
-    const auto qtFormat = selected.value()->sampleRateHz == sourceRate
-        ? (selected.value()->sampleFormat == DeviceSampleFormat::IEEE_F32
-            ? exactFloatFormat
-            : exactPcm16Format)
-        : (selected.value()->sampleFormat
-            == DeviceSampleFormat::IEEE_F32
-            ? pairedFloatFormat
-            : pairedPcm16Format);
+    const int selectedHz=selected.value()->sampleRateHz;
+    const auto qtFormat=make_format(sourceFormat,selectedHz,
+        selected.value()->sampleFormat==DeviceSampleFormat::IEEE_F32
+            ?QAudioFormat::Float:QAudioFormat::Int16);
 
     std::optional<audio::PlaybackSampleRateAdapter> rateAdapter;
     if (selected.value()->srcApplied) {
