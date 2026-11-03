@@ -173,13 +173,21 @@ public:
           scope_begin_(absoluteScopeBegin),
           scope_frames_(scopeFrames)
     {
+        const auto* bank = find_frozen_k_weighting_bank_candidate(sampleRateHz);
         valid_ = (channelCount == 1U || channelCount == 2U)
-            && (sampleRateHz == 44100U || sampleRateHz == 48000U
-                || sampleRateHz == 88200U || sampleRateHz == 96000U
-                || sampleRateHz == 176400U || sampleRateHz == 192000U)
-            && scopeFrames > 0U
+            && bank != nullptr && scopeFrames > 0U
             && absoluteScopeBegin <=
                 (std::numeric_limits<std::uint64_t>::max)() - scopeFrames;
+        if (valid_) {
+            quarter_frames_ = sampleRateHz / 10U;
+            const auto toBiquad = [](const std::array<double,6>& coeff) {
+                return Biquad{coeff[0],coeff[1],coeff[2],coeff[4],coeff[5]};
+            };
+            for (auto& filter : filters_) {
+                filter.shelf = toBiquad(bank->shelf_b0_b1_b2_a0_a1_a2);
+                filter.highpass = toBiquad(bank->rlb_b0_b1_b2_a0_a1_a2);
+            }
+        }
     }
 
     // Input must be the actual chronological PCM inside exactly one logical
@@ -354,6 +362,7 @@ private:
     std::uint64_t scope_frames_{};
     std::uint64_t consumed_{0};
     std::uint64_t quarters_completed_{0};
+    std::uint32_t quarter_frames_{0};
     bool valid_{false};
     bool finished_{false};
     double peak_magnitude_{0.0};
