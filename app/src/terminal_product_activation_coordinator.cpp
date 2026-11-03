@@ -904,7 +904,6 @@ void TerminalProductActivationCoordinator::private_session_changed()
             return;
         }
         const auto& evidence=measured->rendered.terminal;
-        const double peak=20.0*std::log10(evidence.measured_linear_peak);
         // Honest, current and non-verifiable-as-success: true measured peak,
         // no automatic playback and no verified READY declaration.
         view_->setNonconformingObservation(
@@ -912,10 +911,15 @@ void TerminalProductActivationCoordinator::private_session_changed()
             evidence.requested_ceiling_db_tp);
         view_->setPreparationProgress(
             QStringLiteral("Measured PCM retained · Ceiling not met"),0.99,false);
+        // Never print the two rounded values as if they were equal:
+        // a genuine positive ULP above Ceiling can display -4.50/-4.50.
+        // The ViewModel already computes the unrounded excess with log1p.
+        // Expose its <0.01 dB category without altering M16 acceptance.
+        const auto excess=view_->nonconforming_excess_text();
         view_->setAudioStatus(
-            QStringLiteral("NON-CONFORMING · %1 dBTP (target %2)")
-                .arg(QString::number(peak,'f',2))
-                .arg(QString::number(evidence.requested_ceiling_db_tp,'f',2)));
+            QStringLiteral("NON-CONFORMING · %1 OVER %2 dBTP")
+                .arg(excess,QString::number(
+                    evidence.requested_ceiling_db_tp,'f',2)));
         // Advisory UI availability. A device change after this observation
         // is still rejected by preview_nonconforming_requested() at click.
         view_->setNonconformingDirectPreviewAvailable(
