@@ -1515,6 +1515,7 @@ Window {
     height: 688
     property bool meterMode: false
     property bool privateMonitorOn: false
+    property bool privateMonitorPreparing: false
     property bool sourceBoundTpValid: false
     property bool sourceLiveAvailable: false
     // Compare QML source-owner identity in QML, without assuming Qt's
@@ -1597,6 +1598,12 @@ Window {
         id: privateMonitor
         objectName: "m17FixturePrivateMonitor"
         property bool monitorExclusive: fixtureWindow.privateMonitorOn
+        property bool monitorPreparing: fixtureWindow.privateMonitorPreparing
+        property bool devicePreparationDeterminate: true
+        property real devicePreparationFraction: 0.42
+        property string devicePreparationEta: "~45s remaining"
+        property int masterRateHz: 192000
+        property int pendingDeviceRateHz: 48000
     }
     QtObject {
         id: fixtureModel
@@ -1687,6 +1694,23 @@ Window {
     auto* inGrProgress = find_child_by_name(
         limiterEditor, QStringLiteral("m17PreparationProgressBar"));
     QVERIFY(meterEditor && limiterEditor && actionBand && inGrProgress);
+    // Device PCM is a separate honest progress phase in the same limiter
+    // rail. It must show measured progress, not the historical MASTER ETA.
+    QVERIFY(window->setProperty("privateMonitorPreparing",true));
+    QTRY_COMPARE_WITH_TIMEOUT(inGrProgress->property("value").toDouble(),0.42,5000);
+    QVERIFY(inGrProgress->property("visible").toBool());
+    QVERIFY(!inGrProgress->property("indeterminate").toBool());
+    auto* progressLabel=find_child_by_name(
+        limiterEditor,QStringLiteral("m17PreparationProgressLabel"));
+    QVERIFY(progressLabel);
+    QVERIFY(progressLabel->property("text").toString().contains(
+        QStringLiteral("192 kHz")));
+    QVERIFY(progressLabel->property("text").toString().contains(
+        QStringLiteral("48 kHz")));
+    QVERIFY(progressLabel->property("text").toString().contains(
+        QStringLiteral("42%")));
+    QVERIFY(window->setProperty("privateMonitorPreparing",false));
+    QCoreApplication::processEvents();
     // PO FQ90: Prepare -> Cancel must occupy exactly the SAME physical
     // RowLayout width, never moving Rate & Time during a long render.
     auto* prepareButton=find_child_by_name(
