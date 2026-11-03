@@ -861,8 +861,14 @@ void TerminalProductActivationCoordinator::private_session_changed()
     if(session_->monitoring_transaction_active()) {
         readyToPreview_=false;
         renderHeartbeat_.stop();
-        view_->setAudioStatus(QStringLiteral(
-            "MONITOR · PRIVATE PCM (NOT LIVE)"));
+        // A SOURCE recovery ticket is NOT an installed or audible
+        // monitor. A generic "MONITOR" label would lie about Windows
+        // output and hide why the only legal action is an explicit retry.
+        view_->setAudioStatus(session_->status()==QStringLiteral(
+            "MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED")
+            ? QStringLiteral(
+                "DEVICE UNAVAILABLE · MASTER RETAINED · RETRY SOURCE")
+            : QStringLiteral("MONITOR · PRIVATE PCM (NOT LIVE)"));
         return;
     }
     if(transitioning_||!intent_)return;
