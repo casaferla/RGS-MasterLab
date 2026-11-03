@@ -564,8 +564,11 @@ Rectangle {
                         && root.terminalMonitorViewModel.monitorCancelling
                         ? "Cancelling…"
                         : root.terminalMonitorViewModel
-                            && root.terminalMonitorViewModel.returnTargetText.indexOf("Close") === 0
-                            ? "Close Master Listening" : "Return to Source"
+                            && root.terminalMonitorViewModel.returnTargetText.indexOf("Retry") === 0
+                            ? "Retry Return to Source"
+                            : root.terminalMonitorViewModel
+                                && root.terminalMonitorViewModel.returnTargetText.indexOf("Close") === 0
+                                ? "Close Master Listening" : "Return to Source"
                 minimumControlWidth: 126
                 accentColor: root.activeFamilyAccent
                 visible: root.monitorReturnVisible
