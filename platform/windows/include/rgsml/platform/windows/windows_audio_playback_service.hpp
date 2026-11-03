@@ -63,6 +63,12 @@ public:
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime,
         std::optional<core::RealizationId> realizationId = std::nullopt);
+    // SIDE-EFFECT-FREE Return-to-Source admission: probe six actual Windows
+    // sink formats, authenticate any required SHA-pinned SOURCE SRC FIR and
+    // allocate only a disposable candidate queue. NEVER stop/play/replace
+    // the currently installed MASTER DEVICE sink.
+    [[nodiscard]] core::Status preflight_source_pcm(
+        audio::AudioBufferView source) const;
     // M17 candidate-only: no PROCESSED publication or active UI yet.
     // Advisory owner-thread probe of the current device preferred exact
     // output format; install rechecks against the actual selected device.
