@@ -272,7 +272,8 @@ int main()
                   actual.begin()+begin+count,0.125);
         actual[begin-1U]=(std::numeric_limits<double>::quiet_NaN)();
         actual[begin+count]=(std::numeric_limits<double>::infinity)();
-        const auto domain=(rate % 3==0) ? FrameDomainId::OUTPUT_RATE
+        const auto domain=(rate==44100 || rate==88200 || rate==176400)
+                ? FrameDomainId::OUTPUT_RATE
                                          : FrameDomainId::SOURCE_PROCESSING_RATE;
         auto owner=makeBuffer(rate,ChannelLayout::MONO_C,0,actual,{},domain);
         require(owner.has_value());
