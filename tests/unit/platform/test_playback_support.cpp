@@ -876,7 +876,7 @@ void PlaybackSupportTest::sourceSixRateDeviceMatrixRequiresProbedFormats()
     using platform::windows::internal::select_source_device_format_six_rate;
     constexpr std::array<int,6> rates{
         44'100,48'000,88'200,96'000,176'400,192'000};
-    const auto blank=[] {
+    const auto blank=[&] {
         std::array<Probe,6> available{};
         for(std::size_t i=0;i<rates.size();++i)
             available[i]={rates[i],false,false};
