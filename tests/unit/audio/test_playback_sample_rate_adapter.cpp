@@ -448,8 +448,31 @@ phase11FullResourcePinnedCandidateUsesActualAudioBufferAndCancellation()
         return audio::materialize_phase11_pinned_final_src_candidate(
             source.value()->view(),master,frame_count(128),asset,pin,cancel);
     };
+    // Progress is a passive, monotone observation of real output frames
+    // across channels. It cannot alter strict-scalar PCM bit patterns.
+    std::vector<std::pair<std::int64_t,std::int64_t>> reported;
+    auto withProgress=audio::materialize_phase11_pinned_final_src_candidate(
+        source.value()->view(),rate(96000),frame_count(128),
+        asset,sha,{},[&reported](std::int64_t done,std::int64_t total) {
+            reported.emplace_back(done,total);
+        });
+    QVERIFY(withProgress);
+    QVERIFY(!reported.empty());
+    QCOMPARE(reported.front(),(std::pair<std::int64_t,std::int64_t>{0,6}));
+    QCOMPARE(reported.back(),(std::pair<std::int64_t,std::int64_t>{6,6}));
+    for(std::size_t i=1;i<reported.size();++i) {
+        QCOMPARE(reported[i].second,std::int64_t{6});
+        QVERIFY(reported[i].first>=reported[i-1].first);
+        QVERIFY(reported[i].first<=reported[i].second);
+    }
     auto converted=make(rate(96000),sha);
     QVERIFY2(converted,converted?"":converted.error()->message().c_str());
+    const auto observed=withProgress.value()->pcm.view().channel(0);
+    const auto reference=converted.value()->pcm.view().channel(0);
+    QVERIFY(observed && reference);
+    for(std::size_t i=0;i<6;++i)
+        QCOMPARE(std::bit_cast<std::uint64_t>((*observed.value())[i]),
+                 std::bit_cast<std::uint64_t>((*reference.value())[i]));
     QCOMPARE(converted.value()->source_rate,rate(48000));
     QCOMPARE(converted.value()->output_rate,rate(96000));
     QCOMPARE(converted.value()->pcm.view().frame_count().value(),
