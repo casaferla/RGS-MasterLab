@@ -1862,6 +1862,8 @@ Window {
     color: "#06121F"
     QtObject {
         id: vm
+        objectName: "m17TestLimiterVm"
+        property string audioStatus: "NEEDS PREPARATION"
         property string validationField: fixture.validationMessage.length>0 ? "ceilingDbTp" : ""
         property string validationMessage: fixture.validationMessage
         property real ceilingDbTp: -1
@@ -1971,6 +1973,29 @@ Window {
                     +QString::number(size.height())+".png"),"PNG"));
         }
     }
+    // FQ96: display PREPARATION strictly during a running job.
+    // Return to Source, errors, BYPASS and READY must restore the GR
+    // chrome without inventing one gain sample.
+    auto* statusVm=find_child_by_name(instance.data(),
+        QStringLiteral("m17TestLimiterVm"));
+    auto* grPlot=find_child_by_name(m17,
+        QStringLiteral("m17GainReductionPlot"));
+    auto* prepPlot=find_child_by_name(m17,
+        QStringLiteral("m17PreparationInGrRegion"));
+    QVERIFY(statusVm&&grPlot&&prepPlot);
+    const auto expectSlot=[&](const char* status,bool preparing) {
+        QVERIFY(statusVm->setProperty("audioStatus",QString::fromUtf8(status)));
+        QCoreApplication::processEvents();
+        QCOMPARE(prepPlot->property("visible").toBool(),preparing);
+        QCOMPARE(grPlot->property("visible").toBool(),!preparing);
+        QVERIFY(!grPlot->property("verifiedSeriesAvailable").toBool());
+    };
+    expectSlot("NEEDS PREPARATION",false);
+    expectSlot("Preparing audio",true);
+    expectSlot("READY · PREVIEW AVAILABLE",false);
+    expectSlot("MONITOR · PRIVATE PCM (NOT LIVE)",false);
+    expectSlot("ERROR · BYPASS",false);
+    expectSlot("BYPASS · MANUAL PROCESSED",false);
     window->close();
 }
 
