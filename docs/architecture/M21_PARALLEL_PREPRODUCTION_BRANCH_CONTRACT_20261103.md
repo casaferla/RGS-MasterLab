@@ -63,3 +63,21 @@ The whole product Main.qml, Qt registration and app binary are UNCHANGED.
 Dual-OS native Debug/Release and independent QML static nonactivation checks
 are required in addition to both genuine Qt jobs. This remains preproduction;
 official Gate S and real Windows Manual Gate M remain BLOCKED.
+
+
+## Private macro-lot #3 — typed REAL M19/M20 candidate numerical source
+Read-only adapter from ACTUAL existing M19 BasicLevelPreproductionSnapshot
+and M20 M20ScopeCandidate types, not synthetic reimplementations or parsed
+rounded M20 preview labels. Exact scope origin/frames/sample clock and private
+externally supplied realization/generation must match; checks mono/stereo,
+finite values, DSP diagnostics and spectrum geometry. Genuine frozen K-bank
+M19 calculations and genuine M20 FFT/Hann/PSD and mono stereo diagnostics
+are exercised in native Windows/Linux Debug/Release on six actual Fs. TP
+remains MISSING: actual M19 candidate does not own a qualified M16 True Peak
+regional result. M20 fractions are not normalized-shape dB; no M21 invented
+log conversion or faux canonical tonal delta. This adapter intentionally
+carries NO production FeatureDefinitionRegistry, owner/epoch authority, Qt
+application activation or official Gate S, even when private test fixtures
+supply typed producer evidence. The UI preview's first lot uses deterministic
+presentation fixtures; this lane proves reuse of actual M19/M20 numerical
+candidate types, not real validated SOURCE/GOLD/PROCESSED artifact ownership.

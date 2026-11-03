@@ -27,6 +27,15 @@ jobs:
           persist-credentials: false
       - name: Authority/production non-activation guard
         run: python3 tools/qualification/m21/test_m21_scope_guard.py
+      - name: Real M19/M20 private typed port · GCC both modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Iapp/src -Ianalysis/src -Ianalysis/include -Iaudio/include -Icore/include tools/qualification/m21/m21_actual_m19_m20_port_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp -o "$RUNNER_TEMP/m21-real"
+            "$RUNNER_TEMP/m21-real"
+          done
+          echo M21_REAL_TYPED_LINUX_PRIVATE_PASS_NOT_S
       - name: M21 independent display-only Qt scope/nonactivation check
         run: python3 tools/qualification/m21/test_m21_qml_guard.py
       - name: Nine metrics and independent scope presentation · both GCC modes
@@ -71,6 +80,17 @@ jobs:
           }
           Write-Output M21_PRIVATE_WINDOWS_PASS_NOT_GATE_S_OR_M
 
+      - name: Real M19/M20 private typed port · MSVC both modes
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m21-real-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Iapp/src /Ianalysis/src /Ianalysis/include /Iaudio/include /Icore/include tools/qualification/m21/m21_actual_m19_m20_port_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp "/Fe:$env:RUNNER_TEMP/m21-real-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 70; throw "M21_REAL_TYPED_BUILD_$mode" }
+            & "$env:RUNNER_TEMP/m21-real-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M21_REAL_TYPED_TEST_$mode" }
+          }
       - name: M21 independent display-only Qt scope/nonactivation check
         shell: pwsh
         run: python tools/qualification/m21/test_m21_qml_guard.py
