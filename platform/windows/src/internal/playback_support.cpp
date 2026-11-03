@@ -230,6 +230,62 @@ core::Result<DeviceFormat> select_device_format(
         "Default output supports neither the exact nor authorized paired Source rate.");
 }
 
+core::Result<DeviceFormat> select_source_device_format_six_rate(
+    const audio::AudioFormat& sourceFormat,
+    int devicePreferredRateHz,
+    const std::array<ObservedSixRateDeviceFormat,6>& observed)
+{
+    // Explicitly bind probed capabilities to known Hertz slots: an array
+    // shuffled by a caller must never authorize a different physical sink.
+    constexpr std::array<int,6> rates{
+        44'100,48'000,88'200,96'000,176'400,192'000};
+    for(std::size_t i=0;i<rates.size();++i)
+        if(observed[i].sampleRateHz!=rates[i])
+            return failure<DeviceFormat>(core::ErrorCode::InvalidArgument,
+                "SOURCE_DEVICE_SIX_RATE_PROBE_ORDER_INVALID");
+
+    const auto sourceHz=sourceFormat.sample_rate().value();
+    const auto channels=sourceFormat.channel_count();
+    if(channels!=1U &&channels!=2U)
+        return failure<DeviceFormat>(core::ErrorCode::UnsupportedAudioLayout,
+            "SOURCE_DEVICE_CHANNEL_LAYOUT_UNSUPPORTED");
+    if(std::find(rates.begin(),rates.end(),sourceHz)==rates.end())
+        return failure<DeviceFormat>(core::ErrorCode::UnsupportedOperation,
+            "SOURCE_DEVICE_SOURCE_RATE_UNSUPPORTED");
+
+    const auto attempt=[&](int hz)->std::optional<DeviceFormat> {
+        for(const auto& format:observed) {
+            if(format.sampleRateHz!=hz)continue;
+            if(format.ieeeFloat32Supported)
+                return DeviceFormat{hz,channels,DeviceSampleFormat::IEEE_F32,
+                    hz!=sourceHz};
+            if(format.pcm16Supported)
+                return DeviceFormat{hz,channels,DeviceSampleFormat::PCM_S16,
+                    hz!=sourceHz};
+            break;
+        }
+        return std::nullopt;
+    };
+    // No resampling wins over everything else, even over the OS preference:
+    // it preserves exact PCM and cannot accidentally retarget MASTER.
+    if(auto exact=attempt(static_cast<int>(sourceHz)))
+        return core::Result<DeviceFormat>::success(*exact);
+    // The OS-advertised format is an advisory candidate only, never proof
+    // of hardware clock and never permission to skip isFormatSupported().
+    if(auto preferred=attempt(devicePreferredRateHz))
+        return core::Result<DeviceFormat>::success(*preferred);
+    // Deterministic, real-capability-checked fallbacks: prefer ubiquitous
+    // 48/44.1 rates, then higher-rate sinks. All are backed by SHA-pinned
+    // PCM FIRs and validated again before the playback engine installs.
+    constexpr std::array<int,6> fallback{
+        48'000,44'100,96'000,88'200,192'000,176'400};
+    for(const int hz:fallback)
+        if(auto candidate=attempt(hz))
+            return core::Result<DeviceFormat>::success(*candidate);
+    return failure<DeviceFormat>(core::ErrorCode::UnsupportedOperation,
+        "SOURCE_DEVICE_NO_SIX_RATE_SUPPORTED_FORMAT");
+}
+
 core::Result<DeviceFormat> select_monitoring_device_format(
     const audio::AudioFormat& immutableMasterFormat,
     int observedPreferredRateHz,
