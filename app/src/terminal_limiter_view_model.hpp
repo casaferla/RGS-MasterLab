@@ -25,6 +25,7 @@ class TerminalLimiterViewModel final : public QObject {
     Q_PROPERTY(QString nonconformingPeakText READ nonconforming_peak_text NOTIFY changed)
     Q_PROPERTY(QString nonconformingTargetText READ nonconforming_target_text NOTIFY changed)
     Q_PROPERTY(QString nonconformingExcessText READ nonconforming_excess_text NOTIFY changed)
+    Q_PROPERTY(bool nonconformingDirectPreviewAvailable READ nonconforming_direct_preview_available NOTIFY changed)
     Q_PROPERTY(QString preparationStage READ preparation_stage NOTIFY changed)
     Q_PROPERTY(double preparationFraction READ preparation_fraction NOTIFY changed)
     Q_PROPERTY(bool preparationDeterminate READ preparation_determinate NOTIFY changed)
@@ -49,6 +50,7 @@ public:
     [[nodiscard]] QString nonconforming_peak_text() const {return nonconformingPeakText_;}
     [[nodiscard]] QString nonconforming_target_text() const {return nonconformingTargetText_;}
     [[nodiscard]] QString nonconforming_excess_text() const {return nonconformingExcessText_;}
+    [[nodiscard]] bool nonconforming_direct_preview_available() const noexcept {return nonconformingDirectPreviewAvailable_;}
     [[nodiscard]] QString preparation_stage() const {return preparationStage_;}
     [[nodiscard]] double preparation_fraction() const noexcept {return preparationFraction_;}
     [[nodiscard]] bool preparation_determinate() const noexcept {return preparationDeterminate_;}
@@ -79,6 +81,9 @@ public:
     void setNonconformingObservation(double measured_linear_peak,
                                      double ceiling_linear,double target_db_tp);
     void setAudioStatus(const QString& value);
+    // Presentation hint only; the coordinator always rechecks the DEVICE
+    // before publishing measured nonconforming PCM.
+    void setNonconformingDirectPreviewAvailable(bool available);
     // Only the coordinator may supply independently M16-remeasured,
     // exact-owner final-check evidence; the UI never derives trim from Ceiling.
     void setVerifiedTrimObservation(double gain,bool used,double before,double after);
@@ -114,6 +119,7 @@ private:
     QString nonconformingPeakText_;
     QString nonconformingTargetText_;
     QString nonconformingExcessText_;
+    bool nonconformingDirectPreviewAvailable_{false};
     QString preparationStage_;
     double preparationFraction_{0.0};
     bool preparationDeterminate_{false};
