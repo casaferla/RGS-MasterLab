@@ -13,7 +13,7 @@ Rectangle {
         anchors.margins: 16
         spacing: 8
         Text {
-            text: "METRICS / DELTA · PREPARED | GOLD | PROCESSED · PRIVATE PREVIEW"
+            text: "METRICS / DELTA · PREPARED | GOLD | PROCESSED · DEMO DATA"
             font.bold: true
             font.pixelSize: 18
             color: "#DCEAF2"
