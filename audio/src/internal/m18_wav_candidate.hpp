@@ -53,7 +53,9 @@ struct M18WavPlanResult {
 {
     constexpr std::array<std::uint32_t,6> rates{{
         44100U,48000U,88200U,96000U,176400U,192000U}};
-    if((spec.channels!=1U && spec.channels!=2U) ||
+    if((spec.encoding!=M18WavEncoding::PCM24 &&
+        spec.encoding!=M18WavEncoding::IEEE_FLOAT32) ||
+        (spec.channels!=1U && spec.channels!=2U) ||
         std::find(rates.begin(),rates.end(),spec.sample_rate)==rates.end() ||
         spec.frame_count>static_cast<std::uint64_t>(INT64_MAX))
         return {};
@@ -170,8 +172,8 @@ struct M18WavCandidate {
 {
     const auto p=m18_plan_wav(spec);
     if(p.status!=M18WavStatus::OK)return {p.status};
-    if(spec.frame_count>UINT64_MAX-first_absolute_output_frame
-        && spec.frame_count!=0U)
+    if(spec.frame_count!=0U && spec.frame_count-1U>
+        UINT64_MAX-first_absolute_output_frame)
         return {M18WavStatus::OVERFLOW};
     if(spec.frame_count!=interleaved.size()/spec.channels
        ||interleaved.size()%spec.channels!=0U)
