@@ -727,6 +727,22 @@ public:
         return core::Status::success();
     }
 
+    [[nodiscard]] core::Status preflight_source_pcm(
+        audio::AudioBufferView source) const
+    {
+        // A read-only candidate admission while the MASTER monitor owns
+        // the actual device. No engine methods, SOURCE epoch or sink change.
+        if(source.timebase().frame_domain_id()
+                !=audio::FrameDomainId::SOURCE_PROCESSING_RATE
+           ||source.frame_count().value()<=0)
+            return status_failure(core::ErrorCode::InvalidArgument,
+                "SOURCE_DEVICE_PREFLIGHT_INVALID_PCM");
+        auto candidate=make_output_candidate(
+            source.format(),source.frame_count());
+        return candidate?core::Status::success()
+            :core::Status::failure(*candidate.error());
+    }
+
     [[nodiscard]] core::Status prepare_pcm(
         audio::AudioBufferView source,
         std::shared_ptr<const void> lifetime = nullptr,
@@ -1171,6 +1187,24 @@ public:
     }
 
 
+    [[nodiscard]] core::Status preflight_source_pcm(
+        audio::AudioBufferView source) const
+    {
+        if(!ready_ || worker_==nullptr)
+            return status_failure(core::ErrorCode::IoFailure,
+                "SOURCE_DEVICE_PREFLIGHT_WINDOWS_WORKER_UNAVAILABLE");
+        if(QThread::currentThread()==worker_->thread())
+            return worker_->preflight_source_pcm(source);
+        std::optional<core::Status> result;
+        const bool invoked=QMetaObject::invokeMethod(worker_,[&] {
+            result.emplace(worker_->preflight_source_pcm(source));
+        },Qt::BlockingQueuedConnection);
+        if(!invoked||!result)
+            return status_failure(core::ErrorCode::IoFailure,
+                "SOURCE_DEVICE_PREFLIGHT_OWNER_THREAD_QUERY_FAILED");
+        return std::move(*result);
+    }
+
     [[nodiscard]] core::Result<core::SampleRate>
     preferred_terminal_output_rate(audio::ChannelLayout layout) const
     {
@@ -1481,6 +1515,12 @@ core::Status WindowsAudioPlaybackService::prepare_pcm(
 {
     return impl_->prepare_pcm(
         source, std::move(lifetime), realizationId);
+}
+
+core::Status WindowsAudioPlaybackService::preflight_source_pcm(
+    audio::AudioBufferView source) const
+{
+    return impl_->preflight_source_pcm(source);
 }
 
 core::Result<core::SampleRate>
