@@ -543,6 +543,12 @@ ApplicationWindow {
                         ToolTip.text: sourceWaveform.viewportStartText
                             + " — " + sourceWaveform.viewportEndText
                         ToolTip.visible: waveformClockHover.hovered
+                            && waveformClockDwell.ready
+                        ToolTip.delay: 0
+                        StudioTooltipDwell {
+                            id: waveformClockDwell
+                            anchors.fill: parent
+                        }
                     }
                 }
             }
