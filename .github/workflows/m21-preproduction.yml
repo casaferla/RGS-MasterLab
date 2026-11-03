@@ -1,0 +1,61 @@
+# PRIVATE M21-only CI. No production QML/App activation, Gate S/M, FQ or merge.
+name: M21 Independent Preproduction CI
+on:
+  push:
+    branches:
+      - experimental/m21-metrics-delta-20261103
+    paths:
+      - 'app/src/internal/m21_*.hpp'
+      - 'tools/qualification/m21/**'
+      - 'docs/architecture/M21_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261103.md'
+      - '.github/workflows/m21-preproduction.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m21-private-preproduction-only
+  cancel-in-progress: false
+jobs:
+  linux-m21:
+    name: M21 private candidate · Linux GCC C++20 Debug + Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Authority/production non-activation guard
+        run: python3 tools/qualification/m21/test_m21_scope_guard.py
+      - name: State, sign, scopes, status, async generations and tonal gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Iapp/src tools/qualification/m21/m21_comparison_selftest.cpp -o "$RUNNER_TEMP/m21-private"
+            "$RUNNER_TEMP/m21-private"
+          done
+          echo M21_PRIVATE_LINUX_PASS_NOT_GATE_S_OR_M
+  windows-m21:
+    name: M21 private candidate · Windows 2022 MSVC Debug + Release
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Authority/production non-activation guard
+        shell: pwsh
+        run: python tools/qualification/m21/test_m21_scope_guard.py
+      - name: State, sign, scopes, status, async generations and tonal gate
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m21-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Iapp/src tools/qualification/m21/m21_comparison_selftest.cpp "/Fe:$env:RUNNER_TEMP/m21-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 55; throw "M21_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m21-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M21_TEST_FAILED_$mode" }
+          }
+          Write-Output M21_PRIVATE_WINDOWS_PASS_NOT_GATE_S_OR_M
