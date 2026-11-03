@@ -54,8 +54,8 @@ int main()
         auto absolute=m19::absolute_block_start(j,44105U,12345U);
         require(absolute && *absolute==12345U+irregular[j]);
     }
-    require(!m19::complete_block_fits(2U,44105U,26462U+17642U));
-    require(m19::complete_block_fits(2U,44105U,26463U+17642U));
+    require(!m19::complete_block_fits(6U,44105U,26462U+17642U));
+    require(m19::complete_block_fits(6U,44105U,26463U+17642U));
 
     // Exact integer ties to even; never rely on ambient FP rounding mode.
     require(m19::checked_round_ties_even_ratio(1U,5U,10U)==0U);
