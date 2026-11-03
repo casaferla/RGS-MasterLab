@@ -26,6 +26,9 @@ ApplicationWindow {
     readonly property color accent: "#00C8FF"
     readonly property color warning: "#F2B632"
     readonly property color error: "#F27683"
+    // Explicitly confirmed in-RAM MASTER loss alone permits exiting a
+    // recovery state without reinstalling the original Windows DEVICE.
+    property bool m17ConfirmedDiscardExit: false
 
     // Minimum-first desktop composition: the supported 1184 x 688 geometry is
     // already complete and readable. Larger windows expand elastic content
@@ -502,6 +505,49 @@ ApplicationWindow {
         onRejected: projectSession.cancelProjectSave()
     }
 
+    // X/Alt+F4 is NOT permission to retry an absent Windows DEVICE.
+    // Keep the in-RAM M17 MASTER or explicitly discard on shutdown.
+    Dialog {
+        id: m17RecoveryExitDialog
+        objectName: "m17RecoveryExitConfirmation"
+        modal: true
+        focus: true
+        title: "Audio device unavailable"
+        anchors.centerIn: parent
+        width: Math.min(500, root.width - 36)
+        closePolicy: Popup.CloseOnEscape
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 12
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Windows could not restore the Source device. "
+                    + "Your prepared Master remains in memory. Keep "
+                    + "working and retry Return to Source, or explicitly "
+                    + "exit and lose the unsaved Master."
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Button {
+                    objectName: "m17KeepRecoverySessionButton"
+                    text: "Keep working"
+                    onClicked: m17RecoveryExitDialog.close()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    objectName: "m17DiscardRecoverySessionButton"
+                    text: "Discard unsaved Master and exit"
+                    onClicked: {
+                        root.m17ConfirmedDiscardExit = true
+                        m17RecoveryExitDialog.close()
+                        root.close()
+                    }
+                }
+            }
+        }
+    }
+
     Shortcut {
         sequence: "F10"
         context: Qt.ApplicationShortcut
@@ -509,6 +555,19 @@ ApplicationWindow {
     }
 
     onClosing: function(close) {
+        if (root.m17ConfirmedDiscardExit) {
+            close.accepted = true
+            Qt.quit()
+            return
+        }
+        if (root.monitorExclusive && root.appTerminalMonitorViewModel
+                && root.appTerminalMonitorViewModel.returnTargetText
+                    === "Retry Return to Source") {
+            close.accepted = false
+            if (!m17RecoveryExitDialog.opened)
+                m17RecoveryExitDialog.open()
+            return
+        }
         if (root.monitorExclusive && !root.appTerminalMonitorViewModel.cancel()) {
             close.accepted = false
             return
