@@ -39,3 +39,9 @@
 4. Only after M17/M18 formally qualified and approved for integration, rebase/forward-integrate M19 against the accepted chain, run actual Windows/Linux product tests and obtain explicit PO merge approval.
 
 Do not mistake a green 2-minute preproduction CI for a qualified Qt/Windows build or for a release-ready M19.
+
+## Preproduction numerical macro-lot #2 — strict gate edge
+- The independent October mathematical pre-audit specifies a strict power-domain comparison for the -70 LKFS and -10 LU gates. A direct compare of rounded log-domain levels could accidentally include an exactly-equal threshold (e.g. q=[19,1]); preproduction candidate now separates a strict power-domain one-pass GATE helper with explicit absolute/final membership counts.
+- Fixed independent C++ and Python fixtures check q=[19,1] equality/exclusion, nextafter(1,+inf) inclusion, absolute power-gate equality/nextafter, silence, negative/nonfinite block power, and sum overflow. This is numerical regression evidence only, not accepted F07 range/QTP or canonical production gate.
+- Removing a misleading noexcept from the potentially growing streaming vector is a private exception-safety correction, not a new memory/performance claim. Actual production will require bounded memory and audit-qualified whole-track numerical accumulation.
+- Continue to leave M16 TP absent; do NOT replace it with limiter detector or a new M19 FIR.
