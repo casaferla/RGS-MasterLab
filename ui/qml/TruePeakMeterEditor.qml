@@ -25,11 +25,17 @@ Item {
     // The lower bay is a single stable slot: offline PREPARATION occupies
     // it until a terminal result exists, then the authentic GR history
     // replaces it without changing any M16/M17 meter coordinates.
+    readonly property string terminalAudioStatus: root.limiterViewModel
+        ? root.limiterViewModel.audioStatus : ""
+    // After a completed Prepare, READY / MASTER VERIFIED / MONITOR must
+    // return the lower bay to GR HISTORY, even during SOURCE listening.
+    // A graph requires an independently authenticated gain+sink provider.
     readonly property bool limiterPreparationVisible: root.showLimiterGrHistory
         && (root.devicePreparing || !root.limiterViewModel
-            || !(root.limiterViewModel.audioStatus.startsWith("READY")
-                 || root.limiterViewModel.audioStatus.startsWith("ACTIVE")
-                 || root.limiterViewModel.audioStatus.startsWith("NON-CONFORMING")))
+            || root.terminalAudioStatus.startsWith("Preparing")
+            || root.terminalAudioStatus.startsWith("NEEDS PREPARATION")
+            || root.terminalAudioStatus.startsWith("ERROR")
+            || root.terminalAudioStatus.startsWith("BYPASS"))
     // The entire lower band is fixed. In this combined layout,
     // GR and Ceiling+Verification Trim use the SAME 198px height.
     // Canonical 548px M17 editor retains its accepted 198px lower band.
