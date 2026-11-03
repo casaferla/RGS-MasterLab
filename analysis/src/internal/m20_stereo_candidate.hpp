@@ -142,7 +142,12 @@ struct CorrelationResult {
     if(std::isfinite(el)&&std::isfinite(er)&&std::isfinite(cross)&&el/n>=1e-10&&er/n>=1e-10){
       const double den=std::sqrt(el/n)*std::sqrt(er/n);
       if(std::isfinite(den)&&den>=1e-20&&den>0){
-        const double rho=(cross/n)/den;
+        // Exact-algebra boundary: identical (or inverted) centered sample
+        // products imply rho = +/-1. Avoid a spurious 1+ulp from
+        // sqrt(power)*sqrt(power) rounding; this is NOT a general clamp.
+        double rho=(cross/n)/den;
+        if(el==er&&cross==el) rho=1.0;
+        else if(el==er&&cross==-el) rho=-1.0;
         if(std::isfinite(rho)&&rho>=-1&&rho<=1){
           w.diagnostic=Diagnostic::valid;w.rho=rho;valid.push_back(rho);
         }

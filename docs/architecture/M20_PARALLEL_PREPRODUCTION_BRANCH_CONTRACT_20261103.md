@@ -57,3 +57,7 @@ CI run 41669577807: Linux SUCCESS; Windows FAILED in the new real AudioBufferVie
 
 ### Bounded diagnostics for M20 CI #5
 After previous scoped-mask test correction, CI run 41670334732 exposed a separate Linux M20 stereo adversarial step failure and recurring Windows AudioBufferView step failure; do not claim either green. Add self-contained failure-only artifacts containing at most 40/60 diagnostic lines per failed test/compile. Preserve exact test assertions; do not download whole workflow logs. Use output to classify failures before next corrective candidate; no release/merge/FQ authority.
+
+
+### Corrective report — diagnostic run 41671022289
+The two bounded failure artifacts identified **independent** causes, not generic failing math: Windows `m20_real_audio_scope_selftest.cpp:91` /W4 /WX warning C4244 in `std::fill(vector<uint8_t>, literal int 0)`; replaced by `std::uint8_t{0}` without weakening compiler warnings. Linux `m20_stereo_adversarial_selftest.cpp:66` positive-exact-correlation fixture rejected because `(cross/n)/(sqrt(el/n)*sqrt(er/n))` can evaluate to 1+ulp for same centered sums. PRIVATE candidate now evaluates the exact identities `el==er && cross==el` and `el==er && cross==-el` as exactly +1/-1 respectively, otherwise retains the same finite/support/range checks; **no generic correlation clamp or tolerance invention**. Both fixes need fresh two-OS CI before claiming PASS. Canonical QTP and future alternative precision policy still require authority reconciliation.

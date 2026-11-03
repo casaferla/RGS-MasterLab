@@ -88,7 +88,7 @@ int main(){
       auto selected=analyze_audio_buffer_scope_candidate(resource.view(),
         core::FrameIndex{static_cast<std::int64_t>(origin)},*fc.value(),domain,gated);
       assert(selected&&selected.value()->spectrum.selected_frames==1);
-      std::fill(mask.begin(),mask.end(),0);
+      std::fill(mask.begin(),mask.end(),std::uint8_t{0}); // MSVC /W4 /WX exact element type
       const auto empty=analyze_audio_buffer_scope_candidate(resource.view(),
         core::FrameIndex{static_cast<std::int64_t>(origin)},*fc.value(),domain,gated);
       assert(empty&&empty.value()->spectrum.diagnostic==Diagnostic::insufficient_content);
