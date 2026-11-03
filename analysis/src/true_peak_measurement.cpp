@@ -8,11 +8,13 @@
 namespace rgsml::analysis {
 
 core::Result<TruePeakMeasurement>
-measure_true_peak_full_resource(const audio::AudioBuffer& resource)
+measure_true_peak_full_resource(
+    const audio::AudioBuffer& resource,
+    const TruePeakResourceProgress& progress)
 {
     // Same exact production FIR, strict-FP source and 11-frame finalization:
     // no parallel algorithm, dB conversion, DC filter or PCM mutation.
-    auto evidence = internal::measure_unqualified_true_peak_full_resource(resource);
+    auto evidence = internal::measure_unqualified_true_peak_full_resource(resource,progress);
     if (!evidence) {
         return core::Result<TruePeakMeasurement>::failure(*evidence.error());
     }
