@@ -131,6 +131,9 @@ render_true_peak_limiter_owned_candidate_impl(
         block.value(),audio::PlaybackSampleRateAdapter::kMaximumOutputBlockFrames));
     if(!boundedBlock)return core::Result<Candidate>::failure(*boundedBlock.error());
     report(TerminalRenderProgressPhase::SRC);
+    const auto srcProgress=[&](std::int64_t completed,std::int64_t total) {
+        report(TerminalRenderProgressPhase::SRC,completed,total);
+    };
     const auto src_started=std::chrono::steady_clock::now();
     // Preserve the existing serial-authoritative renderer cancellation
     // through SOURCE -> OUTPUT SRC itself, rather than waiting for the
@@ -140,10 +143,10 @@ render_true_peak_limiter_owned_candidate_impl(
     // behavior remains exactly unchanged. This is not runtime admission.
     auto output=original_q0_fir_asset.empty()
         ? audio::materialize_full_resource_output_rate_candidate(
-            view,output_rate,*boundedBlock.value(),cancelled)
+            view,output_rate,*boundedBlock.value(),cancelled,srcProgress)
         : audio::materialize_phase11_scoped_q0_pinned_offline_candidate(
             view,output_rate,*boundedBlock.value(),
-            original_q0_fir_asset,cancelled);
+            original_q0_fir_asset,cancelled,srcProgress);
     if(stage_timings)
         stage_timings->src_us=std::chrono::duration_cast<
             std::chrono::microseconds>(
