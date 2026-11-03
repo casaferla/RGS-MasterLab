@@ -237,6 +237,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Linux QtGui OpenGL development dependencies
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev
       - name: Install Qt 6.8.3 without changing main build
         shell: bash
         run: |
