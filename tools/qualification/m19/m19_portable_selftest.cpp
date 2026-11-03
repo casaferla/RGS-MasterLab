@@ -133,6 +133,52 @@ int main() {
         near(*out.full_scope_rms_dbfs, 20.0*std::log10(0.25));
         near(*out.sample_peak_dbfs, 20.0*std::log10(0.25));
     }
+    // Independent 2026-10-04 F04 strict relative-gating adversary:
+    // q=[19,1] has meanA=10, threshold qR=1 EXACTLY. Equality is EXCLUDED.
+    // The low block's next representable positive power MUST be included.
+    {
+        const std::array<double,2> eq{19.0,1.0};
+        auto a = rgsml::analysis::internal::m19::
+            gate_complete_400ms_block_powers(eq);
+        require(a.has_value());
+        require(a->absolute_count == 2U && a->final_count == 1U);
+        require(a->integrated_lufs.has_value());
+        near(*a->integrated_lufs, -0.691 + 10.0*std::log10(19.0), 1e-12);
+
+        const std::array<double,2> next{
+            19.0, std::nextafter(1.0, 2.0)};
+        auto b = rgsml::analysis::internal::m19::
+            gate_complete_400ms_block_powers(next);
+        require(b.has_value());
+        require(b->absolute_count == 2U && b->final_count == 2U);
+        require(b->integrated_lufs.has_value());
+        near(*b->integrated_lufs, -0.691+10.0*std::log10(10.0), 1e-12);
+        require(*a->integrated_lufs > *b->integrated_lufs + 2.7);
+
+        const double absolute = std::pow(10.0,(-70.0 + 0.691)/10.0);
+        const std::array<double,3> boundary{
+            std::nextafter(absolute, 0.0),
+            absolute, std::nextafter(absolute, 1.0)};
+        auto c = rgsml::analysis::internal::m19::
+            gate_complete_400ms_block_powers(boundary);
+        require(c.has_value());
+        require(c->absolute_count == 1U && c->final_count == 1U);
+        require(c->integrated_lufs.has_value());
+        auto silencePowers = rgsml::analysis::internal::m19::
+            gate_complete_400ms_block_powers(std::array<double,2>{0.0,0.0});
+        require(silencePowers.has_value());
+        require(!silencePowers->integrated_lufs);
+        require(silencePowers->absolute_count == 0U);
+
+        require(!rgsml::analysis::internal::m19::
+            gate_complete_400ms_block_powers(std::array<double,2>{1.0,-1.0}));
+        require(!rgsml::analysis::internal::m19::
+            gate_complete_400ms_block_powers(std::array<double,2>{
+                1.0,(std::numeric_limits<double>::infinity)()}));
+        require(!rgsml::analysis::internal::m19::
+            gate_complete_400ms_block_powers(std::array<double,2>{1e308,1e308}));
+    }
+
     // Invalid data inside the scope: prevalidate the WHOLE chunk before state.
     BasicLevelPreproduction m(48000U,1U,0U,19200U);
     auto bad = dc;
