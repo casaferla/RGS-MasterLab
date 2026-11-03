@@ -47,6 +47,9 @@ public:
     ~TerminalMonitorViewModel() override;
     [[nodiscard]] QString status_text() const;
     [[nodiscard]] QString return_target_text() const {
+        if(session_->status()
+               ==QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"))
+            return QStringLiteral("Retry Return to Source");
         return session_->monitor_returns_to_empty_source()
             ? QStringLiteral("Close DEVICE · No MANUAL sink")
             : QStringLiteral("Return MANUAL");
