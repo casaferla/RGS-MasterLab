@@ -40,3 +40,26 @@ Canonical M21 Gate S: BLOCKED.
 Real Windows Manual Gate M: BLOCKED.
 M17–M20 predecessor integration gates: BLOCKED.
 No merge, no GUI-01 composition change, no product acceptance.
+
+
+## Private macro-lot #2 — read-only C++ presenter and GENUINE isolated Qt6 GUI test
+The initial native M21 comparison candidate received a fail-closed semantic-column
+identity rejection on staging after lot #1 green. A separate PRIVATE C++20
+presenter formats nine existing canonical-subset rows and Gold-relative
+unrounded-source deltas, explicit state/low-confidence/mono/missing labels,
+independent Full Track/Region scope warnings, and never borrows one column's
+data as another. It passes through producer-owned spectrum cardinality and
+tonal band IDs; it neither invents Hz positions nor implements spectral
+math. The proposed private presentation QML consumes C++-provided read-only
+formatted values only. No QML delta formulas, analyzer code, Level Match,
+Reference Match or new project persistence. User-visible geometry is
+NOT accepted by the GUI Design Authority.
+
+Isolated Qt6.8.3 QQmlEngine real compilation and smoke test on BOTH Windows
+MSVC and Linux GCC instantiate the actual unregistered component, check
+empty results, populated true C++ Gold−Prepared delta, mono missing,
+stale and cleared values. Private fixtures are not real user-analyzed WAVs.
+The whole product Main.qml, Qt registration and app binary are UNCHANGED.
+Dual-OS native Debug/Release and independent QML static nonactivation checks
+are required in addition to both genuine Qt jobs. This remains preproduction;
+official Gate S and real Windows Manual Gate M remain BLOCKED.
