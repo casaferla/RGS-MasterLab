@@ -34,7 +34,8 @@ core::Result<FullResourceOutputRateCandidate>
 materialize_phase11_pinned_final_src_candidate(
     AudioBufferView input,core::SampleRate outputRate,core::FrameCount block,
     std::span<const std::uint8_t> asset,std::string_view sha,
-    const FullResourceOutputRateCancel& cancelled)
+    const FullResourceOutputRateCancel& cancelled,
+    const FullResourceOutputRateProgress& progress)
 {
     const auto stopped=[&] {return cancelled&&cancelled();};
     if(stopped())return refuse("Phase11 candidate conversion cancelled",
@@ -54,7 +55,7 @@ materialize_phase11_pinned_final_src_candidate(
             return refuse("Phase11 identity refuses external FIR and hash");
         // Reuse the existing exact-bit identity path; no second DSP engine.
         return materialize_full_resource_output_rate_candidate(
-            input,outputRate,block,cancelled);
+            input,outputRate,block,cancelled,progress);
     }
     const auto g=std::gcd(fin,fout);
     const auto L=static_cast<std::uint32_t>(fout/g);
@@ -76,6 +77,11 @@ materialize_phase11_pinned_final_src_candidate(
         return refuse("Phase11 output sample count overflow",
                       core::ErrorCode::IntegerOverflow);
     const auto total=whole*fout+tail;
+    const auto channels=static_cast<std::int64_t>(input.format().channel_count());
+    if(channels<=0 ||total>std::numeric_limits<std::int64_t>::max()/channels)
+        return refuse("Phase11 progress coordinate overflow",
+                      core::ErrorCode::IntegerOverflow);
+    const auto totalWork=total*channels;
     auto frames=core::FrameCount::create(total);
     if(!frames)return core::Result<FullResourceOutputRateCandidate>::failure(
         *frames.error());
@@ -96,6 +102,7 @@ materialize_phase11_pinned_final_src_candidate(
                                     core::FrameIndex{0},*frames.value());
     if(!output)return core::Result<FullResourceOutputRateCandidate>::failure(
         *output.error());
+    if(progress)progress(0,totalWork);
     for(std::size_t ch=0;ch<input.format().channel_count();++ch) {
         if(stopped())return refuse("Phase11 SRC cancelled before channel",
                                    core::ErrorCode::InvalidState);
@@ -103,8 +110,14 @@ materialize_phase11_pinned_final_src_candidate(
         const auto dst=output.value()->mutable_view().channel(ch);
         if(!src||!dst)return refuse("Phase11 channel allocation/read failed",
                                    core::ErrorCode::InvalidState);
+        const auto channelBase=static_cast<std::int64_t>(ch)*total;
         const auto status=internal::render_phase11_strict_scalar_reference(
-            *src.value(),*dst.value(),0,L,M,*parsed.value(),cancelled);
+            *src.value(),*dst.value(),0,L,M,*parsed.value(),cancelled,
+            [&progress,channelBase,totalWork](std::size_t channelDone) {
+                if(progress)
+                    progress(channelBase
+                        +static_cast<std::int64_t>(channelDone),totalWork);
+            });
         if(!status)return core::Result<FullResourceOutputRateCandidate>::failure(
             *status.error());
     }
@@ -121,13 +134,14 @@ core::Result<FullResourceOutputRateCandidate>
 materialize_phase11_scoped_q0_pinned_offline_candidate(
     AudioBufferView input,core::SampleRate outputRate,core::FrameCount block,
     std::span<const std::uint8_t> privateAsset,
-    const FullResourceOutputRateCancel& cancelled)
+    const FullResourceOutputRateCancel& cancelled,
+    const FullResourceOutputRateProgress& progress)
 {
     const auto fin=input.format().sample_rate().value();
     const auto fout=outputRate.value();
     if(fin==fout)
         return materialize_phase11_pinned_final_src_candidate(
-            input,outputRate,block,privateAsset,{},cancelled);
+            input,outputRate,block,privateAsset,{},cancelled,progress);
     if(fin<=0||fout<=0)return refuse("Q0 pinned offline rate invalid");
     const auto g=std::gcd(fin,fout);
     const auto L=static_cast<std::uint32_t>(fout/g);
@@ -137,7 +151,7 @@ materialize_phase11_scoped_q0_pinned_offline_candidate(
                           core::ErrorCode::UnsupportedOperation);
     // Do not permit an untrusted caller to self-issue a SHA from its own bytes.
     auto converted=materialize_phase11_pinned_final_src_candidate(
-        input,outputRate,block,privateAsset,pin->sha256,cancelled);
+        input,outputRate,block,privateAsset,pin->sha256,cancelled,progress);
     if(!converted)return converted;
     converted.value()->kernel_sha256=pin->sha256; // source identity only
     return converted; // not a product release or publication
