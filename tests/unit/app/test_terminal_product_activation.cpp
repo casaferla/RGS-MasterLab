@@ -464,6 +464,16 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
             QCOMPARE(master.timebase().frame_domain_id(),
                 audio::FrameDomainId::OUTPUT_RATE);
             QVERIFY(master.frame_count().value()>0);
+            // Snapshot the exact IEEE-754 bits of the fully verified
+            // MASTER; NO DEVICE materializer may write into its owner.
+            std::vector<std::uint64_t> originalMasterBits;
+            for(std::size_t ch=0;ch<2;++ch) {
+                const auto samples=master.channel(ch);
+                QVERIFY(samples);
+                for(const double value:*samples.value())
+                    originalMasterBits.push_back(
+                        std::bit_cast<std::uint64_t>(value));
+            }
             ++masterPairs;
             // Actual WAV bytes, rather than an export-rate intention:
             // IEEE F64 WavWriter is already implemented independently of
@@ -513,6 +523,23 @@ sixSourceBySixTargetOfflineMasterAndDeviceRateMatrix()
                     finalHz!=deviceHz);
                 QCOMPARE(monitor.value()->device_pcm.view().format().sample_rate(),
                          *deviceRate.value());
+                const auto masterFrames=master.frame_count().value();
+                const auto expectedDeviceFrames=
+                    (masterFrames/finalHz)*deviceHz
+                    +((masterFrames%finalHz)*deviceHz+finalHz-1)/finalHz;
+                QCOMPARE(monitor.value()->device_pcm.view().frame_count().value(),
+                         expectedDeviceFrames);
+                // The device-rate allocation must also be distinct from
+                // the immutable MASTER buffer for SRC paths.
+                std::vector<std::uint64_t> afterDeviceMasterBits;
+                for(std::size_t ch=0;ch<2;++ch) {
+                    const auto samples=master.channel(ch);
+                    QVERIFY(samples);
+                    for(const double value:*samples.value())
+                        afterDeviceMasterBits.push_back(
+                            std::bit_cast<std::uint64_t>(value));
+                }
+                QCOMPARE(afterDeviceMasterBits,originalMasterBits);
                 QCOMPARE(master.format().sample_rate(),*finalRate.value());
                 if(sourceHz==finalHz)++equalSourceMasterDevicePairs;
                 ++devicePairs;
