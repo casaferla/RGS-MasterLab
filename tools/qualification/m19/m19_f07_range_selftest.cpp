@@ -53,8 +53,13 @@ run(const std::vector<double>& left,
     require(!result->integrated_lufs);
     // 44100 now has its exact frozen PO P01 bank. This short diagnostic
     // vector simply lacks the minimum 400-ms support.
+    // All vectors here are shorter than 400 ms. Extremely large but
+    // finite PCM can additionally overflow the independent K path;
+    // it MUST NOT erase valid RMS/Sample Peak/Crest.
     require(result->loudness_state==
-        m19::LoudnessPreproductionState::insufficient_duration);
+        m19::LoudnessPreproductionState::insufficient_duration ||
+        result->loudness_state==
+        m19::LoudnessPreproductionState::k_numerically_undefined);
     require(!result->true_peak_db_tp);
     return *result;
 }
