@@ -106,3 +106,25 @@ signs and status only and DO NOT establish canonical shape authority or
 official M21 Gate S. No production UI/Main.qml, Qt registration, M19/M20 math,
 M17/FIR, export, main branch or prerequisite PR changed. Official S and Windows
 M remain blocked, as do predecessor M17→CI reset→M18→M19→M20 gates.
+
+
+## Private macro-lot #5 — immutable asynchronous publication and false-zero refusal
+This private staging change hardens the preproduction publication guard:
+(1) once one CURRENT result has been published for a producer generation,
+a second completion with the SAME generation cannot overwrite it; a real
+backend Re-analyze must mint a strictly newer producer generation first;
+(2) all published feature cells must have finite unrounded data IFF their
+status is numerically usable; MISSING/STALE/INVALID/NOT_APPLICABLE/
+INCOMPATIBLE never carry a hidden fabricated number;
+(3) average-spectrum Hz and density are finite, nonnegative, and scoped
+by the same selected realization; (4) origin+scope overflow, unsupported
+rates, invalid scope labels and tonal entries without explicit
+common-comparison proof fail closed. Invalid publication never promotes
+STALE to CURRENT or alters the accepted artifact.
+
+The existing per-column EXPECT generation method is only a private test
+stand-in for Phase-6 authoritative asynchronous epoch ownership. New
+adversarial tests require strict generation changes when recomputing
+Gold and Prepared, and reject duplicate, stale, NaN, false-zero or
+malformed spectrum submissions. No changes to shared scheduling,
+real UI, GUI registration, producer DTOs, M17/M18/M19/M20, or main.
