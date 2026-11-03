@@ -214,6 +214,10 @@ public:
     // independently reports exactly the same rate as the checked MASTER.
     // A mismatch is NOT an error or permission to rerender the MASTER.
     [[nodiscard]] bool current_master_matches_device_for_preview() const;
+    // Measured NON-CONFORMING PCM has no authorized MASTER->DEVICE SRC.
+    // A direct Preview Anyway must therefore match the freshly probed
+    // exact device rate without modifying the retained measured candidate.
+    [[nodiscard]] bool current_measured_matches_device_for_preview() const;
     // A SOURCE Loop Region is PLAYBACK METADATA, not M17 full-track DSP
     // input. A valid region edit during deferred Prepare / READY may adopt
     // its new SOURCE loop mapping without invalidating the immutable PCM,
