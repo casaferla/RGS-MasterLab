@@ -1,6 +1,7 @@
 #include "audition_source_selector.hpp"
 #include "playback_transport_view_model.hpp"
 #include "terminal_candidate_gate.hpp"
+#include "terminal_measured_device_audition_ticket.hpp"
 #include "terminal_playback_frame_map.hpp"
 #include "internal/terminal_src_frame_map_provenance.hpp"
 #include "terminal_audio_session_gate.hpp"
@@ -630,6 +631,78 @@ void TerminalActivationIntegrationTest::finalMasterAt192kNeverBecomesDeviceRate4
         *registry.value(),*block.value(),{},nullptr,true,&recovered);
     QVERIFY(!invalidSrc);
     QVERIFY(!recovered);
+
+    // FQ99 isolation fixture: fabricate a stage ONLY to exercise the
+    // strongly typed DEVICE-admission gate; do NOT call it a real M16
+    // measured miss. Genuine measurements enter only via CandidateGate.
+    auto original=audio::AudioBuffer::create(
+        pcm.format(),audio::FrameDomainId::OUTPUT_RATE,
+        core::FrameIndex{0},pcm.frame_count());
+    QVERIFY(original);
+    for(std::size_t ch=0;ch<pcm.format().channel_count();++ch) {
+        auto from=pcm.channel(ch);
+        auto to=original.value()->mutable_view().channel(ch);
+        QVERIFY(from&&to);
+        for(std::size_t k=0;k<from.value()->size();++k)
+            (*to.value())[k]=(*from.value())[k];
+    }
+    render::TruePeakLimiterTerminalCandidate taggedPcm{
+        std::move(*original.value()),checked.terminal.applied_gain_frames,0,false};
+    const render::TruePeakLimiterMeasuredNonconformingCandidate fakeMiss{
+        std::move(taggedPcm),-7.0,0.44,0.51,
+        render::M17NonconformingReason::TRIM_GUARD_EXCEEDED,
+        analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED};
+    render::TruePeakLimiterOwnedMeasuredNonconformingCandidate fakeOwned{
+        manual,std::move(fakeMiss),*instance.value(),
+        limiter.value()->chain().revision(),*sourceRate.value(),
+        *frames.value(),manual->chain_revision(),false,{}};
+    using Staged=app::TerminalCandidateGate::StagedMeasuredCandidate;
+    const auto captured=std::make_shared<const Staged>(
+        Staged{std::move(fakeOwned),core::RealizationId{9001},manual});
+    const auto masterPcm=captured->rendered.terminal.terminal
+        .compensated_pcm.view();
+    auto converted=audio::materialize_monitoring_pcm_candidate(
+        masterPcm,*deviceRate.value(),*block.value(),
+        [](const audio::MonitoringPcmResourceProjection&)
+            ->core::Status {return core::Status::success();});
+    QVERIFY2(converted,converted?"":converted.error()->message().c_str());
+    auto unfinished=std::make_shared<const audio::MonitoringPcmCandidate>(
+        std::move(*converted.value()));
+    using app::admit_measured_device_audition_ticket;
+    QVERIFY(!admit_measured_device_audition_ticket(
+        captured,captured,unfinished,false));
+    QVERIFY(!admit_measured_device_audition_ticket(
+        captured,{},unfinished,true));
+    QVERIFY(!admit_measured_device_audition_ticket(
+        captured,captured,unfinished,true)); // missing endpoint witness
+    auto device=std::make_shared<audio::MonitoringPcmCandidate>(
+        audio::MonitoringPcmCandidate{
+            audio::AudioBuffer{},*sourceRate.value(),*deviceRate.value(),
+            *frames.value(),true,"fixture-endpoint-A"});
+    // Replace the empty buffer by a genuine independently converted owner.
+    // The gate must not allow an impossible stage to become verified.
+    QVERIFY(!admit_measured_device_audition_ticket(
+        captured,captured,device,true));
+    // A second properly typed real conversion is cheap (513 frames) and
+    // carries only an opaque simulated endpoint ID, never LIVE authority.
+    auto second=audio::materialize_monitoring_pcm_candidate(
+        masterPcm,*deviceRate.value(),*block.value());
+    QVERIFY(second);
+    second.value()->windows_prepared_endpoint_id="fixture-endpoint-A";
+    auto deviceOwned=std::make_shared<const audio::MonitoringPcmCandidate>(
+        std::move(*second.value()));
+    const auto ticket=admit_measured_device_audition_ticket(
+        captured,captured,deviceOwned,true);
+    QVERIFY(ticket);
+    QCOMPARE(ticket.value()->measured_master,captured);
+    QCOMPARE(ticket.value()->audition_device_pcm,deviceOwned);
+    QCOMPARE(ticket.value()->original_manual_realization_id.value,
+             std::uint64_t{9001});
+    QCOMPARE(ticket.value()->audition_device_pcm->device_rate,
+             *deviceRate.value());
+    QCOMPARE(ticket.value()->measured_master->rendered.output_rate,
+             *sourceRate.value());
+    QVERIFY(!ticket.value()->audition_device_pcm->windows_prepared_endpoint_id.empty());
 }
 
 void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSourceAndLoop()
