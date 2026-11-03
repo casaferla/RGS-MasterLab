@@ -951,6 +951,16 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
        &&(sourceCue<predecessor.loop->begin()
           ||sourceCue>=predecessor.loop->end()))
         sourceCue=predecessor.loop->begin();
+    // A failed Windows SOURCE/PROCESSED rate admission must not first
+    // retire the exact MASTER monitor and leave the user with NO_SOURCE.
+    // The callback probes endpoint formats and pinned FIR only, without
+    // touching the running monitor or changing any SOURCE/MASTER revision.
+    // This is NOT a guarantee against a later Windows hotplug; the old
+    // strict post-restore owner/loop proof remains mandatory.
+    if(manualRestorePreflight_) {
+        const auto preflight=manualRestorePreflight_(predecessor.manual);
+        if(!preflight)return preflight;
+    }
     const auto owned=monitorOwned_(candidate);
     if(!owned)return core::Status::failure(*owned.error());
     if(!*owned.value())
