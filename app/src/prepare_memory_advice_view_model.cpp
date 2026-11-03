@@ -459,6 +459,30 @@ QVariantList PrepareMemoryAdviceViewModel::prepare_time_rows() const
     return rows;
 }
 
+std::optional<std::pair<std::int64_t,std::int64_t>>
+PrepareMemoryAdviceViewModel::predicted_whole_prepare_us(
+    std::int64_t targetRate) const
+{
+    const auto revisions=activeRevisionProvider_
+        ?activeRevisionProvider_():std::nullopt;
+    const auto ceiling=activeCeilingProvider_
+        ?std::optional<double>{activeCeilingProvider_()}:std::nullopt;
+    if(!source_||!source_->has_source()||!revisions||!ceiling
+       ||!std::isfinite(*ceiling)
+       ||!m17_final_src_candidate_admissible(
+           source_->sample_rate_hz(),targetRate,originalQ0FamilyReady_))
+        return std::nullopt;
+    const auto range=hostTimingHistory_.predict(
+        source_->sample_rate_hz(),source_->frame_count(),
+        source_->channel_count(),targetRate,*ceiling,
+        revisions->terminal,revisions->parameters,
+        originalQ0FamilyReady_);
+    if(!range ||range->low_us<=0 ||range->high_us<range->low_us)
+        return std::nullopt;
+    return std::pair<std::int64_t,std::int64_t>{
+        range->low_us,range->high_us};
+}
+
 QVariantList PrepareMemoryAdviceViewModel::host_total_ranges() const
 {
     QVariantList rows;
