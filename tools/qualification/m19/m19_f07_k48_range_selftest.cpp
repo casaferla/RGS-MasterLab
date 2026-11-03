@@ -97,13 +97,20 @@ int main() {
     near(*tiny.sample_peak_dbfs,20.0*std::log10(microscopic),2e-12);
     near(*tiny.full_scope_rms_dbfs,20.0*std::log10(microscopic),2e-12);
 
-    // Grossly oversized finite PCM can overflow the current physical
-    // K-filter binary64 recurrence. The diagnostic must reject the result
-    // rather than fabricate a valid LUFS, -Inf, or clamped meter reading.
+    // Finite source PCM at huge gain may overflow the K-energy path.
+    // Keep three INDEPENDENT valid level metrics while rejecting LUFS.
+    // This is only a PRIVATE diagnostic status, not a canonical F09 enum.
     const double enormous=std::ldexp(1.0,512);
     std::vector<double> large(19200U,enormous);
-    m19::BasicLevelPreproduction invalid(48000U,1U,0U,large.size());
-    require(!invalid.push(large));
-    require(!invalid.finalize().has_value());
+    m19::BasicLevelPreproduction extreme(48000U,1U,0U,large.size());
+    require(extreme.push(large));
+    const auto isolated=extreme.finalize();
+    require(isolated.has_value());
+    require(!isolated->integrated_lufs);
+    require(isolated->loudness_state==
+            m19::LoudnessPreproductionState::k_numerically_undefined);
+    near(*isolated->sample_peak_dbfs,20.0*std::log10(enormous),2e-12);
+    near(*isolated->full_scope_rms_dbfs,20.0*std::log10(enormous),2e-12);
+    near(*isolated->sample_peak_crest_db,0.0,2e-12);
     return 0;
 }
