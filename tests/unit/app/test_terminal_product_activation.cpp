@@ -3205,6 +3205,36 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
     QVERIFY(!product.verified_master_rate_for_monitoring());
+    QVERIFY(!monitorUi.monitor_installed());
+    QVERIFY(monitorUi.monitor_exclusive());
+    QCOMPARE(monitorUi.return_target_text(),
+        QStringLiteral("Retry Return to Source"));
+    QVERIFY(monitorUi.status_text().contains(
+        QStringLiteral("MASTER PCM RETAINED")));
+    // A Qt SOURCE-loop changed signal is NOT a user request to retry
+    // a just-failed physical Windows sink. No hidden device mutation.
+    product.cancel_pending_on_region_change();
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"));
+    QCOMPARE(sourceRestoreProbes,std::size_t{3});
+    QCOMPARE(manualRestores,std::size_t{1});
+    QVERIFY(candidates.staged());
+    // If Windows/another application installs any other sink between the
+    // failed Return and our explicit retry, don't clear it or borrow it.
+    device->state=core::PlaybackState::STOPPED;
+    device->duration=*frames.value();
+    device->audibleRealization={
+        core::AudibleHandoffPhase::NEW,core::RealizationId{0xABCD}};
+    const auto foreignRefused=product.return_private_monitor_to_manual();
+    QVERIFY(!foreignRefused);
+    QCOMPARE(foreignRefused.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(sourceRestoreProbes,std::size_t{3});
+    QCOMPARE(manualRestores,std::size_t{1});
+    QCOMPARE(monitorRetires,std::size_t{1});
+    QCOMPARE(device->audibleRealization.realizationId,
+        std::optional{core::RealizationId{0xABCD}});
+    // Only the fake physical system (not M17) removes that foreign owner.
+    QVERIFY(device->clear());
     sourceRestoreSupported=false;
     const auto refusedRetry=product.return_private_monitor_to_manual();
     QVERIFY(!refusedRetry);
