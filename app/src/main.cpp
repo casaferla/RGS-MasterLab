@@ -544,6 +544,13 @@ int main(int argc, char* argv[])
                 terminalLimiterState.chain().revision(),
                 terminalLimiterState.parameter_revision()};
         });
+    // The same host-advice policy gates whole-Prepare ranges: >=3 accepted
+    // complete runs, matching active source/rate/ceiling/revisions. No
+    // synthetic CPU benchmark is a stand-in for Final SRC or M16 cost.
+    terminalProductActivation.set_host_total_eta_provider(
+        [&prepareRateAdvisor](std::int64_t targetRate) {
+            return prepareRateAdvisor.predicted_whole_prepare_us(targetRate);
+        });
     QObject::connect(&terminalLimiterViewModel,
         &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
         &prepareRateAdvisor,
