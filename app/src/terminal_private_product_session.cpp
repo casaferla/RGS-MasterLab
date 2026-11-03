@@ -1196,13 +1196,21 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
     if(reconciledSourceLoop) {
         // The callback must act on the restored original MANUAL, never on
         // the anonymous monitor. Its SOURCE region is independently checked.
-        const auto committed=sourceLoopReconcile_(*reconciledSourceLoop);
-        if(!committed) {
-            monitorTransitioning_=false;
-            renderer_->invalidate();
-            failed(*committed.error());
-            return committed;
-        }
+        const auto committed=[&]()->core::Status {
+            try {
+                return sourceLoopReconcile_(*reconciledSourceLoop);
+            } catch(const std::bad_alloc&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "MONITOR_RETURN_LOOP_RECONCILE_OUT_OF_MEMORY"});
+            } catch(const std::exception&) {
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "MONITOR_RETURN_LOOP_RECONCILE_EXCEPTION"});
+            }
+        }();
+        if(!committed)
+            return preserveReturnFailure(*committed.error());
         const auto region=sourceLoop_();
         const auto loopSink=transport_->playback_snapshot();
         if(!region||*region!=*reconciledSourceLoop
@@ -1215,10 +1223,7 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
            ||loopSink.value()->duration
                !=std::optional{predecessor.manual->view().frame_count()}
            ||loopSink.value()->loop!=reconciledSourceLoop) {
-            monitorTransitioning_=false;
-            renderer_->invalidate();
-            failed(rejected("MONITOR_RETURN_SOURCE_LOOP_EPOCH_MISMATCH"));
-            return core::Status::failure(rejected(
+            return preserveReturnFailure(rejected(
                 "MONITOR_RETURN_SOURCE_LOOP_EPOCH_MISMATCH"));
         }
     }
