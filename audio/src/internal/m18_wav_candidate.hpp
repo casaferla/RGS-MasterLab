@@ -20,7 +20,7 @@ namespace rgsml::audio::internal {
 
 enum class M18WavEncoding : std::uint8_t { PCM24, IEEE_FLOAT32 };
 enum class M18WavStatus : std::uint8_t {
-    OK, INVALID_SPEC, OVERFLOW, MEMORY_LIMIT,
+    OK, INVALID_SPEC, SIZE_OVERFLOW, MEMORY_LIMIT,
     CODEC_REJECTED, ALLOCATION_FAILED
 };
 struct M18WavSpec {
@@ -64,16 +64,16 @@ struct M18WavPlanResult {
     const std::uint64_t align=bytes_per_sample*spec.channels;
     const std::uint64_t bytes_per_sec=align*spec.sample_rate;
     if(align>UINT16_MAX || bytes_per_sec>UINT32_MAX)
-        return {M18WavStatus::OVERFLOW,{}};
+        return {M18WavStatus::SIZE_OVERFLOW,{}};
     if(spec.frame_count>UINT64_MAX/align)
-        return {M18WavStatus::OVERFLOW,{}};
+        return {M18WavStatus::SIZE_OVERFLOW,{}};
     const std::uint64_t data_bytes=spec.frame_count*align;
     const std::uint64_t riff_overhead=
         spec.encoding==M18WavEncoding::PCM24 ? 44U:58U;
     const std::uint64_t rf64_overhead=
         spec.encoding==M18WavEncoding::PCM24 ? 80U:94U;
     if(data_bytes>UINT64_MAX-rf64_overhead)
-        return {M18WavStatus::OVERFLOW,{}};
+        return {M18WavStatus::SIZE_OVERFLOW,{}};
     const bool use_rf64=data_bytes>UINT32_C(0xFFFFFFFE)
         || data_bytes>UINT64_C(0xFFFFFFFE)-(riff_overhead-8U);
     const auto overhead=use_rf64?rf64_overhead:riff_overhead;
@@ -174,7 +174,7 @@ struct M18WavCandidate {
     if(p.status!=M18WavStatus::OK)return {p.status};
     if(spec.frame_count!=0U && spec.frame_count-1U>
         UINT64_MAX-first_absolute_output_frame)
-        return {M18WavStatus::OVERFLOW};
+        return {M18WavStatus::SIZE_OVERFLOW};
     if(spec.frame_count!=interleaved.size()/spec.channels
        ||interleaved.size()%spec.channels!=0U)
         return {M18WavStatus::INVALID_SPEC};
