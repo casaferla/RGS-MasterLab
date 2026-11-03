@@ -83,6 +83,7 @@ void TerminalProductActivationCoordinator::fail_closed(const QString& reason)
     renderHeartbeat_.stop();
     corePhaseObserved_=false;
     view_->clearPreparationProgress();
+    activeWholeEtaUs_.reset();
     waitingForManualPreview_=false;
     manualPreviewInProgress_=false;
     transitioning_=true;
@@ -161,6 +162,10 @@ void TerminalProductActivationCoordinator::begin_activation()
         return;
     }
     intent_=*captured.value();
+    activeWholeEtaUs_.reset();
+    if(hostTotalEtaProvider_ &&masterRateState_)
+        activeWholeEtaUs_=hostTotalEtaProvider_(
+            masterRateState_->master_rate_hz());
     transitioning_=true;
     view_->clearAudioError();
     // Keep the DSP-chain summary readable and show time spent waiting for
@@ -243,9 +248,40 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
     double fraction=0.0;
     bool determinate=false;
     QString eta;
+    const auto seconds=renderElapsed_.elapsed()/1000;
+    const auto elapsedText=QStringLiteral("Elapsed %1m %2s")
+        .arg(seconds/60).arg(seconds%60,2,10,QLatin1Char('0'));
+    if(activeWholeEtaUs_) {
+        const auto lo=activeWholeEtaUs_->first/1000;
+        const auto hi=activeWholeEtaUs_->second/1000;
+        const auto elapsed=renderElapsed_.elapsed();
+        if(elapsed>hi) {
+            eta=QStringLiteral("Total estimate exceeded · ")
+                +elapsedText;
+        } else {
+            const auto remainingLo=std::max<std::int64_t>(0,lo-elapsed);
+            const auto remainingHi=std::max<std::int64_t>(0,hi-elapsed);
+            const auto fmt=[](std::int64_t ms) {
+                const auto s=(ms+999)/1000;
+                return QStringLiteral("%1m %2s")
+                    .arg(s/60).arg(s%60,2,10,QLatin1Char('0'));
+            };
+            eta=elapsedText+QStringLiteral(" · Total remaining ~")
+                +fmt(remainingLo)+QStringLiteral("–")+fmt(remainingHi);
+        }
+    } else {
+        eta=elapsedText+QStringLiteral(" · Total ETA learning");
+    }
     switch(progress.phase) {
     case Phase::SRC:
-        stage=QStringLiteral("Output-rate conversion");break;
+        stage=QStringLiteral("Final SRC");
+        if(progress.total_frames>0 &&progress.processed_frames>=0
+           &&progress.processed_frames<=progress.total_frames) {
+            determinate=true;
+            fraction=std::min(0.99,static_cast<double>(progress.processed_frames)
+                /static_cast<double>(progress.total_frames));
+        }
+        break;
     case Phase::M17_CORE:
         stage=QStringLiteral("M17 DSP · processed frames");
         if(progress.total_frames>0 && progress.processed_frames>=0
@@ -260,17 +296,8 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
                 corePhaseObserved_=true;
                 corePhaseElapsed_.start();
             }
-            if(corePhaseElapsed_.elapsed()>=5000
-               &&progress.processed_frames>0
-               &&progress.processed_frames<progress.total_frames) {
-                const auto remaining=static_cast<double>(corePhaseElapsed_.elapsed())
-                    *(static_cast<double>(progress.total_frames-
-                       progress.processed_frames)
-                      /static_cast<double>(progress.processed_frames));
-                if(std::isfinite(remaining)&&remaining>=0.0&&remaining<36000000.0)
-                    eta=QStringLiteral("M17 stage ~%1s remaining")
-                            .arg(static_cast<qint64>(remaining/1000));
-            }
+            // Stage percentage is measured; total ETA comes only from
+            // independently accepted complete historical Prepare timings.
         }
         break;
     case Phase::M16_PRIMARY:
@@ -283,10 +310,9 @@ void TerminalProductActivationCoordinator::update_render_elapsed()
         stage=QStringLiteral("Checking publication ownership");break;
     case Phase::IDLE:break;
     }
-    // All other stages have no honest frame denominator yet. Show an
-    // indeterminate bar with stage text, never a guessed total ETA.
+    // NEVER present a stage percentage as a full-Prepare fraction.
+    // Total ETA (if available) includes SRC, M17 and M16 verification.
     view_->setPreparationProgress(stage,fraction,determinate,eta);
-    const auto seconds=renderElapsed_.elapsed()/1000;
     view_->setAudioStatus(QStringLiteral("Preparing · %1s").arg(seconds));
 }
 
@@ -546,6 +572,7 @@ void TerminalProductActivationCoordinator::deactivate(bool keepActiveIntent)
     if(transitioning_)return;
     view_->clearVerificationTrim();
     renderHeartbeat_.stop();
+    activeWholeEtaUs_.reset();
     transitioning_=true;
     const bool hadActiveOutput=deviceActive_;
     if(intent_ && deviceActive_) {
