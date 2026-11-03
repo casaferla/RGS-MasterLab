@@ -2873,6 +2873,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     std::size_t monitorInstalls=0;
     std::size_t monitorRetires=0;
     std::size_t manualRestores=0;
+    int injectedManualRestoreFailure=0;
     std::optional<core::FrameRange> monitorMasterLoop;
     int injectedMonitorInstallFailure=0;
     int injectedMonitorRetireFailure=0;
@@ -2929,6 +2930,12 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         [&](auto manual,core::RealizationId id,core::FrameIndex cue)
             ->core::Status {
             ++manualRestores;
+            if(injectedManualRestoreFailure>0) {
+                --injectedManualRestoreFailure;
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::IoFailure,
+                    "TEST_WINDOWS_SOURCE_INSTALL_DENIED_AFTER_RETIRE"});
+            }
             return selector.restore_manual_processed_after_terminal(
                 std::move(manual),id,cue);
         });
@@ -3178,10 +3185,40 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(deviceMonitor,privateMonitor);
     sourceRestoreThrows=false;
     sourceRestoreSupported=true;
-    QVERIFY(product.return_private_monitor_to_manual());
+    injectedManualRestoreFailure=1;
+    // FC100 / blocker #73: the device passed *preflight*, but the real
+    // Windows SOURCE install refused only AFTER exact monitor retirement.
+    // Neither a second lost Prepare nor a false verified audible sink
+    // may follow. A bounded retry must re-probe the physical endpoint.
+    const auto retiredButSourceRefused=product.return_private_monitor_to_manual();
+    QVERIFY(!retiredButSourceRefused);
+    QCOMPARE(retiredButSourceRefused.error()->code(),core::ErrorCode::IoFailure);
     QCOMPARE(sourceRestoreProbes,std::size_t{3});
     QCOMPARE(monitorRetires,std::size_t{1});
     QCOMPARE(manualRestores,std::size_t{1});
+    QVERIFY(!deviceMonitor);
+    QCOMPARE(device->state,core::PlaybackState::NO_SOURCE);
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"));
+    QVERIFY(product.monitoring_transaction_active());
+    QVERIFY(candidates.staged());
+    QVERIFY(!product.private_id());
+    QVERIFY(!audioGate.has_session());
+    QVERIFY(!product.verified_master_rate_for_monitoring());
+    sourceRestoreSupported=false;
+    const auto refusedRetry=product.return_private_monitor_to_manual();
+    QVERIFY(!refusedRetry);
+    QCOMPARE(refusedRetry.error()->code(),
+        core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(sourceRestoreProbes,std::size_t{4});
+    QCOMPARE(manualRestores,std::size_t{1});
+    QCOMPARE(monitorRetires,std::size_t{1});
+    QVERIFY(candidates.staged());
+    sourceRestoreSupported=true;
+    QVERIFY(monitorUi.returnManual()); // the sole recovery UI operation
+    QCOMPARE(sourceRestoreProbes,std::size_t{5});
+    QCOMPARE(monitorRetires,std::size_t{1});
+    QCOMPARE(manualRestores,std::size_t{2});
     QCOMPARE(product.status(),
         QStringLiteral("MASTER_READY_MONITOR_PENDING"));
     QVERIFY(!deviceMonitor);
