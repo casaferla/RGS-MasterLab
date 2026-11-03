@@ -37,6 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/qualification/m18/test_m18_independent_reference.py
+          python3 tools/qualification/m18/test_m18_statistical_reference.py
           python3 tools/qualification/m18/test_m18_wav_reference.py
           python3 tools/qualification/m18/test_m18_wav_candidate_auditor.py
       - name: Compile and run independent M18 oracle · Debug
@@ -57,6 +58,18 @@ jobs:
             tools/qualification/m18/m18_portable_selftest.cpp \
             -o "$RUNNER_TEMP/m18-preproduction-release"
           "$RUNNER_TEMP/m18-preproduction-release"
+
+      - name: M18 TPDF and total error statistical screen · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror \
+              -I audio/src \
+              tools/qualification/m18/m18_statistical_selftest.cpp \
+              -o "$RUNNER_TEMP/m18-statistics-linux"
+            "$RUNNER_TEMP/m18-statistics-linux"
+          done
 
       - name: M18 streaming WAV and private disk transaction · Linux Debug + Release
         shell: bash
@@ -117,6 +130,29 @@ jobs:
           & "$env:RUNNER_TEMP/m18-preproduction-release.exe"
           if ($LASTEXITCODE -ne 0) { throw "M18_RELEASE_ORACLE_FAILED" }
 
+      - name: M18 TPDF and total error statistical screen · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-statistics-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus `
+              /Iaudio/src `
+              tools/qualification/m18/m18_statistical_selftest.cpp `
+              "/Fe:$env:RUNNER_TEMP/m18-statistics-$mode.exe" *> $report
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+              Get-Content $report -Tail 70
+              throw "M18_STATISTICS_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m18-statistics-$mode.exe" >> $report 2>&1
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+              Get-Content $report -Tail 40
+              throw "M18_STATISTICS_FAILED_$mode"
+            }
+          }
+
       - name: M18 streaming WAV and private disk transaction · Windows Debug + Release
         shell: pwsh
         run: |
@@ -152,5 +188,6 @@ jobs:
             ${{ runner.temp }}/m18-windows-debug-bounded.txt
             ${{ runner.temp }}/m18-windows-execution.txt
             ${{ runner.temp }}/m18-streaming-windows-bounded.txt
+            ${{ runner.temp }}/m18-statistics-windows-bounded.txt
           if-no-files-found: ignore
           retention-days: 7
