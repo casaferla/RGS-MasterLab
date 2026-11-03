@@ -12,6 +12,7 @@
 #include <QFontDatabase>
 #include <QRawFont>
 #include <QSet>
+#include <QFileInfo>
 #include <QString>
 #include <iostream>
 #include <memory>
@@ -31,12 +32,24 @@ int main(int argc,char** argv){
   // Font atlas guard is only for the actual Windows screenshot lane.
   // Linux offscreen Qt does not require Microsoft's Arial to test QML.
   if(!qEnvironmentVariable("M21_SCREENSHOT_PATH").isEmpty()){
-    const auto families=QFontDatabase::families();
-    const QString family=families.contains(QStringLiteral("Arial")) ?
-       QStringLiteral("Arial") :
-       families.contains(QStringLiteral("Segoe UI")) ?
-       QStringLiteral("Segoe UI") : QString{};
-    check(!family.isEmpty(),"M21_WINDOWS_FONT_FAMILY_NOT_REGISTERED");
+    // Offscreen Windows Qt may not auto-enumerate system font families.
+    // Register a concrete installed system font into the Qt font database.
+    const QString arialPath=QStringLiteral("C:/Windows/Fonts/arial.ttf");
+    std::cerr<<"M21_FONT_DIAG arial-file-exists="<<QFileInfo::exists(arialPath)<<'\n';
+    const auto fontId=QFontDatabase::addApplicationFont(arialPath);
+    const auto fromFile=fontId>=0 ?
+        QFontDatabase::applicationFontFamilies(fontId) : QStringList{};
+    const auto available=QFontDatabase::families();
+    std::cerr<<"M21_FONT_DIAG loaded-id="<<fontId
+             <<" loaded-count="<<fromFile.size()
+             <<" system-count="<<available.size()<<'\n';
+    const QString family=!fromFile.isEmpty()?fromFile.front() :
+        available.contains(QStringLiteral("Arial")) ?
+        QStringLiteral("Arial") :
+        available.contains(QStringLiteral("Segoe UI")) ?
+        QStringLiteral("Segoe UI") : QString{};
+    check(!family.isEmpty(),"M21_WINDOWS_FONT_LOAD_FAILED");
+    std::cerr<<"M21_FONT_DIAG family="<<family.toStdString()<<'\n';
     QFont actualFont(family);
     actualFont.setPointSize(10);
     app.setFont(actualFont);
