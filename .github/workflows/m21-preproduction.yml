@@ -157,6 +157,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "M21_QT_WIN_CONFIGURE" }
           cmake --build "$env:RUNNER_TEMP/m21-qt-build" --config Release --parallel 3
           if ($LASTEXITCODE -ne 0) { throw "M21_QT_WIN_BUILD" }
+          # Match the successful M20 Qt Windows runtime: make the actual
+          # Qt6 DLLs reachable before executing the isolated smoke binary.
+          $env:PATH = "$env:RUNNER_TEMP/m21qt/6.8.3/msvc2022_64/bin;$env:PATH"
           & "$env:RUNNER_TEMP/m21-qt-build/m21_qt_preview_smoke.exe"
           if ($LASTEXITCODE -ne 0) { throw "M21_QT_WIN_SMOKE" }
           Write-Output M21_QT_WINDOWS_PRIVATE_PASS_NOT_GATE_M
