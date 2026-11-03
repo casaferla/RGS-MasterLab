@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -172,6 +173,19 @@ inline Comparison compose(const std::array<std::optional<Snapshot>,3>& snapshots
 // Independent producer generation tokens, NEVER fabricated from UI selection.
 // Advancing only the changed column preserves other columns and marks older
 // published evidence STALE; no stale async result can be installed as current.
+// Invariant-only checks for private preproduction. Production status/epoch
+// ownership remains a separate Phase-6 canonical contract.
+inline bool supported_private_rate(std::uint32_t fs) {
+    return fs==44100U || fs==48000U || fs==88200U ||
+           fs==96000U || fs==176400U || fs==192000U;
+}
+inline bool valid_cell_storage(const Cell& c) {
+    const bool numeric=c.quality==Quality::present ||
+                       c.quality==Quality::low_confidence;
+    return numeric ?
+      c.unrounded && std::isfinite(*c.unrounded) :
+      !c.unrounded;
+}
 class PrivatePublicationGuard {
 public:
     bool expect(Column column,std::uint64_t monotonic_token) {
@@ -183,23 +197,40 @@ public:
         return true;
     }
     bool publish(const Snapshot& incoming) {
+        // One immutable authoritative result per producer generation. A late
+        // second completion in the SAME epoch cannot overwrite first-current.
+        // Re-analyze must first mint a fresh producer generation via expect().
         const auto i=static_cast<std::size_t>(incoming.column);
         if(i>=3 || expected_[i]==0 || incoming.generation_token!=expected_[i] ||
            incoming.lifecycle!=Lifecycle::current ||
            incoming.resource_identity.empty() || incoming.analysis_scope_label.empty() ||
-           incoming.scope_frames==0 || incoming.sample_rate_hz==0)
+           incoming.scope_frames==0 || incoming.sample_rate_hz==0 ||
+           (incoming.analysis_scope_label!="Full Track" &&
+            incoming.analysis_scope_label!="Region") ||
+           incoming.absolute_scope_begin>
+               (std::numeric_limits<std::uint64_t>::max)()-incoming.scope_frames)
+            return false;
+        if(slots_[i] && slots_[i]->lifecycle==Lifecycle::current &&
+           slots_[i]->generation_token==incoming.generation_token)
+            return false;
+        if(!supported_private_rate(incoming.sample_rate_hz))
             return false;
         for(const auto& c:incoming.metrics)
-            if((c.quality==Quality::present || c.quality==Quality::low_confidence) &&
-               (!c.unrounded || !std::isfinite(*c.unrounded))) return false;
+            if(!valid_cell_storage(c)) return false;
         for(const auto& b:incoming.tonal_profile)
-            if((b.normalized_shape_db.quality==Quality::present ||
-                b.normalized_shape_db.quality==Quality::low_confidence) &&
-               (!b.normalized_shape_db.unrounded ||
-                !std::isfinite(*b.normalized_shape_db.unrounded))) return false;
+            if(!valid_cell_storage(b.normalized_shape_db) ||
+               (!b.in_common_support && b.normalized_shape_db.unrounded))
+                return false;
+        for(const auto& p:incoming.average_spectrum)
+            if(!std::isfinite(p.hz) || p.hz<0 ||
+               !valid_cell_storage(p.power_density) ||
+               (p.power_density.unrounded && *p.power_density.unrounded<0))
+                return false;
         if(incoming.profile_denominator!=0 &&
            incoming.profile_denominator!=3 && incoming.profile_denominator!=12) return false;
-        if(!incoming.tonal_profile.empty() && incoming.profile_denominator==0) return false;
+        if(!incoming.tonal_profile.empty() &&
+           (incoming.profile_denominator==0 ||
+            incoming.common_comparison_support_id.empty())) return false;
         slots_[i]=incoming;
         return true;
     }
