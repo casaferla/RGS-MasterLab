@@ -301,8 +301,23 @@ void TerminalLimiterViewModel::setVerifiedTrimObservation(
 
 void TerminalLimiterViewModel::setAudioStatus(const QString& value)
 {
-    if(audioStatus_==value)return;
+    // A new SOURCE, rate, parameter or playback phase must never leave an
+    // old GUI device-admission hint enabled. Backend permission remains the
+    // fresh, independent click-time check.
+    const bool retainHint=value.startsWith(QStringLiteral("NON-CONFORMING"));
+    const bool resetHint=!retainHint &&nonconformingDirectPreviewAvailable_;
+    if(audioStatus_==value &&!resetHint)return;
     audioStatus_=value;
+    if(resetHint)nonconformingDirectPreviewAvailable_=false;
+    emit changed();
+}
+
+void TerminalLimiterViewModel::setNonconformingDirectPreviewAvailable(bool available)
+{
+    const bool next=available
+        &&audioStatus_.startsWith(QStringLiteral("NON-CONFORMING"));
+    if(nonconformingDirectPreviewAvailable_==next)return;
+    nonconformingDirectPreviewAvailable_=next;
     emit changed();
 }
 
