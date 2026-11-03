@@ -92,6 +92,7 @@ private:
     bool srcPhaseObserved_{false};
     bool m16PhaseObserved_{false};
     std::int64_t observedCoreMs_{0};
+    std::int64_t observedPrimaryM16Ms_{0};
     render::TerminalRenderProgressPhase lastObservedM16Phase_{
         render::TerminalRenderProgressPhase::IDLE};
     QTimer renderHeartbeat_;
