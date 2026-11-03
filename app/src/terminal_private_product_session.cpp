@@ -1169,8 +1169,20 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         emit changed();
         return core::Status::failure(error);
     };
-    const auto restored=manualRestore_(
-        predecessor.manual,predecessor.manualId,sourceCue);
+    const auto restored=[&]()->core::Status {
+        try {
+            return manualRestore_(
+                predecessor.manual,predecessor.manualId,sourceCue);
+        } catch(const std::bad_alloc&) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::IoFailure,
+                "MONITOR_RETURN_SOURCE_INSTALL_OUT_OF_MEMORY_AFTER_RETIRE"});
+        } catch(const std::exception&) {
+            return core::Status::failure(core::Error{
+                core::ErrorCode::InvalidState,
+                "MONITOR_RETURN_SOURCE_INSTALL_EXCEPTION_AFTER_RETIRE"});
+        }
+    }();
     if(!restored)
         return preserveReturnFailure(*restored.error());
     const auto after=transport_->playback_snapshot();
