@@ -460,6 +460,28 @@ QVariantList PrepareMemoryAdviceViewModel::prepare_time_rows() const
 }
 
 std::optional<std::pair<std::int64_t,std::int64_t>>
+PrepareMemoryAdviceViewModel::provisional_dsp_compute_us(
+    std::int64_t targetRate) const
+{
+    const auto ceiling=activeCeilingProvider_
+        ?std::optional<double>{activeCeilingProvider_()}:std::nullopt;
+    if(!source_||!source_->has_source()||!ceiling
+       ||!std::isfinite(*ceiling)||!calibrationValid_
+       ||calibratedCeiling_!=*ceiling
+       ||!m17_final_src_candidate_admissible(
+           source_->sample_rate_hz(),targetRate,originalQ0FamilyReady_))
+        return std::nullopt;
+    const auto it=std::find(kMasterRates.begin(),kMasterRates.end(),targetRate);
+    if(it==kMasterRates.end())return std::nullopt;
+    const auto& probe=calibratedDspIntervals_[
+        static_cast<std::size_t>(it-kMasterRates.begin())];
+    if(!probe.valid||probe.lowUs<=0||probe.highUs<probe.lowUs)
+        return std::nullopt;
+    return std::pair<std::int64_t,std::int64_t>{
+        probe.lowUs,probe.highUs};
+}
+
+std::optional<std::pair<std::int64_t,std::int64_t>>
 PrepareMemoryAdviceViewModel::predicted_whole_prepare_us(
     std::int64_t targetRate) const
 {
@@ -572,6 +594,7 @@ void PrepareMemoryAdviceViewModel::clear_calibration(const QString& message)
     completedCalibrationRates_=0;
     calibrationValid_=false;
     dspEstimates_.clear();
+    calibratedDspIntervals_.fill(DspProbeEstimate{});
     calibratedCeiling_=0.0;
     calibrationStatus_=message;
     emit calibrationChanged();
@@ -750,6 +773,7 @@ void PrepareMemoryAdviceViewModel::finish_calibration(
         rows.append(row);
     }
     dspEstimates_=std::move(rows);
+    calibratedDspIntervals_=results;
     calibratedCeiling_=ceiling;
     calibrationRunning_=false;
     completedCalibrationRates_=6;

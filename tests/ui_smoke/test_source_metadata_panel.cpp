@@ -1107,6 +1107,7 @@ Window {
             auto* toggle=find_child_by_name(host,
                 QStringLiteral("m17RateAndTimesButton"));
             QVERIFY(toggle);
+            QVERIFY(!popup->property("modal").toBool());
             QVERIFY(QMetaObject::invokeMethod(toggle,"clicked"));
             QTRY_VERIFY_WITH_TIMEOUT(!popup->property("opened").toBool(),2000);
             QVERIFY(QMetaObject::invokeMethod(toggle,"clicked"));

@@ -144,8 +144,11 @@ Item {
         TruePeakReadoutCard {
             objectName: "truePeakFullResourceCard"
             roomyLimiterReadout: true
-            additionalTooltip: root.limiterControlsIncluded
-                ? root.provenanceDetails : ""
+            additionalTooltip: root.hasMeasuredCeilingMiss
+                ? "Ceiling " + root.limiterViewModel.nonconformingTargetText
+                    + "\n" + root.provenanceDetails
+                : root.limiterControlsIncluded
+                    ? root.provenanceDetails : ""
             detailTooltipEnabled: root.showProvenanceTooltips
             Layout.fillHeight: false
             useFamilyAccent: root.useFamilyAccent
@@ -157,8 +160,9 @@ Item {
             // The complete-source M16 analysis does NOT become a complete
             // post-M17 peak certificate when Ceiling changes. Keep it
             // independent from verified post-limiter RECENT/HOLD evidence.
+            // Keep the complete scope readable; outcome appears in detail.
             heading: root.hasMeasuredCeilingMiss
-                ? "COMPLETE POST-LIMITER TP · NON-CONFORMING"
+                ? "COMPLETE POST-LIMITER TP"
                 : root.limiterControlsIncluded
                     ? "COMPLETE PRE-LIMITER TP"
                     : "COMPLETE PROCESSED RESOURCE"
@@ -172,8 +176,8 @@ Item {
             // PRE-LIMITER scope is explicit in heading and full tooltip;
             // long provisional status strings must not overflow the card.
             detail: root.hasMeasuredCeilingMiss
-                ? "OVER " + root.limiterViewModel.nonconformingExcessText
-                    + " · target " + root.limiterViewModel.nonconformingTargetText
+                ? "NON-CONFORMING · OVER "
+                    + root.limiterViewModel.nonconformingExcessText
                 : root.hasMeasurement
                     ? "Peak channel: " + root.measurementProvider.channelText
                     : "No complete, source-bound measurement"

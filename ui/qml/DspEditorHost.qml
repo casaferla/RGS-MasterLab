@@ -732,14 +732,29 @@ Rectangle {
             color: "#101F30"
             border.color: "#27465F"
             border.width: 1
-            // Uniform module-family top rule; do NOT make an all-copper frame.
-            Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: 1
-                height: 2
-                color: root.activeFamilyAccent
+            // The copper stroke follows the *rounded* outer frame,
+            // eliminating the displaced square-ended line at 150% DPI.
+            Canvas {
+                id: copperTopArc
+                anchors.fill: parent
+                onPaint: {
+                    const c = getContext("2d")
+                    c.clearRect(0, 0, width, height)
+                    c.beginPath()
+                    c.moveTo(1, 7)
+                    c.quadraticCurveTo(1, 1, 7, 1)
+                    c.lineTo(width - 7, 1)
+                    c.quadraticCurveTo(width - 1, 1, width - 1, 7)
+                    c.lineWidth = 2
+                    c.strokeStyle = root.activeFamilyAccent.toString()
+                    c.stroke()
+                }
+                Connections {
+                    target: root
+                    function onActiveFamilyAccentChanged() {
+                        copperTopArc.requestPaint()
+                    }
+                }
             }
         }
         contentItem: Item {

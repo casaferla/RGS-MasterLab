@@ -551,6 +551,10 @@ int main(int argc, char* argv[])
         [&prepareRateAdvisor](std::int64_t targetRate) {
             return prepareRateAdvisor.predicted_whole_prepare_us(targetRate);
         });
+    terminalProductActivation.set_provisional_dsp_eta_provider(
+        [&prepareRateAdvisor](std::int64_t targetRate) {
+            return prepareRateAdvisor.provisional_dsp_compute_us(targetRate);
+        });
     QObject::connect(&terminalLimiterViewModel,
         &rgsml::app::TerminalLimiterViewModel::acceptedStateChanged,
         &prepareRateAdvisor,

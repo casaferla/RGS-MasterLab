@@ -41,6 +41,9 @@ public:
     void set_host_total_eta_provider(HostTotalEtaProvider provider) {
         hostTotalEtaProvider_=std::move(provider);
     }
+    void set_provisional_dsp_eta_provider(HostTotalEtaProvider provider) {
+        provisionalDspEtaProvider_=std::move(provider);
+    }
     // Keep Active user intent across ordinary accepted MANUAL rerenders and
     // SOURCE Loop Region edits; never claim terminal PCM during preparation.
     void manual_preview_changed(const QString& previewStatus);
@@ -83,9 +86,16 @@ private:
     std::uint64_t lastParameterRevision_{0};
     QElapsedTimer renderElapsed_;
     QElapsedTimer corePhaseElapsed_;
+    QElapsedTimer srcPhaseElapsed_;
+    QElapsedTimer m16PhaseElapsed_;
     bool corePhaseObserved_{false};
+    bool srcPhaseObserved_{false};
+    bool m16PhaseObserved_{false};
+    std::int64_t observedCoreMs_{0};
     QTimer renderHeartbeat_;
     HostTotalEtaProvider hostTotalEtaProvider_;
+    HostTotalEtaProvider provisionalDspEtaProvider_;
     std::optional<std::pair<std::int64_t,std::int64_t>> activeWholeEtaUs_;
+    std::optional<std::pair<std::int64_t,std::int64_t>> activeDspEtaUs_;
 };
 } // namespace rgsml::app

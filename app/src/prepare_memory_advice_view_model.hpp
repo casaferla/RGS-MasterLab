@@ -79,6 +79,10 @@ public:
     // Typed, >=3 accepted whole-Prepare host range. UI only, no admission.
     [[nodiscard]] std::optional<std::pair<std::int64_t,std::int64_t>>
         predicted_whole_prepare_us(std::int64_t target_rate_hz) const;
+    // An observational M17+M16 CPU projection for this source and ceiling.
+    // Never an accepted whole-Prepare duration or permission to render.
+    [[nodiscard]] std::optional<std::pair<std::int64_t,std::int64_t>>
+        provisional_dsp_compute_us(std::int64_t target_rate_hz) const;
     using CeilingProvider=std::function<double()>;
     void set_active_ceiling_provider(CeilingProvider provider) {
         activeCeilingProvider_=std::move(provider);
@@ -133,6 +137,7 @@ private:
     bool calibrationValid_{false};
     double calibratedCeiling_{0.0};
     QVariantList dspEstimates_;
+    std::array<DspProbeEstimate,6> calibratedDspIntervals_{};
     AcceptedPrepareObservationHistory actualHistory_;
     AcceptedPrepareHostTimingHistory hostTimingHistory_;
     CeilingProvider activeCeilingProvider_;
