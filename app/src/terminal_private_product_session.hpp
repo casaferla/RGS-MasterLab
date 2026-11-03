@@ -2,6 +2,7 @@
 #include "terminal_private_render_controller.hpp"
 #include "terminal_private_publication_coordinator.hpp"
 #include "terminal_candidate_gate.hpp"
+#include "terminal_measured_device_audition_ticket.hpp"
 #include "playback_transport_view_model.hpp"
 #include <rgsml/platform/windows/windows_audio_playback_service.hpp>
 #include <QObject>
@@ -226,6 +227,19 @@ public:
     // A direct Preview Anyway must therefore match the freshly probed
     // exact device rate without modifying the retained measured candidate.
     [[nodiscard]] bool current_measured_matches_device_for_preview() const;
+    // FQ99: typed, STILL NON-AUDIBLE cross-rate DEVICE capture/admission.
+    // Only the UI OWNER thread may observe a live measured stage. A stale
+    // conversion completion must never borrow the verified Master Audition
+    // ticket, mutate the sink or assert M16 LIVE provenance.
+    using MeasuredMasterCapture=
+        std::shared_ptr<const TerminalCandidateGate::StagedMeasuredCandidate>;
+    [[nodiscard]] MeasuredMasterCapture
+    capture_measured_master_for_device_conversion() const;
+    [[nodiscard]] core::Result<MeasuredDeviceAuditionTicket>
+    admit_measured_device_conversion(
+        MeasuredMasterCapture captured,
+        std::shared_ptr<const audio::MonitoringPcmCandidate> device,
+        bool explicitUserRequest) const;
     // A SOURCE Loop Region is PLAYBACK METADATA, not M17 full-track DSP
     // input. A valid region edit during deferred Prepare / READY may adopt
     // its new SOURCE loop mapping without invalidating the immutable PCM,
