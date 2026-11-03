@@ -193,6 +193,8 @@ ApplicationWindow {
     property bool primaryDetached: false
     property string primaryDetachedInstanceId: ""
     property var primaryDetachedModule: null
+    property real primaryDockReferenceWidth: 0
+    property real primaryDockReferenceHeight: 0
     property var additionalFloatingSessions: ({})
     property var dockedEditorHost: null
 
@@ -243,12 +245,18 @@ ApplicationWindow {
         if (!spare) return
         const host=root.dockedEditorHost
         const id=module.instanceId
+        // Capture while still docked. Never derive minima from an already
+        // reparented/zero-sized floating proxy.
+        const dockW=Math.max(0, Math.ceil(host.width))
+        const dockH=Math.max(0, Math.ceil(host.height))
         root.editorDetached=true // no two simultaneously visible proxies
         host.activeModuleOverride=module
         host.suppressActiveModule=false
         if (host===realDspWorkspace.editorHost && !root.primaryDetached) {
             root.primaryDetachedModule=module
             root.primaryDetachedInstanceId=id
+            root.primaryDockReferenceWidth=dockW
+            root.primaryDockReferenceHeight=dockH
             root.primaryDetached=true
         } else {
             host.detachedWindow=true
@@ -257,6 +265,9 @@ ApplicationWindow {
                 moduleInstanceId:id,
                 moduleTitle:module.displayName,
                 familyAccent:module.familyAccent,
+                editorKind:module.editorContentKey,
+                dockReferenceWidth:dockW,
+                dockReferenceHeight:dockH,
                 detached:true
             })
             if (!floatingWin) {
@@ -938,6 +949,10 @@ ApplicationWindow {
         id: floatingModuleWindow
         editorTarget: realDspWorkspace.editorHost
         moduleInstanceId: root.primaryDetachedInstanceId
+        editorKind: root.primaryDetachedModule
+            ? root.primaryDetachedModule.editorContentKey : ""
+        dockReferenceWidth: root.primaryDockReferenceWidth
+        dockReferenceHeight: root.primaryDockReferenceHeight
         moduleTitle: root.primaryDetachedModule
             ? root.primaryDetachedModule.displayName : "Module"
         familyAccent: root.primaryDetachedModule

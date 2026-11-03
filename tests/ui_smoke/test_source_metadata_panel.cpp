@@ -3477,6 +3477,18 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     QTRY_VERIFY_WITH_TIMEOUT(root->property("editorDetached").toBool(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(floatingModule->isVisible(),5000);
     QTRY_VERIFY_WITH_TIMEOUT(nativeDockedEditor->window()==floatingModule,5000);
+    // Independent Main/DSP Z-order, and width/height inherited from
+    // the actual docked widget plus module-specific safety minima.
+    QCOMPARE(floatingModule->property("editorKind").toString(),
+        QStringLiteral("INPUT_GAIN"));
+    QVERIFY(floatingModule->minimumWidth()>=720);
+    QVERIFY(floatingModule->minimumHeight()>=520);
+    QVERIFY(floatingModule->minimumWidth()>=
+        root->property("primaryDockReferenceWidth").toDouble()+20.0);
+    QVERIFY(floatingModule->minimumHeight()>=
+        root->property("primaryDockReferenceHeight").toDouble()+20.0);
+    QVERIFY2(!floatingModule->transientParent(),
+        "Floating DSP must not forcibly stay above focused Main");
     QVERIFY(!find_child_by_name(root,QStringLiteral("dspFloatingDragGrip")));
     QCOMPARE(dockGrip->window(),floatingModule);
     QVERIFY(dockToggle->isVisible());
@@ -3574,6 +3586,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     })(),5000);
     QVERIFY(floatingModule->isVisible());
     QVERIFY(nativeDockedEditor->window()==floatingModule);
+    QCOMPARE(secondNative->property("editorKind").toString(),
+        QStringLiteral("PARAMETRIC_EQ"));
+    QVERIFY(secondNative->minimumWidth()>=960);
+    QVERIFY(secondNative->minimumHeight()>=640);
+    QVERIFY2(!secondNative->transientParent(),
+        "Additional DSP Window must also be independent");
     // LayoutItemProxy changes the visual parent (window()), not
     // necessarily QObject::parent. Read the native target property
     // directly instead of assuming findChild under QQuickWindow.
