@@ -47,6 +47,17 @@ jobs:
             "$RUNNER_TEMP/m20-scope"
           done
           echo M20_REAL_SCOPE_LINUX_PASS_NOT_GATE_G
+      - name: M20 independent exact Fraction/Decimal profile reference
+        shell: bash
+        run: python3 tools/qualification/m20/test_m20_profile_reference.py
+      - name: M20 six-rate normalized profile/common bandwidth · REAL FFT · Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src -Ianalysis/include tools/qualification/m20/m20_normalized_profile_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp -o "$RUNNER_TEMP/m20-profile"
+            "$RUNNER_TEMP/m20-profile"
+          done
   windows-m20:
     name: M20 only · Windows 2022 MSVC Debug + Release
     runs-on: windows-2022
@@ -88,3 +99,18 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "M20_SCOPE_TEST_FAILED_$mode" }
           }
           Write-Output M20_REAL_SCOPE_WINDOWS_PASS_NOT_GATE_G
+      - name: M20 independent exact Fraction/Decimal profile reference
+        shell: pwsh
+        run: python tools/qualification/m20/test_m20_profile_reference.py
+      - name: M20 six-rate normalized profile/common bandwidth · REAL FFT · Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m20-profile-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src /Ianalysis/include tools/qualification/m20/m20_normalized_profile_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp "/Fe:$env:RUNNER_TEMP/m20-profile-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 80; throw "M20_PROFILE_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m20-profile-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M20_PROFILE_TEST_FAILED_$mode" }
+          }
+          Write-Output M20_PROFILE_WINDOWS_PASS_NOT_GATE_G
