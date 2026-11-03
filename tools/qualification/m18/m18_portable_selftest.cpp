@@ -4,6 +4,8 @@
 #include "internal/m18_counter_dither_philox.hpp"
 #include "internal/m18_pcm24_pack.hpp"
 #include "internal/m18_terminal_sample_codec.hpp"
+#include "internal/m18_wav_candidate.hpp"
+#include "internal/m18_delivery_identity.hpp"
 #include <array>
 #include <cstdint>
 #include <bit>
@@ -231,6 +233,147 @@ static int m18_test_fp_environment_independence()
     return matched?0:60;
 }
 
+
+static int m18_test_wave_candidates_and_identity()
+{
+    using namespace rgsml::audio::internal;
+    constexpr auto seed=UINT64_C(0x0123456789ABCDEF);
+    const auto le16=[](const std::vector<std::uint8_t>& x,
+                       std::size_t pos)->std::uint16_t {
+        return static_cast<std::uint16_t>(x[pos])
+            |static_cast<std::uint16_t>(x[pos+1U]<<8U);
+    };
+    const auto le32=[](const std::vector<std::uint8_t>& x,
+                       std::size_t pos)->std::uint32_t {
+        std::uint32_t r=0U;
+        for(unsigned i=0;i<4;++i)
+            r|=static_cast<std::uint32_t>(x[pos+i])<<(8U*i);
+        return r;
+    };
+    const auto le64=[](const std::vector<std::uint8_t>& x,
+                       std::size_t pos)->std::uint64_t {
+        std::uint64_t r=0U;
+        for(unsigned i=0;i<8;++i)
+            r|=static_cast<std::uint64_t>(x[pos+i])<<(8U*i);
+        return r;
+    };
+    constexpr M18WavSpec monoSpec{
+        M18WavEncoding::PCM24,44100U,1U,0U,seed};
+    const auto mono=m18_make_bounded_wav_candidate(
+        monoSpec,std::span<const double>{});
+    if(mono.status!=M18WavStatus::OK || mono.bytes.size()!=44U
+        ||mono.plan->header_bytes!=44U
+        ||le32(mono.bytes,4)!=36U
+        ||le16(mono.bytes,20)!=1U
+        ||le16(mono.bytes,22)!=1U
+        ||le32(mono.bytes,24)!=44100U
+        ||le32(mono.bytes,28)!=132300U
+        ||le16(mono.bytes,32)!=3U
+        ||le16(mono.bytes,34)!=24U
+        ||le32(mono.bytes,40)!=0U)return 70;
+    constexpr M18WavSpec stereo24{
+        M18WavEncoding::PCM24,48000U,2U,2U,seed};
+    const std::array<double,4> input{{0.0,0.5,-0.5,0.25}};
+    const auto pcm=m18_make_bounded_wav_candidate(stereo24,input,11);
+    if(pcm.status!=M18WavStatus::OK ||pcm.bytes.size()!=56U
+        ||le32(pcm.bytes,4)!=48U
+        ||le32(pcm.bytes,28)!=288000U
+        ||le16(pcm.bytes,32)!=6U
+        ||le32(pcm.bytes,40)!=12U)return 71;
+    std::array<std::uint8_t,12> expectedPcm{};
+    if(m18_pcm24_block(input,2U,11,seed,expectedPcm)!=M18CodecStatus::OK)
+        return 72;
+    if(!std::equal(expectedPcm.begin(),expectedPcm.end(),
+                   pcm.bytes.begin()+44))return 73;
+    if(pcm.bytes!=m18_make_bounded_wav_candidate(stereo24,input,11).bytes)
+        return 74;
+    constexpr M18WavSpec stereoF32{
+        M18WavEncoding::IEEE_FLOAT32,48000U,2U,2U,seed};
+    const auto f32=m18_make_bounded_wav_candidate(stereoF32,input,11);
+    if(f32.status!=M18WavStatus::OK ||f32.bytes.size()!=74U
+        ||f32.plan->header_bytes!=58U
+        ||le16(f32.bytes,20)!=3U
+        ||le32(f32.bytes,16)!=18U
+        ||le16(f32.bytes,34)!=32U
+        ||le16(f32.bytes,36)!=0U
+        ||le32(f32.bytes,28)!=384000U
+        ||le32(f32.bytes,42)!=4U
+        ||le32(f32.bytes,46)!=2U
+        ||le32(f32.bytes,54)!=16U)return 75;
+    std::array<std::uint8_t,16> expectedF32{};
+    if(m18_float32_block(input,2U,11,expectedF32)!=M18CodecStatus::OK)
+        return 76;
+    if(!std::equal(expectedF32.begin(),expectedF32.end(),
+                   f32.bytes.begin()+58))return 77;
+    const auto f32DifferentSeed=m18_make_bounded_wav_candidate(
+        {M18WavEncoding::IEEE_FLOAT32,48000U,2U,2U,seed+1U},
+        input,11);
+    if(f32DifferentSeed.bytes!=f32.bytes)return 78;
+    const auto firstIdentity=m18_make_delivery_identity(stereo24,11);
+    const auto secondIdentity=m18_make_delivery_identity(
+        {M18WavEncoding::PCM24,48000U,2U,2U,seed+1U},11);
+    const auto floatIdentity=m18_make_delivery_identity(stereoF32,11);
+    const auto floatIdentity2=m18_make_delivery_identity(
+        {M18WavEncoding::IEEE_FLOAT32,48000U,2U,2U,seed+1U},11);
+    if(!firstIdentity||!secondIdentity||!floatIdentity||!floatIdentity2
+       ||*firstIdentity==*secondIdentity
+       ||*floatIdentity!=*floatIdentity2
+       ||!firstIdentity->dither_seed.has_value()
+       ||floatIdentity->dither_seed.has_value())return 79;
+    // The source at UINT64_MAX is legal if there is exactly one
+    // terminal sample frame, but not if the output needs a successor.
+    const auto lastFrame=m18_make_bounded_wav_candidate(
+        {M18WavEncoding::PCM24,44100U,1U,1U,seed},
+        std::span<const double>{input.data(),1},UINT64_MAX);
+    if(lastFrame.status!=M18WavStatus::OK)return 80;
+    const auto badFrame=m18_make_bounded_wav_candidate(stereo24,input,
+        UINT64_MAX);
+    if(badFrame.status!=M18WavStatus::OVERFLOW)return 81;
+
+    // Candidate rejection must return no published header OR payload.
+    const std::array<double,2> overloaded{{0.0,2.0}};
+    const auto failedPcm=m18_make_bounded_wav_candidate(
+        {M18WavEncoding::PCM24,48000U,2U,1U,seed},overloaded);
+    if(failedPcm.status!=M18WavStatus::CODEC_REJECTED
+       ||failedPcm.codec_status!=M18CodecStatus::PCM24_OVERLOAD
+       ||!failedPcm.bytes.empty())return 82;
+    const std::array<double,2> nonfinite{{
+        0.0,std::bit_cast<double>(UINT64_C(0x7FF0000000000000))}};
+    const auto failedFloat=m18_make_bounded_wav_candidate(
+        {M18WavEncoding::IEEE_FLOAT32,48000U,2U,1U,seed},nonfinite);
+    if(failedFloat.status!=M18WavStatus::CODEC_REJECTED
+       ||failedFloat.codec_status!=M18CodecStatus::NONFINITE_INPUT
+       ||!failedFloat.bytes.empty())return 83;
+
+    // RF64 must carry real 64-bit ds64 counts while leaving RIFF
+    // 32-bit lengths set to 0xFFFFFFFF; no huge memory allocation.
+    const auto big=m18_plan_wav(
+        {M18WavEncoding::PCM24,192000U,2U,
+         UINT64_C(715827883),seed});
+    if(big.status!=M18WavStatus::OK ||!big.plan.rf64
+       ||big.plan.header_bytes!=80U
+       ||big.plan.data_bytes!=UINT64_C(4294967298))
+        return 84;
+    const auto hdr=m18_wav_header(big.plan);
+    if(hdr.size()!=80U || le32(hdr,4)!=UINT32_MAX
+       ||le32(hdr,16)!=28U
+       ||le64(hdr,20)!=big.plan.file_bytes-8U
+       ||le64(hdr,28)!=big.plan.data_bytes
+       ||le64(hdr,36)!=big.plan.spec.frame_count
+       ||le32(hdr,76)!=UINT32_MAX)return 85;
+    if(m18_make_bounded_wav_candidate(big.plan.spec,
+        std::span<const double>{}).status!=M18WavStatus::INVALID_SPEC)
+        return 86;
+    if(m18_plan_wav({M18WavEncoding::PCM24,32000U,2U,0U,seed})
+        .status!=M18WavStatus::INVALID_SPEC)return 87;
+    if(m18_plan_wav({M18WavEncoding::PCM24,48000U,3U,0U,seed})
+        .status!=M18WavStatus::INVALID_SPEC)return 88;
+    if(m18_plan_wav({M18WavEncoding::IEEE_FLOAT32,192000U,2U,
+        UINT64_MAX,seed}).status!=M18WavStatus::INVALID_SPEC)
+        return 89;
+    return 0;
+}
+
 int main()
 {
     // Runtime checks mirror independently anchored compile-time vectors
@@ -279,6 +422,7 @@ int main()
     if(const auto s=m18_test_float32_numerics();s) return s;
     if(const auto s=m18_test_fail_atomic_and_chunks();s) return s;
     if(const auto s=m18_test_fp_environment_independence();s) return s;
-    std::puts("M18_PREPRODUCTION_PORTABLE_PASS: exact RN64 PCM24, Float32 RNE, fail-atomic blocks, corrected Philox, FP-mode independence");
+    if(const auto s=m18_test_wave_candidates_and_identity();s) return s;
+    std::puts("M18_PREPRODUCTION_PORTABLE_PASS: exact RN64 PCM24, Float32 RNE, RIFF/RF64, seed identities, failed-candidate rollback");
     return 0;
 }
