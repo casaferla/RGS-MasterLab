@@ -247,6 +247,7 @@ class PlaybackSupportTest final : public QObject {
 
 private slots:
     void formatSelectionIsDeterministic();
+    void sourceSixRateDeviceMatrixRequiresProbedFormats();
     void terminalFormatRejectsDeviceRateFallback();
     void monitoringFormatDoesNotRetargetMaster();
     void monitoringEndpointStartResumeRequiresSameDeviceAndRate();
@@ -867,6 +868,101 @@ void PlaybackSupportTest::preferredTerminalRateIsExplicitAndFailClosed()
         48000,audio::ChannelLayout::STEREO_LR,false,false));
     QVERIFY(!select_preferred_terminal_output_rate(
         44100,audio::ChannelLayout::STEREO_LR,false,false));
+}
+
+void PlaybackSupportTest::sourceSixRateDeviceMatrixRequiresProbedFormats()
+{
+    using Probe=platform::windows::internal::ObservedSixRateDeviceFormat;
+    using platform::windows::internal::select_source_device_format_six_rate;
+    constexpr std::array<int,6> rates{
+        44'100,48'000,88'200,96'000,176'400,192'000};
+    const auto blank=[] {
+        std::array<Probe,6> available{};
+        for(std::size_t i=0;i<rates.size();++i)
+            available[i]={rates[i],false,false};
+        return available;
+    };
+    // 6 source rates x 6 physical output rates x two encodings x mono/stereo
+    // = 144 proofs of actual observed DEVICE selection. There is no
+    // arbitrary default rate and absolutely no MASTER mutation.
+    std::size_t cases=0;
+    for(const auto layout:{audio::ChannelLayout::MONO_C,
+                           audio::ChannelLayout::STEREO_LR}) {
+        for(const int sourceHz:rates) {
+            const auto sourceRate=core::SampleRate::create(sourceHz);
+            QVERIFY(sourceRate);
+            const auto format=audio::AudioFormat::create(
+                *sourceRate.value(),layout);
+            QVERIFY(format);
+            for(const int sinkHz:rates) {
+                for(const bool floatAvailable:{true,false}) {
+                    auto probes=blank();
+                    for(auto& probe:probes) {
+                        if(probe.sampleRateHz==sinkHz) {
+                            probe.ieeeFloat32Supported=floatAvailable;
+                            probe.pcm16Supported=!floatAvailable;
+                        }
+                    }
+                    const auto output=select_source_device_format_six_rate(
+                        *format.value(),sinkHz,probes);
+                    QVERIFY2(output,
+                        output?"" :output.error()->message().c_str());
+                    QCOMPARE(output.value()->sampleRateHz,sinkHz);
+                    QCOMPARE(output.value()->channelCount,
+                        layout==audio::ChannelLayout::MONO_C
+                            ?std::size_t{1}:std::size_t{2});
+                    QCOMPARE(output.value()->srcApplied,sourceHz!=sinkHz);
+                    QCOMPARE(output.value()->sampleFormat,
+                        floatAvailable?DeviceSampleFormat::IEEE_F32
+                                      :DeviceSampleFormat::PCM_S16);
+                    ++cases;
+                }
+            }
+            // When exact SOURCE is supported it always wins, even if
+            // Windows advertises another preferred, six-rate output.
+            auto both=blank();
+            for(auto& probe:both) {
+                if(probe.sampleRateHz==sourceHz
+                   ||probe.sampleRateHz==(sourceHz==48000?44100:48000))
+                    probe.pcm16Supported=true;
+            }
+            const int alternative=sourceHz==48000?44100:48000;
+            const auto exact=select_source_device_format_six_rate(
+                *format.value(),alternative,both);
+            QVERIFY(exact);
+            QCOMPARE(exact.value()->sampleRateHz,sourceHz);
+            QVERIFY(!exact.value()->srcApplied);
+            // Fail closed for an endpoint that advertises a rate but
+            // actually supports neither of our explicit sample encodings.
+            const auto refused=select_source_device_format_six_rate(
+                *format.value(),48000,blank());
+            QVERIFY(!refused);
+            QCOMPARE(refused.error()->code(),
+                core::ErrorCode::UnsupportedOperation);
+        }
+    }
+    QCOMPARE(cases,std::size_t{144});
+    const auto s192=*core::SampleRate::create(192000).value();
+    const auto hi=audio::AudioFormat::create(s192,audio::ChannelLayout::STEREO_LR);
+    QVERIFY(hi);
+    auto fallback=blank();
+    fallback[3].pcm16Supported=true; // Only 96k, preferred 44.1 unsupported.
+    const auto chosen=select_source_device_format_six_rate(
+        *hi.value(),44100,fallback);
+    QVERIFY(chosen);
+    QCOMPARE(chosen.value()->sampleRateHz,96000);
+    QVERIFY(chosen.value()->srcApplied);
+    auto swapped=fallback;
+    std::swap(swapped[0],swapped[1]);
+    const auto invalid=select_source_device_format_six_rate(
+        *hi.value(),44100,swapped);
+    QVERIFY(!invalid);
+    QCOMPARE(invalid.error()->code(),core::ErrorCode::InvalidArgument);
+    // An unadvertised preferred rate is NOT permission to invent hardware.
+    const auto chosenDespiteUnknownPreference=select_source_device_format_six_rate(
+        *hi.value(),384000,fallback);
+    QVERIFY(chosenDespiteUnknownPreference);
+    QCOMPARE(chosenDespiteUnknownPreference.value()->sampleRateHz,96000);
 }
 
 void PlaybackSupportTest::formatSelectionIsDeterministic()
