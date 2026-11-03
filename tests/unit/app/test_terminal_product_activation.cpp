@@ -1588,14 +1588,20 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(!product.private_id());
     QVERIFY(!audioGate.has_session());
 
-    // A wrong target is rejected at explicit Prepare, not when arming ON.
+    // A PREPARED target is automatically switched to the real accepted
+    // PROCESSED owner before the M17 Prepare preflight. The deliberately
+    // failing DEVICE rate probe still fails closed, but target mismatch
+    // must NOT be the reason or leave PREPARED selected.
     QVERIFY(selector.switch_to(app::AuditionTarget::PREPARED));
     vm.setBypass(false);
     QCOMPARE(vm.audio_status(),QStringLiteral("NEEDS PREPARATION"));
     vm.requestPrepare();
+    QCOMPARE(selector.active_target(),std::optional{app::AuditionTarget::PROCESSED});
     QVERIFY(limiter.value()->bypassed());
     QCOMPARE(vm.audio_status(),QStringLiteral("ERROR · BYPASS"));
     QVERIFY(vm.validation_message().contains(
+        QStringLiteral("Synthetic audition rate-probe failure")));
+    QVERIFY(!vm.validation_message().contains(
         QStringLiteral("requires PROCESSED audition target")));
     QVERIFY(!coordinator.device_active());
     QVERIFY(!product.private_id());
@@ -2108,6 +2114,17 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(monitorUi.master_region_end_frames(),qint64{0});
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
     QVERIFY(!monitorSinkOwner);
+    // Same immutable MASTER and same physical endpoint: reuse the already
+    // checked DEVICE PCM. It must install synchronously, without another
+    // full-track device FIR or a second M17 whole-Prepare.
+    QVERIFY(monitorUi.installMonitor(false));
+    QVERIFY(!monitorUi.monitor_preparing());
+    QVERIFY(monitorUi.monitor_installed());
+    QCOMPARE(asyncPreflights,std::size_t{2}); // fresh admission, not stale
+    QCOMPARE(asyncRechecks,std::size_t{2});
+    QCOMPARE(renderer.render_invocation_count(),beforeAsyncRender);
+    QVERIFY(monitorUi.returnManual());
+    QVERIFY(!monitorSinkOwner);
     // UNKNOWN or DISCOURAGED memory advice must be refused BEFORE the
     // jthread even begins; the checked M17 MASTER stays ready for retry.
     monitorUi.set_async_monitoring_device(
@@ -2131,7 +2148,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(monitorUi.error_text(),
         QStringLiteral("MONITOR_MEMORY_NOT_APPROVED_OR_UNAVAILABLE"));
     QCOMPARE(renderer.render_invocation_count(),beforeAsyncRender);
-    QCOMPARE(asyncRechecks,std::size_t{1});
+    QCOMPARE(asyncRechecks,std::size_t{2});
     // A hardware endpoint can change to a different physical ID with the
     // SAME rate while the FIR runs. The second owner-thread probe MUST
     // refuse installation even though the audio bits are already computed.
@@ -2165,7 +2182,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(monitorUi.error_text(),QStringLiteral(
         "MONITOR_ASYNC_DEVICE_ENDPOINT_OR_RATE_CHANGED_DURING_CONVERSION"));
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
-    QCOMPARE(asyncRechecks,std::size_t{2});
+    QCOMPARE(asyncRechecks,std::size_t{3});
     QVERIFY(monitorUi.can_install());
     // The cancel test below must still use a current, approvable endpoint;
     // a freshly captured identity is independent from the rejected one.
@@ -2214,7 +2231,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!monitorUi.monitor_cancelling());
     QCOMPARE(monitorUi.property("monitorCancelling").toBool(),false);
     QVERIFY(!monitorSinkOwner);
-    QCOMPARE(asyncRechecks,std::size_t{2});
+    QCOMPARE(asyncRechecks,std::size_t{3});
     monitorUi.set_async_monitoring_device({}, {});
 
     // The asynchronous converter correctly superseded the old synchronous
@@ -2364,8 +2381,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
 
     // A loop belongs to the MANUAL transport epoch, not to the DSP render
     // window. A new explicit Prepare after changing the loop produces one
-    // M17 checked owner; its DEVICE audition inherits and preserves the
-    // loop including on the return to SOURCE with exact half-open bounds.
+    // M17 checked owner. DEVICE audition is always nonlooped; the original
+    // SOURCE loop is preserved for the exact return to MANUAL.
     transport.stop();
     QVERIFY(product.cancel());
     // An arbitrarily late worker result must not revive a canceled M17
@@ -2403,11 +2420,8 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(product.install_private_monitor_stopped(*loopMonitor.value()));
     QCOMPARE(product.status(),QStringLiteral("MONITOR_PRIVATE_PLAYING"));
     QCOMPARE(device->position,core::FrameIndex{125});
-    QCOMPARE(requestedMasterLoop,std::optional{*sourceRegion.value()});
-    const auto expectedDeviceLoop=core::FrameRange::create(
-        core::FrameIndex{30},core::FrameIndex{300});
-    QVERIFY(expectedDeviceLoop);
-    QCOMPARE(device->loop,std::optional{*expectedDeviceLoop.value()});
+    QVERIFY(!requestedMasterLoop);
+    QVERIFY(!device->loop); // Loop is SOURCE-only, never inherited by Master.
     QCOMPARE(renderer.render_invocation_count(),renderedWithLoop);
     QVERIFY(monitorUi.returnManual());
     QCOMPARE(device->state,core::PlaybackState::PLAYING);
@@ -2431,12 +2445,11 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(product.status(),QStringLiteral("READY_TO_INSTALL"));
 
     // Each mapped seeding step is its own DEVICE owner-thread action.
-    // A failure at SET_LOOP, SEEK or PLAY may leave partially updated
-    // anonymous PCM; only recovery Return may touch it. No manual STOP.
+    // Master no longer inherits a SOURCE Loop, so only SEEK/PLAY seed
+    // failures enter the partial-owner recovery path.
     using SeedAction=platform::windows::MonitoringTransportAction;
     for(const auto failingAction:{
-            SeedAction::SET_MASTER_LOOP,SeedAction::SEEK_MASTER,
-            SeedAction::PLAY}) {
+            SeedAction::SEEK_MASTER,SeedAction::PLAY}) {
         requestedMasterLoop.reset();
         injectedSeedFailure=failingAction;
         QVERIFY(!product.install_private_monitor_stopped(*loopMonitor.value()));
@@ -2461,7 +2474,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
         QCOMPARE(candidates.staged(),loopStage);
         QCOMPARE(renderer.render_invocation_count(),originalRenderCount);
     }
-    // PAUSE failure is reached only after successful LOOP/SEEK/PLAY seeds.
+    // PAUSE failure is reached only after successful SEEK/PLAY seeds.
     // Revert to the original PAUSED state rather than falsely PLAYING.
     transport.pause();
     QCOMPARE(device->state,core::PlaybackState::PAUSED);

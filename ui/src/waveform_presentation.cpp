@@ -3,6 +3,7 @@
 #include "internal/waveform_viewport.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <utility>
 
