@@ -43,6 +43,18 @@ def rf64_header(frames=715827883, rate=192000, channels=2):
             + b"data" + struct.pack("<I", 0xffffffff))
 
 
+
+def rf64_float_header(frames=4294967296, rate=48000, channels=2):
+    align = channels * 4
+    payload_size = frames * align
+    return (b'RF64' + struct.pack('<I', 0xffffffff) + b'WAVE'
+            + b'ds64' + struct.pack('<IQQQI', 28, payload_size + 86,
+                                   payload_size, frames, 0)
+            + b'fmt ' + struct.pack('<IHHIIHHH', 18, 3, channels, rate,
+                                   rate * align, align, 32, 0)
+            + b'fact' + struct.pack('<II', 4, 0xffffffff)
+            + b'data' + struct.pack('<I', 0xffffffff))
+
 class TestAuditor(unittest.TestCase):
     def test_pcm24_integrity(self):
         data = pcm24()
@@ -102,6 +114,19 @@ class TestAuditor(unittest.TestCase):
             bad[offset] ^= 1
             with self.assertRaises(CandidateError):
                 parse_canonical_header(bad, len(bad))
+
+    def test_rf64_float32_large_fact_sentinel_without_allocating(self):
+        header = rf64_float_header()
+        g = parse_canonical_header(header)
+        self.assertEqual(g.encoding, 'FLOAT32')
+        self.assertEqual(g.container, 'RF64')
+        self.assertEqual(g.header_bytes, 94)
+        self.assertEqual(g.frame_count, 4294967296)
+        self.assertEqual(g.payload_bytes, 34359738368)
+        bad = bytearray(header)
+        bad[82] = 0  # low byte of saturated fact count
+        with self.assertRaisesRegex(CandidateError, 'fact count mismatch'):
+            parse_canonical_header(bad)
 
     def test_invalid_sha_arg(self):
         with tempfile.TemporaryDirectory() as folder:
