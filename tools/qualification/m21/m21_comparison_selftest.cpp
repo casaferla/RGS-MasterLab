@@ -48,6 +48,7 @@ int main(){
         assert(guard.expect(Column::processed,9));
         assert(guard.publish(p));
         assert(guard.publish(g));
+        assert(!guard.publish(g)); // no duplicate same-epoch replacement
         assert(guard.publish(x));
         auto v=guard.view();
         assert(v.independent_scopes);
@@ -62,19 +63,24 @@ int main(){
         assert(v.prepared_to_gold[5].quality==Quality::not_applicable);
         assert(!v.prepared_to_gold[5].unrounded);
         auto gg=g;gg.metrics[0].unrounded=-25.;
+        assert(guard.expect(Column::gold,7));gg.generation_token=7;
         assert(guard.publish(gg));
         v=guard.view();
         assert(*v.prepared_to_gold[0].unrounded==-7.); // Gold < Current
         assert(*v.processed_to_gold[0].unrounded==-11.);
         gg.metrics[0].unrounded=-18.;
+        assert(guard.expect(Column::gold,8));gg.generation_token=8;
         assert(guard.publish(gg));
         v=guard.view();
         assert(*v.prepared_to_gold[0].unrounded==0.); // Gold == Current
         gg.metrics[0].unrounded=-13.;
+        assert(guard.expect(Column::gold,9));gg.generation_token=9;
         assert(guard.publish(gg));
         // Unrounded canonical values, never difference of rounded strings.
         p.metrics[0].unrounded=-18.444;
         gg.metrics[0].unrounded=-13.445;
+        assert(guard.expect(Column::prepared,2));p.generation_token=2;
+        assert(guard.expect(Column::gold,10));gg.generation_token=10;
         assert(guard.publish(p)&&guard.publish(gg));
         v=guard.view();
         assert(std::abs(*v.prepared_to_gold[0].unrounded-4.999)<1e-12);
@@ -96,6 +102,7 @@ int main(){
         assert(td.quality==Quality::incompatible && !td.unrounded);
         // Low support visible while valid numerical delta is still marked.
         qg=gg;qg.metrics[0].quality=Quality::low_confidence;
+        assert(guard.expect(Column::gold,11));qg.generation_token=11;
         assert(guard.publish(qg));
         v=guard.view();
         assert(v.prepared_to_gold[0].quality==Quality::low_confidence);
@@ -112,22 +119,23 @@ int main(){
         assert(guard.publish(newx));
         assert(guard.view().processed_to_gold[0].quality==Quality::low_confidence);
         // Prep change stales prepared only; Gold is preserved.
-        assert(guard.expect(Column::prepared,2));
+        assert(guard.expect(Column::prepared,3));
         v=guard.view();
         assert(v.columns[0]->lifecycle==Lifecycle::stale);
         assert(v.columns[1]->lifecycle==Lifecycle::current);
         assert(v.prepared_to_gold[0].quality==Quality::stale);
         assert(!guard.publish(p));
-        p.generation_token=2;assert(guard.publish(p));
+        p.generation_token=3;assert(guard.publish(p));
+        assert(!guard.publish(p));
         // Gold change stales only Gold; all deltas must be stale.
-        assert(guard.expect(Column::gold,7));
+        assert(guard.expect(Column::gold,12));
         v=guard.view();
         assert(v.columns[0]->lifecycle==Lifecycle::current);
         assert(v.columns[1]->lifecycle==Lifecycle::stale);
         assert(v.prepared_to_gold[0].quality==Quality::stale);
         assert(v.processed_to_gold[0].quality==Quality::stale);
         // Fake present numbers or nonfinite samples fail closed.
-        auto bad=gg;bad.generation_token=7;
+        auto bad=gg;bad.generation_token=12;
         bad.metrics[0].unrounded=std::numeric_limits<double>::quiet_NaN();
         assert(!guard.publish(bad));
         bad.metrics[0].unrounded=-13.;
@@ -135,6 +143,20 @@ int main(){
         bad.metrics[0].unrounded=std::numeric_limits<double>::infinity();
         assert(!guard.publish(bad));
         assert(!guard.expect(Column::gold,6)); // no epoch rollback
+        // Disallow status+number contradictions and malformed static PSD,
+        // including a measured-looking zero mislabeled MISSING.
+        assert(guard.expect(Column::gold,13));
+        auto malformed=gg;malformed.generation_token=13;
+        malformed.metrics[5]={0.0,Quality::missing,"fabricated zero"};
+        assert(!guard.publish(malformed));
+        malformed.metrics[5]={{},Quality::not_applicable,"Mono"};
+        malformed.average_spectrum[0].hz=
+          std::numeric_limits<double>::quiet_NaN();
+        assert(!guard.publish(malformed));
+        malformed.average_spectrum[0].hz=100.0;
+        assert(guard.publish(malformed));
+        assert(!guard.publish(malformed)); // same epoch cannot override
+
         // Missing current Gold must disable every Gold-relative delta.
         auto no_gold=std::array<std::optional<Snapshot>,3>{p,std::nullopt,newx};
         v=compose(no_gold);
