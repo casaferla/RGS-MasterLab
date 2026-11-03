@@ -75,7 +75,7 @@ def run():
     q = [19.0,1.0]
     rel_threshold = (-0.691+10*math.log10(math.fsum(q)/len(q)))-10.0
     assert math.isclose(rel_threshold, -0.691, abs_tol=1e-12)
-    assert not (-0.691+10*math.log10(q[1]) > rel_threshold)
+    assert not (q[1] > (math.fsum(q)/len(q))/10.0)
     # Poison outside scope is not included; the scope owns the filter reset.
     assert full_loudness_mono_48k(([1.0e4]+dc+[-1.0e4])[1:-1]) == full_loudness_mono_48k(dc)
     print("M19_INDEPENDENT_48K_ORACLE_PASS_NOT_FORMAL_GATE_G")
