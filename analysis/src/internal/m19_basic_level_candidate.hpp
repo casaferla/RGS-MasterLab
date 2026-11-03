@@ -137,13 +137,33 @@ public:
                 const double x = channel == 0U ? channel0[i] : channel1[i];
                 const double magnitude = std::abs(x);
                 if (magnitude > peak_magnitude_) {
+                    // Scale *both* parts of the compensated, nonnegative
+                    // square sum. Direct x*x would overflow above 2^512
+                    // or underflow for tiny but nonzero dyadic samples.
                     const double ratio = peak_magnitude_ / magnitude;
-                    rms_normalized_squares_ *= ratio * ratio;
+                    const double factor = ratio * ratio;
+                    rms_normalized_squares_ *= factor;
+                    rms_normalized_compensation_ *= factor;
                     peak_magnitude_ = magnitude;
                 }
                 if (peak_magnitude_ > 0.0) {
                     const double scaled = magnitude / peak_magnitude_;
-                    rms_normalized_squares_ += scaled * scaled;
+                    const double add = scaled * scaled;
+                    // Neumaier compensated addition, in the mathematical
+                    // *sample order*; neither chunk boundaries nor channel
+                    // buffer partitioning regroup the reduction. Needed for
+                    // F07: 1 followed by 4096 * 2^-30 contributes 2^-48
+                    // to the mean-square numerator, despite each addition
+                    // being lost by naive sequential binary64 addition.
+                    const double next = rms_normalized_squares_ + add;
+                    if (rms_normalized_squares_ >= add) {
+                        rms_normalized_compensation_ +=
+                            (rms_normalized_squares_ - next) + add;
+                    } else {
+                        rms_normalized_compensation_ +=
+                            (add - next) + rms_normalized_squares_;
+                    }
+                    rms_normalized_squares_ = next;
                 }
                 if (sample_rate_hz_ == 48000U) {
                     const double shelf = filters_[channel].shelf.push(x);
@@ -201,7 +221,9 @@ public:
         if (peak_magnitude_ > 0.0) {
             const double totalSamples = static_cast<double>(scope_frames_)
                 * static_cast<double>(channel_count_);
-            const double relativePower = rms_normalized_squares_ / totalSamples;
+            const double compensatedSquares =
+                rms_normalized_squares_ + rms_normalized_compensation_;
+            const double relativePower = compensatedSquares / totalSamples;
             const double peakDb = 20.0 * std::log10(peak_magnitude_);
             const double rmsDb = peakDb + 10.0 * std::log10(relativePower);
             const double crestDb = peakDb - rmsDb;
@@ -265,6 +287,7 @@ private:
     bool finished_{false};
     double peak_magnitude_{0.0};
     double rms_normalized_squares_{0.0};
+    double rms_normalized_compensation_{0.0};
     std::array<KFilter, 2> filters_{};
     std::array<double, 2> quarter_energy_sum_{};
     std::array<std::array<double, 4>, 2> quarter_mean_squares_{};
