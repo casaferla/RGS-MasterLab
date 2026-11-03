@@ -3238,6 +3238,14 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(sourceRestoreProbes,std::size_t{3});
     QCOMPARE(manualRestores,std::size_t{1});
     QVERIFY(candidates.staged());
+    const auto unexpectedCancel=product.cancel();
+    QVERIFY(!unexpectedCancel);
+    QCOMPARE(unexpectedCancel.error()->code(),core::ErrorCode::InvalidState);
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_SOURCE_RECOVERY_REQUIRED"));
+    QCOMPARE(sourceRestoreProbes,std::size_t{3});
+    QCOMPARE(manualRestores,std::size_t{1});
+    QVERIFY(candidates.staged());
     // If Windows/another application installs any other sink between the
     // failed Return and our explicit retry, don't clear it or borrow it.
     device->state=core::PlaybackState::STOPPED;
