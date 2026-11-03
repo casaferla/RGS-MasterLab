@@ -162,3 +162,15 @@ screenshot of the main product nor proof of a valid producer/official M21 M gate
 M20 also has its own unintegrated Qt6 preview and thus M21 is NOT the first
 post-M17 milestone with stand-alone Windows Qt graphics. Neither M20 nor M21
 currently activates the main Windows product UI without the predecessor holds.
+
+
+### Screenshot-first visual audit correction
+CI #41705401393 passed native and Qt smoke checks and archived a 1100×765
+image, BUT an operator visual read-back found the PNG text UNREADABLE
+(square glyphs throughout). This is a real preview-quality failure even
+though CI returned success; do not advertise the initial PNG as accepted
+visual evidence. Private screenshot fix explicitly loads Windows-native
+Arial, requires a genuine Qt font atlas with ASCII glyphs and runs a
+rendered-pixel complexity check: a trivial all-box/no-font image must FAIL
+the Qt Windows job. This is a screenshot-only rendering fix, still no
+product UI activation or acceptance.
