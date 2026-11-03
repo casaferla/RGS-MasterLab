@@ -176,8 +176,14 @@ int main() {
         require(!rgsml::analysis::internal::m19::
             gate_complete_400ms_block_powers(std::array<double,2>{
                 1.0,(std::numeric_limits<double>::infinity)()}));
-        require(!rgsml::analysis::internal::m19::
-            gate_complete_400ms_block_powers(std::array<double,2>{1e308,1e308}));
+        // F07: mathematical mean is representable even when the
+        // unnormalized *sum* of two valid block powers overflows binary64.
+        auto huge = rgsml::analysis::internal::m19::
+            gate_complete_400ms_block_powers(std::array<double,2>{1e308,1e308});
+        require(huge.has_value());
+        require(huge->absolute_count == 2U && huge->final_count == 2U);
+        require(huge->integrated_lufs.has_value());
+        near(*huge->integrated_lufs,-0.691+10.0*std::log10(1e308),1e-10);
     }
 
     // Independent bounded K-scope re-signoff: 12 feeder partitions per
