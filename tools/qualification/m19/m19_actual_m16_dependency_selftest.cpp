@@ -255,5 +255,85 @@ int main()
     require(!invalidRate);
     require(invalidRate.error()->code()==
             rgsml::core::ErrorCode::UnsupportedOperation);
+
+    // Last M19 premerge integration proof with ACTUAL unchanged canonical
+    // AudioBufferView/subview, not a copied synthetic span or substitute M16
+    // region detector. Cover all PO-frozen clocks, nonzero selected origin,
+    // two complete overlapping K blocks and poisoned OUTSIDE PCM. Reuse the
+    // same source-owned K authority and never expose unqualified M16 TP.
+    for (const std::int64_t rate : {
+            44100,48000,88200,96000,176400,192000}) {
+        const std::size_t begin=31U;
+        const std::size_t window=static_cast<std::size_t>(rate*2/5);
+        const std::size_t hop=static_cast<std::size_t>(rate/10);
+        const std::size_t count=window+hop;
+        std::vector<double> actual(begin+count+17U,1000.0);
+        std::fill(actual.begin()+begin,
+                  actual.begin()+begin+count,0.125);
+        actual[begin-1U]=(std::numeric_limits<double>::quiet_NaN)();
+        actual[begin+count]=(std::numeric_limits<double>::infinity)();
+        const auto domain=(rate % 3==0) ? FrameDomainId::OUTPUT_RATE
+                                         : FrameDomainId::SOURCE_PROCESSING_RATE;
+        auto owner=makeBuffer(rate,ChannelLayout::MONO_C,0,actual,{},domain);
+        require(owner.has_value());
+        const auto frames=rgsml::core::FrameCount::create(
+            static_cast<std::int64_t>(count));
+        require(frames.has_value());
+        const auto scope=rgsml::core::FrameIndex{
+            static_cast<std::int64_t>(begin)};
+        const auto selected=rgsml::analysis::internal::m19::
+            measure_selected_scope_candidate(
+                owner.value()->view(),scope,*frames.value(),domain);
+        require(selected.has_value());
+        require(selected.value()->integrated_lufs.has_value());
+        require(selected.value()->loudness_state ==
+                rgsml::analysis::internal::m19::
+                    LoudnessPreproductionState::available);
+        require(std::abs(*selected.value()->integrated_lufs -
+                          (-26.2768703195911+20.0*std::log10(0.125)))
+                < 0.00005);
+        require(selected.value()->sample_rate_hz ==
+                static_cast<std::uint32_t>(rate));
+        require(selected.value()->scope_begin_frame==begin);
+        require(selected.value()->scope_frames==count);
+        require(selected.value()->full_scope_rms_dbfs.has_value());
+        require(selected.value()->sample_peak_dbfs.has_value());
+        require(selected.value()->sample_peak_crest_db.has_value());
+        require(!selected.value()->true_peak_db_tp);
+        const auto* bank = rgsml::analysis::internal::m19::
+            find_frozen_k_weighting_bank_candidate(
+                static_cast<std::uint32_t>(rate));
+        require(bank!=nullptr);
+        require(selected.value()->k_weighting_bank_member_id==bank->member_id);
+        require(selected.value()->k_weighting_bank_sha256==
+                bank->canonical_le_sha256);
+
+        auto repeat=rgsml::analysis::internal::m19::
+            measure_selected_scope_candidate(
+                owner.value()->view(),scope,*frames.value(),domain);
+        require(repeat.has_value());
+        require(selected.value()->integrated_lufs==repeat.value()->integrated_lufs);
+        require(selected.value()->full_scope_rms_dbfs==
+                repeat.value()->full_scope_rms_dbfs);
+
+        const auto original=owner.value()->view().channel(0U);
+        require(original.has_value());
+        require(std::isnan((*original.value())[begin-1U]));
+        require(std::isinf((*original.value())[begin+count]));
+        const auto forbiddenTp=measure_true_peak_full_resource(*owner.value());
+        require(!forbiddenTp);
+        require(forbiddenTp.error()->code() ==
+                rgsml::core::ErrorCode::InvalidAudioSample);
+
+        const auto oppositeDomain=(domain==FrameDomainId::OUTPUT_RATE)
+                ?FrameDomainId::SOURCE_PROCESSING_RATE
+                :FrameDomainId::OUTPUT_RATE;
+        const auto wrong=rgsml::analysis::internal::m19::
+            measure_selected_scope_candidate(
+                owner.value()->view(),scope,*frames.value(),oppositeDomain);
+        require(!wrong);
+        require(wrong.error()->code()==
+                rgsml::core::ErrorCode::InvalidFrameRange);
+    }
     return 0;
 }
