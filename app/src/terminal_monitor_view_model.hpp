@@ -3,6 +3,7 @@
 #include "playback_transport_view_model.hpp"
 #include <QObject>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QString>
 #include <atomic>
 #include <functional>
@@ -21,6 +22,10 @@ class TerminalMonitorViewModel final : public QObject {
     Q_PROPERTY(bool monitorExclusive READ monitor_exclusive NOTIFY changed)
     Q_PROPERTY(bool monitorInstalled READ monitor_installed NOTIFY changed)
     Q_PROPERTY(bool monitorPreparing READ monitor_preparing NOTIFY changed)
+    Q_PROPERTY(bool devicePreparationDeterminate READ device_preparation_determinate NOTIFY changed)
+    Q_PROPERTY(double devicePreparationFraction READ device_preparation_fraction NOTIFY changed)
+    Q_PROPERTY(QString devicePreparationEta READ device_preparation_eta NOTIFY changed)
+    Q_PROPERTY(int pendingDeviceRateHz READ pending_device_rate_hz NOTIFY changed)
     Q_PROPERTY(bool monitorCancelling READ monitor_cancelling NOTIFY changed)
     Q_PROPERTY(bool monitorControllable READ monitor_controllable NOTIFY changed)
     Q_PROPERTY(bool canPrepare READ can_prepare NOTIFY changed)
@@ -56,6 +61,10 @@ public:
     [[nodiscard]] bool monitor_exclusive() const noexcept;
     [[nodiscard]] bool monitor_installed() const noexcept;
     [[nodiscard]] bool monitor_preparing() const noexcept {return monitorPreparing_;}
+    [[nodiscard]] bool device_preparation_determinate() const noexcept;
+    [[nodiscard]] double device_preparation_fraction() const noexcept;
+    [[nodiscard]] QString device_preparation_eta() const;
+    [[nodiscard]] int pending_device_rate_hz() const noexcept {return pendingDeviceRateHz_;}
     [[nodiscard]] bool monitor_cancelling() const noexcept {
         return !monitorPreparing_
             &&asyncWorkerRunning_.load(std::memory_order_acquire);
@@ -135,6 +144,12 @@ private:
     bool monitorRequested_{false};
     bool monitorPreparing_{false};
     std::uint64_t monitorSerial_{0};
+    // Worker writes counters only; the Qt owner thread polls a bounded cadence.
+    std::atomic<std::int64_t> deviceCompletedFrames_{0};
+    std::atomic<std::int64_t> deviceTotalFrames_{0};
+    QElapsedTimer devicePrepClock_;
+    QTimer deviceProgressTimer_;
+    int pendingDeviceRateHz_{0};
     std::atomic_bool asyncWorkerRunning_{false};
     std::shared_ptr<std::atomic_bool> asyncCancellation_;
     TerminalPrivateProductSession::MonitoringMasterCapture pendingMaster_;

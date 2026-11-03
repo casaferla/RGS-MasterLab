@@ -5,6 +5,8 @@
 #include <rgsml/audio/monitoring_pcm_candidate.hpp>
 #include <QMetaObject>
 #include <QThread>
+#include <algorithm>
+#include <cmath>
 #include <new>
 #include <exception>
 #include <utility>
@@ -27,6 +29,9 @@ TerminalMonitorViewModel::TerminalMonitorViewModel(
 {
     observationTimer_.setInterval(200);
     connect(&observationTimer_,&QTimer::timeout,this,&TerminalMonitorViewModel::refresh);
+    deviceProgressTimer_.setInterval(300);
+    connect(&deviceProgressTimer_,&QTimer::timeout,this,
+            &TerminalMonitorViewModel::changed);
     // DEVICE admission and exceptional NO_SOURCE offline fallback both
     // depend on transport, even if the session does not change. Notify QML
     // on either eligibility transition, not on every timer tick.
@@ -106,7 +111,44 @@ void TerminalMonitorViewModel::abort_async_conversion()
     ++monitorSerial_;
     monitorPreparing_=false;
     pendingMaster_.reset();
+    deviceProgressTimer_.stop();
+    deviceCompletedFrames_.store(0,std::memory_order_release);
+    deviceTotalFrames_.store(0,std::memory_order_release);
+    pendingDeviceRateHz_=0;
     emit changed();
+}
+
+bool TerminalMonitorViewModel::device_preparation_determinate() const noexcept
+{
+    return monitorPreparing_
+        &&deviceTotalFrames_.load(std::memory_order_acquire)>0;
+}
+double TerminalMonitorViewModel::device_preparation_fraction() const noexcept
+{
+    const auto total=deviceTotalFrames_.load(std::memory_order_acquire);
+    const auto completed=deviceCompletedFrames_.load(std::memory_order_acquire);
+    if(!monitorPreparing_ ||total<=0)return 0.0;
+    return std::clamp(static_cast<double>(completed)/total,0.0,1.0);
+}
+QString TerminalMonitorViewModel::device_preparation_eta() const
+{
+    const auto total=deviceTotalFrames_.load(std::memory_order_acquire);
+    const auto completed=deviceCompletedFrames_.load(std::memory_order_acquire);
+    const auto elapsed=devicePrepClock_.isValid()
+        ?devicePrepClock_.elapsed():0;
+    if(!monitorPreparing_ ||total<=0 ||completed<=0 ||completed>=total
+       ||elapsed<4000 ||static_cast<double>(completed)/total<0.03)
+        return QStringLiteral("Estimating time remaining");
+    const auto seconds=std::ceil(
+        (elapsed/1000.0)*(static_cast<double>(total-completed)/completed));
+    if(!std::isfinite(seconds) ||seconds<0 ||seconds>24*3600)
+        return QStringLiteral("Estimating time remaining");
+    const auto remaining=static_cast<qint64>(seconds);
+    return remaining<60
+        ?QStringLiteral("~%1s remaining").arg(remaining)
+        :QStringLiteral("~%1m %2s remaining")
+            .arg(remaining/60)
+            .arg(remaining%60,2,10,QLatin1Char('0'));
 }
 
 QString TerminalMonitorViewModel::status_text() const
@@ -343,6 +385,11 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
         asyncCancellation_=token;
         pendingMaster_=stage;
         monitorPreparing_=true;
+        deviceCompletedFrames_.store(0,std::memory_order_release);
+        deviceTotalFrames_.store(0,std::memory_order_release);
+        pendingDeviceRateHz_=static_cast<int>(plan.value()->device_rate.value());
+        devicePrepClock_.start();
+        deviceProgressTimer_.start();
         asyncWorkerRunning_.store(true,std::memory_order_release);
         error_.clear();
         emit changed();
@@ -373,6 +420,11 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
                         [token,stop] {
                             return stop.stop_requested()
                                 ||token->load(std::memory_order_acquire);
+                        },
+                        [this](std::int64_t completed,std::int64_t total) {
+                            deviceTotalFrames_.store(total,std::memory_order_release);
+                            deviceCompletedFrames_.store(completed,
+                                std::memory_order_release);
                         });
                     if(!created)return Result::failure(*created.error());
                     auto completed=std::move(*created.value());
@@ -404,6 +456,8 @@ bool TerminalMonitorViewModel::installMonitor(bool explicitlyAllowCaution)
                 }
                 monitorPreparing_=false;
                 pendingMaster_.reset();
+                deviceProgressTimer_.stop();
+                pendingDeviceRateHz_=0;
                 emit changed();
                 if(!*outcome) {
                     report(core::Status::failure(*outcome->error()));
