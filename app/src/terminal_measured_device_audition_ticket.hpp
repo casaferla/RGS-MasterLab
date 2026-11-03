@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -79,13 +80,34 @@ MeasuredDeviceAuditionTicket::admit(
 
     const auto& measured=captured->rendered.terminal;
     const auto original=measured.terminal.compensated_pcm.view();
+    // The M16 stage is allowed to be SUPPORTED_UNQUALIFIED only;
+    // a fabricated QUALIFIED tag, unsupported sample or impossible
+    // Ceiling/miss relationship must never enter the audio-device lane.
+    // The renderer calculates the linear threshold with exactly this
+    // expression. Permit only a few binary64 rounding ULPs at the
+    // independent admission boundary; never round the *miss* itself.
+    const double expectedCeiling=std::pow(
+        10.0,measured.requested_ceiling_db_tp/20.0);
+    const double ceilingDelta=std::abs(
+        measured.ceiling_linear-expectedCeiling);
+    const double ceilingTolerance=8.0*
+        std::numeric_limits<double>::epsilon()*expectedCeiling;
+    const bool knownReason=measured.reason
+        ==render::M17NonconformingReason::TRIM_GUARD_EXCEEDED
+        ||measured.reason
+            ==render::M17NonconformingReason::POST_TRIM_ABOVE_CEILING;
     if(!std::isfinite(measured.measured_linear_peak)
        ||!std::isfinite(measured.ceiling_linear)
        ||!std::isfinite(measured.requested_ceiling_db_tp)
+       ||measured.requested_ceiling_db_tp< -12.0
+       ||measured.requested_ceiling_db_tp>0.0
        ||measured.measured_linear_peak<=measured.ceiling_linear
        ||measured.ceiling_linear<=0.0
+       ||!std::isfinite(expectedCeiling)
+       ||ceilingDelta>ceilingTolerance
+       ||!knownReason
        ||measured.measurement_status
-           ==analysis::TruePeakQualificationStatus::UNSUPPORTED)
+           !=analysis::TruePeakQualificationStatus::SUPPORTED_UNQUALIFIED)
         return refuse("M17_MEASURED_DEVICE_NO_AUTHENTIC_CEILING_MISS");
     if(original.timebase().frame_domain_id()!=audio::FrameDomainId::OUTPUT_RATE
        ||original.absolute_start_frame().value()!=0
