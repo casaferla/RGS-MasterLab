@@ -37,6 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/qualification/m18/test_m18_independent_reference.py
+          python3 tools/qualification/m18/test_m18_pre_audit_payload_digests.py
           python3 tools/qualification/m18/test_m18_statistical_reference.py
           python3 tools/qualification/m18/test_m18_wav_reference.py
           python3 tools/qualification/m18/test_m18_wav_candidate_auditor.py
@@ -82,6 +83,18 @@ jobs:
               -o "$RUNNER_TEMP/m18-gate-g-smoke"
             "$RUNNER_TEMP/m18-gate-g-smoke" --smoke \
               | grep -q 'M18_GATE_G_SMOKE_PASS_NOT_FORMAL_GATE_G'
+          done
+
+      - name: Frozen independent PCM24 pre-audit byte SHA vectors · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror \
+              -I audio/src -I core/include \
+              tools/qualification/m18/m18_pre_audit_payload_digests.cpp \
+              core/src/sha256.cpp -o "$RUNNER_TEMP/m18-pre-audit-hashes"
+            "$RUNNER_TEMP/m18-pre-audit-hashes"
           done
 
       - name: M18 streaming WAV and private disk transaction · Linux Debug + Release
@@ -191,6 +204,32 @@ jobs:
             }
           }
 
+      - name: Frozen independent PCM24 pre-audit byte SHA vectors · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $log = "$env:RUNNER_TEMP/m18-pre-audit-hashes-windows.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus `
+              /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_pre_audit_payload_digests.cpp `
+              core/src/sha256.cpp `
+              "/Fe:$env:RUNNER_TEMP/m18-pre-audit-hashes.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 70
+              throw "M18_SHA_ORACLE_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m18-pre-audit-hashes.exe" *> $log
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $log -Tail 40
+              throw "M18_SHA_ORACLE_RUNTIME_FAILED_$mode"
+            }
+            $output = Get-Content $log -Raw
+            if ($output -notmatch "M18_INDEPENDENT_PUBLISHED_SHA_AND_RESUME_PASS_NOT_GATE_G") {
+              throw "M18_SHA_ORACLE_INCOMPLETE_$mode"
+            }
+          }
+
       - name: M18 streaming WAV and private disk transaction · Windows Debug + Release
         shell: pwsh
         run: |
@@ -228,5 +267,6 @@ jobs:
             ${{ runner.temp }}/m18-streaming-windows-bounded.txt
             ${{ runner.temp }}/m18-statistics-windows-bounded.txt
             ${{ runner.temp }}/m18-gate-g-smoke-windows.txt
+            ${{ runner.temp }}/m18-pre-audit-hashes-windows.txt
           if-no-files-found: ignore
           retention-days: 7
