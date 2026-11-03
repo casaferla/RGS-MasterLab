@@ -1136,26 +1136,6 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
     const auto retired=monitorRetire_(candidate);
     if(!retired){monitorTransitioning_=false;return retired;}
     installedMonitor_.reset();
-    const auto vacant=transport_->playback_snapshot();
-    if(!vacant||vacant.value()->state!=core::PlaybackState::NO_SOURCE
-       ||vacant.value()->audibleRealization.phase
-           !=core::AudibleHandoffPhase::UNAVAILABLE
-       ||vacant.value()->audibleRealization.realizationId) {
-        monitorTransitioning_=false;
-        renderer_->invalidate();
-        failed(rejected("MONITOR_RETURN_RETIRE_DID_NOT_EMPTY_DEVICE"));
-        return core::Status::failure(rejected(
-            "MONITOR_RETURN_RETIRE_DID_NOT_EMPTY_DEVICE"));
-    }
-    if(!selected_||!selected_()||!manual_||!manualId_
-       ||manual_()!=predecessor.manual
-       ||manualId_()!=std::optional{predecessor.manualId}) {
-        monitorTransitioning_=false;
-        renderer_->invalidate();
-        failed(rejected("MONITOR_RETURN_STALE_MANUAL_OWNER"));
-        return core::Status::failure(rejected(
-            "MONITOR_RETURN_STALE_MANUAL_OWNER"));
-    }
     // All failures AFTER the exact monitor has retired must retain the
     // authoritative MASTER and typed timeline. Never fabricate a MANUAL
     // audible certificate, and never overwrite a successor DEVICE sink.
@@ -1170,6 +1150,20 @@ core::Status TerminalPrivateProductSession::return_private_monitor_to_manual()
         emit changed();
         return core::Status::failure(error);
     };
+    const auto vacant=transport_->playback_snapshot();
+    if(!vacant||vacant.value()->state!=core::PlaybackState::NO_SOURCE
+       ||vacant.value()->audibleRealization.phase
+           !=core::AudibleHandoffPhase::UNAVAILABLE
+       ||vacant.value()->audibleRealization.realizationId) {
+        return preserveReturnFailure(rejected(
+            "MONITOR_RETURN_RETIRE_DID_NOT_EMPTY_DEVICE"));
+    }
+    if(!selected_||!selected_()||!manual_||!manualId_
+       ||manual_()!=predecessor.manual
+       ||manualId_()!=std::optional{predecessor.manualId}) {
+        return preserveReturnFailure(rejected(
+            "MONITOR_RETURN_STALE_MANUAL_OWNER"));
+    }
     const auto restored=[&]()->core::Status {
         try {
             return manualRestore_(
