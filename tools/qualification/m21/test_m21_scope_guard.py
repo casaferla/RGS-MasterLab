@@ -12,7 +12,7 @@ assert 'M19' in contract and 'M20' in contract
 assert 'const double result=*g.unrounded-*a.unrounded' in src
 assert 'const double d=*g->normalized_shape_db.unrounded -' in src
 assert 'PrivatePublicationGuard' in src and 'monotonic_token<=expected_[i]' in src
-assert 'NOT official Gate S/M' in contract
+assert 'Canonical M21 Gate S: BLOCKED.' in contract and 'Real Windows Manual Gate M: BLOCKED.' in contract
 assert 'M21' not in (ROOT/"ui/qml/Main.qml").read_text()
 assert not re.search(r'm21_metrics_comparison_candidate', (ROOT/"app/CMakeLists.txt").read_text(),re.I)
 assert not re.search(r'M21', (ROOT/"ui/CMakeLists.txt").read_text(),re.I)
