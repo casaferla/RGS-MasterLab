@@ -8,7 +8,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <span>
 
@@ -53,9 +52,7 @@ db_tp_of_peak(double linearPeak)
 }  // namespace
 
 core::Result<UnqualifiedTruePeakResourceEvidence>
-measure_unqualified_true_peak_full_resource(
-    const audio::AudioBuffer& resource,
-    const std::function<void(std::int64_t,std::int64_t)>& progress)
+measure_unqualified_true_peak_full_resource(const audio::AudioBuffer& resource)
 {
     const auto view = resource.view();
     const auto& fmt = view.format();
@@ -86,15 +83,6 @@ measure_unqualified_true_peak_full_resource(
                         "Empty-resource True Peak semantics not yet reconciled."});
     }
     const std::size_t count = fmt.channel_count();
-    if(progress && frames>std::numeric_limits<std::int64_t>::max()
-                       /static_cast<std::int64_t>(count)) {
-        return core::Result<UnqualifiedTruePeakResourceEvidence>::failure(
-            core::Error{core::ErrorCode::IntegerOverflow,
-                        "True Peak progress denominator overflow."});
-    }
-    const auto totalWork=frames*static_cast<std::int64_t>(count);
-    std::int64_t reported=0;
-    if(progress)progress(0,totalWork);
     std::array<std::span<const double>, 2> channels{};
     for (std::size_t ch = 0; ch < count; ++ch) {
         auto span = view.channel(ch);
@@ -121,16 +109,6 @@ measure_unqualified_true_peak_full_resource(
                     *step.error());
             }
             begin += length;
-            if(progress) {
-                const auto done=static_cast<std::int64_t>(ch)*frames
-                    +static_cast<std::int64_t>(begin);
-                // Report at ~1% intervals, after strict-FP chunks only.
-                if(done-reported>=std::max<std::int64_t>(
-                       1,totalWork/100) ||done==totalWork) {
-                    progress(done,totalWork);
-                    reported=done;
-                }
-            }
         }
     }
 
