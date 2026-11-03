@@ -1102,6 +1102,23 @@ Window {
             QVERIFY(panel);
             QVERIFY2(check_item_contained_in_ancestor(panel,host,1.5),
                 "Rate/ETA overlay must fit compact 680x338 host");
+            // Clicking the SAME Rate & Time button while opened closes it;
+            // then a second click opens it again. X / Escape remain valid.
+            auto* toggle=find_child_by_name(host,
+                QStringLiteral("m17RateAndTimesButton"));
+            QVERIFY(toggle);
+            QVERIFY(QMetaObject::invokeMethod(toggle,"clicked"));
+            QTRY_VERIFY_WITH_TIMEOUT(!popup->property("opened").toBool(),2000);
+            QVERIFY(QMetaObject::invokeMethod(toggle,"clicked"));
+            QTRY_VERIFY_WITH_TIMEOUT(popup->property("opened").toBool(),2000);
+            auto* actionRow=qobject_cast<QQuickItem*>(find_child_by_name(
+                host,QStringLiteral("m17ExplicitPreparationControls")));
+            QVERIFY(actionRow);
+            auto* popupItem=qobject_cast<QQuickItem*>(popup);
+            QVERIFY(popupItem);
+            QVERIFY2(popupItem->mapToItem(host,QPointF{}).y()
+                >= actionRow->mapToItem(host,QPointF{0,actionRow->height()}).y(),
+                "Rate & Time popup must not cover the toggle button.");
             auto* summary=find_child_by_name(host,
                 QStringLiteral("m17MasterRateSummary"));
             QVERIFY(summary);

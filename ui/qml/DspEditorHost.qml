@@ -418,6 +418,7 @@ Rectangle {
     // Active Editor Content Area
         // M17 explicit offline action: controls do not borrow transport Play.
         RowLayout {
+            id: m17ControlsRow
             objectName: "m17ExplicitPreparationControls"
             visible: root.isLimiterEditor || root.isMeterEditor
             Layout.fillWidth: true
@@ -442,7 +443,14 @@ Rectangle {
                     && !root.masterRateState.currentMasterRateAdmissible
                     ? root.masterRateState.final_src_path_status(
                         root.masterRateState.masterRateHz)
-                    : "Render and verify the full master; Play never starts this job."
+                    : root.terminalLimiterViewModel
+                        && root.terminalLimiterViewModel.audioStatus.startsWith("READY")
+                        ? "Master already verified: use Listen to Master or change parameters to prepare a different master."
+                        : root.terminalLimiterViewModel
+                            && (root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
+                                || root.terminalLimiterViewModel.audioStatus.startsWith("ACTIVE"))
+                            ? "A measured or active candidate is present. This button cannot override its verification; change a setting or return to normal preparation first."
+                            : "Render and verify the full master; Play never starts this job."
                 ToolTip.visible: hovered && m17PrepareTooltipDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
@@ -518,15 +526,24 @@ Rectangle {
                 text: "Listen to Master"
                 minimumControlWidth: 124
                 accentColor: root.activeFamilyAccent
-                visible: root.canListenPreparedMaster
-                enabled: visible
+                // Keep the affordance visible even when the current Master
+                // is not verified or has been invalidated. Availability must
+                // not be inferred from an absent control.
+                visible: root.isLimiterEditor && !root.monitorReturnVisible
+                enabled: root.canListenPreparedMaster
                 onClicked: {
                     if (root.masterListeningHandler) root.masterListeningHandler()
                     else if (root.terminalMonitorViewModel)
                         root.terminalMonitorViewModel.installMonitor(false)
                 }
                 Accessible.name: "Listen to the verified Master"
-                ToolTip.text: "Play the already prepared Master through the device"
+                ToolTip.text: root.canListenPreparedMaster
+                    ? "Play the verified Master through the device"
+                    : root.terminalLimiterViewModel
+                        && (root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
+                            || root.terminalLimiterViewModel.audioStatus.startsWith("ACTIVE · NON-CONFORMING"))
+                        ? "Master is not Ceiling-verified. Preview Anyway is a separate unqualified audition, not Listen to Master."
+                        : "No verified Master is available for this source and rate; Prepare M17 first."
                 ToolTip.visible: hovered && m17MasterListenDwell.ready
                 ToolTip.delay: 0
                 StudioTooltipDwell {
@@ -570,11 +587,13 @@ Rectangle {
             }
             Text {
                 objectName: "m17PreparationStatusText"
-                visible: root.isLimiterEditor && !root.masterActionsVisible
+                visible: root.isLimiterEditor
                 Layout.fillWidth: true
                 font.family: "Segoe UI"
                 font.pixelSize: 11
-                color: "#B6CADA"
+                color: root.terminalLimiterViewModel
+                    && root.terminalLimiterViewModel.audioStatus.startsWith("NON-CONFORMING")
+                    ? "#F0C87D" : "#B6CADA"
                 elide: Text.ElideRight
                 text: root.terminalLimiterViewModel
                     ? root.terminalLimiterViewModel.audioStatus : "UNAVAILABLE"
@@ -693,9 +712,13 @@ Rectangle {
         padding: 0
         width: Math.min(458, root.width - 16)
         x: Math.max(8, root.width - width - 8)
-        y: root.height < 470 ? 42 : 52
-        height: Math.min(290, root.height - y - 8)
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        // The popup MUST sit below the action row, not over the Rate &
+        // Time button. The popup overlay must never consume its second click.
+        y: m17ControlsRow.mapToItem(root, 0, m17ControlsRow.height).y + 6
+        height: Math.max(120, Math.min(290, root.height - y - 8))
+        // Button toggles open/closed; X and Escape are the other exits.
+        // CloseOnPressOutside can consume the button click then re-open.
+        closePolicy: Popup.CloseOnEscape
         onOpened: if (root.memoryAdvisor) root.memoryAdvisor.refresh()
         readonly property int selectedRateIndex: root.masterRateState
             ? [44100, 48000, 88200, 96000, 176400, 192000]
