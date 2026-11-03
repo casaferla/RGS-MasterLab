@@ -174,3 +174,24 @@ Arial, requires a genuine Qt font atlas with ASCII glyphs and runs a
 rendered-pixel complexity check: a trivial all-box/no-font image must FAIL
 the Qt Windows job. This is a screenshot-only rendering fix, still no
 product UI activation or acceptance.
+
+## Private macro-lot #8 — dependency invalidation matrix with real generational staleness
+Private read-only event simulation (NOT production Phase-6 scheduler) exercises the
+distinct dependency consequences of PREPARED or SOURCE replacement, mastering
+chain changes, active external Gold replacement and real Gold analysis-scope
+replacement. PREPARED/SOURCE invalidates PREPARED and PROCESSED, but NEVER
+external Gold. Chain edits invalidate only PROCESSED; Gold edits invalidate
+only GOLD and thereby both Gold-relative deltas. Audition-only loop/region
+and Level Match or display selection never affect persisted feature identity.
+
+Each event advances exactly the affected producer generation tokens; delayed
+old async snapshots cannot republish CURRENT values. New PROCESSED is never
+fabricated or copied from PREPARED; it stays STALE until separately published
+under its new producer generation. External Gold is independently scoped
+and the comparison never assumes sample alignment. Numeric 6-rate fixtures
+check before/after deltas, publishing order, stale rejection and authority
+preservation on Windows/Linux C++20 strict-FP Debug/Release.
+
+This is a **private semantic and state regression**, not an integration of
+the real UI, signal bus, canonical registry, playback, analysis service,
+or official M21 Gate S/M. All predecessor holds and NO MERGE remain.
