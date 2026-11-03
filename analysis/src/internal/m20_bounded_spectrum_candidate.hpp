@@ -22,7 +22,7 @@ public:
       std::uint32_t fs,std::uint64_t origin,std::uint64_t frames,
       std::uint32_t channels,bool gate_available=false,
       std::span<const std::uint8_t> mask={})
-    : fs_(fs),origin_(origin),frames_(frames),channels_(channels),
+    : fs_(fs),channels_(channels),origin_(origin),frames_(frames),
       gate_available_(gate_available),mask_(mask)
   {
     const auto g=spectral_geometry(fs_);
