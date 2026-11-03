@@ -6,6 +6,7 @@
 #include "internal/m18_terminal_sample_codec.hpp"
 #include "internal/m18_wav_candidate.hpp"
 #include "internal/m18_delivery_identity.hpp"
+#include "internal/m18_candidate_decoded_measurement.hpp"
 #include <array>
 #include <cstdint>
 #include <bit>
@@ -287,6 +288,22 @@ static int m18_test_wave_candidates_and_identity()
                    pcm.bytes.begin()+44))return 73;
     if(pcm.bytes!=m18_make_bounded_wav_candidate(stereo24,input,11).bytes)
         return 74;
+    const auto decoded24=m18_decode_own_bounded_candidate(pcm);
+    if(decoded24.status!=M18DecodeStatus::OK ||
+       decoded24.sample_rate!=48000U ||decoded24.channels!=2U ||
+       decoded24.interleaved.size()!=input.size())return 90;
+    // Dither+quantization can change samples; the frozen physical M16
+    // bank must later measure exactly these DECODED samples, not the
+    // pre-quantization M17 candidate. This is only a sample-level bound.
+    for(std::size_t i=0;i<input.size();++i){
+        const auto diff=decoded24.interleaved[i]-input[i];
+        if(!(diff>-(1.500001/8388608.0) &&
+             diff<(1.500001/8388608.0)))return 91;
+    }
+    auto corrupted24=pcm;
+    corrupted24.bytes[24]^=0x80U;
+    if(m18_decode_own_bounded_candidate(corrupted24).status
+        !=M18DecodeStatus::INCONSISTENT_HEADER)return 92;
     constexpr M18WavSpec stereoF32{
         M18WavEncoding::IEEE_FLOAT32,48000U,2U,2U,seed};
     const auto f32=m18_make_bounded_wav_candidate(stereoF32,input,11);
@@ -305,6 +322,11 @@ static int m18_test_wave_candidates_and_identity()
         return 76;
     if(!std::equal(expectedF32.begin(),expectedF32.end(),
                    f32.bytes.begin()+58))return 77;
+    const auto decodedF32=m18_decode_own_bounded_candidate(f32);
+    if(decodedF32.status!=M18DecodeStatus::OK ||
+       decodedF32.interleaved.size()!=input.size())return 93;
+    for(std::size_t i=0;i<input.size();++i)
+        if(decodedF32.interleaved[i]!=input[i])return 94;
     const auto f32DifferentSeed=m18_make_bounded_wav_candidate(
         {M18WavEncoding::IEEE_FLOAT32,48000U,2U,2U,seed+1U},
         input,11);
