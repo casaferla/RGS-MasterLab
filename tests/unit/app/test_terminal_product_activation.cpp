@@ -3137,7 +3137,37 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QCOMPARE(product.status(),
         QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
     deviceMonitor=privateMonitor;
+    // FQ98: hardware SOURCE preflight fails while M17 monitor remains
+    // exactly owned. Return must NOT retire the current device, must NOT
+    // install a partial MANUAL, and must retain the master and cue for retry.
+    std::size_t sourceRestoreProbes=0;
+    bool sourceRestoreSupported=false;
+    product.set_private_monitor_manual_restore_preflight(
+        [&](auto original)->core::Status {
+            ++sourceRestoreProbes;
+            if(original!=selector.processed_realization_snapshot())
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::InvalidState,
+                    "TEST_PREFLIGHT_MANUAL_EPOCH_CHANGED"});
+            if(!sourceRestoreSupported)
+                return core::Status::failure(core::Error{
+                    core::ErrorCode::UnsupportedOperation,
+                    "TEST_SOURCE_DEVICE_FORMAT_NOT_SUPPORTED"});
+            return core::Status::success();
+        });
+    const auto retryable=product.return_private_monitor_to_manual();
+    QVERIFY(!retryable);
+    QCOMPARE(retryable.error()->code(),core::ErrorCode::UnsupportedOperation);
+    QCOMPARE(sourceRestoreProbes,std::size_t{1});
+    QCOMPARE(monitorRetires,std::size_t{0});
+    QCOMPARE(manualRestores,std::size_t{0});
+    QCOMPARE(deviceMonitor,privateMonitor);
+    QCOMPARE(product.status(),
+        QStringLiteral("MONITOR_PRIVATE_INSTALLED_STOPPED"));
+    QCOMPARE(device->position,core::FrameIndex{200});
+    sourceRestoreSupported=true;
     QVERIFY(product.return_private_monitor_to_manual());
+    QCOMPARE(sourceRestoreProbes,std::size_t{2});
     QCOMPARE(monitorRetires,std::size_t{1});
     QCOMPARE(manualRestores,std::size_t{1});
     QCOMPARE(product.status(),
