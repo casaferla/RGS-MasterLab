@@ -9,6 +9,9 @@
 #include <QElapsedTimer>
 #include <QTimer>
 #include <optional>
+#include <cstdint>
+#include <functional>
+#include <utility>
 
 namespace rgsml::app {
 // Audio truth coordinator for the first M17 product ON/BYPASS transition.
@@ -32,6 +35,12 @@ public:
     // Product-only authority: M17 Prepare targets PROJECT MASTER, never the
     // Windows endpoint. Absent binding preserves legacy isolated fixtures.
     void set_master_rate_state(MasterOutputRateState& masterState);
+    // Snapshot before rendering: previously ACCEPTED full Prepare only.
+    using HostTotalEtaProvider=std::function<
+        std::optional<std::pair<std::int64_t,std::int64_t>>(std::int64_t)>;
+    void set_host_total_eta_provider(HostTotalEtaProvider provider) {
+        hostTotalEtaProvider_=std::move(provider);
+    }
     // Keep Active user intent across ordinary accepted MANUAL rerenders and
     // SOURCE Loop Region edits; never claim terminal PCM during preparation.
     void manual_preview_changed(const QString& previewStatus);
@@ -76,5 +85,7 @@ private:
     QElapsedTimer corePhaseElapsed_;
     bool corePhaseObserved_{false};
     QTimer renderHeartbeat_;
+    HostTotalEtaProvider hostTotalEtaProvider_;
+    std::optional<std::pair<std::int64_t,std::int64_t>> activeWholeEtaUs_;
 };
 } // namespace rgsml::app
