@@ -51,6 +51,21 @@ Rectangle {
             ? null : root.truePeakStaticViewModel
     property var terminalLimiterViewModel: null
     property var terminalMonitorViewModel: null
+    // Main owns any RAM-caution consent dialog. The editor is a consumer,
+    // not a second private-MASTER authority.
+    property var masterListeningHandler: null
+    readonly property bool canListenPreparedMaster: root.isLimiterEditor
+        && !root.monitorExclusive && !!root.terminalMonitorViewModel
+        && root.terminalMonitorViewModel.canInstall
+        && !root.terminalMonitorViewModel.monitorPreparing
+        && !root.terminalMonitorViewModel.monitorCancelling
+    readonly property bool monitorReturnVisible: root.isLimiterEditor
+        && !!root.terminalMonitorViewModel
+        && (root.terminalMonitorViewModel.monitorExclusive
+            || root.terminalMonitorViewModel.monitorPreparing
+            || root.terminalMonitorViewModel.monitorCancelling)
+    readonly property bool masterActionsVisible:
+        root.canListenPreparedMaster || root.monitorReturnVisible
     // Real Project authority. Selection does not certify Final SRC/M17 PCM.
     property var masterRateState: null
     property var memoryAdvisor: null
@@ -498,9 +513,52 @@ Rectangle {
                 ToolTip.delay: 0
                 StudioTooltipDwell { id: rateDwell; anchors.fill: parent }
             }
+            StudioButton {
+                objectName: "m17ListenMasterButton"
+                text: "Listen to Master"
+                minimumControlWidth: 124
+                accentColor: root.activeFamilyAccent
+                visible: root.canListenPreparedMaster
+                enabled: visible
+                onClicked: {
+                    if (root.masterListeningHandler) root.masterListeningHandler()
+                    else if (root.terminalMonitorViewModel)
+                        root.terminalMonitorViewModel.installMonitor(false)
+                }
+                Accessible.name: "Listen to the verified Master"
+                ToolTip.text: "Play the already prepared Master through the device"
+                ToolTip.visible: hovered && m17MasterListenDwell.ready
+                ToolTip.delay: 0
+                StudioTooltipDwell {
+                    id: m17MasterListenDwell
+                    anchors.fill: parent
+                }
+            }
+            StudioButton {
+                objectName: "m17ReturnSourceButton"
+                text: root.terminalMonitorViewModel
+                        && root.terminalMonitorViewModel.monitorPreparing
+                    ? "Cancel Playback Prep"
+                    : root.terminalMonitorViewModel
+                        && root.terminalMonitorViewModel.monitorCancelling
+                        ? "Cancelling…"
+                        : root.terminalMonitorViewModel
+                            && root.terminalMonitorViewModel.returnTargetText.indexOf("Close") === 0
+                            ? "Close Master Listening" : "Return to Source"
+                minimumControlWidth: 126
+                accentColor: root.activeFamilyAccent
+                visible: root.monitorReturnVisible
+                enabled: visible && root.terminalMonitorViewModel
+                    && !root.terminalMonitorViewModel.monitorCancelling
+                onClicked: {
+                    if (root.terminalMonitorViewModel)
+                        root.terminalMonitorViewModel.cancel()
+                }
+                Accessible.name: text
+            }
             Text {
                 objectName: "m17MasterRateSummary"
-                visible: root.isLimiterEditor
+                visible: root.isLimiterEditor && !root.masterActionsVisible
                 Layout.preferredWidth: root.width < 740 ? 132 : 178
                 elide: Text.ElideRight
                 font.family: "Segoe UI"
@@ -512,7 +570,7 @@ Rectangle {
             }
             Text {
                 objectName: "m17PreparationStatusText"
-                visible: root.isLimiterEditor
+                visible: root.isLimiterEditor && !root.masterActionsVisible
                 Layout.fillWidth: true
                 font.family: "Segoe UI"
                 font.pixelSize: 11
@@ -774,7 +832,7 @@ Rectangle {
                         Text {
                             objectName: "m17TimeColumnHeader"
                             Layout.preferredWidth: 62
-                            property string interactionHint: "HOST ~range is an indicative future total Prepare estimate from three or more accepted full runs. ACT is only a past completed Prepare. DSP * is an M17/M16 compute projection, NOT total Prepare. SRC N/A is blocked."
+                            property string interactionHint: "HOST ~range is an indicative future total Prepare estimate from three or more accepted full runs. ACT is only a past completed Prepare. DSP estimates are M17/M16 compute projections only, NOT total Prepare. SRC N/A is blocked."
                             text: "TIME"
                             HoverHandler { id: timeHeaderHover }
                             ToolTip.text: interactionHint

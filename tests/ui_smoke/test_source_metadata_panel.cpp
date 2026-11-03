@@ -3373,16 +3373,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // PO §12: one integrated MASTER listening surface in MAIN transport.
     // Minimal mock has no verified M17 candidate and MUST fail closed.
     for (const char* name : {
-        "transportListenMaster", "transportMasterListenControls",
-        "transportMasterDeviceRate", "transportMasterMemoryConfirmation",
+        "transportMasterMemoryConfirmation",
         "auditionRegionStartEditor", "auditionRegionEndEditor",
         "auditionRegionLoopCheckBox", "auditionRegionClearButton",
-        "globalReturnFromMonitor"}) {
+        "m17ListenMasterButton", "m17ReturnSourceButton"}) {
         QVERIFY2(root->findChild<QObject*>(QString::fromLatin1(name)) != nullptr,
                  name);
     }
     auto* listenMaster = root->findChild<QObject*>(
-        QStringLiteral("transportListenMaster"));
+        QStringLiteral("m17ListenMasterButton"));
     QVERIFY(listenMaster);
     QVERIFY(!listenMaster->property("enabled").toBool());
     QVERIFY(!listenMaster->property("visible").toBool());
@@ -3404,10 +3403,12 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
     // Consent is contextual, not a permanently visible checkbox.
     QVERIFY(root->findChild<QObject*>(
         QStringLiteral("transportMasterMemoryConsent")) == nullptr);
-    auto* masterControls = root->findChild<QObject*>(
-        QStringLiteral("transportMasterListenControls"));
-    QVERIFY(masterControls);
-    QVERIFY(!masterControls->property("visible").toBool());
+    QVERIFY(!root->findChild<QObject*>(
+        QStringLiteral("transportMasterListenControls")));
+    QVERIFY(!root->findChild<QObject*>(
+        QStringLiteral("transportMasterDeviceRate")));
+    QVERIFY(!root->findChild<QObject*>(
+        QStringLiteral("globalReturnFromMonitor")));
     auto* mainSourceRegion=root->findChild<QObject*>(
         QStringLiteral("auditionRegionContent"));
     QVERIFY(mainSourceRegion);
@@ -6045,36 +6046,18 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QSize{1184, 688}),
         "Capture real Qt Stereo/M-S corrected global status");
 
-    // FQ90 physical listening: while a genuine MASTER -> DEVICE conversion
-    // runs on its dedicated worker, its Main transport group MUST remain
-    // visible, including the cancel command and truthful busy text.
-    // A mocked source has no verified Master; no audio install is attempted.
-    engine.rootContext()->setContextProperty(
-        QStringLiteral("terminalMonitorViewModel"),
-        QVariantMap{
-            {QStringLiteral("canInstall"),false},
-            {QStringLiteral("monitorExclusive"),false},
-            {QStringLiteral("monitorPreparing"),true},
-            {QStringLiteral("monitorCancelling"),false},
-            {QStringLiteral("returnTargetText"),QStringLiteral("Return to Source")},
-            {QStringLiteral("masterRateHz"),88200},
-            {QStringLiteral("deviceRateHz"),48000}
-        });
-    QCoreApplication::processEvents();
-    auto* masterBusyRow=find_child_by_name(root,
-        QStringLiteral("transportMasterListenControls"));
-    auto* masterBusyCancel=find_child_by_name(root,
-        QStringLiteral("globalReturnFromMonitor"));
-    auto* masterBusyStatus=find_child_by_name(root,
-        QStringLiteral("transportMasterDeviceRate"));
-    QVERIFY(masterBusyRow && masterBusyCancel && masterBusyStatus);
-    QTRY_VERIFY_WITH_TIMEOUT(masterBusyRow->property("visible").toBool(),1500);
-    QVERIFY(masterBusyCancel->property("visible").toBool());
-    QCOMPARE(masterBusyCancel->property("text").toString(),
-        QStringLiteral("Cancel Master Prepare"));
-    QVERIFY(masterBusyStatus->property("visible").toBool());
-    QVERIFY(masterBusyStatus->property("text").toString().contains(
-        QStringLiteral("Preparing Master device PCM")));
+    // FQ92 user feedback: Master playback actions are owned by M17,
+    // never by the global transport, even when preparing DEVICE PCM.
+    // The fixed Main transport still has only shared transport controls.
+    QVERIFY(!find_child_by_name(root,
+        QStringLiteral("transportMasterListenControls")));
+    QVERIFY(!find_child_by_name(root,
+        QStringLiteral("globalReturnFromMonitor")));
+    auto* m17MasterAction=find_child_by_name(root,
+        QStringLiteral("m17ListenMasterButton"));
+    auto* m17ReturnAction=find_child_by_name(root,
+        QStringLiteral("m17ReturnSourceButton"));
+    QVERIFY(m17MasterAction && m17ReturnAction);
 
     window->close();
     QCoreApplication::processEvents();

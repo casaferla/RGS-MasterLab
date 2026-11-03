@@ -707,8 +707,8 @@ void PrepareMemoryAdviceViewModel::finish_calibration(
             const auto low=formatDuration(result.lowUs);
             const auto high=formatDuration(result.highUs);
             row[QStringLiteral("label")]=low==high
-                ?QStringLiteral("~%1*").arg(low)
-                :QStringLiteral("%1-%2*").arg(low,high);
+                ?QStringLiteral("~%1").arg(low)
+                :QStringLiteral("%1-%2").arg(low,high);
             row[QStringLiteral("details")]=QStringLiteral(
                 "LOCAL M17+M16 compute-time projection ONLY (%1 to %2); "
                 "two actual quiet + two transient 50ms probes on this CPU. "

@@ -666,81 +666,8 @@ ApplicationWindow {
                 }
                 StudioIconButton { id: zoomInButton; objectName: "waveformZoomInButton"; iconKind: "zoom-in"; enabled: sourceWaveform.canNavigate && sourceWaveform.zoomPosition < 1.0; KeyNavigation.backtab: zoomControl; KeyNavigation.tab: fitSourceButton; onClicked: sourceWaveform.zoomIn(); Accessible.name: "Zoom in Source waveform" }
                 StudioIconButton { id: fitSourceButton; objectName: "waveformFitSourceButton"; iconKind: "fit-source"; enabled: sourceWaveform.canNavigate && !sourceWaveform.fullFit; KeyNavigation.backtab: zoomInButton; KeyNavigation.tab: auditionTargetSelector.firstTarget; onClicked: sourceWaveform.fitSource(); Accessible.name: "Fit complete Source waveform" }
-                // The only Master-specific controls live LEFT of Stop.
-                RowLayout {
-                    objectName: "transportMasterListenControls"
-                    // A pending asynchronous MASTER -> DEVICE conversion is
-                    // neither installable yet nor an active monitor lease.
-                    // Keep this row visible so Cancel + real preparation
-                    // status do not disappear for the whole conversion.
-                    visible: root.canListenMaster || root.monitorExclusive
-                        || (root.appTerminalMonitorViewModel
-                            && (root.appTerminalMonitorViewModel.monitorPreparing
-                                || root.appTerminalMonitorViewModel.monitorCancelling))
-                    spacing: 6
-                    StudioButton {
-                        id: masterListenButton
-                        objectName: "transportListenMaster"
-                        text: "Listen to Master"
-                        visible: root.canListenMaster
-                        enabled: root.canListenMaster
-                        minimumControlWidth: 124
-                        onClicked: root.listenToPreparedMaster()
-                        Accessible.name: "Listen to the verified Master"
-                        StudioTooltipDwell {
-                            id: mainMasterListenTooltipDwell
-                            anchors.fill: parent
-                        }
-                        ToolTip.text: "Use the prepared Master, resampled only for the device"
-                        ToolTip.visible: mainMasterListenTooltipDwell.ready
-                        ToolTip.delay: 0
-                    }
-                    StudioButton {
-                        objectName: "globalReturnFromMonitor"
-                        text: root.appTerminalMonitorViewModel
-                                && root.appTerminalMonitorViewModel.monitorPreparing
-                            ? "Cancel Master Prepare"
-                            : root.appTerminalMonitorViewModel
-                                && root.appTerminalMonitorViewModel.monitorCancelling
-                                ? "Cancelling Master…"
-                                : root.appTerminalMonitorViewModel
-                                    && root.appTerminalMonitorViewModel.returnTargetText.indexOf("Close") === 0
-                                    ? "Close Master Listening" : "Return to Source"
-                        visible: root.monitorExclusive
-                            || (root.appTerminalMonitorViewModel
-                                && (root.appTerminalMonitorViewModel.monitorPreparing
-                                    || root.appTerminalMonitorViewModel.monitorCancelling))
-                        enabled: visible && !(root.appTerminalMonitorViewModel
-                            && root.appTerminalMonitorViewModel.monitorCancelling)
-                        minimumControlWidth: 110
-                        onClicked: if (root.appTerminalMonitorViewModel)
-                            root.appTerminalMonitorViewModel.cancel()
-                        Accessible.name: text
-                    }
-                    // Consumer clock stays at the right in mm:ss.mmm.
-                    // MASTER/DEVICE rate is status, never a replacement for
-                    // the source Region toolbar or a raw engineering counter.
-                    Label {
-                        objectName: "transportMasterDeviceRate"
-                        visible: root.monitorExclusive
-                            || (root.appTerminalMonitorViewModel
-                                && (root.appTerminalMonitorViewModel.monitorPreparing
-                                    || root.appTerminalMonitorViewModel.monitorCancelling))
-                        text: root.appTerminalMonitorViewModel
-                            && root.appTerminalMonitorViewModel.monitorCancelling
-                            ? "Cancelling device preparation…"
-                            : root.appTerminalMonitorViewModel
-                                && root.appTerminalMonitorViewModel.monitorPreparing
-                                ? "Preparing Master device PCM…"
-                            : root.appTerminalMonitorViewModel
-                                ? "Master " + (root.appTerminalMonitorViewModel.masterRateHz / 1000)
-                                    + " → " + (root.appTerminalMonitorViewModel.deviceRateHz / 1000)
-                                    + " kHz"
-                                : "Master preview"
-                        color: root.textSecondary
-                        font.pixelSize: 10
-                    }
-                }
+                // Master-specific commands are in True Peak Limiter.
+                // The ordinary transport retains only shared Play/Pause/Stop.
                 Item { objectName: "controlStripElasticCenter"; Layout.fillWidth: true }
                 TransportButton {
                     id: stopButton
@@ -936,6 +863,7 @@ ApplicationWindow {
             // same-named child property here creates a QML binding loop.
             terminalLimiterViewModel: root.appTerminalLimiterViewModel
             terminalMonitorViewModel: root.appTerminalMonitorViewModel
+            masterListeningHandler: function() { return root.listenToPreparedMaster() }
             masterRateState: root.appMasterRateState
             memoryAdvisor: root.appMemoryAdvisor
             limiterGrProvider: typeof terminalPrivateGrViewModel !== "undefined"
