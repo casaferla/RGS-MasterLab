@@ -916,6 +916,10 @@ void TerminalProductActivationCoordinator::private_session_changed()
             QStringLiteral("NON-CONFORMING · %1 dBTP (target %2)")
                 .arg(QString::number(peak,'f',2))
                 .arg(QString::number(evidence.requested_ceiling_db_tp,'f',2)));
+        // Advisory UI availability. A device change after this observation
+        // is still rejected by preview_nonconforming_requested() at click.
+        view_->setNonconformingDirectPreviewAvailable(
+            session_->current_measured_matches_device_for_preview());
     } else if(status==QStringLiteral("PRIVATE_INSTALLED")) {
         finish_activation();
     } else if(status==QStringLiteral("STALE")
