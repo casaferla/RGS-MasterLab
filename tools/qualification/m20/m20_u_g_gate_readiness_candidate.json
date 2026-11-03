@@ -1,0 +1,91 @@
+{
+  "schema": "rgsml.m20.private-gate-readiness/2026-11-03",
+  "authority": "PO M20 Targeted Materialization ACCEPTED/FROZEN; Phase-6 P02/P06 closure",
+  "private_preproduction_only": true,
+  "official_U_qualified": false,
+  "official_G_qualified": false,
+  "current_candidate": {
+    "fft": "existing rgsml_analysis Radix2Fft/HannWindow/compute_onesided_psd",
+    "spectral_memory": "bounded DSP ring; borrowed caller-owned gate mask",
+    "accepted_feature_id_primary": "rgsml.tonal.profile.normalized.fractional_octave_1_12",
+    "accepted_feature_id_substitute": "rgsml.tonal.profile.normalized.fractional_octave_1_3",
+    "stereo_ids": [
+      "rgsml.stereo.width_ratio",
+      "rgsml.stereo.correlation.series"
+    ],
+    "qml_registration": "isolate_preview_only_not_in_Main_or_ui_CMake",
+    "current_gate": "PRIVATE_CANDIDATE_ONLY"
+  },
+  "required_before_official_U_and_G": [
+    {
+      "id": "M17_PHYSICAL_PO",
+      "state": "BLOCKED_UPSTREAM",
+      "detail": "M17 #61 formal and physical acceptance"
+    },
+    {
+      "id": "POST_M17_CI_RESET",
+      "state": "BLOCKED_UPSTREAM",
+      "detail": "mandatory CI architecture review/reset after M17 acceptance"
+    },
+    {
+      "id": "M18_INTEGRATED_QUALIFIED",
+      "state": "BLOCKED_UPSTREAM",
+      "detail": "M18 #63 integrated and formally qualified"
+    },
+    {
+      "id": "M19_INTEGRATED_QUALIFIED",
+      "state": "BLOCKED_UPSTREAM",
+      "detail": "M19 #64 integrated and formally qualified"
+    },
+    {
+      "id": "PHASE6_REGISTRY",
+      "state": "BLOCKED_CANONICAL",
+      "detail": "FeatureDefinitionRegistry exact real API, status/reason mappings"
+    },
+    {
+      "id": "M19_RETAINED_IDENTITIES",
+      "state": "BLOCKED_CANONICAL",
+      "detail": "M19 qualified retained Integrated-Loudness block identity and STFT frame membership semantics"
+    },
+    {
+      "id": "VALID_BAND_LOW_SUPPORT",
+      "state": "BLOCKED_CANONICAL",
+      "detail": "validBandEnergy eligibility numerical threshold and QTP"
+    },
+    {
+      "id": "DISPLAY_COMPOSITION_PO",
+      "state": "BLOCKED_APPROVAL",
+      "detail": "Static UI + separate live B3 bay composition PO decision"
+    },
+    {
+      "id": "GATE_U_INTEGRATION",
+      "state": "BLOCKED_QUALIFICATION",
+      "detail": "Actual Windows application, canonical API/view, transport/scope/lifecycle"
+    },
+    {
+      "id": "GATE_G_NUMERIC",
+      "state": "BLOCKED_QUALIFICATION",
+      "detail": "Independent mathematical QTP, thresholds and cross-platform native evidence"
+    },
+    {
+      "id": "WINDOWS_FQ",
+      "state": "BLOCKED_PHYSICAL",
+      "detail": "cold Windows package, static UI and physical acceptance"
+    },
+    {
+      "id": "FINAL_PO_MERGE",
+      "state": "BLOCKED_APPROVAL",
+      "detail": "Explicit PO GO; no main merge from draft"
+    }
+  ],
+  "preliminary_evidence": [
+    "real shared FFT/Hann/PSD six rates",
+    "mean channel power and linear time average",
+    "Fraction/Decimal independent oracles",
+    "stereo P06 interval union + 400ms Grid100 rho",
+    "actual AudioBufferView selected scope and domain guard",
+    "M19 snapshot intake fail-closed on missing retained identity",
+    "isolated Qt 6.8.3 actual QQmlEngine on both OS",
+    "bounded-memory chunk invariant streaming DSP"
+  ]
+}

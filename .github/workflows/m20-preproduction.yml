@@ -9,6 +9,7 @@ on:
       - 'ui/qml/M20BasicTonalStereoPreview.qml'
       - 'tools/qualification/m20/**'
       - 'docs/architecture/M20_PARALLEL_PREPRODUCTION_BRANCH_CONTRACT_20261103.md'
+      - 'tools/qualification/m20/m20_u_g_gate_readiness_candidate.json'
       - '.github/workflows/m20-preproduction.yml'
   workflow_dispatch:
 permissions:
@@ -103,6 +104,17 @@ jobs:
           for opts in "-O0 -g" "-O2"; do
             g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src -Ianalysis/include -Iaudio/include -Icore/include tools/qualification/m20/m20_presentation_selftest.cpp -o "$RUNNER_TEMP/m20-presentation"
             "$RUNNER_TEMP/m20-presentation"
+          done
+      - name: M20 U/G official gate readiness fail-closed contract
+        shell: bash
+        run: python3 tools/qualification/m20/test_m20_u_g_preflight.py
+      - name: M20 bounded-memory genuine FFT scope streaming · Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            g++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off -Ianalysis/src -Ianalysis/include tools/qualification/m20/m20_bounded_spectrum_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp -o "$RUNNER_TEMP/m20-bounded"
+            "$RUNNER_TEMP/m20-bounded"
           done
   windows-m20:
     name: M20 only · Windows 2022 MSVC Debug + Release
@@ -221,6 +233,21 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "M20_PRESENTER_TEST_FAILED_$mode" }
           }
           Write-Output M20_PRESENTER_WINDOWS_PREPRODUCTION_PASS_NOT_GATE_G
+      - name: M20 U/G official gate readiness fail-closed contract
+        shell: pwsh
+        run: python tools/qualification/m20/test_m20_u_g_preflight.py
+      - name: M20 bounded-memory genuine FFT scope streaming · Debug + Release
+        shell: pwsh
+        run: |
+          foreach ($mode in @("Debug","Release")) {
+            $opt = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $log = "$env:RUNNER_TEMP/m20-bounded-$mode.log"
+            & cl.exe /nologo /std:c++20 /EHsc $opt /W4 /WX /fp:strict /Zc:__cplusplus /Ianalysis/src /Ianalysis/include tools/qualification/m20/m20_bounded_spectrum_selftest.cpp analysis/src/fft.cpp analysis/src/hann.cpp analysis/src/psd.cpp "/Fe:$env:RUNNER_TEMP/m20-bounded-$mode.exe" *> $log
+            if ($LASTEXITCODE -ne 0) { Get-Content $log -Tail 70; throw "M20_BOUNDED_COMPILE_FAILED_$mode" }
+            & "$env:RUNNER_TEMP/m20-bounded-$mode.exe"
+            if ($LASTEXITCODE -ne 0) { throw "M20_BOUNDED_TEST_FAILED_$mode" }
+          }
+          Write-Output M20_BOUNDED_WINDOWS_PREPRODUCTION_PASS_NOT_GATE_G
       - name: Preserve ONLY bounded Windows failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
