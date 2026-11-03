@@ -937,6 +937,10 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     // No fabricated unsafe direct-preview availability.
     QVERIFY(product.current_master_matches_device_for_preview());
     QVERIFY(!product.current_measured_matches_device_for_preview());
+    QVERIFY(!product.capture_measured_master_for_device_conversion());
+    const auto forbidden=product.admit_measured_device_conversion(
+        {},{},true);
+    QVERIFY(!forbidden); // Verified MASTER cannot become measured audition.
     // P0 bridge returns ONLY the exact currently verified MASTER at the
     // selected PROJECT rate. DEVICE must not implicitly retarget it.
     const auto firstRenderCount=renderer.render_invocation_count();
