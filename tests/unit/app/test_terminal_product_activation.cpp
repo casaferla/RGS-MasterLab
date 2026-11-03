@@ -1690,7 +1690,7 @@ void TerminalActivationIntegrationTest::audibleOnBypassRestoresExactManualSource
     QVERIFY(firstProjectMaster);
     QCOMPARE(firstProjectMaster->rendered.output_rate,*masterRate.value());
     QCOMPARE(vm.audio_status(),
-        QStringLiteral("MASTER VERIFIED · ASCOLTA MASTER"));
+        QStringLiteral("MASTER VERIFIED · LISTEN TO MASTER"));
     QVERIFY(!product.current_master_matches_device_for_preview());
     const auto callsBeforeIgnoredPreview=renderer.render_invocation_count();
     vm.previewPrepared(); // disallowed: project MASTER != physical DEVICE
@@ -3463,7 +3463,7 @@ privateMaster192kOn48kDeviceRemainsUninstalled()
     QVERIFY(!audioGate.has_session());
     QCOMPARE(product.status(),QStringLiteral("IDLE"));
     QCOMPARE(monitorUi.status_text(),
-        QStringLiteral("ASCOLTA MASTER IDLE · NO PRIVATE DEVICE PCM"));
+        QStringLiteral("MASTER LISTENING IDLE · NO DEVICE PCM"));
     // SOURCE was refused by the physical device: returning from the
     // exclusive monitor MUST clear its readouts immediately. The UI must
     // never retain an apparently PLAYING ghost owner or borrowed rate.

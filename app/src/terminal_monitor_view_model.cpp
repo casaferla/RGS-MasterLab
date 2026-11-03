@@ -120,7 +120,7 @@ QString TerminalMonitorViewModel::status_text() const
     // IDLE cannot attest audible MANUAL: SOURCE may have been refused
     // initially and an offline-origin monitor may have returned NO_SOURCE.
     if(status==QStringLiteral("IDLE"))
-        return QStringLiteral("ASCOLTA MASTER IDLE · NO PRIVATE DEVICE PCM");
+        return QStringLiteral("MASTER LISTENING IDLE · NO DEVICE PCM");
     if(status==QStringLiteral("RENDERING"))
         return QStringLiteral("PREPARING FINAL MASTER · NOT DEVICE AUDIO");
     if(status==QStringLiteral("MASTER_READY_MONITOR_PENDING")
@@ -131,7 +131,7 @@ QString TerminalMonitorViewModel::status_text() const
     if(status==QStringLiteral("PRIVATE_INSTALLED")
        &&installedHandoffEligible_&&installedHandoffEligible_())
         return QStringLiteral(
-            "M17 PREVIEW ACTIVE · ASCOLTA MASTER RETAINS SAME PCM");
+            "M17 PREVIEW ACTIVE · MASTER LISTENING REUSES PCM");
     if(status==QStringLiteral("MASTER_MEASURED_NONCONFORMING_PRIVATE"))
         return QStringLiteral("MASTER NON-CONFORMING · AUDITION BLOCKED");
     if(status==QStringLiteral("MONITOR_PRIVATE_RECOVERY_REQUIRED"))
