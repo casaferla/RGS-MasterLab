@@ -76,6 +76,27 @@ def run():
     rel_threshold = (-0.691+10*math.log10(math.fsum(q)/len(q)))-10.0
     assert math.isclose(rel_threshold, -0.691, abs_tol=1e-12)
     assert not (q[1] > (math.fsum(q)/len(q))/10.0)
+    # Strict relative gating in the independent POWER domain.
+    def gate(powers):
+        absolute = 10**((-70+0.691)/10)
+        active = [q for q in powers if q > absolute]
+        if not active:
+            return (0, 0, None)
+        relative = (math.fsum(active)/len(active))/10
+        kept = [q for q in active if q > relative]
+        return (len(active), len(kept), -0.691+
+                10*math.log10(math.fsum(kept)/len(kept)))
+    aa, ar, av = gate([19.0, 1.0])
+    assert (aa, ar) == (2, 1)
+    close(av, -0.691+10*math.log10(19), 1e-12)
+    aa, ar, av = gate([19.0, math.nextafter(1.0, 2.0)])
+    assert (aa, ar) == (2, 2)
+    close(av, -0.691+10*math.log10(10), 1e-12)
+    abs_gate = 10**((-70+0.691)/10)
+    aa, ar, _ = gate([math.nextafter(abs_gate, 0.0),
+                      abs_gate, math.nextafter(abs_gate, 1.0)])
+    assert (aa, ar) == (1, 1)
+
     # Poison outside scope is not included; the scope owns the filter reset.
     assert full_loudness_mono_48k(([1.0e4]+dc+[-1.0e4])[1:-1]) == full_loudness_mono_48k(dc)
     print("M19_INDEPENDENT_48K_ORACLE_PASS_NOT_FORMAL_GATE_G")
