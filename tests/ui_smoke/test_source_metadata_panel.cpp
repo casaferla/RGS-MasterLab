@@ -3457,6 +3457,15 @@ void SourceMetadataPanelSmokeTest::emptyReadyErrorAndWindowLifecycle()
         QVERIFY2(root->findChild<QObject*>(QString::fromLatin1(name)) != nullptr,
                  name);
     }
+    // A clean Main session must never display the emergency discard
+    // dialog. It is available only for an explicitly proven post-retirement
+    // Windows SOURCE recovery state; normal close remains unchanged.
+    auto* recoveryExitDialog=root->findChild<QObject*>(
+        QStringLiteral("m17RecoveryExitConfirmation"));
+    QVERIFY(recoveryExitDialog);
+    QVERIFY(!recoveryExitDialog->property("visible").toBool());
+    QVERIFY(root->findChild<QObject*>(
+        QStringLiteral("m17DiscardRecoverySessionButton")));
     auto* listenMaster = root->findChild<QObject*>(
         QStringLiteral("m17ListenMasterButton"));
     QVERIFY(listenMaster);
