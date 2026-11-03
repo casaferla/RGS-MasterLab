@@ -57,6 +57,19 @@ jobs:
             -o "$RUNNER_TEMP/m18-preproduction-release"
           "$RUNNER_TEMP/m18-preproduction-release"
 
+      - name: M18 streaming WAV and private disk transaction · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for opts in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $opts -Wall -Wextra -Wpedantic -Werror \
+              -I audio/src -I core/include \
+              tools/qualification/m18/m18_streaming_selftest.cpp \
+              core/src/sha256.cpp \
+              -o "$RUNNER_TEMP/m18-streaming-linux"
+            "$RUNNER_TEMP/m18-streaming-linux"
+          done
+
   windows-m18:
     name: M18 only · Windows MSVC C++20 Debug + Release
     runs-on: windows-2022
@@ -97,6 +110,32 @@ jobs:
           & "$env:RUNNER_TEMP/m18-preproduction-release.exe"
           if ($LASTEXITCODE -ne 0) { throw "M18_RELEASE_ORACLE_FAILED" }
 
+      - name: M18 streaming WAV and private disk transaction · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-streaming-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus `
+              /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_streaming_selftest.cpp `
+              core/src/sha256.cpp `
+              "/Fe:$env:RUNNER_TEMP/m18-streaming-$mode.exe" *> $report
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+              Add-Content $report "M18_STREAM_COMPILE_${mode}_EXIT=$code"
+              Get-Content $report -Tail 70
+              throw "M18_STREAM_COMPILE_FAILED_$mode"
+            }
+            & "$env:RUNNER_TEMP/m18-streaming-$mode.exe" >> $report 2>&1
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+              Add-Content $report "M18_STREAM_RUNTIME_${mode}_EXIT=$code"
+              Get-Content $report -Tail 40
+              throw "M18_STREAM_RUNTIME_FAILED_$mode"
+            }
+          }
+
       - name: Upload bounded Windows M18 errors only
         if: failure()
         uses: actions/upload-artifact@v4
@@ -105,5 +144,6 @@ jobs:
           path: |
             ${{ runner.temp }}/m18-windows-debug-bounded.txt
             ${{ runner.temp }}/m18-windows-execution.txt
+            ${{ runner.temp }}/m18-streaming-windows-bounded.txt
           if-no-files-found: ignore
           retention-days: 7
