@@ -88,7 +88,15 @@ constexpr std::array<Fixture,3> kFixtures{{
         if(!encode(fixture,adversarial,ragged))return 21;
         if(entire!=ragged)return 22;
         if(entire.size()!=fixture.frames*fixture.channels*3U)return 23;
-        if(sha(entire)!=fixture.expected_sha256)return 24;
+        if(sha(entire)!=fixture.expected_sha256){
+            std::fprintf(stderr,
+                "M18_SHA_DIAGNOSTIC fixture=%zu observed=%s expected=%s firstBytes=",
+                i,sha(entire).c_str(),fixture.expected_sha256);
+            for(std::size_t n=0;n<std::min(std::size_t{48},entire.size());++n)
+                std::fprintf(stderr,"%02X",static_cast<unsigned>(entire[n]));
+            std::fputc('\n',stderr);
+            return 24;
+        }
         if(sha(ragged)!=fixture.expected_sha256)return 25;
 
         // Explicit checkpoint and resume boundary, source identity frozen.
