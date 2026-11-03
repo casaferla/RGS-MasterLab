@@ -137,6 +137,24 @@ jobs:
             "$RUNNER_TEMP/m18-lowlevel-lane"
           done
 
+      - name: Decode actual M18 WAV and invoke unmodified M16 FIR · Linux Debug + Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flags in "-O0 -g" "-O2"; do
+            c++ -std=c++20 $flags -Wall -Wextra -Wpedantic -Werror \
+              -ffp-contract=off -fno-fast-math \
+              -I analysis/src -I audio/src -I core/include \
+              tools/qualification/m18/m18_true_peak_delivered_selftest.cpp \
+              analysis/src/true_peak_itu4x_channel_stream.cpp \
+              core/src/error.cpp core/src/sha256.cpp \
+              -o "$RUNNER_TEMP/m18-m16-delivery"
+            "$RUNNER_TEMP/m18-m16-delivery" \
+              | tee "$RUNNER_TEMP/m18-m16-delivered-evidence.txt"
+            grep -q 'M18_POST_QUANTIZATION_AUTHENTIC_M16_NUMERIC_SEAM_PASS_NOT_PRODUCT_GATE' \
+              "$RUNNER_TEMP/m18-m16-delivered-evidence.txt"
+          done
+
   windows-m18:
     name: M18 only · Windows MSVC C++20 Debug + Release
     runs-on: windows-2022
@@ -345,6 +363,34 @@ jobs:
             }
           }
 
+      - name: Decode actual M18 WAV and invoke unmodified M16 FIR · Windows Debug + Release
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP/m18-m16-delivered-windows-bounded.txt"
+          foreach ($mode in @("Debug","Release")) {
+            $optimization = if ($mode -eq "Debug") { "/Od" } else { "/O2" }
+            $exe = "$env:RUNNER_TEMP/m18-m16-delivery-$mode.exe"
+            & cl.exe /nologo /std:c++20 /EHsc $optimization /W4 /WX /Zc:__cplusplus /fp:strict `
+              /Ianalysis/src /Iaudio/src /Icore/include `
+              tools/qualification/m18/m18_true_peak_delivered_selftest.cpp `
+              analysis/src/true_peak_itu4x_channel_stream.cpp `
+              core/src/error.cpp core/src/sha256.cpp `
+              "/Fe:$exe" *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 75
+              throw "M18_M16_DELIVERED_COMPILE_FAILED_$mode"
+            }
+            & $exe *> $report
+            if ($LASTEXITCODE -ne 0) {
+              Get-Content $report -Tail 65
+              throw "M18_M16_DELIVERED_RUNTIME_FAILED_$mode"
+            }
+            $content = Get-Content $report -Raw
+            if ($content -notmatch "M18_POST_QUANTIZATION_AUTHENTIC_M16_NUMERIC_SEAM_PASS_NOT_PRODUCT_GATE") {
+              throw "M18_M16_DELIVERED_EVIDENCE_MISSING_$mode"
+            }
+          }
+
       - name: Upload bounded Windows M18 errors only
         if: failure()
         uses: actions/upload-artifact@v4
@@ -359,5 +405,6 @@ jobs:
             ${{ runner.temp }}/m18-pre-audit-hashes-windows.txt
             ${{ runner.temp }}/m18-offline-windows-bounded.txt
             ${{ runner.temp }}/m18-lowlevel-windows-bounded.txt
+            ${{ runner.temp }}/m18-m16-delivered-windows-bounded.txt
           if-no-files-found: ignore
           retention-days: 7
