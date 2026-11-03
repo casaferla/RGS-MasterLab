@@ -1095,6 +1095,12 @@ Window {
             // Real QtQuick fixture only; not the physical Main/150%-DPI Gate.
             auto* popup=find_child_by_name(host,QStringLiteral("m17RateTimePopup"));
             QVERIFY(popup);
+            // Rate & Time open/close is observational; no MASTER selection.
+            const auto revisionBeforePopup=selectedMasterRate.rate_revision();
+            const auto rateBeforePopup=selectedMasterRate.master_rate_hz();
+            QSignalSpy popupRateChanges{&selectedMasterRate,
+                &app::MasterOutputRateState::changed};
+            QVERIFY(popupRateChanges.isValid());
             QVERIFY(QMetaObject::invokeMethod(popup,"open"));
             QTRY_VERIFY_WITH_TIMEOUT(popup->property("opened").toBool(),3000);
             auto* panel=qobject_cast<QQuickItem*>(find_child_by_name(
@@ -1112,6 +1118,9 @@ Window {
             QTRY_VERIFY_WITH_TIMEOUT(!popup->property("opened").toBool(),2000);
             QVERIFY(QMetaObject::invokeMethod(toggle,"clicked"));
             QTRY_VERIFY_WITH_TIMEOUT(popup->property("opened").toBool(),2000);
+            QCOMPARE(selectedMasterRate.rate_revision(),revisionBeforePopup);
+            QCOMPARE(selectedMasterRate.master_rate_hz(),rateBeforePopup);
+            QCOMPARE(popupRateChanges.count(),0);
             auto* actionRow=qobject_cast<QQuickItem*>(find_child_by_name(
                 host,QStringLiteral("m17ExplicitPreparationControls")));
             QVERIFY(actionRow);
