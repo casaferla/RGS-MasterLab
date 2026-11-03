@@ -44,10 +44,18 @@ measure_selected_scope_candidate(
     const auto& format = subview.value()->format();
     const auto sampleRate = format.sample_rate().value();
     const auto count = format.channel_count();
-    if (sampleRate <= 0 || sampleRate > 192000 || (count != 1U && count != 2U)) {
+    if (count != 1U && count != 2U) {
         return core::Result<BasicLevelPreproductionSnapshot>::failure(
             core::Error{core::ErrorCode::UnsupportedAudioLayout,
-                        "M19 candidate needs a supported mono/stereo sample clock."});
+                        "M19 candidate requires canonical mono or stereo."});
+    }
+    const bool supportedClock = sampleRate == 44100 || sampleRate == 48000
+        || sampleRate == 88200 || sampleRate == 96000
+        || sampleRate == 176400 || sampleRate == 192000;
+    if (!supportedClock) {
+        return core::Result<BasicLevelPreproductionSnapshot>::failure(
+            core::Error{core::ErrorCode::UnsupportedOperation,
+                        "M19 candidate sample rate is outside the six-rate scope."});
     }
     auto left = subview.value()->channel(0U);
     if (!left) {
